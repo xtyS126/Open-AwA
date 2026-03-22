@@ -2,6 +2,8 @@ from typing import Dict, List, Any, Optional
 from loguru import logger
 import asyncio
 import httpx
+from memory.experience_manager import ExperienceManager
+from sqlalchemy.orm import Session
 
 
 class ExecutionLayer:
@@ -75,6 +77,10 @@ class ExecutionLayer:
             
             result["step"] = step.get("step")
             result["action"] = action
+            
+            if context.get('relevant_experiences'):
+                logger.info(f"Executed step using {len(context['relevant_experiences'])} experiences")
+            
             return result
             
         except Exception as e:
@@ -181,3 +187,19 @@ class ExecutionLayer:
     async def retry_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Retrying step: {step.get('action')}")
         return await self.execute_step(step, context)
+    
+    async def record_experience_feedback(
+        self,
+        experience_id: int,
+        success: bool,
+        db: Session
+    ) -> None:
+        """记录经验应用反馈"""
+        try:
+            manager = ExperienceManager(db)
+            await manager.update_experience_quality(
+                experience_id=experience_id,
+                success=success
+            )
+        except Exception as e:
+            logger.error(f"Error recording experience feedback: {e}")
