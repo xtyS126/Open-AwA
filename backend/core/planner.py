@@ -28,6 +28,11 @@ class PlanningLayer:
         else:
             plan = await self._create_chat_plan(entities, context)
         
+        relevant_experiences = context.get('relevant_experiences', [])
+        if relevant_experiences:
+            plan['relevant_experiences'] = relevant_experiences
+            logger.debug(f"Added {len(relevant_experiences)} experiences to plan context")
+        
         logger.debug(f"Created plan with {len(plan.get('steps', []))} steps")
         return plan
     
@@ -157,3 +162,18 @@ class PlanningLayer:
             processed.update(group)
         
         return parallel_groups
+    
+    def generate_experience_prompt(self, experiences: List[Dict[str, Any]]) -> str:
+        """生成经验提示文本"""
+        if not experiences:
+            return ""
+        
+        prompt_parts = ["\n\n## 相关经验提示\n"]
+        prompt_parts.append("根据历史经验，以下列方法可能对当前任务有帮助：\n")
+        
+        for i, exp in enumerate(experiences, 1):
+            prompt_parts.append(f"\n{i}. **{exp['title']}** (置信度: {exp['confidence']:.2f})\n")
+            prompt_parts.append(f"   {exp['content']}\n")
+            prompt_parts.append(f"   适用场景：{exp['trigger']}\n")
+        
+        return "".join(prompt_parts)

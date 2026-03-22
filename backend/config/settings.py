@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+from config.experience_settings import experience_config
 
 
 class Settings(BaseSettings):
@@ -29,6 +30,9 @@ class Settings(BaseSettings):
     SANDBOX_MEMORY_LIMIT: str = "512m"
     
     LOG_LEVEL: str = "INFO"
+    
+    experience_extraction_enabled: bool = True
+    experience_retrieval_enabled: bool = True
     
     class Config:
         env_file = ".env"

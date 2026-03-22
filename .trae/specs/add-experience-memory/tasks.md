@@ -21,47 +21,47 @@
 
 ## 2. 经验提取Skill开发
 
-- [ ] **任务2.1**: 创建experience-extractor Skill配置文件
-  - [ ] 定义Skill元数据（name, version, description）
-  - [ ] 编写experience_extraction_prompt模板
-  - [ ] 配置Skill触发条件（自动/手动/定期）
-  - [ ] 定义Skill输出格式规范
+- [x] **任务2.1**: 创建experience-extractor Skill配置文件
+  - [x] 定义Skill元数据（name, version, description）
+  - [x] 编写experience_extraction_prompt模板
+  - [x] 配置Skill触发条件（自动/手动/定期）
+  - [x] 定义Skill输出格式规范
 
-- [ ] **任务2.2**: 实现经验提取核心逻辑
-  - [ ] 创建ExperienceExtractor类
-  - [ ] 实现会话上下文分析功能
-  - [ ] 实现经验类型分类功能
-  - [ ] 实现触发条件生成功能
-  - [ ] 实现置信度评估功能
+- [x] **任务2.2**: 实现经验提取核心逻辑
+  - [x] 创建ExperienceExtractor类
+  - [x] 实现会话上下文分析功能
+  - [x] 实现经验类型分类功能
+  - [x] 实现触发条件生成功能
+  - [x] 实现置信度评估功能
 
-- [ ] **任务2.3**: 集成Skill到Skills系统
-  - [ ] 在Skill路由中注册新Skill
-  - [ ] 实现Skill配置加载功能
-  - [ ] 实现Skill执行接口
-  - [ ] 添加Skill启用/禁用控制
+- [x] **任务2.3**: 集成Skill到Skills系统
+  - [x] 在Skill路由中注册新Skill
+  - [x] 实现Skill配置加载功能
+  - [x] 实现Skill执行接口
+  - [x] 添加Skill启用/禁用控制
 
 ## 3. 经验管理器实现
 
-- [ ] **任务3.1**: 创建ExperienceManager类
-  - [ ] 继承MemoryManager的模式和接口
-  - [ ] 实现add_experience方法
-  - [ ] 实现get_experiences方法
-  - [ ] 实现search_experiences多维度检索
-  - [ ] 实现semantic_search_experiences语义检索
-  - [ ] 实现update_experience_quality质量更新
+- [x] **任务3.1**: 创建ExperienceManager类
+  - [x] 继承MemoryManager的模式和接口
+  - [x] 实现add_experience方法
+  - [x] 实现get_experiences方法
+  - [x] 实现search_experiences多维度检索
+  - [x] 实现semantic_search_experiences语义检索
+  - [x] 实现update_experience_quality质量更新
 
-- [ ] **任务3.2**: 实现经验检索与复用机制
-  - [ ] 实现retrieve_relevant_experiences检索方法
-  - [ ] 实现extract_task_features任务特征提取
-  - [ ] 实现deduplicate_and_rank去重排序
-  - [ ] 实现experience_injection上下文注入
-  - [ ] 集成到PlanningLayer的计划创建流程
+- [x] **任务3.2**: 实现经验检索与复用机制
+  - [x] 实现retrieve_relevant_experiences检索方法
+  - [x] 实现extract_task_features任务特征提取
+  - [x] 实现deduplicate_and_rank去重排序
+  - [x] 实现experience_injection上下文注入
+  - [x] 集成到PlanningLayer的计划创建流程
 
-- [ ] **任务3.3**: 实现经验质量保障机制
-  - [ ] 实现实用性评分计算
-  - [ ] 实现置信度动态更新算法
-  - [ ] 实现低质量经验处理逻辑
-  - [ ] 实现定期归档任务
+- [x] **任务3.3**: 实现经验质量保障机制
+  - [x] 实现实用性评分计算
+  - [x] 实现置信度动态更新算法
+  - [x] 实现低质量经验处理逻辑
+  - [x] 实现定期归档任务
 
 ## 4. API路由开发
 
