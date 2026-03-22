@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from db.models import get_db, Skill, ExperienceMemory, ExperienceExtractionLog
@@ -10,6 +10,8 @@ from loguru import logger
 import yaml
 import uuid
 import json
+import zipfile
+import io
 
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
@@ -310,3 +312,58 @@ async def validate_skill(
             errors=[f"Validation error: {str(e)}"],
             warnings=[]
         )
+
+@router.post("/parse-upload")
+async def parse_skill_upload(
+    file: UploadFile = File(...),
+    current_user = Depends(get_current_user)
+):
+    content = await file.read()
+    filename = file.filename
+    
+    skill_content = ""
+    
+    if filename.endswith('.zip') or filename.endswith('.skill'):
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as z:
+                if 'SKILL.md' in z.namelist():
+                    skill_content = z.read('SKILL.md').decode('utf-8')
+                else:
+                    md_files = [f for f in z.namelist() if f.endswith('.md')]
+                    if md_files:
+                        skill_content = z.read(md_files[0]).decode('utf-8')
+                    else:
+                        raise HTTPException(status_code=400, detail="No SKILL.md found in the archive")
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid zip file")
+    elif filename.endswith('.md') or filename.endswith('.yaml') or filename.endswith('.yml'):
+        skill_content = content.decode('utf-8')
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file format")
+        
+    name = filename.split('.')[0]
+    description = ""
+    instructions = skill_content
+    
+    try:
+        if skill_content.startswith('---'):
+            parts = skill_content.split('---', 2)
+            if len(parts) >= 3:
+                frontmatter = yaml.safe_load(parts[1])
+                name = frontmatter.get('name', name)
+                description = frontmatter.get('description', description)
+                instructions = parts[2].strip()
+        else:
+            data = yaml.safe_load(skill_content)
+            if isinstance(data, dict):
+                name = data.get('name', name)
+                description = data.get('description', description)
+                instructions = data.get('instructions', skill_content)
+    except Exception:
+        pass
+        
+    return {
+        "name": name,
+        "description": description,
+        "instructions": instructions
+    }

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
 from db.models import get_db, Plugin
@@ -8,6 +8,9 @@ from plugins.plugin_manager import PluginManager
 from plugins.plugin_validator import PluginValidator
 from loguru import logger
 import uuid
+import zipfile
+import io
+import os
 
 
 router = APIRouter(prefix="/plugins", tags=["Plugins"])
@@ -279,3 +282,55 @@ async def discover_plugins(
     except Exception as e:
         logger.error(f"Error discovering plugins: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Plugin discovery failed: {str(e)}")
+
+@router.post("/upload")
+async def upload_plugin(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Only .zip files are supported")
+        
+    content = await file.read()
+    
+    try:
+        plugin_manager = PluginManager()
+        plugins_dir = plugin_manager.plugins_dir
+        
+        with zipfile.ZipFile(io.BytesIO(content)) as z:
+            for member in z.namelist():
+                if member.startswith('/') or '..' in member:
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure")
+            
+            z.extractall(plugins_dir)
+            
+        # After extracting, discover and install to DB
+        discovered = plugin_manager.discover_plugins()
+        installed_count = 0
+        
+        for plugin_info in discovered:
+            name = plugin_info.get('name')
+            version = plugin_info.get('version', '1.0.0')
+            description = plugin_info.get('description', '')
+            
+            existing_plugin = db.query(Plugin).filter(Plugin.name == name).first()
+            if not existing_plugin:
+                new_plugin = Plugin(
+                    id=str(uuid.uuid4()),
+                    name=name,
+                    version=version,
+                    config=f'{{"description": "{description}"}}',
+                    enabled=True
+                )
+                db.add(new_plugin)
+                installed_count += 1
+                
+        db.commit()
+            
+        return {"message": f"Plugin uploaded and extracted successfully. Installed {installed_count} new plugins."}
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid zip file")
+    except Exception as e:
+        logger.error(f"Error extracting plugin: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to extract plugin: {str(e)}")

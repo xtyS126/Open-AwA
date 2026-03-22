@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
 import { memoryAPI } from '../services/api'
 import { ShortTermMemory, LongTermMemory } from '../types/api'
+import ExperiencePage from './ExperiencePage'
 import './MemoryPage.css'
 
 function MemoryPage() {
   const [activeTab, setActiveTab] = useState('short-term')
   const [shortTermMemories, setShortTermMemories] = useState<ShortTermMemory[]>([])
   const [longTermMemories, setLongTermMemories] = useState<LongTermMemory[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    loadMemories()
+    if (activeTab === 'short-term' || activeTab === 'long-term') {
+      loadMemories()
+    }
   }, [activeTab])
 
   const loadMemories = async () => {
@@ -71,9 +74,21 @@ function MemoryPage() {
         >
           长期记忆
         </button>
+        <button
+          className={`tab-btn ${activeTab === 'experience' ? 'active' : ''}`}
+          onClick={() => setActiveTab('experience')}
+        >
+          经验记忆
+        </button>
       </div>
 
       <div className="memory-content">
+        {activeTab === 'experience' && (
+          <div className="experience-tab-content">
+            <ExperiencePage hideHeader={true} />
+          </div>
+        )}
+
         {activeTab === 'short-term' && (
           <div className="memory-list">
             {shortTermMemories.length === 0 ? (

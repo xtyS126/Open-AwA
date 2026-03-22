@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { skillsAPI } from '../services/api'
 import { Skill } from '../types/dashboard'
+import SkillModal from '../components/SkillModal'
 import './SkillsPage.css'
 
 function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
     loadSkills()
@@ -49,14 +51,17 @@ function SkillsPage() {
     <div className="skills-page">
       <div className="page-header">
         <h1>技能管理</h1>
-        <button className="btn btn-primary">浏览市场</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>创建技能</button>
+          <button className="btn btn-secondary">浏览市场</button>
+        </div>
       </div>
 
       <div className="skills-grid">
         {skills.length === 0 ? (
           <div className="empty-state">
             <p>还没有安装任何技能</p>
-            <button className="btn btn-secondary">浏览市场</button>
+            <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>创建技能</button>
           </div>
         ) : (
           skills.map((skill) => (
@@ -84,6 +89,16 @@ function SkillsPage() {
           ))
         )}
       </div>
+
+      {isModalOpen && (
+        <SkillModal 
+          onClose={() => setIsModalOpen(false)} 
+          onSuccess={() => {
+            setIsModalOpen(false)
+            loadSkills()
+          }} 
+        />
+      )}
     </div>
   )
 }
