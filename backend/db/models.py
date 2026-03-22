@@ -33,6 +33,7 @@ class Skill(Base):
     description = Column(Text)
     config = Column(Text)
     enabled = Column(Boolean, default=True)
+    usage_count = Column(Integer, default=0)
     installed_at = Column(DateTime, default=datetime.utcnow)
 
 
