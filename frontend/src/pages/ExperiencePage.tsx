@@ -8,7 +8,11 @@ import './ExperiencePage.css'
 
 type TabType = 'list' | 'logs' | 'stats' | 'extract'
 
-function ExperiencePage() {
+interface ExperiencePageProps {
+  hideHeader?: boolean
+}
+
+function ExperiencePage({ hideHeader = false }: ExperiencePageProps) {
   const [activeTab, setActiveTab] = useState<TabType>('list')
   const [experiences, setExperiences] = useState<Experience[]>([])
   const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null)
@@ -139,12 +143,22 @@ function ExperiencePage() {
 
   return (
     <div className="experience-page">
-      <div className="page-header">
-        <h1>经验记忆</h1>
-        <button className="btn-primary" onClick={handleCreateExperience}>
-          + 创建经验
-        </button>
-      </div>
+      {!hideHeader && (
+        <div className="page-header">
+          <h1>经验记忆</h1>
+          <button className="btn-primary" onClick={handleCreateExperience}>
+            + 创建经验
+          </button>
+        </div>
+      )}
+      
+      {hideHeader && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+          <button className="btn btn-primary" onClick={handleCreateExperience}>
+            + 创建经验
+          </button>
+        </div>
+      )}
 
       <div className="tabs">
         <button
