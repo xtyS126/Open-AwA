@@ -475,4 +475,5 @@ class SkillEngine:
     def clear_metrics(self) -> int:
         count = len(self._performance_metrics)
         self._performance_metrics.clear()
-        logger
+        logger.info(f"Cleared {count} performance metrics")
+        return count
