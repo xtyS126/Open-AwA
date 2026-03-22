@@ -22,7 +22,8 @@ class ExperienceManager:
         trigger_conditions: str,
         confidence: float = 0.5,
         source_task: str = 'general',
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        user_id: Optional[str] = None
     ) -> ExperienceMemory:
         """添加新经验"""
         experience = ExperienceMemory(
@@ -32,7 +33,8 @@ class ExperienceManager:
             trigger_conditions=trigger_conditions,
             confidence=confidence,
             source_task=source_task,
-            metadata=json.dumps(metadata) if metadata else '{}'
+            experience_metadata=json.dumps(metadata) if metadata else '{}',
+            user_id=user_id
         )
         
         self.db.add(experience)
@@ -308,9 +310,9 @@ class ExperienceManager:
         experience.last_access = datetime.utcnow()
         
         if feedback:
-            metadata = json.loads(experience.metadata or '{}')
+            metadata = json.loads(experience.experience_metadata or '{}')
             metadata['last_feedback'] = feedback
-            experience.metadata = json.dumps(metadata)
+            experience.experience_metadata = json.dumps(metadata)
         
         self.db.commit()
         
@@ -328,10 +330,10 @@ class ExperienceManager:
         
         archived_count = 0
         for exp in low_quality:
-            metadata = json.loads(exp.metadata or '{}')
+            metadata = json.loads(exp.experience_metadata or '{}')
             metadata['archived'] = True
             metadata['archived_at'] = datetime.utcnow().isoformat()
-            exp.metadata = json.dumps(metadata)
+            exp.experience_metadata = json.dumps(metadata)
             archived_count += 1
         
         self.db.commit()
@@ -345,10 +347,10 @@ class ExperienceManager:
         if not experience:
             return False
         
-        metadata = json.loads(experience.metadata or '{}')
+        metadata = json.loads(experience.experience_metadata or '{}')
         metadata['needs_review'] = True
         metadata['marked_at'] = datetime.utcnow().isoformat()
-        experience.metadata = json.dumps(metadata)
+        experience.experience_metadata = json.dumps(metadata)
         
         self.db.commit()
         

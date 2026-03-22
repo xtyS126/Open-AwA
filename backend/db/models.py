@@ -81,8 +81,9 @@ class BehaviorLog(Base):
 
 class ExperienceMemory(Base):
     __tablename__ = "experience_memory"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True)
     experience_type = Column(String, index=True)
     title = Column(String(200))
     content = Column(Text)
@@ -94,7 +95,7 @@ class ExperienceMemory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_access = Column(DateTime, default=datetime.utcnow)
     confidence = Column(Float, default=0.5, index=True)
-    metadata = Column(Text)
+    experience_metadata = Column(Text)
 
 
 class AuditLog(Base):
@@ -112,6 +113,7 @@ class ExperienceExtractionLog(Base):
     __tablename__ = "experience_extraction_log"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True)
     session_id = Column(String, index=True)
     task_summary = Column(Text)
     extracted_experience = Column(Text)
