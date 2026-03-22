@@ -210,3 +210,74 @@ class ExperienceStatsResponse(BaseModel):
     total_usage: int
     total_success: int
     top_experiences: List[Dict[str, Any]]
+
+
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    version: Optional[str] = None
+    description: Optional[str] = None
+    config: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class SkillExecute(BaseModel):
+    inputs: Dict[str, Any] = Field(default_factory=dict, description="技能输入参数")
+    context: Dict[str, Any] = Field(default_factory=dict, description="执行上下文")
+
+
+class SkillConfigResponse(BaseModel):
+    skill_id: str
+    name: str
+    version: Optional[str] = None
+    description: Optional[str] = None
+    config: Dict[str, Any]
+    enabled: bool
+    installed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SkillValidationResult(BaseModel):
+    valid: bool
+    errors: List[str]
+    warnings: List[str]
+    skill_name: Optional[str] = None
+    version: Optional[str] = None
+
+
+class SkillValidationRequest(BaseModel):
+    yaml_content: str = Field(..., description="YAML 格式的技能配置")
+
+
+class PluginUpdate(BaseModel):
+    name: Optional[str] = None
+    version: Optional[str] = None
+    config: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class PluginExecute(BaseModel):
+    method: str = Field(..., description="要执行的插件方法")
+    params: Dict[str, Any] = Field(default_factory=dict, description="方法参数")
+
+
+class PluginToolsResponse(BaseModel):
+    plugin_id: str
+    plugin_name: str
+    tools: List[Dict[str, Any]]
+
+
+class PluginValidationResult(BaseModel):
+    valid: bool
+    errors: List[str]
+    warnings: List[str]
+
+
+class PluginValidationRequest(BaseModel):
+    yaml_content: str = Field(..., description="YAML 格式的插件配置")
+
+
+class PluginDiscoveryResult(BaseModel):
+    discovered: List[Dict[str, Any]]
+    total_count: int
