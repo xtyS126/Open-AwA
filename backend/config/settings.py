@@ -6,10 +6,20 @@ from config.experience_settings import experience_config
 
 
 def generate_secret_key() -> str:
+    from loguru import logger
+    
     env_key = os.getenv("SECRET_KEY")
-    if env_key:
-        return env_key
-    return secrets.token_urlsafe(32)
+    environment = os.getenv("ENVIRONMENT", "development")
+    
+    if environment == "production" and not env_key:
+        logger.error("SECRET_KEY environment variable is required in production environment")
+        raise ValueError("SECRET_KEY environment variable is required in production environment")
+    
+    if not env_key:
+        logger.warning("SECRET_KEY not set, using randomly generated key. This is not secure for production!")
+        return secrets.token_urlsafe(32)
+    
+    return env_key
 
 
 class Settings(BaseSettings):

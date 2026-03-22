@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from typing import Dict, List
+from loguru import logger
 from db.models import get_db
 from api.dependencies import get_current_user
 from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest
@@ -88,21 +89,24 @@ async def websocket_endpoint(
     
     try:
         user = db.query(User).filter(User.username == username).first()
-    except Exception:
+        if user is None:
+            await websocket.close(code=4004, reason="User not found")
+            return
+    except Exception as e:
+        logger.error(f"Database query failed: {type(e).__name__}")
+        await websocket.close(code=4004, reason="Database error")
+        return
+    finally:
         try:
             db_gen.close()
-        except:
-            pass
-        await websocket.close(code=4004, reason="User not found")
-        return
-    
-    if user is None:
-        try:
-            db_gen.close()
-        except:
-            pass
-        await websocket.close(code=4004, reason="User not found")
-        return
+        except Exception as e:
+            logger.error(f"Failed to close database connection in WebSocket auth: {type(e).__name__}")
+            try:
+                if hasattr(db_gen, 'remove'):
+                    db_gen.remove()
+            except Exception:
+                logger.warning("Unable to clean up database connection resources")
+        logger.debug(f"Database connection cleanup completed for session {session_id}")
     
     await websocket.accept()
     

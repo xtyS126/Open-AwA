@@ -15,28 +15,39 @@ class ExecutionTimeoutException(Exception):
 def execute_with_timeout(code, exec_globals, local_vars, timeout):
     """
     使用线程执行代码并设置超时
+    
+    使用threading.Event和threading.Lock实现可靠的超时机制，避免竞态条件
     """
     result_queue = queue.Queue()
+    timeout_event = threading.Event()
+    result_lock = threading.Lock()
     
     def run_code():
         try:
             exec(code, exec_globals, local_vars)
-            result_queue.put(('success', None))
+            with result_lock:
+                if not timeout_event.is_set():
+                    result_queue.put(('success', None))
         except Exception as e:
-            result_queue.put(('error', e))
+            with result_lock:
+                if not timeout_event.is_set():
+                    result_queue.put(('error', e))
     
     thread = threading.Thread(target=run_code)
     thread.daemon = True
     thread.start()
+    
     thread.join(timeout=timeout)
     
     if thread.is_alive():
+        timeout_event.set()
         raise ExecutionTimeoutException(f"Execution exceeded {timeout} seconds")
     
-    if not result_queue.empty():
-        status, error = result_queue.get()
-        if status == 'error':
-            raise error
+    with result_lock:
+        if not result_queue.empty():
+            status, error = result_queue.get_nowait()
+            if status == 'error':
+                raise error
 
 
 class CodeValidator(ast.NodeVisitor):
