@@ -79,6 +79,24 @@ class BehaviorLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 
+class ExperienceMemory(Base):
+    __tablename__ = "experience_memory"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experience_type = Column(String, index=True)
+    title = Column(String(200))
+    content = Column(Text)
+    trigger_conditions = Column(Text)
+    success_metrics = Column(Float, default=0.0)
+    usage_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    source_task = Column(String, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_access = Column(DateTime, default=datetime.utcnow)
+    confidence = Column(Float, default=0.5, index=True)
+    metadata = Column(Text)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     
@@ -88,6 +106,19 @@ class AuditLog(Base):
     resource = Column(String)
     result = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class ExperienceExtractionLog(Base):
+    __tablename__ = "experience_extraction_log"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, index=True)
+    task_summary = Column(Text)
+    extracted_experience = Column(Text)
+    extraction_trigger = Column(String)
+    extraction_quality = Column(Float, default=0.0)
+    reviewed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class PromptConfig(Base):
