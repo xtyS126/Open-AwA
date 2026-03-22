@@ -243,7 +243,7 @@ function SettingsPage() {
     }
   }
 
-  const handleChange = (key: keyof Settings, value: any) => {
+  const handleChange = (key: keyof Settings, value: string | boolean) => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { memoryAPI } from '../services/api'
+import { ShortTermMemory, LongTermMemory } from '../types/api'
 import './MemoryPage.css'
 
 function MemoryPage() {
   const [activeTab, setActiveTab] = useState('short-term')
-  const [shortTermMemories, setShortTermMemories] = useState<any[]>([])
-  const [longTermMemories, setLongTermMemories] = useState<any[]>([])
+  const [shortTermMemories, setShortTermMemories] = useState<ShortTermMemory[]>([])
+  const [longTermMemories, setLongTermMemories] = useState<LongTermMemory[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

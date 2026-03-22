@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { pluginsAPI } from '../services/api'
+import { Plugin } from '../types/dashboard'
 import './PluginsPage.css'
 
 function PluginsPage() {
-  const [plugins, setPlugins] = useState<any[]>([])
+  const [plugins, setPlugins] = useState<Plugin[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

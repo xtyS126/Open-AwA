@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { experiencesAPI, Experience, ExperienceStats, ExtractionLog } from '../services/experiencesApi'
 import ExperienceCard from '../components/ExperienceCard'
 import ExperienceModal from '../components/ExperienceModal'
@@ -29,25 +29,7 @@ function ExperiencePage() {
   const [stats, setStats] = useState<ExperienceStats | null>(null)
   const [logs, setLogs] = useState<ExtractionLog[]>([])
 
-  useEffect(() => {
-    if (activeTab === 'list') {
-      loadExperiences()
-    }
-  }, [activeTab, pagination.page, filters])
-
-  useEffect(() => {
-    if (activeTab === 'stats') {
-      loadStats()
-    }
-  }, [activeTab])
-
-  useEffect(() => {
-    if (activeTab === 'logs') {
-      loadLogs()
-    }
-  }, [activeTab])
-
-  const loadExperiences = async () => {
+  const loadExperiences = useCallback(async () => {
     setLoading(true)
     try {
       const response = await experiencesAPI.getExperiences({
@@ -61,25 +43,43 @@ function ExperiencePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters, pagination.page, pagination.limit])
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const response = await experiencesAPI.getStats()
       setStats(response.data)
     } catch (error) {
       console.error('Failed to load stats:', error)
     }
-  }
+  }, [])
 
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     try {
       const response = await experiencesAPI.getExtractionLogs()
       setLogs(response.data)
     } catch (error) {
       console.error('Failed to load logs:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'list') {
+      loadExperiences()
+    }
+  }, [activeTab, loadExperiences])
+
+  useEffect(() => {
+    if (activeTab === 'stats') {
+      loadStats()
+    }
+  }, [activeTab, loadStats])
+
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      loadLogs()
+    }
+  }, [activeTab, loadLogs])
 
   const handleCreateExperience = () => {
     setSelectedExperience(null)

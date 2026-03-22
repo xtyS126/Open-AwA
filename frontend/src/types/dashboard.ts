@@ -31,7 +31,7 @@ export interface CostTrend {
   cost: number
   input_tokens?: number
   output_tokens?: number
-  [key: string]: string | number
+  [key: string]: string | number | undefined
 }
 
 export interface ModelUsage {

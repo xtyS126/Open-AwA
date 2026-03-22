@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { behaviorAPI } from '../services/api'
 import { billingAPI } from '../services/billingApi'
+import { BehaviorStats, BillingStats, Intent } from '../types/dashboard'
 import './DashboardPage.css'
 
 function DashboardPage() {
-  const [stats, setStats] = useState<any>(null)
-  const [billingStats, setBillingStats] = useState<any>(null)
+  const [stats, setStats] = useState<BehaviorStats | null>(null)
+  const [billingStats, setBillingStats] = useState<BillingStats | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -22,7 +23,7 @@ function DashboardPage() {
       setStats(behaviorRes.data)
       setBillingStats(billingRes.data)
     } catch (error) {
-      setStats({})
+      setStats(null)
     } finally {
       setLoading(false)
     }
@@ -93,7 +94,7 @@ function DashboardPage() {
       <div className="top-intents-card">
         <h3>最常用的意图</h3>
         <ul className="intent-list">
-          {(stats?.top_intents || []).map((intent: any, index: number) => (
+          {(stats?.top_intents || []).map((intent: Intent, index: number) => (
             <li key={index}>
               <span className="intent-name">{intent.intent}</span>
               <span className="intent-count">{intent.count}次</span>
@@ -105,7 +106,7 @@ function DashboardPage() {
       <div className="top-intents-card">
         <h3>模型使用分布</h3>
         <ul className="intent-list">
-          {(billingStats?.by_model || []).slice(0, 5).map((model: any, index: number) => (
+          {(billingStats?.by_model || []).slice(0, 5).map((model, index: number) => (
             <li key={index}>
               <span className="intent-name">{model.provider}:{model.model}</span>
               <span className="intent-count">{formatCurrency(model.cost, billingStats?.currency)}</span>

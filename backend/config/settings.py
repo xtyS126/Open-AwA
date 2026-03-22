@@ -1,7 +1,15 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+import secrets
 from config.experience_settings import experience_config
+
+
+def generate_secret_key() -> str:
+    env_key = os.getenv("SECRET_KEY")
+    if env_key:
+        return env_key
+    return secrets.token_urlsafe(32)
 
 
 class Settings(BaseSettings):
@@ -11,7 +19,7 @@ class Settings(BaseSettings):
     
     DATABASE_URL: str = "sqlite:///./openawa.db"
     
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str = generate_secret_key()
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     

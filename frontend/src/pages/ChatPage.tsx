@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatAPI } from '../services/api'
 import { modelsAPI, ModelConfiguration } from '../services/modelsApi'
 import { useChatStore } from '../stores/chatStore'
@@ -12,19 +12,15 @@ function ChatPage() {
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [loadingModels, setLoadingModels] = useState(false)
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  }, [])
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, scrollToBottom])
 
-  useEffect(() => {
-    loadConfigurations()
-  }, [])
-
-  const loadConfigurations = async () => {
+  const loadConfigurations = useCallback(async () => {
     setLoadingModels(true)
     try {
       const response = await modelsAPI.getConfigurations()
@@ -43,7 +39,11 @@ function ChatPage() {
     } finally {
       setLoadingModels(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadConfigurations()
+  }, [loadConfigurations])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return

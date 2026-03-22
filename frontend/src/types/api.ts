@@ -1,0 +1,107 @@
+export interface ShortTermMemory {
+  id: number
+  role: string
+  content: string
+  timestamp: string
+  session_id?: string
+}
+
+export interface LongTermMemory {
+  id: number
+  content: string
+  importance: number
+  access_count: number
+  created_at?: string
+  last_access?: string
+}
+
+export interface Prompt {
+  id?: string
+  name: string
+  content: string
+  variables?: string
+  is_active?: boolean
+}
+
+export interface BehaviorLog {
+  id: number
+  action_type: string
+  details: string
+  user_id?: string
+  created_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: string
+}
+
+export interface ChatResponse {
+  response: string
+  session_id?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface ExecutionStep {
+  action: string
+  result: string
+}
+
+export const snakeToCamel = (str: string): string =>
+  str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+
+export const camelToSnake = (str: string): string =>
+  str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+
+export const convertToCamelCase = <T>(obj: unknown): T => {
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertToCamelCase<T>(item)) as T
+  } else if (obj !== null && typeof obj === 'object') {
+    return Object.keys(obj as Record<string, unknown>).reduce((acc, key) => {
+      const camelKey = snakeToCamel(key)
+      const value = (obj as Record<string, unknown>)[key]
+      return {
+        ...acc,
+        [camelKey]: convertToCamelCase<unknown>(value)
+      }
+    }, {} as T)
+  }
+  return obj as T
+}
+
+export const convertToSnakeCase = <T>(obj: unknown): T => {
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertToSnakeCase<T>(item)) as T
+  } else if (obj !== null && typeof obj === 'object') {
+    return Object.keys(obj as Record<string, unknown>).reduce((acc, key) => {
+      const snakeKey = camelToSnake(key)
+      const value = (obj as Record<string, unknown>)[key]
+      return {
+        ...acc,
+        [snakeKey]: convertToSnakeCase<unknown>(value)
+      }
+    }, {} as T)
+  }
+  return obj as T
+}
+
+export interface ApiResponse<T> {
+  data: T
+  status?: number
+  message?: string
+}
+
+export interface PaginationParams {
+  page?: number
+  limit?: number
+  skip?: number
+  offset?: number
+}
+
+export interface ApiError {
+  message: string
+  code?: string | number
+  details?: Record<string, unknown>
+}
