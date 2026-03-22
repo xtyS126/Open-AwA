@@ -1,0 +1,191 @@
+import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import './Sidebar.css'
+
+interface MenuItem {
+  path: string
+  label: string
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'plugins' | 'memory' | 'settings'
+}
+
+interface MenuGroup {
+  id: string
+  title: string
+  items: MenuItem[]
+}
+
+const menuGroups: MenuGroup[] = [
+  {
+    id: 'control',
+    title: '控制',
+    items: [
+      { path: '/chat', label: '聊天', iconType: 'chat' },
+      { path: '/dashboard', label: '概览', iconType: 'dashboard' },
+      { path: '/billing', label: '使用情况', iconType: 'billing' },
+    ]
+  },
+  {
+    id: 'agent',
+    title: '代理',
+    items: [
+      { path: '/skills', label: '技能', iconType: 'skills' },
+      { path: '/plugins', label: '插件', iconType: 'plugins' },
+      { path: '/memory', label: '记忆', iconType: 'memory' },
+    ]
+  },
+  {
+    id: 'settings',
+    title: '设置',
+    items: [
+      { path: '/settings', label: '设置', iconType: 'settings' },
+    ]
+  }
+]
+
+const icons = {
+  chat: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  ),
+  dashboard: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="7" height="9" />
+      <rect x="14" y="3" width="7" height="5" />
+      <rect x="14" y="12" width="7" height="9" />
+      <rect x="3" y="16" width="7" height="5" />
+    </svg>
+  ),
+  billing: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="12" y1="20" x2="12" y2="10" />
+      <line x1="18" y1="20" x2="18" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="16" />
+    </svg>
+  ),
+  skills: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  ),
+  plugins: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2v6m0 12v2M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24M2 12h6m12 0h2M4.93 19.07l4.24-4.24m5.66-5.66l4.24-4.24" />
+    </svg>
+  ),
+  memory: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2a9 9 0 0 0-9 9c0 3.6 3.4 6.2 5.5 8.5 1 1.1 1.5 2.4 1.5 3.5v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2c0-1.1.5-2.4 1.5-3.5 2.1-2.3 5.5-4.9 5.5-8.5a9 9 0 0 0-9-9z" />
+    </svg>
+  ),
+  settings: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  ),
+  claw: (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 4l4 4M4 4v4h4" />
+      <path d="M20 4l-4 4M20 4v4h-4" />
+      <path d="M4 20l4-4M4 20v-4h4" />
+      <path d="M20 20l-4-4M20 20v-4h-4" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  )
+}
+
+function Sidebar() {
+  const location = useLocation()
+  const [collapsed, setCollapsed] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    control: true,
+    agent: true,
+    settings: true,
+  })
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
+    }))
+  }
+
+  const isActive = (path: string) => location.pathname === path
+
+  return (
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <div className="sidebar-header">
+        {!collapsed && (
+          <>
+            <div className="logo-container">
+              <span className="logo-icon">{icons.claw}</span>
+              <span className="logo-text">Open-AwA</span>
+            </div>
+          </>
+        )}
+        <button 
+          className="collapse-btn" 
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? '展开' : '收起'}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </div>
+      
+      <nav className="sidebar-nav">
+        {menuGroups.map((group) => (
+          <div key={group.id} className="menu-group">
+            <div 
+              className="group-header"
+              onClick={() => toggleGroup(group.id)}
+            >
+              {!collapsed && (
+                <>
+                  <span className="group-title">{group.title}</span>
+                  <svg 
+                    className={`chevron ${expandedGroups[group.id] ? 'expanded' : ''}`}
+                    width="16" 
+                    height="16" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </>
+              )}
+            </div>
+            
+            {expandedGroups[group.id] && (
+              <div className="group-items">
+                {group.items.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`sidebar-item ${isActive(item.path) ? 'active' : ''}`}
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <span className="sidebar-icon">{icons[item.iconType]}</span>
+                    {!collapsed && <span className="sidebar-label">{item.label}</span>}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </nav>
+      
+      <div className="sidebar-footer">
+        {!collapsed && <p>v1.0.0</p>}
+      </div>
+    </aside>
+  )
+}
+
+export default Sidebar

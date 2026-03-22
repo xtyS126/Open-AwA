@@ -1,0 +1,64 @@
+.plugins-page {
+  padding: 24px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.plugins-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.plugin-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.plugin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.plugin-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.plugin-version {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-tertiary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.plugin-status {
+  margin-bottom: 16px;
+}
+
+.status-badge {
+  display: inline-block;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.status-badge.enabled {
+  background: rgba(78, 205, 196, 0.1);
+  color: var(--color-success);
+}
+
+.status-badge.disabled {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+}
+
+.plugin-actions {
+  display: flex;
+  gap: 8px;
+}
