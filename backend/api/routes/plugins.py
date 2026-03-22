@@ -212,10 +212,18 @@ async def validate_plugin(
             try:
                 import yaml
                 config = yaml.safe_load(config_data)
-            except:
+            except yaml.YAMLError as e:
+                logger.error(f"YAML parsing error in plugin validation: {str(e)}")
                 return PluginValidationResult(
                     valid=False,
                     errors=["Invalid YAML format"],
+                    warnings=[]
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error parsing plugin config: {str(e)}")
+                return PluginValidationResult(
+                    valid=False,
+                    errors=[f"Configuration parsing error: {str(e)}"],
                     warnings=[]
                 )
 
