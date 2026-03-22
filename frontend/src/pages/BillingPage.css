@@ -1,0 +1,247 @@
+.billing-page {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.billing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.billing-header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.billing-filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.billing-filters select {
+  padding: 8px 12px;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+}
+
+.billing-filters select:focus {
+  outline: none;
+  border-color: #5B8DEF;
+}
+
+.billing-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.billing-stat-card {
+  background: white;
+  border: 1px solid #E5E5E5;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.billing-stat-card h3 {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 8px 0;
+  font-weight: 500;
+}
+
+.billing-stat-card .stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.billing-stat-card .stat-subtitle {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.billing-charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+  .billing-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.billing-chart-card {
+  background: white;
+  border: 1px solid #E5E5E5;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.billing-chart-card h3 {
+  font-size: 16px;
+  color: #333;
+  margin: 0 0 16px 0;
+  font-weight: 600;
+}
+
+.billing-usage-table {
+  background: white;
+  border: 1px solid #E5E5E5;
+  border-radius: 12px;
+  padding: 20px;
+  overflow-x: auto;
+}
+
+.billing-usage-table h3 {
+  font-size: 16px;
+  color: #333;
+  margin: 0 0 16px 0;
+  font-weight: 600;
+}
+
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #E5E5E5;
+}
+
+.usage-table th {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.usage-table td {
+  font-size: 14px;
+  color: #333;
+}
+
+.usage-table tr:last-child td {
+  border-bottom: none;
+}
+
+.usage-table tr:hover {
+  background: #FAFAFA;
+}
+
+.provider-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.provider-badge.openai { background: #10A37F20; color: #10A37F; }
+.provider-badge.anthropic { background: #D4A57420; color: #C2703A; }
+.provider-badge.google { background: #4285F420; color: #4285F4; }
+.provider-badge.deepseek { background: #7C3AED20; color: #7C3AED; }
+.provider-badge.alibaba { background: #FF6A0020; color: #FF6A00; }
+.provider-badge.moonshot { background: #00D4AA20; color: #00A99D; }
+.provider-badge.zhipu { background: #4ECDC420; color: #4ECDC4; }
+
+.content-type-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #F5F5F5;
+  color: #666;
+}
+
+.cache-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.export-btn {
+  padding: 8px 16px;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px;
+  background: white;
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.export-btn:hover {
+  background: #F5F5F5;
+  border-color: #5B8DEF;
+  color: #5B8DEF;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  color: #666;
+  font-size: 16px;
+}
+
+.error-message {
+  padding: 16px;
+  background: #FFEBEE;
+  border: 1px solid #FFCDD2;
+  border-radius: 8px;
+  color: #C62828;
+  margin-bottom: 16px;
+}
+
+.budget-progress {
+  margin-top: 8px;
+}
+
+.budget-progress-bar {
+  height: 8px;
+  background: #E5E5E5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.budget-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.budget-progress-fill.normal { background: #5B8DEF; }
+.budget-progress-fill.warning { background: #FFA726; }
+.budget-progress-fill.danger { background: #EF5350; }
+
+.budget-progress-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
