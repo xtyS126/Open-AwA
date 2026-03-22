@@ -2,53 +2,53 @@
 
 ## 第一阶段：数据库模型设计 ✓
 
-- [ ] **数据库模型检查**
-  - [ ] ExperienceMemory模型字段完整（id, experience_type, title, content, trigger_conditions, success_metrics, usage_count, success_count, source_task, created_at, last_access, confidence, metadata）
-  - [ ] ExperienceExtractionLog模型字段完整（id, session_id, task_summary, extracted_experience, extraction_trigger, extraction_quality, reviewed, created_at）
-  - [ ] experience_type枚举值正确（strategy/method/error_pattern/tool_usage/context_handling）
-  - [ ] 字段类型匹配（Integer, String, Text, Float, DateTime, Boolean）
-  - [ ] 数据库索引正确设置（experience_type, source_task, confidence等常用查询字段）
-  - [ ] 数据库迁移脚本可执行
-  - [ ] 数据库表创建成功验证通过
+- [x] **数据库模型检查**
+  - [x] ExperienceMemory模型字段完整（id, experience_type, title, content, trigger_conditions, success_metrics, usage_count, success_count, source_task, created_at, last_access, confidence, metadata）
+  - [x] ExperienceExtractionLog模型字段完整（id, session_id, task_summary, extracted_experience, extraction_trigger, extraction_quality, reviewed, created_at）
+  - [x] experience_type枚举值正确（strategy/method/error_pattern/tool_usage/context_handling）
+  - [x] 字段类型匹配（Integer, String, Text, Float, DateTime, Boolean）
+  - [x] 数据库索引正确设置（experience_type, source_task, confidence等常用查询字段）
+  - [x] 数据库迁移脚本可执行
+  - [x] 数据库表创建成功验证通过
 
 ## 第二阶段：经验提取Skill ✓
 
-- [ ] **Skill配置文件检查**
-  - [ ] experience-extractor Skill配置YAML格式正确
-  - [ ] Skill元数据完整（name, version, description）
-  - [ ] experience_extraction_prompt模板语法正确
-  - [ ] 触发条件配置完整（自动/手动/定期）
-  - [ ] 输出格式规范明确定义
+- [x] **Skill配置文件检查**
+  - [x] experience-extractor Skill配置YAML格式正确
+  - [x] Skill元数据完整（name, version, description）
+  - [x] experience_extraction_prompt模板语法正确
+  - [x] 触发条件配置完整（自动/手动/定期）
+  - [x] 输出格式规范明确定义
 
-- [ ] **Skill实现检查**
-  - [ ] ExperienceExtractor类可实例化
-  - [ ] 会话上下文分析功能正常工作
-  - [ ] 经验类型分类功能正确
-  - [ ] 触发条件生成逻辑正确
-  - [ ] 置信度评估算法正确实现
+- [x] **Skill实现检查**
+  - [x] ExperienceExtractor类可实例化
+  - [x] 会话上下文分析功能正常工作
+  - [x] 经验类型分类功能正确
+  - [x] 触发条件生成逻辑正确
+  - [x] 置信度评估算法正确实现
 
-- [ ] **Skill集成检查**
-  - [ ] Skill路由注册成功
-  - [ ] Skill配置加载功能正常
-  - [ ] Skill执行接口响应正常
-  - [ ] Skill启用/禁用控制生效
+- [x] **Skill集成检查**
+  - [x] Skill路由注册成功
+  - [x] Skill配置加载功能正常
+  - [x] Skill执行接口响应正常
+  - [x] Skill启用/禁用控制生效
 
 ## 第三阶段：经验管理器 ✓
 
-- [ ] **ExperienceManager类检查**
-  - [ ] 类可实例化且无错误
-  - [ ] add_experience方法正确保存经验到数据库
-  - [ ] get_experiences方法正确查询经验
-  - [ ] search_experiences多维度检索返回正确结果
-  - [ ] semantic_search_experiences语义检索返回相关经验
-  - [ ] update_experience_quality方法正确更新质量指标
+- [x] **ExperienceManager类检查**
+  - [x] 类可实例化且无错误
+  - [x] add_experience方法正确保存经验到数据库
+  - [x] get_experiences方法正确查询经验
+  - [x] search_experiences多维度检索返回正确结果
+  - [x] semantic_search_experiences语义检索返回相关经验
+  - [x] update_experience_quality方法正确更新质量指标
 
-- [ ] **经验检索与复用检查**
-  - [ ] retrieve_relevant_experiences方法可调用
-  - [ ] extract_task_features正确提取任务特征
-  - [ ] 去重和排序算法正确实现
-  - [ ] 上下文注入机制正确集成
-  - [ ] 集成到PlanningLayer不影响原有流程
+- [x] **经验检索与复用检查**
+  - [x] retrieve_relevant_experiences方法可调用
+  - [x] extract_task_features正确提取任务特征
+  - [x] 去重和排序算法正确实现
+  - [x] 上下文注入机制正确集成
+  - [x] 集成到PlanningLayer不影响原有流程
 
 - [ ] **质量保障检查**
   - [ ] 实用性评分计算逻辑正确
