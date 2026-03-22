@@ -45,9 +45,13 @@ def execute_with_timeout(code, exec_globals, local_vars, timeout):
     
     with result_lock:
         if not result_queue.empty():
-            status, error = result_queue.get_nowait()
-            if status == 'error':
-                raise error
+            try:
+                status, error = result_queue.get_nowait()
+                if status == 'error':
+                    raise error
+            except queue.Empty:
+                # 队列在此期间变空，可能是由于竞态条件
+                pass
 
 
 class CodeValidator(ast.NodeVisitor):
