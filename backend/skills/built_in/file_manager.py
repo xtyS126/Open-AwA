@@ -4,6 +4,28 @@ from typing import Dict, Any, List, Optional
 from loguru import logger
 
 
+def safe_resolve_path(file_path: str) -> str:
+    return os.path.realpath(file_path)
+
+
+def is_path_safe(file_path: str, allowed_directories: List[str]) -> bool:
+    try:
+        resolved_path = safe_resolve_path(file_path)
+        
+        if not os.path.exists(resolved_path):
+            return True
+        
+        for allowed_dir in allowed_directories:
+            allowed_resolved = os.path.realpath(allowed_dir)
+            common = os.path.commonpath([resolved_path, allowed_resolved])
+            if common == allowed_resolved:
+                return True
+        
+        return False
+    except Exception:
+        return False
+
+
 class FileManagerSkill:
     name: str = "file_manager"
     version: str = "1.0.0"
@@ -29,10 +51,8 @@ class FileManagerSkill:
         ]
 
     def _validate_path(self, file_path: str) -> bool:
-        resolved_path = str(Path(file_path).resolve())
-        for allowed_dir in self.allowed_directories:
-            if resolved_path.startswith(allowed_dir):
-                return True
+        if is_path_safe(file_path, self.allowed_directories):
+            return True
         logger.warning(f"Access denied to path: {file_path}")
         return False
 

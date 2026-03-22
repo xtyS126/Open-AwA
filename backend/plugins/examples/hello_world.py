@@ -17,7 +17,6 @@ class HelloWorldPlugin(BasePlugin):
         if not self.validate_config(self.config):
             logger.error("Plugin configuration validation failed")
             return False
-        self.greeting = self.config.get('greeting', 'Hello')
         logger.info(f"Plugin initialized with greeting: {self.greeting}")
         return True
 

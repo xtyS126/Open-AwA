@@ -30,6 +30,24 @@ class AIAgent:
         
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
     
+    def __del__(self):
+        if hasattr(self, 'skill_engine') and hasattr(self.skill_engine, 'registry'):
+            try:
+                if self.skill_engine.registry.db:
+                    self.skill_engine.registry.db.close()
+                    logger.debug("Database session closed via __del__")
+            except Exception as e:
+                logger.error(f"Error closing database session in __del__: {e}")
+    
+    def close(self):
+        if hasattr(self, 'skill_engine') and hasattr(self.skill_engine, 'registry'):
+            try:
+                if self.skill_engine.registry.db:
+                    self.skill_engine.registry.db.close()
+                    logger.info("Database session closed")
+            except Exception as e:
+                logger.error(f"Error closing database session: {e}")
+    
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
         logger.info(f"Executing skill: {skill_name}")
         try:
@@ -282,6 +300,131 @@ class AIAgent:
             "plugin_results": self.plugin_results.copy()
         }
     
+    async def _auto_execute_skills_and_plugins(
+        self,
+        intent: Dict[str, Any],
+        entities: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        logger.info("Auto-executing skills and plugins based on intent and entities")
+        auto_results = {
+            'skills': [],
+            'plugins': []
+        }
+        
+        try:
+            intent_type = intent.get('type', '')
+            intent_action = intent.get('action', '')
+            entities_list = entities.get('entities', [])
+            
+            available_skills = await self.get_available_skills()
+            available_plugins = await self.get_available_plugins()
+            
+            for skill in available_skills:
+                if not skill.get('enabled'):
+                    continue
+                
+                skill_name = skill.get('name', '')
+                skill_description = skill.get('description', '').lower()
+                intent_keywords = f"{intent_type} {intent_action}".lower()
+                
+                if self._is_skill_relevant(skill_name, skill_description, intent_keywords, entities_list):
+                    logger.info(f"Auto-selecting skill: {skill_name}")
+                    
+                    skill_inputs = {
+                        'intent': intent,
+                        'entities': entities,
+                        'context': context
+                    }
+                    
+                    skill_result = await self.execute_skill(
+                        skill_name=skill_name,
+                        inputs=skill_inputs,
+                        context=context
+                    )
+                    
+                    if skill_result.get('status') == 'success':
+                        auto_results['skills'].append({
+                            'skill_name': skill_name,
+                            'result': skill_result,
+                            'reason': 'auto_selected'
+                        })
+            
+            for plugin in available_plugins:
+                plugin_name = plugin.get('name', '')
+                plugin_description = plugin.get('description', '').lower()
+                plugin_tools = plugin.get('tools', [])
+                
+                for tool in plugin_tools:
+                    tool_name = tool.get('name', '').lower()
+                    tool_description = tool.get('description', '').lower()
+                    
+                    if self._is_plugin_relevant(tool_name, tool_description, intent_keywords, entities_list):
+                        logger.info(f"Auto-selecting plugin '{plugin_name}' tool '{tool.get('name')}'")
+                        
+                        plugin_result = await self.execute_plugin(
+                            plugin_name=plugin_name,
+                            method=tool.get('method'),
+                            intent=intent,
+                            entities=entities,
+                            context=context
+                        )
+                        
+                        if plugin_result.get('status') == 'success':
+                            auto_results['plugins'].append({
+                                'plugin_name': plugin_name,
+                                'tool': tool.get('name'),
+                                'result': plugin_result,
+                                'reason': 'auto_selected'
+                            })
+            
+            logger.info(f"Auto-execution completed: {len(auto_results['skills'])} skills, {len(auto_results['plugins'])} plugins")
+            return auto_results
+            
+        except Exception as e:
+            logger.error(f"Error in auto-execution of skills and plugins: {e}")
+            return auto_results
+    
+    def _is_skill_relevant(
+        self,
+        skill_name: str,
+        skill_description: str,
+        intent_keywords: str,
+        entities: List[Dict]
+    ) -> bool:
+        skill_name_lower = skill_name.lower()
+        
+        if any(keyword in skill_name_lower or keyword in skill_description 
+               for keyword in intent_keywords.split() if len(keyword) > 3):
+            return True
+        
+        entity_types = [entity.get('type', '').lower() for entity in entities]
+        if any(entity_type in skill_name_lower or entity_type in skill_description 
+               for entity_type in entity_types if entity_type):
+            return True
+        
+        return False
+    
+    def _is_plugin_relevant(
+        self,
+        tool_name: str,
+        tool_description: str,
+        intent_keywords: str,
+        entities: List[Dict]
+    ) -> bool:
+        tool_name_lower = tool_name.lower()
+        
+        if any(keyword in tool_name_lower or keyword in tool_description 
+               for keyword in intent_keywords.split() if len(keyword) > 3):
+            return True
+        
+        entity_types = [entity.get('type', '').lower() for entity in entities]
+        if any(entity_type in tool_name_lower or entity_type in tool_description 
+               for entity_type in entity_types if entity_type):
+            return True
+        
+        return False
+    
     async def handle_confirmation(self, confirmed: bool, step: Dict, context: Dict) -> Dict[str, Any]:
         if confirmed:
             result = await self.executor.execute_step(step, context)
@@ -380,3 +523,72 @@ class AIAgent:
             
         except Exception as e:
             logger.error(f"Error extracting and storing experience: {e}")
+    
+    def _collect_skill_plugin_results(self) -> Dict[str, Any]:
+        logger.info("Collecting skill and plugin execution results")
+        
+        skill_results_summary = {
+            'total': len(self.skill_results),
+            'successful': sum(1 for r in self.skill_results if r.get('success', False)),
+            'failed': sum(1 for r in self.skill_results if not r.get('success', False)),
+            'details': self.skill_results.copy()
+        }
+        
+        plugin_results_summary = {
+            'total': len(self.plugin_results),
+            'successful': sum(1 for r in self.plugin_results if r.get('success', False)),
+            'failed': sum(1 for r in self.plugin_results if not r.get('success', False)),
+            'details': self.plugin_results.copy()
+        }
+        
+        logger.info(f"Collected {skill_results_summary['total']} skill results, {plugin_results_summary['total']} plugin results")
+        
+        return {
+            'skills': skill_results_summary,
+            'plugins': plugin_results_summary,
+            'overall_success': skill_results_summary['successful'] > 0 or plugin_results_summary['successful'] > 0
+        }
+    
+    def _generate_skill_plugin_feedback(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info("Generating feedback for skill and plugin executions")
+        
+        skills = results.get('skills', {})
+        plugins = results.get('plugins', {})
+        
+        skill_success_rate = 0
+        if skills.get('total', 0) > 0:
+            skill_success_rate = skills['successful'] / skills['total']
+        
+        plugin_success_rate = 0
+        if plugins.get('total', 0) > 0:
+            plugin_success_rate = plugins['successful'] / plugins['total']
+        
+        feedback_messages = []
+        
+        if skills['total'] > 0:
+            feedback_messages.append(f"Executed {skills['total']} skills with {skills['successful']} successful")
+            if skill_success_rate < 0.5:
+                feedback_messages.append(f"Warning: Low skill success rate ({skill_success_rate:.1%})")
+        
+        if plugins['total'] > 0:
+            feedback_messages.append(f"Executed {plugins['total']} plugins with {plugins['successful']} successful")
+            if plugin_success_rate < 0.5:
+                feedback_messages.append(f"Warning: Low plugin success rate ({plugin_success_rate:.1%})")
+        
+        if not feedback_messages:
+            feedback_messages.append("No skills or plugins were executed")
+        
+        logger.info(f"Generated feedback: {'; '.join(feedback_messages)}")
+        
+        return {
+            'skill_success_rate': skill_success_rate,
+            'plugin_success_rate': plugin_success_rate,
+            'messages': feedback_messages,
+            'needs_attention': skill_success_rate < 0.5 or plugin_success_rate < 0.5
+        }
+    
+    def clear_results(self) -> None:
+        logger.info("Clearing skill and plugin results")
+        self.skill_results.clear()
+        self.plugin_results.clear()
+        logger.info("Results cleared successfully")
