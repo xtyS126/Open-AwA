@@ -1,7 +1,9 @@
+import { ReactNode } from 'react'
+
 interface Props {
   title: string
   value: string | number
-  icon: React.ReactNode
+  icon: ReactNode
 }
 
 function ExperienceStatsCard({ title, value, icon }: Props) {

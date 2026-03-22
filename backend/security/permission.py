@@ -81,10 +81,11 @@ class PermissionChecker:
                 "reason": "Operation requires user confirmation"
             }
         
+        logger.warning(f"Permission denied for operation '{operation}': not in whitelist")
         return {
-            "allowed": True,
-            "mode": "auto",
-            "reason": "Default allow"
+            "allowed": False,
+            "mode": "denied",
+            "reason": "Operation not in whitelist"
         }
     
     def validate_parameters(

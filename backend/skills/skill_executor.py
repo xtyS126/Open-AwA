@@ -2,29 +2,41 @@ from typing import Dict, List, Optional, Any, NamedTuple
 from loguru import logger
 import time
 import ast
-import signal
+import sys
 from dataclasses import dataclass, field
-from contextlib import contextmanager
+import threading
+import queue
 
 
 class ExecutionTimeoutException(Exception):
     pass
 
 
-@contextmanager
-def timeout_context(seconds):
-    def signal_handler(signum, frame):
-        raise ExecutionTimeoutException(f"Execution exceeded {seconds} seconds")
+def execute_with_timeout(code, exec_globals, local_vars, timeout):
+    """
+    使用线程执行代码并设置超时
+    """
+    result_queue = queue.Queue()
     
-    if seconds > 0:
-        old_handler = signal.signal(signal.SIGALRM, signal_handler)
-        signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        if seconds > 0:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+    def run_code():
+        try:
+            exec(code, exec_globals, local_vars)
+            result_queue.put(('success', None))
+        except Exception as e:
+            result_queue.put(('error', e))
+    
+    thread = threading.Thread(target=run_code)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=timeout)
+    
+    if thread.is_alive():
+        raise ExecutionTimeoutException(f"Execution exceeded {timeout} seconds")
+    
+    if not result_queue.empty():
+        status, error = result_queue.get()
+        if status == 'error':
+            raise error
 
 
 class CodeValidator(ast.NodeVisitor):
@@ -282,8 +294,7 @@ class SkillExecutor:
                     }
                 }
                 
-                with timeout_context(timeout):
-                    exec(code, exec_globals, local_vars)
+                execute_with_timeout(code, exec_globals, local_vars, timeout)
                 
                 return local_vars.get('result', {'status': 'executed'})
                 

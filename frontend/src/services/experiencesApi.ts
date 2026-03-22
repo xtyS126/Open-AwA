@@ -12,7 +12,7 @@ export interface Experience {
   success_count: number
   created_at: string
   last_access: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface ExperienceSearchParams {

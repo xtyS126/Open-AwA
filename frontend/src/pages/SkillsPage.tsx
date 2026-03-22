@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { skillsAPI } from '../services/api'
+import { Skill } from '../types/dashboard'
 import './SkillsPage.css'
 
 function SkillsPage() {
-  const [skills, setSkills] = useState<any[]>([])
+  const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
