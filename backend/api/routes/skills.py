@@ -48,8 +48,12 @@ async def install_skill(
     
     try:
         config_dict = yaml.safe_load(skill.config)
-    except:
+    except yaml.YAMLError as e:
+        logger.error(f"YAML parsing error in skill config: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid YAML configuration")
+    except Exception as e:
+        logger.error(f"Unexpected error parsing skill config: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
     
     new_skill = Skill(
         id=str(uuid.uuid4()),
@@ -180,8 +184,12 @@ async def update_skill(
         try:
             yaml.safe_load(skill_update.config)
             skill.config = skill_update.config
-        except:
+        except yaml.YAMLError as e:
+            logger.error(f"YAML parsing error in skill update: {str(e)}")
             raise HTTPException(status_code=400, detail="Invalid YAML configuration")
+        except Exception as e:
+            logger.error(f"Unexpected error parsing skill update: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
     db.commit()
     db.refresh(skill)
@@ -241,8 +249,12 @@ async def get_skill_config(
 
     try:
         config_dict = yaml.safe_load(skill.config)
-    except:
+    except yaml.YAMLError as e:
+        logger.error(f"YAML parsing error getting skill config: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to parse skill configuration")
+    except Exception as e:
+        logger.error(f"Unexpected error getting skill config: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     return SkillConfigResponse(
         skill_id=skill.id,

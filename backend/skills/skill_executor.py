@@ -1,7 +1,153 @@
 from typing import Dict, List, Optional, Any, NamedTuple
 from loguru import logger
 import time
+import ast
+import signal
 from dataclasses import dataclass, field
+from contextlib import contextmanager
+
+
+class ExecutionTimeoutException(Exception):
+    pass
+
+
+@contextmanager
+def timeout_context(seconds):
+    def signal_handler(signum, frame):
+        raise ExecutionTimeoutException(f"Execution exceeded {seconds} seconds")
+    
+    if seconds > 0:
+        old_handler = signal.signal(signal.SIGALRM, signal_handler)
+        signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        if seconds > 0:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+
+
+class CodeValidator(ast.NodeVisitor):
+    """
+    AST节点访问器，用于验证Python代码安全性
+    只允许安全的数学运算、列表、字典、元组等基本操作
+    """
+    
+    def __init__(self):
+        self.allowed_node_types = {
+            'Module', 'Expr', 'Assign', 'AugAssign', 'AnnAssign',
+            'Name', 'Constant', 'Num', 'Str', 'Bytes', 'List', 'Tuple', 'Dict', 'Set',
+            'BinOp', 'UnaryOp', 'Compare', 'BoolOp', 'IfExp',
+            'Call', 'Subscript', 'Index',
+            'ListComp', 'DictComp', 'SetComp', 'GeneratorExp',
+            'For', 'While', 'If',
+            'Break', 'Continue', 'Pass', 'Return',
+            'FunctionDef', 'AsyncFunctionDef', 'Lambda',
+            'arguments', 'arg', 'Return', 'Delete',
+            'Slice', 'ExtSlice',
+            'Load', 'Store', 'Del',
+            'Add', 'Sub', 'Mult', 'Div', 'FloorDiv', 'Mod', 'Pow', 'LShift', 'RShift', 'BitOr', 'BitXor', 'BitAnd',
+            'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'Is', 'IsNot', 'In', 'NotIn',
+            'And', 'Or', 'Not', 'UAdd', 'USub', 'Invert',
+            'comprehension', 'keyword'
+        }
+        
+        self.dangerous_patterns = [
+            'import', 'Import', 'ImportFrom',
+            '__import__', 'getattr', 'setattr', 'delattr',
+            'open', 'file', 'input', 'exec', 'eval', 'compile',
+            'globals', 'locals', 'vars', 'dir', 'help',
+            'breakpoint', 'reload', ' memory',
+            '__builtins__', '__class__', '__subclasses__',
+            '__globals__', '__code__', '__closure__', '__func__',
+            'subprocess', 'os.', 'sys.', 'socket', 'urllib', 'requests',
+            'http', 'ftplib', 'telnetlib', 'smtplib', 'poplib',
+            'pickle', 'marshal', 'shelve', 'anydbm', 'dbm',
+            'ctypes', 'threading', 'multiprocessing', 'concurrent',
+            'asyncio', 'await',
+            'property', 'classmethod', 'staticmethod',
+            'lambda', 'lambda:',
+        ]
+        
+        self.errors = []
+        self.depth = 0
+        self.max_depth = 20
+    
+    def visit(self, node):
+        if self.depth > self.max_depth:
+            self.errors.append(f"代码嵌套深度超过限制: {self.max_depth}")
+            return
+        
+        node_type = type(node).__name__
+        
+        if node_type not in self.allowed_node_types:
+            self.errors.append(f"不支持的代码元素: {node_type} at line {getattr(node, 'lineno', '?')}")
+            return
+        
+        self.depth += 1
+        super().visit(node)
+        self.depth -= 1
+    
+    def visit_Call(self, node):
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+            if func_name in ['__import__', 'eval', 'exec', 'compile', 'open', 'input', 'breakpoint', 'reload', 'memory', 'exit', 'quit']:
+                self.errors.append(f"危险函数调用: {func_name} at line {getattr(node, 'lineno', '?')}")
+                return
+            
+            if func_name in dir(__builtins__) if isinstance(dir(__builtins__), list) else True:
+                if not any(safe in func_name for safe in ['abs', 'min', 'max', 'sum', 'len', 'range', 'print', 'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple', 'type', 'isinstance', 'issubclass', 'hasattr', 'getattr', 'setattr', 'delattr', 'sorted', 'reversed', 'enumerate', 'zip', 'map', 'filter', 'any', 'all', 'round', 'pow', 'divmod', 'format', 'hex', 'oct', 'bin', 'chr', 'ord', 'slice']):
+                    self.errors.append(f"不允许的函数调用: {func_name} at line {getattr(node, 'lineno', '?')}")
+                    return
+        
+        self.generic_visit(node)
+    
+    def visit_Attribute(self, node):
+        attr_name = node.attr if hasattr(node, 'attr') else ''
+        if isinstance(attr_name, str):
+            for pattern in self.dangerous_patterns:
+                if pattern in attr_name:
+                    self.errors.append(f"危险的属性访问: {attr_name} at line {getattr(node, 'lineno', '?')}")
+                    return
+        
+        self.generic_visit(node)
+    
+    def visit_Name(self, node):
+        name = node.id if hasattr(node, 'id') else ''
+        if isinstance(name, str):
+            for pattern in self.dangerous_patterns:
+                if pattern in name:
+                    self.errors.append(f"危险的名称: {name} at line {getattr(node, 'lineno', '?')}")
+                    return
+        
+        self.generic_visit(node)
+    
+    def visit_Subscript(self, node):
+        if isinstance(node.value, ast.Name):
+            name = node.value.id if hasattr(node.value, 'id') else ''
+            if name in ['__builtins__', '__imports__']:
+                self.errors.append(f"不允许访问: {name} at line {getattr(node, 'lineno', '?')}")
+                return
+        
+        self.generic_visit(node)
+    
+    def validate_code(self, code: str) -> tuple[bool, str]:
+        """
+        验证代码安全性
+        返回: (是否安全, 错误信息)
+        """
+        try:
+            tree = ast.parse(code, mode='exec')
+        except SyntaxError as e:
+            return False, f"语法错误: {e}"
+        
+        self.errors = []
+        self.visit(tree)
+        
+        if self.errors:
+            return False, "; ".join(self.errors)
+        
+        return True, ""
 
 
 class StepResult(NamedTuple):
@@ -107,16 +253,46 @@ class SkillExecutor:
     async def _execute_code_action(self, action: str, params: Dict) -> Any:
         code = params.get('code', '')
         language = params.get('language', 'python')
+        timeout = params.get('timeout', 30)
 
         logger.info(f"Executing {language} code: {action}")
 
         if language == 'python':
+            validator = CodeValidator()
+            is_safe, error_msg = validator.validate_code(code)
+            
+            if not is_safe:
+                raise RuntimeError(f"代码安全验证失败: {error_msg}")
+            
             try:
                 local_vars = {}
-                exec(code, {}, local_vars)
+                exec_globals = {
+                    '__builtins__': {
+                        'abs': abs, 'min': min, 'max': max, 'sum': sum,
+                        'len': len, 'range': range, 'print': print,
+                        'str': str, 'int': int, 'float': float, 'bool': bool,
+                        'list': list, 'dict': dict, 'set': set, 'tuple': tuple,
+                        'type': type, 'isinstance': isinstance, 'issubclass': issubclass,
+                        'hasattr': hasattr, 'getattr': getattr, 'setattr': setattr, 'delattr': delattr,
+                        'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
+                        'zip': zip, 'map': map, 'filter': filter, 'any': any, 'all': all,
+                        'round': round, 'pow': pow, 'divmod': divmod, 'format': format,
+                        'hex': hex, 'oct': oct, 'bin': bin, 'chr': chr, 'ord': ord,
+                        'slice': slice, 'True': True, 'False': False, 'None': None
+                    }
+                }
+                
+                with timeout_context(timeout):
+                    exec(code, exec_globals, local_vars)
+                
                 return local_vars.get('result', {'status': 'executed'})
+                
+            except ExecutionTimeoutException as e:
+                raise RuntimeError(f"代码执行超时（超过{timeout}秒）")
+            except SyntaxError as e:
+                raise RuntimeError(f"代码语法错误: {e}")
             except Exception as e:
-                raise RuntimeError(f"Code execution error: {e}")
+                raise RuntimeError(f"代码执行错误: {e}")
 
         return {'status': 'executed', 'action': action}
 
@@ -146,26 +322,60 @@ class SkillExecutor:
 
     async def _execute_shell_action(self, action: str, params: Dict) -> Any:
         import subprocess
+        import shlex
 
         command = params.get('command', '')
+        timeout = params.get('timeout', 30)
+        
         logger.info(f"Executing shell command: {command}")
 
+        if not command:
+            raise RuntimeError("Shell命令不能为空")
+
+        command_list = params.get('command_list', None)
+        
+        if command_list is None:
+            try:
+                command_list = shlex.split(command)
+            except ValueError as e:
+                raise RuntimeError(f"命令解析失败: {e}")
+
+        if not command_list or len(command_list) == 0:
+            raise RuntimeError("命令列表为空")
+
+        allowed_commands = ['ls', 'cat', 'grep', 'find', 'echo', 'pwd', 'mkdir', 'cp', 'mv', 'rm', 'chmod', 'chown', 'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'head', 'tail', 'sort', 'uniq', 'wc', 'awk', 'sed', 'cut', 'tr', 'tee', 'xargs']
+        
+        if command_list[0] not in allowed_commands:
+            raise RuntimeError(f"不允许的命令: {command_list[0]}。允许的命令: {', '.join(allowed_commands)}")
+        
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                command_list,
+                shell=False,
                 capture_output=True,
                 text=True,
-                timeout=params.get('timeout', 30)
+                timeout=timeout,
+                cwd=params.get('cwd', None),
+                env=params.get('env', None)
             )
+
+            if result.returncode != 0 and result.stderr:
+                logger.warning(f"Shell command returned non-zero: {result.returncode}, stderr: {result.stderr}")
 
             return {
                 'stdout': result.stdout,
                 'stderr': result.stderr,
                 'returncode': result.returncode
             }
+            
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Shell命令执行超时（超过{timeout}秒）")
+        except PermissionError as e:
+            raise RuntimeError(f"权限不足: {e}")
+        except FileNotFoundError as e:
+            raise RuntimeError(f"命令未找到: {e}")
         except Exception as e:
-            raise RuntimeError(f"Shell execution error: {e}")
+            raise RuntimeError(f"Shell执行错误: {e}")
 
     async def _execute_api_action(self, action: str, params: Dict) -> Any:
         import httpx
@@ -316,8 +526,10 @@ class SkillExecutor:
                     if hasattr(value, 'close'):
                         try:
                             await value.close()
-                        except:
-                            pass
+                        except AttributeError as e:
+                            logger.warning(f"Failed to close {key}: {str(e)}")
+                        except Exception as e:
+                            logger.error(f"Unexpected error closing {key}: {str(e)}")
 
             self.execution_context.clear()
             self.environment_initialized = False
