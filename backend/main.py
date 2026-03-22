@@ -6,7 +6,7 @@ import sys
 
 from config.settings import settings
 from db.models import init_db, engine, Base
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences
 from billing.models import Base as BillingBase
 from billing.routers import billing
 
@@ -62,6 +62,7 @@ app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
 app.include_router(prompts.router, prefix=settings.API_V1_STR)
 app.include_router(behavior.router, prefix=settings.API_V1_STR)
+app.include_router(experiences.router, prefix=settings.API_V1_STR)
 app.include_router(billing.router)
 
 
