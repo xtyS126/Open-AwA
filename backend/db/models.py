@@ -32,6 +32,10 @@ class Skill(Base):
     version = Column(String)
     description = Column(Text)
     config = Column(Text)
+    category = Column(String, default='general')
+    tags = Column(Text)
+    dependencies = Column(Text)
+    author = Column(String)
     enabled = Column(Boolean, default=True)
     usage_count = Column(Integer, default=0)
     installed_at = Column(DateTime, default=datetime.utcnow)
@@ -45,7 +49,40 @@ class Plugin(Base):
     version = Column(String)
     enabled = Column(Boolean, default=True)
     config = Column(Text)
+    category = Column(String, default='general')
+    author = Column(String)
+    source = Column(String)
+    dependencies = Column(Text)
     installed_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SkillExecutionLog(Base):
+    __tablename__ = "skill_execution_logs"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    skill_id = Column(String, index=True)
+    skill_name = Column(String, index=True)
+    inputs = Column(Text)
+    outputs = Column(Text)
+    status = Column(String)
+    execution_time = Column(Float)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PluginExecutionLog(Base):
+    __tablename__ = "plugin_execution_logs"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    plugin_id = Column(String, index=True)
+    plugin_name = Column(String, index=True)
+    method = Column(String)
+    inputs = Column(Text)
+    outputs = Column(Text)
+    status = Column(String)
+    execution_time = Column(Float)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class ShortTermMemory(Base):
