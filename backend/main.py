@@ -39,6 +39,10 @@ async def lifespan(app: FastAPI):
         count = pricing_manager.initialize_default_pricing()
         if count > 0:
             logger.info(f"Initialized {count} model pricing entries")
+        
+        config_count = pricing_manager.initialize_default_configurations()
+        if config_count > 0:
+            logger.info(f"Initialized {config_count} model configurations")
     finally:
         db.close()
     yield
