@@ -1,10 +1,38 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set, Tuple
 from billing.models import ModelPricing, ModelConfiguration
 from datetime import datetime
 
 
 class PricingManager:
+    
+    @staticmethod
+    def _validate_configurations_uniqueness(configurations: List[Dict]) -> Tuple[bool, List[Tuple[str, str]]]:
+        """
+        验证配置列表中 provider+model 组合的唯一性
+        返回: (是否唯一, 重复项列表)
+        """
+        seen: Set[Tuple[str, str]] = set()
+        duplicates: List[Tuple[str, str]] = []
+        
+        for config in configurations:
+            key = (config["provider"], config["model"])
+            if key in seen:
+                duplicates.append(key)
+            else:
+                seen.add(key)
+        
+        return (len(duplicates) == 0, duplicates)
+    
+    @staticmethod
+    def validate_default_configurations() -> Tuple[bool, List[Tuple[str, str]]]:
+        """
+        验证默认配置常量的唯一性(静态验证)
+        在部署前调用此方法可提前发现问题
+        """
+        return PricingManager._validate_configurations_uniqueness(
+            PricingManager.DEFAULT_CONFIGURATIONS
+        )
     DEFAULT_PRICING_DATA = [
         {
             "provider": "openai",
@@ -194,6 +222,18 @@ class PricingManager:
         }
     ]
 
+    DEFAULT_CONFIGURATIONS = [
+        {
+            "provider": "openai",
+            "model": "gpt-5.3",
+            "display_name": "GPT-5.3",
+            "description": "GPT最强大的通用AI模型，支持复杂推理和创意任务",
+            "is_active": True,
+            "is_default": True,
+            "sort_order": 0
+        }
+    ]
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -255,6 +295,43 @@ class PricingManager:
                 count += 1
         
         self.db.commit()
+        return count
+
+    def initialize_default_configurations(self) -> int:
+        from loguru import logger
+        
+        is_unique, duplicates = self._validate_configurations_uniqueness(self.DEFAULT_CONFIGURATIONS)
+        if not is_unique:
+            duplicate_str = ", ".join([f"{p}/{m}" for p, m in duplicates])
+            logger.error(
+                f"DEFAULT_CONFIGURATIONS contains duplicate entries: {duplicate_str}. "
+                f"Fix the code before deployment!"
+            )
+            self.db.rollback()
+            raise ValueError(
+                f"Configuration error: Found {len(duplicates)} duplicate(s) in DEFAULT_CONFIGURATIONS: {duplicate_str}"
+            )
+        
+        existing_count = self.db.query(ModelConfiguration).count()
+        if existing_count > 0:
+            logger.info(f"Model configurations already exist ({existing_count}), skipping initialization")
+            return 0
+        
+        count = 0
+        for data in self.DEFAULT_CONFIGURATIONS:
+            existing = self.db.query(ModelConfiguration).filter(
+                ModelConfiguration.provider == data["provider"],
+                ModelConfiguration.model == data["model"]
+            ).first()
+            
+            if not existing:
+                config = ModelConfiguration(**data)
+                self.db.add(config)
+                count += 1
+                logger.info(f"Created default configuration: {data['provider']}/{data['model']}")
+        
+        self.db.commit()
+        logger.info(f"Initialized {count} default model configurations")
         return count
 
     def validate_pricing_data(self, data: Dict) -> tuple:

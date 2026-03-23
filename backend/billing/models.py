@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, Date
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -84,10 +84,11 @@ class UserUsageSummary(Base):
 
 class ModelConfiguration(Base):
     __tablename__ = "model_configurations"
+    from sqlalchemy import UniqueConstraint
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     provider = Column(String, nullable=False, index=True)
-    model = Column(String, nullable=False)
+    model = Column(String, nullable=False, index=True)
     display_name = Column(String)
     description = Column(Text)
     api_key = Column(Text)
@@ -99,5 +100,6 @@ class ModelConfiguration(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     __table_args__ = (
+        UniqueConstraint('provider', 'model', name='uq_model_configurations_provider_model'),
         {"sqlite_autoincrement": True},
     )
