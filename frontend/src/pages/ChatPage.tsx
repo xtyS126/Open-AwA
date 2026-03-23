@@ -11,6 +11,9 @@ function ChatPage() {
   const [configurations, setConfigurations] = useState<ModelConfiguration[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [loadingModels, setLoadingModels] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -22,28 +25,62 @@ function ChatPage() {
 
   const loadConfigurations = useCallback(async () => {
     setLoadingModels(true)
+    setError(null)
+    
     try {
       const response = await modelsAPI.getConfigurations()
       setConfigurations(response.data.configurations || [])
-      const defaultConfig = response.data.configurations?.find(
-        (c: ModelConfiguration) => c.is_default
-      )
-      if (defaultConfig) {
-        setSelectedModel(`${defaultConfig.provider}:${defaultConfig.model}`)
-      } else if (response.data.configurations?.length > 0) {
-        const firstConfig = response.data.configurations[0]
-        setSelectedModel(`${firstConfig.provider}:${firstConfig.model}`)
+      
+      const savedModel = localStorage.getItem('selected_model')
+      if (savedModel && response.data.configurations) {
+        const exists = response.data.configurations.some(
+          (c: ModelConfiguration) => `${c.provider}:${c.model}` === savedModel
+        )
+        if (exists) {
+          setSelectedModel(savedModel)
+        } else {
+          const defaultConfig = response.data.configurations.find(
+            (c: ModelConfiguration) => c.is_default
+          )
+          if (defaultConfig) {
+            setSelectedModel(`${defaultConfig.provider}:${defaultConfig.model}`)
+          } else if (response.data.configurations.length > 0) {
+            const firstConfig = response.data.configurations[0]
+            setSelectedModel(`${firstConfig.provider}:${firstConfig.model}`)
+          }
+        }
+      } else {
+        const defaultConfig = response.data.configurations?.find(
+          (c: ModelConfiguration) => c.is_default
+        )
+        if (defaultConfig) {
+          setSelectedModel(`${defaultConfig.provider}:${defaultConfig.model}`)
+        } else if (response.data.configurations?.length > 0) {
+          const firstConfig = response.data.configurations[0]
+          setSelectedModel(`${firstConfig.provider}:${firstConfig.model}`)
+        }
       }
-    } catch (error) {
-      console.error('Failed to load configurations')
+      
+      setRetryCount(0)
+    } catch (err) {
+      console.error('Failed to load configurations:', err)
+      setError('加载模型失败，请检查网络连接')
+      
+      if (retryCount < 3) {
+        const nextRetry = retryCount + 1
+        setRetryCount(nextRetry)
+        setTimeout(() => {
+          loadConfigurations()
+        }, 1000 * nextRetry)
+      }
     } finally {
       setLoadingModels(false)
     }
-  }, [])
+  }, [retryCount])
 
   useEffect(() => {
     loadConfigurations()
-  }, [loadConfigurations])
+  }, [])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -73,6 +110,33 @@ function ChatPage() {
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedModel(e.target.value)
     localStorage.setItem('selected_model', e.target.value)
+    setSaveSuccess(false)
+  }
+
+  const handleSaveModel = async () => {
+    if (!selectedModel) return
+    
+    try {
+      const [provider, model] = selectedModel.split(':')
+      const config = configurations.find(
+        (c: ModelConfiguration) => c.provider === provider && c.model === model
+      )
+      
+      if (config) {
+        await modelsAPI.updateConfiguration(config.id, { is_default: true })
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+        localStorage.setItem('selected_model', selectedModel)
+      }
+    } catch (err) {
+      console.error('Failed to save model:', err)
+      setError('保存模型失败')
+    }
+  }
+
+  const handleRetry = () => {
+    setRetryCount(0)
+    loadConfigurations()
   }
 
   const formatModelLabel = (config: ModelConfiguration) => {
@@ -96,7 +160,7 @@ function ChatPage() {
           <select
             value={selectedModel}
             onChange={handleModelChange}
-            disabled={loadingModels}
+            disabled={loadingModels || !!error}
             className="model-select"
           >
             {loadingModels ? (
@@ -114,7 +178,26 @@ function ChatPage() {
               ))
             )}
           </select>
+          {selectedModel && (
+            <button
+              className={`btn btn-save-model ${saveSuccess ? 'success' : ''}`}
+              onClick={handleSaveModel}
+              disabled={!selectedModel}
+            >
+              {saveSuccess ? '✓ 已保存' : '保存模型'}
+            </button>
+          )}
         </div>
+        {error && (
+          <div className="model-error">
+            <span>{error}</span>
+            {retryCount < 3 && (
+              <button className="btn btn-retry" onClick={handleRetry}>
+                重试 ({3 - retryCount})
+              </button>
+            )}
+          </div>
+        )}
         <button className="btn btn-secondary" onClick={clearMessages}>
           新对话
         </button>
