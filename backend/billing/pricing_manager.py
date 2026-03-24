@@ -225,12 +225,48 @@ class PricingManager:
     DEFAULT_CONFIGURATIONS = [
         {
             "provider": "openai",
-            "model": "gpt-5.3",
-            "display_name": "GPT-5.3",
+            "model": "gpt-4",
+            "display_name": "GPT-4",
             "description": "GPT最强大的通用AI模型，支持复杂推理和创意任务",
             "is_active": True,
             "is_default": True,
             "sort_order": 0
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "display_name": "GPT-4o Mini",
+            "description": "轻量高效的通用模型，适合快速响应场景",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 1
+        },
+        {
+            "provider": "anthropic",
+            "model": "claude-3.5-sonnet",
+            "display_name": "Claude 3.5 Sonnet",
+            "description": "平衡推理能力与速度的模型",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 2
+        },
+        {
+            "provider": "google",
+            "model": "gemini-2.0-flash",
+            "display_name": "Gemini 2.0 Flash",
+            "description": "Google 高速度多模态模型",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 3
+        },
+        {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "display_name": "DeepSeek Chat",
+            "description": "中文场景友好的对话模型",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 4
         }
     ]
 
