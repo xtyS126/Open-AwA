@@ -30,10 +30,10 @@
   - [x] SubTask 6.2: 实现失败自动回滚
   - [x] SubTask 6.3: 实现按用户/地域/版本灰度策略
 
-- [ ] Task 7: 打通可观测性与调试能力
-  - [ ] SubTask 7.1: 每插件独立日志文件与级别动态开关
-  - [ ] SubTask 7.2: 输出 API 调用、事件、性能指标
-  - [ ] SubTask 7.3: 增加插件调试面板入口
+- [x] Task 7: 打通可观测性与调试能力
+  - [x] SubTask 7.1: 每插件独立日志文件与级别动态开关
+  - [x] SubTask 7.2: 输出 API 调用、事件、性能指标
+  - [x] SubTask 7.3: 增加插件调试面板入口
 
 - [x] Task 8: 完成 CLI 与发布链路
   - [x] SubTask 8.1: 实现 init/dev/typecheck/build 命令
