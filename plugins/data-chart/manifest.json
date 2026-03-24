@@ -1,0 +1,38 @@
+{
+  "name": "data-chart",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0",
+  "description": "演示API拦截与权限申请的数据图表插件",
+  "author": "Open-AwA Team",
+  "permissions": [
+    "network:http"
+  ],
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "fetch_chart_data",
+      "version": "1.0.0",
+      "config": {
+        "description": "从远端数据源拉取图表数据"
+      }
+    },
+    {
+      "point": "middleware",
+      "name": "api_intercept_middleware",
+      "version": "1.0.0",
+      "config": {
+        "description": "拦截 /api/chart/* 路由，注入认证头",
+        "intercept_path_prefix": "/api/chart/"
+      }
+    },
+    {
+      "point": "data_provider",
+      "name": "chart_data_provider",
+      "version": "1.0.0",
+      "config": {
+        "description": "为前端图表组件提供结构化数据",
+        "chart_types": ["line", "bar", "pie"]
+      }
+    }
+  ]
+}

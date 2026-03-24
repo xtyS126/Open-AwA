@@ -25,20 +25,20 @@
   - [x] SubTask 5.2: 运行时拦截敏感 API 调用
   - [x] SubTask 5.3: 实现授权弹窗、权限持久化与细粒度撤销
 
-- [ ] Task 6: 实现热更新与灰度发布
-  - [ ] SubTask 6.1: 实现双缓存更新与无感切换
-  - [ ] SubTask 6.2: 实现失败自动回滚
-  - [ ] SubTask 6.3: 实现按用户/地域/版本灰度策略
+- [x] Task 6: 实现热更新与灰度发布
+  - [x] SubTask 6.1: 实现双缓存更新与无感切换
+  - [x] SubTask 6.2: 实现失败自动回滚
+  - [x] SubTask 6.3: 实现按用户/地域/版本灰度策略
 
 - [ ] Task 7: 打通可观测性与调试能力
   - [ ] SubTask 7.1: 每插件独立日志文件与级别动态开关
   - [ ] SubTask 7.2: 输出 API 调用、事件、性能指标
   - [ ] SubTask 7.3: 增加插件调试面板入口
 
-- [ ] Task 8: 完成 CLI 与发布链路
-  - [ ] SubTask 8.1: 实现 init/dev/typecheck/build 命令
-  - [ ] SubTask 8.2: 实现 sign/publish 命令
-  - [ ] SubTask 8.3: 校验插件包结构与签名文件
+- [x] Task 8: 完成 CLI 与发布链路
+  - [x] SubTask 8.1: 实现 init/dev/typecheck/build 命令
+  - [x] SubTask 8.2: 实现 sign/publish 命令
+  - [x] SubTask 8.3: 校验插件包结构与签名文件
 
 - [ ] Task 9: 交付文档与示例插件
   - [ ] SubTask 9.1: 完成《插件开发手册》核心章节
