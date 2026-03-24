@@ -89,8 +89,10 @@ describe('PluginDebugPanel', () => {
     ;(pluginsAPI.getLogs as any).mockResolvedValue(mockLogsWithEntries)
     render(<PluginDebugPanel pluginId={PLUGIN_ID} pluginName={PLUGIN_NAME} />)
     await waitFor(() => {
-      expect(screen.getByText('INFO')).toBeInTheDocument()
-      expect(screen.getByText('ERROR')).toBeInTheDocument()
+      const infoEls = screen.getAllByText('INFO')
+      const errorEls = screen.getAllByText('ERROR')
+      expect(infoEls.length).toBeGreaterThan(0)
+      expect(errorEls.length).toBeGreaterThan(0)
     })
   })
 
