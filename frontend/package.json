@@ -9,6 +9,7 @@
     "test": "vitest run --environment jsdom",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
+    "e2e:electron": "playwright test --project=electron",
     "e2e:install": "playwright install chromium firefox"
   },
   "dependencies": {
@@ -27,7 +28,9 @@
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
+    "electron": "^35.7.5",
     "jsdom": "^25.0.1",
+    "playwright": "^1.58.2",
     "typescript": "^5.3.3",
     "vite": "^5.1.0",
     "vitest": "^2.1.8"
