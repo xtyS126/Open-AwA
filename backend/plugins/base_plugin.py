@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class BasePlugin(ABC):
@@ -10,17 +10,46 @@ class BasePlugin(ABC):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self._initialized = False
+        self._state = "registered"
 
     @abstractmethod
     def initialize(self) -> bool:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def execute(self, *args, **kwargs) -> Any:
-        pass
+        raise NotImplementedError
 
     def cleanup(self) -> None:
         self._initialized = False
 
     def validate(self) -> bool:
+        return True
+
+    def on_registered(self) -> None:
+        self._state = "registered"
+
+    def on_loaded(self) -> None:
+        self._state = "loaded"
+
+    def on_enabled(self) -> None:
+        self._state = "enabled"
+
+    def on_disabled(self) -> None:
+        self._state = "disabled"
+
+    def on_unloaded(self) -> None:
+        self._state = "unloaded"
+
+    def on_updating(self) -> None:
+        self._state = "updating"
+
+    def on_error_state(self) -> None:
+        self._state = "error"
+
+    def on_error(self, error: Exception, from_state: str, to_state: str) -> None:
+        self._state = "error"
+
+    def rollback(self, previous_state: str, context: Optional[Dict[str, Any]] = None) -> bool:
+        self._state = previous_state
         return True

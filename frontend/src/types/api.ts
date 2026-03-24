@@ -105,3 +105,43 @@ export interface ApiError {
   code?: string | number
   details?: Record<string, unknown>
 }
+
+export type ExtensionPointType =
+  | 'tool'
+  | 'hook'
+  | 'command'
+  | 'route'
+  | 'event_handler'
+  | 'scheduler'
+  | 'middleware'
+  | 'data_provider'
+
+export interface PluginExtension {
+  point: ExtensionPointType
+  name: string
+  version: string
+  config?: Record<string, unknown>
+}
+
+export interface PluginManifest {
+  name: string
+  version: string
+  pluginApiVersion: string
+  description?: string
+  author?: string
+  permissions?: string[]
+  extensions: PluginExtension[]
+}
+
+export interface ExtensionRegistration {
+  pluginName: string
+  point: ExtensionPointType
+  name: string
+  version: string
+  config: Record<string, unknown>
+}
+
+export interface SchemaValidationResult {
+  valid: boolean
+  errors: string[]
+}

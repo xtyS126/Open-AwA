@@ -1,19 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from db.models import get_db, Plugin
-from api.dependencies import get_current_user, get_current_admin_user
-from api.schemas import PluginCreate, PluginResponse, PluginUpdate, PluginExecute, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult
+from api.dependencies import get_current_user
+from api.schemas import PluginCreate, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
 from plugins.plugin_manager import PluginManager
 from plugins.plugin_validator import PluginValidator
+from plugins.plugin_logger import LogManager
 from loguru import logger
 import uuid
 import zipfile
 import io
-import os
 
 
 router = APIRouter(prefix="/plugins", tags=["Plugins"])
+plugin_manager = PluginManager()
+
+
+def _ensure_plugin_discovered(plugin_name: str) -> None:
+    if plugin_name in plugin_manager.plugin_metadata:
+        return
+    plugin_manager.discover_plugins()
 
 
 @router.get("", response_model=List[PluginResponse])
@@ -118,6 +125,82 @@ async def update_plugin(
     return plugin
 
 
+@router.post("/{plugin_id}/permissions/authorize", response_model=PluginPermissionUpdateResponse)
+async def authorize_plugin_permissions(
+    plugin_id: str,
+    payload: PluginPermissionUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+    try:
+        status = plugin_manager.authorize_plugin_permissions(plugin.name, payload.permissions)
+        return PluginPermissionUpdateResponse(
+            plugin_id=plugin_id,
+            plugin_name=status["plugin_name"],
+            requested_permissions=status["requested_permissions"],
+            granted_permissions=status["granted_permissions"],
+            missing_permissions=status["missing_permissions"],
+            message="权限授权成功",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{plugin_id}/permissions/revoke", response_model=PluginPermissionUpdateResponse)
+async def revoke_plugin_permissions(
+    plugin_id: str,
+    payload: PluginPermissionUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+    try:
+        status = plugin_manager.revoke_plugin_permissions(plugin.name, payload.permissions)
+        return PluginPermissionUpdateResponse(
+            plugin_id=plugin_id,
+            plugin_name=status["plugin_name"],
+            requested_permissions=status["requested_permissions"],
+            granted_permissions=status["granted_permissions"],
+            missing_permissions=status["missing_permissions"],
+            message="权限撤销成功",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/{plugin_id}/permissions", response_model=PluginPermissionStatus)
+async def get_plugin_permissions(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+    try:
+        status = plugin_manager.get_plugin_permission_status(plugin.name)
+        return PluginPermissionStatus(
+            plugin_id=plugin_id,
+            plugin_name=status["plugin_name"],
+            requested_permissions=status["requested_permissions"],
+            granted_permissions=status["granted_permissions"],
+            missing_permissions=status["missing_permissions"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post("/{plugin_id}/execute")
 async def execute_plugin(
     plugin_id: str,
@@ -133,7 +216,7 @@ async def execute_plugin(
         raise HTTPException(status_code=400, detail="Plugin is disabled")
 
     try:
-        plugin_manager = PluginManager()
+        _ensure_plugin_discovered(plugin.name)
 
         if plugin.name not in plugin_manager.loaded_plugins:
             load_success = plugin_manager.load_plugin(plugin.name)
@@ -156,6 +239,8 @@ async def execute_plugin(
             "result": result
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error executing plugin '{plugin.name}': {str(e)}")
         raise HTTPException(status_code=500, detail=f"Plugin execution failed: {str(e)}")
@@ -172,7 +257,7 @@ async def get_plugin_tools(
         raise HTTPException(status_code=404, detail="Plugin not found")
 
     try:
-        plugin_manager = PluginManager()
+        _ensure_plugin_discovered(plugin.name)
 
         if plugin.name not in plugin_manager.loaded_plugins:
             load_success = plugin_manager.load_plugin(plugin.name)
@@ -187,6 +272,8 @@ async def get_plugin_tools(
             tools=tools
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting tools for plugin '{plugin.name}': {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get plugin tools: {str(e)}")
@@ -334,3 +421,135 @@ async def upload_plugin(
     except Exception as e:
         logger.error(f"Error extracting plugin: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to extract plugin: {str(e)}")
+
+
+@router.post("/{plugin_id}/hot-update", response_model=HotUpdateResponse)
+async def hot_update_plugin(
+    plugin_id: str,
+    payload: HotUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+
+    rollout_dict = payload.rollout_config.model_dump() if payload.rollout_config else None
+
+    try:
+        result = plugin_manager.hot_update_plugin(
+            plugin_name=plugin.name,
+            rollout_policy=rollout_dict,
+            strategy=payload.strategy,
+        )
+        hot_status = plugin_manager.hot_update_manager.get_status(plugin.name)
+        return HotUpdateResponse(
+            success=result.get("success", False),
+            plugin_name=plugin.name,
+            strategy=payload.strategy,
+            new_version=hot_status.get("standby", {}).get("version") if hot_status.get("standby") else hot_status.get("active", {}).get("version"),
+            standby_ready=hot_status.get("standby") is not None,
+            rollout_config=hot_status.get("rollout_config"),
+            active_release_id=result.get("active_release_id"),
+            standby_release_id=result.get("standby_release_id"),
+            rolled_back=result.get("rolled_back", False),
+            error=result.get("error"),
+            hot_update_status=hot_status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Hot update failed for plugin '{plugin.name}': {exc}")
+        raise HTTPException(status_code=500, detail=f"Hot update failed: {str(exc)}")
+
+
+@router.post("/{plugin_id}/rollback", response_model=RollbackResponse)
+async def rollback_plugin(
+    plugin_id: str,
+    payload: RollbackRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    _ensure_plugin_discovered(plugin.name)
+
+    try:
+        result = plugin_manager.rollback_plugin(
+            plugin_name=plugin.name,
+            snapshot_id=payload.snapshot_id,
+        )
+        return RollbackResponse(
+            success=True,
+            plugin_name=plugin.name,
+            rolled_back_to=result.get("rolled_back_to"),
+            snapshot_id=result.get("snapshot_id"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Rollback failed for plugin '{plugin.name}': {exc}")
+        raise HTTPException(status_code=500, detail=f"Rollback failed: {str(exc)}")
+
+
+_log_manager = LogManager()
+
+
+@router.get("/{plugin_id}/logs", response_model=PluginLogsResponse)
+async def get_plugin_logs(
+    plugin_id: str,
+    level: Optional[str] = Query(None, description="按级别过滤: DEBUG/INFO/WARNING/ERROR/CRITICAL"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_logger = _log_manager.get_logger(plugin_id)
+    entries = plugin_logger.get_entries(level=level, limit=limit, offset=offset)
+
+    return PluginLogsResponse(
+        plugin_id=plugin_id,
+        plugin_name=plugin.name,
+        level_filter=level,
+        total=len(entries),
+        entries=[PluginLogEntry(**e) for e in entries],
+    )
+
+
+@router.put("/{plugin_id}/log-level", response_model=PluginLogLevelResponse)
+async def update_plugin_log_level(
+    plugin_id: str,
+    payload: PluginLogLevelUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    level_upper = payload.level.upper()
+    if level_upper not in valid_levels:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid log level '{payload.level}'. Must be one of: {', '.join(sorted(valid_levels))}",
+        )
+
+    plugin_logger = _log_manager.get_logger(plugin_id)
+    plugin_logger.level = level_upper
+
+    logger.info(f"Plugin '{plugin.name}' log level set to {level_upper} by user '{current_user.username}'")
+
+    return PluginLogLevelResponse(
+        plugin_id=plugin_id,
+        plugin_name=plugin.name,
+        level=level_upper,
+    )

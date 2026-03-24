@@ -1,16 +1,19 @@
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from loguru import logger
 
 from .base_plugin import BasePlugin
 
 
 class PluginSandbox:
-    def __init__(self, timeout: int = 30, memory_limit: str = "512m"):
+    def __init__(self, timeout: int = 30, memory_limit: str = "512m", cpu_limit: float = 1.0):
         self.timeout = timeout
         self.memory_limit = memory_limit
+        self.cpu_limit = cpu_limit
         self._execution_count = 0
-        logger.info(f"PluginSandbox initialized with timeout={timeout}s, memory_limit={memory_limit}")
+        logger.info(
+            f"PluginSandbox initialized with timeout={timeout}s, memory_limit={memory_limit}, cpu_limit={cpu_limit}"
+        )
 
     async def execute_plugin(
         self,
@@ -109,7 +112,8 @@ class PluginSandbox:
         return {
             "total_executions": self._execution_count,
             "timeout_setting": self.timeout,
-            "memory_limit": self.memory_limit
+            "memory_limit": self.memory_limit,
+            "cpu_limit": self.cpu_limit,
         }
 
     def reset_stats(self) -> None:
