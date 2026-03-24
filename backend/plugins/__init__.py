@@ -1,3 +1,4 @@
+from .cli import cli
 from .base_plugin import BasePlugin
 from .extension_protocol import ExtensionPointType, ExtensionRegistry
 from .plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
@@ -16,6 +17,7 @@ from .schema_validator import (
 )
 
 __all__ = [
+    "cli",
     "BasePlugin",
     "PluginState",
     "PluginStateMachine",

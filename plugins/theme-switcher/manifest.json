@@ -1,0 +1,35 @@
+{
+  "name": "theme-switcher",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0",
+  "description": "演示存储API与UI扩展点的主题切换插件",
+  "author": "Open-AwA Team",
+  "permissions": [],
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "get_theme",
+      "version": "1.0.0",
+      "config": {
+        "description": "获取当前主题配置"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "set_theme",
+      "version": "1.0.0",
+      "config": {
+        "description": "切换主题（light/dark/system）"
+      }
+    },
+    {
+      "point": "hook",
+      "name": "ui_theme_hook",
+      "version": "1.0.0",
+      "config": {
+        "hook_point": "ui.render.before",
+        "description": "在UI渲染前注入主题变量"
+      }
+    }
+  ]
+}
