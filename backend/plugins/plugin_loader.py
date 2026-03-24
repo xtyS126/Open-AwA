@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Type, Any
+from typing import Dict, Optional, Type
 from loguru import logger
 import importlib
 import os
@@ -38,7 +38,7 @@ class PluginLoader:
             spec.loader.exec_module(module)
 
             plugin_classes = []
-            for name, obj in inspect.getmembers(module, inspect.isclass):
+            for _, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, BasePlugin) and obj is not BasePlugin:
                     plugin_classes.append(obj)
 

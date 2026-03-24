@@ -262,6 +262,22 @@ class PluginExecute(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict, description="方法参数")
 
 
+class PluginPermissionUpdateRequest(BaseModel):
+    permissions: List[str] = Field(default_factory=list, description="要授权或撤销的权限列表")
+
+
+class PluginPermissionStatus(BaseModel):
+    plugin_id: str
+    plugin_name: str
+    requested_permissions: List[str]
+    granted_permissions: List[str]
+    missing_permissions: List[str]
+
+
+class PluginPermissionUpdateResponse(PluginPermissionStatus):
+    message: str
+
+
 class PluginToolsResponse(BaseModel):
     plugin_id: str
     plugin_name: str
@@ -281,3 +297,68 @@ class PluginValidationRequest(BaseModel):
 class PluginDiscoveryResult(BaseModel):
     discovered: List[Dict[str, Any]]
     total_count: int
+
+
+class RolloutConfigSchema(BaseModel):
+    enabled: bool = False
+    strategy: str = Field(default="percentage", description="percentage / user_list / region")
+    percentage: Optional[float] = Field(default=0.0, ge=0.0, le=100.0)
+    user_list: Optional[List[str]] = Field(default_factory=list)
+    region: Optional[List[str]] = Field(default_factory=list)
+
+
+class HotUpdateRequest(BaseModel):
+    rollout_config: Optional[RolloutConfigSchema] = None
+    strategy: str = Field(default="gray", description="gray / immediate / force")
+
+
+class HotUpdateResponse(BaseModel):
+    success: bool
+    plugin_name: str
+    strategy: str
+    new_version: Optional[str] = None
+    standby_ready: bool = False
+    rollout_config: Optional[Dict[str, Any]] = None
+    active_release_id: Optional[str] = None
+    standby_release_id: Optional[str] = None
+    rolled_back: bool = False
+    error: Optional[str] = None
+    hot_update_status: Optional[Dict[str, Any]] = None
+
+
+class RollbackRequest(BaseModel):
+    snapshot_id: Optional[str] = Field(default=None, description="要恢复的快照ID，不填则使用最新快照")
+
+
+class RollbackResponse(BaseModel):
+    success: bool
+    plugin_name: str
+    rolled_back_to: Optional[str] = None
+    snapshot_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PluginLogEntry(BaseModel):
+    timestamp: str
+    level: str
+    message: str
+    plugin_id: str
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PluginLogsResponse(BaseModel):
+    plugin_id: str
+    plugin_name: str
+    level_filter: Optional[str]
+    total: int
+    entries: List[PluginLogEntry]
+
+
+class PluginLogLevelUpdate(BaseModel):
+    level: str = Field(..., description="日志级别: DEBUG / INFO / WARNING / ERROR / CRITICAL")
+
+
+class PluginLogLevelResponse(BaseModel):
+    plugin_id: str
+    plugin_name: str
+    level: str

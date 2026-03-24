@@ -42,12 +42,55 @@ export const skillsAPI = {
   toggle: (id: string) => api.put(`/skills/${id}/toggle`),
 }
 
+export interface PluginPermissionStatus {
+  plugin_id: string
+  plugin_name: string
+  requested_permissions: string[]
+  granted_permissions: string[]
+  missing_permissions: string[]
+}
+
+export interface PluginPermissionUpdateResponse extends PluginPermissionStatus {
+  message: string
+}
+
+export interface PluginLogEntry {
+  timestamp: string
+  level: string
+  message: string
+  plugin_id: string
+  extra: Record<string, unknown>
+}
+
+export interface PluginLogsResponse {
+  plugin_id: string
+  plugin_name: string
+  level_filter: string | null
+  total: number
+  entries: PluginLogEntry[]
+}
+
+export interface PluginLogLevelResponse {
+  plugin_id: string
+  plugin_name: string
+  level: string
+}
+
 export const pluginsAPI = {
   getAll: () => api.get('/plugins'),
   getOne: (id: string) => api.get(`/plugins/${id}`),
   install: (plugin: any) => api.post('/plugins', plugin),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
   toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
+  getPermissions: (id: string) => api.get<PluginPermissionStatus>(`/plugins/${id}/permissions`),
+  authorizePermissions: (id: string, permissions: string[]) =>
+    api.post<PluginPermissionUpdateResponse>(`/plugins/${id}/permissions/authorize`, { permissions }),
+  revokePermissions: (id: string, permissions: string[]) =>
+    api.post<PluginPermissionUpdateResponse>(`/plugins/${id}/permissions/revoke`, { permissions }),
+  getLogs: (id: string, level?: string, limit = 100, offset = 0) =>
+    api.get<PluginLogsResponse>(`/plugins/${id}/logs`, { params: { level, limit, offset } }),
+  setLogLevel: (id: string, level: string) =>
+    api.put<PluginLogLevelResponse>(`/plugins/${id}/log-level`, { level }),
 }
 
 export const memoryAPI = {

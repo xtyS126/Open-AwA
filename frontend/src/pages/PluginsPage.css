@@ -39,6 +39,9 @@
 
 .plugin-status {
   margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .status-badge {
@@ -58,7 +61,104 @@
   color: var(--color-text-tertiary);
 }
 
+.permission-badge {
+  display: inline-block;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 184, 0, 0.16);
+  color: var(--color-warning, #b58100);
+}
+
 .plugin-actions {
   display: flex;
+  gap: 8px;
+}
+
+.permission-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.permission-modal {
+  width: 520px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 64px);
+  overflow: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.permission-modal h3 {
+  margin: 0;
+}
+
+.permission-modal-plugin {
+  margin: 8px 0 16px;
+  color: var(--color-text-secondary);
+}
+
+.permission-loading,
+.permission-empty {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.permission-section {
+  margin-bottom: 14px;
+}
+
+.permission-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.permission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.permission-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.permission-granted {
+  color: var(--color-success);
+}
+
+.permission-missing {
+  color: var(--color-warning, #b58100);
+}
+
+.permission-revoke-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.permission-message {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.permission-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
 }
