@@ -1,5 +1,5 @@
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import List, Optional
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from db.models import ShortTermMemory, LongTermMemory
 from loguru import logger
@@ -88,7 +88,7 @@ class MemoryManager:
         
         if memory:
             memory.access_count += 1
-            memory.last_access = datetime.utcnow()
+            memory.last_access = datetime.now(timezone.utc)
             self.db.commit()
     
     async def search_memories(

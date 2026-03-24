@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any, NamedTuple
+from typing import Dict, List, Optional, NamedTuple
 from loguru import logger
 import yaml
 import re
@@ -62,7 +62,7 @@ class SkillValidator:
 
     def validate_required_fields(self, config: Dict) -> ValidationResult:
         errors = []
-        warnings = []
+        warnings: list[str] = []
 
         for field in self.REQUIRED_FIELDS:
             if field not in config:
@@ -132,8 +132,8 @@ class SkillValidator:
             return ValidationResult.success(warnings)
 
     def validate_dependencies(self, dependencies: List[str]) -> ValidationResult:
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         if not dependencies:
             return ValidationResult.success(warnings)

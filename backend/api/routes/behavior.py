@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
-from datetime import datetime, timedelta
+from typing import Optional
+from datetime import datetime, timedelta, timezone
 from db.models import get_db, BehaviorLog
 from api.dependencies import get_current_user
 from api.schemas import BehaviorStats
@@ -17,7 +17,7 @@ async def get_behavior_stats(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     
     total_interactions = db.query(func.count(BehaviorLog.id)).filter(
         BehaviorLog.timestamp >= start_date
@@ -35,7 +35,7 @@ async def get_behavior_stats(
     ).all()
     total_errors = len(error_logs)
     
-    tool_counts = {}
+    tool_counts: dict[str, int] = {}
     for log in tool_logs:
         details = log.details or ""
         tool_name = details.split(":")[0] if ":" in details else "unknown"
@@ -46,7 +46,7 @@ async def get_behavior_stats(
         for tool, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
     
-    intent_counts = {}
+    intent_counts: dict[str, int] = {}
     intent_logs = db.query(BehaviorLog).filter(
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "intent"

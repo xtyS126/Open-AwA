@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'plugins'))
 
 import pytest
-from plugin_logger import LogManager, PluginLogger, LOG_LEVELS
+from plugin_logger import LogManager, PluginLogger
 
 
 class TestPluginLogger:

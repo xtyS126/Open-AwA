@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 
 class BasePlugin(ABC):
     name: str = ""
     version: str = "1.0.0"
     description: str = ""
+    enable_count: int = 0
+    rollback_events: List[str] = []
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}

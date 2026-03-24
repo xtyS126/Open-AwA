@@ -1,4 +1,5 @@
 from typing import Dict, Optional, Type
+from importlib import util as importlib_util
 from loguru import logger
 import importlib
 import os
@@ -28,13 +29,13 @@ class PluginLoader:
         logger.info(f"Loading plugin module: {plugin_path}")
 
         try:
-            spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
+            spec = importlib_util.spec_from_file_location(plugin_name, plugin_path)
             if spec is None or spec.loader is None:
                 logger.error(f"Failed to create module spec for: {plugin_path}")
                 self.loading_states[plugin_name] = self.LOADING_STATE_FAILED
                 return None
 
-            module = importlib.util.module_from_spec(spec)
+            module = importlib_util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
             plugin_classes = []

@@ -2,8 +2,6 @@ from typing import Dict, List, Optional, Any, NamedTuple
 from loguru import logger
 import time
 import ast
-import sys
-from dataclasses import dataclass, field
 import threading
 import queue
 
@@ -292,7 +290,7 @@ class SkillExecutor:
                 raise RuntimeError(f"代码安全验证失败: {error_msg}")
             
             try:
-                local_vars = {}
+                local_vars: dict[str, Any] = {}
                 exec_globals = {
                     '__builtins__': {
                         'abs': abs, 'min': min, 'max': max, 'sum': sum,
@@ -313,7 +311,7 @@ class SkillExecutor:
                 
                 return local_vars.get('result', {'status': 'executed'})
                 
-            except ExecutionTimeoutException as e:
+            except ExecutionTimeoutException:
                 raise RuntimeError(f"代码执行超时（超过{timeout}秒）")
             except SyntaxError as e:
                 raise RuntimeError(f"代码语法错误: {e}")
@@ -325,7 +323,6 @@ class SkillExecutor:
     async def _execute_file_action(self, action: str, params: Dict) -> Any:
         file_path = params.get('path', '')
         content = params.get('content', '')
-        mode = params.get('mode', 'r')
 
         logger.info(f"File operation: {action} on {file_path}")
 

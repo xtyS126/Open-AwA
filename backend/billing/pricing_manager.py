@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
 from billing.models import ModelPricing, ModelConfiguration
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class PricingManager:
@@ -304,7 +304,7 @@ class PricingManager:
         if pricing:
             for key, value in pricing_data.items():
                 setattr(pricing, key, value)
-            pricing.updated_at = datetime.utcnow()
+            pricing.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(pricing)
         return pricing
@@ -435,7 +435,7 @@ class PricingManager:
             for key, value in config_data.items():
                 if key != "id":
                     setattr(config, key, value)
-            config.updated_at = datetime.utcnow()
+            config.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(config)
         
@@ -463,7 +463,7 @@ class PricingManager:
         
         if config:
             config.is_default = True
-            config.updated_at = datetime.utcnow()
+            config.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(config)
         

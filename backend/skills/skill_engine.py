@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Any
 from loguru import logger
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 from .skill_registry import SkillRegistry
@@ -80,7 +80,7 @@ class SkillEngine:
         return str(uuid.uuid4())
 
     def _get_timestamp(self) -> str:
-        return datetime.utcnow().isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     def _add_execution_log(
         self,
@@ -390,7 +390,7 @@ class SkillEngine:
         self._add_execution_log(
             skill_name=config.get('name', 'unknown'),
             event_type='CONFIG_PARSED',
-            message=f'YAML configuration parsed successfully',
+            message='YAML configuration parsed successfully',
             details={'keys': list(config.keys())}
         )
 

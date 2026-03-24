@@ -7,7 +7,6 @@ from api.schemas import (
     ShortTermMemoryCreate, ShortTermMemoryResponse,
     LongTermMemoryCreate, LongTermMemoryResponse
 )
-import uuid
 
 
 router = APIRouter(prefix="/memory", tags=["Memory"])

@@ -1,5 +1,4 @@
 import asyncio
-import subprocess
 from typing import Dict, Any, Optional
 from loguru import logger
 from config.settings import settings
@@ -71,6 +70,8 @@ class Sandbox:
                     "content": content
                 }
             elif operation == "write":
+                if content is None:
+                    return {"status": "error", "message": "content cannot be None"}
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
                 return {

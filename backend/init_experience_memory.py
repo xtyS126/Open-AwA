@@ -6,10 +6,8 @@ import sys
 sys.path.insert(0, '.')
 
 from db.models import init_db, SessionLocal, ExperienceMemory, ExperienceExtractionLog, Skill
-from skills.experience_extractor import ExperienceExtractor
 import yaml
 import uuid
-from datetime import datetime
 
 def initialize_experience_memory():
     print("[工具] 初始化经验记忆系统...")

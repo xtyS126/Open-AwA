@@ -2,7 +2,6 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 import os
 import secrets
-from config.experience_settings import experience_config
 
 
 def generate_secret_key() -> str:

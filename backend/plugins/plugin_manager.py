@@ -10,7 +10,7 @@ import tempfile
 import urllib.parse
 import zipfile
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
@@ -18,7 +18,7 @@ from loguru import logger
 
 from .base_plugin import BasePlugin
 from .extension_protocol import ExtensionRegistry
-from .hot_update_manager import HotUpdateManager, RollbackManager, RolloutConfig
+from .hot_update_manager import HotUpdateManager, RollbackManager
 from .plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
 from .plugin_loader import PluginLoader
 from .plugin_sandbox import PluginSandbox
@@ -513,7 +513,7 @@ class PluginManager:
                 "regions": [],
                 "versions": [],
             },
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         if not isinstance(policy, dict):
             return default_policy
@@ -528,7 +528,7 @@ class PluginManager:
         default_policy["enabled"] = bool(policy.get("enabled", False))
         default_policy["rollout_percentage"] = rollout_percentage
         default_policy["targets"] = self._normalize_rollout_targets(policy.get("targets"))
-        default_policy["updated_at"] = datetime.utcnow().isoformat()
+        default_policy["updated_at"] = datetime.now(timezone.utc).isoformat()
         return default_policy
 
     def _ensure_runtime_route(self, plugin_name: str) -> Optional[Dict[str, Any]]:
@@ -553,12 +553,12 @@ class PluginManager:
                     "plugin_instance": plugin_instance,
                     "sandbox": self._plugin_sandboxes.get(plugin_name, self.sandbox),
                     "tools": deepcopy(self._tools_registry.get(plugin_name, [])),
-                    "loaded_at": datetime.utcnow().isoformat(),
+                    "loaded_at": datetime.now(timezone.utc).isoformat(),
                 },
                 "standby": None,
             },
             "rollout_policy": self._normalize_rollout_policy(None),
-            "last_update": datetime.utcnow().isoformat(),
+            "last_update": datetime.now(timezone.utc).isoformat(),
             "last_error": None,
             "last_rollback": None,
         }
@@ -715,7 +715,7 @@ class PluginManager:
 
         normalized = self._normalize_rollout_policy(policy)
         route["rollout_policy"] = normalized
-        route["last_update"] = datetime.utcnow().isoformat()
+        route["last_update"] = datetime.now(timezone.utc).isoformat()
         return self.get_plugin_rollout_status(plugin_name)
 
     def hot_update_plugin(
@@ -752,7 +752,7 @@ class PluginManager:
                 "plugin_instance": binding["plugin_instance"],
                 "sandbox": binding["sandbox"],
                 "tools": deepcopy(binding["tools"]),
-                "loaded_at": datetime.utcnow().isoformat(),
+                "loaded_at": datetime.now(timezone.utc).isoformat(),
             }
             old_standby = route["slots"].get("standby")
             route["slots"]["standby"] = standby_slot
@@ -761,7 +761,7 @@ class PluginManager:
             normalized_policy = self._normalize_rollout_policy(rollout_policy)
             route["rollout_policy"] = normalized_policy
             route["last_error"] = None
-            route["last_update"] = datetime.utcnow().isoformat()
+            route["last_update"] = datetime.now(timezone.utc).isoformat()
 
             if strategy in {"immediate", "force"}:
                 route["slots"]["active"], route["slots"]["standby"] = route["slots"]["standby"], route["slots"]["active"]
@@ -783,7 +783,7 @@ class PluginManager:
             route["slots"]["active"] = previous_active_slot
             route["last_error"] = str(exc)
             route["last_rollback"] = {
-                "at": datetime.utcnow().isoformat(),
+                "at": datetime.now(timezone.utc).isoformat(),
                 "reason": str(exc),
                 "active_release_id": previous_active_slot.get("release_id"),
             }
@@ -1084,13 +1084,12 @@ class PluginManager:
                 logger.error(f"Failed to unload plugin '{plugin_name}' before reload")
                 return False
 
-        importlib.invalidate_imports()
-
         if plugin_name in self.plugin_metadata:
             metadata = self.plugin_metadata[plugin_name]
             spec = importlib.util.spec_from_file_location(metadata["module"], metadata["path"])
             if spec and spec.loader:
-                importlib.reload(spec.loader.__class__)
+                mod = importlib.util.module_from_spec(spec)
+                importlib.reload(mod)
 
         return self.load_plugin(plugin_name)
 

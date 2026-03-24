@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import and_
 from typing import List, Optional, Dict
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
-from billing.models import BudgetConfig, UsageRecord
+from billing.models import BudgetConfig
 
 
 class BudgetManager:
@@ -14,7 +14,7 @@ class BudgetManager:
         self,
         budget_type: str,
         max_amount: float,
-        scope_id: str = None,
+        scope_id: Optional[str] = None,
         period_type: str = "monthly",
         currency: str = "USD",
         warning_threshold: float = 0.8
@@ -75,7 +75,7 @@ class BudgetManager:
         if budget:
             for key, value in budget_data.items():
                 setattr(budget, key, value)
-            budget.updated_at = datetime.utcnow()
+            budget.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(budget)
         return budget

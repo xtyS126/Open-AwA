@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from loguru import logger
 
 from db.models import Skill
@@ -12,8 +12,8 @@ class SkillRegistry:
         self._cache: Dict[str, Skill] = {}
 
     def register(self, skill_config: Dict) -> Skill:
-        skill_name = skill_config.get('name')
-        existing_skill = self.get(skill_name)
+        skill_name = skill_config.get('name') or ""
+        existing_skill = self.get(skill_name or "")
         if existing_skill:
             logger.warning(f"Skill '{skill_name}' already exists, updating existing skill")
             return self._update_skill(existing_skill, skill_config)
@@ -85,7 +85,7 @@ class SkillRegistry:
 
         return skill
 
-    def list_all(self, filters: Dict = None) -> List[Skill]:
+    def list_all(self, filters: Optional[Dict] = None) -> List[Skill]:
         query = self.db.query(Skill)
 
         if filters:

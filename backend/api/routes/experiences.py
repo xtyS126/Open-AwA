@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import datetime
+from typing import List, Optional, Any
+from datetime import datetime, timezone
 from db.models import get_db, ExperienceMemory, ExperienceExtractionLog
-from api.dependencies import get_current_user, get_current_admin_user
+from api.dependencies import get_current_user
 from api.schemas import (
     ExperienceCreate, ExperienceUpdate, ExperienceResponse,
-    ExperienceSearchParams, ExperienceExtractionRequest,
-    ExperienceStatsResponse
+    ExperienceExtractionRequest
 )
 from memory.experience_manager import ExperienceManager
 import json
@@ -34,26 +33,26 @@ async def get_experiences(
 ):
     """获取经验列表"""
     offset = (page - 1) * limit
-    
-    experiences = manager.db.query(ExperienceMemory).filter(
+
+    query = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.user_id == current_user.id
     )
-    
+
     if experience_type:
-        experiences = experiences.filter(ExperienceMemory.experience_type == experience_type)
+        query = query.filter(ExperienceMemory.experience_type == experience_type)
     if min_confidence > 0:
-        experiences = experiences.filter(ExperienceMemory.confidence >= min_confidence)
+        query = query.filter(ExperienceMemory.confidence >= min_confidence)
     if source_task:
-        experiences = experiences.filter(ExperienceMemory.source_task == source_task)
-    
+        query = query.filter(ExperienceMemory.source_task == source_task)
+
     sort_column = getattr(ExperienceMemory, sort_by, ExperienceMemory.confidence)
     if order == "desc":
-        experiences = experiences.order_by(sort_column.desc())
+        query = query.order_by(sort_column.desc())
     else:
-        experiences = experiences.order_by(sort_column)
-    
-    experiences = experiences.offset(offset).limit(limit).all()
-    
+        query = query.order_by(sort_column)
+
+    experiences = query.offset(offset).limit(limit).all()
+
     return experiences
 
 
@@ -73,7 +72,7 @@ async def get_experience(
         raise HTTPException(status_code=404, detail="经验不存在")
     
     experience.usage_count += 1
-    experience.last_access = datetime.utcnow()
+    experience.last_access = datetime.now(timezone.utc)
     manager.db.commit()
     
     return experience
@@ -253,7 +252,7 @@ async def get_experience_stats(
         ExperienceMemory.user_id == current_user.id
     ).all()
     
-    user_stats = {
+    user_stats: dict[str, Any] = {
         'total_experiences': len(user_experiences),
         'type_distribution': {},
         'avg_confidence': sum(e.confidence for e in user_experiences) / len(user_experiences) if user_experiences else 0,
@@ -319,7 +318,7 @@ async def review_experience(
     metadata = json.loads(experience.experience_metadata or '{}')
     metadata['reviewed'] = True
     metadata['approved'] = approved
-    metadata['reviewed_at'] = datetime.utcnow().isoformat()
+    metadata['reviewed_at'] = datetime.now(timezone.utc).isoformat()
     experience.experience_metadata = json.dumps(metadata)
     
     if approved:

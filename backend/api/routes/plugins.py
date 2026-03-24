@@ -5,7 +5,6 @@ from db.models import get_db, Plugin
 from api.dependencies import get_current_user
 from api.schemas import PluginCreate, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
 from plugins.plugin_manager import PluginManager
-from plugins.plugin_validator import PluginValidator
 from plugins.plugin_logger import LogManager
 from loguru import logger
 import uuid
@@ -324,7 +323,6 @@ async def validate_plugin(
                 warnings=[]
             )
 
-        validator = PluginValidator()
         required_fields = ["name", "version"]
         missing_fields = [f for f in required_fields if f not in config]
 
@@ -376,7 +374,7 @@ async def upload_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    if not file.filename.endswith('.zip'):
+    if not file.filename or not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Only .zip files are supported")
         
     content = await file.read()

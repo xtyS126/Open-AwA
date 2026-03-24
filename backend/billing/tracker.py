@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import List, Optional, Dict
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import uuid
 import json
 
@@ -26,7 +26,7 @@ class UsageTracker:
         currency: str = "USD",
         cache_hit: bool = False,
         duration_ms: int = 0,
-        metadata: dict = None
+        metadata: Optional[dict] = None
     ) -> UsageRecord:
         call_id = f"call_{uuid.uuid4().hex[:16]}"
         
@@ -170,7 +170,7 @@ class UsageTracker:
         user_id: Optional[str] = None,
         days: int = 30
     ) -> List[Dict]:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
         query = self.db.query(
@@ -273,7 +273,7 @@ class UsageTracker:
         }
 
     def cleanup_old_records(self, retention_days: int = 365) -> int:
-        cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
         
         deleted_count = self.db.query(UsageRecord).filter(
             UsageRecord.created_at < cutoff_date

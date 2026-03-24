@@ -1,5 +1,6 @@
 import re
 import math
+from typing import Optional
 
 
 class CostCalculator:
@@ -71,7 +72,7 @@ class CostCalculator:
         input_price: float,
         output_price: float,
         cache_hit: bool = False,
-        cache_hit_price: float = None
+        cache_hit_price: Optional[float] = None
     ) -> dict:
         if cache_hit and cache_hit_price is not None:
             effective_input_price = cache_hit_price

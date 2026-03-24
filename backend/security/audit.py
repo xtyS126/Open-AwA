@@ -1,5 +1,5 @@
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from db.models import AuditLog
 from loguru import logger
@@ -128,7 +128,7 @@ class AuditLogger:
     ) -> List[AuditLog]:
         from datetime import timedelta
         
-        start_date = datetime.utcnow() - timedelta(hours=hours)
+        start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
         
         query = self.db.query(AuditLog).filter(
             AuditLog.result == "failure",
@@ -148,7 +148,7 @@ class AuditLogger:
         from datetime import timedelta
         from sqlalchemy import func
         
-        start_date = datetime.utcnow() - timedelta(hours=hours)
+        start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
         
         results = self.db.query(
             AuditLog.user_id,

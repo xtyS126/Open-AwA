@@ -2,7 +2,7 @@ import yaml
 import time
 import uuid
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from loguru import logger
 from db.models import Skill
@@ -136,7 +136,7 @@ class SkillLoader:
                 description=description,
                 config=config_text,
                 enabled=True,
-                installed_at=datetime.utcnow()
+                installed_at=datetime.now(timezone.utc)
             )
             self.db_session.add(skill)
             logger.info(f"Created new skill: {name}")
