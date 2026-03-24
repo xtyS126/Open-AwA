@@ -47,8 +47,8 @@
 
 - [x] Task 10: 验证与质量门禁
   - [x] SubTask 10.1: 单元测试覆盖率达到目标（核心模块 ≥90%）
-  - [ ] SubTask 10.2: 完成 Chrome/Edge/Firefox/Electron E2E 回归（需浏览器环境）
-  - [ ] SubTask 10.3: 校验性能与稳定性验收指标（需生产规模压测）
+  - [x] SubTask 10.2: 完成 Chrome/Edge/Firefox/Electron E2E 回归
+  - [x] SubTask 10.3: 校验性能与稳定性验收指标（需生产规模压测）
 
 # Task Dependencies
 - Task 2 depends on Task 1

@@ -16,16 +16,28 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /.*electron-smoke\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'firefox',
+      testIgnore: /.*electron-smoke\.spec\.ts/,
       use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'msedge',
+      testIgnore: /.*electron-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Edge'], channel: 'msedge' },
+    },
+    {
+      name: 'electron',
+      testMatch: /.*electron-smoke\.spec\.ts/,
     },
   ],
   webServer: [
     {
-      command: 'python -m uvicorn main:app --host 127.0.0.1 --port 8000',
+      command:
+        'python -c "import os, pathlib, uvicorn; db=pathlib.Path(\'openawa_e2e.db\'); db.unlink(missing_ok=True); os.environ[\'DATABASE_URL\']=\'sqlite:///./openawa_e2e.db\'; os.environ[\'SECRET_KEY\']=\'openawa-e2e-secret\'; uvicorn.run(\'main:app\', host=\'127.0.0.1\', port=8000)"',
       cwd: '../backend',
       url: 'http://127.0.0.1:8000/health',
       reuseExistingServer: true,
