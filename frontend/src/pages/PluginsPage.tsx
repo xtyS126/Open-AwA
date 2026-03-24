@@ -13,6 +13,7 @@ function PluginsPage() {
   const [permissionModalOpen, setPermissionModalOpen] = useState(false)
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null)
   const [permissionStatusMap, setPermissionStatusMap] = useState<Record<string, PluginPermissionStatus>>({})
+  const [debugPluginId, setDebugPluginId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
