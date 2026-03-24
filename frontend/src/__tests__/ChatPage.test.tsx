@@ -33,6 +33,7 @@ describe('ChatPage Model Selector', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
