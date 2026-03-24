@@ -1,5 +1,5 @@
 import sys
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from billing.models import Base, ModelConfiguration
 from billing.pricing_manager import PricingManager
@@ -60,7 +60,7 @@ def test_database_uniqueness():
         return False
 
     except Exception as e:
-        print(f"✓ 数据库正确拒绝重复插入")
+        print("✓ 数据库正确拒绝重复插入")
         print(f"  异常类型: {type(e).__name__}")
         print(f"  异常信息: {str(e)[:80]}...")
         session.rollback()
