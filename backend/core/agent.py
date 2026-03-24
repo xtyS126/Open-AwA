@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from loguru import logger
 from .comprehension import ComprehensionLayer
 from .planner import PlanningLayer
@@ -8,8 +8,6 @@ from memory.experience_manager import ExperienceManager
 from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
-from skills.skill_registry import SkillRegistry
-from plugins.plugin_loader import PluginLoader
 from db.models import SessionLocal
 
 
@@ -307,7 +305,7 @@ class AIAgent:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         logger.info("Auto-executing skills and plugins based on intent and entities")
-        auto_results = {
+        auto_results: dict[str, list[Any]] = {
             'skills': [],
             'plugins': []
         }
@@ -352,7 +350,6 @@ class AIAgent:
             
             for plugin in available_plugins:
                 plugin_name = plugin.get('name', '')
-                plugin_description = plugin.get('description', '').lower()
                 plugin_tools = plugin.get('tools', [])
                 
                 for tool in plugin_tools:
@@ -527,14 +524,14 @@ class AIAgent:
     def _collect_skill_plugin_results(self) -> Dict[str, Any]:
         logger.info("Collecting skill and plugin execution results")
         
-        skill_results_summary = {
+        skill_results_summary: dict[str, Any] = {
             'total': len(self.skill_results),
             'successful': sum(1 for r in self.skill_results if r.get('success', False)),
             'failed': sum(1 for r in self.skill_results if not r.get('success', False)),
             'details': self.skill_results.copy()
         }
-        
-        plugin_results_summary = {
+
+        plugin_results_summary: dict[str, Any] = {
             'total': len(self.plugin_results),
             'successful': sum(1 for r in self.plugin_results if r.get('success', False)),
             'failed': sum(1 for r in self.plugin_results if not r.get('success', False)),

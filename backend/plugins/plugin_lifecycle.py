@@ -127,7 +127,7 @@ class TransitionExecutor:
                     rolled_back = True
                 elif resolved_plugin_instance is not None and hasattr(resolved_plugin_instance, "rollback"):
                     self._call(
-                        lambda err=exc: resolved_plugin_instance.rollback(from_state.value, {"error": str(err)})
+                        lambda err=exc: resolved_plugin_instance.rollback(from_state.value, {"error": str(err)})  # type: ignore[misc]
                     )
                     rolled_back = True
             except Exception as rollback_error:

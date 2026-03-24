@@ -1,7 +1,7 @@
 import json
 import re
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 
@@ -35,7 +35,7 @@ class ExperienceExtractor:
                 experience['source_task'] = self._infer_task_type(user_goal)
                 experience['metadata'] = json.dumps({
                     'session_id': session_id,
-                    'extracted_at': datetime.utcnow().isoformat()
+                    'extracted_at': datetime.now(timezone.utc).isoformat()
                 })
             return experience
         except Exception as e:
@@ -129,7 +129,7 @@ class ExperienceExtractor:
                 actions = [step.get('action', '') for step in execution_steps]
                 return json.dumps({
                     "experience_type": "method",
-                    "title": f"完成任务的执行步骤",
+                    "title": "完成任务的执行步骤",
                     "content": "执行了以下步骤：\n" + "\n".join([f"- {a}" for a in actions if a]),
                     "trigger_conditions": f"当用户需要{self._infer_task_type(user_goal)}时",
                     "confidence": 0.3

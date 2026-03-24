@@ -1,9 +1,9 @@
 import json
 from typing import List, Dict, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
-from db.models import ExperienceMemory, ExperienceExtractionLog
+from db.models import ExperienceMemory
 from loguru import logger
 
 
@@ -108,7 +108,7 @@ class ExperienceManager:
         
         for exp in experiences:
             exp.usage_count += 1
-            exp.last_access = datetime.utcnow()
+            exp.last_access = datetime.now(timezone.utc)
         
         self.db.commit()
         
@@ -154,7 +154,7 @@ class ExperienceManager:
         
         for exp in experiences:
             exp.usage_count += 1
-            exp.last_access = datetime.utcnow()
+            exp.last_access = datetime.now(timezone.utc)
         
         self.db.commit()
         
@@ -201,7 +201,7 @@ class ExperienceManager:
         
         for exp in experiences:
             exp.usage_count += 1
-            exp.last_access = datetime.utcnow()
+            exp.last_access = datetime.now(timezone.utc)
         
         self.db.commit()
         
@@ -270,7 +270,7 @@ class ExperienceManager:
                 if exp.usage_count > 0 else 0.5
             )
             
-            days_since_access = (datetime.utcnow() - exp.last_access).days
+            days_since_access = (datetime.now(timezone.utc) - exp.last_access).days
             recency_score = max(0, 1 - (days_since_access / 30))
             
             score = (
@@ -301,13 +301,13 @@ class ExperienceManager:
         if experience.usage_count > 0:
             base_rate = experience.success_count / experience.usage_count
             
-            weeks_since_creation = (datetime.utcnow() - experience.created_at).days / 7
+            weeks_since_creation = (datetime.now(timezone.utc) - experience.created_at).days / 7
             decay_rate = 0.95
             decayed_rate = base_rate * (decay_rate ** weeks_since_creation)
             
             experience.confidence = max(0.0, min(1.0, decayed_rate))
         
-        experience.last_access = datetime.utcnow()
+        experience.last_access = datetime.now(timezone.utc)
         
         if feedback:
             metadata = json.loads(experience.experience_metadata or '{}')
@@ -332,7 +332,7 @@ class ExperienceManager:
         for exp in low_quality:
             metadata = json.loads(exp.experience_metadata or '{}')
             metadata['archived'] = True
-            metadata['archived_at'] = datetime.utcnow().isoformat()
+            metadata['archived_at'] = datetime.now(timezone.utc).isoformat()
             exp.experience_metadata = json.dumps(metadata)
             archived_count += 1
         
@@ -349,7 +349,7 @@ class ExperienceManager:
         
         metadata = json.loads(experience.experience_metadata or '{}')
         metadata['needs_review'] = True
-        metadata['marked_at'] = datetime.utcnow().isoformat()
+        metadata['marked_at'] = datetime.now(timezone.utc).isoformat()
         experience.experience_metadata = json.dumps(metadata)
         
         self.db.commit()

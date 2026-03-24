@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional, Callable
 from loguru import logger
 import asyncio
 import httpx
@@ -13,12 +13,12 @@ class ExecutionLayer:
         self.llm_api_key = None
         logger.info("ExecutionLayer initialized")
     
-    def configure_llm(self, api_url: str, api_key: str = None):
+    def configure_llm(self, api_url: str, api_key: Optional[str] = None):
         self.llm_api_url = api_url
         self.llm_api_key = api_key
         logger.info(f"LLM API configured: {api_url}")
     
-    def register_tool(self, name: str, tool_func: callable):
+    def register_tool(self, name: str, tool_func: Callable[..., Any]):
         self.tools[name] = tool_func
         logger.debug(f"Registered execution tool: {name}")
     

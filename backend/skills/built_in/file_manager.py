@@ -31,7 +31,7 @@ class FileManagerSkill:
     version: str = "1.0.0"
     description: str = "文件管理技能"
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.allowed_directories: List[str] = self.config.get('allowed_directories', [])
         self._initialized = False

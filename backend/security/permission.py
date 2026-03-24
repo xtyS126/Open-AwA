@@ -93,8 +93,8 @@ class PermissionChecker:
         operation: str,
         params: Dict[str, Any]
     ) -> Dict[str, Any]:
-        validated = {}
-        errors = []
+        validated: dict[str, Any] = {}
+        errors: list[str] = []
         
         if operation == "file:read" or operation == "file:write":
             if "path" not in params:

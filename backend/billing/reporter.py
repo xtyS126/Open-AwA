@@ -1,11 +1,11 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from typing import List, Optional, Dict
-from datetime import datetime, date, timedelta
+from typing import List, Optional, Dict, Any
+from datetime import date, timedelta
 import csv
 import io
 
-from billing.models import UsageRecord, ModelPricing
+from billing.models import UsageRecord
 from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
 
@@ -36,13 +36,13 @@ class BillingReporter:
         if user_id:
             query = query.filter(UsageRecord.user_id == user_id)
         
-        records = query.all()
-        
+        records: list[UsageRecord] = query.all()
+
         total_input_tokens = sum(r.input_tokens for r in records)
         total_output_tokens = sum(r.output_tokens for r in records)
         total_cost = sum(r.total_cost for r in records)
         
-        by_model = {}
+        by_model: dict[str, dict[str, Any]] = {}
         for r in records:
             key = f"{r.provider}:{r.model}"
             if key not in by_model:

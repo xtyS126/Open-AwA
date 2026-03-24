@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from loguru import logger
 from backend.plugins.base_plugin import BasePlugin
 
@@ -8,7 +8,7 @@ class HelloWorldPlugin(BasePlugin):
     version: str = "1.0.0"
     description: str = "Hello World示例插件"
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
         self.greeting = self.config.get('greeting', 'Hello')
 

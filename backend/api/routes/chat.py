@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
-from typing import Dict, List
+from typing import Dict
 from loguru import logger
 from db.models import get_db
 from api.dependencies import get_current_user
 from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest
 from core.agent import AIAgent
-from core.feedback import FeedbackLayer
 from config.security import decode_access_token
 from db.models import User
 import json
@@ -34,7 +33,7 @@ async def chat(
     result = await agent.process(message.message, context)
     
     return ChatResponse(
-        status=result.get("status"),
+        status=result.get("status") or "error",
         response=result.get("response", ""),
         session_id=message.session_id
     )
@@ -153,7 +152,7 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         if session_id in active_connections:
             del active_connections[session_id]
-    except Exception as e:
+    except Exception:
         if session_id in active_connections:
             del active_connections[session_id]
         await websocket.close(code=4005, reason="Internal server error")

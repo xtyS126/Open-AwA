@@ -85,14 +85,10 @@ class JsonSchemaValidator:
         schema_type = schema.get("type")
         if schema_type:
             expected_type = self.TYPE_MAPPING.get(schema_type)
-            if expected_type is None:
+            if not isinstance(expected_type, (type, tuple)):
                 errors.append(f"{path}: unsupported schema type '{schema_type}'")
                 return
-            if isinstance(expected_type, tuple):
-                if not isinstance(data, expected_type) or isinstance(data, bool):
-                    errors.append(f"{path}: expected type {schema_type}")
-                    return
-            elif not isinstance(data, expected_type):
+            if not isinstance(data, expected_type) or (isinstance(data, bool) and expected_type is bool):
                 errors.append(f"{path}: expected type {schema_type}")
                 return
 

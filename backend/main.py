@@ -4,10 +4,9 @@ from contextlib import asynccontextmanager
 from loguru import logger
 import sys
 import os
-from typing import List
 
 from config.settings import settings
-from db.models import init_db, engine, Base
+from db.models import init_db, engine
 from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences
 from billing.models import Base as BillingBase
 from billing.routers import billing

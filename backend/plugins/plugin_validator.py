@@ -111,7 +111,7 @@ class PluginValidator:
 
     def validate_plugin(self, plugin_class: Type, config: Dict[str, Any]) -> ValidationResult:
         errors = []
-        warnings = []
+        warnings: list[str] = []
 
         if not self.validate_base_class(plugin_class):
             errors.append(f"Plugin class {plugin_class.__name__} must inherit from BasePlugin")

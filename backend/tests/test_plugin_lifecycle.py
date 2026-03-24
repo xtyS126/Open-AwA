@@ -10,48 +10,50 @@ from plugins.plugin_manager import PluginManager
 
 @pytest.fixture
 def plugin_workspace(tmp_path: Path) -> Path:
-    success_plugin = '''from plugins.base_plugin import BasePlugin
+    success_plugin = '''from typing import Optional, Any
+from plugins.base_plugin import BasePlugin
 
 
 class TestPlugin(BasePlugin):
     name = "test_plugin"
     version = "1.0.0"
     description = "test plugin"
+    enable_count: int = 0
 
-    def __init__(self, config=None):
+    def __init__(self, config: Optional[Any] = None) -> None:
         super().__init__(config)
-        self.enable_count = 0
 
-    def initialize(self):
+    def initialize(self) -> bool:
         return True
 
-    def execute(self, **kwargs):
+    def execute(self, **kwargs) -> dict:
         return kwargs
 
-    def on_enabled(self):
+    def on_enabled(self) -> None:
         super().on_enabled()
         self.enable_count += 1
 '''
 
-    failing_enable_plugin = '''from plugins.base_plugin import BasePlugin
+    failing_enable_plugin = '''from typing import Optional, Any, List
+from plugins.base_plugin import BasePlugin
 
 
 class FailingEnablePlugin(BasePlugin):
     name = "failing_enable"
     version = "1.0.0"
     description = "failing enable plugin"
-    rollback_events = []
+    rollback_events: List[str] = []
 
-    def initialize(self):
+    def initialize(self) -> bool:
         return True
 
-    def execute(self, **kwargs):
+    def execute(self, **kwargs) -> dict:
         return kwargs
 
-    def on_enabled(self):
+    def on_enabled(self) -> None:
         raise RuntimeError("enable failed")
 
-    def rollback(self, previous_state: str, context=None):
+    def rollback(self, previous_state: str, context: Optional[Any] = None) -> bool:
         self.__class__.rollback_events.append(previous_state)
         self._state = previous_state
         return True

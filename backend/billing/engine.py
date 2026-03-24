@@ -71,9 +71,9 @@ class BillingEngine:
         self,
         before_result: Dict,
         output_text: str,
-        output_tokens: int = None,
+        output_tokens: Optional[int] = None,
         cache_hit: bool = False,
-        api_response_usage: dict = None
+        api_response_usage: Optional[dict] = None
     ) -> Dict:
         start_time = before_result["start_time"]
         duration_ms = int((time.time() - start_time) * 1000)
@@ -94,12 +94,12 @@ class BillingEngine:
             input_price=before_result["input_price"],
             output_price=before_result["output_price"],
             cache_hit=cache_hit,
-            cache_hit_price=before_result.get("cache_hit_price")
+            cache_hit_price=before_result.get("cache_hit_price") or 0.0
         )
         
         usage_record = self.tracker.create_usage_record(
-            user_id=before_result.get("user_id"),
-            session_id=before_result.get("session_id"),
+            user_id=before_result.get("user_id") or "",
+            session_id=before_result.get("session_id") or "",
             provider=before_result["provider"],
             model=before_result["model"],
             content_type=before_result["content_type"],
@@ -110,7 +110,7 @@ class BillingEngine:
             currency=before_result["currency"],
             cache_hit=cache_hit,
             duration_ms=duration_ms,
-            extra_data={
+            metadata={
                 "tokens_breakdown": before_result.get("tokens_breakdown"),
                 "output_length": len(output_text) if output_text else 0
             }
@@ -139,7 +139,7 @@ class BillingEngine:
         output_tokens: int,
         cache_hit: bool = False,
         duration_ms: int = 0,
-        metadata: dict = None
+        metadata: Optional[dict] = None
     ) -> Dict:
         pricing = self.pricing_manager.get_pricing(provider, model)
         if not pricing:

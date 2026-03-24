@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from db.models import get_db, Skill, ExperienceMemory, ExperienceExtractionLog
-from api.dependencies import get_current_user, get_current_admin_user
+from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
 from skills.skill_validator import SkillValidator
@@ -217,7 +217,6 @@ async def execute_skill(
 
     try:
         skill_engine = SkillEngine(db)
-        skill_config = yaml.safe_load(skill.config)
 
         result = await skill_engine.execute_skill(
             skill_name=skill.name,
@@ -323,7 +322,7 @@ async def parse_skill_upload(
     
     skill_content = ""
     
-    if filename.endswith('.zip') or filename.endswith('.skill'):
+    if not filename or filename.endswith('.zip') or filename.endswith('.skill'):
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as z:
                 if 'SKILL.md' in z.namelist():
@@ -336,12 +335,12 @@ async def parse_skill_upload(
                         raise HTTPException(status_code=400, detail="No SKILL.md found in the archive")
         except zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid zip file")
-    elif filename.endswith('.md') or filename.endswith('.yaml') or filename.endswith('.yml'):
+    elif filename and (filename.endswith('.md') or filename.endswith('.yaml') or filename.endswith('.yml')):
         skill_content = content.decode('utf-8')
     else:
         raise HTTPException(status_code=400, detail="Unsupported file format")
         
-    name = filename.split('.')[0]
+    name = (filename or "").split('.')[0]
     description = ""
     instructions = skill_content
     

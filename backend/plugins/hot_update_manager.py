@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
@@ -95,7 +95,7 @@ class RollbackManager:
             "version": version,
             "metadata": deepcopy(metadata),
             "extra": deepcopy(extra) if extra else {},
-            "saved_at": datetime.utcnow().isoformat(),
+            "saved_at": datetime.now(timezone.utc).isoformat(),
         }
         with self._lock:
             history = self._snapshots.setdefault(plugin_name, [])
@@ -116,17 +116,19 @@ class RollbackManager:
                 logger.warning(f"No snapshots found for plugin '{plugin_name}'")
                 return None
             if snapshot_id is None:
-                snapshot = history[-1]
+                snapshot: Dict[str, Any] = history[-1]
             else:
-                snapshot = next(
+                _NOT_FOUND = object()
+                found: Any = next(
                     (s for s in reversed(history) if s["snapshot_id"] == snapshot_id),
-                    None,
+                    _NOT_FOUND,  # type: ignore[arg-type]
                 )
-            if snapshot is None:
-                logger.warning(
-                    f"Snapshot '{snapshot_id}' not found for plugin '{plugin_name}'"
-                )
-                return None
+                if found is _NOT_FOUND:
+                    logger.warning(
+                        f"Snapshot '{snapshot_id}' not found for plugin '{plugin_name}'"
+                    )
+                    return None
+                snapshot = found
         logger.info(
             f"Restoring snapshot '{snapshot['snapshot_id']}' for plugin '{plugin_name}'"
         )
@@ -150,7 +152,7 @@ class RollbackManager:
 
     @staticmethod
     def _make_snapshot_id(plugin_name: str, version: str) -> str:
-        ts = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
         raw = f"{plugin_name}:{version}:{ts}"
         digest = hashlib.sha256(raw.encode()).hexdigest()[:8]
         return f"{plugin_name}-{version}-{digest}"
@@ -186,7 +188,7 @@ class HotUpdateManager:
                 "version": version,
                 "metadata": deepcopy(metadata),
                 "plugin_instance": plugin_instance,
-                "loaded_at": datetime.utcnow().isoformat(),
+                "loaded_at": datetime.now(timezone.utc).isoformat(),
             }
         self.rollback_manager.save_snapshot(plugin_name, version, metadata)
         logger.info(f"HotUpdateManager: registered initial version '{version}' for '{plugin_name}'")
@@ -225,11 +227,11 @@ class HotUpdateManager:
                 "version": new_version,
                 "metadata": deepcopy(new_metadata),
                 "plugin_instance": new_instance,
-                "loaded_at": datetime.utcnow().isoformat(),
+                "loaded_at": datetime.now(timezone.utc).isoformat(),
             }
             rc = RolloutConfig.from_dict(rollout_config or {})
             slot["rollout_config"] = rc
-            slot["last_update"] = datetime.utcnow().isoformat()
+            slot["last_update"] = datetime.now(timezone.utc).isoformat()
             slot["last_error"] = None
 
         logger.info(
@@ -252,7 +254,7 @@ class HotUpdateManager:
             old_active = slot["active"]
             slot["active"] = slot["standby"]
             slot["standby"] = None
-            slot["last_update"] = datetime.utcnow().isoformat()
+            slot["last_update"] = datetime.now(timezone.utc).isoformat()
             new_version = slot["active"]["version"]
         logger.info(
             f"HotUpdateManager: atomically committed version '{new_version}' for '{plugin_name}'"
@@ -292,9 +294,9 @@ class HotUpdateManager:
                 "version": snapshot["version"],
                 "metadata": deepcopy(snapshot["metadata"]),
                 "plugin_instance": restored_instance,
-                "loaded_at": datetime.utcnow().isoformat(),
+                "loaded_at": datetime.now(timezone.utc).isoformat(),
             }
-            slot["last_update"] = datetime.utcnow().isoformat()
+            slot["last_update"] = datetime.now(timezone.utc).isoformat()
 
         logger.info(
             f"HotUpdateManager: rolled back '{plugin_name}' to version '{snapshot['version']}'"

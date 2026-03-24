@@ -1,5 +1,3 @@
-import json
-import os
 from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
@@ -104,12 +102,12 @@ class PluginLogger:
 class LogManager:
     _instance: Optional["LogManager"] = None
     _lock: Lock = Lock()
+    _loggers: Dict[str, PluginLogger] = {}
 
     def __new__(cls) -> "LogManager":
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
-                cls._instance._loggers: Dict[str, PluginLogger] = {}
         return cls._instance
 
     def get_logger(self, plugin_id: str) -> PluginLogger:

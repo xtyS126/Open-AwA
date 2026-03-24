@@ -1,7 +1,6 @@
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
+from datetime import datetime, timezone
 from config.settings import settings
 
 
@@ -10,167 +9,174 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class User(Base):
     __tablename__ = "users"
-    
-    id = Column(String, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    role = Column(String, default="user")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
 
 
 class Skill(Base):
     __tablename__ = "skills"
-    
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
-    version = Column(String)
-    description = Column(Text)
-    config = Column(Text)
-    category = Column(String, default='general')
-    tags = Column(Text)
-    dependencies = Column(Text)
-    author = Column(String)
-    enabled = Column(Boolean, default=True)
-    usage_count = Column(Integer, default=0)
-    installed_at = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(Text)
+    config: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String, default="general")
+    tags: Mapped[str] = mapped_column(Text)
+    dependencies: Mapped[str] = mapped_column(Text)
+    author: Mapped[str] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    installed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Plugin(Base):
     __tablename__ = "plugins"
-    
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String)
-    version = Column(String)
-    enabled = Column(Boolean, default=True)
-    config = Column(Text)
-    category = Column(String, default='general')
-    author = Column(String)
-    source = Column(String)
-    dependencies = Column(Text)
-    installed_at = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String)
+    version: Mapped[str] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    config: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String, default="general")
+    author: Mapped[str] = mapped_column(String)
+    source: Mapped[str] = mapped_column(String)
+    dependencies: Mapped[str] = mapped_column(Text)
+    installed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class SkillExecutionLog(Base):
     __tablename__ = "skill_execution_logs"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    skill_id = Column(String, index=True)
-    skill_name = Column(String, index=True)
-    inputs = Column(Text)
-    outputs = Column(Text)
-    status = Column(String)
-    execution_time = Column(Float)
-    error_message = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    skill_id: Mapped[str] = mapped_column(String, index=True)
+    skill_name: Mapped[str] = mapped_column(String, index=True)
+    inputs: Mapped[str] = mapped_column(Text)
+    outputs: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String)
+    execution_time: Mapped[float] = mapped_column(Float)
+    error_message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class PluginExecutionLog(Base):
     __tablename__ = "plugin_execution_logs"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    plugin_id = Column(String, index=True)
-    plugin_name = Column(String, index=True)
-    method = Column(String)
-    inputs = Column(Text)
-    outputs = Column(Text)
-    status = Column(String)
-    execution_time = Column(Float)
-    error_message = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plugin_id: Mapped[str] = mapped_column(String, index=True)
+    plugin_name: Mapped[str] = mapped_column(String, index=True)
+    method: Mapped[str] = mapped_column(String)
+    inputs: Mapped[str] = mapped_column(Text)
+    outputs: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String)
+    execution_time: Mapped[float] = mapped_column(Float)
+    error_message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ShortTermMemory(Base):
     __tablename__ = "short_term_memory"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, index=True)
-    role = Column(String)
-    content = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String, index=True)
+    role: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class LongTermMemory(Base):
     __tablename__ = "long_term_memory"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    content = Column(Text)
-    embedding = Column(Text)
-    importance = Column(Float, default=0.5)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    access_count = Column(Integer, default=0)
-    last_access = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[str] = mapped_column(Text)
+    importance: Mapped[float] = mapped_column(Float, default=0.5)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    access_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_access: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class BehaviorLog(Base):
     __tablename__ = "behavior_logs"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, index=True)
-    action_type = Column(String)
-    details = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    action_type: Mapped[str] = mapped_column(String)
+    details: Mapped[str] = mapped_column(Text)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ExperienceMemory(Base):
     __tablename__ = "experience_memory"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, index=True)
-    experience_type = Column(String, index=True)
-    title = Column(String(200))
-    content = Column(Text)
-    trigger_conditions = Column(Text)
-    success_metrics = Column(Float, default=0.0)
-    usage_count = Column(Integer, default=0)
-    success_count = Column(Integer, default=0)
-    source_task = Column(String, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_access = Column(DateTime, default=datetime.utcnow)
-    confidence = Column(Float, default=0.5, index=True)
-    experience_metadata = Column(Text)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    experience_type: Mapped[str] = mapped_column(String, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    trigger_conditions: Mapped[str] = mapped_column(Text)
+    success_metrics: Mapped[float] = mapped_column(Float, default=0.0)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    source_task: Mapped[str] = mapped_column(String, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_access: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    confidence: Mapped[float] = mapped_column(Float, default=0.5, index=True)
+    experience_metadata: Mapped[str] = mapped_column(Text)
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, index=True)
-    action = Column(String)
-    resource = Column(String)
-    result = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    action: Mapped[str] = mapped_column(String)
+    resource: Mapped[str] = mapped_column(String)
+    result: Mapped[str] = mapped_column(String)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ExperienceExtractionLog(Base):
     __tablename__ = "experience_extraction_log"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, index=True)
-    session_id = Column(String, index=True)
-    task_summary = Column(Text)
-    extracted_experience = Column(Text)
-    extraction_trigger = Column(String)
-    extraction_quality = Column(Float, default=0.0)
-    reviewed = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    session_id: Mapped[str] = mapped_column(String, index=True)
+    task_summary: Mapped[str] = mapped_column(Text)
+    extracted_experience: Mapped[str] = mapped_column(Text)
+    extraction_trigger: Mapped[str] = mapped_column(String)
+    extraction_quality: Mapped[float] = mapped_column(Float, default=0.0)
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class PromptConfig(Base):
     __tablename__ = "prompt_configs"
-    
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String)
-    content = Column(Text)
-    variables = Column(Text)
-    is_active = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text)
+    variables: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
 
 
 def init_db():
