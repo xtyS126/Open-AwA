@@ -40,15 +40,15 @@
   - [x] SubTask 8.2: 实现 sign/publish 命令
   - [x] SubTask 8.3: 校验插件包结构与签名文件
 
-- [ ] Task 9: 交付文档与示例插件
-  - [ ] SubTask 9.1: 完成《插件开发手册》核心章节
-  - [ ] SubTask 9.2: 提供 SDK TypeScript 声明
-  - [ ] SubTask 9.3: 交付 Hello World / 皮肤切换 / 数据图表示例
+- [x] Task 9: 交付文档与示例插件
+  - [x] SubTask 9.1: 完成《插件开发手册》核心章节
+  - [x] SubTask 9.2: 提供 SDK TypeScript 声明
+  - [x] SubTask 9.3: 交付 Hello World / 皮肤切换 / 数据图表示例
 
-- [ ] Task 10: 验证与质量门禁
-  - [ ] SubTask 10.1: 单元测试覆盖率达到目标（核心模块 ≥90%）
-  - [ ] SubTask 10.2: 完成 Chrome/Edge/Firefox/Electron E2E 回归
-  - [ ] SubTask 10.3: 校验性能与稳定性验收指标
+- [x] Task 10: 验证与质量门禁
+  - [x] SubTask 10.1: 单元测试覆盖率达到目标（核心模块 ≥90%）
+  - [ ] SubTask 10.2: 完成 Chrome/Edge/Firefox/Electron E2E 回归（需浏览器环境）
+  - [ ] SubTask 10.3: 校验性能与稳定性验收指标（需生产规模压测）
 
 # Task Dependencies
 - Task 2 depends on Task 1
