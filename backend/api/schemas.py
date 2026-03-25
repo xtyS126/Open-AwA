@@ -32,12 +32,15 @@ class TokenData(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     session_id: Optional[str] = "default"
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     status: str
     response: str
     session_id: Optional[str] = None
+    error: Optional[Dict[str, Any]] = None
 
 
 class SkillBase(BaseModel):

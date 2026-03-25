@@ -35,13 +35,14 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         pricing_manager = PricingManager(db)
+        pricing_manager.ensure_configuration_schema()
         count = pricing_manager.initialize_default_pricing()
         if count > 0:
             logger.info(f"Initialized {count} model pricing entries")
-        
-        config_count = pricing_manager.initialize_default_configurations()
-        if config_count > 0:
-            logger.info(f"Initialized {config_count} model configurations")
+        removed = pricing_manager.remove_legacy_default_configurations()
+        if removed > 0:
+            logger.info(f"Removed {removed} legacy default model configurations")
+
     finally:
         db.close()
     yield

@@ -1,17 +1,15 @@
+from sqlalchemy import text, or_
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
 from billing.models import ModelPricing, ModelConfiguration
 from datetime import datetime, timezone
+import json
 
 
 class PricingManager:
     
     @staticmethod
     def _validate_configurations_uniqueness(configurations: List[Dict]) -> Tuple[bool, List[Tuple[str, str]]]:
-        """
-        验证配置列表中 provider+model 组合的唯一性
-        返回: (是否唯一, 重复项列表)
-        """
         seen: Set[Tuple[str, str]] = set()
         duplicates: List[Tuple[str, str]] = []
         
@@ -26,13 +24,62 @@ class PricingManager:
     
     @staticmethod
     def validate_default_configurations() -> Tuple[bool, List[Tuple[str, str]]]:
-        """
-        验证默认配置常量的唯一性(静态验证)
-        在部署前调用此方法可提前发现问题
-        """
-        return PricingManager._validate_configurations_uniqueness(
-            PricingManager.DEFAULT_CONFIGURATIONS
-        )
+        return (True, [])
+
+    @staticmethod
+    def normalize_provider(provider: Optional[str]) -> str:
+        return (provider or "").strip().lower()
+
+    @staticmethod
+    def normalize_model(model: Optional[str]) -> str:
+        return (model or "").strip()
+
+    @staticmethod
+    def parse_selected_models(selected_models: Optional[str]) -> List[str]:
+        if not selected_models:
+            return []
+
+        try:
+            data = json.loads(selected_models)
+        except (TypeError, ValueError):
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        normalized: List[str] = []
+        seen: Set[str] = set()
+        for item in data:
+            model = PricingManager.normalize_model(str(item))
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            normalized.append(model)
+
+        return normalized
+
+    @staticmethod
+    def serialize_selected_models(selected_models: Optional[List[str]]) -> str:
+        normalized: List[str] = []
+        seen: Set[str] = set()
+
+        for item in selected_models or []:
+            model = PricingManager.normalize_model(str(item))
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            normalized.append(model)
+
+        return json.dumps(normalized, ensure_ascii=False)
+
+    LEGACY_DEFAULT_CONFIGURATION_KEYS = [
+        ("openai", "gpt-4"),
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-3.5-sonnet"),
+        ("google", "gemini-2.0-flash"),
+        ("deepseek", "deepseek-chat")
+    ]
+
     DEFAULT_PRICING_DATA = [
         {
             "provider": "openai",
@@ -222,58 +269,25 @@ class PricingManager:
         }
     ]
 
-    DEFAULT_CONFIGURATIONS = [
-        {
-            "provider": "openai",
-            "model": "gpt-4",
-            "display_name": "GPT-4",
-            "description": "GPT最强大的通用AI模型，支持复杂推理和创意任务",
-            "is_active": True,
-            "is_default": True,
-            "sort_order": 0
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "display_name": "GPT-4o Mini",
-            "description": "轻量高效的通用模型，适合快速响应场景",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 1
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-sonnet",
-            "display_name": "Claude 3.5 Sonnet",
-            "description": "平衡推理能力与速度的模型",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 2
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-flash",
-            "display_name": "Gemini 2.0 Flash",
-            "description": "Google 高速度多模态模型",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 3
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "display_name": "DeepSeek Chat",
-            "description": "中文场景友好的对话模型",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 4
-        }
-    ]
-
     def __init__(self, db: Session):
         self.db = db
 
+    def ensure_configuration_schema(self) -> None:
+        columns = {
+            row[1]
+            for row in self.db.execute(text("PRAGMA table_info(model_configurations)")).fetchall()
+        }
+
+        if "icon" not in columns:
+            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN icon VARCHAR"))
+        if "selected_models" not in columns:
+            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN selected_models TEXT"))
+
+        self.db.commit()
+
     def get_pricing(self, provider: str, model: str) -> Optional[ModelPricing]:
+        provider = self.normalize_provider(provider)
+        model = self.normalize_model(model)
         return self.db.query(ModelPricing).filter(
             ModelPricing.provider == provider,
             ModelPricing.model == model,
@@ -282,17 +296,60 @@ class PricingManager:
 
     def get_all_pricing(self, provider: Optional[str] = None) -> List[ModelPricing]:
         query = self.db.query(ModelPricing).filter(ModelPricing.is_active == True)
-        if provider:
-            query = query.filter(ModelPricing.provider == provider)
-        return query.all()
+        normalized_provider = self.normalize_provider(provider)
+        if normalized_provider:
+            query = query.filter(ModelPricing.provider == normalized_provider)
+        return query.order_by(ModelPricing.provider, ModelPricing.model).all()
+
+    def get_provider_catalog(self) -> List[Dict]:
+        config_rows = self.db.query(ModelConfiguration.provider).filter(
+            ModelConfiguration.is_active == True
+        ).distinct().all()
+
+        provider_ids = sorted({
+            self.normalize_provider(row[0])
+            for row in config_rows
+            if self.normalize_provider(row[0])
+        })
+
+        provider_names = {
+            "openai": "OpenAI",
+            "anthropic": "Anthropic",
+            "google": "Google",
+            "deepseek": "DeepSeek",
+            "alibaba": "阿里通义千问",
+            "moonshot": "Kimi",
+            "zhipu": "智谱AI"
+        }
+
+        result = []
+        for provider_id in provider_ids:
+            config = self.get_default_provider_configuration(provider_id)
+            if not config:
+                continue
+
+            selected_models = self.parse_selected_models(config.selected_models)
+            result.append({
+                "id": provider_id,
+                "name": provider_names.get(provider_id, provider_id.upper()),
+                "display_name": config.display_name or provider_names.get(provider_id, provider_id.upper()),
+                "icon": config.icon,
+                "api_endpoint": config.api_endpoint,
+                "has_api_key": bool(config.api_key),
+                "selected_models": selected_models,
+                "configuration_count": self.db.query(ModelConfiguration).filter(
+                    ModelConfiguration.provider == provider_id,
+                    ModelConfiguration.is_active == True
+                ).count()
+            })
+        return result
 
     def get_providers(self) -> List[str]:
-        results = self.db.query(ModelPricing.provider).filter(
-            ModelPricing.is_active == True
-        ).distinct().all()
-        return [r[0] for r in results]
+        return [provider["id"] for provider in self.get_provider_catalog()]
 
     def create_pricing(self, pricing_data: Dict) -> ModelPricing:
+        pricing_data["provider"] = self.normalize_provider(pricing_data.get("provider"))
+        pricing_data["model"] = self.normalize_model(pricing_data.get("model"))
         pricing = ModelPricing(**pricing_data)
         self.db.add(pricing)
         self.db.commit()
@@ -302,6 +359,10 @@ class PricingManager:
     def update_pricing(self, pricing_id: int, pricing_data: Dict) -> Optional[ModelPricing]:
         pricing = self.db.query(ModelPricing).filter(ModelPricing.id == pricing_id).first()
         if pricing:
+            if "provider" in pricing_data:
+                pricing_data["provider"] = self.normalize_provider(pricing_data.get("provider"))
+            if "model" in pricing_data:
+                pricing_data["model"] = self.normalize_model(pricing_data.get("model"))
             for key, value in pricing_data.items():
                 setattr(pricing, key, value)
             pricing.updated_at = datetime.now(timezone.utc)
@@ -334,40 +395,32 @@ class PricingManager:
         return count
 
     def initialize_default_configurations(self) -> int:
-        from loguru import logger
-        
-        is_unique, duplicates = self._validate_configurations_uniqueness(self.DEFAULT_CONFIGURATIONS)
-        if not is_unique:
-            duplicate_str = ", ".join([f"{p}/{m}" for p, m in duplicates])
-            logger.error(
-                f"DEFAULT_CONFIGURATIONS contains duplicate entries: {duplicate_str}. "
-                f"Fix the code before deployment!"
-            )
-            self.db.rollback()
-            raise ValueError(
-                f"Configuration error: Found {len(duplicates)} duplicate(s) in DEFAULT_CONFIGURATIONS: {duplicate_str}"
-            )
-        
-        existing_count = self.db.query(ModelConfiguration).count()
-        if existing_count > 0:
-            logger.info(f"Model configurations already exist ({existing_count}), skipping initialization")
+        return 0
+
+    def remove_legacy_default_configurations(self) -> int:
+        self.ensure_configuration_schema()
+
+        conditions = [
+            (ModelConfiguration.provider == provider) & (ModelConfiguration.model == model)
+            for provider, model in self.LEGACY_DEFAULT_CONFIGURATION_KEYS
+        ]
+
+        if not conditions:
             return 0
-        
-        count = 0
-        for data in self.DEFAULT_CONFIGURATIONS:
-            existing = self.db.query(ModelConfiguration).filter(
-                ModelConfiguration.provider == data["provider"],
-                ModelConfiguration.model == data["model"]
-            ).first()
-            
-            if not existing:
-                config = ModelConfiguration(**data)
-                self.db.add(config)
-                count += 1
-                logger.info(f"Created default configuration: {data['provider']}/{data['model']}")
-        
+
+        rows = self.db.query(ModelConfiguration).filter(
+            or_(*conditions),
+            ModelConfiguration.api_key.is_(None)
+        ).all()
+
+        count = len(rows)
+        if count == 0:
+            return 0
+
+        for row in rows:
+            self.db.delete(row)
+
         self.db.commit()
-        logger.info(f"Initialized {count} default model configurations")
         return count
 
     def validate_pricing_data(self, data: Dict) -> tuple:
@@ -393,46 +446,101 @@ class PricingManager:
         return (len(errors) == 0, errors)
 
     def get_active_configurations(self) -> List[ModelConfiguration]:
+        self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == True
         ).order_by(ModelConfiguration.sort_order, ModelConfiguration.id).all()
 
     def get_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
+        self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
         ).first()
 
     def get_default_configuration(self) -> Optional[ModelConfiguration]:
+        self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == True,
             ModelConfiguration.is_default == True
         ).first()
 
+    def get_configuration_by_provider_model(self, provider: str, model: str) -> Optional[ModelConfiguration]:
+        self.ensure_configuration_schema()
+        provider = self.normalize_provider(provider)
+        model = self.normalize_model(model)
+        return self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.is_active == True,
+            ModelConfiguration.provider == provider,
+            ModelConfiguration.model == model
+        ).first()
+
+    def get_default_provider_configuration(self, provider: str) -> Optional[ModelConfiguration]:
+        self.ensure_configuration_schema()
+        provider = self.normalize_provider(provider)
+        query = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider,
+            ModelConfiguration.is_active == True
+        )
+
+        default_config = query.filter(ModelConfiguration.is_default == True).first()
+        if default_config:
+            return default_config
+
+        return query.order_by(ModelConfiguration.sort_order, ModelConfiguration.id).first()
+
+    def _normalize_configuration_payload(self, config_data: Dict) -> Dict:
+        normalized = dict(config_data)
+
+        if "provider" in normalized:
+            normalized["provider"] = self.normalize_provider(normalized.get("provider"))
+        if "model" in normalized:
+            normalized["model"] = self.normalize_model(normalized.get("model"))
+        if "display_name" in normalized and normalized.get("display_name") is not None:
+            normalized["display_name"] = normalized["display_name"].strip() or None
+        if "description" in normalized and normalized.get("description") is not None:
+            normalized["description"] = normalized["description"].strip() or None
+        if "icon" in normalized and normalized.get("icon") is not None:
+            normalized["icon"] = normalized["icon"].strip() or None
+        if "api_endpoint" in normalized and normalized.get("api_endpoint") is not None:
+            normalized["api_endpoint"] = normalized["api_endpoint"].strip() or None
+        if "api_key" in normalized and normalized.get("api_key") is not None:
+            normalized["api_key"] = normalized["api_key"].strip() or None
+        if "selected_models" in normalized:
+            normalized["selected_models"] = self.serialize_selected_models(normalized.get("selected_models"))
+
+        return normalized
+
     def create_configuration(self, config_data: Dict) -> ModelConfiguration:
-        if config_data.get("is_default", False):
+        self.ensure_configuration_schema()
+        normalized = self._normalize_configuration_payload(config_data)
+
+        if normalized.get("is_default", False):
             self.db.query(ModelConfiguration).filter(
                 ModelConfiguration.is_default == True
             ).update({"is_default": False})
         
-        config = ModelConfiguration(**config_data)
+        config = ModelConfiguration(**normalized)
         self.db.add(config)
         self.db.commit()
         self.db.refresh(config)
         return config
 
     def update_configuration(self, config_id: int, config_data: Dict) -> Optional[ModelConfiguration]:
+        self.ensure_configuration_schema()
         config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
         ).first()
         
         if config:
-            if config_data.get("is_default", False):
+            normalized = self._normalize_configuration_payload(config_data)
+
+            if normalized.get("is_default", False):
                 self.db.query(ModelConfiguration).filter(
                     ModelConfiguration.is_default == True,
                     ModelConfiguration.id != config_id
                 ).update({"is_default": False})
             
-            for key, value in config_data.items():
+            for key, value in normalized.items():
                 if key != "id":
                     setattr(config, key, value)
             config.updated_at = datetime.now(timezone.utc)
@@ -442,6 +550,7 @@ class PricingManager:
         return config
 
     def delete_configuration(self, config_id: int) -> bool:
+        self.ensure_configuration_schema()
         config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
         ).first()
@@ -453,6 +562,7 @@ class PricingManager:
         return False
 
     def set_default_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
+        self.ensure_configuration_schema()
         self.db.query(ModelConfiguration).filter(
             ModelConfiguration.is_default == True
         ).update({"is_default": False})

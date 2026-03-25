@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import List, Optional
 from fastapi import Body
 from datetime import datetime
 
@@ -57,6 +57,68 @@ class BudgetUpdateRequest(BaseModel):
     currency: Optional[str] = None
     warning_threshold: Optional[float] = None
     is_active: Optional[bool] = None
+
+
+class ProviderModelSelectionRequest(BaseModel):
+    selected_models: List[str] = []
+
+
+class ModelConfigCreateRequest(BaseModel):
+    provider: str
+    model: str
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    api_key: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    selected_models: List[str] = []
+    is_active: bool = True
+    is_default: bool = False
+    sort_order: int = 0
+
+
+class ModelConfigUpdateRequest(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    api_key: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    selected_models: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class RetentionUpdateRequest(BaseModel):
+    retention_days: int = Query(..., ge=1, le=3650)
+    cleanup: bool = Query(False)
+
+
+def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False):
+    selected_models = pricing_manager.parse_selected_models(config.selected_models)
+    payload = {
+        "id": config.id,
+        "provider": config.provider,
+        "model": config.model,
+        "display_name": config.display_name or config.model,
+        "description": config.description,
+        "icon": getattr(config, "icon", None),
+        "api_endpoint": config.api_endpoint,
+        "has_api_key": bool(config.api_key),
+        "selected_models": selected_models,
+        "is_active": config.is_active,
+        "is_default": config.is_default,
+        "sort_order": config.sort_order,
+        "created_at": config.created_at.isoformat() if config.created_at else None,
+        "updated_at": config.updated_at.isoformat() if config.updated_at else None
+    }
+
+    if include_secret:
+        payload["api_key"] = config.api_key
+
+    return payload
 
 
 @router.get("/usage")
@@ -395,35 +457,6 @@ async def update_retention_config(
     }
 
 
-class RetentionUpdateRequest(BaseModel):
-    retention_days: int = Query(..., ge=1, le=3650)
-    cleanup: bool = Query(False)
-
-
-class ModelConfigCreateRequest(BaseModel):
-    provider: str
-    model: str
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    api_key: Optional[str] = None
-    api_endpoint: Optional[str] = None
-    is_active: bool = True
-    is_default: bool = False
-    sort_order: int = 0
-
-
-class ModelConfigUpdateRequest(BaseModel):
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    api_key: Optional[str] = None
-    api_endpoint: Optional[str] = None
-    is_active: Optional[bool] = None
-    is_default: Optional[bool] = None
-    sort_order: Optional[int] = None
-
-
 @router.get("/configurations")
 async def get_configurations(
     db: Session = Depends(get_db)
@@ -433,18 +466,7 @@ async def get_configurations(
     
     return {
         "configurations": [
-            {
-                "id": c.id,
-                "provider": c.provider,
-                "model": c.model,
-                "display_name": c.display_name or c.model,
-                "description": c.description,
-                "is_active": c.is_active,
-                "is_default": c.is_default,
-                "sort_order": c.sort_order,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-                "updated_at": c.updated_at.isoformat() if c.updated_at else None
-            }
+            serialize_configuration(c, pricing_manager)
             for c in configs
         ]
     }
@@ -461,20 +483,7 @@ async def get_configuration(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
     
-    return {
-        "id": config.id,
-        "provider": config.provider,
-        "model": config.model,
-        "display_name": config.display_name,
-        "description": config.description,
-        "api_key": config.api_key,
-        "api_endpoint": config.api_endpoint,
-        "is_active": config.is_active,
-        "is_default": config.is_default,
-        "sort_order": config.sort_order,
-        "created_at": config.created_at.isoformat() if config.created_at else None,
-        "updated_at": config.updated_at.isoformat() if config.updated_at else None
-    }
+    return serialize_configuration(config, pricing_manager, include_secret=True)
 
 
 @router.post("/configurations")
@@ -483,16 +492,11 @@ async def create_configuration(
     db: Session = Depends(get_db)
 ):
     pricing_manager = PricingManager(db)
-    
     config = pricing_manager.create_configuration(config_data.dict())
     
     return {
         "success": True,
-        "id": config.id,
-        "provider": config.provider,
-        "model": config.model,
-        "display_name": config.display_name,
-        "is_default": config.is_default
+        "configuration": serialize_configuration(config, pricing_manager)
     }
 
 
@@ -503,7 +507,6 @@ async def update_configuration(
     db: Session = Depends(get_db)
 ):
     pricing_manager = PricingManager(db)
-    
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
     
     if not update_dict:
@@ -516,11 +519,7 @@ async def update_configuration(
     
     return {
         "success": True,
-        "id": updated.id,
-        "provider": updated.provider,
-        "model": updated.model,
-        "display_name": updated.display_name,
-        "is_default": updated.is_default
+        "configuration": serialize_configuration(updated, pricing_manager)
     }
 
 
@@ -551,8 +550,7 @@ async def set_default_configuration(
     
     return {
         "success": True,
-        "id": config.id,
-        "is_default": config.is_default
+        "configuration": serialize_configuration(config, pricing_manager)
     }
 
 
@@ -561,26 +559,61 @@ async def get_providers(
     db: Session = Depends(get_db)
 ):
     pricing_manager = PricingManager(db)
-    providers = pricing_manager.get_providers()
-    
-    provider_names = {
-        "openai": "OpenAI",
-        "anthropic": "Anthropic",
-        "google": "Google",
-        "deepseek": "DeepSeek",
-        "alibaba": "阿里通义千问",
-        "moonshot": "Kimi",
-        "zhipu": "智谱AI"
-    }
+    providers = pricing_manager.get_provider_catalog()
     
     return {
-        "providers": [
-            {
-                "id": p,
-                "name": provider_names.get(p, p.upper())
-            }
-            for p in providers
-        ]
+        "providers": providers,
+        "total": len(providers)
+    }
+
+
+@router.get("/providers/{provider}")
+async def get_provider_detail(
+    provider: str,
+    db: Session = Depends(get_db)
+):
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    config = pricing_manager.get_default_provider_configuration(provider_id)
+
+    if not config:
+        raise HTTPException(status_code=404, detail="Provider configuration not found")
+
+    return {
+        "provider": {
+            "id": provider_id,
+            "name": config.display_name or provider_id.upper(),
+            "icon": getattr(config, "icon", None),
+            "api_endpoint": config.api_endpoint,
+            "has_api_key": bool(config.api_key),
+            "selected_models": pricing_manager.parse_selected_models(config.selected_models)
+        },
+        "configuration": serialize_configuration(config, pricing_manager, include_secret=True)
+    }
+
+
+@router.put("/providers/{provider}/selected-models")
+async def update_provider_selected_models(
+    provider: str,
+    payload: ProviderModelSelectionRequest,
+    db: Session = Depends(get_db)
+):
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    config = pricing_manager.get_default_provider_configuration(provider_id)
+
+    if not config:
+        raise HTTPException(status_code=404, detail="Provider configuration not found")
+
+    updated = pricing_manager.update_configuration(
+        config.id,
+        {"selected_models": payload.selected_models}
+    )
+
+    return {
+        "success": True,
+        "provider": provider_id,
+        "selected_models": pricing_manager.parse_selected_models(updated.selected_models)
     }
 
 
@@ -590,22 +623,43 @@ async def get_models_by_provider(
     db: Session = Depends(get_db)
 ):
     pricing_manager = PricingManager(db)
-    models = pricing_manager.get_all_pricing(provider=provider)
-    
-    return {
-        "models": [
-            {
-                "id": m.id,
-                "provider": m.provider,
-                "model": m.model,
-                "input_price": m.input_price,
-                "output_price": m.output_price,
-                "currency": m.currency,
-                "context_window": m.context_window
+    provider_id = pricing_manager.normalize_provider(provider)
+    config = pricing_manager.get_default_provider_configuration(provider_id)
+    selected_models = pricing_manager.parse_selected_models(config.selected_models if config else None)
+
+    try:
+        models = pricing_manager.get_all_pricing(provider=provider_id)
+        return {
+            "success": True,
+            "provider": provider_id,
+            "models": [
+                {
+                    "id": m.id,
+                    "provider": m.provider,
+                    "model": m.model,
+                    "input_price": m.input_price,
+                    "output_price": m.output_price,
+                    "currency": m.currency,
+                    "context_window": m.context_window,
+                    "selected": m.model in selected_models
+                }
+                for m in models
+            ],
+            "selected_models": selected_models,
+            "error": None
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "provider": provider_id,
+            "models": [],
+            "selected_models": selected_models,
+            "error": {
+                "code": "provider_models_fetch_failed",
+                "message": "模型列表获取失败",
+                "detail": str(exc)
             }
-            for m in models
-        ]
-    }
+        }
 
 
 @router.post("/retention")

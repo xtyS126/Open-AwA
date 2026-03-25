@@ -27,7 +27,10 @@ async def chat(
     context = {
         "user_id": current_user.id,
         "session_id": message.session_id,
-        "username": current_user.username
+        "username": current_user.username,
+        "provider": message.provider,
+        "model": message.model,
+        "db": db
     }
     
     result = await agent.process(message.message, context)
@@ -35,7 +38,8 @@ async def chat(
     return ChatResponse(
         status=result.get("status") or "error",
         response=result.get("response", ""),
-        session_id=message.session_id
+        session_id=message.session_id,
+        error=result.get("error")
     )
 
 

@@ -176,7 +176,9 @@ class AIAgent:
     
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Processing user input: {user_input}")
-        
+
+        if "message" not in context:
+            context["message"] = user_input
         intent = await self.comprehension.recognize_intent(user_input)
         logger.debug(f"Recognized intent: {intent}")
         
@@ -269,7 +271,21 @@ class AIAgent:
                     }
         
         final_response = await self.feedback.generate_response(results)
-        
+
+        first_error = None
+        for item in results:
+            result = item.get('result', item)
+            if isinstance(result, dict) and result.get('error'):
+                first_error = result.get('error')
+                break
+
+        if first_error:
+            return {
+                "status": "error",
+                "response": final_response,
+                "results": results,
+                "error": first_error
+            }
         await self.feedback.update_memory(
             user_input=user_input,
             response=final_response,
@@ -309,56 +325,76 @@ class AIAgent:
             'skills': [],
             'plugins': []
         }
-        
+
         try:
-            intent_type = intent.get('type', '')
-            intent_action = intent.get('action', '')
-            entities_list = entities.get('entities', [])
-            
+            if isinstance(intent, dict):
+                intent_type = str(intent.get('type', ''))
+                intent_action = str(intent.get('action', ''))
+            else:
+                intent_type = str(intent or '')
+                intent_action = ''
+
+            intent_keywords = f"{intent_type} {intent_action}".lower().strip()
+
+            entities_list: List[Dict[str, Any]] = []
+            if isinstance(entities, dict):
+                raw_entities = entities.get('entities')
+                if isinstance(raw_entities, list):
+                    entities_list = [e for e in raw_entities if isinstance(e, dict)]
+                else:
+                    for entity_type, entity_values in entities.items():
+                        if isinstance(entity_values, list):
+                            entities_list.extend(
+                                {
+                                    'type': entity_type,
+                                    'value': value
+                                }
+                                for value in entity_values
+                            )
+
             available_skills = await self.get_available_skills()
             available_plugins = await self.get_available_plugins()
-            
+
             for skill in available_skills:
                 if not skill.get('enabled'):
                     continue
-                
+
                 skill_name = skill.get('name', '')
                 skill_description = skill.get('description', '').lower()
-                intent_keywords = f"{intent_type} {intent_action}".lower()
-                
+
                 if self._is_skill_relevant(skill_name, skill_description, intent_keywords, entities_list):
                     logger.info(f"Auto-selecting skill: {skill_name}")
-                    
+
                     skill_inputs = {
                         'intent': intent,
                         'entities': entities,
                         'context': context
                     }
-                    
+
                     skill_result = await self.execute_skill(
                         skill_name=skill_name,
                         inputs=skill_inputs,
                         context=context
                     )
-                    
+
                     if skill_result.get('status') == 'success':
                         auto_results['skills'].append({
                             'skill_name': skill_name,
                             'result': skill_result,
                             'reason': 'auto_selected'
                         })
-            
+
             for plugin in available_plugins:
                 plugin_name = plugin.get('name', '')
                 plugin_tools = plugin.get('tools', [])
-                
+
                 for tool in plugin_tools:
                     tool_name = tool.get('name', '').lower()
                     tool_description = tool.get('description', '').lower()
-                    
+
                     if self._is_plugin_relevant(tool_name, tool_description, intent_keywords, entities_list):
                         logger.info(f"Auto-selecting plugin '{plugin_name}' tool '{tool.get('name')}'")
-                        
+
                         plugin_result = await self.execute_plugin(
                             plugin_name=plugin_name,
                             method=tool.get('method'),
@@ -366,7 +402,7 @@ class AIAgent:
                             entities=entities,
                             context=context
                         )
-                        
+
                         if plugin_result.get('status') == 'success':
                             auto_results['plugins'].append({
                                 'plugin_name': plugin_name,
@@ -374,10 +410,10 @@ class AIAgent:
                                 'result': plugin_result,
                                 'reason': 'auto_selected'
                             })
-            
+
             logger.info(f"Auto-execution completed: {len(auto_results['skills'])} skills, {len(auto_results['plugins'])} plugins")
             return auto_results
-            
+
         except Exception as e:
             logger.error(f"Error in auto-execution of skills and plugins: {e}")
             return auto_results

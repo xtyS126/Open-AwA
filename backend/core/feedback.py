@@ -36,12 +36,16 @@ class FeedbackLayer:
     async def generate_response(self, results: List[Dict[str, Any]]) -> str:
         if not results:
             return "No results to report."
-        
+
         responses = []
-        for result in results:
-            if result.get("status") == "completed":
-                if "response" in result:
-                    responses.append(result["response"])
+        for item in results:
+            result = item.get("result", item)
+            status = result.get("status")
+
+            if status == "completed":
+                response_text = result.get("response")
+                if response_text is not None:
+                    responses.append(str(response_text))
                 elif "results" in result:
                     for file_path, file_result in result["results"].items():
                         if file_result.get("status") == "success":
@@ -52,7 +56,10 @@ class FeedbackLayer:
                     responses.append(f"Command output:\n{result['stdout']}")
             else:
                 responses.append(f"Error: {result.get('message', 'Unknown error')}")
-        
+
+        if not responses:
+            return "No response generated."
+
         return "\n\n".join(responses)
     
     async def update_memory(
