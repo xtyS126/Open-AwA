@@ -11,49 +11,276 @@ class ExecutionLayer:
         self.tools = {}
         self.llm_api_url = None
         self.llm_api_key = None
+        self.default_provider_endpoints = {
+            "openai": "https://api.openai.com/v1/chat/completions",
+            "anthropic": "https://api.anthropic.com/v1/messages",
+            "deepseek": "https://api.deepseek.com/v1/chat/completions",
+            "google": "https://generativelanguage.googleapis.com/v1beta/models",
+            "alibaba": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "moonshot": "https://api.moonshot.cn/v1/chat/completions",
+            "zhipu": "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        }
+        self.provider_api_key_fields = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY"
+        }
         logger.info("ExecutionLayer initialized")
-    
+
     def configure_llm(self, api_url: str, api_key: Optional[str] = None):
         self.llm_api_url = api_url
         self.llm_api_key = api_key
         logger.info(f"LLM API configured: {api_url}")
-    
+
     def register_tool(self, name: str, tool_func: Callable[..., Any]):
         self.tools[name] = tool_func
         logger.debug(f"Registered execution tool: {name}")
-    
-    async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> str:
-        if not self.llm_api_url:
-            return "LLM API not configured. Please set up API configuration."
-        
-        headers = {
-            "Content-Type": "application/json"
+
+    def _build_error(self, code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return {
+            "code": code,
+            "message": message,
+            "details": details or {}
         }
-        if self.llm_api_key:
-            headers["Authorization"] = f"Bearer {self.llm_api_key}"
-        
+
+    def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
+        if "response" in response_data and response_data["response"] is not None:
+            return str(response_data["response"])
+        if "content" in response_data and response_data["content"] is not None:
+            return str(response_data["content"])
+
+        choices = response_data.get("choices")
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                message = first_choice.get("message")
+                if isinstance(message, dict):
+                    content = message.get("content")
+                    if isinstance(content, str):
+                        return content
+                    if isinstance(content, list):
+                        parts = []
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text = item.get("text")
+                                if isinstance(text, str):
+                                    parts.append(text)
+                        if parts:
+                            return "\n".join(parts)
+
+                text = first_choice.get("text")
+                if isinstance(text, str):
+                    return text
+
+        return ""
+
+    def _resolve_llm_configuration(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        from config.settings import settings
+
+        provider = context.get("provider")
+        model = context.get("model")
+        db = context.get("db")
+        config = None
+
+        if db:
+            try:
+                from billing.pricing_manager import PricingManager
+                pricing_manager = PricingManager(db)
+                if provider and model:
+                    config = pricing_manager.get_configuration_by_provider_model(provider, model)
+                if not config:
+                    config = pricing_manager.get_default_configuration()
+            except Exception as e:
+                logger.error(f"Failed to resolve model configuration from database: {e}")
+
+        if config:
+            provider = provider or config.provider
+            model = model or config.model
+            api_key = config.api_key
+            api_endpoint = config.api_endpoint
+        else:
+            api_key = None
+            api_endpoint = None
+
+        provider = (provider or "").strip().lower()
+        model = (model or "").strip()
+
+        if not provider:
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_provider_missing",
+                    "未配置可用的模型提供商",
+                    {
+                        "provider": provider,
+                        "model": model
+                    }
+                )
+            }
+
+        if not model:
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_model_missing",
+                    "未配置可用的模型名称",
+                    {
+                        "provider": provider,
+                        "model": model
+                    }
+                )
+            }
+
+        if not api_endpoint:
+            if self.llm_api_url:
+                api_endpoint = self.llm_api_url
+            else:
+                api_endpoint = self.default_provider_endpoints.get(provider)
+
+        if not api_endpoint:
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_endpoint_missing",
+                    "未配置模型服务地址",
+                    {
+                        "provider": provider,
+                        "model": model
+                    }
+                )
+            }
+
+        if not api_key:
+            if self.llm_api_key:
+                api_key = self.llm_api_key
+            else:
+                field_name = self.provider_api_key_fields.get(provider)
+                if field_name:
+                    api_key = getattr(settings, field_name, None)
+
+        if not api_key:
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_api_key_missing",
+                    "未配置模型 API Key",
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "api_endpoint": api_endpoint
+                    }
+                )
+            }
+
+        return {
+            "ok": True,
+            "provider": provider,
+            "model": model,
+            "api_endpoint": api_endpoint,
+            "api_key": api_key
+        }
+
+    async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        resolved = self._resolve_llm_configuration(context)
+        if not resolved.get("ok"):
+            return resolved
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {resolved['api_key']}"
+        }
+
         payload = {
+            "model": resolved["model"],
+            "provider": resolved["provider"],
             "prompt": prompt,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
             "context": context,
             "max_tokens": 1000
         }
-        
+
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    self.llm_api_url,
+                    resolved["api_endpoint"],
                     json=payload,
                     headers=headers
                 )
                 response.raise_for_status()
                 result = response.json()
-                return result.get("response", "No response from LLM API")
+                response_text = self._extract_response_text(result)
+
+                if not response_text.strip():
+                    return {
+                        "ok": False,
+                        "error": self._build_error(
+                            "llm_empty_response",
+                            "模型返回了空内容",
+                            {
+                                "provider": resolved["provider"],
+                                "model": resolved["model"],
+                                "api_endpoint": resolved["api_endpoint"]
+                            }
+                        )
+                    }
+
+                return {
+                    "ok": True,
+                    "response": response_text,
+                    "provider": resolved["provider"],
+                    "model": resolved["model"]
+                }
+        except httpx.HTTPStatusError as e:
+            logger.error(f"LLM API HTTP status error: {str(e)}")
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_http_error",
+                    "调用模型服务失败",
+                    {
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "api_endpoint": resolved["api_endpoint"],
+                        "status_code": e.response.status_code,
+                        "response_text": e.response.text
+                    }
+                )
+            }
         except httpx.HTTPError as e:
             logger.error(f"LLM API call failed: {str(e)}")
-            return f"LLM API call failed: {str(e)}"
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_network_error",
+                    "模型服务网络请求失败",
+                    {
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "api_endpoint": resolved["api_endpoint"],
+                        "reason": str(e)
+                    }
+                )
+            }
         except Exception as e:
             logger.error(f"Unexpected error in LLM call: {str(e)}")
-            return f"Unexpected error: {str(e)}"
+            return {
+                "ok": False,
+                "error": self._build_error(
+                    "llm_unexpected_error",
+                    "模型调用出现未预期错误",
+                    {
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "api_endpoint": resolved["api_endpoint"],
+                        "reason": str(e)
+                    }
+                )
+            }
     
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         action = step.get("action")
@@ -153,35 +380,71 @@ class ExecutionLayer:
     
     async def _execute_llm(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         task = step.get("task", "")
-        response = await self._call_llm_api(task, context)
+        result = await self._call_llm_api(task, context)
+        if not result.get("ok"):
+            return {
+                "status": "error",
+                "message": result["error"]["message"],
+                "error": result["error"]
+            }
+
         return {
             "status": "completed",
-            "response": response,
+            "response": result["response"],
+            "provider": result.get("provider"),
+            "model": result.get("model"),
             "requires_confirmation": True
         }
-    
+
     async def _execute_llm_query(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         query = step.get("query", "")
-        response = await self._call_llm_api(query, context)
+        result = await self._call_llm_api(query, context)
+        if not result.get("ok"):
+            return {
+                "status": "error",
+                "message": result["error"]["message"],
+                "error": result["error"]
+            }
+
         return {
             "status": "completed",
-            "response": response
+            "response": result["response"],
+            "provider": result.get("provider"),
+            "model": result.get("model")
         }
-    
+
     async def _execute_llm_explain(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         target = step.get("target", "")
-        response = await self._call_llm_api(f"Explain: {target}", context)
+        result = await self._call_llm_api(f"Explain: {target}", context)
+        if not result.get("ok"):
+            return {
+                "status": "error",
+                "message": result["error"]["message"],
+                "error": result["error"]
+            }
+
         return {
             "status": "completed",
-            "response": response
+            "response": result["response"],
+            "provider": result.get("provider"),
+            "model": result.get("model")
         }
-    
+
     async def _execute_llm_chat(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         message = step.get("message", "")
-        response = await self._call_llm_api(message, context)
+        result = await self._call_llm_api(message, context)
+        if not result.get("ok"):
+            return {
+                "status": "error",
+                "message": result["error"]["message"],
+                "error": result["error"]
+            }
+
         return {
             "status": "completed",
-            "response": response
+            "response": result["response"],
+            "provider": result.get("provider"),
+            "model": result.get("model")
         }
     
     async def retry_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:

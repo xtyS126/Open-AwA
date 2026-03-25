@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { promptsAPI } from '../services/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '../services/billingApi'
-import { modelsAPI, ModelConfiguration, ModelProvider, ProviderModel } from '../services/modelsApi'
+import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse } from '../services/modelsApi'
 import './SettingsPage.css'
 
 interface Settings {
@@ -12,6 +12,17 @@ interface Settings {
   promptContent: string
   requireConfirm: boolean
   enableAudit: boolean
+}
+
+interface ApiProviderFormState {
+  config_id: number | null
+  provider: string
+  display_name: string
+  icon: string
+  api_endpoint: string
+  api_key: string
+  has_api_key: boolean
+  selected_models: string[]
 }
 
 function SettingsPage() {
@@ -49,6 +60,31 @@ function SettingsPage() {
     is_default: false,
   })
 
+  const [selectedProviderId, setSelectedProviderId] = useState('')
+  const [loadingApiProviders, setLoadingApiProviders] = useState(false)
+  const [loadingProviderDetail, setLoadingProviderDetail] = useState(false)
+  const [loadingProviderModels, setLoadingProviderModels] = useState(false)
+  const [providerModelsError, setProviderModelsError] = useState<string | null>(null)
+  const [showAddProviderForm, setShowAddProviderForm] = useState(false)
+  const [addProviderForm, setAddProviderForm] = useState({
+    provider: '',
+    display_name: '',
+    icon: '',
+    api_endpoint: '',
+    api_key: '',
+    base_model: ''
+  })
+  const [providerForm, setProviderForm] = useState<ApiProviderFormState>({
+    config_id: null,
+    provider: '',
+    display_name: '',
+    icon: '',
+    api_endpoint: '',
+    api_key: '',
+    has_api_key: false,
+    selected_models: []
+  })
+
   useEffect(() => {
     loadSettings()
     loadPrompts()
@@ -60,6 +96,9 @@ function SettingsPage() {
     }
     if (activeTab === 'models') {
       loadModelsData()
+    }
+    if (activeTab === 'api') {
+      loadApiProvidersData()
     }
   }, [activeTab])
 
@@ -106,6 +145,9 @@ function SettingsPage() {
   }
 
   const loadPrompts = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
     try {
       const response = await promptsAPI.getActive()
       if (response.data && response.data.content) {
@@ -144,6 +186,227 @@ function SettingsPage() {
     } finally {
       setLoadingConfigs(false)
     }
+  }
+
+
+  const normalizeProviderId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-')
+
+  const loadApiProvidersData = async (preferredProviderId?: string) => {
+    setLoadingApiProviders(true)
+    setProviderModelsError(null)
+    try {
+      const providersRes = await modelsAPI.getProviders()
+      const providerList: ModelProvider[] = providersRes.data.providers || []
+      setProviders(providerList)
+
+      if (providerList.length === 0) {
+        setSelectedProviderId('')
+        setProviderModels([])
+        setProviderForm({
+          config_id: null,
+          provider: '',
+          display_name: '',
+          icon: '',
+          api_endpoint: '',
+          api_key: '',
+          has_api_key: false,
+          selected_models: []
+        })
+        return
+      }
+
+      const validProviders = providerList.filter(item => (item.configuration_count || 0) > 0)
+      if (validProviders.length === 0) {
+        setSelectedProviderId('')
+        setProviderModels([])
+        setProviderForm({
+          config_id: null,
+          provider: '',
+          display_name: '',
+          icon: '',
+          api_endpoint: '',
+          api_key: '',
+          has_api_key: false,
+          selected_models: []
+        })
+        return
+      }
+
+      const preferred = preferredProviderId || selectedProviderId
+      const nextProviderId = preferred && validProviders.some(item => item.id === preferred)
+        ? preferred
+        : validProviders[0].id
+
+      await loadProviderDetail(nextProviderId)
+    } catch (error) {
+      setMessage({ type: 'error', text: '加载供应商列表失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setLoadingApiProviders(false)
+    }
+  }
+
+  const loadProviderDetail = async (providerId: string) => {
+    if (!providerId) return
+
+    setLoadingProviderDetail(true)
+    setProviderModelsError(null)
+
+    try {
+      const detailRes = await modelsAPI.getProviderDetail(providerId)
+      const detailData = detailRes.data as ProviderDetailResponse
+      const config = detailData.configuration
+      const providerData = detailData.provider
+
+      const selectedModels = Array.isArray(config.selected_models)
+        ? config.selected_models
+        : (providerData.selected_models || [])
+
+      setProviderForm({
+        config_id: config.id,
+        provider: config.provider || providerId,
+        display_name: config.display_name || providerData.display_name || providerData.name || providerId,
+        icon: config.icon || providerData.icon || '',
+        api_endpoint: config.api_endpoint || providerData.api_endpoint || '',
+        api_key: '',
+        has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
+        selected_models: selectedModels
+      })
+      setSelectedProviderId(providerId)
+
+      await fetchProviderModels(providerId, selectedModels)
+    } catch (error) {
+      setMessage({ type: 'error', text: '加载供应商详情失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setLoadingProviderDetail(false)
+    }
+  }
+
+  const fetchProviderModels = async (providerId: string, fallbackSelectedModels: string[] = []) => {
+    if (!providerId) return
+
+    setLoadingProviderModels(true)
+
+    try {
+      const response = await modelsAPI.getModelsByProvider(providerId)
+      const data = response.data as ProviderModelsResponse
+      const selectedModels = Array.isArray(data.selected_models)
+        ? data.selected_models
+        : fallbackSelectedModels
+
+      setProviderModels(data.models || [])
+      setProviderForm(prev => ({ ...prev, selected_models: selectedModels }))
+
+      if (!data.success && data.error?.message) {
+        setProviderModelsError(data.error.message)
+      }
+    } catch (error) {
+      setProviderModels([])
+      setProviderModelsError('获取模型列表失败')
+    } finally {
+      setLoadingProviderModels(false)
+    }
+  }
+
+  const handleCreateProvider = async () => {
+    const providerId = normalizeProviderId(addProviderForm.provider)
+    const baseModel = addProviderForm.base_model.trim() || 'custom-model'
+
+    if (!providerId) {
+      setMessage({ type: 'error', text: '请输入供应商名称' })
+      setTimeout(() => setMessage(null), 3000)
+      return
+    }
+
+    try {
+      await modelsAPI.createConfiguration({
+        provider: providerId,
+        model: baseModel,
+        display_name: addProviderForm.display_name.trim() || providerId,
+        icon: addProviderForm.icon.trim() || undefined,
+        api_endpoint: addProviderForm.api_endpoint.trim() || undefined,
+        api_key: addProviderForm.api_key.trim() || undefined,
+        selected_models: [],
+        is_default: false
+      })
+
+      setAddProviderForm({
+        provider: '',
+        display_name: '',
+        icon: '',
+        api_endpoint: '',
+        api_key: '',
+        base_model: ''
+      })
+      setShowAddProviderForm(false)
+      setMessage({ type: 'success', text: '供应商创建成功' })
+      setTimeout(() => setMessage(null), 3000)
+      await loadApiProvidersData(providerId)
+    } catch (error) {
+      setMessage({ type: 'error', text: '供应商创建失败' })
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  const handleSaveProviderConfig = async () => {
+    if (!providerForm.config_id || !providerForm.provider) {
+      setMessage({ type: 'error', text: '当前供应商配置不完整' })
+      setTimeout(() => setMessage(null), 3000)
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const updatePayload: {
+        display_name?: string
+        icon?: string
+        api_endpoint?: string
+        api_key?: string
+        selected_models?: string[]
+      } = {
+        display_name: providerForm.display_name.trim() || undefined,
+        icon: providerForm.icon.trim() || undefined,
+        api_endpoint: providerForm.api_endpoint.trim() || undefined,
+        selected_models: providerForm.selected_models
+      }
+
+      if (providerForm.api_key.trim()) {
+        updatePayload.api_key = providerForm.api_key.trim()
+      }
+
+      await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
+      await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
+        selected_models: providerForm.selected_models
+      })
+
+      setMessage({ type: 'success', text: '供应商配置保存成功' })
+      setTimeout(() => setMessage(null), 3000)
+      await loadApiProvidersData(providerForm.provider)
+    } catch (error) {
+      setMessage({ type: 'error', text: '保存供应商配置失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggleProviderModel = (modelName: string, checked: boolean) => {
+    setProviderForm(prev => {
+      const selected = checked
+        ? Array.from(new Set([...prev.selected_models, modelName]))
+        : prev.selected_models.filter(item => item !== modelName)
+
+      return {
+        ...prev,
+        selected_models: selected
+      }
+    })
+
+    setProviderModels(prev => prev.map(item => (
+      item.model === modelName ? { ...item, selected: checked } : item
+    )))
   }
 
   const handleProviderChange = async (provider: string) => {
@@ -379,45 +642,235 @@ function SettingsPage() {
           </div>
         )}
 
-        {activeTab === 'api' && (
+                        {activeTab === 'api' && (
           <div className="settings-section">
-            <h2>API配置</h2>
-            <div className="setting-item">
-              <label>API Provider</label>
-              <select
-                value={settings.apiProvider}
-                onChange={(e) => handleChange('apiProvider', e.target.value)}
+            <div className="section-header">
+              <h2>API配置</h2>
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowAddProviderForm(prev => !prev)}
               >
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="zhipu">智谱AI</option>
-                <option value="kimi">Kimi</option>
-              </select>
+                {showAddProviderForm ? '取消新增' : '+ 添加供应商'}
+              </button>
             </div>
-            <div className="setting-item">
-              <label>API Key</label>
-              <input
-                type="password"
-                value={settings.apiKey}
-                onChange={(e) => handleChange('apiKey', e.target.value)}
-                placeholder="输入你的API Key"
-              />
+            <p className="section-desc">左侧管理供应商，右侧配置 API URL、API Key，并获取模型后用复选框选择。</p>
+
+            <div className="api-config-layout">
+              <aside className="provider-sidebar">
+                {showAddProviderForm && (
+                  <div className="provider-create-card">
+                    <div className="form-group">
+                      <label>供应商名称</label>
+                      <input
+                        type="text"
+                        value={addProviderForm.provider}
+                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
+                        placeholder="例如 free-api"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>显示名称（可选）</label>
+                      <input
+                        type="text"
+                        value={addProviderForm.display_name}
+                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
+                        placeholder="例如 Free API"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>图标地址（可选）</label>
+                      <input
+                        type="text"
+                        value={addProviderForm.icon}
+                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, icon: e.target.value }))}
+                        placeholder="https://example.com/icon.png"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>默认模型</label>
+                      <input
+                        type="text"
+                        value={addProviderForm.base_model}
+                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, base_model: e.target.value }))}
+                        placeholder="custom-model"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>API URL（可选）</label>
+                      <input
+                        type="text"
+                        value={addProviderForm.api_endpoint}
+                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
+                        placeholder="https://api.example.com/v1/chat/completions"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>API Key（可选）</label>
+                      <input
+                        type="password"
+                        value={addProviderForm.api_key}
+                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
+                        placeholder="输入供应商 API Key"
+                      />
+                    </div>
+                    <button className="btn btn-primary" onClick={handleCreateProvider}>创建供应商</button>
+                  </div>
+                )}
+
+                {loadingApiProviders ? (
+                  <div className="loading">加载供应商中...</div>
+                ) : providers.length === 0 ? (
+                  <div className="empty-state">
+                    <p>暂无供应商配置</p>
+                    <p className="hint">请先添加供应商</p>
+                  </div>
+                ) : (
+                  <div className="provider-list">
+                    {providers.map(provider => {
+                      const isActive = provider.id === selectedProviderId
+                      const displayName = provider.display_name || provider.name || provider.id
+                      return (
+                        <button
+                          key={provider.id}
+                          className={`provider-item ${isActive ? 'active' : ''}`}
+                          onClick={() => {
+                            if ((provider.configuration_count || 0) === 0) {
+                              setMessage({ type: 'error', text: '该供应商暂无可用配置，请先新增供应商配置' })
+                              setTimeout(() => setMessage(null), 3000)
+                              return
+                            }
+                            loadProviderDetail(provider.id)
+                          }}
+                        >
+                          <span className="provider-avatar">
+                            {provider.icon ? (
+                              <img src={provider.icon} alt={displayName} />
+                            ) : (
+                              <span>{displayName.slice(0, 1).toUpperCase()}</span>
+                            )}
+                          </span>
+                          <span className="provider-item-content">
+                            <span className="provider-item-title">{displayName}</span>
+                            <span className="provider-item-sub">{provider.id}</span>
+                            {(provider.configuration_count || 0) === 0 && (
+                              <span className="provider-item-empty">未配置</span>
+                            )}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </aside>
+
+              <section className="provider-detail-panel">
+                {loadingProviderDetail ? (
+                  <div className="loading">加载供应商详情中...</div>
+                ) : !selectedProviderId ? (
+                  <div className="empty-state">
+                    <p>请选择左侧供应商</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>供应商标识</label>
+                        <input type="text" value={providerForm.provider} disabled />
+                      </div>
+                      <div className="form-group">
+                        <label>显示名称</label>
+                        <input
+                          type="text"
+                          value={providerForm.display_name}
+                          onChange={(e) => setProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
+                          placeholder="供应商显示名称"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>图标地址（可选）</label>
+                        <input
+                          type="text"
+                          value={providerForm.icon}
+                          onChange={(e) => setProviderForm(prev => ({ ...prev, icon: e.target.value }))}
+                          placeholder="https://example.com/icon.png"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>API URL</label>
+                        <input
+                          type="text"
+                          value={providerForm.api_endpoint}
+                          onChange={(e) => setProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
+                          placeholder="https://api.example.com/v1/chat/completions"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>API Key</label>
+                        <input
+                          type="password"
+                          value={providerForm.api_key}
+                          onChange={(e) => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
+                          placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="provider-detail-actions">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models)}
+                        disabled={loadingProviderModels}
+                      >
+                        {loadingProviderModels ? '获取中...' : '获取模型列表'}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleSaveProviderConfig}
+                        disabled={saving}
+                      >
+                        {saving ? '保存中...' : '保存供应商配置'}
+                      </button>
+                    </div>
+
+                    <div className="provider-models-section">
+                      <h3>模型选择（复选）</h3>
+                      {providerModelsError && (
+                        <div className="message error">{providerModelsError}</div>
+                      )}
+                      {loadingProviderModels ? (
+                        <div className="loading">加载模型中...</div>
+                      ) : providerModels.length === 0 ? (
+                        <div className="empty-state">
+                          <p>暂无模型，请先点击“获取模型列表”</p>
+                        </div>
+                      ) : (
+                        <div className="provider-model-list">
+                          {providerModels.map(model => {
+                            const checked = providerForm.selected_models.includes(model.model)
+                            return (
+                              <label key={model.id} className="provider-model-item">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => handleToggleProviderModel(model.model, e.target.checked)}
+                                />
+                                <span className="provider-model-name">{model.model}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
             </div>
-            <div className="setting-item">
-              <label>API Endpoint (可选)</label>
-              <input
-                type="text"
-                placeholder="自定义API地址"
-              />
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={saveSettings}
-              disabled={saving}
-            >
-              {saving ? '保存中...' : '保存API配置'}
-            </button>
           </div>
         )}
 

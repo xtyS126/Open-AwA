@@ -6,7 +6,7 @@ import './ChatPage.css'
 
 function ChatPage() {
   const [input, setInput] = useState('')
-  const { messages, addMessage, setLoading, isLoading, clearMessages } = useChatStore()
+  const { messages, addMessage, setLoading, isLoading, clearMessages, sessionId } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [configurations, setConfigurations] = useState<ModelConfiguration[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
@@ -82,6 +82,22 @@ function ChatPage() {
     loadConfigurations()
   }, [])
 
+  const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
+    if (!value) {
+      return { provider: undefined, model: undefined }
+    }
+
+    const separatorIndex = value.indexOf(':')
+    if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
+      return { provider: undefined, model: undefined }
+    }
+
+    return {
+      provider: value.slice(0, separatorIndex),
+      model: value.slice(separatorIndex + 1)
+    }
+  }
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
 
@@ -91,8 +107,18 @@ function ChatPage() {
     setLoading(true)
 
     try {
-      const response = await chatAPI.sendMessage(userMessage)
-      addMessage('assistant', response.data.response)
+      const { provider, model } = parseSelectedModel(selectedModel)
+      const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model)
+      const assistantText = response.data.response
+      const backendError = response.data.error
+
+      if (assistantText && assistantText.trim()) {
+        addMessage('assistant', assistantText)
+      } else if (backendError?.message) {
+        addMessage('assistant', `请求失败：${backendError.message}`)
+      } else {
+        addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。')
+      }
     } catch (error) {
       addMessage('assistant', '抱歉，发生了错误。请稍后重试。')
     } finally {

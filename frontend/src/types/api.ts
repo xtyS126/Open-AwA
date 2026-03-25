@@ -49,6 +49,46 @@ export interface ExecutionStep {
   result: string
 }
 
+export interface BillingProvider {
+  id: string
+  name: string
+  display_name?: string
+  icon?: string | null
+  api_endpoint?: string | null
+  has_api_key?: boolean
+  selected_models?: string[]
+  configuration_count?: number
+}
+
+export interface BillingModelConfiguration {
+  id: number
+  provider: string
+  model: string
+  display_name: string | null
+  description: string | null
+  icon?: string | null
+  api_endpoint?: string | null
+  api_key?: string | null
+  has_api_key?: boolean
+  selected_models?: string[]
+  is_active: boolean
+  is_default: boolean
+  sort_order: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface BillingProviderModel {
+  id: number
+  provider: string
+  model: string
+  input_price: number
+  output_price: number
+  currency: string
+  context_window: number | null
+  selected?: boolean
+}
+
 export const snakeToCamel = (str: string): string =>
   str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
 

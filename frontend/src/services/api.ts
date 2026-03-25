@@ -18,16 +18,29 @@ api.interceptors.request.use((config) => {
 })
 
 export const authAPI = {
-  login: (username: string, password: string) =>
-    api.post('/auth/login', { username, password }),
+  login: (username: string, password: string) => {
+    const formData = new URLSearchParams()
+    formData.append('username', username)
+    formData.append('password', password)
+    return api.post('/auth/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    })
+  },
   register: (username: string, password: string) =>
     api.post('/auth/register', { username, password }),
   getMe: () => api.get('/auth/me'),
 }
 
 export const chatAPI = {
-  sendMessage: (message: string, sessionId: string = 'default') =>
-    api.post('/chat', { message, session_id: sessionId }),
+  sendMessage: (
+    message: string,
+    sessionId: string = 'default',
+    provider?: string,
+    model?: string
+  ) =>
+    api.post('/chat', { message, session_id: sessionId, provider, model }),
   getHistory: (sessionId: string) =>
     api.get(`/chat/history/${sessionId}`),
   confirmOperation: (confirmed: boolean, step: any) =>

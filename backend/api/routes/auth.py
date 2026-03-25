@@ -5,6 +5,7 @@ from datetime import timedelta
 from db.models import get_db, User
 from db.models import User as UserModel
 from api.schemas import UserCreate, UserResponse, Token
+from api.dependencies import get_current_user
 from config.security import verify_password, get_password_hash, create_access_token
 from config.settings import settings
 import uuid
@@ -21,7 +22,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
-    
+
     new_user = UserModel(
         id=str(uuid.uuid4()),
         username=user.username,
@@ -31,7 +32,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
     return new_user
 
 
@@ -47,15 +48,15 @@ async def login(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_db)):
+async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
