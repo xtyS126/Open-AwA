@@ -13,6 +13,7 @@ import json
 import zipfile
 import io
 import time
+import threading
 
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
@@ -26,6 +27,7 @@ from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig,
 WEIXIN_SKILL_NAME = "weixin_dispatch"
 WEIXIN_QR_SESSION_TTL_SECONDS = 300
 WEIXIN_QR_SESSIONS: Dict[str, Dict[str, Any]] = {}
+WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
 
 
 def _build_default_weixin_config() -> Dict[str, Any]:
@@ -134,15 +136,62 @@ def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
     )
 
 
+def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
+    payload = result.get("data") if isinstance(result.get("data"), dict) else result
+    qrcode = str(
+        payload.get("qrcode")
+        or payload.get("qr_code")
+        or payload.get("qrCode")
+        or ""
+    ).strip()
+    qrcode_url = str(
+        payload.get("qrcode_img_content")
+        or payload.get("qrcode_url")
+        or payload.get("qr_code_url")
+        or payload.get("qrCodeUrl")
+        or ""
+    ).strip()
+    if not qrcode and qrcode_url:
+        qrcode = qrcode_url
+    if not qrcode_url and qrcode.lower().startswith(("http://", "https://")):
+        qrcode_url = qrcode
+    return {"qrcode": qrcode, "qrcode_url": qrcode_url}
+
+
+def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
+    payload = result.get("data") if isinstance(result.get("data"), dict) else result
+    code = payload.get("errcode")
+    if code is None:
+        code = payload.get("code")
+    if code is None:
+        code = payload.get("ret")
+    message = (
+        payload.get("errmsg")
+        or payload.get("message")
+        or payload.get("error")
+        or payload.get("retmsg")
+        or payload.get("detail")
+    )
+    detail = "二维码接口返回异常"
+    if isinstance(code, (int, str)) and str(code).strip() not in {"", "0"}:
+        detail += f" (code={code})"
+    if isinstance(message, str) and message.strip():
+        detail += f": {message.strip()}"
+    else:
+        detail += f": {json.dumps(result, ensure_ascii=False)[:200]}"
+    return detail
+
+
 def _purge_expired_qr_sessions() -> None:
     now = time.time()
-    expired_keys = [
-        key
-        for key, value in WEIXIN_QR_SESSIONS.items()
-        if now - float(value.get("created_at", 0)) >= WEIXIN_QR_SESSION_TTL_SECONDS
-    ]
-    for key in expired_keys:
-        WEIXIN_QR_SESSIONS.pop(key, None)
+    with WEIXIN_QR_SESSIONS_LOCK:
+        expired_keys = [
+            key
+            for key, value in WEIXIN_QR_SESSIONS.items()
+            if now - float(value.get("created_at", 0)) >= WEIXIN_QR_SESSION_TTL_SECONDS
+        ]
+        for key in expired_keys:
+            WEIXIN_QR_SESSIONS.pop(key, None)
 
 class WeixinConfigReq(BaseModel):
     account_id: str
@@ -233,7 +282,8 @@ async def weixin_qr_start(
     runtime = _build_runtime_config_from_db(db)
     session_key = str(payload.session_key or runtime.account_id or uuid.uuid4())
 
-    existing = WEIXIN_QR_SESSIONS.get(session_key)
+    with WEIXIN_QR_SESSIONS_LOCK:
+        existing = WEIXIN_QR_SESSIONS.get(session_key)
     if existing and not payload.force:
         return {
             "message": "二维码已就绪，请使用微信扫描。",
@@ -255,19 +305,23 @@ async def weixin_qr_start(
     except WeixinAdapterError as exc:
         raise HTTPException(status_code=502, detail=exc.message)
 
-    qrcode = str(qr_result.get("qrcode") or "").strip()
-    qrcode_url = str(qr_result.get("qrcode_img_content") or "").strip()
-    if not qrcode or not qrcode_url:
-        raise HTTPException(status_code=502, detail="二维码接口返回异常")
+    logger.debug(f"[weixin_qr_start] upstream raw result: {json.dumps(qr_result, ensure_ascii=False)[:600]}")
+    extracted = _extract_qrcode_fields(qr_result)
+    qrcode = extracted["qrcode"]
+    qrcode_url = extracted["qrcode_url"]
+    if not qrcode:
+        logger.warning(f"[weixin_qr_start] qrcode field empty, upstream result: {qr_result}")
+        raise HTTPException(status_code=502, detail=_build_qrcode_upstream_error_detail(qr_result))
 
-    WEIXIN_QR_SESSIONS[session_key] = {
-        "qrcode": qrcode,
-        "qrcode_url": qrcode_url,
-        "base_url": base_url,
-        "bot_type": bot_type,
-        "created_at": time.time(),
-        "timeout_seconds": timeout_seconds
-    }
+    with WEIXIN_QR_SESSIONS_LOCK:
+        WEIXIN_QR_SESSIONS[session_key] = {
+            "qrcode": qrcode,
+            "qrcode_url": qrcode_url,
+            "base_url": base_url,
+            "bot_type": bot_type,
+            "created_at": time.time(),
+            "timeout_seconds": timeout_seconds
+        }
 
     return {
         "message": "使用微信扫描以下二维码，以完成连接。",
@@ -285,7 +339,10 @@ async def weixin_qr_wait(
     current_user=Depends(get_current_user)
 ):
     _purge_expired_qr_sessions()
-    session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+    with WEIXIN_QR_SESSIONS_LOCK:
+        session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+        if session:
+            session = dict(session)
     if not session:
         raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
 
@@ -333,11 +390,13 @@ async def weixin_qr_wait(
             "token": token,
             "base_url": base_url
         })
-        WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
+        with WEIXIN_QR_SESSIONS_LOCK:
+            WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
         return response
 
     if status == "expired":
-        WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
+        with WEIXIN_QR_SESSIONS_LOCK:
+            WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
         return response
 
     if status == "scaned":
@@ -354,11 +413,13 @@ async def weixin_qr_exit(
     _purge_expired_qr_sessions()
     cleared_sessions = 0
     if payload.session_key:
-        if WEIXIN_QR_SESSIONS.pop(payload.session_key, None) is not None:
-            cleared_sessions = 1
+        with WEIXIN_QR_SESSIONS_LOCK:
+            if WEIXIN_QR_SESSIONS.pop(payload.session_key, None) is not None:
+                cleared_sessions = 1
     else:
-        cleared_sessions = len(WEIXIN_QR_SESSIONS)
-        WEIXIN_QR_SESSIONS.clear()
+        with WEIXIN_QR_SESSIONS_LOCK:
+            cleared_sessions = len(WEIXIN_QR_SESSIONS)
+            WEIXIN_QR_SESSIONS.clear()
 
     if payload.clear_config:
         runtime = _build_runtime_config_from_db(db)
