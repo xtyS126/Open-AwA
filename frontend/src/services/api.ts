@@ -213,4 +213,10 @@ export const behaviorAPI = {
     api.post('/behaviors/log', { action_type: actionType, details }),
 }
 
+export const weixinAPI = {
+  getConfig: () => api.get('/skills/weixin/config'),
+  saveConfig: (config: any) => api.post('/skills/weixin/config', config),
+  healthCheck: (config: any) => api.post('/skills/weixin/health-check', config),
+}
+
 export default api
