@@ -1,10 +1,10 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SettingsPage from '../pages/SettingsPage'
-import { weixinAPI, promptsAPI, conversationAPI } from '../services/api'
-import { billingAPI } from '../services/billingApi'
-import { modelsAPI } from '../services/modelsApi'
+import CommunicationPage from '../pages/CommunicationPage'
+import { weixinAPI } from '../services/api'
 
 vi.mock('../services/api', () => ({
   weixinAPI: {
@@ -35,7 +35,7 @@ vi.mock('../services/modelsApi', () => ({
   }
 }))
 
-describe('SettingsPage Weixin Clawbot Configuration', () => {
+describe('CommunicationPage Weixin Clawbot Configuration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(weixinAPI.getConfig as any).mockResolvedValue({
@@ -53,13 +53,12 @@ describe('SettingsPage Weixin Clawbot Configuration', () => {
   })
 
   it('loads and displays weixin config on communication tab', async () => {
-    render(<SettingsPage />)
-    
-    // Click on Communication tab
-    const commTab = screen.getByText('通讯配置')
-    fireEvent.click(commTab)
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
 
-    // Wait for the inputs to be populated
     await waitFor(() => {
       expect(weixinAPI.getConfig).toHaveBeenCalledTimes(1)
     })
@@ -76,8 +75,11 @@ describe('SettingsPage Weixin Clawbot Configuration', () => {
       data: { account_id: '', token: '' }
     })
 
-    render(<SettingsPage />)
-    fireEvent.click(screen.getByText('通讯配置'))
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
 
     await waitFor(() => {
       expect(weixinAPI.getConfig).toHaveBeenCalled()
@@ -96,8 +98,11 @@ describe('SettingsPage Weixin Clawbot Configuration', () => {
   it('calls saveConfig API on valid save', async () => {
     ;(weixinAPI.saveConfig as any).mockResolvedValue({ data: { message: 'success' } })
 
-    render(<SettingsPage />)
-    fireEvent.click(screen.getByText('通讯配置'))
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
 
     await waitFor(() => {
       expect(weixinAPI.getConfig).toHaveBeenCalled()
@@ -126,8 +131,11 @@ describe('SettingsPage Weixin Clawbot Configuration', () => {
       }
     })
 
-    render(<SettingsPage />)
-    fireEvent.click(screen.getByText('通讯配置'))
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
 
     await waitFor(() => {
       expect(weixinAPI.getConfig).toHaveBeenCalled()
@@ -145,6 +153,23 @@ describe('SettingsPage Weixin Clawbot Configuration', () => {
       })
       expect(screen.getByText('测试连接成功！')).toBeInTheDocument()
       expect(screen.getByText('配置正常，微信适配器健康检查通过。')).toBeInTheDocument()
+    })
+  })
+
+  it('redirects legacy settings communication tab to standalone page', async () => {
+    render(
+      <MemoryRouter initialEntries={['/settings?tab=communication']}>
+        <Routes>
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/communication" element={<CommunicationPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '通讯配置' })).toBeInTheDocument()
+      expect(screen.queryByText('通用设置')).not.toBeInTheDocument()
+      expect(weixinAPI.getConfig).toHaveBeenCalled()
     })
   })
 })

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, weixinAPI } from '../services/api'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '../services/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '../services/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse } from '../services/modelsApi'
 import './SettingsPage.css'
@@ -26,6 +27,11 @@ interface ApiProviderFormState {
 }
 
 function SettingsPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const queryParams = new URLSearchParams(location.search)
+  const initialTab = queryParams.get('tab') || 'general'
+
   const createInitialAddProviderForm = () => ({
     provider: '',
     display_name: '',
@@ -35,7 +41,29 @@ function SettingsPage() {
     base_model: ''
   })
 
-  const [activeTab, setActiveTab] = useState('general')
+  const [activeTab, setActiveTab] = useState(initialTab)
+
+  useEffect(() => {
+    const tab = queryParams.get('tab')
+    if (tab === 'communication') {
+      navigate('/communication', { replace: true })
+      return
+    }
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab)
+    } else if (!tab && activeTab !== 'general') {
+      setActiveTab('general')
+    }
+  }, [location.search, navigate])
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    if (tab === 'general') {
+      navigate('/settings')
+    } else {
+      navigate(`/settings?tab=${tab}`)
+    }
+  }
   const [settings, setSettings] = useState<Settings>({
     theme: 'light',
     language: 'zh',
@@ -100,18 +128,6 @@ function SettingsPage() {
   const [cleanupDays, setCleanupDays] = useState(30)
   const [cleaningRecords, setCleaningRecords] = useState(false)
 
-  // Weixin Clawbot States
-  const [weixinConfig, setWeixinConfig] = useState({
-    account_id: '',
-    token: '',
-    base_url: 'https://ilinkai.weixin.qq.com',
-    timeout_seconds: 15
-  })
-  const [loadingWeixin, setLoadingWeixin] = useState(false)
-  const [savingWeixin, setSavingWeixin] = useState(false)
-  const [testingWeixin, setTestingWeixin] = useState(false)
-  const [weixinHealthResult, setWeixinHealthResult] = useState<{ ok: boolean, issues: string[], suggestions: string[] } | null>(null)
-
   useEffect(() => {
     loadSettings()
     loadPrompts()
@@ -131,71 +147,7 @@ function SettingsPage() {
       loadCollectionStatus()
       loadRecordsPreview()
     }
-    if (activeTab === 'communication') {
-      loadWeixinConfig()
-    }
   }, [activeTab])
-
-  const loadWeixinConfig = async () => {
-    setLoadingWeixin(true)
-    try {
-      const response = await weixinAPI.getConfig()
-      if (response.data) {
-        setWeixinConfig({
-          account_id: response.data.account_id || '',
-          token: response.data.token || '',
-          base_url: response.data.base_url || 'https://ilinkai.weixin.qq.com',
-          timeout_seconds: response.data.timeout_seconds || 15
-        })
-      }
-    } catch (error) {
-      console.error('Failed to load weixin config')
-    } finally {
-      setLoadingWeixin(false)
-    }
-  }
-
-  const handleSaveWeixinConfig = async () => {
-    if (!weixinConfig.account_id || !weixinConfig.token) {
-      setMessage({ type: 'error', text: '微信配置不完整，account_id 和 token 为必填项' })
-      setTimeout(() => setMessage(null), 3000)
-      return
-    }
-    setSavingWeixin(true)
-    try {
-      await weixinAPI.saveConfig(weixinConfig)
-      setMessage({ type: 'success', text: '微信通讯配置保存成功' })
-    } catch (error) {
-      setMessage({ type: 'error', text: '微信通讯配置保存失败' })
-    } finally {
-      setSavingWeixin(false)
-      setTimeout(() => setMessage(null), 3000)
-    }
-  }
-
-  const handleTestWeixinConnection = async () => {
-    if (!weixinConfig.account_id || !weixinConfig.token) {
-      setMessage({ type: 'error', text: '微信配置不完整，请先填写 account_id 和 token' })
-      setTimeout(() => setMessage(null), 3000)
-      return
-    }
-    setTestingWeixin(true)
-    setWeixinHealthResult(null)
-    try {
-      const response = await weixinAPI.healthCheck(weixinConfig)
-      setWeixinHealthResult(response.data)
-      if (response.data.ok) {
-        setMessage({ type: 'success', text: '测试连接成功！' })
-      } else {
-        setMessage({ type: 'error', text: '测试连接失败，请查看下方详细结果' })
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: '测试连接请求失败' })
-    } finally {
-      setTestingWeixin(false)
-      setTimeout(() => setMessage(null), 3000)
-    }
-  }
 
   const loadRetentionConfig = async () => {
     setLoadingRetention(true)
@@ -840,55 +792,49 @@ function SettingsPage() {
       <div className="settings-tabs">
         <button
           className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`}
-          onClick={() => setActiveTab('general')}
+          onClick={() => handleTabChange('general')}
         >
           通用设置
         </button>
         <button
           className={`tab-btn ${activeTab === 'api' ? 'active' : ''}`}
-          onClick={() => setActiveTab('api')}
+          onClick={() => handleTabChange('api')}
         >
           API配置
         </button>
         <button
           className={`tab-btn ${activeTab === 'prompts' ? 'active' : ''}`}
-          onClick={() => setActiveTab('prompts')}
+          onClick={() => handleTabChange('prompts')}
         >
           提示词
         </button>
         <button
           className={`tab-btn ${activeTab === 'billing' ? 'active' : ''}`}
-          onClick={() => setActiveTab('billing')}
+          onClick={() => handleTabChange('billing')}
         >
           计费配置
         </button>
         <button
           className={`tab-btn ${activeTab === 'models' ? 'active' : ''}`}
-          onClick={() => setActiveTab('models')}
+          onClick={() => handleTabChange('models')}
         >
           模型管理
         </button>
         <button
           className={`tab-btn ${activeTab === 'data-retention' ? 'active' : ''}`}
-          onClick={() => setActiveTab('data-retention')}
+          onClick={() => handleTabChange('data-retention')}
         >
           数据保留
         </button>
         <button
           className={`tab-btn ${activeTab === 'data-collection' ? 'active' : ''}`}
-          onClick={() => setActiveTab('data-collection')}
+          onClick={() => handleTabChange('data-collection')}
         >
           数据采集
         </button>
         <button
-          className={`tab-btn ${activeTab === 'communication' ? 'active' : ''}`}
-          onClick={() => setActiveTab('communication')}
-        >
-          通讯配置
-        </button>
-        <button
           className={`tab-btn ${activeTab === 'security' ? 'active' : ''}`}
-          onClick={() => setActiveTab('security')}
+          onClick={() => handleTabChange('security')}
         >
           安全设置
         </button>
@@ -1586,108 +1532,6 @@ function SettingsPage() {
             >
               {saving ? '保存中...' : '保存安全设置'}
             </button>
-          </div>
-        )}
-
-        {activeTab === 'communication' && (
-          <div className="settings-section">
-            <h2>通讯配置</h2>
-            <p className="section-desc" style={{ marginBottom: '20px', color: 'var(--text-secondary)' }}>配置外部通讯渠道，如微信 Clawbot 插件。</p>
-
-            <div className="config-card" style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-secondary)' }}>
-              <h3 style={{ marginBottom: '15px' }}>微信 Clawbot 配置</h3>
-              {loadingWeixin ? (
-                <div className="loading">加载配置中...</div>
-              ) : (
-                <>
-                  <div className="setting-item" style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px' }}>Account ID <span className="required" style={{ color: '#d32f2f' }}>*</span></label>
-                    <input
-                      type="text"
-                      value={weixinConfig.account_id}
-                      onChange={(e) => setWeixinConfig({ ...weixinConfig, account_id: e.target.value })}
-                      placeholder="输入微信通讯账户 ID"
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
-                    />
-                  </div>
-                  <div className="setting-item" style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px' }}>Token <span className="required" style={{ color: '#d32f2f' }}>*</span></label>
-                    <input
-                      type="password"
-                      value={weixinConfig.token}
-                      onChange={(e) => setWeixinConfig({ ...weixinConfig, token: e.target.value })}
-                      placeholder="输入 iLink Bot Token"
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
-                    />
-                  </div>
-                  <div className="setting-item" style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px' }}>Base URL</label>
-                    <input
-                      type="text"
-                      value={weixinConfig.base_url}
-                      onChange={(e) => setWeixinConfig({ ...weixinConfig, base_url: e.target.value })}
-                      placeholder="https://ilinkai.weixin.qq.com"
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
-                    />
-                  </div>
-                  <div className="setting-item" style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px' }}>超时时间 (秒)</label>
-                    <input
-                      type="number"
-                      value={weixinConfig.timeout_seconds}
-                      onChange={(e) => setWeixinConfig({ ...weixinConfig, timeout_seconds: parseInt(e.target.value, 10) || 15 })}
-                      placeholder="15"
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
-                    />
-                  </div>
-                  <div className="actions-row" style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSaveWeixinConfig}
-                      disabled={savingWeixin}
-                    >
-                      {savingWeixin ? '保存中...' : '保存配置'}
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={handleTestWeixinConnection}
-                      disabled={testingWeixin}
-                    >
-                      {testingWeixin ? '测试中...' : '测试连接'}
-                    </button>
-                  </div>
-
-                  {weixinHealthResult && (
-                    <div className={`health-result ${weixinHealthResult.ok ? 'success' : 'error'}`} style={{ marginTop: '20px', padding: '15px', borderRadius: '8px', backgroundColor: weixinHealthResult.ok ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)', border: `1px solid ${weixinHealthResult.ok ? '#4caf50' : '#f44336'}` }}>
-                      <h4 style={{ color: weixinHealthResult.ok ? '#2e7d32' : '#c62828', marginBottom: '10px' }}>测试结果: {weixinHealthResult.ok ? '成功' : '失败'}</h4>
-                      {weixinHealthResult.issues && weixinHealthResult.issues.length > 0 && (
-                        <div style={{ marginTop: '10px' }}>
-                          <strong style={{ color: 'var(--text-color)' }}>问题发现:</strong>
-                          <ul style={{ paddingLeft: '20px', marginTop: '5px', color: 'var(--text-color)' }}>
-                            {weixinHealthResult.issues.map((issue, i) => (
-                              <li key={i} style={{ color: '#d32f2f' }}>{issue}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {weixinHealthResult.suggestions && weixinHealthResult.suggestions.length > 0 && (
-                        <div style={{ marginTop: '10px' }}>
-                          <strong style={{ color: 'var(--text-color)' }}>建议修复:</strong>
-                          <ul style={{ paddingLeft: '20px', marginTop: '5px', color: 'var(--text-color)' }}>
-                            {weixinHealthResult.suggestions.map((suggestion, i) => (
-                              <li key={i}>{suggestion}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {weixinHealthResult.ok && (!weixinHealthResult.issues || weixinHealthResult.issues.length === 0) && (
-                        <p style={{ color: '#2e7d32', marginTop: '10px' }}>配置正常，微信适配器健康检查通过。</p>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
           </div>
         )}
 
