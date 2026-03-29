@@ -265,6 +265,33 @@ class WeixinSkillAdapter:
         response = await self._api_post(config=config, endpoint="ilink/bot/getupdates", body=request_body, timeout_seconds=38)
         return {"request": request_body, "response": response}
 
+    async def fetch_login_qrcode(
+        self,
+        base_url: str,
+        bot_type: str = DEFAULT_BOT_TYPE,
+        timeout_seconds: int = 15
+    ) -> Dict[str, Any]:
+        return await self._api_get(
+            base_url=base_url,
+            endpoint="ilink/bot/get_bot_qrcode",
+            params={"bot_type": bot_type},
+            timeout_seconds=timeout_seconds
+        )
+
+    async def fetch_qrcode_status(
+        self,
+        base_url: str,
+        qrcode: str,
+        timeout_seconds: int = 35
+    ) -> Dict[str, Any]:
+        return await self._api_get(
+            base_url=base_url,
+            endpoint="ilink/bot/get_qrcode_status",
+            params={"qrcode": qrcode},
+            timeout_seconds=timeout_seconds,
+            extra_headers={"iLink-App-ClientVersion": "1"}
+        )
+
     async def _api_post(
         self,
         config: WeixinRuntimeConfig,
@@ -305,6 +332,55 @@ class WeixinSkillAdapter:
                 code="WEIXIN_TIMEOUT",
                 message="weixin 上游请求超时",
                 details={"endpoint": endpoint, "timeout_seconds": timeout_value},
+                suggestions=["提高 timeout_seconds 或检查网络连通性"]
+            )
+        except httpx.HTTPError as exc:
+            raise WeixinAdapterError(
+                code="WEIXIN_HTTP_ERROR",
+                message="weixin 上游请求异常",
+                details={"endpoint": endpoint, "error": str(exc)},
+                suggestions=["检查网络、代理和证书配置"]
+            )
+
+    async def _api_get(
+        self,
+        base_url: str,
+        endpoint: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout_seconds: int = 15,
+        extra_headers: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        normalized_base_url = str(base_url or DEFAULT_BASE_URL).strip().rstrip("/")
+        url = f"{normalized_base_url}/{endpoint.lstrip('/')}"
+        headers: Dict[str, str] = {}
+        if extra_headers:
+            headers.update(extra_headers)
+
+        try:
+            async with httpx.AsyncClient(timeout=max(1, int(timeout_seconds))) as client:
+                response = await client.get(url, params=params, headers=headers)
+            content_type = response.headers.get("content-type", "")
+            if response.status_code >= 400:
+                raise WeixinAdapterError(
+                    code="WEIXIN_UPSTREAM_HTTP_ERROR",
+                    message=f"上游请求失败: HTTP {response.status_code}",
+                    details={
+                        "endpoint": endpoint,
+                        "status_code": response.status_code,
+                        "response_text": response.text[:500]
+                    },
+                    suggestions=["检查 base_url 是否正确，或稍后重试"]
+                )
+            if "application/json" in content_type.lower():
+                return response.json()
+            return {"raw_text": response.text}
+        except WeixinAdapterError:
+            raise
+        except httpx.TimeoutException:
+            raise WeixinAdapterError(
+                code="WEIXIN_TIMEOUT",
+                message="weixin 上游请求超时",
+                details={"endpoint": endpoint, "timeout_seconds": timeout_seconds},
                 suggestions=["提高 timeout_seconds 或检查网络连通性"]
             )
         except httpx.HTTPError as exc:

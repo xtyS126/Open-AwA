@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
-import { weixinAPI } from '../services/api'
+import { useEffect, useRef, useState } from 'react'
+import { WeixinConfig, WeixinHealthCheckResult, weixinAPI } from '../services/api'
 import './CommunicationPage.css'
 
 function CommunicationPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [weixinConfig, setWeixinConfig] = useState({
+  const [weixinConfig, setWeixinConfig] = useState<WeixinConfig>({
     account_id: '',
     token: '',
     base_url: 'https://ilinkai.weixin.qq.com',
@@ -13,11 +13,30 @@ function CommunicationPage() {
   const [loadingWeixin, setLoadingWeixin] = useState(false)
   const [savingWeixin, setSavingWeixin] = useState(false)
   const [testingWeixin, setTestingWeixin] = useState(false)
-  const [weixinHealthResult, setWeixinHealthResult] = useState<{ ok: boolean, issues: string[], suggestions: string[] } | null>(null)
+  const [weixinHealthResult, setWeixinHealthResult] = useState<WeixinHealthCheckResult | null>(null)
+  const [startingQrLogin, setStartingQrLogin] = useState(false)
+  const [pollingQrLogin, setPollingQrLogin] = useState(false)
+  const [qrSessionKey, setQrSessionKey] = useState('')
+  const [qrCodeUrl, setQrCodeUrl] = useState('')
+  const [qrStatus, setQrStatus] = useState<'idle' | 'wait' | 'scaned' | 'expired' | 'confirmed'>('idle')
+  const [qrStatusText, setQrStatusText] = useState('')
+  const pollTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     loadWeixinConfig()
+
+    return () => {
+      clearQrPolling()
+    }
   }, [])
+
+  const clearQrPolling = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+    setPollingQrLogin(false)
+  }
 
   const loadWeixinConfig = async () => {
     setLoadingWeixin(true)
@@ -35,6 +54,92 @@ function CommunicationPage() {
       console.error('Failed to load weixin config')
     } finally {
       setLoadingWeixin(false)
+    }
+  }
+
+  const pollQrLoginStatus = async (sessionKey: string) => {
+    try {
+      const response = await weixinAPI.waitQrLogin({ session_key: sessionKey, timeout_seconds: weixinConfig.timeout_seconds })
+      const status = (response.data.status || 'wait') as 'wait' | 'scaned' | 'expired' | 'confirmed'
+      setQrStatus(status)
+      setQrStatusText(response.data.message || '')
+
+      if (status === 'confirmed' && response.data.connected) {
+        clearQrPolling()
+        setQrSessionKey('')
+        setQrCodeUrl('')
+        setQrStatus('confirmed')
+        setMessage({ type: 'success', text: '微信扫码登录成功，配置已自动更新' })
+        await loadWeixinConfig()
+        return false
+      }
+
+      if (status === 'expired') {
+        clearQrPolling()
+        setQrSessionKey('')
+        setMessage({ type: 'error', text: '二维码已过期，请重新获取二维码' })
+        return false
+      }
+      return true
+    } catch {
+      clearQrPolling()
+      setQrStatusText('轮询登录状态失败，请稍后重试')
+      setMessage({ type: 'error', text: '轮询登录状态失败' })
+      return false
+    }
+  }
+
+  const handleStartQrLogin = async () => {
+    setStartingQrLogin(true)
+    clearQrPolling()
+    setQrStatus('idle')
+    setQrStatusText('')
+    setQrCodeUrl('')
+    setQrSessionKey('')
+    try {
+      const response = await weixinAPI.startQrLogin({
+        base_url: weixinConfig.base_url,
+        timeout_seconds: weixinConfig.timeout_seconds,
+        force: true
+      })
+      setQrSessionKey(response.data.session_key)
+      setQrCodeUrl(response.data.qrcode_url || '')
+      setQrStatus('wait')
+      setQrStatusText(response.data.message || '等待扫码中')
+      setPollingQrLogin(true)
+      const shouldContinuePolling = await pollQrLoginStatus(response.data.session_key)
+      if (shouldContinuePolling) {
+        pollTimerRef.current = window.setInterval(() => {
+          pollQrLoginStatus(response.data.session_key)
+        }, 2000)
+      }
+    } catch {
+      setMessage({ type: 'error', text: '获取二维码失败，请检查配置后重试' })
+      clearQrPolling()
+    } finally {
+      setStartingQrLogin(false)
+    }
+  }
+
+  const handleCancelQrLogin = async () => {
+    if (!qrSessionKey) {
+      clearQrPolling()
+      setQrCodeUrl('')
+      setQrStatus('idle')
+      setQrStatusText('')
+      return
+    }
+    try {
+      await weixinAPI.exitQrLogin({ session_key: qrSessionKey, clear_config: false })
+      setMessage({ type: 'success', text: '已取消当前扫码登录' })
+    } catch {
+      setMessage({ type: 'error', text: '取消扫码登录失败' })
+    } finally {
+      clearQrPolling()
+      setQrSessionKey('')
+      setQrCodeUrl('')
+      setQrStatus('idle')
+      setQrStatusText('')
     }
   }
 
@@ -154,6 +259,37 @@ function CommunicationPage() {
                   >
                     {testingWeixin ? '测试中...' : '测试连接'}
                   </button>
+                </div>
+
+                <div className="communication-qr-login">
+                  <h4 className="communication-qr-login-title">扫码登录</h4>
+                  <p className="communication-qr-login-desc">点击获取二维码后，请用微信扫码并在手机上确认授权。</p>
+                  <div className="actions-row communication-actions-row">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleStartQrLogin}
+                      disabled={startingQrLogin}
+                    >
+                      {startingQrLogin ? '获取中...' : '获取登录二维码'}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleCancelQrLogin}
+                      disabled={!qrSessionKey && !pollingQrLogin && !qrCodeUrl}
+                    >
+                      取消扫码登录
+                    </button>
+                  </div>
+                  {qrCodeUrl && (
+                    <div className="communication-qr-preview">
+                      <img src={qrCodeUrl} alt="微信登录二维码" className="communication-qr-image" />
+                    </div>
+                  )}
+                  {(qrStatusText || qrStatus !== 'idle') && (
+                    <p className="communication-qr-status">
+                      当前状态：{qrStatusText || qrStatus}
+                    </p>
+                  )}
                 </div>
 
                 {weixinHealthResult && (

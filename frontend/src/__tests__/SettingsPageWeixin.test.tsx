@@ -11,6 +11,9 @@ vi.mock('../services/api', () => ({
     getConfig: vi.fn(),
     saveConfig: vi.fn(),
     healthCheck: vi.fn(),
+    startQrLogin: vi.fn(),
+    waitQrLogin: vi.fn(),
+    exitQrLogin: vi.fn(),
   },
   promptsAPI: {
     getActive: vi.fn().mockResolvedValue({ data: null }),
@@ -44,6 +47,29 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         token: 'test_token',
         base_url: 'https://test.weixin.qq.com',
         timeout_seconds: 20
+      }
+    })
+    ;(weixinAPI.startQrLogin as any).mockResolvedValue({
+      data: {
+        message: '使用微信扫描以下二维码，以完成连接。',
+        session_key: 'session_1',
+        status: 'wait',
+        qrcode: 'qrcode_1',
+        qrcode_url: 'https://test.weixin.qq.com/qrcode-1.png'
+      }
+    })
+    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+      data: {
+        connected: false,
+        session_key: 'session_1',
+        status: 'wait',
+        message: '等待扫码中'
+      }
+    })
+    ;(weixinAPI.exitQrLogin as any).mockResolvedValue({
+      data: {
+        message: 'success',
+        cleared_sessions: 1
       }
     })
   })
@@ -170,6 +196,74 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
       expect(screen.getByRole('heading', { name: '通讯配置' })).toBeInTheDocument()
       expect(screen.queryByText('通用设置')).not.toBeInTheDocument()
       expect(weixinAPI.getConfig).toHaveBeenCalled()
+    })
+  })
+
+  it('starts qr login and auto handles confirmed status', async () => {
+    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+      data: {
+        connected: true,
+        session_key: 'session_1',
+        status: 'confirmed',
+        message: '与微信连接成功',
+        account_id: 'wx_account',
+        token: 'wx_token',
+        base_url: 'https://ilinkai.weixin.qq.com'
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(weixinAPI.getConfig).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByText('获取登录二维码'))
+
+    await waitFor(() => {
+      expect(weixinAPI.startQrLogin).toHaveBeenCalledWith({
+        base_url: 'https://test.weixin.qq.com',
+        timeout_seconds: 20,
+        force: true
+      })
+      expect(weixinAPI.waitQrLogin).toHaveBeenCalledWith({
+        session_key: 'session_1',
+        timeout_seconds: 20
+      })
+      expect(screen.getByText('微信扫码登录成功，配置已自动更新')).toBeInTheDocument()
+      expect(weixinAPI.getConfig).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('cancels qr login and calls exit api', async () => {
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(weixinAPI.getConfig).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByText('获取登录二维码'))
+
+    await waitFor(() => {
+      expect(screen.getByAltText('微信登录二维码')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('取消扫码登录'))
+
+    await waitFor(() => {
+      expect(weixinAPI.exitQrLogin).toHaveBeenCalledWith({
+        session_key: 'session_1',
+        clear_config: false
+      })
+      expect(screen.queryByAltText('微信登录二维码')).not.toBeInTheDocument()
     })
   })
 })

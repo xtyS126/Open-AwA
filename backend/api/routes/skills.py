@@ -12,6 +12,7 @@ import uuid
 import json
 import zipfile
 import io
+import time
 
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
@@ -19,21 +20,161 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
 
 from pydantic import BaseModel
 from typing import Optional
+from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig, WeixinAdapterError, DEFAULT_BASE_URL, DEFAULT_BOT_TYPE
+
+
+WEIXIN_SKILL_NAME = "weixin_dispatch"
+WEIXIN_QR_SESSION_TTL_SECONDS = 300
+WEIXIN_QR_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+
+def _build_default_weixin_config() -> Dict[str, Any]:
+    return {
+        "account_id": "",
+        "token": "",
+        "base_url": DEFAULT_BASE_URL,
+        "timeout_seconds": 15
+    }
+
+
+def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 15) -> int:
+    if timeout_seconds is None:
+        return fallback
+    try:
+        return max(1, int(timeout_seconds))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _load_weixin_skill_config_dict(db: Session) -> Dict[str, Any]:
+    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
+    if not skill:
+        return {}
+    try:
+        loaded = yaml.safe_load(skill.config)
+    except Exception:
+        return {}
+    if isinstance(loaded, dict):
+        return loaded
+    return {}
+
+
+def _build_weixin_config_payload(
+    account_id: str,
+    token: str,
+    base_url: str,
+    timeout_seconds: int
+) -> Dict[str, Any]:
+    return {
+        "name": WEIXIN_SKILL_NAME,
+        "version": "1.0.0",
+        "description": "Weixin Clawbot communication skill",
+        "adapter": "weixin",
+        "weixin": {
+            "account_id": account_id,
+            "token": token,
+            "base_url": base_url,
+            "timeout_seconds": timeout_seconds
+        }
+    }
+
+
+def _save_weixin_config_to_db(
+    db: Session,
+    account_id: str,
+    token: str,
+    base_url: str,
+    timeout_seconds: int
+) -> None:
+    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
+    config_yaml = yaml.dump(
+        _build_weixin_config_payload(
+            account_id=account_id,
+            token=token,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds
+        )
+    )
+    if skill:
+        skill.config = config_yaml
+    else:
+        skill = Skill(
+            id=str(uuid.uuid4()),
+            name=WEIXIN_SKILL_NAME,
+            version="1.0.0",
+            description="Weixin Clawbot communication skill",
+            config=config_yaml,
+            category="general",
+            tags="[]",
+            dependencies="[]",
+            author="system",
+            enabled=True
+        )
+        db.add(skill)
+    db.commit()
+
+
+def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
+    adapter = WeixinSkillAdapter()
+    config_dict = _load_weixin_skill_config_dict(db)
+    if config_dict:
+        runtime = adapter.map_skill_config(config_dict)
+        if runtime.base_url:
+            return runtime
+    return WeixinRuntimeConfig(
+        account_id="",
+        token="",
+        base_url=DEFAULT_BASE_URL,
+        bot_type=DEFAULT_BOT_TYPE,
+        channel_version="1.0.2",
+        timeout_seconds=15,
+        plugin_root=adapter.default_plugin_root,
+        require_node=False,
+        min_node_major=22
+    )
+
+
+def _purge_expired_qr_sessions() -> None:
+    now = time.time()
+    expired_keys = [
+        key
+        for key, value in WEIXIN_QR_SESSIONS.items()
+        if now - float(value.get("created_at", 0)) >= WEIXIN_QR_SESSION_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        WEIXIN_QR_SESSIONS.pop(key, None)
 
 class WeixinConfigReq(BaseModel):
     account_id: str
     token: str
-    base_url: Optional[str] = "https://ilinkai.weixin.qq.com"
+    base_url: Optional[str] = DEFAULT_BASE_URL
     timeout_seconds: Optional[int] = 15
+
+
+class WeixinQrStartReq(BaseModel):
+    session_key: Optional[str] = None
+    base_url: Optional[str] = None
+    bot_type: Optional[str] = None
+    force: Optional[bool] = False
+    timeout_seconds: Optional[int] = 15
+
+
+class WeixinQrWaitReq(BaseModel):
+    session_key: str
+    timeout_seconds: Optional[int] = 35
+
+
+class WeixinQrExitReq(BaseModel):
+    session_key: Optional[str] = None
+    clear_config: Optional[bool] = True
 
 @router.post("/weixin/health-check")
 async def weixin_health_check(config: WeixinConfigReq):
-    from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig
     adapter = WeixinSkillAdapter()
     runtime_config = WeixinRuntimeConfig(
         account_id=config.account_id,
         token=config.token,
-        base_url=config.base_url or "https://ilinkai.weixin.qq.com",
+        base_url=config.base_url or DEFAULT_BASE_URL,
         bot_type="3",
         channel_version="1.0.2",
         timeout_seconds=config.timeout_seconds or 15,
@@ -50,41 +191,13 @@ async def save_weixin_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    skill_name = "weixin_dispatch"
-    skill = db.query(Skill).filter(Skill.name == skill_name).first()
-    
-    config_dict = {
-        "name": skill_name,
-        "version": "1.0.0",
-        "description": "Weixin Clawbot communication skill",
-        "adapter": "weixin",
-        "weixin": {
-            "account_id": config.account_id,
-            "token": config.token,
-            "base_url": config.base_url or "https://ilinkai.weixin.qq.com",
-            "timeout_seconds": config.timeout_seconds or 15
-        }
-    }
-    config_yaml = yaml.dump(config_dict)
-    
-    if skill:
-        skill.config = config_yaml
-    else:
-        skill = Skill(
-            id=str(uuid.uuid4()),
-            name=skill_name,
-            version="1.0.0",
-            description="Weixin Clawbot communication skill",
-            config=config_yaml,
-            category="general",
-            tags="[]",
-            dependencies="[]",
-            author="system",
-            enabled=True
-        )
-        db.add(skill)
-        
-    db.commit()
+    _save_weixin_config_to_db(
+        db=db,
+        account_id=config.account_id,
+        token=config.token,
+        base_url=config.base_url or DEFAULT_BASE_URL,
+        timeout_seconds=_normalize_timeout_seconds(config.timeout_seconds, fallback=15)
+    )
     return {"message": "success"}
 
 @router.get("/weixin/config")
@@ -92,9 +205,9 @@ async def get_weixin_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    skill = db.query(Skill).filter(Skill.name == "weixin_dispatch").first()
+    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     if not skill:
-        return {"account_id": "", "token": "", "base_url": "https://ilinkai.weixin.qq.com", "timeout_seconds": 15}
+        return _build_default_weixin_config()
     
     try:
         config_dict = yaml.safe_load(skill.config)
@@ -102,11 +215,162 @@ async def get_weixin_config(
         return {
             "account_id": wx_config.get("account_id", ""),
             "token": wx_config.get("token", ""),
-            "base_url": wx_config.get("base_url", "https://ilinkai.weixin.qq.com"),
+            "base_url": wx_config.get("base_url", DEFAULT_BASE_URL),
             "timeout_seconds": wx_config.get("timeout_seconds", 15)
         }
     except:
-        return {"account_id": "", "token": "", "base_url": "https://ilinkai.weixin.qq.com", "timeout_seconds": 15}
+        return _build_default_weixin_config()
+
+
+@router.post("/weixin/qr/start")
+async def weixin_qr_start(
+    payload: WeixinQrStartReq,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    _purge_expired_qr_sessions()
+    adapter = WeixinSkillAdapter()
+    runtime = _build_runtime_config_from_db(db)
+    session_key = str(payload.session_key or runtime.account_id or uuid.uuid4())
+
+    existing = WEIXIN_QR_SESSIONS.get(session_key)
+    if existing and not payload.force:
+        return {
+            "message": "二维码已就绪，请使用微信扫描。",
+            "session_key": session_key,
+            "status": "wait",
+            "qrcode": existing.get("qrcode", ""),
+            "qrcode_url": existing.get("qrcode_url", "")
+        }
+
+    try:
+        timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=runtime.timeout_seconds)
+        base_url = str(payload.base_url or runtime.base_url or DEFAULT_BASE_URL).strip().rstrip("/")
+        bot_type = str(payload.bot_type or runtime.bot_type or DEFAULT_BOT_TYPE).strip() or DEFAULT_BOT_TYPE
+        qr_result = await adapter.fetch_login_qrcode(
+            base_url=base_url,
+            bot_type=bot_type,
+            timeout_seconds=timeout_seconds
+        )
+    except WeixinAdapterError as exc:
+        raise HTTPException(status_code=502, detail=exc.message)
+
+    qrcode = str(qr_result.get("qrcode") or "").strip()
+    qrcode_url = str(qr_result.get("qrcode_img_content") or "").strip()
+    if not qrcode or not qrcode_url:
+        raise HTTPException(status_code=502, detail="二维码接口返回异常")
+
+    WEIXIN_QR_SESSIONS[session_key] = {
+        "qrcode": qrcode,
+        "qrcode_url": qrcode_url,
+        "base_url": base_url,
+        "bot_type": bot_type,
+        "created_at": time.time(),
+        "timeout_seconds": timeout_seconds
+    }
+
+    return {
+        "message": "使用微信扫描以下二维码，以完成连接。",
+        "session_key": session_key,
+        "status": "wait",
+        "qrcode": qrcode,
+        "qrcode_url": qrcode_url
+    }
+
+
+@router.post("/weixin/qr/wait")
+async def weixin_qr_wait(
+    payload: WeixinQrWaitReq,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    _purge_expired_qr_sessions()
+    session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+    if not session:
+        raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
+
+    adapter = WeixinSkillAdapter()
+    timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
+    try:
+        status_result = await adapter.fetch_qrcode_status(
+            base_url=str(session.get("base_url") or DEFAULT_BASE_URL),
+            qrcode=str(session.get("qrcode") or ""),
+            timeout_seconds=timeout_seconds
+        )
+    except WeixinAdapterError as exc:
+        raise HTTPException(status_code=502, detail=exc.message)
+
+    status = str(status_result.get("status") or "wait").strip().lower()
+    message_map = {
+        "wait": "等待扫码中",
+        "scaned": "已扫码，请在微信继续确认",
+        "expired": "二维码已过期，请重新生成",
+        "confirmed": "与微信连接成功"
+    }
+
+    response: Dict[str, Any] = {
+        "connected": status == "confirmed",
+        "session_key": payload.session_key,
+        "status": status,
+        "message": message_map.get(status, "登录状态更新中")
+    }
+
+    if status == "confirmed":
+        account_id = str(status_result.get("ilink_bot_id") or "").strip()
+        token = str(status_result.get("bot_token") or "").strip()
+        base_url = str(status_result.get("baseurl") or session.get("base_url") or DEFAULT_BASE_URL).strip().rstrip("/")
+        previous_runtime = _build_runtime_config_from_db(db)
+        if account_id and token:
+            _save_weixin_config_to_db(
+                db=db,
+                account_id=account_id,
+                token=token,
+                base_url=base_url,
+                timeout_seconds=_normalize_timeout_seconds(previous_runtime.timeout_seconds, fallback=15)
+            )
+        response.update({
+            "account_id": account_id,
+            "token": token,
+            "base_url": base_url
+        })
+        WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
+        return response
+
+    if status == "expired":
+        WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
+        return response
+
+    if status == "scaned":
+        response["qrcode_url"] = session.get("qrcode_url", "")
+    return response
+
+
+@router.post("/weixin/qr/exit")
+async def weixin_qr_exit(
+    payload: WeixinQrExitReq,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    _purge_expired_qr_sessions()
+    cleared_sessions = 0
+    if payload.session_key:
+        if WEIXIN_QR_SESSIONS.pop(payload.session_key, None) is not None:
+            cleared_sessions = 1
+    else:
+        cleared_sessions = len(WEIXIN_QR_SESSIONS)
+        WEIXIN_QR_SESSIONS.clear()
+
+    if payload.clear_config:
+        runtime = _build_runtime_config_from_db(db)
+        _save_weixin_config_to_db(
+            db=db,
+            account_id="",
+            token="",
+            base_url=runtime.base_url or DEFAULT_BASE_URL,
+            timeout_seconds=_normalize_timeout_seconds(runtime.timeout_seconds, fallback=15)
+        )
+
+    return {"message": "success", "cleared_sessions": cleared_sessions}
 
 @router.get(
     "",

@@ -36,16 +36,32 @@ app.dependency_overrides[get_current_user] = override_get_current_user
 
 client = TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def reset_skills_table():
+    db = TestingSessionLocal()
+    try:
+        db.query(Skill).delete()
+        db.commit()
+    finally:
+        db.close()
+    yield
+    db = TestingSessionLocal()
+    try:
+        db.query(Skill).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_save_and_get_weixin_config():
     with TestClient(app) as client:
-        # Test GET config when no skill exists
         response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
         assert response.status_code == 200
         data = response.json()
         assert data["account_id"] == ""
         assert data["token"] == ""
 
-        # Test POST save config
         payload = {
             "account_id": "test_acc",
             "token": "test_tok",
@@ -56,7 +72,6 @@ def test_save_and_get_weixin_config():
         assert response.status_code == 200
         assert response.json() == {"message": "success"}
 
-        # Test GET config after saving
         response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
         assert response.status_code == 200
         data = response.json()
@@ -67,7 +82,6 @@ def test_save_and_get_weixin_config():
 
 def test_weixin_health_check(monkeypatch):
     with TestClient(app) as client:
-        # Mock the WeixinSkillAdapter's check_health method
         def mock_check_health(self, config):
             return {
                 "ok": True,
@@ -88,3 +102,105 @@ def test_weixin_health_check(monkeypatch):
         data = response.json()
         assert data["ok"] is True
         assert data["diagnostics"]["plugin_root_exists"] is True
+
+
+def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-123",
+                "qrcode_img_content": "https://example.com/qr.png"
+            }
+
+        async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            return {
+                "status": "confirmed",
+                "bot_token": "bot-token-1",
+                "ilink_bot_id": "bot-account-1",
+                "baseurl": "https://ilinkai.weixin.qq.com"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_qrcode_status", mock_fetch_qrcode_status)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        start_data = start_response.json()
+        assert start_data["status"] == "wait"
+        assert start_data["qrcode"] == "qr-123"
+        assert start_data["qrcode_url"] == "https://example.com/qr.png"
+        assert start_data["session_key"]
+
+        wait_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": start_data["session_key"]}
+        )
+        assert wait_response.status_code == 200
+        wait_data = wait_response.json()
+        assert wait_data["connected"] is True
+        assert wait_data["status"] == "confirmed"
+        assert wait_data["account_id"] == "bot-account-1"
+        assert wait_data["token"] == "bot-token-1"
+
+        config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
+        assert config_response.status_code == 200
+        config_data = config_response.json()
+        assert config_data["account_id"] == "bot-account-1"
+        assert config_data["token"] == "bot-token-1"
+
+
+def test_weixin_qr_wait_returns_404_when_session_missing():
+    with TestClient(app) as client:
+        response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": "missing-session"}
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "当前没有进行中的登录，请先发起登录。"
+
+
+def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-exit",
+                "qrcode_img_content": "https://example.com/qr-exit.png"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+
+        save_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/config",
+            json={
+                "account_id": "keep-account",
+                "token": "keep-token",
+                "base_url": "https://test.url",
+                "timeout_seconds": 18
+            }
+        )
+        assert save_response.status_code == 200
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        session_key = start_response.json()["session_key"]
+
+        exit_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/exit",
+            json={"session_key": session_key, "clear_config": True}
+        )
+        assert exit_response.status_code == 200
+        exit_data = exit_response.json()
+        assert exit_data["message"] == "success"
+        assert exit_data["cleared_sessions"] == 1
+
+        config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
+        assert config_response.status_code == 200
+        config_data = config_response.json()
+        assert config_data["account_id"] == ""
+        assert config_data["token"] == ""
+        assert config_data["base_url"] == "https://test.url"
+        assert config_data["timeout_seconds"] == 18

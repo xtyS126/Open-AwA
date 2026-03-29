@@ -213,10 +213,68 @@ export const behaviorAPI = {
     api.post('/behaviors/log', { action_type: actionType, details }),
 }
 
+export interface WeixinConfig {
+  account_id: string
+  token: string
+  base_url: string
+  timeout_seconds: number
+}
+
+export interface WeixinHealthCheckResult {
+  ok: boolean
+  issues: string[]
+  suggestions: string[]
+}
+
+export interface WeixinQrStartRequest {
+  session_key?: string
+  base_url?: string
+  bot_type?: string
+  force?: boolean
+  timeout_seconds?: number
+}
+
+export interface WeixinQrStartResponse {
+  message: string
+  session_key: string
+  status: string
+  qrcode: string
+  qrcode_url: string
+}
+
+export interface WeixinQrWaitRequest {
+  session_key: string
+  timeout_seconds?: number
+}
+
+export interface WeixinQrWaitResponse {
+  connected: boolean
+  session_key: string
+  status: string
+  message: string
+  qrcode_url?: string
+  account_id?: string
+  token?: string
+  base_url?: string
+}
+
+export interface WeixinQrExitRequest {
+  session_key?: string
+  clear_config?: boolean
+}
+
+export interface WeixinQrExitResponse {
+  message: string
+  cleared_sessions: number
+}
+
 export const weixinAPI = {
-  getConfig: () => api.get('/skills/weixin/config'),
-  saveConfig: (config: any) => api.post('/skills/weixin/config', config),
-  healthCheck: (config: any) => api.post('/skills/weixin/health-check', config),
+  getConfig: () => api.get<WeixinConfig>('/skills/weixin/config'),
+  saveConfig: (config: WeixinConfig) => api.post('/skills/weixin/config', config),
+  healthCheck: (config: WeixinConfig) => api.post<WeixinHealthCheckResult>('/skills/weixin/health-check', config),
+  startQrLogin: (payload: WeixinQrStartRequest = {}) => api.post<WeixinQrStartResponse>('/skills/weixin/qr/start', payload),
+  waitQrLogin: (payload: WeixinQrWaitRequest) => api.post<WeixinQrWaitResponse>('/skills/weixin/qr/wait', payload),
+  exitQrLogin: (payload: WeixinQrExitRequest) => api.post<WeixinQrExitResponse>('/skills/weixin/qr/exit', payload),
 }
 
 export default api
