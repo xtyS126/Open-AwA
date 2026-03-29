@@ -1,13 +1,17 @@
 import json
 import re
-from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from loguru import logger
 
 
 class ExperienceExtractor:
     def __init__(self, llm_client=None):
         self.llm_client = llm_client
+        self.memory_skill_dir = Path(__file__).resolve().parents[2] / "memory_skill"
+        self.memory_skill_dir.mkdir(parents=True, exist_ok=True)
         logger.info("ExperienceExtractor initialized")
 
     async def extract_from_session(
@@ -31,16 +35,71 @@ class ExperienceExtractor:
 
         try:
             experience = self._parse_extraction_response(llm_response)
-            if experience:
-                experience['source_task'] = self._infer_task_type(user_goal)
-                experience['metadata'] = json.dumps({
-                    'session_id': session_id,
-                    'extracted_at': datetime.now(timezone.utc).isoformat()
-                })
+            if not experience:
+                return None
+
+            extracted_at = datetime.now(timezone.utc).isoformat()
+            experience['source_task'] = self._infer_task_type(user_goal)
+            experience['metadata'] = {
+                'session_id': session_id,
+                'status': status,
+                'extracted_at': extracted_at,
+            }
+            experience['save_result'] = self._save_experience_markdown(experience)
             return experience
         except Exception as e:
             logger.error(f"Failed to parse extraction response: {e}")
             return None
+
+    def _save_experience_markdown(self, experience: Dict[str, Any]) -> Dict[str, Any]:
+        self.memory_skill_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        title_slug = self._slugify(experience.get('title', 'experience'))
+        base_name = f"{timestamp}_{title_slug}"
+
+        file_path = self.memory_skill_dir / f"{base_name}.md"
+        index = 1
+        while file_path.exists():
+            file_path = self.memory_skill_dir / f"{base_name}_{index}.md"
+            index += 1
+
+        content = self._build_markdown_content(experience)
+        file_path.write_text(content, encoding="utf-8")
+
+        stat = file_path.stat()
+        updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+
+        return {
+            "file_name": file_path.name,
+            "file_path": str(file_path),
+            "updated_at": updated_at,
+            "size": stat.st_size,
+        }
+
+    def _build_markdown_content(self, experience: Dict[str, Any]) -> str:
+        metadata = experience.get('metadata') or {}
+        source_task = experience.get('source_task', 'general')
+
+        metadata_json = json.dumps(metadata, ensure_ascii=False, indent=2)
+
+        return (
+            f"# {experience.get('title', '未命名经验')}\n\n"
+            f"- 类型: {experience.get('experience_type', 'method')}\n"
+            f"- 置信度: {experience.get('confidence', 0.0)}\n"
+            f"- 来源任务: {source_task}\n"
+            f"- 提取时间: {metadata.get('extracted_at', '')}\n\n"
+            f"## 触发条件\n{experience.get('trigger_conditions', '')}\n\n"
+            f"## 经验内容\n{experience.get('content', '')}\n\n"
+            f"## 元数据\n```json\n{metadata_json}\n```\n"
+        )
+
+    def _slugify(self, value: str) -> str:
+        normalized = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", value or "experience")
+        normalized = normalized.strip("_")
+        if not normalized:
+            return "experience"
+        return normalized[:80]
 
     def _build_extraction_prompt(
         self,

@@ -5,6 +5,13 @@ import { billingAPI } from '../services/billingApi'
 import { BehaviorStats, BillingStats, Intent } from '../types/dashboard'
 import './DashboardPage.css'
 
+const CHART_COLORS = {
+  grid: 'var(--color-chart-grid)',
+  axis: 'var(--color-chart-axis)',
+  interactions: 'var(--color-chart-primary)',
+  cost: 'var(--color-chart-secondary)'
+}
+
 function DashboardPage() {
   const [stats, setStats] = useState<BehaviorStats | null>(null)
   const [billingStats, setBillingStats] = useState<BillingStats | null>(null)
@@ -68,11 +75,11 @@ function DashboardPage() {
           <h3>近7天交互趋势</h3>
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={stats?.chart_data || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E5E5" />
-              <XAxis dataKey="day" stroke="#666" />
-              <YAxis stroke="#666" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+              <XAxis dataKey="day" stroke={CHART_COLORS.axis} />
+              <YAxis stroke={CHART_COLORS.axis} />
               <Tooltip />
-              <Line type="monotone" dataKey="interactions" stroke="#5B8DEF" strokeWidth={2} />
+              <Line type="monotone" dataKey="interactions" stroke={CHART_COLORS.interactions} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -81,11 +88,11 @@ function DashboardPage() {
           <h3>成本趋势</h3>
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={billingStats?.trend || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E5E5" />
-              <XAxis dataKey="date" stroke="#666" fontSize={10} />
-              <YAxis stroke="#666" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+              <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={10} />
+              <YAxis stroke={CHART_COLORS.axis} />
               <Tooltip formatter={(value: number) => formatCurrency(value, billingStats?.currency)} />
-              <Line type="monotone" dataKey="cost" stroke="#4ECDC4" strokeWidth={2} />
+              <Line type="monotone" dataKey="cost" stroke={CHART_COLORS.cost} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>

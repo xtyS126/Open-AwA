@@ -14,7 +14,19 @@ import {
 import { billingAPI, CostStatistics, UsageRecord } from '../services/billingApi'
 import './BillingPage.css'
 
-const COLORS = ['#5B8DEF', '#4ECDC4', '#FF6B6B', '#FFE66D', '#95E1D3', '#F38181']
+const CHART_COLORS = {
+  grid: 'var(--color-chart-grid)',
+  axis: 'var(--color-chart-axis)',
+  line: 'var(--color-chart-primary)',
+  pie: [
+    'var(--color-chart-primary)',
+    'var(--color-chart-secondary)',
+    'var(--color-chart-3)',
+    'var(--color-chart-4)',
+    'var(--color-chart-5)',
+    'var(--color-chart-6)'
+  ]
+}
 
 function BillingPage() {
   const [statistics, setStatistics] = useState<CostStatistics | null>(null)
@@ -77,7 +89,7 @@ function BillingPage() {
     return statistics.by_model.slice(0, 6).map((item, index) => ({
       name: `${item.provider}:${item.model}`,
       value: item.cost,
-      color: COLORS[index % COLORS.length]
+      color: CHART_COLORS.pie[index % CHART_COLORS.pie.length]
     }))
   }
 
@@ -140,18 +152,18 @@ function BillingPage() {
           <h3>成本趋势</h3>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={statistics?.trend || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E5E5" />
-              <XAxis dataKey="date" stroke="#666" fontSize={12} />
-              <YAxis stroke="#666" fontSize={12} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+              <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={12} />
+              <YAxis stroke={CHART_COLORS.axis} fontSize={12} />
               <Tooltip 
                 formatter={(value: number) => formatCurrency(value, statistics?.currency || 'USD')}
               />
               <Line 
                 type="monotone" 
                 dataKey="cost" 
-                stroke="#5B8DEF" 
+                stroke={CHART_COLORS.line} 
                 strokeWidth={2}
-                dot={{ fill: '#5B8DEF', r: 3 }}
+                dot={{ fill: CHART_COLORS.line, r: 3 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -200,7 +212,7 @@ function BillingPage() {
           <tbody>
             {usageRecords.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>
+                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
                   暂无数据
                 </td>
               </tr>

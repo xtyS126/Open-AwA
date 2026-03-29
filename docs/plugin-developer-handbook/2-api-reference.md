@@ -1,323 +1,324 @@
 # 第二章：API 参考
 
-## 2.1 核心 API
+本章只覆盖当前仓库中能够直接定位到的插件核心 API 与相关接口，不额外补充未在代码中出现的虚拟能力。
 
-### BasePlugin
+## 1. BasePlugin
 
-所有插件的基类，位于 `backend/plugins/base_plugin.py`。
+所有插件基类位于：
 
-```python
-from backend.plugins.base_plugin import BasePlugin
-```
+- [base_plugin.py](file:///d:/代码/Open-AwA/backend/plugins/base_plugin.py#L5-L58)
 
-#### 类属性
+### 1.1 类属性
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `name` | str | `""` | 插件唯一标识符 |
-| `version` | str | `"1.0.0"` | 插件版本号（SemVer） |
-| `description` | str | `""` | 插件功能描述 |
+| 属性 | 说明 |
+| --- | --- |
+| `name` | 插件名称 |
+| `version` | 插件版本 |
+| `description` | 插件描述 |
+| `enable_count` | 类属性，默认 `0` |
+| `rollback_events` | 回滚事件记录列表 |
 
-#### 构造函数
+### 1.2 构造函数
 
 ```python
 BasePlugin(config: Optional[Dict[str, Any]] = None)
 ```
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `config` | `dict` \| None | 插件配置字典，可从 manifest.json 传入 |
+实例初始化后，基类会创建：
 
-#### 抽象方法
+- `self.config`
+- `self._initialized`
+- `self._state`
 
-**`initialize() -> bool`**
-
-插件初始化方法，在首次加载时调用。返回 `True` 表示初始化成功，`False` 表示失败（插件将进入 error 状态）。
+### 1.3 必须实现的方法
 
 ```python
-def initialize(self) -> bool:
-    self._initialized = True
-    return True
+def initialize(self) -> bool: ...
+def execute(self, *args, **kwargs) -> Any: ...
 ```
 
-**`execute(*args, **kwargs) -> Any`**
-
-插件主执行逻辑，当系统调用该插件时触发。
+### 1.4 可重写的方法
 
 ```python
-def execute(self, *args, **kwargs) -> Any:
-    return {"result": "ok"}
+def cleanup(self) -> None: ...
+def validate(self) -> bool: ...
+def rollback(self, previous_state: str, context: Optional[Dict[str, Any]] = None) -> bool: ...
 ```
 
-#### 可重写方法
-
-**`cleanup() -> None`**
-
-插件卸载前的清理逻辑，默认将 `_initialized` 设为 False。
-
-**`validate() -> bool`**
-
-插件注册前的配置校验，默认返回 `True`。建议重写以检查必要的配置项。
-
-**`rollback(previous_state: str, context: Optional[Dict[str, Any]] = None) -> bool`**
-
-热更新失败时的回滚逻辑，默认将状态恢复到 `previous_state`。
-
-#### 实例属性
-
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `config` | `Dict[str, Any]` | 构造时传入的配置字典 |
-| `_initialized` | bool | 是否已完成初始化 |
-| `_state` | str | 当前状态字符串 |
-
----
-
-### PluginStateMachine
-
-管理插件的状态流转，位于 `backend/plugins/plugin_lifecycle.py`。
-
-#### 合法状态转换
-
-```
-registered  --> loaded, error
-loaded      --> enabled, unloaded, error
-enabled     --> disabled, updating, error
-disabled    --> enabled, unloaded, error
-updating    --> loaded, error
-error       --> unloaded, loaded
-unloaded    --> loaded
-```
-
-#### 方法
-
-**`get_state(plugin_name: str) -> PluginState`**
-
-获取指定插件的当前状态。
-
-**`can_transition(plugin_name: str, to_state: PluginState) -> bool`**
-
-检查插件是否可以转换到目标状态。
-
----
-
-## 2.2 扩展点 API
-
-### ExtensionPointType
-
-枚举类，定义所有支持的扩展点类型，位于 `backend/plugins/extension_protocol.py`。
-
-| 枚举值 | 字符串值 | 用途 |
-|--------|----------|------|
-| `TOOL` | `"tool"` | 向 AI 智能体注册可调用工具 |
-| `HOOK` | `"hook"` | 在系统流程中插入前置/后置逻辑 |
-| `COMMAND` | `"command"` | 注册用户可触发的命令 |
-| `ROUTE` | `"route"` | 注册自定义 HTTP 路由 |
-| `EVENT_HANDLER` | `"event_handler"` | 订阅并处理系统事件 |
-| `SCHEDULER` | `"scheduler"` | 注册定时任务 |
-| `MIDDLEWARE` | `"middleware"` | 注册 HTTP 中间件 |
-| `DATA_PROVIDER` | `"data_provider"` | 注册数据提供者 |
-
-### ExtensionRegistry
-
-管理所有插件的扩展点注册，通常由 `PluginManager` 内部使用。
-
-#### 注册方法
+### 1.5 生命周期钩子
 
 ```python
-registry.register_tool(plugin_name, name, version, config)
-registry.register_hook(plugin_name, name, version, config)
-registry.register_command(plugin_name, name, version, config)
-registry.register_route(plugin_name, name, version, config)
-registry.register_event_handler(plugin_name, name, version, config)
-registry.register_scheduler(plugin_name, name, version, config)
-registry.register_middleware(plugin_name, name, version, config)
-registry.register_data_provider(plugin_name, name, version, config)
+def on_registered(self) -> None: ...
+def on_loaded(self) -> None: ...
+def on_enabled(self) -> None: ...
+def on_disabled(self) -> None: ...
+def on_unloaded(self) -> None: ...
+def on_updating(self) -> None: ...
+def on_error_state(self) -> None: ...
+def on_error(self, error: Exception, from_state: str, to_state: str) -> None: ...
 ```
 
-所有方法均返回 `ExtensionRegistration` 对象。
+## 2. 扩展点注册
 
-**`register_manifest(plugin_name: str, manifest: Dict[str, Any]) -> List[ExtensionRegistration]`**
+扩展点定义位于：
 
-批量注册 manifest.json 中声明的所有扩展点。
+- [extension_protocol.py](file:///d:/代码/Open-AwA/backend/plugins/extension_protocol.py#L8-L156)
 
-**`get_extensions(point: ExtensionPointType) -> List[ExtensionRegistration]`**
+### 2.1 支持的扩展点类型
 
-获取指定扩展点类型的所有注册信息。
+| 类型 | 字符串值 |
+| --- | --- |
+| TOOL | `tool` |
+| HOOK | `hook` |
+| COMMAND | `command` |
+| ROUTE | `route` |
+| EVENT_HANDLER | `event_handler` |
+| SCHEDULER | `scheduler` |
+| MIDDLEWARE | `middleware` |
+| DATA_PROVIDER | `data_provider` |
 
-### manifest.json 扩展点声明格式
+### 2.2 ExtensionRegistration
 
-```json
-{
-  "extensions": [
-    {
-      "point": "tool",
-      "name": "my_tool_name",
-      "version": "1.0.0",
-      "config": {
-        "description": "工具描述",
-        "parameters": {}
-      }
-    }
-  ]
-}
-```
+扩展点注册对象包含：
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `point` | string | 是 | 扩展点类型，取值见上表 |
-| `name` | string | 是 | 扩展点名称，在同一插件内唯一 |
-| `version` | string | 是 | SemVer 格式版本号 |
-| `config` | object | 否 | 扩展点附加配置 |
+- `plugin_name`
+- `point`
+- `name`
+- `version`
+- `config`
 
----
-
-## 2.3 存储 API
-
-插件可以通过 `config` 字典持久化配置数据。对于运行时状态存储，推荐使用以下模式：
-
-### 插件配置存储
-
-在 manifest.json 中声明的配置项会通过构造函数传入：
+### 2.3 ExtensionRegistry 常用方法
 
 ```python
-class MyPlugin(BasePlugin):
-    def __init__(self, config=None):
-        super().__init__(config)
-        # 读取配置
-        self.theme = self.config.get("theme", "light")
-        self.max_items = self.config.get("max_items", 100)
+register_extension(plugin_name, extension)
+register_manifest(plugin_name, manifest)
+unregister_plugin(plugin_name)
+list_by_point(point)
+list_plugin_extensions(plugin_name)
+get_registry_snapshot()
 ```
 
-### REST API 存储接口
-
-通过后端 HTTP 接口进行数据持久化：
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/api/plugins/{name}/config` | GET | 获取插件配置 |
-| `/api/plugins/{name}/config` | PUT | 更新插件配置 |
-| `/api/plugins/{name}/state` | GET | 获取插件当前状态 |
-
----
-
-## 2.4 事件 API
-
-### 支持的扩展点事件类型
-
-使用 `event_handler` 扩展点订阅系统事件：
-
-```json
-{
-  "point": "event_handler",
-  "name": "on_chat_message",
-  "version": "1.0.0",
-  "config": {
-    "event": "chat.message.received"
-  }
-}
-```
-
-### 在插件中处理事件
+也提供按扩展点类型拆分的快捷方法：
 
 ```python
-class MyEventPlugin(BasePlugin):
-    name = "my-event-plugin"
-    version = "1.0.0"
-    description = "事件处理示例插件"
-
-    def initialize(self) -> bool:
-        self._initialized = True
-        return True
-
-    def execute(self, *args, **kwargs) -> Any:
-        event_type = kwargs.get("event_type", "")
-        event_data = kwargs.get("event_data", {})
-
-        if event_type == "chat.message.received":
-            return self._handle_chat_message(event_data)
-        return {"status": "ignored"}
-
-    def _handle_chat_message(self, data: dict) -> dict:
-        message = data.get("message", "")
-        return {"processed": True, "message_length": len(message)}
+register_tool(...)
+register_hook(...)
+register_command(...)
+register_route(...)
+register_event_handler(...)
+register_scheduler(...)
+register_middleware(...)
+register_data_provider(...)
 ```
 
-### 系统内置事件列表
+## 3. 动态加载与实例化
 
-| 事件名称 | 触发时机 | 数据结构 |
-|----------|----------|----------|
-| `plugin.loaded` | 插件加载完成 | `{plugin_name, version}` |
-| `plugin.enabled` | 插件启用 | `{plugin_name}` |
-| `plugin.disabled` | 插件禁用 | `{plugin_name}` |
-| `plugin.error` | 插件发生错误 | `{plugin_name, error}` |
-| `chat.message.received` | 收到聊天消息 | `{session_id, message, role}` |
+相关实现：
 
----
+- [plugin_loader.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_loader.py#L11-L93)
 
-## 2.5 权限 API
+### 3.1 PluginLoader
 
-### 权限声明
+当前 `PluginLoader` 主要负责：
 
-在 manifest.json 的 `permissions` 字段中声明所需权限：
+- 从文件路径加载模块
+- 找出继承 `BasePlugin` 的类
+- 缓存已加载插件类
+- 根据配置实例化插件
+- 注入配置
+- 查询加载状态
 
-```json
-{
-  "permissions": [
-    "file:read",
-    "network:http"
-  ]
-}
-```
-
-### 内置权限类型
-
-| 权限标识 | 允许的操作 |
-|----------|------------|
-| `file:read` | 使用 `open()` 读取文件 |
-| `file:write` | 使用 `open()`、`remove()`、`unlink()`、`rmtree()` 写入/删除文件 |
-| `network:http` | 使用 `requests`、`httpx`、`urllib` 等发起 HTTP 请求 |
-
-### 权限校验机制
-
-`PluginManager` 在加载插件时会通过静态代码分析（AST 扫描）检测插件代码中的 API 使用是否与 manifest.json 中声明的权限一致：
-
-- 若插件使用了未声明的危险 API，加载将被拒绝
-- 以下 API 无论是否声明权限都被无条件禁止：`eval`、`exec`、`compile`、`subprocess`、`ctypes`、`pickle`、`marshal`
-
-### 沙箱限制
-
-`PluginSandbox` 为所有插件的执行提供运行时保护：
-
-| 限制项 | 默认值 | 说明 |
-|--------|--------|------|
-| 执行超时 | 30 秒 | 单次 execute 调用的最长执行时间 |
-| 内存限制 | 512m | 插件可使用的最大内存 |
-| CPU 限制 | 1.0 | CPU 配额（1.0 = 100% 单核） |
-
-### 权限校验示例
+### 3.2 关键方法
 
 ```python
-class NetworkPlugin(BasePlugin):
-    name = "network-plugin"
-    version = "1.0.0"
-    description = "需要网络权限的插件"
-
-    def initialize(self) -> bool:
-        self._initialized = True
-        return True
-
-    def execute(self, *args, **kwargs) -> Any:
-        import httpx
-        url = kwargs.get("url", "")
-        response = httpx.get(url)
-        return {"status_code": response.status_code}
+load_module(plugin_path: str) -> Optional[Type[BasePlugin]]
+instantiate_plugin(plugin_class: Type[BasePlugin], config: Dict) -> Optional[BasePlugin]
+inject_config(plugin_instance: BasePlugin, config: Dict) -> None
+get_loading_state(plugin_name: str) -> str
 ```
 
-对应的 manifest.json 必须声明：
+## 4. 插件校验
 
-```json
-{
-  "permissions": ["network:http"]
-}
+相关实现：
+
+- [plugin_validator.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_validator.py#L24-L160)
+
+### 4.1 校验内容
+
+当前 `PluginValidator` 会检查：
+
+- 插件类是否继承 `BasePlugin`
+- 是否具备 `initialize`、`execute`、`cleanup`
+- 配置是否包含 `name`、`version`
+- `dependencies` 是否为字符串列表
+- 插件实例的 `validate()` 是否返回 `True`
+
+### 4.2 返回值
+
+`validate_plugin()` 返回 `ValidationResult`，包含：
+
+- `valid`
+- `errors`
+- `warnings`
+
+## 5. 插件沙箱
+
+相关实现：
+
+- [plugin_sandbox.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_sandbox.py#L8-L121)
+
+### 5.1 作用
+
+当前 `PluginSandbox` 实现了执行包装能力，重点是：
+
+- 支持同步与异步插件方法
+- 异步执行支持超时控制
+- 记录执行计数与统计信息
+
+### 5.2 构造参数
+
+```python
+PluginSandbox(timeout: int = 30, memory_limit: str = "512m", cpu_limit: float = 1.0)
 ```
+
+### 5.3 关键方法
+
+```python
+async execute_plugin(plugin_instance, method, **kwargs)
+execute_plugin_sync(plugin_instance, method, **kwargs)
+get_execution_stats()
+reset_stats()
+```
+
+说明：
+
+- 当前代码中 `memory_limit` 和 `cpu_limit` 主要体现在配置与统计输出上
+- 真正的操作系统级资源限制并未在该文件中直接实现
+
+## 6. 生命周期状态机
+
+相关实现：
+
+- [plugin_lifecycle.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_lifecycle.py#L13-L220)
+
+### 6.1 状态枚举
+
+| 状态 | 值 |
+| --- | --- |
+| REGISTERED | `registered` |
+| LOADED | `loaded` |
+| ENABLED | `enabled` |
+| DISABLED | `disabled` |
+| UNLOADED | `unloaded` |
+| ERROR | `error` |
+| UPDATING | `updating` |
+
+### 6.2 合法状态流转
+
+```text
+registered -> loaded, error
+loaded -> enabled, unloaded, error
+enabled -> disabled, updating, error
+disabled -> enabled, unloaded, error
+updating -> loaded, error
+error -> unloaded, loaded
+unloaded -> loaded
+```
+
+### 6.3 关键对象
+
+- `PluginStateMachine`：保存和查询状态
+- `TransitionExecutor`：执行状态迁移、回滚、错误钩子、幂等缓存
+
+## 7. 插件管理 API
+
+后端插件路由位于：
+
+- [plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L15-L519)
+
+### 7.1 基础管理接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/plugins` | 获取插件列表 |
+| GET | `/api/plugins/{plugin_id}` | 获取单个插件 |
+| POST | `/api/plugins` | 在数据库中创建插件记录 |
+| PUT | `/api/plugins/{plugin_id}` | 更新插件记录 |
+| DELETE | `/api/plugins/{plugin_id}` | 删除插件记录 |
+| PUT | `/api/plugins/{plugin_id}/toggle` | 启用或禁用 |
+
+### 7.2 执行与工具接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/plugins/{plugin_id}/execute` | 执行插件方法 |
+| GET | `/api/plugins/{plugin_id}/tools` | 获取插件暴露的工具描述 |
+
+### 7.3 权限与日志接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/plugins/{plugin_id}/permissions` | 查询插件权限状态 |
+| POST | `/api/plugins/{plugin_id}/permissions/authorize` | 授权权限 |
+| POST | `/api/plugins/{plugin_id}/permissions/revoke` | 撤销权限 |
+| GET | `/api/plugins/{plugin_id}/logs` | 读取插件日志 |
+
+### 7.4 上传、发现与维护接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/plugins/upload` | 上传并解压 zip 插件包 |
+| POST | `/api/plugins/validate` | 校验配置内容 |
+| GET | `/api/plugins/discover` | 重新发现插件 |
+| POST | `/api/plugins/{plugin_id}/hot-update` | 热更新 |
+| POST | `/api/plugins/{plugin_id}/rollback` | 回滚 |
+
+## 8. 前端插件 API 封装
+
+前端请求封装见：
+
+- [api.ts](file:///d:/代码/Open-AwA/frontend/src/services/api.ts#L110-L134)
+
+当前前端已封装的插件接口包括：
+
+```ts
+pluginsAPI.getAll()
+pluginsAPI.getOne(id)
+pluginsAPI.install(plugin)
+pluginsAPI.uninstall(id)
+pluginsAPI.toggle(id)
+pluginsAPI.upload(file)
+pluginsAPI.getPermissions(id)
+pluginsAPI.authorizePermissions(id, permissions)
+pluginsAPI.revokePermissions(id, permissions)
+pluginsAPI.getLogs(id, level?, limit?, offset?)
+pluginsAPI.setLogLevel(id, level)
+```
+
+## 9. CLI API
+
+插件 CLI 位于：
+
+- [plugin_cli.py](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L11-L166)
+
+当前可用命令：
+
+```powershell
+python -m plugins.cli.plugin_cli init ...
+python -m plugins.cli.plugin_cli build ...
+python -m plugins.cli.plugin_cli validate ...
+python -m plugins.cli.plugin_cli sign ...
+```
+
+## 10. 测试参考
+
+CLI 测试样例可参考：
+
+- [test_plugin_cli.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_cli.py#L12-L202)
+
+该测试文件验证了：
+
+- 脚手架生成结果
+- 打包 zip 文件命名与内容
+- zip 包校验
+- 签名结果正确性

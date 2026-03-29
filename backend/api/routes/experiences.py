@@ -78,7 +78,12 @@ async def get_experience(
     return experience
 
 
-@router.post("", response_model=ExperienceResponse)
+@router.post(
+    "",
+    response_model=ExperienceResponse,
+    summary="创建经验",
+    description="手动创建一条新的经验记录。"
+)
 async def create_experience(
     experience_data: ExperienceCreate,
     manager: ExperienceManager = Depends(get_experience_manager),
@@ -103,7 +108,12 @@ async def create_experience(
     return experience
 
 
-@router.put("/{experience_id}", response_model=ExperienceResponse)
+@router.put(
+    "/{experience_id}",
+    response_model=ExperienceResponse,
+    summary="更新经验",
+    description="修改指定经验记录的内容、类型、置信度等字段。"
+)
 async def update_experience(
     experience_id: int,
     experience_data: ExperienceUpdate,
@@ -162,7 +172,7 @@ async def extract_experience(
 ):
     """手动触发经验提取"""
     from skills.experience_extractor import ExperienceExtractor
-    
+
     extractor = ExperienceExtractor()
     experience_data = await extractor.extract_from_session(
         user_goal=request.user_goal,
@@ -171,44 +181,55 @@ async def extract_experience(
         status=request.status,
         session_id=request.session_id
     )
-    
+
     if not experience_data:
         return {"status": "no_experience", "message": "未发现值得提取的经验"}
-    
-    experience = await manager.add_experience(
-        experience_type=experience_data['experience_type'],
-        title=experience_data['title'],
-        content=experience_data['content'],
-        trigger_conditions=experience_data['trigger_conditions'],
-        confidence=experience_data['confidence'],
-        source_task=experience_data.get('source_task', 'general'),
-        metadata=experience_data.get('metadata'),
-        user_id=current_user.id
-    )
-    
+
     log = ExperienceExtractionLog(
         session_id=request.session_id,
         task_summary=request.user_goal,
-        extracted_experience=json.dumps(experience_data),
+        extracted_experience=json.dumps(experience_data, ensure_ascii=False),
         extraction_trigger='manual',
         extraction_quality=experience_data['confidence'],
         user_id=current_user.id
     )
     manager.db.add(log)
-    manager.db.commit()
     
+    # 恢复双写机制：将提取的经验同时保存到数据库主表
+    try:
+        await manager.add_experience(
+            experience_type=experience_data.get('experience_type', 'method'),
+            title=experience_data.get('title', '未命名经验'),
+            content=experience_data.get('content', ''),
+            trigger_conditions=experience_data.get('trigger_conditions', ''),
+            confidence=experience_data.get('confidence', 0.5),
+            source_task='session_extraction',
+            metadata={"session_id": request.session_id, "file": experience_data.get('save_result')},
+            user_id=current_user.id
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to save extracted experience to DB: {e}")
+
+    manager.db.commit()
+
     return {
         "status": "extracted",
         "experience": {
-            "id": experience.id,
-            "type": experience.experience_type,
-            "title": experience.title,
-            "confidence": experience.confidence
+            "type": experience_data['experience_type'],
+            "title": experience_data['title'],
+            "confidence": experience_data['confidence'],
+            "file": experience_data.get('save_result')
         }
     }
 
 
-@router.get("/search")
+
+@router.get(
+    "/search",
+    summary="搜索经验",
+    description="按关键词搜索与当前任务相关的经验记录。"
+)
 async def search_experiences(
     query: str = Query(..., description="搜索关键词"),
     experience_type: Optional[str] = Query(None, description="经验类型"),
@@ -242,7 +263,11 @@ async def search_experiences(
     }
 
 
-@router.get("/stats/summary")
+@router.get(
+    "/stats/summary",
+    summary="获取经验统计",
+    description="返回当前用户经验库的数量、类型分布和平均指标。"
+)
 async def get_experience_stats(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
@@ -267,7 +292,11 @@ async def get_experience_stats(
     return user_stats
 
 
-@router.get("/logs")
+@router.get(
+    "/logs",
+    summary="获取经验提取日志",
+    description="分页返回经验提取过程产生的日志记录。"
+)
 async def get_extraction_logs(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),

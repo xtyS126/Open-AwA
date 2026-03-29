@@ -104,6 +104,9 @@ export const modelsAPI = {
   getProviderDetail: (provider: string) =>
     api.get(`/billing/providers/${provider}`),
 
+  deleteProvider: (provider: string) =>
+    api.delete(`/billing/providers/${provider}`),
+
   updateProviderSelectedModels: (provider: string, data: { selected_models: string[] }) =>
     api.put(`/billing/providers/${provider}/selected-models`, data),
 

@@ -14,7 +14,7 @@
 .billing-header h1 {
   font-size: 24px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -26,17 +26,17 @@
 
 .billing-filters select {
   padding: 8px 12px;
-  border: 1px solid #E5E5E5;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font-size: 14px;
-  background: white;
-  color: #333;
+  background: var(--color-bg);
+  color: var(--color-text);
   cursor: pointer;
 }
 
 .billing-filters select:focus {
   outline: none;
-  border-color: #5B8DEF;
+  border-color: var(--color-primary);
 }
 
 .billing-stats-grid {
@@ -47,8 +47,8 @@
 }
 
 .billing-stat-card {
-  background: white;
-  border: 1px solid #E5E5E5;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 24px;
   transition: all 0.2s ease;
@@ -61,7 +61,7 @@
 
 .billing-stat-card h3 {
   font-size: 14px;
-  color: #666;
+  color: var(--color-text-secondary);
   margin: 0 0 8px 0;
   font-weight: 500;
 }
@@ -69,13 +69,13 @@
 .billing-stat-card .stat-value {
   font-size: 28px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text);
   margin: 0;
 }
 
 .billing-stat-card .stat-subtitle {
   font-size: 12px;
-  color: #999;
+  color: var(--color-text-tertiary);
   margin-top: 4px;
 }
 
@@ -103,22 +103,22 @@
 }
 
 .billing-chart-card {
-  background: white;
-  border: 1px solid #E5E5E5;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 20px;
 }
 
 .billing-chart-card h3 {
   font-size: 16px;
-  color: #333;
+  color: var(--color-text);
   margin: 0 0 16px 0;
   font-weight: 600;
 }
 
 .billing-usage-table {
-  background: white;
-  border: 1px solid #E5E5E5;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 20px;
   overflow-x: auto;
@@ -126,7 +126,7 @@
 
 .billing-usage-table h3 {
   font-size: 16px;
-  color: #333;
+  color: var(--color-text);
   margin: 0 0 16px 0;
   font-weight: 600;
 }
@@ -140,19 +140,19 @@
 .usage-table td {
   padding: 12px;
   text-align: left;
-  border-bottom: 1px solid #E5E5E5;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .usage-table th {
   font-size: 12px;
-  color: #666;
+  color: var(--color-text-secondary);
   font-weight: 500;
   text-transform: uppercase;
 }
 
 .usage-table td {
   font-size: 14px;
-  color: #333;
+  color: var(--color-text);
 }
 
 .usage-table tr:last-child td {
@@ -160,7 +160,7 @@
 }
 
 .usage-table tr:hover {
-  background: #FAFAFA;
+  background: var(--color-bg-secondary);
 }
 
 .provider-badge {
@@ -185,8 +185,8 @@
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
-  background: #F5F5F5;
-  color: #666;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
 }
 
 .cache-badge {
@@ -194,25 +194,25 @@
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 11px;
-  background: #E8F5E9;
-  color: #2E7D32;
+  background: var(--color-success-soft-bg);
+  color: var(--color-success-strong);
 }
 
 .export-btn {
   padding: 8px 16px;
-  border: 1px solid #E5E5E5;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: white;
-  color: #333;
+  background: var(--color-bg);
+  color: var(--color-text);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .export-btn:hover {
-  background: #F5F5F5;
-  border-color: #5B8DEF;
-  color: #5B8DEF;
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .loading {
@@ -220,16 +220,16 @@
   justify-content: center;
   align-items: center;
   min-height: 400px;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 16px;
 }
 
 .error-message {
   padding: 16px;
-  background: #FFEBEE;
-  border: 1px solid #FFCDD2;
+  background: var(--color-error-soft-bg);
+  border: 1px solid var(--color-error-soft-border);
   border-radius: 8px;
-  color: #C62828;
+  color: var(--color-error-strong);
   margin-bottom: 16px;
 }
 
@@ -239,7 +239,7 @@
 
 .budget-progress-bar {
   height: 8px;
-  background: #E5E5E5;
+  background: var(--color-border);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -250,14 +250,14 @@
   transition: width 0.3s;
 }
 
-.budget-progress-fill.normal { background: #5B8DEF; }
-.budget-progress-fill.warning { background: #FFA726; }
-.budget-progress-fill.danger { background: #EF5350; }
+.budget-progress-fill.normal { background: var(--color-primary); }
+.budget-progress-fill.warning { background: var(--color-warning-strong); }
+.budget-progress-fill.danger { background: var(--color-danger); }
 
 .budget-progress-text {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #666;
+  color: var(--color-text-secondary);
   margin-top: 4px;
 }

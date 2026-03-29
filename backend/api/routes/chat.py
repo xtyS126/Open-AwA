@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from sqlalchemy.orm import Session
 from typing import Dict
 from loguru import logger
-from db.models import get_db
+from db.models import get_db, SessionLocal
 from api.dependencies import get_current_user
 from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest
 from core.agent import AIAgent
@@ -43,7 +43,11 @@ async def chat(
     )
 
 
-@router.post("/confirm")
+@router.post(
+    "/confirm",
+    summary="确认待执行操作",
+    description="对智能体生成的待确认步骤进行确认或拒绝。"
+)
 async def confirm_operation(
     confirmation: ConfirmationRequest,
     db: Session = Depends(get_db),
@@ -87,9 +91,8 @@ async def websocket_endpoint(
         await websocket.close(code=4003, reason="Invalid token payload")
         return
     
-    db_gen = get_db()
-    db = next(db_gen)
-    
+    db = SessionLocal()
+
     try:
         user = db.query(User).filter(User.username == username).first()
         if user is None:
@@ -100,16 +103,7 @@ async def websocket_endpoint(
         await websocket.close(code=4004, reason="Database error")
         return
     finally:
-        try:
-            db_gen.close()
-        except Exception as e:
-            logger.error(f"Failed to close database connection in WebSocket auth: {type(e).__name__}")
-            try:
-                if hasattr(db_gen, 'remove'):
-                    db_gen.remove()
-            except Exception:
-                logger.warning("Unable to clean up database connection resources")
-        logger.debug(f"Database connection cleanup completed for session {session_id}")
+        db.close()
     
     await websocket.accept()
     
@@ -161,13 +155,15 @@ async def websocket_endpoint(
             del active_connections[session_id]
         await websocket.close(code=4005, reason="Internal server error")
     finally:
-        try:
-            db_gen.close()
-        except:
-            pass
+        if session_id in active_connections:
+            del active_connections[session_id]
 
 
-@router.get("/history/{session_id}")
+@router.get(
+    "/history/{session_id}",
+    summary="获取会话历史",
+    description="返回指定会话在短期记忆中保存的历史消息列表。"
+)
 async def get_chat_history(
     session_id: str,
     db: Session = Depends(get_db),

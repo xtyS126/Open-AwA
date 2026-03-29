@@ -1,3 +1,5 @@
+import asyncio
+import time
 from typing import Dict, List, Any
 from loguru import logger
 from .comprehension import ComprehensionLayer
@@ -9,6 +11,7 @@ from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
 from db.models import SessionLocal
+from .conversation_recorder import conversation_recorder
 
 
 class AIAgent:
@@ -19,9 +22,10 @@ class AIAgent:
         self.feedback = FeedbackLayer()
         self.experience_extractor = ExperienceExtractor()
         
-        db_session = SessionLocal()
-        self.skill_engine = SkillEngine(db_session)
+        self._db_session = SessionLocal()
+        self.skill_engine = SkillEngine(self._db_session)
         self.plugin_manager = PluginManager()
+        self._closed = False
         
         self.skill_results: List[Dict[str, Any]] = []
         self.plugin_results: List[Dict[str, Any]] = []
@@ -29,23 +33,78 @@ class AIAgent:
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
     
     def __del__(self):
-        if hasattr(self, 'skill_engine') and hasattr(self.skill_engine, 'registry'):
-            try:
-                if self.skill_engine.registry.db:
-                    self.skill_engine.registry.db.close()
-                    logger.debug("Database session closed via __del__")
-            except Exception as e:
-                logger.error(f"Error closing database session in __del__: {e}")
+        try:
+            self.close()
+        except Exception:
+            pass
     
     def close(self):
-        if hasattr(self, 'skill_engine') and hasattr(self.skill_engine, 'registry'):
+        if getattr(self, "_closed", False):
+            return
+        
+        db_session = getattr(self, "_db_session", None)
+        if db_session is not None:
             try:
-                if self.skill_engine.registry.db:
-                    self.skill_engine.registry.db.close()
-                    logger.info("Database session closed")
+                db_session.close()
+                logger.info("Database session closed")
             except Exception as e:
                 logger.error(f"Error closing database session: {e}")
+        
+        self._closed = True
     
+    def _handle_record_task_result(self, task: asyncio.Task) -> None:
+        try:
+            if task.cancelled():
+                logger.warning("Conversation recorder task was cancelled")
+                return
+
+            exc = task.exception()
+            if exc is not None:
+                logger.warning(f"Conversation recorder task failed: {exc}")
+                return
+
+            task.result()
+        except Exception as e:
+            logger.warning(f"Conversation recorder task failed: {e}")
+
+    def _schedule_record(
+        self,
+        *,
+        node_type: str,
+        user_message: str,
+        context: Dict[str, Any],
+        status: str = "success",
+        error_message: str | None = None,
+        llm_input: Any = None,
+        llm_output: Any = None,
+        llm_tokens_used: int | None = None,
+        execution_duration_ms: int | None = None,
+        metadata: Any = None,
+    ) -> None:
+        user_id = context.get("user_id")
+        session_id = context.get("session_id", "default")
+        if not user_id:
+            return
+
+        task = asyncio.create_task(
+            conversation_recorder.record(
+                node_type=node_type,
+                session_id=session_id,
+                user_message=user_message,
+                user_id=user_id,
+                provider=context.get("provider"),
+                model=context.get("model"),
+                llm_input=llm_input,
+                llm_output=llm_output,
+                llm_tokens_used=llm_tokens_used,
+                execution_duration_ms=execution_duration_ms,
+                status=status,
+                error_message=error_message,
+                metadata=metadata,
+            )
+        )
+        task.add_done_callback(lambda t: self._handle_record_task_result(t))
+
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
         logger.info(f"Executing skill: {skill_name}")
         try:
@@ -179,11 +238,25 @@ class AIAgent:
 
         if "message" not in context:
             context["message"] = user_input
+        context["_record_hook"] = self._schedule_record
+
+        intent_start = time.perf_counter()
         intent = await self.comprehension.recognize_intent(user_input)
         logger.debug(f"Recognized intent: {intent}")
-        
+
         entities = await self.comprehension.extract_entities(user_input)
         logger.debug(f"Extracted entities: {entities}")
+        intent_duration_ms = int((time.perf_counter() - intent_start) * 1000)
+        self._schedule_record(
+            node_type="intent_recognition",
+            user_message=user_input,
+            context=context,
+            execution_duration_ms=intent_duration_ms,
+            metadata={
+                "intent": intent,
+                "entities": entities
+            }
+        )
         
         experiences = []
         if context.get('retrieve_experiences', True):
@@ -202,15 +275,31 @@ class AIAgent:
         )
         logger.debug(f"Created plan: {plan}")
         
+        auto_results = {"skills": [], "plugins": []}
         if context.get('enable_skill_plugin', True):
+            matching_start = time.perf_counter()
             auto_results = await self._auto_execute_skills_and_plugins(
                 intent=intent,
                 entities=entities,
                 context=context
             )
+            matching_duration_ms = int((time.perf_counter() - matching_start) * 1000)
             if auto_results:
                 context['auto_execution_results'] = auto_results
                 logger.info(f"Auto-executed {len(auto_results.get('skills', []))} skills and {len(auto_results.get('plugins', []))} plugins")
+
+            self._schedule_record(
+                node_type="skill_plugin_matching",
+                user_message=user_input,
+                context=context,
+                execution_duration_ms=matching_duration_ms,
+                metadata={
+                    "skills": [item.get('skill_name') for item in auto_results.get('skills', [])],
+                    "plugins": [item.get('plugin_name') for item in auto_results.get('plugins', [])],
+                    "skills_count": len(auto_results.get('skills', [])),
+                    "plugins_count": len(auto_results.get('plugins', []))
+                }
+            )
         
         results = []
         for step in plan.get("steps", []):
@@ -227,6 +316,19 @@ class AIAgent:
                         'step': step,
                         'result': skill_result
                     })
+                    self._schedule_record(
+                        node_type="tool_execution",
+                        user_message=user_input,
+                        context=context,
+                        status="success" if skill_result.get('status') == 'success' else "error",
+                        error_message=skill_result.get('error'),
+                        llm_input=step,
+                        llm_output=skill_result,
+                        metadata={
+                            "execution_type": "skill",
+                            "skill_name": skill_name
+                        }
+                    )
                     continue
             
             if context.get('enable_skill_plugin', True) and step.get('use_plugin'):
@@ -243,6 +345,20 @@ class AIAgent:
                         'step': step,
                         'result': plugin_result
                     })
+                    self._schedule_record(
+                        node_type="tool_execution",
+                        user_message=user_input,
+                        context=context,
+                        status="success" if plugin_result.get('status') == 'success' else "error",
+                        error_message=plugin_result.get('message'),
+                        llm_input=step,
+                        llm_output=plugin_result,
+                        metadata={
+                            "execution_type": "plugin",
+                            "plugin_name": plugin_name,
+                            "plugin_method": plugin_method
+                        }
+                    )
                     continue
             
             result = await self.executor.execute_step(step, context)
@@ -251,6 +367,19 @@ class AIAgent:
                 'step': step,
                 'result': result
             })
+            self._schedule_record(
+                node_type="tool_execution",
+                user_message=user_input,
+                context=context,
+                status="success" if isinstance(result, dict) and result.get('status') in ['completed', 'success'] else "error",
+                error_message=result.get('message') if isinstance(result, dict) else None,
+                llm_input=step,
+                llm_output=result,
+                metadata={
+                    "execution_type": "execution",
+                    "action": step.get('action')
+                }
+            )
             
             if isinstance(result, dict):
                 feedback = await self.feedback.evaluate_result(result)
@@ -270,7 +399,7 @@ class AIAgent:
                         'result': retry_result
                     }
         
-        final_response = await self.feedback.generate_response(results)
+        final_response = await self.feedback.generate_response(results, context)
 
         first_error = None
         for item in results:
@@ -536,23 +665,14 @@ class AIAgent:
                 status=status,
                 session_id=context.get('session_id', '')
             )
-            
+
             if not experience_data:
                 logger.info("No experience extracted from session")
                 return
-            
-            manager = ExperienceManager(db)
-            experience = await manager.add_experience(
-                experience_type=experience_data['experience_type'],
-                title=experience_data['title'],
-                content=experience_data['content'],
-                trigger_conditions=experience_data['trigger_conditions'],
-                confidence=experience_data['confidence'],
-                source_task=experience_data.get('source_task', 'general'),
-                metadata=experience_data.get('metadata')
+
+            logger.info(
+                f"Extracted experience and saved to file: {experience_data.get('save_result', {}).get('file_name', '')}"
             )
-            
-            logger.info(f"Extracted and stored experience: {experience.title} (ID: {experience.id})")
             
         except Exception as e:
             logger.error(f"Error extracting and storing experience: {e}")

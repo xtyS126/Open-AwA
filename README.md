@@ -1,269 +1,318 @@
-# Open-AwA AI Agent Framework
+# Open-AwA
 
-基于 OpenClaw 架构的 AI 智能体框架，支持 Skill、MCP、工具调用、提示词配置、用户行为分析、记忆系统、插件热更新、计费系统等核心功能。
+Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性平台，当前仓库已经实现了聊天调用、技能管理、插件管理、记忆管理、经验提取、提示词配置、行为统计、会话记录采集与计费模块等功能，并提供了一套可独立演进的插件生命周期与调试能力。
 
-## 特性
+本文档基于当前仓库代码整理，尽量只描述已经存在的实现与可直接验证的能力。
 
-- **AI 智能体核心**：理解 → 规划 → 执行 → 反馈的完整闭环
-- **Skill 系统**：可扩展的技能插件体系，支持 YAML 配置、依赖管理、注册/执行生命周期
-- **MCP 支持**：Model Context Protocol 原生集成
-- **工具调用**：统一的工具注册和执行机制
-- **记忆系统**：短期 + 长期三层记忆架构，经验记忆自动提取与复用
-- **插件系统**：完整的企业级热插拔架构，支持生命周期管理（registered/loaded/enabled/disabled/unloaded/error/updating）、8 种扩展点类型、热更新与灰度发布、安全沙箱隔离、依赖解析
-- **安全隔离**：多级沙箱和权限控制，静态代码扫描 + 运行时权限授权
-- **行为分析**：完整的用户行为追踪和统计
-- **提示词管理**：动态提示词模板配置
-- **计费系统**：Token 级计费、预算控制、模型配置管理、多维度成本报告
-- **可观测性**：独立日志通道、实时 Debug 面板、热更新状态追踪
+## 目录
+
+- [项目概览](#项目概览)
+- [当前能力](#当前能力)
+- [技术栈](#技术栈)
+- [仓库结构](#仓库结构)
+- [快速开始](#快速开始)
+- [运行方式](#运行方式)
+- [主要接口与页面](#主要接口与页面)
+- [插件开发文档](#插件开发文档)
+- [测试与质量检查](#测试与质量检查)
+- [更多文档](#更多文档)
+- [已知情况说明](#已知情况说明)
+
+## 项目概览
+
+当前仓库由两个主要应用组成：
+
+- 后端：`backend/`，使用 FastAPI、SQLAlchemy、JWT 鉴权、SQLite 默认存储
+- 前端：`frontend/`，使用 React 18、TypeScript、Vite、React Router、Zustand、Recharts
+
+后端入口会在启动时初始化数据库、创建计费表并补齐默认模型定价；前端提供聊天、仪表盘、设置、技能、插件、记忆、计费等页面。
+
+相关代码可参考：
+
+- [main.py](file:///d:/代码/Open-AwA/backend/main.py#L1-L95)
+- [settings.py](file:///d:/代码/Open-AwA/backend/config/settings.py#L24-L59)
+- [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx#L1-L91)
+
+## 当前能力
+
+基于现有代码，可以确认的模块包括：
+
+- 聊天接口与 WebSocket 会话通信
+- 用户注册、登录与 `/auth/me` 鉴权信息获取
+- 技能的增删改查、执行、配置读取、上传解析与经验提取
+- 插件的增删改查、启用/禁用、执行、工具描述读取、上传解包、权限授权、日志查看、热更新与回滚
+- 短期记忆、长期记忆与经验记忆管理
+- 提示词配置管理
+- 行为日志与统计
+- 会话记录预览、导出、清理与采集开关
+- 模型定价、预算、报表、配置管理等计费能力
+
+后端路由注册见：
+
+- [main.py](file:///d:/代码/Open-AwA/backend/main.py#L52-L76)
+
+数据库模型见：
+
+- [models.py](file:///d:/代码/Open-AwA/backend/db/models.py#L20-L235)
 
 ## 技术栈
 
-**后端**
+### 后端
+
 - Python 3.11+
 - FastAPI
-- SQLAlchemy 2.0（Mapped 类型）
-- JWT 认证
-- Loguru 日志
+- SQLAlchemy 2.x
+- pydantic-settings
+- Loguru
+- Uvicorn
+- SQLite（默认）
 
-**前端**
+依赖文件：
+
+- [requirements.txt](file:///d:/代码/Open-AwA/backend/requirements.txt)
+
+### 前端
+
 - React 18
-- TypeScript（严格模式）
-- Vite
+- TypeScript 5
+- Vite 5
+- React Router DOM 6
+- Axios
 - Zustand
 - Recharts
-- Playwright（E2E 测试）
+- Vitest
+- Playwright
+
+依赖与脚本：
+
+- [package.json](file:///d:/代码/Open-AwA/frontend/package.json#L1-L38)
+
+## 仓库结构
+
+```text
+Open-AwA/
+├─ backend/                     # FastAPI 后端
+│  ├─ api/routes/               # 业务路由
+│  ├─ billing/                  # 计费相关模块
+│  ├─ config/                   # 配置与安全
+│  ├─ core/                     # Agent 核心流程
+│  ├─ db/                       # SQLAlchemy 模型与数据库初始化
+│  ├─ memory/                   # 记忆与经验管理
+│  ├─ plugins/                  # 插件系统核心
+│  ├─ skills/                   # Skill 系统
+│  ├─ tests/                    # 后端测试
+│  └─ main.py                   # FastAPI 入口
+├─ frontend/                    # React 前端
+│  ├─ src/components/           # 通用组件
+│  ├─ src/pages/                # 页面
+│  ├─ src/services/             # API 封装
+│  ├─ src/stores/               # Zustand 状态管理
+│  ├─ src/__tests__/            # 前端单测
+│  ├─ tests/e2e/                # Playwright E2E
+│  └─ package.json
+├─ plugins/                     # 示例插件目录
+└─ docs/                        # 项目文档
+```
 
 ## 快速开始
 
-### 后端启动
+### 1. 环境要求
 
-```bash
-cd backend
+建议环境：
 
-# 创建虚拟环境
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
+- Python 3.11 或更高版本
+- Node.js 18 或更高版本
+- npm 9+
 
-# 安装依赖
+### 2. 启动后端
+
+Windows PowerShell：
+
+```powershell
+cd d:\代码\Open-AwA\backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# 启动服务
 python main.py
-# 或
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-后端将在 http://localhost:8000 启动
+启动后可访问：
 
-### 前端启动
+- `http://127.0.0.1:8000/`
+- `http://127.0.0.1:8000/health`
 
-```bash
-cd frontend
+### 3. 启动前端
 
-# 安装依赖
+```powershell
+cd d:\代码\Open-AwA\frontend
 npm install
-
-# 启动开发服务器
-npm run dev
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-前端将在 http://localhost:5173 启动
+默认前端地址：
 
-### 插件开发
+- `http://127.0.0.1:5173`
 
-```bash
-cd backend
+## 运行方式
 
-# 初始化插件模板
-python -m plugins.cli.plugin_cli init my-plugin
+### 后端启动行为
 
-# 构建插件包
-python -m plugins.cli.plugin_cli build ./plugins/my-plugin
+后端在启动时会：
 
-# 验证插件配置
-python -m plugins.cli.plugin_cli validate ./plugins/my-plugin
-```
+1. 初始化主数据库表
+2. 创建计费模块表结构
+3. 初始化默认模型定价配置
+4. 挂载各业务路由
+5. 配置允许的 CORS 来源
 
-## 项目结构
+代码位置：
 
-```
-backend/
-├── core/               # 核心引擎
-│   ├── agent.py        # AI 智能体主控制器
-│   ├── comprehension.py # 理解层
-│   ├── planner.py      # 规划层
-│   ├── executor.py     # 执行层
-│   └── feedback.py     # 反馈层
-├── api/
-│   ├── routes/         # API 路由模块
-│   │   ├── auth.py     # 认证
-│   │   ├── chat.py     # 聊天
-│   │   ├── skills.py   # 技能管理
-│   │   ├── plugins.py  # 插件管理
-│   │   ├── behaviors.py # 行为分析
-│   │   ├── experiences.py # 经验记忆
-│   │   └── memory.py   # 记忆系统
-│   └── dependencies.py  # 依赖注入
-├── plugins/            # 插件系统核心
-│   ├── plugin_manager.py        # 插件管理器
-│   ├── plugin_lifecycle.py     # 生命周期状态机
-│   ├── extension_protocol.py  # 扩展点协议
-│   ├── schema_validator.py     # 配置校验
-│   ├── hot_update_manager.py   # 热更新管理
-│   ├── plugin_logger.py        # 独立日志通道
-│   ├── security/
-│   │   ├── static_scanner.py  # 静态安全扫描
-│   │   ├── permission_controller.py # 权限控制
-│   │   └── sandbox.py         # 运行时沙箱
-│   ├── cli/
-│   │   └── plugin_cli.py      # CLI 工具
-│   └── examples/               # 示例插件
-├── skills/             # Skill 系统
-├── memory/             # 记忆系统
-├── billing/            # 计费系统
-│   ├── pricing_manager.py   # 定价管理
-│   ├── tracker.py          # 用量追踪
-│   ├── engine.py           # 计费引擎
-│   ├── calculator.py        # 费用计算
-│   ├── budget_manager.py   # 预算控制
-│   └── reporter.py         # 成本报告
-├── security/           # 安全模块
-└── main.py            # 应用入口
+- [main.py](file:///d:/代码/Open-AwA/backend/main.py#L22-L76)
 
-frontend/
-├── src/
-│   ├── components/
-│   │   ├── PluginDebugPanel.tsx  # 实时 Debug 面板
-│   │   └── ...
-│   ├── pages/
-│   │   ├── ChatPage.tsx
-│   │   ├── PluginsPage.tsx
-│   │   └── ...
-│   ├── services/
-│   │   ├── chatService.ts
-│   │   ├── pluginService.ts
-│   │   └── ...
-│   ├── types/
-│   │   └── plugin-sdk.d.ts  # TypeScript SDK 类型定义
-│   └── stores/
-└── playwright.config.ts     # E2E 测试配置
-```
+### 默认配置
 
-## API 接口
+默认配置来自 [settings.py](file:///d:/代码/Open-AwA/backend/config/settings.py#L24-L59)，其中较重要的项包括：
 
-### 认证
-- `POST /api/auth/register` - 用户注册
-- `POST /api/auth/login` - 用户登录
+- `API_V1_STR=/api`
+- `DATABASE_URL=sqlite:///./openawa.db`
+- `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
+- `SANDBOX_TIMEOUT=30`
+- `SANDBOX_MEMORY_LIMIT=512m`
+- `LOG_LEVEL=INFO`
 
-### 聊天
-- `POST /api/chat` - 发送消息
-- `GET /api/chat/history/{session_id}` - 获取聊天历史
-- `WS /api/chat/ws/{session_id}` - WebSocket 连接
+生产环境中应显式设置：
 
-### 技能
-- `GET /api/skills` - 获取技能列表
-- `POST /api/skills` - 安装技能
-- `POST /api/skills/upload` - 上传技能包
-- `DELETE /api/skills/{id}` - 卸载技能
-- `GET /api/skills/stats` - 技能统计
+- `SECRET_KEY`
+- `DATABASE_URL`
+- `ALLOWED_ORIGINS`
+- 各模型提供方 API Key
 
-### 插件
-- `GET /api/plugins` - 获取插件列表
-- `POST /api/plugins` - 安装插件
-- `POST /api/plugins/upload` - 上传插件包
-- `DELETE /api/plugins/{id}` - 卸载插件
-- `PUT /api/plugins/{id}/enable` - 启用插件
-- `PUT /api/plugins/{id}/disable` - 禁用插件
-- `POST /api/plugins/{id}/update` - 热更新
-- `POST /api/plugins/{id}/rollback` - 回滚
-- `GET /api/plugins/{id}/permissions` - 权限状态
-- `POST /api/plugins/{id}/permissions/authorize` - 授权
-- `GET /api/plugins/logs` - 获取插件日志
+## 主要接口与页面
 
-### 经验
-- `GET /api/experiences` - 获取经验列表
-- `POST /api/experiences` - 创建经验
-- `GET /api/experiences/search` - 搜索经验
-- `GET /api/experiences/stats` - 经验统计
+### 后端主要路由
 
-### 记忆
-- `GET /api/memory/short-term/{session_id}` - 短期记忆
-- `GET /api/memory/long-term` - 长期记忆
-- `POST /api/memory/long-term` - 添加长期记忆
+已在入口文件注册的主路由包括：
 
-### 提示词
-- `GET /api/prompts` - 获取提示词列表
-- `POST /api/prompts` - 创建提示词
-- `PUT /api/prompts/{id}` - 更新提示词
+- `/api/auth`
+- `/api/chat`
+- `/api/skills`
+- `/api/plugins`
+- `/api/memory`
+- `/api/prompts`
+- `/api/behaviors`
+- `/api/experiences`
+- `/api/conversations`
+- `/api/billing`
 
-### 行为分析
-- `GET /api/behaviors/stats` - 获取行为统计
-- `GET /api/behaviors/intents` - 意图分布
+可参考以下代码：
 
-### 计费
-- `GET /api/billing/usage` - 获取用量
-- `GET /api/billing/cost` - 获取成本
-- `GET /api/billing/budget` - 获取预算状态
+- [auth.py](file:///d:/代码/Open-AwA/backend/api/routes/auth.py#L14-L62)
+- [chat.py](file:///d:/代码/Open-AwA/backend/api/routes/chat.py#L14-L190)
+- [skills.py](file:///d:/代码/Open-AwA/backend/api/routes/skills.py#L17-L368)
+- [plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L15-L519)
+- [memory.py](file:///d:/代码/Open-AwA/backend/api/routes/memory.py#L12-L121)
+- [experiences.py](file:///d:/代码/Open-AwA/backend/api/routes/experiences.py#L14-L260)
+- [conversation.py](file:///d:/代码/Open-AwA/backend/api/routes/conversation.py#L14-L139)
+- [billing.py](file:///d:/代码/Open-AwA/backend/billing/routers/billing.py#L14-L260)
 
-## 插件扩展点
+### 前端页面
 
-插件支持以下 8 种扩展点类型：
+前端目前包含以下页面路由：
 
-| 扩展点类型 | 用途 |
-|-----------|------|
-| `tool` | 注册工具供 Agent 调用 |
-| `hook` | 拦截处理链中的事件 |
-| `command` | 注册命令到 CLI |
-| `route` | 注册 API 路由 |
-| `event_handler` | 订阅系统事件 |
-| `scheduler` | 定时任务 |
-| `middleware` | 请求/响应中间件 |
-| `data_provider` | 提供结构化数据 |
+- `/chat`
+- `/dashboard`
+- `/settings`
+- `/skills`
+- `/plugins`
+- `/memory`
+- `/billing`
 
-## 测试
+代码位置：
 
-```bash
-# 后端测试
-cd backend
+- [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx#L70-L88)
+
+其中几个核心页面对应实现：
+
+- [ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/ChatPage.tsx#L1-L259)
+- [DashboardPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/DashboardPage.tsx#L1-L128)
+- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/PluginsPage.tsx#L1-L260)
+- [MemoryPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/MemoryPage.tsx#L1-L154)
+- [BillingPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/BillingPage.tsx#L1-L249)
+
+## 插件开发文档
+
+仓库已经包含插件开发手册，现已按当前代码重新整理。入口文档：
+
+- [README.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/README.md)
+
+建议阅读顺序：
+
+1. [1-getting-started.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/1-getting-started.md)
+2. [2-api-reference.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/2-api-reference.md)
+3. [3-best-practices.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/3-best-practices.md)
+4. [4-faq.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/4-faq.md)
+
+示例插件目录：
+
+- `d:\代码\Open-AwA\plugins\hello-world`
+- `d:\代码\Open-AwA\plugins\theme-switcher`
+- `d:\代码\Open-AwA\plugins\data-chart`
+
+## 测试与质量检查
+
+### 后端
+
+```powershell
+cd d:\代码\Open-AwA\backend
 python -m pytest
+```
 
-# 前端单元测试
-cd frontend
+### 前端单元测试
+
+```powershell
+cd d:\代码\Open-AwA\frontend
 npm run test
+```
 
-# 前端类型检查
+### 前端类型检查
+
+```powershell
+cd d:\代码\Open-AwA\frontend
 npm run typecheck
+```
 
-# E2E 测试（需先启动后端）
-cd frontend
+### 前端构建
+
+```powershell
+cd d:\代码\Open-AwA\frontend
+npm run build
+```
+
+### E2E 测试
+
+```powershell
+cd d:\代码\Open-AwA\frontend
 npm run e2e
 ```
 
-## 代码质量
+E2E 配置见：
 
-```bash
-# 后端 ruff 检查
-cd backend
-ruff check .
+- [playwright.config.ts](file:///d:/代码/Open-AwA/frontend/playwright.config.ts#L1-L54)
 
-# 后端 mypy 类型检查
-mypy . --ignore-missing-imports
+## 更多文档
 
-# 前端 ESLint
-cd frontend
-npx eslint src/ --ext .ts,.tsx
-```
+新增与更新后的中文文档位于 `docs/`：
 
-## 文档
+- [README.md](file:///d:/代码/Open-AwA/docs/README.md)
+- [deployment.md](file:///d:/代码/Open-AwA/docs/deployment.md)
+- [backend-architecture.md](file:///d:/代码/Open-AwA/docs/backend-architecture.md)
+- [frontend-architecture.md](file:///d:/代码/Open-AwA/docs/frontend-architecture.md)
+- [testing.md](file:///d:/代码/Open-AwA/docs/testing.md)
 
-详细文档请参考：
-- [插件开发手册](docs/plugin-developer-handbook/)
-- [OpenClaw 研究报告](docs/openclaw-research.md)
-- [项目规范](.trae/specs/)
+## 已知情况说明
 
-## 许可证
+以下内容是根据当前代码观察得到，建议在后续开发中继续收敛：
 
-MIT License
+- 前端初始化流程会自动注册并登录测试用户，属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx#L20-L53)
+- `PluginsPage` 中存在“浏览插件市场”按钮，但当前仓库未看到对应市场实现
+- README 只描述已存在的接口与页面，不对未完成功能做保证

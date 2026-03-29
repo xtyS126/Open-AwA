@@ -25,7 +25,12 @@ async def get_short_term_memory(
     return memories
 
 
-@router.post("/short-term", response_model=ShortTermMemoryResponse)
+@router.post(
+    "/short-term",
+    response_model=ShortTermMemoryResponse,
+    summary="新增短期记忆",
+    description="向指定会话写入一条短期记忆记录。"
+)
 async def add_short_term_memory(
     memory: ShortTermMemoryCreate,
     db: Session = Depends(get_db),
@@ -60,7 +65,12 @@ async def delete_short_term_memory(
     return {"message": "Memory deleted successfully"}
 
 
-@router.get("/long-term", response_model=List[LongTermMemoryResponse])
+@router.get(
+    "/long-term",
+    response_model=List[LongTermMemoryResponse],
+    summary="获取长期记忆列表",
+    description="按重要度返回长期记忆记录，支持分页参数。"
+)
 async def get_long_term_memories(
     skip: int = 0,
     limit: int = 50,
@@ -108,7 +118,11 @@ async def delete_long_term_memory(
     return {"message": "Memory deleted successfully"}
 
 
-@router.get("/search")
+@router.get(
+    "/search",
+    summary="搜索长期记忆",
+    description="根据关键词搜索长期记忆内容。"
+)
 async def search_memories(
     query: str,
     db: Session = Depends(get_db),

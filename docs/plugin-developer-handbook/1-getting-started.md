@@ -1,202 +1,223 @@
-# 第一章：快速入门
+# 第一章：快速开始
 
-## 1.1 环境准备
+本章介绍如何基于当前仓库中的插件 CLI、基类和示例插件快速创建一个可被 Open-AwA 识别的插件。
 
-### 系统要求
+## 1. 环境准备
 
-| 依赖项 | 最低版本 | 推荐版本 |
-|--------|----------|----------|
-| Python | 3.10 | 3.12 |
-| Node.js | 18.0 | 20.x LTS |
-| Git | 2.30 | 最新稳定版 |
+建议环境：
 
-### 克隆仓库
+| 项目 | 建议版本 |
+| --- | --- |
+| Python | 3.11 及以上 |
+| Node.js | 18 及以上 |
+| npm | 9 及以上 |
 
-```bash
-git clone https://github.com/your-org/Open-AwA.git
-cd Open-AwA
-```
+如果你只开发后端插件，通常只需要 Python 环境即可。
 
-### 安装后端依赖
+安装后端依赖：
 
-```bash
-cd backend
+```powershell
+cd d:\代码\Open-AwA\backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### 安装前端依赖
+插件 CLI 位于：
 
-```bash
-cd frontend
-npm install
+- [plugin_cli.py](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L11-L166)
+
+## 2. 插件最小目录结构
+
+当前仓库的 CLI 与示例插件表明，一个插件目录通常至少包含：
+
+```text
+my-plugin/
+├─ manifest.json
+├─ README.md
+├─ LICENSE
+└─ src/
+   └─ index.py
 ```
 
-### 启动开发服务器
+其中：
 
-```bash
-# 终端1：启动后端
-cd backend
-uvicorn main:app --reload --port 8000
+- `manifest.json`：插件元数据与扩展点声明
+- `src/index.py`：插件主实现文件
+- `README.md`、`LICENSE`：CLI 打包校验时会一并处理
 
-# 终端2：启动前端
-cd frontend
-npm run dev
+CLI `build` 会优先打包 `dist/` 目录；如果没有该目录，会写入占位文件 `dist/.gitkeep` 到 zip 包中。
+
+参考代码：
+
+- [plugin_cli.py](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L58-L94)
+
+## 3. 使用 CLI 初始化插件
+
+当前 CLI 的 `init` 命令要求显式传入 `--name`：
+
+```powershell
+cd d:\代码\Open-AwA\backend
+python -m plugins.cli.plugin_cli init ..\plugins\my-plugin --name my-plugin --version 1.0.0 --author your-name --description "示例插件"
 ```
 
-## 1.2 创建第一个插件
+生成结果来自：
 
-### 目录结构
+- [cmd_init](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L16-L55)
 
-每个插件是一个独立目录，位于项目根目录的 `plugins/` 下，结构如下：
+命令执行后会生成：
 
-```
-plugins/
-  my-plugin/
-    manifest.json      # 插件元数据（必须）
-    src/
-      index.py         # 插件主入口（必须）
-    README.md          # 插件说明文档（推荐）
-```
+- `manifest.json`
+- `src/index.py`
+- `README.md`
+- `LICENSE`
 
-### 编写 manifest.json
+## 4. manifest.json 的当前格式
 
-`manifest.json` 是插件的身份证，系统通过它识别和加载插件。
+根据 CLI 初始化逻辑与扩展点校验器，插件清单至少应包含：
 
 ```json
 {
-  "name": "my-first-plugin",
+  "name": "my-plugin",
   "version": "1.0.0",
-  "pluginApiVersion": "1.0",
-  "description": "我的第一个插件",
-  "author": "你的名字",
+  "pluginApiVersion": "1.0.0",
+  "description": "示例插件",
+  "author": "your-name",
   "permissions": [],
   "extensions": [
     {
       "point": "tool",
-      "name": "my_tool",
-      "version": "1.0.0",
-      "config": {}
+      "name": "my-plugin",
+      "version": "1.0.0"
     }
   ]
 }
 ```
 
-字段说明：
+当前代码里可以确认的扩展点类型见：
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 是 | 插件唯一标识符，建议使用小写字母和连字符 |
-| version | string | 是 | 遵循 SemVer 规范，如 1.0.0 |
-| pluginApiVersion | string | 是 | 当前支持 "1.0" |
-| description | string | 否 | 插件功能描述 |
-| author | string | 否 | 开发者名称 |
-| permissions | string[] | 否 | 所需权限列表，留空表示无特殊权限需求 |
-| extensions | array | 是 | 至少包含一个扩展点声明 |
+- [ExtensionPointType](file:///d:/代码/Open-AwA/backend/plugins/extension_protocol.py#L8-L16)
 
-### 编写插件主入口 src/index.py
+## 5. 编写插件实现
 
-所有插件必须继承 `BasePlugin` 基类，并实现 `initialize` 与 `execute` 两个抽象方法。
+需要注意的是：
+
+- 真正被后端插件系统动态加载的类，需要继承 `BasePlugin`
+- CLI 生成的 `src/index.py` 只是一个最简占位文件，通常需要你手工改造成类实现
+
+`BasePlugin` 定义见：
+
+- [base_plugin.py](file:///d:/代码/Open-AwA/backend/plugins/base_plugin.py#L5-L58)
+
+一个最小可用示例：
 
 ```python
-from typing import Any, Dict
+from typing import Any
 from backend.plugins.base_plugin import BasePlugin
-from loguru import logger
 
 
-class MyFirstPlugin(BasePlugin):
-    name: str = "my-first-plugin"
-    version: str = "1.0.0"
-    description: str = "我的第一个插件"
+class MyPlugin(BasePlugin):
+    name = "my-plugin"
+    version = "1.0.0"
+    description = "示例插件"
 
     def initialize(self) -> bool:
-        logger.info(f"插件 {self.name} 初始化成功")
         self._initialized = True
         return True
 
     def execute(self, *args, **kwargs) -> Any:
-        input_text = kwargs.get("input", "")
-        logger.info(f"插件执行，输入：{input_text}")
         return {
             "status": "success",
-            "output": f"已处理：{input_text}"
+            "echo": kwargs,
         }
 ```
 
-### 生命周期方法
+## 6. 参考示例插件
 
-`BasePlugin` 提供以下可重写的生命周期钩子：
+建议优先阅读这几个插件：
 
-| 方法 | 触发时机 | 返回值 |
-|------|----------|--------|
-| `initialize()` | 插件首次加载时 | bool |
-| `execute(*args, **kwargs)` | 插件被调用执行时 | Any |
-| `cleanup()` | 插件卸载时 | None |
-| `validate()` | 注册前配置校验 | bool |
-| `on_registered()` | 进入 registered 状态 | None |
-| `on_loaded()` | 进入 loaded 状态 | None |
-| `on_enabled()` | 进入 enabled 状态 | None |
-| `on_disabled()` | 进入 disabled 状态 | None |
-| `on_unloaded()` | 进入 unloaded 状态 | None |
-| `on_error(error, from_state, to_state)` | 发生错误时 | None |
+- [hello-world](file:///d:/代码/Open-AwA/plugins/hello-world/src/index.py)
+- [theme-switcher](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L28-L145)
+- [data-chart](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L9-L205)
 
-## 1.3 运行与调试
+它们分别展示了：
 
-### 通过 REST API 注册插件
+- 基础执行逻辑
+- 工具描述输出
+- 配置读取
+- 模拟数据模式
+- API 拦截和数据提供场景
 
-将插件目录放置在服务器可访问的路径后，调用以下接口进行注册：
+## 7. 打包、校验、签名
 
-```bash
-# 从本地路径加载插件
-curl -X POST http://localhost:8000/api/plugins/load \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/absolute/path/to/plugins/my-first-plugin"}'
+### 打包
+
+```powershell
+cd d:\代码\Open-AwA\backend
+python -m plugins.cli.plugin_cli build d:\代码\Open-AwA\plugins\my-plugin -o d:\代码\Open-AwA\dist
 ```
 
-### 通过命令行工具
+### 校验
 
-Open-AwA 提供了 CLI 工具用于插件管理：
+注意：当前 `validate` 命令接收的是 zip 文件路径。
 
-```bash
-# 列出所有已注册插件
-python -m backend.plugins.cli.plugin_cli list
-
-# 加载插件
-python -m backend.plugins.cli.plugin_cli load --path ./plugins/my-first-plugin
-
-# 启用插件
-python -m backend.plugins.cli.plugin_cli enable --name my-first-plugin
-
-# 禁用插件
-python -m backend.plugins.cli.plugin_cli disable --name my-first-plugin
+```powershell
+python -m plugins.cli.plugin_cli validate d:\代码\Open-AwA\dist\my-plugin@1.0.0.zip
 ```
 
-### 查看插件日志
+### 签名
 
-系统使用 [loguru](https://github.com/Delgan/loguru) 进行日志管理，插件输出的日志会统一汇入系统日志流。
-
-开发阶段建议在 `execute` 方法中使用 `logger.debug()` 输出详细信息：
-
-```python
-from loguru import logger
-
-def execute(self, *args, **kwargs):
-    logger.debug(f"收到参数：{kwargs}")
-    # ...
+```powershell
+python -m plugins.cli.plugin_cli sign d:\代码\Open-AwA\dist\my-plugin@1.0.0.zip
 ```
 
-### 前端调试面板
+相关代码：
 
-启动前端开发服务器后，进入「插件管理」页面可以：
+- [cmd_build](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L58-L95)
+- [cmd_validate](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L97-L140)
+- [cmd_sign](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L143-L166)
 
-- 查看所有已注册插件及其状态
-- 手动触发插件启用、禁用
-- 实时查看插件执行日志（PluginDebugPanel 组件）
+## 8. 在系统中导入与执行
 
-### 常见启动错误排查
+当前前后端提供的常见接入方式：
 
-| 错误信息 | 原因 | 解决方法 |
-|----------|------|----------|
-| `Invalid manifest: missing required field 'name'` | manifest.json 缺少必填字段 | 检查 manifest.json 结构 |
-| `Invalid extension: additional property ... is not allowed` | 扩展点声明包含非法字段 | 移除多余字段 |
-| `Plugin does not have method 'execute'` | 插件类未实现 execute 方法 | 实现抽象方法 |
-| `Execution exceeded Xs limit` | 插件执行超时 | 优化逻辑或申请更高超时配置 |
+### 方式一：前端插件管理页面导入
+
+前端插件页支持上传 zip：
+
+- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/PluginsPage.tsx#L127-L150)
+
+后端上传接口：
+
+- [upload_plugin](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L371-L421)
+
+### 方式二：通过插件管理 API 执行
+
+插件执行接口：
+
+- [execute_plugin](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L203-L245)
+
+## 9. 调试建议
+
+当前仓库提供两类调试方式：
+
+1. 后端日志
+2. 前端插件调试面板
+
+插件日志相关接口：
+
+- [get_plugin_logs](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L500-L519)
+
+前端调试面板入口：
+
+- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/PluginsPage.tsx#L213-L241)
+
+## 10. 本章小结
+
+如果你只想尽快跑通一个插件，推荐最短路径：
+
+1. 用 CLI 初始化目录
+2. 把 `src/index.py` 改成继承 `BasePlugin` 的类
+3. 声明至少一个扩展点
+4. 打包成 zip
+5. 在插件管理页面导入并执行

@@ -1,21 +1,77 @@
 :root {
-  --color-primary: #5B8DEF;
-  --color-primary-hover: #4A7CD8;
-  --color-bg: #FFFFFF;
-  --color-bg-secondary: #FAFAFA;
-  --color-bg-tertiary: #F5F5F5;
+  --color-primary: #5b8def;
+  --color-primary-hover: #4a7cd8;
+  --color-primary-dark: #3c67bc;
+  --color-primary-ring: rgba(91, 141, 239, 0.2);
+  --color-primary-soft-bg: rgba(91, 141, 239, 0.1);
+  --color-primary-softer-bg: rgba(91, 141, 239, 0.08);
+  --color-primary-softest-bg: rgba(91, 141, 239, 0.05);
+
+  --color-bg: #ffffff;
+  --color-bg-secondary: #fafafa;
+  --color-bg-tertiary: #f5f5f5;
+
   --color-text: #333333;
   --color-text-secondary: #666666;
   --color-text-tertiary: #999999;
-  --color-border: #E5E5E5;
-  --color-success: #4ECDC4;
-  --color-error: #FF6B6B;
-  --color-warning: #FFE66D;
-  
+  --color-border: #e5e5e5;
+
+  --color-success: #4ecdc4;
+  --color-success-bg: rgba(78, 205, 196, 0.12);
+  --color-success-soft-bg: #e8f5e9;
+  --color-success-strong: #2e7d32;
+  --color-success-accent: #10b981;
+
+  --color-error: #ff6b6b;
+  --color-error-bg: rgba(255, 107, 107, 0.12);
+  --color-error-soft-bg: #ffebee;
+  --color-error-soft-border: #ffcdd2;
+  --color-error-strong: #c62828;
+
+  --color-warning: #b58100;
+  --color-warning-bg: rgba(255, 184, 0, 0.16);
+  --color-warning-soft-bg: #fff3e0;
+  --color-warning-strong: #f57c00;
+
+  --color-info: #1976d2;
+  --color-info-bg: #e3f2fd;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-overlay-soft: rgba(0, 0, 0, 0.45);
+
+  --color-surface-dark: #1e1e1e;
+  --color-surface-dark-secondary: #252525;
+  --color-surface-dark-tertiary: #2a2a2a;
+  --color-border-dark: #333333;
+  --color-border-dark-secondary: #444444;
+  --color-text-on-dark: #ffffff;
+  --color-text-on-dark-secondary: #dddddd;
+  --color-text-on-dark-tertiary: #888888;
+  --color-required: #ff4d4f;
+
+  --color-chart-grid: #e5e5e5;
+  --color-chart-axis: #666666;
+  --color-chart-primary: #5b8def;
+  --color-chart-secondary: #4ecdc4;
+  --color-chart-3: #ff6b6b;
+  --color-chart-4: #b58100;
+  --color-chart-5: #95e1d3;
+  --color-chart-6: #f38181;
+
+  --color-tag-purple-bg: rgba(123, 31, 162, 0.12);
+  --color-tag-purple-text: #7b1fa2;
+
+  --color-log-debug: #6c757d;
+  --color-log-error: #e74c3c;
+  --color-log-critical: #c0392b;
+
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 12px;
-  
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.05);
 }

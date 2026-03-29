@@ -132,30 +132,15 @@ function PluginsPage() {
         return
       }
 
-      const formData = new FormData()
-      formData.append('file', file)
-
       try {
         setUploading(true)
-        const token = localStorage.getItem('token')
-        const response = await fetch('/api/plugins/upload', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          body: formData
-        })
-
-        if (response.ok) {
-          alert('插件导入成功')
-          await loadPlugins()
-        } else {
-          const data = await response.json()
-          alert(`插件导入失败: ${data.detail || '未知错误'}`)
-        }
-      } catch (error) {
+        await pluginsAPI.upload(file)
+        alert('插件导入成功')
+        await loadPlugins()
+      } catch (error: any) {
         console.error('Failed to upload plugin:', error)
-        alert('插件导入失败')
+        const detail = error?.response?.data?.detail
+        alert(`插件导入失败: ${detail || '未知错误'}`)
       } finally {
         setUploading(false)
         if (fileInputRef.current) {

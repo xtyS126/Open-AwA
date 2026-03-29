@@ -62,9 +62,9 @@
 }
 
 .debug-btn-active {
-  background: var(--color-primary, #4ecdc4);
-  color: #fff;
-  border-color: var(--color-primary, #4ecdc4);
+  background: var(--color-primary);
+  color: var(--color-text-on-dark);
+  border-color: var(--color-primary);
 }
 
 .debug-panel-body {
@@ -118,11 +118,11 @@
   text-transform: uppercase;
 }
 
-.debug-log-level.DEBUG   { color: #6c757d; }
-.debug-log-level.INFO    { color: var(--color-success, #4ecdc4); }
-.debug-log-level.WARNING { color: var(--color-warning, #b58100); }
-.debug-log-level.ERROR   { color: #e74c3c; }
-.debug-log-level.CRITICAL{ color: #c0392b; font-style: italic; }
+.debug-log-level.DEBUG   { color: var(--color-log-debug); }
+.debug-log-level.INFO    { color: var(--color-success); }
+.debug-log-level.WARNING { color: var(--color-warning); }
+.debug-log-level.ERROR   { color: var(--color-log-error); }
+.debug-log-level.CRITICAL{ color: var(--color-log-critical); font-style: italic; }
 
 .debug-log-msg {
   color: var(--color-text);

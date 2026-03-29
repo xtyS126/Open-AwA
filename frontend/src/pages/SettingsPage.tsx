@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { promptsAPI } from '../services/api'
+import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '../services/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '../services/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse } from '../services/modelsApi'
 import './SettingsPage.css'
@@ -26,6 +26,15 @@ interface ApiProviderFormState {
 }
 
 function SettingsPage() {
+  const createInitialAddProviderForm = () => ({
+    provider: '',
+    display_name: '',
+    icon: '',
+    api_endpoint: '',
+    api_key: '',
+    base_model: ''
+  })
+
   const [activeTab, setActiveTab] = useState('general')
   const [settings, setSettings] = useState<Settings>({
     theme: 'light',
@@ -65,15 +74,10 @@ function SettingsPage() {
   const [loadingProviderDetail, setLoadingProviderDetail] = useState(false)
   const [loadingProviderModels, setLoadingProviderModels] = useState(false)
   const [providerModelsError, setProviderModelsError] = useState<string | null>(null)
-  const [showAddProviderForm, setShowAddProviderForm] = useState(false)
-  const [addProviderForm, setAddProviderForm] = useState({
-    provider: '',
-    display_name: '',
-    icon: '',
-    api_endpoint: '',
-    api_key: '',
-    base_model: ''
-  })
+  const [showCreateProviderModal, setShowCreateProviderModal] = useState(false)
+  const [creatingProvider, setCreatingProvider] = useState(false)
+  const [deletingProvider, setDeletingProvider] = useState(false)
+  const [addProviderForm, setAddProviderForm] = useState(createInitialAddProviderForm())
   const [providerForm, setProviderForm] = useState<ApiProviderFormState>({
     config_id: null,
     provider: '',
@@ -84,6 +88,17 @@ function SettingsPage() {
     has_api_key: false,
     selected_models: []
   })
+
+  const [collectionEnabled, setCollectionEnabled] = useState(false)
+  const [collectionStats, setCollectionStats] = useState<ConversationCollectionStatusResponse['stats'] | null>(null)
+  const [updatingCollection, setUpdatingCollection] = useState(false)
+  const [recordsPreview, setRecordsPreview] = useState<ConversationRecordItem[]>([])
+  const [loadingRecordsPreview, setLoadingRecordsPreview] = useState(false)
+  const [exportStartTime, setExportStartTime] = useState('')
+  const [exportEndTime, setExportEndTime] = useState('')
+  const [exportingRecords, setExportingRecords] = useState(false)
+  const [cleanupDays, setCleanupDays] = useState(30)
+  const [cleaningRecords, setCleaningRecords] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -99,6 +114,10 @@ function SettingsPage() {
     }
     if (activeTab === 'api') {
       loadApiProvidersData()
+    }
+    if (activeTab === 'data-collection') {
+      loadCollectionStatus()
+      loadRecordsPreview()
     }
   }, [activeTab])
 
@@ -145,9 +164,6 @@ function SettingsPage() {
   }
 
   const loadPrompts = async () => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-
     try {
       const response = await promptsAPI.getActive()
       if (response.data && response.data.content) {
@@ -155,6 +171,101 @@ function SettingsPage() {
       }
     } catch (error) {
       console.error('Failed to load prompts')
+    }
+  }
+
+  const loadCollectionStatus = async () => {
+    try {
+      const response = await conversationAPI.getCollectionStatus()
+      setCollectionEnabled(Boolean(response.data.enabled))
+      setCollectionStats(response.data.stats || null)
+    } catch (error) {
+      setMessage({ type: 'error', text: '加载收集状态失败' })
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  const loadRecordsPreview = async () => {
+    setLoadingRecordsPreview(true)
+    try {
+      const response = await conversationAPI.getRecordsPreview(20)
+      setRecordsPreview(response.data.records || [])
+    } catch (error) {
+      setMessage({ type: 'error', text: '加载最近记录失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setLoadingRecordsPreview(false)
+    }
+  }
+
+  const handleToggleCollection = async (enabled: boolean) => {
+    setUpdatingCollection(true)
+    try {
+      await conversationAPI.updateCollectionStatus(enabled)
+      setCollectionEnabled(enabled)
+      await loadCollectionStatus()
+      setMessage({ type: 'success', text: enabled ? '已开启数据收集' : '已关闭数据收集' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (error) {
+      setMessage({ type: 'error', text: '更新收集开关失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setUpdatingCollection(false)
+    }
+  }
+
+  const handleExportRecords = async () => {
+    setExportingRecords(true)
+    try {
+      const params: { start_time?: string; end_time?: string } = {}
+      if (exportStartTime) {
+        params.start_time = new Date(exportStartTime).toISOString()
+      }
+      if (exportEndTime) {
+        params.end_time = new Date(exportEndTime).toISOString()
+      }
+
+      const response = await conversationAPI.exportRecords(params)
+      const dispositionHeader = response.headers['content-disposition'] as string | undefined
+      const matched = dispositionHeader?.match(/filename="?([^"]+)"?/) || null
+      const filename = matched?.[1] || 'conversation_records.jsonl'
+
+      const blob = new Blob([response.data], { type: 'application/x-ndjson' })
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(downloadUrl)
+
+      setMessage({ type: 'success', text: '导出完成' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (error) {
+      setMessage({ type: 'error', text: '导出失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setExportingRecords(false)
+    }
+  }
+
+  const handleCleanupRecords = async () => {
+    if (!confirm(`确认清理 ${cleanupDays} 天前的记录吗？`)) return
+
+    setCleaningRecords(true)
+    try {
+      const response = await conversationAPI.cleanupRecords(cleanupDays)
+      const deleted = response.data?.deleted_count ?? 0
+      setMessage({ type: 'success', text: `清理完成：已删除 ${deleted} 条记录` })
+      setTimeout(() => setMessage(null), 3000)
+      await loadRecordsPreview()
+      await loadCollectionStatus()
+    } catch (error) {
+      setMessage({ type: 'error', text: '清理失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setCleaningRecords(false)
     }
   }
 
@@ -190,6 +301,50 @@ function SettingsPage() {
 
 
   const normalizeProviderId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-')
+
+  const providerEndpointSuffixMap: Record<string, string> = {
+    openai: '/v1/chat/completions',
+    deepseek: '/v1/chat/completions',
+    moonshot: '/v1/chat/completions',
+    alibaba: '/compatible-mode/v1/chat/completions',
+    zhipu: '/api/paas/v4/chat/completions',
+    anthropic: '/v1/messages',
+    google: '/v1beta/models'
+  }
+
+  const normalizeProviderApiEndpoint = (provider: string, apiEndpoint: string) => {
+    const raw = apiEndpoint.trim()
+    if (!raw) {
+      return { endpoint: '', autoCompleted: false }
+    }
+
+    const normalizedProvider = normalizeProviderId(provider)
+    const defaultSuffix = providerEndpointSuffixMap[normalizedProvider] || '/v1/chat/completions'
+    const knownSuffixes = Array.from(new Set([...Object.values(providerEndpointSuffixMap), defaultSuffix]))
+
+    const trimmed = raw.replace(/\/+$/, '')
+    const lowerTrimmed = trimmed.toLowerCase()
+    if (knownSuffixes.some((suffix) => lowerTrimmed.endsWith(suffix.toLowerCase()))) {
+      return { endpoint: trimmed, autoCompleted: false }
+    }
+
+    let pathName = ''
+    try {
+      pathName = new URL(raw).pathname.toLowerCase()
+    } catch {
+      pathName = ''
+    }
+
+    const isBasePath = pathName === '' || pathName === '/' || pathName === '/v1' || pathName === '/v1beta' || pathName === '/api'
+    if (!isBasePath) {
+      return { endpoint: trimmed, autoCompleted: false }
+    }
+
+    return {
+      endpoint: `${trimmed}${defaultSuffix}`,
+      autoCompleted: true
+    }
+  }
 
   const loadApiProvidersData = async (preferredProviderId?: string) => {
     setLoadingApiProviders(true)
@@ -267,7 +422,7 @@ function SettingsPage() {
         provider: config.provider || providerId,
         display_name: config.display_name || providerData.display_name || providerData.name || providerId,
         icon: config.icon || providerData.icon || '',
-        api_endpoint: config.api_endpoint || providerData.api_endpoint || '',
+        api_endpoint: (config.api_endpoint || (config as any).api_url || (config as any).base_url || providerData.api_endpoint || (providerData as any).api_url || (providerData as any).base_url || ''),
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
         selected_models: selectedModels
@@ -309,43 +464,64 @@ function SettingsPage() {
     }
   }
 
+  const handleOpenCreateProviderModal = () => {
+    setAddProviderForm(createInitialAddProviderForm())
+    setShowCreateProviderModal(true)
+  }
+
+  const handleCloseCreateProviderModal = () => {
+    if (creatingProvider) return
+    setShowCreateProviderModal(false)
+  }
+
+  useEffect(() => {
+    if (!showCreateProviderModal) return
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleCloseCreateProviderModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [showCreateProviderModal, creatingProvider])
+
   const handleCreateProvider = async () => {
     const providerId = normalizeProviderId(addProviderForm.provider)
     const baseModel = addProviderForm.base_model.trim() || 'custom-model'
 
     if (!providerId) {
-      setMessage({ type: 'error', text: '请输入供应商名称' })
+      setMessage({ type: 'error', text: '请输入供应商标识' })
       setTimeout(() => setMessage(null), 3000)
       return
     }
 
+    setCreatingProvider(true)
+
     try {
+      const normalizedEndpointResult = normalizeProviderApiEndpoint(providerId, addProviderForm.api_endpoint)
       await modelsAPI.createConfiguration({
         provider: providerId,
         model: baseModel,
         display_name: addProviderForm.display_name.trim() || providerId,
         icon: addProviderForm.icon.trim() || undefined,
-        api_endpoint: addProviderForm.api_endpoint.trim() || undefined,
+        api_endpoint: normalizedEndpointResult.endpoint || undefined,
         api_key: addProviderForm.api_key.trim() || undefined,
         selected_models: [],
         is_default: false
       })
 
-      setAddProviderForm({
-        provider: '',
-        display_name: '',
-        icon: '',
-        api_endpoint: '',
-        api_key: '',
-        base_model: ''
-      })
-      setShowAddProviderForm(false)
-      setMessage({ type: 'success', text: '供应商创建成功' })
+      setAddProviderForm(createInitialAddProviderForm())
+      setShowCreateProviderModal(false)
+      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? '供应商创建成功，已自动补全 API URL 后缀' : '供应商创建成功' })
       setTimeout(() => setMessage(null), 3000)
       await loadApiProvidersData(providerId)
     } catch (error) {
       setMessage({ type: 'error', text: '供应商创建失败' })
       setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setCreatingProvider(false)
     }
   }
 
@@ -359,6 +535,7 @@ function SettingsPage() {
     setSaving(true)
 
     try {
+      const normalizedEndpointResult = normalizeProviderApiEndpoint(providerForm.provider, providerForm.api_endpoint)
       const updatePayload: {
         display_name?: string
         icon?: string
@@ -368,7 +545,7 @@ function SettingsPage() {
       } = {
         display_name: providerForm.display_name.trim() || undefined,
         icon: providerForm.icon.trim() || undefined,
-        api_endpoint: providerForm.api_endpoint.trim() || undefined,
+        api_endpoint: normalizedEndpointResult.endpoint || undefined,
         selected_models: providerForm.selected_models
       }
 
@@ -376,12 +553,13 @@ function SettingsPage() {
         updatePayload.api_key = providerForm.api_key.trim()
       }
 
+      setProviderForm(prev => ({ ...prev, api_endpoint: normalizedEndpointResult.endpoint }))
       await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
       await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
         selected_models: providerForm.selected_models
       })
 
-      setMessage({ type: 'success', text: '供应商配置保存成功' })
+      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? '供应商配置保存成功，已自动补全 API URL 后缀' : '供应商配置保存成功' })
       setTimeout(() => setMessage(null), 3000)
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
@@ -389,6 +567,32 @@ function SettingsPage() {
       setTimeout(() => setMessage(null), 3000)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDeleteProvider = async () => {
+    if (!providerForm.provider) {
+      setMessage({ type: 'error', text: '当前供应商配置不完整' })
+      setTimeout(() => setMessage(null), 3000)
+      return
+    }
+
+    const providerLabel = providerForm.display_name.trim() || providerForm.provider
+    const confirmed = confirm(`确定要删除供应商“${providerLabel}”吗？该供应商下的配置将被删除。`)
+    if (!confirmed) return
+
+    setDeletingProvider(true)
+
+    try {
+      await modelsAPI.deleteProvider(providerForm.provider)
+      setMessage({ type: 'success', text: '供应商删除成功' })
+      setTimeout(() => setMessage(null), 3000)
+      await loadApiProvidersData()
+    } catch (error) {
+      setMessage({ type: 'error', text: '供应商删除失败' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setDeletingProvider(false)
     }
   }
 
@@ -595,6 +799,12 @@ function SettingsPage() {
           数据保留
         </button>
         <button
+          className={`tab-btn ${activeTab === 'data-collection' ? 'active' : ''}`}
+          onClick={() => setActiveTab('data-collection')}
+        >
+          数据采集
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'security' ? 'active' : ''}`}
           onClick={() => setActiveTab('security')}
         >
@@ -648,75 +858,15 @@ function SettingsPage() {
               <h2>API配置</h2>
               <button
                 className="btn btn-primary"
-                onClick={() => setShowAddProviderForm(prev => !prev)}
+                onClick={handleOpenCreateProviderModal}
               >
-                {showAddProviderForm ? '取消新增' : '+ 添加供应商'}
+                新增供应商
               </button>
             </div>
             <p className="section-desc">左侧管理供应商，右侧配置 API URL、API Key，并获取模型后用复选框选择。</p>
 
             <div className="api-config-layout">
               <aside className="provider-sidebar">
-                {showAddProviderForm && (
-                  <div className="provider-create-card">
-                    <div className="form-group">
-                      <label>供应商名称</label>
-                      <input
-                        type="text"
-                        value={addProviderForm.provider}
-                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
-                        placeholder="例如 free-api"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>显示名称（可选）</label>
-                      <input
-                        type="text"
-                        value={addProviderForm.display_name}
-                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
-                        placeholder="例如 Free API"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>图标地址（可选）</label>
-                      <input
-                        type="text"
-                        value={addProviderForm.icon}
-                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, icon: e.target.value }))}
-                        placeholder="https://example.com/icon.png"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>默认模型</label>
-                      <input
-                        type="text"
-                        value={addProviderForm.base_model}
-                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, base_model: e.target.value }))}
-                        placeholder="custom-model"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>API URL（可选）</label>
-                      <input
-                        type="text"
-                        value={addProviderForm.api_endpoint}
-                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
-                        placeholder="https://api.example.com/v1/chat/completions"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>API Key（可选）</label>
-                      <input
-                        type="password"
-                        value={addProviderForm.api_key}
-                        onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
-                        placeholder="输入供应商 API Key"
-                      />
-                    </div>
-                    <button className="btn btn-primary" onClick={handleCreateProvider}>创建供应商</button>
-                  </div>
-                )}
-
                 {loadingApiProviders ? (
                   <div className="loading">加载供应商中...</div>
                 ) : providers.length === 0 ? (
@@ -825,16 +975,23 @@ function SettingsPage() {
                       <button
                         className="btn btn-secondary"
                         onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models)}
-                        disabled={loadingProviderModels}
+                        disabled={loadingProviderModels || deletingProvider}
                       >
                         {loadingProviderModels ? '获取中...' : '获取模型列表'}
                       </button>
                       <button
                         className="btn btn-primary"
                         onClick={handleSaveProviderConfig}
-                        disabled={saving}
+                        disabled={saving || deletingProvider}
                       >
                         {saving ? '保存中...' : '保存供应商配置'}
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        onClick={handleDeleteProvider}
+                        disabled={deletingProvider}
+                      >
+                        {deletingProvider ? '删除中...' : '删除供应商'}
                       </button>
                     </div>
 
@@ -1132,6 +1289,124 @@ function SettingsPage() {
             )}
           </div>
         )}
+        {activeTab === 'data-collection' && (
+          <div className="settings-section">
+            <h2>对话数据采集</h2>
+            <p className="section-desc">
+              采集调用链数据，预览最近记录，导出 JSONL，并清理历史数据。
+            </p>
+
+            <div className="setting-item checkbox">
+              <input
+                type="checkbox"
+                id="conversation-collection"
+                checked={collectionEnabled}
+                onChange={(e) => handleToggleCollection(e.target.checked)}
+                disabled={updatingCollection}
+              />
+              <label htmlFor="conversation-collection">
+                {updatingCollection ? '更新中...' : '启用对话数据采集'}
+              </label>
+            </div>
+
+            {collectionStats && (
+              <div className="collection-stats-grid">
+                <div className="collection-stat-card">
+                  <span className="collection-stat-label">队列占用</span>
+                  <span className="collection-stat-value">{collectionStats.queue_size} / {collectionStats.queue_maxsize}</span>
+                </div>
+                <div className="collection-stat-card">
+                  <span className="collection-stat-label">丢弃数量</span>
+                  <span className="collection-stat-value">{collectionStats.dropped_count}</span>
+                </div>
+                <div className="collection-stat-card">
+                  <span className="collection-stat-label">跟踪用户数</span>
+                  <span className="collection-stat-value">{collectionStats.tracked_user_count}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="collection-actions-row">
+              <button className="btn btn-secondary" onClick={loadRecordsPreview} disabled={loadingRecordsPreview}>
+                {loadingRecordsPreview ? '刷新中...' : '预览最近 20 条'}
+              </button>
+            </div>
+
+            <div className="collection-export-panel">
+              <h3>导出 JSONL</h3>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>开始时间（可选）</label>
+                  <input
+                    type="datetime-local"
+                    value={exportStartTime}
+                    onChange={(e) => setExportStartTime(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>结束时间（可选）</label>
+                  <input
+                    type="datetime-local"
+                    value={exportEndTime}
+                    onChange={(e) => setExportEndTime(e.target.value)}
+                  />
+                </div>
+              </div>
+              <button className="btn btn-primary" onClick={handleExportRecords} disabled={exportingRecords}>
+                {exportingRecords ? '导出中...' : '导出数据集'}
+              </button>
+            </div>
+
+            <div className="collection-cleanup-panel">
+              <h3>清理历史数据</h3>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>删除早于以下天数的记录</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3650}
+                    value={cleanupDays}
+                    onChange={(e) => setCleanupDays(parseInt(e.target.value) || 30)}
+                  />
+                </div>
+              </div>
+              <button className="btn btn-danger" onClick={handleCleanupRecords} disabled={cleaningRecords}>
+                {cleaningRecords ? '清理中...' : '执行清理'}
+              </button>
+            </div>
+
+            <div className="collection-preview-panel">
+              <h3>最近记录</h3>
+              {loadingRecordsPreview ? (
+                <div className="loading">加载中...</div>
+              ) : recordsPreview.length === 0 ? (
+                <div className="empty-state">
+                  <p>暂无记录</p>
+                </div>
+              ) : (
+                <div className="collection-record-list">
+                  {recordsPreview.map((record) => (
+                    <div key={record.id} className="collection-record-item">
+                      <div className="collection-record-row">
+                        <span className="collection-record-node">{record.node_type}</span>
+                        <span className={`collection-record-status ${record.status}`}>{record.status}</span>
+                      </div>
+                      <div className="collection-record-row muted">
+                        <span>会话: {record.session_id}</span>
+                        <span>{record.timestamp ? new Date(record.timestamp).toLocaleString('zh-CN') : '-'}</span>
+                      </div>
+                      <div className="collection-record-row muted">
+                        <span>模型: {record.provider || '-'} / {record.model || '-'}</span>
+                        <span>耗时: {record.execution_duration_ms ?? '-'} ms</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {activeTab === 'data-retention' && (
           <div className="settings-section">
@@ -1154,7 +1429,7 @@ function SettingsPage() {
                     max={3650}
                     style={{ width: '150px' }}
                   />
-                  <span style={{ marginLeft: '8px', color: '#666', fontSize: '14px' }}>
+                  <span style={{ marginLeft: '8px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
                     天（范围：1-3650）
                   </span>
                 </div>
@@ -1162,7 +1437,7 @@ function SettingsPage() {
                 {retentionConfig && (
                   <div className="setting-item">
                     <label>当前数据状态</label>
-                    <div style={{ fontSize: '14px', color: '#666', marginTop: '8px' }}>
+                    <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
                       <p>总记录数：{retentionConfig.total_records}</p>
                       <p>
                         数据范围：{retentionConfig.oldest_record
@@ -1229,6 +1504,78 @@ function SettingsPage() {
             >
               {saving ? '保存中...' : '保存安全设置'}
             </button>
+          </div>
+        )}
+
+        {showCreateProviderModal && (
+          <div className="provider-modal-overlay" onClick={handleCloseCreateProviderModal}>
+            <div className="provider-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="provider-modal-header">
+                <h3>新增供应商</h3>
+              </div>
+              <div className="provider-modal-body">
+                <div className="form-group">
+                  <label>供应商标识</label>
+                  <input
+                    type="text"
+                    value={addProviderForm.provider}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
+                    placeholder="例如 free-api"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>显示名称（可选）</label>
+                  <input
+                    type="text"
+                    value={addProviderForm.display_name}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
+                    placeholder="例如 Free API"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>图标地址（可选）</label>
+                  <input
+                    type="text"
+                    value={addProviderForm.icon}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, icon: e.target.value }))}
+                    placeholder="https://example.com/icon.png"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>默认模型（可选）</label>
+                  <input
+                    type="text"
+                    value={addProviderForm.base_model}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, base_model: e.target.value }))}
+                    placeholder="custom-model"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>API URL（可选）</label>
+                  <input
+                    type="text"
+                    value={addProviderForm.api_endpoint}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
+                    placeholder="https://api.example.com/v1/chat/completions"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>API Key（可选）</label>
+                  <input
+                    type="password"
+                    value={addProviderForm.api_key}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
+                    placeholder="输入供应商 API Key"
+                  />
+                </div>
+              </div>
+              <div className="provider-modal-actions">
+                <button className="btn btn-secondary" onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
+                <button className="btn btn-primary" onClick={handleCreateProvider} disabled={creatingProvider}>
+                  {creatingProvider ? '创建中...' : '确认创建'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

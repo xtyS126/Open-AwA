@@ -592,6 +592,25 @@ async def get_provider_detail(
     }
 
 
+@router.delete("/providers/{provider}")
+async def delete_provider(
+    provider: str,
+    db: Session = Depends(get_db)
+):
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    deleted_count = pricing_manager.delete_provider_configurations(provider_id)
+
+    if deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Provider configuration not found")
+
+    return {
+        "success": True,
+        "provider": provider_id,
+        "deleted_count": deleted_count
+    }
+
+
 @router.put("/providers/{provider}/selected-models")
 async def update_provider_selected_models(
     provider: str,

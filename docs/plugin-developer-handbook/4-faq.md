@@ -1,198 +1,148 @@
 # 第四章：常见问题
 
-## Q1：插件加载时报错 `Invalid manifest: missing required field 'extensions'`，如何解决？
+## Q1：CLI 初始化后为什么 `src/index.py` 里只有一个 `run()` 占位函数？
 
-**原因：** manifest.json 中缺少 `extensions` 字段，或该字段为空数组。
+这是当前脚手架的实现结果。CLI `init` 只是帮你生成最小文件集，不会自动生成继承 `BasePlugin` 的完整类。
 
-`extensions` 是必填字段，且至少需要包含一个扩展点声明。
+相关代码：
 
-**解决方法：** 确保 manifest.json 包含至少一个扩展点：
+- [cmd_init](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L16-L55)
 
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "pluginApiVersion": "1.0",
-  "extensions": [
-    {
-      "point": "tool",
-      "name": "my_tool",
-      "version": "1.0.0"
-    }
-  ]
-}
-```
+实际开发时，需要你手工把它改造成继承 `BasePlugin` 的类实现。
 
----
+## Q2：`validate` 命令为什么不能直接校验插件目录？
 
-## Q2：插件的 `initialize` 方法返回 `True`，但插件状态仍然是 `error`，这是什么原因？
+因为当前 CLI 的 `validate` 命令接收参数名就是 `zip_path`，内部逻辑也是按 zip 文件读取的。
 
-**原因：** 可能是 `validate()` 方法返回了 `False`，或者 `initialize` 内部抛出了未捕获的异常。
+参考：
 
-**解决方法：**
+- [cmd_validate](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L97-L140)
 
-1. 检查 `validate()` 方法逻辑，确保配置合法时返回 `True`
-2. 在 `initialize` 中添加 try-except，使用 `logger.error()` 输出具体错误信息
-3. 查看后端日志，搜索插件名称关键词定位具体报错
+推荐流程是先 `build`，再 `validate`。
 
----
+## Q3：插件最少要实现哪些方法？
 
-## Q3：我的插件使用了 `requests` 库发起 HTTP 请求，但加载时被拒绝，应如何处理？
+至少要实现：
 
-**原因：** `requests` 属于受限网络 API，必须在 manifest.json 中声明 `network:http` 权限才能使用。
+- `initialize()`
+- `execute()`
 
-**解决方法：** 在 manifest.json 中添加权限声明：
+并继承 `BasePlugin`。
 
-```json
-{
-  "permissions": ["network:http"]
-}
-```
+参考：
 
-注意：推荐在插件中使用 `httpx` 而非 `requests`，因为 `httpx` 原生支持 async，与系统沙箱的异步执行模型更兼容。
+- [BasePlugin](file:///d:/代码/Open-AwA/backend/plugins/base_plugin.py#L5-L58)
 
----
+## Q4：当前支持哪些扩展点？
 
-## Q4：插件执行时提示 `Execution exceeded 30s limit`，如何提高超时限制？
+当前代码中支持 8 类扩展点：
 
-**原因：** `PluginSandbox` 默认超时为 30 秒，长时间运行的任务会被中断。
+- `tool`
+- `hook`
+- `command`
+- `route`
+- `event_handler`
+- `scheduler`
+- `middleware`
+- `data_provider`
 
-**解决方法：**
+参考：
 
-1. 优先优化插件逻辑，减少执行时间
-2. 将同步操作改为异步操作（`async def execute`），充分利用 IO 等待时间
-3. 若确实需要更长超时，可在实例化 `PluginSandbox` 时传入自定义 `timeout` 参数（需后端管理员操作）
+- [ExtensionPointType](file:///d:/代码/Open-AwA/backend/plugins/extension_protocol.py#L8-L16)
 
----
+## Q5：插件执行超时怎么处理？
 
-## Q5：如何在插件之间共享数据？
+当前 `PluginSandbox` 默认超时 30 秒。先优先优化插件执行路径，而不是直接放大超时值。
 
-**原因：** 插件之间相互隔离，不能直接访问彼此的实例变量。
+参考：
 
-**推荐方案：**
+- [PluginSandbox](file:///d:/代码/Open-AwA/backend/plugins/plugin_sandbox.py#L8-L17)
 
-1. 通过后端 REST API 接口读写数据库实现数据共享
-2. 使用 `data_provider` 扩展点注册数据源，其他插件通过该扩展点查询数据
-3. 使用 `event_handler` 扩展点监听另一个插件发出的事件
+建议：
 
----
+1. 外部请求设置超时
+2. 控制一次处理的数据量
+3. 将 IO 操作异步化
+4. 使用缓存减少重复计算
 
-## Q6：`manifest.json` 中 `pluginApiVersion` 填什么值？
+## Q6：插件 zip 包里为什么要求 `README.md`、`LICENSE` 和 `dist/`？
 
-当前 Open-AwA 支持的 Plugin API 版本为 `"1.0"`，填写如下：
+因为当前 CLI `validate` 会显式检查这些内容是否存在。
 
-```json
-{
-  "pluginApiVersion": "1.0"
-}
-```
+参考：
 
-未来版本升级时，文档会同步更新此字段的有效值。若填写了系统不支持的版本，插件将无法通过 schema 校验。
+- [cmd_validate](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L109-L140)
 
----
+## Q7：如何查看插件日志？
 
-## Q7：如何实现插件的热更新，不重启服务就能加载新版本？
+后端提供日志读取接口，前端插件页也提供调试面板入口。
 
-系统内置了 `HotUpdateManager` 支持热更新，通过以下 REST API 触发：
+参考：
 
-```bash
-curl -X POST http://localhost:8000/api/plugins/{plugin_name}/update \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/path/to/new-version"}'
-```
+- [get_plugin_logs](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L500-L519)
+- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/PluginsPage.tsx#L213-L241)
 
-热更新流程：
-1. 系统对当前版本创建快照
-2. 加载新版本插件并执行 `initialize`
-3. 若新版本初始化失败，自动回滚至快照版本
-4. 回滚调用插件的 `rollback` 方法，可重写该方法添加自定义回滚逻辑
+## Q8：上传 zip 后，插件为什么没有立即变成“完整可用”的业务能力？
 
----
+当前 `/api/plugins/upload` 的逻辑主要负责：
 
-## Q8：如何为插件编写单元测试？
+- 解压 zip
+- 重新发现插件
+- 如数据库里不存在同名插件，则创建基础记录
 
-直接实例化插件类，传入测试配置，调用 `initialize` 和 `execute` 即可：
+参考：
 
-```python
-import pytest
-from plugins.hello_world.src.index import HelloWorldPlugin
+- [upload_plugin](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L371-L421)
 
+它不是一个完整的“插件商店安装器”，因此如果插件本身结构或代码不完整，上传成功也不代表业务逻辑一定能执行成功。
 
-def test_hello_world_execute():
-    plugin = HelloWorldPlugin(config={"greeting": "Hi"})
-    assert plugin.initialize() is True
-    result = plugin.execute(name="Alice")
-    assert result["message"] == "Hi, Alice!"
+## Q9：怎样确认插件是否真的被动态加载？
 
+可以从几个角度验证：
 
-def test_hello_world_validate():
-    plugin = HelloWorldPlugin(config={"greeting": 123})
-    assert plugin.validate() is False
-```
+1. 调用 `/api/plugins/discover`
+2. 调用 `/api/plugins/{plugin_id}/tools`
+3. 调用 `/api/plugins/{plugin_id}/execute`
+4. 查看插件日志
 
-运行测试：
+相关代码：
 
-```bash
-cd backend
-pytest tests/plugins/ -v
-```
+- [discover_plugins](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L351-L369)
+- [get_plugin_tools](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L248-L278)
+- [execute_plugin](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L203-L245)
 
----
+## Q10：插件权限是怎么管理的？
 
-## Q9：前端插件调试面板（PluginDebugPanel）无法显示插件列表，应如何排查？
+当前后端已提供：
 
-**排查步骤：**
+- 查询权限状态
+- 授权权限
+- 撤销权限
 
-1. 确认后端服务正在运行（`http://localhost:8000` 可访问）
-2. 打开浏览器开发者工具，检查 Network 标签，查看 `/api/plugins` 请求是否返回 200
-3. 若接口返回 401，检查认证 token 是否有效
-4. 若接口返回 500，查看后端日志定位服务端错误
-5. 检查前端 `.env` 文件中的 `VITE_API_BASE_URL` 配置是否正确
+参考：
 
----
+- [get_plugin_permissions](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L179-L200)
+- [authorize_plugin_permissions](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L127-L151)
+- [revoke_plugin_permissions](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L153-L176)
 
-## Q10：插件的 `name` 字段有什么命名限制？
+前端权限弹窗见：
 
-`name` 字段用于在系统中唯一标识插件，建议遵循以下规范：
+- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/PluginsPage.tsx#L55-L98)
 
-- 只使用小写字母、数字和连字符（`-`）
-- 不以连字符开头或结尾
-- 长度不超过 64 个字符
-- 在整个系统中全局唯一，若与已注册插件重名，后加载的插件会覆盖前者
+## Q11：是否可以假设存在完整的插件市场、发布中心或审核平台？
 
-推荐格式：`{作者}-{功能描述}`，如 `alice-weather-query`、`corp-data-export`。
+不建议。当前仓库中可以看到前端有“浏览插件市场”按钮，但没有发现与之对应的完整市场实现。因此编写插件文档或对外说明时，不应把这部分写成已完成功能。
 
----
+## Q12：如何给插件写测试？
 
-## Q11：可以在 `initialize` 中发起 HTTP 请求吗？
+最直接的方式是：
 
-可以，但需注意以下几点：
+1. 直接实例化插件类
+2. 传入配置
+3. 调用 `initialize()`
+4. 调用 `execute()`
+5. 对返回值断言
 
-1. 必须在 manifest.json 中声明 `network:http` 权限
-2. `initialize` 是同步方法，若需要发起异步请求，可将 `initialize` 改为 `async def initialize`
-3. 若 HTTP 请求失败，`initialize` 应返回 `False`，不要抛出未捕获的异常
+也可以参考仓库已有的 CLI 测试风格：
 
-```python
-async def initialize(self) -> bool:
-    try:
-        import httpx
-        async with httpx.AsyncClient() as client:
-            response = await client.get(self.config.get("health_url", ""))
-            if response.status_code != 200:
-                return False
-        self._initialized = True
-        return True
-    except Exception as e:
-        logger.error(f"初始化失败：{e}")
-        return False
-```
-
----
-
-## Q12：如何处理插件的多版本共存问题？
-
-当前系统通过插件 `name` 字段唯一标识一个插件实例，同一 `name` 只能有一个版本处于 `enabled` 状态。
-
-若需要 A/B 测试不同版本，可以使用不同的 `name`，如 `my-plugin-v1` 和 `my-plugin-v2`，分别注册并通过路由逻辑决定调用哪个版本。
-
-热更新（`HotUpdateManager`）是官方推荐的版本升级方式，支持自动回滚，适合生产环境的无缝升级。
+- [test_plugin_cli.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_cli.py#L12-L202)

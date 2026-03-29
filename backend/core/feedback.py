@@ -1,3 +1,4 @@
+import time
 from typing import Dict, List, Any
 from loguru import logger
 
@@ -33,9 +34,22 @@ class FeedbackLayer:
             "success": True
         }
     
-    async def generate_response(self, results: List[Dict[str, Any]]) -> str:
+    async def generate_response(self, results: List[Dict[str, Any]], context: Dict[str, Any] | None = None) -> str:
+        started_at = time.perf_counter()
         if not results:
-            return "No results to report."
+            response_text = "No results to report."
+            if context and callable(context.get("_record_hook")):
+                context["_record_hook"](
+                    node_type="feedback_generation",
+                    user_message=context.get("message", ""),
+                    context=context,
+                    llm_output=response_text,
+                    execution_duration_ms=int((time.perf_counter() - started_at) * 1000),
+                    metadata={
+                        "results_count": 0
+                    }
+                )
+            return response_text
 
         responses = []
         for item in results:
@@ -58,9 +72,23 @@ class FeedbackLayer:
                 responses.append(f"Error: {result.get('message', 'Unknown error')}")
 
         if not responses:
-            return "No response generated."
+            response_text = "No response generated."
+        else:
+            response_text = "\n\n".join(responses)
 
-        return "\n\n".join(responses)
+        if context and callable(context.get("_record_hook")):
+            context["_record_hook"](
+                node_type="feedback_generation",
+                user_message=context.get("message", ""),
+                context=context,
+                llm_output=response_text,
+                execution_duration_ms=int((time.perf_counter() - started_at) * 1000),
+                metadata={
+                    "results_count": len(results)
+                }
+            )
+
+        return response_text
     
     async def update_memory(
         self,

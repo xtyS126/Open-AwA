@@ -7,6 +7,7 @@ import SkillsPage from './pages/SkillsPage'
 import PluginsPage from './pages/PluginsPage'
 import MemoryPage from './pages/MemoryPage'
 import BillingPage from './pages/BillingPage'
+import ExperiencePage from './pages/ExperiencePage'
 import Sidebar from './components/Sidebar'
 import { authAPI } from './services/api'
 
@@ -20,8 +21,14 @@ function App() {
   const initializeApp = async () => {
     const token = localStorage.getItem('token')
     if (token) {
-      setInitialized(true)
-      return
+      try {
+        await authAPI.getMe()
+        setInitialized(true)
+        return
+      } catch (error) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('username')
+      }
     }
 
     try {
@@ -53,7 +60,7 @@ function App() {
         justifyContent: 'center', 
         alignItems: 'center', 
         height: '100vh',
-        color: '#666',
+        color: 'var(--color-text-secondary)',
         fontSize: '16px'
       }}>
         正在初始化应用...
@@ -74,6 +81,7 @@ function App() {
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/experience" element={<ExperiencePage hideHeader />} />
             <Route path="/billing" element={<BillingPage />} />
           </Routes>
         </main>
