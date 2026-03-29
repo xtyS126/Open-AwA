@@ -103,3 +103,38 @@
   color: #2e7d32;
   margin-top: 10px;
 }
+
+.communication-qr-login {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.communication-qr-login-title {
+  margin: 0 0 8px;
+}
+
+.communication-qr-login-desc {
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
+}
+
+.communication-qr-preview {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  width: fit-content;
+}
+
+.communication-qr-image {
+  display: block;
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+}
+
+.communication-qr-status {
+  margin-top: 10px;
+}
