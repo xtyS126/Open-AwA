@@ -356,10 +356,15 @@ class WeixinSkillAdapter:
         if extra_headers:
             headers.update(extra_headers)
 
+        logger.debug(f"[weixin _api_get] GET {url} params={params}")
         try:
             async with httpx.AsyncClient(timeout=max(1, int(timeout_seconds))) as client:
                 response = await client.get(url, params=params, headers=headers)
             content_type = response.headers.get("content-type", "")
+            logger.debug(
+                f"[weixin _api_get] {endpoint} status={response.status_code} "
+                f"content-type={content_type!r} body={response.text[:500]!r}"
+            )
             if response.status_code >= 400:
                 raise WeixinAdapterError(
                     code="WEIXIN_UPSTREAM_HTTP_ERROR",
@@ -373,7 +378,14 @@ class WeixinSkillAdapter:
                 )
             if "application/json" in content_type.lower():
                 return response.json()
-            return {"raw_text": response.text}
+            raw = response.text.strip()
+            if raw.startswith("{") or raw.startswith("["):
+                try:
+                    import json as _json
+                    return _json.loads(raw)
+                except Exception:
+                    pass
+            return {"raw_text": raw}
         except WeixinAdapterError:
             raise
         except httpx.TimeoutException:
