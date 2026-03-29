@@ -2,6 +2,8 @@ import axios from 'axios'
 
 const API_BASE_URL = '/api'
 
+const getStoredToken = () => localStorage.getItem('token')
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -10,7 +12,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = getStoredToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -19,14 +21,21 @@ api.interceptors.request.use((config) => {
 
 export const authAPI = {
   login: (username: string, password: string) => {
-    const formData = new URLSearchParams()
-    formData.append('username', username)
-    formData.append('password', password)
-    return api.post('/auth/login', formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    })
+    try {
+      const formData = new URLSearchParams({ username, password })
+      return api.post('/auth/login', formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      })
+    } catch {
+      const formData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+      return api.post('/auth/login', formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      })
+    }
   },
   register: (username: string, password: string) =>
     api.post('/auth/register', { username, password }),
@@ -53,6 +62,15 @@ export const skillsAPI = {
   install: (skill: any) => api.post('/skills', skill),
   uninstall: (id: string) => api.delete(`/skills/${id}`),
   toggle: (id: string) => api.put(`/skills/${id}/toggle`),
+  parseUpload: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/skills/parse-upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
 }
 
 export interface PluginPermissionStatus {
@@ -95,6 +113,15 @@ export const pluginsAPI = {
   install: (plugin: any) => api.post('/plugins', plugin),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
   toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
+  upload: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/plugins/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
   getPermissions: (id: string) => api.get<PluginPermissionStatus>(`/plugins/${id}/permissions`),
   authorizePermissions: (id: string, permissions: string[]) =>
     api.post<PluginPermissionUpdateResponse>(`/plugins/${id}/permissions/authorize`, { permissions }),
@@ -128,6 +155,53 @@ export const promptsAPI = {
   create: (prompt: any) => api.post('/prompts', prompt),
   update: (id: string, prompt: any) => api.put(`/prompts/${id}`, prompt),
   delete: (id: string) => api.delete(`/prompts/${id}`),
+}
+
+export interface ConversationRecordItem {
+  id: number
+  session_id: string
+  user_id: string
+  node_type: string
+  user_message: string
+  timestamp: string | null
+  provider: string | null
+  model: string | null
+  llm_input: unknown
+  llm_output: unknown
+  llm_tokens_used: number | null
+  execution_duration_ms: number | null
+  status: string
+  error_message: string | null
+  metadata: unknown
+}
+
+export interface ConversationRecordsResponse {
+  records: ConversationRecordItem[]
+  count: number
+  limit: number
+}
+
+export interface ConversationCollectionStatusResponse {
+  enabled: boolean
+  stats: {
+    queue_size: number
+    queue_maxsize: number
+    dropped_count: number
+    tracked_user_count: number
+  }
+}
+
+export const conversationAPI = {
+  getCollectionStatus: () =>
+    api.get<ConversationCollectionStatusResponse>('/conversations/collection-status'),
+  updateCollectionStatus: (enabled: boolean) =>
+    api.put('/conversations/collection-status', null, { params: { enabled } }),
+  getRecordsPreview: (limit: number = 20) =>
+    api.get<ConversationRecordsResponse>('/conversations/records', { params: { limit } }),
+  exportRecords: (params?: { start_time?: string; end_time?: string }) =>
+    api.get('/conversations/export', { params, responseType: 'blob' }),
+  cleanupRecords: (days: number = 30) =>
+    api.delete('/conversations/records/cleanup', { params: { days } }),
 }
 
 export const behaviorAPI = {

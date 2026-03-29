@@ -73,7 +73,11 @@ async def get_behavior_stats(
     )
 
 
-@router.get("/logs")
+@router.get(
+    "/logs",
+    summary="获取行为日志",
+    description="分页返回行为日志，可按行为类型筛选。"
+)
 async def get_behavior_logs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
@@ -100,7 +104,11 @@ async def get_behavior_logs(
     ]
 
 
-@router.post("/log")
+@router.post(
+    "/log",
+    summary="记录行为日志",
+    description="写入一条新的行为日志记录。"
+)
 async def log_behavior(
     action_type: str,
     details: str,

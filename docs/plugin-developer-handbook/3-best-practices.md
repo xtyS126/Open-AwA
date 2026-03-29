@@ -1,274 +1,206 @@
 # 第三章：最佳实践
 
-## 3.1 安全规范
+本章聚焦当前仓库下插件开发的实际建议，优先覆盖能和现有实现直接对应的内容。
 
-### 最小权限原则
+## 1. 先从示例插件抽取模式
 
-只在 manifest.json 中声明插件真正需要的权限。多余的权限声明会降低用户信任度，并在代码审查中被标记为安全风险。
+在正式编写自己的插件前，建议先对照现有示例：
 
-不推荐的写法：
+- [theme-switcher](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L28-L145)
+- [data-chart](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L9-L205)
 
-```json
-{
-  "permissions": ["file:read", "file:write", "network:http"]
+这两个示例已经体现出几个较稳定的写法：
+
+- 在 `__init__` 中只做轻量配置读取
+- 在 `initialize()` 中做状态修正和初始化记录
+- 在 `execute()` 中通过 `action` 路由不同能力
+- 返回统一结构，例如 `status`、`message`、`data`、`tokens`
+- 在 `validate()` 中主动检查配置是否合法
+- 在 `cleanup()` 中清理缓存和内部状态
+
+## 2. 配置处理建议
+
+### 2.1 `__init__` 中做轻量初始化
+
+推荐做法：
+
+- 读取配置
+- 初始化内存变量
+- 不做网络请求或重型加载
+
+示例：
+
+```python
+class MyPlugin(BasePlugin):
+    def __init__(self, config=None):
+        super().__init__(config)
+        self._api_key = self.config.get("api_key", "")
+        self._cache = {}
+```
+
+### 2.2 在 `validate()` 中拦截错误配置
+
+当前仓库示例插件都采用了这个模式，例如：
+
+- [theme-switcher validate](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L102-L111)
+- [data-chart validate](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L155-L170)
+
+建议校验：
+
+- 必填配置是否存在
+- 枚举值是否合法
+- 数值范围是否合理
+- 外部依赖参数类型是否正确
+
+## 3. 返回值保持稳定
+
+前后端集成场景下，插件返回值越稳定，调用方越容易处理。推荐统一包含：
+
+- `status`
+- 与业务相关的主结果字段
+- 可选的 `message`
+
+例如：
+
+```python
+return {
+    "status": "success",
+    "data": payload,
+    "message": "执行成功"
 }
 ```
 
-若插件只需读取一个配置文件，应只声明：
+避免直接返回裸字符串、混合类型或不带状态位的结构。
 
-```json
-{
-  "permissions": ["file:read"]
-}
-```
+## 4. 使用 `action` 组织多能力插件
 
-### 禁止使用的 API
+如果一个插件有多个子功能，当前仓库更接近的写法是在 `execute()` 中读取 `action`，再分发到内部方法。
 
-以下 API 在插件中无条件禁止，任何使用都会导致插件加载失败：
+参考：
 
-| 禁止 API | 禁止原因 |
-|----------|----------|
-| `eval()` | 动态代码执行，无法静态分析 |
-| `exec()` | 动态代码执行，无法静态分析 |
-| `compile()` | 编译任意代码 |
-| `subprocess` | 执行系统命令 |
-| `ctypes` | 调用原生库，可绕过沙箱 |
-| `pickle` | 反序列化可执行任意代码 |
-| `marshal` | 同 pickle，存在代码注入风险 |
+- [ThemeSwitcherPlugin.execute](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L49-L61)
+- [DataChartPlugin.execute](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L35-L57)
 
-### 输入校验
+这种写法的优点：
 
-`execute` 方法接收来自外部的参数，务必进行类型和边界校验，防止注入攻击：
+- 对外只暴露一个执行入口
+- 便于和插件执行 API 对接
+- 更容易和工具描述、权限模型结合
 
-```python
-def execute(self, *args, **kwargs) -> Any:
-    query = kwargs.get("query", "")
-    if not isinstance(query, str):
-        return {"error": "query 必须是字符串"}
-    if len(query) > 1000:
-        return {"error": "query 长度不能超过 1000 字符"}
-    return self._process(query)
-```
+## 5. 日志记录建议
 
-### 敏感信息处理
+当前仓库使用 Loguru，插件代码中也大量直接使用 `logger`。
 
-- 不要在代码中硬编码 API 密钥、密码等敏感信息
-- 通过 `config` 字典接收敏感配置，由系统在部署时注入
-- 不要在日志中输出完整的敏感数据
+建议：
 
-```python
-def initialize(self) -> bool:
-    api_key = self.config.get("api_key", "")
-    if not api_key:
-        logger.error("api_key 未配置")
-        return False
-    logger.info("api_key 已加载（已隐藏）")
-    self._api_key = api_key
-    self._initialized = True
-    return True
-```
+- 关键路径用 `info`
+- 参数与分支细节用 `debug`
+- 可恢复问题用 `warning`
+- 失败信息用 `error`
 
-### 异常处理
+示例插件可参考：
 
-`execute` 方法中的未捕获异常会被沙箱拦截并返回 error 状态。建议在方法内部主动捕获并返回结构化错误：
+- [theme-switcher 日志用法](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L39-L46)
+- [data-chart 日志用法](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L22-L33)
 
-```python
-def execute(self, *args, **kwargs) -> Any:
-    try:
-        return self._do_work(**kwargs)
-    except ValueError as e:
-        logger.warning(f"参数错误：{e}")
-        return {"status": "error", "message": str(e)}
-    except Exception as e:
-        logger.error(f"未知错误：{e}")
-        return {"status": "error", "message": "内部错误"}
-```
+不要在日志中输出敏感信息原文，例如完整 token、密码、密钥。
 
----
+## 6. 控制执行时间
 
-## 3.2 性能优化
+`PluginSandbox` 当前默认超时为 30 秒：
 
-### 避免阻塞主线程
+- [PluginSandbox](file:///d:/代码/Open-AwA/backend/plugins/plugin_sandbox.py#L8-L17)
 
-插件执行有 30 秒超时限制。对于 IO 密集型操作，使用异步方法：
+因此应尽量避免：
 
-```python
-import asyncio
-from typing import Any
-from backend.plugins.base_plugin import BasePlugin
-from loguru import logger
+- 长时间阻塞计算
+- 无限循环
+- 无上限远程请求重试
 
+建议：
 
-class AsyncPlugin(BasePlugin):
-    name = "async-plugin"
-    version = "1.0.0"
-    description = "异步执行示例"
+- 为外部请求设置 timeout
+- 对数据量设置上限
+- 对缓存进行清理
 
-    def initialize(self) -> bool:
-        self._initialized = True
-        return True
+`data-chart` 已在远程请求中设置 `timeout=10`，可以作为参考：
 
-    async def execute(self, *args, **kwargs) -> Any:
-        result = await self._fetch_data(kwargs.get("url", ""))
-        return result
+- [data-chart _real_fetch](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L81-L101)
 
-    async def _fetch_data(self, url: str) -> dict:
-        await asyncio.sleep(0.1)
-        return {"url": url, "data": "..."}
-```
+## 7. 为工具调用补齐描述
 
-`PluginSandbox` 会自动检测方法是否为协程函数并使用 `asyncio.wait_for` 执行，无需额外配置。
+如果插件会被系统当成工具消费，建议实现 `get_tools()` 并提供清晰参数说明。
 
-### 缓存重复计算结果
+参考：
 
-若 `execute` 中存在重复且耗时的计算，使用实例变量缓存：
+- [ThemeSwitcherPlugin.get_tools](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L119-L145)
+- [DataChartPlugin.get_tools](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L179-L205)
 
-```python
-class CachedPlugin(BasePlugin):
-    name = "cached-plugin"
-    version = "1.0.0"
-    description = "缓存示例"
+建议在工具描述中写清楚：
 
-    def initialize(self) -> bool:
-        self._cache: dict = {}
-        self._initialized = True
-        return True
+- 工具名称
+- 能力说明
+- 参数类型
+- 必填项
+- 枚举范围
 
-    def execute(self, *args, **kwargs) -> Any:
-        key = kwargs.get("key", "")
-        if key in self._cache:
-            return {"result": self._cache[key], "from_cache": True}
-        result = self._expensive_computation(key)
-        self._cache[key] = result
-        return {"result": result, "from_cache": False}
+## 8. 做好资源清理
 
-    def _expensive_computation(self, key: str) -> str:
-        return f"computed_{key}"
+如果插件持有缓存、连接或历史记录，应在 `cleanup()` 中释放。
 
-    def cleanup(self) -> None:
-        self._cache.clear()
-        super().cleanup()
-```
+示例：
 
-### 延迟初始化重型资源
+- [theme-switcher cleanup](file:///d:/代码/Open-AwA/plugins/theme-switcher/src/index.py#L113-L117)
+- [data-chart cleanup](file:///d:/代码/Open-AwA/plugins/data-chart/src/index.py#L172-L177)
 
-不要在 `__init__` 中加载大型模型或建立数据库连接，应在 `initialize` 中执行：
+## 9. 包结构和打包注意事项
 
-```python
-def __init__(self, config=None):
-    super().__init__(config)
-    self._model = None
+根据 CLI 逻辑，构建 zip 时会重点处理：
 
-def initialize(self) -> bool:
-    self._model = self._load_model()
-    self._initialized = True
-    return True
-```
+- `manifest.json`
+- `README.md`
+- `LICENSE`
+- `dist/`
 
-### 合理使用日志级别
+参考：
 
-| 级别 | 适用场景 |
-|------|----------|
-| `logger.debug()` | 开发调试，生产环境应关闭 |
-| `logger.info()` | 关键流程节点，如初始化、执行开始/结束 |
-| `logger.warning()` | 可恢复的异常情况 |
-| `logger.error()` | 错误，影响功能正常运行 |
+- [cmd_build](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L58-L95)
+- [cmd_validate](file:///d:/代码/Open-AwA/backend/plugins/cli/plugin_cli.py#L97-L140)
 
-频繁调用的热路径中避免使用 `logger.info()`，改用 `logger.debug()`，减少 IO 开销。
+建议在交付前确保：
 
-### 资源清理
+1. `manifest.json` 能被解析
+2. `README.md`、`LICENSE` 存在
+3. zip 包中存在 `dist/` 目录
+4. 执行 `validate` 无错误
 
-在 `cleanup` 方法中释放所有持有的资源：
+## 10. 生命周期与热更新建议
 
-```python
-def cleanup(self) -> None:
-    if hasattr(self, "_connection") and self._connection:
-        self._connection.close()
-        self._connection = None
-    super().cleanup()
-```
+当前仓库已经实现状态机与热更新、回滚接口，因此插件作者应避免把不可恢复状态直接写死在实例中。
 
----
+建议：
 
-## 3.3 用户体验
+- 初始化逻辑幂等
+- `rollback()` 可重复调用
+- `on_error()` 中只做错误记录，不做高风险修复动作
 
-### 提供清晰的错误信息
+生命周期代码：
 
-`execute` 的返回值会透传给调用方，错误信息应简洁、可操作：
+- [plugin_lifecycle.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_lifecycle.py#L61-L220)
 
-不推荐：
+## 11. 测试优先于手工验证
 
-```python
-return {"error": "Exception: 'NoneType' object has no attribute 'get'"}
-```
+至少为插件补充以下测试：
 
-推荐：
+- 配置校验测试
+- 初始化成功与失败测试
+- `execute()` 主要路径测试
+- 边界参数测试
 
-```python
-return {"error": "参数 'keyword' 不能为空，请提供搜索关键词"}
-```
+可先参考现有 CLI 测试风格：
 
-### 结构化返回值
+- [test_plugin_cli.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_cli.py#L12-L202)
 
-保持 `execute` 返回值格式一致，便于调用方处理：
+## 12. 不要依赖未实现的平台能力
 
-```python
-def execute(self, *args, **kwargs) -> dict:
-    return {
-        "status": "success",
-        "data": {...},
-        "meta": {
-            "plugin": self.name,
-            "version": self.version
-        }
-    }
-```
-
-### 版本兼容性
-
-遵循 SemVer 语义化版本规范：
-
-| 版本类型 | 适用场景 | 示例 |
-|----------|----------|------|
-| 补丁版本 | Bug 修复，向后兼容 | 1.0.0 -> 1.0.1 |
-| 次版本 | 新增功能，向后兼容 | 1.0.0 -> 1.1.0 |
-| 主版本 | 破坏性变更，不兼容 | 1.0.0 -> 2.0.0 |
-
-### 提供完善的 README.md
-
-每个插件目录应包含 README.md，至少涵盖：
-
-1. 插件功能简介
-2. 安装与配置方法（包含 config 字段说明）
-3. 使用示例（输入/输出示例）
-4. 权限说明
-5. 已知限制
-
-### get_tools 方法
-
-若插件作为 AI 工具使用，应实现 `get_tools` 方法，提供标准的工具描述，以便 AI 智能体正确理解工具的用途和参数：
-
-```python
-def get_tools(self):
-    return [
-        {
-            "name": "search_web",
-            "description": "搜索互联网上的信息，返回最相关的结果摘要",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "搜索关键词，支持自然语言查询"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "返回结果数量，默认为 5",
-                        "default": 5
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    ]
-```
+编写插件文档或对外说明时，建议只承诺当前仓库中已经落地的能力。比如前端虽然有“浏览插件市场”按钮，但当前仓库并未看到完整市场实现，因此不应把“插件市场”写成既成事实。

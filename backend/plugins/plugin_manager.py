@@ -108,7 +108,8 @@ class PluginManager:
 
     def _get_default_plugins_dir(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        default_dir = os.path.join(current_dir, "plugins")
+        repo_root_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
+        default_dir = os.path.join(repo_root_dir, "plugins")
         if not os.path.exists(default_dir):
             os.makedirs(default_dir, exist_ok=True)
             logger.info(f"Created default plugins directory: {default_dir}")

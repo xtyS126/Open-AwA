@@ -22,7 +22,12 @@ def _ensure_plugin_discovered(plugin_name: str) -> None:
     plugin_manager.discover_plugins()
 
 
-@router.get("", response_model=List[PluginResponse])
+@router.get(
+    "",
+    response_model=List[PluginResponse],
+    summary="获取插件列表",
+    description="返回数据库中已登记的插件记录列表。"
+)
 async def get_plugins(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -31,7 +36,12 @@ async def get_plugins(
     return plugins
 
 
-@router.get("/{plugin_id}", response_model=PluginResponse)
+@router.get(
+    "/{plugin_id}",
+    response_model=PluginResponse,
+    summary="获取插件详情",
+    description="根据插件 ID 返回对应插件的详细信息。"
+)
 async def get_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
@@ -80,7 +90,11 @@ async def uninstall_plugin(
     return {"message": "Plugin uninstalled successfully"}
 
 
-@router.put("/{plugin_id}/toggle")
+@router.put(
+    "/{plugin_id}/toggle",
+    summary="切换插件启用状态",
+    description="将指定插件在启用和禁用状态之间切换。"
+)
 async def toggle_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
@@ -96,7 +110,12 @@ async def toggle_plugin(
     return {"message": f"Plugin {'enabled' if plugin.enabled else 'disabled'}"}
 
 
-@router.put("/{plugin_id}", response_model=PluginResponse)
+@router.put(
+    "/{plugin_id}",
+    response_model=PluginResponse,
+    summary="更新插件",
+    description="更新插件名称、版本、配置或启用状态。"
+)
 async def update_plugin(
     plugin_id: str,
     plugin_update: PluginUpdate,
@@ -150,7 +169,12 @@ async def authorize_plugin_permissions(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("/{plugin_id}/permissions/revoke", response_model=PluginPermissionUpdateResponse)
+@router.post(
+    "/{plugin_id}/permissions/revoke",
+    response_model=PluginPermissionUpdateResponse,
+    summary="撤销插件权限",
+    description="撤销指定插件的部分或全部已授予权限。"
+)
 async def revoke_plugin_permissions(
     plugin_id: str,
     payload: PluginPermissionUpdateRequest,
@@ -200,7 +224,11 @@ async def get_plugin_permissions(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("/{plugin_id}/execute")
+@router.post(
+    "/{plugin_id}/execute",
+    summary="执行插件方法",
+    description="调用指定插件的方法并返回执行结果。"
+)
 async def execute_plugin(
     plugin_id: str,
     execution_data: PluginExecute,
@@ -348,7 +376,12 @@ async def validate_plugin(
         )
 
 
-@router.get("/discover", response_model=PluginDiscoveryResult)
+@router.get(
+    "/discover",
+    response_model=PluginDiscoveryResult,
+    summary="发现插件",
+    description="扫描插件目录并返回可发现的插件元数据。"
+)
 async def discover_plugins(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -368,7 +401,11 @@ async def discover_plugins(
         logger.error(f"Error discovering plugins: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Plugin discovery failed: {str(e)}")
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    summary="上传插件包",
+    description="上传 zip 格式插件包并尝试安装到系统中。"
+)
 async def upload_plugin(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -463,7 +500,12 @@ async def hot_update_plugin(
         raise HTTPException(status_code=500, detail=f"Hot update failed: {str(exc)}")
 
 
-@router.post("/{plugin_id}/rollback", response_model=RollbackResponse)
+@router.post(
+    "/{plugin_id}/rollback",
+    response_model=RollbackResponse,
+    summary="回滚插件",
+    description="将指定插件回滚到之前的稳定版本。"
+)
 async def rollback_plugin(
     plugin_id: str,
     payload: RollbackRequest,
@@ -522,7 +564,12 @@ async def get_plugin_logs(
     )
 
 
-@router.put("/{plugin_id}/log-level", response_model=PluginLogLevelResponse)
+@router.put(
+    "/{plugin_id}/log-level",
+    response_model=PluginLogLevelResponse,
+    summary="更新插件日志级别",
+    description="修改指定插件的日志输出级别。"
+)
 async def update_plugin_log_level(
     plugin_id: str,
     payload: PluginLogLevelUpdate,

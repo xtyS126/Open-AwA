@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from db.models import get_db, Skill, ExperienceMemory, ExperienceExtractionLog
+from db.models import get_db, Skill, ExperienceExtractionLog
 from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
@@ -17,7 +17,12 @@ import io
 router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
-@router.get("", response_model=List[SkillResponse])
+@router.get(
+    "",
+    response_model=List[SkillResponse],
+    summary="获取技能列表",
+    description="返回系统中已安装的技能列表。"
+)
 async def get_skills(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -38,7 +43,12 @@ async def get_skill(
     return skill
 
 
-@router.post("", response_model=SkillResponse)
+@router.post(
+    "",
+    response_model=SkillResponse,
+    summary="安装技能",
+    description="安装新的技能配置；若同名技能已存在则返回错误。"
+)
 async def install_skill(
     skill: SkillCreate,
     db: Session = Depends(get_db),
@@ -130,40 +140,35 @@ async def extract_experience(
     if not experience:
         return {"status": "no_experience", "message": "未发现值得提取的经验"}
 
-    new_experience = ExperienceMemory(
-        experience_type=experience['experience_type'],
-        title=experience['title'],
-        content=experience['content'],
-        trigger_conditions=experience['trigger_conditions'],
-        confidence=experience['confidence'],
-        source_task=experience.get('source_task', 'general'),
-        experience_metadata=experience.get('metadata', '{}')
-    )
-    db.add(new_experience)
-
     log = ExperienceExtractionLog(
+        user_id=current_user.id,
         session_id=session_id,
         task_summary=user_goal,
-        extracted_experience=json.dumps(experience),
+        extracted_experience=json.dumps(experience, ensure_ascii=False),
         extraction_trigger='auto' if status == 'success' else 'failure',
         extraction_quality=experience['confidence']
     )
     db.add(log)
-
     db.commit()
-    db.refresh(new_experience)
 
     return {
         "status": "extracted",
         "experience": {
-            "id": new_experience.id,
-            "type": new_experience.experience_type,
-            "title": new_experience.title
+            "type": experience['experience_type'],
+            "title": experience['title'],
+            "confidence": experience['confidence'],
+            "file": experience.get('save_result')
         }
     }
 
 
-@router.put("/{skill_id}", response_model=SkillResponse)
+
+@router.put(
+    "/{skill_id}",
+    response_model=SkillResponse,
+    summary="更新技能",
+    description="更新技能的名称、版本、描述、配置或启用状态。"
+)
 async def update_skill(
     skill_id: str,
     skill_update: SkillUpdate,
@@ -201,7 +206,11 @@ async def update_skill(
     return skill
 
 
-@router.post("/{skill_id}/execute")
+@router.post(
+    "/{skill_id}/execute",
+    summary="执行技能",
+    description="按输入参数执行指定技能，并返回执行结果。"
+)
 async def execute_skill(
     skill_id: str,
     execution_data: SkillExecute,
@@ -268,7 +277,12 @@ async def get_skill_config(
     )
 
 
-@router.post("/validate", response_model=SkillValidationResult)
+@router.post(
+    "/validate",
+    response_model=SkillValidationResult,
+    summary="校验技能配置",
+    description="校验上传或输入的技能 YAML 配置是否合法。"
+)
 async def validate_skill(
     validation_request: SkillValidationRequest,
     db: Session = Depends(get_db),

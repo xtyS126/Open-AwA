@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, Callable
 from loguru import logger
 import asyncio
+import time
 import httpx
 from memory.experience_manager import ExperienceManager
 from sqlalchemy.orm import Session
@@ -181,8 +182,36 @@ class ExecutionLayer:
         }
 
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        record_hook = context.get("_record_hook")
+        started_at = time.perf_counter()
+        serialized_context = {
+            key: value
+            for key, value in context.items()
+            if key not in {"_record_hook", "db"}
+        }
+        llm_input_payload = {
+            "prompt": prompt,
+            "context": serialized_context,
+        }
+
         resolved = self._resolve_llm_configuration(context)
         if not resolved.get("ok"):
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="error",
+                    error_message=resolved.get("error", {}).get("message"),
+                    llm_input=llm_input_payload,
+                    llm_output=resolved,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "phase": "resolve_configuration",
+                        "error": resolved.get("error"),
+                    }
+                )
             return resolved
 
         headers = {
@@ -200,9 +229,17 @@ class ExecutionLayer:
                     "content": prompt
                 }
             ],
-            "context": context,
+            "context": serialized_context,
             "max_tokens": 1000
         }
+        llm_input_payload.update({
+            "endpoint": resolved["api_endpoint"],
+            "headers": {
+                "Content-Type": headers.get("Content-Type"),
+                "Authorization": "Bearer ***"
+            },
+            "payload": payload,
+        })
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -216,11 +253,11 @@ class ExecutionLayer:
                 response_text = self._extract_response_text(result)
 
                 if not response_text.strip():
-                    return {
+                    output = {
                         "ok": False,
                         "error": self._build_error(
                             "llm_empty_response",
-                            "模型返回了空内容",
+                            "Empty response from model",
                             {
                                 "provider": resolved["provider"],
                                 "model": resolved["model"],
@@ -228,36 +265,95 @@ class ExecutionLayer:
                             }
                         )
                     }
+                    duration_ms = int((time.perf_counter() - started_at) * 1000)
+                    if callable(record_hook):
+                        record_hook(
+                            node_type="llm_call",
+                            user_message=context.get("message", prompt),
+                            context=context,
+                            status="error",
+                            error_message=output["error"]["message"],
+                            llm_input=llm_input_payload,
+                            llm_output=output,
+                            execution_duration_ms=duration_ms,
+                            metadata={
+                                "provider": resolved["provider"],
+                                "model": resolved["model"],
+                                "status_code": response.status_code,
+                            }
+                        )
+                    return output
 
-                return {
+                output = {
                     "ok": True,
                     "response": response_text,
                     "provider": resolved["provider"],
                     "model": resolved["model"]
                 }
+                duration_ms = int((time.perf_counter() - started_at) * 1000)
+                if callable(record_hook):
+                    usage = result.get("usage") if isinstance(result, dict) else None
+                    tokens_used = None
+                    if isinstance(usage, dict):
+                        tokens_used = usage.get("total_tokens")
+                    record_hook(
+                        node_type="llm_call",
+                        user_message=context.get("message", prompt),
+                        context=context,
+                        status="success",
+                        llm_input=llm_input_payload,
+                        llm_output=output,
+                        llm_tokens_used=tokens_used,
+                        execution_duration_ms=duration_ms,
+                        metadata={
+                            "provider": resolved["provider"],
+                            "model": resolved["model"],
+                            "status_code": response.status_code,
+                        }
+                    )
+                return output
         except httpx.HTTPStatusError as e:
             logger.error(f"LLM API HTTP status error: {str(e)}")
-            return {
+            response_text = e.response.text[:1000] if e.response.text else ""
+            output = {
                 "ok": False,
                 "error": self._build_error(
                     "llm_http_error",
-                    "调用模型服务失败",
+                    "Model service request failed",
                     {
                         "provider": resolved["provider"],
                         "model": resolved["model"],
                         "api_endpoint": resolved["api_endpoint"],
                         "status_code": e.response.status_code,
-                        "response_text": e.response.text
+                        "response_text": response_text
                     }
                 )
             }
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="error",
+                    error_message=output["error"]["message"],
+                    llm_input=llm_input_payload,
+                    llm_output=output,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "status_code": e.response.status_code,
+                    }
+                )
+            return output
         except httpx.HTTPError as e:
             logger.error(f"LLM API call failed: {str(e)}")
-            return {
+            output = {
                 "ok": False,
                 "error": self._build_error(
                     "llm_network_error",
-                    "模型服务网络请求失败",
+                    "Model service network error",
                     {
                         "provider": resolved["provider"],
                         "model": resolved["model"],
@@ -266,13 +362,30 @@ class ExecutionLayer:
                     }
                 )
             }
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="error",
+                    error_message=output["error"]["message"],
+                    llm_input=llm_input_payload,
+                    llm_output=output,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                    }
+                )
+            return output
         except Exception as e:
             logger.error(f"Unexpected error in LLM call: {str(e)}")
-            return {
+            output = {
                 "ok": False,
                 "error": self._build_error(
                     "llm_unexpected_error",
-                    "模型调用出现未预期错误",
+                    "Unexpected model invocation error",
                     {
                         "provider": resolved["provider"],
                         "model": resolved["model"],
@@ -281,7 +394,24 @@ class ExecutionLayer:
                     }
                 )
             }
-    
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="error",
+                    error_message=output["error"]["message"],
+                    llm_input=llm_input_payload,
+                    llm_output=output,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                    }
+                )
+            return output
+
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         action = step.get("action")
         logger.info(f"Executing step: {action}")

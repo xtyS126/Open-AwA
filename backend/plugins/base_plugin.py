@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, ClassVar
 
 
 class BasePlugin(ABC):
@@ -7,12 +7,13 @@ class BasePlugin(ABC):
     version: str = "1.0.0"
     description: str = ""
     enable_count: int = 0
-    rollback_events: List[str] = []
+    rollback_events: ClassVar[List[str]] = []
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self._initialized = False
         self._state = "registered"
+        self.rollback_events = []
 
     @abstractmethod
     def initialize(self) -> bool:

@@ -52,7 +52,7 @@
 }
 
 .status-badge.enabled {
-  background: rgba(78, 205, 196, 0.1);
+  background: var(--color-success-bg);
   color: var(--color-success);
 }
 
@@ -66,8 +66,8 @@
   font-size: 12px;
   padding: 4px 10px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 184, 0, 0.16);
-  color: var(--color-warning, #b58100);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
 }
 
 .plugin-actions {
@@ -78,7 +78,7 @@
 .permission-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--color-overlay-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,7 +143,7 @@
 }
 
 .permission-missing {
-  color: var(--color-warning, #b58100);
+  color: var(--color-warning);
 }
 
 .permission-revoke-btn {

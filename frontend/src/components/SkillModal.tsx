@@ -22,26 +22,14 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
       setFile(selectedFile)
       
       // Auto parse
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-      
+
       try {
         setLoading(true)
-        const token = localStorage.getItem('token')
-        const response = await fetch('http://localhost:8000/api/skills/parse-upload', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          body: formData
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.name) setName(data.name)
-          if (data.description) setDescription(data.description)
-          if (data.instructions) setInstructions(data.instructions)
-        }
+        const response = await skillsAPI.parseUpload(selectedFile)
+        const data = response.data
+        if (data.name) setName(data.name)
+        if (data.description) setDescription(data.description)
+        if (data.instructions) setInstructions(data.instructions)
       } catch (error) {
         console.error('Failed to parse file:', error)
       } finally {

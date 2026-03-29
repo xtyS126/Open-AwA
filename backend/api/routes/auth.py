@@ -36,7 +36,12 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="用户登录",
+    description="使用 OAuth2PasswordRequestForm 提交用户名和密码，成功后返回访问令牌。"
+)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -57,6 +62,11 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="获取当前用户信息",
+    description="返回当前访问令牌对应的用户资料。"
+)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user

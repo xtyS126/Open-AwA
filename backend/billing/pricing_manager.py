@@ -24,7 +24,7 @@ class PricingManager:
     
     @staticmethod
     def validate_default_configurations() -> Tuple[bool, List[Tuple[str, str]]]:
-        return (True, [])
+        return PricingManager._validate_configurations_uniqueness(PricingManager.DEFAULT_CONFIGURATIONS)
 
     @staticmethod
     def normalize_provider(provider: Optional[str]) -> str:
@@ -33,6 +33,43 @@ class PricingManager:
     @staticmethod
     def normalize_model(model: Optional[str]) -> str:
         return (model or "").strip()
+
+    @staticmethod
+    def _normalize_provider_api_endpoint(provider: Optional[str], api_endpoint: Optional[str]) -> Optional[str]:
+        raw = (api_endpoint or "").strip()
+        if not raw:
+            return None
+
+        normalized_provider = PricingManager.normalize_provider(provider)
+        suffix_map = {
+            "openai": "/v1/chat/completions",
+            "deepseek": "/v1/chat/completions",
+            "moonshot": "/v1/chat/completions",
+            "alibaba": "/compatible-mode/v1/chat/completions",
+            "zhipu": "/api/paas/v4/chat/completions",
+            "anthropic": "/v1/messages",
+            "google": "/v1beta/models",
+        }
+        default_suffix = suffix_map.get(normalized_provider, "/v1/chat/completions")
+        known_suffixes = {default_suffix, *suffix_map.values()}
+
+        trimmed = raw.rstrip("/")
+        lowered = trimmed.lower()
+        if any(lowered.endswith(suffix.lower()) for suffix in known_suffixes):
+            return trimmed
+
+        path_name = ""
+        try:
+            from urllib.parse import urlparse
+            path_name = (urlparse(raw).path or "").lower()
+        except Exception:
+            path_name = ""
+
+        is_base_path = path_name in {"", "/", "/v1", "/v1beta", "/api"}
+        if not is_base_path:
+            return trimmed
+
+        return f"{trimmed}{default_suffix}"
 
     @staticmethod
     def parse_selected_models(selected_models: Optional[str]) -> List[str]:
@@ -78,6 +115,54 @@ class PricingManager:
         ("anthropic", "claude-3.5-sonnet"),
         ("google", "gemini-2.0-flash"),
         ("deepseek", "deepseek-chat")
+    ]
+
+    DEFAULT_CONFIGURATIONS = [
+        {
+            "provider": "openai",
+            "model": "gpt-4",
+            "display_name": "GPT-4",
+            "description": "最强大的通用AI模型",
+            "is_active": True,
+            "is_default": True,
+            "sort_order": 0,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "display_name": "GPT-4o Mini",
+            "description": "兼顾速度与成本的轻量模型",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 1,
+        },
+        {
+            "provider": "anthropic",
+            "model": "claude-3.5-sonnet",
+            "display_name": "Claude 3.5 Sonnet",
+            "description": "适合复杂推理与长文本处理",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 2,
+        },
+        {
+            "provider": "google",
+            "model": "gemini-2.0-flash",
+            "display_name": "Gemini 2.0 Flash",
+            "description": "响应快速，适合高频交互场景",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 3,
+        },
+        {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "display_name": "DeepSeek Chat",
+            "description": "适用于中文对话与通用生成任务",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 4,
+        },
     ]
 
     DEFAULT_PRICING_DATA = [
@@ -395,7 +480,26 @@ class PricingManager:
         return count
 
     def initialize_default_configurations(self) -> int:
-        return 0
+        self.ensure_configuration_schema()
+
+        existing_count = self.db.query(ModelConfiguration).count()
+        if existing_count > 0:
+            return 0
+
+        is_unique, duplicates = self.validate_default_configurations()
+        if not is_unique:
+            duplicate_text = ", ".join(f"{provider}/{model}" for provider, model in duplicates)
+            raise ValueError(f"Duplicate default configurations found: {duplicate_text}")
+
+        count = 0
+        for data in self.DEFAULT_CONFIGURATIONS:
+            normalized = self._normalize_configuration_payload(data)
+            config = ModelConfiguration(**normalized)
+            self.db.add(config)
+            count += 1
+
+        self.db.commit()
+        return count
 
     def remove_legacy_default_configurations(self) -> int:
         self.ensure_configuration_schema()
@@ -502,7 +606,10 @@ class PricingManager:
         if "icon" in normalized and normalized.get("icon") is not None:
             normalized["icon"] = normalized["icon"].strip() or None
         if "api_endpoint" in normalized and normalized.get("api_endpoint") is not None:
-            normalized["api_endpoint"] = normalized["api_endpoint"].strip() or None
+            normalized["api_endpoint"] = self._normalize_provider_api_endpoint(
+                normalized.get("provider"),
+                normalized.get("api_endpoint")
+            )
         if "api_key" in normalized and normalized.get("api_key") is not None:
             normalized["api_key"] = normalized["api_key"].strip() or None
         if "selected_models" in normalized:
@@ -560,6 +667,28 @@ class PricingManager:
             self.db.commit()
             return True
         return False
+
+    def delete_provider_configurations(self, provider: str) -> int:
+        self.ensure_configuration_schema()
+        provider_id = self.normalize_provider(provider)
+        if not provider_id:
+            return 0
+
+        configs = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider_id,
+            ModelConfiguration.is_active == True
+        ).all()
+
+        if len(configs) == 0:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        for config in configs:
+            config.is_active = False
+            config.updated_at = now
+
+        self.db.commit()
+        return len(configs)
 
     def set_default_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
         self.ensure_configuration_schema()

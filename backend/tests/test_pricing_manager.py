@@ -303,3 +303,44 @@ class TestConfigurationUniquenessValidation:
         from sqlalchemy.exc import IntegrityError
         with pytest.raises(IntegrityError):
             db_session.commit()
+
+
+class TestDeleteProviderConfigurations:
+    def test_delete_provider_configurations_soft_deletes_active_rows(self, pricing_manager, db_session):
+        db_session.add_all([
+            ModelConfiguration(provider="deepseek", model="deepseek-chat", is_active=True, is_default=False),
+            ModelConfiguration(provider="deepseek", model="deepseek-r1", is_active=True, is_default=False),
+            ModelConfiguration(provider="deepseek", model="deepseek-v3", is_active=False, is_default=False),
+            ModelConfiguration(provider="openai", model="gpt-4o-mini", is_active=True, is_default=True),
+        ])
+        db_session.commit()
+
+        deleted_count = pricing_manager.delete_provider_configurations("deepseek")
+
+        assert deleted_count == 2
+        deepseek_rows = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "deepseek"
+        ).all()
+        assert len(deepseek_rows) == 3
+        assert sum(1 for row in deepseek_rows if row.is_active) == 0
+
+        openai_row = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "openai",
+            ModelConfiguration.model == "gpt-4o-mini"
+        ).first()
+        assert openai_row is not None
+        assert openai_row.is_active is True
+
+    def test_delete_provider_configurations_returns_zero_when_provider_not_found(self, pricing_manager):
+        deleted_count = pricing_manager.delete_provider_configurations("not-exists")
+        assert deleted_count == 0
+
+    def test_delete_provider_configurations_normalizes_provider(self, pricing_manager, db_session):
+        db_session.add(
+            ModelConfiguration(provider="deepseek", model="deepseek-chat", is_active=True, is_default=False)
+        )
+        db_session.commit()
+
+        deleted_count = pricing_manager.delete_provider_configurations("  DeepSeek  ")
+
+        assert deleted_count == 1
