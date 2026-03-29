@@ -17,6 +17,97 @@ import io
 router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
+from pydantic import BaseModel
+from typing import Optional
+
+class WeixinConfigReq(BaseModel):
+    account_id: str
+    token: str
+    base_url: Optional[str] = "https://ilinkai.weixin.qq.com"
+    timeout_seconds: Optional[int] = 15
+
+@router.post("/weixin/health-check")
+async def weixin_health_check(config: WeixinConfigReq):
+    from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig
+    adapter = WeixinSkillAdapter()
+    runtime_config = WeixinRuntimeConfig(
+        account_id=config.account_id,
+        token=config.token,
+        base_url=config.base_url or "https://ilinkai.weixin.qq.com",
+        bot_type="3",
+        channel_version="1.0.2",
+        timeout_seconds=config.timeout_seconds or 15,
+        plugin_root=adapter.default_plugin_root,
+        require_node=True,
+        min_node_major=22
+    )
+    result = adapter.check_health(runtime_config)
+    return result
+
+@router.post("/weixin/config")
+async def save_weixin_config(
+    config: WeixinConfigReq,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    skill_name = "weixin_dispatch"
+    skill = db.query(Skill).filter(Skill.name == skill_name).first()
+    
+    config_dict = {
+        "name": skill_name,
+        "version": "1.0.0",
+        "description": "Weixin Clawbot communication skill",
+        "adapter": "weixin",
+        "weixin": {
+            "account_id": config.account_id,
+            "token": config.token,
+            "base_url": config.base_url or "https://ilinkai.weixin.qq.com",
+            "timeout_seconds": config.timeout_seconds or 15
+        }
+    }
+    config_yaml = yaml.dump(config_dict)
+    
+    if skill:
+        skill.config = config_yaml
+    else:
+        skill = Skill(
+            id=str(uuid.uuid4()),
+            name=skill_name,
+            version="1.0.0",
+            description="Weixin Clawbot communication skill",
+            config=config_yaml,
+            category="general",
+            tags="[]",
+            dependencies="[]",
+            author="system",
+            enabled=True
+        )
+        db.add(skill)
+        
+    db.commit()
+    return {"message": "success"}
+
+@router.get("/weixin/config")
+async def get_weixin_config(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    skill = db.query(Skill).filter(Skill.name == "weixin_dispatch").first()
+    if not skill:
+        return {"account_id": "", "token": "", "base_url": "https://ilinkai.weixin.qq.com", "timeout_seconds": 15}
+    
+    try:
+        config_dict = yaml.safe_load(skill.config)
+        wx_config = config_dict.get("weixin", {})
+        return {
+            "account_id": wx_config.get("account_id", ""),
+            "token": wx_config.get("token", ""),
+            "base_url": wx_config.get("base_url", "https://ilinkai.weixin.qq.com"),
+            "timeout_seconds": wx_config.get("timeout_seconds", 15)
+        }
+    except:
+        return {"account_id": "", "token": "", "base_url": "https://ilinkai.weixin.qq.com", "timeout_seconds": 15}
+
 @router.get(
     "",
     response_model=List[SkillResponse],
