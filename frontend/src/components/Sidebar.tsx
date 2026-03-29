@@ -5,7 +5,7 @@ import './Sidebar.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'plugins' | 'memory' | 'settings' | 'experience'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication'
 }
 
 interface MenuGroup {
@@ -39,6 +39,7 @@ const menuGroups: MenuGroup[] = [
     title: '设置',
     items: [
       { path: '/settings', label: '设置', iconType: 'settings' },
+      { path: '/communication', label: '通讯配置', iconType: 'communication' },
     ]
   }
 ]
@@ -90,6 +91,11 @@ const icons = {
       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </svg>
   ),
+  communication: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+    </svg>
+  ),
   claw: (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M4 4l4 4M4 4v4h4" />
@@ -117,7 +123,18 @@ function Sidebar() {
     }))
   }
 
-  const isActive = (path: string) => location.pathname === path
+  const isActive = (path: string) => {
+    if (path.includes('?')) {
+      return location.pathname + location.search === path
+    }
+    if (path === '/communication') {
+      return location.pathname === '/communication'
+    }
+    if (path === '/settings') {
+      return location.pathname === '/settings' && (!location.search || !location.search.includes('tab='))
+    }
+    return location.pathname === path
+  }
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>

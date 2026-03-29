@@ -8,6 +8,7 @@ import PluginsPage from './pages/PluginsPage'
 import MemoryPage from './pages/MemoryPage'
 import BillingPage from './pages/BillingPage'
 import ExperiencePage from './pages/ExperiencePage'
+import CommunicationPage from './pages/CommunicationPage'
 import Sidebar from './components/Sidebar'
 import { authAPI } from './services/api'
 
@@ -83,6 +84,7 @@ function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/experience" element={<ExperiencePage hideHeader />} />
             <Route path="/billing" element={<BillingPage />} />
+            <Route path="/communication" element={<CommunicationPage />} />
           </Routes>
         </main>
       </div>
