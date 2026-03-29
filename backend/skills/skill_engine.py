@@ -9,6 +9,7 @@ from .skill_registry import SkillRegistry
 from .skill_validator import SkillValidator, ValidationResult
 from .skill_loader import SkillLoader
 from .skill_executor import SkillExecutor, ExecutionResult
+from .weixin_skill_adapter import WeixinSkillAdapter
 
 
 @dataclass
@@ -68,6 +69,7 @@ class SkillEngine:
         self.validator = SkillValidator()
         self.loader = SkillLoader(db_session)
         self.executor = SkillExecutor()
+        self.weixin_adapter = WeixinSkillAdapter()
 
         self._execution_logs: List[ExecutionLog] = []
         self._performance_metrics: List[PerformanceMetrics] = []
@@ -239,6 +241,89 @@ class SkillEngine:
                 details={'execution_id': execution_id}
             )
 
+            merged_inputs = {**inputs, **context}
+
+            if self.weixin_adapter.is_weixin_skill(skill_config):
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='ADAPTER_ROUTED',
+                    message=f'Routing skill to weixin adapter: {skill_name}',
+                    details={'execution_id': execution_id}
+                )
+                adapter_result = await self.weixin_adapter.execute(
+                    skill_name=skill_name,
+                    skill_config=skill_config,
+                    inputs=merged_inputs,
+                    context=context
+                )
+                metrics.finalize()
+                metrics.step_count = 1
+
+                adapter_error = adapter_result.get('error')
+                adapter_outputs = adapter_result.get('outputs', {})
+                adapter_action = adapter_result.get('action', 'unknown')
+
+                if adapter_result.get('success'):
+                    self._add_execution_log(
+                        skill_name=skill_name,
+                        event_type='ADAPTER_EXECUTION_SUCCESS',
+                        message=f'Weixin adapter executed successfully: {skill_name}',
+                        details={
+                            'execution_id': execution_id,
+                            'adapter': 'weixin',
+                            'action': adapter_action
+                        }
+                    )
+                    self.registry.increment_usage(skill_name)
+                    return {
+                        'success': True,
+                        'skill_name': skill_name,
+                        'execution_id': execution_id,
+                        'outputs': adapter_outputs,
+                        'steps': [
+                            {
+                                'action': adapter_action,
+                                'tool': 'weixin_adapter',
+                                'success': True,
+                                'error': None,
+                                'result': adapter_outputs
+                            }
+                        ],
+                        'metrics': metrics.to_dict(),
+                        'execution_time': metrics.duration
+                    }
+
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='ADAPTER_EXECUTION_FAILED',
+                    message=f'Weixin adapter execution failed: {skill_name}',
+                    level='ERROR',
+                    details={
+                        'execution_id': execution_id,
+                        'adapter': 'weixin',
+                        'action': adapter_action,
+                        'error': adapter_error
+                    }
+                )
+                return {
+                    'success': False,
+                    'skill_name': skill_name,
+                    'execution_id': execution_id,
+                    'error': adapter_error.get('message') if isinstance(adapter_error, dict) else 'weixin adapter execution failed',
+                    'outputs': adapter_outputs,
+                    'steps': [
+                        {
+                            'action': adapter_action,
+                            'tool': 'weixin_adapter',
+                            'success': False,
+                            'error': adapter_error,
+                            'result': adapter_outputs
+                        }
+                    ],
+                    'metrics': metrics.to_dict(),
+                    'execution_time': metrics.duration
+                }
+
             env_init_success = await self.executor.initialize_environment(skill_config, context)
             if not env_init_success:
                 self._add_execution_log(
@@ -265,7 +350,6 @@ class SkillEngine:
                 details={'execution_id': execution_id}
             )
 
-            merged_inputs = {**inputs, **context}
             execution_result: ExecutionResult = await self.executor.execute_skill(
                 skill_name=skill_name,
                 inputs=merged_inputs,
