@@ -389,6 +389,9 @@ class WeixinSkillAdapter:
         except WeixinAdapterError:
             raise
         except httpx.TimeoutException:
+            if endpoint.strip().lower() == "ilink/bot/get_qrcode_status":
+                logger.debug(f"[weixin _api_get] {endpoint} client timeout after {timeout_seconds}s, fallback to wait")
+                return {"status": "wait"}
             raise WeixinAdapterError(
                 code="WEIXIN_TIMEOUT",
                 message="weixin 上游请求超时",

@@ -169,6 +169,35 @@ def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
         assert "liteapp.weixin.qq.com" in start_data["qrcode_url"]
 
 
+def test_weixin_qr_wait_returns_wait_on_upstream_timeout(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-timeout",
+                "qrcode_img_content": "https://example.com/qr-timeout.png"
+            }
+
+        async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            return {"status": "wait"}
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_qrcode_status", mock_fetch_qrcode_status)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        session_key = start_response.json()["session_key"]
+
+        wait_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": session_key}
+        )
+        assert wait_response.status_code == 200
+        assert wait_response.json()["status"] == "wait"
+        assert wait_response.json()["connected"] is False
+
+
 def test_weixin_qr_wait_returns_404_when_session_missing():
     with TestClient(app) as client:
         response = client.post(
