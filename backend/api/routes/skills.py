@@ -215,6 +215,8 @@ class WeixinQrStartReq(BaseModel):
 class WeixinQrWaitReq(BaseModel):
     session_key: str
     timeout_seconds: Optional[int] = 35
+    qrcode: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 class WeixinQrExitReq(BaseModel):
@@ -338,26 +340,27 @@ async def weixin_qr_start(
 
 @router.get("/weixin/qr/image")
 async def weixin_qr_image(
-    session_key: str,
+    session_key: Optional[str] = None,
+    qrcode_url: Optional[str] = None,
     current_user=Depends(get_current_user)
 ):
     _purge_expired_qr_sessions()
-    with WEIXIN_QR_SESSIONS_LOCK:
-        session = WEIXIN_QR_SESSIONS.get(session_key)
-        if session:
-            session = dict(session)
-    if not session:
+    session: Optional[Dict[str, Any]] = None
+    if session_key:
+        with WEIXIN_QR_SESSIONS_LOCK:
+            found = WEIXIN_QR_SESSIONS.get(session_key)
+            if found:
+                session = dict(found)
+
+    resolved_qrcode_url = str((session or {}).get("qrcode_url") or qrcode_url or "").strip()
+    if not resolved_qrcode_url:
         raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
 
-    qrcode_url = str(session.get("qrcode_url") or "").strip()
-    if not qrcode_url:
-        raise HTTPException(status_code=404, detail="当前会话没有可用二维码图片。")
-
     try:
-        timeout_seconds = _normalize_timeout_seconds(session.get("timeout_seconds"), fallback=15)
+        timeout_seconds = _normalize_timeout_seconds((session or {}).get("timeout_seconds"), fallback=15)
         import httpx
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            upstream = await client.get(qrcode_url)
+            upstream = await client.get(resolved_qrcode_url)
         if upstream.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"二维码图片请求失败: HTTP {upstream.status_code}")
         content_type = upstream.headers.get("content-type", "image/png")
@@ -375,19 +378,32 @@ async def weixin_qr_wait(
     current_user=Depends(get_current_user)
 ):
     _purge_expired_qr_sessions()
+    session: Optional[Dict[str, Any]] = None
     with WEIXIN_QR_SESSIONS_LOCK:
-        session = WEIXIN_QR_SESSIONS.get(payload.session_key)
-        if session:
-            session = dict(session)
+        found = WEIXIN_QR_SESSIONS.get(payload.session_key)
+        if found:
+            session = dict(found)
+
     if not session:
-        raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
+        fallback_qrcode = str(payload.qrcode or "").strip()
+        if not fallback_qrcode:
+            raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
+        session = {
+            "qrcode": fallback_qrcode,
+            "base_url": str(payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL,
+            "qrcode_url": ""
+        }
+
+    qrcode = str(session.get("qrcode") or payload.qrcode or "").strip()
+    if not qrcode:
+        raise HTTPException(status_code=502, detail="二维码标识为空，无法查询扫码状态。")
 
     adapter = WeixinSkillAdapter()
     timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
     try:
         status_result = await adapter.fetch_qrcode_status(
-            base_url=str(session.get("base_url") or DEFAULT_BASE_URL),
-            qrcode=str(session.get("qrcode") or ""),
+            base_url=str(session.get("base_url") or payload.base_url or DEFAULT_BASE_URL),
+            qrcode=qrcode,
             timeout_seconds=timeout_seconds
         )
     except WeixinAdapterError as exc:

@@ -245,6 +245,8 @@ export interface WeixinQrStartResponse {
 export interface WeixinQrWaitRequest {
   session_key: string
   timeout_seconds?: number
+  qrcode?: string
+  base_url?: string
 }
 
 export interface WeixinQrWaitResponse {
@@ -275,7 +277,13 @@ export const weixinAPI = {
   startQrLogin: (payload: WeixinQrStartRequest = {}) => api.post<WeixinQrStartResponse>('/skills/weixin/qr/start', payload),
   waitQrLogin: (payload: WeixinQrWaitRequest) => api.post<WeixinQrWaitResponse>('/skills/weixin/qr/wait', payload),
   exitQrLogin: (payload: WeixinQrExitRequest) => api.post<WeixinQrExitResponse>('/skills/weixin/qr/exit', payload),
-  getQrImage: (sessionKey: string) => api.get(`/skills/weixin/qr/image?session_key=${encodeURIComponent(sessionKey)}`, { responseType: 'blob' }),
+  getQrImage: (sessionKey: string, qrcodeUrl?: string) => {
+    const query = new URLSearchParams({ session_key: sessionKey })
+    if (qrcodeUrl) {
+      query.set('qrcode_url', qrcodeUrl)
+    }
+    return api.get(`/skills/weixin/qr/image?${query.toString()}`, { responseType: 'blob' })
+  },
 }
 
 export default api

@@ -18,6 +18,8 @@ function CommunicationPage() {
   const [pollingQrLogin, setPollingQrLogin] = useState(false)
   const [qrSessionKey, setQrSessionKey] = useState('')
   const [qrCodeUrl, setQrCodeUrl] = useState('')
+  const [qrRawUrl, setQrRawUrl] = useState('')
+  const [qrCodeValue, setQrCodeValue] = useState('')
   const [qrImageLoadError, setQrImageLoadError] = useState('')
   const [qrStatus, setQrStatus] = useState<'idle' | 'wait' | 'scaned' | 'expired' | 'confirmed'>('idle')
   const [qrStatusText, setQrStatusText] = useState('')
@@ -63,12 +65,14 @@ function CommunicationPage() {
       qrObjectUrlRef.current = ''
     }
     setQrCodeUrl('')
+    setQrRawUrl('')
+    setQrCodeValue('')
     setQrImageLoadError('')
   }
 
-  const loadQrImage = async (sessionKey: string) => {
+  const loadQrImage = async (sessionKey: string, qrcodeUrl?: string) => {
     try {
-      const response = await weixinAPI.getQrImage(sessionKey)
+      const response = await weixinAPI.getQrImage(sessionKey, qrcodeUrl || qrRawUrl || undefined)
       const blobUrl = URL.createObjectURL(response.data)
       if (qrObjectUrlRef.current) {
         URL.revokeObjectURL(qrObjectUrlRef.current)
@@ -104,7 +108,12 @@ function CommunicationPage() {
 
   const pollQrLoginStatus = async (sessionKey: string) => {
     try {
-      const response = await weixinAPI.waitQrLogin({ session_key: sessionKey, timeout_seconds: weixinConfig.timeout_seconds })
+      const response = await weixinAPI.waitQrLogin({
+        session_key: sessionKey,
+        timeout_seconds: weixinConfig.timeout_seconds,
+        qrcode: qrCodeValue || undefined,
+        base_url: weixinConfig.base_url || undefined,
+      })
       const status = (response.data.status || 'wait') as 'wait' | 'scaned' | 'expired' | 'confirmed'
       setQrStatus(status)
       setQrStatusText(response.data.message || '')
@@ -122,6 +131,7 @@ function CommunicationPage() {
       if (status === 'expired') {
         clearQrPolling()
         setQrSessionKey('')
+        clearQrImage()
         setMessage({ type: 'error', text: '二维码已过期，请重新获取二维码' })
         return false
       }
@@ -148,7 +158,9 @@ function CommunicationPage() {
         force: true
       })
       setQrSessionKey(response.data.session_key)
-      const qrImageReady = await loadQrImage(response.data.session_key)
+      setQrRawUrl(response.data.qrcode_url || '')
+      setQrCodeValue(response.data.qrcode || '')
+      const qrImageReady = await loadQrImage(response.data.session_key, response.data.qrcode_url || undefined)
       setQrStatus('wait')
       setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
       setPollingQrLogin(true)
