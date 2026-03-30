@@ -275,6 +275,7 @@ export const weixinAPI = {
   startQrLogin: (payload: WeixinQrStartRequest = {}) => api.post<WeixinQrStartResponse>('/skills/weixin/qr/start', payload),
   waitQrLogin: (payload: WeixinQrWaitRequest) => api.post<WeixinQrWaitResponse>('/skills/weixin/qr/wait', payload),
   exitQrLogin: (payload: WeixinQrExitRequest) => api.post<WeixinQrExitResponse>('/skills/weixin/qr/exit', payload),
+  getQrImage: (sessionKey: string) => api.get(`/skills/weixin/qr/image?session_key=${encodeURIComponent(sessionKey)}`, { responseType: 'blob' }),
 }
 
 export default api

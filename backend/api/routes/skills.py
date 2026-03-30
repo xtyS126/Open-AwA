@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from db.models import get_db, Skill, ExperienceExtractionLog
@@ -14,6 +14,7 @@ import zipfile
 import io
 import time
 import threading
+from urllib.parse import parse_qs, urlparse
 
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
@@ -152,9 +153,12 @@ def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
         or ""
     ).strip()
     if not qrcode and qrcode_url:
-        qrcode = qrcode_url
-    if not qrcode_url and qrcode.lower().startswith(("http://", "https://")):
-        qrcode_url = qrcode
+        try:
+            parsed = urlparse(qrcode_url)
+            query_qrcode = parse_qs(parsed.query).get("qrcode", [""])[0]
+            qrcode = str(query_qrcode or "").strip()
+        except Exception:
+            qrcode = ""
     return {"qrcode": qrcode, "qrcode_url": qrcode_url}
 
 
@@ -330,6 +334,38 @@ async def weixin_qr_start(
         "qrcode": qrcode,
         "qrcode_url": qrcode_url
     }
+
+
+@router.get("/weixin/qr/image")
+async def weixin_qr_image(
+    session_key: str,
+    current_user=Depends(get_current_user)
+):
+    _purge_expired_qr_sessions()
+    with WEIXIN_QR_SESSIONS_LOCK:
+        session = WEIXIN_QR_SESSIONS.get(session_key)
+        if session:
+            session = dict(session)
+    if not session:
+        raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
+
+    qrcode_url = str(session.get("qrcode_url") or "").strip()
+    if not qrcode_url:
+        raise HTTPException(status_code=404, detail="当前会话没有可用二维码图片。")
+
+    try:
+        timeout_seconds = _normalize_timeout_seconds(session.get("timeout_seconds"), fallback=15)
+        import httpx
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            upstream = await client.get(qrcode_url)
+        if upstream.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"二维码图片请求失败: HTTP {upstream.status_code}")
+        content_type = upstream.headers.get("content-type", "image/png")
+        return Response(content=upstream.content, media_type=content_type)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"二维码图片代理失败: {str(exc)}")
 
 
 @router.post("/weixin/qr/wait")

@@ -18,15 +18,34 @@ function CommunicationPage() {
   const [pollingQrLogin, setPollingQrLogin] = useState(false)
   const [qrSessionKey, setQrSessionKey] = useState('')
   const [qrCodeUrl, setQrCodeUrl] = useState('')
+  const [qrImageLoadError, setQrImageLoadError] = useState('')
   const [qrStatus, setQrStatus] = useState<'idle' | 'wait' | 'scaned' | 'expired' | 'confirmed'>('idle')
   const [qrStatusText, setQrStatusText] = useState('')
   const pollTimerRef = useRef<number | null>(null)
+  const qrObjectUrlRef = useRef('')
+
+  const resolveApiErrorMessage = (error: unknown, fallback: string) => {
+    const maybeError = error as { response?: { status?: number, data?: { detail?: string } } }
+    const status = maybeError?.response?.status
+    const detail = maybeError?.response?.data?.detail
+    if (status === 401) {
+      return '登录状态已失效，请重新登录系统后再试'
+    }
+    if (status === 404) {
+      return '后端未找到二维码接口，请重启后端服务后重试'
+    }
+    if (detail && typeof detail === 'string') {
+      return `获取二维码失败：${detail}`
+    }
+    return fallback
+  }
 
   useEffect(() => {
     loadWeixinConfig()
 
     return () => {
       clearQrPolling()
+      clearQrImage()
     }
   }, [])
 
@@ -36,6 +55,32 @@ function CommunicationPage() {
       pollTimerRef.current = null
     }
     setPollingQrLogin(false)
+  }
+
+  const clearQrImage = () => {
+    if (qrObjectUrlRef.current) {
+      URL.revokeObjectURL(qrObjectUrlRef.current)
+      qrObjectUrlRef.current = ''
+    }
+    setQrCodeUrl('')
+    setQrImageLoadError('')
+  }
+
+  const loadQrImage = async (sessionKey: string) => {
+    try {
+      const response = await weixinAPI.getQrImage(sessionKey)
+      const blobUrl = URL.createObjectURL(response.data)
+      if (qrObjectUrlRef.current) {
+        URL.revokeObjectURL(qrObjectUrlRef.current)
+      }
+      qrObjectUrlRef.current = blobUrl
+      setQrCodeUrl(blobUrl)
+      setQrImageLoadError('')
+      return true
+    } catch {
+      setQrImageLoadError('二维码图片加载失败，请重试获取二维码')
+      return false
+    }
   }
 
   const loadWeixinConfig = async () => {
@@ -67,7 +112,7 @@ function CommunicationPage() {
       if (status === 'confirmed' && response.data.connected) {
         clearQrPolling()
         setQrSessionKey('')
-        setQrCodeUrl('')
+        clearQrImage()
         setQrStatus('confirmed')
         setMessage({ type: 'success', text: '微信扫码登录成功，配置已自动更新' })
         await loadWeixinConfig()
@@ -94,7 +139,7 @@ function CommunicationPage() {
     clearQrPolling()
     setQrStatus('idle')
     setQrStatusText('')
-    setQrCodeUrl('')
+    clearQrImage()
     setQrSessionKey('')
     try {
       const response = await weixinAPI.startQrLogin({
@@ -103,9 +148,9 @@ function CommunicationPage() {
         force: true
       })
       setQrSessionKey(response.data.session_key)
-      setQrCodeUrl(response.data.qrcode_url || '')
+      const qrImageReady = await loadQrImage(response.data.session_key)
       setQrStatus('wait')
-      setQrStatusText(response.data.message || '等待扫码中')
+      setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
       setPollingQrLogin(true)
       const shouldContinuePolling = await pollQrLoginStatus(response.data.session_key)
       if (shouldContinuePolling) {
@@ -113,8 +158,8 @@ function CommunicationPage() {
           pollQrLoginStatus(response.data.session_key)
         }, 2000)
       }
-    } catch {
-      setMessage({ type: 'error', text: '获取二维码失败，请检查配置后重试' })
+    } catch (error) {
+      setMessage({ type: 'error', text: resolveApiErrorMessage(error, '获取二维码失败，请检查配置后重试') })
       clearQrPolling()
     } finally {
       setStartingQrLogin(false)
@@ -124,7 +169,7 @@ function CommunicationPage() {
   const handleCancelQrLogin = async () => {
     if (!qrSessionKey) {
       clearQrPolling()
-      setQrCodeUrl('')
+      clearQrImage()
       setQrStatus('idle')
       setQrStatusText('')
       return
@@ -137,7 +182,7 @@ function CommunicationPage() {
     } finally {
       clearQrPolling()
       setQrSessionKey('')
-      setQrCodeUrl('')
+      clearQrImage()
       setQrStatus('idle')
       setQrStatusText('')
     }
@@ -284,6 +329,9 @@ function CommunicationPage() {
                     <div className="communication-qr-preview">
                       <img src={qrCodeUrl} alt="微信登录二维码" className="communication-qr-image" />
                     </div>
+                  )}
+                  {qrImageLoadError && (
+                    <p className="communication-qr-status">{qrImageLoadError}</p>
                   )}
                   {(qrStatusText || qrStatus !== 'idle') && (
                     <p className="communication-qr-status">

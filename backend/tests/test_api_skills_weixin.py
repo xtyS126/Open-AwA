@@ -151,6 +151,24 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         assert config_data["token"] == "bot-token-1"
 
 
+def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode_img_content": "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=5bd615dc3e27eb837ca2db2f30ee7b7b&bot_type=3"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        start_data = start_response.json()
+        assert start_data["qrcode"] == "5bd615dc3e27eb837ca2db2f30ee7b7b"
+        assert "liteapp.weixin.qq.com" in start_data["qrcode_url"]
+
+
 def test_weixin_qr_wait_returns_404_when_session_missing():
     with TestClient(app) as client:
         response = client.post(
