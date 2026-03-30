@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 import { WeixinConfig, WeixinHealthCheckResult, weixinAPI } from '../services/api'
 import './CommunicationPage.css'
 
@@ -70,19 +71,27 @@ function CommunicationPage() {
     setQrImageLoadError('')
   }
 
-  const loadQrImage = async (sessionKey: string, qrcodeUrl?: string) => {
+  const loadQrImage = async (_sessionKey: string, qrcodeText?: string) => {
+    const qrValue = (qrcodeText || qrRawUrl || '').trim()
+    if (!qrValue) {
+      setQrImageLoadError('二维码内容为空，请重试获取二维码')
+      return false
+    }
     try {
-      const response = await weixinAPI.getQrImage(sessionKey, qrcodeUrl || qrRawUrl || undefined)
-      const blobUrl = URL.createObjectURL(response.data)
+      const dataUrl = await QRCode.toDataURL(qrValue, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 240,
+      })
       if (qrObjectUrlRef.current) {
         URL.revokeObjectURL(qrObjectUrlRef.current)
+        qrObjectUrlRef.current = ''
       }
-      qrObjectUrlRef.current = blobUrl
-      setQrCodeUrl(blobUrl)
+      setQrCodeUrl(dataUrl)
       setQrImageLoadError('')
       return true
     } catch {
-      setQrImageLoadError('二维码图片加载失败，请重试获取二维码')
+      setQrImageLoadError('二维码生成失败，请重试获取二维码')
       return false
     }
   }
@@ -159,8 +168,8 @@ function CommunicationPage() {
       })
       setQrSessionKey(response.data.session_key)
       setQrRawUrl(response.data.qrcode_url || '')
-      setQrCodeValue(response.data.qrcode || '')
-      const qrImageReady = await loadQrImage(response.data.session_key, response.data.qrcode_url || undefined)
+      setQrCodeValue(response.data.qrcode || response.data.qrcode_url || '')
+      const qrImageReady = await loadQrImage(response.data.session_key, response.data.qrcode || response.data.qrcode_url || undefined)
       setQrStatus('wait')
       setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
       setPollingQrLogin(true)
