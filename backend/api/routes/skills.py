@@ -407,7 +407,13 @@ async def weixin_qr_wait(
             timeout_seconds=timeout_seconds
         )
     except WeixinAdapterError as exc:
-        raise HTTPException(status_code=502, detail=exc.message)
+        detail = str(exc.message or "")
+        transient_keywords = ["timeout", "超时", "temporarily", "temporary", "connection", "network", "远程主机", "断开", "reset"]
+        if any(keyword in detail.lower() for keyword in ["timeout", "temporarily", "temporary", "connection", "network", "reset"]) or any(keyword in detail for keyword in ["超时", "远程主机", "断开"]):
+            logger.warning(f"[weixin_qr_wait] transient upstream error fallback to wait: {detail}")
+            status_result = {"status": "wait"}
+        else:
+            raise HTTPException(status_code=502, detail=exc.message)
 
     status = str(status_result.get("status") or "wait").strip().lower()
     message_map = {
