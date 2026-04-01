@@ -6,6 +6,12 @@ import SettingsPage from '../pages/SettingsPage'
 import CommunicationPage from '../pages/CommunicationPage'
 import { weixinAPI } from '../services/api'
 
+vi.mock('qrcode', () => ({
+  default: {
+    toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,mocked-qrcode')
+  }
+}))
+
 vi.mock('../services/api', () => ({
   weixinAPI: {
     getConfig: vi.fn(),
@@ -41,6 +47,7 @@ vi.mock('../services/modelsApi', () => ({
 describe('CommunicationPage Weixin Clawbot Configuration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
     ;(weixinAPI.getConfig as any).mockResolvedValue({
       data: {
         account_id: 'test_account',
@@ -75,6 +82,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     cleanup()
   })
 
@@ -91,7 +99,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
 
     const accountIdInput = screen.getByPlaceholderText('输入微信通讯账户 ID') as HTMLInputElement
     const tokenInput = screen.getByPlaceholderText('输入 iLink Bot Token') as HTMLInputElement
-    
+
     expect(accountIdInput.value).toBe('test_account')
     expect(tokenInput.value).toBe('test_token')
   })
@@ -117,7 +125,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     await waitFor(() => {
       expect(screen.getByText('微信配置不完整，account_id 和 token 为必填项')).toBeInTheDocument()
     })
-    
+
     expect(weixinAPI.saveConfig).not.toHaveBeenCalled()
   })
 
@@ -232,11 +240,90 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
       })
       expect(weixinAPI.waitQrLogin).toHaveBeenCalledWith({
         session_key: 'session_1',
-        timeout_seconds: 20
+        timeout_seconds: 20,
+        qrcode: 'qrcode_1',
+        base_url: 'https://test.weixin.qq.com'
       })
       expect(screen.getByText('微信扫码登录成功，配置已自动更新')).toBeInTheDocument()
       expect(weixinAPI.getConfig).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('keeps polling on pending qr status', async () => {
+    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+      data: {
+        connected: false,
+        session_key: 'session_1',
+        status: 'pending',
+        message: 'waiting for confirm',
+        auth_id: 'auth_123'
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(weixinAPI.getConfig).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByText('获取登录二维码'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('img')).toBeInTheDocument()
+      expect(screen.getByText((_, element) => element?.textContent === '当前状态：waiting for confirm（auth_123）')).toBeInTheDocument()
+    })
+  })
+
+  it('updates polling base url after redirect status', async () => {
+    ;(weixinAPI.waitQrLogin as any)
+      .mockResolvedValueOnce({
+        data: {
+          connected: false,
+          session_key: 'session_1',
+          status: 'scaned_but_redirect',
+          message: '已扫码，正在切换轮询节点',
+          redirect_host: 'redirect.weixin.qq.com',
+          base_url: 'https://redirect.weixin.qq.com'
+        }
+      })
+      .mockResolvedValueOnce({
+        data: {
+          connected: false,
+          session_key: 'session_1',
+          status: 'wait',
+          message: '等待扫码中',
+          base_url: 'https://redirect.weixin.qq.com'
+        }
+      })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(weixinAPI.getConfig).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByText('获取登录二维码'))
+
+    await waitFor(() => {
+      expect(screen.getByText((_, element) => element?.textContent === '当前状态：已扫码，正在切换轮询节点（redirect.weixin.qq.com）')).toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect((weixinAPI.waitQrLogin as any).mock.calls[1][0]).toEqual({
+        session_key: 'session_1',
+        timeout_seconds: 20,
+        qrcode: 'qrcode_1',
+        base_url: 'https://redirect.weixin.qq.com'
+      })
+    }, { timeout: 3500 })
   })
 
   it('cancels qr login and calls exit api', async () => {

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Logs
+*.log
+
+# Env
+.env
+.env.*
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Local runtime data
+.openawa/
+backend/openawa.db
+backend/openawa_e2e.db
+frontend/test-results/
+
+# Local generated reports
+backend/scan_report.txt
+backend/COMPLETE_SCAN_REPORT.md

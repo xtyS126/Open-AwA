@@ -234,10 +234,12 @@ export interface WeixinQrStartRequest {
   timeout_seconds?: number
 }
 
+export type WeixinQrStatus = 'idle' | 'wait' | 'scaned' | 'scaned_but_redirect' | 'expired' | 'confirmed'
+
 export interface WeixinQrStartResponse {
   message: string
   session_key: string
-  status: string
+  status: Exclude<WeixinQrStatus, 'idle' | 'scaned_but_redirect' | 'expired' | 'confirmed'> | 'wait'
   qrcode?: string
   qrcode_url?: string
 }
@@ -252,12 +254,16 @@ export interface WeixinQrWaitRequest {
 export interface WeixinQrWaitResponse {
   connected: boolean
   session_key: string
-  status: string
+  status: Exclude<WeixinQrStatus, 'idle'>
   message: string
   qrcode_url?: string
+  auth_id?: string
+  ticket?: string
+  hint?: string
   account_id?: string
   token?: string
   base_url?: string
+  redirect_host?: string
 }
 
 export interface WeixinQrExitRequest {
