@@ -22,7 +22,7 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
 
 from pydantic import BaseModel
 from typing import Optional
-from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig, WeixinAdapterError, DEFAULT_BASE_URL, DEFAULT_BOT_TYPE
+from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig, WeixinAdapterError, DEFAULT_BASE_URL, DEFAULT_BOT_TYPE, DEFAULT_QR_BASE_URL
 
 
 WEIXIN_SKILL_NAME = "weixin_dispatch"
@@ -162,6 +162,26 @@ def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
     return {"qrcode": qrcode, "qrcode_url": qrcode_url}
 
 
+def _build_qr_session(
+    *,
+    qrcode: str,
+    qrcode_url: str,
+    login_base_url: str,
+    poll_base_url: str,
+    bot_type: str,
+    timeout_seconds: int
+) -> Dict[str, Any]:
+    return {
+        "qrcode": qrcode,
+        "qrcode_url": qrcode_url,
+        "login_base_url": login_base_url,
+        "poll_base_url": poll_base_url,
+        "bot_type": bot_type,
+        "created_at": time.time(),
+        "timeout_seconds": timeout_seconds
+    }
+
+
 def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
     payload = result.get("data") if isinstance(result.get("data"), dict) else result
     code = payload.get("errcode")
@@ -185,6 +205,62 @@ def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
         detail += f": {json.dumps(result, ensure_ascii=False)[:200]}"
     return detail
 
+
+
+def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
+    payload = status_result.get("data") if isinstance(status_result.get("data"), dict) else status_result
+    if not isinstance(payload, dict):
+        payload = {"raw_text": str(payload or "")}
+
+    raw_status = str(
+        payload.get("status")
+        or payload.get("state")
+        or payload.get("result")
+        or payload.get("login_status")
+        or ""
+    ).strip().lower()
+    message = str(
+        payload.get("message")
+        or payload.get("errmsg")
+        or payload.get("hint")
+        or payload.get("detail")
+        or payload.get("raw_text")
+        or ""
+    ).strip()
+    auth_id = str(payload.get("auth_id") or payload.get("authId") or payload.get("confirm_id") or "").strip()
+    ticket = str(payload.get("ticket") or payload.get("ticket_id") or payload.get("ticketId") or "").strip()
+    hint = str(payload.get("hint") or payload.get("tips") or payload.get("tip") or "").strip()
+    account_id = str(payload.get("ilink_bot_id") or payload.get("account_id") or "").strip()
+    token = str(payload.get("bot_token") or payload.get("token") or "").strip()
+    redirect_host = str(payload.get("redirect_host") or payload.get("redirectHost") or "").strip()
+
+    if raw_status == "scaned_but_redirect":
+        normalized_status = "scaned_but_redirect"
+    elif account_id and token:
+        normalized_status = "confirmed"
+    elif raw_status in {"confirmed", "confirm", "success", "succeed", "succeeded", "ok", "done"}:
+        normalized_status = "confirmed"
+    elif raw_status in {"expired", "timeout", "timed_out", "cancelled", "canceled", "invalid"}:
+        normalized_status = "expired"
+    elif raw_status in {"scaned", "scanned", "scan", "confirming", "pending", "wait_confirm", "waiting_confirm", "auth", "authorizing", "authorized"}:
+        normalized_status = "scaned"
+    elif auth_id or ticket or hint:
+        normalized_status = "scaned"
+    else:
+        normalized_status = "wait"
+
+    normalized_payload = dict(payload)
+    normalized_payload["status"] = normalized_status
+    normalized_payload["message"] = message
+    if auth_id:
+        normalized_payload["auth_id"] = auth_id
+    if ticket:
+        normalized_payload["ticket"] = ticket
+    if hint:
+        normalized_payload["hint"] = hint
+    if redirect_host:
+        normalized_payload["redirect_host"] = redirect_host
+    return normalized_payload
 
 def _purge_expired_qr_sessions() -> None:
     now = time.time()
@@ -301,10 +377,11 @@ async def weixin_qr_start(
 
     try:
         timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=runtime.timeout_seconds)
-        base_url = str(payload.base_url or runtime.base_url or DEFAULT_BASE_URL).strip().rstrip("/")
+        login_base_url = DEFAULT_QR_BASE_URL
+        poll_base_url = str(payload.base_url or runtime.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
         bot_type = str(payload.bot_type or runtime.bot_type or DEFAULT_BOT_TYPE).strip() or DEFAULT_BOT_TYPE
         qr_result = await adapter.fetch_login_qrcode(
-            base_url=base_url,
+            base_url=login_base_url,
             bot_type=bot_type,
             timeout_seconds=timeout_seconds
         )
@@ -320,14 +397,14 @@ async def weixin_qr_start(
         raise HTTPException(status_code=502, detail=_build_qrcode_upstream_error_detail(qr_result))
 
     with WEIXIN_QR_SESSIONS_LOCK:
-        WEIXIN_QR_SESSIONS[session_key] = {
-            "qrcode": qrcode,
-            "qrcode_url": qrcode_url,
-            "base_url": base_url,
-            "bot_type": bot_type,
-            "created_at": time.time(),
-            "timeout_seconds": timeout_seconds
-        }
+        WEIXIN_QR_SESSIONS[session_key] = _build_qr_session(
+            qrcode=qrcode,
+            qrcode_url=qrcode_url,
+            login_base_url=login_base_url,
+            poll_base_url=poll_base_url,
+            bot_type=bot_type,
+            timeout_seconds=timeout_seconds
+        )
 
     return {
         "message": "使用微信扫描以下二维码，以完成连接。",
@@ -390,8 +467,11 @@ async def weixin_qr_wait(
             raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
         session = {
             "qrcode": fallback_qrcode,
-            "base_url": str(payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL,
-            "qrcode_url": ""
+            "login_base_url": DEFAULT_QR_BASE_URL,
+            "poll_base_url": str(payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL,
+            "qrcode_url": "",
+            "bot_type": DEFAULT_BOT_TYPE,
+            "timeout_seconds": _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
         }
 
     qrcode = str(session.get("qrcode") or payload.qrcode or "").strip()
@@ -400,9 +480,10 @@ async def weixin_qr_wait(
 
     adapter = WeixinSkillAdapter()
     timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
+    poll_base_url = str(session.get("poll_base_url") or payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
     try:
         status_result = await adapter.fetch_qrcode_status(
-            base_url=str(session.get("base_url") or payload.base_url or DEFAULT_BASE_URL),
+            base_url=poll_base_url,
             qrcode=qrcode,
             timeout_seconds=timeout_seconds
         )
@@ -415,11 +496,13 @@ async def weixin_qr_wait(
         else:
             raise HTTPException(status_code=502, detail=exc.message)
 
-    status = str(status_result.get("status") or "wait").strip().lower()
+    normalized_status_result = _normalize_qr_wait_status(status_result)
+    status = str(normalized_status_result.get("status") or "wait").strip().lower()
     message_map = {
         "wait": "等待扫码中",
-        "scaned": "已扫码，请在微信继续确认",
-        "expired": "二维码已过期，请重新生成",
+        "scaned": "已扫码，请在微信中确认",
+        "scaned_but_redirect": "已扫码，正在切换轮询节点",
+        "expired": "二维码已过期，请重新获取",
         "confirmed": "与微信连接成功"
     }
 
@@ -427,13 +510,26 @@ async def weixin_qr_wait(
         "connected": status == "confirmed",
         "session_key": payload.session_key,
         "status": status,
-        "message": message_map.get(status, "登录状态更新中")
+        "message": str(normalized_status_result.get("message") or message_map.get(status, "login status updating")).strip() or message_map.get(status, "login status updating")
     }
 
+    if status == "scaned_but_redirect":
+        redirect_host = str(normalized_status_result.get("redirect_host") or "").strip()
+        if redirect_host:
+            poll_base_url = f"https://{redirect_host}"
+            with WEIXIN_QR_SESSIONS_LOCK:
+                active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+                if active_session:
+                    active_session["poll_base_url"] = poll_base_url
+                    active_session["created_at"] = time.time()
+            response["redirect_host"] = redirect_host
+            response["base_url"] = poll_base_url
+        return response
+
     if status == "confirmed":
-        account_id = str(status_result.get("ilink_bot_id") or "").strip()
-        token = str(status_result.get("bot_token") or "").strip()
-        base_url = str(status_result.get("baseurl") or session.get("base_url") or DEFAULT_BASE_URL).strip().rstrip("/")
+        account_id = str(normalized_status_result.get("ilink_bot_id") or normalized_status_result.get("account_id") or "").strip()
+        token = str(normalized_status_result.get("bot_token") or normalized_status_result.get("token") or "").strip()
+        base_url = str(normalized_status_result.get("baseurl") or normalized_status_result.get("base_url") or poll_base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         previous_runtime = _build_runtime_config_from_db(db)
         if account_id and token:
             _save_weixin_config_to_db(
@@ -459,6 +555,15 @@ async def weixin_qr_wait(
 
     if status == "scaned":
         response["qrcode_url"] = session.get("qrcode_url", "")
+        auth_id = str(normalized_status_result.get("auth_id") or "").strip()
+        ticket = str(normalized_status_result.get("ticket") or "").strip()
+        hint = str(normalized_status_result.get("hint") or "").strip()
+        if auth_id:
+            response["auth_id"] = auth_id
+        if ticket:
+            response["ticket"] = ticket
+        if hint:
+            response["hint"] = hint
     return response
 
 

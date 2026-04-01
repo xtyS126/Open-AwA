@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { WeixinConfig, WeixinHealthCheckResult, weixinAPI } from '../services/api'
+import { WeixinConfig, WeixinHealthCheckResult, WeixinQrStatus, weixinAPI } from '../services/api'
 import './CommunicationPage.css'
+
+const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com'
 
 function CommunicationPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [weixinConfig, setWeixinConfig] = useState<WeixinConfig>({
     account_id: '',
     token: '',
-    base_url: 'https://ilinkai.weixin.qq.com',
+    base_url: DEFAULT_BASE_URL,
     timeout_seconds: 15
   })
   const [loadingWeixin, setLoadingWeixin] = useState(false)
@@ -20,12 +22,14 @@ function CommunicationPage() {
   const [qrSessionKey, setQrSessionKey] = useState('')
   const [qrCodeUrl, setQrCodeUrl] = useState('')
   const [qrRawUrl, setQrRawUrl] = useState('')
-  const [qrCodeValue, setQrCodeValue] = useState('')
   const [qrImageLoadError, setQrImageLoadError] = useState('')
-  const [qrStatus, setQrStatus] = useState<'idle' | 'wait' | 'scaned' | 'expired' | 'confirmed'>('idle')
+  const [qrStatus, setQrStatus] = useState<WeixinQrStatus>('idle')
   const [qrStatusText, setQrStatusText] = useState('')
+  const [qrStatusHint, setQrStatusHint] = useState('')
   const pollTimerRef = useRef<number | null>(null)
   const qrObjectUrlRef = useRef('')
+  const qrCodeValueRef = useRef('')
+  const qrPollBaseUrlRef = useRef(DEFAULT_BASE_URL)
 
   const resolveApiErrorMessage = (error: unknown, fallback: string) => {
     const maybeError = error as { response?: { status?: number, data?: { detail?: string } } }
@@ -41,6 +45,49 @@ function CommunicationPage() {
       return `获取二维码失败：${detail}`
     }
     return fallback
+  }
+
+  const buildStatusText = (status: WeixinQrStatus, fallback: string) => {
+    if (fallback.trim()) {
+      return fallback
+    }
+    if (status === 'scaned_but_redirect') {
+      return '已扫码，正在切换轮询节点'
+    }
+    if (status === 'scaned') {
+      return '已扫码，请在微信中确认'
+    }
+    if (status === 'expired') {
+      return '二维码已过期，请重新获取'
+    }
+    if (status === 'confirmed') {
+      return '与微信连接成功'
+    }
+    return '等待扫码中'
+  }
+
+  const normalizeQrStatus = (rawStatus: string, connected: boolean): WeixinQrStatus => {
+    if (connected || rawStatus === 'confirmed') {
+      return 'confirmed'
+    }
+    if (rawStatus === 'expired') {
+      return 'expired'
+    }
+    if (rawStatus === 'scaned_but_redirect') {
+      return 'scaned_but_redirect'
+    }
+    if (rawStatus === 'scaned' || rawStatus === 'scanned' || rawStatus === 'pending' || rawStatus === 'confirming') {
+      return 'scaned'
+    }
+    return 'wait'
+  }
+
+  const updateQrCodeValue = (value: string) => {
+    qrCodeValueRef.current = value
+  }
+
+  const updateQrPollBaseUrl = (value: string) => {
+    qrPollBaseUrlRef.current = value
   }
 
   useEffect(() => {
@@ -67,12 +114,14 @@ function CommunicationPage() {
     }
     setQrCodeUrl('')
     setQrRawUrl('')
-    setQrCodeValue('')
+    updateQrCodeValue('')
     setQrImageLoadError('')
+    setQrStatusHint('')
+    updateQrPollBaseUrl(DEFAULT_BASE_URL)
   }
 
   const loadQrImage = async (_sessionKey: string, qrcodeText?: string) => {
-    const qrValue = (qrcodeText || qrRawUrl || '').trim()
+    const qrValue = (qrcodeText || qrCodeValueRef.current || qrRawUrl || '').trim()
     if (!qrValue) {
       setQrImageLoadError('二维码内容为空，请重试获取二维码')
       return false
@@ -101,14 +150,16 @@ function CommunicationPage() {
     try {
       const response = await weixinAPI.getConfig()
       if (response.data) {
-        setWeixinConfig({
+        const nextConfig = {
           account_id: response.data.account_id || '',
           token: response.data.token || '',
-          base_url: response.data.base_url || 'https://ilinkai.weixin.qq.com',
+          base_url: response.data.base_url || DEFAULT_BASE_URL,
           timeout_seconds: response.data.timeout_seconds || 15
-        })
+        }
+        setWeixinConfig(nextConfig)
+        updateQrPollBaseUrl(nextConfig.base_url || DEFAULT_BASE_URL)
       }
-    } catch (error) {
+    } catch {
       console.error('Failed to load weixin config')
     } finally {
       setLoadingWeixin(false)
@@ -120,18 +171,32 @@ function CommunicationPage() {
       const response = await weixinAPI.waitQrLogin({
         session_key: sessionKey,
         timeout_seconds: weixinConfig.timeout_seconds,
-        qrcode: qrCodeValue || undefined,
-        base_url: weixinConfig.base_url || undefined,
+        qrcode: qrCodeValueRef.current || undefined,
+        base_url: qrPollBaseUrlRef.current || weixinConfig.base_url || undefined,
       })
-      const status = (response.data.status || 'wait') as 'wait' | 'scaned' | 'expired' | 'confirmed'
-      setQrStatus(status)
-      setQrStatusText(response.data.message || '')
+      const data = response.data
+      const status = normalizeQrStatus(String(data.status || 'wait').toLowerCase(), Boolean(data.connected))
+      const hintText = [data.hint, data.auth_id, data.ticket, data.redirect_host]
+        .filter((item): item is string => Boolean(item && item.trim()))
+        .join(' ')
 
-      if (status === 'confirmed' && response.data.connected) {
+      if (data.base_url) {
+        updateQrPollBaseUrl(data.base_url)
+      }
+      if (data.qrcode_url) {
+        setQrRawUrl(data.qrcode_url)
+      }
+
+      setQrStatus(status)
+      setQrStatusText(buildStatusText(status, data.message || ''))
+      setQrStatusHint(hintText)
+
+      if (status === 'confirmed' && data.connected) {
         clearQrPolling()
         setQrSessionKey('')
         clearQrImage()
         setQrStatus('confirmed')
+        setQrStatusText(buildStatusText('confirmed', data.message || ''))
         setMessage({ type: 'success', text: '微信扫码登录成功，配置已自动更新' })
         await loadWeixinConfig()
         return false
@@ -144,6 +209,7 @@ function CommunicationPage() {
         setMessage({ type: 'error', text: '二维码已过期，请重新获取二维码' })
         return false
       }
+
       return true
     } catch {
       clearQrPolling()
@@ -166,12 +232,15 @@ function CommunicationPage() {
         timeout_seconds: weixinConfig.timeout_seconds,
         force: true
       })
+      const qrValue = response.data.qrcode || response.data.qrcode_url || ''
       setQrSessionKey(response.data.session_key)
       setQrRawUrl(response.data.qrcode_url || '')
-      setQrCodeValue(response.data.qrcode || response.data.qrcode_url || '')
-      const qrImageReady = await loadQrImage(response.data.session_key, response.data.qrcode || response.data.qrcode_url || undefined)
+      updateQrCodeValue(qrValue)
+      updateQrPollBaseUrl(weixinConfig.base_url || DEFAULT_BASE_URL)
+      const qrImageReady = await loadQrImage(response.data.session_key, qrValue || undefined)
       setQrStatus('wait')
       setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
+      setQrStatusHint('')
       setPollingQrLogin(true)
       const shouldContinuePolling = await pollQrLoginStatus(response.data.session_key)
       if (shouldContinuePolling) {
@@ -219,7 +288,7 @@ function CommunicationPage() {
     try {
       await weixinAPI.saveConfig(weixinConfig)
       setMessage({ type: 'success', text: '微信通讯配置保存成功' })
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '微信通讯配置保存失败' })
     } finally {
       setSavingWeixin(false)
@@ -243,7 +312,7 @@ function CommunicationPage() {
       } else {
         setMessage({ type: 'error', text: '测试连接失败，请查看下方详细结果' })
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '测试连接请求失败' })
     } finally {
       setTestingWeixin(false)
@@ -357,6 +426,7 @@ function CommunicationPage() {
                   {(qrStatusText || qrStatus !== 'idle') && (
                     <p className="communication-qr-status">
                       当前状态：{qrStatusText || qrStatus}
+                      {qrStatusHint ? `（${qrStatusHint}）` : ''}
                     </p>
                   )}
                 </div>

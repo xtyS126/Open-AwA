@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import shutil
 import subprocess
@@ -13,8 +14,13 @@ from loguru import logger
 
 
 DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com"
+DEFAULT_QR_BASE_URL = DEFAULT_BASE_URL
 DEFAULT_BOT_TYPE = "3"
 DEFAULT_CHANNEL_VERSION = "1.0.2"
+SESSION_EXPIRED_ERRCODE = -14
+SESSION_PAUSE_DURATION_SECONDS = 60 * 60
+
+_SESSION_PAUSE_UNTIL: Dict[str, float] = {}
 
 
 class WeixinAdapterError(Exception):
@@ -58,6 +64,7 @@ class WeixinSkillAdapter:
         resolved_root = project_root or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.project_root = resolved_root
         self.default_plugin_root = os.path.join(resolved_root, "插件", "openclaw-weixin")
+        self.state_root = os.path.join(resolved_root, ".openawa", "weixin")
 
     def is_weixin_skill(self, skill_config: Dict[str, Any]) -> bool:
         adapter = str(skill_config.get("adapter", "")).strip().lower()
@@ -145,7 +152,9 @@ class WeixinSkillAdapter:
                 "plugin_root": config.plugin_root,
                 "plugin_root_exists": plugin_root_exists,
                 "base_url": config.base_url,
-                "account_id": config.account_id
+                "account_id": config.account_id,
+                "state_root": self.state_root,
+                "session_paused": self._is_session_paused(config.account_id),
             }
         }
 
@@ -188,6 +197,8 @@ class WeixinSkillAdapter:
                     suggestions=["补齐 weixin.account_id 与 weixin.token 配置字段"]
                 )
 
+            self._assert_session_active(runtime.account_id)
+
             if action == "send_message":
                 result = await self._send_message(runtime, payload)
             elif action == "get_updates":
@@ -225,6 +236,9 @@ class WeixinSkillAdapter:
         context_token = str(payload.get("context_token") or payload.get("contextToken") or "").strip()
         client_id = str(payload.get("client_id") or payload.get("clientId") or f"openawa-{int(time.time() * 1000)}")
 
+        if not context_token and to_user_id and config.account_id:
+            context_token = self._get_context_token(config.account_id, to_user_id)
+
         missing = []
         if not to_user_id:
             missing.append("to_user_id")
@@ -237,7 +251,7 @@ class WeixinSkillAdapter:
                 code="WEIXIN_INPUT_MISSING_FIELDS",
                 message="发送消息参数不完整",
                 details={"missing_fields": missing},
-                suggestions=["在 inputs.payload 中提供 to_user_id、text、context_token"]
+                suggestions=["在 inputs.payload 中提供 to_user_id、text、context_token，或先执行 get_updates 建立上下文缓存"]
             )
 
         request_body = {
@@ -257,13 +271,47 @@ class WeixinSkillAdapter:
             }
         }
         response = await self._api_post(config=config, endpoint="ilink/bot/sendmessage", body=request_body)
-        return {"request": {"to_user_id": to_user_id, "client_id": client_id}, "response": response}
+        return {
+            "request": {"to_user_id": to_user_id, "client_id": client_id, "context_token": context_token},
+            "response": response,
+            "state": {"context_token_source": "cache" if not payload.get("context_token") and not payload.get("contextToken") else "payload"}
+        }
 
     async def _get_updates(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
-        get_updates_buf = str(payload.get("get_updates_buf") or payload.get("getUpdatesBuf") or "")
+        incoming_buf = str(payload.get("get_updates_buf") or payload.get("getUpdatesBuf") or "").strip()
+        persisted_buf = self._load_get_updates_buf(config.account_id)
+        get_updates_buf = incoming_buf or persisted_buf or ""
         request_body = {"get_updates_buf": get_updates_buf}
         response = await self._api_post(config=config, endpoint="ilink/bot/getupdates", body=request_body, timeout_seconds=38)
-        return {"request": request_body, "response": response}
+
+        errcode = response.get("errcode")
+        ret = response.get("ret")
+        if errcode == SESSION_EXPIRED_ERRCODE or ret == SESSION_EXPIRED_ERRCODE:
+            self._pause_session(config.account_id)
+
+        next_buf = str(response.get("get_updates_buf") or "").strip()
+        if next_buf:
+            self._save_get_updates_buf(config.account_id, next_buf)
+
+        stored_context_tokens = 0
+        for item in response.get("msgs") or []:
+            if not isinstance(item, dict):
+                continue
+            from_user_id = str(item.get("from_user_id") or "").strip()
+            context_token = str(item.get("context_token") or "").strip()
+            if from_user_id and context_token:
+                self._set_context_token(config.account_id, from_user_id, context_token)
+                stored_context_tokens += 1
+
+        return {
+            "request": request_body,
+            "response": response,
+            "state": {
+                "used_get_updates_buf": get_updates_buf,
+                "saved_get_updates_buf": next_buf,
+                "stored_context_token_count": stored_context_tokens,
+            }
+        }
 
     async def fetch_login_qrcode(
         self,
@@ -272,10 +320,10 @@ class WeixinSkillAdapter:
         timeout_seconds: int = 15
     ) -> Dict[str, Any]:
         return await self._api_get(
-            base_url=base_url,
+            base_url=DEFAULT_QR_BASE_URL,
             endpoint="ilink/bot/get_bot_qrcode",
             params={"bot_type": bot_type},
-            timeout_seconds=timeout_seconds
+            timeout_seconds=max(1, min(int(timeout_seconds), 5))
         )
 
     async def fetch_qrcode_status(
@@ -284,11 +332,12 @@ class WeixinSkillAdapter:
         qrcode: str,
         timeout_seconds: int = 35
     ) -> Dict[str, Any]:
+        poll_base_url = str(base_url or DEFAULT_QR_BASE_URL).strip().rstrip("/") or DEFAULT_QR_BASE_URL
         return await self._api_get(
-            base_url=base_url,
+            base_url=poll_base_url,
             endpoint="ilink/bot/get_qrcode_status",
             params={"qrcode": qrcode},
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=max(1, int(timeout_seconds)),
             extra_headers={"iLink-App-ClientVersion": "1"}
         )
 
@@ -309,6 +358,7 @@ class WeixinSkillAdapter:
             "AuthorizationType": "ilink_bot_token",
             "Authorization": f"Bearer {config.token}",
             "X-WECHAT-UIN": self._build_random_wechat_uin(),
+            "iLink-App-ClientVersion": "1",
         }
 
         try:
@@ -324,7 +374,13 @@ class WeixinSkillAdapter:
                 )
             if "application/json" in content_type.lower():
                 return response.json()
-            return {"raw_text": response.text}
+            raw = response.text.strip()
+            if raw.startswith("{") or raw.startswith("["):
+                try:
+                    return json.loads(raw)
+                except Exception:
+                    pass
+            return {"raw_text": raw}
         except WeixinAdapterError:
             raise
         except httpx.TimeoutException:
@@ -381,8 +437,7 @@ class WeixinSkillAdapter:
             raw = response.text.strip()
             if raw.startswith("{") or raw.startswith("["):
                 try:
-                    import json as _json
-                    return _json.loads(raw)
+                    return json.loads(raw)
                 except Exception:
                     pass
             return {"raw_text": raw}
@@ -472,6 +527,92 @@ class WeixinSkillAdapter:
             if not isinstance(value, str) or not value.strip():
                 missing.append(field)
         return missing
+
+    def _accounts_state_dir(self) -> str:
+        path = os.path.join(self.state_root, "accounts")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _sync_buf_file_path(self, account_id: str) -> str:
+        safe_account_id = self._sanitize_account_id(account_id)
+        return os.path.join(self._accounts_state_dir(), f"{safe_account_id}.sync.json")
+
+    def _context_tokens_file_path(self, account_id: str) -> str:
+        safe_account_id = self._sanitize_account_id(account_id)
+        return os.path.join(self._accounts_state_dir(), f"{safe_account_id}.context-tokens.json")
+
+    def _load_get_updates_buf(self, account_id: str) -> str:
+        data = self._read_json_file(self._sync_buf_file_path(account_id))
+        value = data.get("get_updates_buf")
+        return str(value).strip() if isinstance(value, str) else ""
+
+    def _save_get_updates_buf(self, account_id: str, get_updates_buf: str) -> None:
+        self._write_json_file(self._sync_buf_file_path(account_id), {"get_updates_buf": get_updates_buf})
+
+    def _get_context_token(self, account_id: str, user_id: str) -> str:
+        data = self._read_json_file(self._context_tokens_file_path(account_id))
+        value = data.get(user_id)
+        return str(value).strip() if isinstance(value, str) else ""
+
+    def _set_context_token(self, account_id: str, user_id: str, token: str) -> None:
+        file_path = self._context_tokens_file_path(account_id)
+        data = self._read_json_file(file_path)
+        data[user_id] = token
+        self._write_json_file(file_path, data)
+
+    def _pause_session(self, account_id: str) -> None:
+        _SESSION_PAUSE_UNTIL[account_id] = time.time() + SESSION_PAUSE_DURATION_SECONDS
+
+    def _is_session_paused(self, account_id: str) -> bool:
+        if not account_id:
+            return False
+        until = _SESSION_PAUSE_UNTIL.get(account_id)
+        if until is None:
+            return False
+        if until <= time.time():
+            _SESSION_PAUSE_UNTIL.pop(account_id, None)
+            return False
+        return True
+
+    def _remaining_pause_seconds(self, account_id: str) -> int:
+        if not self._is_session_paused(account_id):
+            return 0
+        return max(0, int(_SESSION_PAUSE_UNTIL.get(account_id, 0) - time.time()))
+
+    def _assert_session_active(self, account_id: str) -> None:
+        if not self._is_session_paused(account_id):
+            return
+        remaining_seconds = self._remaining_pause_seconds(account_id)
+        raise WeixinAdapterError(
+            code="WEIXIN_SESSION_PAUSED",
+            message="weixin 会话已暂停，请稍后再试",
+            details={"account_id": account_id, "remaining_seconds": remaining_seconds, "errcode": SESSION_EXPIRED_ERRCODE},
+            suggestions=["重新扫码登录或等待暂停窗口结束后重试"]
+        )
+
+    @staticmethod
+    def _sanitize_account_id(account_id: str) -> str:
+        safe = str(account_id or "default").strip() or "default"
+        return safe.replace("/", "-").replace("\\", "-").replace(":", "-").replace("@", "-")
+
+    @staticmethod
+    def _read_json_file(file_path: str) -> Dict[str, Any]:
+        try:
+            with open(file_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                return data
+        except FileNotFoundError:
+            return {}
+        except Exception as exc:
+            logger.warning(f"Failed to read weixin state file {file_path}: {exc}")
+        return {}
+
+    @staticmethod
+    def _write_json_file(file_path: str, data: Dict[str, Any]) -> None:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
 
     @staticmethod
     def _pick_value(primary: Dict[str, Any], fallback: Dict[str, Any], *keys: str) -> Any:
