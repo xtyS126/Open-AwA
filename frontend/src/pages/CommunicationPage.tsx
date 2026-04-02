@@ -26,6 +26,7 @@ function CommunicationPage() {
   const [qrStatus, setQrStatus] = useState<WeixinQrStatus>('idle')
   const [qrStatusText, setQrStatusText] = useState('')
   const [qrStatusHint, setQrStatusHint] = useState('')
+  const [qrBindingResult, setQrBindingResult] = useState<{ userId: string; bindingStatus: string } | null>(null)
   const pollTimerRef = useRef<number | null>(null)
   const qrObjectUrlRef = useRef('')
   const qrCodeValueRef = useRef('')
@@ -64,6 +65,37 @@ function CommunicationPage() {
       return '与微信连接成功'
     }
     return '等待扫码中'
+  }
+
+  const normalizeBindingStatus = (bindingStatus?: string, userId?: string) => {
+    const normalized = String(bindingStatus || '').trim().toLowerCase()
+    if (normalized === 'bound' || normalized === 'confirmed' || normalized === 'linked' || normalized === 'success') {
+      return 'bound'
+    }
+    if (normalized === 'pending' || normalized === 'confirming' || normalized === 'waiting') {
+      return 'pending'
+    }
+    if (userId?.trim()) {
+      return 'bound'
+    }
+    return 'unbound'
+  }
+
+  const buildBindingResultText = (userId?: string, bindingStatus?: string) => {
+    const normalizedStatus = normalizeBindingStatus(bindingStatus, userId)
+    if (normalizedStatus === 'bound') {
+      return userId?.trim()
+        ? `绑定成功，用户 ID：${userId.trim()}，绑定状态：${normalizedStatus}`
+        : `绑定状态：${normalizedStatus}`
+    }
+    if (normalizedStatus === 'pending') {
+      return userId?.trim()
+        ? `已获取用户 ID：${userId.trim()}，绑定状态：${normalizedStatus}`
+        : `绑定状态：${normalizedStatus}`
+    }
+    return userId?.trim()
+      ? `用户 ID：${userId.trim()}，绑定状态：${normalizedStatus}`
+      : `绑定状态：${normalizedStatus}`
   }
 
   const normalizeQrStatus = (rawStatus: string, connected: boolean): WeixinQrStatus => {
@@ -154,9 +186,14 @@ function CommunicationPage() {
           account_id: response.data.account_id || '',
           token: response.data.token || '',
           base_url: response.data.base_url || DEFAULT_BASE_URL,
-          timeout_seconds: response.data.timeout_seconds || 15
+          timeout_seconds: response.data.timeout_seconds || 15,
+          user_id: response.data.user_id || '',
+          binding_status: normalizeBindingStatus(response.data.binding_status, response.data.user_id)
         }
         setWeixinConfig(nextConfig)
+        setQrBindingResult(nextConfig.user_id || nextConfig.binding_status !== 'unbound'
+          ? { userId: nextConfig.user_id || '', bindingStatus: nextConfig.binding_status || 'unbound' }
+          : null)
         updateQrPollBaseUrl(nextConfig.base_url || DEFAULT_BASE_URL)
       }
     } catch {
@@ -192,12 +229,20 @@ function CommunicationPage() {
       setQrStatusHint(hintText)
 
       if (status === 'confirmed' && data.connected) {
+        const bindingStatus = normalizeBindingStatus(data.binding_status, data.user_id)
+        setQrBindingResult({
+          userId: data.user_id || '',
+          bindingStatus
+        })
         clearQrPolling()
         setQrSessionKey('')
         clearQrImage()
         setQrStatus('confirmed')
         setQrStatusText(buildStatusText('confirmed', data.message || ''))
-        setMessage({ type: 'success', text: '微信扫码登录成功，配置已自动更新' })
+        setMessage({
+          type: 'success',
+          text: `微信扫码登录成功，配置已自动更新；${buildBindingResultText(data.user_id, bindingStatus)}`
+        })
         await loadWeixinConfig()
         return false
       }
@@ -224,6 +269,7 @@ function CommunicationPage() {
     clearQrPolling()
     setQrStatus('idle')
     setQrStatusText('')
+    setQrBindingResult(null)
     clearQrImage()
     setQrSessionKey('')
     try {
@@ -427,6 +473,11 @@ function CommunicationPage() {
                     <p className="communication-qr-status">
                       当前状态：{qrStatusText || qrStatus}
                       {qrStatusHint ? `（${qrStatusHint}）` : ''}
+                    </p>
+                  )}
+                  {qrBindingResult && (
+                    <p className="communication-qr-status">
+                      绑定结果：{buildBindingResultText(qrBindingResult.userId, qrBindingResult.bindingStatus)}
                     </p>
                   )}
                 </div>

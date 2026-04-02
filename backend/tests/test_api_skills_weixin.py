@@ -1,8 +1,13 @@
+import sys
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from main import app
 from db.models import Base, Skill
@@ -19,6 +24,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 Base.metadata.create_all(bind=engine)
 
+
 def override_get_db():
     try:
         db = TestingSessionLocal()
@@ -26,11 +32,13 @@ def override_get_db():
     finally:
         db.close()
 
+
 def override_get_current_user():
     class DummyUser:
         id = 1
         username = "testuser"
     return DummyUser()
+
 
 app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_current_user] = override_get_current_user
@@ -62,12 +70,15 @@ def test_save_and_get_weixin_config():
         data = response.json()
         assert data["account_id"] == ""
         assert data["token"] == ""
+        assert data["binding_status"] == "unbound"
 
         payload = {
             "account_id": "test_acc",
             "token": "test_tok",
             "base_url": "https://test.url",
-            "timeout_seconds": 30
+            "timeout_seconds": 30,
+            "user_id": "persisted-user",
+            "binding_status": "bound"
         }
         response = client.post(f"{settings.API_V1_STR}/skills/weixin/config", json=payload)
         assert response.status_code == 200
@@ -80,6 +91,9 @@ def test_save_and_get_weixin_config():
         assert data["token"] == "test_tok"
         assert data["base_url"] == "https://test.url"
         assert data["timeout_seconds"] == 30
+        assert data["user_id"] == "persisted-user"
+        assert data["binding_status"] == "bound"
+
 
 def test_weixin_health_check(monkeypatch):
     with TestClient(app) as client:
@@ -124,6 +138,8 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
                 "status": "confirmed",
                 "bot_token": "bot-token-1",
                 "ilink_bot_id": "bot-account-1",
+                "ilink_user_id": "wx-user-1",
+                "binding_status": "bound",
                 "baseurl": "https://ilinkai.weixin.qq.com"
             }
 
@@ -152,6 +168,8 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         assert wait_data["status"] == "confirmed"
         assert wait_data["account_id"] == "bot-account-1"
         assert wait_data["token"] == "bot-token-1"
+        assert wait_data["user_id"] == "wx-user-1"
+        assert wait_data["binding_status"] == "bound"
         assert call_log[1] == ("wait", "https://poll.example.com", "qr-123", 35)
 
         config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
@@ -159,6 +177,8 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         config_data = config_response.json()
         assert config_data["account_id"] == "bot-account-1"
         assert config_data["token"] == "bot-token-1"
+        assert config_data["user_id"] == "wx-user-1"
+        assert config_data["binding_status"] == "bound"
 
 
 def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
@@ -293,7 +313,9 @@ def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
                 "account_id": "keep-account",
                 "token": "keep-token",
                 "base_url": "https://test.url",
-                "timeout_seconds": 18
+                "timeout_seconds": 18,
+                "user_id": "bound-user",
+                "binding_status": "bound"
             }
         )
         assert save_response.status_code == 200
@@ -318,6 +340,8 @@ def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
         assert config_data["token"] == ""
         assert config_data["base_url"] == "https://test.url"
         assert config_data["timeout_seconds"] == 18
+        assert config_data["user_id"] == ""
+        assert config_data["binding_status"] == "unbound"
 
 
 def test_weixin_qr_exit_only_clears_session_when_clear_config_false(monkeypatch):
@@ -338,7 +362,9 @@ def test_weixin_qr_exit_only_clears_session_when_clear_config_false(monkeypatch)
                 "account_id": "keep-account",
                 "token": "keep-token",
                 "base_url": "https://keep.url",
-                "timeout_seconds": 18
+                "timeout_seconds": 18,
+                "user_id": "keep-user",
+                "binding_status": "bound"
             }
         )
         assert save_response.status_code == 200
@@ -361,6 +387,8 @@ def test_weixin_qr_exit_only_clears_session_when_clear_config_false(monkeypatch)
         assert config_data["token"] == "keep-token"
         assert config_data["base_url"] == "https://keep.url"
         assert config_data["timeout_seconds"] == 18
+        assert config_data["user_id"] == "keep-user"
+        assert config_data["binding_status"] == "bound"
 
 
 def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
@@ -398,3 +426,89 @@ def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
         assert wait_data["message"] == "waiting for confirm"
         assert wait_data["auth_id"] == "auth-123"
         assert wait_data["qrcode_url"] == "https://example.com/qr-pending.png"
+
+
+def test_weixin_qr_wait_rejects_confirmed_without_account_or_token(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-invalid-confirmed",
+                "qrcode_img_content": "https://example.com/qr-invalid-confirmed.png"
+            }
+
+        async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            return {
+                "status": "confirmed",
+                "ilink_user_id": "wx-user-missing-token",
+                "binding_status": "bound"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_qrcode_status", mock_fetch_qrcode_status)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+
+        wait_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": start_response.json()["session_key"]}
+        )
+        assert wait_response.status_code == 502
+        assert "account_id 或 token" in wait_response.json()["detail"]
+
+
+
+def test_weixin_qr_wait_replays_confirmed_result_idempotently(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        call_count = {"wait": 0}
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-idempotent-confirmed",
+                "qrcode_img_content": "https://example.com/qr-idempotent-confirmed.png"
+            }
+
+        async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            call_count["wait"] += 1
+            return {
+                "status": "confirmed",
+                "bot_token": "bot-token-idempotent",
+                "ilink_bot_id": "bot-account-idempotent",
+                "ilink_user_id": "wx-user-idempotent",
+                "binding_status": "confirmed",
+                "baseurl": "https://redirect.weixin.qq.com"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_qrcode_status", mock_fetch_qrcode_status)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        session_key = start_response.json()["session_key"]
+
+        first_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": session_key}
+        )
+        assert first_response.status_code == 200
+        first_data = first_response.json()
+        assert first_data["status"] == "confirmed"
+        assert first_data["binding_status"] == "bound"
+
+        second_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": session_key}
+        )
+        assert second_response.status_code == 200
+        assert second_response.json() == first_data
+        assert call_count["wait"] == 1
+
+        config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
+        assert config_response.status_code == 200
+        config_data = config_response.json()
+        assert config_data["user_id"] == "wx-user-idempotent"
+        assert config_data["binding_status"] == "bound"

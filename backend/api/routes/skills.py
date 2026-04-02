@@ -36,7 +36,23 @@ def _build_default_weixin_config() -> Dict[str, Any]:
         "account_id": "",
         "token": "",
         "base_url": DEFAULT_BASE_URL,
-        "timeout_seconds": 15
+        "timeout_seconds": 15,
+        "user_id": "",
+        "binding_status": "unbound"
+    }
+
+
+def _build_weixin_bound_snapshot(
+    account_id: str = "",
+    user_id: str = "",
+    binding_status: str = "unbound"
+) -> Dict[str, str]:
+    normalized_user_id = str(user_id or "").strip()
+    normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
+    return {
+        "account_id": str(account_id or "").strip(),
+        "user_id": normalized_user_id,
+        "binding_status": normalized_binding_status,
     }
 
 
@@ -47,6 +63,19 @@ def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 1
         return max(1, int(timeout_seconds))
     except (TypeError, ValueError):
         return fallback
+
+
+def _normalize_binding_status(binding_status: Optional[str], user_id: str = "", fallback: str = "unbound") -> str:
+    normalized = str(binding_status or "").strip().lower()
+    if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
+        return "bound"
+    if normalized in {"pending", "confirming", "waiting"}:
+        return "pending"
+    if normalized in {"unbound", "failed", "none", ""}:
+        return "bound" if user_id else fallback
+    if user_id:
+        return "bound"
+    return fallback
 
 
 def _load_weixin_skill_config_dict(db: Session) -> Dict[str, Any]:
@@ -66,7 +95,9 @@ def _build_weixin_config_payload(
     account_id: str,
     token: str,
     base_url: str,
-    timeout_seconds: int
+    timeout_seconds: int,
+    user_id: str = "",
+    binding_status: str = "unbound"
 ) -> Dict[str, Any]:
     return {
         "name": WEIXIN_SKILL_NAME,
@@ -77,7 +108,9 @@ def _build_weixin_config_payload(
             "account_id": account_id,
             "token": token,
             "base_url": base_url,
-            "timeout_seconds": timeout_seconds
+            "timeout_seconds": timeout_seconds,
+            "user_id": user_id,
+            "binding_status": _normalize_binding_status(binding_status, user_id=user_id)
         }
     }
 
@@ -87,7 +120,9 @@ def _save_weixin_config_to_db(
     account_id: str,
     token: str,
     base_url: str,
-    timeout_seconds: int
+    timeout_seconds: int,
+    user_id: str = "",
+    binding_status: str = "unbound"
 ) -> None:
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     config_yaml = yaml.dump(
@@ -95,7 +130,9 @@ def _save_weixin_config_to_db(
             account_id=account_id,
             token=token,
             base_url=base_url,
-            timeout_seconds=timeout_seconds
+            timeout_seconds=timeout_seconds,
+            user_id=user_id,
+            binding_status=binding_status
         )
     )
     if skill:
@@ -178,7 +215,9 @@ def _build_qr_session(
         "poll_base_url": poll_base_url,
         "bot_type": bot_type,
         "created_at": time.time(),
-        "timeout_seconds": timeout_seconds
+        "timeout_seconds": timeout_seconds,
+        "confirmed_payload": None,
+        "confirmed_snapshot": _build_weixin_bound_snapshot()
     }
 
 
@@ -232,6 +271,11 @@ def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
     hint = str(payload.get("hint") or payload.get("tips") or payload.get("tip") or "").strip()
     account_id = str(payload.get("ilink_bot_id") or payload.get("account_id") or "").strip()
     token = str(payload.get("bot_token") or payload.get("token") or "").strip()
+    user_id = str(payload.get("ilink_user_id") or payload.get("user_id") or payload.get("openid") or "").strip()
+    binding_status = _normalize_binding_status(
+        payload.get("binding_status") or payload.get("bindingStatus") or payload.get("bind_status"),
+        user_id=user_id
+    )
     redirect_host = str(payload.get("redirect_host") or payload.get("redirectHost") or "").strip()
 
     if raw_status == "scaned_but_redirect":
@@ -258,6 +302,9 @@ def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
         normalized_payload["ticket"] = ticket
     if hint:
         normalized_payload["hint"] = hint
+    if user_id:
+        normalized_payload["user_id"] = user_id
+    normalized_payload["binding_status"] = binding_status
     if redirect_host:
         normalized_payload["redirect_host"] = redirect_host
     return normalized_payload
@@ -278,6 +325,8 @@ class WeixinConfigReq(BaseModel):
     token: str
     base_url: Optional[str] = DEFAULT_BASE_URL
     timeout_seconds: Optional[int] = 15
+    user_id: Optional[str] = ""
+    binding_status: Optional[str] = "unbound"
 
 
 class WeixinQrStartReq(BaseModel):
@@ -327,7 +376,9 @@ async def save_weixin_config(
         account_id=config.account_id,
         token=config.token,
         base_url=config.base_url or DEFAULT_BASE_URL,
-        timeout_seconds=_normalize_timeout_seconds(config.timeout_seconds, fallback=15)
+        timeout_seconds=_normalize_timeout_seconds(config.timeout_seconds, fallback=15),
+        user_id=str(config.user_id or "").strip(),
+        binding_status=_normalize_binding_status(config.binding_status, user_id=str(config.user_id or "").strip())
     )
     return {"message": "success"}
 
@@ -343,11 +394,14 @@ async def get_weixin_config(
     try:
         config_dict = yaml.safe_load(skill.config)
         wx_config = config_dict.get("weixin", {})
+        user_id = str(wx_config.get("user_id", "") or "").strip()
         return {
             "account_id": wx_config.get("account_id", ""),
             "token": wx_config.get("token", ""),
             "base_url": wx_config.get("base_url", DEFAULT_BASE_URL),
-            "timeout_seconds": wx_config.get("timeout_seconds", 15)
+            "timeout_seconds": wx_config.get("timeout_seconds", 15),
+            "user_id": user_id,
+            "binding_status": _normalize_binding_status(wx_config.get("binding_status"), user_id=user_id)
         }
     except:
         return _build_default_weixin_config()
@@ -481,6 +535,17 @@ async def weixin_qr_wait(
     adapter = WeixinSkillAdapter()
     timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
     poll_base_url = str(session.get("poll_base_url") or payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
+
+    confirmed_payload: Optional[Dict[str, Any]] = None
+    with WEIXIN_QR_SESSIONS_LOCK:
+        active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+        if active_session and isinstance(active_session.get("confirmed_payload"), dict):
+            confirmed_payload = dict(active_session["confirmed_payload"])
+
+    if confirmed_payload:
+        logger.info(f"[weixin_qr_wait] replay confirmed result for session={payload.session_key}")
+        return dict(confirmed_payload)
+
     try:
         status_result = await adapter.fetch_qrcode_status(
             base_url=poll_base_url,
@@ -529,23 +594,44 @@ async def weixin_qr_wait(
     if status == "confirmed":
         account_id = str(normalized_status_result.get("ilink_bot_id") or normalized_status_result.get("account_id") or "").strip()
         token = str(normalized_status_result.get("bot_token") or normalized_status_result.get("token") or "").strip()
+        user_id = str(normalized_status_result.get("user_id") or normalized_status_result.get("ilink_user_id") or "").strip()
+        binding_status = _normalize_binding_status(normalized_status_result.get("binding_status"), user_id=user_id)
         base_url = str(normalized_status_result.get("baseurl") or normalized_status_result.get("base_url") or poll_base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         previous_runtime = _build_runtime_config_from_db(db)
-        if account_id and token:
-            _save_weixin_config_to_db(
-                db=db,
-                account_id=account_id,
-                token=token,
-                base_url=base_url,
-                timeout_seconds=_normalize_timeout_seconds(previous_runtime.timeout_seconds, fallback=15)
+        if not account_id or not token:
+            logger.error(
+                f"[weixin_qr_wait] confirmed status missing credentials session={payload.session_key} "
+                f"account_id={account_id!r} token_present={bool(token)} user_id={user_id!r}"
             )
+            raise HTTPException(status_code=502, detail="扫码确认成功，但上游未返回完整的 account_id 或 token")
+        _save_weixin_config_to_db(
+            db=db,
+            account_id=account_id,
+            token=token,
+            base_url=base_url,
+            timeout_seconds=_normalize_timeout_seconds(previous_runtime.timeout_seconds, fallback=15),
+            user_id=user_id,
+            binding_status=binding_status
+        )
         response.update({
             "account_id": account_id,
             "token": token,
-            "base_url": base_url
+            "base_url": base_url,
+            "user_id": user_id,
+            "binding_status": binding_status
         })
         with WEIXIN_QR_SESSIONS_LOCK:
-            WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
+            active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+            if active_session is not None:
+                active_session["confirmed_payload"] = dict(response)
+                active_session["confirmed_snapshot"] = _build_weixin_bound_snapshot(
+                    account_id=account_id,
+                    user_id=user_id,
+                    binding_status=binding_status
+                )
+                active_session["created_at"] = time.time()
+            else:
+                logger.warning(f"[weixin_qr_wait] unable to persist confirmed payload for idempotent replay session={payload.session_key}")
         return response
 
     if status == "expired":
@@ -591,7 +677,9 @@ async def weixin_qr_exit(
             account_id="",
             token="",
             base_url=runtime.base_url or DEFAULT_BASE_URL,
-            timeout_seconds=_normalize_timeout_seconds(runtime.timeout_seconds, fallback=15)
+            timeout_seconds=_normalize_timeout_seconds(runtime.timeout_seconds, fallback=15),
+            user_id="",
+            binding_status="unbound"
         )
 
     return {"message": "success", "cleared_sessions": cleared_sessions}
@@ -851,111 +939,75 @@ async def get_skill_config(
         version=skill.version,
         description=skill.description,
         config=config_dict,
-        enabled=skill.enabled,
-        installed_at=skill.installed_at
+        enabled=skill.enabled
     )
 
 
-@router.post(
-    "/validate",
-    response_model=SkillValidationResult,
-    summary="校验技能配置",
-    description="校验上传或输入的技能 YAML 配置是否合法。"
-)
-async def validate_skill(
-    validation_request: SkillValidationRequest,
+@router.post("/validate", response_model=SkillValidationResult)
+async def validate_skill(skill_data: SkillValidationRequest):
+    validator = SkillValidator()
+    result = validator.validate_skill_data(skill_data.dict())
+    return result
+
+
+@router.post("/install-from-package")
+async def install_skill_from_package(
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """从ZIP包安装技能"""
     try:
-        yaml.safe_load(validation_request.yaml_content)
+        content = await file.read()
+        zip_file = zipfile.ZipFile(io.BytesIO(content))
+        
+        config_files = [name for name in zip_file.namelist() if name.endswith('skill.yaml') or name.endswith('skill.yml')]
+        if not config_files:
+            raise HTTPException(status_code=400, detail="技能包中未找到skill.yaml配置文件")
+        
+        config_content = zip_file.read(config_files[0]).decode('utf-8')
+        config_dict = yaml.safe_load(config_content)
+        
+        required_fields = ['name', 'version', 'description', 'adapter']
+        for field in required_fields:
+            if field not in config_dict:
+                raise HTTPException(status_code=400, detail=f"技能配置缺少必需字段: {field}")
+        
+        existing_skill = db.query(Skill).filter(Skill.name == config_dict['name']).first()
+        if existing_skill:
+            raise HTTPException(status_code=400, detail=f"技能 '{config_dict['name']}' 已存在")
+        
+        new_skill = Skill(
+            id=str(uuid.uuid4()),
+            name=config_dict['name'],
+            version=config_dict['version'],
+            description=config_dict['description'],
+            config=config_content,
+            category=config_dict.get('category', 'general'),
+            tags=json.dumps(config_dict.get('tags', [])),
+            dependencies=json.dumps(config_dict.get('dependencies', [])),
+            author=config_dict.get('author', 'unknown'),
+            enabled=True
+        )
+        
+        db.add(new_skill)
+        db.commit()
+        db.refresh(new_skill)
+        
+        logger.info(f"Skill '{new_skill.name}' installed from package by user '{current_user.username}'")
+        
+        return {
+            "message": f"技能 '{new_skill.name}' 安装成功",
+            "skill": new_skill
+        }
+        
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="无效的ZIP文件")
     except yaml.YAMLError as e:
-        return SkillValidationResult(
-            valid=False,
-            errors=[f"Invalid YAML format: {str(e)}"],
-            warnings=[]
-        )
-
-    try:
-        config = yaml.safe_load(validation_request.yaml_content)
-
-        if not isinstance(config, dict):
-            return SkillValidationResult(
-                valid=False,
-                errors=["Configuration must be a dictionary"],
-                warnings=[]
-            )
-
-        validator = SkillValidator()
-        result = validator.validate_skill_config(config)
-
-        return SkillValidationResult(
-            valid=result.valid,
-            errors=result.errors,
-            warnings=result.warnings,
-            skill_name=config.get("name"),
-            version=config.get("version")
-        )
-
+        logger.error(f"YAML parsing error in skill package: {str(e)}")
+        raise HTTPException(status_code=400, detail="技能配置文件格式错误")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error validating skill configuration: {str(e)}")
-        return SkillValidationResult(
-            valid=False,
-            errors=[f"Validation error: {str(e)}"],
-            warnings=[]
-        )
-
-@router.post("/parse-upload")
-async def parse_skill_upload(
-    file: UploadFile = File(...),
-    current_user = Depends(get_current_user)
-):
-    content = await file.read()
-    filename = file.filename
-    
-    skill_content = ""
-    
-    if not filename or filename.endswith('.zip') or filename.endswith('.skill'):
-        try:
-            with zipfile.ZipFile(io.BytesIO(content)) as z:
-                if 'SKILL.md' in z.namelist():
-                    skill_content = z.read('SKILL.md').decode('utf-8')
-                else:
-                    md_files = [f for f in z.namelist() if f.endswith('.md')]
-                    if md_files:
-                        skill_content = z.read(md_files[0]).decode('utf-8')
-                    else:
-                        raise HTTPException(status_code=400, detail="No SKILL.md found in the archive")
-        except zipfile.BadZipFile:
-            raise HTTPException(status_code=400, detail="Invalid zip file")
-    elif filename and (filename.endswith('.md') or filename.endswith('.yaml') or filename.endswith('.yml')):
-        skill_content = content.decode('utf-8')
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported file format")
-        
-    name = (filename or "").split('.')[0]
-    description = ""
-    instructions = skill_content
-    
-    try:
-        if skill_content.startswith('---'):
-            parts = skill_content.split('---', 2)
-            if len(parts) >= 3:
-                frontmatter = yaml.safe_load(parts[1])
-                name = frontmatter.get('name', name)
-                description = frontmatter.get('description', description)
-                instructions = parts[2].strip()
-        else:
-            data = yaml.safe_load(skill_content)
-            if isinstance(data, dict):
-                name = data.get('name', name)
-                description = data.get('description', description)
-                instructions = data.get('instructions', skill_content)
-    except Exception:
-        pass
-        
-    return {
-        "name": name,
-        "description": description,
-        "instructions": instructions
-    }
+        logger.error(f"Error installing skill from package: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"安装技能失败: {str(e)}")

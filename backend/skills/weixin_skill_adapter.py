@@ -57,6 +57,8 @@ class WeixinRuntimeConfig:
     plugin_root: str
     require_node: bool
     min_node_major: int
+    user_id: str = ""
+    binding_status: str = "unbound"
 
 
 class WeixinSkillAdapter:
@@ -90,6 +92,8 @@ class WeixinSkillAdapter:
         plugin_root = self._pick_value(section, runtime, "plugin_root", "pluginRoot") or self.default_plugin_root
         require_node_raw = self._pick_value(section, runtime, "require_node", "requireNode")
         min_node_major_raw = self._pick_value(section, runtime, "min_node_major", "minNodeMajor")
+        user_id = self._pick_value(section, runtime, "user_id", "userId")
+        binding_status_raw = self._pick_value(section, runtime, "binding_status", "bindingStatus")
 
         try:
             timeout_seconds = int(timeout_raw) if timeout_raw is not None else 15
@@ -104,6 +108,9 @@ class WeixinSkillAdapter:
         except (TypeError, ValueError):
             min_node_major = 22
 
+        normalized_user_id = str(user_id or "").strip()
+        normalized_binding_status = self._normalize_binding_status(binding_status_raw, normalized_user_id)
+
         return WeixinRuntimeConfig(
             account_id=str(account_id or "").strip(),
             token=str(token or "").strip(),
@@ -113,7 +120,9 @@ class WeixinSkillAdapter:
             timeout_seconds=timeout_seconds,
             plugin_root=str(plugin_root).strip(),
             require_node=require_node,
-            min_node_major=min_node_major
+            min_node_major=min_node_major,
+            user_id=normalized_user_id,
+            binding_status=normalized_binding_status
         )
 
     def check_health(self, config: WeixinRuntimeConfig) -> Dict[str, Any]:
@@ -155,6 +164,9 @@ class WeixinSkillAdapter:
                 "account_id": config.account_id,
                 "state_root": self.state_root,
                 "session_paused": self._is_session_paused(config.account_id),
+                "user_id": config.user_id,
+                "binding_status": config.binding_status,
+                "binding_ready": self._is_binding_ready(config),
             }
         }
 
@@ -480,7 +492,10 @@ class WeixinSkillAdapter:
                 "meta": {
                     "duration_seconds": round(time.time() - started, 6),
                     "account_id": runtime.account_id,
-                    "base_url": runtime.base_url
+                    "base_url": runtime.base_url,
+                    "user_id": runtime.user_id,
+                    "binding_status": runtime.binding_status,
+                    "binding_ready": self._is_binding_ready(runtime)
                 }
             }
         }
@@ -504,7 +519,10 @@ class WeixinSkillAdapter:
                 "meta": {
                     "duration_seconds": round(time.time() - started, 6),
                     "account_id": runtime.account_id,
-                    "base_url": runtime.base_url
+                    "base_url": runtime.base_url,
+                    "user_id": runtime.user_id,
+                    "binding_status": runtime.binding_status,
+                    "binding_ready": self._is_binding_ready(runtime)
                 }
             }
         }
@@ -589,6 +607,20 @@ class WeixinSkillAdapter:
             details={"account_id": account_id, "remaining_seconds": remaining_seconds, "errcode": SESSION_EXPIRED_ERRCODE},
             suggestions=["重新扫码登录或等待暂停窗口结束后重试"]
         )
+
+    @staticmethod
+    def _normalize_binding_status(binding_status: Optional[str], user_id: str = "") -> str:
+        normalized = str(binding_status or "").strip().lower()
+        if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
+            return "bound"
+        if normalized in {"pending", "confirming", "waiting"}:
+            return "pending"
+        if user_id:
+            return "bound"
+        return "unbound"
+
+    def _is_binding_ready(self, config: WeixinRuntimeConfig) -> bool:
+        return self._normalize_binding_status(config.binding_status, config.user_id) == "bound"
 
     @staticmethod
     def _sanitize_account_id(account_id: str) -> str:

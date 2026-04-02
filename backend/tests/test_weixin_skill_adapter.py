@@ -23,7 +23,9 @@ def _build_weixin_skill_config(token: str = "test-token"):
         "weixin": {
             "account_id": "test-account",
             "token": token,
-            "base_url": "https://ilinkai.weixin.qq.com"
+            "base_url": "https://ilinkai.weixin.qq.com",
+            "user_id": "wx-user-default",
+            "binding_status": "bound"
         }
     }
 
@@ -336,3 +338,14 @@ async def test_weixin_adapter_session_expired_pauses_followup_requests(monkeypat
 
     assert result["success"] is False
     assert result["error"]["code"] == "WEIXIN_SESSION_PAUSED"
+
+
+
+def test_weixin_adapter_map_skill_config_reads_binding_fields():
+    adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
+
+    runtime = adapter.map_skill_config(_build_weixin_skill_config())
+
+    assert runtime.user_id == "wx-user-default"
+    assert runtime.binding_status == "bound"
+    assert adapter._is_binding_ready(runtime) is True
