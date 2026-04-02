@@ -150,7 +150,9 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         account_id: 'test_account',
         token: 'test_token',
         base_url: 'https://test.weixin.qq.com',
-        timeout_seconds: 20
+        timeout_seconds: 20,
+        user_id: '',
+        binding_status: 'unbound'
       })
       expect(screen.getByText('微信通讯配置保存成功')).toBeInTheDocument()
     })
@@ -183,7 +185,9 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         account_id: 'test_account',
         token: 'test_token',
         base_url: 'https://test.weixin.qq.com',
-        timeout_seconds: 20
+        timeout_seconds: 20,
+        user_id: '',
+        binding_status: 'unbound'
       })
       expect(screen.getByText('测试连接成功！')).toBeInTheDocument()
       expect(screen.getByText('配置正常，微信适配器健康检查通过。')).toBeInTheDocument()
@@ -207,7 +211,72 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     })
   })
 
+  it('normalizes confirmed binding status from persisted config', async () => {
+    ;(weixinAPI.getConfig as any).mockResolvedValue({
+      data: {
+        account_id: 'test_account',
+        token: 'test_token',
+        base_url: 'https://test.weixin.qq.com',
+        timeout_seconds: 20,
+        user_id: 'persisted-confirmed-user',
+        binding_status: 'confirmed'
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('绑定结果：绑定成功，用户 ID：persisted-confirmed-user，绑定状态：bound')).toBeInTheDocument()
+    })
+  })
+
+  it('shows persisted binding result after loading config', async () => {
+    ;(weixinAPI.getConfig as any).mockResolvedValue({
+      data: {
+        account_id: 'test_account',
+        token: 'test_token',
+        base_url: 'https://test.weixin.qq.com',
+        timeout_seconds: 20,
+        user_id: 'persisted-user',
+        binding_status: 'bound'
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('绑定结果：绑定成功，用户 ID：persisted-user，绑定状态：bound')).toBeInTheDocument()
+    })
+  })
+
   it('starts qr login and auto handles confirmed status', async () => {
+    ;(weixinAPI.getConfig as any)
+      .mockResolvedValueOnce({
+        data: {
+          account_id: 'test_account',
+          token: 'test_token',
+          base_url: 'https://test.weixin.qq.com',
+          timeout_seconds: 20
+        }
+      })
+      .mockResolvedValueOnce({
+        data: {
+          account_id: 'wx_account',
+          token: 'wx_token',
+          base_url: 'https://ilinkai.weixin.qq.com',
+          timeout_seconds: 20,
+          user_id: 'wx-user-1',
+          binding_status: 'bound'
+        }
+      })
     ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
       data: {
         connected: true,
@@ -216,7 +285,9 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         message: '与微信连接成功',
         account_id: 'wx_account',
         token: 'wx_token',
-        base_url: 'https://ilinkai.weixin.qq.com'
+        base_url: 'https://ilinkai.weixin.qq.com',
+        user_id: 'wx-user-1',
+        binding_status: 'bound'
       }
     })
 
@@ -244,7 +315,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         qrcode: 'qrcode_1',
         base_url: 'https://test.weixin.qq.com'
       })
-      expect(screen.getByText('微信扫码登录成功，配置已自动更新')).toBeInTheDocument()
+      expect(screen.getByText('微信扫码登录成功，配置已自动更新；绑定成功，用户 ID：wx-user-1，绑定状态：bound')).toBeInTheDocument()
+      expect(screen.getByText('绑定结果：绑定成功，用户 ID：wx-user-1，绑定状态：bound')).toBeInTheDocument()
       expect(weixinAPI.getConfig).toHaveBeenCalledTimes(2)
     })
   })
