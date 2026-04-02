@@ -218,6 +218,8 @@ export interface WeixinConfig {
   token: string
   base_url: string
   timeout_seconds: number
+  user_id?: string
+  binding_status?: string
 }
 
 export interface WeixinHealthCheckResult {
@@ -264,6 +266,8 @@ export interface WeixinQrWaitResponse {
   token?: string
   base_url?: string
   redirect_host?: string
+  user_id?: string
+  binding_status?: string
 }
 
 export interface WeixinQrExitRequest {
