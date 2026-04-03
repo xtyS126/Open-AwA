@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { WeixinConfig, WeixinHealthCheckResult, WeixinQrStatus, weixinAPI } from '../services/api'
+import { WeixinConfig, WeixinHealthCheckResult, WeixinQrState, WeixinQrStatus, weixinAPI } from '../services/api'
 import './CommunicationPage.css'
 
 const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com'
@@ -24,6 +24,7 @@ function CommunicationPage() {
   const [qrRawUrl, setQrRawUrl] = useState('')
   const [qrImageLoadError, setQrImageLoadError] = useState('')
   const [qrStatus, setQrStatus] = useState<WeixinQrStatus>('idle')
+  const [qrState, setQrState] = useState<WeixinQrState | null>(null)
   const [qrStatusText, setQrStatusText] = useState('')
   const [qrStatusHint, setQrStatusHint] = useState('')
   const [qrBindingResult, setQrBindingResult] = useState<{ userId: string; bindingStatus: string } | null>(null)
@@ -48,7 +49,22 @@ function CommunicationPage() {
     return fallback
   }
 
-  const buildStatusText = (status: WeixinQrStatus, fallback: string) => {
+  const normalizeQrState = (rawState?: string, rawStatus?: string, connected?: boolean): WeixinQrState => {
+    const normalizedState = String(rawState || '').trim().toLowerCase()
+    const normalizedStatus = String(rawStatus || '').trim().toLowerCase()
+    if (normalizedState === 'success' || connected || normalizedStatus === 'confirmed') {
+      return 'success'
+    }
+    if (normalizedState === 'failed' || normalizedStatus === 'expired') {
+      return 'failed'
+    }
+    if (normalizedState === 'half_success' || normalizedStatus === 'scaned' || normalizedStatus === 'scanned' || normalizedStatus === 'scaned_but_redirect' || normalizedStatus === 'pending' || normalizedStatus === 'confirming') {
+      return 'half_success'
+    }
+    return 'pending'
+  }
+
+  const buildStatusText = (status: WeixinQrStatus, state: WeixinQrState, fallback: string) => {
     if (fallback.trim()) {
       return fallback
     }
@@ -56,13 +72,18 @@ function CommunicationPage() {
       return '已扫码，正在切换轮询节点'
     }
     if (status === 'scaned') {
-      return '已扫码，请在微信中确认'
+      return state === 'half_success'
+        ? '已扫码，请在微信中确认，系统正在等待后端补齐登录信息'
+        : '已扫码，请在微信中确认'
     }
     if (status === 'expired') {
       return '二维码已过期，请重新获取'
     }
     if (status === 'confirmed') {
       return '与微信连接成功'
+    }
+    if (state === 'half_success') {
+      return '扫码流程已推进，正在等待确认或补齐登录信息'
     }
     return '等待扫码中'
   }
@@ -96,6 +117,17 @@ function CommunicationPage() {
     return userId?.trim()
       ? `用户 ID：${userId.trim()}，绑定状态：${normalizedStatus}`
       : `绑定状态：${normalizedStatus}`
+  }
+
+  const buildNextStepText = (bindingStatus?: string, userId?: string) => {
+    const normalizedStatus = normalizeBindingStatus(bindingStatus, userId)
+    if (normalizedStatus === 'bound') {
+      return '后续流程：配置已自动回填。建议先点击“测试连接”确认链路可用，再进入聊天页验证消息收发。'
+    }
+    if (normalizedStatus === 'pending') {
+      return '后续流程：当前账号信息已回填，但绑定仍在处理中。请先测试连接，确认后再进入聊天页继续验证。'
+    }
+    return '后续流程：配置已更新，请先测试连接，确认账号状态无误后再进入聊天页继续后续操作。'
   }
 
   const normalizeQrStatus = (rawStatus: string, connected: boolean): WeixinQrStatus => {
@@ -212,7 +244,8 @@ function CommunicationPage() {
         base_url: qrPollBaseUrlRef.current || weixinConfig.base_url || undefined,
       })
       const data = response.data
-      const status = normalizeQrStatus(String(data.status || 'wait').toLowerCase(), Boolean(data.connected))
+      const state = normalizeQrState(data.state, data.status, Boolean(data.connected))
+      const status = normalizeQrStatus(String(data.status || 'wait').toLowerCase(), state === 'success' || Boolean(data.connected))
       const hintText = [data.hint, data.auth_id, data.ticket, data.redirect_host]
         .filter((item): item is string => Boolean(item && item.trim()))
         .join(' ')
@@ -224,11 +257,12 @@ function CommunicationPage() {
         setQrRawUrl(data.qrcode_url)
       }
 
+      setQrState(state)
       setQrStatus(status)
-      setQrStatusText(buildStatusText(status, data.message || ''))
+      setQrStatusText(buildStatusText(status, state, data.message || ''))
       setQrStatusHint(hintText)
 
-      if (status === 'confirmed' && data.connected) {
+      if (state === 'success' && (status === 'confirmed' || data.connected)) {
         const bindingStatus = normalizeBindingStatus(data.binding_status, data.user_id)
         setQrBindingResult({
           userId: data.user_id || '',
@@ -237,20 +271,22 @@ function CommunicationPage() {
         clearQrPolling()
         setQrSessionKey('')
         clearQrImage()
+        setQrState('success')
         setQrStatus('confirmed')
-        setQrStatusText(buildStatusText('confirmed', data.message || ''))
+        setQrStatusText(buildStatusText('confirmed', 'success', data.message || ''))
         setMessage({
           type: 'success',
-          text: `微信扫码登录成功，配置已自动更新；${buildBindingResultText(data.user_id, bindingStatus)}`
+          text: `微信扫码登录成功，配置已自动更新；${buildBindingResultText(data.user_id, bindingStatus)} ${buildNextStepText(bindingStatus, data.user_id)}`
         })
         await loadWeixinConfig()
         return false
       }
 
-      if (status === 'expired') {
+      if (state === 'failed' || status === 'expired') {
         clearQrPolling()
         setQrSessionKey('')
         clearQrImage()
+        setQrState('failed')
         setMessage({ type: 'error', text: '二维码已过期，请重新获取二维码' })
         return false
       }
@@ -268,6 +304,7 @@ function CommunicationPage() {
     setStartingQrLogin(true)
     clearQrPolling()
     setQrStatus('idle')
+    setQrState(null)
     setQrStatusText('')
     setQrBindingResult(null)
     clearQrImage()
@@ -279,11 +316,13 @@ function CommunicationPage() {
         force: true
       })
       const qrValue = response.data.qrcode || response.data.qrcode_url || ''
+      const nextState = normalizeQrState(response.data.state, response.data.status, false)
       setQrSessionKey(response.data.session_key)
       setQrRawUrl(response.data.qrcode_url || '')
       updateQrCodeValue(qrValue)
       updateQrPollBaseUrl(weixinConfig.base_url || DEFAULT_BASE_URL)
       const qrImageReady = await loadQrImage(response.data.session_key, qrValue || undefined)
+      setQrState(nextState)
       setQrStatus('wait')
       setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
       setQrStatusHint('')
@@ -307,6 +346,7 @@ function CommunicationPage() {
       clearQrPolling()
       clearQrImage()
       setQrStatus('idle')
+      setQrState(null)
       setQrStatusText('')
       return
     }
@@ -320,6 +360,7 @@ function CommunicationPage() {
       setQrSessionKey('')
       clearQrImage()
       setQrStatus('idle')
+      setQrState(null)
       setQrStatusText('')
     }
   }
@@ -471,13 +512,18 @@ function CommunicationPage() {
                   )}
                   {(qrStatusText || qrStatus !== 'idle') && (
                     <p className="communication-qr-status">
-                      当前状态：{qrStatusText || qrStatus}
+                      当前阶段：{qrState || 'pending'}；当前状态：{qrStatusText || qrStatus}
                       {qrStatusHint ? `（${qrStatusHint}）` : ''}
                     </p>
                   )}
                   {qrBindingResult && (
                     <p className="communication-qr-status">
                       绑定结果：{buildBindingResultText(qrBindingResult.userId, qrBindingResult.bindingStatus)}
+                    </p>
+                  )}
+                  {qrState === 'success' && qrBindingResult && (
+                    <p className="communication-qr-status">
+                      {buildNextStepText(qrBindingResult.bindingStatus, qrBindingResult.userId)}
                     </p>
                   )}
                 </div>

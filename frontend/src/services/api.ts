@@ -236,9 +236,13 @@ export interface WeixinQrStartRequest {
   timeout_seconds?: number
 }
 
+export type WeixinQrState = 'pending' | 'half_success' | 'success' | 'failed'
+
 export type WeixinQrStatus = 'idle' | 'wait' | 'scaned' | 'scaned_but_redirect' | 'expired' | 'confirmed'
 
 export interface WeixinQrStartResponse {
+  success?: boolean
+  state?: WeixinQrState
   message: string
   session_key: string
   status: Exclude<WeixinQrStatus, 'idle' | 'scaned_but_redirect' | 'expired' | 'confirmed'> | 'wait'
@@ -254,6 +258,8 @@ export interface WeixinQrWaitRequest {
 }
 
 export interface WeixinQrWaitResponse {
+  success?: boolean
+  state?: WeixinQrState
   connected: boolean
   session_key: string
   status: Exclude<WeixinQrStatus, 'idle'>
