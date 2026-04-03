@@ -58,6 +58,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     })
     ;(weixinAPI.startQrLogin as any).mockResolvedValue({
       data: {
+        success: true,
+        state: 'pending',
         message: '使用微信扫描以下二维码，以完成连接。',
         session_key: 'session_1',
         status: 'wait',
@@ -67,6 +69,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     })
     ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
       data: {
+        success: true,
+        state: 'pending',
         connected: false,
         session_key: 'session_1',
         status: 'wait',
@@ -257,7 +261,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     })
   })
 
-  it('starts qr login and auto handles confirmed status', async () => {
+  it('starts qr login and auto handles confirmed success state with next-step guidance', async () => {
     ;(weixinAPI.getConfig as any)
       .mockResolvedValueOnce({
         data: {
@@ -279,6 +283,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
       })
     ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
       data: {
+        success: true,
+        state: 'success',
         connected: true,
         session_key: 'session_1',
         status: 'confirmed',
@@ -315,18 +321,21 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         qrcode: 'qrcode_1',
         base_url: 'https://test.weixin.qq.com'
       })
-      expect(screen.getByText('微信扫码登录成功，配置已自动更新；绑定成功，用户 ID：wx-user-1，绑定状态：bound')).toBeInTheDocument()
+      expect(screen.getByText('微信扫码登录成功，配置已自动更新；绑定成功，用户 ID：wx-user-1，绑定状态：bound 后续流程：配置已自动回填。建议先点击“测试连接”确认链路可用，再进入聊天页验证消息收发。')).toBeInTheDocument()
       expect(screen.getByText('绑定结果：绑定成功，用户 ID：wx-user-1，绑定状态：bound')).toBeInTheDocument()
+      expect(screen.getByText('后续流程：配置已自动回填。建议先点击“测试连接”确认链路可用，再进入聊天页验证消息收发。')).toBeInTheDocument()
       expect(weixinAPI.getConfig).toHaveBeenCalledTimes(2)
     })
   })
 
-  it('keeps polling on pending qr status', async () => {
+  it('shows half-success state from backend state field and keeps polling', async () => {
     ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
       data: {
+        success: true,
+        state: 'half_success',
         connected: false,
         session_key: 'session_1',
-        status: 'pending',
+        status: 'scaned',
         message: 'waiting for confirm',
         auth_id: 'auth_123'
       }
@@ -346,7 +355,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('img')).toBeInTheDocument()
-      expect(screen.getByText((_, element) => element?.textContent === '当前状态：waiting for confirm（auth_123）')).toBeInTheDocument()
+      expect(screen.getByText((_, element) => element?.textContent === '当前阶段：half_success；当前状态：waiting for confirm（auth_123）')).toBeInTheDocument()
     })
   })
 
@@ -354,6 +363,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     ;(weixinAPI.waitQrLogin as any)
       .mockResolvedValueOnce({
         data: {
+          success: true,
+          state: 'half_success',
           connected: false,
           session_key: 'session_1',
           status: 'scaned_but_redirect',
@@ -364,6 +375,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
       })
       .mockResolvedValueOnce({
         data: {
+          success: true,
+          state: 'pending',
           connected: false,
           session_key: 'session_1',
           status: 'wait',
@@ -385,7 +398,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     fireEvent.click(screen.getByText('获取登录二维码'))
 
     await waitFor(() => {
-      expect(screen.getByText((_, element) => element?.textContent === '当前状态：已扫码，正在切换轮询节点（redirect.weixin.qq.com）')).toBeInTheDocument()
+      expect(screen.getByText((_, element) => element?.textContent === '当前阶段：half_success；当前状态：已扫码，正在切换轮询节点（redirect.weixin.qq.com）')).toBeInTheDocument()
     })
 
     await waitFor(() => {

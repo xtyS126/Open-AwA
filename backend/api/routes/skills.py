@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from db.models import get_db, Skill, ExperienceExtractionLog
@@ -14,6 +14,7 @@ import zipfile
 import io
 import time
 import threading
+import re
 from urllib.parse import parse_qs, urlparse
 
 
@@ -174,8 +175,88 @@ def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
     )
 
 
+def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
+    if isinstance(payload, dict):
+        return dict(payload)
+    if payload is None:
+        return {}
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8", errors="ignore")
+
+    text = str(payload or "").strip()
+    if not text:
+        return {}
+
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
+        normalized = dict(parsed)
+        normalized.setdefault("raw_text", text)
+        return normalized
+    if isinstance(parsed, str) and parsed.strip() and parsed.strip() != text:
+        normalized = _coerce_weixin_response_payload(parsed)
+        if normalized:
+            normalized.setdefault("raw_text", text)
+            return normalized
+
+    query_candidate = text
+    if "://" in text or text.startswith("/"):
+        try:
+            parsed_url = urlparse(text)
+            if parsed_url.query:
+                query_candidate = parsed_url.query
+        except Exception:
+            query_candidate = text
+
+    try:
+        form_values = parse_qs(query_candidate, keep_blank_values=True)
+    except Exception:
+        form_values = {}
+    if form_values:
+        normalized = {
+            str(key): values[-1] if isinstance(values, list) and values else ""
+            for key, values in form_values.items()
+        }
+        normalized.setdefault("raw_text", text)
+        if "qrcode" not in normalized and text.startswith(("http://", "https://")):
+            normalized["qrcode_url"] = text
+        return normalized
+
+    normalized_pairs: Dict[str, Any] = {}
+    for segment in re.split(r"[\n\r,;]+", text):
+        item = str(segment or "").strip()
+        if not item:
+            continue
+        separator = None
+        if "=" in item:
+            separator = "="
+        elif ":" in item and "://" not in item:
+            separator = ":"
+        if not separator:
+            continue
+        key, value = item.split(separator, 1)
+        key = str(key or "").strip()
+        value = str(value or "").strip()
+        if key:
+            normalized_pairs[key] = value
+    if normalized_pairs:
+        normalized_pairs.setdefault("raw_text", text)
+        return normalized_pairs
+
+    lowered = text.lower()
+    if lowered in {"wait", "scaned", "scanned", "scaned_but_redirect", "confirmed", "expired", "pending", "confirming", "timeout", "success", "ok", "done"}:
+        return {"status": text, "raw_text": text}
+    if text.startswith(("http://", "https://")):
+        return {"qrcode_url": text, "raw_text": text}
+    return {"raw_text": text}
+
+
 def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
-    payload = result.get("data") if isinstance(result.get("data"), dict) else result
+    payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
+    payload = _coerce_weixin_response_payload(payload_source)
+    raw_text = str(payload.get("raw_text") or "").strip()
     qrcode = str(
         payload.get("qrcode")
         or payload.get("qr_code")
@@ -196,6 +277,8 @@ def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
             qrcode = str(query_qrcode or "").strip()
         except Exception:
             qrcode = ""
+    if not qrcode and raw_text and not qrcode_url:
+        qrcode = raw_text
     return {"qrcode": qrcode, "qrcode_url": qrcode_url}
 
 
@@ -221,8 +304,79 @@ def _build_qr_session(
     }
 
 
+WEIXIN_QR_STATE_MAP = {
+    "wait": "pending",
+    "scaned": "half_success",
+    "scaned_but_redirect": "half_success",
+    "expired": "failed",
+    "confirmed": "success"
+}
+
+
+WEIXIN_QR_MESSAGE_MAP = {
+    "wait": "等待扫码中",
+    "scaned": "已扫码，请在微信中确认",
+    "scaned_but_redirect": "已扫码，正在切换轮询节点",
+    "expired": "二维码已过期，请重新获取",
+    "confirmed": "与微信连接成功"
+}
+
+
+def _build_qr_response(
+    *,
+    session_key: str,
+    status: str,
+    message: str = "",
+    connected: bool = False,
+    qrcode: str = "",
+    qrcode_url: str = "",
+    redirect_host: str = "",
+    base_url: str = "",
+    account_id: str = "",
+    token: str = "",
+    user_id: str = "",
+    binding_status: str = "unbound",
+    auth_id: str = "",
+    ticket: str = "",
+    hint: str = ""
+) -> Dict[str, Any]:
+    normalized_status = str(status or "wait").strip().lower() or "wait"
+    normalized_message = str(message or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")).strip() or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")
+    normalized_user_id = str(user_id or "").strip()
+    normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
+    return {
+        "success": True,
+        "connected": bool(connected),
+        "state": WEIXIN_QR_STATE_MAP.get(normalized_status, "pending"),
+        "status": normalized_status,
+        "session_key": str(session_key or "").strip(),
+        "message": normalized_message,
+        "qrcode": str(qrcode or "").strip(),
+        "qrcode_url": str(qrcode_url or "").strip(),
+        "redirect_host": str(redirect_host or "").strip(),
+        "base_url": str(base_url or "").strip(),
+        "account_id": str(account_id or "").strip(),
+        "token": str(token or "").strip(),
+        "user_id": normalized_user_id,
+        "binding_status": normalized_binding_status,
+        "auth_id": str(auth_id or "").strip(),
+        "ticket": str(ticket or "").strip(),
+        "hint": str(hint or "").strip()
+    }
+
+
+def _build_qr_logger(session_key: str, event: str, **fields: Any):
+    return logger.bind(
+        feature="weixin_qr",
+        session_key=str(session_key or "").strip(),
+        event=event,
+        **fields
+    )
+
+
 def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
-    payload = result.get("data") if isinstance(result.get("data"), dict) else result
+    payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
+    payload = _coerce_weixin_response_payload(payload_source)
     code = payload.get("errcode")
     if code is None:
         code = payload.get("code")
@@ -234,8 +388,9 @@ def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
         or payload.get("error")
         or payload.get("retmsg")
         or payload.get("detail")
+        or payload.get("raw_text")
     )
-    detail = "二维码接口返回异常"
+    detail = "?????????"
     if isinstance(code, (int, str)) and str(code).strip() not in {"", "0"}:
         detail += f" (code={code})"
     if isinstance(message, str) and message.strip():
@@ -245,11 +400,9 @@ def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
     return detail
 
 
-
 def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
-    payload = status_result.get("data") if isinstance(status_result.get("data"), dict) else status_result
-    if not isinstance(payload, dict):
-        payload = {"raw_text": str(payload or "")}
+    payload_source = status_result.get("data") if isinstance(status_result, dict) and status_result.get("data") is not None else status_result
+    payload = _coerce_weixin_response_payload(payload_source)
 
     raw_status = str(
         payload.get("status")
@@ -348,8 +501,46 @@ class WeixinQrExitReq(BaseModel):
     session_key: Optional[str] = None
     clear_config: Optional[bool] = True
 
+
+def _coerce_weixin_payload_dict(raw_body: Any) -> Dict[str, Any]:
+    if isinstance(raw_body, dict):
+        return raw_body
+    if raw_body is None:
+        return {}
+
+    if isinstance(raw_body, bytes):
+        raw_body = raw_body.decode("utf-8", errors="ignore")
+    text = str(raw_body or "").strip()
+    if not text:
+        return {}
+
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+
+    try:
+        form_values = parse_qs(text, keep_blank_values=True)
+    except Exception:
+        form_values = {}
+    if form_values:
+        normalized: Dict[str, Any] = {}
+        for key, values in form_values.items():
+            normalized[str(key)] = values[-1] if isinstance(values, list) and values else ""
+        return normalized
+
+    raise HTTPException(status_code=422, detail="请求载荷格式无效，仅支持对象、JSON 字符串或表单字符串")
+
+
+async def _parse_weixin_request_payload(request: Request) -> Dict[str, Any]:
+    raw_body = await request.body()
+    return _coerce_weixin_payload_dict(raw_body)
+
 @router.post("/weixin/health-check")
-async def weixin_health_check(config: WeixinConfigReq):
+async def weixin_health_check(request: Request):
+    config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     adapter = WeixinSkillAdapter()
     runtime_config = WeixinRuntimeConfig(
         account_id=config.account_id,
@@ -367,10 +558,11 @@ async def weixin_health_check(config: WeixinConfigReq):
 
 @router.post("/weixin/config")
 async def save_weixin_config(
-    config: WeixinConfigReq,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     _save_weixin_config_to_db(
         db=db,
         account_id=config.account_id,
@@ -409,10 +601,11 @@ async def get_weixin_config(
 
 @router.post("/weixin/qr/start")
 async def weixin_qr_start(
-    payload: WeixinQrStartReq,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    payload = WeixinQrStartReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     adapter = WeixinSkillAdapter()
     runtime = _build_runtime_config_from_db(db)
@@ -421,13 +614,15 @@ async def weixin_qr_start(
     with WEIXIN_QR_SESSIONS_LOCK:
         existing = WEIXIN_QR_SESSIONS.get(session_key)
     if existing and not payload.force:
-        return {
-            "message": "二维码已就绪，请使用微信扫描。",
-            "session_key": session_key,
-            "status": "wait",
-            "qrcode": existing.get("qrcode", ""),
-            "qrcode_url": existing.get("qrcode_url", "")
-        }
+        _build_qr_logger(session_key, "qr_reuse", poll_base_url=existing.get("poll_base_url", "")).info("reusing active weixin qr session")
+        return _build_qr_response(
+            session_key=session_key,
+            status="wait",
+            message="二维码已就绪，请使用微信扫描。",
+            qrcode=existing.get("qrcode", ""),
+            qrcode_url=existing.get("qrcode_url", ""),
+            base_url=existing.get("poll_base_url", "")
+        )
 
     try:
         timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=runtime.timeout_seconds)
@@ -442,12 +637,12 @@ async def weixin_qr_start(
     except WeixinAdapterError as exc:
         raise HTTPException(status_code=502, detail=exc.message)
 
-    logger.debug(f"[weixin_qr_start] upstream raw result: {json.dumps(qr_result, ensure_ascii=False)[:600]}")
+    _build_qr_logger(session_key, "qr_start_upstream_result", poll_base_url=poll_base_url, bot_type=bot_type, timeout_seconds=timeout_seconds, upstream_preview=json.dumps(qr_result, ensure_ascii=False)[:600]).debug("received weixin qr upstream result")
     extracted = _extract_qrcode_fields(qr_result)
     qrcode = extracted["qrcode"]
     qrcode_url = extracted["qrcode_url"]
     if not qrcode:
-        logger.warning(f"[weixin_qr_start] qrcode field empty, upstream result: {qr_result}")
+        _build_qr_logger(session_key, "qr_start_missing_qrcode", upstream_preview=json.dumps(qr_result, ensure_ascii=False)[:600]).warning("missing qrcode in upstream response")
         raise HTTPException(status_code=502, detail=_build_qrcode_upstream_error_detail(qr_result))
 
     with WEIXIN_QR_SESSIONS_LOCK:
@@ -460,13 +655,15 @@ async def weixin_qr_start(
             timeout_seconds=timeout_seconds
         )
 
-    return {
-        "message": "使用微信扫描以下二维码，以完成连接。",
-        "session_key": session_key,
-        "status": "wait",
-        "qrcode": qrcode,
-        "qrcode_url": qrcode_url
-    }
+    _build_qr_logger(session_key, "qr_started", poll_base_url=poll_base_url, has_qrcode_url=bool(qrcode_url)).info("weixin qr session started")
+    return _build_qr_response(
+        session_key=session_key,
+        status="wait",
+        message="使用微信扫描以下二维码，以完成连接。",
+        qrcode=qrcode,
+        qrcode_url=qrcode_url,
+        base_url=poll_base_url
+    )
 
 
 @router.get("/weixin/qr/image")
@@ -504,10 +701,11 @@ async def weixin_qr_image(
 
 @router.post("/weixin/qr/wait")
 async def weixin_qr_wait(
-    payload: WeixinQrWaitReq,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    payload = WeixinQrWaitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
     with WEIXIN_QR_SESSIONS_LOCK:
@@ -543,7 +741,7 @@ async def weixin_qr_wait(
             confirmed_payload = dict(active_session["confirmed_payload"])
 
     if confirmed_payload:
-        logger.info(f"[weixin_qr_wait] replay confirmed result for session={payload.session_key}")
+        _build_qr_logger(payload.session_key, "confirmed_replay").info("replaying confirmed weixin qr result")
         return dict(confirmed_payload)
 
     try:
@@ -556,30 +754,46 @@ async def weixin_qr_wait(
         detail = str(exc.message or "")
         transient_keywords = ["timeout", "超时", "temporarily", "temporary", "connection", "network", "远程主机", "断开", "reset"]
         if any(keyword in detail.lower() for keyword in ["timeout", "temporarily", "temporary", "connection", "network", "reset"]) or any(keyword in detail for keyword in ["超时", "远程主机", "断开"]):
-            logger.warning(f"[weixin_qr_wait] transient upstream error fallback to wait: {detail}")
+            _build_qr_logger(payload.session_key, "transient_upstream_error", poll_base_url=poll_base_url, detail=detail).warning("transient upstream error, fallback to wait")
             status_result = {"status": "wait"}
         else:
             raise HTTPException(status_code=502, detail=exc.message)
 
     normalized_status_result = _normalize_qr_wait_status(status_result)
     status = str(normalized_status_result.get("status") or "wait").strip().lower()
-    message_map = {
-        "wait": "等待扫码中",
-        "scaned": "已扫码，请在微信中确认",
-        "scaned_but_redirect": "已扫码，正在切换轮询节点",
-        "expired": "二维码已过期，请重新获取",
-        "confirmed": "与微信连接成功"
-    }
-
-    response: Dict[str, Any] = {
-        "connected": status == "confirmed",
-        "session_key": payload.session_key,
-        "status": status,
-        "message": str(normalized_status_result.get("message") or message_map.get(status, "login status updating")).strip() or message_map.get(status, "login status updating")
-    }
+    base_response = _build_qr_response(
+        session_key=payload.session_key,
+        status=status,
+        message=str(normalized_status_result.get("message") or "").strip(),
+        connected=status == "confirmed",
+        qrcode=qrcode,
+        qrcode_url=session.get("qrcode_url", ""),
+        base_url=poll_base_url,
+        account_id=str(normalized_status_result.get("ilink_bot_id") or normalized_status_result.get("account_id") or "").strip(),
+        token=str(normalized_status_result.get("bot_token") or normalized_status_result.get("token") or "").strip(),
+        user_id=str(normalized_status_result.get("user_id") or normalized_status_result.get("ilink_user_id") or "").strip(),
+        binding_status=str(normalized_status_result.get("binding_status") or "unbound").strip(),
+        auth_id=str(normalized_status_result.get("auth_id") or "").strip(),
+        ticket=str(normalized_status_result.get("ticket") or "").strip(),
+        hint=str(normalized_status_result.get("hint") or "").strip(),
+        redirect_host=str(normalized_status_result.get("redirect_host") or "").strip()
+    )
+    _build_qr_logger(
+        payload.session_key,
+        "status_polled",
+        poll_base_url=poll_base_url,
+        status=status,
+        state=base_response["state"],
+        connected=base_response["connected"],
+        redirect_host=base_response["redirect_host"],
+        has_account_id=bool(base_response["account_id"]),
+        has_token=bool(base_response["token"]),
+        has_user_id=bool(base_response["user_id"])
+    ).info("weixin qr status updated")
 
     if status == "scaned_but_redirect":
-        redirect_host = str(normalized_status_result.get("redirect_host") or "").strip()
+        redirect_host = base_response["redirect_host"]
+        response = dict(base_response)
         if redirect_host:
             poll_base_url = f"https://{redirect_host}"
             with WEIXIN_QR_SESSIONS_LOCK:
@@ -587,23 +801,45 @@ async def weixin_qr_wait(
                 if active_session:
                     active_session["poll_base_url"] = poll_base_url
                     active_session["created_at"] = time.time()
-            response["redirect_host"] = redirect_host
             response["base_url"] = poll_base_url
+        _build_qr_logger(payload.session_key, "redirect_updated", redirect_host=redirect_host, base_url=response["base_url"]).info("weixin qr polling host redirected")
         return response
 
     if status == "confirmed":
-        account_id = str(normalized_status_result.get("ilink_bot_id") or normalized_status_result.get("account_id") or "").strip()
-        token = str(normalized_status_result.get("bot_token") or normalized_status_result.get("token") or "").strip()
-        user_id = str(normalized_status_result.get("user_id") or normalized_status_result.get("ilink_user_id") or "").strip()
-        binding_status = _normalize_binding_status(normalized_status_result.get("binding_status"), user_id=user_id)
+        account_id = base_response["account_id"]
+        token = base_response["token"]
+        user_id = base_response["user_id"]
+        binding_status = base_response["binding_status"]
         base_url = str(normalized_status_result.get("baseurl") or normalized_status_result.get("base_url") or poll_base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         previous_runtime = _build_runtime_config_from_db(db)
         if not account_id or not token:
-            logger.error(
-                f"[weixin_qr_wait] confirmed status missing credentials session={payload.session_key} "
-                f"account_id={account_id!r} token_present={bool(token)} user_id={user_id!r}"
+            response = _build_qr_response(
+                session_key=payload.session_key,
+                status="scaned",
+                message="扫码已确认，正在等待上游返回完整凭据",
+                connected=False,
+                qrcode=base_response["qrcode"],
+                qrcode_url=base_response["qrcode_url"],
+                redirect_host=base_response["redirect_host"],
+                base_url=base_url,
+                account_id=account_id,
+                token=token,
+                user_id=user_id,
+                binding_status=binding_status,
+                auth_id=base_response["auth_id"],
+                ticket=base_response["ticket"],
+                hint=base_response["hint"]
             )
-            raise HTTPException(status_code=502, detail="扫码确认成功，但上游未返回完整的 account_id 或 token")
+            _build_qr_logger(
+                payload.session_key,
+                "confirmed_missing_credentials",
+                account_id=account_id,
+                token_present=bool(token),
+                user_id=user_id,
+                binding_status=binding_status,
+                state=response["state"]
+            ).warning("confirmed status missing credentials, downgraded to recoverable half-success state")
+            return response
         _save_weixin_config_to_db(
             db=db,
             account_id=account_id,
@@ -613,13 +849,8 @@ async def weixin_qr_wait(
             user_id=user_id,
             binding_status=binding_status
         )
-        response.update({
-            "account_id": account_id,
-            "token": token,
-            "base_url": base_url,
-            "user_id": user_id,
-            "binding_status": binding_status
-        })
+        response = dict(base_response)
+        response["base_url"] = base_url
         with WEIXIN_QR_SESSIONS_LOCK:
             active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
             if active_session is not None:
@@ -631,34 +862,29 @@ async def weixin_qr_wait(
                 )
                 active_session["created_at"] = time.time()
             else:
-                logger.warning(f"[weixin_qr_wait] unable to persist confirmed payload for idempotent replay session={payload.session_key}")
+                _build_qr_logger(payload.session_key, "confirmed_payload_persist_skipped").warning("unable to persist confirmed payload for idempotent replay")
+        _build_qr_logger(payload.session_key, "confirmed", account_id=account_id, base_url=base_url, user_id=user_id, binding_status=binding_status).info("weixin qr login confirmed")
         return response
 
     if status == "expired":
         with WEIXIN_QR_SESSIONS_LOCK:
             WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
-        return response
+        _build_qr_logger(payload.session_key, "expired").warning("weixin qr session expired")
+        return dict(base_response)
 
     if status == "scaned":
-        response["qrcode_url"] = session.get("qrcode_url", "")
-        auth_id = str(normalized_status_result.get("auth_id") or "").strip()
-        ticket = str(normalized_status_result.get("ticket") or "").strip()
-        hint = str(normalized_status_result.get("hint") or "").strip()
-        if auth_id:
-            response["auth_id"] = auth_id
-        if ticket:
-            response["ticket"] = ticket
-        if hint:
-            response["hint"] = hint
-    return response
+        _build_qr_logger(payload.session_key, "half_success", auth_id=base_response["auth_id"], ticket=base_response["ticket"], has_hint=bool(base_response["hint"])).info("weixin qr reached half-success state")
+        return dict(base_response)
+    return dict(base_response)
 
 
 @router.post("/weixin/qr/exit")
 async def weixin_qr_exit(
-    payload: WeixinQrExitReq,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    payload = WeixinQrExitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     cleared_sessions = 0
     if payload.session_key:
