@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -59,6 +60,16 @@ async def get_records_preview(
         .all()
     )
 
+    logger.bind(
+        event="conversation_records_preview",
+        module="conversation",
+        action="records_preview",
+        status="success",
+        user_id=current_user.id,
+        count=len(records),
+        limit=limit,
+    ).info("conversation records preview loaded")
+
     return {
         "records": [_to_dict(item) for item in records],
         "count": len(records),
@@ -81,6 +92,16 @@ async def export_records_jsonl(
         query = query.filter(ConversationRecord.timestamp <= end_time)
 
     query = query.order_by(ConversationRecord.timestamp.asc())
+
+    logger.bind(
+        event="conversation_export_started",
+        module="conversation",
+        action="export_jsonl",
+        status="start",
+        user_id=current_user.id,
+        has_start_time=bool(start_time),
+        has_end_time=bool(end_time),
+    ).info("conversation export started")
 
     def iter_jsonl():
         for record in query.yield_per(200):
@@ -113,6 +134,16 @@ async def cleanup_records(
     )
     db.commit()
 
+    logger.bind(
+        event="conversation_cleanup_done",
+        module="conversation",
+        action="cleanup",
+        status="success",
+        user_id=current_user.id,
+        days=days,
+        deleted_count=deleted,
+    ).info("conversation cleanup completed")
+
     return {
         "success": True,
         "deleted_count": deleted,
@@ -126,8 +157,18 @@ async def cleanup_records(
     description="返回当前用户的会话数据采集开关状态与运行时统计。"
 )
 async def get_collection_status(current_user: User = Depends(get_current_user)):
+    enabled = conversation_recorder.is_collection_enabled(current_user=current_user)
+    logger.bind(
+        event="conversation_collection_status",
+        module="conversation",
+        action="get_collection_status",
+        status="success",
+        user_id=current_user.id,
+        enabled=enabled,
+    ).info("conversation collection status loaded")
+
     return {
-        "enabled": conversation_recorder.is_collection_enabled(current_user=current_user),
+        "enabled": enabled,
         "stats": conversation_recorder.get_runtime_stats(),
     }
 
@@ -143,7 +184,24 @@ async def update_collection_status(
 ):
     updated = conversation_recorder.set_collection_enabled(enabled=enabled, current_user=current_user)
     if not updated:
+        logger.bind(
+            event="conversation_collection_status_update_failed",
+            module="conversation",
+            action="set_collection_status",
+            status="failure",
+            user_id=current_user.id,
+            enabled=enabled,
+        ).warning("conversation collection status update failed")
         raise HTTPException(status_code=400, detail="更新收集开关失败")
+
+    logger.bind(
+        event="conversation_collection_status_updated",
+        module="conversation",
+        action="set_collection_status",
+        status="success",
+        user_id=current_user.id,
+        enabled=enabled,
+    ).info("conversation collection status updated")
 
     return {
         "success": True,

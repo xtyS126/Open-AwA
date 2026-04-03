@@ -1,14 +1,17 @@
+from datetime import timedelta
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from loguru import logger
 from sqlalchemy.orm import Session
-from datetime import timedelta
-from db.models import get_db, User
-from db.models import User as UserModel
-from api.schemas import UserCreate, UserResponse, Token
+
 from api.dependencies import get_current_user
+from api.schemas import UserCreate, UserResponse, Token
 from config.security import verify_password, get_password_hash, create_access_token
 from config.settings import settings
-import uuid
+from db.models import User, get_db
+from db.models import User as UserModel
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -18,6 +21,13 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(UserModel).filter(UserModel.username == user.username).first()
     if db_user:
+        logger.bind(
+            event="auth_register_conflict",
+            module="auth",
+            action="register",
+            status="failure",
+            username=user.username,
+        ).warning("username already registered")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
@@ -32,6 +42,15 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    logger.bind(
+        event="auth_register_success",
+        module="auth",
+        action="register",
+        status="success",
+        user_id=new_user.id,
+        username=new_user.username,
+    ).info("user registered")
 
     return new_user
 
@@ -48,6 +67,13 @@ async def login(
 ):
     user = db.query(UserModel).filter(UserModel.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
+        logger.bind(
+            event="auth_login_failed",
+            module="auth",
+            action="login",
+            status="failure",
+            username=form_data.username,
+        ).warning("login failed")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -59,6 +85,15 @@ async def login(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
 
+    logger.bind(
+        event="auth_login_success",
+        module="auth",
+        action="login",
+        status="success",
+        user_id=user.id,
+        username=user.username,
+    ).info("login succeeded")
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -69,4 +104,12 @@ async def login(
     description="返回当前访问令牌对应的用户资料。"
 )
 async def get_me(current_user: User = Depends(get_current_user)):
+    logger.bind(
+        event="auth_me",
+        module="auth",
+        action="me",
+        status="success",
+        user_id=current_user.id,
+        username=current_user.username,
+    ).info("fetched current user")
     return current_user

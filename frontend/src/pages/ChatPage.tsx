@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatAPI } from '../services/api'
 import { modelsAPI, ModelConfiguration } from '../services/modelsApi'
 import { useChatStore } from '../stores/chatStore'
+import { appLogger } from '../services/logger'
 import './ChatPage.css'
 
 function ChatPage() {
@@ -63,7 +64,14 @@ function ChatPage() {
       
       setRetryCount(0)
     } catch (err) {
-      console.error('Failed to load configurations:', err)
+      appLogger.error({
+        event: 'chat_model_load',
+        module: 'chat_page',
+        action: 'load_configurations',
+        status: 'failure',
+        message: 'failed to load model configurations',
+        extra: { error: err instanceof Error ? err.message : String(err) },
+      })
       setError('加载模型失败，请检查网络连接')
       
       if (retryCount < 3) {
@@ -79,6 +87,13 @@ function ChatPage() {
   }, [retryCount])
 
   useEffect(() => {
+    appLogger.info({
+      event: 'page_view',
+      module: 'chat_page',
+      action: 'mount',
+      status: 'success',
+      message: 'chat page mounted',
+    })
     loadConfigurations()
   }, [])
 
@@ -102,6 +117,14 @@ function ChatPage() {
     if (!input.trim() || isLoading) return
 
     const userMessage = input.trim()
+    appLogger.info({
+      event: 'chat_send',
+      module: 'chat_page',
+      action: 'send_message',
+      status: 'start',
+      message: 'chat send started',
+      extra: { session_id: sessionId, input_length: userMessage.length },
+    })
     setInput('')
     addMessage('user', userMessage)
     setLoading(true)
@@ -120,6 +143,14 @@ function ChatPage() {
         addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。')
       }
     } catch (error) {
+      appLogger.error({
+        event: 'chat_send',
+        module: 'chat_page',
+        action: 'send_message',
+        status: 'failure',
+        message: 'chat send failed',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
       addMessage('assistant', '抱歉，发生了错误。请稍后重试。')
     } finally {
       setLoading(false)
@@ -150,12 +181,27 @@ function ChatPage() {
       
       if (config) {
         await modelsAPI.updateConfiguration(config.id, { is_default: true })
+        appLogger.info({
+          event: 'chat_model_save',
+          module: 'chat_page',
+          action: 'save_default_model',
+          status: 'success',
+          message: 'default model saved',
+          extra: { provider, model },
+        })
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
         localStorage.setItem('selected_model', selectedModel)
       }
     } catch (err) {
-      console.error('Failed to save model:', err)
+      appLogger.error({
+        event: 'chat_model_save',
+        module: 'chat_page',
+        action: 'save_default_model',
+        status: 'failure',
+        message: 'failed to save default model',
+        extra: { error: err instanceof Error ? err.message : String(err) },
+      })
       setError('保存模型失败')
     }
   }
