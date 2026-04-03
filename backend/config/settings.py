@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     SANDBOX_MEMORY_LIMIT: str = "512m"
     
     LOG_LEVEL: str = "INFO"
+    LOG_SERIALIZE: bool = True
+    LOG_SERVICE_NAME: str = "openawa-backend"
     
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True

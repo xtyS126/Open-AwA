@@ -6,6 +6,7 @@ from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
 from skills.skill_validator import SkillValidator
+from config.logging import sanitize_for_logging
 from loguru import logger
 import yaml
 import uuid
@@ -954,10 +955,26 @@ async def install_skill(
     try:
         config_dict = yaml.safe_load(skill.config)
     except yaml.YAMLError as e:
-        logger.error(f"YAML parsing error in skill config: {str(e)}")
+        logger.bind(
+            event="skill_install_invalid_yaml",
+            module="skills",
+            action="install_skill",
+            status="failure",
+            skill_name=skill.name,
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).error("skill install yaml parsing failed")
         raise HTTPException(status_code=400, detail="Invalid YAML configuration")
     except Exception as e:
-        logger.error(f"Unexpected error parsing skill config: {str(e)}")
+        logger.bind(
+            event="skill_install_error",
+            module="skills",
+            action="install_skill",
+            status="failure",
+            skill_name=skill.name,
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).error("unexpected skill install error")
         raise HTTPException(status_code=500, detail="Internal server error")
     
     new_skill = Skill(
@@ -972,6 +989,16 @@ async def install_skill(
     db.add(new_skill)
     db.commit()
     db.refresh(new_skill)
+
+    logger.bind(
+        event="skill_installed",
+        module="skills",
+        action="install_skill",
+        status="success",
+        skill_id=new_skill.id,
+        skill_name=new_skill.name,
+        user_id=current_user.id,
+    ).info("skill installed")
     
     return new_skill
 
@@ -1085,16 +1112,40 @@ async def update_skill(
             yaml.safe_load(skill_update.config)
             skill.config = skill_update.config
         except yaml.YAMLError as e:
-            logger.error(f"YAML parsing error in skill update: {str(e)}")
+            logger.bind(
+                event="skill_update_config_invalid_yaml",
+                module="skills",
+                action="update_skill",
+                status="failure",
+                skill_id=skill_id,
+                error_type=type(e).__name__,
+                error_message=sanitize_for_logging(str(e)),
+            ).error("skill update yaml parsing failed")
             raise HTTPException(status_code=400, detail="Invalid YAML configuration")
         except Exception as e:
-            logger.error(f"Unexpected error parsing skill update: {str(e)}")
+            logger.bind(
+                event="skill_update_config_error",
+                module="skills",
+                action="update_skill",
+                status="failure",
+                skill_id=skill_id,
+                error_type=type(e).__name__,
+                error_message=sanitize_for_logging(str(e)),
+            ).error("unexpected skill update config error")
             raise HTTPException(status_code=500, detail="Internal server error")
 
     db.commit()
     db.refresh(skill)
 
-    logger.info(f"Skill '{skill_id}' updated by user '{current_user.username}'")
+    logger.bind(
+        event="skill_updated",
+        module="skills",
+        action="update_skill",
+        status="success",
+        skill_id=skill_id,
+        skill_name=skill.name,
+        user_id=current_user.id,
+    ).info("skill updated")
 
     return skill
 
@@ -1117,6 +1168,16 @@ async def execute_skill(
     if not skill.enabled:
         raise HTTPException(status_code=400, detail="Skill is disabled")
 
+    logger.bind(
+        event="skill_execute_started",
+        module="skills",
+        action="execute_skill",
+        status="start",
+        skill_id=skill_id,
+        skill_name=skill.name,
+        user_id=current_user.id,
+    ).info("skill execute started")
+
     try:
         skill_engine = SkillEngine(db)
 
@@ -1126,17 +1187,37 @@ async def execute_skill(
             context=execution_data.context
         )
 
-        logger.info(f"Skill '{skill.name}' executed by user '{current_user.username}'")
+        result_status = "success" if result.get("success") else "error"
+        logger.bind(
+            event="skill_execute_finished",
+            module="skills",
+            action="execute_skill",
+            status=result_status,
+            skill_id=skill_id,
+            skill_name=skill.name,
+            user_id=current_user.id,
+            success=bool(result.get("success")),
+        ).info("skill execute finished")
 
         return {
-            "status": "success" if result.get("success") else "error",
+            "status": result_status,
             "skill_id": skill_id,
             "skill_name": skill.name,
             "result": result
         }
 
     except Exception as e:
-        logger.error(f"Error executing skill '{skill.name}': {str(e)}")
+        logger.bind(
+            event="skill_execute_failed",
+            module="skills",
+            action="execute_skill",
+            status="failure",
+            skill_id=skill_id,
+            skill_name=skill.name,
+            user_id=current_user.id,
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).exception("skill execute failed")
         raise HTTPException(status_code=500, detail=f"Skill execution failed: {str(e)}")
 
 
@@ -1153,10 +1234,26 @@ async def get_skill_config(
     try:
         config_dict = yaml.safe_load(skill.config)
     except yaml.YAMLError as e:
-        logger.error(f"YAML parsing error getting skill config: {str(e)}")
+        logger.bind(
+            event="skill_get_config_invalid_yaml",
+            module="skills",
+            action="get_skill_config",
+            status="failure",
+            skill_id=skill_id,
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).error("get skill config yaml parsing failed")
         raise HTTPException(status_code=500, detail="Failed to parse skill configuration")
     except Exception as e:
-        logger.error(f"Unexpected error getting skill config: {str(e)}")
+        logger.bind(
+            event="skill_get_config_error",
+            module="skills",
+            action="get_skill_config",
+            status="failure",
+            skill_id=skill_id,
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).error("unexpected get skill config error")
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return SkillConfigResponse(
@@ -1220,7 +1317,14 @@ async def install_skill_from_package(
         db.commit()
         db.refresh(new_skill)
         
-        logger.info(f"Skill '{new_skill.name}' installed from package by user '{current_user.username}'")
+        logger.bind(
+            event="skill_installed_from_package",
+            module="skills",
+            action="install_from_package",
+            status="success",
+            skill_name=new_skill.name,
+            user_id=current_user.id,
+        ).info("skill installed from package")
         
         return {
             "message": f"技能 '{new_skill.name}' 安装成功",
@@ -1230,10 +1334,24 @@ async def install_skill_from_package(
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="无效的ZIP文件")
     except yaml.YAMLError as e:
-        logger.error(f"YAML parsing error in skill package: {str(e)}")
+        logger.bind(
+            event="skill_install_package_invalid_yaml",
+            module="skills",
+            action="install_from_package",
+            status="failure",
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).error("skill package yaml parsing failed")
         raise HTTPException(status_code=400, detail="技能配置文件格式错误")
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error installing skill from package: {str(e)}")
+        logger.bind(
+            event="skill_install_package_error",
+            module="skills",
+            action="install_from_package",
+            status="failure",
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).exception("skill install from package failed")
         raise HTTPException(status_code=500, detail=f"安装技能失败: {str(e)}")

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import ChatPage from './pages/ChatPage'
 import DashboardPage from './pages/DashboardPage'
@@ -11,6 +11,24 @@ import ExperiencePage from './pages/ExperiencePage'
 import CommunicationPage from './pages/CommunicationPage'
 import Sidebar from './components/Sidebar'
 import { authAPI } from './services/api'
+import { appLogger } from './services/logger'
+
+function NavigationLogger() {
+  const location = useLocation()
+
+  useEffect(() => {
+    appLogger.info({
+      event: 'page_view',
+      module: 'app',
+      action: 'navigate',
+      status: 'success',
+      message: 'page visited',
+      extra: { path: location.pathname },
+    })
+  }, [location.pathname])
+
+  return null
+}
 
 function App() {
   const [initialized, setInitialized] = useState(false)
@@ -20,13 +38,36 @@ function App() {
   }, [])
 
   const initializeApp = async () => {
+    appLogger.info({
+      event: 'app_initialize',
+      module: 'app',
+      action: 'initialize',
+      status: 'start',
+      message: 'app initialization started',
+    })
+
     const token = localStorage.getItem('token')
     if (token) {
       try {
         await authAPI.getMe()
+        appLogger.info({
+          event: 'app_initialize',
+          module: 'app',
+          action: 'token_validate',
+          status: 'success',
+          message: 'existing token validated',
+        })
         setInitialized(true)
         return
       } catch (error) {
+        appLogger.warning({
+          event: 'app_initialize',
+          module: 'app',
+          action: 'token_validate',
+          status: 'failure',
+          message: 'token validation failed, clear local auth',
+          extra: { error: error instanceof Error ? error.message : String(error) },
+        })
         localStorage.removeItem('token')
         localStorage.removeItem('username')
       }
@@ -46,10 +87,23 @@ function App() {
       const loginResponse = await authAPI.login(testUser.username, testUser.password)
       localStorage.setItem('token', loginResponse.data.access_token)
       localStorage.setItem('username', testUser.username)
-      
+      appLogger.info({
+        event: 'app_initialize',
+        module: 'app',
+        action: 'auto_login',
+        status: 'success',
+        message: 'test user login succeeded',
+      })
       setInitialized(true)
     } catch (error) {
-      console.error('Failed to initialize app:', error)
+      appLogger.error({
+        event: 'app_initialize',
+        module: 'app',
+        action: 'auto_login',
+        status: 'failure',
+        message: 'app initialization failed',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
       setInitialized(true)
     }
   }
@@ -71,6 +125,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <NavigationLogger />
       <div className="app-container">
         <Sidebar />
         <main className="main-content">

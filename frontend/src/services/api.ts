@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { appLogger, generateRequestId, setCurrentRequestId } from './logger'
 
 const API_BASE_URL = '/api'
 
@@ -12,12 +13,69 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
+  const requestId = generateRequestId()
+  config.headers['X-Request-Id'] = requestId
+  setCurrentRequestId(requestId)
+
   const token = getStoredToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  appLogger.info({
+    event: 'api_request',
+    module: 'api',
+    action: config.method?.toUpperCase() || 'GET',
+    status: 'start',
+    request_id: requestId,
+    message: 'api request started',
+    extra: {
+      url: config.url,
+    },
+  })
   return config
 })
+
+api.interceptors.response.use(
+  (response) => {
+    const responseRequestId = String(response.headers?.['x-request-id'] || '')
+    if (responseRequestId) {
+      setCurrentRequestId(responseRequestId)
+    }
+    appLogger.info({
+      event: 'api_response',
+      module: 'api',
+      action: response.config.method?.toUpperCase() || 'GET',
+      status: 'success',
+      request_id: responseRequestId,
+      message: 'api request finished',
+      extra: {
+        url: response.config.url,
+        status_code: response.status,
+      },
+    })
+    return response
+  },
+  (error) => {
+    const responseRequestId = String(error?.response?.headers?.['x-request-id'] || '')
+    if (responseRequestId) {
+      setCurrentRequestId(responseRequestId)
+    }
+    appLogger.error({
+      event: 'api_response',
+      module: 'api',
+      action: error?.config?.method?.toUpperCase() || 'GET',
+      status: 'failure',
+      request_id: responseRequestId,
+      message: 'api request failed',
+      extra: {
+        url: error?.config?.url,
+        status_code: error?.response?.status,
+        error: error?.message,
+      },
+    })
+    return Promise.reject(error)
+  }
+)
 
 export const authAPI = {
   login: (username: string, password: string) => {
@@ -107,6 +165,24 @@ export interface PluginLogLevelResponse {
   level: string
 }
 
+export interface SystemLogRecord {
+  timestamp: string
+  level: string
+  service: string
+  module: string
+  event: string
+  message: string
+  request_id: string
+  extra: Record<string, unknown>
+}
+
+export interface SystemLogsQueryResponse {
+  total: number
+  offset: number
+  limit: number
+  records: SystemLogRecord[]
+}
+
 export const pluginsAPI = {
   getAll: () => api.get('/plugins'),
   getOne: (id: string) => api.get(`/plugins/${id}`),
@@ -131,6 +207,23 @@ export const pluginsAPI = {
     api.get<PluginLogsResponse>(`/plugins/${id}/logs`, { params: { level, limit, offset } }),
   setLogLevel: (id: string, level: string) =>
     api.put<PluginLogLevelResponse>(`/plugins/${id}/log-level`, { level }),
+}
+
+export const logsAPI = {
+  query: (params?: {
+    start_time?: string
+    end_time?: string
+    level?: string
+    keyword?: string
+    limit?: number
+    offset?: number
+  }) => api.get<SystemLogsQueryResponse>('/logs', { params }),
+  export: (params?: {
+    start_time?: string
+    end_time?: string
+    level?: string
+    keyword?: string
+  }) => api.get('/logs/export', { params, responseType: 'blob' }),
 }
 
 export const memoryAPI = {
