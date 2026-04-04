@@ -1,10 +1,10 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import PluginDebugPanel from '../components/PluginDebugPanel'
-import { pluginsAPI } from '../services/api'
+import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
+import { pluginsAPI } from '@/shared/api/api'
 
-vi.mock('../services/api', () => ({
+vi.mock('@/shared/api/api', () => ({
   pluginsAPI: {
     getLogs: vi.fn(),
     setLogLevel: vi.fn(),
