@@ -4,6 +4,7 @@ import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import { useAuthStore } from '@/shared/store/authStore'
+import { useThemeStore } from '@/shared/store/themeStore'
 
 const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
 const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
@@ -34,10 +35,19 @@ function NavigationLogger() {
 
 function App() {
   const { isInitialized, setInitialized, setAuth, logout } = useAuthStore()
+  const { theme } = useThemeStore()
 
   useEffect(() => {
     initializeApp()
   }, [])
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [theme])
 
   const initializeApp = async () => {
     appLogger.info({
