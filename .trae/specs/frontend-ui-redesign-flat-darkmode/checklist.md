@@ -1,0 +1,8 @@
+- [ ] `global.css` 包含完整的 `:root` 和 `.dark` 语义化 CSS 变量定义，且支持平滑过渡。
+- [ ] `frontend/src/shared/store/themeStore.ts` 实现了 `html` 级别的 `.dark` 类切换逻辑（支持 localStorage 持久化及系统偏好识别）。
+- [ ] 全局基础组件（Button, Input, Card）均移除了突兀的边框和强阴影，实现了干净的扁平化风格。
+- [ ] 侧边栏（Sidebar）底部包含可见的主题切换按钮，且点击能正常工作。
+- [ ] `Chat` 和 `Communication` 页面在白天和黑夜模式下气泡与文字对比度均正常，移除强阴影和渐变。
+- [ ] `Dashboard`、`Plugins`、`Skills`、`Settings`、`Memory` 等所有主要路由页面的 UI 在黑夜模式下显示正常，没有背景色冲突。
+- [ ] 全局代码和UI中没有使用任何 Emoji，包括主题切换按钮等。
+- [ ] UI整体风格统一，不“花里胡哨”，界面极简且美观。
