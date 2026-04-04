@@ -488,14 +488,14 @@ function CommunicationPage() {
                 </div>
                 <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
                   <button
-                    className={`${styles['btn']} ${styles['btn-primary']}`}
+                    className={`btn btn-primary`}
                     onClick={handleSaveWeixinConfig}
                     disabled={savingWeixin}
                   >
                       {savingWeixin ? '保存中...' : '保存配置'}
                     </button>
                     <button
-                      className={`${styles['btn']} ${styles['btn-secondary']}`}
+                      className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                       onClick={handleTestWeixinConnection}
                       disabled={testingWeixin}
                     >
@@ -508,14 +508,14 @@ function CommunicationPage() {
                     <p className={styles['communication-qr-login-desc']}>点击获取二维码后，请用微信扫码并在手机上确认授权。</p>
                     <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
                       <button
-                        className={`${styles['btn']} ${styles['btn-primary']}`}
+                        className={`btn btn-primary`}
                         onClick={handleStartQrLogin}
                         disabled={startingQrLogin}
                       >
                         {startingQrLogin ? '获取中...' : '获取登录二维码'}
                       </button>
                     <button
-                      className={`${styles['btn']} ${styles['btn-secondary']}`}
+                      className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                       onClick={handleCancelQrLogin}
                       disabled={!qrSessionKey && !pollingQrLogin && !qrCodeUrl}
                     >

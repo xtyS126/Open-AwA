@@ -252,7 +252,7 @@ function ChatPage() {
           </select>
           {selectedModel && (
             <button
-              className={`${styles['btn']} ${styles['btn-save-model']} ${saveSuccess ? styles['success'] : ''}`}
+              className={`btn ${styles['btn-save-model']} ${saveSuccess ? styles['success'] : ''}`}
               onClick={handleSaveModel}
               disabled={!selectedModel}
             >
@@ -264,13 +264,13 @@ function ChatPage() {
           <div className={styles['model-error']}>
             <span>{error}</span>
             {retryCount < 3 && (
-              <button className={`${styles['btn']} ${styles['btn-retry']}`} onClick={handleRetry}>
+              <button className={`btn ${styles['btn-retry']}`} onClick={handleRetry}>
                 重试 ({3 - retryCount})
               </button>
             )}
           </div>
         )}
-        <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={clearMessages}>
+        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={clearMessages}>
           新对话
         </button>
       </div>
@@ -314,7 +314,7 @@ function ChatPage() {
           rows={1}
         />
         <button
-          className={`${styles['btn']} ${styles['btn-primary']} ${styles['send-btn']}`}
+          className={`btn btn-primary ${styles['send-btn']}`}
           onClick={handleSend}
           disabled={!input.trim() || isLoading}
         >

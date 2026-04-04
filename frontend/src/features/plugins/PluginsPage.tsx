@@ -169,13 +169,13 @@ function PluginsPage() {
             onChange={handleFileUpload}
           />
           <button
-            className={`${styles['btn']} ${styles['btn-primary']}`}
+            className={`btn btn-primary`}
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
             {uploading ? '导入中...' : '导入插件'}
           </button>
-          <button className={`${styles['btn']} ${styles['btn-secondary']}`}>浏览插件市场</button>
+          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}>浏览插件市场</button>
         </div>
       </div>
 
@@ -184,7 +184,7 @@ function PluginsPage() {
           <div className={styles['empty-state']}>
             <p>还没有安装任何插件</p>
             <button
-              className={`${styles['btn']} ${styles['btn-primary']}`}
+              className={`btn btn-primary`}
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
             >
@@ -212,25 +212,25 @@ function PluginsPage() {
                 </div>
                 <div className={styles['plugin-actions']}>
                   <button
-                    className={`${styles['btn']} ${plugin.enabled ? styles['btn-secondary'] : styles['btn-primary']}`}
+                    className={`btn ${plugin.enabled ? styles['btn-secondary'] : styles['btn-primary']}`}
                     onClick={() => handleToggle(plugin)}
                   >
                     {plugin.enabled ? '禁用' : '启用'}
                   </button>
                   <button
-                    className={`${styles['btn']} ${styles['btn-secondary']}`}
+                    className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                     onClick={() => openPermissionModal(plugin)}
                   >
                     权限
                   </button>
                   <button
-                    className={`${styles['btn']} ${styles['btn-secondary']}`}
+                    className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                     onClick={() => setDebugPluginId(debugPluginId === plugin.id ? null : plugin.id)}
                   >
                     {debugPluginId === plugin.id ? '关闭调试' : '调试'}
                   </button>
                   <button
-                    className={`${styles['btn']} ${styles['btn-danger']}`}
+                    className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
                     onClick={() => handleUninstall(plugin.id)}
                   >
                     卸载
@@ -284,7 +284,7 @@ function PluginsPage() {
                         <div key={`granted-${permission}`} className={styles['permission-item']}>
                           <span>{permission}</span>
                           <button
-                            className={`${styles['btn']} ${styles['btn-danger']} ${styles['permission-revoke-btn']}`}
+                            className={`btn ${styles['btn-danger'] || 'btn-danger'} ${styles['permission-revoke-btn']}`}
                             onClick={() => handleRevokePermission(permission)}
                           >
                             撤销
@@ -301,14 +301,14 @@ function PluginsPage() {
 
             <div className={styles['permission-actions']}>
               <button
-                className={`${styles['btn']} ${styles['btn-primary']}`}
+                className={`btn btn-primary`}
                 onClick={handleAuthorizeMissingPermissions}
                 disabled={permissionLoading}
               >
                 授权缺失权限
               </button>
               <button
-                className={`${styles['btn']} ${styles['btn-secondary']}`}
+                className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                 onClick={() => {
                   setPermissionModalOpen(false)
                   setSelectedPlugin(null)
