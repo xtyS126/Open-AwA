@@ -84,7 +84,7 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
               accept=".zip,.skill,.md,.yaml,.yml"
               onChange={handleFileChange}
             />
-            <div className={styles['upload-icon']}>📄</div>
+            <div className={styles['upload-icon']}>文件</div>
             <p className={styles['upload-title']}>{file ? file.name : '上传进行智能解析'}</p>
             <p className={styles['upload-desc']}>包含 SKILL.md 文件的 .zip 或 .skill 文件，SKILL.md 位于根目录，包含 YAML 格式的技能名称和描述。</p>
           </div>
