@@ -129,10 +129,11 @@
   width: 100%;
   max-width: 400px;
   padding: 12px 16px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-md);
   font-size: 14px;
   background: var(--color-bg-tertiary);
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
@@ -166,7 +167,7 @@
   width: 100%;
   min-height: 200px;
   padding: 16px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-md);
   font-family: 'Monaco', 'Menlo', monospace;
   font-size: 14px;
@@ -174,6 +175,7 @@
   resize: vertical;
   margin-bottom: 16px;
   background: var(--color-bg-tertiary);
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
@@ -239,10 +241,11 @@
 .price-input {
   width: 100px;
   padding: 8px 12px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-sm);
   font-size: 13px;
   background: var(--color-bg-tertiary);
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
@@ -293,10 +296,11 @@
 .form-group input[type="text"] {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-md);
   font-size: 14px;
   background: var(--color-bg);
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
@@ -578,10 +582,11 @@
 .provider-modal-body input[type='password'] {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-md);
   font-size: 14px;
   background: var(--color-bg-tertiary);
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
@@ -612,10 +617,11 @@
 .provider-detail-panel input[type='password'] {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-md);
   font-size: 14px;
   background: var(--color-bg);
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
