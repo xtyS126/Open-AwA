@@ -1,8 +1,8 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import ChatPage from '../pages/ChatPage'
-import { modelsAPI } from '../services/modelsApi'
+import ChatPage from '@/features/chat/ChatPage'
+import { modelsAPI } from '@/features/settings/modelsApi'
 
 if (!HTMLElement.prototype.scrollIntoView) {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
@@ -12,14 +12,14 @@ if (!HTMLElement.prototype.scrollIntoView) {
 }
 
 
-vi.mock('../services/modelsApi', () => ({
+vi.mock('@/features/settings/modelsApi', () => ({
   modelsAPI: {
     getConfigurations: vi.fn(),
     updateConfiguration: vi.fn()
   }
 }))
 
-vi.mock('../stores/chatStore', () => ({
+vi.mock('@/features/chat/store/chatStore', () => ({
   useChatStore: vi.fn(() => ({
     messages: [],
     addMessage: vi.fn(),

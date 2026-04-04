@@ -3,9 +3,9 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import QRCode from 'qrcode'
-import SettingsPage from '../pages/SettingsPage'
-import CommunicationPage from '../pages/CommunicationPage'
-import { weixinAPI } from '../services/api'
+import SettingsPage from '@/features/settings/SettingsPage'
+import CommunicationPage from '@/features/chat/CommunicationPage'
+import { weixinAPI } from '@/shared/api/api'
 
 vi.mock('qrcode', () => ({
   default: {
@@ -13,7 +13,7 @@ vi.mock('qrcode', () => ({
   }
 }))
 
-vi.mock('../services/api', () => ({
+vi.mock('@/shared/api/api', () => ({
   weixinAPI: {
     getConfig: vi.fn(),
     saveConfig: vi.fn(),
@@ -31,14 +31,14 @@ vi.mock('../services/api', () => ({
   }
 }))
 
-vi.mock('../services/billingApi', () => ({
+vi.mock('@/features/billingApi', () => ({
   billingAPI: {
     getModels: vi.fn().mockResolvedValue({ data: { models: [] } }),
     getRetention: vi.fn().mockResolvedValue({ data: { retention_days: 365 } }),
   }
 }))
 
-vi.mock('../services/modelsApi', () => ({
+vi.mock('@/features/settings/modelsApi', () => ({
   modelsAPI: {
     getConfigurations: vi.fn().mockResolvedValue({ data: { configurations: [] } }),
     getProviders: vi.fn().mockResolvedValue({ data: { providers: [] } }),
