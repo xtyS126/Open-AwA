@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import QRCode from 'qrcode'
 import SettingsPage from '../pages/SettingsPage'
 import CommunicationPage from '../pages/CommunicationPage'
 import { weixinAPI } from '../services/api'
@@ -64,6 +65,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         session_key: 'session_1',
         status: 'wait',
         qrcode: 'qrcode_1',
+        qrcode_content: 'https://test.weixin.qq.com/qrcode-content-1',
         qrcode_url: 'https://test.weixin.qq.com/qrcode-1.png'
       }
     })
@@ -321,6 +323,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         qrcode: 'qrcode_1',
         base_url: 'https://test.weixin.qq.com'
       })
+      expect(QRCode.toDataURL).toHaveBeenCalledWith('https://test.weixin.qq.com/qrcode-content-1', expect.any(Object))
       expect(screen.getByText('微信扫码登录成功，配置已自动更新；绑定成功，用户 ID：wx-user-1，绑定状态：bound 后续流程：配置已自动回填。建议先点击“测试连接”确认链路可用，再进入聊天页验证消息收发。')).toBeInTheDocument()
       expect(screen.getByText('绑定结果：绑定成功，用户 ID：wx-user-1，绑定状态：bound')).toBeInTheDocument()
       expect(screen.getByText('后续流程：配置已自动回填。建议先点击“测试连接”确认链路可用，再进入聊天页验证消息收发。')).toBeInTheDocument()

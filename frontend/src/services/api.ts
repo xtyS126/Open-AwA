@@ -344,6 +344,7 @@ export interface WeixinQrStartResponse {
   status: 'wait' | 'waiting'
   qrcode?: string
   qrcode_url?: string
+  qrcode_content?: string
   baseurl?: string
 }
 
@@ -361,7 +362,9 @@ export interface WeixinQrWaitResponse {
   session_key: string
   status: 'wait' | 'waiting' | 'scanned' | 'scaned' | 'scaned_but_redirect' | 'confirmed' | 'expired' | 'refreshing'
   message: string
+  qrcode?: string
   qrcode_url?: string
+  qrcode_content?: string
   auth_id?: string
   ticket?: string
   hint?: string

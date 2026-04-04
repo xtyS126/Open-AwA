@@ -268,6 +268,7 @@ def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
         or payload.get("qrCodeUrl")
         or ""
     ).strip()
+    qrcode_content = qrcode_url
     if not qrcode and qrcode_url:
         try:
             parsed = urlparse(qrcode_url)
@@ -275,15 +276,18 @@ def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
             qrcode = str(query_qrcode or "").strip()
         except Exception:
             qrcode = ""
+    if not qrcode_content and raw_text:
+        qrcode_content = raw_text
     if not qrcode and raw_text and not qrcode_url:
         qrcode = raw_text
-    return {"qrcode": qrcode, "qrcode_url": qrcode_url}
+    return {"qrcode": qrcode, "qrcode_url": qrcode_url, "qrcode_content": qrcode_content}
 
 
 def _build_qr_session(
     *,
     qrcode: str,
     qrcode_url: str,
+    qrcode_content: str,
     login_base_url: str,
     poll_base_url: str,
     bot_type: str,
@@ -292,6 +296,7 @@ def _build_qr_session(
     return {
         "qrcode": qrcode,
         "qrcode_url": qrcode_url,
+        "qrcode_content": qrcode_content,
         "login_base_url": login_base_url,
         "poll_base_url": poll_base_url,
         "bot_type": bot_type,
@@ -330,6 +335,7 @@ def _build_qr_response(
     connected: bool = False,
     qrcode: str = "",
     qrcode_url: str = "",
+    qrcode_content: str = "",
     redirect_host: str = "",
     base_url: str = "",
     account_id: str = "",
@@ -353,6 +359,7 @@ def _build_qr_response(
         "message": normalized_message,
         "qrcode": str(qrcode or "").strip(),
         "qrcode_url": str(qrcode_url or "").strip(),
+        "qrcode_content": str(qrcode_content or qrcode_url or qrcode or "").strip(),
         "redirect_host": str(redirect_host or "").strip(),
         "base_url": str(base_url or "").strip(),
         "account_id": str(account_id or "").strip(),
@@ -645,6 +652,7 @@ async def weixin_qr_start(
     extracted = _extract_qrcode_fields(qr_result)
     qrcode = extracted["qrcode"]
     qrcode_url = extracted["qrcode_url"]
+    qrcode_content = extracted["qrcode_content"]
     if not qrcode:
         _build_qr_logger(session_key, "qr_start_missing_qrcode", upstream_preview=json.dumps(qr_result, ensure_ascii=False)[:600]).warning("missing qrcode in upstream response")
         raise HTTPException(status_code=502, detail=_build_qrcode_upstream_error_detail(qr_result))
@@ -653,6 +661,7 @@ async def weixin_qr_start(
         WEIXIN_QR_SESSIONS[session_key] = _build_qr_session(
             qrcode=qrcode,
             qrcode_url=qrcode_url,
+            qrcode_content=qrcode_content,
             login_base_url=login_base_url,
             poll_base_url=poll_base_url,
             bot_type=bot_type,
@@ -666,6 +675,7 @@ async def weixin_qr_start(
         message="使用微信扫描以下二维码，以完成连接。",
         qrcode=qrcode,
         qrcode_url=qrcode_url,
+        qrcode_content=qrcode_content,
         base_url=poll_base_url
     )
 
@@ -726,6 +736,7 @@ async def weixin_qr_wait(
             "login_base_url": DEFAULT_QR_BASE_URL,
             "poll_base_url": str(payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL,
             "qrcode_url": "",
+            "qrcode_content": "",
             "bot_type": DEFAULT_BOT_TYPE,
             "timeout_seconds": _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
         }
@@ -772,6 +783,7 @@ async def weixin_qr_wait(
         connected=status == "confirmed",
         qrcode=qrcode,
         qrcode_url=session.get("qrcode_url", ""),
+        qrcode_content=session.get("qrcode_content", ""),
         base_url=poll_base_url,
         account_id=str(normalized_status_result.get("ilink_bot_id") or normalized_status_result.get("account_id") or "").strip(),
         token=str(normalized_status_result.get("bot_token") or normalized_status_result.get("token") or "").strip(),
@@ -827,6 +839,7 @@ async def weixin_qr_wait(
                 connected=False,
                 qrcode=base_response["qrcode"],
                 qrcode_url=base_response["qrcode_url"],
+                qrcode_content=base_response["qrcode_content"],
                 redirect_host=base_response["redirect_host"],
                 base_url=base_url,
                 account_id=account_id,
