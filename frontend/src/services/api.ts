@@ -313,6 +313,9 @@ export interface WeixinConfig {
   timeout_seconds: number
   user_id?: string
   binding_status?: string
+  bot_token?: string
+  ilink_bot_id?: string
+  ilink_user_id?: string
 }
 
 export interface WeixinHealthCheckResult {
@@ -331,16 +334,17 @@ export interface WeixinQrStartRequest {
 
 export type WeixinQrState = 'pending' | 'half_success' | 'success' | 'failed'
 
-export type WeixinQrStatus = 'idle' | 'wait' | 'scaned' | 'scaned_but_redirect' | 'expired' | 'confirmed'
+export type WeixinQrStatus = 'idle' | 'waiting' | 'scanned' | 'scaned_but_redirect' | 'expired' | 'confirmed' | 'refreshing'
 
 export interface WeixinQrStartResponse {
   success?: boolean
   state?: WeixinQrState
   message: string
   session_key: string
-  status: Exclude<WeixinQrStatus, 'idle' | 'scaned_but_redirect' | 'expired' | 'confirmed'> | 'wait'
+  status: 'wait' | 'waiting'
   qrcode?: string
   qrcode_url?: string
+  baseurl?: string
 }
 
 export interface WeixinQrWaitRequest {
@@ -355,17 +359,21 @@ export interface WeixinQrWaitResponse {
   state?: WeixinQrState
   connected: boolean
   session_key: string
-  status: Exclude<WeixinQrStatus, 'idle'>
+  status: 'wait' | 'waiting' | 'scanned' | 'scaned' | 'scaned_but_redirect' | 'confirmed' | 'expired' | 'refreshing'
   message: string
   qrcode_url?: string
   auth_id?: string
   ticket?: string
   hint?: string
   account_id?: string
+  ilink_bot_id?: string
   token?: string
+  bot_token?: string
   base_url?: string
+  baseurl?: string
   redirect_host?: string
   user_id?: string
+  ilink_user_id?: string
   binding_status?: string
 }
 

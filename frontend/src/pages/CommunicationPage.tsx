@@ -58,7 +58,7 @@ function CommunicationPage() {
     if (normalizedState === 'failed' || normalizedStatus === 'expired') {
       return 'failed'
     }
-    if (normalizedState === 'half_success' || normalizedStatus === 'scaned' || normalizedStatus === 'scanned' || normalizedStatus === 'scaned_but_redirect' || normalizedStatus === 'pending' || normalizedStatus === 'confirming') {
+    if (normalizedState === 'half_success' || normalizedStatus === 'scaned' || normalizedStatus === 'scanned' || normalizedStatus === 'scaned_but_redirect' || normalizedStatus === 'pending' || normalizedStatus === 'confirming' || normalizedStatus === 'refreshing') {
       return 'half_success'
     }
     return 'pending'
@@ -71,7 +71,7 @@ function CommunicationPage() {
     if (status === 'scaned_but_redirect') {
       return '已扫码，正在切换轮询节点'
     }
-    if (status === 'scaned') {
+    if (status === 'scanned') {
       return state === 'half_success'
         ? '已扫码，请在微信中确认，系统正在等待后端补齐登录信息'
         : '已扫码，请在微信中确认'
@@ -137,11 +137,14 @@ function CommunicationPage() {
     if (rawStatus === 'expired') {
       return 'expired'
     }
-    if (rawStatus === 'scaned_but_redirect') {
+    if (rawStatus === 'scaned_but_redirect' || rawStatus === 'refreshing') {
       return 'scaned_but_redirect'
     }
-    if (rawStatus === 'scaned' || rawStatus === 'scanned' || rawStatus === 'pending' || rawStatus === 'confirming') {
-      return 'scaned'
+    if (rawStatus === 'scaned' || rawStatus === 'scanned') {
+      return 'scanned'
+    }
+    if (rawStatus === 'waiting' || rawStatus === 'wait' || rawStatus === 'pending') {
+      return 'waiting'
     }
     return 'wait'
   }
@@ -250,8 +253,9 @@ function CommunicationPage() {
         .filter((item): item is string => Boolean(item && item.trim()))
         .join(' ')
 
-      if (data.base_url) {
-        updateQrPollBaseUrl(data.base_url)
+      const effectiveBaseUrl = data.baseurl || data.base_url
+      if (effectiveBaseUrl) {
+        updateQrPollBaseUrl(effectiveBaseUrl)
       }
       if (data.qrcode_url) {
         setQrRawUrl(data.qrcode_url)
@@ -263,9 +267,10 @@ function CommunicationPage() {
       setQrStatusHint(hintText)
 
       if (state === 'success' && (status === 'confirmed' || data.connected)) {
-        const bindingStatus = normalizeBindingStatus(data.binding_status, data.user_id)
+        const effectiveUserId = data.ilink_user_id || data.user_id || ''
+        const bindingStatus = normalizeBindingStatus(data.binding_status, effectiveUserId)
         setQrBindingResult({
-          userId: data.user_id || '',
+          userId: effectiveUserId,
           bindingStatus
         })
         clearQrPolling()
@@ -276,7 +281,7 @@ function CommunicationPage() {
         setQrStatusText(buildStatusText('confirmed', 'success', data.message || ''))
         setMessage({
           type: 'success',
-          text: `微信扫码登录成功，配置已自动更新；${buildBindingResultText(data.user_id, bindingStatus)} ${buildNextStepText(bindingStatus, data.user_id)}`
+          text: `微信扫码登录成功，配置已自动更新；${buildBindingResultText(effectiveUserId, bindingStatus)} ${buildNextStepText(bindingStatus, effectiveUserId)}`
         })
         await loadWeixinConfig()
         return false
@@ -320,10 +325,11 @@ function CommunicationPage() {
       setQrSessionKey(response.data.session_key)
       setQrRawUrl(response.data.qrcode_url || '')
       updateQrCodeValue(qrValue)
-      updateQrPollBaseUrl(weixinConfig.base_url || DEFAULT_BASE_URL)
+      const effectiveBaseUrl = response.data.baseurl || weixinConfig.base_url || DEFAULT_BASE_URL
+      updateQrPollBaseUrl(effectiveBaseUrl)
       const qrImageReady = await loadQrImage(response.data.session_key, qrValue || undefined)
       setQrState(nextState)
-      setQrStatus('wait')
+      setQrStatus('waiting')
       setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
       setQrStatusHint('')
       setPollingQrLogin(true)
@@ -419,9 +425,9 @@ function CommunicationPage() {
           </div>
         )}
         <div className="settings-section">
-          <p className="section-desc communication-section-desc">配置外部通讯渠道，如微信 Clawbot 插件。</p>
+          <p className="section-desc communication-section-desc">配置外部通讯渠道，如微信 iLink 集成。</p>
           <div className="config-card communication-card">
-            <h3 className="communication-card-title">微信 Clawbot 配置</h3>
+            <h3 className="communication-card-title">微信通讯配置</h3>
             {loadingWeixin ? (
               <div className="loading">加载配置中...</div>
             ) : (
