@@ -102,6 +102,7 @@ function SettingsPage() {
   const [loadingProviderDetail, setLoadingProviderDetail] = useState(false)
   const [loadingProviderModels, setLoadingProviderModels] = useState(false)
   const [providerModelsError, setProviderModelsError] = useState<string | null>(null)
+  const [hasFetchedModels, setHasFetchedModels] = useState(false)
   const [showCreateProviderModal, setShowCreateProviderModal] = useState(false)
   const [creatingProvider, setCreatingProvider] = useState(false)
   const [deletingProvider, setDeletingProvider] = useState(false)
@@ -456,6 +457,7 @@ function SettingsPage() {
         selected_models: selectedModels
       })
       setSelectedProviderId(providerId)
+      setHasFetchedModels(false)
 
       await fetchProviderModels(providerId, selectedModels)
     } catch (error) {
@@ -472,6 +474,7 @@ function SettingsPage() {
     setLoadingProviderModels(true)
 
     try {
+      setProviderModelsError(null)
       const response = await modelsAPI.getModelsByProvider(providerId)
       const data = response.data as ProviderModelsResponse
       const selectedModels = Array.isArray(data.selected_models)
@@ -488,6 +491,7 @@ function SettingsPage() {
       setProviderModels([])
       setProviderModelsError('获取模型列表失败')
     } finally {
+      setHasFetchedModels(true)
       setLoadingProviderModels(false)
     }
   }
@@ -1001,6 +1005,7 @@ function SettingsPage() {
 
                     <div className={styles['provider-detail-actions']}>
                       <button
+                        type="button"
                         className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                         onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models)}
                         disabled={loadingProviderModels || deletingProvider}
@@ -1032,7 +1037,11 @@ function SettingsPage() {
                         <div className={styles['loading']}>加载模型中...</div>
                       ) : providerModels.length === 0 ? (
                         <div className={styles['empty-state']}>
-                          <p>暂无模型，请先点击“获取模型列表”</p>
+                          {hasFetchedModels ? (
+                            <p>该供应商暂无模型配置。请在下方的“添加模型”中录入。</p>
+                          ) : (
+                            <p>暂无模型，请先点击“获取模型列表”</p>
+                          )}
                         </div>
                       ) : (
                         <div className={styles['provider-model-list']}>
