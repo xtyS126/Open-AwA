@@ -5,9 +5,9 @@
   - [x] SubTask 1.2: 更新基础元素（body, button, input, textarea）的全局样式，实现扁平化无边框/弱边框设计，并添加颜色平滑过渡动画（如 `transition: background-color 0.3s, color 0.3s`）。
   - [x] SubTask 1.3: 在 `frontend/src/shared/store/` 下创建 `themeStore.ts`（使用 Zustand），支持读取系统偏好并持久化到 localStorage，并在 `App.tsx` 动态挂载 `.dark` 类到 `html` 标签。
 
-- [ ] Task 2: 侧边栏重构与主题切换入口
-  - [ ] SubTask 2.1: 重构 `Sidebar.tsx` 及样式，采用扁平化设计，移除右侧硬边框，改用背景色区分。
-  - [ ] SubTask 2.2: 在 Sidebar 底部增加一个美观的主题切换按钮（使用 SVG 图标或文字），支持手动切换白天/黑夜模式，并禁止使用 Emoji。
+- [x] Task 2: 侧边栏重构与主题切换入口
+  - [x] SubTask 2.1: 重构 `Sidebar.tsx` 及样式，采用扁平化设计，移除右侧硬边框，改用背景色区分。
+  - [x] SubTask 2.2: 在 Sidebar 底部增加一个美观的主题切换按钮（使用 SVG 图标或文字），支持手动切换白天/黑夜模式，并禁止使用 Emoji。
 
 - [ ] Task 3: 核心交互页面适配（Chat 与 Dashboard）
   - [ ] SubTask 3.1: 升级 `ChatPage` 与 `CommunicationPage`，气泡和输入框采用扁平化色块（`--color-bg-secondary`），移除生硬边框。
