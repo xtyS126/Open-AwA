@@ -31,6 +31,7 @@ function CommunicationPage() {
   const pollTimerRef = useRef<number | null>(null)
   const qrObjectUrlRef = useRef('')
   const qrCodeValueRef = useRef('')
+  const qrPollTokenRef = useRef('')
   const qrPollBaseUrlRef = useRef(DEFAULT_BASE_URL)
 
   const resolveApiErrorMessage = (error: unknown, fallback: string) => {
@@ -146,11 +147,15 @@ function CommunicationPage() {
     if (rawStatus === 'waiting' || rawStatus === 'wait' || rawStatus === 'pending') {
       return 'waiting'
     }
-    return 'wait'
+    return 'waiting'
   }
 
   const updateQrCodeValue = (value: string) => {
     qrCodeValueRef.current = value
+  }
+
+  const updateQrPollToken = (value: string) => {
+    qrPollTokenRef.current = value
   }
 
   const updateQrPollBaseUrl = (value: string) => {
@@ -182,6 +187,7 @@ function CommunicationPage() {
     setQrCodeUrl('')
     setQrRawUrl('')
     updateQrCodeValue('')
+    updateQrPollToken('')
     setQrImageLoadError('')
     setQrStatusHint('')
     updateQrPollBaseUrl(DEFAULT_BASE_URL)
@@ -243,7 +249,7 @@ function CommunicationPage() {
       const response = await weixinAPI.waitQrLogin({
         session_key: sessionKey,
         timeout_seconds: weixinConfig.timeout_seconds,
-        qrcode: qrCodeValueRef.current || undefined,
+        qrcode: qrPollTokenRef.current || undefined,
         base_url: qrPollBaseUrlRef.current || weixinConfig.base_url || undefined,
       })
       const data = response.data
@@ -257,8 +263,16 @@ function CommunicationPage() {
       if (effectiveBaseUrl) {
         updateQrPollBaseUrl(effectiveBaseUrl)
       }
-      if (data.qrcode_url) {
-        setQrRawUrl(data.qrcode_url)
+      const effectiveQrContent = data.qrcode_content || data.qrcode_url || data.qrcode
+      if (effectiveQrContent) {
+        setQrRawUrl(effectiveQrContent)
+        if (effectiveQrContent !== qrCodeValueRef.current) {
+          updateQrCodeValue(effectiveQrContent)
+          await loadQrImage(sessionKey, effectiveQrContent)
+        }
+      }
+      if (data.qrcode) {
+        updateQrPollToken(data.qrcode)
       }
 
       setQrState(state)
@@ -320,11 +334,12 @@ function CommunicationPage() {
         timeout_seconds: weixinConfig.timeout_seconds,
         force: true
       })
-      const qrValue = response.data.qrcode || response.data.qrcode_url || ''
+      const qrValue = response.data.qrcode_content || response.data.qrcode_url || response.data.qrcode || ''
       const nextState = normalizeQrState(response.data.state, response.data.status, false)
       setQrSessionKey(response.data.session_key)
-      setQrRawUrl(response.data.qrcode_url || '')
+      setQrRawUrl(response.data.qrcode_content || response.data.qrcode_url || '')
       updateQrCodeValue(qrValue)
+      updateQrPollToken(response.data.qrcode || '')
       const effectiveBaseUrl = response.data.baseurl || weixinConfig.base_url || DEFAULT_BASE_URL
       updateQrPollBaseUrl(effectiveBaseUrl)
       const qrImageReady = await loadQrImage(response.data.session_key, qrValue || undefined)

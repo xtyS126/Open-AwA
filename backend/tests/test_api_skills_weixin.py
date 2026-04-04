@@ -167,6 +167,7 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         assert start_data["status"] == "waiting"
         assert start_data["qrcode"] == "qr-123"
         assert start_data["qrcode_url"] == "https://example.com/qr.png"
+        assert start_data["qrcode_content"] == "https://example.com/qr.png"
         assert start_data["session_key"]
         assert call_log[0] == ("start", DEFAULT_QR_BASE_URL, "3", 12)
 
@@ -211,6 +212,7 @@ def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
         start_data = start_response.json()
         assert start_data["qrcode"] == "5bd615dc3e27eb837ca2db2f30ee7b7b"
         assert "liteapp.weixin.qq.com" in start_data["qrcode_url"]
+        assert "liteapp.weixin.qq.com" in start_data["qrcode_content"]
 
 
 def test_weixin_qr_wait_updates_poll_base_url_on_redirect(monkeypatch):
@@ -678,6 +680,7 @@ def test_weixin_qr_start_accepts_json_string_upstream_payload(monkeypatch):
         start_data = start_response.json()
         assert start_data["qrcode"] == "qr-json-payload"
         assert start_data["qrcode_url"] == "https://example.com/qr-json.png"
+        assert start_data["qrcode_content"] == "https://example.com/qr-json.png"
 
 
 
@@ -695,6 +698,7 @@ def test_weixin_qr_start_extracts_qrcode_from_key_value_string_payload(monkeypat
         start_data = start_response.json()
         assert start_data["qrcode"] == "qr-kv-payload"
         assert start_data["qrcode_url"] == "https://example.com/qr-kv.png"
+        assert start_data["qrcode_content"] == "https://example.com/qr-kv.png"
 
 
 
@@ -925,5 +929,4 @@ def test_weixin_qr_wait_handles_expired_status(monkeypatch):
         assert wait_data["connected"] is False
         assert wait_data["state"] == "failed"
         assert wait_data["status"] == "expired"
-
 
