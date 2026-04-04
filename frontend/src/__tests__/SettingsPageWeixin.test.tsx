@@ -438,4 +438,78 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
       expect(screen.queryByAltText('微信登录二维码')).not.toBeInTheDocument()
     })
   })
+
+  it('handles refreshing status from backend as half_success state', async () => {
+    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+      data: {
+        success: true,
+        state: 'half_success',
+        connected: false,
+        session_key: 'session_1',
+        status: 'refreshing',
+        message: '二维码已过期，正在刷新',
+        qrcode: 'qr-refresh-1',
+        qrcode_url: 'https://example.com/qr-refresh-1.png'
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(weixinAPI.getConfig).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByText('获取登录二维码'))
+
+    await waitFor(() => {
+      expect(screen.getByText((_, element) => element?.textContent === '当前阶段：half_success；当前状态：二维码已过期，正在刷新')).toBeInTheDocument()
+    })
+  })
+
+  it('handles expired status and displays failure message', async () => {
+    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+      data: {
+        success: true,
+        state: 'failed',
+        connected: false,
+        session_key: 'session_1',
+        status: 'expired',
+        message: '二维码已过期，请重新获取',
+        qrcode: 'qr-expired-1',
+        qrcode_url: 'https://example.com/qr-expired-1.png'
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(weixinAPI.getConfig).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByText('获取登录二维码'))
+
+    await waitFor(() => {
+      expect(screen.getByText((_, element) => element?.textContent === '当前阶段：failed；当前状态：二维码已过期，请重新获取')).toBeInTheDocument()
+    })
+  })
+
+  it('displays ilink integration description text', async () => {
+    render(
+      <MemoryRouter initialEntries={['/communication']}>
+        <CommunicationPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('配置外部通讯渠道，如微信 iLink 集成。')).toBeInTheDocument()
+    })
+  })
 })

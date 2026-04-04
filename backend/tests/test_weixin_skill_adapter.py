@@ -9,6 +9,7 @@ from db.models import Base, Skill
 from skills.skill_engine import SkillEngine
 from skills.weixin_skill_adapter import (
     WeixinSkillAdapter,
+    WeixinRuntimeConfig,
     DEFAULT_QR_BASE_URL,
     SESSION_EXPIRED_ERRCODE,
 )
@@ -200,7 +201,7 @@ async def test_skill_engine_routes_weixin_skill_and_records_adapter_logs(monkeyp
 
         assert result["success"] is True
         assert result["steps"][0]["tool"] == "weixin_adapter"
-        assert result["outputs"]["action"] == "send_message"
+        assert result["outputs"]["action"] == "send_text"
         logs = engine.get_execution_logs(skill_name=config["name"], limit=20)
         event_types = {item["event_type"] for item in logs}
         assert "ADAPTER_ROUTED" in event_types
@@ -349,3 +350,83 @@ def test_weixin_adapter_map_skill_config_reads_binding_fields():
     assert runtime.user_id == "wx-user-default"
     assert runtime.binding_status == "bound"
     assert adapter._is_binding_ready(runtime) is True
+
+
+@pytest.mark.asyncio
+async def test_weixin_adapter_send_message_generates_ilink_client_id_format(monkeypatch, tmp_path):
+    adapter = WeixinSkillAdapter(project_root=str(tmp_path))
+    adapter._set_context_token("test-account", "user-a", "ctx-test")
+    captured = {}
+
+    async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+        captured["client_id"] = body["msg"]["client_id"]
+        return {"ret": 0}
+
+    monkeypatch.setattr(WeixinSkillAdapter, "_api_post", fake_api_post)
+
+    runtime = adapter.map_skill_config(_build_weixin_skill_config())
+    await adapter._send_message(runtime, {"to_user_id": "user-a", "text": "test message"})
+
+    assert captured["client_id"].startswith("ilink-")
+    uuid_part = captured["client_id"][len("ilink-"):]
+    assert len(uuid_part) == 8
+    assert all(c in "0123456789abcdef" for c in uuid_part)
+
+
+def test_weixin_adapter_check_health_validates_static_config_fields():
+    adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
+
+    result_valid = adapter.check_health(WeixinRuntimeConfig(
+        account_id="test-account",
+        token="test-token",
+        base_url="https://ilinkai.weixin.qq.com",
+        bot_type="3",
+        channel_version="1.0.2",
+        timeout_seconds=15,
+        user_id="wx-user",
+        binding_status="bound"
+    ))
+    assert result_valid["ok"] is True
+    assert result_valid["issues"] == []
+    assert "account_id" in result_valid["diagnostics"]
+    assert "base_url" in result_valid["diagnostics"]
+    assert result_valid["diagnostics"]["account_id"] == "test-account"
+
+    result_missing_account = adapter.check_health(WeixinRuntimeConfig(
+        account_id="",
+        token="test-token",
+        base_url="https://ilinkai.weixin.qq.com",
+        bot_type="3",
+        channel_version="1.0.2",
+        timeout_seconds=15,
+        user_id="",
+        binding_status="unbound"
+    ))
+    assert result_missing_account["ok"] is False
+    assert "account_id 为空" in result_missing_account["issues"]
+
+    result_missing_token = adapter.check_health(WeixinRuntimeConfig(
+        account_id="test-account",
+        token="",
+        base_url="https://ilinkai.weixin.qq.com",
+        bot_type="3",
+        channel_version="1.0.2",
+        timeout_seconds=15,
+        user_id="",
+        binding_status="unbound"
+    ))
+    assert result_missing_token["ok"] is False
+    assert "token 为空" in result_missing_token["issues"]
+
+    result_invalid_base_url = adapter.check_health(WeixinRuntimeConfig(
+        account_id="test-account",
+        token="test-token",
+        base_url="invalid-url",
+        bot_type="3",
+        channel_version="1.0.2",
+        timeout_seconds=15,
+        user_id="",
+        binding_status="unbound"
+    ))
+    assert result_invalid_base_url["ok"] is False
+    assert "base_url 格式无效" in result_invalid_base_url["issues"]
