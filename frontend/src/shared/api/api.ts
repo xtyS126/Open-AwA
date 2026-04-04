@@ -60,19 +60,27 @@ api.interceptors.response.use(
     if (responseRequestId) {
       setCurrentRequestId(responseRequestId)
     }
-    appLogger.error({
-      event: 'api_response',
-      module: 'api',
-      action: error?.config?.method?.toUpperCase() || 'GET',
-      status: 'failure',
-      request_id: responseRequestId,
-      message: 'api request failed',
-      extra: {
-        url: error?.config?.url,
-        status_code: error?.response?.status,
-        error: error?.message,
-      },
-    })
+    
+    const isExpectedAuthError = (
+      (error?.config?.url === '/auth/me' && error?.response?.status === 401) ||
+      (error?.config?.url === '/auth/register' && error?.response?.status === 400)
+    );
+
+    if (!isExpectedAuthError) {
+      appLogger.error({
+        event: 'api_response',
+        module: 'api',
+        action: error?.config?.method?.toUpperCase() || 'GET',
+        status: 'failure',
+        request_id: responseRequestId,
+        message: 'api request failed',
+        extra: {
+          url: error?.config?.url,
+          status_code: error?.response?.status,
+          error: error?.message,
+        },
+      })
+    }
     return Promise.reject(error)
   }
 )
