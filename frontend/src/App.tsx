@@ -1,18 +1,19 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
-import ChatPage from '@/features/chat/ChatPage'
-import DashboardPage from '@/features/dashboard/DashboardPage'
-import SettingsPage from '@/features/settings/SettingsPage'
-import SkillsPage from '@/features/skills/SkillsPage'
-import PluginsPage from '@/features/plugins/PluginsPage'
-import MemoryPage from '@/features/memory/MemoryPage'
-import BillingPage from '@/features/billing/BillingPage'
-import ExperiencePage from '@/features/experiences/ExperiencePage'
-import CommunicationPage from '@/features/chat/CommunicationPage'
+import React, { useEffect, Suspense } from 'react'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import { useAuthStore } from '@/shared/store/authStore'
+
+const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
+const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
+const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
+const SkillsPage = React.lazy(() => import('@/features/skills/SkillsPage'))
+const PluginsPage = React.lazy(() => import('@/features/plugins/PluginsPage'))
+const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
+const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
+const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
+const CommunicationPage = React.lazy(() => import('@/features/chat/CommunicationPage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -130,18 +131,20 @@ function App() {
       <div className="app-container">
         <Sidebar />
         <main className="main-content">
-          <Routes>
-            <Route path="/" element={<Navigate to="/chat" replace />} />
-            <Route path="/chat" element={<ChatPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/skills" element={<SkillsPage />} />
-            <Route path="/plugins" element={<PluginsPage />} />
-            <Route path="/memory" element={<MemoryPage />} />
-            <Route path="/experience" element={<ExperiencePage hideHeader />} />
-            <Route path="/billing" element={<BillingPage />} />
-            <Route path="/communication" element={<CommunicationPage />} />
-          </Routes>
+          <Suspense fallback={<div className="loading-fallback">加载中...</div>}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/chat" element={<ChatPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/plugins" element={<PluginsPage />} />
+              <Route path="/memory" element={<MemoryPage />} />
+              <Route path="/experience" element={<ExperiencePage hideHeader />} />
+              <Route path="/billing" element={<BillingPage />} />
+              <Route path="/communication" element={<CommunicationPage />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </BrowserRouter>
