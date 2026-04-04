@@ -77,7 +77,7 @@ async def test_weixin_adapter_fetch_qrcode_status_uses_provided_poll_base_url(mo
         captured["params"] = params
         captured["timeout_seconds"] = timeout_seconds
         captured["extra_headers"] = extra_headers
-        return {"status": "wait"}
+        return {"status": "waiting"}
 
     monkeypatch.setattr(WeixinSkillAdapter, "_api_get", fake_api_get)
 
@@ -87,7 +87,7 @@ async def test_weixin_adapter_fetch_qrcode_status_uses_provided_poll_base_url(mo
         timeout_seconds=38
     )
 
-    assert result["status"] == "wait"
+    assert result["status"] == "waiting"
     assert captured == {
         "base_url": "https://redirect.weixin.qq.com",
         "endpoint": "ilink/bot/get_qrcode_status",
@@ -130,7 +130,7 @@ async def test_weixin_adapter_health_check_returns_diagnostics(monkeypatch):
             "ok": True,
             "issues": [],
             "suggestions": [],
-            "diagnostics": {"node_version": "22.3.0", "plugin_root_exists": True}
+            "diagnostics": {"binding_ready": True}
         }
     )
 
