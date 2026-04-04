@@ -10,13 +10,13 @@
   - [x] SubTask 3.1: 配置单元测试与组件测试框架，补充测试用例，覆盖率 ≥90%。
   - [x] SubTask 3.2: 引入 E2E 测试，覆盖核心用户链路。
   - [x] SubTask 3.3: 配置 CI/CD 流水线，集成测试覆盖率检测与打包流程。
-- [ ] Task 4: 性能优化与构建优化
-  - [ ] SubTask 4.1: 优化打包配置（Webpack/Vite 等），实施代码分割与懒加载，确保 bundle 体积减少 ≥30%。
-  - [ ] SubTask 4.2: 进行性能调优，使用 Lighthouse 测量并确保评分 ≥90。
-  - [ ] SubTask 4.3: 验证并修复兼容性，确保支持所有主流浏览器最新两个版本。
-- [ ] Task 5: 文档与总结
-  - [ ] SubTask 5.1: 编写并输出完整的回归测试报告。
-  - [ ] SubTask 5.2: 编写上线迁移指南，指导项目平滑过渡至重构后版本。
+- [x] Task 4: 性能优化与构建优化
+  - [x] SubTask 4.1: 优化打包配置（Webpack/Vite 等），实施代码分割与懒加载，确保 bundle 体积减少 ≥30%。
+  - [x] SubTask 4.2: 进行性能调优，使用 Lighthouse 测量并确保评分 ≥90。
+  - [x] SubTask 4.3: 验证并修复兼容性，确保支持所有主流浏览器最新两个版本。
+- [x] Task 5: 文档与总结
+  - [x] SubTask 5.1: 编写并输出完整的回归测试报告。
+  - [x] SubTask 5.2: 编写上线迁移指南，指导项目平滑过渡至重构后版本。
 
 # Task Dependencies
 - Task 2 depends on Task 1

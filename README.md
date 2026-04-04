@@ -308,6 +308,8 @@ E2E 配置见：
 - [backend-architecture.md](file:///d:/代码/Open-AwA/docs/backend-architecture.md)
 - [frontend-architecture.md](file:///d:/代码/Open-AwA/docs/frontend-architecture.md)
 - [testing.md](file:///d:/代码/Open-AwA/docs/testing.md)
+- [regression-test-report.md](file:///d:/代码/Open-AwA/docs/regression-test-report.md)
+- [deployment-migration-guide.md](file:///d:/代码/Open-AwA/docs/deployment-migration-guide.md)
 
 ## 已知情况说明
 
