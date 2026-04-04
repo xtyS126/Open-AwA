@@ -102,7 +102,14 @@ def test_weixin_health_check(monkeypatch):
                 "ok": True,
                 "issues": [],
                 "suggestions": [],
-                "diagnostics": {"plugin_root_exists": True}
+                "diagnostics": {
+                    "base_url": config.base_url,
+                    "account_id": config.account_id,
+                    "session_paused": False,
+                    "user_id": config.user_id,
+                    "binding_status": config.binding_status,
+                    "binding_ready": bool(config.account_id and config.token)
+                }
             }
 
         import skills.weixin_skill_adapter
@@ -116,7 +123,9 @@ def test_weixin_health_check(monkeypatch):
         assert response.status_code == 200
         data = response.json()
         assert data["ok"] is True
-        assert data["diagnostics"]["plugin_root_exists"] is True
+        assert data["diagnostics"]["account_id"] == "test_acc"
+        assert data["diagnostics"]["base_url"] == DEFAULT_QR_BASE_URL
+        assert data["diagnostics"]["binding_ready"] is True
 
 
 def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
@@ -155,7 +164,7 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         assert start_data["success"] is True
         assert start_data["connected"] is False
         assert start_data["state"] == "pending"
-        assert start_data["status"] == "wait"
+        assert start_data["status"] == "waiting"
         assert start_data["qrcode"] == "qr-123"
         assert start_data["qrcode_url"] == "https://example.com/qr.png"
         assert start_data["session_key"]
@@ -249,7 +258,7 @@ def test_weixin_qr_wait_updates_poll_base_url_on_redirect(monkeypatch):
         assert redirect_data["success"] is True
         assert redirect_data["connected"] is False
         assert redirect_data["state"] == "half_success"
-        assert redirect_data["status"] == "scaned_but_redirect"
+        assert redirect_data["status"] == "scanned"
         assert redirect_data["redirect_host"] == "redirect.weixin.qq.com"
         assert redirect_data["base_url"] == "https://redirect.weixin.qq.com"
 
@@ -293,7 +302,7 @@ def test_weixin_qr_wait_returns_wait_on_upstream_timeout(monkeypatch):
         wait_data = wait_response.json()
         assert wait_data["success"] is True
         assert wait_data["state"] == "pending"
-        assert wait_data["status"] == "wait"
+        assert wait_data["status"] == "waiting"
         assert wait_data["connected"] is False
 
 
@@ -436,7 +445,7 @@ def test_weixin_qr_wait_returns_uniform_fields_for_half_success(monkeypatch):
         assert wait_data["success"] is True
         assert wait_data["connected"] is False
         assert wait_data["state"] == "half_success"
-        assert wait_data["status"] == "scaned"
+        assert wait_data["status"] == "scanned"
         assert wait_data["session_key"] == start_response.json()["session_key"]
         assert wait_data["qrcode"] == "qr-half-success"
         assert wait_data["qrcode_url"] == "https://example.com/qr-half-success.png"
@@ -483,7 +492,7 @@ def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
         assert wait_data["success"] is True
         assert wait_data["connected"] is False
         assert wait_data["state"] == "half_success"
-        assert wait_data["status"] == "scaned"
+        assert wait_data["status"] == "scanned"
         assert wait_data["message"] == "waiting for confirm"
         assert wait_data["auth_id"] == "auth-123"
         assert wait_data["qrcode_url"] == "https://example.com/qr-pending.png"
@@ -522,7 +531,7 @@ def test_weixin_qr_wait_downgrades_confirmed_without_account_or_token_to_half_su
         assert wait_data["success"] is True
         assert wait_data["connected"] is False
         assert wait_data["state"] == "half_success"
-        assert wait_data["status"] == "scaned"
+        assert wait_data["status"] == "scanned"
         assert wait_data["session_key"] == session_key
         assert wait_data["message"] == "扫码已确认，正在等待上游返回完整凭据"
         assert wait_data["qrcode"] == "qr-invalid-confirmed"
@@ -621,7 +630,7 @@ def test_weixin_qr_wait_accepts_json_string_payload_without_session(monkeypatch)
         assert data["session_key"] == "string-session"
         assert data["qrcode"] == "qr-from-string"
         assert data["base_url"] == "https://string-poll.url"
-        assert data["status"] == "scaned"
+        assert data["status"] == "scanned"
         assert data["state"] == "half_success"
         assert data["auth_id"] == "auth-from-string"
 
@@ -750,7 +759,7 @@ def test_weixin_qr_wait_parses_key_value_string_status_payload(monkeypatch):
         )
         assert wait_response.status_code == 200
         data = wait_response.json()
-        assert data["status"] == "scaned"
+        assert data["status"] == "scanned"
         assert data["state"] == "half_success"
         assert data["auth_id"] == "auth-kv"
         assert data["ticket"] == "ticket-kv"
@@ -784,7 +793,7 @@ def test_weixin_qr_wait_preserves_plain_string_status_message(monkeypatch):
         )
         assert wait_response.status_code == 200
         data = wait_response.json()
-        assert data["status"] == "wait"
+        assert data["status"] == "waiting"
         assert data["state"] == "pending"
         assert data["message"] == "waiting for confirm"
 
@@ -844,5 +853,77 @@ def test_weixin_qr_wait_replays_confirmed_result_idempotently(monkeypatch):
         config_data = config_response.json()
         assert config_data["user_id"] == "wx-user-idempotent"
         assert config_data["binding_status"] == "bound"
+
+
+def test_weixin_qr_wait_handles_refreshing_status(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-refreshing",
+                "qrcode_img_content": "https://example.com/qr-refreshing.png"
+            }
+
+        async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            return {
+                "status": "refreshing",
+                "message": "二维码已过期，正在刷新"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_qrcode_status", mock_fetch_qrcode_status)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        session_key = start_response.json()["session_key"]
+
+        wait_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": session_key}
+        )
+        assert wait_response.status_code == 200
+        wait_data = wait_response.json()
+        assert wait_data["success"] is True
+        assert wait_data["connected"] is False
+        assert wait_data["state"] == "half_success"
+        assert wait_data["status"] == "refreshing"
+        assert wait_data["qrcode"] == "qr-refreshing"
+        assert wait_data["qrcode_url"] == "https://example.com/qr-refreshing.png"
+
+
+def test_weixin_qr_wait_handles_expired_status(monkeypatch):
+    with TestClient(app) as client:
+        import skills.weixin_skill_adapter
+
+        async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            return {
+                "qrcode": "qr-expired",
+                "qrcode_img_content": "https://example.com/qr-expired.png"
+            }
+
+        async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            return {
+                "status": "expired",
+                "message": "二维码已过期，请重新获取"
+            }
+
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
+        monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_qrcode_status", mock_fetch_qrcode_status)
+
+        start_response = client.post(f"{settings.API_V1_STR}/skills/weixin/qr/start", json={})
+        assert start_response.status_code == 200
+        session_key = start_response.json()["session_key"]
+
+        wait_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/qr/wait",
+            json={"session_key": session_key}
+        )
+        assert wait_response.status_code == 200
+        wait_data = wait_response.json()
+        assert wait_data["success"] is True
+        assert wait_data["connected"] is False
+        assert wait_data["state"] == "failed"
+        assert wait_data["status"] == "expired"
 
 
