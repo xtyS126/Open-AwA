@@ -217,7 +217,7 @@ describe('ChatPage Model Selector', () => {
       })
 
       await waitFor(() => {
-        expect(screen.getByText('✓ 已保存')).toBeInTheDocument()
+        expect(screen.getByText('已保存')).toBeInTheDocument()
       })
     })
   })
