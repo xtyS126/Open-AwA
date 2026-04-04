@@ -8,13 +8,13 @@
   --color-primary-softest-bg: rgba(91, 141, 239, 0.05);
 
   --color-bg: #ffffff;
-  --color-bg-secondary: #fafafa;
-  --color-bg-tertiary: #f5f5f5;
+  --color-bg-secondary: #f4f4f5;
+  --color-bg-tertiary: #e4e4e7;
 
-  --color-text: #333333;
-  --color-text-secondary: #666666;
-  --color-text-tertiary: #999999;
-  --color-border: #e5e5e5;
+  --color-text: #18181b;
+  --color-text-secondary: #52525b;
+  --color-text-tertiary: #a1a1aa;
+  --color-border: transparent;
 
   --color-success: #4ecdc4;
   --color-success-bg: rgba(78, 205, 196, 0.12);
@@ -25,7 +25,7 @@
   --color-error: #ff6b6b;
   --color-error-bg: rgba(255, 107, 107, 0.12);
   --color-error-soft-bg: #ffebee;
-  --color-error-soft-border: #ffcdd2;
+  --color-error-soft-border: transparent;
   --color-error-strong: #c62828;
 
   --color-warning: #b58100;
@@ -42,17 +42,9 @@
   --color-overlay: rgba(0, 0, 0, 0.5);
   --color-overlay-soft: rgba(0, 0, 0, 0.45);
 
-  --color-surface-dark: #1e1e1e;
-  --color-surface-dark-secondary: #252525;
-  --color-surface-dark-tertiary: #2a2a2a;
-  --color-border-dark: #333333;
-  --color-border-dark-secondary: #444444;
-  --color-text-on-dark: #ffffff;
-  --color-text-on-dark-secondary: #dddddd;
-  --color-text-on-dark-tertiary: #888888;
   --color-required: #ff4d4f;
 
-  --color-chart-grid: #e5e5e5;
+  --color-chart-grid: transparent;
   --color-chart-axis: #666666;
   --color-chart-primary: #5b8def;
   --color-chart-secondary: #4ecdc4;
@@ -72,8 +64,65 @@
   --radius-md: 10px;
   --radius-lg: 12px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-sm: none;
+  --shadow-md: none;
+}
+
+.dark {
+  --color-primary: #5b8def;
+  --color-primary-hover: #739df2;
+  --color-primary-dark: #4a7cd8;
+  --color-primary-ring: rgba(91, 141, 239, 0.3);
+  --color-primary-soft-bg: rgba(91, 141, 239, 0.15);
+  --color-primary-softer-bg: rgba(91, 141, 239, 0.1);
+  --color-primary-softest-bg: rgba(91, 141, 239, 0.05);
+
+  --color-bg: #18181b;
+  --color-bg-secondary: #27272a;
+  --color-bg-tertiary: #3f3f46;
+
+  --color-text: #fafafa;
+  --color-text-secondary: #a1a1aa;
+  --color-text-tertiary: #71717a;
+  --color-border: transparent;
+
+  --color-success: #4ecdc4;
+  --color-success-bg: rgba(78, 205, 196, 0.2);
+  --color-success-soft-bg: rgba(78, 205, 196, 0.1);
+  --color-success-strong: #4ecdc4;
+  --color-success-accent: #10b981;
+
+  --color-error: #ff6b6b;
+  --color-error-bg: rgba(255, 107, 107, 0.2);
+  --color-error-soft-bg: rgba(255, 107, 107, 0.1);
+  --color-error-soft-border: transparent;
+  --color-error-strong: #ff6b6b;
+
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.2);
+  --color-warning-soft-bg: rgba(251, 191, 36, 0.1);
+  --color-warning-strong: #fbbf24;
+
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.2);
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-overlay-soft: rgba(0, 0, 0, 0.6);
+
+  --color-required: #ef4444;
+
+  --color-chart-grid: transparent;
+  --color-chart-axis: #a1a1aa;
+  
+  --color-tag-purple-bg: rgba(192, 132, 252, 0.2);
+  --color-tag-purple-text: #d8b4fe;
+
+  --color-log-debug: #9ca3af;
+  --color-log-error: #f87171;
+  --color-log-critical: #ef4444;
 }
 
 * {
@@ -100,14 +149,16 @@ button {
 input, textarea {
   font-family: inherit;
   outline: none;
-  border: 1px solid var(--color-border);
+  border: none;
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
-  transition: border-color 0.2s;
+  transition: background-color 0.2s;
 }
 
 input:focus, textarea:focus {
-  border-color: var(--color-primary);
+  background-color: var(--color-bg-tertiary);
 }
 
 .app-container {
@@ -118,7 +169,7 @@ input:focus, textarea:focus {
 .sidebar {
   width: 240px;
   background: var(--color-bg-secondary);
-  border-right: 1px solid var(--color-border);
+  border-right: none;
   display: flex;
   flex-direction: column;
 }
@@ -153,15 +204,20 @@ input:focus, textarea:focus {
 }
 
 .btn-secondary:hover {
-  background: var(--color-border);
+  background: var(--color-bg-secondary);
+  filter: brightness(0.95);
+}
+
+.dark .btn-secondary:hover {
+  filter: brightness(1.2);
 }
 
 .card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  border: none;
   border-radius: var(--radius-md);
   padding: 16px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .loading {
