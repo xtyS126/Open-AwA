@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { generateRequestId, getCurrentRequestId, setCurrentRequestId } from '../services/logger'
+import { generateRequestId, getCurrentRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 
 describe('logger service', () => {
   afterEach(() => {

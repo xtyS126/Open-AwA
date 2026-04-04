@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/global.css'
-import { appLogger } from './services/logger'
+import { appLogger } from '@/shared/utils/logger'
 
 window.addEventListener('error', (event) => {
   appLogger.error({

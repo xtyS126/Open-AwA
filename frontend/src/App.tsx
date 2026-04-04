@@ -1,17 +1,18 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import ChatPage from './pages/ChatPage'
-import DashboardPage from './pages/DashboardPage'
-import SettingsPage from './pages/SettingsPage'
-import SkillsPage from './pages/SkillsPage'
-import PluginsPage from './pages/PluginsPage'
-import MemoryPage from './pages/MemoryPage'
-import BillingPage from './pages/BillingPage'
-import ExperiencePage from './pages/ExperiencePage'
-import CommunicationPage from './pages/CommunicationPage'
-import Sidebar from './components/Sidebar'
-import { authAPI } from './services/api'
-import { appLogger } from './services/logger'
+import { useEffect } from 'react'
+import ChatPage from '@/features/chat/ChatPage'
+import DashboardPage from '@/features/dashboard/DashboardPage'
+import SettingsPage from '@/features/settings/SettingsPage'
+import SkillsPage from '@/features/skills/SkillsPage'
+import PluginsPage from '@/features/plugins/PluginsPage'
+import MemoryPage from '@/features/memory/MemoryPage'
+import BillingPage from '@/features/billing/BillingPage'
+import ExperiencePage from '@/features/experiences/ExperiencePage'
+import CommunicationPage from '@/features/chat/CommunicationPage'
+import Sidebar from '@/shared/components/Sidebar/Sidebar'
+import { authAPI } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
+import { useAuthStore } from '@/shared/store/authStore'
 
 function NavigationLogger() {
   const location = useLocation()
@@ -31,7 +32,7 @@ function NavigationLogger() {
 }
 
 function App() {
-  const [initialized, setInitialized] = useState(false)
+  const { isInitialized, setInitialized, setAuth, logout } = useAuthStore()
 
   useEffect(() => {
     initializeApp()
@@ -47,6 +48,7 @@ function App() {
     })
 
     const token = localStorage.getItem('token')
+    const username = localStorage.getItem('username')
     if (token) {
       try {
         await authAPI.getMe()
@@ -57,6 +59,7 @@ function App() {
           status: 'success',
           message: 'existing token validated',
         })
+        setAuth(username ? { username } : { username: 'user' }, token)
         setInitialized(true)
         return
       } catch (error) {
@@ -68,14 +71,13 @@ function App() {
           message: 'token validation failed, clear local auth',
           extra: { error: error instanceof Error ? error.message : String(error) },
         })
-        localStorage.removeItem('token')
-        localStorage.removeItem('username')
+        logout()
       }
     }
 
     try {
       const testUser = {
-        username: 'test_user_' + Date.now(),
+        username: 'test_user_default',
         password: 'test_password_123'
       }
 
@@ -85,8 +87,7 @@ function App() {
       }
 
       const loginResponse = await authAPI.login(testUser.username, testUser.password)
-      localStorage.setItem('token', loginResponse.data.access_token)
-      localStorage.setItem('username', testUser.username)
+      setAuth({ username: testUser.username }, loginResponse.data.access_token)
       appLogger.info({
         event: 'app_initialize',
         module: 'app',
@@ -108,7 +109,7 @@ function App() {
     }
   }
 
-  if (!initialized) {
+  if (!isInitialized) {
     return (
       <div style={{ 
         display: 'flex', 

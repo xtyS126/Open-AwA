@@ -1,10 +1,10 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import PluginsPage from '../pages/PluginsPage'
-import { pluginsAPI } from '../services/api'
+import PluginsPage from '@/features/plugins/PluginsPage'
+import { pluginsAPI } from '@/shared/api/api'
 
-vi.mock('../services/api', () => ({
+vi.mock('@/shared/api/api', () => ({
   pluginsAPI: {
     getAll: vi.fn(),
     toggle: vi.fn(),
