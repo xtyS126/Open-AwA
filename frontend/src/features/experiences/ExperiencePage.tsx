@@ -185,7 +185,7 @@ function ExperiencePage({ hideHeader = false }: ExperiencePageProps) {
                     </div>
                   </div>
                   <button className={styles['btn-primary']} onClick={handleSave} disabled={!hasUnsavedChanges || saving}>
-                    {saving ? styles['保存中...'] : styles['保存']}
+                    {saving ? '保存中...' : '保存'}
                   </button>
                 </div>
 

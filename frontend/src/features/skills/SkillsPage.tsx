@@ -52,8 +52,8 @@ function SkillsPage() {
       <div className={styles['page-header']}>
         <h1>技能管理</h1>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button className={`${styles['btn']} ${styles['btn-primary']}`} onClick={() => setIsModalOpen(true)}>创建技能</button>
-          <button className={`${styles['btn']} ${styles['btn-secondary']}`}>浏览市场</button>
+          <button className={`btn btn-primary`} onClick={() => setIsModalOpen(true)}>创建技能</button>
+          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}>浏览市场</button>
         </div>
       </div>
 
@@ -61,7 +61,7 @@ function SkillsPage() {
         {skills.length === 0 ? (
           <div className={styles['empty-state']}>
             <p>还没有安装任何技能</p>
-            <button className={`${styles['btn']} ${styles['btn-primary']}`} onClick={() => setIsModalOpen(true)}>创建技能</button>
+            <button className={`btn btn-primary`} onClick={() => setIsModalOpen(true)}>创建技能</button>
           </div>
         ) : (
           skills.map((skill) => (
@@ -73,13 +73,13 @@ function SkillsPage() {
               <p className={styles['skill-desc']}>{skill.description || '暂无描述'}</p>
               <div className={styles['skill-actions']}>
                 <button
-                  className={`${styles['btn']} ${skill.enabled ? styles['btn-secondary'] : styles['btn-primary']}`}
+                  className={`btn ${skill.enabled ? styles['btn-secondary'] : styles['btn-primary']}`}
                   onClick={() => handleToggle(skill.id)}
                 >
-                  {skill.enabled ? styles['禁用'] : styles['启用']}
+                  {skill.enabled ? '禁用' : '启用'}
                 </button>
                 <button
-                  className={`${styles['btn']} ${styles['btn-danger']}`}
+                  className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
                   onClick={() => handleUninstall(skill.id)}
                 >
                   卸载
