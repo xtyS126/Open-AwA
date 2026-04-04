@@ -2,6 +2,7 @@
   padding: 24px;
   overflow-y: auto;
   height: 100%;
+  background: var(--color-bg);
 }
 
 .dashboard-header {
@@ -11,6 +12,7 @@
 .dashboard-header h1 {
   font-size: 24px;
   font-weight: 600;
+  margin: 0;
 }
 
 .stats-grid {
@@ -21,22 +23,24 @@
 }
 
 .stat-card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 20px;
+  background: var(--color-bg-secondary);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 24px;
 }
 
 .stat-card h3 {
   font-size: 14px;
   color: var(--color-text-secondary);
-  margin-bottom: 8px;
+  margin: 0 0 12px 0;
+  font-weight: 500;
 }
 
 .stat-value {
   font-size: 32px;
   font-weight: 600;
   color: var(--color-text);
+  margin: 0;
 }
 
 .stat-value.error {
@@ -51,48 +55,53 @@
 }
 
 .chart-card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 20px;
+  background: var(--color-bg-secondary);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 24px;
 }
 
 .chart-card h3 {
   font-size: 16px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin: 0 0 20px 0;
 }
 
 .top-intents-card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 20px;
+  background: var(--color-bg-secondary);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
 }
 
 .top-intents-card h3 {
   font-size: 16px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin: 0 0 20px 0;
 }
 
 .intent-list {
   list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .intent-list li {
   display: flex;
   justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.intent-list li:last-child {
-  border-bottom: none;
+  padding: 12px 16px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  border: none;
 }
 
 .intent-name {
   color: var(--color-text);
+  font-weight: 500;
 }
 
 .intent-count {

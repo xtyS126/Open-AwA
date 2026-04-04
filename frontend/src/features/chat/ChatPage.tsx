@@ -256,7 +256,7 @@ function ChatPage() {
               onClick={handleSaveModel}
               disabled={!selectedModel}
             >
-              {saveSuccess ? '✓ 已保存' : '保存模型'}
+              {saveSuccess ? '已保存' : '保存模型'}
             </button>
           )}
         </div>
