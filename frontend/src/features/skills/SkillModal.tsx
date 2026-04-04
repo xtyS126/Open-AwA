@@ -142,9 +142,9 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
         </div>
 
         <div className={styles['modal-footer']}>
-          <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={onClose} disabled={loading}>取消</button>
-          <button className={`${styles['btn']} ${styles['btn-primary']}`} onClick={handleSubmit} disabled={loading}>
-            {loading ? styles['处理中...'] : styles['确认']}
+          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={onClose} disabled={loading}>取消</button>
+          <button className={`btn btn-primary`} onClick={handleSubmit} disabled={loading}>
+            {loading ? '处理中...' : '确认'}
           </button>
         </div>
       </div>

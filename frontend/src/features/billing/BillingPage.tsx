@@ -74,7 +74,7 @@ function BillingPage() {
   }
 
   const formatCurrency = (amount: number, currency: string) => {
-    const symbol = currency === 'CNY' ? styles['¥'] : styles['$']
+    const symbol = currency === 'CNY' ? '¥' : '$'
     return `${symbol}${amount.toFixed(6)}`
   }
 

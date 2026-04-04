@@ -37,7 +37,7 @@ function DashboardPage() {
   }
 
   const formatCurrency = (amount: number, currency: string = 'USD') => {
-    const symbol = currency === 'CNY' ? styles['¥'] : styles['$']
+    const symbol = currency === 'CNY' ? '¥' : '$'
     return `${symbol}${amount.toFixed(2)}`
   }
 

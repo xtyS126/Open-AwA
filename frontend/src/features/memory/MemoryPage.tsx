@@ -105,7 +105,7 @@ function MemoryPage() {
                       {new Date(memory.timestamp).toLocaleString()}
                     </span>
                     <button
-                      className={`${styles['btn']} ${styles['btn-danger']} ${styles['btn-sm']}`}
+                      className={`btn ${styles['btn-danger'] || 'btn-danger'} ${styles['btn-sm']}`}
                       onClick={() => handleDeleteShortTerm(memory.id)}
                     >
                       删除
@@ -135,7 +135,7 @@ function MemoryPage() {
                       访问: {memory.access_count}次
                     </span>
                     <button
-                      className={`${styles['btn']} ${styles['btn-danger']} ${styles['btn-sm']}`}
+                      className={`btn ${styles['btn-danger'] || 'btn-danger'} ${styles['btn-sm']}`}
                       onClick={() => handleDeleteLongTerm(memory.id)}
                     >
                       删除

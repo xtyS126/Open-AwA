@@ -232,7 +232,7 @@ function SettingsPage() {
       await conversationAPI.updateCollectionStatus(enabled)
       setCollectionEnabled(enabled)
       await loadCollectionStatus()
-      setMessage({ type: 'success', text: enabled ? styles['已开启数据收集'] : styles['已关闭数据收集'] })
+      setMessage({ type: 'success', text: enabled ? '已开启数据收集' : '已关闭数据收集' })
       setTimeout(() => setMessage(null), 3000)
     } catch (error) {
       setMessage({ type: 'error', text: '更新收集开关失败' })
@@ -542,7 +542,7 @@ function SettingsPage() {
 
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
-      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? styles['供应商创建成功，已自动补全 API URL 后缀'] : styles['供应商创建成功'] })
+      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? '供应商创建成功，已自动补全 API URL 后缀' : '供应商创建成功' })
       setTimeout(() => setMessage(null), 3000)
       await loadApiProvidersData(providerId)
     } catch (error) {
@@ -587,7 +587,7 @@ function SettingsPage() {
         selected_models: providerForm.selected_models
       })
 
-      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? styles['供应商配置保存成功，已自动补全 API URL 后缀'] : styles['供应商配置保存成功'] })
+      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? '供应商配置保存成功，已自动补全 API URL 后缀' : '供应商配置保存成功' })
       setTimeout(() => setMessage(null), 3000)
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
@@ -766,7 +766,7 @@ function SettingsPage() {
   }
 
   const formatPrice = (price: number, currency: string) => {
-    const symbol = currency === 'CNY' ? styles['¥'] : styles['$']
+    const symbol = currency === 'CNY' ? '¥' : '$'
     return `${symbol}${price.toFixed(4)}`
   }
 
@@ -871,11 +871,11 @@ function SettingsPage() {
               </select>
             </div>
             <button
-              className={`${styles['btn']} ${styles['btn-primary']}`}
+              className={`btn btn-primary`}
               onClick={saveSettings}
               disabled={saving}
             >
-              {saving ? styles['保存中...'] : styles['保存设置']}
+              {saving ? '保存中...' : '保存设置'}
             </button>
           </div>
         )}
@@ -885,7 +885,7 @@ function SettingsPage() {
             <div className={styles['section-header']}>
               <h2>API配置</h2>
               <button
-                className={`${styles['btn']} ${styles['btn-primary']}`}
+                className={`btn btn-primary`}
                 onClick={handleOpenCreateProviderModal}
               >
                 新增供应商
@@ -994,32 +994,32 @@ function SettingsPage() {
                           type="password"
                           value={providerForm.api_key}
                           onChange={(e) => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
-                          placeholder={providerForm.has_api_key ? styles['已配置密钥，留空表示不修改'] : styles['输入供应商 API Key']}
+                          placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
                         />
                       </div>
                     </div>
 
                     <div className={styles['provider-detail-actions']}>
                       <button
-                        className={`${styles['btn']} ${styles['btn-secondary']}`}
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                         onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models)}
                         disabled={loadingProviderModels || deletingProvider}
                       >
-                        {loadingProviderModels ? styles['获取中...'] : styles['获取模型列表']}
+                        {loadingProviderModels ? '获取中...' : '获取模型列表'}
                       </button>
                       <button
-                        className={`${styles['btn']} ${styles['btn-primary']}`}
+                        className={`btn btn-primary`}
                         onClick={handleSaveProviderConfig}
                         disabled={saving || deletingProvider}
                       >
-                        {saving ? styles['保存中...'] : styles['保存供应商配置']}
+                        {saving ? '保存中...' : '保存供应商配置'}
                       </button>
                       <button
-                        className={`${styles['btn']} ${styles['btn-danger']}`}
+                        className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
                         onClick={handleDeleteProvider}
                         disabled={deletingProvider}
                       >
-                        {deletingProvider ? styles['删除中...'] : styles['删除供应商']}
+                        {deletingProvider ? '删除中...' : '删除供应商'}
                       </button>
                     </div>
 
@@ -1076,11 +1076,11 @@ function SettingsPage() {
               <p>支持的变量：{'{user_name}'} - 用户名，{'{current_time}'} - 当前时间</p>
             </div>
             <button
-              className={`${styles['btn']} ${styles['btn-primary']}`}
+              className={`btn btn-primary`}
               onClick={saveSettings}
               disabled={saving}
             >
-              {saving ? styles['保存中...'] : styles['保存提示词']}
+              {saving ? '保存中...' : '保存提示词'}
             </button>
           </div>
         )}
@@ -1156,13 +1156,13 @@ function SettingsPage() {
                               {editingModel === model.id ? (
                                 <div className={styles['action-buttons']}>
                                   <button 
-                                    className={`${styles['btn']} ${styles['btn-small']} ${styles['btn-primary']}`}
+                                    className={`btn ${styles['btn-small'] || 'btn-small'} btn-primary`}
                                     onClick={() => handleSaveModelPrice(model.id)}
                                   >
                                     保存
                                   </button>
                                   <button 
-                                    className={`${styles['btn']} ${styles['btn-small']}`}
+                                    className={`btn ${styles['btn-small'] || 'btn-small'}`}
                                     onClick={() => setEditingModel(null)}
                                   >
                                     取消
@@ -1170,7 +1170,7 @@ function SettingsPage() {
                                 </div>
                               ) : (
                                 <button 
-                                  className={`${styles['btn']} ${styles['btn-small']}`}
+                                  className={`btn ${styles['btn-small'] || 'btn-small'}`}
                                   onClick={() => handleEditModel(model)}
                                 >
                                   编辑
@@ -1193,10 +1193,10 @@ function SettingsPage() {
             <div className={styles['section-header']}>
               <h2>模型管理</h2>
               <button 
-                className={`${styles['btn']} ${styles['btn-primary']}`}
+                className={`btn btn-primary`}
                 onClick={() => setShowAddForm(!showAddForm)}
               >
-                {showAddForm ? styles['取消'] : styles['+ 添加模型']}
+                {showAddForm ? '取消' : '+ 添加模型'}
               </button>
             </div>
             <p className={styles['section-desc']}>
@@ -1265,7 +1265,7 @@ function SettingsPage() {
                     <label htmlFor="is-default-new">设为默认模型</label>
                   </div>
                 </div>
-                <button className={`${styles['btn']} ${styles['btn-primary']}`} onClick={handleAddConfiguration}>
+                <button className={`btn btn-primary`} onClick={handleAddConfiguration}>
                   添加
                 </button>
               </div>
@@ -1298,14 +1298,14 @@ function SettingsPage() {
                     <div className={styles['config-actions']}>
                       {!config.is_default && (
                         <button 
-                          className={`${styles['btn']} ${styles['btn-small']}`}
+                          className={`btn ${styles['btn-small'] || 'btn-small'}`}
                           onClick={() => handleSetDefault(config.id)}
                         >
                           设为默认
                         </button>
                       )}
                       <button 
-                        className={`${styles['btn']} ${styles['btn-small']} ${styles['btn-danger']}`}
+                        className={`btn ${styles['btn-small'] || 'btn-small'} ${styles['btn-danger'] || 'btn-danger'}`}
                         onClick={() => handleDeleteConfiguration(config.id)}
                       >
                         删除
@@ -1333,7 +1333,7 @@ function SettingsPage() {
                 disabled={updatingCollection}
               />
               <label htmlFor="conversation-collection">
-                {updatingCollection ? styles['更新中...'] : styles['启用对话数据采集']}
+                {updatingCollection ? '更新中...' : '启用对话数据采集'}
               </label>
             </div>
 
@@ -1355,8 +1355,8 @@ function SettingsPage() {
             )}
 
             <div className={styles['collection-actions-row']}>
-              <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={loadRecordsPreview} disabled={loadingRecordsPreview}>
-                {loadingRecordsPreview ? styles['刷新中...'] : styles['预览最近 20 条']}
+              <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadRecordsPreview} disabled={loadingRecordsPreview}>
+                {loadingRecordsPreview ? '刷新中...' : '预览最近 20 条'}
               </button>
             </div>
 
@@ -1380,8 +1380,8 @@ function SettingsPage() {
                   />
                 </div>
               </div>
-              <button className={`${styles['btn']} ${styles['btn-primary']}`} onClick={handleExportRecords} disabled={exportingRecords}>
-                {exportingRecords ? styles['导出中...'] : styles['导出数据集']}
+              <button className={`btn btn-primary`} onClick={handleExportRecords} disabled={exportingRecords}>
+                {exportingRecords ? '导出中...' : '导出数据集'}
               </button>
             </div>
 
@@ -1399,8 +1399,8 @@ function SettingsPage() {
                   />
                 </div>
               </div>
-              <button className={`${styles['btn']} ${styles['btn-danger']}`} onClick={handleCleanupRecords} disabled={cleaningRecords}>
-                {cleaningRecords ? styles['清理中...'] : styles['执行清理']}
+              <button className={`btn ${styles['btn-danger'] || 'btn-danger'}`} onClick={handleCleanupRecords} disabled={cleaningRecords}>
+                {cleaningRecords ? '清理中...' : '执行清理'}
               </button>
             </div>
 
@@ -1493,11 +1493,11 @@ function SettingsPage() {
                 </div>
 
                 <button
-                  className={`${styles['btn']} ${styles['btn-primary']}`}
+                  className={`btn btn-primary`}
                   onClick={handleSaveRetention}
                   disabled={saving}
                 >
-                  {saving ? styles['保存中...'] : styles['保存设置']}
+                  {saving ? '保存中...' : '保存设置'}
                 </button>
               </>
             )}
@@ -1526,11 +1526,11 @@ function SettingsPage() {
               <label htmlFor="enable-audit">启用审计日志</label>
             </div>
             <button
-              className={`${styles['btn']} ${styles['btn-primary']}`}
+              className={`btn btn-primary`}
               onClick={saveSettings}
               disabled={saving}
             >
-              {saving ? styles['保存中...'] : styles['保存安全设置']}
+              {saving ? '保存中...' : '保存安全设置'}
             </button>
           </div>
         )}
@@ -1598,9 +1598,9 @@ function SettingsPage() {
                 </div>
               </div>
               <div className={styles['provider-modal-actions']}>
-                <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
-                <button className={`${styles['btn']} ${styles['btn-primary']}`} onClick={handleCreateProvider} disabled={creatingProvider}>
-                  {creatingProvider ? styles['创建中...'] : styles['确认创建']}
+                <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
+                <button className={`btn btn-primary`} onClick={handleCreateProvider} disabled={creatingProvider}>
+                  {creatingProvider ? '创建中...' : '确认创建'}
                 </button>
               </div>
             </div>
