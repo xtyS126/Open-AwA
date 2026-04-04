@@ -3,9 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
-import subprocess
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -54,9 +53,6 @@ class WeixinRuntimeConfig:
     bot_type: str
     channel_version: str
     timeout_seconds: int
-    plugin_root: str
-    require_node: bool
-    min_node_major: int
     user_id: str = ""
     binding_status: str = "unbound"
 
@@ -65,7 +61,6 @@ class WeixinSkillAdapter:
     def __init__(self, project_root: Optional[str] = None):
         resolved_root = project_root or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.project_root = resolved_root
-        self.default_plugin_root = os.path.join(resolved_root, "插件", "openclaw-weixin")
         self.state_root = os.path.join(resolved_root, ".openawa", "weixin")
 
     def is_weixin_skill(self, skill_config: Dict[str, Any]) -> bool:
@@ -89,9 +84,6 @@ class WeixinSkillAdapter:
         bot_type = str(self._pick_value(section, runtime, "bot_type", "botType") or DEFAULT_BOT_TYPE)
         channel_version = str(self._pick_value(section, runtime, "channel_version", "channelVersion") or DEFAULT_CHANNEL_VERSION)
         timeout_raw = self._pick_value(section, runtime, "timeout_seconds", "timeoutSeconds")
-        plugin_root = self._pick_value(section, runtime, "plugin_root", "pluginRoot") or self.default_plugin_root
-        require_node_raw = self._pick_value(section, runtime, "require_node", "requireNode")
-        min_node_major_raw = self._pick_value(section, runtime, "min_node_major", "minNodeMajor")
         user_id = self._pick_value(section, runtime, "user_id", "userId")
         binding_status_raw = self._pick_value(section, runtime, "binding_status", "bindingStatus")
 
@@ -100,13 +92,6 @@ class WeixinSkillAdapter:
         except (TypeError, ValueError):
             timeout_seconds = 15
         timeout_seconds = max(5, timeout_seconds)
-
-        require_node = True if require_node_raw is None else bool(require_node_raw)
-
-        try:
-            min_node_major = int(min_node_major_raw) if min_node_major_raw is not None else 22
-        except (TypeError, ValueError):
-            min_node_major = 22
 
         normalized_user_id = str(user_id or "").strip()
         normalized_binding_status = self._normalize_binding_status(binding_status_raw, normalized_user_id)
@@ -118,9 +103,6 @@ class WeixinSkillAdapter:
             bot_type=bot_type,
             channel_version=channel_version,
             timeout_seconds=timeout_seconds,
-            plugin_root=str(plugin_root).strip(),
-            require_node=require_node,
-            min_node_major=min_node_major,
             user_id=normalized_user_id,
             binding_status=normalized_binding_status
         )
@@ -128,41 +110,24 @@ class WeixinSkillAdapter:
     def check_health(self, config: WeixinRuntimeConfig) -> Dict[str, Any]:
         issues: List[str] = []
         suggestions: List[str] = []
-        node_path = shutil.which("node")
-        node_version = ""
 
-        if config.require_node:
-            if not node_path:
-                issues.append("缺少 Node.js 运行时")
-                suggestions.append("安装 Node.js 22 或更高版本并确保 node 在 PATH 中")
-            else:
-                node_version = self._read_node_version(node_path)
-                if node_version:
-                    major = self._parse_node_major(node_version)
-                    if major is None or major < config.min_node_major:
-                        issues.append(f"Node.js 版本过低: {node_version}")
-                        suggestions.append(f"升级 Node.js 到 {config.min_node_major}+")
-                else:
-                    issues.append("无法读取 Node.js 版本")
-                    suggestions.append("确认 node 命令可执行且具备读取版本权限")
-
-        plugin_root_exists = bool(config.plugin_root) and os.path.isdir(config.plugin_root)
-        if not plugin_root_exists:
-            issues.append(f"weixin 插件目录不存在: {config.plugin_root}")
-            suggestions.append("确认仓库包含 插件/openclaw-weixin 目录或在 skill 配置中指定 plugin_root")
+        if not config.account_id:
+            issues.append("account_id 为空")
+            suggestions.append("配置有效的 account_id")
+        if not config.token:
+            issues.append("token 为空")
+            suggestions.append("配置有效的 bot token")
+        if not config.base_url or not config.base_url.startswith(("http://", "https://")):
+            issues.append("base_url 格式无效")
+            suggestions.append("配置有效的 base_url，如 https://ilinkai.weixin.qq.com")
 
         return {
             "ok": len(issues) == 0,
             "issues": issues,
             "suggestions": suggestions,
             "diagnostics": {
-                "node_path": node_path,
-                "node_version": node_version,
-                "plugin_root": config.plugin_root,
-                "plugin_root_exists": plugin_root_exists,
                 "base_url": config.base_url,
                 "account_id": config.account_id,
-                "state_root": self.state_root,
                 "session_paused": self._is_session_paused(config.account_id),
                 "user_id": config.user_id,
                 "binding_status": config.binding_status,
@@ -192,9 +157,9 @@ class WeixinSkillAdapter:
                     suggestions=health["suggestions"]
                 )
 
-            if action == "health_check":
+            if action in {"health_check", "check_health"}:
                 return self._success_result(
-                    action=action,
+                    action="check_health",
                     started=started,
                     runtime=runtime,
                     data={"health": health}
@@ -211,17 +176,21 @@ class WeixinSkillAdapter:
 
             self._assert_session_active(runtime.account_id)
 
-            if action == "send_message":
+            if action in {"send_message", "send_text"}:
                 result = await self._send_message(runtime, payload)
-            elif action == "get_updates":
+                normalized_action = "send_text"
+            elif action in {"get_updates", "poll"}:
                 result = await self._get_updates(runtime, payload)
+                normalized_action = "poll"
             else:
                 raise WeixinAdapterError(
                     code="WEIXIN_UNSUPPORTED_ACTION",
                     message=f"不支持的 weixin 操作: {action}",
-                    details={"supported_actions": ["health_check", "send_message", "get_updates"]},
-                    suggestions=["将 inputs.action 设置为 health_check、send_message 或 get_updates"]
+                    details={"supported_actions": ["check_health", "send_text", "poll"]},
+                    suggestions=["将 inputs.action 设置为 check_health、send_text 或 poll"]
                 )
+
+            action = normalized_action
 
             return self._success_result(
                 action=action,
@@ -243,10 +212,16 @@ class WeixinSkillAdapter:
             return self._error_result(action=action, started=started, runtime=runtime, error=wrapped)
 
     async def _send_message(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
-        to_user_id = str(payload.get("to_user_id") or payload.get("toUserId") or "").strip()
-        text = str(payload.get("text") or "").strip()
+        to_user_id = str(
+            payload.get("to_user_id")
+            or payload.get("toUserId")
+            or payload.get("user_id")
+            or payload.get("userId")
+            or ""
+        ).strip()
+        text = str(payload.get("text") or payload.get("content") or "").strip()
         context_token = str(payload.get("context_token") or payload.get("contextToken") or "").strip()
-        client_id = str(payload.get("client_id") or payload.get("clientId") or f"openawa-{int(time.time() * 1000)}")
+        client_id = str(payload.get("client_id") or payload.get("clientId") or f"ilink-{uuid.uuid4().hex[:8]}")
 
         if not context_token and to_user_id and config.account_id:
             context_token = self._get_context_token(config.account_id, to_user_id)
@@ -284,13 +259,18 @@ class WeixinSkillAdapter:
         }
         response = await self._api_post(config=config, endpoint="ilink/bot/sendmessage", body=request_body)
         return {
-            "request": {"to_user_id": to_user_id, "client_id": client_id, "context_token": context_token},
+            "request": {"to_user_id": to_user_id, "client_id": client_id, "context_token": context_token, "text": text},
             "response": response,
             "state": {"context_token_source": "cache" if not payload.get("context_token") and not payload.get("contextToken") else "payload"}
         }
 
     async def _get_updates(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
-        incoming_buf = str(payload.get("get_updates_buf") or payload.get("getUpdatesBuf") or "").strip()
+        incoming_buf = str(
+            payload.get("get_updates_buf")
+            or payload.get("getUpdatesBuf")
+            or payload.get("cursor")
+            or ""
+        ).strip()
         persisted_buf = self._load_get_updates_buf(config.account_id)
         get_updates_buf = incoming_buf or persisted_buf or ""
         request_body = {"get_updates_buf": get_updates_buf}
@@ -318,6 +298,7 @@ class WeixinSkillAdapter:
         return {
             "request": request_body,
             "response": response,
+            "cursor": next_buf,
             "state": {
                 "used_get_updates_buf": get_updates_buf,
                 "saved_get_updates_buf": next_buf,
@@ -457,8 +438,8 @@ class WeixinSkillAdapter:
             raise
         except httpx.TimeoutException:
             if endpoint.strip().lower() == "ilink/bot/get_qrcode_status":
-                logger.debug(f"[weixin _api_get] {endpoint} client timeout after {timeout_seconds}s, fallback to wait")
-                return {"status": "wait"}
+                logger.debug(f"[weixin _api_get] {endpoint} client timeout after {timeout_seconds}s, fallback to waiting")
+                return {"status": "waiting"}
             raise WeixinAdapterError(
                 code="WEIXIN_TIMEOUT",
                 message="weixin 上游请求超时",
@@ -661,26 +642,3 @@ class WeixinSkillAdapter:
         raw = str(int.from_bytes(os.urandom(4), byteorder="big", signed=False))
         return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
 
-    @staticmethod
-    def _read_node_version(node_path: str) -> str:
-        try:
-            proc = subprocess.run(
-                [node_path, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False
-            )
-            version = (proc.stdout or proc.stderr or "").strip()
-            return version.lstrip("v")
-        except Exception:
-            return ""
-
-    @staticmethod
-    def _parse_node_major(version: str) -> Optional[int]:
-        if not version:
-            return None
-        try:
-            return int(version.split(".")[0])
-        except (TypeError, ValueError, IndexError):
-            return None
