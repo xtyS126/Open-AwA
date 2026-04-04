@@ -169,10 +169,7 @@ def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
         base_url=DEFAULT_BASE_URL,
         bot_type=DEFAULT_BOT_TYPE,
         channel_version="1.0.2",
-        timeout_seconds=15,
-        plugin_root=adapter.default_plugin_root,
-        require_node=False,
-        min_node_major=22
+        timeout_seconds=15
     )
 
 
@@ -247,7 +244,7 @@ def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
         return normalized_pairs
 
     lowered = text.lower()
-    if lowered in {"wait", "scaned", "scanned", "scaned_but_redirect", "confirmed", "expired", "pending", "confirming", "timeout", "success", "ok", "done"}:
+    if lowered in {"wait", "waiting", "scaned", "scanned", "scaned_but_redirect", "confirmed", "expired", "pending", "confirming", "refreshing", "timeout", "success", "ok", "done"}:
         return {"status": text, "raw_text": text}
     if text.startswith(("http://", "https://")):
         return {"qrcode_url": text, "raw_text": text}
@@ -306,18 +303,20 @@ def _build_qr_session(
 
 
 WEIXIN_QR_STATE_MAP = {
-    "wait": "pending",
-    "scaned": "half_success",
+    "waiting": "pending",
+    "scanned": "half_success",
     "scaned_but_redirect": "half_success",
+    "refreshing": "half_success",
     "expired": "failed",
+    "timeout": "failed",
     "confirmed": "success"
 }
 
 
 WEIXIN_QR_MESSAGE_MAP = {
-    "wait": "等待扫码中",
-    "scaned": "已扫码，请在微信中确认",
-    "scaned_but_redirect": "已扫码，正在切换轮询节点",
+    "waiting": "等待扫码中",
+    "scanned": "已扫码，请在微信中确认",
+    "refreshing": "二维码已过期，正在刷新",
     "expired": "二维码已过期，请重新获取",
     "confirmed": "与微信连接成功"
 }
@@ -341,7 +340,7 @@ def _build_qr_response(
     ticket: str = "",
     hint: str = ""
 ) -> Dict[str, Any]:
-    normalized_status = str(status or "wait").strip().lower() or "wait"
+    normalized_status = str(status or "waiting").strip().lower() or "waiting"
     normalized_message = str(message or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")).strip() or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")
     normalized_user_id = str(user_id or "").strip()
     normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
@@ -433,7 +432,10 @@ def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
     redirect_host = str(payload.get("redirect_host") or payload.get("redirectHost") or "").strip()
 
     if raw_status == "scaned_but_redirect":
-        normalized_status = "scaned_but_redirect"
+        normalized_status = "scanned"
+        if redirect_host:
+            payload["redirect_host"] = redirect_host
+            message = message or "已扫码，正在切换轮询节点"
     elif account_id and token:
         normalized_status = "confirmed"
     elif raw_status in {"confirmed", "confirm", "success", "succeed", "succeeded", "ok", "done"}:
@@ -441,11 +443,13 @@ def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
     elif raw_status in {"expired", "timeout", "timed_out", "cancelled", "canceled", "invalid"}:
         normalized_status = "expired"
     elif raw_status in {"scaned", "scanned", "scan", "confirming", "pending", "wait_confirm", "waiting_confirm", "auth", "authorizing", "authorized"}:
-        normalized_status = "scaned"
+        normalized_status = "scanned"
+    elif raw_status == "refreshing":
+        normalized_status = "refreshing"
     elif auth_id or ticket or hint:
-        normalized_status = "scaned"
+        normalized_status = "scanned"
     else:
-        normalized_status = "wait"
+        normalized_status = "waiting"
 
     normalized_payload = dict(payload)
     normalized_payload["status"] = normalized_status
@@ -550,9 +554,8 @@ async def weixin_health_check(request: Request):
         bot_type="3",
         channel_version="1.0.2",
         timeout_seconds=config.timeout_seconds or 15,
-        plugin_root=adapter.default_plugin_root,
-        require_node=True,
-        min_node_major=22
+        user_id=str(config.user_id or "").strip(),
+        binding_status=_normalize_binding_status(config.binding_status, user_id=str(config.user_id or "").strip())
     )
     result = adapter.check_health(runtime_config)
     return result
@@ -618,7 +621,7 @@ async def weixin_qr_start(
         _build_qr_logger(session_key, "qr_reuse", poll_base_url=existing.get("poll_base_url", "")).info("reusing active weixin qr session")
         return _build_qr_response(
             session_key=session_key,
-            status="wait",
+            status="waiting",
             message="二维码已就绪，请使用微信扫描。",
             qrcode=existing.get("qrcode", ""),
             qrcode_url=existing.get("qrcode_url", ""),
@@ -659,7 +662,7 @@ async def weixin_qr_start(
     _build_qr_logger(session_key, "qr_started", poll_base_url=poll_base_url, has_qrcode_url=bool(qrcode_url)).info("weixin qr session started")
     return _build_qr_response(
         session_key=session_key,
-        status="wait",
+        status="waiting",
         message="使用微信扫描以下二维码，以完成连接。",
         qrcode=qrcode,
         qrcode_url=qrcode_url,
@@ -756,12 +759,12 @@ async def weixin_qr_wait(
         transient_keywords = ["timeout", "超时", "temporarily", "temporary", "connection", "network", "远程主机", "断开", "reset"]
         if any(keyword in detail.lower() for keyword in ["timeout", "temporarily", "temporary", "connection", "network", "reset"]) or any(keyword in detail for keyword in ["超时", "远程主机", "断开"]):
             _build_qr_logger(payload.session_key, "transient_upstream_error", poll_base_url=poll_base_url, detail=detail).warning("transient upstream error, fallback to wait")
-            status_result = {"status": "wait"}
+            status_result = {"status": "waiting"}
         else:
             raise HTTPException(status_code=502, detail=exc.message)
 
     normalized_status_result = _normalize_qr_wait_status(status_result)
-    status = str(normalized_status_result.get("status") or "wait").strip().lower()
+    status = str(normalized_status_result.get("status") or "waiting").strip().lower()
     base_response = _build_qr_response(
         session_key=payload.session_key,
         status=status,
@@ -792,7 +795,7 @@ async def weixin_qr_wait(
         has_user_id=bool(base_response["user_id"])
     ).info("weixin qr status updated")
 
-    if status == "scaned_but_redirect":
+    if str(normalized_status_result.get("redirect_host") or "").strip():
         redirect_host = base_response["redirect_host"]
         response = dict(base_response)
         if redirect_host:
@@ -803,6 +806,9 @@ async def weixin_qr_wait(
                     active_session["poll_base_url"] = poll_base_url
                     active_session["created_at"] = time.time()
             response["base_url"] = poll_base_url
+            response["status"] = "scanned"
+            response["state"] = WEIXIN_QR_STATE_MAP["scanned"]
+            response["message"] = response["message"] or WEIXIN_QR_MESSAGE_MAP["scanned"]
         _build_qr_logger(payload.session_key, "redirect_updated", redirect_host=redirect_host, base_url=response["base_url"]).info("weixin qr polling host redirected")
         return response
 
@@ -816,7 +822,7 @@ async def weixin_qr_wait(
         if not account_id or not token:
             response = _build_qr_response(
                 session_key=payload.session_key,
-                status="scaned",
+                status="scanned",
                 message="扫码已确认，正在等待上游返回完整凭据",
                 connected=False,
                 qrcode=base_response["qrcode"],
@@ -873,7 +879,7 @@ async def weixin_qr_wait(
         _build_qr_logger(payload.session_key, "expired").warning("weixin qr session expired")
         return dict(base_response)
 
-    if status == "scaned":
+    if status == "scanned":
         _build_qr_logger(payload.session_key, "half_success", auth_id=base_response["auth_id"], ticket=base_response["ticket"], has_hint=bool(base_response["hint"])).info("weixin qr reached half-success state")
         return dict(base_response)
     return dict(base_response)
