@@ -339,6 +339,10 @@ class ExecutionLayer:
                 )
             return resolved
 
+        max_tokens = resolved.get("max_tokens")
+        if max_tokens is None:
+            max_tokens = 8192
+
         request_spec = build_provider_request(
             provider=resolved["provider"],
             api_endpoint=resolved["api_endpoint"],
@@ -346,7 +350,7 @@ class ExecutionLayer:
             purpose="chat",
             model=resolved["model"],
             prompt=prompt,
-            max_tokens=resolved.get("max_tokens") if resolved.get("max_tokens") is not None else 8192,
+            max_tokens=max_tokens,
             request_id=resolved.get("request_id"),
             client_version=resolved.get("client_version"),
             context=serialized_context,
@@ -559,6 +563,10 @@ class ExecutionLayer:
             yield {"error": resolved.get("error")}
             return
 
+        max_tokens = resolved.get("max_tokens")
+        if max_tokens is None:
+            max_tokens = 8192
+
         request_spec = build_provider_request(
             provider=resolved["provider"],
             api_endpoint=resolved["api_endpoint"],
@@ -566,7 +574,7 @@ class ExecutionLayer:
             purpose="chat",
             model=resolved["model"],
             prompt=prompt,
-            max_tokens=resolved.get("max_tokens") if resolved.get("max_tokens") is not None else 8192,
+            max_tokens=max_tokens,
             request_id=resolved.get("request_id"),
             client_version=resolved.get("client_version"),
             context=serialized_context,
