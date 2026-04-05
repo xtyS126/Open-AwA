@@ -4,6 +4,7 @@
 """
 
 import hashlib
+from typing import Union
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -75,7 +76,7 @@ async def _send_chunked_websocket_message(
     record_websocket_message_metric(message_type, "sent")
 
 
-@router.post("")
+@router.post("", response_model=Union[ChatResponse, str])
 async def chat(
     request: Request,
     message: ChatMessage,
