@@ -86,36 +86,40 @@ function App() {
       }
     }
 
-    try {
-      const testUser = {
-        username: 'test_user_default',
-        password: 'test_password_123'
-      }
-
+    if (import.meta.env.DEV) {
       try {
-        await authAPI.register(testUser.username, testUser.password)
-      } catch (e) {
-      }
+        const testUser = {
+          username: 'test_user_default',
+          password: 'test_password_123'
+        }
 
-      const loginResponse = await authAPI.login(testUser.username, testUser.password)
-      setAuth({ username: testUser.username }, loginResponse.data.access_token)
-      appLogger.info({
-        event: 'app_initialize',
-        module: 'app',
-        action: 'auto_login',
-        status: 'success',
-        message: 'test user login succeeded',
-      })
-      setInitialized(true)
-    } catch (error) {
-      appLogger.error({
-        event: 'app_initialize',
-        module: 'app',
-        action: 'auto_login',
-        status: 'failure',
-        message: 'app initialization failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
+        try {
+          await authAPI.register(testUser.username, testUser.password)
+        } catch (e) {
+        }
+
+        const loginResponse = await authAPI.login(testUser.username, testUser.password)
+        setAuth({ username: testUser.username }, loginResponse.data.access_token)
+        appLogger.info({
+          event: 'app_initialize',
+          module: 'app',
+          action: 'auto_login',
+          status: 'success',
+          message: 'test user login succeeded',
+        })
+        setInitialized(true)
+      } catch (error) {
+        appLogger.error({
+          event: 'app_initialize',
+          module: 'app',
+          action: 'auto_login',
+          status: 'failure',
+          message: 'app initialization failed',
+          extra: { error: error instanceof Error ? error.message : String(error) },
+        })
+        setInitialized(true)
+      }
+    } else {
       setInitialized(true)
     }
   }
