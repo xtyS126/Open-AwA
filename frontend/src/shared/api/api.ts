@@ -125,16 +125,32 @@ export const chatAPI = {
     onChunk?: (content: string, reasoning: string) => void,
     onError?: (error: any) => void
   ) => {
+    let isErrorLogged = false
+    const url = '/api/chat'
+    const requestId = generateRequestId()
+    setCurrentRequestId(requestId)
+
+    appLogger.info({
+      event: 'api_request',
+      module: 'api',
+      action: 'POST',
+      status: 'start',
+      request_id: requestId,
+      message: 'api request started',
+      extra: { url },
+    })
+
     try {
       const token = localStorage.getItem('token')
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        'X-Request-Id': requestId,
       }
       if (token) {
         headers['Authorization'] = `Bearer ${token}`
       }
 
-      const response = await fetch('/api/chat', {
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -146,10 +162,44 @@ export const chatAPI = {
         })
       })
 
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err?.detail || err?.error?.message || 'Request failed')
+      const responseRequestId = response.headers.get('x-request-id') || requestId
+      if (responseRequestId) {
+        setCurrentRequestId(responseRequestId)
       }
+
+      if (!response.ok) {
+        isErrorLogged = true
+        const err = await response.json().catch(() => ({}))
+        const errorMessage = err?.detail || err?.error?.message || 'Request failed'
+        
+        appLogger.error({
+          event: 'api_response',
+          module: 'api',
+          action: 'POST',
+          status: 'failure',
+          request_id: responseRequestId,
+          message: 'api request failed',
+          extra: {
+            url,
+            status_code: response.status,
+            error: errorMessage,
+          },
+        })
+        throw new Error(errorMessage)
+      }
+
+      appLogger.info({
+        event: 'api_response',
+        module: 'api',
+        action: 'POST',
+        status: 'success',
+        request_id: responseRequestId,
+        message: 'api request finished',
+        extra: {
+          url,
+          status_code: response.status,
+        },
+      })
 
       if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
 
@@ -207,6 +257,20 @@ export const chatAPI = {
         }
       }
     } catch (e) {
+      if (!isErrorLogged) {
+        appLogger.error({
+          event: 'api_response',
+          module: 'api',
+          action: 'POST',
+          status: 'failure',
+          request_id: requestId,
+          message: 'api stream request failed',
+          extra: {
+            url,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        })
+      }
       onError?.(e)
       throw e
     }
