@@ -627,7 +627,7 @@ async def update_configuration(
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
     """
     pricing_manager = PricingManager(db)
-    update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
+    update_dict = update_data.dict(exclude_unset=True)
     
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update")
