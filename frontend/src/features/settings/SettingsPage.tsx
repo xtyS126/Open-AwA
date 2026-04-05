@@ -102,10 +102,21 @@ function SettingsPage() {
   const [loadingProviderDetail, setLoadingProviderDetail] = useState(false)
   const [loadingProviderModels, setLoadingProviderModels] = useState(false)
   const [providerModelsError, setProviderModelsError] = useState<string | null>(null)
-  const [hasFetchedModels, setHasFetchedModels] = useState(false)
   const [showCreateProviderModal, setShowCreateProviderModal] = useState(false)
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
   const [creatingProvider, setCreatingProvider] = useState(false)
   const [deletingProvider, setDeletingProvider] = useState(false)
+
+  // --- New states for model importing and batch deleting ---
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [fetchedRemoteModels, setFetchedRemoteModels] = useState<ProviderModel[]>([])
+  const [modalSelectedModels, setModalSelectedModels] = useState<string[]>([])
+  const [importing, setImporting] = useState(false)
+  const [selectedForDeletion, setSelectedForDeletion] = useState<string[]>([])
+  const [showDeleteModelsModal, setShowDeleteModelsModal] = useState(false)
+  const [deletingModels, setDeletingModels] = useState(false)
+  // --------------------------------------------------------
+
   const [addProviderForm, setAddProviderForm] = useState(createInitialAddProviderForm())
   const [providerForm, setProviderForm] = useState<ApiProviderFormState>({
     config_id: null,
@@ -331,48 +342,44 @@ function SettingsPage() {
 
   const normalizeProviderId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-')
 
-  const providerEndpointSuffixMap: Record<string, string> = {
-    openai: '/v1/chat/completions',
-    deepseek: '/v1/chat/completions',
-    moonshot: '/v1/chat/completions',
-    alibaba: '/compatible-mode/v1/chat/completions',
-    zhipu: '/api/paas/v4/chat/completions',
-    anthropic: '/v1/messages',
-    google: '/v1beta/models'
-  }
-
-  const normalizeProviderApiEndpoint = (provider: string, apiEndpoint: string) => {
-    const raw = apiEndpoint.trim()
+  const normalizeProviderBaseUrl = (apiEndpoint: string) => {
+    let raw = apiEndpoint.trim()
     if (!raw) {
-      return { endpoint: '', autoCompleted: false }
+      return ''
     }
 
-    const normalizedProvider = normalizeProviderId(provider)
-    const defaultSuffix = providerEndpointSuffixMap[normalizedProvider] || '/v1/chat/completions'
-    const knownSuffixes = Array.from(new Set([...Object.values(providerEndpointSuffixMap), defaultSuffix]))
-
-    const trimmed = raw.replace(/\/+$/, '')
-    const lowerTrimmed = trimmed.toLowerCase()
-    if (knownSuffixes.some((suffix) => lowerTrimmed.endsWith(suffix.toLowerCase()))) {
-      return { endpoint: trimmed, autoCompleted: false }
-    }
-
-    let pathName = ''
     try {
-      pathName = new URL(raw).pathname.toLowerCase()
-    } catch {
-      pathName = ''
+      new URL(raw)
+    } catch (e) {
+      // Return raw if invalid URL, let backend or other logic handle, or maybe we can just proceed
     }
 
-    const isBasePath = pathName === '' || pathName === '/' || pathName === '/v1' || pathName === '/v1beta' || pathName === '/api'
-    if (!isBasePath) {
-      return { endpoint: trimmed, autoCompleted: false }
+    const knownSuffixes = [
+      '/v1/chat/completions',
+      '/compatible-mode/v1/chat/completions',
+      '/api/paas/v4/chat/completions',
+      '/v1/messages',
+      '/v1beta/models',
+      '/v1/models',
+      '/chat/completions',
+      '/models'
+    ]
+
+    let trimmed = raw.replace(/\/+$/, '')
+    const lowerTrimmed = trimmed.toLowerCase()
+    
+    for (const suffix of knownSuffixes) {
+      if (lowerTrimmed.endsWith(suffix.toLowerCase())) {
+        trimmed = trimmed.slice(0, trimmed.length - suffix.length).replace(/\/+$/, '')
+        break
+      }
     }
 
-    return {
-      endpoint: `${trimmed}${defaultSuffix}`,
-      autoCompleted: true
+    if (!trimmed.toLowerCase().endsWith('/v1')) {
+      trimmed = `${trimmed}/v1`
     }
+
+    return trimmed
   }
 
   const loadApiProvidersData = async (preferredProviderId?: string) => {
@@ -451,15 +458,14 @@ function SettingsPage() {
         provider: config.provider || providerId,
         display_name: config.display_name || providerData.display_name || providerData.name || providerId,
         icon: config.icon || providerData.icon || '',
-        api_endpoint: (config.api_endpoint || (config as any).api_url || (config as any).base_url || providerData.api_endpoint || (providerData as any).api_url || (providerData as any).base_url || ''),
+        api_endpoint: (config.base_url || config.api_endpoint || (config as any).api_url || (config as any).base_url || providerData.base_url || providerData.api_endpoint || (providerData as any).api_url || (providerData as any).base_url || ''),
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
         selected_models: selectedModels
       })
       setSelectedProviderId(providerId)
-      setHasFetchedModels(false)
 
-      await fetchProviderModels(providerId, selectedModels)
+      await fetchProviderModels(providerId, selectedModels, false)
     } catch (error) {
       setMessage({ type: 'error', text: '加载供应商详情失败' })
       setTimeout(() => setMessage(null), 3000)
@@ -468,7 +474,7 @@ function SettingsPage() {
     }
   }
 
-  const fetchProviderModels = async (providerId: string, fallbackSelectedModels: string[] = []) => {
+  const fetchProviderModels = async (providerId: string, fallbackSelectedModels: string[] = [], openModal: boolean = true) => {
     if (!providerId) return
 
     setLoadingProviderModels(true)
@@ -481,18 +487,59 @@ function SettingsPage() {
         ? data.selected_models
         : fallbackSelectedModels
 
-      setProviderModels(data.models || [])
+      const models = data.models || []
+      setFetchedRemoteModels(models)
+      
+      // Update provider form's selected_models so the main page displays them
       setProviderForm(prev => ({ ...prev, selected_models: selectedModels }))
+
+      if (openModal) {
+        // Open the modal with pre-selected models
+        setModalSelectedModels(selectedModels)
+        setShowImportModal(true)
+      }
 
       if (!data.success && data.error?.message) {
         setProviderModelsError(data.error.message)
       }
     } catch (error) {
-      setProviderModels([])
+      setFetchedRemoteModels([])
       setProviderModelsError('获取模型列表失败')
     } finally {
-      setHasFetchedModels(true)
       setLoadingProviderModels(false)
+    }
+  }
+
+  const handleImportModels = async () => {
+    if (!providerForm.provider) return
+    setImporting(true)
+    try {
+      const newSelected = [...modalSelectedModels]
+      await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
+      setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
+      setMessage({ type: 'success', text: '模型导入成功' })
+      setShowImportModal(false)
+    } catch (error) {
+      setMessage({ type: 'error', text: '模型导入失败' })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleBatchDeleteModels = async () => {
+    if (!providerForm.provider) return
+    setDeletingModels(true)
+    try {
+      const newSelected = providerForm.selected_models.filter(m => !selectedForDeletion.includes(m))
+      await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
+      setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
+      setSelectedForDeletion([])
+      setMessage({ type: 'success', text: '批量删除成功' })
+      setShowDeleteModelsModal(false)
+    } catch (error) {
+      setMessage({ type: 'error', text: '批量删除失败' })
+    } finally {
+      setDeletingModels(false)
     }
   }
 
@@ -519,6 +566,19 @@ function SettingsPage() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [showCreateProviderModal, creatingProvider])
 
+  useEffect(() => {
+    if (!showDeleteConfirmModal) return
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleCloseDeleteConfirmModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [showDeleteConfirmModal, deletingProvider])
+
   const handleCreateProvider = async () => {
     const providerId = normalizeProviderId(addProviderForm.provider)
     const baseModel = addProviderForm.base_model.trim() || 'custom-model'
@@ -529,16 +589,26 @@ function SettingsPage() {
       return
     }
 
+    if (addProviderForm.api_endpoint) {
+      try {
+        new URL(addProviderForm.api_endpoint)
+      } catch (error) {
+        setMessage({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
+        setTimeout(() => setMessage(null), 3000)
+        return
+      }
+    }
+
     setCreatingProvider(true)
 
     try {
-      const normalizedEndpointResult = normalizeProviderApiEndpoint(providerId, addProviderForm.api_endpoint)
+      const normalizedBaseUrl = normalizeProviderBaseUrl(addProviderForm.api_endpoint)
       await modelsAPI.createConfiguration({
         provider: providerId,
         model: baseModel,
         display_name: addProviderForm.display_name.trim() || providerId,
         icon: addProviderForm.icon.trim() || undefined,
-        api_endpoint: normalizedEndpointResult.endpoint || undefined,
+        api_endpoint: normalizedBaseUrl || undefined,
         api_key: addProviderForm.api_key.trim() || undefined,
         selected_models: [],
         is_default: false
@@ -546,7 +616,7 @@ function SettingsPage() {
 
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
-      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? '供应商创建成功，已自动补全 API URL 后缀' : '供应商创建成功' })
+      setMessage({ type: 'success', text: '供应商创建成功' })
       setTimeout(() => setMessage(null), 3000)
       await loadApiProvidersData(providerId)
     } catch (error) {
@@ -564,10 +634,20 @@ function SettingsPage() {
       return
     }
 
+    if (providerForm.api_endpoint) {
+      try {
+        new URL(providerForm.api_endpoint)
+      } catch (error) {
+        setMessage({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
+        setTimeout(() => setMessage(null), 3000)
+        return
+      }
+    }
+
     setSaving(true)
 
     try {
-      const normalizedEndpointResult = normalizeProviderApiEndpoint(providerForm.provider, providerForm.api_endpoint)
+      const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.api_endpoint)
       const updatePayload: {
         display_name?: string
         icon?: string
@@ -577,7 +657,7 @@ function SettingsPage() {
       } = {
         display_name: providerForm.display_name.trim() || undefined,
         icon: providerForm.icon.trim() || undefined,
-        api_endpoint: normalizedEndpointResult.endpoint || undefined,
+        api_endpoint: normalizedBaseUrl || undefined,
         selected_models: providerForm.selected_models
       }
 
@@ -585,13 +665,13 @@ function SettingsPage() {
         updatePayload.api_key = providerForm.api_key.trim()
       }
 
-      setProviderForm(prev => ({ ...prev, api_endpoint: normalizedEndpointResult.endpoint }))
+      setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))
       await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
       await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
         selected_models: providerForm.selected_models
       })
 
-      setMessage({ type: 'success', text: normalizedEndpointResult.autoCompleted ? '供应商配置保存成功，已自动补全 API URL 后缀' : '供应商配置保存成功' })
+      setMessage({ type: 'success', text: '供应商配置保存成功' })
       setTimeout(() => setMessage(null), 3000)
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
@@ -602,16 +682,22 @@ function SettingsPage() {
     }
   }
 
-  const handleDeleteProvider = async () => {
+  const handleOpenDeleteConfirmModal = () => {
     if (!providerForm.provider) {
       setMessage({ type: 'error', text: '当前供应商配置不完整' })
       setTimeout(() => setMessage(null), 3000)
       return
     }
+    setShowDeleteConfirmModal(true)
+  }
 
-    const providerLabel = providerForm.display_name.trim() || providerForm.provider
-    const confirmed = confirm(`确定要删除供应商“${providerLabel}”吗？该供应商下的配置将被删除。`)
-    if (!confirmed) return
+  const handleCloseDeleteConfirmModal = () => {
+    if (deletingProvider) return
+    setShowDeleteConfirmModal(false)
+  }
+
+  const confirmDeleteProvider = async () => {
+    if (!providerForm.provider) return
 
     setDeletingProvider(true)
 
@@ -619,6 +705,7 @@ function SettingsPage() {
       await modelsAPI.deleteProvider(providerForm.provider)
       setMessage({ type: 'success', text: '供应商删除成功' })
       setTimeout(() => setMessage(null), 3000)
+      setShowDeleteConfirmModal(false)
       await loadApiProvidersData()
     } catch (error) {
       setMessage({ type: 'error', text: '供应商删除失败' })
@@ -626,23 +713,6 @@ function SettingsPage() {
     } finally {
       setDeletingProvider(false)
     }
-  }
-
-  const handleToggleProviderModel = (modelName: string, checked: boolean) => {
-    setProviderForm(prev => {
-      const selected = checked
-        ? Array.from(new Set([...prev.selected_models, modelName]))
-        : prev.selected_models.filter(item => item !== modelName)
-
-      return {
-        ...prev,
-        selected_models: selected
-      }
-    })
-
-    setProviderModels(prev => prev.map(item => (
-      item.model === modelName ? { ...item, selected: checked } : item
-    )))
   }
 
   const handleProviderChange = async (provider: string) => {
@@ -895,7 +965,7 @@ function SettingsPage() {
                 新增供应商
               </button>
             </div>
-            <p className={styles['section-desc']}>左侧管理供应商，右侧配置 API URL、API Key，并获取模型后用复选框选择。</p>
+            <p className={styles['section-desc']}>左侧管理供应商，右侧配置基础 URL、API Key，并从远端获取模型后用复选框选择。</p>
 
             <div className={styles['api-config-layout']}>
               <aside className={styles['provider-sidebar']}>
@@ -981,12 +1051,12 @@ function SettingsPage() {
                         />
                       </div>
                       <div className={styles['form-group']}>
-                        <label>API URL</label>
+                        <label>基础 URL</label>
                         <input
                           type="text"
                           value={providerForm.api_endpoint}
                           onChange={(e) => setProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
-                          placeholder="https://api.example.com/v1/chat/completions"
+                          placeholder="https://api.example.com"
                         />
                       </div>
                     </div>
@@ -1007,7 +1077,7 @@ function SettingsPage() {
                       <button
                         type="button"
                         className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models)}
+                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models, true)}
                         disabled={loadingProviderModels || deletingProvider}
                       >
                         {loadingProviderModels ? '获取中...' : '获取模型列表'}
@@ -1021,40 +1091,51 @@ function SettingsPage() {
                       </button>
                       <button
                         className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
-                        onClick={handleDeleteProvider}
+                        onClick={handleOpenDeleteConfirmModal}
                         disabled={deletingProvider}
                       >
                         {deletingProvider ? '删除中...' : '删除供应商'}
                       </button>
                     </div>
+                    {providerModelsError && (
+                      <div className={`${styles['message']} ${styles['error']}`} style={{ marginTop: '12px' }}>{providerModelsError}</div>
+                    )}
 
                     <div className={styles['provider-models-section']}>
-                      <h3>模型选择（复选）</h3>
-                      {providerModelsError && (
-                        <div className={`${styles['message']} ${styles['error']}`}>{providerModelsError}</div>
-                      )}
-                      {loadingProviderModels ? (
-                        <div className={styles['loading']}>加载模型中...</div>
-                      ) : providerModels.length === 0 ? (
+                      <div className={styles['provider-models-header']} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 style={{ margin: 0 }}>已导入模型</h3>
+                        {selectedForDeletion.length > 0 && (
+                          <button
+                            className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
+                            onClick={() => setShowDeleteModelsModal(true)}
+                          >
+                            批量删除 ({selectedForDeletion.length})
+                          </button>
+                        )}
+                      </div>
+                      
+                      {providerForm.selected_models.length === 0 ? (
                         <div className={styles['empty-state']}>
-                          {hasFetchedModels ? (
-                            <p>该供应商暂无模型配置。请在下方的“添加模型”中录入。</p>
-                          ) : (
-                            <p>暂无模型，请先点击“获取模型列表”</p>
-                          )}
+                          <p>暂无已导入模型，请点击上方“获取模型列表”进行选择和导入</p>
                         </div>
                       ) : (
                         <div className={styles['provider-model-list']}>
-                          {providerModels.map(model => {
-                            const checked = providerForm.selected_models.includes(model.model)
+                          {providerForm.selected_models.map(modelName => {
+                            const checked = selectedForDeletion.includes(modelName)
                             return (
-                              <label key={model.id} className={styles['provider-model-item']}>
+                              <label key={modelName} className={styles['provider-model-item']}>
                                 <input
                                   type="checkbox"
                                   checked={checked}
-                                  onChange={(e) => handleToggleProviderModel(model.model, e.target.checked)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedForDeletion(prev => [...prev, modelName])
+                                    } else {
+                                      setSelectedForDeletion(prev => prev.filter(m => m !== modelName))
+                                    }
+                                  }}
                                 />
-                                <span className={styles['provider-model-name']}>{model.model}</span>
+                                <span className={styles['provider-model-name']}>{modelName}</span>
                               </label>
                             )
                           })}
@@ -1610,6 +1691,120 @@ function SettingsPage() {
                 <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
                 <button className={`btn btn-primary`} onClick={handleCreateProvider} disabled={creatingProvider}>
                   {creatingProvider ? '创建中...' : '确认创建'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showDeleteConfirmModal && (
+          <div className={styles['provider-modal-overlay']} onClick={handleCloseDeleteConfirmModal}>
+            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()}>
+              <div className={styles['provider-modal-header']}>
+                <h3>确认删除</h3>
+              </div>
+              <div className={styles['provider-modal-body']}>
+                <p style={{ margin: '16px 0', lineHeight: 1.5 }}>
+                  确定要删除供应商“<strong>{providerForm.display_name.trim() || providerForm.provider}</strong>”吗？<br />
+                  该供应商下的配置将被永久删除，此操作不可恢复。
+                </p>
+              </div>
+              <div className={styles['provider-modal-footer']}>
+                <button 
+                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} 
+                  onClick={handleCloseDeleteConfirmModal} 
+                  disabled={deletingProvider}
+                >
+                  取消
+                </button>
+                <button 
+                  className={`btn ${styles['btn-danger'] || 'btn-danger'}`} 
+                  onClick={confirmDeleteProvider} 
+                  disabled={deletingProvider}
+                >
+                  {deletingProvider ? '删除中...' : '确认删除'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showImportModal && (
+          <div className={styles['provider-modal-overlay']} onClick={() => setShowImportModal(false)}>
+            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+              <div className={styles['provider-modal-header']}>
+                <h3>导入模型</h3>
+              </div>
+              <div className={styles['provider-modal-body']} style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                <p style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>请勾选需要导入的模型，未勾选的模型不会出现在聊天界面中。</p>
+                <div className={styles['provider-model-list']} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                  {fetchedRemoteModels.map(model => {
+                    const checked = modalSelectedModels.includes(model.model)
+                    return (
+                      <label key={model.id || model.model} className={styles['provider-model-item']}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setModalSelectedModels(prev => [...prev, model.model])
+                            } else {
+                              setModalSelectedModels(prev => prev.filter(m => m !== model.model))
+                            }
+                          }}
+                        />
+                        <span className={styles['provider-model-name']}>{model.model}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className={styles['provider-modal-footer']} style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px', borderTop: '1px solid var(--border-color)' }}>
+                <button 
+                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} 
+                  onClick={() => setShowImportModal(false)} 
+                  disabled={importing}
+                >
+                  取消
+                </button>
+                <button 
+                  className={`btn btn-primary`} 
+                  onClick={handleImportModels} 
+                  disabled={importing}
+                >
+                  {importing ? '导入中...' : '确认导入'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showDeleteModelsModal && (
+          <div className={styles['provider-modal-overlay']} onClick={() => setShowDeleteModelsModal(false)}>
+            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()}>
+              <div className={styles['provider-modal-header']}>
+                <h3>确认批量删除</h3>
+              </div>
+              <div className={styles['provider-modal-body']}>
+                <p style={{ margin: '16px 0', lineHeight: 1.5 }}>
+                  确定要删除选中的 <strong>{selectedForDeletion.length}</strong> 个模型吗？<br />
+                  这些模型将从当前配置中移除。
+                </p>
+              </div>
+              <div className={styles['provider-modal-footer']}>
+                <button 
+                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} 
+                  onClick={() => setShowDeleteModelsModal(false)} 
+                  disabled={deletingModels}
+                >
+                  取消
+                </button>
+                <button 
+                  className={`btn ${styles['btn-danger'] || 'btn-danger'}`} 
+                  onClick={handleBatchDeleteModels} 
+                  disabled={deletingModels}
+                >
+                  {deletingModels ? '删除中...' : '确认删除'}
                 </button>
               </div>
             </div>

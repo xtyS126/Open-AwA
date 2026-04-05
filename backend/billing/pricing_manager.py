@@ -18,6 +18,24 @@ class PricingManager:
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     @staticmethod
+    def get_provider_base_suffix(provider: Optional[str]) -> str:
+        """
+        返回 Provider 的基础版本路径。
+        不同厂商的基础路径并不相同，不能一律强制补 `/v1`。
+        """
+
+        provider_id = PricingManager.normalize_provider(provider)
+        return {
+            "openai": "/v1",
+            "anthropic": "/v1",
+            "deepseek": "/v1",
+            "google": "/v1beta",
+            "alibaba": "/compatible-mode/v1",
+            "moonshot": "/v1",
+            "zhipu": "/api/paas/v4",
+        }.get(provider_id, "/v1")
+
+    @staticmethod
     def _validate_configurations_uniqueness(configurations: List[Dict]) -> Tuple[bool, List[Tuple[str, str]]]:
         """
         处理validate、configurations、uniqueness相关逻辑，并为调用方返回对应结果。
@@ -69,36 +87,82 @@ class PricingManager:
         if not raw:
             return None
 
-        normalized_provider = PricingManager.normalize_provider(provider)
-        suffix_map = {
-            "openai": "/v1/chat/completions",
-            "deepseek": "/v1/chat/completions",
-            "moonshot": "/v1/chat/completions",
-            "alibaba": "/compatible-mode/v1/chat/completions",
-            "zhipu": "/api/paas/v4/chat/completions",
-            "anthropic": "/v1/messages",
-            "google": "/v1beta/models",
-        }
-        default_suffix = suffix_map.get(normalized_provider, "/v1/chat/completions")
-        known_suffixes = {default_suffix, *suffix_map.values()}
+        # Verify URL format if possible, just like frontend
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(raw)
+            if not parsed.scheme or not parsed.netloc:
+                pass  # We don't raise error to keep compatibility, but frontend validates it
+        except Exception:
+            pass
 
         trimmed = raw.rstrip("/")
+        known_suffixes = sorted(list(dict.fromkeys([
+            "/v1/chat/completions",
+            "/compatible-mode/v1/chat/completions",
+            "/api/paas/v4/chat/completions",
+            "/v1/messages",
+            "/v1beta/models",
+            "/v1/models",
+            "/chat/completions",
+            "/models"
+        ])), key=len, reverse=True)
+
         lowered = trimmed.lower()
-        if any(lowered.endswith(suffix.lower()) for suffix in known_suffixes):
-            return trimmed
+        for suffix in known_suffixes:
+            if lowered.endswith(suffix.lower()):
+                trimmed = trimmed[: len(trimmed) - len(suffix)].rstrip("/")
+                break
 
-        path_name = ""
-        try:
-            from urllib.parse import urlparse
-            path_name = (urlparse(raw).path or "").lower()
-        except Exception:
-            path_name = ""
+        base_suffix = PricingManager.get_provider_base_suffix(provider)
+        if base_suffix and not trimmed.lower().endswith(base_suffix.lower()):
+            trimmed = f"{trimmed}{base_suffix}"
 
-        is_base_path = path_name in {"", "/", "/v1", "/v1beta", "/api"}
-        if not is_base_path:
-            return trimmed
+        return trimmed or None
 
-        return f"{trimmed}{default_suffix}"
+    @staticmethod
+    def get_provider_endpoint_suffixes(provider: Optional[str]) -> Dict[str, str]:
+        """
+        获取provider对应的接口后缀映射。
+        根据接口规范：
+        - 模型列表: /models (用于 GET 请求)
+        - 聊天请求: /chat/completions (用于 POST 请求)
+        """
+        provider_id = PricingManager.normalize_provider(provider)
+        if provider_id == "anthropic":
+            return {
+                "chat": "/messages",
+                "models": "/models",
+            }
+        if provider_id == "google":
+            return {
+                "chat": "/models",
+                "models": "/models",
+            }
+        return {
+            "chat": "/chat/completions",
+            "models": "/models",
+        }
+
+    @staticmethod
+    def build_provider_api_endpoint(provider: Optional[str], base_url: Optional[str], purpose: str) -> Optional[str]:
+        """
+        基于保存的基础 URL 构建具体用途的接口地址。
+        """
+        normalized_base_url = PricingManager._normalize_provider_api_endpoint(provider, base_url)
+        if not normalized_base_url:
+            return None
+
+        suffixes = PricingManager.get_provider_endpoint_suffixes(provider)
+        suffix = suffixes.get(purpose)
+        if not suffix:
+            return normalized_base_url
+
+        lowered = normalized_base_url.lower()
+        if lowered.endswith(suffix.lower()):
+            return normalized_base_url
+
+        return f"{normalized_base_url}{suffix}"
 
     @staticmethod
     def parse_selected_models(selected_models: Optional[str]) -> List[str]:

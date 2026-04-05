@@ -9,13 +9,15 @@
   - [x] SubTask 2.1: 重构 `Sidebar.tsx` 及样式，采用扁平化设计，移除右侧硬边框，改用背景色区分。
   - [x] SubTask 2.2: 在 Sidebar 底部增加一个美观的主题切换按钮（使用 SVG 图标或文字），支持手动切换白天/黑夜模式，并禁止使用 Emoji。
 
-- [ ] Task 3: 核心交互页面适配（Chat 与 Dashboard）
-  - [ ] SubTask 3.1: 升级 `ChatPage` 与 `CommunicationPage`，气泡和输入框采用扁平化色块（`--color-bg-secondary`），移除生硬边框。
-  - [ ] SubTask 3.2: 升级 `DashboardPage`，数据卡片和图表区域适配扁平化规范与暗色模式。
+- [x] Task 3: 核心交互页面适配（Chat 与 Dashboard）
+  - [x] SubTask 3.1: 升级 `ChatPage` 与 `CommunicationPage`，气泡和输入框采用扁平化色块（`--color-bg-secondary`），移除生硬边框。
+  - [x] SubTask 3.2: 升级 `DashboardPage`，数据卡片和图表区域适配扁平化规范与暗色模式。
 
-- [ ] Task 4: 配置与管理页面适配（Plugins, Skills, Settings, Memory, Billing, Experiences）
-  - [ ] SubTask 4.1: 升级 `PluginsPage`、`SkillsPage` 与 `SettingsPage`，统一表单输入框、下拉框、开关和列表项的扁平化样式与悬停效果。
-  - [ ] SubTask 4.2: 升级 `MemoryPage`、`BillingPage` 和 `ExperiencePage`，确保表格、卡片和标签在黑夜模式下的对比度与可读性，移除花里胡哨的设计。
+- [x] Task 4: 配置与管理页面适配（Plugins, Skills, Settings, Memory, Billing, Experiences）
+  - [x] SubTask 4.1: 升级 `PluginsPage`、`SkillsPage` 与 `SettingsPage`，统一表单输入框、下拉框、开关和列表项的扁平化样式与悬停效果。
+  - [x] SubTask 4.2: 升级 `MemoryPage`、`BillingPage` 和 `ExperiencePage`，确保表格、卡片和标签在黑夜模式下的对比度与可读性，移除花里胡哨的设计。
+
+- [x] Task 5: 验证并更新检查清单
 
 # Task Dependencies
 - [Task 2] depends on [Task 1]

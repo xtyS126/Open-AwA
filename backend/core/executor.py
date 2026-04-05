@@ -3,11 +3,24 @@
 这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
 """
 
-from typing import Dict, Any, Optional, Callable
-from loguru import logger
 import asyncio
+import hashlib
+import json
 import time
+from typing import Dict, Any, Optional, Callable
+
 import httpx
+from loguru import logger
+
+from config.logging import get_request_id
+from core.metrics import record_model_service_metric, record_tool_execution_metric
+from core.model_service import (
+    build_provider_request,
+    build_standard_error,
+    is_retryable_exception,
+    send_with_retries,
+    send_stream_with_retries,
+)
 from memory.experience_manager import ExperienceManager
 from sqlalchemy.orm import Session
 
@@ -39,6 +52,9 @@ class ExecutionLayer:
             "anthropic": "ANTHROPIC_API_KEY",
             "deepseek": "DEEPSEEK_API_KEY"
         }
+        self._tool_execution_cache: Dict[str, Dict[str, Any]] = {}
+        self._tool_execution_cache_order: list[str] = []
+        self._max_tool_execution_cache = 256
         logger.info("ExecutionLayer initialized")
 
     def configure_llm(self, api_url: str, api_key: Optional[str] = None):
@@ -63,11 +79,57 @@ class ExecutionLayer:
         处理build、error相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        return {
-            "code": code,
-            "message": message,
-            "details": details or {}
+        return build_standard_error(
+            code=code,
+            message=message,
+            request_id=get_request_id(),
+            details=details,
+        )
+
+    def _build_tool_idempotency_key(self, step: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """
+        为工具执行生成稳定幂等键。
+        如果调用方已显式传入幂等键，则优先复用该值。
+        """
+
+        explicit_key = str(step.get("idempotency_key") or context.get("idempotency_key") or "").strip()
+        if explicit_key:
+            return explicit_key
+
+        fingerprint_source = {
+            "session_id": context.get("session_id"),
+            "user_id": context.get("user_id"),
+            "action": step.get("action"),
+            "step": step,
         }
+        serialized = json.dumps(fingerprint_source, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    def _get_cached_tool_result(self, idempotency_key: str) -> Optional[Dict[str, Any]]:
+        """
+        读取已缓存的工具执行结果，避免同一幂等键重复触发副作用。
+        """
+
+        cached = self._tool_execution_cache.get(idempotency_key)
+        if not isinstance(cached, dict):
+            return None
+        cloned = dict(cached)
+        cloned["idempotent_replay"] = True
+        return cloned
+
+    def _cache_tool_result(self, idempotency_key: str, result: Dict[str, Any]) -> None:
+        """
+        缓存工具执行结果，并控制缓存上限，防止内存持续增长。
+        """
+
+        self._tool_execution_cache[idempotency_key] = dict(result)
+        if idempotency_key in self._tool_execution_cache_order:
+            self._tool_execution_cache_order.remove(idempotency_key)
+        self._tool_execution_cache_order.append(idempotency_key)
+
+        while len(self._tool_execution_cache_order) > self._max_tool_execution_cache:
+            oldest = self._tool_execution_cache_order.pop(0)
+            self._tool_execution_cache.pop(oldest, None)
 
     def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
         """
@@ -101,6 +163,21 @@ class ExecutionLayer:
                 text = first_choice.get("text")
                 if isinstance(text, str):
                     return text
+
+        candidates = response_data.get("candidates")
+        if isinstance(candidates, list) and candidates:
+            first_candidate = candidates[0]
+            if isinstance(first_candidate, dict):
+                content = first_candidate.get("content")
+                if isinstance(content, dict):
+                    parts = content.get("parts")
+                    if isinstance(parts, list):
+                        texts = []
+                        for part in parts:
+                            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                                texts.append(part["text"])
+                        if texts:
+                            return "\n".join(texts)
 
         return ""
 
@@ -171,6 +248,12 @@ class ExecutionLayer:
             else:
                 api_endpoint = self.default_provider_endpoints.get(provider)
 
+        try:
+            from billing.pricing_manager import PricingManager
+            api_endpoint = PricingManager.build_provider_api_endpoint(provider, api_endpoint, "chat")
+        except Exception as e:
+            logger.error(f"Failed to normalize provider endpoint: {e}")
+
         if not api_endpoint:
             return {
                 "ok": False,
@@ -211,7 +294,9 @@ class ExecutionLayer:
             "provider": provider,
             "model": model,
             "api_endpoint": api_endpoint,
-            "api_key": api_key
+            "api_key": api_key,
+            "request_id": context.get("request_id") or get_request_id(),
+            "client_version": context.get("client_version"),
         }
 
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -251,96 +336,63 @@ class ExecutionLayer:
                 )
             return resolved
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {resolved['api_key']}"
-        }
-
-        payload = {
-            "model": resolved["model"],
-            "provider": resolved["provider"],
-            "prompt": prompt,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "context": serialized_context,
-            "max_tokens": 1000
-        }
+        request_spec = build_provider_request(
+            provider=resolved["provider"],
+            api_endpoint=resolved["api_endpoint"],
+            api_key=resolved["api_key"],
+            purpose="chat",
+            model=resolved["model"],
+            prompt=prompt,
+            max_tokens=1000,
+            request_id=resolved.get("request_id"),
+            client_version=resolved.get("client_version"),
+            context=serialized_context,
+        )
         llm_input_payload.update({
-            "endpoint": resolved["api_endpoint"],
+            "endpoint": request_spec.endpoint,
             "headers": {
-                "Content-Type": headers.get("Content-Type"),
-                "Authorization": "Bearer ***"
+                key: ("Bearer ***" if key.lower() == "authorization" else value)
+                for key, value in request_spec.headers.items()
             },
-            "payload": payload,
+            "payload": request_spec.payload,
         })
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    resolved["api_endpoint"],
-                    json=payload,
-                    headers=headers
-                )
-                response.raise_for_status()
-                result = response.json()
-                response_text = self._extract_response_text(result)
+            logger.info(
+                f"Sending LLM request to {request_spec.endpoint} "
+                f"for provider {resolved['provider']}, model {resolved['model']}"
+            )
+            response = await send_with_retries(request_spec)
+            result = response.json()
+            logger.info(f"Successfully received response from {request_spec.endpoint}")
+            response_text = self._extract_response_text(result)
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat", "success", duration_ms)
 
-                if not response_text.strip():
-                    output = {
-                        "ok": False,
-                        "error": self._build_error(
-                            "llm_empty_response",
-                            "Empty response from model",
-                            {
-                                "provider": resolved["provider"],
-                                "model": resolved["model"],
-                                "api_endpoint": resolved["api_endpoint"]
-                            }
-                        )
-                    }
-                    duration_ms = int((time.perf_counter() - started_at) * 1000)
-                    if callable(record_hook):
-                        record_hook(
-                            node_type="llm_call",
-                            user_message=context.get("message", prompt),
-                            context=context,
-                            status="error",
-                            error_message=output["error"]["message"],
-                            llm_input=llm_input_payload,
-                            llm_output=output,
-                            execution_duration_ms=duration_ms,
-                            metadata={
-                                "provider": resolved["provider"],
-                                "model": resolved["model"],
-                                "status_code": response.status_code,
-                            }
-                        )
-                    return output
-
+            if not response_text.strip():
                 output = {
-                    "ok": True,
-                    "response": response_text,
-                    "provider": resolved["provider"],
-                    "model": resolved["model"]
+                    "ok": False,
+                    "error": build_standard_error(
+                        "model_service_empty_response",
+                        "模型服务返回空响应",
+                        request_id=resolved.get("request_id"),
+                        details={
+                            "provider": resolved["provider"],
+                            "model": resolved["model"],
+                            "api_endpoint": request_spec.endpoint,
+                        },
+                        retryable=False,
+                    )
                 }
-                duration_ms = int((time.perf_counter() - started_at) * 1000)
                 if callable(record_hook):
-                    usage = result.get("usage") if isinstance(result, dict) else None
-                    tokens_used = None
-                    if isinstance(usage, dict):
-                        tokens_used = usage.get("total_tokens")
                     record_hook(
                         node_type="llm_call",
                         user_message=context.get("message", prompt),
                         context=context,
-                        status="success",
+                        status="error",
+                        error_message=output["error"]["message"],
                         llm_input=llm_input_payload,
                         llm_output=output,
-                        llm_tokens_used=tokens_used,
                         execution_duration_ms=duration_ms,
                         metadata={
                             "provider": resolved["provider"],
@@ -349,24 +401,57 @@ class ExecutionLayer:
                         }
                     )
                 return output
+
+            output = {
+                "ok": True,
+                "response": response_text,
+                "provider": resolved["provider"],
+                "model": resolved["model"],
+                "request_id": resolved.get("request_id"),
+            }
+            if callable(record_hook):
+                usage = result.get("usage") if isinstance(result, dict) else None
+                tokens_used = None
+                if isinstance(usage, dict):
+                    tokens_used = usage.get("total_tokens")
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="success",
+                    llm_input=llm_input_payload,
+                    llm_output=output,
+                    llm_tokens_used=tokens_used,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "status_code": response.status_code,
+                    }
+                )
+            return output
         except httpx.HTTPStatusError as e:
             logger.error(f"LLM API HTTP status error: {str(e)}")
             response_text = e.response.text[:1000] if e.response.text else ""
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat", "http_error", duration_ms)
             output = {
                 "ok": False,
-                "error": self._build_error(
-                    "llm_http_error",
-                    "Model service request failed",
-                    {
+                "error": build_standard_error(
+                    "model_service_http_error",
+                    "模型服务请求失败",
+                    request_id=resolved.get("request_id"),
+                    details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "api_endpoint": resolved["api_endpoint"],
+                        "api_endpoint": request_spec.endpoint,
                         "status_code": e.response.status_code,
                         "response_text": response_text
-                    }
+                    },
+                    retryable=is_retryable_exception(e),
+                    status_code=e.response.status_code,
                 )
             }
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
             if callable(record_hook):
                 record_hook(
                     node_type="llm_call",
@@ -386,20 +471,23 @@ class ExecutionLayer:
             return output
         except httpx.HTTPError as e:
             logger.error(f"LLM API call failed: {str(e)}")
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat", "network_error", duration_ms)
             output = {
                 "ok": False,
-                "error": self._build_error(
-                    "llm_network_error",
-                    "Model service network error",
-                    {
+                "error": build_standard_error(
+                    "model_service_network_error",
+                    "模型服务网络异常",
+                    request_id=resolved.get("request_id"),
+                    details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "api_endpoint": resolved["api_endpoint"],
+                        "api_endpoint": request_spec.endpoint,
                         "reason": str(e)
-                    }
+                    },
+                    retryable=is_retryable_exception(e),
                 )
             }
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
             if callable(record_hook):
                 record_hook(
                     node_type="llm_call",
@@ -418,20 +506,22 @@ class ExecutionLayer:
             return output
         except Exception as e:
             logger.error(f"Unexpected error in LLM call: {str(e)}")
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat", "unexpected_error", duration_ms)
             output = {
                 "ok": False,
-                "error": self._build_error(
-                    "llm_unexpected_error",
-                    "Unexpected model invocation error",
-                    {
+                "error": build_standard_error(
+                    "model_service_unexpected_error",
+                    "模型服务调用出现未知异常",
+                    request_id=resolved.get("request_id"),
+                    details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "api_endpoint": resolved["api_endpoint"],
+                        "api_endpoint": request_spec.endpoint if "request_spec" in locals() else resolved["api_endpoint"],
                         "reason": str(e)
-                    }
+                    },
                 )
             }
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
             if callable(record_hook):
                 record_hook(
                     node_type="llm_call",
@@ -449,6 +539,109 @@ class ExecutionLayer:
                 )
             return output
 
+    async def _call_llm_api_stream(self, prompt: str, context: Dict[str, Any]):
+        """
+        流式请求模型服务，向外 yield { "content": "...", "reasoning_content": "..." } 结构。
+        """
+        record_hook = context.get("_record_hook")
+        started_at = time.perf_counter()
+        serialized_context = {
+            key: value
+            for key, value in context.items()
+            if key not in {"_record_hook", "db"}
+        }
+
+        resolved = self._resolve_llm_configuration(context)
+        if not resolved.get("ok"):
+            yield {"error": resolved.get("error")}
+            return
+
+        request_spec = build_provider_request(
+            provider=resolved["provider"],
+            api_endpoint=resolved["api_endpoint"],
+            api_key=resolved["api_key"],
+            purpose="chat",
+            model=resolved["model"],
+            prompt=prompt,
+            max_tokens=1000,
+            request_id=resolved.get("request_id"),
+            client_version=resolved.get("client_version"),
+            context=serialized_context,
+            stream=True,
+        )
+
+        try:
+            logger.info(
+                f"Sending streaming LLM request to {request_spec.endpoint} "
+                f"for provider {resolved['provider']}, model {resolved['model']}"
+            )
+            stream_gen = await send_stream_with_retries(request_spec)
+            
+            full_content = ""
+            full_reasoning = ""
+            
+            async for line in stream_gen:
+                line = line.strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                
+                data_str = line[6:]
+                if data_str == "[DONE]":
+                    break
+                
+                try:
+                    data = json.loads(data_str)
+                    choices = data.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        
+                        content = delta.get("content", "")
+                        reasoning = delta.get("reasoning_content", "")
+                        
+                        # Handle Google format if applicable, though usually they return full text in chunks
+                        if not content and not reasoning and "candidates" in data:
+                            cands = data["candidates"]
+                            if cands:
+                                parts = cands[0].get("content", {}).get("parts", [])
+                                if parts:
+                                    content = parts[0].get("text", "")
+                                    
+                        # Handle Anthropic format if they use SSE with different schema
+                        # Note: Anthropic streaming is slightly different, but assuming standard SSE proxy or openai compat for now.
+                        if "type" in data and data["type"] == "content_block_delta":
+                            content = data.get("delta", {}).get("text", "")
+                            
+                        if content or reasoning:
+                            if content: full_content += content
+                            if reasoning: full_reasoning += reasoning
+                            
+                            yield {
+                                "content": content,
+                                "reasoning_content": reasoning
+                            }
+                except json.JSONDecodeError:
+                    continue
+
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat_stream", "success", duration_ms)
+
+        except Exception as e:
+            logger.error(f"Error in LLM stream call: {str(e)}")
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
+            yield {
+                "error": build_standard_error(
+                    "model_service_stream_error",
+                    "模型流式服务调用出现异常",
+                    request_id=resolved.get("request_id"),
+                    details={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "reason": str(e)
+                    },
+                )
+            }
+
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理execute、step相关逻辑，并为调用方返回对应结果。
@@ -456,6 +649,12 @@ class ExecutionLayer:
         """
         action = step.get("action")
         logger.info(f"Executing step: {action}")
+        idempotency_key = self._build_tool_idempotency_key(step, context)
+        cached_result = self._get_cached_tool_result(idempotency_key)
+        if cached_result is not None:
+            cached_result["idempotency_key"] = idempotency_key
+            record_tool_execution_metric(str(action or "unknown"), "replayed")
+            return cached_result
         
         try:
             if action == "read_files":
@@ -475,6 +674,9 @@ class ExecutionLayer:
             
             result["step"] = step.get("step")
             result["action"] = action
+            result["idempotency_key"] = idempotency_key
+            self._cache_tool_result(idempotency_key, result)
+            record_tool_execution_metric(str(action or "unknown"), str(result.get("status") or "completed"))
             
             if context.get('relevant_experiences'):
                 logger.info(f"Executed step using {len(context['relevant_experiences'])} experiences")
@@ -483,11 +685,13 @@ class ExecutionLayer:
             
         except Exception as e:
             logger.error(f"Error executing step {action}: {str(e)}")
+            record_tool_execution_metric(str(action or "unknown"), "error")
             return {
                 "status": "error",
                 "message": str(e),
                 "step": step.get("step"),
-                "action": action
+                "action": action,
+                "idempotency_key": idempotency_key,
             }
     
     async def _execute_read_files(self, step: Dict[str, Any]) -> Dict[str, Any]:
