@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatAPI } from '@/shared/api/api'
-import { modelsAPI, ModelConfiguration } from '@/features/settings/modelsApi'
+import { modelsAPI } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './ChatPage.module.css'
@@ -9,7 +9,7 @@ function ChatPage() {
   const [input, setInput] = useState('')
   const { messages, addMessage, setLoading, isLoading, clearMessages, sessionId } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const [configurations, setConfigurations] = useState<ModelConfiguration[]>([])
+  const [configurations, setConfigurations] = useState<{ id: string; provider: string; model: string; display_name: string }[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [loadingModels, setLoadingModels] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,37 +29,34 @@ function ChatPage() {
     setError(null)
     
     try {
-      const response = await modelsAPI.getConfigurations()
-      setConfigurations(response.data.configurations || [])
+      const response = await modelsAPI.getProviders()
+      const providersList = response.data.providers || []
+      
+      const flatConfigs: { id: string; provider: string; model: string; display_name: string }[] = []
+      providersList.forEach((provider: any) => {
+        const selected = provider.selected_models || []
+        selected.forEach((modelName: string) => {
+          flatConfigs.push({
+            id: `${provider.id}:${modelName}`,
+            provider: provider.id,
+            model: modelName,
+            display_name: `${provider.display_name || provider.name || provider.id} - ${modelName}`
+          })
+        })
+      })
+      
+      setConfigurations(flatConfigs)
       
       const savedModel = localStorage.getItem('selected_model')
-      if (savedModel && response.data.configurations) {
-        const exists = response.data.configurations.some(
-          (c: ModelConfiguration) => `${c.provider}:${c.model}` === savedModel
-        )
+      if (savedModel && flatConfigs.length > 0) {
+        const exists = flatConfigs.some(c => c.id === savedModel)
         if (exists) {
           setSelectedModel(savedModel)
         } else {
-          const defaultConfig = response.data.configurations.find(
-            (c: ModelConfiguration) => c.is_default
-          )
-          if (defaultConfig) {
-            setSelectedModel(`${defaultConfig.provider}:${defaultConfig.model}`)
-          } else if (response.data.configurations.length > 0) {
-            const firstConfig = response.data.configurations[0]
-            setSelectedModel(`${firstConfig.provider}:${firstConfig.model}`)
-          }
+          setSelectedModel(flatConfigs[0].id)
         }
-      } else {
-        const defaultConfig = response.data.configurations?.find(
-          (c: ModelConfiguration) => c.is_default
-        )
-        if (defaultConfig) {
-          setSelectedModel(`${defaultConfig.provider}:${defaultConfig.model}`)
-        } else if (response.data.configurations?.length > 0) {
-          const firstConfig = response.data.configurations[0]
-          setSelectedModel(`${firstConfig.provider}:${firstConfig.model}`)
-        }
+      } else if (flatConfigs.length > 0) {
+        setSelectedModel(flatConfigs[0].id)
       }
       
       setRetryCount(0)
@@ -174,20 +171,20 @@ function ChatPage() {
     if (!selectedModel) return
     
     try {
-      const [provider, model] = selectedModel.split(':')
       const config = configurations.find(
-        (c: ModelConfiguration) => c.provider === provider && c.model === model
+        (c) => c.id === selectedModel
       )
       
       if (config) {
-        await modelsAPI.updateConfiguration(config.id, { is_default: true })
+        // Just save to localStorage as we don't have a specific is_default flag for a single model string
+        // inside the selected_models array in backend yet.
         appLogger.info({
           event: 'chat_model_save',
           module: 'chat_page',
           action: 'save_default_model',
           status: 'success',
-          message: 'default model saved',
-          extra: { provider, model },
+          message: 'default model saved locally',
+          extra: { provider: config.provider, model: config.model },
         })
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
@@ -211,17 +208,8 @@ function ChatPage() {
     loadConfigurations()
   }
 
-  const formatModelLabel = (config: ModelConfiguration) => {
-    const providerNames: Record<string, string> = {
-      openai: 'OpenAI',
-      anthropic: 'Anthropic',
-      google: 'Google',
-      deepseek: 'DeepSeek',
-      alibaba: '阿里',
-      moonshot: 'Kimi',
-      zhipu: '智谱'
-    }
-    return `${providerNames[config.provider] || config.provider} - ${config.display_name || config.model}`
+  const formatModelLabel = (config: { display_name: string }) => {
+    return config.display_name
   }
 
   return (
@@ -243,7 +231,7 @@ function ChatPage() {
               configurations.map((config) => (
                 <option
                   key={config.id}
-                  value={`${config.provider}:${config.model}`}
+                  value={config.id}
                 >
                   {formatModelLabel(config)}
                 </option>

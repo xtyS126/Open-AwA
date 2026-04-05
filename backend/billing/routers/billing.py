@@ -3,7 +3,7 @@
 这一部分直接关联成本核算、调用统计以及运维观测。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from fastapi import Body
@@ -14,6 +14,9 @@ from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
 from billing.budget_manager import BudgetManager
 from billing.reporter import BillingReporter
+from config.logging import REQUEST_ID_HEADER
+from core.metrics import record_model_service_metric
+from core.model_service import build_provider_request, build_standard_error, send_with_retries
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
@@ -147,6 +150,7 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "description": config.description,
         "icon": getattr(config, "icon", None),
         "api_endpoint": config.api_endpoint,
+        "base_url": config.api_endpoint,
         "has_api_key": bool(config.api_key),
         "selected_models": selected_models,
         "is_active": config.is_active,
@@ -714,6 +718,7 @@ async def get_provider_detail(
             "name": config.display_name or provider_id.upper(),
             "icon": getattr(config, "icon", None),
             "api_endpoint": config.api_endpoint,
+            "base_url": config.api_endpoint,
             "has_api_key": bool(config.api_key),
             "selected_models": pricing_manager.parse_selected_models(config.selected_models)
         },
@@ -776,6 +781,7 @@ async def update_provider_selected_models(
 @router.get("/models-by-provider/{provider}")
 async def get_models_by_provider(
     provider: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -786,8 +792,67 @@ async def get_models_by_provider(
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
     selected_models = pricing_manager.parse_selected_models(config.selected_models if config else None)
+    base_url = config.api_endpoint if config else None
+    request_id = getattr(request.state, "request_id", "") or request.headers.get(REQUEST_ID_HEADER, "")
+    client_version = request.headers.get("X-Client-Ver", "")
 
     try:
+        remote_models: List[dict] = []
+        source = "local"
+        if base_url:
+            try:
+                request_spec = build_provider_request(
+                    provider=provider_id,
+                    api_endpoint=base_url,
+                    api_key=config.api_key if config else "",
+                    purpose="models",
+                    request_id=request_id,
+                    client_version=client_version,
+                )
+                started_at = datetime.now().timestamp()
+                response = await send_with_retries(request_spec)
+                payload = response.json()
+                duration_ms = int((datetime.now().timestamp() - started_at) * 1000)
+                record_model_service_metric(provider_id, "models", "success", duration_ms)
+            except Exception as fetch_exc:
+                duration_ms = 0
+                record_model_service_metric(provider_id, "models", "error", duration_ms)
+                raise fetch_exc
+
+            data = None
+            if isinstance(payload, dict):
+                data = payload.get("data")
+                if not isinstance(data, list):
+                    data = payload.get("models")
+            if isinstance(data, list):
+                for index, item in enumerate(data):
+                    if isinstance(item, dict):
+                        model_name = str(item.get("id") or item.get("name") or "").strip()
+                        if model_name.startswith("models/"):
+                            model_name = model_name.split("/", 1)[1]
+                        if model_name:
+                            remote_models.append({
+                                "id": -(index + 1),
+                                "provider": provider_id,
+                                "model": model_name,
+                                "input_price": 0,
+                                "output_price": 0,
+                                "currency": "USD",
+                                "context_window": None,
+                                "selected": model_name in selected_models
+                            })
+            source = "remote"
+
+        if remote_models:
+            return {
+                "success": True,
+                "provider": provider_id,
+                "models": remote_models,
+                "selected_models": selected_models,
+                "source": source,
+                "error": None
+            }
+
         models = pricing_manager.get_all_pricing(provider=provider_id)
         return {
             "success": True,
@@ -806,19 +871,36 @@ async def get_models_by_provider(
                 for m in models
             ],
             "selected_models": selected_models,
+            "source": source,
             "error": None
         }
     except Exception as exc:
+        models = pricing_manager.get_all_pricing(provider=provider_id)
         return {
             "success": False,
             "provider": provider_id,
-            "models": [],
+            "models": [
+                {
+                    "id": m.id,
+                    "provider": m.provider,
+                    "model": m.model,
+                    "input_price": m.input_price,
+                    "output_price": m.output_price,
+                    "currency": m.currency,
+                    "context_window": m.context_window,
+                    "selected": m.model in selected_models
+                }
+                for m in models
+            ],
             "selected_models": selected_models,
-            "error": {
-                "code": "provider_models_fetch_failed",
-                "message": "模型列表获取失败",
-                "detail": str(exc)
-            }
+            "source": "local",
+            "error": build_standard_error(
+                "provider_models_fetch_failed",
+                "模型列表获取失败，已回退到本地模型列表",
+                request_id=request_id,
+                details={"reason": str(exc), "provider": provider_id},
+                retryable=True,
+            ),
         }
 
 

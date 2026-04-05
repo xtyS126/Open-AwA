@@ -114,6 +114,34 @@ API 路由集中在 `backend/api/routes/`。
 
 从目录组织可以看出，后端将 Agent 流程拆分为理解、规划、执行、反馈等阶段。
 
+### 6.1 模型服务协议与链路治理
+
+模型服务协议适配集中在：
+
+- [model_service.py](file:///d:/代码/Open-AwA/backend/core/model_service.py)
+- [executor.py](file:///d:/代码/Open-AwA/backend/core/executor.py)
+- [billing.py](file:///d:/代码/Open-AwA/backend/billing/routers/billing.py#L778-L891)
+
+当前实现补充了以下约束：
+
+- 按 `provider` 生成不同的端点、请求头与请求载荷，避免把所有模型服务都按 OpenAI 协议调用
+- 在上游模型请求中透传 `X-Request-Id` 与 `X-Client-Ver`
+- 对客户端请求返回 `X-Server-Ver` 与 `X-Version-Status`，提供简单版本协商结果
+- 为模型服务请求补充标准错误码与有限次重试
+- 通过 [metrics.py](file:///d:/代码/Open-AwA/backend/core/metrics.py) 输出简易 Prometheus 文本指标
+
+### 6.2 WebSocket 协议增强
+
+聊天 WebSocket 位于：
+
+- [chat.py](file:///d:/代码/Open-AwA/backend/api/routes/chat.py#L1-L291)
+
+当前在保留最终完整消息的同时，新增了分段消息：
+
+- 每个分段包含 `seq`、`total` 与 `checksum`
+- 最终完整消息继续返回 `response` 或 `confirmation_result`
+- 工具执行会结合 `idempotency_key` 复用已完成结果，减少重复副作用
+
 ## 7. Skill 系统
 
 技能系统入口路由：

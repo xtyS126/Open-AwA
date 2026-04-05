@@ -67,6 +67,7 @@ class ChatMessage(BaseModel):
     session_id: Optional[str] = "default"
     provider: Optional[str] = None
     model: Optional[str] = None
+    mode: Optional[str] = "stream"
 
 
 class ChatResponse(BaseModel):
@@ -78,6 +79,7 @@ class ChatResponse(BaseModel):
     response: str
     session_id: Optional[str] = None
     error: Optional[Dict[str, Any]] = None
+    request_id: Optional[str] = None
 
 
 class SkillBase(BaseModel):

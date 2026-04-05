@@ -8,6 +8,7 @@ export interface ModelConfiguration {
   description: string | null
   icon?: string | null
   api_endpoint?: string | null
+  base_url?: string | null
   api_key?: string | null
   has_api_key?: boolean
   selected_models?: string[]
@@ -24,6 +25,7 @@ export interface ModelProvider {
   display_name?: string
   icon?: string | null
   api_endpoint?: string | null
+  base_url?: string | null
   has_api_key?: boolean
   selected_models?: string[]
   configuration_count?: number
@@ -50,6 +52,7 @@ export interface ProviderModelsResponse {
   provider: string
   models: ProviderModel[]
   selected_models: string[]
+  source?: 'remote' | 'local'
   error?: {
     code: string
     message: string
