@@ -4,6 +4,7 @@ interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  reasoning_content?: string
   timestamp: Date
 }
 
@@ -11,30 +12,50 @@ interface ChatState {
   messages: Message[]
   isLoading: boolean
   sessionId: string
-  addMessage: (role: 'user' | 'assistant', content: string) => void
+  outputMode: 'stream' | 'direct'
+  addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string) => void
+  updateLastMessage: (content: string, reasoning_content?: string) => void
   setMessages: (messages: Message[]) => void
   setLoading: (loading: boolean) => void
   clearMessages: () => void
   setSessionId: (id: string) => void
+  setOutputMode: (mode: 'stream' | 'direct') => void
 }
 
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   isLoading: false,
   sessionId: 'default',
+  outputMode: (localStorage.getItem('chat_output_mode') as 'stream' | 'direct') || 'stream',
   
-  addMessage: (role, content) =>
+  addMessage: (role, content, reasoning_content) =>
     set((state) => ({
       messages: [
         ...state.messages,
         {
-          id: Date.now().toString(),
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
           role,
           content,
+          reasoning_content,
           timestamp: new Date(),
         },
       ],
     })),
+  
+  updateLastMessage: (content, reasoning_content) =>
+    set((state) => {
+      if (state.messages.length === 0) return state
+      const newMessages = [...state.messages]
+      const lastMessage = newMessages[newMessages.length - 1]
+      
+      if (lastMessage.role === 'assistant') {
+        lastMessage.content += content
+        if (reasoning_content) {
+          lastMessage.reasoning_content = (lastMessage.reasoning_content || '') + reasoning_content
+        }
+      }
+      return { messages: newMessages }
+    }),
   
   setMessages: (messages) => set({ messages }),
   
@@ -43,4 +64,9 @@ export const useChatStore = create<ChatState>((set) => ({
   clearMessages: () => set({ messages: [] }),
   
   setSessionId: (id) => set({ sessionId: id }),
+
+  setOutputMode: (mode) => {
+    localStorage.setItem('chat_output_mode', mode)
+    set({ outputMode: mode })
+  },
 }))
