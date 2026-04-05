@@ -625,11 +625,38 @@ class ExecutionLayer:
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "success", duration_ms)
 
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="success",
+                    llm_input={
+                        "prompt": prompt,
+                        "endpoint": request_spec.endpoint,
+                        "context": serialized_context
+                    },
+                    llm_output={
+                        "ok": True,
+                        "response": full_content,
+                        "reasoning_content": full_reasoning,
+                        "provider": resolved["provider"],
+                        "model": resolved["model"]
+                    },
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "mode": "stream"
+                    }
+                )
+
         except Exception as e:
             logger.error(f"Error in LLM stream call: {str(e)}")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
-            yield {
+            
+            output_error = {
                 "error": build_standard_error(
                     "model_service_stream_error",
                     "模型流式服务调用出现异常",
@@ -641,6 +668,29 @@ class ExecutionLayer:
                     },
                 )
             }
+            
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="error",
+                    error_message=output_error["error"]["message"],
+                    llm_input={
+                        "prompt": prompt,
+                        "endpoint": request_spec.endpoint,
+                        "context": serialized_context
+                    },
+                    llm_output=output_error,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                        "mode": "stream"
+                    }
+                )
+                
+            yield output_error
 
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """

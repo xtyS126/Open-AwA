@@ -26,11 +26,13 @@ async def get_behavior_stats(
     获取behavior、stats相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
+    import json
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
     
     total_interactions = db.query(func.count(BehaviorLog.id)).filter(
-        BehaviorLog.timestamp >= start_date
-    ).scalar()
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type == "llm_call"
+    ).scalar() or 0
     
     tool_logs = db.query(BehaviorLog).filter(
         BehaviorLog.timestamp >= start_date,
@@ -70,16 +72,64 @@ async def get_behavior_stats(
         for intent, count in sorted(intent_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
     
-    avg_response_time = 1.5
+    llm_logs = db.query(BehaviorLog).filter(
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type == "llm_call"
+    ).all()
+
+    total_duration = 0
+    valid_duration_count = 0
+    chart_data_map = {}
     
-    return BehaviorStats(
-        total_interactions=total_interactions or 0,
-        total_tools_used=total_tools_used,
-        total_errors=total_errors,
-        top_tools=top_tools,
-        top_intents=top_intents,
-        average_response_time=avg_response_time
-    )
+    # Initialize chart data map with empty days
+    for i in range(days):
+        day_str = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%m-%d")
+        chart_data_map[day_str] = 0
+
+    model_counts: dict[str, int] = {}
+    for log in llm_logs:
+        try:
+            details = json.loads(log.details)
+            duration = details.get("duration_ms")
+            if duration is not None:
+                total_duration += duration
+                valid_duration_count += 1
+                
+            model_name = details.get("model") or "unknown"
+            provider = details.get("provider") or "unknown"
+            display_name = f"{provider}/{model_name}"
+            model_counts[display_name] = model_counts.get(display_name, 0) + 1
+            
+        except Exception:
+            pass
+        
+        # Populate chart data
+        if log.timestamp:
+            day_str = log.timestamp.strftime("%m-%d")
+            if day_str in chart_data_map:
+                chart_data_map[day_str] += 1
+
+    avg_response_time = round((total_duration / valid_duration_count) / 1000.0, 2) if valid_duration_count > 0 else 0.0
+    
+    chart_data = [
+        {"day": day, "interactions": count}
+        for day, count in sorted(chart_data_map.items())
+    ]
+    
+    top_models = [
+        {"tool": model, "count": count}
+        for model, count in sorted(model_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    ]
+    
+    return {
+        "total_interactions": total_interactions,
+        "total_tools_used": total_tools_used,
+        "total_errors": total_errors,
+        "top_tools": top_models, # Frontend expects "top_tools" for 模型使用分布
+        "top_intents": top_intents,
+        "average_response_time": avg_response_time,
+        "chart_data": chart_data
+    }
 
 
 @router.get(
