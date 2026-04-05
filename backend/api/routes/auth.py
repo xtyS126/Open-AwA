@@ -25,8 +25,8 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     """
-    处理register相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    创建新的本地用户账户。
+    接口会先校验用户名是否已存在，再对密码执行哈希处理并写入数据库，成功后返回新建用户的基础资料。
     """
     db_user = db.query(UserModel).filter(UserModel.username == user.username).first()
     if db_user:

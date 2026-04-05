@@ -171,8 +171,8 @@ class PluginManager:
 
     def _get_node_name(self, node: ast.AST) -> str:
         """
-        处理get、node、name相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从 AST 节点中提取可读的标识符名称。
+        当前支持 `Name`、`Attribute` 与 `Call` 三类节点，用于静态风险分析时还原导入名、调用名和属性访问链路。
         """
         if isinstance(node, ast.Name):
             return node.id

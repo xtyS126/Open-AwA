@@ -39,8 +39,8 @@ logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    处理lifespan相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    管理应用启动与关闭阶段的全局生命周期。
+    启动时会初始化主数据库、计费表与默认定价配置；关闭时负责输出应用停止日志，为后续扩展统一资源清理入口。
     """
     logger.bind(event="app_startup", module="main").info("starting up openawa")
     init_db()
@@ -77,8 +77,8 @@ app = FastAPI(
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
     """
-    处理request、context、middleware相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    为每个 HTTP 请求建立统一的请求上下文与链路追踪信息。
+    中间件会生成或继承请求 ID、写入请求状态与日志上下文、在响应头回传请求 ID，并记录请求开始、结束与异常日志。
     """
     incoming_request_id = request.headers.get(REQUEST_ID_HEADER, "")
     request_id = str(incoming_request_id or generate_request_id()).strip() or generate_request_id()
