@@ -181,6 +181,16 @@ class ExecutionLayer:
 
         return ""
 
+    def _resolve_max_tokens(self, resolved: Dict[str, Any]) -> int:
+        """
+        统一解析模型请求使用的 max_tokens。
+        仅当配置值为 None 时回退到默认值，保留 0 等显式配置。
+        """
+        max_tokens = resolved.get("max_tokens")
+        if max_tokens is None:
+            return 8192
+        return max_tokens
+
     def _resolve_llm_configuration(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理resolve、llm、configuration相关逻辑，并为调用方返回对应结果。
@@ -339,10 +349,6 @@ class ExecutionLayer:
                 )
             return resolved
 
-        max_tokens = resolved.get("max_tokens")
-        if max_tokens is None:
-            max_tokens = 8192
-
         request_spec = build_provider_request(
             provider=resolved["provider"],
             api_endpoint=resolved["api_endpoint"],
@@ -350,7 +356,7 @@ class ExecutionLayer:
             purpose="chat",
             model=resolved["model"],
             prompt=prompt,
-            max_tokens=max_tokens,
+            max_tokens=self._resolve_max_tokens(resolved),
             request_id=resolved.get("request_id"),
             client_version=resolved.get("client_version"),
             context=serialized_context,
@@ -563,10 +569,6 @@ class ExecutionLayer:
             yield {"error": resolved.get("error")}
             return
 
-        max_tokens = resolved.get("max_tokens")
-        if max_tokens is None:
-            max_tokens = 8192
-
         request_spec = build_provider_request(
             provider=resolved["provider"],
             api_endpoint=resolved["api_endpoint"],
@@ -574,7 +576,7 @@ class ExecutionLayer:
             purpose="chat",
             model=resolved["model"],
             prompt=prompt,
-            max_tokens=max_tokens,
+            max_tokens=self._resolve_max_tokens(resolved),
             request_id=resolved.get("request_id"),
             client_version=resolved.get("client_version"),
             context=serialized_context,
