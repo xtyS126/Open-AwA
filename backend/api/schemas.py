@@ -271,6 +271,7 @@ class BehaviorStats(BaseModel):
     top_tools: List[Any]
     top_intents: List[Any]
     average_response_time: float
+    chart_data: Optional[List[Any]] = None
 
 
 class ConfirmationRequest(BaseModel):
