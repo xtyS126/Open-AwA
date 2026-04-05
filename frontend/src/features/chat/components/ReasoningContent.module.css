@@ -1,0 +1,68 @@
+.container {
+  margin-bottom: 8px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-left: 4px solid #888;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  color: #666;
+  font-size: 0.9em;
+  font-weight: bold;
+  background-color: rgba(0, 0, 0, 0.02);
+  transition: background-color 0.2s;
+}
+
+.header:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.icon {
+  margin-right: 6px;
+  transition: transform 0.3s ease;
+  display: inline-block;
+}
+
+.icon.expanded {
+  transform: rotate(90deg);
+}
+
+.contentWrapper {
+  max-height: 0;
+  overflow-y: auto;
+  transition: max-height 0.3s ease, padding 0.3s ease;
+  padding: 0 12px;
+  color: #666;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.contentWrapper.expanded {
+  max-height: 320px;
+  padding: 8px 12px 12px;
+}
+
+/* 滚动条样式优化 */
+.contentWrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.contentWrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.contentWrapper::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.contentWrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}

@@ -3,6 +3,7 @@ import { chatAPI } from '@/shared/api/api'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import { appLogger } from '@/shared/utils/logger'
+import { ReasoningContent } from './components/ReasoningContent'
 import styles from './ChatPage.module.css'
 
 function ChatPage() {
@@ -316,30 +317,28 @@ function ChatPage() {
           </div>
         )}
 
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}
-          >
-            <div className={styles['message-content']}>
-              {message.reasoning_content && (
-                <div className={styles['reasoning-content']} style={{
-                  padding: '8px 12px',
-                  marginBottom: '8px',
-                  backgroundColor: 'rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #888',
-                  color: '#666',
-                  fontStyle: 'italic',
-                  fontSize: '0.9em',
-                  borderRadius: '4px'
-                }}>
-                  {message.reasoning_content}
-                </div>
-              )}
-              <p>{message.content}</p>
+        {messages.map((message, index) => {
+          const isLastMessage = index === messages.length - 1
+          const isCurrentlyStreaming = isLoading && isLastMessage && message.role === 'assistant'
+          
+          return (
+            <div
+              key={message.id}
+              className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}
+            >
+              <div className={styles['message-content']}>
+                {message.reasoning_content && (
+                  <ReasoningContent 
+                    messageId={message.id}
+                    content={message.reasoning_content}
+                    isStreaming={isCurrentlyStreaming}
+                  />
+                )}
+                <p>{message.content}</p>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {isLoading && (
           <div className={`${styles['message']} ${styles['assistant']}`}>
