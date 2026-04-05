@@ -200,6 +200,18 @@ class ConversationRecorder:
         处理flush、batch相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
+        try:
+            # 将同步 ORM 提交下沉到线程中，避免在事件循环线程里直接执行 commit。
+            await asyncio.to_thread(self._flush_batch_sync, batch)
+        finally:
+            for _ in batch:
+                self.queue.task_done()
+
+    def _flush_batch_sync(self, batch: list[Dict[str, Any]]) -> None:
+        """
+        在线程中执行同步数据库写入。
+        这样可以保留现有同步 SessionLocal 实现，同时避免阻塞 asyncio 主循环。
+        """
         db = SessionLocal()
         try:
             for item in batch:
@@ -210,8 +222,6 @@ class ConversationRecorder:
             logger.error(f"Failed to flush conversation record batch: {e}")
         finally:
             db.close()
-            for _ in batch:
-                self.queue.task_done()
 
     def _resolve_user_id(self, current_user: Any = None, user_id: Optional[str] = None) -> Optional[str]:
         """

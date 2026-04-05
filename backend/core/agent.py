@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import json
 import time
 from typing import Dict, List, Any
 from loguru import logger
@@ -17,6 +18,7 @@ from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
 from db.models import SessionLocal
+from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
 
 
@@ -116,55 +118,19 @@ class AIAgent:
         if not user_id:
             return
 
-        # 补全基础统计的埋点上报，写入 BehaviorLog（不受细粒度采集开关影响）
-        def _write_behavior_sync():
-            try:
-                from db.models import BehaviorLog
-                import json
-                with SessionLocal() as db:
-                    action_type = ""
-                    details_str = ""
-
-                    if node_type == "llm_call":
-                        action_type = "llm_call"
-                        
-                        response_content = None
-                        if isinstance(llm_output, dict):
-                            response_content = llm_output.get("response") or llm_output.get("error")
-                        
-                        details_dict = {
-                            "duration_ms": execution_duration_ms,
-                            "status": status,
-                            "provider": metadata.get("provider") if isinstance(metadata, dict) else None,
-                            "model": metadata.get("model") if isinstance(metadata, dict) else None,
-                            "tokens_used": llm_tokens_used,
-                            "response_result": response_content
-                        }
-                        details_str = json.dumps(details_dict, ensure_ascii=False)
-                    elif node_type == "tool_execution":
-                        action_type = "tool_usage"
-                        tool_name = "unknown"
-                        if isinstance(metadata, dict):
-                            if metadata.get("execution_type") == "skill":
-                                tool_name = metadata.get("skill_name", "unknown")
-                            elif metadata.get("execution_type") == "plugin":
-                                tool_name = metadata.get("plugin_name", "unknown")
-                        details_str = f"{tool_name}:" + json.dumps({"status": status}, ensure_ascii=False)
-                    elif node_type == "intent_recognition":
-                        action_type = "intent"
-                        details_str = metadata.get("intent", "unknown") if isinstance(metadata, dict) else str(metadata)
-
-                    if action_type:
-                        db.add(BehaviorLog(user_id=user_id, action_type=action_type, details=details_str))
-
-                    if status == "error":
-                        db.add(BehaviorLog(user_id=user_id, action_type="error", details=error_message or "Unknown error"))
-
-                    db.commit()
-            except Exception as e:
-                logger.error(f"Failed to write basic behavior log: {e}")
-
-        asyncio.create_task(asyncio.to_thread(_write_behavior_sync))
+        behavior_entries = self._build_behavior_entries(
+            user_id=user_id,
+            node_type=node_type,
+            status=status,
+            error_message=error_message,
+            llm_output=llm_output,
+            llm_tokens_used=llm_tokens_used,
+            execution_duration_ms=execution_duration_ms,
+            metadata=metadata,
+        )
+        for entry in behavior_entries:
+            task = asyncio.create_task(behavior_logger.record(entry))
+            task.add_done_callback(lambda t: self._handle_record_task_result(t))
 
         task = asyncio.create_task(
             conversation_recorder.record(
@@ -184,6 +150,71 @@ class AIAgent:
             )
         )
         task.add_done_callback(lambda t: self._handle_record_task_result(t))
+
+    def _build_behavior_entries(
+        self,
+        *,
+        user_id: str,
+        node_type: str,
+        status: str,
+        error_message: str | None,
+        llm_output: Any,
+        llm_tokens_used: int | None,
+        execution_duration_ms: int | None,
+        metadata: Any,
+    ) -> List[Dict[str, Any]]:
+        """
+        将运行态信息整理成轻量埋点结构，交给后台队列统一批量落库。
+        这里仅做内存对象拼装，不直接触发数据库操作。
+        """
+        entries: List[Dict[str, Any]] = []
+        action_type = ""
+        details_str = ""
+
+        if node_type == "llm_call":
+            action_type = "llm_call"
+
+            response_content = None
+            if isinstance(llm_output, dict):
+                response_content = llm_output.get("response") or llm_output.get("error")
+
+            details_dict = {
+                "duration_ms": execution_duration_ms,
+                "status": status,
+                "provider": metadata.get("provider") if isinstance(metadata, dict) else None,
+                "model": metadata.get("model") if isinstance(metadata, dict) else None,
+                "tokens_used": llm_tokens_used,
+                "response_result": response_content,
+            }
+            details_str = json.dumps(details_dict, ensure_ascii=False)
+        elif node_type == "tool_execution":
+            action_type = "tool_usage"
+            tool_name = "unknown"
+            if isinstance(metadata, dict):
+                if metadata.get("execution_type") == "skill":
+                    tool_name = metadata.get("skill_name", "unknown")
+                elif metadata.get("execution_type") == "plugin":
+                    tool_name = metadata.get("plugin_name", "unknown")
+            details_str = f"{tool_name}:" + json.dumps({"status": status}, ensure_ascii=False)
+        elif node_type == "intent_recognition":
+            action_type = "intent"
+            details_str = metadata.get("intent", "unknown") if isinstance(metadata, dict) else str(metadata)
+
+        if action_type:
+            entries.append({
+                "user_id": user_id,
+                "action_type": action_type,
+                "details": details_str,
+            })
+
+        if status == "error":
+            entries.append({
+                "user_id": user_id,
+                "action_type": "error",
+                "details": error_message or "Unknown error",
+            })
+
+        return entries
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
         """
