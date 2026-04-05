@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 import sys
 from pathlib import Path
 
@@ -26,6 +31,10 @@ Base.metadata.create_all(bind=engine)
 
 
 def override_get_db():
+    """
+    处理override、get、db相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     try:
         db = TestingSessionLocal()
         yield db
@@ -34,7 +43,15 @@ def override_get_db():
 
 
 def override_get_current_user():
+    """
+    处理override、get、current、user相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     class DummyUser:
+        """
+        封装与DummyUser相关的核心逻辑与运行状态。
+        该类通常是当前文件中组织数据与调度行为的主要封装单元。
+        """
         id = 1
         username = "testuser"
     return DummyUser()
@@ -48,6 +65,10 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def reset_skills_table():
+    """
+    处理reset、skills、table相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     db = TestingSessionLocal()
     try:
         db.query(Skill).delete()
@@ -64,6 +85,10 @@ def reset_skills_table():
 
 
 def test_save_and_get_weixin_config():
+    """
+    验证save、and、get、weixin、config相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
         assert response.status_code == 200
@@ -96,8 +121,16 @@ def test_save_and_get_weixin_config():
 
 
 def test_weixin_health_check(monkeypatch):
+    """
+    验证weixin、health、check相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         def mock_check_health(self, config):
+            """
+            处理mock、check、health相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "ok": True,
                 "issues": [],
@@ -129,12 +162,20 @@ def test_weixin_health_check(monkeypatch):
 
 
 def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
+    """
+    验证weixin、qr、start、and、wait、confirmed、updates、config相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         call_log = []
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             call_log.append(("start", base_url, bot_type, timeout_seconds))
             return {
                 "qrcode": "qr-123",
@@ -142,6 +183,10 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             call_log.append(("wait", base_url, qrcode, timeout_seconds))
             return {
                 "status": "confirmed",
@@ -197,10 +242,18 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
 
 
 def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
+    """
+    验证weixin、qr、start、extracts、qrcode、from、qrcode、url、query相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode_img_content": "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=5bd615dc3e27eb837ca2db2f30ee7b7b&bot_type=3"
             }
@@ -216,18 +269,30 @@ def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
 
 
 def test_weixin_qr_wait_updates_poll_base_url_on_redirect(monkeypatch):
+    """
+    验证weixin、qr、wait、updates、poll、base、url、on、redirect相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         call_log = []
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-redirect",
                 "qrcode_img_content": "https://example.com/qr-redirect.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             call_log.append(base_url)
             if len(call_log) == 1:
                 return {
@@ -277,16 +342,28 @@ def test_weixin_qr_wait_updates_poll_base_url_on_redirect(monkeypatch):
 
 
 def test_weixin_qr_wait_returns_wait_on_upstream_timeout(monkeypatch):
+    """
+    验证weixin、qr、wait、returns、wait、on、upstream、timeout相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-timeout",
                 "qrcode_img_content": "https://example.com/qr-timeout.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {"status": "wait"}
 
         monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
@@ -309,6 +386,10 @@ def test_weixin_qr_wait_returns_wait_on_upstream_timeout(monkeypatch):
 
 
 def test_weixin_qr_wait_returns_404_when_session_missing():
+    """
+    验证weixin、qr、wait、returns、404、when、session、missing相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         response = client.post(
             f"{settings.API_V1_STR}/skills/weixin/qr/wait",
@@ -319,10 +400,18 @@ def test_weixin_qr_wait_returns_404_when_session_missing():
 
 
 def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
+    """
+    验证weixin、qr、exit、clears、session、and、config相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-exit",
                 "qrcode_img_content": "https://example.com/qr-exit.png"
@@ -368,10 +457,18 @@ def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
 
 
 def test_weixin_qr_exit_only_clears_session_when_clear_config_false(monkeypatch):
+    """
+    验证weixin、qr、exit、only、clears、session、when、clear、config、false相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-exit-keep-config",
                 "qrcode_img_content": "https://example.com/qr-exit-keep-config.png"
@@ -415,16 +512,28 @@ def test_weixin_qr_exit_only_clears_session_when_clear_config_false(monkeypatch)
 
 
 def test_weixin_qr_wait_returns_uniform_fields_for_half_success(monkeypatch):
+    """
+    验证weixin、qr、wait、returns、uniform、fields、for、half、success相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-half-success",
                 "qrcode_img_content": "https://example.com/qr-half-success.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "status": "scaned",
                 "auth_id": "auth-half-success",
@@ -462,16 +571,28 @@ def test_weixin_qr_wait_returns_uniform_fields_for_half_success(monkeypatch):
 
 
 def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
+    """
+    验证weixin、qr、wait、maps、pending、with、auth、id、to、scanned相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-pending",
                 "qrcode_img_content": "https://example.com/qr-pending.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "status": "pending",
                 "message": "waiting for confirm",
@@ -501,16 +622,28 @@ def test_weixin_qr_wait_maps_pending_with_auth_id_to_scanned(monkeypatch):
 
 
 def test_weixin_qr_wait_downgrades_confirmed_without_account_or_token_to_half_success(monkeypatch):
+    """
+    验证weixin、qr、wait、downgrades、confirmed、without、account、or、token、to、half、success相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-invalid-confirmed",
                 "qrcode_img_content": "https://example.com/qr-invalid-confirmed.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "status": "confirmed",
                 "ilink_user_id": "wx-user-missing-token",
@@ -557,6 +690,10 @@ def test_weixin_qr_wait_downgrades_confirmed_without_account_or_token_to_half_su
 
 
 def test_weixin_config_accepts_json_string_payload():
+    """
+    验证weixin、config、accepts、json、string、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         payload = '{"account_id":"string-acc","token":"string-token","base_url":"https://string.url","timeout_seconds":21,"user_id":"string-user","binding_status":"bound"}'
         response = client.post(
@@ -580,8 +717,16 @@ def test_weixin_config_accepts_json_string_payload():
 
 
 def test_weixin_health_check_accepts_form_string_payload(monkeypatch):
+    """
+    验证weixin、health、check、accepts、form、string、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         def mock_check_health(self, config):
+            """
+            处理mock、check、health相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "ok": True,
                 "account_id": config.account_id,
@@ -609,10 +754,18 @@ def test_weixin_health_check_accepts_form_string_payload(monkeypatch):
 
 
 def test_weixin_qr_wait_accepts_json_string_payload_without_session(monkeypatch):
+    """
+    验证weixin、qr、wait、accepts、json、string、payload、without、session相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "status": "scaned",
                 "message": "waiting confirm",
@@ -639,10 +792,18 @@ def test_weixin_qr_wait_accepts_json_string_payload_without_session(monkeypatch)
 
 
 def test_weixin_qr_exit_accepts_form_string_payload(monkeypatch):
+    """
+    验证weixin、qr、exit、accepts、form、string、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-exit-string",
                 "qrcode_img_content": "https://example.com/qr-exit-string.png"
@@ -667,10 +828,18 @@ def test_weixin_qr_exit_accepts_form_string_payload(monkeypatch):
 
 
 def test_weixin_qr_start_accepts_json_string_upstream_payload(monkeypatch):
+    """
+    验证weixin、qr、start、accepts、json、string、upstream、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return '{"qrcode":"qr-json-payload","qrcode_img_content":"https://example.com/qr-json.png"}'
 
         monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
@@ -685,10 +854,18 @@ def test_weixin_qr_start_accepts_json_string_upstream_payload(monkeypatch):
 
 
 def test_weixin_qr_start_extracts_qrcode_from_key_value_string_payload(monkeypatch):
+    """
+    验证weixin、qr、start、extracts、qrcode、from、key、value、string、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return "qrcode=qr-kv-payload&qrcode_img_content=https%3A%2F%2Fexample.com%2Fqr-kv.png"
 
         monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
@@ -703,16 +880,28 @@ def test_weixin_qr_start_extracts_qrcode_from_key_value_string_payload(monkeypat
 
 
 def test_weixin_qr_wait_parses_json_string_status_payload(monkeypatch):
+    """
+    验证weixin、qr、wait、parses、json、string、status、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-json-status",
                 "qrcode_img_content": "https://example.com/qr-json-status.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return '{"status":"confirmed","bot_token":"json-token","ilink_bot_id":"json-account","ilink_user_id":"json-user","binding_status":"bound","baseurl":"https://ilinkai.weixin.qq.com"}'
 
         monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
@@ -738,16 +927,28 @@ def test_weixin_qr_wait_parses_json_string_status_payload(monkeypatch):
 
 
 def test_weixin_qr_wait_parses_key_value_string_status_payload(monkeypatch):
+    """
+    验证weixin、qr、wait、parses、key、value、string、status、payload相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-kv-status",
                 "qrcode_img_content": "https://example.com/qr-kv-status.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return "status=scaned&auth_id=auth-kv&ticket=ticket-kv&hint=confirm-in-wechat"
 
         monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
@@ -772,16 +973,28 @@ def test_weixin_qr_wait_parses_key_value_string_status_payload(monkeypatch):
 
 
 def test_weixin_qr_wait_preserves_plain_string_status_message(monkeypatch):
+    """
+    验证weixin、qr、wait、preserves、plain、string、status、message相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-plain-status",
                 "qrcode_img_content": "https://example.com/qr-plain-status.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return "waiting for confirm"
 
         monkeypatch.setattr(skills.weixin_skill_adapter.WeixinSkillAdapter, "fetch_login_qrcode", mock_fetch_login_qrcode)
@@ -804,18 +1017,30 @@ def test_weixin_qr_wait_preserves_plain_string_status_message(monkeypatch):
 
 
 def test_weixin_qr_wait_replays_confirmed_result_idempotently(monkeypatch):
+    """
+    验证weixin、qr、wait、replays、confirmed、result、idempotently相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         call_count = {"wait": 0}
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-idempotent-confirmed",
                 "qrcode_img_content": "https://example.com/qr-idempotent-confirmed.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             call_count["wait"] += 1
             return {
                 "status": "confirmed",
@@ -860,16 +1085,28 @@ def test_weixin_qr_wait_replays_confirmed_result_idempotently(monkeypatch):
 
 
 def test_weixin_qr_wait_handles_refreshing_status(monkeypatch):
+    """
+    验证weixin、qr、wait、handles、refreshing、status相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-refreshing",
                 "qrcode_img_content": "https://example.com/qr-refreshing.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "status": "refreshing",
                 "message": "二维码已过期，正在刷新"
@@ -897,16 +1134,28 @@ def test_weixin_qr_wait_handles_refreshing_status(monkeypatch):
 
 
 def test_weixin_qr_wait_handles_expired_status(monkeypatch):
+    """
+    验证weixin、qr、wait、handles、expired、status相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     with TestClient(app) as client:
         import skills.weixin_skill_adapter
 
         async def mock_fetch_login_qrcode(self, base_url, bot_type="3", timeout_seconds=15):
+            """
+            处理mock、fetch、login、qrcode相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "qrcode": "qr-expired",
                 "qrcode_img_content": "https://example.com/qr-expired.png"
             }
 
         async def mock_fetch_qrcode_status(self, base_url, qrcode, timeout_seconds=35):
+            """
+            处理mock、fetch、qrcode、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {
                 "status": "expired",
                 "message": "二维码已过期，请重新获取"

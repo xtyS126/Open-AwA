@@ -1,3 +1,8 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import List, Optional, Dict, Any
@@ -11,7 +16,15 @@ from billing.pricing_manager import PricingManager
 
 
 class BillingReporter:
+    """
+    封装与BillingReporter相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
         self.tracker = UsageTracker(db)
         self.pricing_manager = PricingManager(db)
@@ -21,6 +34,10 @@ class BillingReporter:
         user_id: Optional[str] = None,
         period: str = "monthly"
     ) -> Dict:
+        """
+        获取cost、statistics相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         period_start, period_end = self._get_period_dates(period)
         
         if period_start is None and period_end is None:
@@ -88,6 +105,10 @@ class BillingReporter:
         user_id: Optional[str] = None,
         period: str = "monthly"
     ) -> List[Dict]:
+        """
+        获取model、usage、report相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         period_start, period_end = self._get_period_dates(period)
         
         query = self.db.query(
@@ -131,6 +152,10 @@ class BillingReporter:
         period: str = "monthly",
         limit: int = 10
     ) -> List[Dict]:
+        """
+        获取user、comparison、report相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         period_start, period_end = self._get_period_dates(period)
         
         results = self.db.query(
@@ -166,6 +191,10 @@ class BillingReporter:
         user_id: Optional[str] = None,
         period: str = "monthly"
     ) -> Dict:
+        """
+        获取content、type、analysis相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         period_start, period_end = self._get_period_dates(period)
         
         query = self.db.query(
@@ -209,6 +238,10 @@ class BillingReporter:
         user_id: Optional[str] = None,
         period: str = "monthly"
     ) -> str:
+        """
+        处理generate、csv、report相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         period_start, period_end = self._get_period_dates(period)
         
         query = self.db.query(UsageRecord).filter(
@@ -266,6 +299,10 @@ class BillingReporter:
         return output.getvalue()
 
     def _get_period_dates(self, period: str) -> tuple:
+        """
+        处理get、period、dates相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         today = date.today()
         
         if period == "daily":

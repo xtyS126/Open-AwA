@@ -1,3 +1,8 @@
+"""
+后端服务主入口，负责应用初始化、中间件注册、路由挂载与基础健康检查。
+阅读本文件时，建议优先关注启动顺序、生命周期管理、请求链路上下文以及全局异常处理方式。
+"""
+
 from contextlib import asynccontextmanager
 import os
 
@@ -33,6 +38,10 @@ logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    处理lifespan相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     logger.bind(event="app_startup", module="main").info("starting up openawa")
     init_db()
     logger.bind(event="db_initialized", module="main").info("database initialized")
@@ -67,6 +76,10 @@ app = FastAPI(
 
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
+    """
+    处理request、context、middleware相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     incoming_request_id = request.headers.get(REQUEST_ID_HEADER, "")
     request_id = str(incoming_request_id or generate_request_id()).strip() or generate_request_id()
     set_request_id(request_id)
@@ -112,6 +125,10 @@ async def request_context_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    处理unhandled、exception、handler相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     request_id = getattr(request.state, "request_id", "") or generate_request_id()
     logger.bind(
         event="unhandled_exception",
@@ -155,6 +172,10 @@ app.include_router(billing.router)
 
 @app.get("/")
 async def root():
+    """
+    处理root相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "name": settings.PROJECT_NAME,
         "version": settings.VERSION,
@@ -164,6 +185,10 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    """
+    处理health、check相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {"status": "healthy"}
 
 

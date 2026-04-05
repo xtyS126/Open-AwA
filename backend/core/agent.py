@@ -1,3 +1,8 @@
+"""
+核心执行编排模块，负责 Agent 主流程中的理解、规划、执行、反馈或记录能力。
+这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
+"""
+
 import asyncio
 import time
 from typing import Dict, List, Any
@@ -15,7 +20,15 @@ from .conversation_recorder import conversation_recorder
 
 
 class AIAgent:
+    """
+    封装与AIAgent相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.comprehension = ComprehensionLayer()
         self.planner = PlanningLayer()
         self.executor = ExecutionLayer()
@@ -33,12 +46,20 @@ class AIAgent:
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
     
     def __del__(self):
+        """
+        处理del相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             self.close()
         except Exception:
             pass
     
     def close(self):
+        """
+        处理close相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if getattr(self, "_closed", False):
             return
         
@@ -53,6 +74,10 @@ class AIAgent:
         self._closed = True
     
     def _handle_record_task_result(self, task: asyncio.Task) -> None:
+        """
+        处理handle、record、task、result相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             if task.cancelled():
                 logger.warning("Conversation recorder task was cancelled")
@@ -81,6 +106,10 @@ class AIAgent:
         execution_duration_ms: int | None = None,
         metadata: Any = None,
     ) -> None:
+        """
+        处理schedule、record相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         user_id = context.get("user_id")
         session_id = context.get("session_id", "default")
         if not user_id:
@@ -106,6 +135,10 @@ class AIAgent:
         task.add_done_callback(lambda t: self._handle_record_task_result(t))
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
+        """
+        处理execute、skill相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info(f"Executing skill: {skill_name}")
         try:
             result = await self.skill_engine.execute_skill(skill_name, inputs, context)
@@ -144,6 +177,10 @@ class AIAgent:
             }
     
     async def execute_plugin(self, plugin_name: str, method: str, **kwargs) -> Any:
+        """
+        处理execute、plugin相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info(f"Executing plugin '{plugin_name}' method '{method}'")
         try:
             if plugin_name not in self.plugin_manager.loaded_plugins:
@@ -185,6 +222,10 @@ class AIAgent:
             }
     
     async def get_available_skills(self) -> List[Dict[str, Any]]:
+        """
+        获取available、skills相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         logger.info("Getting available skills")
         try:
             registry = self.skill_engine.registry
@@ -209,6 +250,10 @@ class AIAgent:
             return []
     
     async def get_available_plugins(self) -> List[Dict[str, Any]]:
+        """
+        获取available、plugins相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         logger.info("Getting available plugins")
         try:
             discovered_plugins = self.plugin_manager.discover_plugins()
@@ -234,6 +279,10 @@ class AIAgent:
             return []
     
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理process相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info(f"Processing user input: {user_input}")
 
         if "message" not in context:
@@ -449,6 +498,10 @@ class AIAgent:
         entities: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """
+        处理auto、execute、skills、and、plugins相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info("Auto-executing skills and plugins based on intent and entities")
         auto_results: dict[str, list[Any]] = {
             'skills': [],
@@ -554,6 +607,10 @@ class AIAgent:
         intent_keywords: str,
         entities: List[Dict]
     ) -> bool:
+        """
+        处理is、skill、relevant相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         skill_name_lower = skill_name.lower()
         
         if any(keyword in skill_name_lower or keyword in skill_description 
@@ -574,6 +631,10 @@ class AIAgent:
         intent_keywords: str,
         entities: List[Dict]
     ) -> bool:
+        """
+        处理is、plugin、relevant相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         tool_name_lower = tool_name.lower()
         
         if any(keyword in tool_name_lower or keyword in tool_description 
@@ -588,6 +649,10 @@ class AIAgent:
         return False
     
     async def handle_confirmation(self, confirmed: bool, step: Dict, context: Dict) -> Dict[str, Any]:
+        """
+        处理handle、confirmation相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if confirmed:
             result = await self.executor.execute_step(step, context)
             return {"status": "executed", "result": result}
@@ -599,7 +664,10 @@ class AIAgent:
         user_input: str,
         context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """检索相关经验"""
+        """
+        处理retrieve、relevant、experiences相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             db = context.get('db')
             if not db:
@@ -642,7 +710,10 @@ class AIAgent:
         results: List[Dict],
         status: str
     ) -> None:
-        """提取并存储经验"""
+        """
+        处理extract、and、store、experience相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             db = context.get('db')
             if not db:
@@ -678,6 +749,10 @@ class AIAgent:
             logger.error(f"Error extracting and storing experience: {e}")
     
     def _collect_skill_plugin_results(self) -> Dict[str, Any]:
+        """
+        处理collect、skill、plugin、results相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info("Collecting skill and plugin execution results")
         
         skill_results_summary: dict[str, Any] = {
@@ -703,6 +778,10 @@ class AIAgent:
         }
     
     def _generate_skill_plugin_feedback(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理generate、skill、plugin、feedback相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info("Generating feedback for skill and plugin executions")
         
         skills = results.get('skills', {})
@@ -741,6 +820,10 @@ class AIAgent:
         }
     
     def clear_results(self) -> None:
+        """
+        处理clear、results相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info("Clearing skill and plugin results")
         self.skill_results.clear()
         self.plugin_results.clear()

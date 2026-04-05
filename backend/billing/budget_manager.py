@@ -1,3 +1,8 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from typing import List, Optional, Dict
@@ -7,7 +12,15 @@ from billing.models import BudgetConfig
 
 
 class BudgetManager:
+    """
+    封装与BudgetManager相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
 
     def create_budget(
@@ -19,6 +32,10 @@ class BudgetManager:
         currency: str = "USD",
         warning_threshold: float = 0.8
     ) -> BudgetConfig:
+        """
+        创建budget相关对象、记录或执行结果。
+        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        """
         budget = BudgetConfig(
             budget_type=budget_type,
             scope_id=scope_id,
@@ -33,6 +50,10 @@ class BudgetManager:
         return budget
 
     def get_budget(self, budget_id: int) -> Optional[BudgetConfig]:
+        """
+        获取budget相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return self.db.query(BudgetConfig).filter(BudgetConfig.id == budget_id).first()
 
     def get_budgets(
@@ -41,6 +62,10 @@ class BudgetManager:
         scope_id: Optional[str] = None,
         is_active: bool = True
     ) -> List[BudgetConfig]:
+        """
+        获取budgets相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         query = self.db.query(BudgetConfig).filter(BudgetConfig.is_active == is_active)
         
         if budget_type:
@@ -51,6 +76,10 @@ class BudgetManager:
         return query.all()
 
     def get_budget_for_user(self, user_id: str) -> Optional[BudgetConfig]:
+        """
+        获取budget、for、user相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         user_budget = self.db.query(BudgetConfig).filter(
             and_(
                 BudgetConfig.budget_type == "user",
@@ -71,6 +100,10 @@ class BudgetManager:
         ).first()
 
     def update_budget(self, budget_id: int, budget_data: Dict) -> Optional[BudgetConfig]:
+        """
+        更新budget相关数据、配置或状态。
+        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        """
         budget = self.get_budget(budget_id)
         if budget:
             for key, value in budget_data.items():
@@ -81,6 +114,10 @@ class BudgetManager:
         return budget
 
     def delete_budget(self, budget_id: int) -> bool:
+        """
+        删除budget相关对象或持久化记录。
+        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        """
         budget = self.get_budget(budget_id)
         if budget:
             budget.is_active = False
@@ -93,6 +130,10 @@ class BudgetManager:
         user_id: str,
         proposed_cost: float = 0
     ) -> Dict:
+        """
+        检查budget相关条件、状态或权限是否满足要求。
+        检查结果往往会直接决定后续是否允许继续执行某项操作。
+        """
         budget = self.get_budget_for_user(user_id)
         
         if not budget:
@@ -136,6 +177,10 @@ class BudgetManager:
         }
 
     def get_budget_status(self, user_id: str) -> Dict:
+        """
+        获取budget、status相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         budget = self.get_budget_for_user(user_id)
         
         if not budget:
@@ -166,6 +211,10 @@ class BudgetManager:
         }
 
     def _get_period_dates(self, period_type: str) -> tuple:
+        """
+        处理get、period、dates相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         today = date.today()
         
         if period_type == "daily":
@@ -197,6 +246,10 @@ class BudgetManager:
         period_start: date,
         period_end: date
     ) -> float:
+        """
+        处理calculate、current、usage相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         from billing.tracker import UsageTracker
         tracker = UsageTracker(self.db)
         usage = tracker.get_user_usage(user_id, period_start, period_end)

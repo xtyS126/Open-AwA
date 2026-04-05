@@ -1,3 +1,8 @@
+"""
+插件系统模块，负责插件定义、加载、校验、沙箱隔离、生命周期或扩展协议处理。
+这一层通常同时涉及可扩展性、安全性与运行时状态管理。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +16,10 @@ from loguru import logger
 
 
 class PluginState(str, Enum):
+    """
+    封装与PluginState相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     REGISTERED = "registered"
     LOADED = "loaded"
     ENABLED = "enabled"
@@ -22,6 +31,10 @@ class PluginState(str, Enum):
 
 @dataclass
 class TransitionResult:
+    """
+    封装与TransitionResult相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     success: bool
     plugin_name: str
     from_state: str
@@ -31,6 +44,10 @@ class TransitionResult:
 
 
 class PluginStateMachine:
+    """
+    封装与PluginStateMachine相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     VALID_TRANSITIONS = {
         PluginState.REGISTERED: {PluginState.LOADED, PluginState.ERROR},
         PluginState.LOADED: {PluginState.ENABLED, PluginState.UNLOADED, PluginState.ERROR},
@@ -42,24 +59,48 @@ class PluginStateMachine:
     }
 
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._states: Dict[str, PluginState] = {}
         self._lock = threading.Lock()
 
     def get_state(self, plugin_name: str) -> PluginState:
+        """
+        获取state相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         with self._lock:
             return self._states.get(plugin_name, PluginState.REGISTERED)
 
     def set_state(self, plugin_name: str, new_state: PluginState) -> None:
+        """
+        设置state相关配置或运行状态。
+        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+        """
         with self._lock:
             self._states[plugin_name] = new_state
 
     def can_transition(self, plugin_name: str, to_state: PluginState) -> bool:
+        """
+        处理can、transition相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         current = self.get_state(plugin_name)
         return to_state in self.VALID_TRANSITIONS.get(current, set())
 
 
 class TransitionExecutor:
+    """
+    封装与TransitionExecutor相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, state_machine: PluginStateMachine):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.state_machine = state_machine
         self._idempotency_cache: Dict[str, TransitionResult] = {}
 
@@ -72,6 +113,10 @@ class TransitionExecutor:
         rollback_action: Optional[Callable[[PluginState], Any]] = None,
         idempotency_key: Optional[str] = None,
     ) -> TransitionResult:
+        """
+        处理execute相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         from_state = self.state_machine.get_state(plugin_name)
         resolved_plugin_instance = self._resolve_plugin_instance(plugin_instance)
 
@@ -148,6 +193,10 @@ class TransitionExecutor:
             return result
 
     def _resolve_plugin_instance(self, plugin_instance: Any) -> Any:
+        """
+        处理resolve、plugin、instance相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if callable(plugin_instance):
             try:
                 return plugin_instance()
@@ -157,6 +206,10 @@ class TransitionExecutor:
         return plugin_instance
 
     def _call_state_hook(self, plugin_instance: Any, state: PluginState) -> None:
+        """
+        处理call、state、hook相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if plugin_instance is None:
             return
 
@@ -175,6 +228,10 @@ class TransitionExecutor:
             self._call(getattr(plugin_instance, hook_name))
 
     def _call_error_hook(self, plugin_instance: Any, error: Exception, from_state: PluginState, to_state: PluginState) -> None:
+        """
+        处理call、error、hook相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if plugin_instance is None or not hasattr(plugin_instance, "on_error"):
             return
         try:
@@ -183,12 +240,20 @@ class TransitionExecutor:
             logger.error(f"Failed to execute on_error hook: {hook_error}")
 
     def _call(self, callable_obj: Callable[[], Any]) -> Any:
+        """
+        处理call相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         result = callable_obj()
         if inspect.isawaitable(result):
             return self._run_coroutine(result)
         return result
 
     def _run_coroutine(self, awaitable: Any) -> Any:
+        """
+        处理run、coroutine相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -198,6 +263,10 @@ class TransitionExecutor:
         error_holder: Dict[str, BaseException] = {}
 
         def _runner() -> None:
+            """
+            处理runner相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
             try:

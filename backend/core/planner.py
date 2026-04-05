@@ -1,13 +1,30 @@
+"""
+核心执行编排模块，负责 Agent 主流程中的理解、规划、执行、反馈或记录能力。
+这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
+"""
+
 from typing import Dict, List, Any
 from loguru import logger
 
 
 class PlanningLayer:
+    """
+    封装与PlanningLayer相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.available_tools = []
         logger.info("PlanningLayer initialized")
     
     def register_tool(self, tool: Dict[str, Any]):
+        """
+        处理register、tool相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.available_tools.append(tool)
         logger.debug(f"Registered tool: {tool.get('name')}")
     
@@ -17,6 +34,10 @@ class PlanningLayer:
         entities: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """
+        创建plan相关对象、记录或执行结果。
+        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        """
         logger.info(f"Creating plan for intent: {intent}")
         
         if intent == "execute":
@@ -41,6 +62,10 @@ class PlanningLayer:
         entities: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """
+        处理create、execution、plan相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         steps = []
         
         if "files" in entities:
@@ -77,6 +102,10 @@ class PlanningLayer:
         entities: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """
+        处理create、query、plan相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "intent": "query",
             "steps": [
@@ -95,6 +124,10 @@ class PlanningLayer:
         entities: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """
+        处理create、explain、plan相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "intent": "explain",
             "steps": [
@@ -113,6 +146,10 @@ class PlanningLayer:
         entities: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """
+        处理create、chat、plan相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "intent": "chat",
             "steps": [
@@ -127,6 +164,10 @@ class PlanningLayer:
         }
     
     async def analyze_dependencies(self, steps: List[Dict]) -> Dict[str, Any]:
+        """
+        处理analyze、dependencies相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         dependency_graph = {}
         
         for i, step in enumerate(steps):
@@ -144,6 +185,10 @@ class PlanningLayer:
         }
     
     def _find_parallel_steps(self, dependency_graph: Dict[int, List[int]]) -> List[List[int]]:
+        """
+        处理find、parallel、steps相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         parallel_groups = []
         processed = set()
         
@@ -164,7 +209,10 @@ class PlanningLayer:
         return parallel_groups
     
     def generate_experience_prompt(self, experiences: List[Dict[str, Any]]) -> str:
-        """生成经验提示文本"""
+        """
+        处理generate、experience、prompt相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if not experiences:
             return ""
         

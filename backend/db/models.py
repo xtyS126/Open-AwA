@@ -1,3 +1,8 @@
+"""
+数据库模型与会话管理模块，负责 ORM 实体定义、数据库连接与初始化逻辑。
+这里的结构定义直接决定了持久化层能够保存哪些业务数据。
+"""
+
 from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
@@ -14,10 +19,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
+    """
+    封装与Base相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     pass
 
 
 class User(Base):
+    """
+    封装与User相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
@@ -31,6 +44,10 @@ class User(Base):
 
 
 class Skill(Base):
+    """
+    封装与Skill相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "skills"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
@@ -48,6 +65,10 @@ class Skill(Base):
 
 
 class Plugin(Base):
+    """
+    封装与Plugin相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "plugins"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
@@ -63,6 +84,10 @@ class Plugin(Base):
 
 
 class SkillExecutionLog(Base):
+    """
+    封装与SkillExecutionLog相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "skill_execution_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -77,6 +102,10 @@ class SkillExecutionLog(Base):
 
 
 class PluginExecutionLog(Base):
+    """
+    封装与PluginExecutionLog相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "plugin_execution_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -92,6 +121,10 @@ class PluginExecutionLog(Base):
 
 
 class ShortTermMemory(Base):
+    """
+    封装与ShortTermMemory相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "short_term_memory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -102,6 +135,10 @@ class ShortTermMemory(Base):
 
 
 class LongTermMemory(Base):
+    """
+    封装与LongTermMemory相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "long_term_memory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -114,6 +151,10 @@ class LongTermMemory(Base):
 
 
 class BehaviorLog(Base):
+    """
+    封装与BehaviorLog相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "behavior_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -124,6 +165,10 @@ class BehaviorLog(Base):
 
 
 class ExperienceMemory(Base):
+    """
+    封装与ExperienceMemory相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "experience_memory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -143,6 +188,10 @@ class ExperienceMemory(Base):
 
 
 class AuditLog(Base):
+    """
+    封装与AuditLog相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -154,6 +203,10 @@ class AuditLog(Base):
 
 
 class ExperienceExtractionLog(Base):
+    """
+    封装与ExperienceExtractionLog相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "experience_extraction_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -168,6 +221,10 @@ class ExperienceExtractionLog(Base):
 
 
 class PromptConfig(Base):
+    """
+    封装与PromptConfig相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "prompt_configs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
@@ -182,6 +239,10 @@ class PromptConfig(Base):
 
 
 class ConversationRecord(Base):
+    """
+    封装与ConversationRecord相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "conversation_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -202,6 +263,10 @@ class ConversationRecord(Base):
 
 
 def _migrate_conversation_record_metadata_column():
+    """
+    处理migrate、conversation、record、metadata、column相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
     if "conversation_records" not in table_names:
@@ -223,6 +288,10 @@ def _migrate_conversation_record_metadata_column():
 
 
 def _migrate_plugin_columns():
+    """
+    处理migrate、plugin、columns相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
     if "plugins" not in table_names:
@@ -245,12 +314,20 @@ def _migrate_plugin_columns():
 
 
 def init_db():
+    """
+    初始化db相关运行上下文、配置或默认数据。
+    这些步骤往往是其他能力能够正常运行的前置条件。
+    """
     Base.metadata.create_all(bind=engine)
     _migrate_conversation_record_metadata_column()
     _migrate_plugin_columns()
 
 
 def get_db():
+    """
+    获取db相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     db = SessionLocal()
     try:
         yield db

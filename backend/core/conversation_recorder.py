@@ -1,3 +1,8 @@
+"""
+核心执行编排模块，负责 Agent 主流程中的理解、规划、执行、反馈或记录能力。
+这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
+"""
+
 import asyncio
 import json
 from datetime import datetime, timezone
@@ -9,12 +14,20 @@ from db.models import ConversationRecord, SessionLocal
 
 
 class ConversationRecorder:
+    """
+    封装与ConversationRecorder相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(
         self,
         batch_size: int = 50,
         flush_interval: float = 1.0,
         queue_maxsize: int = 2000,
     ):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=queue_maxsize)
@@ -24,12 +37,20 @@ class ConversationRecorder:
         self._dropped_count = 0
 
     async def start(self) -> None:
+        """
+        处理start相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if self._worker_task and not self._worker_task.done():
             return
         self._shutdown_event.clear()
         self._worker_task = asyncio.create_task(self._worker_loop())
 
     async def stop(self) -> None:
+        """
+        处理stop相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if not self._worker_task:
             return
         self._shutdown_event.set()
@@ -37,6 +58,10 @@ class ConversationRecorder:
         self._worker_task = None
 
     def set_collection_enabled(self, enabled: bool, current_user: Any = None, user_id: Optional[str] = None) -> bool:
+        """
+        设置collection、enabled相关配置或运行状态。
+        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+        """
         resolved_user_id = self._resolve_user_id(current_user=current_user, user_id=user_id)
         if not resolved_user_id:
             return False
@@ -44,6 +69,10 @@ class ConversationRecorder:
         return True
 
     def is_collection_enabled(self, current_user: Any = None, user_id: Optional[str] = None) -> bool:
+        """
+        处理is、collection、enabled相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         resolved_user_id = self._resolve_user_id(current_user=current_user, user_id=user_id)
         if not resolved_user_id:
             return False
@@ -68,6 +97,10 @@ class ConversationRecorder:
         metadata: Any = None,
         timestamp: Optional[datetime] = None,
     ) -> bool:
+        """
+        处理record相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         resolved_user_id = self._resolve_user_id(current_user=current_user, user_id=user_id)
         if not resolved_user_id:
             return False
@@ -107,6 +140,10 @@ class ConversationRecorder:
                 return False
 
     def get_runtime_stats(self) -> Dict[str, int]:
+        """
+        获取runtime、stats相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return {
             "queue_size": self.queue.qsize(),
             "queue_maxsize": self.queue.maxsize,
@@ -115,6 +152,10 @@ class ConversationRecorder:
         }
 
     async def _worker_loop(self) -> None:
+        """
+        处理worker、loop相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         while not self._shutdown_event.is_set():
             batch = await self._gather_batch()
             if batch:
@@ -136,6 +177,10 @@ class ConversationRecorder:
             await self._flush_batch(tail_batch)
 
     async def _gather_batch(self) -> list[Dict[str, Any]]:
+        """
+        处理gather、batch相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         batch: list[Dict[str, Any]] = []
         try:
             first_item = await asyncio.wait_for(self.queue.get(), timeout=self.flush_interval)
@@ -151,6 +196,10 @@ class ConversationRecorder:
         return batch
 
     async def _flush_batch(self, batch: list[Dict[str, Any]]) -> None:
+        """
+        处理flush、batch相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         db = SessionLocal()
         try:
             for item in batch:
@@ -165,6 +214,10 @@ class ConversationRecorder:
                 self.queue.task_done()
 
     def _resolve_user_id(self, current_user: Any = None, user_id: Optional[str] = None) -> Optional[str]:
+        """
+        处理resolve、user、id相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if user_id:
             return user_id
         if current_user is None:
@@ -175,6 +228,10 @@ class ConversationRecorder:
         return None
 
     def _serialize_optional(self, value: Any) -> Optional[str]:
+        """
+        处理serialize、optional相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if value is None:
             return None
         if isinstance(value, str):

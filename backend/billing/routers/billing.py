@@ -1,3 +1,8 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -15,6 +20,10 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 
 class UsageRecordResponse(BaseModel):
+    """
+    封装与UsageRecordResponse相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     call_id: str
     user_id: Optional[str]
     session_id: Optional[str]
@@ -33,6 +42,10 @@ class UsageRecordResponse(BaseModel):
 
 
 class PricingUpdateRequest(BaseModel):
+    """
+    封装与PricingUpdateRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     input_price: Optional[float] = None
     output_price: Optional[float] = None
     currency: Optional[str] = None
@@ -43,6 +56,10 @@ class PricingUpdateRequest(BaseModel):
 
 
 class BudgetCreateRequest(BaseModel):
+    """
+    封装与BudgetCreateRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     budget_type: str
     max_amount: float
     scope_id: Optional[str] = None
@@ -52,6 +69,10 @@ class BudgetCreateRequest(BaseModel):
 
 
 class BudgetUpdateRequest(BaseModel):
+    """
+    封装与BudgetUpdateRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     max_amount: Optional[float] = None
     period_type: Optional[str] = None
     currency: Optional[str] = None
@@ -60,10 +81,18 @@ class BudgetUpdateRequest(BaseModel):
 
 
 class ProviderModelSelectionRequest(BaseModel):
+    """
+    封装与ProviderModelSelectionRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     selected_models: List[str] = []
 
 
 class ModelConfigCreateRequest(BaseModel):
+    """
+    封装与ModelConfigCreateRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     provider: str
     model: str
     display_name: Optional[str] = None
@@ -78,6 +107,10 @@ class ModelConfigCreateRequest(BaseModel):
 
 
 class ModelConfigUpdateRequest(BaseModel):
+    """
+    封装与ModelConfigUpdateRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     provider: Optional[str] = None
     model: Optional[str] = None
     display_name: Optional[str] = None
@@ -92,11 +125,19 @@ class ModelConfigUpdateRequest(BaseModel):
 
 
 class RetentionUpdateRequest(BaseModel):
+    """
+    封装与RetentionUpdateRequest相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     retention_days: int = Query(..., ge=1, le=3650)
     cleanup: bool = Query(False)
 
 
 def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False):
+    """
+    将configuration相关对象序列化为接口或存储所需格式。
+    通常用于在内部对象与外部输出结构之间建立稳定映射。
+    """
     selected_models = pricing_manager.parse_selected_models(config.selected_models)
     payload = {
         "id": config.id,
@@ -131,6 +172,10 @@ async def get_usage(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
+    """
+    获取usage相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     tracker = UsageTracker(db)
     records = tracker.get_usage_records(
         user_id=user_id,
@@ -172,6 +217,10 @@ async def get_cost_statistics(
     period: str = Query("monthly", regex="^(daily|weekly|monthly|yearly)$"),
     db: Session = Depends(get_db)
 ):
+    """
+    获取cost、statistics相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     reporter = BillingReporter(db)
     stats = reporter.get_cost_statistics(user_id=user_id, period=period)
     return stats
@@ -182,6 +231,10 @@ async def get_models(
     provider: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
+    """
+    获取models相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     pricing_manager = PricingManager(db)
     models = pricing_manager.get_all_pricing(provider=provider)
     
@@ -211,6 +264,10 @@ async def update_model_pricing(
     update_data: PricingUpdateRequest,
     db: Session = Depends(get_db)
 ):
+    """
+    更新model、pricing相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     pricing_manager = PricingManager(db)
     
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
@@ -242,6 +299,10 @@ async def get_budget(
     user_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
+    """
+    获取budget相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     budget_manager = BudgetManager(db)
     status = budget_manager.get_budget_status(user_id)
     return status
@@ -252,6 +313,10 @@ async def create_budget(
     budget_data: BudgetCreateRequest,
     db: Session = Depends(get_db)
 ):
+    """
+    创建budget相关对象、记录或执行结果。
+    实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+    """
     budget_manager = BudgetManager(db)
     
     if budget_data.budget_type not in ["global", "user", "project", "model"]:
@@ -287,6 +352,10 @@ async def update_budget(
     update_data: BudgetUpdateRequest,
     db: Session = Depends(get_db)
 ):
+    """
+    更新budget相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     budget_manager = BudgetManager(db)
     
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
@@ -312,6 +381,10 @@ async def delete_budget(
     budget_id: int,
     db: Session = Depends(get_db)
 ):
+    """
+    删除budget相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     budget_manager = BudgetManager(db)
     success = budget_manager.delete_budget(budget_id)
     
@@ -328,6 +401,10 @@ async def get_report(
     format: str = Query("json", regex="^(json|csv)$"),
     db: Session = Depends(get_db)
 ):
+    """
+    获取report相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     reporter = BillingReporter(db)
     
     if format == "csv":
@@ -354,6 +431,10 @@ async def get_session_usage(
     session_id: str,
     db: Session = Depends(get_db)
 ):
+    """
+    获取session、usage相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     tracker = UsageTracker(db)
     usage = tracker.get_session_usage(session_id)
     return usage
@@ -369,6 +450,10 @@ async def estimate_cost(
     video_seconds: float = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
+    """
+    处理estimate、cost相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     pricing_manager = PricingManager(db)
     pricing = pricing_manager.get_pricing(provider, model)
     
@@ -405,6 +490,10 @@ async def estimate_cost(
 async def initialize_default_pricing(
     db: Session = Depends(get_db)
 ):
+    """
+    处理initialize、default、pricing相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     pricing_manager = PricingManager(db)
     count = pricing_manager.initialize_default_pricing()
     
@@ -418,6 +507,10 @@ async def initialize_default_pricing(
 async def get_retention_config(
     db: Session = Depends(get_db)
 ):
+    """
+    获取retention、config相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     from config.settings import settings
     
     tracker = UsageTracker(db)
@@ -439,6 +532,10 @@ async def update_retention_config(
     cleanup: bool = Query(False, description="Whether to cleanup old records"),
     db: Session = Depends(get_db)
 ):
+    """
+    更新retention、config相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     from config.settings import settings
     
     old_value = settings.USAGE_RETENTION_DAYS
@@ -461,6 +558,10 @@ async def update_retention_config(
 async def get_configurations(
     db: Session = Depends(get_db)
 ):
+    """
+    获取configurations相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     pricing_manager = PricingManager(db)
     configs = pricing_manager.get_active_configurations()
     
@@ -477,6 +578,10 @@ async def get_configuration(
     config_id: int,
     db: Session = Depends(get_db)
 ):
+    """
+    获取configuration相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     pricing_manager = PricingManager(db)
     config = pricing_manager.get_configuration(config_id)
     
@@ -491,6 +596,10 @@ async def create_configuration(
     config_data: ModelConfigCreateRequest,
     db: Session = Depends(get_db)
 ):
+    """
+    创建configuration相关对象、记录或执行结果。
+    实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+    """
     pricing_manager = PricingManager(db)
     config = pricing_manager.create_configuration(config_data.dict())
     
@@ -506,6 +615,10 @@ async def update_configuration(
     update_data: ModelConfigUpdateRequest,
     db: Session = Depends(get_db)
 ):
+    """
+    更新configuration相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     pricing_manager = PricingManager(db)
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
     
@@ -528,6 +641,10 @@ async def delete_configuration(
     config_id: int,
     db: Session = Depends(get_db)
 ):
+    """
+    删除configuration相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     pricing_manager = PricingManager(db)
     success = pricing_manager.delete_configuration(config_id)
     
@@ -542,6 +659,10 @@ async def set_default_configuration(
     config_id: int,
     db: Session = Depends(get_db)
 ):
+    """
+    设置default、configuration相关配置或运行状态。
+    此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+    """
     pricing_manager = PricingManager(db)
     config = pricing_manager.set_default_configuration(config_id)
     
@@ -558,6 +679,10 @@ async def set_default_configuration(
 async def get_providers(
     db: Session = Depends(get_db)
 ):
+    """
+    获取providers相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     pricing_manager = PricingManager(db)
     providers = pricing_manager.get_provider_catalog()
     
@@ -572,6 +697,10 @@ async def get_provider_detail(
     provider: str,
     db: Session = Depends(get_db)
 ):
+    """
+    获取provider、detail相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
@@ -597,6 +726,10 @@ async def delete_provider(
     provider: str,
     db: Session = Depends(get_db)
 ):
+    """
+    删除provider相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
     deleted_count = pricing_manager.delete_provider_configurations(provider_id)
@@ -617,6 +750,10 @@ async def update_provider_selected_models(
     payload: ProviderModelSelectionRequest,
     db: Session = Depends(get_db)
 ):
+    """
+    更新provider、selected、models相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
@@ -641,6 +778,10 @@ async def get_models_by_provider(
     provider: str,
     db: Session = Depends(get_db)
 ):
+    """
+    获取models、by、provider相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
@@ -687,6 +828,10 @@ async def update_retention(
     cleanup: bool = Body(False),
     db: Session = Depends(get_db)
 ):
+    """
+    更新retention相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     from config.settings import settings
     
     old_value = settings.USAGE_RETENTION_DAYS

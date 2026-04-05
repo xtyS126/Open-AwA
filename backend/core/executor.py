@@ -1,3 +1,8 @@
+"""
+核心执行编排模块，负责 Agent 主流程中的理解、规划、执行、反馈或记录能力。
+这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
+"""
+
 from typing import Dict, Any, Optional, Callable
 from loguru import logger
 import asyncio
@@ -8,7 +13,15 @@ from sqlalchemy.orm import Session
 
 
 class ExecutionLayer:
+    """
+    封装与ExecutionLayer相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.tools = {}
         self.llm_api_url = None
         self.llm_api_key = None
@@ -29,15 +42,27 @@ class ExecutionLayer:
         logger.info("ExecutionLayer initialized")
 
     def configure_llm(self, api_url: str, api_key: Optional[str] = None):
+        """
+        处理configure、llm相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.llm_api_url = api_url
         self.llm_api_key = api_key
         logger.info(f"LLM API configured: {api_url}")
 
     def register_tool(self, name: str, tool_func: Callable[..., Any]):
+        """
+        处理register、tool相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.tools[name] = tool_func
         logger.debug(f"Registered execution tool: {name}")
 
     def _build_error(self, code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        处理build、error相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "code": code,
             "message": message,
@@ -45,6 +70,10 @@ class ExecutionLayer:
         }
 
     def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
+        """
+        处理extract、response、text相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if "response" in response_data and response_data["response"] is not None:
             return str(response_data["response"])
         if "content" in response_data and response_data["content"] is not None:
@@ -76,6 +105,10 @@ class ExecutionLayer:
         return ""
 
     def _resolve_llm_configuration(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理resolve、llm、configuration相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         from config.settings import settings
 
         provider = context.get("provider")
@@ -182,6 +215,10 @@ class ExecutionLayer:
         }
 
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理call、llm、api相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         record_hook = context.get("_record_hook")
         started_at = time.perf_counter()
         serialized_context = {
@@ -413,6 +450,10 @@ class ExecutionLayer:
             return output
 
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、step相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         action = step.get("action")
         logger.info(f"Executing step: {action}")
         
@@ -450,6 +491,10 @@ class ExecutionLayer:
             }
     
     async def _execute_read_files(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、read、files相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         files = step.get("targets", [])
         results = {}
         
@@ -477,6 +522,10 @@ class ExecutionLayer:
         }
     
     async def _execute_command(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、command相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         command = step.get("command", "")
         
         try:
@@ -509,6 +558,10 @@ class ExecutionLayer:
             }
     
     async def _execute_llm(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、llm相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         task = step.get("task", "")
         result = await self._call_llm_api(task, context)
         if not result.get("ok"):
@@ -527,6 +580,10 @@ class ExecutionLayer:
         }
 
     async def _execute_llm_query(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、llm、query相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         query = step.get("query", "")
         result = await self._call_llm_api(query, context)
         if not result.get("ok"):
@@ -544,6 +601,10 @@ class ExecutionLayer:
         }
 
     async def _execute_llm_explain(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、llm、explain相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         target = step.get("target", "")
         result = await self._call_llm_api(f"Explain: {target}", context)
         if not result.get("ok"):
@@ -561,6 +622,10 @@ class ExecutionLayer:
         }
 
     async def _execute_llm_chat(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理execute、llm、chat相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         message = step.get("message", "")
         result = await self._call_llm_api(message, context)
         if not result.get("ok"):
@@ -578,6 +643,10 @@ class ExecutionLayer:
         }
     
     async def retry_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理retry、step相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info(f"Retrying step: {step.get('action')}")
         return await self.execute_step(step, context)
     
@@ -587,7 +656,10 @@ class ExecutionLayer:
         success: bool,
         db: Session
     ) -> None:
-        """记录经验应用反馈"""
+        """
+        处理record、experience、feedback相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             manager = ExperienceManager(db)
             await manager.update_experience_quality(

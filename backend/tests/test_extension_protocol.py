@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 import pytest
 
 from plugins.extension_protocol import ExtensionPointType, ExtensionRegistry
@@ -5,6 +10,10 @@ from plugins.schema_validator import ManifestExtensionSchemaValidator
 
 
 def _build_manifest(plugin_name: str = "demo_plugin"):
+    """
+    处理build、manifest相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "name": plugin_name,
         "version": "1.0.0",
@@ -26,6 +35,10 @@ def _build_manifest(plugin_name: str = "demo_plugin"):
 
 
 def test_manifest_schema_validator_accepts_valid_manifest():
+    """
+    验证manifest、schema、validator、accepts、valid、manifest相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     validator = ManifestExtensionSchemaValidator()
     result = validator.validate_manifest(_build_manifest())
 
@@ -34,6 +47,10 @@ def test_manifest_schema_validator_accepts_valid_manifest():
 
 
 def test_manifest_schema_validator_rejects_invalid_manifest():
+    """
+    验证manifest、schema、validator、rejects、invalid、manifest相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     validator = ManifestExtensionSchemaValidator()
     invalid_manifest = {
         "name": "demo_plugin",
@@ -51,6 +68,10 @@ def test_manifest_schema_validator_rejects_invalid_manifest():
 
 
 def test_extension_registry_register_manifest_and_query_by_point():
+    """
+    验证extension、registry、register、manifest、and、query、by、point相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     registry = ExtensionRegistry()
     manifest = _build_manifest("plugin_alpha")
 
@@ -67,6 +88,10 @@ def test_extension_registry_register_manifest_and_query_by_point():
 
 
 def test_extension_registry_unregister_plugin():
+    """
+    验证extension、registry、unregister、plugin相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     registry = ExtensionRegistry()
     manifest = _build_manifest("plugin_beta")
     registry.register_manifest("plugin_beta", manifest)
@@ -79,6 +104,10 @@ def test_extension_registry_unregister_plugin():
 
 
 def test_extension_registry_rejects_invalid_extension():
+    """
+    验证extension、registry、rejects、invalid、extension相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     registry = ExtensionRegistry()
 
     with pytest.raises(ValueError):
