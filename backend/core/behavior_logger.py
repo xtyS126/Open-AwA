@@ -23,13 +23,18 @@ class BehaviorLogger:
         batch_size: int = 50,
         flush_interval: float = 0.5,
         queue_maxsize: int = 2000,
+        enqueue_timeout: float = 0.05,
+        warn_every: int = 10,
     ) -> None:
         self.batch_size = batch_size
         self.flush_interval = flush_interval
+        self.enqueue_timeout = enqueue_timeout
+        self.warn_every = warn_every
         self.queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=queue_maxsize)
         self._worker_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
         self._dropped_count = 0
+        self._enqueue_failed_count = 0
 
     async def start(self) -> None:
         """确保后台刷盘 worker 已启动。"""
@@ -49,7 +54,8 @@ class BehaviorLogger:
     async def record(self, payload: Dict[str, Any]) -> bool:
         """
         将埋点放入队列。
-        队列满时丢弃最旧的数据，为最新请求留出空间，避免请求链路阻塞。
+        队列满时会先丢弃最旧的数据，再尝试用一个很短的超时时间回压入队。
+        这样既能控制请求链路延迟，又能让丢数行为具备统计与告警能力。
         """
         await self.start()
 
@@ -58,12 +64,32 @@ class BehaviorLogger:
             return True
         except asyncio.QueueFull:
             self._dropped_count += 1
+            dropped_payload = None
             try:
-                self.queue.get_nowait()
+                dropped_payload = self.queue.get_nowait()
                 self.queue.task_done()
-                self.queue.put_nowait(payload)
+                await asyncio.wait_for(self.queue.put(payload), timeout=self.enqueue_timeout)
+                self._log_backpressure_event(
+                    event="drop_oldest",
+                    payload=payload,
+                    dropped_payload=dropped_payload,
+                )
                 return True
             except asyncio.QueueEmpty:
+                self._enqueue_failed_count += 1
+                self._log_backpressure_event(
+                    event="queue_empty_after_full",
+                    payload=payload,
+                    dropped_payload=dropped_payload,
+                )
+                return False
+            except TimeoutError:
+                self._enqueue_failed_count += 1
+                self._log_backpressure_event(
+                    event="enqueue_timeout",
+                    payload=payload,
+                    dropped_payload=dropped_payload,
+                )
                 return False
 
     def get_runtime_stats(self) -> Dict[str, int]:
@@ -72,7 +98,33 @@ class BehaviorLogger:
             "queue_size": self.queue.qsize(),
             "queue_maxsize": self.queue.maxsize,
             "dropped_count": self._dropped_count,
+            "enqueue_failed_count": self._enqueue_failed_count,
         }
+
+    def _log_backpressure_event(
+        self,
+        *,
+        event: str,
+        payload: Dict[str, Any],
+        dropped_payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        对队列回压与丢弃行为做结构化告警。
+        仅在固定步长打印一次，避免高并发下刷爆日志。
+        """
+        total_backpressure = self._dropped_count + self._enqueue_failed_count
+        should_warn = total_backpressure == 1 or (
+            self.warn_every > 0 and total_backpressure % self.warn_every == 0
+        )
+        if not should_warn:
+            return
+
+        logger.warning(
+            "Behavior logger backpressure detected: "
+            f"event={event}, queue_size={self.queue.qsize()}, queue_maxsize={self.queue.maxsize}, "
+            f"dropped_count={self._dropped_count}, enqueue_failed_count={self._enqueue_failed_count}, "
+            f"current_action={payload.get('action_type')}, dropped_action={dropped_payload.get('action_type') if dropped_payload else None}"
+        )
 
     async def _worker_loop(self) -> None:
         """持续聚合批次，并将同步数据库写入下沉到线程中执行。"""
