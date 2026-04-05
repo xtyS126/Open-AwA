@@ -1,13 +1,26 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from datetime import datetime, timezone
 
 
 class Base(DeclarativeBase):
+    """
+    封装与Base相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     pass
 
 
 class UsageRecord(Base):
+    """
+    封装与UsageRecord相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "usage_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -30,6 +43,10 @@ class UsageRecord(Base):
 
 
 class ModelPricing(Base):
+    """
+    封装与ModelPricing相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "model_pricing"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -56,6 +73,10 @@ class ModelPricing(Base):
 
 
 class BudgetConfig(Base):
+    """
+    封装与BudgetConfig相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "budget_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -74,6 +95,10 @@ class BudgetConfig(Base):
 
 
 class UserUsageSummary(Base):
+    """
+    封装与UserUsageSummary相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "user_usage_summary"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -91,6 +116,10 @@ class UserUsageSummary(Base):
 
 
 class ModelConfiguration(Base):
+    """
+    封装与ModelConfiguration相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     __tablename__ = "model_configurations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

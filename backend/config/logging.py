@@ -1,3 +1,8 @@
+"""
+配置管理模块，负责系统运行参数、安全策略或日志行为的统一定义。
+配置项通常会在多个子模块中生效，因此理解其字段含义非常重要。
+"""
+
 import re
 import sys
 import uuid
@@ -38,22 +43,42 @@ IDENTIFIER_KEYS = {
 
 
 def generate_request_id() -> str:
+    """
+    处理generate、request、id相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return uuid.uuid4().hex
 
 
 def set_request_id(request_id: str) -> None:
+    """
+    设置request、id相关配置或运行状态。
+    此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+    """
     _REQUEST_ID_CTX.set(str(request_id or "").strip())
 
 
 def get_request_id() -> str:
+    """
+    获取request、id相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     return _REQUEST_ID_CTX.get()
 
 
 def clear_request_id() -> None:
+    """
+    处理clear、request、id相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     _REQUEST_ID_CTX.set("")
 
 
 def _mask_identifier(value: Any) -> Any:
+    """
+    处理mask、identifier相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if not isinstance(value, str):
         return value
     text = value.strip()
@@ -72,6 +97,10 @@ def _mask_identifier(value: Any) -> Any:
 
 
 def _mask_secret_text(text: str) -> str:
+    """
+    处理mask、secret、text相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if not text:
         return text
 
@@ -91,6 +120,10 @@ def _mask_secret_text(text: str) -> str:
 
 
 def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
+    """
+    处理sanitize、for、logging相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     normalized_key = str(key_name or "").strip().lower()
 
     if isinstance(value, dict):
@@ -128,6 +161,10 @@ def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
 
 
 def _patch_record(record: Dict[str, Any], service_name: str) -> None:
+    """
+    处理patch、record相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     extra = dict(record.get("extra") or {})
 
     request_id = get_request_id()
@@ -158,6 +195,10 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
 
 
 def init_logging(log_level: str = "INFO", service_name: str = "openawa-backend", log_serialize: bool = True) -> None:
+    """
+    初始化logging相关运行上下文、配置或默认数据。
+    这些步骤往往是其他能力能够正常运行的前置条件。
+    """
     logger.remove()
     logger.configure(patcher=lambda record: _patch_record(record, service_name=service_name))
     logger.add(
@@ -178,6 +219,10 @@ def query_log_buffer(
     limit: int = 100,
     offset: int = 0,
 ) -> Dict[str, Any]:
+    """
+    处理query、log、buffer相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     level_filter = str(level or "").upper().strip()
     keyword_filter = str(keyword or "").strip().lower()
 

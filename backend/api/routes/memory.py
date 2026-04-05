@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -18,6 +23,10 @@ async def get_short_term_memory(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取short、term、memory相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     memories = db.query(ShortTermMemory).filter(
         ShortTermMemory.session_id == session_id
     ).order_by(ShortTermMemory.timestamp.desc()).limit(50).all()
@@ -36,6 +45,10 @@ async def add_short_term_memory(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理add、short、term、memory相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     new_memory = ShortTermMemory(
         session_id=memory.session_id,
         role=memory.role,
@@ -55,6 +68,10 @@ async def delete_short_term_memory(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    删除short、term、memory相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     memory = db.query(ShortTermMemory).filter(ShortTermMemory.id == memory_id).first()
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -77,6 +94,10 @@ async def get_long_term_memories(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取long、term、memories相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     memories = db.query(LongTermMemory).order_by(
         LongTermMemory.importance.desc()
     ).offset(skip).limit(limit).all()
@@ -90,6 +111,10 @@ async def add_long_term_memory(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理add、long、term、memory相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     new_memory = LongTermMemory(
         content=memory.content,
         importance=memory.importance
@@ -108,6 +133,10 @@ async def delete_long_term_memory(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    删除long、term、memory相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -128,6 +157,10 @@ async def search_memories(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理search、memories相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     memories = db.query(LongTermMemory).filter(
         LongTermMemory.content.contains(query)
     ).all()

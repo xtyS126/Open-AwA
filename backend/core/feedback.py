@@ -1,17 +1,38 @@
+"""
+核心执行编排模块，负责 Agent 主流程中的理解、规划、执行、反馈或记录能力。
+这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
+"""
+
 import time
 from typing import Dict, List, Any
 from loguru import logger
 
 
 class FeedbackLayer:
+    """
+    封装与FeedbackLayer相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.memory_manager = None
         logger.info("FeedbackLayer initialized")
     
     def set_memory_manager(self, memory_manager):
+        """
+        设置memory、manager相关配置或运行状态。
+        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+        """
         self.memory_manager = memory_manager
     
     async def evaluate_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理evaluate、result相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         status = result.get("status")
         
         if status == "error":
@@ -35,6 +56,10 @@ class FeedbackLayer:
         }
     
     async def generate_response(self, results: List[Dict[str, Any]], context: Dict[str, Any] | None = None) -> str:
+        """
+        处理generate、response相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         started_at = time.perf_counter()
         if not results:
             response_text = "No results to report."
@@ -96,6 +121,10 @@ class FeedbackLayer:
         response: str,
         context: Dict[str, Any]
     ):
+        """
+        更新memory相关数据、配置或状态。
+        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        """
         if not self.memory_manager:
             logger.warning("Memory manager not set, skipping memory update")
             return
@@ -123,6 +152,10 @@ class FeedbackLayer:
             logger.error(f"Error updating memory: {str(e)}")
     
     def _should_persist(self, content: str) -> bool:
+        """
+        处理should、persist相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         important_keywords = [
             "remember", "记住", "important", "重要",
             "preference", "偏好", "习惯", "always"
@@ -132,6 +165,10 @@ class FeedbackLayer:
         return any(keyword in content_lower for keyword in important_keywords)
     
     async def diagnose_error(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理diagnose、error相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         error_message = result.get("message", "")
         
         diagnosis = {

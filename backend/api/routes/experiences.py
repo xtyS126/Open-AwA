@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any
@@ -15,7 +20,10 @@ router = APIRouter(prefix="/experiences", tags=["Experience"])
 
 
 def get_experience_manager(db: Session = Depends(get_db)) -> ExperienceManager:
-    """获取ExperienceManager实例"""
+    """
+    获取experience、manager相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     return ExperienceManager(db)
 
 
@@ -31,7 +39,10 @@ async def get_experiences(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """获取经验列表"""
+    """
+    获取experiences相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     offset = (page - 1) * limit
 
     query = manager.db.query(ExperienceMemory).filter(
@@ -62,7 +73,10 @@ async def get_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """获取单个经验详情"""
+    """
+    获取experience相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     experience = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
@@ -89,7 +103,10 @@ async def create_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """手动创建经验"""
+    """
+    创建experience相关对象、记录或执行结果。
+    实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+    """
     experience = ExperienceMemory(
         experience_type=experience_data.experience_type,
         title=experience_data.title,
@@ -120,7 +137,10 @@ async def update_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """更新经验"""
+    """
+    更新experience相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     experience = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
@@ -149,7 +169,10 @@ async def delete_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """删除经验"""
+    """
+    删除experience相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     experience = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
@@ -170,7 +193,10 @@ async def extract_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """手动触发经验提取"""
+    """
+    处理extract、experience相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     from skills.experience_extractor import ExperienceExtractor
 
     extractor = ExperienceExtractor()
@@ -238,7 +264,10 @@ async def search_experiences(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """检索相关经验"""
+    """
+    处理search、experiences相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     experiences = await manager.search_experiences(
         query_text=query,
         experience_type=experience_type,
@@ -272,7 +301,10 @@ async def get_experience_stats(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """获取经验统计信息"""
+    """
+    获取experience、stats相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     user_experiences = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.user_id == current_user.id
     ).all()
@@ -303,7 +335,10 @@ async def get_extraction_logs(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取经验提取日志"""
+    """
+    获取extraction、logs相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     offset = (page - 1) * limit
     
     logs = db.query(ExperienceExtractionLog).filter(
@@ -335,7 +370,10 @@ async def review_experience(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user = Depends(get_current_user)
 ):
-    """审核经验"""
+    """
+    处理review、experience相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     experience = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id

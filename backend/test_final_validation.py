@@ -1,3 +1,8 @@
+"""
+最终验证辅助脚本，用于执行关键场景的集成性校验。
+阅读时可结合输出日志理解每个验证步骤对应的目标能力与预期结果。
+"""
+
 import sys
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -5,7 +10,10 @@ from billing.models import Base, ModelConfiguration
 from billing.pricing_manager import PricingManager
 
 def test_database_uniqueness():
-    """测试数据库唯一约束"""
+    """
+    验证database、uniqueness相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     print("=== 测试数据库唯一约束 ===\n")
 
     # 创建内存数据库
@@ -70,7 +78,10 @@ def test_database_uniqueness():
 
 
 def test_code_validation():
-    """测试代码层面验证"""
+    """
+    验证code、validation相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     print("\n=== 测试代码层面验证 ===\n")
 
     # 保存原始数据
@@ -112,7 +123,10 @@ def test_code_validation():
 
 
 def test_normal_case():
-    """测试正常情况"""
+    """
+    验证normal、case相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     print("\n=== 测试正常情况 ===\n")
 
     # 验证当前配置唯一

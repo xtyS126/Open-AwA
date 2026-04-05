@@ -1,3 +1,8 @@
+"""
+技能系统模块，负责技能注册、加载、校验、执行或适配外部能力。
+当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
+"""
+
 from typing import Dict, List, Optional, NamedTuple
 from loguru import logger
 import yaml
@@ -5,19 +10,35 @@ import re
 
 
 class ValidationResult(NamedTuple):
+    """
+    封装与ValidationResult相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     valid: bool
     errors: List[str]
     warnings: List[str]
 
     @classmethod
     def success(cls, warnings: Optional[List[str]] = None) -> 'ValidationResult':
+        """
+        处理success相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return cls(valid=True, errors=[], warnings=warnings or [])
 
     @classmethod
     def failure(cls, errors: List[str], warnings: Optional[List[str]] = None) -> 'ValidationResult':
+        """
+        处理failure相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return cls(valid=False, errors=errors, warnings=warnings or [])
 
     def merge(self, other: 'ValidationResult') -> 'ValidationResult':
+        """
+        处理merge相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         combined_errors = self.errors + other.errors
         combined_warnings = self.warnings + other.warnings
         return ValidationResult(
@@ -28,6 +49,10 @@ class ValidationResult(NamedTuple):
 
 
 class SkillValidator:
+    """
+    封装与SkillValidator相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     REQUIRED_FIELDS = ['name', 'version', 'description']
 
     VALID_PERMISSIONS = [
@@ -42,9 +67,17 @@ class SkillValidator:
     ]
 
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info("SkillValidator initialized")
 
     def validate_yaml_format(self, yaml_content: str) -> bool:
+        """
+        校验yaml、format相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         if not yaml_content or not yaml_content.strip():
             logger.warning("Empty YAML content provided")
             return False
@@ -61,6 +94,10 @@ class SkillValidator:
             return False
 
     def validate_required_fields(self, config: Dict) -> ValidationResult:
+        """
+        校验required、fields相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         errors = []
         warnings: list[str] = []
 
@@ -97,6 +134,10 @@ class SkillValidator:
             return ValidationResult.success(warnings)
 
     def validate_permissions(self, permissions: List[str]) -> ValidationResult:
+        """
+        校验permissions相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         errors = []
         warnings = []
 
@@ -132,6 +173,10 @@ class SkillValidator:
             return ValidationResult.success(warnings)
 
     def validate_dependencies(self, dependencies: List[str]) -> ValidationResult:
+        """
+        校验dependencies相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         errors: list[str] = []
         warnings: list[str] = []
 
@@ -180,6 +225,10 @@ class SkillValidator:
             return ValidationResult.success(warnings)
 
     def validate_version(self, version: str) -> bool:
+        """
+        校验version相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         if not version or not isinstance(version, str):
             return False
 
@@ -194,6 +243,10 @@ class SkillValidator:
         return is_valid
 
     def validate_skill_config(self, config: Dict) -> ValidationResult:
+        """
+        校验skill、config相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         if not isinstance(config, dict):
             logger.error("Config must be a dictionary")
             return ValidationResult.failure(["Config must be a dictionary"])

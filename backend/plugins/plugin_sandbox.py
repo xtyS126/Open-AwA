@@ -1,3 +1,8 @@
+"""
+插件系统模块，负责插件定义、加载、校验、沙箱隔离、生命周期或扩展协议处理。
+这一层通常同时涉及可扩展性、安全性与运行时状态管理。
+"""
+
 import asyncio
 from typing import Dict, Any
 from loguru import logger
@@ -6,7 +11,15 @@ from .base_plugin import BasePlugin
 
 
 class PluginSandbox:
+    """
+    封装与PluginSandbox相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, timeout: int = 30, memory_limit: str = "512m", cpu_limit: float = 1.0):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.timeout = timeout
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
@@ -21,6 +34,10 @@ class PluginSandbox:
         method: str,
         **kwargs
     ) -> Dict[str, Any]:
+        """
+        处理execute、plugin相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._execution_count += 1
         execution_id = self._execution_count
 
@@ -75,6 +92,10 @@ class PluginSandbox:
         method: str,
         **kwargs
     ) -> Dict[str, Any]:
+        """
+        处理execute、plugin、sync相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._execution_count += 1
         execution_id = self._execution_count
 
@@ -109,6 +130,10 @@ class PluginSandbox:
             }
 
     def get_execution_stats(self) -> Dict[str, Any]:
+        """
+        获取execution、stats相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return {
             "total_executions": self._execution_count,
             "timeout_setting": self.timeout,
@@ -117,5 +142,9 @@ class PluginSandbox:
         }
 
     def reset_stats(self) -> None:
+        """
+        处理reset、stats相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._execution_count = 0
         logger.info("PluginSandbox execution stats reset")

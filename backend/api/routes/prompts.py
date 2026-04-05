@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -20,6 +25,10 @@ async def get_prompts(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取prompts相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     prompts = db.query(PromptConfig).all()
     return prompts
 
@@ -34,6 +43,10 @@ async def get_active_prompt(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取active、prompt相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     prompt = db.query(PromptConfig).filter(PromptConfig.is_active == True).first()
     if prompt:
         return prompt
@@ -69,6 +82,10 @@ async def get_prompt(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取prompt相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     prompt = db.query(PromptConfig).filter(PromptConfig.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
@@ -81,6 +98,10 @@ async def create_prompt(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    创建prompt相关对象、记录或执行结果。
+    实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+    """
     new_prompt = PromptConfig(
         id=str(uuid.uuid4()),
         name=prompt.name,
@@ -103,6 +124,10 @@ async def update_prompt(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    更新prompt相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     prompt = db.query(PromptConfig).filter(PromptConfig.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
@@ -136,6 +161,10 @@ async def delete_prompt(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    删除prompt相关对象或持久化记录。
+    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    """
     prompt = db.query(PromptConfig).filter(PromptConfig.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")

@@ -1,3 +1,8 @@
+"""
+记忆管理模块，负责短期记忆、长期记忆或经验数据的存储、检索与维护。
+它是上下文连续性和经验复用能力的重要支撑层。
+"""
+
 import json
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
@@ -8,9 +13,16 @@ from loguru import logger
 
 
 class ExperienceManager:
-    """经验管理器 - 负责经验的存储、检索和质量保障"""
+    """
+    封装与ExperienceManager相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
         logger.info("ExperienceManager initialized")
     
@@ -25,7 +37,10 @@ class ExperienceManager:
         metadata: Optional[Dict] = None,
         user_id: Optional[str] = None
     ) -> ExperienceMemory:
-        """添加新经验"""
+        """
+        处理add、experience相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         experience = ExperienceMemory(
             experience_type=experience_type,
             title=title,
@@ -54,7 +69,10 @@ class ExperienceManager:
         sort_by: str = 'confidence',
         order: str = 'desc'
     ) -> List[ExperienceMemory]:
-        """获取经验列表，支持筛选和排序"""
+        """
+        获取experiences相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         query = self.db.query(ExperienceMemory)
         
         if experience_type:
@@ -75,7 +93,10 @@ class ExperienceManager:
         return experiences
     
     async def get_experience_by_id(self, experience_id: int) -> Optional[ExperienceMemory]:
-        """根据ID获取经验"""
+        """
+        获取experience、by、id相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return self.db.query(ExperienceMemory).filter(
             ExperienceMemory.id == experience_id
         ).first()
@@ -87,7 +108,10 @@ class ExperienceManager:
         min_confidence: float = 0.0,
         limit: int = 10
     ) -> List[ExperienceMemory]:
-        """基于文本的精确匹配搜索"""
+        """
+        处理search、experiences相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         query = self.db.query(ExperienceMemory).filter(
             or_(
                 ExperienceMemory.title.contains(query_text),
@@ -120,7 +144,10 @@ class ExperienceManager:
         task_context: Optional[Dict] = None,
         limit: int = 5
     ) -> List[ExperienceMemory]:
-        """语义搜索经验（简单实现，可扩展为向量检索）"""
+        """
+        处理semantic、search、experiences相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         keywords = self._extract_keywords(query)
         
         if not keywords:
@@ -161,7 +188,10 @@ class ExperienceManager:
         return experiences
     
     def _extract_keywords(self, text: str) -> List[str]:
-        """提取关键词（简化实现）"""
+        """
+        处理extract、keywords相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         stop_words = {'的', '了', '是', '在', '和', '与', '或', '我', '你', '他', '她', '它', '这', '那', '有', '没有', '要', '不', '能', '会', '可以', '如何', '怎么', '什么', '哪个', '哪些'}
         
         words = text.replace(',', ' ').replace('。', ' ').replace('！', ' ').replace('？', ' ').split()
@@ -174,7 +204,10 @@ class ExperienceManager:
         conditions: Dict[str, Any],
         limit: int = 5
     ) -> List[ExperienceMemory]:
-        """基于规则的搜索"""
+        """
+        处理rule、based、search相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         query = self.db.query(ExperienceMemory)
         
         if 'task_type' in conditions:
@@ -212,7 +245,10 @@ class ExperienceManager:
         task_context: Dict[str, Any],
         max_experiences: int = 3
     ) -> List[ExperienceMemory]:
-        """检索相关经验 - 多维度检索"""
+        """
+        处理retrieve、relevant、experiences相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         experiences = []
         
         task_type = task_context.get('task_type', 'general')
@@ -250,7 +286,10 @@ class ExperienceManager:
         self,
         experiences: List[ExperienceMemory]
     ) -> List[ExperienceMemory]:
-        """去重和排序"""
+        """
+        处理deduplicate、and、rank相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         seen_ids = set()
         unique_experiences = []
         
@@ -260,6 +299,10 @@ class ExperienceManager:
                 unique_experiences.append(exp)
         
         def calculate_score(exp: ExperienceMemory) -> float:
+            """
+            处理calculate、score相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             confidence_weight = 0.4
             usage_weight = 0.2
             success_weight = 0.3
@@ -290,7 +333,10 @@ class ExperienceManager:
         success: bool,
         feedback: Optional[Dict] = None
     ) -> bool:
-        """更新经验质量指标"""
+        """
+        更新experience、quality相关数据、配置或状态。
+        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        """
         experience = await self.get_experience_by_id(experience_id)
         if not experience:
             return False
@@ -320,7 +366,10 @@ class ExperienceManager:
         return True
     
     async def archive_low_quality_experiences(self) -> int:
-        """归档低质量经验"""
+        """
+        处理archive、low、quality、experiences相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         low_quality = self.db.query(ExperienceMemory).filter(
             and_(
                 ExperienceMemory.confidence < 0.2,
@@ -342,7 +391,10 @@ class ExperienceManager:
         return archived_count
     
     async def mark_for_review(self, experience_id: int) -> bool:
-        """标记经验为待审核"""
+        """
+        处理mark、for、review相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         experience = await self.get_experience_by_id(experience_id)
         if not experience:
             return False
@@ -357,7 +409,10 @@ class ExperienceManager:
         return True
     
     async def get_experience_stats(self) -> Dict[str, Any]:
-        """获取经验统计信息"""
+        """
+        获取experience、stats相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         total = self.db.query(ExperienceMemory).count()
         
         type_counts = {}
@@ -392,7 +447,10 @@ class ExperienceManager:
         }
     
     async def delete_experience(self, experience_id: int) -> bool:
-        """删除经验"""
+        """
+        删除experience相关对象或持久化记录。
+        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        """
         experience = await self.get_experience_by_id(experience_id)
         if not experience:
             return False
