@@ -8,9 +8,11 @@ from typing import Dict, AsyncGenerator
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from sqlalchemy.orm import Session
 
 from core.metrics import record_websocket_message_metric
+from core.model_service import build_standard_error
+from config.logging import sanitize_for_logging
+from api.services.ws_manager import ws_manager
 
 WS_CHUNK_SIZE = 1024
 
@@ -73,18 +75,11 @@ async def handle_websocket_session(
     username: str,
     client_version: str,
     connection_request_id: str,
-    db: Session,
+    agent: "AIAgent",
 ):
     """
     处理 WebSocket 会话的收发循环。
     """
-    from core.agent import AIAgent
-    from core.model_service import build_standard_error
-    from config.logging import sanitize_for_logging
-    from api.services.ws_manager import ws_manager
-
-    agent = AIAgent(db_session=db)
-
     try:
         while True:
             data = await websocket.receive_text()
@@ -187,4 +182,3 @@ async def handle_websocket_session(
             await websocket.close(code=4005, reason="Internal server error")
     finally:
         ws_manager.disconnect(session_id)
-        db.close()
