@@ -3,10 +3,10 @@
 这里的结构定义直接决定了持久化层能够保存哪些业务数据。
 """
 
-from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, inspect, text
+from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any, Dict, List
 from loguru import logger
 from config.settings import settings
 
@@ -54,10 +54,10 @@ class Skill(Base):
     name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     version: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text)
-    config: Mapped[str] = mapped_column(Text)
+    config: Mapped[Dict[str, Any]] = mapped_column(JSON)
     category: Mapped[str] = mapped_column(String, default="general")
-    tags: Mapped[str] = mapped_column(Text)
-    dependencies: Mapped[str] = mapped_column(Text)
+    tags: Mapped[List[str]] = mapped_column(JSON)
+    dependencies: Mapped[List[str]] = mapped_column(JSON)
     author: Mapped[str] = mapped_column(String)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -75,11 +75,11 @@ class Plugin(Base):
     name: Mapped[str] = mapped_column(String)
     version: Mapped[str] = mapped_column(String)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    config: Mapped[str] = mapped_column(Text)
+    config: Mapped[Dict[str, Any]] = mapped_column(JSON)
     category: Mapped[str] = mapped_column(String, default="general")
     author: Mapped[str] = mapped_column(String)
     source: Mapped[str] = mapped_column(String)
-    dependencies: Mapped[str] = mapped_column(Text)
+    dependencies: Mapped[List[str]] = mapped_column(JSON)
     installed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -93,8 +93,8 @@ class SkillExecutionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     skill_id: Mapped[str] = mapped_column(String, index=True)
     skill_name: Mapped[str] = mapped_column(String, index=True)
-    inputs: Mapped[str] = mapped_column(Text)
-    outputs: Mapped[str] = mapped_column(Text)
+    inputs: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    outputs: Mapped[Dict[str, Any]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String)
     execution_time: Mapped[float] = mapped_column(Float)
     error_message: Mapped[str] = mapped_column(Text)
@@ -112,8 +112,8 @@ class PluginExecutionLog(Base):
     plugin_id: Mapped[str] = mapped_column(String, index=True)
     plugin_name: Mapped[str] = mapped_column(String, index=True)
     method: Mapped[str] = mapped_column(String)
-    inputs: Mapped[str] = mapped_column(Text)
-    outputs: Mapped[str] = mapped_column(Text)
+    inputs: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    outputs: Mapped[Dict[str, Any]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String)
     execution_time: Mapped[float] = mapped_column(Float)
     error_message: Mapped[str] = mapped_column(Text)
@@ -143,7 +143,7 @@ class LongTermMemory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[List[float]] = mapped_column(JSON)
     importance: Mapped[float] = mapped_column(Float, default=0.5)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     access_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -160,7 +160,7 @@ class BehaviorLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, index=True)
     action_type: Mapped[str] = mapped_column(String)
-    details: Mapped[str] = mapped_column(Text)
+    details: Mapped[Dict[str, Any]] = mapped_column(JSON)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -176,7 +176,7 @@ class ExperienceMemory(Base):
     experience_type: Mapped[str] = mapped_column(String, index=True)
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(Text)
-    trigger_conditions: Mapped[str] = mapped_column(Text)
+    trigger_conditions: Mapped[Dict[str, Any]] = mapped_column(JSON)
     success_metrics: Mapped[float] = mapped_column(Float, default=0.0)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     success_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -184,7 +184,7 @@ class ExperienceMemory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_access: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     confidence: Mapped[float] = mapped_column(Float, default=0.5, index=True)
-    experience_metadata: Mapped[str] = mapped_column(Text)
+    experience_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON)
 
 
 class AuditLog(Base):
@@ -253,8 +253,8 @@ class ConversationRecord(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    llm_input: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    llm_output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    llm_input: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    llm_output: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     llm_tokens_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     execution_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, default="success")
