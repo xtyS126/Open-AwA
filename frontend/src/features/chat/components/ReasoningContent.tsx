@@ -56,9 +56,13 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
   // Handle auto-scroll to bottom when streaming
   useEffect(() => {
     if (isStreaming && isExpanded && contentRef.current) {
-      const el = contentRef.current
-      // Auto-scroll to bottom
-      el.scrollTop = el.scrollHeight
+      // Use requestAnimationFrame or setTimeout to ensure DOM is updated before scrolling
+      requestAnimationFrame(() => {
+        if (contentRef.current) {
+          const el = contentRef.current
+          el.scrollTop = el.scrollHeight
+        }
+      })
     }
   }, [content, isStreaming, isExpanded])
 
@@ -81,6 +85,7 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
       <div
         ref={contentRef}
         className={`${styles.contentWrapper} ${isExpanded ? styles.expanded : ''}`}
+        style={{ whiteSpace: 'pre-wrap' }}
       >
         {content}
       </div>
