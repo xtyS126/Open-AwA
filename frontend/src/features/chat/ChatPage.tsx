@@ -7,7 +7,7 @@ import styles from './ChatPage.module.css'
 
 function ChatPage() {
   const [input, setInput] = useState('')
-  const { messages, addMessage, setLoading, isLoading, clearMessages, sessionId } = useChatStore()
+  const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [configurations, setConfigurations] = useState<{ id: string; provider: string; model: string; display_name: string }[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
@@ -120,7 +120,7 @@ function ChatPage() {
       action: 'send_message',
       status: 'start',
       message: 'chat send started',
-      extra: { session_id: sessionId, input_length: userMessage.length },
+      extra: { session_id: sessionId, input_length: userMessage.length, mode: outputMode },
     })
     setInput('')
     addMessage('user', userMessage)
@@ -128,16 +128,53 @@ function ChatPage() {
 
     try {
       const { provider, model } = parseSelectedModel(selectedModel)
-      const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model)
-      const assistantText = response.data.response
-      const backendError = response.data.error
 
-      if (assistantText && assistantText.trim()) {
-        addMessage('assistant', assistantText)
-      } else if (backendError?.message) {
-        addMessage('assistant', `请求失败：${backendError.message}`)
+      if (outputMode === 'stream') {
+        let isFirstChunk = true
+        await chatAPI.sendMessageStream(
+          userMessage,
+          sessionId,
+          provider,
+          model,
+          (content, reasoning) => {
+            if (isFirstChunk) {
+              setLoading(false)
+              addMessage('assistant', content, reasoning)
+              isFirstChunk = false
+            } else {
+              updateLastMessage(content, reasoning)
+            }
+          },
+          (error) => {
+            appLogger.error({
+              event: 'chat_stream_error',
+              module: 'chat_page',
+              action: 'receive_stream',
+              status: 'failure',
+              message: 'chat stream error',
+              extra: { error: error instanceof Error ? error.message : String(error) },
+            })
+            if (isFirstChunk) {
+              setLoading(false)
+              addMessage('assistant', `请求失败：${error.message}`)
+              isFirstChunk = false
+            } else {
+              updateLastMessage(`\n\n[流中断：${error.message}]`)
+            }
+          }
+        )
       } else {
-        addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。')
+        const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model, 'direct')
+        const assistantText = response.data.response
+        const backendError = response.data.error
+
+        if (assistantText && assistantText.trim()) {
+          addMessage('assistant', assistantText)
+        } else if (backendError?.message) {
+          addMessage('assistant', `请求失败：${backendError.message}`)
+        } else {
+          addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。')
+        }
       }
     } catch (error) {
       appLogger.error({
@@ -218,6 +255,15 @@ function ChatPage() {
         <h1>AI 助手</h1>
         <div className={styles['model-selector']}>
           <select
+            value={outputMode}
+            onChange={(e) => setOutputMode(e.target.value as 'stream' | 'direct')}
+            className={styles['model-select']}
+            style={{ marginRight: '10px' }}
+          >
+            <option value="stream">流式传输</option>
+            <option value="direct">直接输出</option>
+          </select>
+          <select
             value={selectedModel}
             onChange={handleModelChange}
             disabled={loadingModels || !!error}
@@ -276,6 +322,20 @@ function ChatPage() {
             className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}
           >
             <div className={styles['message-content']}>
+              {message.reasoning_content && (
+                <div className={styles['reasoning-content']} style={{
+                  padding: '8px 12px',
+                  marginBottom: '8px',
+                  backgroundColor: 'rgba(0,0,0,0.05)',
+                  borderLeft: '4px solid #888',
+                  color: '#666',
+                  fontStyle: 'italic',
+                  fontSize: '0.9em',
+                  borderRadius: '4px'
+                }}>
+                  {message.reasoning_content}
+                </div>
+              )}
               <p>{message.content}</p>
             </div>
           </div>

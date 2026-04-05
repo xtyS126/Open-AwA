@@ -113,9 +113,81 @@ export const chatAPI = {
     message: string,
     sessionId: string = 'default',
     provider?: string,
-    model?: string
+    model?: string,
+    mode: 'stream' | 'direct' = 'direct'
   ) =>
-    api.post('/chat', { message, session_id: sessionId, provider, model }),
+    api.post('/chat', { message, session_id: sessionId, provider, model, mode }),
+  sendMessageStream: async (
+    message: string,
+    sessionId: string = 'default',
+    provider?: string,
+    model?: string,
+    onChunk?: (content: string, reasoning: string) => void,
+    onError?: (error: any) => void
+  ) => {
+    try {
+      const token = localStorage.getItem('token')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          message,
+          session_id: sessionId,
+          provider,
+          model,
+          mode: 'stream'
+        })
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err?.detail || err?.error?.message || 'Request failed')
+      }
+
+      if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let done = false
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read()
+        done = doneReading
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true })
+          const lines = chunk.split('\n')
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6)
+              if (dataStr === '[DONE]') {
+                break
+              }
+              try {
+                const data = JSON.parse(dataStr)
+                if (data.type === 'chunk') {
+                  onChunk?.(data.content || '', data.reasoning_content || '')
+                } else if (data.type === 'error') {
+                  onError?.(new Error(data.error?.message || 'Stream error'))
+                }
+              } catch (e) {
+                // Ignore parse errors for incomplete chunks
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      onError?.(e)
+      throw e
+    }
+  },
   getHistory: (sessionId: string) =>
     api.get(`/chat/history/${sessionId}`),
   confirmOperation: (confirmed: boolean, step: any) =>
