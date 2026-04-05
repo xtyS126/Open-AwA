@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 import uuid
 
 import pytest
@@ -16,6 +21,10 @@ from skills.weixin_skill_adapter import (
 
 
 def _build_weixin_skill_config(token: str = "test-token"):
+    """
+    处理build、weixin、skill、config相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "name": "weixin_dispatch",
         "version": "1.0.0",
@@ -32,6 +41,10 @@ def _build_weixin_skill_config(token: str = "test-token"):
 
 
 def _create_db_session():
+    """
+    处理create、db、session相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session_local = sessionmaker(bind=engine)
@@ -40,10 +53,18 @@ def _create_db_session():
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_fetch_login_qrcode_uses_fixed_qr_base_url(monkeypatch):
+    """
+    验证weixin、adapter、fetch、login、qrcode、uses、fixed、qr、base、url相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
     captured = {}
 
     async def fake_api_get(self, base_url, endpoint, params=None, timeout_seconds=15, extra_headers=None):
+        """
+        处理fake、api、get相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         captured["base_url"] = base_url
         captured["endpoint"] = endpoint
         captured["params"] = params
@@ -69,10 +90,18 @@ async def test_weixin_adapter_fetch_login_qrcode_uses_fixed_qr_base_url(monkeypa
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_fetch_qrcode_status_uses_provided_poll_base_url(monkeypatch):
+    """
+    验证weixin、adapter、fetch、qrcode、status、uses、provided、poll、base、url相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
     captured = {}
 
     async def fake_api_get(self, base_url, endpoint, params=None, timeout_seconds=15, extra_headers=None):
+        """
+        处理fake、api、get相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         captured["base_url"] = base_url
         captured["endpoint"] = endpoint
         captured["params"] = params
@@ -100,6 +129,10 @@ async def test_weixin_adapter_fetch_qrcode_status_uses_provided_poll_base_url(mo
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_returns_structured_error_when_missing_config_fields(monkeypatch):
+    """
+    验证weixin、adapter、returns、structured、error、when、missing、config、fields相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     monkeypatch.setattr(
@@ -122,6 +155,10 @@ async def test_weixin_adapter_returns_structured_error_when_missing_config_field
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_health_check_returns_diagnostics(monkeypatch):
+    """
+    验证weixin、adapter、health、check、returns、diagnostics相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     monkeypatch.setattr(
@@ -149,6 +186,10 @@ async def test_weixin_adapter_health_check_returns_diagnostics(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_skill_engine_routes_weixin_skill_and_records_adapter_logs(monkeypatch):
+    """
+    验证skill、engine、routes、weixin、skill、and、records、adapter、logs相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     db_session = _create_db_session()
     try:
         config = _build_weixin_skill_config()
@@ -169,6 +210,10 @@ async def test_skill_engine_routes_weixin_skill_and_records_adapter_logs(monkeyp
         db_session.commit()
 
         async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+            """
+            处理fake、api、post相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return {"ret": 0, "endpoint": endpoint, "echo": body}
 
         monkeypatch.setattr(
@@ -212,6 +257,10 @@ async def test_skill_engine_routes_weixin_skill_and_records_adapter_logs(monkeyp
 
 @pytest.mark.asyncio
 async def test_skill_engine_returns_adapter_error_and_records_failure_logs(monkeypatch):
+    """
+    验证skill、engine、returns、adapter、error、and、records、failure、logs相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     db_session = _create_db_session()
     try:
         config = _build_weixin_skill_config(token="")
@@ -259,9 +308,17 @@ async def test_skill_engine_returns_adapter_error_and_records_failure_logs(monke
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_get_updates_persists_sync_buf_and_context_token(monkeypatch, tmp_path):
+    """
+    验证weixin、adapter、get、updates、persists、sync、buf、and、context、token相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+        """
+        处理fake、api、post相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         assert endpoint == "ilink/bot/getupdates"
         assert body["get_updates_buf"] == ""
         return {
@@ -289,11 +346,19 @@ async def test_weixin_adapter_get_updates_persists_sync_buf_and_context_token(mo
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_send_message_uses_cached_context_token(monkeypatch, tmp_path):
+    """
+    验证weixin、adapter、send、message、uses、cached、context、token相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
     adapter._set_context_token("test-account", "user-a", "ctx-cached")
     captured = {}
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+        """
+        处理fake、api、post相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         captured["endpoint"] = endpoint
         captured["body"] = body
         return {"ret": 0}
@@ -310,9 +375,17 @@ async def test_weixin_adapter_send_message_uses_cached_context_token(monkeypatch
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_session_expired_pauses_followup_requests(monkeypatch, tmp_path):
+    """
+    验证weixin、adapter、session、expired、pauses、followup、requests相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+        """
+        处理fake、api、post相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "ret": SESSION_EXPIRED_ERRCODE,
             "errcode": SESSION_EXPIRED_ERRCODE,
@@ -343,6 +416,10 @@ async def test_weixin_adapter_session_expired_pauses_followup_requests(monkeypat
 
 
 def test_weixin_adapter_map_skill_config_reads_binding_fields():
+    """
+    验证weixin、adapter、map、skill、config、reads、binding、fields相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     runtime = adapter.map_skill_config(_build_weixin_skill_config())
@@ -354,11 +431,19 @@ def test_weixin_adapter_map_skill_config_reads_binding_fields():
 
 @pytest.mark.asyncio
 async def test_weixin_adapter_send_message_generates_ilink_client_id_format(monkeypatch, tmp_path):
+    """
+    验证weixin、adapter、send、message、generates、ilink、client、id、format相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
     adapter._set_context_token("test-account", "user-a", "ctx-test")
     captured = {}
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
+        """
+        处理fake、api、post相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         captured["client_id"] = body["msg"]["client_id"]
         return {"ret": 0}
 
@@ -374,6 +459,10 @@ async def test_weixin_adapter_send_message_generates_ilink_client_id_format(monk
 
 
 def test_weixin_adapter_check_health_validates_static_config_fields():
+    """
+    验证weixin、adapter、check、health、validates、static、config、fields相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     adapter = WeixinSkillAdapter(project_root="d:/tmp/openawa")
 
     result_valid = adapter.check_health(WeixinRuntimeConfig(

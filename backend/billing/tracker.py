@@ -1,3 +1,8 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import List, Optional, Dict
@@ -9,7 +14,15 @@ from billing.models import UsageRecord, UserUsageSummary
 
 
 class UsageTracker:
+    """
+    封装与UsageTracker相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
 
     def create_usage_record(
@@ -28,6 +41,10 @@ class UsageTracker:
         duration_ms: int = 0,
         metadata: Optional[dict] = None
     ) -> UsageRecord:
+        """
+        创建usage、record相关对象、记录或执行结果。
+        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        """
         call_id = f"call_{uuid.uuid4().hex[:16]}"
         
         record = UsageRecord(
@@ -57,6 +74,10 @@ class UsageTracker:
         return record
 
     def get_usage_record(self, call_id: str) -> Optional[UsageRecord]:
+        """
+        获取usage、record相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return self.db.query(UsageRecord).filter(UsageRecord.call_id == call_id).first()
 
     def get_usage_records(
@@ -70,6 +91,10 @@ class UsageTracker:
         limit: int = 100,
         offset: int = 0
     ) -> List[UsageRecord]:
+        """
+        获取usage、records相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         query = self.db.query(UsageRecord)
         
         if user_id:
@@ -88,6 +113,10 @@ class UsageTracker:
         return query.order_by(UsageRecord.created_at.desc()).offset(offset).limit(limit).all()
 
     def get_session_usage(self, session_id: str) -> Dict:
+        """
+        获取session、usage相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         records = self.db.query(UsageRecord).filter(
             UsageRecord.session_id == session_id
         ).all()
@@ -120,6 +149,10 @@ class UsageTracker:
         period_start: Optional[date] = None,
         period_end: Optional[date] = None
     ) -> Dict:
+        """
+        获取user、usage相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         if not period_start:
             period_start = date.today().replace(day=1)
         if not period_end:
@@ -170,6 +203,10 @@ class UsageTracker:
         user_id: Optional[str] = None,
         days: int = 30
     ) -> List[Dict]:
+        """
+        获取daily、usage、trend相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
@@ -205,6 +242,10 @@ class UsageTracker:
         cost: float,
         currency: str
     ):
+        """
+        处理update、user、summary相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         today = date.today()
         period_start = today.replace(day=1)
         
@@ -239,6 +280,10 @@ class UsageTracker:
         self.db.commit()
 
     def get_usage_statistics(self, user_id: Optional[str] = None) -> Dict:
+        """
+        获取usage、statistics相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         query = self.db.query(UsageRecord)
         if user_id:
             query = query.filter(UsageRecord.user_id == user_id)
@@ -273,6 +318,10 @@ class UsageTracker:
         }
 
     def cleanup_old_records(self, retention_days: int = 365) -> int:
+        """
+        处理cleanup、old、records相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
         
         deleted_count = self.db.query(UsageRecord).filter(
@@ -283,12 +332,24 @@ class UsageTracker:
         return deleted_count
 
     def get_record_count(self) -> int:
+        """
+        获取record、count相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return self.db.query(UsageRecord).count()
 
     def get_oldest_record_date(self) -> Optional[datetime]:
+        """
+        获取oldest、record、date相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         record = self.db.query(UsageRecord).order_by(UsageRecord.created_at.asc()).first()
         return record.created_at if record else None
 
     def get_newest_record_date(self) -> Optional[datetime]:
+        """
+        获取newest、record、date相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         record = self.db.query(UsageRecord).order_by(UsageRecord.created_at.desc()).first()
         return record.created_at if record else None

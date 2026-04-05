@@ -1,3 +1,8 @@
+"""
+插件系统模块，负责插件定义、加载、校验、沙箱隔离、生命周期或扩展协议处理。
+这一层通常同时涉及可扩展性、安全性与运行时状态管理。
+"""
+
 from typing import Dict, List, Any, Type
 from loguru import logger
 
@@ -5,15 +10,31 @@ from .base_plugin import BasePlugin
 
 
 class ValidationResult:
+    """
+    封装与ValidationResult相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, valid: bool, errors: List[str], warnings: List[str]):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.valid = valid
         self.errors = errors
         self.warnings = warnings
 
     def __repr__(self) -> str:
+        """
+        处理repr相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return f"ValidationResult(valid={self.valid}, errors={len(self.errors)}, warnings={len(self.warnings)})"
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        处理to、dict相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "valid": self.valid,
             "errors": self.errors,
@@ -22,14 +43,26 @@ class ValidationResult:
 
 
 class PluginValidator:
+    """
+    封装与PluginValidator相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     REQUIRED_METHODS = ["initialize", "execute", "cleanup"]
     REQUIRED_CONFIG_FIELDS = ["name", "version"]
     OPTIONAL_CONFIG_FIELDS = ["description", "author", "dependencies"]
 
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.logger = logger
 
     def validate_base_class(self, plugin_class: Type) -> bool:
+        """
+        校验base、class相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         try:
             if not isinstance(plugin_class, type):
                 self.logger.error(f"Plugin class must be a type, got {type(plugin_class)}")
@@ -45,6 +78,10 @@ class PluginValidator:
             return False
 
     def validate_required_methods(self, plugin_class: Type) -> bool:
+        """
+        校验required、methods相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         try:
             missing_methods = []
             for method_name in self.REQUIRED_METHODS:
@@ -60,6 +97,10 @@ class PluginValidator:
             return False
 
     def validate_config_format(self, config: Dict[str, Any]) -> bool:
+        """
+        校验config、format相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         try:
             if not isinstance(config, dict):
                 self.logger.error("Config must be a dictionary")
@@ -90,6 +131,10 @@ class PluginValidator:
             return False
 
     def validate_dependencies(self, dependencies: List[str]) -> bool:
+        """
+        校验dependencies相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         try:
             if not isinstance(dependencies, list):
                 self.logger.error("Dependencies must be a list")
@@ -110,6 +155,10 @@ class PluginValidator:
             return False
 
     def validate_plugin(self, plugin_class: Type, config: Dict[str, Any]) -> ValidationResult:
+        """
+        校验plugin相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         errors = []
         warnings: list[str] = []
 

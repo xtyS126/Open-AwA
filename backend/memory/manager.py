@@ -1,3 +1,8 @@
+"""
+记忆管理模块，负责短期记忆、长期记忆或经验数据的存储、检索与维护。
+它是上下文连续性和经验复用能力的重要支撑层。
+"""
+
 from typing import List, Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -6,7 +11,15 @@ from loguru import logger
 
 
 class MemoryManager:
+    """
+    封装与MemoryManager相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
         logger.info("MemoryManager initialized")
     
@@ -16,6 +29,10 @@ class MemoryManager:
         role: str,
         content: str
     ) -> ShortTermMemory:
+        """
+        处理add、short、term、memory相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         memory = ShortTermMemory(
             session_id=session_id,
             role=role,
@@ -33,6 +50,10 @@ class MemoryManager:
         session_id: str,
         limit: int = 50
     ) -> List[ShortTermMemory]:
+        """
+        获取short、term、memories相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         memories = self.db.query(ShortTermMemory).filter(
             ShortTermMemory.session_id == session_id
         ).order_by(
@@ -42,6 +63,10 @@ class MemoryManager:
         return memories
     
     async def clear_short_term_memory(self, session_id: str) -> int:
+        """
+        处理clear、short、term、memory相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         count = self.db.query(ShortTermMemory).filter(
             ShortTermMemory.session_id == session_id
         ).delete()
@@ -56,6 +81,10 @@ class MemoryManager:
         importance: float = 0.5,
         embedding: Optional[str] = None
     ) -> LongTermMemory:
+        """
+        处理add、long、term、memory相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         memory = LongTermMemory(
             content=content,
             importance=importance,
@@ -73,6 +102,10 @@ class MemoryManager:
         min_importance: float = 0.0,
         limit: int = 50
     ) -> List[LongTermMemory]:
+        """
+        获取long、term、memories相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         memories = self.db.query(LongTermMemory).filter(
             LongTermMemory.importance >= min_importance
         ).order_by(
@@ -82,6 +115,10 @@ class MemoryManager:
         return memories
     
     async def update_memory_access(self, memory_id: int) -> None:
+        """
+        更新memory、access相关数据、配置或状态。
+        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        """
         memory = self.db.query(LongTermMemory).filter(
             LongTermMemory.id == memory_id
         ).first()
@@ -96,6 +133,10 @@ class MemoryManager:
         query: str,
         limit: int = 10
     ) -> List[LongTermMemory]:
+        """
+        处理search、memories相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         memories = self.db.query(LongTermMemory).filter(
             LongTermMemory.content.contains(query)
         ).order_by(
@@ -108,6 +149,10 @@ class MemoryManager:
         return memories
     
     async def delete_long_term_memory(self, memory_id: int) -> bool:
+        """
+        删除long、term、memory相关对象或持久化记录。
+        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        """
         memory = self.db.query(LongTermMemory).filter(
             LongTermMemory.id == memory_id
         ).first()
@@ -121,6 +166,10 @@ class MemoryManager:
         return False
     
     async def consolidate_memories(self) -> int:
+        """
+        处理consolidate、memories相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         all_memories = self.db.query(LongTermMemory).all()
         consolidated = 0
         
@@ -139,6 +188,10 @@ class MemoryManager:
         session_id: str,
         max_memories: int = 10
     ) -> str:
+        """
+        获取context、for、session相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         short_term = await self.get_short_term_memories(
             session_id, limit=max_memories
         )

@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from datetime import datetime, timedelta, timezone
 import json
 from typing import Any, Dict, Optional
@@ -16,6 +21,10 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
 def _safe_deserialize(value: Optional[str]) -> Any:
+    """
+    处理safe、deserialize相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if value is None:
         return None
     if not isinstance(value, str):
@@ -27,6 +36,10 @@ def _safe_deserialize(value: Optional[str]) -> Any:
 
 
 def _to_dict(record: ConversationRecord) -> Dict[str, Any]:
+    """
+    处理to、dict相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "id": record.id,
         "session_id": record.session_id,
@@ -52,6 +65,10 @@ async def get_records_preview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    获取records、preview相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     records = (
         db.query(ConversationRecord)
         .filter(ConversationRecord.user_id == current_user.id)
@@ -84,6 +101,10 @@ async def export_records_jsonl(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    处理export、records、jsonl相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     query = db.query(ConversationRecord).filter(ConversationRecord.user_id == current_user.id)
 
     if start_time is not None:
@@ -104,6 +125,10 @@ async def export_records_jsonl(
     ).info("conversation export started")
 
     def iter_jsonl():
+        """
+        处理iter、jsonl相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         for record in query.yield_per(200):
             payload = _to_dict(record)
             yield json.dumps(payload, ensure_ascii=False, default=str) + "\n"
@@ -124,6 +149,10 @@ async def cleanup_records(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    处理cleanup、records相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     deleted = (
@@ -157,6 +186,10 @@ async def cleanup_records(
     description="返回当前用户的会话数据采集开关状态与运行时统计。"
 )
 async def get_collection_status(current_user: User = Depends(get_current_user)):
+    """
+    获取collection、status相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     enabled = conversation_recorder.is_collection_enabled(current_user=current_user)
     logger.bind(
         event="conversation_collection_status",
@@ -182,6 +215,10 @@ async def update_collection_status(
     enabled: bool,
     current_user: User = Depends(get_current_user),
 ):
+    """
+    更新collection、status相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     updated = conversation_recorder.set_collection_enabled(enabled=enabled, current_user=current_user)
     if not updated:
         logger.bind(

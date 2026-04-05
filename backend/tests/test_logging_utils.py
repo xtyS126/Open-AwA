@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 from datetime import datetime, timezone, timedelta
 
 from loguru import logger
@@ -6,6 +11,10 @@ from config.logging import init_logging, query_log_buffer, sanitize_for_logging,
 
 
 def test_sanitize_for_logging_masks_sensitive_fields():
+    """
+    验证sanitize、for、logging、masks、sensitive、fields相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     payload = {
         "token": "abc123",
         "password": "pwd",
@@ -20,6 +29,10 @@ def test_sanitize_for_logging_masks_sensitive_fields():
 
 
 def test_query_log_buffer_filters_by_level_and_keyword():
+    """
+    验证query、log、buffer、filters、by、level、and、keyword相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     init_logging(log_level="DEBUG", service_name="test-service", log_serialize=False)
     request_id = "req-test-001"
     set_request_id(request_id)

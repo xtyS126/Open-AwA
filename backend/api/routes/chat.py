@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import Dict
@@ -26,6 +31,10 @@ async def chat(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """
+    处理chat相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     context = {
         "user_id": current_user.id,
         "session_id": message.session_id,
@@ -77,6 +86,10 @@ async def confirm_operation(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """
+    处理confirm、operation相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if not confirmation.step:
         logger.bind(
             event="chat_confirm_invalid",
@@ -117,6 +130,10 @@ async def websocket_endpoint(
     session_id: str,
     token: str = Query(None)
 ):
+    """
+    处理websocket、endpoint相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if token is None:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
@@ -243,6 +260,10 @@ async def get_chat_history(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """
+    获取chat、history相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     from db.models import ShortTermMemory
 
     messages = db.query(ShortTermMemory).filter(

@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 import io
 import zipfile
 from pathlib import Path
@@ -10,6 +15,10 @@ from plugins.plugin_manager import PluginManager
 
 @pytest.fixture
 def plugin_workspace(tmp_path: Path) -> Path:
+    """
+    处理plugin、workspace相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     success_plugin = '''from typing import Optional, Any
 from plugins.base_plugin import BasePlugin
 
@@ -82,6 +91,10 @@ class PermissionPlugin(BasePlugin):
 
 
 def _create_plugin_zip_bytes(plugin_name: str = "zip_plugin") -> bytes:
+    """
+    处理create、plugin、zip、bytes相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin_content = f'''from plugins.base_plugin import BasePlugin
 
 
@@ -104,6 +117,10 @@ class ZipPlugin(BasePlugin):
 
 
 def test_plugin_manager_state_machine_and_idempotent_enable(plugin_workspace: Path):
+    """
+    验证plugin、manager、state、machine、and、idempotent、enable相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager(plugins_dir=str(plugin_workspace))
     manager.discover_plugins()
 
@@ -128,6 +145,10 @@ def test_plugin_manager_state_machine_and_idempotent_enable(plugin_workspace: Pa
 
 
 def test_plugin_manager_rollback_when_enable_fails(plugin_workspace: Path):
+    """
+    验证plugin、manager、rollback、when、enable、fails相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager(plugins_dir=str(plugin_workspace))
     manager.discover_plugins()
 
@@ -140,6 +161,10 @@ def test_plugin_manager_rollback_when_enable_fails(plugin_workspace: Path):
 
 
 def test_transition_executor_rejects_invalid_transition():
+    """
+    验证transition、executor、rejects、invalid、transition相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     state_machine = PluginStateMachine()
     executor = TransitionExecutor(state_machine)
 
@@ -158,6 +183,10 @@ def test_transition_executor_rejects_invalid_transition():
 
 
 def test_register_plugin_from_local_zip_and_bind_resource_limits(tmp_path: Path):
+    """
+    验证register、plugin、from、local、zip、and、bind、resource、limits相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
@@ -183,19 +212,39 @@ def test_register_plugin_from_local_zip_and_bind_resource_limits(tmp_path: Path)
 
 
 def test_register_plugin_from_url(monkeypatch, tmp_path: Path):
+    """
+    验证register、plugin、from、url相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
     zip_bytes = _create_plugin_zip_bytes("url_plugin")
 
     class FakeResponse:
+        """
+        封装与FakeResponse相关的核心逻辑与运行状态。
+        该类通常是当前文件中组织数据与调度行为的主要封装单元。
+        """
         def __init__(self, content: bytes):
+            """
+            处理init相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             self.content = content
 
         def raise_for_status(self):
+            """
+            处理raise、for、status相关逻辑，并为调用方返回对应结果。
+            阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+            """
             return None
 
     def fake_get(url: str, timeout: int, follow_redirects: bool):
+        """
+        处理fake、get相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         assert url == "https://example.com/plugin.zip"
         assert timeout == 30
         assert follow_redirects is True
@@ -212,6 +261,10 @@ def test_register_plugin_from_url(monkeypatch, tmp_path: Path):
 
 
 def test_parse_npm_source_and_validate():
+    """
+    验证parse、npm、source、and、validate相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager()
 
     parsed = manager.parse_npm_source("npm:@openawa/sample-plugin@1.2.3")
@@ -229,6 +282,10 @@ def test_parse_npm_source_and_validate():
 
 @pytest.fixture
 def dependency_workspace(tmp_path: Path) -> Path:
+    """
+    处理dependency、workspace相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin_a = '''from plugins.base_plugin import BasePlugin
 
 
@@ -344,6 +401,10 @@ class PluginD(BasePlugin):
 
 
 def test_semver_range_parser_and_compatibility():
+    """
+    验证semver、range、parser、and、compatibility相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager()
 
     assert manager._satisfies_semver_range("2.1.0", "^2.0.0") is True
@@ -356,6 +417,10 @@ def test_semver_range_parser_and_compatibility():
 
 
 def test_dependency_graph_and_conflict_diagnostics(dependency_workspace: Path):
+    """
+    验证dependency、graph、and、conflict、diagnostics相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager(plugins_dir=str(dependency_workspace))
     discovered = manager.discover_plugins()
     assert len(discovered) == 4
@@ -392,6 +457,10 @@ def test_dependency_graph_and_conflict_diagnostics(dependency_workspace: Path):
 
 
 def test_get_plugin_dependency_info(dependency_workspace: Path):
+    """
+    验证get、plugin、dependency、info相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager(plugins_dir=str(dependency_workspace))
     manager.discover_plugins()
 
@@ -405,6 +474,10 @@ def test_get_plugin_dependency_info(dependency_workspace: Path):
 
 
 def test_runtime_permission_intercept_and_authorize(plugin_workspace: Path):
+    """
+    验证runtime、permission、intercept、and、authorize相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     manager = PluginManager(plugins_dir=str(plugin_workspace))
     discovered = manager.discover_plugins()
 
@@ -436,6 +509,10 @@ def test_runtime_permission_intercept_and_authorize(plugin_workspace: Path):
 
 
 def test_static_scan_blocks_dangerous_plugin(tmp_path: Path):
+    """
+    验证static、scan、blocks、dangerous、plugin相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
 

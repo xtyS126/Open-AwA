@@ -1,3 +1,8 @@
+"""
+技能系统模块，负责技能注册、加载、校验、执行或适配外部能力。
+当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
+"""
+
 from typing import Dict, List, Optional, Any
 from loguru import logger
 import time
@@ -14,6 +19,10 @@ from .weixin_skill_adapter import WeixinSkillAdapter
 
 @dataclass
 class PerformanceMetrics:
+    """
+    封装与PerformanceMetrics相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     skill_name: str
     start_time: float
     end_time: Optional[float] = None
@@ -24,10 +33,18 @@ class PerformanceMetrics:
     peak_memory: Optional[int] = None
 
     def finalize(self):
+        """
+        处理finalize相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.end_time = time.time()
         self.duration = self.end_time - self.start_time
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        处理to、dict相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             'skill_name': self.skill_name,
             'start_time': self.start_time,
@@ -42,6 +59,10 @@ class PerformanceMetrics:
 
 @dataclass
 class ExecutionLog:
+    """
+    封装与ExecutionLog相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     log_id: str
     skill_name: str
     timestamp: str
@@ -51,6 +72,10 @@ class ExecutionLog:
     level: str = 'INFO'
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        处理to、dict相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             'log_id': self.log_id,
             'skill_name': self.skill_name,
@@ -63,7 +88,15 @@ class ExecutionLog:
 
 
 class SkillEngine:
+    """
+    封装与SkillEngine相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db_session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db_session = db_session
         self.registry = SkillRegistry(db_session)
         self.validator = SkillValidator()
@@ -79,9 +112,17 @@ class SkillEngine:
         logger.info("SkillEngine initialized")
 
     def _generate_log_id(self) -> str:
+        """
+        处理generate、log、id相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return str(uuid.uuid4())
 
     def _get_timestamp(self) -> str:
+        """
+        处理get、timestamp相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return datetime.now(timezone.utc).isoformat()
 
     def _add_execution_log(
@@ -92,6 +133,10 @@ class SkillEngine:
         level: str = 'INFO',
         details: Optional[Dict[str, Any]] = None
     ) -> ExecutionLog:
+        """
+        处理add、execution、log相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         log = ExecutionLog(
             log_id=self._generate_log_id(),
             skill_name=skill_name,
@@ -119,6 +164,10 @@ class SkillEngine:
         return log
 
     def _start_performance_tracking(self, skill_name: str) -> PerformanceMetrics:
+        """
+        处理start、performance、tracking相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         metrics = PerformanceMetrics(
             skill_name=skill_name,
             start_time=time.time()
@@ -131,6 +180,10 @@ class SkillEngine:
         return metrics
 
     def _get_current_memory_usage(self) -> Optional[int]:
+        """
+        处理get、current、memory、usage相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             import psutil
             process = psutil.Process()
@@ -139,6 +192,10 @@ class SkillEngine:
             return None
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
+        """
+        处理execute、skill相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         execution_id = self._generate_log_id()
         metrics = self._start_performance_tracking(skill_name)
 
@@ -450,6 +507,10 @@ class SkillEngine:
             await self.executor.cleanup()
 
     async def validate_skill(self, config: Dict) -> Dict[str, Any]:
+        """
+        校验skill相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         logger.info(f"Validating skill config: {config.get('name', 'unknown')}")
 
         result: ValidationResult = self.validator.validate_skill_config(config)
@@ -464,6 +525,10 @@ class SkillEngine:
         }
 
     async def parse_config(self, yaml_content: str) -> Dict:
+        """
+        解析config相关输入内容，并转换为内部可用结构。
+        它常用于屏蔽外部协议差异并统一上层业务使用的数据格式。
+        """
         logger.debug("Parsing YAML configuration")
 
         if not self.validator.validate_yaml_format(yaml_content):
@@ -487,6 +552,10 @@ class SkillEngine:
         level: Optional[str] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
+        """
+        获取execution、logs相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         filtered_logs = self._execution_logs
 
         if skill_name:
@@ -507,6 +576,10 @@ class SkillEngine:
         skill_name: Optional[str] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
+        """
+        获取performance、metrics相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         filtered_metrics = self._performance_metrics
 
         if skill_name:
@@ -517,6 +590,10 @@ class SkillEngine:
         return [m.to_dict() for m in filtered_metrics]
 
     def get_skill_statistics(self, skill_name: str) -> Dict[str, Any]:
+        """
+        获取skill、statistics相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         skill_record = self.registry.get(skill_name)
 
         if not skill_record:
@@ -551,12 +628,20 @@ class SkillEngine:
         }
 
     def clear_logs(self) -> int:
+        """
+        处理clear、logs相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         count = len(self._execution_logs)
         self._execution_logs.clear()
         logger.info(f"Cleared {count} execution logs")
         return count
 
     def clear_metrics(self) -> int:
+        """
+        处理clear、metrics相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         count = len(self._performance_metrics)
         self._performance_metrics.clear()
         logger.info(f"Cleared {count} performance metrics")

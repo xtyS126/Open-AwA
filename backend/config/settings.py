@@ -1,3 +1,8 @@
+"""
+配置管理模块，负责系统运行参数、安全策略或日志行为的统一定义。
+配置项通常会在多个子模块中生效，因此理解其字段含义非常重要。
+"""
+
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
@@ -5,6 +10,10 @@ import secrets
 
 
 def generate_secret_key() -> str:
+    """
+    处理generate、secret、key相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     from loguru import logger
     
     env_key = os.getenv("SECRET_KEY")
@@ -22,6 +31,10 @@ def generate_secret_key() -> str:
 
 
 class Settings(BaseSettings):
+    """
+    封装与Settings相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     PROJECT_NAME: str = "Open-AwA AI Agent"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
@@ -54,6 +67,10 @@ class Settings(BaseSettings):
     experience_retrieval_enabled: bool = True
     
     class Config:
+        """
+        封装与Config相关的核心逻辑与运行状态。
+        该类通常是当前文件中组织数据与调度行为的主要封装单元。
+        """
         env_file = ".env"
         case_sensitive = True
 

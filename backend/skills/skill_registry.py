@@ -1,3 +1,8 @@
+"""
+技能系统模块，负责技能注册、加载、校验、执行或适配外部能力。
+当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
+"""
+
 import json
 import uuid
 from typing import Dict, List, Optional
@@ -7,11 +12,23 @@ from db.models import Skill
 
 
 class SkillRegistry:
+    """
+    封装与SkillRegistry相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db_session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db_session
         self._cache: Dict[str, Skill] = {}
 
     def register(self, skill_config: Dict) -> Skill:
+        """
+        处理register相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         skill_name = skill_config.get('name') or ""
         existing_skill = self.get(skill_name or "")
         if existing_skill:
@@ -39,6 +56,10 @@ class SkillRegistry:
         return skill
 
     def _update_skill(self, skill: Skill, skill_config: Dict) -> Skill:
+        """
+        处理update、skill相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if 'version' in skill_config:
             skill.version = skill_config['version']
         if 'description' in skill_config:
@@ -57,6 +78,10 @@ class SkillRegistry:
         return skill
 
     def unregister(self, skill_name: str) -> bool:
+        """
+        处理unregister相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for unregistration")
@@ -72,6 +97,10 @@ class SkillRegistry:
         return True
 
     def get(self, skill_name: str) -> Optional[Skill]:
+        """
+        处理get相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if skill_name in self._cache:
             logger.debug(f"Skill '{skill_name}' retrieved from cache")
             return self._cache[skill_name]
@@ -86,6 +115,10 @@ class SkillRegistry:
         return skill
 
     def list_all(self, filters: Optional[Dict] = None) -> List[Skill]:
+        """
+        列出all相关内容，便于调用方查看、筛选或批量处理。
+        返回结果通常会被页面展示、审计流程或后续操作复用。
+        """
         query = self.db.query(Skill)
 
         if filters:
@@ -101,6 +134,10 @@ class SkillRegistry:
         return skills
 
     def enable(self, skill_name: str) -> bool:
+        """
+        处理enable相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for enabling")
@@ -117,6 +154,10 @@ class SkillRegistry:
         return True
 
     def disable(self, skill_name: str) -> bool:
+        """
+        处理disable相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for disabling")
@@ -133,6 +174,10 @@ class SkillRegistry:
         return True
 
     def increment_usage(self, skill_name: str) -> bool:
+        """
+        处理increment、usage相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for usage increment")
@@ -145,6 +190,10 @@ class SkillRegistry:
         return True
 
     def get_usage_count(self, skill_name: str) -> Optional[int]:
+        """
+        获取usage、count相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for usage count retrieval")
@@ -152,10 +201,18 @@ class SkillRegistry:
         return skill.usage_count
 
     def clear_cache(self) -> None:
+        """
+        处理clear、cache相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._cache.clear()
         logger.info("Skill cache cleared")
 
     def refresh_cache(self) -> int:
+        """
+        处理refresh、cache相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._cache.clear()
         skills = self.db.query(Skill).all()
         for skill in skills:

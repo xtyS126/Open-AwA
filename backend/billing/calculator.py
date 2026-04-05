@@ -1,9 +1,18 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 import re
 import math
 from typing import Optional
 
 
 class CostCalculator:
+    """
+    封装与CostCalculator相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     CHINESE_CHARS_PER_TOKEN = 1.5
     ENGLISH_CHARS_PER_TOKEN = 4.0
     TOKEN_PER_IMAGE = 1024
@@ -12,6 +21,10 @@ class CostCalculator:
 
     @staticmethod
     def estimate_text_tokens(text: str) -> int:
+        """
+        处理estimate、text、tokens相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if not text:
             return 0
         
@@ -27,14 +40,26 @@ class CostCalculator:
 
     @staticmethod
     def calculate_image_tokens(num_images: int) -> int:
+        """
+        处理calculate、image、tokens相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return num_images * CostCalculator.TOKEN_PER_IMAGE
 
     @staticmethod
     def calculate_audio_tokens(duration_seconds: float) -> int:
+        """
+        处理calculate、audio、tokens相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return int(duration_seconds * CostCalculator.TOKEN_PER_SECOND_AUDIO)
 
     @staticmethod
     def calculate_video_tokens(duration_seconds: float) -> int:
+        """
+        处理calculate、video、tokens相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return int(duration_seconds * CostCalculator.TOKEN_PER_SECOND_VIDEO)
 
     @staticmethod
@@ -44,6 +69,10 @@ class CostCalculator:
         audio_seconds: float = 0,
         video_seconds: float = 0
     ) -> dict:
+        """
+        处理calculate、multimodal、tokens相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         text_tokens = CostCalculator.estimate_text_tokens(text)
         image_tokens = CostCalculator.calculate_image_tokens(num_images)
         audio_tokens = CostCalculator.calculate_audio_tokens(audio_seconds)
@@ -74,6 +103,10 @@ class CostCalculator:
         cache_hit: bool = False,
         cache_hit_price: Optional[float] = None
     ) -> dict:
+        """
+        处理calculate、cost相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if cache_hit and cache_hit_price is not None:
             effective_input_price = cache_hit_price
         else:
@@ -93,6 +126,10 @@ class CostCalculator:
 
     @staticmethod
     def parse_api_response_tokens(usage: dict) -> dict:
+        """
+        解析api、response、tokens相关输入内容，并转换为内部可用结构。
+        它常用于屏蔽外部协议差异并统一上层业务使用的数据格式。
+        """
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
         

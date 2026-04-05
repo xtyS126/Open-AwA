@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 import asyncio
 
 import pytest
@@ -9,12 +14,24 @@ from db.models import Base, ConversationRecord
 
 
 class _User:
+    """
+    封装与User相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, user_id: str):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.id = user_id
 
 
 @pytest.mark.asyncio
 async def test_record_respects_user_preference_and_flushes(monkeypatch, tmp_path):
+    """
+    验证record、respects、user、preference、and、flushes相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     db_path = tmp_path / "conversation_recorder_test.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
@@ -59,6 +76,10 @@ async def test_record_respects_user_preference_and_flushes(monkeypatch, tmp_path
 
 @pytest.mark.asyncio
 async def test_recorder_queue_is_bounded_under_high_frequency(monkeypatch, tmp_path):
+    """
+    验证recorder、queue、is、bounded、under、high、frequency相关场景的行为是否符合预期。
+    通过断言结果可以帮助定位实现与预期行为之间的偏差。
+    """
     db_path = tmp_path / "conversation_recorder_pressure.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)

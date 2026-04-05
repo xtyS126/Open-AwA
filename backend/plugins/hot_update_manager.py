@@ -1,3 +1,8 @@
+"""
+插件系统模块，负责插件定义、加载、校验、沙箱隔离、生命周期或扩展协议处理。
+这一层通常同时涉及可扩展性、安全性与运行时状态管理。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -10,11 +15,19 @@ from loguru import logger
 
 
 class RolloutConfig:
+    """
+    封装与RolloutConfig相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     STRATEGY_PERCENTAGE = "percentage"
     STRATEGY_USER_LIST = "user_list"
     STRATEGY_REGION = "region"
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         raw = config or {}
         self.enabled: bool = bool(raw.get("enabled", False))
         self.strategy: str = str(raw.get("strategy", self.STRATEGY_PERCENTAGE))
@@ -24,6 +37,10 @@ class RolloutConfig:
 
     @staticmethod
     def _parse_percentage(value: Any) -> float:
+        """
+        处理parse、percentage相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             v = float(value)
         except (TypeError, ValueError):
@@ -32,6 +49,10 @@ class RolloutConfig:
 
     @staticmethod
     def _parse_string_list(value: Any) -> List[str]:
+        """
+        处理parse、string、list相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
         if isinstance(value, str) and value.strip():
@@ -43,6 +64,10 @@ class RolloutConfig:
         user_id: str = "",
         region: str = "",
     ) -> bool:
+        """
+        处理should、use、new、version相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if not self.enabled:
             return False
 
@@ -57,10 +82,18 @@ class RolloutConfig:
 
     @staticmethod
     def _compute_bucket(user_id: str, region: str) -> int:
+        """
+        处理compute、bucket相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         payload = f"{user_id}|{region}".encode("utf-8")
         return int(hashlib.sha256(payload).hexdigest()[:8], 16) % 100
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        处理to、dict相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return {
             "enabled": self.enabled,
             "strategy": self.strategy,
@@ -71,13 +104,25 @@ class RolloutConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RolloutConfig":
+        """
+        处理from、dict相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return cls(data)
 
 
 class RollbackManager:
+    """
+    封装与RollbackManager相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     MAX_SNAPSHOTS = 10
 
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._snapshots: Dict[str, List[Dict[str, Any]]] = {}
         self._lock = threading.Lock()
 
@@ -88,6 +133,10 @@ class RollbackManager:
         metadata: Dict[str, Any],
         extra: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """
+        保存snapshot相关数据到持久化存储。
+        实现过程往往伴随序列化、写入、事务提交或异常回滚等步骤。
+        """
         snapshot_id = self._make_snapshot_id(plugin_name, version)
         snapshot = {
             "snapshot_id": snapshot_id,
@@ -110,6 +159,10 @@ class RollbackManager:
         plugin_name: str,
         snapshot_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
+        """
+        处理restore、snapshot相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         with self._lock:
             history = self._snapshots.get(plugin_name, [])
             if not history:
@@ -135,6 +188,10 @@ class RollbackManager:
         return deepcopy(snapshot)
 
     def list_snapshots(self, plugin_name: str) -> List[Dict[str, Any]]:
+        """
+        列出snapshots相关内容，便于调用方查看、筛选或批量处理。
+        返回结果通常会被页面展示、审计流程或后续操作复用。
+        """
         with self._lock:
             history = self._snapshots.get(plugin_name, [])
             return [
@@ -147,11 +204,19 @@ class RollbackManager:
             ]
 
     def clear_snapshots(self, plugin_name: str) -> None:
+        """
+        处理clear、snapshots相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         with self._lock:
             self._snapshots.pop(plugin_name, None)
 
     @staticmethod
     def _make_snapshot_id(plugin_name: str, version: str) -> str:
+        """
+        处理make、snapshot、id相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
         raw = f"{plugin_name}:{version}:{ts}"
         digest = hashlib.sha256(raw.encode()).hexdigest()[:8]
@@ -159,12 +224,24 @@ class RollbackManager:
 
 
 class HotUpdateManager:
+    """
+    封装与HotUpdateManager相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, rollback_manager: Optional[RollbackManager] = None):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self._slots: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self.rollback_manager = rollback_manager or RollbackManager()
 
     def _get_or_create_slot(self, plugin_name: str) -> Dict[str, Any]:
+        """
+        处理get、or、create、slot相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if plugin_name not in self._slots:
             self._slots[plugin_name] = {
                 "active": None,
@@ -182,6 +259,10 @@ class HotUpdateManager:
         metadata: Dict[str, Any],
         plugin_instance: Any,
     ) -> None:
+        """
+        处理register、initial相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         with self._lock:
             slot = self._get_or_create_slot(plugin_name)
             slot["active"] = {
@@ -201,6 +282,10 @@ class HotUpdateManager:
         loader: Callable[[], Any],
         rollout_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """
+        处理prepare、update相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         with self._lock:
             slot = self._get_or_create_slot(plugin_name)
             active = slot.get("active")
@@ -245,6 +330,10 @@ class HotUpdateManager:
         }
 
     def commit_update(self, plugin_name: str) -> Dict[str, Any]:
+        """
+        处理commit、update相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         with self._lock:
             slot = self._slots.get(plugin_name)
             if slot is None or slot.get("standby") is None:
@@ -271,6 +360,10 @@ class HotUpdateManager:
         snapshot_id: Optional[str] = None,
         restore_fn: Optional[Callable[[Dict[str, Any]], Any]] = None,
     ) -> Dict[str, Any]:
+        """
+        处理rollback相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         snapshot = self.rollback_manager.restore_snapshot(plugin_name, snapshot_id)
         if snapshot is None:
             raise ValueError(
@@ -308,6 +401,10 @@ class HotUpdateManager:
         }
 
     def resolve_instance(self, plugin_name: str, user_id: str = "", region: str = "") -> Any:
+        """
+        处理resolve、instance相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         with self._lock:
             slot = self._slots.get(plugin_name)
         if slot is None:
@@ -319,6 +416,10 @@ class HotUpdateManager:
         return active["plugin_instance"] if active else None
 
     def get_status(self, plugin_name: str) -> Dict[str, Any]:
+        """
+        获取status相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         with self._lock:
             slot = self._slots.get(plugin_name)
         if slot is None:

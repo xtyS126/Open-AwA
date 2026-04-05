@@ -1,3 +1,8 @@
+"""
+技能系统模块，负责技能注册、加载、校验、执行或适配外部能力。
+当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
+"""
+
 from typing import Dict, List, Optional, Any, NamedTuple
 from loguru import logger
 import time
@@ -7,20 +12,27 @@ import queue
 
 
 class ExecutionTimeoutException(Exception):
+    """
+    封装与ExecutionTimeoutException相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     pass
 
 
 def execute_with_timeout(code, exec_globals, local_vars, timeout):
     """
-    使用线程执行代码并设置超时
-    
-    使用threading.Event和threading.Lock实现可靠的超时机制，避免竞态条件
+    处理execute、with、timeout相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     result_queue = queue.Queue()
     timeout_event = threading.Event()
     result_lock = threading.Lock()
     
     def run_code():
+        """
+        处理run、code相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             exec(code, exec_globals, local_vars)
             with result_lock:
@@ -54,11 +66,15 @@ def execute_with_timeout(code, exec_globals, local_vars, timeout):
 
 class CodeValidator(ast.NodeVisitor):
     """
-    AST节点访问器，用于验证Python代码安全性
-    只允许安全的数学运算、列表、字典、元组等基本操作
+    封装与CodeValidator相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.allowed_node_types = {
             'Module', 'Expr', 'Assign', 'AugAssign', 'AnnAssign',
             'Name', 'Constant', 'Num', 'Str', 'Bytes', 'List', 'Tuple', 'Dict', 'Set',
@@ -99,6 +115,10 @@ class CodeValidator(ast.NodeVisitor):
         self.max_depth = 20
     
     def visit(self, node):
+        """
+        处理visit相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if self.depth > self.max_depth:
             self.errors.append(f"代码嵌套深度超过限制: {self.max_depth}")
             return
@@ -114,6 +134,10 @@ class CodeValidator(ast.NodeVisitor):
         self.depth -= 1
     
     def visit_Call(self, node):
+        """
+        处理visit、Call相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if isinstance(node.func, ast.Name):
             func_name = node.func.id
             if func_name in ['__import__', 'eval', 'exec', 'compile', 'open', 'input', 'breakpoint', 'reload', 'memory', 'exit', 'quit']:
@@ -128,6 +152,10 @@ class CodeValidator(ast.NodeVisitor):
         self.generic_visit(node)
     
     def visit_Attribute(self, node):
+        """
+        处理visit、Attribute相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         attr_name = node.attr if hasattr(node, 'attr') else ''
         if isinstance(attr_name, str):
             for pattern in self.dangerous_patterns:
@@ -138,6 +166,10 @@ class CodeValidator(ast.NodeVisitor):
         self.generic_visit(node)
     
     def visit_Name(self, node):
+        """
+        处理visit、Name相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         name = node.id if hasattr(node, 'id') else ''
         if isinstance(name, str):
             for pattern in self.dangerous_patterns:
@@ -148,6 +180,10 @@ class CodeValidator(ast.NodeVisitor):
         self.generic_visit(node)
     
     def visit_Subscript(self, node):
+        """
+        处理visit、Subscript相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if isinstance(node.value, ast.Name):
             name = node.value.id if hasattr(node.value, 'id') else ''
             if name in ['__builtins__', '__imports__']:
@@ -158,8 +194,8 @@ class CodeValidator(ast.NodeVisitor):
     
     def validate_code(self, code: str) -> tuple[bool, str]:
         """
-        验证代码安全性
-        返回: (是否安全, 错误信息)
+        校验code相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
         """
         try:
             tree = ast.parse(code, mode='exec')
@@ -176,6 +212,10 @@ class CodeValidator(ast.NodeVisitor):
 
 
 class StepResult(NamedTuple):
+    """
+    封装与StepResult相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     action: str
     tool: str
     result: Any
@@ -184,6 +224,10 @@ class StepResult(NamedTuple):
 
 
 class ExecutionResult(NamedTuple):
+    """
+    封装与ExecutionResult相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     skill_name: str
     steps: List[StepResult]
     success: bool
@@ -193,12 +237,24 @@ class ExecutionResult(NamedTuple):
 
 
 class SkillExecutor:
+    """
+    封装与SkillExecutor相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.environment_initialized = False
         self.execution_context: Dict[str, Any] = {}
         logger.info("SkillExecutor initialized")
 
     async def initialize_environment(self, skill_config: Dict, context: Dict) -> bool:
+        """
+        处理initialize、environment相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             logger.info(f"Initializing environment for skill config: {skill_config.get('name', 'unknown')}")
 
@@ -227,6 +283,10 @@ class SkillExecutor:
             return False
 
     async def execute_step(self, step: Dict, context: Dict) -> StepResult:
+        """
+        处理execute、step相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             action = step.get('action', 'unknown')
             tool = step.get('tool', 'default')
@@ -262,6 +322,10 @@ class SkillExecutor:
             )
 
     async def _execute_tool(self, tool: str, action: str, params: Dict) -> Any:
+        """
+        处理execute、tool相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if tool == 'code_executor':
             return await self._execute_code_action(action, params)
         elif tool == 'file_operation':
@@ -276,6 +340,10 @@ class SkillExecutor:
             return await self._execute_default_action(action, params)
 
     async def _execute_code_action(self, action: str, params: Dict) -> Any:
+        """
+        处理execute、code、action相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         code = params.get('code', '')
         language = params.get('language', 'python')
         timeout = params.get('timeout', 30)
@@ -321,6 +389,10 @@ class SkillExecutor:
         return {'status': 'executed', 'action': action}
 
     async def _execute_file_action(self, action: str, params: Dict) -> Any:
+        """
+        处理execute、file、action相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         file_path = params.get('path', '')
         content = params.get('content', '')
 
@@ -344,6 +416,10 @@ class SkillExecutor:
         return {'status': 'completed', 'action': action}
 
     async def _execute_shell_action(self, action: str, params: Dict) -> Any:
+        """
+        处理execute、shell、action相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         import subprocess
         import shlex
 
@@ -401,6 +477,10 @@ class SkillExecutor:
             raise RuntimeError(f"Shell执行错误: {e}")
 
     async def _execute_api_action(self, action: str, params: Dict) -> Any:
+        """
+        处理execute、api、action相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         import httpx
 
         url = params.get('url', '')
@@ -429,6 +509,10 @@ class SkillExecutor:
             raise RuntimeError(f"API call error: {e}")
 
     async def _execute_llm_action(self, action: str, params: Dict) -> Any:
+        """
+        处理execute、llm、action相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         prompt = params.get('prompt', '')
         model = params.get('model', 'default')
 
@@ -445,6 +529,10 @@ class SkillExecutor:
         return {'response': f"LLM placeholder response for: {action}", 'model': model}
 
     async def _execute_default_action(self, action: str, params: Dict) -> Any:
+        """
+        处理execute、default、action相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         logger.info(f"Executing default action: {action}")
         return {
             'action': action,
@@ -453,6 +541,10 @@ class SkillExecutor:
         }
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> ExecutionResult:
+        """
+        处理execute、skill相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         start_time = time.time()
         steps_results: List[StepResult] = []
         outputs: Dict[str, Any] = {}
@@ -541,6 +633,10 @@ class SkillExecutor:
             )
 
     async def cleanup(self):
+        """
+        处理cleanup相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         try:
             logger.info("Starting cleanup process")
 

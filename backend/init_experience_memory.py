@@ -1,6 +1,6 @@
 """
-经验记忆系统初始化脚本
-自动注册experience-extractor skill并创建示例经验
+经验记忆初始化脚本，用于预置经验数据或执行初始化导入。
+它主要服务于启动前准备或离线维护场景，用于保证经验相关能力具备可用的基础数据。
 """
 import sys
 sys.path.insert(0, '.')
@@ -10,6 +10,10 @@ import yaml
 import uuid
 
 def initialize_experience_memory():
+    """
+    处理initialize、experience、memory相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     print("[工具] 初始化经验记忆系统...")
 
     # 1. 初始化数据库表

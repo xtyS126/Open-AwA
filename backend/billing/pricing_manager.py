@@ -1,3 +1,8 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from sqlalchemy import text, or_
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
@@ -8,8 +13,16 @@ import json
 
 class PricingManager:
     
+    """
+    封装与PricingManager相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     @staticmethod
     def _validate_configurations_uniqueness(configurations: List[Dict]) -> Tuple[bool, List[Tuple[str, str]]]:
+        """
+        处理validate、configurations、uniqueness相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         seen: Set[Tuple[str, str]] = set()
         duplicates: List[Tuple[str, str]] = []
         
@@ -24,18 +37,34 @@ class PricingManager:
     
     @staticmethod
     def validate_default_configurations() -> Tuple[bool, List[Tuple[str, str]]]:
+        """
+        校验default、configurations相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         return PricingManager._validate_configurations_uniqueness(PricingManager.DEFAULT_CONFIGURATIONS)
 
     @staticmethod
     def normalize_provider(provider: Optional[str]) -> str:
+        """
+        规范化provider相关输入、配置或字段值。
+        该步骤主要用于降低外部输入不一致性对内部逻辑的影响。
+        """
         return (provider or "").strip().lower()
 
     @staticmethod
     def normalize_model(model: Optional[str]) -> str:
+        """
+        规范化model相关输入、配置或字段值。
+        该步骤主要用于降低外部输入不一致性对内部逻辑的影响。
+        """
         return (model or "").strip()
 
     @staticmethod
     def _normalize_provider_api_endpoint(provider: Optional[str], api_endpoint: Optional[str]) -> Optional[str]:
+        """
+        处理normalize、provider、api、endpoint相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         raw = (api_endpoint or "").strip()
         if not raw:
             return None
@@ -73,6 +102,10 @@ class PricingManager:
 
     @staticmethod
     def parse_selected_models(selected_models: Optional[str]) -> List[str]:
+        """
+        解析selected、models相关输入内容，并转换为内部可用结构。
+        它常用于屏蔽外部协议差异并统一上层业务使用的数据格式。
+        """
         if not selected_models:
             return []
 
@@ -97,6 +130,10 @@ class PricingManager:
 
     @staticmethod
     def serialize_selected_models(selected_models: Optional[List[str]]) -> str:
+        """
+        将selected、models相关对象序列化为接口或存储所需格式。
+        通常用于在内部对象与外部输出结构之间建立稳定映射。
+        """
         normalized: List[str] = []
         seen: Set[str] = set()
 
@@ -355,9 +392,17 @@ class PricingManager:
     ]
 
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
 
     def ensure_configuration_schema(self) -> None:
+        """
+        确保configuration、schema相关前置条件或数据结构已经准备完成。
+        通常用于在真正执行业务前补齐环境、表结构或缺失配置。
+        """
         columns = {
             row[1]
             for row in self.db.execute(text("PRAGMA table_info(model_configurations)")).fetchall()
@@ -371,6 +416,10 @@ class PricingManager:
         self.db.commit()
 
     def get_pricing(self, provider: str, model: str) -> Optional[ModelPricing]:
+        """
+        获取pricing相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         provider = self.normalize_provider(provider)
         model = self.normalize_model(model)
         return self.db.query(ModelPricing).filter(
@@ -380,6 +429,10 @@ class PricingManager:
         ).first()
 
     def get_all_pricing(self, provider: Optional[str] = None) -> List[ModelPricing]:
+        """
+        获取all、pricing相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         query = self.db.query(ModelPricing).filter(ModelPricing.is_active == True)
         normalized_provider = self.normalize_provider(provider)
         if normalized_provider:
@@ -387,6 +440,10 @@ class PricingManager:
         return query.order_by(ModelPricing.provider, ModelPricing.model).all()
 
     def get_provider_catalog(self) -> List[Dict]:
+        """
+        获取provider、catalog相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         config_rows = self.db.query(ModelConfiguration.provider).filter(
             ModelConfiguration.is_active == True
         ).distinct().all()
@@ -430,9 +487,17 @@ class PricingManager:
         return result
 
     def get_providers(self) -> List[str]:
+        """
+        获取providers相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         return [provider["id"] for provider in self.get_provider_catalog()]
 
     def create_pricing(self, pricing_data: Dict) -> ModelPricing:
+        """
+        创建pricing相关对象、记录或执行结果。
+        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        """
         pricing_data["provider"] = self.normalize_provider(pricing_data.get("provider"))
         pricing_data["model"] = self.normalize_model(pricing_data.get("model"))
         pricing = ModelPricing(**pricing_data)
@@ -442,6 +507,10 @@ class PricingManager:
         return pricing
 
     def update_pricing(self, pricing_id: int, pricing_data: Dict) -> Optional[ModelPricing]:
+        """
+        更新pricing相关数据、配置或状态。
+        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        """
         pricing = self.db.query(ModelPricing).filter(ModelPricing.id == pricing_id).first()
         if pricing:
             if "provider" in pricing_data:
@@ -456,6 +525,10 @@ class PricingManager:
         return pricing
 
     def delete_pricing(self, pricing_id: int) -> bool:
+        """
+        删除pricing相关对象或持久化记录。
+        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        """
         pricing = self.db.query(ModelPricing).filter(ModelPricing.id == pricing_id).first()
         if pricing:
             pricing.is_active = False
@@ -464,6 +537,10 @@ class PricingManager:
         return False
 
     def initialize_default_pricing(self) -> int:
+        """
+        处理initialize、default、pricing相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         count = 0
         for data in self.DEFAULT_PRICING_DATA:
             existing = self.db.query(ModelPricing).filter(
@@ -480,6 +557,10 @@ class PricingManager:
         return count
 
     def initialize_default_configurations(self) -> int:
+        """
+        处理initialize、default、configurations相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.ensure_configuration_schema()
 
         existing_count = self.db.query(ModelConfiguration).count()
@@ -502,6 +583,10 @@ class PricingManager:
         return count
 
     def remove_legacy_default_configurations(self) -> int:
+        """
+        移除legacy、default、configurations相关数据、缓存或配置项。
+        这类逻辑常用于运行时清理、兼容性整理或状态维护。
+        """
         self.ensure_configuration_schema()
 
         conditions = [
@@ -528,6 +613,10 @@ class PricingManager:
         return count
 
     def validate_pricing_data(self, data: Dict) -> tuple:
+        """
+        校验pricing、data相关输入、规则或结构是否合法。
+        返回结果通常用于阻止非法输入继续流入后续链路。
+        """
         errors = []
         
         if "input_price" in data:
@@ -550,18 +639,30 @@ class PricingManager:
         return (len(errors) == 0, errors)
 
     def get_active_configurations(self) -> List[ModelConfiguration]:
+        """
+        获取active、configurations相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == True
         ).order_by(ModelConfiguration.sort_order, ModelConfiguration.id).all()
 
     def get_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
+        """
+        获取configuration相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
         ).first()
 
     def get_default_configuration(self) -> Optional[ModelConfiguration]:
+        """
+        获取default、configuration相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == True,
@@ -569,6 +670,10 @@ class PricingManager:
         ).first()
 
     def get_configuration_by_provider_model(self, provider: str, model: str) -> Optional[ModelConfiguration]:
+        """
+        获取configuration、by、provider、model相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         self.ensure_configuration_schema()
         provider = self.normalize_provider(provider)
         model = self.normalize_model(model)
@@ -579,6 +684,10 @@ class PricingManager:
         ).first()
 
     def get_default_provider_configuration(self, provider: str) -> Optional[ModelConfiguration]:
+        """
+        获取default、provider、configuration相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         self.ensure_configuration_schema()
         provider = self.normalize_provider(provider)
         query = self.db.query(ModelConfiguration).filter(
@@ -593,6 +702,10 @@ class PricingManager:
         return query.order_by(ModelConfiguration.sort_order, ModelConfiguration.id).first()
 
     def _normalize_configuration_payload(self, config_data: Dict) -> Dict:
+        """
+        处理normalize、configuration、payload相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         normalized = dict(config_data)
 
         if "provider" in normalized:
@@ -618,6 +731,10 @@ class PricingManager:
         return normalized
 
     def create_configuration(self, config_data: Dict) -> ModelConfiguration:
+        """
+        创建configuration相关对象、记录或执行结果。
+        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        """
         self.ensure_configuration_schema()
         normalized = self._normalize_configuration_payload(config_data)
 
@@ -633,6 +750,10 @@ class PricingManager:
         return config
 
     def update_configuration(self, config_id: int, config_data: Dict) -> Optional[ModelConfiguration]:
+        """
+        更新configuration相关数据、配置或状态。
+        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        """
         self.ensure_configuration_schema()
         config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
@@ -657,6 +778,10 @@ class PricingManager:
         return config
 
     def delete_configuration(self, config_id: int) -> bool:
+        """
+        删除configuration相关对象或持久化记录。
+        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        """
         self.ensure_configuration_schema()
         config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
@@ -669,6 +794,10 @@ class PricingManager:
         return False
 
     def delete_provider_configurations(self, provider: str) -> int:
+        """
+        删除provider、configurations相关对象或持久化记录。
+        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        """
         self.ensure_configuration_schema()
         provider_id = self.normalize_provider(provider)
         if not provider_id:
@@ -691,6 +820,10 @@ class PricingManager:
         return len(configs)
 
     def set_default_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
+        """
+        设置default、configuration相关配置或运行状态。
+        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+        """
         self.ensure_configuration_schema()
         self.db.query(ModelConfiguration).filter(
             ModelConfiguration.is_default == True

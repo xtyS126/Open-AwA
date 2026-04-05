@@ -1,3 +1,8 @@
+"""
+技能系统模块，负责技能注册、加载、校验、执行或适配外部能力。
+当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
+"""
+
 import json
 import re
 from datetime import datetime, timezone
@@ -8,7 +13,15 @@ from loguru import logger
 
 
 class ExperienceExtractor:
+    """
+    封装与ExperienceExtractor相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, llm_client=None):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.llm_client = llm_client
         self.memory_skill_dir = Path(__file__).resolve().parents[2] / "memory_skill"
         self.memory_skill_dir.mkdir(parents=True, exist_ok=True)
@@ -22,6 +35,10 @@ class ExperienceExtractor:
         status: str,
         session_id: str
     ) -> Optional[Dict[str, Any]]:
+        """
+        处理extract、from、session相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         prompt = self._build_extraction_prompt(
             user_goal, execution_steps, final_result, status
         )
@@ -52,6 +69,10 @@ class ExperienceExtractor:
             return None
 
     def _save_experience_markdown(self, experience: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理save、experience、markdown相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.memory_skill_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -78,6 +99,10 @@ class ExperienceExtractor:
         }
 
     def _build_markdown_content(self, experience: Dict[str, Any]) -> str:
+        """
+        处理build、markdown、content相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         metadata = experience.get('metadata') or {}
         source_task = experience.get('source_task', 'general')
 
@@ -95,6 +120,10 @@ class ExperienceExtractor:
         )
 
     def _slugify(self, value: str) -> str:
+        """
+        处理slugify相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         normalized = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", value or "experience")
         normalized = normalized.strip("_")
         if not normalized:
@@ -108,6 +137,10 @@ class ExperienceExtractor:
         final_result: str,
         status: str
     ) -> str:
+        """
+        处理build、extraction、prompt相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         prompt_template = """你是一个经验提取专家。请分析以下工作会话，提取可复用的经验：
 
 ## 会话上下文
@@ -141,6 +174,10 @@ class ExperienceExtractor:
         )
 
     def _parse_extraction_response(self, response: str) -> Optional[Dict[str, Any]]:
+        """
+        处理parse、extraction、response相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if not json_match:
             return None
@@ -183,6 +220,10 @@ class ExperienceExtractor:
         final_result: str,
         status: str
     ) -> str:
+        """
+        处理rule、based、extraction相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         if status == "success":
             if execution_steps:
                 actions = [step.get('action', '') for step in execution_steps]
@@ -208,6 +249,10 @@ class ExperienceExtractor:
         return json.dumps({"no_experience": True, "reason": "未发现明显的可复用经验"})
 
     def _infer_task_type(self, user_goal: str) -> str:
+        """
+        处理infer、task、type相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         user_goal_lower = user_goal.lower()
 
         task_keywords = {
@@ -230,6 +275,10 @@ class ExperienceExtractor:
         return 'general'
 
     def classify_experience_type(self, content: str) -> str:
+        """
+        处理classify、experience、type相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         content_lower = content.lower()
 
         if any(word in content_lower for word in ['策略', 'strategy', '计划', '分解', '优先级']):
@@ -251,6 +300,10 @@ class ExperienceExtractor:
         execution_steps: List[Dict],
         status: str
     ) -> float:
+        """
+        处理evaluate、confidence相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         base_confidence = float(experience.get('confidence', 0.5))
 
         steps_count = len(execution_steps)

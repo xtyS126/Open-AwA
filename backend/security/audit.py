@@ -1,3 +1,8 @@
+"""
+安全控制模块，负责权限约束、沙箱限制、审计记录或安全边界保护。
+这里的逻辑通常用于避免未授权操作、危险行为或不可控的资源访问。
+"""
+
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -6,7 +11,15 @@ from loguru import logger
 
 
 class AuditLogger:
+    """
+    封装与AuditLogger相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
         logger.info("AuditLogger initialized")
     
@@ -18,6 +31,10 @@ class AuditLogger:
         result: str,
         details: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
+        """
+        处理log相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         log_entry = AuditLog(
             user_id=user_id,
             action=action,
@@ -40,6 +57,10 @@ class AuditLogger:
         success: bool,
         details: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
+        """
+        处理log、auth、event相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return await self.log(
             user_id=user_id,
             action=f"auth:{event_type}",
@@ -55,6 +76,10 @@ class AuditLogger:
         params: Dict[str, Any],
         result: str
     ) -> AuditLog:
+        """
+        处理log、tool、usage相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return await self.log(
             user_id=user_id,
             action=f"tool:{tool_name}",
@@ -70,6 +95,10 @@ class AuditLogger:
         file_path: str,
         result: str
     ) -> AuditLog:
+        """
+        处理log、file、operation相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return await self.log(
             user_id=user_id,
             action=f"file:{operation}",
@@ -84,6 +113,10 @@ class AuditLogger:
         old_value: Any,
         new_value: Any
     ) -> AuditLog:
+        """
+        处理log、config、change相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         return await self.log(
             user_id=user_id,
             action="config:change",
@@ -103,6 +136,10 @@ class AuditLogger:
         end_date: Optional[datetime] = None,
         limit: int = 100
     ) -> List[AuditLog]:
+        """
+        获取logs相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         query = self.db.query(AuditLog)
         
         if user_id:
@@ -126,6 +163,10 @@ class AuditLogger:
         user_id: Optional[str] = None,
         hours: int = 24
     ) -> List[AuditLog]:
+        """
+        获取failed、attempts相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         from datetime import timedelta
         
         start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -145,6 +186,10 @@ class AuditLogger:
         threshold: int = 5,
         hours: int = 1
     ) -> Dict[str, Any]:
+        """
+        获取suspicious、activity相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
         from datetime import timedelta
         from sqlalchemy import func
         

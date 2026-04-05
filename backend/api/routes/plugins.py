@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -17,6 +22,10 @@ plugin_manager = PluginManager()
 
 
 def _ensure_plugin_discovered(plugin_name: str) -> None:
+    """
+    处理ensure、plugin、discovered相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if plugin_name in plugin_manager.plugin_metadata:
         return
     plugin_manager.discover_plugins()
@@ -32,6 +41,10 @@ async def get_plugins(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取plugins相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     plugins = db.query(Plugin).all()
     return plugins
 
@@ -47,6 +60,10 @@ async def get_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取plugin相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -59,6 +76,10 @@ async def install_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理install、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     new_plugin = Plugin(
         id=str(uuid.uuid4()),
         name=plugin.name,
@@ -80,6 +101,10 @@ async def uninstall_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理uninstall、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -100,6 +125,10 @@ async def toggle_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理toggle、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -122,6 +151,10 @@ async def update_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    更新plugin相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -150,6 +183,10 @@ async def authorize_plugin_permissions(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    为plugin、permissions相关操作授予所需权限。
+    授权结果不仅影响当前操作，也会改变后续可用能力的边界。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -181,6 +218,10 @@ async def revoke_plugin_permissions(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    撤销plugin、permissions相关操作已授予的权限或访问能力。
+    此类逻辑主要用于收缩权限面，以确保运行时行为符合安全约束。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -206,6 +247,10 @@ async def get_plugin_permissions(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取plugin、permissions相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -235,6 +280,10 @@ async def execute_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理execute、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -279,6 +328,10 @@ async def get_plugin_tools(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取plugin、tools相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -312,6 +365,10 @@ async def validate_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    校验plugin相关输入、规则或结构是否合法。
+    返回结果通常用于阻止非法输入继续流入后续链路。
+    """
     try:
         config_data = validation_request.yaml_content.strip()
 
@@ -386,6 +443,10 @@ async def discover_plugins(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理discover、plugins相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     try:
         plugin_manager = PluginManager()
         discovered = plugin_manager.discover_plugins()
@@ -411,6 +472,10 @@ async def upload_plugin(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理upload、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if not file.filename or not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Only .zip files are supported")
         
@@ -465,6 +530,10 @@ async def hot_update_plugin(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """
+    处理hot、update、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -512,6 +581,10 @@ async def rollback_plugin(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """
+    处理rollback、plugin相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -548,6 +621,10 @@ async def get_plugin_logs(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
+    """
+    获取plugin、logs相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -576,6 +653,10 @@ async def update_plugin_log_level(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
+    """
+    更新plugin、log、level相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")

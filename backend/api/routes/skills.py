@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
@@ -34,6 +39,10 @@ WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
 
 
 def _build_default_weixin_config() -> Dict[str, Any]:
+    """
+    处理build、default、weixin、config相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "account_id": "",
         "token": "",
@@ -49,6 +58,10 @@ def _build_weixin_bound_snapshot(
     user_id: str = "",
     binding_status: str = "unbound"
 ) -> Dict[str, str]:
+    """
+    处理build、weixin、bound、snapshot相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     normalized_user_id = str(user_id or "").strip()
     normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
     return {
@@ -59,6 +72,10 @@ def _build_weixin_bound_snapshot(
 
 
 def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 15) -> int:
+    """
+    处理normalize、timeout、seconds相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if timeout_seconds is None:
         return fallback
     try:
@@ -68,6 +85,10 @@ def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 1
 
 
 def _normalize_binding_status(binding_status: Optional[str], user_id: str = "", fallback: str = "unbound") -> str:
+    """
+    处理normalize、binding、status相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     normalized = str(binding_status or "").strip().lower()
     if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
         return "bound"
@@ -81,6 +102,10 @@ def _normalize_binding_status(binding_status: Optional[str], user_id: str = "", 
 
 
 def _load_weixin_skill_config_dict(db: Session) -> Dict[str, Any]:
+    """
+    处理load、weixin、skill、config、dict相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     if not skill:
         return {}
@@ -101,6 +126,10 @@ def _build_weixin_config_payload(
     user_id: str = "",
     binding_status: str = "unbound"
 ) -> Dict[str, Any]:
+    """
+    处理build、weixin、config、payload相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "name": WEIXIN_SKILL_NAME,
         "version": "1.0.0",
@@ -126,6 +155,10 @@ def _save_weixin_config_to_db(
     user_id: str = "",
     binding_status: str = "unbound"
 ) -> None:
+    """
+    处理save、weixin、config、to、db相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     config_yaml = yaml.dump(
         _build_weixin_config_payload(
@@ -157,6 +190,10 @@ def _save_weixin_config_to_db(
 
 
 def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
+    """
+    处理build、runtime、config、from、db相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     adapter = WeixinSkillAdapter()
     config_dict = _load_weixin_skill_config_dict(db)
     if config_dict:
@@ -174,6 +211,10 @@ def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
 
 
 def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
+    """
+    处理coerce、weixin、response、payload相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if isinstance(payload, dict):
         return dict(payload)
     if payload is None:
@@ -252,6 +293,10 @@ def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
 
 
 def _extract_qrcode_fields(result: Dict[str, Any]) -> Dict[str, str]:
+    """
+    处理extract、qrcode、fields相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
     payload = _coerce_weixin_response_payload(payload_source)
     raw_text = str(payload.get("raw_text") or "").strip()
@@ -293,6 +338,10 @@ def _build_qr_session(
     bot_type: str,
     timeout_seconds: int
 ) -> Dict[str, Any]:
+    """
+    处理build、qr、session相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return {
         "qrcode": qrcode,
         "qrcode_url": qrcode_url,
@@ -346,6 +395,10 @@ def _build_qr_response(
     ticket: str = "",
     hint: str = ""
 ) -> Dict[str, Any]:
+    """
+    处理build、qr、response相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     normalized_status = str(status or "waiting").strip().lower() or "waiting"
     normalized_message = str(message or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")).strip() or WEIXIN_QR_MESSAGE_MAP.get(normalized_status, "login status updating")
     normalized_user_id = str(user_id or "").strip()
@@ -373,6 +426,10 @@ def _build_qr_response(
 
 
 def _build_qr_logger(session_key: str, event: str, **fields: Any):
+    """
+    处理build、qr、logger相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return logger.bind(
         feature="weixin_qr",
         session_key=str(session_key or "").strip(),
@@ -382,6 +439,10 @@ def _build_qr_logger(session_key: str, event: str, **fields: Any):
 
 
 def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
+    """
+    处理build、qrcode、upstream、error、detail相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
     payload = _coerce_weixin_response_payload(payload_source)
     code = payload.get("errcode")
@@ -408,6 +469,10 @@ def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
 
 
 def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    处理normalize、qr、wait、status相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     payload_source = status_result.get("data") if isinstance(status_result, dict) and status_result.get("data") is not None else status_result
     payload = _coerce_weixin_response_payload(payload_source)
 
@@ -475,6 +540,10 @@ def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
     return normalized_payload
 
 def _purge_expired_qr_sessions() -> None:
+    """
+    处理purge、expired、qr、sessions相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     now = time.time()
     with WEIXIN_QR_SESSIONS_LOCK:
         expired_keys = [
@@ -486,6 +555,10 @@ def _purge_expired_qr_sessions() -> None:
             WEIXIN_QR_SESSIONS.pop(key, None)
 
 class WeixinConfigReq(BaseModel):
+    """
+    封装与WeixinConfigReq相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     account_id: str
     token: str
     base_url: Optional[str] = DEFAULT_BASE_URL
@@ -495,6 +568,10 @@ class WeixinConfigReq(BaseModel):
 
 
 class WeixinQrStartReq(BaseModel):
+    """
+    封装与WeixinQrStartReq相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     session_key: Optional[str] = None
     base_url: Optional[str] = None
     bot_type: Optional[str] = None
@@ -503,6 +580,10 @@ class WeixinQrStartReq(BaseModel):
 
 
 class WeixinQrWaitReq(BaseModel):
+    """
+    封装与WeixinQrWaitReq相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     session_key: str
     timeout_seconds: Optional[int] = 35
     qrcode: Optional[str] = None
@@ -510,11 +591,19 @@ class WeixinQrWaitReq(BaseModel):
 
 
 class WeixinQrExitReq(BaseModel):
+    """
+    封装与WeixinQrExitReq相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     session_key: Optional[str] = None
     clear_config: Optional[bool] = True
 
 
 def _coerce_weixin_payload_dict(raw_body: Any) -> Dict[str, Any]:
+    """
+    处理coerce、weixin、payload、dict相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     if isinstance(raw_body, dict):
         return raw_body
     if raw_body is None:
@@ -547,11 +636,19 @@ def _coerce_weixin_payload_dict(raw_body: Any) -> Dict[str, Any]:
 
 
 async def _parse_weixin_request_payload(request: Request) -> Dict[str, Any]:
+    """
+    处理parse、weixin、request、payload相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     raw_body = await request.body()
     return _coerce_weixin_payload_dict(raw_body)
 
 @router.post("/weixin/health-check")
 async def weixin_health_check(request: Request):
+    """
+    处理weixin、health、check相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     adapter = WeixinSkillAdapter()
     runtime_config = WeixinRuntimeConfig(
@@ -573,6 +670,10 @@ async def save_weixin_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    保存weixin、config相关数据到持久化存储。
+    实现过程往往伴随序列化、写入、事务提交或异常回滚等步骤。
+    """
     config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     _save_weixin_config_to_db(
         db=db,
@@ -590,6 +691,10 @@ async def get_weixin_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取weixin、config相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     if not skill:
         return _build_default_weixin_config()
@@ -616,6 +721,10 @@ async def weixin_qr_start(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """
+    处理weixin、qr、start相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     payload = WeixinQrStartReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     adapter = WeixinSkillAdapter()
@@ -686,6 +795,10 @@ async def weixin_qr_image(
     qrcode_url: Optional[str] = None,
     current_user=Depends(get_current_user)
 ):
+    """
+    处理weixin、qr、image相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
     if session_key:
@@ -719,6 +832,10 @@ async def weixin_qr_wait(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """
+    处理weixin、qr、wait相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     payload = WeixinQrWaitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
@@ -904,6 +1021,10 @@ async def weixin_qr_exit(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """
+    处理weixin、qr、exit相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     payload = WeixinQrExitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     cleared_sessions = 0
@@ -940,6 +1061,10 @@ async def get_skills(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取skills相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     skills = db.query(Skill).all()
     return skills
 
@@ -950,6 +1075,10 @@ async def get_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取skill相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -967,6 +1096,10 @@ async def install_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理install、skill相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     existing_skill = db.query(Skill).filter(Skill.name == skill.name).first()
     if existing_skill:
         raise HTTPException(status_code=400, detail="Skill already installed")
@@ -1028,6 +1161,10 @@ async def uninstall_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理uninstall、skill相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1044,6 +1181,10 @@ async def toggle_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理toggle、skill相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1064,7 +1205,10 @@ async def extract_experience(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """从会话中提取经验"""
+    """
+    处理extract、experience相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     from skills.experience_extractor import ExperienceExtractor
 
     extractor = ExperienceExtractor()
@@ -1114,6 +1258,10 @@ async def update_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    更新skill相关数据、配置或状态。
+    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1180,6 +1328,10 @@ async def execute_skill(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    处理execute、skill相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1246,6 +1398,10 @@ async def get_skill_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """
+    获取skill、config相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    """
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -1287,6 +1443,10 @@ async def get_skill_config(
 
 @router.post("/validate", response_model=SkillValidationResult)
 async def validate_skill(skill_data: SkillValidationRequest):
+    """
+    校验skill相关输入、规则或结构是否合法。
+    返回结果通常用于阻止非法输入继续流入后续链路。
+    """
     validator = SkillValidator()
     result = validator.validate_skill_data(skill_data.dict())
     return result
@@ -1298,7 +1458,10 @@ async def install_skill_from_package(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """从ZIP包安装技能"""
+    """
+    处理install、skill、from、package相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     try:
         content = await file.read()
         zip_file = zipfile.ZipFile(io.BytesIO(content))

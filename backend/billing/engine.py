@@ -1,3 +1,8 @@
+"""
+计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
+这一部分直接关联成本核算、调用统计以及运维观测。
+"""
+
 from sqlalchemy.orm import Session
 from typing import Dict, Optional
 import time
@@ -9,7 +14,15 @@ from billing.budget_manager import BudgetManager
 
 
 class BillingEngine:
+    """
+    封装与BillingEngine相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def __init__(self, db: Session):
+        """
+        处理init相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         self.db = db
         self.calculator = CostCalculator()
         self.pricing_manager = PricingManager(db)
@@ -28,6 +41,10 @@ class BillingEngine:
         audio_seconds: float = 0,
         video_seconds: float = 0
     ) -> Dict:
+        """
+        处理before、llm、call相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         start_time = time.time()
         
         pricing = self.pricing_manager.get_pricing(provider, model)
@@ -75,6 +92,10 @@ class BillingEngine:
         cache_hit: bool = False,
         api_response_usage: Optional[dict] = None
     ) -> Dict:
+        """
+        处理after、llm、call相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         start_time = before_result["start_time"]
         duration_ms = int((time.time() - start_time) * 1000)
         
@@ -141,6 +162,10 @@ class BillingEngine:
         duration_ms: int = 0,
         metadata: Optional[dict] = None
     ) -> Dict:
+        """
+        处理record、call相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         pricing = self.pricing_manager.get_pricing(provider, model)
         if not pricing:
             raise ValueError(f"Pricing not found for {provider}:{model}")
@@ -189,6 +214,10 @@ class BillingEngine:
         audio_seconds: float = 0,
         video_seconds: float = 0
     ) -> Dict:
+        """
+        处理estimate、cost相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         pricing = self.pricing_manager.get_pricing(provider, model)
         if not pricing:
             raise ValueError(f"Pricing not found for {provider}:{model}")

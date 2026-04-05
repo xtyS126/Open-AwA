@@ -1,3 +1,8 @@
+"""
+后端测试模块，负责验证对应功能在正常、边界或异常场景下的行为是否符合预期。
+保持测试注释清晰，有助于快速分辨各个用例所覆盖的场景。
+"""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -7,7 +12,10 @@ from billing.pricing_manager import PricingManager
 
 @pytest.fixture
 def db_session():
-    """Create an in-memory database for testing."""
+    """
+    处理db、session相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     engine = create_engine('sqlite:///:memory:', echo=False)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine)
@@ -18,15 +26,24 @@ def db_session():
 
 @pytest.fixture
 def pricing_manager(db_session):
-    """Create a PricingManager instance."""
+    """
+    处理pricing、manager相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     return PricingManager(db_session)
 
 
 class TestInitializeDefaultConfigurations:
-    """Test the initialize_default_configurations method."""
+    """
+    封装与TestInitializeDefaultConfigurations相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
 
     def test_initialize_creates_configurations_when_empty(self, pricing_manager, db_session):
-        """Should create default configurations when table is empty."""
+        """
+        验证initialize、creates、configurations、when、empty相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         count = pricing_manager.initialize_default_configurations()
 
         assert count == 5, "Should create 5 default configurations"
@@ -41,7 +58,10 @@ class TestInitializeDefaultConfigurations:
         assert "deepseek" in providers
 
     def test_initialize_skips_when_configurations_exist(self, pricing_manager, db_session):
-        """Should not create configurations when table is not empty."""
+        """
+        验证initialize、skips、when、configurations、exist相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         existing_config = ModelConfiguration(
             provider="openai",
             model="gpt-4",
@@ -59,7 +79,10 @@ class TestInitializeDefaultConfigurations:
         assert len(configs) == 1, "Should only have the existing configuration"
 
     def test_initialize_sets_first_as_default(self, pricing_manager, db_session):
-        """First configuration should be set as default."""
+        """
+        验证initialize、sets、first、as、default相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         configs = db_session.query(ModelConfiguration).order_by(ModelConfiguration.sort_order).all()
@@ -70,7 +93,10 @@ class TestInitializeDefaultConfigurations:
         assert default_configs[0].provider == "openai"
 
     def test_initialize_respects_sort_order(self, pricing_manager, db_session):
-        """Configurations should be created in correct sort order."""
+        """
+        验证initialize、respects、sort、order相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         configs = db_session.query(ModelConfiguration).order_by(ModelConfiguration.sort_order).all()
@@ -82,7 +108,10 @@ class TestInitializeDefaultConfigurations:
         assert configs[4].sort_order == 4
 
     def test_initialize_creates_correct_display_names(self, pricing_manager, db_session):
-        """Should create configurations with correct display names."""
+        """
+        验证initialize、creates、correct、display、names相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         gpt4 = db_session.query(ModelConfiguration).filter(
@@ -95,7 +124,10 @@ class TestInitializeDefaultConfigurations:
         assert "最强大的通用AI模型" in gpt4.description
 
     def test_initialize_all_active(self, pricing_manager, db_session):
-        """All default configurations should be active."""
+        """
+        验证initialize、all、active相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         configs = db_session.query(ModelConfiguration).all()
@@ -104,7 +136,10 @@ class TestInitializeDefaultConfigurations:
         assert len(inactive) == 0, "All configurations should be active"
 
     def test_initialize_idempotent(self, pricing_manager, db_session):
-        """Calling initialize multiple times should not create duplicates."""
+        """
+        验证initialize、idempotent相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
         pricing_manager.initialize_default_configurations()
         count2 = pricing_manager.initialize_default_configurations()
@@ -114,7 +149,10 @@ class TestInitializeDefaultConfigurations:
         assert len(configs) == 5, "Should still have only 5 configurations"
 
     def test_initialize_no_duplicate_provider_model_combinations(self, pricing_manager, db_session):
-        """Should not create duplicate provider:model combinations."""
+        """
+        验证initialize、no、duplicate、provider、model、combinations相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
         pricing_manager.initialize_default_configurations()
 
@@ -129,10 +167,16 @@ class TestInitializeDefaultConfigurations:
 
 
 class TestGetActiveConfigurations:
-    """Test the get_active_configurations method."""
+    """
+    封装与TestGetActiveConfigurations相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
 
     def test_get_active_only_returns_active(self, pricing_manager, db_session):
-        """Should only return active configurations."""
+        """
+        验证get、active、only、returns、active相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         active = pricing_manager.get_active_configurations()
@@ -142,7 +186,10 @@ class TestGetActiveConfigurations:
             assert config.is_active is True
 
     def test_get_active_excludes_inactive(self, pricing_manager, db_session):
-        """Should exclude inactive configurations."""
+        """
+        验证get、active、excludes、inactive相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         config = db_session.query(ModelConfiguration).first()
@@ -159,7 +206,10 @@ class TestGetActiveConfigurations:
             assert a.id not in inactive_ids
 
     def test_get_active_ordered_by_sort_order(self, pricing_manager, db_session):
-        """Should return configurations ordered by sort_order."""
+        """
+        验证get、active、ordered、by、sort、order相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         active = pricing_manager.get_active_configurations()
@@ -169,10 +219,16 @@ class TestGetActiveConfigurations:
 
 
 class TestDefaultConfiguration:
-    """Test the get_default_configuration method."""
+    """
+    封装与TestDefaultConfiguration相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
 
     def test_get_default_returns_default_config(self, pricing_manager, db_session):
-        """Should return the default configuration."""
+        """
+        验证get、default、returns、default、config相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         pricing_manager.initialize_default_configurations()
 
         default = pricing_manager.get_default_configuration()
@@ -182,7 +238,10 @@ class TestDefaultConfiguration:
         assert default.model == "gpt-4"
 
     def test_get_default_returns_none_when_no_default(self, pricing_manager, db_session):
-        """Should return None when no default is set."""
+        """
+        验证get、default、returns、none、when、no、default相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         config = ModelConfiguration(
             provider="openai",
             model="test",
@@ -198,10 +257,16 @@ class TestDefaultConfiguration:
 
 
 class TestConfigurationUniquenessValidation:
-    """Test the configuration uniqueness validation methods."""
+    """
+    封装与TestConfigurationUniquenessValidation相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
 
     def test_validate_configurations_uniqueness_with_unique_data(self):
-        """Should pass validation with unique configurations."""
+        """
+        验证validate、configurations、uniqueness、with、unique、data相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         configs = [
             {"provider": "openai", "model": "gpt-4"},
             {"provider": "anthropic", "model": "claude-3.5-sonnet"},
@@ -213,7 +278,10 @@ class TestConfigurationUniquenessValidation:
         assert len(duplicates) == 0
 
     def test_validate_configurations_uniqueness_with_duplicates(self):
-        """Should detect duplicate configurations."""
+        """
+        验证validate、configurations、uniqueness、with、duplicates相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         configs = [
             {"provider": "openai", "model": "gpt-4"},
             {"provider": "openai", "model": "gpt-4"},
@@ -227,7 +295,10 @@ class TestConfigurationUniquenessValidation:
         assert ("openai", "gpt-4") in duplicates
 
     def test_validate_configurations_uniqueness_with_multiple_duplicates(self):
-        """Should detect multiple duplicate configurations."""
+        """
+        验证validate、configurations、uniqueness、with、multiple、duplicates相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         configs = [
             {"provider": "openai", "model": "gpt-4"},
             {"provider": "anthropic", "model": "claude-3.5-sonnet"},
@@ -244,14 +315,20 @@ class TestConfigurationUniquenessValidation:
         assert ("anthropic", "claude-3.5-sonnet") in duplicates
 
     def test_validate_default_configurations_with_valid_data(self):
-        """validate_default_configurations should pass with current DEFAULT_CONFIGURATIONS."""
+        """
+        验证validate、default、configurations、with、valid、data相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         is_unique, duplicates = PricingManager.validate_default_configurations()
         
         assert is_unique is True, f"DEFAULT_CONFIGURATIONS should be unique, but found duplicates: {duplicates}"
         assert len(duplicates) == 0
 
     def test_initialize_raises_error_on_duplicate_configurations(self, pricing_manager, db_session):
-        """Should raise ValueError when DEFAULT_CONFIGURATIONS contains duplicates."""
+        """
+        验证initialize、raises、error、on、duplicate、configurations相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         original_data = PricingManager.DEFAULT_CONFIGURATIONS.copy()
         try:
             PricingManager.DEFAULT_CONFIGURATIONS.extend([
@@ -267,7 +344,10 @@ class TestConfigurationUniquenessValidation:
             PricingManager.DEFAULT_CONFIGURATIONS[:] = original_data
 
     def test_initialize_creates_unique_constraint_index(self, db_session):
-        """Database should have unique constraint on provider+model."""
+        """
+        验证initialize、creates、unique、constraint、index相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         from sqlalchemy import inspect
 
         inspector = inspect(db_session.bind)
@@ -282,7 +362,10 @@ class TestConfigurationUniquenessValidation:
         assert has_unique_constraint, "Should have unique constraint on provider+model"
 
     def test_cannot_insert_duplicate_provider_model_via_database(self, db_session):
-        """Database should prevent duplicate provider:model combinations."""
+        """
+        验证cannot、insert、duplicate、provider、model、via、database相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         config1 = ModelConfiguration(
             provider="test",
             model="duplicate",
@@ -306,7 +389,15 @@ class TestConfigurationUniquenessValidation:
 
 
 class TestDeleteProviderConfigurations:
+    """
+    封装与TestDeleteProviderConfigurations相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
     def test_delete_provider_configurations_soft_deletes_active_rows(self, pricing_manager, db_session):
+        """
+        验证delete、provider、configurations、soft、deletes、active、rows相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         db_session.add_all([
             ModelConfiguration(provider="deepseek", model="deepseek-chat", is_active=True, is_default=False),
             ModelConfiguration(provider="deepseek", model="deepseek-r1", is_active=True, is_default=False),
@@ -332,10 +423,18 @@ class TestDeleteProviderConfigurations:
         assert openai_row.is_active is True
 
     def test_delete_provider_configurations_returns_zero_when_provider_not_found(self, pricing_manager):
+        """
+        验证delete、provider、configurations、returns、zero、when、provider、not、found相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         deleted_count = pricing_manager.delete_provider_configurations("not-exists")
         assert deleted_count == 0
 
     def test_delete_provider_configurations_normalizes_provider(self, pricing_manager, db_session):
+        """
+        验证delete、provider、configurations、normalizes、provider相关场景的行为是否符合预期。
+        通过断言结果可以帮助定位实现与预期行为之间的偏差。
+        """
         db_session.add(
             ModelConfiguration(provider="deepseek", model="deepseek-chat", is_active=True, is_default=False)
         )

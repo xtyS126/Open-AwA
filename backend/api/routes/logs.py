@@ -1,3 +1,8 @@
+"""
+后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
+这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+"""
+
 from datetime import datetime, timezone
 import json
 from typing import Optional
@@ -24,6 +29,10 @@ async def query_logs(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    处理query、logs相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     result = query_log_buffer(
         start_time=start_time,
         end_time=end_time,
@@ -53,6 +62,10 @@ async def export_logs(
     keyword: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    处理export、logs相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    """
     result = query_log_buffer(
         start_time=start_time,
         end_time=end_time,
@@ -72,6 +85,10 @@ async def export_logs(
     ).info("system logs exported")
 
     def iter_jsonl():
+        """
+        处理iter、jsonl相关逻辑，并为调用方返回对应结果。
+        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        """
         for item in result["records"]:
             yield json.dumps(item, ensure_ascii=False, default=str) + "\n"
 
