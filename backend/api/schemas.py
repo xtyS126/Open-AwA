@@ -621,3 +621,45 @@ class PluginLogLevelResponse(BaseModel):
     plugin_id: str
     plugin_name: str
     level: str
+
+
+class ProviderConfigurationBase(BaseModel):
+    """
+    封装与ProviderConfigurationBase相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
+    provider: str
+    model: str
+    max_tokens: Optional[int] = None
+
+
+class ProviderConfigurationCreate(ProviderConfigurationBase):
+    """
+    封装与ProviderConfigurationCreate相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
+    pass
+
+
+class ProviderConfigurationUpdate(BaseModel):
+    """
+    封装与ProviderConfigurationUpdate相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
+    max_tokens: Optional[int] = None
+
+
+class ProviderConfigurationResponse(ProviderConfigurationBase):
+    """
+    封装与ProviderConfigurationResponse相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
+    id: int
+
+    class Config:
+        """
+        封装与Config相关的核心逻辑与运行状态。
+        该类通常是当前文件中组织数据与调度行为的主要封装单元。
+        """
+        from_attributes = True
+

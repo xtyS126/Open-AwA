@@ -38,7 +38,7 @@ class ProviderRequestSpec:
     endpoint: str
     headers: Dict[str, str]
     payload: Optional[Dict[str, Any]]
-    timeout: float = 30.0
+    timeout: float = 120.0
     method: str = "POST"
     query_params: Optional[Dict[str, Any]] = None
 

@@ -793,6 +793,9 @@ class PricingManager:
             normalized["api_key"] = normalized["api_key"].strip() or None
         if "selected_models" in normalized:
             normalized["selected_models"] = self.serialize_selected_models(normalized.get("selected_models"))
+        if "max_tokens" in normalized:
+            val = normalized.get("max_tokens")
+            normalized["max_tokens"] = int(val) if val is not None else None
 
         return normalized
 
