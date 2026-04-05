@@ -214,6 +214,8 @@ async def websocket_endpoint(
             agent=agent,
         )
     finally:
+        # Agent has completed processing for this websocket session.
+        # It's safe to close the database session here.
         db.close()
 
 
