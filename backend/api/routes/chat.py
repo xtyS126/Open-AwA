@@ -3,23 +3,18 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-import hashlib
-from typing import Union
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from typing import Union, Dict
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
 from sqlalchemy.orm import Session
-from typing import Dict
-import json
 
 from loguru import logger
 
 from api.dependencies import get_current_user
 from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest
-from api.services.chat_protocol import send_chunked_websocket_message, build_sse_response, handle_websocket_session
+from api.services.chat_protocol import build_sse_response, handle_websocket_session
 from api.services.ws_manager import ws_manager
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
-from core.metrics import record_websocket_message_metric
-from core.model_service import CLIENT_VERSION_HEADER, build_standard_error
+from core.model_service import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
 from db.models import SessionLocal, User, get_db
@@ -206,15 +201,20 @@ async def websocket_endpoint(
         user_id=user_id,
     ).info("websocket connected")
 
-    await handle_websocket_session(
-        websocket=websocket,
-        session_id=session_id,
-        user_id=user_id,
-        username=username,
-        client_version=client_version,
-        connection_request_id=connection_request_id,
-        db=db,
-    )
+    agent = AIAgent(db_session=db)
+    
+    try:
+        await handle_websocket_session(
+            websocket=websocket,
+            session_id=session_id,
+            user_id=user_id,
+            username=username,
+            client_version=client_version,
+            connection_request_id=connection_request_id,
+            agent=agent,
+        )
+    finally:
+        db.close()
 
 
 @router.get(
