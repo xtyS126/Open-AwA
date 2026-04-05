@@ -104,3 +104,56 @@ async def test_recorder_queue_is_bounded_under_high_frequency(monkeypatch, tmp_p
     assert stats["dropped_count"] > 0
 
     await recorder.stop()
+
+
+@pytest.mark.asyncio
+async def test_flush_batch_uses_to_thread(monkeypatch, tmp_path):
+    """
+    验证批量刷盘时会通过 asyncio.to_thread 下沉同步写库，
+    避免在事件循环线程中直接执行数据库提交。
+    """
+    db_path = tmp_path / "conversation_recorder_threaded_flush.db"
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    test_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    monkeypatch.setattr("core.conversation_recorder.SessionLocal", test_session_local)
+
+    recorder = ConversationRecorder(batch_size=2, flush_interval=0.01, queue_maxsize=10)
+    called = {"value": False}
+    original_to_thread = asyncio.to_thread
+
+    async def tracking_to_thread(func, /, *args, **kwargs):
+        called["value"] = True
+        return await original_to_thread(func, *args, **kwargs)
+
+    monkeypatch.setattr("core.conversation_recorder.asyncio.to_thread", tracking_to_thread)
+
+    payload = {
+        "session_id": "s-3",
+        "user_id": "u-3",
+        "node_type": "intent",
+        "user_message": "hello",
+        "provider": None,
+        "model": None,
+        "llm_input": None,
+        "llm_output": None,
+        "llm_tokens_used": None,
+        "execution_duration_ms": None,
+        "status": "success",
+        "error_message": None,
+        "record_metadata": None,
+    }
+    recorder.queue.put_nowait(payload)
+
+    await recorder._flush_batch([payload])
+
+    assert called["value"] is True
+
+    db = test_session_local()
+    try:
+        rows = db.query(ConversationRecord).all()
+        assert len(rows) == 1
+        assert rows[0].user_id == "u-3"
+    finally:
+        db.close()
