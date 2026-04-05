@@ -116,6 +116,56 @@ class AIAgent:
         if not user_id:
             return
 
+        # 补全基础统计的埋点上报，写入 BehaviorLog（不受细粒度采集开关影响）
+        def _write_behavior_sync():
+            try:
+                from db.models import BehaviorLog
+                import json
+                with SessionLocal() as db:
+                    action_type = ""
+                    details_str = ""
+
+                    if node_type == "llm_call":
+                        action_type = "llm_call"
+                        
+                        response_content = None
+                        if isinstance(llm_output, dict):
+                            response_content = llm_output.get("response") or llm_output.get("error")
+                        
+                        details_dict = {
+                            "duration_ms": execution_duration_ms,
+                            "status": status,
+                            "provider": metadata.get("provider") if isinstance(metadata, dict) else None,
+                            "model": metadata.get("model") if isinstance(metadata, dict) else None,
+                            "tokens_used": llm_tokens_used,
+                            "response_result": response_content
+                        }
+                        details_str = json.dumps(details_dict, ensure_ascii=False)
+                    elif node_type == "tool_execution":
+                        action_type = "tool_usage"
+                        tool_name = "unknown"
+                        if isinstance(metadata, dict):
+                            if metadata.get("execution_type") == "skill":
+                                tool_name = metadata.get("skill_name", "unknown")
+                            elif metadata.get("execution_type") == "plugin":
+                                tool_name = metadata.get("plugin_name", "unknown")
+                        details_str = f"{tool_name}:" + json.dumps({"status": status}, ensure_ascii=False)
+                    elif node_type == "intent_recognition":
+                        action_type = "intent"
+                        details_str = metadata.get("intent", "unknown") if isinstance(metadata, dict) else str(metadata)
+
+                    if action_type:
+                        db.add(BehaviorLog(user_id=user_id, action_type=action_type, details=details_str))
+
+                    if status == "error":
+                        db.add(BehaviorLog(user_id=user_id, action_type="error", details=error_message or "Unknown error"))
+
+                    db.commit()
+            except Exception as e:
+                logger.error(f"Failed to write basic behavior log: {e}")
+
+        asyncio.create_task(asyncio.to_thread(_write_behavior_sync))
+
         task = asyncio.create_task(
             conversation_recorder.record(
                 node_type=node_type,
@@ -287,6 +337,8 @@ class AIAgent:
 
         if "message" not in context:
             context["message"] = user_input
+            
+        context["_record_hook"] = self._schedule_record
             
         full_content = ""
         full_reasoning = ""
