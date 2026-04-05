@@ -106,7 +106,7 @@ describe('ChatPage Model Selector', () => {
       render(<ChatPage />)
 
       await waitFor(() => {
-        const select = screen.getByRole('combobox') as HTMLSelectElement
+        const select = screen.getAllByRole('combobox')[1] as HTMLSelectElement
         expect(select.value).toBe('openai:gpt-4')
       })
     })
@@ -127,7 +127,7 @@ describe('ChatPage Model Selector', () => {
       render(<ChatPage />)
 
       await waitFor(() => {
-        const select = screen.getByRole('combobox') as HTMLSelectElement
+        const select = screen.getAllByRole('combobox')[1] as HTMLSelectElement
         expect(select.value).toBe('anthropic:claude-3.5-sonnet')
       })
     })
