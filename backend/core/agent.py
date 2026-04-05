@@ -11,6 +11,7 @@ from .comprehension import ComprehensionLayer
 from .planner import PlanningLayer
 from .executor import ExecutionLayer
 from .feedback import FeedbackLayer
+from .metrics import record_tool_execution_metric
 from memory.experience_manager import ExperienceManager
 from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
@@ -378,6 +379,7 @@ class AIAgent:
                             "skill_name": skill_name
                         }
                     )
+                    record_tool_execution_metric("skill", skill_result.get("status", "unknown"))
                     continue
             
             if context.get('enable_skill_plugin', True) and step.get('use_plugin'):
@@ -408,6 +410,7 @@ class AIAgent:
                             "plugin_method": plugin_method
                         }
                     )
+                    record_tool_execution_metric("plugin", plugin_result.get("status", "unknown"))
                     continue
             
             result = await self.executor.execute_step(step, context)

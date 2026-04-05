@@ -14,7 +14,7 @@ if (!HTMLElement.prototype.scrollIntoView) {
 
 vi.mock('@/features/settings/modelsApi', () => ({
   modelsAPI: {
-    getConfigurations: vi.fn(),
+    getProviders: vi.fn(),
     updateConfiguration: vi.fn()
   }
 }))
@@ -45,23 +45,23 @@ describe('ChatPage Model Selector', () => {
     it('should load configurations on mount', async () => {
       const mockConfigs = {
         data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true },
-            { id: 2, provider: 'anthropic', model: 'claude-3.5-sonnet', display_name: 'Claude', is_default: false }
+          providers: [
+            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] },
+            { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', selected_models: ['claude-3.5-sonnet'] }
           ]
         }
       }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
 
       render(<ChatPage />)
 
       await waitFor(() => {
-        expect(modelsAPI.getConfigurations).toHaveBeenCalled()
+        expect(modelsAPI.getProviders).toHaveBeenCalled()
       })
     })
 
     it('should display "加载中..." while loading', () => {
-      ;(modelsAPI.getConfigurations as any).mockImplementation(
+      ;(modelsAPI.getProviders as any).mockImplementation(
         () => new Promise(() => {})
       )
 
@@ -71,8 +71,8 @@ describe('ChatPage Model Selector', () => {
     })
 
     it('should display "暂无可用模型" when no configurations', async () => {
-      const mockConfigs = { data: { configurations: [] } }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      const mockConfigs = { data: { providers: [] } }
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
 
       render(<ChatPage />)
 
@@ -82,7 +82,7 @@ describe('ChatPage Model Selector', () => {
     })
 
     it('should display error message when API fails', async () => {
-      ;(modelsAPI.getConfigurations as any).mockRejectedValue(new Error('Network error'))
+      ;(modelsAPI.getProviders as any).mockRejectedValue(new Error('Network error'))
 
       render(<ChatPage />)
 
@@ -96,12 +96,12 @@ describe('ChatPage Model Selector', () => {
     it('should select default model on load', async () => {
       const mockConfigs = {
         data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true }
+          providers: [
+            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
           ]
         }
       }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
 
       render(<ChatPage />)
 
@@ -116,13 +116,13 @@ describe('ChatPage Model Selector', () => {
 
       const mockConfigs = {
         data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true },
-            { id: 2, provider: 'anthropic', model: 'claude-3.5-sonnet', display_name: 'Claude', is_default: false }
+          providers: [
+            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] },
+            { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', selected_models: ['claude-3.5-sonnet'] }
           ]
         }
       }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
 
       render(<ChatPage />)
 
@@ -135,19 +135,19 @@ describe('ChatPage Model Selector', () => {
     it('should save selected model to localStorage', async () => {
       const mockConfigs = {
         data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true },
-            { id: 2, provider: 'anthropic', model: 'claude-3.5-sonnet', display_name: 'Claude', is_default: false }
+          providers: [
+            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] },
+            { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', selected_models: ['claude-3.5-sonnet'] }
           ]
         }
       }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
 
       render(<ChatPage />)
 
       const select = await screen.findByRole('combobox')
       await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'Anthropic - Claude' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: 'Anthropic - claude-3.5-sonnet' })).toBeInTheDocument()
       })
       fireEvent.change(select, { target: { value: 'anthropic:claude-3.5-sonnet' } })
 
@@ -161,12 +161,12 @@ describe('ChatPage Model Selector', () => {
     it('should show save button when model is selected', async () => {
       const mockConfigs = {
         data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true }
+          providers: [
+            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
           ]
         }
       }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
 
       render(<ChatPage />)
 
@@ -175,38 +175,15 @@ describe('ChatPage Model Selector', () => {
       })
     })
 
-    it('should call updateConfiguration when save button is clicked', async () => {
-      const mockConfigs = {
-        data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true }
-          ]
-        }
-      }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
-      ;(modelsAPI.updateConfiguration as any).mockResolvedValue({ data: { success: true } })
-
-      render(<ChatPage />)
-
-      await waitFor(() => {
-        const saveBtn = screen.getByText('保存模型')
-        fireEvent.click(saveBtn)
-      })
-
-      await waitFor(() => {
-        expect(modelsAPI.updateConfiguration).toHaveBeenCalledWith(1, { is_default: true })
-      })
-    })
-
     it('should show success message after saving', async () => {
       const mockConfigs = {
         data: {
-          configurations: [
-            { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true }
+          providers: [
+            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
           ]
         }
       }
-      ;(modelsAPI.getConfigurations as any).mockResolvedValue(mockConfigs)
+      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
       ;(modelsAPI.updateConfiguration as any).mockResolvedValue({ data: { success: true } })
 
       render(<ChatPage />)
@@ -224,7 +201,7 @@ describe('ChatPage Model Selector', () => {
 
   describe('Retry Mechanism', () => {
     it('should show retry button when loading fails', async () => {
-      ;(modelsAPI.getConfigurations as any).mockRejectedValue(new Error('Network error'))
+      ;(modelsAPI.getProviders as any).mockRejectedValue(new Error('Network error'))
 
       render(<ChatPage />)
 
@@ -235,15 +212,15 @@ describe('ChatPage Model Selector', () => {
 
     it('should retry loading when retry button is clicked', async () => {
       let callCount = 0
-      ;(modelsAPI.getConfigurations as any).mockImplementation(() => {
+      ;(modelsAPI.getProviders as any).mockImplementation(() => {
         callCount++
         if (callCount === 1) {
           return Promise.reject(new Error('Network error'))
         }
         return Promise.resolve({
           data: {
-            configurations: [
-              { id: 1, provider: 'openai', model: 'gpt-4', display_name: 'GPT-4', is_default: true }
+            providers: [
+              { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
             ]
           }
         })

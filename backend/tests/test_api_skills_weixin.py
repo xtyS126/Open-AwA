@@ -396,7 +396,7 @@ def test_weixin_qr_wait_returns_404_when_session_missing():
             json={"session_key": "missing-session"}
         )
         assert response.status_code == 404
-        assert response.json()["detail"] == "当前没有进行中的登录，请先发起登录。"
+        assert response.json()["error"]["message"] == "当前没有进行中的登录，请先发起登录。"
 
 
 def test_weixin_qr_exit_clears_session_and_config(monkeypatch):
