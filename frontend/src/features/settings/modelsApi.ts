@@ -12,6 +12,7 @@ export interface ModelConfiguration {
   api_key?: string | null
   has_api_key?: boolean
   selected_models?: string[]
+  max_tokens?: number | null
   is_active: boolean
   is_default: boolean
   sort_order: number
@@ -76,6 +77,7 @@ export const modelsAPI = {
     api_key?: string
     api_endpoint?: string
     selected_models?: string[]
+    max_tokens?: number | null
     is_active?: boolean
     is_default?: boolean
     sort_order?: number
@@ -90,6 +92,7 @@ export const modelsAPI = {
     api_key?: string
     api_endpoint?: string
     selected_models?: string[]
+    max_tokens?: number | null
     is_active?: boolean
     is_default?: boolean
     sort_order?: number

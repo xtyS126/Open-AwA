@@ -24,6 +24,7 @@ interface ApiProviderFormState {
   api_key: string
   has_api_key: boolean
   selected_models: string[]
+  max_tokens: number | ''
 }
 
 function SettingsPage() {
@@ -38,7 +39,8 @@ function SettingsPage() {
     icon: '',
     api_endpoint: '',
     api_key: '',
-    base_model: ''
+    base_model: '',
+    max_tokens: '' as number | ''
   })
 
   const [activeTab, setActiveTab] = useState(initialTab)
@@ -126,7 +128,8 @@ function SettingsPage() {
     api_endpoint: '',
     api_key: '',
     has_api_key: false,
-    selected_models: []
+    selected_models: [],
+    max_tokens: ''
   })
 
   const [collectionEnabled, setCollectionEnabled] = useState(false)
@@ -401,7 +404,8 @@ function SettingsPage() {
           api_endpoint: '',
           api_key: '',
           has_api_key: false,
-          selected_models: []
+          selected_models: [],
+          max_tokens: ''
         })
         return
       }
@@ -418,7 +422,8 @@ function SettingsPage() {
           api_endpoint: '',
           api_key: '',
           has_api_key: false,
-          selected_models: []
+          selected_models: [],
+          max_tokens: ''
         })
         return
       }
@@ -461,7 +466,8 @@ function SettingsPage() {
         api_endpoint: (config.base_url || config.api_endpoint || (config as any).api_url || (config as any).base_url || providerData.base_url || providerData.api_endpoint || (providerData as any).api_url || (providerData as any).base_url || ''),
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
-        selected_models: selectedModels
+        selected_models: selectedModels,
+        max_tokens: config.max_tokens ?? ''
       })
       setSelectedProviderId(providerId)
 
@@ -611,6 +617,7 @@ function SettingsPage() {
         api_endpoint: normalizedBaseUrl || undefined,
         api_key: addProviderForm.api_key.trim() || undefined,
         selected_models: [],
+        max_tokens: addProviderForm.max_tokens === '' ? null : Number(addProviderForm.max_tokens),
         is_default: false
       })
 
@@ -654,11 +661,13 @@ function SettingsPage() {
         api_endpoint?: string
         api_key?: string
         selected_models?: string[]
+        max_tokens?: number | null
       } = {
         display_name: providerForm.display_name.trim() || undefined,
         icon: providerForm.icon.trim() || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        selected_models: providerForm.selected_models
+        selected_models: providerForm.selected_models,
+        max_tokens: providerForm.max_tokens === '' ? null : Number(providerForm.max_tokens)
       }
 
       if (providerForm.api_key.trim()) {
@@ -1069,6 +1078,16 @@ function SettingsPage() {
                           value={providerForm.api_key}
                           onChange={(e) => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
                           placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
+                        />
+                      </div>
+                      <div className={styles['form-group']}>
+                        <label>最大 Token 数 (可选)</label>
+                        <input
+                          type="number"
+                          value={providerForm.max_tokens}
+                          onChange={(e) => setProviderForm(prev => ({ ...prev, max_tokens: e.target.value === '' ? '' : Number(e.target.value) }))}
+                          placeholder="例如 4096"
+                          min="1"
                         />
                       </div>
                     </div>
@@ -1684,6 +1703,16 @@ function SettingsPage() {
                     value={addProviderForm.api_key}
                     onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
                     placeholder="输入供应商 API Key"
+                  />
+                </div>
+                <div className={styles['form-group']}>
+                  <label>最大 Token 数（可选）</label>
+                  <input
+                    type="number"
+                    value={addProviderForm.max_tokens}
+                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, max_tokens: e.target.value === '' ? '' : Number(e.target.value) }))}
+                    placeholder="例如 4096"
+                    min="1"
                   />
                 </div>
               </div>

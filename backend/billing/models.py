@@ -131,6 +131,7 @@ class ModelConfiguration(Base):
     api_key: Mapped[str] = mapped_column(Text, nullable=True)
     api_endpoint: Mapped[str] = mapped_column(String, nullable=True)
     selected_models: Mapped[str] = mapped_column(Text, nullable=True)
+    max_tokens: Mapped[int] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)

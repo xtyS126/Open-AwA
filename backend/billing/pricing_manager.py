@@ -476,6 +476,8 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN icon VARCHAR"))
         if "selected_models" not in columns:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN selected_models TEXT"))
+        if "max_tokens" not in columns:
+            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN max_tokens INTEGER"))
 
         self.db.commit()
 
