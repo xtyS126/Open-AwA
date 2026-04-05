@@ -104,6 +104,7 @@ class ModelConfigCreateRequest(BaseModel):
     api_key: Optional[str] = None
     api_endpoint: Optional[str] = None
     selected_models: List[str] = []
+    max_tokens: Optional[int] = None
     is_active: bool = True
     is_default: bool = False
     sort_order: int = 0
@@ -122,6 +123,7 @@ class ModelConfigUpdateRequest(BaseModel):
     api_key: Optional[str] = None
     api_endpoint: Optional[str] = None
     selected_models: Optional[List[str]] = None
+    max_tokens: Optional[int] = None
     is_active: Optional[bool] = None
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -153,6 +155,7 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "base_url": config.api_endpoint,
         "has_api_key": bool(config.api_key),
         "selected_models": selected_models,
+        "max_tokens": getattr(config, "max_tokens", None),
         "is_active": config.is_active,
         "is_default": config.is_default,
         "sort_order": config.sort_order,

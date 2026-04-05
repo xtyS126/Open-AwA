@@ -209,9 +209,11 @@ class ExecutionLayer:
             model = model or config.model
             api_key = config.api_key
             api_endpoint = config.api_endpoint
+            max_tokens = getattr(config, "max_tokens", None)
         else:
             api_key = None
             api_endpoint = None
+            max_tokens = None
 
         provider = (provider or "").strip().lower()
         model = (model or "").strip()
@@ -295,6 +297,7 @@ class ExecutionLayer:
             "model": model,
             "api_endpoint": api_endpoint,
             "api_key": api_key,
+            "max_tokens": max_tokens,
             "request_id": context.get("request_id") or get_request_id(),
             "client_version": context.get("client_version"),
         }
@@ -343,7 +346,7 @@ class ExecutionLayer:
             purpose="chat",
             model=resolved["model"],
             prompt=prompt,
-            max_tokens=1000,
+            max_tokens=resolved.get("max_tokens") or 1000,
             request_id=resolved.get("request_id"),
             client_version=resolved.get("client_version"),
             context=serialized_context,
@@ -563,7 +566,7 @@ class ExecutionLayer:
             purpose="chat",
             model=resolved["model"],
             prompt=prompt,
-            max_tokens=1000,
+            max_tokens=resolved.get("max_tokens") or 1000,
             request_id=resolved.get("request_id"),
             client_version=resolved.get("client_version"),
             context=serialized_context,
