@@ -218,7 +218,7 @@ def test_websocket_sends_chunked_messages_with_seq_and_checksum(monkeypatch):
         def close(self):
             return None
 
-    async def mock_process(user_input, context):
+    async def mock_process(self, user_input, context):
         return {
             "status": "completed",
             "response": "A" * 2500,
@@ -227,7 +227,7 @@ def test_websocket_sends_chunked_messages_with_seq_and_checksum(monkeypatch):
 
     monkeypatch.setattr(chat_route, "decode_access_token", lambda token: {"sub": "tester"})
     monkeypatch.setattr(chat_route, "SessionLocal", lambda: FakeSession())
-    monkeypatch.setattr(chat_route.agent, "process", mock_process)
+    monkeypatch.setattr(chat_route.AIAgent, "process", mock_process)
 
     with TestClient(app) as client:
         with client.websocket_connect(

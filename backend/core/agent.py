@@ -17,17 +17,18 @@ from memory.experience_manager import ExperienceManager
 from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
-from db.models import SessionLocal
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
 
+
+from sqlalchemy.orm import Session
 
 class AIAgent:
     """
     封装与AIAgent相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    def __init__(self):
+    def __init__(self, db_session: Session = None):
         """
         处理init相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -38,7 +39,7 @@ class AIAgent:
         self.feedback = FeedbackLayer()
         self.experience_extractor = ExperienceExtractor()
         
-        self._db_session = SessionLocal()
+        self._db_session = db_session
         self.skill_engine = SkillEngine(self._db_session)
         self.plugin_manager = PluginManager()
         self._closed = False
@@ -47,34 +48,6 @@ class AIAgent:
         self.plugin_results: List[Dict[str, Any]] = []
         
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
-    
-    def __del__(self):
-        """
-        在对象销毁阶段触发统一资源清理。
-        该方法会兜底调用 `close`，用于关闭数据库会话并标记代理实例已结束，避免解释器回收对象时遗留未释放资源。
-        """
-        try:
-            self.close()
-        except Exception:
-            pass
-    
-    def close(self):
-        """
-        处理close相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
-        if getattr(self, "_closed", False):
-            return
-        
-        db_session = getattr(self, "_db_session", None)
-        if db_session is not None:
-            try:
-                db_session.close()
-                logger.info("Database session closed")
-            except Exception as e:
-                logger.error(f"Error closing database session: {e}")
-        
-        self._closed = True
     
     def _handle_record_task_result(self, task: asyncio.Task) -> None:
         """
