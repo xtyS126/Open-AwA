@@ -25,8 +25,6 @@ from db.models import SessionLocal, User, get_db
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
-
-agent = AIAgent()
 active_connections: Dict[str, WebSocket] = {}
 WS_CHUNK_SIZE = 1024
 
@@ -110,6 +108,8 @@ async def chat(
         mode=message.mode,
     ).info("chat request received")
 
+    agent = AIAgent(db_session=db)
+
     if message.mode == "stream":
         async def event_generator():
             async for chunk in agent.process_stream(message.message, context):
@@ -175,6 +175,8 @@ async def confirm_operation(
         "idempotency_key": confirmation.step.get("idempotency_key") if isinstance(confirmation.step, dict) else None,
     }
 
+    agent = AIAgent(db_session=db)
+
     result = await agent.handle_confirmation(
         confirmed=confirmation.confirmed,
         step=confirmation.step,
@@ -228,6 +230,7 @@ async def websocket_endpoint(
         user = db.query(User).filter(User.username == username).first()
         if user is None:
             await websocket.close(code=4004, reason="User not found")
+            db.close()
             return
     except Exception as e:
         logger.bind(
@@ -239,14 +242,15 @@ async def websocket_endpoint(
             error_message=sanitize_for_logging(str(e)),
         ).error("database query failed")
         await websocket.close(code=4004, reason="Database error")
-        return
-    finally:
         db.close()
+        return
 
     await websocket.accept()
 
     user_id = user.id
     active_connections[session_id] = websocket
+    
+    agent = AIAgent(db_session=db)
 
     logger.bind(
         event="chat_ws_connected",
@@ -362,6 +366,7 @@ async def websocket_endpoint(
     finally:
         if session_id in active_connections:
             del active_connections[session_id]
+        db.close()
 
 
 @router.get(

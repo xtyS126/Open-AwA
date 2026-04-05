@@ -1,12 +1,12 @@
 # Tasks
 
-- [ ] Task 1: Fix Frontend Auto-Login & Request Interceptor Consistency
-  - [ ] SubTask 1.1: In `frontend/src/App.tsx`, wrap the `test_user_default` registration and auto-login logic in `if (import.meta.env.DEV)`.
-  - [ ] SubTask 1.2: In `frontend/src/shared/api/api.ts`, refactor `chatAPI.sendMessageStream` to generate and send an `X-Request-Id` header, log start/success/failure events, and align headers with `axios` requests.
+- [x] Task 1: Fix Frontend Auto-Login & Request Interceptor Consistency
+  - [x] SubTask 1.1: In `frontend/src/App.tsx`, wrap the `test_user_default` registration and auto-login logic in `if (import.meta.env.DEV)`.
+  - [x] SubTask 1.2: In `frontend/src/shared/api/api.ts`, refactor `chatAPI.sendMessageStream` to generate and send an `X-Request-Id` header, log start/success/failure events, and align headers with `axios` requests.
 
-- [ ] Task 2: Refactor Backend Database Models to use JSON
-  - [ ] SubTask 2.1: In `backend/db/models.py`, change structured `Text` fields to `JSON` type. This includes fields like `Skill.config`, `Skill.tags`, `Skill.dependencies`, `Plugin.config`, `Plugin.dependencies`, `ExperienceMemory.trigger_conditions`, `ExperienceMemory.experience_metadata`, `ConversationRecord.llm_input`, `ConversationRecord.llm_output`, and `BehaviorLog.details`.
-  - [ ] SubTask 2.2: Ensure backward compatibility or graceful serialization if needed (SQLite uses text under the hood for JSON, so SQLAlchemy's `JSON` type is sufficient).
+- [x] Task 2: Refactor Backend Database Models to use JSON
+  - [x] SubTask 2.1: In `backend/db/models.py`, change structured `Text` fields to `JSON` type. This includes fields like `Skill.config`, `Skill.tags`, `Skill.dependencies`, `Plugin.config`, `Plugin.dependencies`, `ExperienceMemory.trigger_conditions`, `ExperienceMemory.experience_metadata`, `ConversationRecord.llm_input`, `ConversationRecord.llm_output`, and `BehaviorLog.details`.
+  - [x] SubTask 2.2: Ensure backward compatibility or graceful serialization if needed (SQLite uses text under the hood for JSON, so SQLAlchemy's `JSON` type is sufficient).
 
 - [ ] Task 3: Eliminate Global Singleton AIAgent and Long-lived DB Session
   - [ ] SubTask 3.1: In `backend/core/agent.py`, modify `AIAgent.__init__` to accept `db_session` as a parameter instead of creating `SessionLocal()` internally. Remove the `close()` / `__del__` logic since the caller should manage the session lifecycle.
