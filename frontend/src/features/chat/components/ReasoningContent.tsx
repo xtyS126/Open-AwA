@@ -27,12 +27,14 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
   }
 
   const [isExpanded, setIsExpanded] = useState<boolean>(getInitialState)
+  const [userManuallyTouched, setUserManuallyTouched] = useState<boolean>(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const prevStreamingRef = useRef(isStreaming)
 
   const toggleExpand = useCallback(() => {
     const newState = !isExpanded
     setIsExpanded(newState)
+    setUserManuallyTouched(true)
     try {
       localStorage.setItem(`reasoning_expanded_${messageId}`, JSON.stringify(newState))
     } catch (e) {
@@ -43,15 +45,13 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
   // Handle auto-collapse when streaming ends
   useEffect(() => {
     if (prevStreamingRef.current === true && isStreaming === false) {
-      // Stream just finished, auto collapse if user didn't manually override during this exact tick
-      // We check if the user manually saved a preference. If not, collapse.
-      const saved = localStorage.getItem(`reasoning_expanded_${messageId}`)
-      if (saved === null) {
+      // Stream just finished, auto collapse if user didn't manually override
+      if (!userManuallyTouched) {
         setIsExpanded(false)
       }
     }
     prevStreamingRef.current = isStreaming
-  }, [isStreaming, messageId])
+  }, [isStreaming, userManuallyTouched])
 
   // Handle auto-scroll to bottom when streaming
   useEffect(() => {
