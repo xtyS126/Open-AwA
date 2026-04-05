@@ -145,11 +145,14 @@ describe('ChatPage Model Selector', () => {
 
       render(<ChatPage />)
 
-      const select = await screen.findByRole('combobox')
+      const selects = await screen.findAllByRole('combobox')
+      const modelSelect = selects[1]
+      
       await waitFor(() => {
         expect(screen.getByRole('option', { name: 'Anthropic - claude-3.5-sonnet' })).toBeInTheDocument()
       })
-      fireEvent.change(select, { target: { value: 'anthropic:claude-3.5-sonnet' } })
+      
+      fireEvent.change(modelSelect, { target: { value: 'anthropic:claude-3.5-sonnet' } })
 
       await waitFor(() => {
         expect(localStorage.getItem('selected_model')).toBe('anthropic:claude-3.5-sonnet')

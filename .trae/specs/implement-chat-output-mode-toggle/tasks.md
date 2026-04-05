@@ -1,13 +1,13 @@
 # Tasks
 
-- [ ] 任务1：后端流式请求基础设施支持
-  - [ ] 子任务1.1：在 `backend/api/schemas.py` 中扩展 `ChatMessage`，支持 `mode` 字段（默认为 `stream`）。
-  - [ ] 子任务1.2：在 `backend/core/model_service.py` 补充 `send_stream_with_retries` 等底层流式请求能力，处理 `httpx` 流式连接。
-  - [ ] 子任务1.3：在 `backend/core/executor.py` 中新增或改造 LLM 调用方法（如 `_call_llm_api_stream`），使其支持解析上游模型并 yield 文本片段与思维链片段。
+- [x] 任务1：后端流式请求基础设施支持
+  - [x] 子任务1.1：在 `backend/api/schemas.py` 中扩展 `ChatMessage`，支持 `mode` 字段（默认为 `stream`）。
+  - [x] 子任务1.2：在 `backend/core/model_service.py` 补充 `send_stream_with_retries` 等底层流式请求能力，处理 `httpx` 流式连接。
+  - [x] 子任务1.3：在 `backend/core/executor.py` 中新增或改造 LLM 调用方法（如 `_call_llm_api_stream`），使其支持解析上游模型并 yield 文本片段与思维链片段。
 
-- [ ] 任务2：后端 Agent 与路由层适配
-  - [ ] 子任务2.1：改造 `backend/core/agent.py` 或补充专用的流式方法（如 `process_stream`），在 `mode=stream` 时绕过或适配复杂规划逻辑，直接 yield 数据块。
-  - [ ] 子任务2.2：在 `backend/api/routes/chat.py` 中适配 `/chat` 接口：根据 `mode` 判定，若为流式请求则返回 `StreamingResponse` 并构造规范的 SSE 格式消息。
+- [x] 任务2：后端 Agent 与路由层适配
+  - [x] 子任务2.1：改造 `backend/core/agent.py` 或补充专用的流式方法（如 `process_stream`），在 `mode=stream` 时绕过或适配复杂规划逻辑，直接 yield 数据块。
+  - [x] 子任务2.2：在 `backend/api/routes/chat.py` 中适配 `/chat` 接口：根据 `mode` 判定，若为流式请求则返回 `StreamingResponse` 并构造规范的 SSE 格式消息。
 
 - [ ] 任务3：前端 API 与状态层支持
   - [ ] 子任务3.1：在 `frontend/src/shared/api/api.ts` 扩展 `sendMessage` 或新增 `sendMessageStream`，实现基于 Fetch API (或 EventSource) 对 SSE 格式的请求与事件监听。

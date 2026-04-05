@@ -5,6 +5,7 @@
 
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Dict
 import json
@@ -74,7 +75,7 @@ async def _send_chunked_websocket_message(
     record_websocket_message_metric(message_type, "sent")
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("")
 async def chat(
     request: Request,
     message: ChatMessage,
@@ -83,7 +84,7 @@ async def chat(
 ):
     """
     处理chat相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    如果请求 mode='stream'，则返回 SSE。否则返回 JSON。
     """
     context = {
         "user_id": current_user.id,
@@ -105,7 +106,17 @@ async def chat(
         session_id=message.session_id,
         provider=message.provider,
         model=message.model,
+        mode=message.mode,
     ).info("chat request received")
+
+    if message.mode == "stream":
+        async def event_generator():
+            async for chunk in agent.process_stream(message.message, context):
+                # Format as SSE
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+            
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     result = await agent.process(message.message, context)
 

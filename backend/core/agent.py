@@ -279,6 +279,46 @@ class AIAgent:
             logger.error(f"Error getting available plugins: {e}")
             return []
     
+    async def process_stream(self, user_input: str, context: Dict[str, Any]):
+        """
+        流式处理用户输入，绕过复杂规划逻辑，直接调用大模型并实时 yield 数据块。
+        """
+        logger.info(f"Processing user input (stream): {user_input}")
+
+        if "message" not in context:
+            context["message"] = user_input
+            
+        full_content = ""
+        full_reasoning = ""
+        
+        async for chunk in self.executor._call_llm_api_stream(user_input, context):
+            if "error" in chunk:
+                yield {
+                    "type": "error",
+                    "error": chunk["error"]
+                }
+                return
+                
+            content = chunk.get("content", "")
+            reasoning = chunk.get("reasoning_content", "")
+            
+            if content: full_content += content
+            if reasoning: full_reasoning += reasoning
+            
+            yield {
+                "type": "chunk",
+                "content": content,
+                "reasoning_content": reasoning
+            }
+            
+        # Update memory after stream completes
+        if full_content:
+            await self.feedback.update_memory(
+                user_input=user_input,
+                response=full_content,
+                context=context
+            )
+
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理process相关逻辑，并为调用方返回对应结果。
