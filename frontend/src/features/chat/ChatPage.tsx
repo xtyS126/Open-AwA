@@ -17,13 +17,42 @@ function ChatPage() {
   const [retryCount, setRetryCount] = useState(0)
   const [saveSuccess, setSaveSuccess] = useState(false)
 
+  // Buffer references for background throttling
+  const bufferRef = useRef({
+    content: '',
+    reasoning: '',
+    lastUpdateTime: Date.now()
+  })
+
+  const flushBuffer = useCallback(() => {
+    if (bufferRef.current.content || bufferRef.current.reasoning) {
+      updateLastMessage(bufferRef.current.content, bufferRef.current.reasoning)
+      bufferRef.current.content = ''
+      bufferRef.current.reasoning = ''
+      bufferRef.current.lastUpdateTime = Date.now()
+    }
+  }, [updateLastMessage])
+
   const scrollToBottom = useCallback(() => {
+    if (document.hidden) return
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
 
   useEffect(() => {
     scrollToBottom()
   }, [messages, scrollToBottom])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        flushBuffer()
+        // Adding a slight delay to ensure DOM is updated before scrolling
+        setTimeout(scrollToBottom, 50)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [flushBuffer, scrollToBottom])
 
   const loadConfigurations = useCallback(async () => {
     setLoadingModels(true)
@@ -132,6 +161,8 @@ function ChatPage() {
 
       if (outputMode === 'stream') {
         let isFirstChunk = true
+        bufferRef.current = { content: '', reasoning: '', lastUpdateTime: Date.now() }
+
         await chatAPI.sendMessageStream(
           userMessage,
           sessionId,
@@ -142,11 +173,35 @@ function ChatPage() {
               setLoading(false)
               addMessage('assistant', content, reasoning)
               isFirstChunk = false
+              bufferRef.current.lastUpdateTime = Date.now()
             } else {
-              updateLastMessage(content, reasoning)
+              if (document.hidden) {
+                // Background mode: throttle updates to prevent massive DOM manipulation
+                bufferRef.current.content += content
+                bufferRef.current.reasoning += reasoning
+                const now = Date.now()
+                if (now - bufferRef.current.lastUpdateTime > 1000) {
+                  flushBuffer()
+                }
+              } else {
+                // Foreground mode: instant update
+                // If there's any remaining buffer, flush it with the new chunk
+                if (bufferRef.current.content || bufferRef.current.reasoning) {
+                  updateLastMessage(
+                    bufferRef.current.content + content,
+                    bufferRef.current.reasoning + reasoning
+                  )
+                  bufferRef.current.content = ''
+                  bufferRef.current.reasoning = ''
+                  bufferRef.current.lastUpdateTime = Date.now()
+                } else {
+                  updateLastMessage(content, reasoning)
+                }
+              }
             }
           },
           (error) => {
+            flushBuffer()
             appLogger.error({
               event: 'chat_stream_error',
               module: 'chat_page',
@@ -164,6 +219,8 @@ function ChatPage() {
             }
           }
         )
+        // Stream completed successfully, flush any remaining buffered data
+        flushBuffer()
       } else {
         const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model, 'direct')
         const assistantText = response.data.response
