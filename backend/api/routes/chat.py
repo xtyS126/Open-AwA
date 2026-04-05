@@ -15,6 +15,8 @@ from loguru import logger
 
 from api.dependencies import get_current_user
 from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest
+from api.services.chat_protocol import send_chunked_websocket_message, build_sse_response, handle_websocket_session
+from api.services.ws_manager import ws_manager
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
 from core.metrics import record_websocket_message_metric
 from core.model_service import CLIENT_VERSION_HEADER, build_standard_error
@@ -24,54 +26,6 @@ from db.models import SessionLocal, User, get_db
 
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
-
-active_connections: Dict[str, WebSocket] = {}
-WS_CHUNK_SIZE = 1024
-
-
-def _build_chunk_checksum(payload_text: str) -> str:
-    """
-    为完整消息生成校验值，客户端可据此校验分段重组结果。
-    """
-
-    return hashlib.sha256(payload_text.encode("utf-8")).hexdigest()
-
-
-async def _send_chunked_websocket_message(
-    websocket: WebSocket,
-    message_type: str,
-    payload: Dict,
-    request_id: str,
-) -> None:
-    """
-    先发送分段消息，再发送兼容旧协议的完整消息。
-    这样既满足新协议对 seq/checksum 的要求，也尽量不破坏现有前端行为。
-    """
-
-    payload_text = json.dumps(payload, ensure_ascii=False, default=str)
-    checksum = _build_chunk_checksum(payload_text)
-    chunks = [payload_text[index:index + WS_CHUNK_SIZE] for index in range(0, len(payload_text), WS_CHUNK_SIZE)] or [""]
-
-    for seq, chunk in enumerate(chunks, start=1):
-        await websocket.send_json(
-            {
-                "type": f"{message_type}_chunk",
-                "request_id": request_id,
-                "seq": seq,
-                "total": len(chunks),
-                "checksum": checksum,
-                "chunk": chunk,
-            }
-        )
-        record_websocket_message_metric(f"{message_type}_chunk", "sent")
-
-    final_payload = dict(payload)
-    final_payload["type"] = message_type
-    final_payload["request_id"] = request_id
-    final_payload["checksum"] = checksum
-    final_payload["chunks_total"] = len(chunks)
-    await websocket.send_json(final_payload)
-    record_websocket_message_metric(message_type, "sent")
 
 
 @router.post("", response_model=Union[ChatResponse, str])
@@ -111,13 +65,7 @@ async def chat(
     agent = AIAgent(db_session=db)
 
     if message.mode == "stream":
-        async def event_generator():
-            async for chunk in agent.process_stream(message.message, context):
-                # Format as SSE
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
-            
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return await build_sse_response(agent.process_stream(message.message, context))
 
     result = await agent.process(message.message, context)
 
@@ -245,13 +193,10 @@ async def websocket_endpoint(
         db.close()
         return
 
-    await websocket.accept()
+    await ws_manager.connect(session_id, websocket)
 
     user_id = user.id
-    active_connections[session_id] = websocket
     
-    agent = AIAgent(db_session=db)
-
     logger.bind(
         event="chat_ws_connected",
         module="chat",
@@ -261,112 +206,15 @@ async def websocket_endpoint(
         user_id=user_id,
     ).info("websocket connected")
 
-    try:
-        while True:
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-
-            if message_data.get("type") == "message":
-                record_websocket_message_metric("message", "received")
-                message_request_id = str(
-                    message_data.get("request_id") or connection_request_id
-                ).strip() or connection_request_id
-                context = {
-                    "session_id": session_id,
-                    "user_id": user_id,
-                    "username": username,
-                    "request_id": message_request_id,
-                    "client_version": client_version,
-                    "idempotency_key": message_data.get("idempotency_key"),
-                }
-
-                result = await agent.process(message_data.get("content", ""), context)
-
-                await _send_chunked_websocket_message(
-                    websocket,
-                    "response",
-                    {
-                        "status": result.get("status"),
-                        "content": result.get("response", ""),
-                        "results": result.get("results", []),
-                    },
-                    message_request_id,
-                )
-
-            elif message_data.get("type") == "confirm":
-                record_websocket_message_metric("confirm", "received")
-                confirmed = message_data.get("confirmed", False)
-                step = message_data.get("step")
-                message_request_id = str(
-                    message_data.get("request_id") or connection_request_id
-                ).strip() or connection_request_id
-
-                context = {
-                    "session_id": session_id,
-                    "user_id": user_id,
-                    "username": username,
-                    "request_id": message_request_id,
-                    "client_version": client_version,
-                    "idempotency_key": message_data.get("idempotency_key")
-                    or (step.get("idempotency_key") if isinstance(step, dict) else None),
-                }
-                result = await agent.handle_confirmation(confirmed, step, context)
-
-                await _send_chunked_websocket_message(
-                    websocket,
-                    "confirmation_result",
-                    {
-                        "result": result,
-                    },
-                    message_request_id,
-                )
-
-    except WebSocketDisconnect:
-        if session_id in active_connections:
-            del active_connections[session_id]
-        logger.bind(
-            event="chat_ws_disconnected",
-            module="chat",
-            action="websocket",
-            status="disconnected",
-            session_id=session_id,
-            user_id=user_id,
-        ).info("websocket disconnected")
-    except Exception as exc:
-        if session_id in active_connections:
-            del active_connections[session_id]
-        logger.bind(
-            event="chat_ws_error",
-            module="chat",
-            action="websocket",
-            status="failure",
-            session_id=session_id,
-            user_id=user_id,
-            error_type=type(exc).__name__,
-            error_message=sanitize_for_logging(str(exc)),
-        ).exception("websocket failed")
-        record_websocket_message_metric("websocket", "error")
-        error_request_id = connection_request_id
-        try:
-            await _send_chunked_websocket_message(
-                websocket,
-                "error",
-                {
-                    "error": build_standard_error(
-                        "websocket_internal_error",
-                        "WebSocket 内部错误",
-                        request_id=error_request_id,
-                        details={"reason": str(exc), "session_id": session_id},
-                    )
-                },
-                error_request_id,
-            )
-        finally:
-            await websocket.close(code=4005, reason="Internal server error")
-    finally:
-        if session_id in active_connections:
-            del active_connections[session_id]
-        db.close()
+    await handle_websocket_session(
+        websocket=websocket,
+        session_id=session_id,
+        user_id=user_id,
+        username=username,
+        client_version=client_version,
+        connection_request_id=connection_request_id,
+        db=db,
+    )
 
 
 @router.get(
