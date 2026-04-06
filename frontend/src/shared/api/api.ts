@@ -622,6 +622,58 @@ export interface WeixinQrExitResponse {
   cleared_sessions: number
 }
 
+export interface WeixinSendMessageRequest {
+  to_user_id: string
+  text: string
+  account_id?: string
+  context_token?: string
+}
+
+export interface WeixinSendMessageResponse {
+  success: boolean
+  message_id?: string
+  error?: string | null
+}
+
+export interface WeixinTaskCreateRequest {
+  task_type: string
+  params: Record<string, unknown>
+  account_id?: string
+}
+
+export interface WeixinTaskCreateResponse {
+  task_id: string
+  status: string
+}
+
+export interface WeixinTaskStatusResponse {
+  task_id: string
+  status: string
+  progress: number
+  result?: Record<string, unknown> | null
+  error?: string | null
+}
+
+export interface WeixinMonitorStatus {
+  account_id: string
+  state: string
+  running: boolean
+  paused: boolean
+  consecutive_failures: number
+  total_messages: number
+  last_message_at?: number | null
+  last_error?: string | null
+  last_error_at?: number | null
+  started_at?: number | null
+  circuit_breaker_state: string
+  session_paused: boolean
+  session_remaining_seconds: number
+}
+
+export interface WeixinMonitorStatusResponse {
+  monitors: Record<string, WeixinMonitorStatus | Record<string, never>>
+}
+
 export const weixinAPI = {
   getConfig: () => api.get<WeixinConfig>('/skills/weixin/config'),
   saveConfig: (config: WeixinConfig) => api.post('/skills/weixin/config', config),
@@ -629,6 +681,20 @@ export const weixinAPI = {
   startQrLogin: (payload: WeixinQrStartRequest = {}) => api.post<WeixinQrStartResponse>('/skills/weixin/qr/start', payload),
   waitQrLogin: (payload: WeixinQrWaitRequest) => api.post<WeixinQrWaitResponse>('/skills/weixin/qr/wait', payload),
   exitQrLogin: (payload: WeixinQrExitRequest) => api.post<WeixinQrExitResponse>('/skills/weixin/qr/exit', payload),
+  sendMessage: (payload: WeixinSendMessageRequest) =>
+    api.post<WeixinSendMessageResponse>('/skills/weixin/message', payload),
+  createTask: (payload: WeixinTaskCreateRequest) =>
+    api.post<WeixinTaskCreateResponse>('/skills/weixin/task', payload),
+  getTaskStatus: (taskId: string) =>
+    api.get<WeixinTaskStatusResponse>(`/skills/weixin/task/${taskId}`),
+  startMonitor: (payload: { account_id?: string } = {}) =>
+    api.post<{ success: boolean; status: WeixinMonitorStatus }>('/skills/weixin/monitor/start', payload),
+  stopMonitor: (payload: { account_id?: string } = {}) =>
+    api.post<{ success: boolean }>('/skills/weixin/monitor/stop', payload),
+  getMonitorStatus: (accountId?: string) =>
+    api.get<WeixinMonitorStatusResponse>('/skills/weixin/monitor/status', {
+      params: accountId ? { account_id: accountId } : {},
+    }),
 }
 
 export default api
