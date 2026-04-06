@@ -32,8 +32,8 @@ from .plugin_validator import PluginValidator
 
 class PluginManager:
     """
-    封装与PluginManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件管理器，负责插件的发现、加载、校验、沙箱隔离和生命周期管理。
+    支持从本地文件、远程 URL 和 NPM 源注册插件，提供权限控制和灰度发布能力。
     """
     NPM_PACKAGE_PATTERN = re.compile(
         r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
@@ -96,8 +96,11 @@ class PluginManager:
 
     def __init__(self, plugins_dir: Optional[str] = None, sandbox_defaults: Optional[Dict[str, Any]] = None):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化插件管理器。
+        
+        Args:
+            plugins_dir: 插件目录路径，默认为项目根目录下的 plugins 文件夹。
+            sandbox_defaults: 沙箱默认资源配置。
         """
         self.plugins_dir = plugins_dir or self._get_default_plugins_dir()
         self.loader = PluginLoader()
@@ -121,8 +124,10 @@ class PluginManager:
 
     def _get_default_plugins_dir(self) -> str:
         """
-        处理get、default、plugins、dir相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        获取默认的插件目录路径，若不存在则自动创建。
+        
+        Returns:
+            插件目录的绝对路径。
         """
         current_dir = os.path.dirname(os.path.abspath(__file__))
         repo_root_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
@@ -134,8 +139,13 @@ class PluginManager:
 
     def _normalize_resource_limits(self, resource_limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        处理normalize、resource、limits相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        规范化资源配置参数。
+        
+        Args:
+            resource_limits: 原始资源配置。
+            
+        Returns:
+            规范化后的资源配置字典。
         """
         normalized = {
             "timeout": 30,
@@ -161,8 +171,13 @@ class PluginManager:
 
     def _create_plugin_sandbox(self, resource_limits: Optional[Dict[str, Any]] = None) -> PluginSandbox:
         """
-        处理create、plugin、sandbox相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        创建插件沙箱实例。
+        
+        Args:
+            resource_limits: 可选的资源限制配置。
+            
+        Returns:
+            配置好的插件沙箱实例。
         """
         merged = dict(self._sandbox_defaults)
         if resource_limits:
@@ -185,8 +200,13 @@ class PluginManager:
 
     def _collect_static_risk_tokens(self, tree: ast.AST) -> Set[str]:
         """
-        处理collect、static、risk、tokens相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从 AST 中收集静态风险标记，包括导入名、调用名等。
+        
+        Args:
+            tree: Python 源码的抽象语法树。
+            
+        Returns:
+            风险标记集合。
         """
         tokens: Set[str] = set()
 
@@ -207,8 +227,13 @@ class PluginManager:
 
     def _match_risk_patterns(self, tokens: Set[str]) -> Set[str]:
         """
-        处理match、risk、patterns相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        将收集到的标记与危险模式进行匹配。
+        
+        Args:
+            tokens: 风险标记集合。
+            
+        Returns:
+            匹配到的危险模式集合。
         """
         matches: Set[str] = set()
         for token in tokens:
@@ -229,8 +254,13 @@ class PluginManager:
 
     def _derive_requested_permissions(self, matched_patterns: Set[str]) -> Set[str]:
         """
-        处理derive、requested、permissions相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        根据匹配的危险模式推导所需的权限。
+        
+        Args:
+            matched_patterns: 匹配到的危险模式集合。
+            
+        Returns:
+            所需权限集合。
         """
         requested: Set[str] = set()
         for permission, patterns in self.PERMISSION_TO_PATTERNS.items():
@@ -242,8 +272,13 @@ class PluginManager:
 
     def _run_static_security_scan(self, plugin_path: str) -> Dict[str, Any]:
         """
-        处理run、static、security、scan相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        对插件源码进行静态安全扫描。
+        
+        Args:
+            plugin_path: 插件文件路径。
+            
+        Returns:
+            包含扫描结果的字典，包括是否阻止、原因、匹配模式和所需权限。
         """
         try:
             with open(plugin_path, "r", encoding="utf-8") as plugin_file:
@@ -269,8 +304,14 @@ class PluginManager:
 
     def authorize_plugin_permissions(self, plugin_name: str, permissions: List[str]) -> Dict[str, Any]:
         """
-        为plugin、permissions相关操作授予所需权限。
-        授权结果不仅影响当前操作，也会改变后续可用能力的边界。
+        为插件授权指定权限。
+        
+        Args:
+            plugin_name: 插件名称。
+            permissions: 权限列表。
+            
+        Returns:
+            授权结果，包含已授权和缺失的权限信息。
         """
         if plugin_name not in self.plugin_metadata:
             raise ValueError(f"Plugin '{plugin_name}' not found")
@@ -299,8 +340,14 @@ class PluginManager:
 
     def revoke_plugin_permissions(self, plugin_name: str, permissions: List[str]) -> Dict[str, Any]:
         """
-        撤销plugin、permissions相关操作已授予的权限或访问能力。
-        此类逻辑主要用于收缩权限面，以确保运行时行为符合安全约束。
+        撤销插件的指定权限。
+        
+        Args:
+            plugin_name: 插件名称。
+            permissions: 要撤销的权限列表。
+            
+        Returns:
+            撤销结果，包含当前权限状态。
         """
         if plugin_name not in self.plugin_metadata:
             raise ValueError(f"Plugin '{plugin_name}' not found")
@@ -330,8 +377,13 @@ class PluginManager:
 
     def get_plugin_permission_status(self, plugin_name: str) -> Dict[str, Any]:
         """
-        获取plugin、permission、status相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取插件的权限状态。
+        
+        Args:
+            plugin_name: 插件名称。
+            
+        Returns:
+            权限状态信息，包含所需、已授权和缺失的权限。
         """
         if plugin_name not in self.plugin_metadata:
             raise ValueError(f"Plugin '{plugin_name}' not found")
@@ -349,8 +401,13 @@ class PluginManager:
 
     def _enforce_runtime_permissions(self, plugin_name: str) -> Optional[Dict[str, Any]]:
         """
-        处理enforce、runtime、permissions相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        检查并强制执行插件的运行时权限。
+        
+        Args:
+            plugin_name: 插件名称。
+            
+        Returns:
+            若权限不足则返回错误信息，否则返回 None。
         """
         status = self.get_plugin_permission_status(plugin_name)
         if status["missing_permissions"]:
@@ -365,8 +422,14 @@ class PluginManager:
 
     def _safe_extract_zip_archive(self, archive: zipfile.ZipFile, target_dir: str) -> None:
         """
-        处理safe、extract、zip、archive相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        安全解压 ZIP 压缩包，防止路径遍历攻击。
+        
+        Args:
+            archive: ZIP 文件对象。
+            target_dir: 目标解压目录。
+            
+        Raises:
+            ValueError: 若检测到非法路径结构。
         """
         target_dir_abs = os.path.abspath(target_dir)
         os.makedirs(target_dir_abs, exist_ok=True)
@@ -388,24 +451,35 @@ class PluginManager:
 
     def _safe_extract_zip_file(self, zip_path: str, target_dir: str) -> None:
         """
-        处理safe、extract、zip、file相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从文件路径安全解压 ZIP 文件。
+        
+        Args:
+            zip_path: ZIP 文件路径。
+            target_dir: 目标解压目录。
         """
         with zipfile.ZipFile(zip_path, "r") as archive:
             self._safe_extract_zip_archive(archive, target_dir)
 
     def _safe_extract_zip_bytes(self, zip_content: bytes, target_dir: str) -> None:
         """
-        处理safe、extract、zip、bytes相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从字节数据安全解压 ZIP 内容。
+        
+        Args:
+            zip_content: ZIP 文件的字节数据。
+            target_dir: 目标解压目录。
         """
         with zipfile.ZipFile(io.BytesIO(zip_content), "r") as archive:
             self._safe_extract_zip_archive(archive, target_dir)
 
     def _create_source_extract_dir(self, source_name: str) -> str:
         """
-        处理create、source、extract、dir相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        创建用于解压插件的临时目录。
+        
+        Args:
+            source_name: 源文件名称。
+            
+        Returns:
+            临时目录路径。
         """
         base_name = os.path.splitext(os.path.basename(source_name))[0] or "plugin"
         safe_base = re.sub(r"[^a-zA-Z0-9_.-]", "_", base_name)
@@ -414,8 +488,13 @@ class PluginManager:
 
     def _discover_plugins_in_directory(self, search_dir: str) -> List[Dict[str, Any]]:
         """
-        处理discover、plugins、in、directory相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        在指定目录中搜索并发现插件。
+        
+        Args:
+            search_dir: 搜索目录路径。
+            
+        Returns:
+            发现的插件信息列表。
         """
         discovered_plugins: List[Dict[str, Any]] = []
 
@@ -442,8 +521,10 @@ class PluginManager:
 
     def discover_plugins(self) -> List[Dict[str, Any]]:
         """
-        处理discover、plugins相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        在插件目录中发现所有可用插件。
+        
+        Returns:
+            发现的插件信息列表。
         """
         logger.info(f"Discovering plugins in directory: {self.plugins_dir}")
 
@@ -461,8 +542,18 @@ class PluginManager:
         resource_limits: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        处理register、plugin、from、local、zip相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从本地 ZIP 文件注册插件。
+        
+        Args:
+            zip_path: ZIP 文件路径。
+            resource_limits: 可选的资源限制配置。
+            
+        Returns:
+            注册的插件信息列表。
+            
+        Raises:
+            FileNotFoundError: ZIP 文件不存在。
+            ValueError: 文件不是 ZIP 格式。
         """
         if not os.path.exists(zip_path):
             raise FileNotFoundError(f"Zip path does not exist: {zip_path}")
@@ -492,8 +583,18 @@ class PluginManager:
         timeout: int = 30,
     ) -> List[Dict[str, Any]]:
         """
-        处理register、plugin、from、url相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从远程 URL 下载并注册插件。
+        
+        Args:
+            source_url: 远程 ZIP 文件的 URL。
+            resource_limits: 可选的资源限制配置。
+            timeout: 下载超时时间（秒）。
+            
+        Returns:
+            注册的插件信息列表。
+            
+        Raises:
+            ValueError: URL 格式无效或内容为空。
         """
         parsed = urllib.parse.urlparse(source_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -525,15 +626,25 @@ class PluginManager:
 
     def validate_npm_package_name(self, package_name: str) -> bool:
         """
-        校验npm、package、name相关输入、规则或结构是否合法。
-        返回结果通常用于阻止非法输入继续流入后续链路。
+        校验 NPM 包名格式是否合法。
+        
+        Args:
+            package_name: 包名。
+            
+        Returns:
+            合法返回 True，否则返回 False。
         """
         return bool(self.NPM_PACKAGE_PATTERN.fullmatch(package_name))
 
     def validate_npm_version(self, version: str) -> bool:
         """
-        校验npm、version相关输入、规则或结构是否合法。
-        返回结果通常用于阻止非法输入继续流入后续链路。
+        校验 NPM 版本号格式是否合法。
+        
+        Args:
+            version: 版本号字符串。
+            
+        Returns:
+            合法返回 True，否则返回 False。
         """
         return bool(self.NPM_VERSION_PATTERN.fullmatch(version))
 

@@ -15,8 +15,8 @@ from db.models import ConversationRecord, SessionLocal
 
 class ConversationRecorder:
     """
-    封装与ConversationRecorder相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    对话记录器，负责异步批量记录用户与 AI 的对话数据。
+    支持按用户控制数据采集开关，使用队列缓冲和批量写入优化性能。
     """
     def __init__(
         self,
@@ -25,8 +25,12 @@ class ConversationRecorder:
         queue_maxsize: int = 2000,
     ):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化对话记录器。
+        
+        Args:
+            batch_size: 批量写入的记录数量阈值。
+            flush_interval: 刷新间隔时间（秒）。
+            queue_maxsize: 队列最大容量。
         """
         self.batch_size = batch_size
         self.flush_interval = flush_interval
@@ -38,8 +42,7 @@ class ConversationRecorder:
 
     async def start(self) -> None:
         """
-        处理start相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        启动后台工作线程，开始处理队列中的记录。
         """
         if self._worker_task and not self._worker_task.done():
             return
@@ -48,8 +51,7 @@ class ConversationRecorder:
 
     async def stop(self) -> None:
         """
-        处理stop相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        停止后台工作线程，等待队列中剩余记录写入完成。
         """
         if not self._worker_task:
             return
@@ -59,8 +61,15 @@ class ConversationRecorder:
 
     def set_collection_enabled(self, enabled: bool, current_user: Any = None, user_id: Optional[str] = None) -> bool:
         """
-        设置collection、enabled相关配置或运行状态。
-        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+        设置用户的数据采集开关。
+        
+        Args:
+            enabled: 是否启用采集。
+            current_user: 当前用户对象。
+            user_id: 用户 ID。
+            
+        Returns:
+            设置成功返回 True，无法识别用户返回 False。
         """
         resolved_user_id = self._resolve_user_id(current_user=current_user, user_id=user_id)
         if not resolved_user_id:
@@ -70,8 +79,14 @@ class ConversationRecorder:
 
     def is_collection_enabled(self, current_user: Any = None, user_id: Optional[str] = None) -> bool:
         """
-        处理is、collection、enabled相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        检查用户是否启用了数据采集。
+        
+        Args:
+            current_user: 当前用户对象。
+            user_id: 用户 ID。
+            
+        Returns:
+            启用返回 True，否则返回 False。
         """
         resolved_user_id = self._resolve_user_id(current_user=current_user, user_id=user_id)
         if not resolved_user_id:
@@ -98,8 +113,27 @@ class ConversationRecorder:
         timestamp: Optional[datetime] = None,
     ) -> bool:
         """
-        处理record相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        记录一条对话数据到队列。
+        
+        Args:
+            node_type: 节点类型。
+            session_id: 会话 ID。
+            user_message: 用户消息内容。
+            current_user: 当前用户对象。
+            user_id: 用户 ID。
+            provider: 供应商名称。
+            model: 模型名称。
+            llm_input: LLM 输入数据。
+            llm_output: LLM 输出数据。
+            llm_tokens_used: 使用的 token 数量。
+            execution_duration_ms: 执行耗时（毫秒）。
+            status: 执行状态。
+            error_message: 错误信息。
+            metadata: 元数据。
+            timestamp: 时间戳。
+            
+        Returns:
+            记录成功返回 True，否则返回 False。
         """
         resolved_user_id = self._resolve_user_id(current_user=current_user, user_id=user_id)
         if not resolved_user_id:
@@ -141,8 +175,10 @@ class ConversationRecorder:
 
     def get_runtime_stats(self) -> Dict[str, int]:
         """
-        获取runtime、stats相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取运行时统计信息。
+        
+        Returns:
+            包含队列大小、丢弃数量等统计数据的字典。
         """
         return {
             "queue_size": self.queue.qsize(),
@@ -153,8 +189,7 @@ class ConversationRecorder:
 
     async def _worker_loop(self) -> None:
         """
-        处理worker、loop相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        后台工作循环，持续从队列获取记录并批量写入数据库。
         """
         while not self._shutdown_event.is_set():
             batch = await self._gather_batch()
@@ -178,8 +213,10 @@ class ConversationRecorder:
 
     async def _gather_batch(self) -> list[Dict[str, Any]]:
         """
-        处理gather、batch相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从队列中收集一批记录。
+        
+        Returns:
+            记录字典列表。
         """
         batch: list[Dict[str, Any]] = []
         try:
@@ -197,8 +234,10 @@ class ConversationRecorder:
 
     async def _flush_batch(self, batch: list[Dict[str, Any]]) -> None:
         """
-        处理flush、batch相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        异步批量写入记录到数据库。
+        
+        Args:
+            batch: 记录字典列表。
         """
         try:
             # 将同步 ORM 提交下沉到线程中，避免在事件循环线程里直接执行 commit。
@@ -225,8 +264,14 @@ class ConversationRecorder:
 
     def _resolve_user_id(self, current_user: Any = None, user_id: Optional[str] = None) -> Optional[str]:
         """
-        处理resolve、user、id相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从用户对象或参数中解析用户 ID。
+        
+        Args:
+            current_user: 当前用户对象。
+            user_id: 用户 ID。
+            
+        Returns:
+            用户 ID，无法解析时返回 None。
         """
         if user_id:
             return user_id
@@ -239,8 +284,13 @@ class ConversationRecorder:
 
     def _serialize_optional(self, value: Any) -> Optional[str]:
         """
-        处理serialize、optional相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        将可选值序列化为 JSON 字符串。
+        
+        Args:
+            value: 待序列化的值。
+            
+        Returns:
+            JSON 字符串，若输入为 None 则返回 None。
         """
         if value is None:
             return None

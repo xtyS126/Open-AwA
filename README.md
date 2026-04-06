@@ -103,15 +103,14 @@ Open-AwA/
 │  ├─ tests/                    # 后端测试
 │  └─ main.py                   # FastAPI 入口
 ├─ frontend/                    # React 前端
-│  ├─ src/components/           # 通用组件
-│  ├─ src/pages/                # 页面
-│  ├─ src/services/             # API 封装
-│  ├─ src/stores/               # Zustand 状态管理
+│  ├─ src/features/             # 功能模块（页面、组件、状态）
+│  ├─ src/shared/               # 共享资源（组件、API、状态、类型、工具）
 │  ├─ src/__tests__/            # 前端单测
 │  ├─ tests/e2e/                # Playwright E2E
 │  └─ package.json
 ├─ plugins/                     # 示例插件目录
 └─ docs/                        # 项目文档
+   └─ archive/                  # 历史报告归档
 ```
 
 ## 快速开始
@@ -174,7 +173,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 默认配置来自 [settings.py](file:///d:/代码/Open-AwA/backend/config/settings.py#L24-L59)，其中较重要的项包括：
 
 - `API_V1_STR=/api`
-- `DATABASE_URL=sqlite:///./openawa.db`
+- `DATABASE_URL=sqlite:///./backend/openawa.db`
 - `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
 - `SANDBOX_TIMEOUT=30`
 - `SANDBOX_MEMORY_LIMIT=512m`
@@ -233,11 +232,11 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 其中几个核心页面对应实现：
 
-- [ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/ChatPage.tsx#L1-L259)
-- [DashboardPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/DashboardPage.tsx#L1-L128)
-- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/PluginsPage.tsx#L1-L260)
-- [MemoryPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/MemoryPage.tsx#L1-L154)
-- [BillingPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/BillingPage.tsx#L1-L249)
+- [ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/chat/ChatPage.tsx#L1-L259)
+- [DashboardPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/dashboard/DashboardPage.tsx#L1-L128)
+- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/plugins/PluginsPage.tsx#L1-L260)
+- [MemoryPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/memory/MemoryPage.tsx#L1-L154)
+- [BillingPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/billing/BillingPage.tsx#L1-L249)
 
 ## 插件开发文档
 
