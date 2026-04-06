@@ -108,6 +108,15 @@ export const authAPI = {
   getMe: () => api.get('/auth/me'),
 }
 
+export interface ChatConfirmRequest {
+  confirmed: boolean
+  step: {
+    id: string
+    action: string
+    params: Record<string, unknown>
+  }
+}
+
 export const chatAPI = {
   sendMessage: (
     message: string,
@@ -123,7 +132,7 @@ export const chatAPI = {
     provider?: string,
     model?: string,
     onChunk?: (content: string, reasoning: string) => void,
-    onError?: (error: any) => void
+    onError?: (error: Error) => void
   ) => {
     let isErrorLogged = false
     const url = '/api/chat'
@@ -277,20 +286,37 @@ export const chatAPI = {
   },
   getHistory: (sessionId: string) =>
     api.get(`/chat/history/${sessionId}`),
-  confirmOperation: (confirmed: boolean, step: any) =>
+  confirmOperation: (confirmed: boolean, step: ChatConfirmRequest['step']) =>
     api.post('/chat/confirm', { confirmed, step }),
 }
 
+export interface SkillRequest {
+  name: string
+  description?: string
+  config?: Record<string, unknown>
+  enabled?: boolean
+}
+
+export interface SkillResponse {
+  id: string
+  name: string
+  description: string
+  config: Record<string, unknown>
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 export const skillsAPI = {
-  getAll: () => api.get('/skills'),
-  getOne: (id: string) => api.get(`/skills/${id}`),
-  install: (skill: any) => api.post('/skills', skill),
+  getAll: () => api.get<SkillResponse[]>('/skills'),
+  getOne: (id: string) => api.get<SkillResponse>(`/skills/${id}`),
+  install: (skill: SkillRequest) => api.post<SkillResponse>('/skills', skill),
   uninstall: (id: string) => api.delete(`/skills/${id}`),
-  toggle: (id: string) => api.put(`/skills/${id}/toggle`),
+  toggle: (id: string) => api.put<SkillResponse>(`/skills/${id}/toggle`),
   parseUpload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/skills/parse-upload', formData, {
+    return api.post<SkillResponse>('/skills/parse-upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -350,16 +376,40 @@ export interface SystemLogsQueryResponse {
   records: SystemLogRecord[]
 }
 
+export interface PluginRequest {
+  name: string
+  description?: string
+  version?: string
+  config?: Record<string, unknown>
+  enabled?: boolean
+}
+
+export interface PluginResponse {
+  id: string
+  name: string
+  description: string
+  version: string
+  config: Record<string, unknown>
+  enabled: boolean
+  category?: string
+  author?: string
+  source?: string
+  dependencies?: string[]
+  installed_at?: string
+  created_at: string
+  updated_at: string
+}
+
 export const pluginsAPI = {
-  getAll: () => api.get('/plugins'),
-  getOne: (id: string) => api.get(`/plugins/${id}`),
-  install: (plugin: any) => api.post('/plugins', plugin),
+  getAll: () => api.get<PluginResponse[]>('/plugins'),
+  getOne: (id: string) => api.get<PluginResponse>(`/plugins/${id}`),
+  install: (plugin: PluginRequest) => api.post<PluginResponse>('/plugins', plugin),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
-  toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
+  toggle: (id: string) => api.put<PluginResponse>(`/plugins/${id}/toggle`),
   upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/plugins/upload', formData, {
+    return api.post<PluginResponse>('/plugins/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -408,12 +458,27 @@ export const memoryAPI = {
   search: (query: string) => api.get(`/memory/search?query=${query}`),
 }
 
+export interface PromptRequest {
+  name: string
+  content: string
+  is_active?: boolean
+}
+
+export interface PromptResponse {
+  id: string
+  name: string
+  content: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export const promptsAPI = {
-  getAll: () => api.get('/prompts'),
-  getActive: () => api.get('/prompts/active'),
-  getOne: (id: string) => api.get(`/prompts/${id}`),
-  create: (prompt: any) => api.post('/prompts', prompt),
-  update: (id: string, prompt: any) => api.put(`/prompts/${id}`, prompt),
+  getAll: () => api.get<PromptResponse[]>('/prompts'),
+  getActive: () => api.get<PromptResponse>('/prompts/active'),
+  getOne: (id: string) => api.get<PromptResponse>(`/prompts/${id}`),
+  create: (prompt: PromptRequest) => api.post<PromptResponse>('/prompts', prompt),
+  update: (id: string, prompt: PromptRequest) => api.put<PromptResponse>(`/prompts/${id}`, prompt),
   delete: (id: string) => api.delete(`/prompts/${id}`),
 }
 
