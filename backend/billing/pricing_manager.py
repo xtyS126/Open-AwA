@@ -12,10 +12,9 @@ import json
 
 
 class PricingManager:
-    
     """
-    封装与PricingManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    计费管理器，负责模型价格配置、用量追踪与预算控制。
+    提供模型定价的增删改查、供应商配置管理以及默认配置初始化等功能。
     """
     @staticmethod
     def get_provider_base_suffix(provider: Optional[str]) -> str:
@@ -38,8 +37,13 @@ class PricingManager:
     @staticmethod
     def _validate_configurations_uniqueness(configurations: List[Dict]) -> Tuple[bool, List[Tuple[str, str]]]:
         """
-        处理validate、configurations、uniqueness相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        校验配置列表中是否存在重复的 provider/model 组合。
+        
+        Args:
+            configurations: 配置字典列表，每个字典需包含 provider 和 model 字段。
+            
+        Returns:
+            元组，第一个元素表示是否唯一，第二个元素为重复项列表。
         """
         seen: Set[Tuple[str, str]] = set()
         duplicates: List[Tuple[str, str]] = []
@@ -56,32 +60,50 @@ class PricingManager:
     @staticmethod
     def validate_default_configurations() -> Tuple[bool, List[Tuple[str, str]]]:
         """
-        校验default、configurations相关输入、规则或结构是否合法。
-        返回结果通常用于阻止非法输入继续流入后续链路。
+        校验默认配置的唯一性。
+        
+        Returns:
+            元组，第一个元素表示是否唯一，第二个元素为重复项列表。
         """
         return PricingManager._validate_configurations_uniqueness(PricingManager.DEFAULT_CONFIGURATIONS)
 
     @staticmethod
     def normalize_provider(provider: Optional[str]) -> str:
         """
-        规范化provider相关输入、配置或字段值。
-        该步骤主要用于降低外部输入不一致性对内部逻辑的影响。
+        规范化供应商名称，转换为小写并去除首尾空格。
+        
+        Args:
+            provider: 原始供应商名称。
+            
+        Returns:
+            规范化后的供应商名称。
         """
         return (provider or "").strip().lower()
 
     @staticmethod
     def normalize_model(model: Optional[str]) -> str:
         """
-        规范化model相关输入、配置或字段值。
-        该步骤主要用于降低外部输入不一致性对内部逻辑的影响。
+        规范化模型名称，去除首尾空格。
+        
+        Args:
+            model: 原始模型名称。
+            
+        Returns:
+            规范化后的模型名称。
         """
         return (model or "").strip()
 
     @staticmethod
     def _normalize_provider_api_endpoint(provider: Optional[str], api_endpoint: Optional[str]) -> Optional[str]:
         """
-        处理normalize、provider、api、endpoint相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        规范化供应商 API 端点地址，移除多余的后缀并添加正确的基础路径。
+        
+        Args:
+            provider: 供应商名称。
+            api_endpoint: 原始 API 端点地址。
+            
+        Returns:
+            规范化后的 API 端点地址，若输入为空则返回 None。
         """
         raw = (api_endpoint or "").strip()
         if not raw:
@@ -167,8 +189,13 @@ class PricingManager:
     @staticmethod
     def parse_selected_models(selected_models: Optional[str]) -> List[str]:
         """
-        解析selected、models相关输入内容，并转换为内部可用结构。
-        它常用于屏蔽外部协议差异并统一上层业务使用的数据格式。
+        解析已选模型的 JSON 字符串为列表。
+        
+        Args:
+            selected_models: JSON 格式的模型列表字符串。
+            
+        Returns:
+            去重后的模型名称列表。
         """
         if not selected_models:
             return []
@@ -195,8 +222,13 @@ class PricingManager:
     @staticmethod
     def serialize_selected_models(selected_models: Optional[List[str]]) -> str:
         """
-        将selected、models相关对象序列化为接口或存储所需格式。
-        通常用于在内部对象与外部输出结构之间建立稳定映射。
+        将模型列表序列化为 JSON 字符串。
+        
+        Args:
+            selected_models: 模型名称列表。
+            
+        Returns:
+            JSON 格式的字符串。
         """
         normalized: List[str] = []
         seen: Set[str] = set()
@@ -457,15 +489,16 @@ class PricingManager:
 
     def __init__(self, db: Session):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化计费管理器。
+        
+        Args:
+            db: 数据库会话对象。
         """
         self.db = db
 
     def ensure_configuration_schema(self) -> None:
         """
-        确保configuration、schema相关前置条件或数据结构已经准备完成。
-        通常用于在真正执行业务前补齐环境、表结构或缺失配置。
+        确保模型配置表包含必要的字段，若缺失则动态添加。
         """
         columns = {
             row[1]
