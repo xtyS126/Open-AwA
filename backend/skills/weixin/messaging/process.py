@@ -5,18 +5,20 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List
 
 from loguru import logger
 
-from backend.skills.weixin.config import WeixinRuntimeConfig, SESSION_EXPIRED_ERRCODE
-from backend.skills.weixin.errors import WeixinAdapterError
-from backend.skills.weixin.api.client import api_post
-from backend.skills.weixin.messaging.inbound import (
+from skills.weixin.config import WeixinRuntimeConfig, SESSION_EXPIRED_ERRCODE
+from skills.weixin.errors import WeixinAdapterError
+from skills.weixin.api.client import api_post
+from skills.weixin.messaging.inbound import (
     parse_messages_from_response,
     extract_context_tokens,
 )
-from backend.skills.weixin.storage.state import StateManager
+from skills.weixin.storage.state import StateManager
+from skills.weixin.utils.helpers import normalize_binding_status
 
 
 async def poll_updates(
@@ -137,9 +139,6 @@ def build_success_result(
     返回:
         成功结果字典
     """
-    import time
-    from backend.skills.weixin.utils.helpers import normalize_binding_status
-    
     return {
         "success": True,
         "adapter": "weixin",
@@ -179,9 +178,6 @@ def build_error_result(
     返回:
         错误结果字典
     """
-    import time
-    from backend.skills.weixin.utils.helpers import normalize_binding_status
-    
     return {
         "success": False,
         "adapter": "weixin",

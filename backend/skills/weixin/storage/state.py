@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from loguru import logger
 
-from backend.skills.weixin.config import SESSION_PAUSE_DURATION_SECONDS, SESSION_EXPIRED_ERRCODE
-from backend.skills.weixin.utils.helpers import (
+from skills.weixin.config import SESSION_PAUSE_DURATION_SECONDS, SESSION_EXPIRED_ERRCODE
+from skills.weixin.utils.helpers import (
     sanitize_account_id,
     read_json_file,
     write_json_file,
