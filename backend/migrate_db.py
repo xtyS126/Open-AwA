@@ -5,10 +5,28 @@
 import re
 import sqlite3
 import sys
+from pathlib import Path
 from typing import List, Tuple, Set
 from loguru import logger
 
 sys.path.insert(0, '.')
+
+
+def get_database_file_path() -> str:
+    """
+    获取数据库文件的绝对路径（不含 sqlite:/// 前缀）。
+    优先使用环境变量 DATABASE_URL，否则使用默认路径。
+    """
+    import os
+    
+    env_db_url = os.getenv("DATABASE_URL")
+    if env_db_url:
+        if env_db_url.startswith("sqlite:///"):
+            return env_db_url[10:]
+        return env_db_url
+    
+    backend_dir = Path(__file__).parent.resolve()
+    return str(backend_dir / "openawa.db")
 
 
 class MigrationSecurityError(Exception):
@@ -233,7 +251,8 @@ def migrate_database():
     """
     logger.info("[工具] 开始完整数据库迁移...")
 
-    db_path = 'openawa.db'
+    db_path = get_database_file_path()
+    logger.info(f"[信息] 数据库路径: {db_path}")
 
     try:
         conn = sqlite3.connect(db_path)
