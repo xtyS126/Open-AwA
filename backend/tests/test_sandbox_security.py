@@ -6,12 +6,14 @@ Sandbox 安全模块单元测试。
 - 路径遍历防护
 - 权限检查
 - 危险命令拒绝
+- 权限检查强制调用验证
 """
 
 import pytest
 import tempfile
 import os
 from pathlib import Path
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from security.sandbox import (
     Sandbox,
@@ -321,3 +323,166 @@ class TestPermissionCheck:
         """验证安全操作权限检查通过。"""
         allowed = await sandbox.check_permission("read", "safe_file.txt")
         assert allowed is True
+
+
+class TestPermissionCheckEnforced:
+    """测试权限检查被强制调用。"""
+
+    @pytest.fixture
+    def sandbox(self, tmp_path):
+        """创建沙箱实例。"""
+        return Sandbox(work_dir=str(tmp_path))
+
+    @pytest.mark.asyncio
+    async def test_execute_command_calls_check_permission(self, sandbox, tmp_path):
+        """验证 execute_command 强制调用 check_permission。"""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test")
+
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = True
+
+            await sandbox.execute_command("ls")
+
+            mock_check.assert_called_once()
+            call_args = mock_check.call_args
+            assert call_args[0][0] == "execute"
+            assert call_args[0][1] == "ls"
+
+    @pytest.mark.asyncio
+    async def test_execute_command_permission_denied_returns_error(self, sandbox):
+        """验证 execute_command 权限拒绝时返回错误。"""
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = False
+
+            result = await sandbox.execute_command("ls")
+
+            assert result["status"] == "error"
+            assert "权限拒绝" in result["message"]
+            mock_check.assert_called_once_with("execute", "ls")
+
+    @pytest.mark.asyncio
+    async def test_execute_file_operation_read_calls_check_permission(self, sandbox, tmp_path):
+        """验证 execute_file_operation read 操作调用 check_permission。"""
+        test_file = tmp_path / "read_test.txt"
+        test_file.write_text("content")
+
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = True
+
+            result = await sandbox.execute_file_operation("read", str(test_file))
+
+            assert result["status"] == "success"
+            mock_check.assert_called_once()
+            call_args = mock_check.call_args
+            assert call_args[0][0] == "read"
+
+    @pytest.mark.asyncio
+    async def test_execute_file_operation_write_calls_check_permission(self, sandbox, tmp_path):
+        """验证 execute_file_operation write 操作调用 check_permission。"""
+        test_file = tmp_path / "write_test.txt"
+
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = True
+
+            result = await sandbox.execute_file_operation(
+                "write", str(test_file), content="test content"
+            )
+
+            assert result["status"] == "success"
+            mock_check.assert_called_once()
+            call_args = mock_check.call_args
+            assert call_args[0][0] == "write"
+
+    @pytest.mark.asyncio
+    async def test_execute_file_operation_delete_calls_check_permission(self, sandbox, tmp_path):
+        """验证 execute_file_operation delete 操作调用 check_permission。"""
+        test_file = tmp_path / "delete_test.txt"
+        test_file.write_text("to delete")
+
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = True
+
+            result = await sandbox.execute_file_operation("delete", str(test_file))
+
+            assert result["status"] == "success"
+            mock_check.assert_called_once()
+            call_args = mock_check.call_args
+            assert call_args[0][0] == "delete"
+
+    @pytest.mark.asyncio
+    async def test_execute_file_operation_permission_denied_returns_error(self, sandbox):
+        """验证 execute_file_operation 权限拒绝时返回错误。"""
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = False
+
+            result = await sandbox.execute_file_operation("read", ".env")
+
+            assert result["status"] == "error"
+            assert "权限拒绝" in result["message"]
+            mock_check.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_check_permission_called_before_path_validation(self, sandbox, tmp_path):
+        """验证权限检查在路径校验之前被调用。"""
+        call_order = []
+
+        original_check = sandbox.check_permission
+        async def track_check(*args, **kwargs):
+            call_order.append('check_permission')
+            return await original_check(*args, **kwargs)
+
+        original_validate = sandbox._validate_path
+        def track_validate(*args, **kwargs):
+            call_order.append('_validate_path')
+            return original_validate(*args, **kwargs)
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        with patch.object(sandbox, 'check_permission', side_effect=track_check):
+            with patch.object(sandbox, '_validate_path', side_effect=track_validate):
+                await sandbox.execute_file_operation("read", str(test_file))
+
+        assert call_order == ['check_permission', '_validate_path']
+
+    @pytest.mark.asyncio
+    async def test_execute_command_check_permission_with_dangerous_command(self, sandbox):
+        """验证危险命令触发权限检查并被拒绝。"""
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = False
+
+            result = await sandbox.execute_command("rm")
+
+            assert result["status"] == "error"
+            mock_check.assert_called_once_with("execute", "rm")
+
+    @pytest.mark.asyncio
+    async def test_execute_file_operation_with_sensitive_path(self, sandbox):
+        """验证敏感路径触发权限检查并被拒绝。"""
+        with patch.object(
+            sandbox, 'check_permission', new_callable=AsyncMock
+        ) as mock_check:
+            mock_check.return_value = False
+
+            result = await sandbox.execute_file_operation("delete", ".env")
+
+            assert result["status"] == "error"
+            mock_check.assert_called_once()
+            call_args = mock_check.call_args
+            assert call_args[0][0] == "delete"
+            assert ".env" in call_args[0][1]

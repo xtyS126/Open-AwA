@@ -88,6 +88,11 @@ backend/openawa.db
 backend/openawa_e2e.db
 frontend/test-results/
 
+# Root directory database files (should be in backend/)
+/*.db
+/*.sqlite
+/*.sqlite3
+
 # Local generated reports
 backend/scan_report.txt
 backend/COMPLETE_SCAN_REPORT.md
