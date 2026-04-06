@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     
-    DATABASE_URL: str = "sqlite:///./openawa.db"
+    DATABASE_URL: str = "sqlite:///./backend/openawa.db"
     
     SECRET_KEY: str = generate_secret_key()
     ALGORITHM: str = "HS256"
