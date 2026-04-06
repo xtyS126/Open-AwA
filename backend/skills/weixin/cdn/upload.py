@@ -1,4 +1,4 @@
-"""
+﻿"""
 CDN 上传模块
 实现微信 CDN 文件上传功能，包括 AES-128-ECB 加密、getUploadUrl 接口调用和文件上传。
 """
@@ -15,7 +15,8 @@ from typing import Any, Dict, Optional
 import httpx
 from loguru import logger
 
-from backend.skills.weixin_skill_adapter import WeixinAdapterError, WeixinRuntimeConfig
+from skills.weixin.errors import WeixinAdapterError
+from skills.weixin.config import WeixinRuntimeConfig
 
 DEFAULT_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c"
 MAX_UPLOAD_RETRIES = 3
@@ -605,3 +606,4 @@ def _build_random_wechat_uin() -> str:
     import base64
     raw = str(int.from_bytes(os.urandom(4), byteorder="big", signed=False))
     return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
+

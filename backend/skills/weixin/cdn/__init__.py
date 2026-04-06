@@ -1,9 +1,9 @@
-"""
+﻿"""
 CDN 模块
 提供微信 CDN 文件上传和下载功能。
 """
 
-from backend.skills.weixin.cdn.upload import (
+from skills.weixin.cdn.upload import (
     UploadResult,
     UploadParams,
     aes_ecb_encrypt,
@@ -20,7 +20,7 @@ from backend.skills.weixin.cdn.upload import (
     build_file_message_item,
 )
 
-from backend.skills.weixin.cdn.download import (
+from skills.weixin.cdn.download import (
     DownloadResult,
     CacheEntry,
     CdnCacheManager,
@@ -65,3 +65,4 @@ __all__ = [
     "download_file",
     "download_voice",
 ]
+

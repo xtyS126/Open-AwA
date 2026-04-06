@@ -1,9 +1,9 @@
-"""
+﻿"""
 媒体处理模块
 提供语音转码、语音识别等功能。
 """
 
-from backend.skills.weixin.media.transcode import (
+from skills.weixin.media.transcode import (
     TranscodeResult,
     VoiceRecognitionResult,
     VoiceRecognizer,
@@ -30,3 +30,4 @@ __all__ = [
     "get_mime_type",
     "get_file_extension",
 ]
+

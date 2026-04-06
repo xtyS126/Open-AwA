@@ -1,4 +1,4 @@
-"""
+﻿"""
 语音转码模块
 实现 SILK 语音格式解码、语音转文字和转码失败降级处理。
 """
@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from backend.skills.weixin_skill_adapter import WeixinAdapterError
+from skills.weixin.errors import WeixinAdapterError
 
 SILK_MAGIC_HEADER = b"\x02#!SILK_V3"
 SILK_SAMPLE_RATE = 24000
@@ -734,3 +734,4 @@ def get_file_extension(mime_type: str) -> str:
     }
     
     return mime_to_ext.get(mime_type.lower(), ".bin")
+

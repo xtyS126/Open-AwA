@@ -1,4 +1,4 @@
-"""
+﻿"""
 微信技能适配器主类
 提供统一的微信消息处理接口
 """
@@ -11,34 +11,34 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from backend.skills.weixin.config import (
+from skills.weixin.config import (
     WeixinRuntimeConfig,
     DEFAULT_BASE_URL,
     DEFAULT_QR_BASE_URL,
     DEFAULT_BOT_TYPE,
     DEFAULT_CHANNEL_VERSION,
 )
-from backend.skills.weixin.errors import WeixinAdapterError
-from backend.skills.weixin.api.client import (
+from skills.weixin.errors import WeixinAdapterError
+from skills.weixin.api.client import (
     api_post,
     api_get,
     fetch_login_qrcode,
     fetch_qrcode_status,
 )
-from backend.skills.weixin.messaging.inbound import extract_context_tokens
-from backend.skills.weixin.messaging.outbound import (
+from skills.weixin.messaging.inbound import extract_context_tokens
+from skills.weixin.messaging.outbound import (
     send_text_message,
     send_message_with_cached_token,
     validate_send_message_params,
 )
-from backend.skills.weixin.messaging.process import (
+from skills.weixin.messaging.process import (
     poll_updates,
     check_session_active,
     build_success_result,
     build_error_result,
 )
-from backend.skills.weixin.storage.state import StateManager
-from backend.skills.weixin.utils.helpers import (
+from skills.weixin.storage.state import StateManager
+from skills.weixin.utils.helpers import (
     pick_value,
     normalize_binding_status,
 )
@@ -428,3 +428,4 @@ class WeixinSkillAdapter:
             如果绑定就绪则返回True，否则返回False
         """
         return normalize_binding_status(config.binding_status, config.user_id) == "bound"
+
