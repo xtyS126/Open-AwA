@@ -516,8 +516,14 @@ class PricingManager:
 
     def get_pricing(self, provider: str, model: str) -> Optional[ModelPricing]:
         """
-        获取pricing相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取指定供应商和模型的价格配置。
+        
+        Args:
+            provider: 供应商名称。
+            model: 模型名称。
+            
+        Returns:
+            价格配置对象，若不存在则返回 None。
         """
         provider = self.normalize_provider(provider)
         model = self.normalize_model(model)
@@ -529,8 +535,13 @@ class PricingManager:
 
     def get_all_pricing(self, provider: Optional[str] = None) -> List[ModelPricing]:
         """
-        获取all、pricing相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取所有激活的价格配置，可按供应商筛选。
+        
+        Args:
+            provider: 可选的供应商名称筛选条件。
+            
+        Returns:
+            价格配置对象列表。
         """
         query = self.db.query(ModelPricing).filter(ModelPricing.is_active == True)
         normalized_provider = self.normalize_provider(provider)
@@ -540,8 +551,10 @@ class PricingManager:
 
     def get_provider_catalog(self) -> List[Dict]:
         """
-        获取provider、catalog相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取供应商目录，包含每个供应商的配置信息和已选模型列表。
+        
+        Returns:
+            供应商信息字典列表。
         """
         config_rows = self.db.query(ModelConfiguration.provider).filter(
             ModelConfiguration.is_active == True
