@@ -12,10 +12,7 @@ export default mergeConfig(
       coverage: {
         provider: 'v8',
         reporter: ['text', 'json', 'html'],
-        include: [
-          'src/features/plugins/PluginDebugPanel.tsx',
-          'src/shared/utils/logger.ts'
-        ],
+        include: ['src/**/*.{ts,tsx}'],
         exclude: [
           'node_modules/',
           'src/setupTests.ts',
