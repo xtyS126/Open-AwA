@@ -15,8 +15,7 @@ from api.dependencies import get_current_user
 from api.schemas import UserCreate, UserResponse, Token
 from config.security import verify_password, get_password_hash, create_access_token
 from config.settings import settings
-from db.models import User, get_db
-from db.models import User as UserModel
+from db.models import User as UserModel, get_db
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -116,7 +115,7 @@ async def login(
     summary="获取当前用户信息",
     description="返回当前访问令牌对应的用户资料。"
 )
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(current_user: UserModel = Depends(get_current_user)):
     """
     获取me相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
