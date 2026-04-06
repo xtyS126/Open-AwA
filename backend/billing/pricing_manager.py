@@ -600,15 +600,22 @@ class PricingManager:
 
     def get_providers(self) -> List[str]:
         """
-        获取providers相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取所有已配置的供应商 ID 列表。
+        
+        Returns:
+            供应商 ID 列表。
         """
         return [provider["id"] for provider in self.get_provider_catalog()]
 
     def create_pricing(self, pricing_data: Dict) -> ModelPricing:
         """
-        创建pricing相关对象、记录或执行结果。
-        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        创建新的价格配置记录。
+        
+        Args:
+            pricing_data: 价格配置数据字典。
+            
+        Returns:
+            新创建的价格配置对象。
         """
         pricing_data["provider"] = self.normalize_provider(pricing_data.get("provider"))
         pricing_data["model"] = self.normalize_model(pricing_data.get("model"))
@@ -620,8 +627,14 @@ class PricingManager:
 
     def update_pricing(self, pricing_id: int, pricing_data: Dict) -> Optional[ModelPricing]:
         """
-        更新pricing相关数据、配置或状态。
-        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        更新指定 ID 的价格配置。
+        
+        Args:
+            pricing_id: 价格配置 ID。
+            pricing_data: 更新数据字典。
+            
+        Returns:
+            更新后的价格配置对象，若不存在则返回 None。
         """
         pricing = self.db.query(ModelPricing).filter(ModelPricing.id == pricing_id).first()
         if pricing:
@@ -638,8 +651,13 @@ class PricingManager:
 
     def delete_pricing(self, pricing_id: int) -> bool:
         """
-        删除pricing相关对象或持久化记录。
-        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        软删除指定 ID 的价格配置。
+        
+        Args:
+            pricing_id: 价格配置 ID。
+            
+        Returns:
+            删除成功返回 True，不存在返回 False。
         """
         pricing = self.db.query(ModelPricing).filter(ModelPricing.id == pricing_id).first()
         if pricing:
@@ -650,8 +668,10 @@ class PricingManager:
 
     def initialize_default_pricing(self) -> int:
         """
-        处理initialize、default、pricing相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化默认价格配置数据。
+        
+        Returns:
+            新创建的记录数量。
         """
         count = 0
         for data in self.DEFAULT_PRICING_DATA:
@@ -670,8 +690,10 @@ class PricingManager:
 
     def initialize_default_configurations(self) -> int:
         """
-        处理initialize、default、configurations相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化默认模型配置数据。
+        
+        Returns:
+            新创建的记录数量。
         """
         self.ensure_configuration_schema()
 
@@ -696,8 +718,10 @@ class PricingManager:
 
     def remove_legacy_default_configurations(self) -> int:
         """
-        移除legacy、default、configurations相关数据、缓存或配置项。
-        这类逻辑常用于运行时清理、兼容性整理或状态维护。
+        移除旧版本的默认配置记录。
+        
+        Returns:
+            删除的记录数量。
         """
         self.ensure_configuration_schema()
 
@@ -726,8 +750,13 @@ class PricingManager:
 
     def validate_pricing_data(self, data: Dict) -> tuple:
         """
-        校验pricing、data相关输入、规则或结构是否合法。
-        返回结果通常用于阻止非法输入继续流入后续链路。
+        校验价格数据的合法性。
+        
+        Args:
+            data: 待校验的价格数据字典。
+            
+        Returns:
+            元组，第一个元素表示是否合法，第二个元素为错误信息列表。
         """
         errors = []
         
@@ -752,8 +781,10 @@ class PricingManager:
 
     def get_active_configurations(self) -> List[ModelConfiguration]:
         """
-        获取active、configurations相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取所有激活的模型配置。
+        
+        Returns:
+            模型配置对象列表。
         """
         self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
@@ -762,8 +793,13 @@ class PricingManager:
 
     def get_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
         """
-        获取configuration相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取指定 ID 的模型配置。
+        
+        Args:
+            config_id: 配置 ID。
+            
+        Returns:
+            模型配置对象，若不存在则返回 None。
         """
         self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
@@ -772,8 +808,10 @@ class PricingManager:
 
     def get_default_configuration(self) -> Optional[ModelConfiguration]:
         """
-        获取default、configuration相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取默认的模型配置。
+        
+        Returns:
+            默认模型配置对象，若不存在则返回 None。
         """
         self.ensure_configuration_schema()
         return self.db.query(ModelConfiguration).filter(
@@ -783,8 +821,14 @@ class PricingManager:
 
     def get_configuration_by_provider_model(self, provider: str, model: str) -> Optional[ModelConfiguration]:
         """
-        获取configuration、by、provider、model相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        根据供应商和模型名称获取配置。
+        
+        Args:
+            provider: 供应商名称。
+            model: 模型名称。
+            
+        Returns:
+            模型配置对象，若不存在则返回 None。
         """
         self.ensure_configuration_schema()
         provider = self.normalize_provider(provider)
@@ -797,8 +841,13 @@ class PricingManager:
 
     def get_default_provider_configuration(self, provider: str) -> Optional[ModelConfiguration]:
         """
-        获取default、provider、configuration相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取指定供应商的默认配置，若无默认配置则返回第一个激活配置。
+        
+        Args:
+            provider: 供应商名称。
+            
+        Returns:
+            模型配置对象，若不存在则返回 None。
         """
         self.ensure_configuration_schema()
         provider = self.normalize_provider(provider)
@@ -815,8 +864,13 @@ class PricingManager:
 
     def _normalize_configuration_payload(self, config_data: Dict) -> Dict:
         """
-        处理normalize、configuration、payload相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        规范化配置数据字典，处理字段格式和空值。
+        
+        Args:
+            config_data: 原始配置数据。
+            
+        Returns:
+            规范化后的配置数据。
         """
         normalized = dict(config_data)
 
@@ -847,8 +901,13 @@ class PricingManager:
 
     def create_configuration(self, config_data: Dict) -> ModelConfiguration:
         """
-        创建configuration相关对象、记录或执行结果。
-        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
+        创建新的模型配置。
+        
+        Args:
+            config_data: 配置数据字典。
+            
+        Returns:
+            新创建的模型配置对象。
         """
         self.ensure_configuration_schema()
         normalized = self._normalize_configuration_payload(config_data)
@@ -866,8 +925,14 @@ class PricingManager:
 
     def update_configuration(self, config_id: int, config_data: Dict) -> Optional[ModelConfiguration]:
         """
-        更新configuration相关数据、配置或状态。
-        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        更新指定 ID 的模型配置。
+        
+        Args:
+            config_id: 配置 ID。
+            config_data: 更新数据字典。
+            
+        Returns:
+            更新后的模型配置对象，若不存在则返回 None。
         """
         self.ensure_configuration_schema()
         config = self.db.query(ModelConfiguration).filter(
@@ -894,8 +959,13 @@ class PricingManager:
 
     def delete_configuration(self, config_id: int) -> bool:
         """
-        删除configuration相关对象或持久化记录。
-        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        软删除指定 ID 的模型配置。
+        
+        Args:
+            config_id: 配置 ID。
+            
+        Returns:
+            删除成功返回 True，不存在返回 False。
         """
         self.ensure_configuration_schema()
         config = self.db.query(ModelConfiguration).filter(
@@ -910,8 +980,13 @@ class PricingManager:
 
     def delete_provider_configurations(self, provider: str) -> int:
         """
-        删除provider、configurations相关对象或持久化记录。
-        实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+        删除指定供应商的所有配置。
+        
+        Args:
+            provider: 供应商名称。
+            
+        Returns:
+            删除的配置数量。
         """
         self.ensure_configuration_schema()
         provider_id = self.normalize_provider(provider)
@@ -936,8 +1011,13 @@ class PricingManager:
 
     def set_default_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
         """
-        设置default、configuration相关配置或运行状态。
-        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
+        设置指定配置为默认配置。
+        
+        Args:
+            config_id: 配置 ID。
+            
+        Returns:
+            更新后的模型配置对象，若不存在则返回 None。
         """
         self.ensure_configuration_schema()
         self.db.query(ModelConfiguration).filter(
