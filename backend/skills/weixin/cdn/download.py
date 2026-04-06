@@ -1,4 +1,4 @@
-"""
+﻿"""
 CDN 下载与解密模块
 实现微信 CDN 文件下载、AES 解密和缓存管理功能。
 """
@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 import httpx
 from loguru import logger
 
-from backend.skills.weixin_skill_adapter import WeixinAdapterError
+from skills.weixin.errors import WeixinAdapterError
 
 DEFAULT_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c"
 DEFAULT_CACHE_DIR = "cdn_cache"
@@ -657,3 +657,4 @@ async def _async_sleep(seconds: float) -> None:
     """
     import asyncio
     await asyncio.sleep(seconds)
+
