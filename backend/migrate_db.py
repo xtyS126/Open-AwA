@@ -2,6 +2,7 @@
 数据库迁移辅助脚本，用于补齐历史库结构并执行兼容性修复。
 这类脚本通常面向一次性运维或版本升级场景，维护时需要重点关注幂等性与旧数据兼容性。
 """
+import os
 import re
 import sqlite3
 import sys
@@ -17,8 +18,6 @@ def get_database_file_path() -> str:
     获取数据库文件的绝对路径（不含 sqlite:/// 前缀）。
     优先使用环境变量 DATABASE_URL，否则使用默认路径。
     """
-    import os
-    
     env_db_url = os.getenv("DATABASE_URL")
     if env_db_url:
         if env_db_url.startswith("sqlite:///"):
