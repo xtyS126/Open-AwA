@@ -3,7 +3,7 @@
 提供游标、context_token等状态的存储与读取
 """
 
-from backend.skills.weixin.storage.state import (
+from skills.weixin.storage.state import (
     StateManager,
     load_get_updates_buf,
     save_get_updates_buf,

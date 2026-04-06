@@ -1,14 +1,98 @@
 """
 消息处理模块
-提供入站消息解析、出站消息发送、消息处理主流程
+提供入站消息解析、出站消息发送、消息处理主流程、斜杠指令、格式转换
 """
 
-from backend.skills.weixin.messaging.inbound import parse_inbound_message
-from backend.skills.weixin.messaging.outbound import send_text_message
-from backend.skills.weixin.messaging.process import process_message
+from skills.weixin.messaging.inbound import (
+    parse_inbound_message,
+    parse_messages_from_response,
+    extract_context_tokens,
+    InboundMessage,
+)
+from skills.weixin.messaging.outbound import (
+    send_text_message,
+    build_text_message_request,
+    validate_send_message_params,
+)
+from skills.weixin.messaging.process import (
+    process_message,
+    poll_updates,
+    check_session_active,
+    build_success_result,
+    build_error_result,
+)
+from skills.weixin.messaging.commands import (
+    parse_command,
+    is_command,
+    dispatch_command,
+    handle_echo,
+    handle_toggle_debug,
+    handle_task,
+    check_command_permission,
+    get_debug_mode,
+    set_debug_mode,
+    build_debug_timing_report,
+    SlashCommand,
+    CommandContext,
+    CommandResult,
+    CommandType,
+)
+from skills.weixin.messaging.format import (
+    markdown_to_plain_text,
+    strip_code_blocks,
+    strip_links,
+    strip_tables,
+    strip_images,
+    strip_headers,
+    strip_bold,
+    strip_italic,
+    strip_blockquotes,
+    convert_lists,
+    split_message,
+    truncate_message,
+    estimate_message_parts,
+    format_code_for_weixin,
+)
 
 __all__ = [
     "parse_inbound_message",
+    "parse_messages_from_response",
+    "extract_context_tokens",
+    "InboundMessage",
     "send_text_message",
+    "build_text_message_request",
+    "validate_send_message_params",
     "process_message",
+    "poll_updates",
+    "check_session_active",
+    "build_success_result",
+    "build_error_result",
+    "parse_command",
+    "is_command",
+    "dispatch_command",
+    "handle_echo",
+    "handle_toggle_debug",
+    "handle_task",
+    "check_command_permission",
+    "get_debug_mode",
+    "set_debug_mode",
+    "build_debug_timing_report",
+    "SlashCommand",
+    "CommandContext",
+    "CommandResult",
+    "CommandType",
+    "markdown_to_plain_text",
+    "strip_code_blocks",
+    "strip_links",
+    "strip_tables",
+    "strip_images",
+    "strip_headers",
+    "strip_bold",
+    "strip_italic",
+    "strip_blockquotes",
+    "convert_lists",
+    "split_message",
+    "truncate_message",
+    "estimate_message_parts",
+    "format_code_for_weixin",
 ]

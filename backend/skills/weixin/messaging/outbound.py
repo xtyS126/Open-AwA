@@ -8,9 +8,9 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, Optional
 
-from backend.skills.weixin.config import WeixinRuntimeConfig
-from backend.skills.weixin.errors import WeixinAdapterError
-from backend.skills.weixin.api.client import api_post
+from skills.weixin.config import WeixinRuntimeConfig
+from skills.weixin.errors import WeixinAdapterError
+from skills.weixin.api.client import api_post
 
 
 def build_text_message_request(

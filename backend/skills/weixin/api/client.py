@@ -11,9 +11,9 @@ from typing import Any, Dict, Optional
 import httpx
 from loguru import logger
 
-from backend.skills.weixin.config import WeixinRuntimeConfig, DEFAULT_BASE_URL
-from backend.skills.weixin.errors import WeixinAdapterError
-from backend.skills.weixin.utils.helpers import build_random_wechat_uin
+from skills.weixin.config import WeixinRuntimeConfig, DEFAULT_BASE_URL
+from skills.weixin.errors import WeixinAdapterError
+from skills.weixin.utils.helpers import build_random_wechat_uin
 
 
 async def api_post(
