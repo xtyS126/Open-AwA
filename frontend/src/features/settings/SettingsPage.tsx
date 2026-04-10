@@ -463,7 +463,7 @@ function SettingsPage() {
         provider: config.provider || providerId,
         display_name: config.display_name || providerData.display_name || providerData.name || providerId,
         icon: config.icon || providerData.icon || '',
-        api_endpoint: (config.base_url || config.api_endpoint || (config as any).api_url || (config as any).base_url || providerData.base_url || providerData.api_endpoint || (providerData as any).api_url || (providerData as any).base_url || ''),
+        api_endpoint: (config.base_url || config.api_endpoint || (config as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as Record<string, unknown>).api_url || '') as string,
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
         selected_models: selectedModels,
