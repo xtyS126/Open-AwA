@@ -57,7 +57,6 @@ jobs:
     - name: Run Bandit security scan
       working-directory: ./backend
       run: bandit -r . -x ./tests --skip B101,B311
-      continue-on-error: true
 
   frontend-tests:
     runs-on: ubuntu-latest
@@ -110,7 +109,6 @@ jobs:
     - name: Run npm audit
       working-directory: ./frontend
       run: npm audit --audit-level=moderate
-      continue-on-error: true
 
   e2e-tests:
     runs-on: ubuntu-latest

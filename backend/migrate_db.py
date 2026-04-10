@@ -253,6 +253,7 @@ def migrate_database():
     db_path = get_database_file_path()
     logger.info(f"[信息] 数据库路径: {db_path}")
 
+    conn = None
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -310,6 +311,12 @@ def migrate_database():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
