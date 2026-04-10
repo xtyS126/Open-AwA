@@ -415,19 +415,15 @@ class ExperienceManager:
         """
         total = self.db.query(ExperienceMemory).count()
         
-        type_counts = {}
+        experience_types = ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
+        type_counts = {t: 0 for t in experience_types}
         type_count_results = self.db.query(
             ExperienceMemory.experience_type,
             func.count(ExperienceMemory.id)
         ).filter(
-            ExperienceMemory.experience_type.in_(
-                ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
-            )
+            ExperienceMemory.experience_type.in_(experience_types)
         ).group_by(ExperienceMemory.experience_type).all()
-        for exp_type in ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']:
-            type_counts[exp_type] = 0
-        for exp_type, count in type_count_results:
-            type_counts[exp_type] = count
+        type_counts.update(dict(type_count_results))
         
         all_experiences = self.db.query(ExperienceMemory).all()
         avg_confidence = sum(e.confidence for e in all_experiences) / total if total > 0 else 0

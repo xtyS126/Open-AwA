@@ -10,12 +10,17 @@ Covers:
 
 import asyncio
 import inspect
+import os
 import time
 from unittest.mock import MagicMock, patch, PropertyMock
 from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.orm import Session
+
+# Base paths derived from this test file's location
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(_BACKEND_DIR)
 
 
 # ---------------------------------------------------------------------------
@@ -259,13 +264,13 @@ class TestRequestDurationLogging:
 
     def test_main_imports_time(self):
         """main.py should import time module."""
-        with open('/home/runner/work/Open-AwA/Open-AwA/backend/main.py', 'r') as f:
+        with open(os.path.join(_BACKEND_DIR, 'main.py'), 'r') as f:
             source = f.read()
         assert 'import time' in source
 
     def test_main_has_duration_ms(self):
         """Middleware should log duration_ms."""
-        with open('/home/runner/work/Open-AwA/Open-AwA/backend/main.py', 'r') as f:
+        with open(os.path.join(_BACKEND_DIR, 'main.py'), 'r') as f:
             source = f.read()
         assert 'duration_ms' in source
         assert 'time.monotonic()' in source
@@ -280,7 +285,7 @@ class TestMigrateDbConnectionLeak:
 
     def test_migrate_database_has_finally(self):
         """migrate_database should have a finally block to close connection."""
-        with open('/home/runner/work/Open-AwA/Open-AwA/backend/migrate_db.py', 'r') as f:
+        with open(os.path.join(_BACKEND_DIR, 'migrate_db.py'), 'r') as f:
             source = f.read()
         
         # Should have finally block
@@ -297,7 +302,7 @@ class TestOpenAwaDbRemoved:
     """Verify openawa.db is no longer tracked by git."""
 
     def test_openawa_db_in_gitignore(self):
-        with open('/home/runner/work/Open-AwA/Open-AwA/.gitignore', 'r') as f:
+        with open(os.path.join(_REPO_ROOT, '.gitignore'), 'r') as f:
             content = f.read()
         assert 'openawa.db' in content or '*.db' in content
 
@@ -310,7 +315,7 @@ class TestCISecurityScans:
     """Verify CI config no longer uses continue-on-error for security scans."""
 
     def test_no_continue_on_error(self):
-        with open('/home/runner/work/Open-AwA/Open-AwA/.github/workflows/ci.yml', 'r') as f:
+        with open(os.path.join(_REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'r') as f:
             content = f.read()
         assert 'continue-on-error: true' not in content, \
             "CI config should not have continue-on-error: true"
