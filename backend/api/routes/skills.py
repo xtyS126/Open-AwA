@@ -803,7 +803,7 @@ async def get_weixin_config(
             "user_id": user_id,
             "binding_status": _normalize_binding_status(wx_config.get("binding_status"), user_id=user_id)
         }
-    except:
+    except Exception:
         return _build_default_weixin_config()
 
 
