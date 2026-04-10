@@ -7,7 +7,7 @@ import json
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, or_, desc, func
 from db.models import ExperienceMemory
 from loguru import logger
 
@@ -416,10 +416,17 @@ class ExperienceManager:
         total = self.db.query(ExperienceMemory).count()
         
         type_counts = {}
+        type_count_results = self.db.query(
+            ExperienceMemory.experience_type,
+            func.count(ExperienceMemory.id)
+        ).filter(
+            ExperienceMemory.experience_type.in_(
+                ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
+            )
+        ).group_by(ExperienceMemory.experience_type).all()
         for exp_type in ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']:
-            count = self.db.query(ExperienceMemory).filter(
-                ExperienceMemory.experience_type == exp_type
-            ).count()
+            type_counts[exp_type] = 0
+        for exp_type, count in type_count_results:
             type_counts[exp_type] = count
         
         all_experiences = self.db.query(ExperienceMemory).all()

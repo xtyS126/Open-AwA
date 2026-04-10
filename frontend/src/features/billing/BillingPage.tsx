@@ -51,8 +51,9 @@ function BillingPage() {
       
       setStatistics(statsRes.data)
       setUsageRecords(usageRes.data.records || [])
-    } catch (err: any) {
-      setError(err.response?.data?.detail || '加载计费数据失败')
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } }
+      setError(axiosErr.response?.data?.detail || '加载计费数据失败')
     } finally {
       setLoading(false)
     }

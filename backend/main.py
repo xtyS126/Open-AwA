@@ -5,6 +5,7 @@
 
 from contextlib import asynccontextmanager
 import os
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,8 +110,11 @@ async def request_context_middleware(request: Request, call_next):
         path=path,
     ).info("request started")
 
+    start_time = time.monotonic()
+
     try:
         response = await call_next(request)
+        duration_ms = round((time.monotonic() - start_time) * 1000, 2)
         response.headers[REQUEST_ID_HEADER] = request_id
         response.headers[SERVER_VERSION_HEADER] = settings.VERSION
         response.headers[VERSION_STATUS_HEADER] = version_status
@@ -123,9 +127,11 @@ async def request_context_middleware(request: Request, call_next):
             http_method=method,
             path=path,
             status=response.status_code,
+            duration_ms=duration_ms,
         ).info("request completed")
         return response
     except Exception as exc:
+        duration_ms = round((time.monotonic() - start_time) * 1000, 2)
         logger.bind(
             event="http_request_failed",
             module="api",
@@ -134,6 +140,7 @@ async def request_context_middleware(request: Request, call_next):
             path=path,
             error_type=type(exc).__name__,
             error_message=sanitize_for_logging(str(exc)),
+            duration_ms=duration_ms,
         ).exception("request failed")
         raise
     finally:

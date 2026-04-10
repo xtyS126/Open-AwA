@@ -3,6 +3,7 @@
 这里的逻辑通常用于避免未授权操作、危险行为或不可控的资源访问。
 """
 
+import asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -23,6 +24,26 @@ class AuditLogger:
         self.db = db
         logger.info("AuditLogger initialized")
     
+    def _log_sync(
+        self,
+        user_id: str,
+        action: str,
+        resource: str,
+        result: str,
+        details: Optional[Dict[str, Any]] = None
+    ) -> AuditLog:
+        log_entry = AuditLog(
+            user_id=user_id,
+            action=action,
+            resource=resource,
+            result=result,
+            details=str(details) if details else None
+        )
+        self.db.add(log_entry)
+        self.db.commit()
+        self.db.refresh(log_entry)
+        return log_entry
+
     async def log(
         self,
         user_id: str,
@@ -35,18 +56,9 @@ class AuditLogger:
         处理log相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        log_entry = AuditLog(
-            user_id=user_id,
-            action=action,
-            resource=resource,
-            result=result,
-            details=str(details) if details else None
+        log_entry = await asyncio.to_thread(
+            self._log_sync, user_id, action, resource, result, details
         )
-        
-        self.db.add(log_entry)
-        self.db.commit()
-        self.db.refresh(log_entry)
-        
         logger.debug(f"Audit log created: {action} on {resource} by {user_id}")
         return log_entry
     
@@ -128,6 +140,25 @@ class AuditLogger:
             }
         )
     
+    def _get_logs_sync(
+        self,
+        user_id: Optional[str],
+        action_type: Optional[str],
+        start_date: Optional[datetime],
+        end_date: Optional[datetime],
+        limit: int
+    ) -> List[AuditLog]:
+        query = self.db.query(AuditLog)
+        if user_id:
+            query = query.filter(AuditLog.user_id == user_id)
+        if action_type:
+            query = query.filter(AuditLog.action.startswith(action_type))
+        if start_date:
+            query = query.filter(AuditLog.timestamp >= start_date)
+        if end_date:
+            query = query.filter(AuditLog.timestamp <= end_date)
+        return query.order_by(AuditLog.timestamp.desc()).limit(limit).all()
+
     async def get_logs(
         self,
         user_id: Optional[str] = None,
@@ -140,24 +171,23 @@ class AuditLogger:
         获取logs相关数据或当前状态。
         调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
         """
-        query = self.db.query(AuditLog)
-        
+        return await asyncio.to_thread(
+            self._get_logs_sync, user_id, action_type, start_date, end_date, limit
+        )
+    
+    def _get_failed_attempts_sync(
+        self, user_id: Optional[str], hours: int
+    ) -> List[AuditLog]:
+        from datetime import timedelta
+        start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
+        query = self.db.query(AuditLog).filter(
+            AuditLog.result == "failure",
+            AuditLog.timestamp >= start_date
+        )
         if user_id:
             query = query.filter(AuditLog.user_id == user_id)
-        
-        if action_type:
-            query = query.filter(AuditLog.action.startswith(action_type))
-        
-        if start_date:
-            query = query.filter(AuditLog.timestamp >= start_date)
-        
-        if end_date:
-            query = query.filter(AuditLog.timestamp <= end_date)
-        
-        logs = query.order_by(AuditLog.timestamp.desc()).limit(limit).all()
-        
-        return logs
-    
+        return query.order_by(AuditLog.timestamp.desc()).all()
+
     async def get_failed_attempts(
         self,
         user_id: Optional[str] = None,
@@ -167,34 +197,16 @@ class AuditLogger:
         获取failed、attempts相关数据或当前状态。
         调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
         """
-        from datetime import timedelta
-        
-        start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
-        
-        query = self.db.query(AuditLog).filter(
-            AuditLog.result == "failure",
-            AuditLog.timestamp >= start_date
+        return await asyncio.to_thread(
+            self._get_failed_attempts_sync, user_id, hours
         )
-        
-        if user_id:
-            query = query.filter(AuditLog.user_id == user_id)
-        
-        return query.order_by(AuditLog.timestamp.desc()).all()
     
-    async def get_suspicious_activity(
-        self,
-        threshold: int = 5,
-        hours: int = 1
+    def _get_suspicious_activity_sync(
+        self, threshold: int, hours: int
     ) -> Dict[str, Any]:
-        """
-        获取suspicious、activity相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
         from datetime import timedelta
         from sqlalchemy import func
-        
         start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
-        
         results = self.db.query(
             AuditLog.user_id,
             func.count(AuditLog.id).label("count")
@@ -206,7 +218,6 @@ class AuditLogger:
         ).having(
             func.count(AuditLog.id) >= threshold
         ).all()
-        
         return {
             "suspicious_users": [
                 {"user_id": r[0], "failed_attempts": r[1]}
@@ -215,3 +226,16 @@ class AuditLogger:
             "time_window_hours": hours,
             "threshold": threshold
         }
+
+    async def get_suspicious_activity(
+        self,
+        threshold: int = 5,
+        hours: int = 1
+    ) -> Dict[str, Any]:
+        """
+        获取suspicious、activity相关数据或当前状态。
+        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        """
+        return await asyncio.to_thread(
+            self._get_suspicious_activity_sync, threshold, hours
+        )
