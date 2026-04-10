@@ -63,7 +63,7 @@ function ChatPage() {
       const providersList = response.data.providers || []
       
       const flatConfigs: { id: string; provider: string; model: string; display_name: string }[] = []
-      providersList.forEach((provider: any) => {
+      providersList.forEach((provider: { id: string; selected_models?: string[]; display_name?: string; name?: string }) => {
         const selected = provider.selected_models || []
         selected.forEach((modelName: string) => {
           flatConfigs.push({

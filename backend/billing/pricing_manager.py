@@ -673,14 +673,15 @@ class PricingManager:
         Returns:
             新创建的记录数量。
         """
+        existing_keys = {
+            (m.provider, m.model)
+            for m in self.db.query(
+                ModelPricing.provider, ModelPricing.model
+            ).all()
+        }
         count = 0
         for data in self.DEFAULT_PRICING_DATA:
-            existing = self.db.query(ModelPricing).filter(
-                ModelPricing.provider == data["provider"],
-                ModelPricing.model == data["model"]
-            ).first()
-            
-            if not existing:
+            if (data["provider"], data["model"]) not in existing_keys:
                 pricing = ModelPricing(**data)
                 self.db.add(pricing)
                 count += 1
