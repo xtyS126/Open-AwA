@@ -298,6 +298,93 @@ class PricingManager:
         },
     ]
 
+    MODEL_CAPABILITY_DEFAULTS: Dict[Tuple[str, str], Dict] = {
+        ("openai", "gpt-4"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": False, "is_multimodal": False,
+            "model_spec": json.dumps({"context_window": 8192, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("openai", "gpt-4o"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("openai", "gpt-4o-mini"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("openai", "gpt-3.5-turbo"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": False, "is_multimodal": False,
+            "model_spec": json.dumps({"context_window": 16385, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("anthropic", "claude-3.5-sonnet"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("anthropic", "claude-3-haiku"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("deepseek", "deepseek-chat"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": False, "is_multimodal": False,
+            "model_spec": json.dumps({"context_window": 65536, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("deepseek", "deepseek-reasoner"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": False, "supports_top_k": False,
+            "supports_vision": False, "is_multimodal": False,
+            "model_spec": json.dumps({"context_window": 65536, "max_output_tokens": 4096, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("google", "gemini-2.0-flash"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 1048576, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("alibaba", "qwen-plus"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": False, "is_multimodal": False,
+            "model_spec": json.dumps({"context_window": 131072, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("moonshot", "moonshot-v1-128k"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": False, "is_multimodal": False,
+            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("zhipu", "glm-4"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+    }
+
     DEFAULT_PRICING_DATA = [
         {
             "provider": "openai",
@@ -1036,3 +1123,82 @@ class PricingManager:
             self.db.refresh(config)
         
         return config
+
+    def get_model_defaults(self, provider: str, model: str) -> Dict:
+        """
+        获取指定模型的默认参数值。
+
+        Args:
+            provider: 供应商名称。
+            model: 模型名称。
+
+        Returns:
+            默认参数字典。
+        """
+        key = (self.normalize_provider(provider), self.normalize_model(model))
+        defaults = self.MODEL_CAPABILITY_DEFAULTS.get(key, {})
+        return {
+            "temperature": defaults.get("temperature", 0.7),
+            "top_k": defaults.get("top_k", 0.9),
+        }
+
+    def batch_update_status(self, config_ids: List[int], status: str) -> int:
+        """
+        批量更新模型配置的 status 字段。
+
+        Args:
+            config_ids: 配置 ID 列表。
+            status: 新的状态值。
+
+        Returns:
+            更新的记录数。
+        """
+        self.ensure_configuration_schema()
+        if not config_ids:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        configs = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.id.in_(config_ids)
+        ).all()
+
+        for config in configs:
+            config.status = status
+            config.updated_at = now
+
+        self.db.commit()
+        return len(configs)
+
+    def initialize_model_defaults(self) -> int:
+        """
+        为已有的 ModelConfiguration 记录填充默认的能力参数。
+        仅在字段为 NULL 时更新，不覆盖用户已自定义的值。
+
+        Returns:
+            更新的配置数量。
+        """
+        self.ensure_configuration_schema()
+        configs = self.db.query(ModelConfiguration).all()
+        updated_count = 0
+
+        for config in configs:
+            key = (self.normalize_provider(config.provider), self.normalize_model(config.model))
+            defaults = self.MODEL_CAPABILITY_DEFAULTS.get(key)
+            if not defaults:
+                continue
+
+            changed = False
+            for field, value in defaults.items():
+                current = getattr(config, field, None)
+                if current is None:
+                    setattr(config, field, value)
+                    changed = True
+
+            if changed:
+                config.updated_at = datetime.now(timezone.utc)
+                updated_count += 1
+
+        if updated_count > 0:
+            self.db.commit()
+
+        return updated_count
