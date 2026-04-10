@@ -22,7 +22,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user: UserCreate, db: Session = Depends(get_db)):
+def register(user: UserCreate, db: Session = Depends(get_db)):
     """
     创建新的本地用户账户。
     接口会先校验用户名是否已存在，再对密码执行哈希处理并写入数据库，成功后返回新建用户的基础资料。
@@ -69,7 +69,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     summary="用户登录",
     description="使用 OAuth2PasswordRequestForm 提交用户名和密码，成功后返回访问令牌。"
 )
-async def login(
+def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
