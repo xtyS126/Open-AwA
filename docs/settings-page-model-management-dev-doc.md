@@ -72,7 +72,7 @@
 - **默认值**: 按模型规格自动匹配（例如 GPT-4 为 8192，DeepSeek 为 65536 等）
 - **范围**: `1 ~ 模型最大上下文窗口`
 - **行为**:
-  - 默认方案按照模型程序对应到最大 Tokens 上限
+  - 默认值按照模型规格（context_window）自动对应到该模型的最大 Tokens 上限
   - 用户可自定义，但不超过模型支持的最大值
   - 切换模型时自动重置为新模型的默认值
 
@@ -746,7 +746,7 @@ Google Gemini API 的参数结构与 OpenAI 格式不同，需要特殊适配：
 }
 ```
 
-> 注意: Google 的 topK 是整数（1-40），与其他 Provider 的浮点数不同，需要在映射时进行类型转换。
+> **注意**: Google 的 `topK` 是整数（范围 1-40，参见 [Google GenerationConfig 文档](https://ai.google.dev/api/rest/v1beta/GenerationConfig)），与其他 Provider 的浮点数 `top_p`（0.0-1.0）不同。映射规则应在 `PROVIDER_PARAM_MAPPING` 常量中统一维护，当 Google API 规格变更时只需更新该配置。转换公式: `google_topK = round(top_k * 40)`，其中 `top_k` 为归一化的 0.0-1.0 浮点数。
 
 ---
 
@@ -1090,6 +1090,7 @@ feature_flag_manager.set_rule("model_parameter_config", FeatureRule(
 - 新增的接口使用 `sync def` 路由处理函数（FastAPI 自动在线程池中执行）
 - 或者使用 `asyncio.to_thread()` 包装同步数据库操作
 - 保持与项目现有模式一致
+- **技术债务追踪**: 现有代码中 `memory/manager.py`、`memory/experience_manager.py`、`api/routes/auth.py`、`security/audit.py` 均存在同步 `.query()` 在 `async def` 中直接调用的问题（阻塞事件循环），本次新增接口应避免引入同类问题，并建议后续统一治理（参见已知问题清单）
 
 #### 难点 3: 模型规格元数据的维护
 
