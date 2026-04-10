@@ -28,6 +28,10 @@ DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_BACKOFF_SECONDS = 0.2
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
+# Google Gemini API topK range is 1-40 (integer). We map from normalized 0.0-1.0 float.
+# See: https://ai.google.dev/api/rest/v1beta/GenerationConfig
+GOOGLE_TOPK_MAX = 40
+
 
 @dataclass
 class ProviderRequestSpec:
@@ -230,7 +234,7 @@ def build_provider_request(
         if temperature is not None:
             google_gen_config["temperature"] = temperature
         if top_k is not None:
-            google_gen_config["topK"] = round(top_k * 40)
+            google_gen_config["topK"] = round(top_k * GOOGLE_TOPK_MAX)
         if top_p is not None:
             google_gen_config["topP"] = top_p
         return ProviderRequestSpec(
@@ -280,7 +284,9 @@ def build_provider_request(
     }
     if temperature is not None:
         openai_payload["temperature"] = temperature
-    if top_k is not None:
+    # top_p takes precedence over top_k when both are provided,
+    # since top_k is mapped to top_p for OpenAI-compatible providers.
+    if top_k is not None and top_p is None:
         openai_payload["top_p"] = top_k
     if top_p is not None:
         openai_payload["top_p"] = top_p

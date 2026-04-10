@@ -1518,7 +1518,7 @@ function SettingsPage() {
                   </div>
 
                   <div className={styles['form-group']}>
-                    <label>Top K</label>
+                    <label>Top K / Top P</label>
                     <input
                       type="number"
                       min={0}
@@ -1533,7 +1533,7 @@ function SettingsPage() {
                       className={styles['param-number-input']}
                     />
                     {modelCapabilities?.capabilities.supports_top_k === false && (
-                      <span className={styles['param-hint']}>该模型不支持 Top K 调节</span>
+                      <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
                     )}
                   </div>
 
