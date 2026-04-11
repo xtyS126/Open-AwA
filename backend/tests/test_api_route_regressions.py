@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.dependencies import get_current_user, get_db
 from config.logging import _LOG_BUFFER
 from config.settings import settings
-from db.models import Base, ConversationRecord, LongTermMemory, ShortTermMemory, Skill
+from db.models import Base, ConversationRecord, LongTermMemory, ShortTermMemory, Skill, init_db
 from main import app
 
 
@@ -119,6 +119,66 @@ def test_weixin_config_uses_dict_storage_and_skills_route_returns_normalized_con
         assert len(skills_data) == 1
         assert skills_data[0]["config"]["weixin"]["account_id"] == "wx-account"
         assert skills_data[0]["config"]["weixin"]["binding_status"] == "bound"
+
+
+def test_init_db_migrates_legacy_skill_yaml_config_for_skills_routes():
+    """验证启动初始化会将历史 YAML 技能配置迁移为合法 JSON，避免技能相关接口返回 500。"""
+    legacy_yaml = (
+        "adapter: weixin\n"
+        "description: Weixin Clawbot communication skill\n"
+        "name: weixin_dispatch\n"
+        "version: 1.0.0\n"
+        "weixin:\n"
+        "  account_id: wx-account\n"
+        "  token: wx-token\n"
+        "  base_url: https://wx.example.com\n"
+        "  timeout_seconds: 20\n"
+        "  user_id: wx-user\n"
+        "  binding_status: bound\n"
+    )
+
+    db = TestingSessionLocal()
+    try:
+        db.execute(
+            text(
+                "INSERT INTO skills (id, name, version, description, config, enabled, tags, dependencies, author, category, usage_count, installed_at) "
+                "VALUES (:id, :name, :version, :description, :config, :enabled, :tags, :dependencies, :author, :category, :usage_count, CURRENT_TIMESTAMP)"
+            ),
+            {
+                "id": "legacy-weixin",
+                "name": "weixin_dispatch",
+                "version": "1.0.0",
+                "description": "legacy weixin skill",
+                "config": legacy_yaml,
+                "enabled": 1,
+                "tags": "",
+                "dependencies": "",
+                "author": "legacy",
+                "category": "general",
+                "usage_count": 0,
+            },
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    init_db(bind_engine=engine)
+
+    with _test_client() as client:
+        skills_response = client.get(f"{settings.API_V1_STR}/skills")
+        assert skills_response.status_code == 200
+        skills_data = skills_response.json()
+        assert len(skills_data) == 1
+        assert skills_data[0]["name"] == "weixin_dispatch"
+        assert skills_data[0]["config"]["weixin"]["account_id"] == "wx-account"
+
+        config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
+        assert config_response.status_code == 200
+        config_data = config_response.json()
+        assert config_data["account_id"] == "wx-account"
+        assert config_data["token"] == "wx-token"
+        assert config_data["user_id"] == "wx-user"
+        assert config_data["binding_status"] == "bound"
 
 
 def test_get_short_term_default_returns_empty_list_when_session_not_created():

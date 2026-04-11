@@ -175,17 +175,17 @@ class TestAuditLoggerAsyncFix:
 # ---------------------------------------------------------------------------
 
 class TestAuthRoutesSyncFix:
-    """Verify auth routes are no longer async when using sync DB operations."""
+    """Verify auth routes have been changed to async def (P1-3 fix)."""
 
-    def test_register_is_sync(self):
+    def test_register_is_async(self):
         from api.routes.auth import register
-        assert not asyncio.iscoroutinefunction(register), \
-            "register should be a sync function since it uses synchronous DB calls"
+        assert asyncio.iscoroutinefunction(register), \
+            "register should be async def after P1-3 fix"
 
-    def test_login_is_sync(self):
+    def test_login_is_async(self):
         from api.routes.auth import login
-        assert not asyncio.iscoroutinefunction(login), \
-            "login should be a sync function since it uses synchronous DB calls"
+        assert asyncio.iscoroutinefunction(login), \
+            "login should be async def after P1-3 fix"
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@
 from contextlib import asynccontextmanager
 import errno
 import os
+import secrets as secrets_module
 import time
 
 from fastapi import FastAPI, Request
@@ -106,6 +107,60 @@ app = FastAPI(
     description="AI Agent Framework - Similar to OpenClaw",
     lifespan=lifespan,
 )
+
+# CSRF 保护 cookie 名称和 header 名称
+_CSRF_COOKIE_NAME = "csrf_token"
+_CSRF_HEADER_NAME = "X-CSRF-Token"
+# 不需要 CSRF 校验的路径前缀（公开只读接口）
+_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register"}
+# 需要 CSRF 校验的请求方法
+_CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+@app.middleware("http")
+async def csrf_protection_middleware(request: Request, call_next):
+    """
+    Double Submit Cookie 模式的 CSRF 保护中间件。
+    GET/HEAD 请求在响应中注入 csrf_token cookie；
+    POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header 与 cookie 是否匹配。
+    WebSocket 和豁免路径跳过校验。
+    """
+    path = request.url.path
+    method = request.method
+
+    # WebSocket 连接跳过 CSRF 校验（通过 token query 参数认证）
+    if "websocket" in path.lower() or request.headers.get("upgrade", "").lower() == "websocket":
+        return await call_next(request)
+
+    # 测试环境跳过 CSRF 校验
+    if os.getenv("TESTING", "").lower() == "true":
+        return await call_next(request)
+
+    if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
+        cookie_token = request.cookies.get(_CSRF_COOKIE_NAME, "")
+        header_token = request.headers.get(_CSRF_HEADER_NAME, "")
+        if not cookie_token or not header_token or not secrets_module.compare_digest(cookie_token, header_token):
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=403,
+                content={"error": "invalid_csrf_token", "message": "CSRF token 验证失败"},
+            )
+
+    response = await call_next(request)
+
+    # 在响应中设置 csrf_token cookie（SameSite=Strict，非 HttpOnly，供前端读取）
+    if _CSRF_COOKIE_NAME not in request.cookies:
+        token = secrets_module.token_urlsafe(32)
+        response.set_cookie(
+            key=_CSRF_COOKIE_NAME,
+            value=token,
+            httponly=False,  # 前端 JS 需要读取以放入 header
+            samesite="strict",
+            secure=os.getenv("ENVIRONMENT", "development") == "production",
+            path="/",
+        )
+
+    return response
 
 
 @app.middleware("http")

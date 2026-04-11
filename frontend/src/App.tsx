@@ -93,36 +93,39 @@ function App() {
     }
 
     if (import.meta.env.DEV) {
-      try {
-        const testUser = {
-          username: 'test_user_default',
-          password: 'test_password_123'
-        }
-
+      // 仅在环境变量中显式配置了测试凭证时才执行自动登录，避免硬编码敏感信息
+      const testUsername = import.meta.env.VITE_TEST_USERNAME
+      const testPassword = import.meta.env.VITE_TEST_PASSWORD
+      if (testUsername && testPassword) {
         try {
-          await authAPI.register(testUser.username, testUser.password)
-        } catch (e) {
-        }
+          try {
+            await authAPI.register(testUsername, testPassword)
+          } catch (e) {
+            // 用户已存在时忽略注册错误
+          }
 
-        const loginResponse = await authAPI.login(testUser.username, testUser.password)
-        setAuth({ username: testUser.username }, loginResponse.data.access_token)
-        appLogger.info({
-          event: 'app_initialize',
-          module: 'app',
-          action: 'auto_login',
-          status: 'success',
-          message: 'test user login succeeded',
-        })
-        setInitialized(true)
-      } catch (error) {
-        appLogger.error({
-          event: 'app_initialize',
-          module: 'app',
-          action: 'auto_login',
-          status: 'failure',
-          message: 'app initialization failed',
-          extra: { error: error instanceof Error ? error.message : String(error) },
-        })
+          const loginResponse = await authAPI.login(testUsername, testPassword)
+          setAuth({ username: testUsername }, loginResponse.data.access_token)
+          appLogger.info({
+            event: 'app_initialize',
+            module: 'app',
+            action: 'auto_login',
+            status: 'success',
+            message: 'test user login succeeded',
+          })
+          setInitialized(true)
+        } catch (error) {
+          appLogger.error({
+            event: 'app_initialize',
+            module: 'app',
+            action: 'auto_login',
+            status: 'failure',
+            message: 'app initialization failed',
+            extra: { error: error instanceof Error ? error.message : String(error) },
+          })
+          setInitialized(true)
+        }
+      } else {
         setInitialized(true)
       }
     } else {

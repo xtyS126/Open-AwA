@@ -3,7 +3,9 @@
 配置项通常会在多个子模块中生效，因此理解其字段含义非常重要。
 """
 
+from pathlib import Path
 from pydantic_settings import BaseSettings
+from pydantic import SecretStr
 from typing import Optional
 import os
 import secrets
@@ -11,8 +13,9 @@ import secrets
 
 def generate_secret_key() -> str:
     """
-    处理generate、secret、key相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    生成或加载 SECRET_KEY。
+    生产环境必须通过环境变量显式配置；
+    开发环境自动生成后持久化到 .env.local，跨重启保持一致，避免 JWT token 全部失效。
     """
     from loguru import logger
     
@@ -23,11 +26,42 @@ def generate_secret_key() -> str:
         logger.error("SECRET_KEY environment variable is required in production environment")
         raise ValueError("SECRET_KEY environment variable is required in production environment")
     
-    if not env_key:
-        logger.warning("SECRET_KEY not set, using randomly generated key. This is not secure for production!")
-        return secrets.token_urlsafe(32)
+    if env_key:
+        return env_key
     
-    return env_key
+    # 开发环境：尝试从 .env.local 加载已生成的 key，保持跨重启一致性
+    env_local_path = Path(__file__).resolve().parents[1] / ".env.local"
+    if env_local_path.exists():
+        with open(env_local_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("SECRET_KEY="):
+                    persisted_key = line[len("SECRET_KEY="):]
+                    if persisted_key:
+                        return persisted_key
+    
+    # 首次启动：生成新 key 并持久化到 .env.local
+    new_key = secrets.token_urlsafe(32)
+    logger.warning(
+        "SECRET_KEY not set, generating new key and persisting to .env.local. "
+        "This is not secure for production!"
+    )
+    try:
+        with open(env_local_path, "a", encoding="utf-8") as f:
+            f.write(f"\nSECRET_KEY={new_key}\n")
+    except OSError as e:
+        logger.warning(f"无法持久化 SECRET_KEY 到 .env.local: {e}")
+    return new_key
+
+
+def build_default_database_url() -> str:
+    """
+    构造稳定的默认 SQLite 连接地址。
+    这里显式锚定到 backend 目录，避免服务从仓库根目录启动时误连到错误的空库。
+    """
+    backend_dir = Path(__file__).resolve().parents[1]
+    database_path = (backend_dir / "openawa.db").resolve()
+    return f"sqlite:///{database_path.as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -39,33 +73,34 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     
-    # SQLite 数据库文件路径，使用相对路径时会相对于 backend 目录解析，亦即以 main.py 所在目录为基准。
-    DATABASE_URL: str = "sqlite:///./openawa.db"
+    # 默认固定到 backend/openawa.db 的绝对路径，避免受进程启动目录影响。
+    DATABASE_URL: str = build_default_database_url()
     
     SECRET_KEY: str = generate_secret_key()
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     
-    OPENAI_API_KEY: Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
-    DEEPSEEK_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[SecretStr] = None
+    ANTHROPIC_API_KEY: Optional[SecretStr] = None
+    DEEPSEEK_API_KEY: Optional[SecretStr] = None
     
     # Ollama 本地模型配置
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     
     # 通义千问配置
-    QWEN_API_KEY: str = ""
+    QWEN_API_KEY: SecretStr = SecretStr("")
     QWEN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     
     # 智谱AI配置
-    ZHIPU_API_KEY: str = ""
+    ZHIPU_API_KEY: SecretStr = SecretStr("")
     ZHIPU_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
     
     # Kimi/Moonshot配置
-    MOONSHOT_API_KEY: str = ""
+    MOONSHOT_API_KEY: SecretStr = SecretStr("")
     MOONSHOT_BASE_URL: str = "https://api.moonshot.cn/v1"
     
-    VECTOR_DB_PATH: str = "./data/vector_db"
+    # 矢量数据库路径，基于 backend 目录碟定绝对路径，避免工作目录不同导致路径错误
+    VECTOR_DB_PATH: str = str(Path(__file__).resolve().parents[1] / "data" / "vector_db")
 
     # 微信集成配置
     WEIXIN_DEFAULT_BASE_URL: str = "https://ilinkai.weixin.qq.com"
