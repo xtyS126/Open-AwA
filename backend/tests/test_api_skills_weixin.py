@@ -19,6 +19,7 @@ from db.models import Base, Skill
 from api.dependencies import get_db, get_current_user
 from config.settings import settings
 from skills.weixin_skill_adapter import DEFAULT_QR_BASE_URL
+from api.routes.skills import WEIXIN_QR_SESSIONS, WEIXIN_QR_SESSIONS_LOCK
 
 engine = create_engine(
     "sqlite:///:memory:",
@@ -75,6 +76,8 @@ def reset_skills_table():
         db.commit()
     finally:
         db.close()
+    with WEIXIN_QR_SESSIONS_LOCK:
+        WEIXIN_QR_SESSIONS.clear()
     yield
     db = TestingSessionLocal()
     try:
@@ -82,6 +85,8 @@ def reset_skills_table():
         db.commit()
     finally:
         db.close()
+    with WEIXIN_QR_SESSIONS_LOCK:
+        WEIXIN_QR_SESSIONS.clear()
 
 
 def test_save_and_get_weixin_config():
@@ -1178,4 +1183,3 @@ def test_weixin_qr_wait_handles_expired_status(monkeypatch):
         assert wait_data["connected"] is False
         assert wait_data["state"] == "failed"
         assert wait_data["status"] == "expired"
-

@@ -290,6 +290,10 @@ def build_provider_request(
 
     headers["Authorization"] = f"Bearer {api_key}"
 
+    # Ollama 本地模型无需鉴权，跳过 Authorization 头
+    if provider_id == "ollama":
+        headers.pop("Authorization", None)
+
     if purpose == "models":
         return ProviderRequestSpec(endpoint=base_endpoint, headers=headers, payload=None, method="GET", timeout=20.0)
 
@@ -372,6 +376,39 @@ async def send_with_retries(
     raise RuntimeError("Model service request failed without explicit error")
 
 
+def extract_reasoning_content(response_data: Dict[str, Any], provider: str = "") -> str:
+    """
+    从模型非流式响应中提取推理内容（思维链）。
+    不同 Provider 的响应格式不同，需分别处理：
+    - OpenAI/DeepSeek: choices[0].message.reasoning_content
+    - Anthropic: content blocks 中 type 为 "thinking" 的 block
+    """
+    # OpenAI / DeepSeek 兼容格式
+    choices = response_data.get("choices")
+    if isinstance(choices, list) and choices:
+        first_choice = choices[0]
+        if isinstance(first_choice, dict):
+            message = first_choice.get("message")
+            if isinstance(message, dict):
+                reasoning = message.get("reasoning_content")
+                if isinstance(reasoning, str) and reasoning:
+                    return reasoning
+
+    # Anthropic 格式：content 列表中 type 为 "thinking" 的 block
+    content = response_data.get("content")
+    if isinstance(content, list):
+        thinking_parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "thinking":
+                text = block.get("thinking", "")
+                if isinstance(text, str) and text:
+                    thinking_parts.append(text)
+        if thinking_parts:
+            return "\n".join(thinking_parts)
+
+    return ""
+
+
 from typing import AsyncGenerator
 
 async def send_stream_with_retries(
@@ -416,3 +453,79 @@ async def send_stream_with_retries(
     if last_error is not None:
         raise last_error
     raise RuntimeError("Model service stream request failed without explicit error")
+
+
+async def discover_ollama_models() -> list[dict]:
+    """
+    从本地 Ollama 服务发现可用模型。
+    调用 Ollama 的 /api/tags 接口获取已拉取的模型列表。
+    当 Ollama 服务不可用时返回空列表，不抛异常。
+    """
+    from config.settings import settings as app_settings
+
+    base_url = (app_settings.OLLAMA_BASE_URL or "http://localhost:11434").rstrip("/")
+    endpoint = f"{base_url}/api/tags"
+
+    try:
+        client = get_shared_client()
+        response = await client.get(endpoint, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        raw_models = data.get("models", [])
+        result = []
+        for m in raw_models:
+            if not isinstance(m, dict):
+                continue
+            result.append({
+                "name": m.get("name", ""),
+                "size": m.get("size", 0),
+                "modified_at": m.get("modified_at", ""),
+                "digest": m.get("digest", ""),
+            })
+        return result
+    except Exception:
+        # Ollama 服务不可达时静默返回空列表
+        return []
+
+
+async def get_provider_connection_status(provider_id: str, base_url: str, api_key: str = "") -> dict:
+    """
+    检测指定模型提供商的连接状态。
+    通过向其 models 端点发送请求来判断是否可达。
+    """
+    from billing.pricing_manager import PricingManager
+
+    normalized = PricingManager.normalize_provider(provider_id)
+    endpoint = PricingManager.build_provider_api_endpoint(normalized, base_url, "models")
+    if not endpoint:
+        return {"provider": provider_id, "status": "unconfigured", "message": "未配置端点"}
+
+    headers = {"Content-Type": "application/json"}
+
+    # 根据 provider 类型设置鉴权头
+    if normalized == "anthropic":
+        if api_key:
+            headers["x-api-key"] = api_key
+            headers[ANTHROPIC_VERSION_HEADER] = DEFAULT_ANTHROPIC_VERSION
+    elif normalized == "google":
+        if api_key:
+            endpoint = _append_query(endpoint, {"key": api_key})
+    elif normalized == "ollama":
+        pass  # Ollama 不需要鉴权
+    else:
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        client = get_shared_client()
+        response = await client.get(endpoint, headers=headers, timeout=10.0)
+        if response.status_code == 200:
+            return {"provider": provider_id, "status": "connected", "message": "连接正常"}
+        elif response.status_code == 401:
+            return {"provider": provider_id, "status": "auth_error", "message": "认证失败，请检查 API Key"}
+        else:
+            return {"provider": provider_id, "status": "error", "message": f"HTTP {response.status_code}"}
+    except httpx.TimeoutException:
+        return {"provider": provider_id, "status": "timeout", "message": "连接超时"}
+    except Exception as exc:
+        return {"provider": provider_id, "status": "unreachable", "message": str(exc)}

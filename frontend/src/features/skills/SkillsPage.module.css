@@ -80,6 +80,14 @@
   margin-bottom: 16px;
 }
 
+.status-message-error {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
 .btn {
   padding: 8px 16px;
   border: none;

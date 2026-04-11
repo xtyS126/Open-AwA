@@ -3,12 +3,13 @@
 这里的结构定义直接决定了持久化层能够保存哪些业务数据。
 """
 
-from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, inspect, text
+from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, inspect, text, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
 from loguru import logger
 from config.settings import settings
+import time
 
 
 engine = create_engine(
@@ -20,19 +21,52 @@ engine = create_engine(
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# SQL 事件监听：记录慢查询和数据库错误
+_SLOW_QUERY_THRESHOLD_MS = 500
+
+
+@event.listens_for(engine, "before_cursor_execute")
+def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """在 SQL 执行前记录起始时间"""
+    conn.info.setdefault("query_start_time", []).append(time.perf_counter())
+
+
+@event.listens_for(engine, "after_cursor_execute")
+def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """SQL 执行完成后检测慢查询"""
+    start_times = conn.info.get("query_start_time")
+    if not start_times:
+        return
+    start = start_times.pop()
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    if duration_ms >= _SLOW_QUERY_THRESHOLD_MS:
+        logger.bind(
+            event="slow_query",
+            module="db",
+            duration_ms=duration_ms,
+        ).warning(f"慢查询 ({duration_ms}ms): {statement[:200]}")
+
+
+@event.listens_for(engine, "handle_error")
+def _handle_db_error(exception_context):
+    """数据库层面异常捕获"""
+    logger.bind(
+        event="db_engine_error",
+        module="db",
+        error_type=type(exception_context.original_exception).__name__,
+    ).opt(exception=True).error(f"数据库引擎错误: {exception_context.original_exception}")
+
 
 class Base(DeclarativeBase):
     """
-    封装与Base相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    SQLAlchemy 声明式基类，所有 ORM 模型的公共父类。
     """
     pass
 
 
 class User(Base):
     """
-    封装与User相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    用户模型，存储用户身份认证信息，包括用户名、密码哈希和角色。
     """
     __tablename__ = "users"
 
@@ -48,8 +82,7 @@ class User(Base):
 
 class Skill(Base):
     """
-    封装与Skill相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能模型，记录已注册的 AI 技能信息，包含配置、版本和使用统计。
     """
     __tablename__ = "skills"
 
@@ -69,8 +102,7 @@ class Skill(Base):
 
 class Plugin(Base):
     """
-    封装与Plugin相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件模型，存储插件的基本信息、启用状态和依赖关系。
     """
     __tablename__ = "plugins"
 
@@ -88,8 +120,7 @@ class Plugin(Base):
 
 class SkillExecutionLog(Base):
     """
-    封装与SkillExecutionLog相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    技能执行日志，记录每次技能调用的输入、输出、状态和执行时间。
     """
     __tablename__ = "skill_execution_logs"
 
@@ -104,10 +135,31 @@ class SkillExecutionLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class WeixinBinding(Base):
+    """
+    微信绑定模型，存储用户与微信账号的绑定关系及连接参数。
+    binding_status 取值: unbound / bound / expired
+    """
+    __tablename__ = "weixin_bindings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    weixin_account_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    token: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    base_url: Mapped[str] = mapped_column(String(500), default="https://ilinkai.weixin.qq.com")
+    bot_type: Mapped[str] = mapped_column(String(10), default="3")
+    channel_version: Mapped[str] = mapped_column(String(20), default="1.0.2")
+    binding_status: Mapped[str] = mapped_column(String(50), default="unbound")
+    weixin_user_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
 class PluginExecutionLog(Base):
     """
-    封装与PluginExecutionLog相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件执行日志，记录插件方法调用的详细信息。
     """
     __tablename__ = "plugin_execution_logs"
 
@@ -125,8 +177,7 @@ class PluginExecutionLog(Base):
 
 class ShortTermMemory(Base):
     """
-    封装与ShortTermMemory相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    短期记忆模型，存储会话级别的对话上下文记忆。
     """
     __tablename__ = "short_term_memory"
 
@@ -139,12 +190,13 @@ class ShortTermMemory(Base):
 
 class LongTermMemory(Base):
     """
-    封装与LongTermMemory相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    长期记忆模型，存储用户的持久化学习记忆。
+    每条记忆归属于特定用户（user_id），支持多租户隔离。
     """
     __tablename__ = "long_term_memory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[List[float]] = mapped_column(JSON)
     importance: Mapped[float] = mapped_column(Float, default=0.5)
@@ -155,8 +207,7 @@ class LongTermMemory(Base):
 
 class BehaviorLog(Base):
     """
-    封装与BehaviorLog相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    用户行为埋点日志，记录用户操作类型和详情。
     """
     __tablename__ = "behavior_logs"
 
@@ -169,8 +220,7 @@ class BehaviorLog(Base):
 
 class ExperienceMemory(Base):
     """
-    封装与ExperienceMemory相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    经验记忆模型，存储从任务执行中提取的可复用经验，支持置信度和使用统计。
     """
     __tablename__ = "experience_memory"
 
@@ -190,25 +240,50 @@ class ExperienceMemory(Base):
     experience_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON)
 
 
+class Role(Base):
+    """
+    角色模型，定义系统中的角色及其对应的权限集合。
+    """
+    __tablename__ = "roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    permissions: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class UserRole(Base):
+    """
+    用户角色关联模型，记录用户与角色的绑定关系。
+    """
+    __tablename__ = "user_roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    role_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class AuditLog(Base):
     """
-    封装与AuditLog相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    审计日志模型，记录用户对资源的操作历史，包含操作详情和来源 IP。
     """
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String, index=True)
-    action: Mapped[str] = mapped_column(String)
-    resource: Mapped[str] = mapped_column(String)
-    result: Mapped[str] = mapped_column(String)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    user_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    action: Mapped[str] = mapped_column(String(200), nullable=False)
+    resource: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    result: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ExperienceExtractionLog(Base):
     """
-    封装与ExperienceExtractionLog相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    经验提取日志，记录每次经验自动提取的过程和质量评估。
     """
     __tablename__ = "experience_extraction_log"
 
@@ -225,8 +300,7 @@ class ExperienceExtractionLog(Base):
 
 class PromptConfig(Base):
     """
-    封装与PromptConfig相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    提示词配置模型，存储系统提示词模板及其变量定义。
     """
     __tablename__ = "prompt_configs"
 
@@ -243,8 +317,7 @@ class PromptConfig(Base):
 
 class ConversationRecord(Base):
     """
-    封装与ConversationRecord相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    会话记录模型，完整记录每次会话各节点的执行情况和 LLM 调用详情。
     """
     __tablename__ = "conversation_records"
 
@@ -318,16 +391,59 @@ def _migrate_plugin_columns(use_engine=None):
             connection.execute(text("UPDATE plugins SET installed_at = :installed_at WHERE installed_at IS NULL"), {"installed_at": now})
 
 
+def _migrate_long_term_memory_user_id(use_engine=None):
+    """
+    为 long_term_memory 表补齐 user_id 列，实现多租户隔离。
+    支持传入自定义 engine，确保迁移操作落到正确数据库。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "long_term_memory" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("long_term_memory")}
+    if "user_id" not in columns:
+        with target_engine.begin() as connection:
+            connection.execute(text("ALTER TABLE long_term_memory ADD COLUMN user_id VARCHAR"))
+            logger.info("Migrated long_term_memory: added user_id column for multi-tenant isolation")
+
+
+def _migrate_audit_log_columns(use_engine=None):
+    """
+    为 audit_logs 表补齐 details、ip_address、created_at 列，
+    同时将旧的 timestamp 列数据迁移到 created_at。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "audit_logs" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("audit_logs")}
+    with target_engine.begin() as connection:
+        if "details" not in columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN details TEXT"))
+        if "ip_address" not in columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(50)"))
+        if "created_at" not in columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN created_at DATETIME"))
+            if "timestamp" in columns:
+                connection.execute(text("UPDATE audit_logs SET created_at = timestamp WHERE created_at IS NULL"))
+            logger.info("Migrated audit_logs: added created_at column")
+
+
 def init_db(bind_engine=None):
     """
-    初始化db相关运行上下文、配置或默认数据。
-    这些步骤往往是其他能力能够正常运行的前置条件。
-    支持自定义engine，便于测试。
+    初始化数据库表结构并执行必要的迁移操作。
+    支持自定义 engine，便于测试环境使用独立数据库。
     """
     use_engine = bind_engine or engine
     Base.metadata.create_all(bind=use_engine)
     _migrate_conversation_record_metadata_column(use_engine=use_engine)
     _migrate_plugin_columns(use_engine=use_engine)
+    _migrate_long_term_memory_user_id(use_engine=use_engine)
+    _migrate_audit_log_columns(use_engine=use_engine)
 
 
 def get_db():
@@ -338,5 +454,13 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        logger.bind(
+            event="db_session_error",
+            module="db",
+            error_type=type(e).__name__,
+        ).opt(exception=True).error(f"数据库会话异常: {e}")
+        db.rollback()
+        raise
     finally:
         db.close()

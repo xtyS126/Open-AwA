@@ -95,6 +95,35 @@ export interface ProviderDetailResponse {
   configuration: ModelConfiguration
 }
 
+// Ollama 模型发现结果
+export interface OllamaModel {
+  name: string
+  size: number
+  modified_at: string
+  digest: string
+}
+
+export interface OllamaDiscoverResponse {
+  success: boolean
+  provider: string
+  base_url: string
+  models: OllamaModel[]
+  count: number
+}
+
+// 提供商连接状态
+export interface ProviderConnectionStatus {
+  provider: string
+  status: 'connected' | 'auth_error' | 'timeout' | 'unreachable' | 'unconfigured' | 'error'
+  message: string
+  display_name?: string
+}
+
+export interface ProvidersStatusResponse {
+  success: boolean
+  providers: ProviderConnectionStatus[]
+}
+
 export interface ProviderModel {
   id: number
   provider: string
@@ -191,4 +220,12 @@ export const modelsAPI = {
 
   getModels: (params?: { provider?: string }) =>
     api.get('/billing/models', { params }),
+
+  // Ollama 本地模型发现
+  discoverOllamaModels: () =>
+    api.get<OllamaDiscoverResponse>('/models/ollama'),
+
+  // 获取所有提供商连接状态
+  getProvidersStatus: () =>
+    api.get<ProvidersStatusResponse>('/models/providers'),
 }

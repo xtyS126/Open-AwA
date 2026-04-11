@@ -1,8 +1,14 @@
 import '@testing-library/jest-dom/vitest'
-import { render } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import MemoryPage from '@/features/memory/MemoryPage'
 import { BrowserRouter } from 'react-router-dom'
+
+const { getShortTermMock, getLongTermMock, getRecordsPreviewMock } = vi.hoisted(() => ({
+  getShortTermMock: vi.fn(),
+  getLongTermMock: vi.fn(),
+  getRecordsPreviewMock: vi.fn(),
+}))
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
@@ -11,14 +17,14 @@ vi.mock('@/shared/api/api', () => ({
   billingAPI: { getSummary: vi.fn().mockResolvedValue({ data: {} }) },
   chatAPI: { getHistory: vi.fn().mockResolvedValue({ data: [] }) },
   modelsAPI: { getConfigurations: vi.fn().mockResolvedValue({ data: { configurations: [] } }) },
-  memoryAPI: { getShortTerm: vi.fn().mockResolvedValue({ data: [] }), getLongTerm: vi.fn().mockResolvedValue({ data: [] }) },
+  memoryAPI: { getShortTerm: getShortTermMock, getLongTerm: getLongTermMock, deleteShortTerm: vi.fn(), deleteLongTerm: vi.fn() },
   experiencesAPI: { getList: vi.fn().mockResolvedValue({ data: [] }) },
   fileExperiencesAPI: { getList: vi.fn().mockResolvedValue({ data: [] }) },
   skillsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   promptsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
   logsAPI: { query: vi.fn().mockResolvedValue({ data: { records: [], total: 0 } }) },
   behaviorAPI: { getStats: vi.fn().mockResolvedValue({ data: {} }) },
-  conversationAPI: { getRecordsPreview: vi.fn().mockResolvedValue({ data: { records: [], count: 0 } }) }
+  conversationAPI: { getRecordsPreview: getRecordsPreviewMock }
 }))
 
 vi.mock('@/features/settings/modelsApi', () => ({
@@ -29,8 +35,25 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('MemoryPage', () => {
-  it('renders without crashing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getLongTermMock.mockResolvedValue({ data: [] })
+  })
+
+  it('短期记忆优先使用最近会话而不是默认 session_id', async () => {
+    getRecordsPreviewMock.mockResolvedValue({
+      data: {
+        records: [{ session_id: 'session-123' }],
+        count: 1,
+        limit: 20,
+      },
+    })
+    getShortTermMock.mockResolvedValue({ data: [] })
+
     render(<BrowserRouter><MemoryPage /></BrowserRouter>)
-    expect(true).toBe(true)
+
+    await waitFor(() => expect(getShortTermMock).toHaveBeenCalledWith('session-123'))
+    expect(getShortTermMock).not.toHaveBeenCalledWith('default')
+    expect(await screen.findByText('当前查看会话：session-123')).toBeInTheDocument()
   })
 })

@@ -1,8 +1,9 @@
 """
-记忆管理模块，负责短期记忆、长期记忆或经验数据的存储、检索与维护。
-它是上下文连续性和经验复用能力的重要支撑层。
+经验记忆管理模块，负责经验数据的增删改查、语义搜索与检索。
+提供基于规则和基于关键词的混合检索策略，支持经验复用与质量评估。
 """
 
+import asyncio
 import json
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
@@ -14,18 +15,47 @@ from loguru import logger
 
 class ExperienceManager:
     """
-    封装与ExperienceManager相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    经验记忆管理器，提供经验的增删改查和混合检索功能。
+    所有异步方法内部通过 asyncio.to_thread 包装同步数据库操作，
+    避免在异步事件循环中阻塞。
     """
     
     def __init__(self, db: Session):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化经验管理器。
+        参数:
+            db: SQLAlchemy 数据库会话实例
         """
         self.db = db
         logger.info("ExperienceManager initialized")
     
+    def _add_experience_sync(
+        self,
+        experience_type: str,
+        title: str,
+        content: str,
+        trigger_conditions: str,
+        confidence: float,
+        source_task: str,
+        metadata: Optional[Dict],
+        user_id: Optional[str]
+    ) -> ExperienceMemory:
+        """同步方法：向数据库插入一条经验记录。"""
+        experience = ExperienceMemory(
+            experience_type=experience_type,
+            title=title,
+            content=content,
+            trigger_conditions=trigger_conditions,
+            confidence=confidence,
+            source_task=source_task,
+            experience_metadata=json.dumps(metadata) if metadata else '{}',
+            user_id=user_id
+        )
+        self.db.add(experience)
+        self.db.commit()
+        self.db.refresh(experience)
+        return experience
+
     async def add_experience(
         self,
         experience_type: str,
@@ -38,41 +68,37 @@ class ExperienceManager:
         user_id: Optional[str] = None
     ) -> ExperienceMemory:
         """
-        处理add、experience相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        添加一条新的经验记录。
+        参数:
+            experience_type: 经验类型分类
+            title: 经验标题
+            content: 经验内容详情
+            trigger_conditions: 触发条件描述
+            confidence: 置信度 (0.0-1.0)
+            source_task: 来源任务类型
+            metadata: 附加元数据
+            user_id: 所属用户ID
+        返回: 新创建的 ExperienceMemory 实例
         """
-        experience = ExperienceMemory(
-            experience_type=experience_type,
-            title=title,
-            content=content,
-            trigger_conditions=trigger_conditions,
-            confidence=confidence,
-            source_task=source_task,
-            experience_metadata=json.dumps(metadata) if metadata else '{}',
-            user_id=user_id
+        experience = await asyncio.to_thread(
+            self._add_experience_sync,
+            experience_type, title, content, trigger_conditions,
+            confidence, source_task, metadata, user_id
         )
-        
-        self.db.add(experience)
-        self.db.commit()
-        self.db.refresh(experience)
-        
         logger.info(f"Added new experience: {title} (type: {experience_type})")
         return experience
     
-    async def get_experiences(
+    def _get_experiences_sync(
         self,
-        experience_type: Optional[str] = None,
-        min_confidence: float = 0.0,
-        source_task: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
-        sort_by: str = 'confidence',
-        order: str = 'desc'
+        experience_type: Optional[str],
+        min_confidence: float,
+        source_task: Optional[str],
+        limit: int,
+        offset: int,
+        sort_by: str,
+        order: str
     ) -> List[ExperienceMemory]:
-        """
-        获取experiences相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """同步方法：按条件查询经验列表。"""
         query = self.db.query(ExperienceMemory)
         
         if experience_type:
@@ -88,30 +114,61 @@ class ExperienceManager:
         else:
             query = query.order_by(sort_column)
         
-        experiences = query.offset(offset).limit(limit).all()
-        
-        return experiences
+        return query.offset(offset).limit(limit).all()
+
+    async def get_experiences(
+        self,
+        experience_type: Optional[str] = None,
+        min_confidence: float = 0.0,
+        source_task: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        sort_by: str = 'confidence',
+        order: str = 'desc'
+    ) -> List[ExperienceMemory]:
+        """
+        按条件获取经验记录列表。
+        参数:
+            experience_type: 按经验类型过滤
+            min_confidence: 最低置信度阈值
+            source_task: 按来源任务过滤
+            limit: 返回数量上限
+            offset: 分页偏移量
+            sort_by: 排序字段名
+            order: 排序方向 ('asc'/'desc')
+        返回: 满足条件的经验列表
+        """
+        return await asyncio.to_thread(
+            self._get_experiences_sync,
+            experience_type, min_confidence, source_task,
+            limit, offset, sort_by, order
+        )
     
-    async def get_experience_by_id(self, experience_id: int) -> Optional[ExperienceMemory]:
-        """
-        获取experience、by、id相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+    def _get_experience_by_id_sync(self, experience_id: int) -> Optional[ExperienceMemory]:
+        """同步方法：按ID查询单条经验记录。"""
         return self.db.query(ExperienceMemory).filter(
             ExperienceMemory.id == experience_id
         ).first()
+
+    async def get_experience_by_id(self, experience_id: int) -> Optional[ExperienceMemory]:
+        """
+        根据ID获取单条经验记录。
+        参数:
+            experience_id: 经验记录的主键ID
+        返回: ExperienceMemory 实例，不存在时返回 None
+        """
+        return await asyncio.to_thread(
+            self._get_experience_by_id_sync, experience_id
+        )
     
-    async def search_experiences(
+    def _search_experiences_sync(
         self,
         query_text: str,
-        experience_type: Optional[str] = None,
-        min_confidence: float = 0.0,
-        limit: int = 10
+        experience_type: Optional[str],
+        min_confidence: float,
+        limit: int
     ) -> List[ExperienceMemory]:
-        """
-        处理search、experiences相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """同步方法：按关键字搜索经验记录并更新访问统计。"""
         query = self.db.query(ExperienceMemory).filter(
             or_(
                 ExperienceMemory.title.contains(query_text),
@@ -130,29 +187,42 @@ class ExperienceManager:
             desc(ExperienceMemory.usage_count)
         ).limit(limit).all()
         
+        # 批量更新访问计数和最后访问时间
         for exp in experiences:
             exp.usage_count += 1
             exp.last_access = datetime.now(timezone.utc)
         
         self.db.commit()
-        
         return experiences
-    
-    async def semantic_search_experiences(
+
+    async def search_experiences(
         self,
-        query: str,
-        task_context: Optional[Dict] = None,
-        limit: int = 5
+        query_text: str,
+        experience_type: Optional[str] = None,
+        min_confidence: float = 0.0,
+        limit: int = 10
     ) -> List[ExperienceMemory]:
         """
-        处理semantic、search、experiences相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        按关键字搜索经验记录，同时更新匹配记录的访问统计。
+        参数:
+            query_text: 搜索关键字
+            experience_type: 按经验类型过滤
+            min_confidence: 最低置信度阈值
+            limit: 返回数量上限
+        返回: 匹配的经验记录列表
         """
-        keywords = self._extract_keywords(query)
-        
-        if not keywords:
-            return []
-        
+        return await asyncio.to_thread(
+            self._search_experiences_sync,
+            query_text, experience_type, min_confidence, limit
+        )
+    
+    def _semantic_search_experiences_sync(
+        self,
+        keywords: List[str],
+        task_context: Optional[Dict],
+        limit: int
+    ) -> List[ExperienceMemory]:
+        """同步方法：基于关键词的语义搜索，并更新访问统计。"""
         conditions = []
         for keyword in keywords:
             conditions.append(ExperienceMemory.content.contains(keyword))
@@ -166,6 +236,7 @@ class ExperienceManager:
             )
         )
         
+        # 优先匹配相同任务类型的经验
         if task_context and 'task_type' in task_context:
             task_experiences = query_obj.filter(
                 ExperienceMemory.source_task == task_context['task_type']
@@ -179,13 +250,37 @@ class ExperienceManager:
             desc(ExperienceMemory.success_count)
         ).limit(limit).all()
         
+        # 批量更新访问计数
         for exp in experiences:
             exp.usage_count += 1
             exp.last_access = datetime.now(timezone.utc)
         
         self.db.commit()
-        
         return experiences
+
+    async def semantic_search_experiences(
+        self,
+        query: str,
+        task_context: Optional[Dict] = None,
+        limit: int = 5
+    ) -> List[ExperienceMemory]:
+        """
+        基于关键词提取的语义搜索，支持任务上下文优先匹配。
+        参数:
+            query: 查询文本，会自动提取关键词
+            task_context: 任务上下文（可选），含 task_type 时优先匹配
+            limit: 返回数量上限
+        返回: 语义匹配的经验列表
+        """
+        keywords = self._extract_keywords(query)
+        
+        if not keywords:
+            return []
+        
+        return await asyncio.to_thread(
+            self._semantic_search_experiences_sync,
+            keywords, task_context, limit
+        )
     
     def _extract_keywords(self, text: str) -> List[str]:
         """
@@ -199,15 +294,12 @@ class ExperienceManager:
         
         return keywords[:10]
     
-    async def rule_based_search(
+    def _rule_based_search_sync(
         self,
         conditions: Dict[str, Any],
-        limit: int = 5
+        limit: int
     ) -> List[ExperienceMemory]:
-        """
-        处理rule、based、search相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """同步方法：基于规则条件搜索经验记录。"""
         query = self.db.query(ExperienceMemory)
         
         if 'task_type' in conditions:
@@ -216,29 +308,58 @@ class ExperienceManager:
             )
         
         if 'experience_types' in conditions:
-            query = query.filter(
-                ExperienceMemory.experience_type.in_(conditions['experience_types'])
-            )
+            exp_types = conditions['experience_types']
+            if exp_types:
+                query = query.filter(
+                    ExperienceMemory.experience_type.in_(exp_types)
+                )
         
+        # 成功率过滤：先查出符合条件的候选集，在内存中过滤
+        # 避免 SQL 直接做除法产生除零错误
         if 'min_success_rate' in conditions:
             min_rate = conditions['min_success_rate']
-            query = query.filter(
-                ExperienceMemory.success_count / ExperienceMemory.usage_count >= min_rate
-            )
+            candidates = query.filter(
+                ExperienceMemory.confidence >= 0.3,
+                ExperienceMemory.usage_count > 0
+            ).order_by(
+                desc(ExperienceMemory.confidence)
+            ).all()
+            
+            experiences = [
+                exp for exp in candidates
+                if exp.usage_count > 0 and (exp.success_count / exp.usage_count) >= min_rate
+            ][:limit]
+        else:
+            experiences = query.filter(
+                ExperienceMemory.confidence >= 0.3
+            ).order_by(
+                desc(ExperienceMemory.confidence)
+            ).limit(limit).all()
         
-        experiences = query.filter(
-            ExperienceMemory.confidence >= 0.3
-        ).order_by(
-            desc(ExperienceMemory.confidence)
-        ).limit(limit).all()
-        
+        # 批量更新访问统计
         for exp in experiences:
             exp.usage_count += 1
             exp.last_access = datetime.now(timezone.utc)
         
         self.db.commit()
-        
         return experiences
+
+    async def rule_based_search(
+        self,
+        conditions: Dict[str, Any],
+        limit: int = 5
+    ) -> List[ExperienceMemory]:
+        """
+        基于规则条件搜索经验记录。
+        支持按任务类型、经验类型和最低成功率过滤。
+        参数:
+            conditions: 查询条件字典，支持 task_type/experience_types/min_success_rate
+            limit: 返回数量上限
+        返回: 满足规则条件的经验列表
+        """
+        return await asyncio.to_thread(
+            self._rule_based_search_sync, conditions, limit
+        )
     
     async def retrieve_relevant_experiences(
         self,

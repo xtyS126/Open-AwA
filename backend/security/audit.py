@@ -1,6 +1,6 @@
 """
-安全控制模块，负责权限约束、沙箱限制、审计记录或安全边界保护。
-这里的逻辑通常用于避免未授权操作、危险行为或不可控的资源访问。
+安全控制模块，负责审计日志记录与查询。
+所有用户操作的审计信息通过此模块写入数据库，支持异步记录与多维度查询。
 """
 
 import asyncio
@@ -12,32 +12,35 @@ from loguru import logger
 
 
 class AuditLogger:
-    """
-    封装与AuditLogger相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """审计日志记录器，提供异步写入与便捷的事件记录方法。"""
+
     def __init__(self, db: Session):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化审计日志记录器。
+
+        Args:
+            db: 数据库会话实例。
         """
         self.db = db
         logger.info("AuditLogger initialized")
-    
+
     def _log_sync(
         self,
         user_id: str,
         action: str,
         resource: str,
         result: str,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[str] = None,
+        ip_address: Optional[str] = None,
     ) -> AuditLog:
+        """同步写入审计日志记录。"""
         log_entry = AuditLog(
             user_id=user_id,
             action=action,
             resource=resource,
             result=result,
-            details=str(details) if details else None
+            details=details,
+            ip_address=ip_address,
         )
         self.db.add(log_entry)
         self.db.commit()
@@ -50,54 +53,79 @@ class AuditLogger:
         action: str,
         resource: str,
         result: str,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
     ) -> AuditLog:
         """
-        处理log相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        异步记录审计日志。
+
+        Args:
+            user_id: 操作用户标识。
+            action: 操作类型。
+            resource: 操作资源。
+            result: 操作结果（success/failure）。
+            details: 附加详情字典。
+            ip_address: 请求来源 IP。
         """
+        details_str = str(details) if details else None
         log_entry = await asyncio.to_thread(
-            self._log_sync, user_id, action, resource, result, details
+            self._log_sync, user_id, action, resource, result, details_str, ip_address
         )
         logger.debug(f"Audit log created: {action} on {resource} by {user_id}")
         return log_entry
-    
+
     async def log_auth_event(
         self,
         user_id: str,
         event_type: str,
         success: bool,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
     ) -> AuditLog:
         """
-        处理log、auth、event相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        记录认证事件审计日志。
+
+        Args:
+            user_id: 用户标识。
+            event_type: 认证事件类型（login/logout/register）。
+            success: 是否成功。
+            details: 附加详情。
+            ip_address: 请求来源 IP。
         """
         return await self.log(
             user_id=user_id,
             action=f"auth:{event_type}",
             resource="authentication",
             result="success" if success else "failure",
-            details=details
+            details=details,
+            ip_address=ip_address,
         )
-    
+
     async def log_tool_usage(
         self,
         user_id: str,
         tool_name: str,
         params: Dict[str, Any],
-        result: str
+        result: str,
+        ip_address: Optional[str] = None,
     ) -> AuditLog:
         """
-        处理log、tool、usage相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        记录工具调用审计日志。
+
+        Args:
+            user_id: 用户标识。
+            tool_name: 工具名称。
+            params: 调用参数。
+            result: 调用结果。
+            ip_address: 请求来源 IP。
         """
         return await self.log(
             user_id=user_id,
             action=f"tool:{tool_name}",
             resource="tool_execution",
             result=result,
-            details=params
+            details=params,
+            ip_address=ip_address,
         )
     
     async def log_file_operation(

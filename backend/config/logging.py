@@ -3,13 +3,15 @@
 配置项通常会在多个子模块中生效，因此理解其字段含义非常重要。
 """
 
+import os
 import re
 import sys
+import traceback
 import uuid
 from collections import deque
 from contextvars import ContextVar
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -17,6 +19,8 @@ from loguru import logger
 REQUEST_ID_HEADER = "X-Request-Id"
 _REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
 _LOG_BUFFER = deque(maxlen=5000)
+# 全局脱敏开关，init_logging 时根据配置设置
+_DISABLE_SANITIZE = False
 
 SENSITIVE_KEYS = {
     "password",
@@ -125,9 +129,10 @@ def _mask_secret_text(text: str) -> str:
 
 def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
     """
-    处理sanitize、for、logging相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    对日志内容进行脱敏处理。当全局脱敏开关 _DISABLE_SANITIZE 为 True 时跳过脱敏，方便开发调试。
     """
+    if _DISABLE_SANITIZE:
+        return value
     normalized_key = str(key_name or "").strip().lower()
 
     if isinstance(value, dict):
@@ -185,6 +190,7 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
     level_obj = record.get("level")
     level_name = getattr(level_obj, "name", "")
 
+    # 构建日志事件，包含异常堆栈信息
     log_event = {
         "timestamp": str(record.get("time", datetime.now(timezone.utc))),
         "level": str(level_name).upper(),
@@ -195,23 +201,105 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
         "request_id": str(extra.get("request_id", "")),
         "extra": extra,
     }
+
+    # 从 record 中提取异常堆栈（loguru 在 logger.exception() 时写入 record["exception"]）
+    exception_info = record.get("exception")
+    if exception_info is not None:
+        exc_type = exception_info.type
+        exc_value = exception_info.value
+        exc_tb = exception_info.traceback
+        if exc_type and exc_value:
+            log_event["error_type"] = exc_type.__name__
+            log_event["error_message"] = str(exc_value)
+        if exc_tb:
+            try:
+                tb_lines = traceback.format_exception(exc_type, exc_value, exc_tb)
+                log_event["traceback"] = "".join(tb_lines)
+            except Exception:
+                pass
+
+    # 从 extra 中提取结构化错误字段
+    for err_field in ("error_type", "error_message", "error_code", "status_code"):
+        val = extra.get(err_field)
+        if val and err_field not in log_event:
+            log_event[err_field] = val
+
     _LOG_BUFFER.append(log_event)
 
 
-def init_logging(log_level: str = "INFO", service_name: str = "openawa-backend", log_serialize: bool = True) -> None:
+def init_logging(
+    log_level: str = "INFO",
+    service_name: str = "openawa-backend",
+    log_serialize: bool = True,
+    log_dir: str = "./logs",
+    log_file_rotation: str = "10 MB",
+    log_file_retention: str = "30 days",
+    log_file_compression: str = "gz",
+    disable_sanitize: bool = False,
+) -> None:
     """
-    初始化logging相关运行上下文、配置或默认数据。
-    这些步骤往往是其他能力能够正常运行的前置条件。
+    初始化日志系统：控制台输出 + 文件持久化 + 错误日志独立文件。
+    日志文件按大小自动轮转，按保留天数自动清理，支持压缩归档。
     """
+    global _DISABLE_SANITIZE
+    _DISABLE_SANITIZE = disable_sanitize
+
     logger.remove()
     logger.configure(patcher=lambda record: _patch_record(record, service_name=service_name))
+
+    level_str = str(log_level or "INFO").upper()
+
+    # 控制台输出（stderr）
     logger.add(
         sys.stderr,
-        level=str(log_level or "INFO").upper(),
+        level=level_str,
         serialize=bool(log_serialize),
         enqueue=False,
-        backtrace=False,
+        backtrace=True,
         diagnose=False,
+    )
+
+    # 文件持久化
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 全量日志文件：所有级别
+    logger.add(
+        os.path.join(log_dir, "openawa_{time:YYYY-MM-DD}.log"),
+        level=level_str,
+        serialize=True,
+        rotation=log_file_rotation,
+        retention=log_file_retention,
+        compression=log_file_compression,
+        encoding="utf-8",
+        enqueue=True,
+        backtrace=True,
+        diagnose=False,
+    )
+
+    # 错误日志独立文件：仅 WARNING 及以上，方便快速定位问题
+    logger.add(
+        os.path.join(log_dir, "openawa_error_{time:YYYY-MM-DD}.log"),
+        level="WARNING",
+        serialize=True,
+        rotation=log_file_rotation,
+        retention=log_file_retention,
+        compression=log_file_compression,
+        encoding="utf-8",
+        enqueue=True,
+        backtrace=True,
+        diagnose=True,
+    )
+
+    logger.bind(
+        event="logging_initialized",
+        module="config",
+        log_level=level_str,
+        log_dir=log_dir,
+        file_rotation=log_file_rotation,
+        file_retention=log_file_retention,
+    ).info(
+        f"日志系统初始化完成: level={level_str}, dir={log_dir}, "
+        f"rotation={log_file_rotation}, retention={log_file_retention}"
     )
 
 
@@ -253,3 +341,94 @@ def query_log_buffer(
     total = len(matched)
     page = matched[offset : offset + limit]
     return {"total": total, "offset": offset, "limit": limit, "records": page}
+
+
+def query_logs_by_request_id(request_id: str) -> List[Dict[str, Any]]:
+    """
+    根据 request_id 聚合一次请求的完整日志链路，方便追踪单次请求的全部执行过程。
+    返回按时间正序排列的日志列表。
+    """
+    if not request_id:
+        return []
+    matched = []
+    for entry in _LOG_BUFFER:
+        if str(entry.get("request_id", "")) == request_id:
+            matched.append(entry)
+    return matched
+
+
+def get_error_summary(
+    hours: Optional[int] = None,
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """
+    统计错误日志摘要：按 error_type 分组计数，并返回最近的错误列表。
+    用于快速了解系统错误分布和高频报错。
+    """
+    if hours is not None and start_time is None:
+        end_time = end_time or datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=max(1, int(hours)))
+
+    errors: List[Dict[str, Any]] = []
+    error_type_counts: Dict[str, int] = {}
+    module_error_counts: Dict[str, int] = {}
+
+    for entry in reversed(_LOG_BUFFER):
+        level = str(entry.get("level", "")).upper()
+        if level not in ("ERROR", "CRITICAL"):
+            continue
+
+        entry_time = None
+        try:
+            entry_time = datetime.fromisoformat(
+                str(entry.get("timestamp", "")).replace("Z", "+00:00")
+            )
+        except ValueError:
+            pass
+
+        if start_time and entry_time and entry_time < start_time:
+            continue
+        if end_time and entry_time and entry_time > end_time:
+            continue
+
+        errors.append(entry)
+
+        # 按错误类型统计
+        etype = entry.get("error_type") or entry.get("event", "unknown")
+        error_type_counts[etype] = error_type_counts.get(etype, 0) + 1
+
+        # 按模块统计
+        mod = entry.get("module", "unknown")
+        module_error_counts[mod] = module_error_counts.get(mod, 0) + 1
+
+    # 按频率降序排序
+    sorted_types = sorted(error_type_counts.items(), key=lambda x: x[1], reverse=True)
+    sorted_modules = sorted(module_error_counts.items(), key=lambda x: x[1], reverse=True)
+
+    return {
+        "total_errors": len(errors),
+        "error_types": [{"type": t, "count": c} for t, c in sorted_types],
+        "error_by_module": [{"module": m, "count": c} for m, c in sorted_modules],
+        "recent_errors": errors[:limit],
+    }
+
+
+def get_log_file_list(log_dir: str = "./logs") -> List[Dict[str, Any]]:
+    """
+    列出日志目录中的所有日志文件及其大小，方便前端展示和下载。
+    """
+    files = []
+    if not os.path.isdir(log_dir):
+        return files
+    for fname in sorted(os.listdir(log_dir), reverse=True):
+        fpath = os.path.join(log_dir, fname)
+        if os.path.isfile(fpath) and (fname.endswith(".log") or fname.endswith(".gz")):
+            stat = os.stat(fpath)
+            files.append({
+                "filename": fname,
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            })
+    return files

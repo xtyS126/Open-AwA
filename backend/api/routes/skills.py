@@ -109,13 +109,51 @@ def _load_weixin_skill_config_dict(db: Session) -> Dict[str, Any]:
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     if not skill:
         return {}
+    return _deserialize_skill_config(skill.config)
+
+
+def _deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
+    """
+    统一解析 Skill.config，兼容 JSON 列中的字典对象以及历史遗留的 YAML/JSON 字符串。
+    """
+    if isinstance(config_value, dict):
+        return dict(config_value)
+    if config_value is None:
+        return {}
+
+    text = str(config_value or "").strip()
+    if not text:
+        return {}
+
     try:
-        loaded = yaml.safe_load(skill.config)
+        loaded = json.loads(text)
+    except Exception:
+        loaded = None
+    if isinstance(loaded, dict):
+        return loaded
+
+    try:
+        loaded = yaml.safe_load(text)
     except Exception:
         return {}
     if isinstance(loaded, dict):
         return loaded
     return {}
+
+
+def _build_skill_response(skill: Skill) -> SkillResponse:
+    """
+    将 ORM Skill 统一转换为响应模型，避免配置字段因历史格式差异触发序列化异常。
+    """
+    return SkillResponse(
+        id=skill.id,
+        name=skill.name,
+        version=skill.version,
+        description=skill.description,
+        config=_deserialize_skill_config(skill.config),
+        enabled=skill.enabled,
+        installed_at=skill.installed_at,
+    )
 
 
 def _build_weixin_config_payload(
@@ -160,28 +198,32 @@ def _save_weixin_config_to_db(
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
-    config_yaml = yaml.dump(
-        _build_weixin_config_payload(
-            account_id=account_id,
-            token=token,
-            base_url=base_url,
-            timeout_seconds=timeout_seconds,
-            user_id=user_id,
-            binding_status=binding_status
-        )
+    config_dict = _build_weixin_config_payload(
+        account_id=account_id,
+        token=token,
+        base_url=base_url,
+        timeout_seconds=timeout_seconds,
+        user_id=user_id,
+        binding_status=binding_status
     )
     if skill:
-        skill.config = config_yaml
+        skill.version = "1.0.0"
+        skill.description = "Weixin Clawbot communication skill"
+        skill.config = config_dict
+        skill.category = skill.category or "general"
+        skill.tags = skill.tags if isinstance(skill.tags, list) else []
+        skill.dependencies = skill.dependencies if isinstance(skill.dependencies, list) else []
+        skill.author = skill.author or "system"
     else:
         skill = Skill(
             id=str(uuid.uuid4()),
             name=WEIXIN_SKILL_NAME,
             version="1.0.0",
             description="Weixin Clawbot communication skill",
-            config=config_yaml,
+            config=config_dict,
             category="general",
-            tags="[]",
-            dependencies="[]",
+            tags=[],
+            dependencies=[],
             author="system",
             enabled=True
         )
@@ -556,8 +598,7 @@ def _purge_expired_qr_sessions() -> None:
 
 class WeixinConfigReq(BaseModel):
     """
-    封装与WeixinConfigReq相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    微信配置请求模型，包含连接参数和绑定信息。
     """
     account_id: str
     token: str
@@ -565,6 +606,8 @@ class WeixinConfigReq(BaseModel):
     timeout_seconds: Optional[int] = 15
     user_id: Optional[str] = ""
     binding_status: Optional[str] = "unbound"
+    bot_type: Optional[str] = None
+    channel_version: Optional[str] = None
 
 
 class WeixinQrStartReq(BaseModel):
@@ -655,8 +698,8 @@ async def weixin_health_check(request: Request):
         account_id=config.account_id,
         token=config.token,
         base_url=config.base_url or DEFAULT_BASE_URL,
-        bot_type="3",
-        channel_version="1.0.2",
+        bot_type=config.bot_type if hasattr(config, "bot_type") and config.bot_type else DEFAULT_BOT_TYPE,
+        channel_version=config.channel_version if hasattr(config, "channel_version") and config.channel_version else "1.0.2",
         timeout_seconds=config.timeout_seconds or 15,
         user_id=str(config.user_id or "").strip(),
         binding_status=_normalize_binding_status(config.binding_status, user_id=str(config.user_id or "").strip())
@@ -700,7 +743,7 @@ async def get_weixin_config(
         return _build_default_weixin_config()
     
     try:
-        config_dict = yaml.safe_load(skill.config)
+        config_dict = _deserialize_skill_config(skill.config)
         wx_config = config_dict.get("weixin", {})
         user_id = str(wx_config.get("user_id", "") or "").strip()
         return {
@@ -709,9 +752,16 @@ async def get_weixin_config(
             "base_url": wx_config.get("base_url", DEFAULT_BASE_URL),
             "timeout_seconds": wx_config.get("timeout_seconds", 15),
             "user_id": user_id,
-            "binding_status": _normalize_binding_status(wx_config.get("binding_status"), user_id=user_id)
+            "binding_status": _normalize_binding_status(wx_config.get("binding_status"), user_id=user_id),
+            "bot_type": wx_config.get("bot_type", DEFAULT_BOT_TYPE),
+            "channel_version": wx_config.get("channel_version", "1.0.2"),
         }
-    except Exception:
+    except Exception as e:
+        logger.bind(
+            event="weixin_config_load_error",
+            module="skills",
+            error_type=type(e).__name__,
+        ).opt(exception=True).warning(f"加载微信配置失败，使用默认配置: {e}")
         return _build_default_weixin_config()
 
 
@@ -1066,7 +1116,7 @@ async def get_skills(
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     skills = db.query(Skill).all()
-    return skills
+    return [_build_skill_response(skill) for skill in skills]
 
 
 @router.get("/{skill_id}", response_model=SkillResponse)
@@ -1082,7 +1132,7 @@ async def get_skill(
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
-    return skill
+    return _build_skill_response(skill)
 
 
 @router.post(
@@ -1132,9 +1182,13 @@ async def install_skill(
     new_skill = Skill(
         id=str(uuid.uuid4()),
         name=skill.name,
-        version=skill.version,
-        description=skill.description,
-        config=yaml.dump(config_dict),
+        version=skill.version or "1.0.0",
+        description=skill.description or "",
+        config=config_dict,
+        category=str(config_dict.get("category") or "general"),
+        tags=config_dict.get("tags") if isinstance(config_dict.get("tags"), list) else [],
+        dependencies=config_dict.get("dependencies") if isinstance(config_dict.get("dependencies"), list) else [],
+        author=str(config_dict.get("author") or "unknown"),
         enabled=True
     )
     
@@ -1152,7 +1206,7 @@ async def install_skill(
         user_id=current_user.id,
     ).info("skill installed")
     
-    return new_skill
+    return _build_skill_response(new_skill)
 
 
 @router.delete("/{skill_id}")
@@ -1276,8 +1330,12 @@ async def update_skill(
         skill.enabled = skill_update.enabled
     if skill_update.config is not None:
         try:
-            yaml.safe_load(skill_update.config)
-            skill.config = skill_update.config
+            parsed_config = yaml.safe_load(skill_update.config)
+            if parsed_config is None:
+                parsed_config = {}
+            if not isinstance(parsed_config, dict):
+                raise HTTPException(status_code=400, detail="Skill configuration must be an object")
+            skill.config = parsed_config
         except yaml.YAMLError as e:
             logger.bind(
                 event="skill_update_config_invalid_yaml",
@@ -1289,6 +1347,8 @@ async def update_skill(
                 error_message=sanitize_for_logging(str(e)),
             ).error("skill update yaml parsing failed")
             raise HTTPException(status_code=400, detail="Invalid YAML configuration")
+        except HTTPException:
+            raise
         except Exception as e:
             logger.bind(
                 event="skill_update_config_error",
@@ -1314,7 +1374,7 @@ async def update_skill(
         user_id=current_user.id,
     ).info("skill updated")
 
-    return skill
+    return _build_skill_response(skill)
 
 
 @router.post(
@@ -1406,30 +1466,7 @@ async def get_skill_config(
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
 
-    try:
-        config_dict = yaml.safe_load(skill.config)
-    except yaml.YAMLError as e:
-        logger.bind(
-            event="skill_get_config_invalid_yaml",
-            module="skills",
-            action="get_skill_config",
-            status="failure",
-            skill_id=skill_id,
-            error_type=type(e).__name__,
-            error_message=sanitize_for_logging(str(e)),
-        ).error("get skill config yaml parsing failed")
-        raise HTTPException(status_code=500, detail="Failed to parse skill configuration")
-    except Exception as e:
-        logger.bind(
-            event="skill_get_config_error",
-            module="skills",
-            action="get_skill_config",
-            status="failure",
-            skill_id=skill_id,
-            error_type=type(e).__name__,
-            error_message=sanitize_for_logging(str(e)),
-        ).error("unexpected get skill config error")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    config_dict = _deserialize_skill_config(skill.config)
 
     return SkillConfigResponse(
         skill_id=skill.id,

@@ -27,6 +27,57 @@ SESSION_PAUSE_DURATION_SECONDS = 60 * 60
 _SESSION_PAUSE_UNTIL: Dict[str, float] = {}
 
 
+def save_binding(db, user_id: str, config: "WeixinRuntimeConfig") -> None:
+    """
+    将微信绑定信息持久化到数据库。
+    如果该用户已有绑定记录则更新，否则新建。
+    """
+    from db.models import WeixinBinding
+    binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == str(user_id)).first()
+    if binding:
+        binding.weixin_account_id = config.account_id
+        binding.token = config.token
+        binding.base_url = config.base_url
+        binding.bot_type = config.bot_type
+        binding.channel_version = config.channel_version
+        binding.binding_status = config.binding_status
+        binding.weixin_user_id = config.user_id
+    else:
+        binding = WeixinBinding(
+            user_id=str(user_id),
+            weixin_account_id=config.account_id,
+            token=config.token,
+            base_url=config.base_url,
+            bot_type=config.bot_type,
+            channel_version=config.channel_version,
+            binding_status=config.binding_status,
+            weixin_user_id=config.user_id,
+        )
+        db.add(binding)
+    db.commit()
+    logger.info(f"[weixin] 已保存用户 {user_id} 的微信绑定, account_id={config.account_id}, status={config.binding_status}")
+
+
+def load_binding(db, user_id: str) -> Optional["WeixinRuntimeConfig"]:
+    """
+    从数据库加载用户的微信绑定信息，返回 WeixinRuntimeConfig；无记录时返回 None。
+    """
+    from db.models import WeixinBinding
+    binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == str(user_id)).first()
+    if not binding:
+        return None
+    return WeixinRuntimeConfig(
+        account_id=binding.weixin_account_id or "",
+        token=binding.token or "",
+        base_url=binding.base_url or DEFAULT_BASE_URL,
+        bot_type=binding.bot_type or DEFAULT_BOT_TYPE,
+        channel_version=binding.channel_version or DEFAULT_CHANNEL_VERSION,
+        timeout_seconds=15,
+        user_id=binding.weixin_user_id or "",
+        binding_status=binding.binding_status or "unbound",
+    )
+
+
 class WeixinAdapterError(Exception):
     """
     封装与WeixinAdapterError相关的核心逻辑与运行状态。
@@ -423,6 +474,16 @@ class WeixinSkillAdapter:
             async with httpx.AsyncClient(timeout=timeout_value) as client:
                 response = await client.post(url, json=payload, headers=headers)
             content_type = response.headers.get("content-type", "")
+            # 401 错误表示 token 失效，更新绑定状态为 expired
+            if response.status_code == 401:
+                logger.warning(f"[weixin] token 认证失败 (401), account_id={config.account_id}, endpoint={endpoint}")
+                config.binding_status = "expired"
+                raise WeixinAdapterError(
+                    code="WEIXIN_TOKEN_EXPIRED",
+                    message="微信 token 已失效，请重新扫码登录",
+                    details={"endpoint": endpoint, "status_code": 401, "binding_status": "expired"},
+                    suggestions=["重新执行扫码登录流程以刷新 token"]
+                )
             if response.status_code >= 400:
                 raise WeixinAdapterError(
                     code="WEIXIN_UPSTREAM_HTTP_ERROR",

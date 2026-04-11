@@ -97,12 +97,14 @@ class MemoryManager:
         return count
     
     def _add_long_term_memory_sync(
-        self, content: str, importance: float, embedding: Optional[str]
+        self, content: str, importance: float, embedding: Optional[str],
+        user_id: Optional[str] = None
     ) -> LongTermMemory:
         memory = LongTermMemory(
             content=content,
             importance=importance,
-            embedding=embedding
+            embedding=embedding,
+            user_id=user_id
         )
         self.db.add(memory)
         self.db.commit()
@@ -113,38 +115,53 @@ class MemoryManager:
         self,
         content: str,
         importance: float = 0.5,
-        embedding: Optional[str] = None
+        embedding: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> LongTermMemory:
         """
-        处理add、long、term、memory相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        添加一条长期记忆到数据库。
+        参数:
+            content: 记忆内容文本
+            importance: 重要性评分 (0.0-1.0)
+            embedding: 向量嵌入（可选）
+            user_id: 所属用户ID，用于多租户隔离
+        返回: 新创建的 LongTermMemory 实例
         """
         memory = await asyncio.to_thread(
-            self._add_long_term_memory_sync, content, importance, embedding
+            self._add_long_term_memory_sync, content, importance, embedding, user_id
         )
         logger.debug(f"Added long-term memory with importance {importance}")
         return memory
     
     def _get_long_term_memories_sync(
-        self, min_importance: float, limit: int
+        self, min_importance: float, limit: int, user_id: Optional[str] = None
     ) -> List[LongTermMemory]:
-        return self.db.query(LongTermMemory).filter(
+        query = self.db.query(LongTermMemory).filter(
             LongTermMemory.importance >= min_importance
-        ).order_by(
+        )
+        # 按用户过滤，实现多租户隔离
+        if user_id is not None:
+            query = query.filter(LongTermMemory.user_id == user_id)
+        return query.order_by(
             LongTermMemory.importance.desc()
         ).limit(limit).all()
 
     async def get_long_term_memories(
         self,
         min_importance: float = 0.0,
-        limit: int = 50
+        limit: int = 50,
+        user_id: Optional[str] = None
     ) -> List[LongTermMemory]:
         """
-        获取long、term、memories相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+        获取长期记忆列表，支持按重要性和用户ID过滤。
+        参数:
+            min_importance: 最低重要性阈值
+            limit: 返回数量上限
+            user_id: 用户ID过滤，为None时返回所有用户的记忆
+        返回: 满足条件的 LongTermMemory 列表
         """
         return await asyncio.to_thread(
-            self._get_long_term_memories_sync, min_importance, limit
+            self._get_long_term_memories_sync, min_importance, limit, user_id
         )
     
     def _update_memory_access_sync(self, memory_id: int) -> None:
@@ -163,24 +180,33 @@ class MemoryManager:
         """
         await asyncio.to_thread(self._update_memory_access_sync, memory_id)
     
-    def _search_memories_sync(self, query: str, limit: int) -> List[LongTermMemory]:
-        return self.db.query(LongTermMemory).filter(
+    def _search_memories_sync(self, query: str, limit: int, user_id: Optional[str] = None) -> List[LongTermMemory]:
+        db_query = self.db.query(LongTermMemory).filter(
             LongTermMemory.content.contains(query)
-        ).order_by(
+        )
+        # 按用户过滤，保证多租户数据隔离
+        if user_id is not None:
+            db_query = db_query.filter(LongTermMemory.user_id == user_id)
+        return db_query.order_by(
             LongTermMemory.access_count.desc()
         ).limit(limit).all()
 
     async def search_memories(
         self,
         query: str,
-        limit: int = 10
+        limit: int = 10,
+        user_id: Optional[str] = None
     ) -> List[LongTermMemory]:
         """
-        处理search、memories相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        根据关键字搜索长期记忆，并更新访问计数。
+        参数:
+            query: 搜索关键字
+            limit: 返回数量上限
+            user_id: 用户ID过滤，实现多租户隔离
+        返回: 匹配的 LongTermMemory 列表
         """
         memories = await asyncio.to_thread(
-            self._search_memories_sync, query, limit
+            self._search_memories_sync, query, limit, user_id
         )
         for memory in memories:
             await self.update_memory_access(memory.id)

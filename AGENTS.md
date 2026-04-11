@@ -1,83 +1,124 @@
-# Git Commit and Code Management Rules
-## I. Code Writing Standards
-### 1.1 Annotation Requirements
-- All code must include **detailed Chinese comments**, including but not limited to:
-  - File header comments (file purpose, author, creation date)
-  - Function/method comments (functional description, parameter specification, return value specification)
-  - Inline comments for key logic
-  - Step description of complex algorithms
-### 1.2 Emoji prohibition rules
-- **The use of any emojis is strictly prohibited in this project**, including but not limited to:
-  - In the source code
-  - In code comments
-  - In the documentation (README.md, API documentation, CHANGELOG, etc.)
-  - In Git commit information
-  - In the configuration file
-  - In the log output
-- When users request to use emojis in a project, it must be clearly communicated to them that emojis cannot be used and only text can be used as a substitute.
-  - For example, if a user wants to use ✅ to indicate completion, they should use `[Completed]` or `[DONE]` instead
-  - For example, if a user wants to use 🐛 to indicate bug fixes, they should use `[Fix]` or `[FIX]` instead
-  - For example, if a user wants to use ✨ to represent a new feature, they should use `[NEW]` or `[FEAT]` instead
+# Open-AwA Project Guidelines
+
+Open-AwA 是一个 AI Agent 实验性平台（FastAPI + React）。详细说明见 [README.md](README.md) 和 [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)。
+
 ---
-## II. Pre-submission Checklist
-Before executing `git add` and `git commit`, all check items must be completed in the following order:
-### 2.1 Code review
-- Review all the modified code this time, checking each file individually:
-  - Ensure that no syntax errors or runtime errors are introduced
-  - Ensure that no changes incompatible with existing functions are introduced
-  - Ensure there is no leftover debugging code (such as `console.log`, `print` debugging statements, etc.)
-  - Ensure there is no hard-coded sensitive information (such as passwords, keys, tokens, etc.)
-### 2.2 Coding standard inspection
-- Check whether the code conforms to the project's coding standards and style:
-  - Naming conventions (variable names, function names, class names, etc.)
-  - Indentation and formatting
-  - File organization structure
-  - Whether the annotations are complete and in Chinese
-  - Confirm that it does not contain any Emoji characters
-### 2.3 Test Verification
-- Run all test suites for the project to ensure:
-  - All existing test cases have passed
-  - Corresponding test cases have been written for the newly added functions
-  - Test coverage has not decreased
-### 2.4 Dependency Check
-- Check the dependencies of the project:
-  - Confirm that the newly added or updated dependency versions are compatible with other modules
-  - Confirm that dependency configuration files such as `package.json`, `requirements.txt`, and `go.mod` have been updated synchronously
-  - Confirm that no unnecessary dependencies have been introduced
-### 2.5 Document Updates
-- Update project-related documents:
-  - `README.md` (update the usage instructions if there are any functional changes)
-  - API documentation (update the interface description if there are any interface changes)
-  - CHANGELOG (Record the content of this change)
-  - Other relevant documents
-### 2.6 File Cleanup
-- Exclude any files unrelated to project functionality:
-  - Temporary files (such as `.tmp`, `.swp`, `.bak`, etc.)
-  - Cache files (such as `__pycache__`, `.cache`, `node_modules`, etc.)
-  - Editor configuration files (such as `.vscode`, `.idea`, etc., unless the project has a unified configuration)
-  - System-generated files (such as `.DS_Store`, `Thumbs.db`, etc.)
-  - Compilation outputs (such as `dist`, `build`, `*.o`, etc.)
-- Confirm that the `.gitignore` file is properly configured to exclude the aforementioned file types
+
+## Build and Test
+
+### Backend (Python 3.11+, FastAPI)
+
+```bash
+cd backend
+pip install -r requirements.txt          # 生产依赖
+pip install -r requirements-dev.txt      # 开发依赖（含 pytest）
+python main.py                           # 启动服务 (uvicorn, 端口 8000)
+pytest                                   # 运行测试
+pytest -v --cov                          # 详细输出 + 覆盖率
+```
+
+### Frontend (Node.js, React 18 + Vite)
+
+```bash
+cd frontend
+npm install
+npm run dev                              # 开发服务器 (端口 5173)
+npm run build                            # TypeScript 检查 + Vite 构建
+npm run test                             # Vitest 单元测试
+npm run test:coverage                    # 覆盖率报告 (阈值 90%)
+npm run lint                             # ESLint
+npm run e2e                              # Playwright E2E 测试
+```
+
 ---
-## III. Git Commit Process
-After completing all the aforementioned checks, proceed with the submission according to the following steps:
-### 3.1 Add files to the staging area
-```bash
-git add .
+
+## Architecture
+
 ```
-> Note: Before executing, please double-check that the `.gitignore` configuration is correct to avoid adding irrelevant files to the staging area. For precise control, you can use `git add <specific file path>` instead.
-### 3.2 Commit changes to the local repository
-```bash
-git commit -m "Descriptive commit message"
+backend/
+  main.py          # 入口：中间件、路由注册、数据库初始化
+  api/routes/      # 业务路由（/api/auth, /chat, /skills, /plugins, /memory, /billing 等）
+  api/schemas.py   # Pydantic 请求/响应模型
+  api/dependencies.py  # OAuth2 + DB session 注入
+  core/            # Agent 核心（agent, planner, executor, comprehension, feedback）
+  db/models.py     # SQLAlchemy ORM 模型
+  billing/         # 计费模块（定价、预算、用量）
+  memory/          # 记忆与经验管理
+  plugins/         # 插件系统（生命周期、沙箱、热更新、CLI）
+  security/        # 审计日志、权限控制、沙箱隔离
+  skills/          # 技能引擎与经验提取
+  config/          # 配置（settings, security, logging）
+
+frontend/src/
+  features/        # 按功能模块组织（chat, dashboard, settings, skills, plugins, memory, billing, experiences）
+  shared/          # 公共模块（api, store, hooks, components, types, utils）
+  __tests__/       # 单元测试
 ```
-### 3.3 Submission Information Standards
-The submitted information must adhere to the following format:
+
+详细架构说明见 [docs/backend-architecture.md](docs/backend-architecture.md) 和 [docs/frontend-architecture.md](docs/frontend-architecture.md)。
+部署指南见 [docs/deployment.md](docs/deployment.md)，测试策略见 [docs/testing.md](docs/testing.md)。
+插件开发见 [docs/plugin-developer-handbook/](docs/plugin-developer-handbook/)。
+
+---
+
+## Code Style
+
+### Absolute Rules
+
+1. **All code comments MUST be in Chinese** -- 文件头注释、函数注释、关键逻辑行内注释均用中文
+2. **Emoji is strictly prohibited everywhere** -- 源码、注释、文档、commit message、配置、日志中一律不得使用 emoji
+   - 用 `[DONE]` 代替完成标记，用 `[Fix]` 代替 bug 标记，用 `[NEW]` 代替新功能标记
+
+### Backend Conventions
+
+- Classes: `PascalCase`，Functions/variables: `snake_case`
+- Routes are `async def`，DB models extend `Base`，schemas extend `BaseModel`
+- Pydantic schemas use `Create`/`Response` suffix variants（如 `SkillCreate`, `SkillResponse`）
+- Config class sets `from_attributes = True` for ORM-to-schema conversion
+- Dependencies via `Depends(get_db)` and `Depends(get_current_user)`
+- Logging via Loguru with `request_id` context from middleware
+
+### Frontend Conventions
+
+- Components: `PascalCase` with `Page` suffix for route pages（如 `ChatPage`, `SettingsPage`）
+- Stores: `use` prefix（如 `useAuthStore`, `useChatStore`），使用 Zustand
+- API modules: feature-specific files（如 `modelsApi.ts`, `billingApi.ts`）
+- CSS Modules: `[FeatureName].module.css`
+- Path alias: `@/` maps to `src/`
+- Test files in `__tests__/` mirror the src structure
+
+---
+
+## Known Pitfalls
+
+- **Blocking ORM in async**: `ExperienceManager` 中 `async def` 调用同步 SQLAlchemy 查询，可能阻塞事件循环
+- **SQLite FK not enforced by default**: 外键约束需要在连接参数中显式启用
+- **Vector DB path is relative**: `VECTOR_DB_PATH = "./data/vector_db"`，工作目录不同会导致路径问题
+- **Billing tables init required**: `PricingManager.ensure_configuration_schema()` 必须在 lifespan startup 中执行
+- **SECRET_KEY auto-generated**: 不设置环境变量时自动生成，生产环境必须显式配置
+- **Chat supports both SSE and WebSocket**: 修改聊天功能时需同时测试两条路径
+
+---
+
+## Git Commit Rules
+
+### Pre-commit Checklist
+
+Before `git add` and `git commit`, complete in order:
+1. **Code review** -- 逐文件检查：无语法错误、无调试代码残留、无硬编码敏感信息
+2. **Style check** -- 命名规范、注释完整（中文）、无 Emoji
+3. **Run tests** -- 全部测试通过，新功能有对应测试，覆盖率不降低
+4. **Dependency check** -- 新增依赖版本兼容，`requirements.txt` / `package.json` 已同步更新
+5. **Document update** -- 功能变更更新 README，接口变更更新 API 文档
+
+### Commit Message Format
+
 ```
-[Type] Concise and clear description of the change
+[Type] Concise description of the change
 ```
-**Type identification (plain text, no Emoji allowed):**
+
 | Type | Description |
-|------|------|
+|------|-------------|
 | `[New]` | New Feature |
 | `[Fix]` | Fix Bug |
 | `[Optimization]` | Code optimization, performance improvement |
@@ -87,43 +128,13 @@ The submitted information must adhere to the following format:
 | `[Configuration]` | Configuration file change |
 | `[Remove]` | Remove a function or file |
 | `[Dependency]` | Dependency Updates |
-**Example of submitted information:**
+
 ```bash
-# Correct Example
-git commit -m "[Add] Added verification code check function to user login interface"
-git commit -m "[Fix] Fix the issue of duplicate data in paged queries of order lists"
-git commit -m "[Optimization] Optimize homepage loading speed and reduce unnecessary API requests"
-git commit -m "[Documentation] Updated README.md, added deployment instructions"
-# Error Example (Prohibited)
-git commit -m "✨ New feature" # Emoji usage is prohibited
-git commit -m "update"               # Insufficient description
-git commit -m "fix bug"              # The description is not specific
-git commit -m "Made some modifications" # vague description
+# Correct
+git commit -m "[New] User login interface add captcha verification"
+git commit -m "[Fix] Fix duplicate data in paginated order list query"
+
+# Wrong (prohibited)
+git commit -m "update"          # too vague
+git commit -m "fix bug"         # not specific
 ```
----
-## IV. Summary of the complete workflow
-```
-Write code (with detailed Chinese comments)
-    ↓
-Code self-review (checking for errors and compatibility)
-    ↓
-Code style check (format, naming, no Emoji)
-    ↓
-Run tests (ensure all pass)
-    ↓
-Check dependencies (version compatibility)
-    ↓
-Update documents (README, API documentation, etc.)
-    ↓
-Clear irrelevant files (temporary files, cache, etc.)
-    ↓
-git add .
-    ↓
-git commit -m "[Type] Descriptive commit message"
-```
----
-## V. Special Emphasis
-1. **Code review must be conducted after each modification, and only after confirmation of no errors can it be submitted to the local repository. **
-2. **Emoji must not be used in the project under any circumstances, and submissions that violate this rule must be corrected. **
-3. **All code comments must be in Chinese, and the content should be detailed and accurate. **
-4. **The submitted information must be concise, clear, and accurately describe the specific content of this submission. **

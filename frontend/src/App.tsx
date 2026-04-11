@@ -6,6 +6,11 @@ import { appLogger } from '@/shared/utils/logger'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 
+const routerFutureConfig = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+}
+
 const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
 const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
 const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
@@ -15,6 +20,7 @@ const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
 const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
 const CommunicationPage = React.lazy(() => import('@/features/chat/CommunicationPage'))
+const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplacePage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -140,7 +146,7 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
+    <BrowserRouter future={routerFutureConfig}>
       <NavigationLogger />
       <div className="app-container">
         <Sidebar />
@@ -153,6 +159,7 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/plugins" element={<PluginsPage />} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/memory" element={<MemoryPage />} />
               <Route path="/experience" element={<ExperiencePage hideHeader />} />
               <Route path="/billing" element={<BillingPage />} />

@@ -38,7 +38,7 @@ describe('ReasoningContent', () => {
   it('toggles expansion on header click', () => {
     render(<ReasoningContent messageId="msg-3" content="Thinking..." isStreaming={false} />)
     
-    const header = screen.getByRole('button')
+    const header = screen.getByText('思考过程').closest('div')!
     const contentDiv = screen.getByText('Thinking...')
     
     // Initial state: collapsed
@@ -72,7 +72,7 @@ describe('ReasoningContent', () => {
   it('respects user manual override when streaming ends', () => {
     const { rerender } = render(<ReasoningContent messageId="msg-5" content="Thinking..." isStreaming={true} />)
     
-    const header = screen.getByRole('button')
+    const header = screen.getByText('思考过程 (思考中...)').closest('div')!
     const contentDiv = screen.getByText('Thinking...')
     
     // User clicks to collapse while streaming

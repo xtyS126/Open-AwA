@@ -1,0 +1,228 @@
+/* 安全审计设置页面样式 */
+
+.security-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  padding: 16px;
+  background: var(--color-bg-secondary, #f9f9f9);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border, #e0e0e0);
+}
+
+.stat-card h4 {
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+  margin: 0 0 8px 0;
+  font-weight: 500;
+}
+
+.stat-card .stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-text-primary, #333);
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+}
+
+.sub-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+}
+
+/* 筛选器区域 */
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-group label {
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+}
+
+.filter-group input,
+.filter-group select {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 13px;
+  background: var(--color-bg-primary, #fff);
+  color: var(--color-text-primary, #333);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+/* 审计日志表格 */
+.audit-table-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.audit-table th,
+.audit-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+}
+
+.audit-table th {
+  background: var(--color-bg-tertiary, #f5f5f5);
+  font-weight: 600;
+  color: var(--color-text-secondary, #666);
+  font-size: 12px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.audit-table tr:hover {
+  background: var(--color-bg-secondary, #fafafa);
+}
+
+.audit-table tr:last-child td {
+  border-bottom: none;
+}
+
+.result-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.result-success {
+  background: #e6f7e6;
+  color: #2d8a2d;
+}
+
+.result-failure {
+  background: #fde8e8;
+  color: #c53030;
+}
+
+/* 分页 */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--color-text-secondary, #666);
+}
+
+.pagination-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* RBAC 角色管理 */
+.role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-card {
+  padding: 16px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg-primary, #fff);
+}
+
+.role-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.role-card-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.role-card-header span {
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+}
+
+.permission-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permission-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--color-bg-tertiary, #f0f0f0);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+}
+
+/* 用户角色分配 */
+.role-assign-form {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 16px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg-secondary, #f9f9f9);
+}
+
+.role-assign-form .filter-group {
+  flex: 1;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--color-text-secondary, #666);
+  font-size: 14px;
+}
+
+.loading-message {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-text-secondary, #666);
+}

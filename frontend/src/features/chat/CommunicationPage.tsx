@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { WeixinConfig, WeixinHealthCheckResult, WeixinQrState, WeixinQrStatus, weixinAPI } from '@/shared/api/api'
+import { WeixinConfig, WeixinHealthCheckResult, WeixinQrState, WeixinQrStatus, WeixinBindingInfo, WeixinParamsConfig, weixinAPI } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './CommunicationPage.module.css'
 
 const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com'
@@ -14,6 +15,7 @@ function CommunicationPage() {
     timeout_seconds: 15
   })
   const [loadingWeixin, setLoadingWeixin] = useState(false)
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null)
   const [savingWeixin, setSavingWeixin] = useState(false)
   const [testingWeixin, setTestingWeixin] = useState(false)
   const [weixinHealthResult, setWeixinHealthResult] = useState<WeixinHealthCheckResult | null>(null)
@@ -33,6 +35,22 @@ function CommunicationPage() {
   const qrCodeValueRef = useRef('')
   const qrPollTokenRef = useRef('')
   const qrPollBaseUrlRef = useRef(DEFAULT_BASE_URL)
+
+  const [bindingInfo, setBindingInfo] = useState<WeixinBindingInfo | null>(null)
+  const [loadingBinding, setLoadingBinding] = useState(false)
+  const [unbinding, setUnbinding] = useState(false)
+  const [bindingError, setBindingError] = useState<string | null>(null)
+  const [paramsConfig, setParamsConfig] = useState<WeixinParamsConfig | null>(null)
+  const [paramsLoadError, setParamsLoadError] = useState<string | null>(null)
+  const [editBotType, setEditBotType] = useState('')
+  const [editChannelVersion, setEditChannelVersion] = useState('')
+  const [savingParams, setSavingParams] = useState(false)
+
+  const getApiErrorDetail = (error: unknown, fallback: string) => {
+    const maybeError = error as { response?: { data?: { detail?: string } } }
+    const detail = maybeError?.response?.data?.detail
+    return typeof detail === 'string' && detail.trim() ? detail : fallback
+  }
 
   const resolveApiErrorMessage = (error: unknown, fallback: string) => {
     const maybeError = error as { response?: { status?: number, data?: { detail?: string } } }
@@ -162,7 +180,9 @@ function CommunicationPage() {
   }
 
   useEffect(() => {
-    loadWeixinConfig()
+    void loadWeixinConfig()
+    void loadBindingInfo()
+    void loadParamsConfig()
 
     return () => {
       clearQrPolling()
@@ -192,6 +212,80 @@ function CommunicationPage() {
     updateQrPollBaseUrl(DEFAULT_BASE_URL)
   }
 
+  const loadBindingInfo = async () => {
+    setLoadingBinding(true)
+    setBindingError(null)
+    try {
+      const response = await weixinAPI.getBinding()
+      if (response.data) {
+        setBindingInfo(response.data)
+      }
+    } catch (error) {
+      setBindingError(getApiErrorDetail(error, '加载绑定状态失败'))
+      appLogger.error({
+        event: 'weixin_binding_load_failed',
+        message: '加载绑定状态失败',
+        module: 'communication',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    } finally {
+      setLoadingBinding(false)
+    }
+  }
+
+  const loadParamsConfig = async () => {
+    setParamsLoadError(null)
+    try {
+      const response = await weixinAPI.getParams()
+      if (response.data) {
+        setParamsConfig(response.data)
+        setEditBotType(response.data.bot_type || '')
+        setEditChannelVersion(response.data.channel_version || '')
+      }
+    } catch (error) {
+      setParamsLoadError(getApiErrorDetail(error, '加载连接参数失败，请稍后重试'))
+      appLogger.error({
+        event: 'weixin_params_load_failed',
+        message: '加载微信参数失败',
+        module: 'communication',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }
+
+  const handleUnbind = async () => {
+    setUnbinding(true)
+    try {
+      await weixinAPI.deleteBinding()
+      setBindingInfo(null)
+      setMessage({ type: 'success', text: '微信绑定已解除' })
+    } catch {
+      setMessage({ type: 'error', text: '解除绑定失败' })
+    } finally {
+      setUnbinding(false)
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  const handleSaveParams = async () => {
+    setSavingParams(true)
+    try {
+      const response = await weixinAPI.updateParams({
+        bot_type: editBotType || undefined,
+        channel_version: editChannelVersion || undefined,
+      })
+      if (response.data) {
+        setParamsConfig(response.data)
+      }
+      setMessage({ type: 'success', text: '连接参数已更新' })
+    } catch {
+      setMessage({ type: 'error', text: '更新连接参数失败，请先绑定微信账号' })
+    } finally {
+      setSavingParams(false)
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
   const loadQrImage = async (_sessionKey: string, qrcodeText?: string) => {
     const qrValue = (qrcodeText || qrCodeValueRef.current || qrRawUrl || '').trim()
     if (!qrValue) {
@@ -219,6 +313,7 @@ function CommunicationPage() {
 
   const loadWeixinConfig = async () => {
     setLoadingWeixin(true)
+    setConfigLoadError(null)
     try {
       const response = await weixinAPI.getConfig()
       if (response.data) {
@@ -236,8 +331,14 @@ function CommunicationPage() {
           : null)
         updateQrPollBaseUrl(nextConfig.base_url || DEFAULT_BASE_URL)
       }
-    } catch {
-      console.error('Failed to load weixin config')
+    } catch (error) {
+      setConfigLoadError(getApiErrorDetail(error, '加载微信配置失败，请稍后重试'))
+      appLogger.error({
+        event: 'weixin_config_load_failed',
+        message: '加载微信配置失败',
+        module: 'communication',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
     } finally {
       setLoadingWeixin(false)
     }
@@ -350,7 +451,7 @@ function CommunicationPage() {
       const shouldContinuePolling = await pollQrLoginStatus(response.data.session_key)
       if (shouldContinuePolling) {
         pollTimerRef.current = window.setInterval(() => {
-          pollQrLoginStatus(response.data.session_key)
+          void pollQrLoginStatus(response.data.session_key)
         }, 2000)
       }
     } catch (error) {
@@ -447,6 +548,11 @@ function CommunicationPage() {
             ) : (
               <>
                 <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
+                  {configLoadError && (
+                    <div className={`${styles['message']} ${styles['error']}`}>
+                      {configLoadError}
+                    </div>
+                  )}
                   <label className={styles['communication-label']}>Account ID <span className={`${styles['required']} ${styles['communication-required']}`}>*</span></label>
                   <input
                     type="text"
@@ -489,18 +595,103 @@ function CommunicationPage() {
                 <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
                   <button
                     className={`btn btn-primary`}
-                    onClick={handleSaveWeixinConfig}
+                    onClick={() => void handleSaveWeixinConfig()}
                     disabled={savingWeixin}
                   >
                       {savingWeixin ? '保存中...' : '保存配置'}
                     </button>
                     <button
                       className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                      onClick={handleTestWeixinConnection}
+                      onClick={() => void handleTestWeixinConnection()}
                       disabled={testingWeixin}
                     >
                       {testingWeixin ? '测试中...' : '测试连接'}
                     </button>
+                  </div>
+
+                <div className={styles['communication-qr-login']}>
+                    <h4 className={styles['communication-qr-login-title']}>绑定状态</h4>
+                    {loadingBinding ? (
+                      <p>加载绑定信息中...</p>
+                    ) : bindingError ? (
+                      <div>
+                        <p className={styles['communication-qr-status']}>{bindingError}</p>
+                        <button className="btn btn-primary" onClick={() => void loadBindingInfo()}>重试</button>
+                      </div>
+                    ) : bindingInfo && bindingInfo.binding_status !== 'unbound' ? (
+                      <div>
+                        <p className={styles['communication-qr-status']}>
+                          {bindingInfo.binding_status === 'bound' ? '[DONE] 已绑定' : bindingInfo.binding_status === 'expired' ? '[!] 已过期' : `状态: ${bindingInfo.binding_status}`}
+                          {bindingInfo.weixin_account_id ? ` | 账号: ${bindingInfo.weixin_account_id}` : ''}
+                          {bindingInfo.weixin_user_id ? ` | 微信用户: ${bindingInfo.weixin_user_id}` : ''}
+                        </p>
+                        {bindingInfo.binding_status === 'expired' && (
+                          <p className={styles['communication-qr-status']}>Token 已过期，请重新扫码登录</p>
+                        )}
+                        <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
+                          <button
+                            className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                            onClick={() => void handleUnbind()}
+                            disabled={unbinding}
+                          >
+                            {unbinding ? '解绑中...' : '解除绑定'}
+                          </button>
+                          {bindingInfo.binding_status === 'expired' && (
+                            <button className="btn btn-primary" onClick={() => void handleStartQrLogin()} disabled={startingQrLogin}>
+                              重新扫码登录
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className={styles['communication-qr-status']}>未绑定微信账号，请通过扫码登录进行绑定。</p>
+                    )}
+                  </div>
+
+                  <div className={styles['communication-qr-login']}>
+                    <h4 className={styles['communication-qr-login-title']}>连接参数配置</h4>
+                    <p className={styles['communication-qr-login-desc']}>可修改 bot_type 和 channel_version 等连接参数，需先绑定微信账号。</p>
+                    {paramsLoadError && (
+                      <div className={`${styles['message']} ${styles['error']}`}>
+                        {paramsLoadError}
+                      </div>
+                    )}
+                    <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
+                      <label className={styles['communication-label']}>Bot Type</label>
+                      <input
+                        type="text"
+                        value={editBotType}
+                        onChange={(e) => setEditBotType(e.target.value)}
+                        placeholder={paramsConfig?.weixin_default_bot_type || '3'}
+                        className={styles['communication-input']}
+                      />
+                    </div>
+                    <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
+                      <label className={styles['communication-label']}>Channel Version</label>
+                      <input
+                        type="text"
+                        value={editChannelVersion}
+                        onChange={(e) => setEditChannelVersion(e.target.value)}
+                        placeholder={paramsConfig?.weixin_default_channel_version || '1.0.2'}
+                        className={styles['communication-input']}
+                      />
+                    </div>
+                    <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => void handleSaveParams()}
+                        disabled={savingParams}
+                      >
+                        {savingParams ? '保存中...' : '保存参数'}
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => void loadParamsConfig()}
+                        disabled={savingParams}
+                      >
+                        重新加载参数
+                      </button>
+                    </div>
                   </div>
 
                   <div className={styles['communication-qr-login']}>
@@ -509,14 +700,14 @@ function CommunicationPage() {
                     <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
                       <button
                         className={`btn btn-primary`}
-                        onClick={handleStartQrLogin}
+                        onClick={() => void handleStartQrLogin()}
                         disabled={startingQrLogin}
                       >
                         {startingQrLogin ? '获取中...' : '获取登录二维码'}
                       </button>
                     <button
                       className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                      onClick={handleCancelQrLogin}
+                      onClick={() => void handleCancelQrLogin()}
                       disabled={!qrSessionKey && !pollingQrLogin && !qrCodeUrl}
                     >
                       取消扫码登录
