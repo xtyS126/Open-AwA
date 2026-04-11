@@ -65,11 +65,15 @@ class UsageTracker:
             extra_data=json.dumps(metadata) if metadata else None
         )
         
-        self.db.add(record)
-        self.db.commit()
-        self.db.refresh(record)
-        
-        self._update_user_summary(user_id, input_tokens, output_tokens, input_cost + output_cost, currency)
+        try:
+            self.db.add(record)
+            # 先更新汇总，再一次性提交，保证明细与汇总数据原子一致
+            self._update_user_summary(user_id, input_tokens, output_tokens, input_cost + output_cost, currency)
+            self.db.commit()
+            self.db.refresh(record)
+        except Exception:
+            self.db.rollback()
+            raise
         
         return record
 
@@ -277,7 +281,7 @@ class UsageTracker:
             )
             self.db.add(summary)
         
-        self.db.commit()
+        # 注意：不在此处单独 commit，调用方应在所有操作完成后统一提交以保证事务原子性
 
     def get_usage_statistics(self, user_id: Optional[str] = None) -> Dict:
         """

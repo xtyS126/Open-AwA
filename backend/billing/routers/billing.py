@@ -212,7 +212,6 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
 
 @router.get("/usage")
 async def get_usage(
-    user_id: Optional[str] = Query(None),
     session_id: Optional[str] = Query(None),
     provider: Optional[str] = Query(None),
     model: Optional[str] = Query(None),
@@ -222,12 +221,12 @@ async def get_usage(
     current_user = Depends(get_current_user)
 ):
     """
-    获取usage相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取当前用户的用量记录。
+    使用 current_user.id 代替查询参数，防止越权访问他人用量数据。
     """
     tracker = UsageTracker(db)
     records = tracker.get_usage_records(
-        user_id=user_id,
+        user_id=current_user.id,
         session_id=session_id,
         provider=provider,
         model=model,
@@ -262,17 +261,16 @@ async def get_usage(
 
 @router.get("/cost")
 async def get_cost_statistics(
-    user_id: Optional[str] = Query(None),
     period: str = Query("monthly", regex="^(daily|weekly|monthly|yearly)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """
-    获取cost、statistics相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取当前用户的成本统计。
+    使用 current_user.id 代替查询参数，防止越权访问他人成本数据。
     """
     reporter = BillingReporter(db)
-    stats = reporter.get_cost_statistics(user_id=user_id, period=period)
+    stats = reporter.get_cost_statistics(user_id=current_user.id, period=period)
     return stats
 
 

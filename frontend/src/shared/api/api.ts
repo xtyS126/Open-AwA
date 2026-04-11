@@ -5,6 +5,12 @@ const API_BASE_URL = '/api'
 
 const getStoredToken = () => sessionStorage.getItem('token')
 
+// 从 cookie 中读取 CSRF token（Double Submit Cookie 模式）
+const getCsrfToken = (): string => {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : ''
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -20,6 +26,15 @@ api.interceptors.request.use((config) => {
   const token = getStoredToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+
+  // 对状态变更请求注入 CSRF token header（Double Submit Cookie 模式）
+  const method = config.method?.toUpperCase() || 'GET'
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
   }
   appLogger.info({
     event: 'api_request',

@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
 from loguru import logger
 from config.settings import settings
+import json
 import time
+import yaml
 
 
 engine = create_engine(
@@ -55,6 +57,16 @@ def _handle_db_error(exception_context):
         module="db",
         error_type=type(exception_context.original_exception).__name__,
     ).opt(exception=True).error(f"数据库引擎错误: {exception_context.original_exception}")
+
+
+# SQLite 外键约束默认关闭，需要在每次连接时显式启用
+if "sqlite" in settings.DATABASE_URL:
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_conn, connection_record):
+        """为每个 SQLite 连接启用外键约束，防止孤立数据和引用完整性违反。"""
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 class Base(DeclarativeBase):
@@ -433,6 +445,94 @@ def _migrate_audit_log_columns(use_engine=None):
             logger.info("Migrated audit_logs: added created_at column")
 
 
+def _normalize_legacy_json_column_value(raw_value: Any, expected_type: type, default_value: Any) -> str:
+    """
+    将历史遗留的 JSON 文本、YAML 文本或空值统一转换为合法 JSON 字符串。
+    skills 表在早期版本中曾直接存储 YAML，若继续按 JSON 列读取会在 ORM 阶段报错。
+    """
+    def _dump_json(value: Any) -> str:
+        """
+        统一 JSON 序列化策略。
+        历史 YAML 中可能含有 date/datetime 等 Python 标量，这里转成字符串以保证迁移可落库。
+        """
+        return json.dumps(value, ensure_ascii=False, default=str)
+
+    if raw_value is None:
+        return _dump_json(default_value)
+    if isinstance(raw_value, expected_type):
+        return _dump_json(raw_value)
+
+    text_value = str(raw_value).strip()
+    if not text_value:
+        return json.dumps(default_value, ensure_ascii=False)
+
+    try:
+        loaded = json.loads(text_value)
+    except Exception:
+        loaded = None
+    if isinstance(loaded, expected_type):
+        return _dump_json(loaded)
+
+    try:
+        loaded = yaml.safe_load(text_value)
+    except Exception:
+        loaded = None
+    if isinstance(loaded, expected_type):
+        return _dump_json(loaded)
+
+    return _dump_json(default_value)
+
+
+def _migrate_skill_json_columns(use_engine=None):
+    """
+    将 skills 表中的历史 YAML/文本配置迁移为合法 JSON，避免 ORM 读取时抛出 JSONDecodeError。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "skills" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("skills")}
+    required_columns = {"id", "config", "tags", "dependencies"}
+    if not required_columns.issubset(columns):
+        return
+
+    with target_engine.begin() as connection:
+        rows = connection.execute(
+            text("SELECT id, config, tags, dependencies FROM skills")
+        ).mappings().all()
+        for row in rows:
+            normalized_config = _normalize_legacy_json_column_value(
+                row.get("config"),
+                dict,
+                {},
+            )
+            normalized_tags = _normalize_legacy_json_column_value(
+                row.get("tags"),
+                list,
+                [],
+            )
+            normalized_dependencies = _normalize_legacy_json_column_value(
+                row.get("dependencies"),
+                list,
+                [],
+            )
+            connection.execute(
+                text(
+                    "UPDATE skills "
+                    "SET config = :config, tags = :tags, dependencies = :dependencies "
+                    "WHERE id = :id"
+                ),
+                {
+                    "id": row["id"],
+                    "config": normalized_config,
+                    "tags": normalized_tags,
+                    "dependencies": normalized_dependencies,
+                },
+            )
+
+
 def init_db(bind_engine=None):
     """
     初始化数据库表结构并执行必要的迁移操作。
@@ -444,6 +544,7 @@ def init_db(bind_engine=None):
     _migrate_plugin_columns(use_engine=use_engine)
     _migrate_long_term_memory_user_id(use_engine=use_engine)
     _migrate_audit_log_columns(use_engine=use_engine)
+    _migrate_skill_json_columns(use_engine=use_engine)
 
 
 def get_db():

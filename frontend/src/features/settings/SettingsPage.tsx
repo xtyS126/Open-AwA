@@ -806,6 +806,8 @@ function SettingsPage() {
         selected_models: providerForm.selected_models
       })
 
+      // 保存成功后清空 API 密钥输入框，避免明文长期留存在前端状态中
+      setProviderForm(prev => ({ ...prev, api_key: '' }))
       showNotification({ type: 'success', text: '供应商配置保存成功' })
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {

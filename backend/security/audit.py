@@ -32,20 +32,28 @@ class AuditLogger:
         result: str,
         details: Optional[str] = None,
         ip_address: Optional[str] = None,
-    ) -> AuditLog:
-        """同步写入审计日志记录。"""
-        log_entry = AuditLog(
-            user_id=user_id,
-            action=action,
-            resource=resource,
-            result=result,
-            details=details,
-            ip_address=ip_address,
-        )
-        self.db.add(log_entry)
-        self.db.commit()
-        self.db.refresh(log_entry)
-        return log_entry
+    ) -> Optional[AuditLog]:
+        """同步写入审计日志记录。异常时回滚并记录到文件日志，不影响主业务流程。"""
+        try:
+            log_entry = AuditLog(
+                user_id=user_id,
+                action=action,
+                resource=resource,
+                result=result,
+                details=details,
+                ip_address=ip_address,
+            )
+            self.db.add(log_entry)
+            self.db.commit()
+            self.db.refresh(log_entry)
+            return log_entry
+        except Exception as e:
+            self.db.rollback()
+            logger.error(
+                f"审计日志写入失败，已回滚: action={action}, resource={resource}, "
+                f"user_id={user_id}, error={type(e).__name__}: {e}"
+            )
+            return None
 
     async def log(
         self,
@@ -55,9 +63,9 @@ class AuditLogger:
         result: str,
         details: Optional[Dict[str, Any]] = None,
         ip_address: Optional[str] = None,
-    ) -> AuditLog:
+    ) -> Optional[AuditLog]:
         """
-        异步记录审计日志。
+        异步记录审计日志。写入失败时不会抛出异常，返回 None。
 
         Args:
             user_id: 操作用户标识。
@@ -71,7 +79,8 @@ class AuditLogger:
         log_entry = await asyncio.to_thread(
             self._log_sync, user_id, action, resource, result, details_str, ip_address
         )
-        logger.debug(f"Audit log created: {action} on {resource} by {user_id}")
+        if log_entry:
+            logger.debug(f"Audit log created: {action} on {resource} by {user_id}")
         return log_entry
 
     async def log_auth_event(

@@ -419,28 +419,28 @@ async def send_stream_with_retries(
 ) -> AsyncGenerator[str, None]:
     """
     统一封装流式请求重试逻辑，生成 SSE 数据流。
+    使用共享 client 避免重复创建连接；通过 async with 上下文管理器确保资源正确释放。
     """
     last_error: Optional[Exception] = None
     total_attempts = max(1, int(attempts))
 
     for attempt in range(1, total_attempts + 1):
         try:
-            # Note: We need a persistent client across the stream iteration. 
-            # So we yield from the client stream context directly.
-            # Retries only apply if connection fails before yielding data.
-            client = httpx.AsyncClient(timeout=spec.timeout)
+            # 复用共享 client 而非每次创建新实例，与 send_with_retries 保持一致
+            client = get_shared_client()
             req = client.build_request(spec.method, spec.endpoint, json=spec.payload, headers=spec.headers)
             response = await client.send(req, stream=True)
             response.raise_for_status()
 
-            async def stream_generator():
+            async def stream_generator(resp=response):
+                """在 generator 自然结束或被提前放弃时确保响应正确关闭。"""
                 try:
-                    async for line in response.aiter_lines():
+                    async for line in resp.aiter_lines():
                         if line:
                             yield line
                 finally:
-                    await response.aclose()
-                    await client.aclose()
+                    # 确保无论 generator 是否被完全消费，底层 HTTP 响应都能被正确释放
+                    await resp.aclose()
             
             return stream_generator()
 

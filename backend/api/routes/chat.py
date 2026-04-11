@@ -4,6 +4,7 @@
 """
 
 from typing import Union, Dict
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
 from sqlalchemy.orm import Session
 
@@ -171,7 +172,10 @@ async def websocket_endpoint(
     db = SessionLocal()
 
     try:
-        user = db.query(User).filter(User.username == username).first()
+        # 使用 asyncio.to_thread 包裹同步 ORM 查询，避免阻塞 asyncio 事件循环
+        user = await asyncio.to_thread(
+            lambda: db.query(User).filter(User.username == username).first()
+        )
         if user is None:
             await websocket.close(code=4004, reason="User not found")
             db.close()
@@ -188,23 +192,23 @@ async def websocket_endpoint(
         await websocket.close(code=4004, reason="Database error")
         db.close()
         return
-
-    await ws_manager.connect(session_id, websocket)
-
-    user_id = user.id
-    
-    logger.bind(
-        event="chat_ws_connected",
-        module="chat",
-        action="websocket",
-        status="connected",
-        session_id=session_id,
-        user_id=user_id,
-    ).info("websocket connected")
-
-    agent = AIAgent(db_session=db)
     
     try:
+        await ws_manager.connect(session_id, websocket)
+
+        user_id = user.id
+        
+        logger.bind(
+            event="chat_ws_connected",
+            module="chat",
+            action="websocket",
+            status="connected",
+            session_id=session_id,
+            user_id=user_id,
+        ).info("websocket connected")
+
+        agent = AIAgent(db_session=db)
+        
         await handle_websocket_session(
             websocket=websocket,
             session_id=session_id,
@@ -215,8 +219,7 @@ async def websocket_endpoint(
             agent=agent,
         )
     finally:
-        # Agent has completed processing for this websocket session.
-        # It's safe to close the database session here.
+        # 统一在此处关闭数据库连接，无论是正常结束还是异常退出
         db.close()
 
 

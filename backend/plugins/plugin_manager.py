@@ -415,26 +415,22 @@ class PluginManager:
             "missing_permissions": missing,
         }
 
-    def _enforce_runtime_permissions(self, plugin_name: str) -> Optional[Dict[str, Any]]:
+    def _enforce_runtime_permissions(self, plugin_name: str) -> None:
         """
         检查并强制执行插件的运行时权限。
+        权限不足时直接抛出 PermissionError，避免调用方遗漏检查。
         
         Args:
             plugin_name: 插件名称。
             
-        Returns:
-            若权限不足则返回错误信息，否则返回 None。
+        Raises:
+            PermissionError: 插件缺少必要的运行权限。
         """
         status = self.get_plugin_permission_status(plugin_name)
         if status["missing_permissions"]:
-            return {
-                "status": "permission_required",
-                "message": f"Plugin '{plugin_name}' 缺少运行权限",
-                "required_permissions": status["missing_permissions"],
-                "requested_permissions": status["requested_permissions"],
-                "granted_permissions": status["granted_permissions"],
-            }
-        return None
+            raise PermissionError(
+                f"Plugin '{plugin_name}' 缺少运行权限: {status['missing_permissions']}"
+            )
 
     def _safe_extract_zip_archive(self, archive: zipfile.ZipFile, target_dir: str) -> None:
         """
@@ -614,6 +610,7 @@ class PluginManager:
             )
 
         # 解析域名到 IP 并校验是否为内网/回环/链路本地地址
+        # 同时校验 DNS rebinding 风险：二次解析确认 IP 一致性
         try:
             resolved_ips = socket.getaddrinfo(hostname, None)
         except socket.gaierror:
@@ -627,6 +624,19 @@ class PluginManager:
                     f"域名 '{hostname}' 解析到不安全的地址 {ip_str}，"
                     "禁止访问内网、回环或链路本地地址"
                 )
+
+        # DNS rebinding 防护：二次解析并校验 IP 未发生变化
+        try:
+            second_resolved = socket.getaddrinfo(hostname, None)
+            second_ips = {sockaddr[0] for _, _, _, _, sockaddr in second_resolved}
+            first_ips = {sockaddr[0] for _, _, _, _, sockaddr in resolved_ips}
+            if second_ips != first_ips:
+                raise ValueError(
+                    f"域名 '{hostname}' DNS 解析结果不一致 (可能存在 DNS rebinding 攻击)，"
+                    f"首次: {first_ips}, 二次: {second_ips}"
+                )
+        except socket.gaierror:
+            raise ValueError(f"DNS rebinding 校验时无法解析域名: {hostname}")
 
     def register_plugin_from_url(
         self,
@@ -1503,12 +1513,16 @@ class PluginManager:
                 "message": f"Plugin '{plugin_name}' is not loaded",
             }
 
-        permission_error = self._enforce_runtime_permissions(plugin_name)
-        if permission_error:
-            logger.warning(
-                f"Plugin '{plugin_name}' runtime permission denied: {permission_error['required_permissions']}"
-            )
-            return permission_error
+        try:
+            self._enforce_runtime_permissions(plugin_name)
+        except PermissionError as e:
+            logger.warning(f"Plugin '{plugin_name}' runtime permission denied: {e}")
+            _perm_status = self.get_plugin_permission_status(plugin_name)
+            return {
+                "status": "permission_required",
+                "message": str(e),
+                "required_permissions": _perm_status.get("missing_permissions", []),
+            }
 
         plugin_state = self.state_machine.get_state(plugin_name)
         if plugin_state != PluginState.ENABLED:
@@ -1542,12 +1556,16 @@ class PluginManager:
                 "message": f"Plugin '{plugin_name}' is not loaded",
             }
 
-        permission_error = self._enforce_runtime_permissions(plugin_name)
-        if permission_error:
-            logger.warning(
-                f"Plugin '{plugin_name}' runtime permission denied: {permission_error['required_permissions']}"
-            )
-            return permission_error
+        try:
+            self._enforce_runtime_permissions(plugin_name)
+        except PermissionError as e:
+            logger.warning(f"Plugin '{plugin_name}' runtime permission denied: {e}")
+            _perm_status = self.get_plugin_permission_status(plugin_name)
+            return {
+                "status": "permission_required",
+                "message": str(e),
+                "required_permissions": _perm_status.get("missing_permissions", []),
+            }
 
         plugin_state = self.state_machine.get_state(plugin_name)
         if plugin_state != PluginState.ENABLED:
