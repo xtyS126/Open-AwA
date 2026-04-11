@@ -7,22 +7,6 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 import os
 import secrets
-from pathlib import Path
-
-
-def get_database_path() -> str:
-    """
-    获取数据库文件的绝对路径。
-    优先使用环境变量 DATABASE_URL，否则使用默认路径。
-    默认在 backend 目录下创建 openawa.db 文件。
-    """
-    env_db_url = os.getenv("DATABASE_URL")
-    if env_db_url:
-        return env_db_url
-    
-    backend_dir = Path(__file__).parent.parent.resolve()
-    db_file = backend_dir / "openawa.db"
-    return f"sqlite:///{db_file}"
 
 
 def generate_secret_key() -> str:
@@ -55,7 +39,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     
-    DATABASE_URL: str = get_database_path()
+    DATABASE_URL: str = "sqlite:///./backend/openawa.db"
     
     SECRET_KEY: str = generate_secret_key()
     ALGORITHM: str = "HS256"
