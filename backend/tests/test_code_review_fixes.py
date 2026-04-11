@@ -200,7 +200,7 @@ class TestBareExceptFix:
         import ast
         import api.routes.skills as skills_module
         source_file = skills_module.__file__
-        with open(source_file, 'r') as f:
+        with open(source_file, 'r', encoding='utf-8') as f:
             tree = ast.parse(f.read())
         
         for node in ast.walk(tree):
@@ -222,7 +222,7 @@ class TestExperienceManagerN1Fix:
         import ast
         import memory.experience_manager as em_module
         source_file = em_module.__file__
-        with open(source_file, 'r') as f:
+        with open(source_file, 'r', encoding='utf-8') as f:
             source = f.read()
         
         # Should contain group_by pattern (the fix)
@@ -247,7 +247,7 @@ class TestPricingManagerN1Fix:
         """Verify the source pre-fetches existing keys."""
         import billing.pricing_manager as pm_module
         source_file = pm_module.__file__
-        with open(source_file, 'r') as f:
+        with open(source_file, 'r', encoding='utf-8') as f:
             source = f.read()
         
         # Should have existing_keys pattern (batch fetch)
@@ -264,13 +264,13 @@ class TestRequestDurationLogging:
 
     def test_main_imports_time(self):
         """main.py should import time module."""
-        with open(os.path.join(_BACKEND_DIR, 'main.py'), 'r') as f:
+        with open(os.path.join(_BACKEND_DIR, 'main.py'), 'r', encoding='utf-8') as f:
             source = f.read()
         assert 'import time' in source
 
     def test_main_has_duration_ms(self):
         """Middleware should log duration_ms."""
-        with open(os.path.join(_BACKEND_DIR, 'main.py'), 'r') as f:
+        with open(os.path.join(_BACKEND_DIR, 'main.py'), 'r', encoding='utf-8') as f:
             source = f.read()
         assert 'duration_ms' in source
         assert 'time.monotonic()' in source
@@ -285,7 +285,7 @@ class TestMigrateDbConnectionLeak:
 
     def test_migrate_database_has_finally(self):
         """migrate_database should have a finally block to close connection."""
-        with open(os.path.join(_BACKEND_DIR, 'migrate_db.py'), 'r') as f:
+        with open(os.path.join(_BACKEND_DIR, 'migrate_db.py'), 'r', encoding='utf-8') as f:
             source = f.read()
         
         # Should have finally block
@@ -302,7 +302,7 @@ class TestOpenAwaDbRemoved:
     """Verify openawa.db is no longer tracked by git."""
 
     def test_openawa_db_in_gitignore(self):
-        with open(os.path.join(_REPO_ROOT, '.gitignore'), 'r') as f:
+        with open(os.path.join(_REPO_ROOT, '.gitignore'), 'r', encoding='utf-8') as f:
             content = f.read()
         assert 'openawa.db' in content or '*.db' in content
 
@@ -315,7 +315,7 @@ class TestCISecurityScans:
     """Verify CI config no longer uses continue-on-error for security scans."""
 
     def test_no_continue_on_error(self):
-        with open(os.path.join(_REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'r') as f:
+        with open(os.path.join(_REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'r', encoding='utf-8') as f:
             content = f.read()
         assert 'continue-on-error: true' not in content, \
             "CI config should not have continue-on-error: true"

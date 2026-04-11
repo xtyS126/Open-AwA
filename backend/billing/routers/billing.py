@@ -10,6 +10,7 @@ from fastapi import Body
 from datetime import datetime
 
 from db.models import get_db
+from api.dependencies import get_current_user
 from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
 from billing.budget_manager import BudgetManager
@@ -216,7 +217,8 @@ async def get_usage(
     model: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取usage相关数据或当前状态。
@@ -261,7 +263,8 @@ async def get_usage(
 async def get_cost_statistics(
     user_id: Optional[str] = Query(None),
     period: str = Query("monthly", regex="^(daily|weekly|monthly|yearly)$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取cost、statistics相关数据或当前状态。
@@ -275,7 +278,8 @@ async def get_cost_statistics(
 @router.get("/models")
 async def get_models(
     provider: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取models相关数据或当前状态。
@@ -308,7 +312,8 @@ async def get_models(
 async def update_model_pricing(
     model_id: int,
     update_data: PricingUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新model、pricing相关数据、配置或状态。
@@ -342,22 +347,23 @@ async def update_model_pricing(
 
 @router.get("/budget")
 async def get_budget(
-    user_id: str = Query(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
-    获取budget相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取当前登录用户的预算状态。
+    使用 current_user.id 代替查询参数，防止越权访问他人预算。
     """
     budget_manager = BudgetManager(db)
-    status = budget_manager.get_budget_status(user_id)
+    status = budget_manager.get_budget_status(current_user.id)
     return status
 
 
 @router.post("/budget")
 async def create_budget(
     budget_data: BudgetCreateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     创建budget相关对象、记录或执行结果。
@@ -396,7 +402,8 @@ async def create_budget(
 async def update_budget(
     budget_id: int,
     update_data: BudgetUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新budget相关数据、配置或状态。
@@ -425,7 +432,8 @@ async def update_budget(
 @router.delete("/budget/{budget_id}")
 async def delete_budget(
     budget_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     删除budget相关对象或持久化记录。
@@ -442,16 +450,19 @@ async def delete_budget(
 
 @router.get("/report")
 async def get_report(
-    user_id: Optional[str] = Query(None),
     period: str = Query("monthly", regex="^(daily|weekly|monthly|yearly)$"),
     format: str = Query("json", regex="^(json|csv)$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
-    获取report相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取当前登录用户的计费报告。
+    使用 current_user.id 代替查询参数，防止越权查看他人报告。
     """
     reporter = BillingReporter(db)
+    
+    # 使用当前用户ID，防止越权
+    user_id = current_user.id
     
     if format == "csv":
         csv_content = reporter.generate_csv_report(user_id=user_id, period=period)
@@ -475,7 +486,8 @@ async def get_report(
 @router.get("/session/{session_id}")
 async def get_session_usage(
     session_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取session、usage相关数据或当前状态。
@@ -494,7 +506,8 @@ async def estimate_cost(
     num_images: int = Query(0, ge=0),
     audio_seconds: float = Query(0, ge=0),
     video_seconds: float = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     处理estimate、cost相关逻辑，并为调用方返回对应结果。
@@ -534,7 +547,8 @@ async def estimate_cost(
 
 @router.post("/initialize-pricing")
 async def initialize_default_pricing(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     处理initialize、default、pricing相关逻辑，并为调用方返回对应结果。
@@ -551,7 +565,8 @@ async def initialize_default_pricing(
 
 @router.get("/retention")
 async def get_retention_config(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取retention、config相关数据或当前状态。
@@ -576,7 +591,8 @@ async def get_retention_config(
 async def update_retention_config(
     retention_days: int = Query(..., ge=1, le=3650, description="Retention days (1-3650)"),
     cleanup: bool = Query(False, description="Whether to cleanup old records"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新retention、config相关数据、配置或状态。
@@ -602,7 +618,8 @@ async def update_retention_config(
 
 @router.get("/configurations")
 async def get_configurations(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取configurations相关数据或当前状态。
@@ -622,7 +639,8 @@ async def get_configurations(
 @router.get("/configurations/{config_id}")
 async def get_configuration(
     config_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取configuration相关数据或当前状态。
@@ -634,13 +652,14 @@ async def get_configuration(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
     
-    return serialize_configuration(config, pricing_manager, include_secret=True)
+    return serialize_configuration(config, pricing_manager)
 
 
 @router.post("/configurations")
 async def create_configuration(
     config_data: ModelConfigCreateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     创建configuration相关对象、记录或执行结果。
@@ -659,7 +678,8 @@ async def create_configuration(
 async def update_configuration(
     config_id: int,
     update_data: ModelConfigUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新configuration相关数据、配置或状态。
@@ -685,7 +705,8 @@ async def update_configuration(
 @router.delete("/configurations/{config_id}")
 async def delete_configuration(
     config_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     删除configuration相关对象或持久化记录。
@@ -703,7 +724,8 @@ async def delete_configuration(
 @router.put("/configurations/{config_id}/set-default")
 async def set_default_configuration(
     config_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     设置default、configuration相关配置或运行状态。
@@ -725,7 +747,8 @@ async def set_default_configuration(
 async def update_configuration_parameters(
     config_id: int,
     params: ModelParameterUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新指定模型配置的运行参数（temperature、top_k、top_p、max_tokens_limit）。
@@ -783,7 +806,8 @@ async def update_configuration_parameters(
 @router.get("/configurations/{config_id}/capabilities")
 async def get_configuration_capabilities(
     config_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取指定模型配置的能力信息、默认参数与限制范围。
@@ -828,7 +852,8 @@ async def get_configuration_capabilities(
 @router.post("/configurations/{config_id}/reset-parameters")
 async def reset_configuration_parameters(
     config_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     将指定模型配置的 temperature、top_k、max_tokens_limit 重置为系统默认值。
@@ -857,7 +882,8 @@ async def reset_configuration_parameters(
 @router.put("/configurations/batch-status")
 async def batch_update_configuration_status(
     payload: BatchStatusUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     批量更新模型配置状态。
@@ -872,8 +898,11 @@ async def batch_update_configuration_status(
         "success": True,
         "updated_count": updated_count
     }
+
+@router.get("/providers")
 async def get_providers(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取providers相关数据或当前状态。
@@ -891,7 +920,8 @@ async def get_providers(
 @router.get("/providers/{provider}")
 async def get_provider_detail(
     provider: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     获取provider、detail相关数据或当前状态。
@@ -914,14 +944,15 @@ async def get_provider_detail(
             "has_api_key": bool(config.api_key),
             "selected_models": pricing_manager.parse_selected_models(config.selected_models)
         },
-        "configuration": serialize_configuration(config, pricing_manager, include_secret=True)
+        "configuration": serialize_configuration(config, pricing_manager)
     }
 
 
 @router.delete("/providers/{provider}")
 async def delete_provider(
     provider: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     删除provider相关对象或持久化记录。

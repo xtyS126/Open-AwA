@@ -1,7 +1,7 @@
 {
   "name": "theme-switcher",
   "version": "1.0.0",
-  "pluginApiVersion": "1.0",
+  "pluginApiVersion": "1.0.0",
   "description": "演示存储API与UI扩展点的主题切换插件",
   "author": "Open-AwA Team",
   "permissions": [],

@@ -56,7 +56,11 @@ async def get_experiences(
     if source_task:
         query = query.filter(ExperienceMemory.source_task == source_task)
 
-    sort_column = getattr(ExperienceMemory, sort_by, ExperienceMemory.confidence)
+    # 白名单校验排序字段，防止通过 getattr 访问内部属性
+    ALLOWED_SORT_FIELDS = {"confidence", "created_at", "last_access", "title", "usage_count", "success_count"}
+    if sort_by not in ALLOWED_SORT_FIELDS:
+        sort_by = "confidence"
+    sort_column = getattr(ExperienceMemory, sort_by)
     if order == "desc":
         query = query.order_by(sort_column.desc())
     else:
@@ -154,8 +158,15 @@ async def update_experience(
         update_data['experience_metadata'] = json.dumps(update_data['metadata'])
         del update_data['metadata']
     
+    # 白名单限制可更新字段，防止通过 setattr 修改内部属性
+    ALLOWED_UPDATE_FIELDS = {
+        "title", "content", "confidence", "trigger_conditions",
+        "experience_type", "source_task", "experience_metadata",
+        "success_metrics",
+    }
     for key, value in update_data.items():
-        setattr(experience, key, value)
+        if key in ALLOWED_UPDATE_FIELDS:
+            setattr(experience, key, value)
     
     manager.db.commit()
     manager.db.refresh(experience)
