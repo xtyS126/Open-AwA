@@ -53,35 +53,47 @@ class BillingReporter:
         if user_id:
             query = query.filter(UsageRecord.user_id == user_id)
         
-        records: list[UsageRecord] = query.all()
-
-        total_input_tokens = sum(r.input_tokens for r in records)
-        total_output_tokens = sum(r.output_tokens for r in records)
-        total_cost = sum(r.total_cost for r in records)
+        # 使用数据库级 SQL 聚合，避免将全量记录加载到内存再在 Python 中 sum()
+        aggregated = query.with_entities(
+            func.sum(UsageRecord.input_tokens).label("total_input_tokens"),
+            func.sum(UsageRecord.output_tokens).label("total_output_tokens"),
+            func.sum(UsageRecord.total_cost).label("total_cost"),
+        ).one()
+        total_input_tokens = int(aggregated.total_input_tokens or 0)
+        total_output_tokens = int(aggregated.total_output_tokens or 0)
+        total_cost = float(aggregated.total_cost or 0)
         
-        by_model: dict[str, dict[str, Any]] = {}
-        for r in records:
-            key = f"{r.provider}:{r.model}"
-            if key not in by_model:
-                by_model[key] = {
-                    "provider": r.provider,
-                    "model": r.model,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost": 0.0,
-                    "call_count": 0
-                }
-            by_model[key]["input_tokens"] += r.input_tokens
-            by_model[key]["output_tokens"] += r.output_tokens
-            by_model[key]["cost"] += r.total_cost
-            by_model[key]["call_count"] += 1
+        # 按模型分组聚合（数据库侧）
+        by_model_rows = query.with_entities(
+            UsageRecord.provider,
+            UsageRecord.model,
+            func.sum(UsageRecord.input_tokens).label("input_tokens"),
+            func.sum(UsageRecord.output_tokens).label("output_tokens"),
+            func.sum(UsageRecord.total_cost).label("cost"),
+            func.count(UsageRecord.id).label("call_count"),
+        ).group_by(UsageRecord.provider, UsageRecord.model).all()
+        by_model: dict[str, dict[str, Any]] = {
+            f"{r.provider}:{r.model}": {
+                "provider": r.provider,
+                "model": r.model,
+                "input_tokens": int(r.input_tokens or 0),
+                "output_tokens": int(r.output_tokens or 0),
+                "cost": float(r.cost or 0),
+                "call_count": int(r.call_count or 0),
+            }
+            for r in by_model_rows
+        }
         
-        by_content_type = {}
-        for r in records:
-            if r.content_type not in by_content_type:
-                by_content_type[r.content_type] = {"tokens": 0, "cost": 0.0}
-            by_content_type[r.content_type]["tokens"] += r.input_tokens + r.output_tokens
-            by_content_type[r.content_type]["cost"] += r.total_cost
+        # 按内容类型分组聚合（数据库侧）
+        by_type_rows = query.with_entities(
+            UsageRecord.content_type,
+            (func.sum(UsageRecord.input_tokens) + func.sum(UsageRecord.output_tokens)).label("tokens"),
+            func.sum(UsageRecord.total_cost).label("cost"),
+        ).group_by(UsageRecord.content_type).all()
+        by_content_type = {
+            r.content_type: {"tokens": int(r.tokens or 0), "cost": float(r.cost or 0)}
+            for r in by_type_rows
+        }
         
         trend_days = 365 if period == "all" else 30
         trend = self.tracker.get_daily_usage_trend(user_id=user_id, days=trend_days)

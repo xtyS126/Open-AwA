@@ -288,7 +288,10 @@ class ExecutionLayer:
             else:
                 field_name = self.provider_api_key_fields.get(provider)
                 if field_name:
-                    api_key = getattr(settings, field_name, None)
+                    secret = getattr(settings, field_name, None)
+                    # SecretStr 类型需要调用 get_secret_value() 获取明文
+                    if secret is not None:
+                        api_key = secret.get_secret_value() if hasattr(secret, 'get_secret_value') else secret
 
         if not api_key:
             return {
