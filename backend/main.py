@@ -53,25 +53,26 @@ async def lifespan(app: FastAPI):
     启动时会初始化主数据库、计费表与默认定价配置；关闭时负责输出应用停止日志，为后续扩展统一资源清理入口。
     """
     logger.bind(event="app_startup", module="main").info("starting up openawa")
-    init_db()
-    logger.bind(event="db_initialized", module="main").info("database initialized")
-    BillingBase.metadata.create_all(bind=engine)
-    logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
-    from billing.pricing_manager import PricingManager
-    from db.models import SessionLocal
+    if not os.getenv("SKIP_INIT_DB"):
+        init_db()
+        logger.bind(event="db_initialized", module="main").info("database initialized")
+        BillingBase.metadata.create_all(bind=engine)
+        logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
+        from billing.pricing_manager import PricingManager
+        from db.models import SessionLocal
 
-    db = SessionLocal()
-    try:
-        pricing_manager = PricingManager(db)
-        pricing_manager.ensure_configuration_schema()
-        count = pricing_manager.initialize_default_pricing()
-        if count > 0:
-            logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
-        removed = pricing_manager.remove_legacy_default_configurations()
-        if removed > 0:
-            logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            pricing_manager = PricingManager(db)
+            pricing_manager.ensure_configuration_schema()
+            count = pricing_manager.initialize_default_pricing()
+            if count > 0:
+                logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
+            removed = pricing_manager.remove_legacy_default_configurations()
+            if removed > 0:
+                logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
+        finally:
+            db.close()
     yield
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
 

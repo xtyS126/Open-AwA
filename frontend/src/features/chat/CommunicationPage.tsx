@@ -1,13 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import {
-  WeixinConfig,
-  WeixinHealthCheckResult,
-  WeixinQrState,
-  WeixinQrStatus,
-  WeixinTaskStatusResponse,
-  weixinAPI
-} from '@/shared/api/api'
+import { WeixinConfig, WeixinHealthCheckResult, WeixinQrState, WeixinQrStatus, weixinAPI } from '@/shared/api/api'
 import styles from './CommunicationPage.module.css'
 
 const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com'
@@ -35,17 +28,7 @@ function CommunicationPage() {
   const [qrStatusText, setQrStatusText] = useState('')
   const [qrStatusHint, setQrStatusHint] = useState('')
   const [qrBindingResult, setQrBindingResult] = useState<{ userId: string; bindingStatus: string } | null>(null)
-  const [toUserId, setToUserId] = useState('')
-  const [messageInput, setMessageInput] = useState('')
-  const [sendingMessage, setSendingMessage] = useState(false)
-  const [messageHistory, setMessageHistory] = useState<Array<{ role: 'user' | 'system', text: string; time: string }>>([])
-  const [taskType, setTaskType] = useState('deep_research')
-  const [taskParams, setTaskParams] = useState('')
-  const [activeTask, setActiveTask] = useState<WeixinTaskStatusResponse | null>(null)
-  const [debugMode, setDebugMode] = useState(false)
-  const [debugInfo, setDebugInfo] = useState('')
   const pollTimerRef = useRef<number | null>(null)
-  const taskPollTimerRef = useRef<number | null>(null)
   const qrObjectUrlRef = useRef('')
   const qrCodeValueRef = useRef('')
   const qrPollTokenRef = useRef('')
@@ -183,7 +166,6 @@ function CommunicationPage() {
 
     return () => {
       clearQrPolling()
-      clearTaskPolling()
       clearQrImage()
     }
   }, [])
@@ -194,13 +176,6 @@ function CommunicationPage() {
       pollTimerRef.current = null
     }
     setPollingQrLogin(false)
-  }
-
-  const clearTaskPolling = () => {
-    if (taskPollTimerRef.current !== null) {
-      window.clearInterval(taskPollTimerRef.current)
-      taskPollTimerRef.current = null
-    }
   }
 
   const clearQrImage = () => {
@@ -452,101 +427,6 @@ function CommunicationPage() {
     }
   }
 
-  const appendHistory = (role: 'user' | 'system', text: string) => {
-    setMessageHistory((prev) => {
-      const next = [...prev, { role, text, time: new Date().toLocaleTimeString() }]
-      return next.slice(-10)
-    })
-  }
-
-  const handleSendMessage = async () => {
-    const userId = toUserId.trim()
-    const text = messageInput.trim()
-    if (!userId || !text) {
-      setMessage({ type: 'error', text: '请填写接收用户ID和消息内容' })
-      return
-    }
-    const started = performance.now()
-    setSendingMessage(true)
-    setDebugInfo('')
-    try {
-      appendHistory('user', text)
-      const response = await weixinAPI.sendMessage({
-        to_user_id: userId,
-        text,
-        account_id: weixinConfig.account_id || undefined,
-      })
-      setMessageInput('')
-      setMessage({ type: 'success', text: response.data.success ? '消息发送成功' : '消息发送失败' })
-      appendHistory('system', response.data.success ? `已发送，message_id=${response.data.message_id || '-'}` : `发送失败：${response.data.error || '未知错误'}`)
-      if (debugMode) {
-        const duration = Math.round(performance.now() - started)
-        setDebugInfo(`send_message 耗时 ${duration}ms`)
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: '消息发送失败，请检查上下文或微信配置' })
-      appendHistory('system', '消息发送失败')
-    } finally {
-      setSendingMessage(false)
-    }
-  }
-
-  const pollTaskStatus = async (taskId: string) => {
-    try {
-      const response = await weixinAPI.getTaskStatus(taskId)
-      setActiveTask(response.data)
-      if (response.data.status === 'completed' || response.data.status === 'failed' || response.data.status === 'cancelled') {
-        clearTaskPolling()
-      }
-    } catch {
-      clearTaskPolling()
-    }
-  }
-
-  const handleCreateTask = async () => {
-    let parsedParams: Record<string, unknown> = {}
-    if (taskParams.trim()) {
-      try {
-        parsedParams = JSON.parse(taskParams) as Record<string, unknown>
-      } catch {
-        setMessage({ type: 'error', text: '任务参数必须是合法JSON' })
-        return
-      }
-    }
-    const started = performance.now()
-    try {
-      const response = await weixinAPI.createTask({
-        task_type: taskType,
-        params: parsedParams,
-        account_id: weixinConfig.account_id || undefined,
-      })
-      setActiveTask({
-        task_id: response.data.task_id,
-        status: response.data.status,
-        progress: 0,
-        result: null,
-        error: null,
-      })
-      clearTaskPolling()
-      taskPollTimerRef.current = window.setInterval(() => {
-        pollTaskStatus(response.data.task_id)
-      }, 2000)
-      await pollTaskStatus(response.data.task_id)
-      setMessage({ type: 'success', text: `任务已创建：${response.data.task_id}` })
-      if (debugMode) {
-        const duration = Math.round(performance.now() - started)
-        setDebugInfo(`create_task 耗时 ${duration}ms`)
-      }
-    } catch {
-      setMessage({ type: 'error', text: '创建任务失败' })
-    }
-  }
-
-  const handleToggleDebug = () => {
-    setDebugMode((prev) => !prev)
-    setDebugInfo((prev) => prev || 'Debug模式已切换')
-  }
-
   return (
     <div className={styles['communication-page']}>
       <div className={styles['communication-header']}>
@@ -665,91 +545,6 @@ function CommunicationPage() {
                     <p className={styles['communication-qr-status']}>
                       {buildNextStepText(qrBindingResult.bindingStatus, qrBindingResult.userId)}
                     </p>
-                  )}
-                </div>
-
-                <div className={styles['communication-qr-login']}>
-                  <h4 className={styles['communication-qr-login-title']}>消息发送测试</h4>
-                  <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
-                    <label className={styles['communication-label']}>接收用户ID</label>
-                    <input
-                      type="text"
-                      value={toUserId}
-                      onChange={(e) => setToUserId(e.target.value)}
-                      placeholder="例如: wxid_xxx@im.wechat"
-                      className={styles['communication-input']}
-                    />
-                  </div>
-                  <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
-                    <label className={styles['communication-label']}>消息内容</label>
-                    <input
-                      type="text"
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      placeholder="输入要发送的文本消息"
-                      className={styles['communication-input']}
-                    />
-                  </div>
-                  <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
-                    <button className="btn btn-primary" onClick={handleSendMessage} disabled={sendingMessage}>
-                      {sendingMessage ? '发送中...' : '发送消息'}
-                    </button>
-                    <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleToggleDebug}>
-                      {debugMode ? '关闭调试模式' : '开启调试模式'}
-                    </button>
-                  </div>
-                  {debugInfo && <p className={styles['communication-qr-status']}>调试信息：{debugInfo}</p>}
-                  {messageHistory.length > 0 && (
-                    <div className={styles['communication-health-section']}>
-                      <strong className={styles['communication-health-strong']}>最近消息（最多10条）:</strong>
-                      <ul className={styles['communication-health-list']}>
-                        {messageHistory.map((item, idx) => (
-                          <li key={`${item.time}-${idx}`}>
-                            [{item.time}] {item.role === 'user' ? '发送' : '系统'}: {item.text}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-
-                <div className={styles['communication-qr-login']}>
-                  <h4 className={styles['communication-qr-login-title']}>异步任务追踪</h4>
-                  <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
-                    <label className={styles['communication-label']}>任务类型</label>
-                    <input
-                      type="text"
-                      value={taskType}
-                      onChange={(e) => setTaskType(e.target.value)}
-                      placeholder="例如: deep_research"
-                      className={styles['communication-input']}
-                    />
-                  </div>
-                  <div className={`${styles['setting-item']} ${styles['communication-form-item']}`}>
-                    <label className={styles['communication-label']}>任务参数(JSON)</label>
-                    <input
-                      type="text"
-                      value={taskParams}
-                      onChange={(e) => setTaskParams(e.target.value)}
-                      placeholder='例如: {"query":"AI 趋势"}'
-                      className={styles['communication-input']}
-                    />
-                  </div>
-                  <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
-                    <button className="btn btn-primary" onClick={handleCreateTask}>创建任务</button>
-                  </div>
-                  {activeTask && (
-                    <div className={styles['communication-health-section']}>
-                      <p className={styles['communication-qr-status']}>任务ID：{activeTask.task_id}</p>
-                      <p className={styles['communication-qr-status']}>状态：{activeTask.status}</p>
-                      <p className={styles['communication-qr-status']}>进度：{activeTask.progress}%</p>
-                      {activeTask.result && (
-                        <p className={styles['communication-qr-status']}>结果：{JSON.stringify(activeTask.result)}</p>
-                      )}
-                      {activeTask.error && (
-                        <p className={styles['communication-qr-status']}>错误：{activeTask.error}</p>
-                      )}
-                    </div>
                   )}
                 </div>
 
