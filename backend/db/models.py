@@ -265,18 +265,19 @@ class ConversationRecord(Base):
     record_metadata: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
-def _migrate_conversation_record_metadata_column():
+def _migrate_conversation_record_metadata_column(use_engine=None):
     """
-    处理migrate、conversation、record、metadata、column相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    迁移 conversation_records 表的 metadata 列到 record_metadata 列。
+    支持传入自定义 engine，确保在测试或多库场景下迁移操作落到正确数据库。
     """
-    inspector = inspect(engine)
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
     table_names = inspector.get_table_names()
     if "conversation_records" not in table_names:
         return
 
     columns = {column["name"] for column in inspector.get_columns("conversation_records")}
-    with engine.begin() as connection:
+    with target_engine.begin() as connection:
         if "record_metadata" not in columns and "metadata" in columns:
             connection.execute(text("ALTER TABLE conversation_records RENAME COLUMN metadata TO record_metadata"))
             logger.info("Migrated conversation_records.metadata column to record_metadata")
@@ -290,18 +291,19 @@ def _migrate_conversation_record_metadata_column():
             logger.info("Merged data from conversation_records.metadata into record_metadata")
 
 
-def _migrate_plugin_columns():
+def _migrate_plugin_columns(use_engine=None):
     """
-    处理migrate、plugin、columns相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    迁移 plugins 表，补齐缺失的列。
+    支持传入自定义 engine，确保迁移操作落到正确数据库。
     """
-    inspector = inspect(engine)
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
     table_names = inspector.get_table_names()
     if "plugins" not in table_names:
         return
 
     columns = {column["name"] for column in inspector.get_columns("plugins")}
-    with engine.begin() as connection:
+    with target_engine.begin() as connection:
         if "category" not in columns:
             connection.execute(text("ALTER TABLE plugins ADD COLUMN category VARCHAR DEFAULT 'general'"))
         if "author" not in columns:
@@ -324,8 +326,8 @@ def init_db(bind_engine=None):
     """
     use_engine = bind_engine or engine
     Base.metadata.create_all(bind=use_engine)
-    _migrate_conversation_record_metadata_column()
-    _migrate_plugin_columns()
+    _migrate_conversation_record_metadata_column(use_engine=use_engine)
+    _migrate_plugin_columns(use_engine=use_engine)
 
 
 def get_db():

@@ -18,6 +18,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import ipaddress
+import socket
 import httpx
 from loguru import logger
 
@@ -35,6 +37,20 @@ class PluginManager:
     插件管理器，负责插件的发现、加载、校验、沙箱隔离和生命周期管理。
     支持从本地文件、远程 URL 和 NPM 源注册插件，提供权限控制和灰度发布能力。
     """
+    # 允许下载插件的域名白名单，可通过配置扩展
+    ALLOWED_DOWNLOAD_DOMAINS: Set[str] = {
+        "github.com",
+        "raw.githubusercontent.com",
+        "gitlab.com",
+        "gitee.com",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "registry.npmjs.org",
+    }
+
+    # 最大允许下载的插件包体积（字节），默认 50MB
+    MAX_DOWNLOAD_SIZE: int = 50 * 1024 * 1024
+
     NPM_PACKAGE_PATTERN = re.compile(
         r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
     )
@@ -576,6 +592,42 @@ class PluginManager:
             shutil.rmtree(extract_dir, ignore_errors=True)
             raise
 
+    def _validate_remote_url(self, source_url: str) -> None:
+        """
+        校验远程插件下载地址的安全性，防止 SSRF 攻击。
+        拒绝私有网络、回环地址、链路本地地址，并校验域名白名单。
+        
+        Args:
+            source_url: 待校验的远程 URL。
+            
+        Raises:
+            ValueError: URL 不安全或不在白名单中。
+        """
+        parsed = urllib.parse.urlparse(source_url)
+        hostname = parsed.hostname or ""
+
+        # 校验域名白名单
+        if hostname not in self.ALLOWED_DOWNLOAD_DOMAINS:
+            raise ValueError(
+                f"域名 '{hostname}' 不在允许下载的白名单中。"
+                f"允许的域名: {sorted(self.ALLOWED_DOWNLOAD_DOMAINS)}"
+            )
+
+        # 解析域名到 IP 并校验是否为内网/回环/链路本地地址
+        try:
+            resolved_ips = socket.getaddrinfo(hostname, None)
+        except socket.gaierror:
+            raise ValueError(f"无法解析域名: {hostname}")
+
+        for family, _, _, _, sockaddr in resolved_ips:
+            ip_str = sockaddr[0]
+            ip_addr = ipaddress.ip_address(ip_str)
+            if ip_addr.is_private or ip_addr.is_loopback or ip_addr.is_link_local or ip_addr.is_reserved:
+                raise ValueError(
+                    f"域名 '{hostname}' 解析到不安全的地址 {ip_str}，"
+                    "禁止访问内网、回环或链路本地地址"
+                )
+
     def register_plugin_from_url(
         self,
         source_url: str,
@@ -600,11 +652,36 @@ class PluginManager:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Invalid remote plugin URL")
 
-        response = httpx.get(source_url, timeout=timeout, follow_redirects=True)
+        # SSRF 防护：校验域名白名单与 IP 安全性
+        self._validate_remote_url(source_url)
+
+        response = httpx.get(
+            source_url,
+            timeout=timeout,
+            follow_redirects=False,
+            headers={"Accept": "application/zip, application/octet-stream"},
+        )
+
+        # 拒绝重定向，防止通过重定向绕过域名白名单校验
+        if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
+            raise ValueError("远程插件下载不允许重定向，请提供直链地址")
+
         response.raise_for_status()
 
         if not response.content:
             raise ValueError("Remote plugin package is empty")
+
+        # 校验下载体积限制
+        if len(response.content) > self.MAX_DOWNLOAD_SIZE:
+            raise ValueError(
+                f"插件包体积 ({len(response.content)} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
+            )
+
+        # 校验内容类型
+        content_type = response.headers.get("content-type", "")
+        allowed_types = {"application/zip", "application/octet-stream", "application/x-zip-compressed"}
+        if content_type and not any(t in content_type for t in allowed_types):
+            raise ValueError(f"不支持的内容类型: {content_type}，仅允许 ZIP 文件")
 
         source_name = os.path.basename(parsed.path) or "remote_plugin.zip"
         extract_dir = self._create_source_extract_dir(source_name)

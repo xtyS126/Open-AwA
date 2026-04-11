@@ -233,7 +233,21 @@ def migrate_database():
     """
     logger.info("[工具] 开始完整数据库迁移...")
 
-    db_path = 'openawa.db'
+    # 从配置统一读取数据库路径，避免硬编码导致迁移目标与运行时不一致
+    try:
+        from config.settings import settings
+        db_url = settings.DATABASE_URL
+        # 从 sqlite:///./backend/openawa.db 格式中提取文件路径
+        if db_url.startswith("sqlite:///"):
+            db_path = db_url.replace("sqlite:///", "")
+            # 处理相对路径前缀
+            if db_path.startswith("./"):
+                db_path = db_path[2:]
+        else:
+            db_path = 'openawa.db'
+    except Exception:
+        db_path = 'openawa.db'
+        logger.warning(f"无法从配置读取数据库路径，回退到默认路径: {db_path}")
 
     conn = None
     try:

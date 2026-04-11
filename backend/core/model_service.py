@@ -28,6 +28,33 @@ DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_BACKOFF_SECONDS = 0.2
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
+# 全局共享的异步 HTTP 客户端，复用连接池以减少 TLS 握手和连接建立开销
+_shared_client: Optional[httpx.AsyncClient] = None
+
+
+def get_shared_client() -> httpx.AsyncClient:
+    """
+    获取全局共享的异步 HTTP 客户端实例。
+    在应用生命周期内复用同一个连接池。
+    """
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _shared_client
+
+
+async def close_shared_client() -> None:
+    """
+    关闭全局共享的 HTTP 客户端，通常在应用关闭时调用。
+    """
+    global _shared_client
+    if _shared_client is not None and not _shared_client.is_closed:
+        await _shared_client.aclose()
+        _shared_client = None
+
 # Google Gemini API topK range is 1-40 (integer). We map from normalized 0.0-1.0 float.
 # See: https://ai.google.dev/api/rest/v1beta/GenerationConfig
 GOOGLE_TOPK_MAX = 40
@@ -327,13 +354,13 @@ async def send_with_retries(
 
     for attempt in range(1, total_attempts + 1):
         try:
-            async with httpx.AsyncClient(timeout=spec.timeout) as client:
-                if spec.method.upper() == "GET":
-                    response = await client.get(spec.endpoint, headers=spec.headers)
-                else:
-                    response = await client.post(spec.endpoint, json=spec.payload, headers=spec.headers)
-                response.raise_for_status()
-                return response
+            client = get_shared_client()
+            if spec.method.upper() == "GET":
+                response = await client.get(spec.endpoint, headers=spec.headers, timeout=spec.timeout)
+            else:
+                response = await client.post(spec.endpoint, json=spec.payload, headers=spec.headers, timeout=spec.timeout)
+            response.raise_for_status()
+            return response
         except Exception as exc:  # noqa: BLE001 - 这里需要统一兜底判断是否可重试
             last_error = exc
             if attempt >= total_attempts or not is_retryable_exception(exc):

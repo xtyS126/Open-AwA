@@ -23,32 +23,42 @@ async def get_behavior_stats(
     current_user = Depends(get_current_user)
 ):
     """
-    获取behavior、stats相关数据或当前状态。
+    获取当前用户的行为统计数据，按用户ID过滤防止信息泄露。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     import json
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
     
+    # 所有查询添加用户ID过滤，防止跨用户数据泄露
     total_interactions = db.query(func.count(BehaviorLog.id)).filter(
+        BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "llm_call"
     ).scalar() or 0
     
-    tool_logs = db.query(BehaviorLog).filter(
+    # 使用COUNT查询代替加载全部记录到内存，提升性能
+    total_tools_used = db.query(func.count(BehaviorLog.id)).filter(
+        BehaviorLog.user_id == current_user.id,
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type == "tool_usage"
+    ).scalar() or 0
+    
+    # 错误总数使用COUNT查询
+    total_errors = db.query(func.count(BehaviorLog.id)).filter(
+        BehaviorLog.user_id == current_user.id,
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type == "error"
+    ).scalar() or 0
+    
+    # 工具使用分布统计 - 仅加载details字段进行聚合
+    tool_counts: dict[str, int] = {}
+    tool_details = db.query(BehaviorLog.details).filter(
+        BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "tool_usage"
     ).all()
-    total_tools_used = len(tool_logs)
-    
-    error_logs = db.query(BehaviorLog).filter(
-        BehaviorLog.timestamp >= start_date,
-        BehaviorLog.action_type == "error"
-    ).all()
-    total_errors = len(error_logs)
-    
-    tool_counts: dict[str, int] = {}
-    for log in tool_logs:
-        details = log.details or ""
+    for (details,) in tool_details:
+        details = details or ""
         tool_name = details.split(":")[0] if ":" in details else "unknown"
         tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
     
@@ -57,14 +67,16 @@ async def get_behavior_stats(
         for tool, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
     
+    # 意图分布统计 - 仅加载details字段进行聚合
     intent_counts: dict[str, int] = {}
-    intent_logs = db.query(BehaviorLog).filter(
+    intent_details = db.query(BehaviorLog.details).filter(
+        BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "intent"
     ).all()
     
-    for log in intent_logs:
-        details = log.details or "unknown"
+    for (details,) in intent_details:
+        details = details or "unknown"
         intent_counts[details] = intent_counts.get(details, 0) + 1
     
     top_intents = [
@@ -73,6 +85,7 @@ async def get_behavior_stats(
     ]
     
     llm_logs = db.query(BehaviorLog).filter(
+        BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "llm_call"
     ).all()
@@ -145,10 +158,10 @@ async def get_behavior_logs(
     current_user = Depends(get_current_user)
 ):
     """
-    获取behavior、logs相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取当前用户的行为日志，按用户ID过滤防止信息泄露。
+    支持分页和按行为类型筛选。
     """
-    query = db.query(BehaviorLog)
+    query = db.query(BehaviorLog).filter(BehaviorLog.user_id == current_user.id)
     
     if action_type:
         query = query.filter(BehaviorLog.action_type == action_type)

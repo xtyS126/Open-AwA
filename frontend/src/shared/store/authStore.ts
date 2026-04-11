@@ -16,21 +16,21 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: localStorage.getItem('token'),
-  isAuthenticated: !!localStorage.getItem('token'),
+  token: sessionStorage.getItem('token'),
+  isAuthenticated: !!sessionStorage.getItem('token'),
   isInitialized: false,
 
   setAuth: (user, token) => {
     if (token) {
-      localStorage.setItem('token', token)
+      sessionStorage.setItem('token', token)
     } else {
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
     }
     
     if (user) {
-      localStorage.setItem('username', user.username)
+      sessionStorage.setItem('username', user.username)
     } else {
-      localStorage.removeItem('username')
+      sessionStorage.removeItem('username')
     }
 
     set({ user, token, isAuthenticated: !!token })
@@ -39,8 +39,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   setInitialized: (initialized) => set({ isInitialized: initialized }),
 
   logout: () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('username')
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('username')
     set({ user: null, token: null, isAuthenticated: false })
   },
 }))

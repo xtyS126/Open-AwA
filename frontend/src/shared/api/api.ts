@@ -3,7 +3,7 @@ import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/util
 
 const API_BASE_URL = '/api'
 
-const getStoredToken = () => localStorage.getItem('token')
+const getStoredToken = () => sessionStorage.getItem('token')
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -141,7 +141,7 @@ export const chatAPI = {
     })
 
     try {
-      const token = localStorage.getItem('token')
+      const token = sessionStorage.getItem('token')
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Request-Id': requestId,

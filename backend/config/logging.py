@@ -27,6 +27,10 @@ SENSITIVE_KEYS = {
     "cookie",
     "access_token",
     "refresh_token",
+    "username",
+    "user_input",
+    "message_content",
+    "chat_content",
 }
 
 IDENTIFIER_KEYS = {

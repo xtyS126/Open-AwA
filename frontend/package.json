@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
     "e2e:electron": "playwright test --project=electron",

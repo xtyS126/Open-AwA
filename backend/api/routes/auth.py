@@ -9,6 +9,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -34,7 +35,6 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             module="auth",
             action="register",
             status="failure",
-            username=user.username,
         ).warning("username already registered")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -48,7 +48,20 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         role="user"
     )
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.bind(
+            event="auth_register_conflict_race",
+            module="auth",
+            action="register",
+            status="failure",
+        ).warning("concurrent registration conflict for username")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already registered"
+        )
     db.refresh(new_user)
 
     logger.bind(
@@ -57,7 +70,6 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         action="register",
         status="success",
         user_id=new_user.id,
-        username=new_user.username,
     ).info("user registered")
 
     return new_user

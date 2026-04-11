@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     
-    DATABASE_URL: str = "sqlite:///./backend/openawa.db"
+    # SQLite 数据库文件路径，使用相对路径时会相对于 backend 目录解析，亦即以 main.py 所在目录为基准。
+    DATABASE_URL: str = "sqlite:///./openawa.db"
     
     SECRET_KEY: str = generate_secret_key()
     ALGORITHM: str = "HS256"
