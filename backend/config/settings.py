@@ -50,8 +50,30 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     DEEPSEEK_API_KEY: Optional[str] = None
     
-    VECTOR_DB_PATH: str = "./data/vector_db"
+    # Ollama 本地模型配置
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
     
+    # 通义千问配置
+    QWEN_API_KEY: str = ""
+    QWEN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    
+    # 智谱AI配置
+    ZHIPU_API_KEY: str = ""
+    ZHIPU_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
+    
+    # Kimi/Moonshot配置
+    MOONSHOT_API_KEY: str = ""
+    MOONSHOT_BASE_URL: str = "https://api.moonshot.cn/v1"
+    
+    VECTOR_DB_PATH: str = "./data/vector_db"
+
+    # 微信集成配置
+    WEIXIN_DEFAULT_BASE_URL: str = "https://ilinkai.weixin.qq.com"
+    WEIXIN_DEFAULT_BOT_TYPE: str = "3"
+    WEIXIN_DEFAULT_CHANNEL_VERSION: str = "1.0.2"
+    WEIXIN_SESSION_TIMEOUT_SECONDS: int = 3600
+    WEIXIN_TOKEN_REFRESH_ENABLED: bool = True
+
     USAGE_RETENTION_DAYS: int = 365
     
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024
@@ -63,6 +85,13 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True
     LOG_SERVICE_NAME: str = "openawa-backend"
+    # 日志文件持久化配置
+    LOG_DIR: str = "./logs"
+    LOG_FILE_ROTATION: str = "10 MB"
+    LOG_FILE_RETENTION: str = "30 days"
+    LOG_FILE_COMPRESSION: str = "gz"
+    # 开发环境脱敏开关（True 时禁用脱敏，方便调试）
+    LOG_DISABLE_SANITIZE: bool = False
     
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True

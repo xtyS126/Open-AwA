@@ -17,6 +17,7 @@ from core.metrics import record_model_service_metric, record_tool_execution_metr
 from core.model_service import (
     build_provider_request,
     build_standard_error,
+    extract_reasoning_content,
     is_retryable_exception,
     send_with_retries,
     send_stream_with_retries,
@@ -212,7 +213,9 @@ class ExecutionLayer:
                 if not config:
                     config = pricing_manager.get_default_configuration()
             except Exception as e:
-                logger.error(f"Failed to resolve model configuration from database: {e}")
+                logger.opt(exception=True).error(
+                    f"Failed to resolve model configuration from database: {e}"
+                )
 
         if config:
             provider = provider or config.provider
@@ -415,9 +418,13 @@ class ExecutionLayer:
                     )
                 return output
 
+            # 从响应中提取推理内容（思维链）
+            reasoning_content = extract_reasoning_content(result, resolved["provider"])
+
             output = {
                 "ok": True,
                 "response": response_text,
+                "reasoning_content": reasoning_content,
                 "provider": resolved["provider"],
                 "model": resolved["model"],
                 "request_id": resolved.get("request_id"),
@@ -444,7 +451,15 @@ class ExecutionLayer:
                 )
             return output
         except httpx.HTTPStatusError as e:
-            logger.error(f"LLM API HTTP status error: {str(e)}")
+            logger.bind(
+                event="llm_http_error",
+                module="executor",
+                error_type="HTTPStatusError",
+                status_code=e.response.status_code,
+                provider=resolved.get("provider"),
+                model=resolved.get("model"),
+                endpoint=request_spec.endpoint,
+            ).opt(exception=True).error(f"LLM API HTTP {e.response.status_code} 错误: {e}")
             response_text = e.response.text[:1000] if e.response.text else ""
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "http_error", duration_ms)
@@ -483,7 +498,14 @@ class ExecutionLayer:
                 )
             return output
         except httpx.HTTPError as e:
-            logger.error(f"LLM API call failed: {str(e)}")
+            logger.bind(
+                event="llm_network_error",
+                module="executor",
+                error_type=type(e).__name__,
+                provider=resolved.get("provider"),
+                model=resolved.get("model"),
+                endpoint=request_spec.endpoint,
+            ).opt(exception=True).error(f"LLM API 网络异常: {e}")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "network_error", duration_ms)
             output = {
@@ -518,7 +540,13 @@ class ExecutionLayer:
                 )
             return output
         except Exception as e:
-            logger.error(f"Unexpected error in LLM call: {str(e)}")
+            logger.bind(
+                event="llm_unexpected_error",
+                module="executor",
+                error_type=type(e).__name__,
+                provider=resolved.get("provider"),
+                model=resolved.get("model"),
+            ).opt(exception=True).error(f"LLM 调用未知异常: {e}")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "unexpected_error", duration_ms)
             output = {
@@ -619,10 +647,14 @@ class ExecutionLayer:
                                 if parts:
                                     content = parts[0].get("text", "")
                                     
-                        # Handle Anthropic format if they use SSE with different schema
-                        # Note: Anthropic streaming is slightly different, but assuming standard SSE proxy or openai compat for now.
+                        # Anthropic 流式格式：区分 thinking_delta 和 text_delta
                         if "type" in data and data["type"] == "content_block_delta":
-                            content = data.get("delta", {}).get("text", "")
+                            delta_obj = data.get("delta", {})
+                            delta_type = delta_obj.get("type", "")
+                            if delta_type == "thinking_delta":
+                                reasoning = delta_obj.get("thinking", "")
+                            else:
+                                content = delta_obj.get("text", "")
                             
                         if content or reasoning:
                             if content: full_content += content
@@ -665,7 +697,13 @@ class ExecutionLayer:
                 )
 
         except Exception as e:
-            logger.error(f"Error in LLM stream call: {str(e)}")
+            logger.bind(
+                event="llm_stream_error",
+                module="executor",
+                error_type=type(e).__name__,
+                provider=resolved.get("provider"),
+                model=resolved.get("model"),
+            ).opt(exception=True).error(f"LLM 流式调用异常: {e}")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
             
@@ -717,6 +755,12 @@ class ExecutionLayer:
         if cached_result is not None:
             cached_result["idempotency_key"] = idempotency_key
             record_tool_execution_metric(str(action or "unknown"), "replayed")
+            logger.bind(
+                event="tool_cache_hit",
+                module="executor",
+                action=action,
+                idempotency_key=idempotency_key[:16],
+            ).debug(f"工具执行命中缓存，跳过重复执行: {action}")
             return cached_result
         
         try:
@@ -747,7 +791,12 @@ class ExecutionLayer:
             return result
             
         except Exception as e:
-            logger.error(f"Error executing step {action}: {str(e)}")
+            logger.bind(
+                event="step_execution_error",
+                module="executor",
+                error_type=type(e).__name__,
+                action=action,
+            ).opt(exception=True).error(f"步骤执行异常 [{action}]: {e}")
             record_tool_execution_metric(str(action or "unknown"), "error")
             return {
                 "status": "error",
@@ -902,12 +951,16 @@ class ExecutionLayer:
                 "error": result["error"]
             }
 
-        return {
+        output = {
             "status": "completed",
             "response": result["response"],
             "provider": result.get("provider"),
-            "model": result.get("model")
+            "model": result.get("model"),
         }
+        # 传递推理内容（如果存在）
+        if result.get("reasoning_content"):
+            output["reasoning_content"] = result["reasoning_content"]
+        return output
     
     async def retry_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -934,4 +987,4 @@ class ExecutionLayer:
                 success=success
             )
         except Exception as e:
-            logger.error(f"Error recording experience feedback: {e}")
+            logger.opt(exception=True).error(f"记录经验反馈失败: {e}")

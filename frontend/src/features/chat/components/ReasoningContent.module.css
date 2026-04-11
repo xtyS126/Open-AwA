@@ -24,6 +24,10 @@
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+.headerText {
+  flex-shrink: 0;
+}
+
 .icon {
   margin-right: 6px;
   transition: transform 0.3s ease;
@@ -32,6 +36,47 @@
 
 .icon.expanded {
   transform: rotate(90deg);
+}
+
+.metaInfo {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  font-weight: normal;
+  color: #999;
+}
+
+.tokenCount {
+  white-space: nowrap;
+}
+
+.elapsed {
+  white-space: nowrap;
+}
+
+.copyBtn {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: transparent;
+  color: #666;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.copyBtn:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+  border-color: #999;
+}
+
+.copyBtn.copySuccess {
+  color: #52c41a;
+  border-color: #52c41a;
 }
 
 .contentWrapper {

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { BrowserRouter } from 'react-router-dom'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import PluginsPage from '@/features/plugins/PluginsPage'
 import { pluginsAPI } from '@/shared/api/api'
@@ -64,7 +65,7 @@ describe('PluginsPage permissions', () => {
   })
 
   it('应显示权限弹窗并可授权缺失权限', async () => {
-    render(<PluginsPage />)
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
 
     await waitFor(() => {
       expect(pluginsAPI.getAll).toHaveBeenCalled()
@@ -108,7 +109,7 @@ describe('PluginsPage permissions', () => {
         },
       })
 
-    render(<PluginsPage />)
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
 
     await waitFor(() => {
       expect(pluginsAPI.getAll).toHaveBeenCalled()

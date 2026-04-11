@@ -14,7 +14,10 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from loguru import logger
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models
+from api.routes.marketplace import router as marketplace_router
+from api.routes.security import router as security_router
+from api.routes.weixin import router as weixin_router
 from billing.models import Base as BillingBase
 from billing.routers import billing
 from config.logging import (
@@ -42,6 +45,11 @@ init_logging(
     log_level=settings.LOG_LEVEL,
     service_name=settings.LOG_SERVICE_NAME,
     log_serialize=settings.LOG_SERIALIZE,
+    log_dir=settings.LOG_DIR,
+    log_file_rotation=settings.LOG_FILE_ROTATION,
+    log_file_retention=settings.LOG_FILE_RETENTION,
+    log_file_compression=settings.LOG_FILE_COMPRESSION,
+    disable_sanitize=settings.LOG_DISABLE_SANITIZE,
 )
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else ["http://localhost:5173", "http://localhost:8000"]
@@ -75,6 +83,18 @@ async def lifespan(app: FastAPI):
                 logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
         finally:
             db.close()
+        # 初始化内置 RBAC 角色
+        from security.rbac import RBACManager
+
+        db = SessionLocal()
+        try:
+            rbac = RBACManager(db)
+            rbac.ensure_built_in_roles()
+        finally:
+            db.close()
+    # 初始化插件市场内置插件
+    from plugins.marketplace.registry import marketplace_registry
+    marketplace_registry.seed_built_in_plugins()
     yield
     await close_shared_client()
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
@@ -231,7 +251,12 @@ app.include_router(experiences.router, prefix=settings.API_V1_STR)
 app.include_router(experience_files.router, prefix=settings.API_V1_STR)
 app.include_router(conversation.router, prefix=settings.API_V1_STR)
 app.include_router(logs.router, prefix=settings.API_V1_STR)
+app.include_router(mcp.router)
+app.include_router(models.router)
 app.include_router(billing.router)
+app.include_router(marketplace_router)
+app.include_router(security_router)
+app.include_router(weixin_router)
 
 
 @app.get("/")

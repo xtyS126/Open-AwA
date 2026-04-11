@@ -4,6 +4,13 @@
   height: 100%;
 }
 
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
 .memory-tabs {
   display: flex;
   gap: 8px;
@@ -104,6 +111,23 @@
   text-align: center;
   padding: 40px;
   color: var(--color-text-secondary);
+}
+
+.status-message-error {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.session-hint {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 13px;
 }
 
 .btn {

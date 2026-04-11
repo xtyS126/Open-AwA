@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
-import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse } from '@/features/settings/modelsApi'
+import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
+import { useNotification } from '@/shared/hooks/useNotification'
+import { appLogger } from '@/shared/utils/logger'
+import MCPSettings from './MCPSettings'
+import SecuritySettings from './SecuritySettings'
 import styles from './SettingsPage.module.css'
 
 interface Settings {
@@ -76,7 +80,7 @@ function SettingsPage() {
     enableAudit: true,
   })
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const { message, showNotification } = useNotification(3000)
   const [models, setModels] = useState<ModelPricing[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [editingModel, setEditingModel] = useState<number | null>(null)
@@ -128,6 +132,15 @@ function SettingsPage() {
   // --------------------------------------------------------
 
   const [addProviderForm, setAddProviderForm] = useState(createInitialAddProviderForm())
+
+  // Ollama 模型发现相关状态
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
+  const [loadingOllama, setLoadingOllama] = useState(false)
+  const [ollamaError, setOllamaError] = useState<string | null>(null)
+  // 提供商连接状态
+  const [providerStatuses, setProviderStatuses] = useState<ProviderConnectionStatus[]>([])
+  const [loadingProviderStatuses, setLoadingProviderStatuses] = useState(false)
+
   const [providerForm, setProviderForm] = useState<ApiProviderFormState>({
     config_id: null,
     provider: '',
@@ -179,7 +192,7 @@ function SettingsPage() {
       setRetentionConfig(response.data)
       setRetentionDays(response.data.retention_days)
     } catch (error) {
-      console.error('Failed to load retention config')
+      appLogger.error({ event: 'retention_config_load_failed', message: 'Failed to load retention config', module: 'settings' })
     } finally {
       setLoadingRetention(false)
     }
@@ -192,14 +205,13 @@ function SettingsPage() {
         retention_days: retentionDays,
         cleanup: cleanupOld
       })
-      setMessage({ type: 'success', text: `保存成功${cleanupOld && response.data.deleted_records > 0 ? `，已删除${response.data.deleted_records}条过期记录` : ''}` })
+      showNotification({ type: 'success', text: `保存成功${cleanupOld && response.data.deleted_records > 0 ? `，已删除${response.data.deleted_records}条过期记录` : ''}` })
       loadRetentionConfig()
       setCleanupOld(false)
     } catch (error) {
-      setMessage({ type: 'error', text: '保存失败' })
+      showNotification({ type: 'error', text: '保存失败' })
     } finally {
       setSaving(false)
-      setTimeout(() => setMessage(null), 3000)
     }
   }
 
@@ -209,7 +221,7 @@ function SettingsPage() {
       try {
         setSettings(JSON.parse(savedSettings))
       } catch (e) {
-        console.error('Failed to load settings')
+        appLogger.error({ event: 'settings_load_failed', message: 'Failed to load settings', module: 'settings' })
       }
     }
   }
@@ -221,7 +233,7 @@ function SettingsPage() {
         setSettings(prev => ({ ...prev, promptContent: response.data.content }))
       }
     } catch (error) {
-      console.error('Failed to load prompts')
+      appLogger.error({ event: 'prompts_load_failed', message: 'Failed to load prompts', module: 'settings' })
     }
   }
 
@@ -231,8 +243,7 @@ function SettingsPage() {
       setCollectionEnabled(Boolean(response.data.enabled))
       setCollectionStats(response.data.stats || null)
     } catch (error) {
-      setMessage({ type: 'error', text: '加载收集状态失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '加载收集状态失败' })
     }
   }
 
@@ -242,8 +253,7 @@ function SettingsPage() {
       const response = await conversationAPI.getRecordsPreview(20)
       setRecordsPreview(response.data.records || [])
     } catch (error) {
-      setMessage({ type: 'error', text: '加载最近记录失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '加载最近记录失败' })
     } finally {
       setLoadingRecordsPreview(false)
     }
@@ -255,11 +265,9 @@ function SettingsPage() {
       await conversationAPI.updateCollectionStatus(enabled)
       setCollectionEnabled(enabled)
       await loadCollectionStatus()
-      setMessage({ type: 'success', text: enabled ? '已开启数据收集' : '已关闭数据收集' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'success', text: enabled ? '已开启数据收集' : '已关闭数据收集' })
     } catch (error) {
-      setMessage({ type: 'error', text: '更新收集开关失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '更新收集开关失败' })
     } finally {
       setUpdatingCollection(false)
     }
@@ -291,11 +299,9 @@ function SettingsPage() {
       link.remove()
       window.URL.revokeObjectURL(downloadUrl)
 
-      setMessage({ type: 'success', text: '导出完成' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'success', text: '导出完成' })
     } catch (error) {
-      setMessage({ type: 'error', text: '导出失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '导出失败' })
     } finally {
       setExportingRecords(false)
     }
@@ -308,13 +314,11 @@ function SettingsPage() {
     try {
       const response = await conversationAPI.cleanupRecords(cleanupDays)
       const deleted = response.data?.deleted_count ?? 0
-      setMessage({ type: 'success', text: `清理完成：已删除 ${deleted} 条记录` })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'success', text: `清理完成：已删除 ${deleted} 条记录` })
       await loadRecordsPreview()
       await loadCollectionStatus()
     } catch (error) {
-      setMessage({ type: 'error', text: '清理失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '清理失败' })
     } finally {
       setCleaningRecords(false)
     }
@@ -328,7 +332,7 @@ function SettingsPage() {
       ])
       setModels(modelsRes.data.models || [])
     } catch (error) {
-      console.error('Failed to load billing data')
+      appLogger.error({ event: 'billing_data_load_failed', message: 'Failed to load billing data', module: 'settings' })
     } finally {
       setLoadingModels(false)
     }
@@ -351,7 +355,7 @@ function SettingsPage() {
         await handleSelectModelConfig(defaultConfig.id, configs)
       }
     } catch (error) {
-      console.error('Failed to load models data')
+      appLogger.error({ event: 'models_data_load_failed', message: 'Failed to load models data', module: 'settings' })
     } finally {
       setLoadingConfigs(false)
     }
@@ -386,13 +390,12 @@ function SettingsPage() {
         top_k: editingTopK,
         max_tokens_limit: editingMaxTokens,
       })
-      setMessage({ type: 'success', text: '模型参数保存成功' })
+      showNotification({ type: 'success', text: '模型参数保存成功' })
       await loadModelsData()
     } catch {
-      setMessage({ type: 'error', text: '模型参数保存失败' })
+      showNotification({ type: 'error', text: '模型参数保存失败' })
     } finally {
       setSavingModelParams(false)
-      setTimeout(() => setMessage(null), 3000)
     }
   }
 
@@ -405,13 +408,12 @@ function SettingsPage() {
       setEditingTemperature(config?.temperature ?? 0.7)
       setEditingTopK(config?.top_k ?? 0.9)
       setEditingMaxTokens(config?.max_tokens_limit ?? null)
-      setMessage({ type: 'success', text: '已重置为默认参数' })
+      showNotification({ type: 'success', text: '已重置为默认参数' })
       await loadModelsData()
     } catch {
-      setMessage({ type: 'error', text: '重置失败' })
+      showNotification({ type: 'error', text: '重置失败' })
     } finally {
       setSavingModelParams(false)
-      setTimeout(() => setMessage(null), 3000)
     }
   }
 
@@ -515,8 +517,7 @@ function SettingsPage() {
 
       await loadProviderDetail(nextProviderId)
     } catch (error) {
-      setMessage({ type: 'error', text: '加载供应商列表失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '加载供应商列表失败' })
     } finally {
       setLoadingApiProviders(false)
     }
@@ -543,7 +544,7 @@ function SettingsPage() {
         provider: config.provider || providerId,
         display_name: config.display_name || providerData.display_name || providerData.name || providerId,
         icon: config.icon || providerData.icon || '',
-        api_endpoint: (config.base_url || config.api_endpoint || (config as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as Record<string, unknown>).api_url || '') as string,
+        api_endpoint: (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string,
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
         selected_models: selectedModels,
@@ -553,8 +554,7 @@ function SettingsPage() {
 
       await fetchProviderModels(providerId, selectedModels, false)
     } catch (error) {
-      setMessage({ type: 'error', text: '加载供应商详情失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '加载供应商详情失败' })
     } finally {
       setLoadingProviderDetail(false)
     }
@@ -603,10 +603,10 @@ function SettingsPage() {
       const newSelected = [...modalSelectedModels]
       await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
       setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
-      setMessage({ type: 'success', text: '模型导入成功' })
+      showNotification({ type: 'success', text: '模型导入成功' })
       setShowImportModal(false)
     } catch (error) {
-      setMessage({ type: 'error', text: '模型导入失败' })
+      showNotification({ type: 'error', text: '模型导入失败' })
     } finally {
       setImporting(false)
     }
@@ -620,10 +620,10 @@ function SettingsPage() {
       await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
       setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
       setSelectedForDeletion([])
-      setMessage({ type: 'success', text: '批量删除成功' })
+      showNotification({ type: 'success', text: '批量删除成功' })
       setShowDeleteModelsModal(false)
     } catch (error) {
-      setMessage({ type: 'error', text: '批量删除失败' })
+      showNotification({ type: 'error', text: '批量删除失败' })
     } finally {
       setDeletingModels(false)
     }
@@ -632,6 +632,58 @@ function SettingsPage() {
   const handleOpenCreateProviderModal = () => {
     setAddProviderForm(createInitialAddProviderForm())
     setShowCreateProviderModal(true)
+  }
+
+  // 发现本地 Ollama 可用模型
+  const handleDiscoverOllamaModels = async () => {
+    setLoadingOllama(true)
+    setOllamaError(null)
+    try {
+      const response = await modelsAPI.discoverOllamaModels()
+      const data = response.data
+      setOllamaModels(data.models || [])
+      if (data.count === 0) {
+        setOllamaError('未发现 Ollama 模型，请确认 Ollama 服务已启动且已拉取模型')
+      }
+    } catch {
+      setOllamaError('无法连接 Ollama 服务，请确认服务已启动')
+      setOllamaModels([])
+    } finally {
+      setLoadingOllama(false)
+    }
+  }
+
+  // 获取所有提供商连接状态
+  const handleCheckProviderStatuses = async () => {
+    setLoadingProviderStatuses(true)
+    try {
+      const response = await modelsAPI.getProvidersStatus()
+      setProviderStatuses(response.data.providers || [])
+    } catch {
+      showNotification({ type: 'error', text: '获取提供商状态失败' })
+    } finally {
+      setLoadingProviderStatuses(false)
+    }
+  }
+
+  // 格式化文件大小
+  const formatModelSize = (bytes: number): string => {
+    if (!bytes) return '-'
+    if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`
+    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(0)} MB`
+    return `${(bytes / 1024).toFixed(0)} KB`
+  }
+
+  // 获取连接状态的显示样式
+  const getStatusIndicator = (status: string): { label: string; color: string } => {
+    switch (status) {
+      case 'connected': return { label: '已连接', color: '#22c55e' }
+      case 'auth_error': return { label: '认证失败', color: '#ef4444' }
+      case 'timeout': return { label: '超时', color: '#f59e0b' }
+      case 'unreachable': return { label: '不可达', color: '#ef4444' }
+      case 'unconfigured': return { label: '未配置', color: '#9ca3af' }
+      default: return { label: '异常', color: '#ef4444' }
+    }
   }
 
   const handleCloseCreateProviderModal = () => {
@@ -670,8 +722,7 @@ function SettingsPage() {
     const baseModel = addProviderForm.base_model.trim() || 'custom-model'
 
     if (!providerId) {
-      setMessage({ type: 'error', text: '请输入供应商标识' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '请输入供应商标识' })
       return
     }
 
@@ -679,8 +730,7 @@ function SettingsPage() {
       try {
         new URL(addProviderForm.api_endpoint)
       } catch (error) {
-        setMessage({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
-        setTimeout(() => setMessage(null), 3000)
+        showNotification({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
         return
       }
     }
@@ -703,12 +753,10 @@ function SettingsPage() {
 
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
-      setMessage({ type: 'success', text: '供应商创建成功' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'success', text: '供应商创建成功' })
       await loadApiProvidersData(providerId)
     } catch (error) {
-      setMessage({ type: 'error', text: '供应商创建失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '供应商创建失败' })
     } finally {
       setCreatingProvider(false)
     }
@@ -716,8 +764,7 @@ function SettingsPage() {
 
   const handleSaveProviderConfig = async () => {
     if (!providerForm.config_id || !providerForm.provider) {
-      setMessage({ type: 'error', text: '当前供应商配置不完整' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '当前供应商配置不完整' })
       return
     }
 
@@ -725,8 +772,7 @@ function SettingsPage() {
       try {
         new URL(providerForm.api_endpoint)
       } catch (error) {
-        setMessage({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
-        setTimeout(() => setMessage(null), 3000)
+        showNotification({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
         return
       }
     }
@@ -760,12 +806,10 @@ function SettingsPage() {
         selected_models: providerForm.selected_models
       })
 
-      setMessage({ type: 'success', text: '供应商配置保存成功' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'success', text: '供应商配置保存成功' })
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
-      setMessage({ type: 'error', text: '保存供应商配置失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '保存供应商配置失败' })
     } finally {
       setSaving(false)
     }
@@ -773,8 +817,7 @@ function SettingsPage() {
 
   const handleOpenDeleteConfirmModal = () => {
     if (!providerForm.provider) {
-      setMessage({ type: 'error', text: '当前供应商配置不完整' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '当前供应商配置不完整' })
       return
     }
     setShowDeleteConfirmModal(true)
@@ -792,13 +835,11 @@ function SettingsPage() {
 
     try {
       await modelsAPI.deleteProvider(providerForm.provider)
-      setMessage({ type: 'success', text: '供应商删除成功' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'success', text: '供应商删除成功' })
       setShowDeleteConfirmModal(false)
       await loadApiProvidersData()
     } catch (error) {
-      setMessage({ type: 'error', text: '供应商删除失败' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '供应商删除失败' })
     } finally {
       setDeletingProvider(false)
     }
@@ -811,7 +852,7 @@ function SettingsPage() {
         const response = await modelsAPI.getModelsByProvider(provider)
         setProviderModels(response.data.models || [])
       } catch (error) {
-        console.error('Failed to load provider models')
+        appLogger.error({ event: 'provider_models_load_failed', message: 'Failed to load provider models', module: 'settings' })
       }
     } else {
       setProviderModels([])
@@ -820,8 +861,7 @@ function SettingsPage() {
 
   const handleAddConfiguration = async () => {
     if (!newConfig.provider || !newConfig.model) {
-      setMessage({ type: 'error', text: '请选择提供商和模型' })
-      setTimeout(() => setMessage(null), 3000)
+      showNotification({ type: 'error', text: '请选择提供商和模型' })
       return
     }
 
@@ -833,14 +873,13 @@ function SettingsPage() {
         description: newConfig.description || undefined,
         is_default: newConfig.is_default,
       })
-      setMessage({ type: 'success', text: '添加成功' })
+      showNotification({ type: 'success', text: '添加成功' })
       setNewConfig({ provider: '', model: '', display_name: '', description: '', is_default: false })
       setShowAddForm(false)
       loadModelsData()
     } catch (error) {
-      setMessage({ type: 'error', text: '添加失败' })
+      showNotification({ type: 'error', text: '添加失败' })
     }
-    setTimeout(() => setMessage(null), 3000)
   }
 
   const handleDeleteConfiguration = async (configId: number) => {
@@ -848,28 +887,25 @@ function SettingsPage() {
 
     try {
       await modelsAPI.deleteConfiguration(configId)
-      setMessage({ type: 'success', text: '删除成功' })
+      showNotification({ type: 'success', text: '删除成功' })
       loadModelsData()
     } catch (error) {
-      setMessage({ type: 'error', text: '删除失败' })
+      showNotification({ type: 'error', text: '删除失败' })
     }
-    setTimeout(() => setMessage(null), 3000)
   }
 
   const handleSetDefault = async (configId: number) => {
     try {
       await modelsAPI.setDefaultConfiguration(configId)
-      setMessage({ type: 'success', text: '设置成功' })
+      showNotification({ type: 'success', text: '设置成功' })
       loadModelsData()
     } catch (error) {
-      setMessage({ type: 'error', text: '设置失败' })
+      showNotification({ type: 'error', text: '设置失败' })
     }
-    setTimeout(() => setMessage(null), 3000)
   }
 
   const saveSettings = async () => {
     setSaving(true)
-    setMessage(null)
 
     try {
       localStorage.setItem('app_settings', JSON.stringify(settings))
@@ -892,12 +928,11 @@ function SettingsPage() {
         }
       }
 
-      setMessage({ type: 'success', text: '设置保存成功' })
+      showNotification({ type: 'success', text: '设置保存成功' })
     } catch (error) {
-      setMessage({ type: 'error', text: '保存失败，请重试' })
+      showNotification({ type: 'error', text: '保存失败，请重试' })
     } finally {
       setSaving(false)
-      setTimeout(() => setMessage(null), 3000)
     }
   }
 
@@ -921,11 +956,10 @@ function SettingsPage() {
       })
       setEditingModel(null)
       loadBillingData()
-      setMessage({ type: 'success', text: '价格更新成功' })
+      showNotification({ type: 'success', text: '价格更新成功' })
     } catch (error) {
-      setMessage({ type: 'error', text: '价格更新失败' })
+      showNotification({ type: 'error', text: '价格更新失败' })
     }
-    setTimeout(() => setMessage(null), 3000)
   }
 
   const formatPrice = (price: number, currency: string) => {
@@ -941,10 +975,11 @@ function SettingsPage() {
     return acc
   }, {} as Record<string, ModelPricing[]>)
 
-  const getProviderName = (providerId: string) => {
+  const _getProviderName = (providerId: string) => {
     const provider = providers.find(p => p.id === providerId)
     return provider ? provider.name : providerId
   }
+  void _getProviderName
 
   return (
     <div className={styles['settings-page']}>
@@ -999,7 +1034,13 @@ function SettingsPage() {
           className={`${styles['tab-btn']} ${activeTab === 'security' ? styles['active'] : ''}`}
           onClick={() => handleTabChange('security')}
         >
-          安全设置
+          安全审计
+        </button>
+        <button
+          className={`${styles['tab-btn']} ${activeTab === 'mcp' ? styles['active'] : ''}`}
+          onClick={() => handleTabChange('mcp')}
+        >
+          MCP 配置
         </button>
       </div>
 
@@ -1076,8 +1117,7 @@ function SettingsPage() {
                           className={`${styles['provider-item']} ${isActive ? styles['active'] : ''}`}
                           onClick={() => {
                             if ((provider.configuration_count || 0) === 0) {
-                              setMessage({ type: 'error', text: '该供应商暂无可用配置，请先新增供应商配置' })
-                              setTimeout(() => setMessage(null), 3000)
+                              showNotification({ type: 'error', text: '该供应商暂无可用配置，请先新增供应商配置' })
                               return
                             }
                             loadProviderDetail(provider.id)
@@ -1244,6 +1284,74 @@ function SettingsPage() {
                   </>
                 )}
               </section>
+            </div>
+
+            {/* 提供商连接状态 */}
+            <div style={{ marginTop: '24px', padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0 }}>提供商连接状态</h3>
+                <button
+                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                  onClick={handleCheckProviderStatuses}
+                  disabled={loadingProviderStatuses}
+                >
+                  {loadingProviderStatuses ? '检测中...' : '检测连接状态'}
+                </button>
+              </div>
+              {providerStatuses.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
+                  {providerStatuses.map(ps => {
+                    const indicator = getStatusIndicator(ps.status)
+                    return (
+                      <div key={ps.provider} style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: indicator.color, flexShrink: 0 }} />
+                        <span style={{ fontWeight: 500 }}>{ps.display_name || ps.provider}</span>
+                        <span style={{ color: '#6b7280', fontSize: '12px', marginLeft: 'auto' }}>{indicator.label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Ollama 本地模型发现 */}
+            <div style={{ marginTop: '24px', padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0 }}>Ollama 本地模型</h3>
+                <button
+                  className={`btn btn-primary`}
+                  onClick={handleDiscoverOllamaModels}
+                  disabled={loadingOllama}
+                >
+                  {loadingOllama ? '发现中...' : '发现本地模型'}
+                </button>
+              </div>
+              <p style={{ color: '#6b7280', fontSize: '13px', marginBottom: '12px' }}>
+                自动发现本地 Ollama 服务中已拉取的模型，需先启动 Ollama 服务
+              </p>
+              {ollamaError && (
+                <div className={`${styles['message']} ${styles['error']}`} style={{ marginBottom: '12px' }}>{ollamaError}</div>
+              )}
+              {ollamaModels.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: 500 }}>模型名称</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: 500 }}>大小</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: 500 }}>更新时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ollamaModels.map(model => (
+                      <tr key={model.name} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '8px', fontFamily: 'monospace' }}>{model.name}</td>
+                        <td style={{ padding: '8px', color: '#6b7280' }}>{formatModelSize(model.size)}</td>
+                        <td style={{ padding: '8px', color: '#6b7280' }}>{model.modified_at ? new Date(model.modified_at).toLocaleString('zh-CN') : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
@@ -1845,32 +1953,14 @@ function SettingsPage() {
 
         {activeTab === 'security' && (
           <div className={styles['settings-section']}>
-            <h2>安全设置</h2>
-            <div className={`${styles['setting-item']} ${styles['checkbox']}`}>
-              <input
-                type="checkbox"
-                id="require-confirm"
-                checked={settings.requireConfirm}
-                onChange={(e) => handleChange('requireConfirm', e.target.checked)}
-              />
-              <label htmlFor="require-confirm">敏感操作需要确认</label>
-            </div>
-            <div className={`${styles['setting-item']} ${styles['checkbox']}`}>
-              <input
-                type="checkbox"
-                id="enable-audit"
-                checked={settings.enableAudit}
-                onChange={(e) => handleChange('enableAudit', e.target.checked)}
-              />
-              <label htmlFor="enable-audit">启用审计日志</label>
-            </div>
-            <button
-              className={`btn btn-primary`}
-              onClick={saveSettings}
-              disabled={saving}
-            >
-              {saving ? '保存中...' : '保存安全设置'}
-            </button>
+            <h2>安全审计</h2>
+            <SecuritySettings />
+          </div>
+        )}
+
+        {activeTab === 'mcp' && (
+          <div className={styles['settings-section']}>
+            <MCPSettings />
           </div>
         )}
 

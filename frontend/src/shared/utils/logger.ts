@@ -79,6 +79,55 @@ function sanitizeExtra(data: Record<string, unknown>): Record<string, unknown> {
   return sanitized
 }
 
+// 后端错误上报队列，避免频繁请求
+let _reportQueue: Array<Record<string, unknown>> = []
+let _reportTimer: ReturnType<typeof setTimeout> | null = null
+const REPORT_FLUSH_INTERVAL = 3000
+const REPORT_MAX_BATCH = 10
+
+async function _flushErrorReports(): Promise<void> {
+  if (_reportQueue.length === 0) return
+  const batch = _reportQueue.splice(0, REPORT_MAX_BATCH)
+  const token = typeof window !== 'undefined' ? sessionStorage.getItem('token') : null
+  if (!token) return // 未登录时不上报
+  for (const report of batch) {
+    try {
+      await fetch('/api/logs/client-errors', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(report),
+      })
+    } catch {
+      // 上报失败时静默忽略，避免无限循环
+    }
+  }
+}
+
+function _scheduleFlush(): void {
+  if (_reportTimer) return
+  _reportTimer = setTimeout(() => {
+    _reportTimer = null
+    _flushErrorReports()
+  }, REPORT_FLUSH_INTERVAL)
+}
+
+function _enqueueErrorReport(record: Record<string, unknown>): void {
+  _reportQueue.push({
+    level: record.level,
+    message: String(record.message || ''),
+    source: String(record.module || 'frontend'),
+    stack: String(record.extra && (record.extra as Record<string, unknown>).stack || ''),
+    url: typeof window !== 'undefined' ? window.location.href : '',
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+    timestamp: String(record.timestamp || new Date().toISOString()),
+    extra: (record.extra || {}) as Record<string, unknown>,
+  })
+  _scheduleFlush()
+}
+
 function emit(level: LogLevel, payload: LoggerPayload): void {
   if (!shouldLog(level)) {
     return
@@ -100,6 +149,8 @@ function emit(level: LogLevel, payload: LoggerPayload): void {
   const text = safeStringify(record)
   if (level === 'ERROR' || level === 'CRITICAL') {
     console.error(text)
+    // 将错误上报到后端日志系统
+    _enqueueErrorReport(record)
     return
   }
   if (level === 'WARNING') {

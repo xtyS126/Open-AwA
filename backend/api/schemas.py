@@ -72,11 +72,11 @@ class ChatMessage(BaseModel):
 
 class ChatResponse(BaseModel):
     """
-    封装与ChatResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    聊天接口响应模型，包含回复内容、推理过程及错误信息。
     """
     status: str
     response: str
+    reasoning_content: Optional[str] = None
     session_id: Optional[str] = None
     error: Optional[Dict[str, Any]] = None
     request_id: Optional[str] = None
@@ -106,6 +106,7 @@ class SkillResponse(SkillBase):
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     id: str
+    config: Optional[Dict[str, Any]] = None
     enabled: bool
     installed_at: datetime
     
@@ -663,3 +664,120 @@ class ProviderConfigurationResponse(ProviderConfigurationBase):
         """
         from_attributes = True
 
+
+# -------- MCP 相关数据模型 --------
+
+class MCPServerCreate(BaseModel):
+    """MCP Server 创建请求"""
+    name: str = Field(..., description="服务器名称")
+    command: Optional[str] = Field(None, description="Stdio 模式启动命令")
+    args: Optional[List[str]] = Field(default=None, description="启动命令参数")
+    env: Optional[Dict[str, str]] = Field(default=None, description="环境变量")
+    transport_type: str = Field(default="stdio", description="传输类型: stdio / sse")
+    url: Optional[str] = Field(None, description="SSE 模式服务器地址")
+
+
+class MCPServerResponse(BaseModel):
+    """MCP Server 状态响应"""
+    id: str = Field(..., description="服务器 ID")
+    name: str = Field(..., description="服务器名称")
+    transport_type: str = Field(..., description="传输类型")
+    status: str = Field(..., description="连接状态")
+    tools_count: int = Field(default=0, description="工具数量")
+
+
+class MCPToolCallCreate(BaseModel):
+    """MCP 工具调用请求"""
+    server_id: str = Field(..., description="目标服务器 ID")
+    tool_name: str = Field(..., description="工具名称")
+    arguments: Optional[Dict[str, Any]] = Field(default=None, description="调用参数")
+
+
+class MCPToolCallResponse(BaseModel):
+    """MCP 工具调用响应"""
+    result: Any = Field(None, description="调用结果")
+    is_error: bool = Field(False, description="是否为错误响应")
+
+
+# -------- 插件市场相关数据模型 --------
+
+class MarketplacePluginResponse(BaseModel):
+    """插件市场单个插件的响应模型"""
+    id: str = Field(..., description="插件唯一标识")
+    name: str = Field(..., description="插件名称")
+    description: str = Field(default="", description="插件描述")
+    author: str = Field(default="", description="作者")
+    version: str = Field(default="1.0.0", description="版本号")
+    category: str = Field(default="other", description="插件分类")
+    tags: List[str] = Field(default_factory=list, description="标签列表")
+    download_url: str = Field(default="", description="下载地址")
+    icon: str = Field(default="", description="图标地址")
+    install_count: int = Field(default=0, description="安装次数")
+
+
+class MarketplaceSearchResponse(BaseModel):
+    """插件市场搜索/列表响应模型"""
+    plugins: List[MarketplacePluginResponse] = Field(default_factory=list, description="插件列表")
+    total: int = Field(default=0, description="总数")
+    page: int = Field(default=1, description="当前页码")
+    page_size: int = Field(default=12, description="每页数量")
+
+
+# -------- 安全与 RBAC 相关数据模型 --------
+
+class RoleResponse(BaseModel):
+    """角色信息响应模型"""
+    name: str = Field(..., description="角色名称")
+    display_name: Optional[str] = Field(None, description="角色显示名称")
+    permissions: List[str] = Field(default_factory=list, description="权限列表")
+
+
+class UserRoleResponse(BaseModel):
+    """用户角色信息响应模型"""
+    user_id: str = Field(..., description="用户 ID")
+    role_name: str = Field(..., description="角色名称")
+    assigned_at: Optional[datetime] = Field(None, description="分配时间")
+
+    class Config:
+        from_attributes = True
+
+
+class UserRoleUpdate(BaseModel):
+    """用户角色更新请求模型"""
+    role_name: str = Field(..., description="目标角色名称")
+
+
+class PermissionCheckRequest(BaseModel):
+    """权限检查请求模型"""
+    user_id: str = Field(..., description="用户 ID")
+    permission: str = Field(..., description="权限标识，如 chat:send")
+
+
+class PermissionCheckResponse(BaseModel):
+    """权限检查响应模型"""
+    allowed: bool = Field(..., description="是否允许")
+    role: str = Field(..., description="用户当前角色")
+    permission: str = Field(..., description="检查的权限")
+
+
+class AuditLogResponse(BaseModel):
+    """审计日志响应模型"""
+    id: int = Field(..., description="日志 ID")
+    user_id: Optional[str] = Field(None, description="用户 ID")
+    action: str = Field(..., description="操作类型")
+    resource: Optional[str] = Field(None, description="操作资源")
+    result: Optional[str] = Field(None, description="操作结果")
+    details: Optional[str] = Field(None, description="操作详情")
+    ip_address: Optional[str] = Field(None, description="来源 IP")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+
+    class Config:
+        from_attributes = True
+
+
+class AuditLogListResponse(BaseModel):
+    """审计日志列表响应模型"""
+    logs: List[AuditLogResponse] = Field(default_factory=list, description="日志列表")
+    total: int = Field(default=0, description="总数")
+    page: int = Field(default=1, description="当前页码")
+    page_size: int = Field(default=20, description="每页数量")

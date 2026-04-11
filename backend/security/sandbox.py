@@ -63,17 +63,20 @@ class Sandbox:
     防止命令注入、路径遍历等安全攻击。
     """
 
-    def __init__(self, work_dir: Optional[str] = None):
+    def __init__(self, work_dir: Optional[str] = None, timeout: Optional[int] = None, max_memory_mb: Optional[int] = None):
         """
         初始化沙箱。
 
         Args:
             work_dir: 允许的工作目录根路径，文件操作被限制在此目录内。
                       若为 None，则使用当前工作目录。
+            timeout: 命令执行超时时间（秒），若为 None 则使用配置默认值。
+            max_memory_mb: 最大内存限制（MB），若为 None 则不限制。
         """
-        self.timeout = settings.SANDBOX_TIMEOUT
+        self.timeout = timeout if timeout is not None else settings.SANDBOX_TIMEOUT
+        self.max_memory_mb = max_memory_mb
         self.work_dir = Path(work_dir).resolve() if work_dir else Path.cwd()
-        logger.info(f"Sandbox initialized with work_dir={self.work_dir}, timeout={self.timeout}s")
+        logger.info(f"Sandbox initialized with work_dir={self.work_dir}, timeout={self.timeout}s, max_memory_mb={self.max_memory_mb}")
 
     def _validate_path(self, file_path: str) -> Path:
         """
@@ -179,6 +182,7 @@ class Sandbox:
         command: str,
         working_dir: Optional[str] = None,
         env: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         在沙箱内安全执行命令。
@@ -190,11 +194,14 @@ class Sandbox:
             command: 待执行的命令字符串（将被解析为参数列表）。
             working_dir: 命令执行的工作目录，必须在沙箱允许范围内。
             env: 环境变量字典。
+            timeout: 本次命令执行的超时时间（秒），为 None 时使用沙箱默认超时。
 
         Returns:
             包含 status、returncode、stdout、stderr 的字典。
         """
-        logger.info(f"Sandbox execute_command: {command[:100]!r}")
+        # 确定本次执行的超时时间
+        exec_timeout = timeout if timeout is not None else self.timeout
+        logger.info(f"Sandbox execute_command: {command[:100]!r}, timeout={exec_timeout}s")
 
         # 解析命令字符串为参数列表（防止 shell 注入）
         try:
@@ -242,7 +249,7 @@ class Sandbox:
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(),
-                    timeout=self.timeout,
+                    timeout=exec_timeout,
                 )
                 return {
                     "status": "success",
@@ -253,10 +260,10 @@ class Sandbox:
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                logger.warning(f"Command timeout after {self.timeout}s: {command_list[0]!r}")
+                logger.warning(f"Command timeout after {exec_timeout}s: {command_list[0]!r}")
                 return {
                     "status": "timeout",
-                    "message": f"命令执行超时（超过 {self.timeout}s）",
+                    "message": f"命令执行超时（超过 {exec_timeout}s）",
                 }
 
         except FileNotFoundError:
