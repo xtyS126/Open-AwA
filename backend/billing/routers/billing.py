@@ -138,12 +138,41 @@ class RetentionUpdateRequest(BaseModel):
     cleanup: bool = Query(False)
 
 
+class ModelParameterUpdateRequest(BaseModel):
+    """更新模型运行参数的请求体。"""
+    temperature: Optional[float] = None
+    top_k: Optional[float] = None
+    top_p: Optional[float] = None
+    max_tokens_limit: Optional[int] = None
+
+
+class BatchStatusUpdateRequest(BaseModel):
+    """批量更新模型状态的请求体。"""
+    config_ids: List[int]
+    status: str
+
+
+def _parse_model_spec(config) -> Optional[dict]:
+    """安全解析 model_spec JSON 字段。"""
+    raw = getattr(config, "model_spec", None)
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        import json as _json
+        return _json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False):
     """
     将configuration相关对象序列化为接口或存储所需格式。
     通常用于在内部对象与外部输出结构之间建立稳定映射。
     """
     selected_models = pricing_manager.parse_selected_models(config.selected_models)
+    spec = _parse_model_spec(config)
     payload = {
         "id": config.id,
         "provider": config.provider,
@@ -159,6 +188,16 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "is_active": config.is_active,
         "is_default": config.is_default,
         "sort_order": config.sort_order,
+        "temperature": getattr(config, "temperature", 0.7),
+        "top_k": getattr(config, "top_k", 0.9),
+        "top_p": getattr(config, "top_p", None),
+        "max_tokens_limit": getattr(config, "max_tokens_limit", None),
+        "supports_temperature": getattr(config, "supports_temperature", True),
+        "supports_top_k": getattr(config, "supports_top_k", True),
+        "supports_vision": getattr(config, "supports_vision", False),
+        "is_multimodal": getattr(config, "is_multimodal", False),
+        "model_spec": spec,
+        "status": getattr(config, "status", "active"),
         "created_at": config.created_at.isoformat() if config.created_at else None,
         "updated_at": config.updated_at.isoformat() if config.updated_at else None
     }
@@ -682,7 +721,157 @@ async def set_default_configuration(
     }
 
 
-@router.get("/providers")
+@router.put("/configurations/{config_id}/parameters")
+async def update_configuration_parameters(
+    config_id: int,
+    params: ModelParameterUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    更新指定模型配置的运行参数（temperature、top_k、top_p、max_tokens_limit）。
+    """
+    pricing_manager = PricingManager(db)
+    config = pricing_manager.get_configuration(config_id)
+
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuration not found")
+
+    update_dict = {}
+
+    if params.temperature is not None:
+        if not (0.0 <= params.temperature <= 2.0):
+            raise HTTPException(status_code=422, detail="temperature must be between 0.0 and 2.0")
+        if getattr(config, "supports_temperature", True):
+            update_dict["temperature"] = params.temperature
+
+    if params.top_k is not None:
+        if not (0.0 <= params.top_k <= 1.0):
+            raise HTTPException(status_code=422, detail="top_k must be between 0.0 and 1.0")
+        if getattr(config, "supports_top_k", True):
+            update_dict["top_k"] = params.top_k
+
+    if params.top_p is not None:
+        if not (0.0 <= params.top_p <= 1.0):
+            raise HTTPException(status_code=422, detail="top_p must be between 0.0 and 1.0")
+        update_dict["top_p"] = params.top_p
+
+    if params.max_tokens_limit is not None:
+        if params.max_tokens_limit < 1:
+            raise HTTPException(status_code=422, detail="max_tokens_limit must be at least 1")
+        spec = _parse_model_spec(config)
+        if spec and spec.get("context_window"):
+            if params.max_tokens_limit > spec["context_window"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"max_tokens_limit cannot exceed model context window ({spec['context_window']})"
+                )
+        update_dict["max_tokens_limit"] = params.max_tokens_limit
+
+    if not update_dict:
+        return {
+            "success": True,
+            "configuration": serialize_configuration(config, pricing_manager)
+        }
+
+    updated = pricing_manager.update_configuration(config_id, update_dict)
+    return {
+        "success": True,
+        "configuration": serialize_configuration(updated, pricing_manager)
+    }
+
+
+@router.get("/configurations/{config_id}/capabilities")
+async def get_configuration_capabilities(
+    config_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    获取指定模型配置的能力信息、默认参数与限制范围。
+    """
+    pricing_manager = PricingManager(db)
+    config = pricing_manager.get_configuration(config_id)
+
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuration not found")
+
+    spec = _parse_model_spec(config)
+    context_window = (spec or {}).get("context_window") or getattr(config, "max_tokens", None) or 128000
+
+    return {
+        "config_id": config.id,
+        "provider": config.provider,
+        "model": config.model,
+        "capabilities": {
+            "supports_temperature": getattr(config, "supports_temperature", True),
+            "supports_top_k": getattr(config, "supports_top_k", True),
+            "supports_vision": getattr(config, "supports_vision", False),
+            "is_multimodal": getattr(config, "is_multimodal", False),
+            "supports_function_calling": (spec or {}).get("supports_function_calling", False),
+            "supports_streaming": (spec or {}).get("supports_streaming", True),
+        },
+        "defaults": {
+            "temperature": getattr(config, "temperature", 0.7) or 0.7,
+            "top_k": getattr(config, "top_k", 0.9) or 0.9,
+            "max_tokens": context_window,
+        },
+        "limits": {
+            "temperature_min": 0.0,
+            "temperature_max": 2.0,
+            "top_k_min": 0.0,
+            "top_k_max": 1.0,
+            "max_tokens_min": 1,
+            "max_tokens_max": context_window,
+        }
+    }
+
+
+@router.post("/configurations/{config_id}/reset-parameters")
+async def reset_configuration_parameters(
+    config_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    将指定模型配置的 temperature、top_k、max_tokens_limit 重置为系统默认值。
+    """
+    pricing_manager = PricingManager(db)
+    config = pricing_manager.get_configuration(config_id)
+
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuration not found")
+
+    defaults = pricing_manager.get_model_defaults(config.provider, config.model)
+
+    update_dict = {
+        "temperature": defaults.get("temperature", 0.7),
+        "top_k": defaults.get("top_k", 0.9),
+        "max_tokens_limit": None,
+    }
+
+    updated = pricing_manager.update_configuration(config_id, update_dict)
+    return {
+        "success": True,
+        "configuration": serialize_configuration(updated, pricing_manager)
+    }
+
+
+@router.put("/configurations/batch-status")
+async def batch_update_configuration_status(
+    payload: BatchStatusUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    批量更新模型配置状态。
+    """
+    if payload.status not in ("active", "inactive", "error", "deprecated"):
+        raise HTTPException(status_code=400, detail="Invalid status value")
+
+    pricing_manager = PricingManager(db)
+    updated_count = pricing_manager.batch_update_status(payload.config_ids, payload.status)
+
+    return {
+        "success": True,
+        "updated_count": updated_count
+    }
 async def get_providers(
     db: Session = Depends(get_db)
 ):

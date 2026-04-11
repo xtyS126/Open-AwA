@@ -135,6 +135,23 @@ class ModelConfiguration(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Model parameter fields
+    temperature: Mapped[float] = mapped_column(Float, nullable=True, default=0.7)
+    top_k: Mapped[float] = mapped_column(Float, nullable=True, default=0.9)
+    top_p: Mapped[float] = mapped_column(Float, nullable=True)
+    max_tokens_limit: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    # Model capability flags
+    supports_temperature: Mapped[bool] = mapped_column(Boolean, default=True)
+    supports_top_k: Mapped[bool] = mapped_column(Boolean, default=True)
+    supports_vision: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_multimodal: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Model metadata
+    model_spec: Mapped[str] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="active")
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc),
