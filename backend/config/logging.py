@@ -44,50 +44,40 @@ IDENTIFIER_KEYS = {
 
 def generate_request_id() -> str:
     """
-    生成唯一的请求标识符。
-    
-    Returns:
-        32位十六进制字符串形式的UUID。
+    处理generate、request、id相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     return uuid.uuid4().hex
 
 
 def set_request_id(request_id: str) -> None:
     """
-    设置当前请求的标识符到上下文变量中。
-    
-    Args:
-        request_id: 要设置的请求ID字符串。
+    设置request、id相关配置或运行状态。
+    此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
     """
     _REQUEST_ID_CTX.set(str(request_id or "").strip())
 
 
 def get_request_id() -> str:
     """
-    获取当前请求的标识符。
-    
-    Returns:
-        当前上下文中的请求ID，未设置时返回空字符串。
+    获取request、id相关数据或当前状态。
+    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     return _REQUEST_ID_CTX.get()
 
 
 def clear_request_id() -> None:
     """
-    清除当前请求的标识符，重置为空字符串。
+    处理clear、request、id相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     _REQUEST_ID_CTX.set("")
 
 
 def _mask_identifier(value: Any) -> Any:
     """
-    对标识符进行脱敏处理，保留部分字符用于追踪。
-    
-    Args:
-        value: 需要脱敏的值，支持字符串或其他类型。
-        
-    Returns:
-        脱敏后的值。邮箱格式保留前后字符，普通字符串保留首尾字符。
+    处理mask、identifier相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     if not isinstance(value, str):
         return value
@@ -108,13 +98,8 @@ def _mask_identifier(value: Any) -> Any:
 
 def _mask_secret_text(text: str) -> str:
     """
-    对文本中的敏感信息进行脱敏处理。
-    
-    Args:
-        text: 需要脱敏的文本字符串。
-        
-    Returns:
-        脱敏后的文本，敏感值被替换为***。
+    处理mask、secret、text相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     if not text:
         return text
@@ -136,14 +121,8 @@ def _mask_secret_text(text: str) -> str:
 
 def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
     """
-    递归地对日志数据进行脱敏处理。
-    
-    Args:
-        value: 需要脱敏的数据，支持字典、列表、元组、集合和基本类型。
-        key_name: 当前字段的键名，用于判断是否为敏感字段。
-        
-    Returns:
-        脱敏后的数据，敏感值被替换为***或部分遮蔽。
+    处理sanitize、for、logging相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     normalized_key = str(key_name or "").strip().lower()
 
@@ -183,11 +162,8 @@ def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
 
 def _patch_record(record: Dict[str, Any], service_name: str) -> None:
     """
-    对日志记录进行补丁处理，添加请求ID和服务信息，并写入缓冲区。
-    
-    Args:
-        record: loguru的日志记录字典。
-        service_name: 服务名称，用于标识日志来源。
+    处理patch、record相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     extra = dict(record.get("extra") or {})
 
@@ -220,12 +196,8 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
 
 def init_logging(log_level: str = "INFO", service_name: str = "openawa-backend", log_serialize: bool = True) -> None:
     """
-    初始化日志系统，配置loguru的输出格式和级别。
-    
-    Args:
-        log_level: 日志级别，默认为INFO。
-        service_name: 服务名称，用于标识日志来源。
-        log_serialize: 是否序列化日志输出。
+    初始化logging相关运行上下文、配置或默认数据。
+    这些步骤往往是其他能力能够正常运行的前置条件。
     """
     logger.remove()
     logger.configure(patcher=lambda record: _patch_record(record, service_name=service_name))
@@ -248,18 +220,8 @@ def query_log_buffer(
     offset: int = 0,
 ) -> Dict[str, Any]:
     """
-    查询日志缓冲区中的日志记录。
-    
-    Args:
-        start_time: 查询起始时间，可选。
-        end_time: 查询结束时间，可选。
-        level: 日志级别过滤，可选。
-        keyword: 关键词搜索，可选。
-        limit: 返回记录数量限制，默认100。
-        offset: 分页偏移量，默认0。
-        
-    Returns:
-        包含total、offset、limit和records字段的字典。
+    处理query、log、buffer相关逻辑，并为调用方返回对应结果。
+    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     level_filter = str(level or "").upper().strip()
     keyword_filter = str(keyword or "").strip().lower()

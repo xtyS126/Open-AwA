@@ -108,15 +108,6 @@ export const authAPI = {
   getMe: () => api.get('/auth/me'),
 }
 
-export interface ChatConfirmRequest {
-  confirmed: boolean
-  step: {
-    id: string
-    action: string
-    params: Record<string, unknown>
-  }
-}
-
 export const chatAPI = {
   sendMessage: (
     message: string,
@@ -132,7 +123,7 @@ export const chatAPI = {
     provider?: string,
     model?: string,
     onChunk?: (content: string, reasoning: string) => void,
-    onError?: (error: Error) => void
+    onError?: (error: any) => void
   ) => {
     let isErrorLogged = false
     const url = '/api/chat'
@@ -286,37 +277,20 @@ export const chatAPI = {
   },
   getHistory: (sessionId: string) =>
     api.get(`/chat/history/${sessionId}`),
-  confirmOperation: (confirmed: boolean, step: ChatConfirmRequest['step']) =>
+  confirmOperation: (confirmed: boolean, step: any) =>
     api.post('/chat/confirm', { confirmed, step }),
 }
 
-export interface SkillRequest {
-  name: string
-  description?: string
-  config?: Record<string, unknown>
-  enabled?: boolean
-}
-
-export interface SkillResponse {
-  id: string
-  name: string
-  description: string
-  config: Record<string, unknown>
-  enabled: boolean
-  created_at: string
-  updated_at: string
-}
-
 export const skillsAPI = {
-  getAll: () => api.get<SkillResponse[]>('/skills'),
-  getOne: (id: string) => api.get<SkillResponse>(`/skills/${id}`),
-  install: (skill: SkillRequest) => api.post<SkillResponse>('/skills', skill),
+  getAll: () => api.get('/skills'),
+  getOne: (id: string) => api.get(`/skills/${id}`),
+  install: (skill: any) => api.post('/skills', skill),
   uninstall: (id: string) => api.delete(`/skills/${id}`),
-  toggle: (id: string) => api.put<SkillResponse>(`/skills/${id}/toggle`),
+  toggle: (id: string) => api.put(`/skills/${id}/toggle`),
   parseUpload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<SkillResponse>('/skills/parse-upload', formData, {
+    return api.post('/skills/parse-upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -376,40 +350,16 @@ export interface SystemLogsQueryResponse {
   records: SystemLogRecord[]
 }
 
-export interface PluginRequest {
-  name: string
-  description?: string
-  version?: string
-  config?: Record<string, unknown>
-  enabled?: boolean
-}
-
-export interface PluginResponse {
-  id: string
-  name: string
-  description: string
-  version: string
-  config: Record<string, unknown>
-  enabled: boolean
-  category?: string
-  author?: string
-  source?: string
-  dependencies?: string[]
-  installed_at?: string
-  created_at: string
-  updated_at: string
-}
-
 export const pluginsAPI = {
-  getAll: () => api.get<PluginResponse[]>('/plugins'),
-  getOne: (id: string) => api.get<PluginResponse>(`/plugins/${id}`),
-  install: (plugin: PluginRequest) => api.post<PluginResponse>('/plugins', plugin),
+  getAll: () => api.get('/plugins'),
+  getOne: (id: string) => api.get(`/plugins/${id}`),
+  install: (plugin: any) => api.post('/plugins', plugin),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
-  toggle: (id: string) => api.put<PluginResponse>(`/plugins/${id}/toggle`),
+  toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
   upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<PluginResponse>('/plugins/upload', formData, {
+    return api.post('/plugins/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -458,27 +408,12 @@ export const memoryAPI = {
   search: (query: string) => api.get(`/memory/search?query=${query}`),
 }
 
-export interface PromptRequest {
-  name: string
-  content: string
-  is_active?: boolean
-}
-
-export interface PromptResponse {
-  id: string
-  name: string
-  content: string
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
-
 export const promptsAPI = {
-  getAll: () => api.get<PromptResponse[]>('/prompts'),
-  getActive: () => api.get<PromptResponse>('/prompts/active'),
-  getOne: (id: string) => api.get<PromptResponse>(`/prompts/${id}`),
-  create: (prompt: PromptRequest) => api.post<PromptResponse>('/prompts', prompt),
-  update: (id: string, prompt: PromptRequest) => api.put<PromptResponse>(`/prompts/${id}`, prompt),
+  getAll: () => api.get('/prompts'),
+  getActive: () => api.get('/prompts/active'),
+  getOne: (id: string) => api.get(`/prompts/${id}`),
+  create: (prompt: any) => api.post('/prompts', prompt),
+  update: (id: string, prompt: any) => api.put(`/prompts/${id}`, prompt),
   delete: (id: string) => api.delete(`/prompts/${id}`),
 }
 
@@ -622,58 +557,6 @@ export interface WeixinQrExitResponse {
   cleared_sessions: number
 }
 
-export interface WeixinSendMessageRequest {
-  to_user_id: string
-  text: string
-  account_id?: string
-  context_token?: string
-}
-
-export interface WeixinSendMessageResponse {
-  success: boolean
-  message_id?: string
-  error?: string | null
-}
-
-export interface WeixinTaskCreateRequest {
-  task_type: string
-  params: Record<string, unknown>
-  account_id?: string
-}
-
-export interface WeixinTaskCreateResponse {
-  task_id: string
-  status: string
-}
-
-export interface WeixinTaskStatusResponse {
-  task_id: string
-  status: string
-  progress: number
-  result?: Record<string, unknown> | null
-  error?: string | null
-}
-
-export interface WeixinMonitorStatus {
-  account_id: string
-  state: string
-  running: boolean
-  paused: boolean
-  consecutive_failures: number
-  total_messages: number
-  last_message_at?: number | null
-  last_error?: string | null
-  last_error_at?: number | null
-  started_at?: number | null
-  circuit_breaker_state: string
-  session_paused: boolean
-  session_remaining_seconds: number
-}
-
-export interface WeixinMonitorStatusResponse {
-  monitors: Record<string, WeixinMonitorStatus | Record<string, never>>
-}
-
 export const weixinAPI = {
   getConfig: () => api.get<WeixinConfig>('/skills/weixin/config'),
   saveConfig: (config: WeixinConfig) => api.post('/skills/weixin/config', config),
@@ -681,20 +564,6 @@ export const weixinAPI = {
   startQrLogin: (payload: WeixinQrStartRequest = {}) => api.post<WeixinQrStartResponse>('/skills/weixin/qr/start', payload),
   waitQrLogin: (payload: WeixinQrWaitRequest) => api.post<WeixinQrWaitResponse>('/skills/weixin/qr/wait', payload),
   exitQrLogin: (payload: WeixinQrExitRequest) => api.post<WeixinQrExitResponse>('/skills/weixin/qr/exit', payload),
-  sendMessage: (payload: WeixinSendMessageRequest) =>
-    api.post<WeixinSendMessageResponse>('/skills/weixin/message', payload),
-  createTask: (payload: WeixinTaskCreateRequest) =>
-    api.post<WeixinTaskCreateResponse>('/skills/weixin/task', payload),
-  getTaskStatus: (taskId: string) =>
-    api.get<WeixinTaskStatusResponse>(`/skills/weixin/task/${taskId}`),
-  startMonitor: (payload: { account_id?: string } = {}) =>
-    api.post<{ success: boolean; status: WeixinMonitorStatus }>('/skills/weixin/monitor/start', payload),
-  stopMonitor: (payload: { account_id?: string } = {}) =>
-    api.post<{ success: boolean }>('/skills/weixin/monitor/stop', payload),
-  getMonitorStatus: (accountId?: string) =>
-    api.get<WeixinMonitorStatusResponse>('/skills/weixin/monitor/status', {
-      params: accountId ? { account_id: accountId } : {},
-    }),
 }
 
 export default api

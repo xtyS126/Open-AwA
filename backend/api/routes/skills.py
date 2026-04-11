@@ -3,7 +3,6 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
@@ -22,86 +21,21 @@ import io
 import time
 import threading
 import re
-import os
 from urllib.parse import parse_qs, urlparse
 
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
 from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig, WeixinAdapterError, DEFAULT_BASE_URL, DEFAULT_BOT_TYPE, DEFAULT_QR_BASE_URL
-from skills.weixin import WeixinSkillAdapter as WeixinV2Adapter
-from skills.weixin.config import WeixinRuntimeConfig as WeixinV2RuntimeConfig
-from skills.weixin.monitor import start_monitor, stop_monitor, get_monitor_status, get_all_monitors
-from skills.weixin.tasks import TaskManager
-from skills.weixin.messaging.outbound import send_text_message
 
 
 WEIXIN_SKILL_NAME = "weixin_dispatch"
 WEIXIN_QR_SESSION_TTL_SECONDS = 300
 WEIXIN_QR_SESSIONS: Dict[str, Dict[str, Any]] = {}
 WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
-WEIXIN_TASK_MANAGER: Optional[TaskManager] = None
-WEIXIN_TASK_MANAGER_LOCK = threading.Lock()
-
-
-def _get_weixin_task_manager() -> TaskManager:
-    """
-    获取微信异步任务管理器的单例实例。
-    """
-    global WEIXIN_TASK_MANAGER
-    with WEIXIN_TASK_MANAGER_LOCK:
-        if WEIXIN_TASK_MANAGER is None:
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-            state_root = os.path.join(project_root, ".openawa", "weixin")
-            WEIXIN_TASK_MANAGER = TaskManager(state_root=state_root, default_ttl=3600, cleanup_interval=300)
-        return WEIXIN_TASK_MANAGER
-
-
-def _build_runtime_config_v2(db: Session, account_id: Optional[str] = None) -> WeixinV2RuntimeConfig:
-    """
-    基于数据库配置构建模块化微信运行时配置。
-    """
-    runtime = _build_runtime_config_from_db(db)
-    resolved_account_id = str(account_id or runtime.account_id or "").strip()
-    return WeixinV2RuntimeConfig(
-        account_id=resolved_account_id,
-        token=runtime.token,
-        base_url=runtime.base_url,
-        bot_type=runtime.bot_type,
-        channel_version=runtime.channel_version,
-        timeout_seconds=runtime.timeout_seconds,
-        user_id=runtime.user_id,
-        binding_status=runtime.binding_status
-    )
-
-
-async def _run_simulated_weixin_task(task_manager: TaskManager, task_id: str) -> None:
-    """
-    执行异步任务的模拟处理逻辑，用于任务状态追踪链路验证。
-    """
-    task = await task_manager.get_task(task_id)
-    if not task:
-        return
-
-    try:
-        await task_manager.update_progress(task_id, 10)
-        await asyncio.sleep(0.2)
-        await task_manager.update_progress(task_id, 40)
-        await asyncio.sleep(0.2)
-        await task_manager.update_progress(task_id, 70)
-        await asyncio.sleep(0.2)
-
-        result = {
-            "task_type": task.type,
-            "summary": f"任务 {task.type} 执行完成",
-            "params": task.params,
-        }
-        await task_manager.complete_task(task_id, result)
-    except Exception as exc:
-        await task_manager.fail_task(task_id, str(exc))
 
 
 def _build_default_weixin_config() -> Dict[str, Any]:
@@ -665,32 +599,6 @@ class WeixinQrExitReq(BaseModel):
     clear_config: Optional[bool] = True
 
 
-class WeixinMessageSendReq(BaseModel):
-    """
-    微信消息发送请求。
-    """
-    to_user_id: str = Field(..., min_length=1)
-    text: str = Field(..., min_length=1)
-    account_id: Optional[str] = None
-    context_token: Optional[str] = None
-
-
-class WeixinTaskCreateReq(BaseModel):
-    """
-    微信异步任务创建请求。
-    """
-    task_type: str = Field(..., min_length=1)
-    params: Dict[str, Any] = Field(default_factory=dict)
-    account_id: Optional[str] = None
-
-
-class WeixinMonitorControlReq(BaseModel):
-    """
-    微信监控器启停控制请求。
-    """
-    account_id: Optional[str] = None
-
-
 def _coerce_weixin_payload_dict(raw_body: Any) -> Dict[str, Any]:
     """
     处理coerce、weixin、payload、dict相关逻辑，并为调用方返回对应结果。
@@ -1142,147 +1050,6 @@ async def weixin_qr_exit(
         )
 
     return {"message": "success", "cleared_sessions": cleared_sessions}
-
-
-@router.post("/weixin/message")
-async def weixin_send_message(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    """
-    发送微信消息，支持从缓存回填 context_token。
-    """
-    payload = WeixinMessageSendReq(**(await _parse_weixin_request_payload(request)))
-    runtime = _build_runtime_config_v2(db, account_id=payload.account_id)
-    if not runtime.account_id or not runtime.token:
-        raise HTTPException(status_code=400, detail="微信配置不完整，请先完成登录并保存配置。")
-
-    adapter_v2 = WeixinV2Adapter()
-    context_token = str(payload.context_token or "").strip()
-    if not context_token:
-        context_token = adapter_v2.state_manager.get_context_token(runtime.account_id, payload.to_user_id)
-    if not context_token:
-        raise HTTPException(status_code=400, detail="缺少 context_token，请先完成消息上下文建立。")
-
-    try:
-        send_result = await send_text_message(
-            config=runtime,
-            to_user_id=payload.to_user_id,
-            text=payload.text,
-            context_token=context_token
-        )
-        return {
-            "success": True,
-            "message_id": send_result.get("request", {}).get("client_id", ""),
-            "error": None
-        }
-    except WeixinAdapterError as exc:
-        raise HTTPException(status_code=502, detail=exc.message)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"发送微信消息失败: {str(exc)}")
-
-
-@router.post("/weixin/task")
-async def weixin_create_task(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    """
-    创建微信异步任务并在后台执行。
-    """
-    payload = WeixinTaskCreateReq(**(await _parse_weixin_request_payload(request)))
-    runtime = _build_runtime_config_v2(db, account_id=payload.account_id)
-    if not runtime.account_id:
-        raise HTTPException(status_code=400, detail="缺少 account_id，请先配置微信账号。")
-
-    task_manager = _get_weixin_task_manager()
-    task = await task_manager.create_task(
-        task_type=payload.task_type,
-        params=payload.params,
-        metadata={"account_id": runtime.account_id, "created_by": str(current_user.id)}
-    )
-    asyncio.create_task(_run_simulated_weixin_task(task_manager, task.id))
-
-    return {"task_id": task.id, "status": task.status}
-
-
-@router.get("/weixin/task/{task_id}")
-async def weixin_get_task_status(
-    task_id: str,
-    current_user=Depends(get_current_user)
-):
-    """
-    查询微信异步任务状态。
-    """
-    task_manager = _get_weixin_task_manager()
-    task = await task_manager.get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
-
-    return {
-        "task_id": task.id,
-        "status": task.status,
-        "progress": task.progress,
-        "result": task.result,
-        "error": task.error
-    }
-
-
-@router.post("/weixin/monitor/start")
-async def weixin_monitor_start(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    """
-    启动微信长轮询监控器。
-    """
-    payload = WeixinMonitorControlReq(**(await _parse_weixin_request_payload(request)))
-    runtime = _build_runtime_config_v2(db, account_id=payload.account_id)
-    if not runtime.account_id or not runtime.token:
-        raise HTTPException(status_code=400, detail="微信配置不完整，无法启动监控。")
-
-    state_manager = WeixinV2Adapter().state_manager
-    monitor = await start_monitor(
-        account_id=runtime.account_id,
-        config=runtime,
-        state_manager=state_manager
-    )
-    return {"success": True, "status": monitor.get_status().to_dict()}
-
-
-@router.post("/weixin/monitor/stop")
-async def weixin_monitor_stop(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    """
-    停止微信长轮询监控器。
-    """
-    payload = WeixinMonitorControlReq(**(await _parse_weixin_request_payload(request)))
-    runtime = _build_runtime_config_v2(db, account_id=payload.account_id)
-    if not runtime.account_id:
-        raise HTTPException(status_code=400, detail="缺少 account_id，无法停止监控。")
-
-    await stop_monitor(runtime.account_id)
-    return {"success": True}
-
-
-@router.get("/weixin/monitor/status")
-async def weixin_monitor_status(
-    account_id: Optional[str] = None,
-    current_user=Depends(get_current_user)
-):
-    """
-    查询微信监控器状态。
-    """
-    if account_id:
-        status = get_monitor_status(account_id)
-        return {"monitors": {account_id: status or {}}}
-    return {"monitors": get_all_monitors()}
 
 @router.get(
     "",

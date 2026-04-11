@@ -316,12 +316,14 @@ def _migrate_plugin_columns():
             connection.execute(text("UPDATE plugins SET installed_at = :installed_at WHERE installed_at IS NULL"), {"installed_at": now})
 
 
-def init_db():
+def init_db(bind_engine=None):
     """
     初始化db相关运行上下文、配置或默认数据。
     这些步骤往往是其他能力能够正常运行的前置条件。
+    支持自定义engine，便于测试。
     """
-    Base.metadata.create_all(bind=engine)
+    use_engine = bind_engine or engine
+    Base.metadata.create_all(bind=use_engine)
     _migrate_conversation_record_metadata_column()
     _migrate_plugin_columns()
 
