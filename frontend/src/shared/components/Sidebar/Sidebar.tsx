@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useThemeStore } from '../../store/themeStore'
 import styles from './Sidebar.module.css'
@@ -130,11 +130,43 @@ function Sidebar() {
   const location = useLocation()
   const { theme, toggleTheme } = useThemeStore()
   const [collapsed, setCollapsed] = useState(false)
+  /* 移动端侧边栏展开状态 */
+  const [mobileOpen, setMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     control: true,
     agent: true,
     settings: true,
   })
+
+  /* 监听窗口大小变化，在非移动端时自动关闭移动端菜单 */
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setMobileOpen(false)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  /* 路由切换时自动关闭移动端菜单 */
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
+
+  /* 移动端打开时阻止背景滚动 */
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [mobileOpen])
+
+  const toggleMobile = useCallback(() => {
+    setMobileOpen((prev) => !prev)
+  }, [])
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups(prev => ({
@@ -157,7 +189,26 @@ function Sidebar() {
   }
 
   return (
-    <aside className={`${styles['sidebar']} ${collapsed ? styles['collapsed'] : ''}`}>
+    <>
+      {/* 移动端汉堡菜单按钮 */}
+      <button
+        className={styles['mobile-menu-btn']}
+        onClick={toggleMobile}
+        title="菜单"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+
+      {/* 移动端遮罩层 */}
+      {mobileOpen && (
+        <div className={styles['mobile-overlay']} onClick={toggleMobile} />
+      )}
+
+      <aside className={`${styles['sidebar']} ${collapsed ? styles['collapsed'] : ''} ${mobileOpen ? styles['mobile-open'] : ''}`}>
       <div className={styles['sidebar-header']}>
         {!collapsed && (
           <>
@@ -236,6 +287,7 @@ function Sidebar() {
         {!collapsed && <p className={styles['version-text']}>v1.0.0</p>}
       </div>
     </aside>
+    </>
   )
 }
 

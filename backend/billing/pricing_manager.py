@@ -30,8 +30,10 @@ class PricingManager:
             "deepseek": "/v1",
             "google": "/v1beta",
             "alibaba": "/compatible-mode/v1",
+            "qwen": "/compatible-mode/v1",
             "moonshot": "/v1",
             "zhipu": "/api/paas/v4",
+            "ollama": "/v1",
         }.get(provider_id, "/v1")
 
     @staticmethod

@@ -225,9 +225,10 @@ function ChatPage() {
         const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model, 'direct')
         const assistantText = response.data.response
         const backendError = response.data.error
+        const reasoningContent = response.data.reasoning_content
 
         if (assistantText && assistantText.trim()) {
-          addMessage('assistant', assistantText)
+          addMessage('assistant', assistantText, reasoningContent || undefined)
         } else if (backendError?.message) {
           addMessage('assistant', `请求失败：${backendError.message}`)
         } else {

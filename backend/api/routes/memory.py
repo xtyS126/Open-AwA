@@ -17,18 +17,23 @@ from api.schemas import (
 router = APIRouter(prefix="/memory", tags=["Memory"])
 
 
-def _verify_session_ownership(db: Session, session_id: str, user_id: str) -> None:
+def _verify_session_ownership(db: Session, session_id: str, user_id: str, allow_missing: bool = False) -> bool:
     """
     验证会话是否属于当前用户。
     通过 ConversationRecord 表的 user_id 字段判断会话owner。
-    如果会话不存在或不属于当前用户，抛出 403 异常。
+    如果会话尚未建立且允许缺失，则返回 False，便于前端读取空会话。
+    如果会话存在但不属于当前用户，则抛出 403 异常。
     """
     record = db.query(ConversationRecord).filter(
-        ConversationRecord.session_id == session_id,
-        ConversationRecord.user_id == user_id
-    ).first()
+        ConversationRecord.session_id == session_id
+    ).order_by(ConversationRecord.timestamp.desc()).first()
     if not record:
+        if allow_missing:
+            return False
+        raise HTTPException(status_code=404, detail="Session not found")
+    if record.user_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied: session does not belong to current user")
+    return True
 
 
 @router.get("/short-term/{session_id}", response_model=List[ShortTermMemoryResponse])
@@ -41,7 +46,9 @@ async def get_short_term_memory(
     获取短期记忆，先验证会话所有权。
     只有会话属于当前用户时才允许访问。
     """
-    _verify_session_ownership(db, session_id, current_user.id)
+    has_session_record = _verify_session_ownership(db, session_id, current_user.id, allow_missing=True)
+    if not has_session_record:
+        return []
     memories = db.query(ShortTermMemory).filter(
         ShortTermMemory.session_id == session_id
     ).order_by(ShortTermMemory.timestamp.desc()).limit(50).all()
@@ -64,7 +71,7 @@ async def add_short_term_memory(
     新增短期记忆，先验证会话所有权。
     只有会话属于当前用户时才允许写入。
     """
-    _verify_session_ownership(db, memory.session_id, current_user.id)
+    _verify_session_ownership(db, memory.session_id, current_user.id, allow_missing=True)
     new_memory = ShortTermMemory(
         session_id=memory.session_id,
         role=memory.role,
@@ -117,7 +124,9 @@ async def get_long_term_memories(
     获取long、term、memories相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
-    memories = db.query(LongTermMemory).order_by(
+    memories = db.query(LongTermMemory).filter(
+        LongTermMemory.user_id == str(current_user.id)
+    ).order_by(
         LongTermMemory.importance.desc()
     ).offset(skip).limit(limit).all()
     
@@ -135,6 +144,7 @@ async def add_long_term_memory(
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     new_memory = LongTermMemory(
+        user_id=str(current_user.id),
         content=memory.content,
         importance=memory.importance
     )
@@ -156,7 +166,10 @@ async def delete_long_term_memory(
     删除long、term、memory相关对象或持久化记录。
     实现中通常还会同时处理资源释放、状态回收或关联数据清理。
     """
-    memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+    memory = db.query(LongTermMemory).filter(
+        LongTermMemory.id == memory_id,
+        LongTermMemory.user_id == str(current_user.id)
+    ).first()
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     
@@ -181,6 +194,7 @@ async def search_memories(
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     memories = db.query(LongTermMemory).filter(
+        LongTermMemory.user_id == str(current_user.id),
         LongTermMemory.content.contains(query)
     ).all()
     

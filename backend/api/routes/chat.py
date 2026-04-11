@@ -78,6 +78,7 @@ async def chat(
     return ChatResponse(
         status=status_value,
         response=result.get("response", ""),
+        reasoning_content=result.get("reasoning_content"),
         session_id=message.session_id,
         error=result.get("error"),
         request_id=context["request_id"],

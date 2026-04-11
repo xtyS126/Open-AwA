@@ -216,8 +216,17 @@ export const chatAPI = {
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
 
+          // 当前 SSE 事件类型，用于区分 reasoning 和普通 chunk
+          let currentEventType = ''
           for (const line of lines) {
-            if (line.trim() === '') continue
+            if (line.trim() === '') {
+              currentEventType = ''
+              continue
+            }
+            if (line.startsWith('event: ')) {
+              currentEventType = line.slice(7).trim()
+              continue
+            }
             if (line.startsWith('data: ')) {
               const dataStr = line.slice(6)
               if (dataStr === '[DONE]') {
@@ -225,34 +234,48 @@ export const chatAPI = {
               }
               try {
                 const data = JSON.parse(dataStr)
-                if (data.type === 'chunk') {
+                if (currentEventType === 'reasoning') {
+                  // reasoning 事件仅携带推理内容
+                  onChunk?.('', data.content || '')
+                } else if (data.type === 'chunk') {
                   onChunk?.(data.content || '', data.reasoning_content || '')
                 } else if (data.type === 'error') {
                   onError?.(new Error(data.error?.message || 'Stream error'))
                 }
               } catch (e) {
-                // Ignore parse errors for incomplete chunks
+                // 忽略不完整 chunk 的解析错误
               }
+              currentEventType = ''
             }
           }
         }
       }
 
       if (buffer.trim()) {
-        const line = buffer.trim()
-        if (line.startsWith('data: ')) {
-          const dataStr = line.slice(6)
-          if (dataStr !== '[DONE]') {
-            try {
-              const data = JSON.parse(dataStr)
-              if (data.type === 'chunk') {
-                onChunk?.(data.content || '', data.reasoning_content || '')
-              } else if (data.type === 'error') {
-                onError?.(new Error(data.error?.message || 'Stream error'))
+        const remainingLines = buffer.trim().split('\n')
+        let remainingEventType = ''
+        for (const line of remainingLines) {
+          if (line.startsWith('event: ')) {
+            remainingEventType = line.slice(7).trim()
+            continue
+          }
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6)
+            if (dataStr !== '[DONE]') {
+              try {
+                const data = JSON.parse(dataStr)
+                if (remainingEventType === 'reasoning') {
+                  onChunk?.('', data.content || '')
+                } else if (data.type === 'chunk') {
+                  onChunk?.(data.content || '', data.reasoning_content || '')
+                } else if (data.type === 'error') {
+                  onError?.(new Error(data.error?.message || 'Stream error'))
+                }
+              } catch (e) {
+                // 忽略不完整数据
               }
-            } catch (e) {
-              // Ignore
             }
+            remainingEventType = ''
           }
         }
       }
@@ -483,6 +506,46 @@ export interface WeixinConfig {
   bot_token?: string
   ilink_bot_id?: string
   ilink_user_id?: string
+  bot_type?: string
+  channel_version?: string
+}
+
+export interface WeixinBindingInfo {
+  id?: number
+  user_id: string
+  weixin_account_id: string
+  base_url: string
+  bot_type: string
+  channel_version: string
+  binding_status: string
+  weixin_user_id: string
+}
+
+export interface WeixinBindingCreate {
+  weixin_account_id: string
+  token: string
+  base_url?: string
+  bot_type?: string
+  channel_version?: string
+  binding_status?: string
+  weixin_user_id?: string
+}
+
+export interface WeixinParamsConfig {
+  base_url: string
+  bot_type: string
+  channel_version: string
+  weixin_default_base_url: string
+  weixin_default_bot_type: string
+  weixin_default_channel_version: string
+  session_timeout_seconds: number
+  token_refresh_enabled: boolean
+}
+
+export interface WeixinParamsUpdate {
+  bot_type?: string
+  channel_version?: string
+  base_url?: string
 }
 
 export interface WeixinHealthCheckResult {
@@ -564,6 +627,11 @@ export const weixinAPI = {
   startQrLogin: (payload: WeixinQrStartRequest = {}) => api.post<WeixinQrStartResponse>('/skills/weixin/qr/start', payload),
   waitQrLogin: (payload: WeixinQrWaitRequest) => api.post<WeixinQrWaitResponse>('/skills/weixin/qr/wait', payload),
   exitQrLogin: (payload: WeixinQrExitRequest) => api.post<WeixinQrExitResponse>('/skills/weixin/qr/exit', payload),
+  getBinding: () => api.get<WeixinBindingInfo>('/weixin/binding'),
+  saveBinding: (data: WeixinBindingCreate) => api.post<WeixinBindingInfo>('/weixin/binding', data),
+  deleteBinding: () => api.delete('/weixin/binding'),
+  getParams: () => api.get<WeixinParamsConfig>('/weixin/config'),
+  updateParams: (data: WeixinParamsUpdate) => api.put<WeixinParamsConfig>('/weixin/config', data),
 }
 
 export default api

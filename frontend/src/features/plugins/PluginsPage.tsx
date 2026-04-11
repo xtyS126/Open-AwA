@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { pluginsAPI, PluginPermissionStatus } from '@/shared/api/api'
 import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
 import styles from './PluginsPage.module.css'
 
 function PluginsPage() {
+  const navigate = useNavigate()
   const [plugins, setPlugins] = useState<Plugin[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -175,7 +177,7 @@ function PluginsPage() {
           >
             {uploading ? '导入中...' : '导入插件'}
           </button>
-          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}>浏览插件市场</button>
+          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => navigate('/marketplace')}>浏览插件市场</button>
         </div>
       </div>
 

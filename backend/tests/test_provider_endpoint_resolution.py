@@ -133,6 +133,8 @@ class TestBillingProviderModelsRoute:
                 }
 
         class MockAsyncClient:
+            is_closed = False
+
             def __init__(self, *args, **kwargs):
                 pass
 
@@ -142,14 +144,20 @@ class TestBillingProviderModelsRoute:
             async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            async def get(self, url, headers=None):
+            async def aclose(self):
+                pass
+
+            async def get(self, url, headers=None, **kwargs):
                 calls["url"] = url
                 calls["headers"] = headers or {}
                 return MockResponse()
 
         import httpx
+        import core.model_service as _ms
 
         monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
+        # 重置全局共享客户端，避免测试间状态污染
+        monkeypatch.setattr(_ms, "_shared_client", None)
 
         response = client.get("/api/billing/models-by-provider/openai")
         assert response.status_code == 200
@@ -191,6 +199,8 @@ class TestBillingProviderModelsRoute:
         db_session.commit()
 
         class MockAsyncClient:
+            is_closed = False
+
             def __init__(self, *args, **kwargs):
                 pass
 
@@ -200,12 +210,18 @@ class TestBillingProviderModelsRoute:
             async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            async def get(self, url, headers=None):
+            async def aclose(self):
+                pass
+
+            async def get(self, url, headers=None, **kwargs):
                 raise RuntimeError("boom")
 
         import httpx
+        import core.model_service as _ms
 
         monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
+        # 重置全局共享客户端，避免测试间状态污染
+        monkeypatch.setattr(_ms, "_shared_client", None)
 
         response = client.get("/api/billing/models-by-provider/openai")
         assert response.status_code == 200

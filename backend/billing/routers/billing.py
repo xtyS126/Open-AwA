@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from fastapi import Body
 from datetime import datetime
+from loguru import logger
 
 from db.models import get_db
 from api.dependencies import get_current_user
@@ -1040,6 +1041,12 @@ async def get_models_by_provider(
             except Exception as fetch_exc:
                 duration_ms = 0
                 record_model_service_metric(provider_id, "models", "error", duration_ms)
+                logger.bind(
+                    event="provider_models_fetch_error",
+                    module="billing",
+                    error_type=type(fetch_exc).__name__,
+                    provider=provider_id,
+                ).opt(exception=True).error(f"远程模型列表拉取失败: {fetch_exc}")
                 raise fetch_exc
 
             data = None
@@ -1098,6 +1105,12 @@ async def get_models_by_provider(
             "error": None
         }
     except Exception as exc:
+        logger.bind(
+            event="provider_models_fallback",
+            module="billing",
+            error_type=type(exc).__name__,
+            provider=provider_id,
+        ).opt(exception=True).warning(f"模型列表获取失败，回退到本地列表: {exc}")
         models = pricing_manager.get_all_pricing(provider=provider_id)
         return {
             "success": False,

@@ -60,10 +60,26 @@ async def send_chunked_websocket_message(
 async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingResponse:
     """
     将生成器包装为 Server-Sent Events (SSE) 流响应。
+    推理内容使用 event: reasoning 类型单独发送，正常内容使用默认事件类型。
     """
     async def event_generator():
         async for chunk in stream_generator:
-            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            # 错误事件直接透传
+            if chunk.get("type") == "error":
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                continue
+
+            reasoning = chunk.get("reasoning_content", "")
+            content = chunk.get("content", "")
+
+            # 先发送推理内容（如果有），使用 reasoning 事件类型
+            if reasoning:
+                yield f"event: reasoning\ndata: {json.dumps({'content': reasoning}, ensure_ascii=False)}\n\n"
+
+            # 再发送正常内容（如果有），使用默认事件类型
+            if content:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': content}, ensure_ascii=False)}\n\n"
+
         yield "data: [DONE]\n\n"
         
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -101,14 +117,19 @@ async def handle_websocket_session(
 
                 result = await agent.process(message_data.get("content", ""), context)
 
+                response_payload = {
+                    "status": result.get("status"),
+                    "content": result.get("response", ""),
+                    "results": result.get("results", []),
+                }
+                # 如果存在推理内容，附加到 WebSocket 响应中
+                if result.get("reasoning_content"):
+                    response_payload["reasoning_content"] = result["reasoning_content"]
+
                 await send_chunked_websocket_message(
                     websocket,
                     "response",
-                    {
-                        "status": result.get("status"),
-                        "content": result.get("response", ""),
-                        "results": result.get("results", []),
-                    },
+                    response_payload,
                     message_request_id,
                 )
 

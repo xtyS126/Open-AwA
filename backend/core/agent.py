@@ -224,7 +224,12 @@ class AIAgent:
                     'execution_id': result.get('execution_id')
                 }
         except Exception as e:
-            logger.error(f"Error executing skill '{skill_name}': {e}")
+            logger.bind(
+                event="skill_execution_error",
+                module="agent",
+                error_type=type(e).__name__,
+                skill_name=skill_name,
+            ).opt(exception=True).error(f"技能 '{skill_name}' 执行异常: {e}")
             return {
                 'status': 'error',
                 'skill_name': skill_name,
@@ -270,7 +275,13 @@ class AIAgent:
                     'message': result.get('message', 'Unknown error')
                 }
         except Exception as e:
-            logger.error(f"Error executing plugin '{plugin_name}' method '{method}': {e}")
+            logger.bind(
+                event="plugin_execution_error",
+                module="agent",
+                error_type=type(e).__name__,
+                plugin_name=plugin_name,
+                method=method,
+            ).opt(exception=True).error(f"插件 '{plugin_name}' 方法 '{method}' 执行异常: {e}")
             return {
                 'status': 'error',
                 'message': str(e)
@@ -301,7 +312,11 @@ class AIAgent:
             logger.info(f"Found {len(skill_list)} available skills")
             return skill_list
         except Exception as e:
-            logger.error(f"Error getting available skills: {e}")
+            logger.bind(
+                event="get_skills_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).opt(exception=True).error(f"获取可用技能列表失败: {e}")
             return []
     
     async def get_available_plugins(self) -> List[Dict[str, Any]]:
@@ -330,7 +345,11 @@ class AIAgent:
             logger.info(f"Found {len(plugin_list)} available plugins")
             return plugin_list
         except Exception as e:
-            logger.error(f"Error getting available plugins: {e}")
+            logger.bind(
+                event="get_plugins_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).opt(exception=True).error(f"获取可用插件列表失败: {e}")
             return []
     
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
@@ -580,7 +599,14 @@ class AIAgent:
         skill_count = sum(1 for r in results if r.get('type') == 'skill')
         plugin_count = sum(1 for r in results if r.get('type') == 'plugin')
         
-        return {
+        # 从执行结果中聚合推理内容
+        reasoning_parts = []
+        for item in results:
+            result = item.get('result', item)
+            if isinstance(result, dict) and result.get('reasoning_content'):
+                reasoning_parts.append(result['reasoning_content'])
+        
+        output = {
             "status": "completed",
             "response": final_response,
             "results": results,
@@ -590,6 +616,9 @@ class AIAgent:
             "skill_results": self.skill_results.copy(),
             "plugin_results": self.plugin_results.copy()
         }
+        if reasoning_parts:
+            output["reasoning_content"] = "\n".join(reasoning_parts)
+        return output
     
     async def _auto_execute_skills_and_plugins(
         self,
@@ -696,7 +725,11 @@ class AIAgent:
             return auto_results
 
         except Exception as e:
-            logger.error(f"Error in auto-execution of skills and plugins: {e}")
+            logger.bind(
+                event="auto_execution_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).opt(exception=True).error(f"自动执行技能/插件异常: {e}")
             return auto_results
     
     def _is_skill_relevant(
@@ -799,7 +832,11 @@ class AIAgent:
             return formatted_experiences
             
         except Exception as e:
-            logger.error(f"Error retrieving experiences: {e}")
+            logger.bind(
+                event="experience_retrieval_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).opt(exception=True).error(f"检索相关经验失败: {e}")
             return []
     
     async def _extract_and_store_experience(
@@ -845,7 +882,11 @@ class AIAgent:
             )
             
         except Exception as e:
-            logger.error(f"Error extracting and storing experience: {e}")
+            logger.bind(
+                event="experience_extraction_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).opt(exception=True).error(f"经验提取与存储失败: {e}")
     
     def _collect_skill_plugin_results(self) -> Dict[str, Any]:
         """

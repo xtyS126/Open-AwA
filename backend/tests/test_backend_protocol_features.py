@@ -95,6 +95,8 @@ async def test_execution_layer_retries_and_forwards_request_headers(monkeypatch)
             return self._payload
 
     class MockAsyncClient:
+        is_closed = False
+
         def __init__(self, *args, **kwargs):
             pass
 
@@ -104,7 +106,10 @@ async def test_execution_layer_retries_and_forwards_request_headers(monkeypatch)
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, url, json=None, headers=None):
+        async def aclose(self):
+            pass
+
+        async def post(self, url, json=None, headers=None, **kwargs):
             calls.append({"url": url, "json": json, "headers": headers or {}})
             if len(calls) < 3:
                 return MockResponse(503, {"error": "busy"}, url)
@@ -122,7 +127,10 @@ async def test_execution_layer_retries_and_forwards_request_headers(monkeypatch)
                 url,
             )
 
+    import core.model_service as _ms
     monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
+    # 重置全局共享客户端，避免测试间状态污染
+    monkeypatch.setattr(_ms, "_shared_client", None)
 
     def mock_resolve(self, context):
         return {
