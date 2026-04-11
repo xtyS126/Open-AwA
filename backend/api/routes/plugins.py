@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from db.models import get_db, Plugin
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, get_current_admin_user
 from api.schemas import PluginCreate, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
 from plugins.plugin_manager import PluginManager
 from plugins.plugin_logger import LogManager
@@ -15,6 +15,9 @@ from loguru import logger
 import uuid
 import zipfile
 import io
+import os
+import shutil
+import tempfile
 
 
 router = APIRouter(prefix="/plugins", tags=["Plugins"])
@@ -74,7 +77,7 @@ async def get_plugin(
 async def install_plugin(
     plugin: PluginCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     处理install、plugin相关逻辑，并为调用方返回对应结果。
@@ -99,7 +102,7 @@ async def install_plugin(
 async def uninstall_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     处理uninstall、plugin相关逻辑，并为调用方返回对应结果。
@@ -123,7 +126,7 @@ async def uninstall_plugin(
 async def toggle_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     处理toggle、plugin相关逻辑，并为调用方返回对应结果。
@@ -149,7 +152,7 @@ async def update_plugin(
     plugin_id: str,
     plugin_update: PluginUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     更新plugin相关数据、配置或状态。
@@ -181,7 +184,7 @@ async def authorize_plugin_permissions(
     plugin_id: str,
     payload: PluginPermissionUpdateRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     为plugin、permissions相关操作授予所需权限。
@@ -216,7 +219,7 @@ async def revoke_plugin_permissions(
     plugin_id: str,
     payload: PluginPermissionUpdateRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     撤销plugin、permissions相关操作已授予的权限或访问能力。
@@ -470,7 +473,7 @@ async def discover_plugins(
 async def upload_plugin(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_admin_user)
 ):
     """
     处理upload、plugin相关逻辑，并为调用方返回对应结果。
@@ -481,19 +484,25 @@ async def upload_plugin(
         
     content = await file.read()
     
+    # 使用临时目录解压，校验通过后再原子移动到插件目录
+    temp_dir = None
+    moved_dirs = []
     try:
         plugin_manager = PluginManager()
         plugins_dir = plugin_manager.plugins_dir
+        
+        # 先解压到临时目录进行校验
+        temp_dir = tempfile.mkdtemp(prefix="plugin_upload_")
         
         with zipfile.ZipFile(io.BytesIO(content)) as z:
             for member in z.namelist():
                 if member.startswith('/') or '..' in member:
                     raise HTTPException(status_code=400, detail="Invalid zip file structure")
             
-            z.extractall(plugins_dir)
-            
-        # After extracting, discover and install to DB
-        discovered = plugin_manager.discover_plugins()
+            z.extractall(temp_dir)
+        
+        # 在临时目录中发现插件
+        discovered = plugin_manager._discover_plugins_in_directory(temp_dir)
         installed_count = 0
         
         for plugin_info in discovered:
@@ -512,15 +521,40 @@ async def upload_plugin(
                 )
                 db.add(new_plugin)
                 installed_count += 1
-                
+        
+        # 数据库提交成功后，再将文件从临时目录移动到插件目录
         db.commit()
+        
+        # 原子移动：将临时目录下的内容移动到插件目录
+        for item in os.listdir(temp_dir):
+            src_path = os.path.join(temp_dir, item)
+            dst_path = os.path.join(plugins_dir, item)
+            if os.path.isdir(src_path):
+                if os.path.exists(dst_path):
+                    shutil.rmtree(dst_path)
+                shutil.move(src_path, dst_path)
+                moved_dirs.append(dst_path)
+            else:
+                shutil.move(src_path, dst_path)
             
         return {"message": f"Plugin uploaded and extracted successfully. Installed {installed_count} new plugins."}
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid zip file")
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
+        # 回滚数据库事务
+        db.rollback()
+        # 清理已移动的目录
+        for moved_dir in moved_dirs:
+            shutil.rmtree(moved_dir, ignore_errors=True)
         logger.error(f"Error extracting plugin: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to extract plugin: {str(e)}")
+    finally:
+        # 清理临时目录
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @router.post("/{plugin_id}/hot-update", response_model=HotUpdateResponse)
@@ -528,7 +562,7 @@ async def hot_update_plugin(
     plugin_id: str,
     payload: HotUpdateRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
     """
     处理hot、update、plugin相关逻辑，并为调用方返回对应结果。
@@ -579,7 +613,7 @@ async def rollback_plugin(
     plugin_id: str,
     payload: RollbackRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin_user),
 ):
     """
     处理rollback、plugin相关逻辑，并为调用方返回对应结果。
@@ -651,7 +685,7 @@ async def update_plugin_log_level(
     plugin_id: str,
     payload: PluginLogLevelUpdate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_admin_user),
 ):
     """
     更新plugin、log、level相关数据、配置或状态。

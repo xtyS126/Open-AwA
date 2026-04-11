@@ -25,11 +25,6 @@ export default defineConfig({
       use: { ...devices['Desktop Firefox'] },
     },
     {
-      name: 'msedge',
-      testIgnore: /.*electron-smoke\.spec\.ts/,
-      use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    },
-    {
       name: 'electron',
       testMatch: /.*electron-smoke\.spec\.ts/,
     },

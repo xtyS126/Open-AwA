@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from db.models import get_db, ShortTermMemory, LongTermMemory
+from db.models import get_db, ShortTermMemory, LongTermMemory, ConversationRecord
 from api.dependencies import get_current_user
 from api.schemas import (
     ShortTermMemoryCreate, ShortTermMemoryResponse,
@@ -17,6 +17,20 @@ from api.schemas import (
 router = APIRouter(prefix="/memory", tags=["Memory"])
 
 
+def _verify_session_ownership(db: Session, session_id: str, user_id: str) -> None:
+    """
+    验证会话是否属于当前用户。
+    通过 ConversationRecord 表的 user_id 字段判断会话owner。
+    如果会话不存在或不属于当前用户，抛出 403 异常。
+    """
+    record = db.query(ConversationRecord).filter(
+        ConversationRecord.session_id == session_id,
+        ConversationRecord.user_id == user_id
+    ).first()
+    if not record:
+        raise HTTPException(status_code=403, detail="Access denied: session does not belong to current user")
+
+
 @router.get("/short-term/{session_id}", response_model=List[ShortTermMemoryResponse])
 async def get_short_term_memory(
     session_id: str,
@@ -24,9 +38,10 @@ async def get_short_term_memory(
     current_user = Depends(get_current_user)
 ):
     """
-    获取short、term、memory相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取短期记忆，先验证会话所有权。
+    只有会话属于当前用户时才允许访问。
     """
+    _verify_session_ownership(db, session_id, current_user.id)
     memories = db.query(ShortTermMemory).filter(
         ShortTermMemory.session_id == session_id
     ).order_by(ShortTermMemory.timestamp.desc()).limit(50).all()
@@ -46,9 +61,10 @@ async def add_short_term_memory(
     current_user = Depends(get_current_user)
 ):
     """
-    处理add、short、term、memory相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    新增短期记忆，先验证会话所有权。
+    只有会话属于当前用户时才允许写入。
     """
+    _verify_session_ownership(db, memory.session_id, current_user.id)
     new_memory = ShortTermMemory(
         session_id=memory.session_id,
         role=memory.role,
@@ -69,12 +85,15 @@ async def delete_short_term_memory(
     current_user = Depends(get_current_user)
 ):
     """
-    删除short、term、memory相关对象或持久化记录。
-    实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+    删除短期记忆，先验证该记忆所属会话是否属于当前用户。
+    防止越权删除其他用户的记忆。
     """
     memory = db.query(ShortTermMemory).filter(ShortTermMemory.id == memory_id).first()
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
+    
+    # 验证记忆所属会话的所有权
+    _verify_session_ownership(db, memory.session_id, current_user.id)
     
     db.delete(memory)
     db.commit()

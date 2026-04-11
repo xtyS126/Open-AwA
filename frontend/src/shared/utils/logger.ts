@@ -59,6 +59,26 @@ export function generateRequestId(): string {
   return `${Date.now().toString(16)}-${random}`
 }
 
+// 需要脱敏的敏感字段名（小写匹配）
+const SENSITIVE_FIELDS = new Set([
+  'password', 'token', 'api_key', 'secret', 'authorization',
+  'cookie', 'access_token', 'refresh_token', 'username', 'user_input',
+])
+
+function sanitizeExtra(data: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (SENSITIVE_FIELDS.has(key.toLowerCase())) {
+      sanitized[key] = '***'
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      sanitized[key] = sanitizeExtra(value as Record<string, unknown>)
+    } else {
+      sanitized[key] = value
+    }
+  }
+  return sanitized
+}
+
 function emit(level: LogLevel, payload: LoggerPayload): void {
   if (!shouldLog(level)) {
     return
@@ -74,7 +94,7 @@ function emit(level: LogLevel, payload: LoggerPayload): void {
     request_id: payload.request_id || getCurrentRequestId(),
     action: payload.action,
     status: payload.status,
-    extra: payload.extra || {},
+    extra: sanitizeExtra(payload.extra || {}),
   }
 
   const text = safeStringify(record)

@@ -337,7 +337,7 @@ class AIAgent:
         """
         流式处理用户输入，绕过复杂规划逻辑，直接调用大模型并实时 yield 数据块。
         """
-        logger.info(f"Processing user input (stream): {user_input}")
+        logger.info(f"Processing user input (stream), length={len(user_input)}")
 
         if "message" not in context:
             context["message"] = user_input
@@ -380,7 +380,7 @@ class AIAgent:
         处理process相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        logger.info(f"Processing user input: {user_input}")
+        logger.info(f"Processing user input, length={len(user_input)}")
 
         if "message" not in context:
             context["message"] = user_input

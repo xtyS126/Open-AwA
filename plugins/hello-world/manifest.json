@@ -1,7 +1,7 @@
 {
   "name": "hello-world",
   "version": "1.0.0",
-  "pluginApiVersion": "1.0",
+  "pluginApiVersion": "1.0.0",
   "description": "最简示例插件，演示插件生命周期与日志输出",
   "author": "Open-AwA Team",
   "permissions": [],

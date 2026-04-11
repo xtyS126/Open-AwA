@@ -230,10 +230,18 @@ async def get_chat_history(
     current_user=Depends(get_current_user)
 ):
     """
-    获取chat、history相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取指定会话的聊天历史，先验证会话所有权。
+    防止用户越权访问其他用户的聊天记录。
     """
-    from db.models import ShortTermMemory
+    from db.models import ShortTermMemory, ConversationRecord
+
+    # 验证会话属于当前用户
+    record = db.query(ConversationRecord).filter(
+        ConversationRecord.session_id == session_id,
+        ConversationRecord.user_id == current_user.id
+    ).first()
+    if not record:
+        raise HTTPException(status_code=403, detail="Access denied: session does not belong to current user")
 
     messages = db.query(ShortTermMemory).filter(
         ShortTermMemory.session_id == session_id

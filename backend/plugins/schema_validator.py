@@ -42,7 +42,7 @@ MANIFEST_SCHEMA: Dict[str, Any] = {
     "properties": {
         "name": {"type": "string", "minLength": 1},
         "version": {"type": "string", "pattern": SEMVER_PATTERN},
-        "pluginApiVersion": {"type": "string", "minLength": 1},
+        "pluginApiVersion": {"type": "string", "pattern": SEMVER_PATTERN},
         "description": {"type": "string"},
         "author": {"type": "string"},
         "permissions": {

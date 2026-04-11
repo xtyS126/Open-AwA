@@ -226,6 +226,10 @@ def test_register_plugin_from_url(monkeypatch, tmp_path: Path):
         封装与FakeResponse相关的核心逻辑与运行状态。
         该类通常是当前文件中组织数据与调度行为的主要封装单元。
         """
+        is_redirect = False
+        status_code = 200
+        headers = {"content-type": "application/zip"}
+
         def __init__(self, content: bytes):
             """
             处理init相关逻辑，并为调用方返回对应结果。
@@ -240,20 +244,22 @@ def test_register_plugin_from_url(monkeypatch, tmp_path: Path):
             """
             return None
 
-    def fake_get(url: str, timeout: int, follow_redirects: bool):
+    def fake_get(url: str, timeout: int, follow_redirects: bool, headers=None):
         """
         处理fake、get相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        assert url == "https://example.com/plugin.zip"
+        assert url == "https://github.com/plugin.zip"
         assert timeout == 30
-        assert follow_redirects is True
+        assert follow_redirects is False
         return FakeResponse(zip_bytes)
 
     monkeypatch.setattr("plugins.plugin_manager.httpx.get", fake_get)
 
     manager = PluginManager(plugins_dir=str(plugins_dir))
-    discovered = manager.register_plugin_from_url("https://example.com/plugin.zip")
+    # 测试环境跳过 SSRF 安全校验（DNS 解析可能指向内网代理地址）
+    monkeypatch.setattr(manager, "_validate_remote_url", lambda url: None)
+    discovered = manager.register_plugin_from_url("https://github.com/plugin.zip")
 
     assert len(discovered) == 1
     assert discovered[0]["name"] == "url_plugin"

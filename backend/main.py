@@ -4,6 +4,7 @@
 """
 
 from contextlib import asynccontextmanager
+import errno
 import os
 import time
 
@@ -30,6 +31,7 @@ from core.model_service import (
     SERVER_VERSION_HEADER,
     VERSION_STATUS_HEADER,
     build_standard_error,
+    close_shared_client,
     negotiate_version_status,
 )
 from config.settings import settings
@@ -74,6 +76,7 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
     yield
+    await close_shared_client()
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
 
 
@@ -265,7 +268,46 @@ async def metrics():
     )
 
 
-if __name__ == "__main__":
+def get_server_host() -> str:
+    """
+    读取后端服务监听主机配置。
+    优先使用环境变量中的 BACKEND_HOST，其次兼容 HOST，未配置时回退到默认值。
+    """
+    return (os.getenv("BACKEND_HOST") or os.getenv("HOST") or "0.0.0.0").strip() or "0.0.0.0"
+
+
+def get_server_port() -> int:
+    """
+    读取后端服务监听端口配置。
+    优先使用环境变量中的 BACKEND_PORT，其次兼容 PORT，未配置时回退到默认值。
+    如果端口值不是合法整数，则抛出带明确信息的异常，便于快速排查配置问题。
+    """
+    raw_port = (os.getenv("BACKEND_PORT") or os.getenv("PORT") or "8000").strip() or "8000"
+    try:
+        return int(raw_port)
+    except ValueError as exc:
+        raise ValueError(f"无效的端口配置: {raw_port}") from exc
+
+
+def run_server() -> None:
+    """
+    启动后端 HTTP 服务并处理常见启动异常。
+    发生端口占用时输出更友好的提示，帮助调用方快速定位冲突端口或调整配置。
+    """
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = get_server_host()
+    port = get_server_port()
+    logger.bind(event="server_starting", module="main", host=host, port=port).info("starting backend server")
+    try:
+        uvicorn.run(app, host=host, port=port)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            message = f"后端服务启动失败：端口 {port} 已被占用，请关闭占用进程或通过 BACKEND_PORT/PORT 更换端口后重试。"
+            logger.bind(event="server_bind_conflict", module="main", host=host, port=port).error(message)
+            raise RuntimeError(message) from exc
+        raise
+
+
+if __name__ == "__main__":
+    run_server()

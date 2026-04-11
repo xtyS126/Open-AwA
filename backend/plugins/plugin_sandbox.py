@@ -12,8 +12,11 @@ from .base_plugin import BasePlugin
 
 class PluginSandbox:
     """
-    封装与PluginSandbox相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件执行沙箱，负责在受控环境中执行插件方法。
+    
+    注意：当前实现仅提供超时控制能力（通过 asyncio.wait_for）。
+    memory_limit 和 cpu_limit 参数仅作为配置占位，尚未实现真正的进程级资源隔离。
+    如需生产级沙箱隔离，应接入容器或 cgroup 等机制。
     """
     def __init__(self, timeout: int = 30, memory_limit: str = "512m", cpu_limit: float = 1.0):
         """
