@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
-import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse } from '@/features/settings/modelsApi'
+import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse } from '@/features/settings/modelsApi'
 import styles from './SettingsPage.module.css'
 
 interface Settings {
@@ -98,6 +98,14 @@ function SettingsPage() {
     description: '',
     is_default: false,
   })
+
+  // Model parameter panel state
+  const [selectedModelConfigId, setSelectedModelConfigId] = useState<number | null>(null)
+  const [modelCapabilities, setModelCapabilities] = useState<ModelCapabilitiesResponse | null>(null)
+  const [editingTemperature, setEditingTemperature] = useState(0.7)
+  const [editingTopK, setEditingTopK] = useState(0.9)
+  const [editingMaxTokens, setEditingMaxTokens] = useState<number | null>(null)
+  const [savingModelParams, setSavingModelParams] = useState(false)
 
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [loadingApiProviders, setLoadingApiProviders] = useState(false)
@@ -333,13 +341,85 @@ function SettingsPage() {
         modelsAPI.getConfigurations(),
         modelsAPI.getProviders()
       ])
-      setConfigurations(configsRes.data.configurations || [])
+      const configs: ModelConfiguration[] = configsRes.data.configurations || []
+      setConfigurations(configs)
       setProviders(providersRes.data.providers || [])
+
+      // Auto-select default model or first model
+      if (configs.length > 0 && !selectedModelConfigId) {
+        const defaultConfig = configs.find(c => c.is_default) || configs[0]
+        await handleSelectModelConfig(defaultConfig.id, configs)
+      }
     } catch (error) {
       console.error('Failed to load models data')
     } finally {
       setLoadingConfigs(false)
     }
+  }
+
+  const handleSelectModelConfig = async (configId: number, configsList?: ModelConfiguration[]) => {
+    setSelectedModelConfigId(configId)
+    const configs = configsList || configurations
+    const config = configs.find(c => c.id === configId)
+
+    try {
+      const capRes = await modelsAPI.getCapabilities(configId)
+      setModelCapabilities(capRes.data)
+      setEditingTemperature(config?.temperature ?? capRes.data.defaults.temperature)
+      setEditingTopK(config?.top_k ?? capRes.data.defaults.top_k)
+      setEditingMaxTokens(config?.max_tokens_limit ?? null)
+    } catch {
+      // Fallback to config values
+      setModelCapabilities(null)
+      setEditingTemperature(config?.temperature ?? 0.7)
+      setEditingTopK(config?.top_k ?? 0.9)
+      setEditingMaxTokens(config?.max_tokens_limit ?? null)
+    }
+  }
+
+  const handleSaveModelParams = async () => {
+    if (!selectedModelConfigId) return
+    setSavingModelParams(true)
+    try {
+      await modelsAPI.updateParameters(selectedModelConfigId, {
+        temperature: editingTemperature,
+        top_k: editingTopK,
+        max_tokens_limit: editingMaxTokens,
+      })
+      setMessage({ type: 'success', text: '模型参数保存成功' })
+      await loadModelsData()
+    } catch {
+      setMessage({ type: 'error', text: '模型参数保存失败' })
+    } finally {
+      setSavingModelParams(false)
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  const handleResetModelParams = async () => {
+    if (!selectedModelConfigId) return
+    setSavingModelParams(true)
+    try {
+      const res = await modelsAPI.resetParameters(selectedModelConfigId)
+      const config = res.data.configuration
+      setEditingTemperature(config?.temperature ?? 0.7)
+      setEditingTopK(config?.top_k ?? 0.9)
+      setEditingMaxTokens(config?.max_tokens_limit ?? null)
+      setMessage({ type: 'success', text: '已重置为默认参数' })
+      await loadModelsData()
+    } catch {
+      setMessage({ type: 'error', text: '重置失败' })
+    } finally {
+      setSavingModelParams(false)
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  const formatTokenCount = (tokens: number | null | undefined): string => {
+    if (tokens == null) return '-'
+    if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`
+    return String(tokens)
   }
 
 
@@ -1309,7 +1389,7 @@ function SettingsPage() {
               </button>
             </div>
             <p className={styles['section-desc']}>
-              配置可用的AI模型，设置的默认模型将自动在聊天页面选中
+              配置可用的AI模型参数，设置的默认模型将自动在聊天页面选中
             </p>
 
             {showAddForm && (
@@ -1380,6 +1460,127 @@ function SettingsPage() {
               </div>
             )}
 
+            {/* Model Parameter Configuration Panel */}
+            {configurations.length > 0 && (
+              <div className={styles['model-param-panel']}>
+                <h3>模型参数配置</h3>
+                <div className={styles['model-param-grid']}>
+                  <div className={styles['form-group']}>
+                    <label>模型选择</label>
+                    <select
+                      value={selectedModelConfigId ?? ''}
+                      onChange={(e) => {
+                        const id = Number(e.target.value)
+                        if (id) handleSelectModelConfig(id)
+                      }}
+                    >
+                      <option value="">选择模型</option>
+                      {configurations.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.display_name || c.model} ({c.provider})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles['form-group']}>
+                    <label>
+                      温度 (Temperature): {editingTemperature.toFixed(1)}
+                    </label>
+                    <div className={styles['slider-row']}>
+                      <input
+                        type="range"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={editingTemperature}
+                        onChange={(e) => setEditingTemperature(parseFloat(e.target.value))}
+                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
+                        className={styles['param-slider']}
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={editingTemperature}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value)
+                          if (!isNaN(val) && val >= 0 && val <= 2) setEditingTemperature(val)
+                        }}
+                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
+                        className={styles['param-number-input']}
+                      />
+                    </div>
+                    {modelCapabilities?.capabilities.supports_temperature === false && (
+                      <span className={styles['param-hint']}>该模型不支持温度调节</span>
+                    )}
+                  </div>
+
+                  <div className={styles['form-group']}>
+                    <label>Top K / Top P</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={editingTopK}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        if (!isNaN(val) && val >= 0 && val <= 1) setEditingTopK(val)
+                      }}
+                      disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_top_k === false}
+                      className={styles['param-number-input']}
+                    />
+                    {modelCapabilities?.capabilities.supports_top_k === false && (
+                      <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
+                    )}
+                  </div>
+
+                  <div className={styles['form-group']}>
+                    <label>
+                      最大 Tokens
+                      {modelCapabilities && (
+                        <span className={styles['param-hint-inline']}>
+                          {' '}(上限: {formatTokenCount(modelCapabilities.limits.max_tokens_max)})
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={modelCapabilities?.limits.max_tokens_max ?? 999999}
+                      value={editingMaxTokens ?? modelCapabilities?.defaults.max_tokens ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? null : parseInt(e.target.value)
+                        setEditingMaxTokens(val)
+                      }}
+                      disabled={!selectedModelConfigId}
+                      placeholder={modelCapabilities ? `默认: ${formatTokenCount(modelCapabilities.defaults.max_tokens)}` : ''}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles['model-param-actions']}>
+                  <button
+                    className={`btn btn-primary`}
+                    onClick={handleSaveModelParams}
+                    disabled={!selectedModelConfigId || savingModelParams}
+                  >
+                    {savingModelParams ? '保存中...' : '保存参数'}
+                  </button>
+                  <button
+                    className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                    onClick={handleResetModelParams}
+                    disabled={!selectedModelConfigId || savingModelParams}
+                  >
+                    重置为默认
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Model Management Table */}
             {loadingConfigs ? (
               <div className={styles['loading']}>加载中...</div>
             ) : configurations.length === 0 ? (
@@ -1388,40 +1589,69 @@ function SettingsPage() {
                 <p className={styles['hint']}>点击上方"添加模型"按钮来配置第一个模型</p>
               </div>
             ) : (
-              <div className={styles['configs-list']}>
-                {configurations.map(config => (
-                  <div key={config.id} className={`${styles['config-card']} ${config.is_default ? styles['default'] : ''}`}>
-                    <div className={styles['config-info']}>
-                      <div className={styles['config-header']}>
-                        <span className={styles['config-provider']}>{getProviderName(config.provider)}</span>
-                        {config.is_default && <span className={styles['default-badge']}>默认</span>}
-                      </div>
-                      <div className={styles['config-model']}>{config.display_name || config.model}</div>
-                      {config.description && (
-                        <div className={styles['config-description']}>{config.description}</div>
-                      )}
-                      <div className={styles['config-meta']}>
-                        模型：{config.model}
-                      </div>
-                    </div>
-                    <div className={styles['config-actions']}>
-                      {!config.is_default && (
-                        <button 
-                          className={`btn ${styles['btn-small'] || 'btn-small'}`}
-                          onClick={() => handleSetDefault(config.id)}
-                        >
-                          设为默认
-                        </button>
-                      )}
-                      <button 
-                        className={`btn ${styles['btn-small'] || 'btn-small'} ${styles['btn-danger'] || 'btn-danger'}`}
-                        onClick={() => handleDeleteConfiguration(config.id)}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className={styles['model-mgmt-table-wrapper']}>
+                <h3>模型列表</h3>
+                <table className={styles['model-mgmt-table']}>
+                  <thead>
+                    <tr>
+                      <th>图标</th>
+                      <th>模型名</th>
+                      <th>提供者</th>
+                      <th>规格</th>
+                      <th>图片</th>
+                      <th>多模</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {configurations.map(config => {
+                      const contextWindow = config.model_spec?.context_window
+                      return (
+                        <tr key={config.id} className={selectedModelConfigId === config.id ? styles['selected-row'] : ''}>
+                          <td>
+                            <span className={styles['model-icon-badge']}>
+                              {config.icon || config.provider.charAt(0).toUpperCase()}
+                            </span>
+                          </td>
+                          <td>
+                            <div className={styles['model-name-cell']}>
+                              {config.display_name || config.model}
+                              {config.is_default && <span className={styles['default-badge']}>默认</span>}
+                            </div>
+                          </td>
+                          <td>{config.provider}</td>
+                          <td>{contextWindow ? formatTokenCount(contextWindow) : '-'}</td>
+                          <td>{config.supports_vision ? '✅' : '❌'}</td>
+                          <td>{config.is_multimodal ? '✅' : '❌'}</td>
+                          <td>
+                            <span className={`${styles['status-badge']} ${styles[`status-${config.status || 'active'}`]}`}>
+                              {config.status || 'active'}
+                            </span>
+                          </td>
+                          <td>
+                            <div className={styles['table-actions']}>
+                              {!config.is_default && (
+                                <button
+                                  className={`btn ${styles['btn-small'] || 'btn-small'}`}
+                                  onClick={() => handleSetDefault(config.id)}
+                                >
+                                  设为默认
+                                </button>
+                              )}
+                              <button
+                                className={`btn ${styles['btn-small'] || 'btn-small'} ${styles['btn-danger'] || 'btn-danger'}`}
+                                onClick={() => handleDeleteConfiguration(config.id)}
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

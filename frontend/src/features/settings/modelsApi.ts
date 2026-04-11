@@ -16,8 +16,66 @@ export interface ModelConfiguration {
   is_active: boolean
   is_default: boolean
   sort_order: number
+  // Model parameter fields
+  temperature?: number | null
+  top_k?: number | null
+  top_p?: number | null
+  max_tokens_limit?: number | null
+  // Model capability flags
+  supports_temperature?: boolean
+  supports_top_k?: boolean
+  supports_vision?: boolean
+  is_multimodal?: boolean
+  // Model metadata
+  model_spec?: ModelSpec | null
+  status?: string
   created_at: string | null
   updated_at: string | null
+}
+
+export interface ModelSpec {
+  context_window?: number
+  max_output_tokens?: number
+  supports_function_calling?: boolean
+  supports_streaming?: boolean
+  supports_vision?: boolean
+  supports_audio?: boolean
+}
+
+export interface ModelCapabilities {
+  supports_temperature: boolean
+  supports_top_k: boolean
+  supports_vision: boolean
+  is_multimodal: boolean
+  supports_function_calling: boolean
+  supports_streaming: boolean
+}
+
+export interface ModelCapabilitiesResponse {
+  config_id: number
+  provider: string
+  model: string
+  capabilities: ModelCapabilities
+  defaults: {
+    temperature: number
+    top_k: number
+    max_tokens: number
+  }
+  limits: {
+    temperature_min: number
+    temperature_max: number
+    top_k_min: number
+    top_k_max: number
+    max_tokens_min: number
+    max_tokens_max: number
+  }
+}
+
+export interface ModelParameterUpdate {
+  temperature?: number | null
+  top_k?: number | null
+  top_p?: number | null
+  max_tokens_limit?: number | null
 }
 
 export interface ModelProvider {
@@ -103,6 +161,18 @@ export const modelsAPI = {
 
   setDefaultConfiguration: (configId: number) =>
     api.put(`/billing/configurations/${configId}/set-default`),
+
+  updateParameters: (configId: number, params: ModelParameterUpdate) =>
+    api.put(`/billing/configurations/${configId}/parameters`, params),
+
+  getCapabilities: (configId: number) =>
+    api.get<ModelCapabilitiesResponse>(`/billing/configurations/${configId}/capabilities`),
+
+  resetParameters: (configId: number) =>
+    api.post(`/billing/configurations/${configId}/reset-parameters`),
+
+  batchUpdateStatus: (configIds: number[], status: string) =>
+    api.put('/billing/configurations/batch-status', { config_ids: configIds, status }),
 
   getProviders: () =>
     api.get('/billing/providers'),

@@ -28,6 +28,10 @@ DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_BACKOFF_SECONDS = 0.2
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
+# Google Gemini API topK range is 1-40 (integer). We map from normalized 0.0-1.0 float.
+# See: https://ai.google.dev/api/rest/v1beta/GenerationConfig
+GOOGLE_TOPK_MAX = 40
+
 
 @dataclass
 class ProviderRequestSpec:
@@ -164,6 +168,9 @@ def build_provider_request(
     model: Optional[str] = None,
     prompt: str = "",
     max_tokens: int = 1000,
+    temperature: Optional[float] = None,
+    top_k: Optional[float] = None,
+    top_p: Optional[float] = None,
     request_id: Optional[str] = None,
     client_version: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
@@ -186,25 +193,30 @@ def build_provider_request(
         headers[ANTHROPIC_VERSION_HEADER] = DEFAULT_ANTHROPIC_VERSION
         if purpose == "models":
             return ProviderRequestSpec(endpoint=base_endpoint, headers=headers, payload=None, method="GET", timeout=20.0)
+        anthropic_payload: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "stream": stream,
+            "metadata": {
+                "request_id": headers[REQUEST_ID_HEADER],
+                "client_version": headers[CLIENT_VERSION_HEADER],
+                "context": serialized_context,
+            },
+        }
+        if temperature is not None:
+            anthropic_payload["temperature"] = temperature
+        if top_k is not None:
+            anthropic_payload["top_k"] = top_k
         return ProviderRequestSpec(
             endpoint=base_endpoint,
             headers=headers,
-            payload={
-                "model": model,
-                "max_tokens": max_tokens,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                "stream": stream,
-                "metadata": {
-                    "request_id": headers[REQUEST_ID_HEADER],
-                    "client_version": headers[CLIENT_VERSION_HEADER],
-                    "context": serialized_context,
-                },
-            },
+            payload=anthropic_payload,
         )
 
     if provider_id == "google":
@@ -216,6 +228,15 @@ def build_provider_request(
                 method="GET",
                 timeout=20.0,
             )
+        google_gen_config: Dict[str, Any] = {
+            "maxOutputTokens": max_tokens,
+        }
+        if temperature is not None:
+            google_gen_config["temperature"] = temperature
+        if top_k is not None:
+            google_gen_config["topK"] = round(top_k * GOOGLE_TOPK_MAX)
+        if top_p is not None:
+            google_gen_config["topP"] = top_p
         return ProviderRequestSpec(
             endpoint=_append_query(_build_google_chat_endpoint(base_endpoint, str(model or "")), {"key": api_key}),
             headers=headers,
@@ -226,9 +247,7 @@ def build_provider_request(
                         "parts": [{"text": prompt}],
                     }
                 ],
-                "generationConfig": {
-                    "maxOutputTokens": max_tokens,
-                },
+                "generationConfig": google_gen_config,
                 "systemInstruction": {
                     "parts": [
                         {
@@ -247,25 +266,35 @@ def build_provider_request(
     if purpose == "models":
         return ProviderRequestSpec(endpoint=base_endpoint, headers=headers, payload=None, method="GET", timeout=20.0)
 
+    openai_payload: Dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        "max_tokens": max_tokens,
+        "stream": stream,
+        "metadata": {
+            "request_id": headers[REQUEST_ID_HEADER],
+            "client_version": headers[CLIENT_VERSION_HEADER],
+            "context": serialized_context,
+        },
+    }
+    if temperature is not None:
+        openai_payload["temperature"] = temperature
+    # top_p takes precedence over top_k when both are provided,
+    # since top_k is mapped to top_p for OpenAI-compatible providers.
+    if top_k is not None and top_p is None:
+        openai_payload["top_p"] = top_k
+    if top_p is not None:
+        openai_payload["top_p"] = top_p
+
     return ProviderRequestSpec(
         endpoint=base_endpoint,
         headers=headers,
-        payload={
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            "max_tokens": max_tokens,
-            "stream": stream,
-            "metadata": {
-                "request_id": headers[REQUEST_ID_HEADER],
-                "client_version": headers[CLIENT_VERSION_HEADER],
-                "context": serialized_context,
-            },
-        },
+        payload=openai_payload,
     )
 
 
