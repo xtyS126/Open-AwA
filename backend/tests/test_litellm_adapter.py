@@ -135,7 +135,6 @@ class TestLitellmAvailability:
 @pytest.mark.asyncio
 async def test_litellm_chat_completion_success(monkeypatch):
     """非流式调用成功路径。"""
-    import core.litellm_adapter as adapter_module
 
     class MockChoice:
         class MockMessage:
