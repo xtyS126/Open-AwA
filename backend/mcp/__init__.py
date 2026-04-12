@@ -6,6 +6,7 @@ MCP (Model Context Protocol) 模块初始化文件。
 from mcp.types import MCPTool, MCPResource, MCPServerConfig, MCPToolCallRequest, MCPToolCallResponse, MCPMessage
 from mcp.protocol import MCPProtocol
 from mcp.client import MCPClient
+from mcp.config_store import MCPConfigStore
 from mcp.manager import MCPManager
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "MCPMessage",
     "MCPProtocol",
     "MCPClient",
+    "MCPConfigStore",
     "MCPManager",
 ]

@@ -4,58 +4,102 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(4px);
 }
 
 .modal-content.skill-modal {
-  background: var(--color-surface);
-  color: var(--color-text);
-  width: 560px;
-  max-width: 95vw;
+  background: var(--color-surface-dark);
+  color: var(--color-text-on-dark);
+  width: 640px;
+  max-width: 90vw;
   max-height: 90vh;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
 }
 
 .modal-header {
   padding: 20px 24px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-dark);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--color-bg-secondary);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-text);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-on-dark-tertiary);
   font-size: 24px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 0;
   line-height: 1;
-  transition: all 0.2s;
+  transition: color 0.15s;
 }
 
 .close-btn:hover {
-  color: var(--color-text);
-  background: var(--color-bg-tertiary);
+  color: var(--color-text-on-dark);
+}
+
+/* 步骤指示器 */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 24px;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border-dark);
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.step-item.step-active {
+  opacity: 1;
+}
+
+.step-number {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-border-dark-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.step-active .step-number {
+  background: var(--color-primary);
+  color: white;
+}
+
+.step-label {
+  font-size: 13px;
+  color: var(--color-text-on-dark-secondary);
+}
+
+.step-divider {
+  width: 32px;
+  height: 1px;
+  background: var(--color-border-dark-secondary);
 }
 
 .modal-body {
@@ -63,65 +107,46 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  flex: 1;
+  gap: 16px;
+  min-height: 280px;
 }
 
 .upload-area {
-  border: 2px dashed var(--color-border);
-  border-radius: 12px;
-  padding: 32px 24px;
+  border: 1px dashed var(--color-border-dark-secondary);
+  border-radius: 10px;
+  padding: 28px 24px;
   text-align: center;
   cursor: pointer;
-  background: var(--color-bg-secondary);
+  background: var(--color-surface-dark-secondary);
   transition: all 0.2s ease;
-  outline: none;
 }
 
-.upload-area:hover,
-.upload-area:focus {
+.upload-area:hover {
   border-color: var(--color-primary);
-  background: var(--color-bg-tertiary);
-}
-
-.upload-area:focus {
-  box-shadow: 0 0 0 3px var(--color-primary-ring);
+  background: var(--color-surface-dark-tertiary);
 }
 
 .upload-icon {
-  font-size: 36px;
-  margin-bottom: 12px;
+  font-size: 15px;
+  margin-bottom: 8px;
   color: var(--color-primary);
-  font-weight: 300;
-}
-
-.upload-title {
-  margin: 0 0 8px 0;
-  font-size: 16px;
   font-weight: 500;
-  color: var(--color-text);
 }
 
 .upload-desc {
   margin: 0;
-  font-size: 13px;
-  color: var(--color-text-tertiary);
+  font-size: 12px;
+  color: var(--color-text-on-dark-tertiary);
   line-height: 1.5;
 }
 
-.form-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0 0 8px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border);
+.parse-error {
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  color: #f87171;
+  font-size: 13px;
 }
 
 .form-group {
@@ -132,129 +157,105 @@
 
 .form-group.flex-1 {
   flex: 1;
-  min-height: 0;
 }
 
 .form-group label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text);
+  font-size: 13px;
+  color: var(--color-text-on-dark-secondary);
   display: flex;
   align-items: center;
   gap: 4px;
+  font-weight: 500;
 }
 
 .required {
-  color: var(--color-error);
-}
-
-.error-text {
-  font-size: 12px;
-  color: var(--color-error);
-  margin-top: 2px;
-}
-
-.radio-group {
-  display: flex;
-  gap: 16px;
-}
-
-.radio-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  transition: all 0.2s;
-}
-
-.radio-label:has(input:checked) {
-  border-color: var(--color-primary);
-  background: var(--color-bg-tertiary);
-}
-
-.radio-label input {
-  accent-color: var(--color-primary);
-}
-
-.radio-label span {
-  font-size: 14px;
-  color: var(--color-text);
+  color: var(--color-required);
 }
 
 input[type="text"] {
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
+  background: var(--color-surface-dark-tertiary);
+  border: 1px solid var(--color-border-dark-secondary);
+  color: var(--color-text-on-dark);
   padding: 10px 14px;
   border-radius: 8px;
   font-size: 14px;
-  transition: all 0.2s;
-}
-
-input[type="text"]:hover {
-  border-color: var(--color-border-hover);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 input[type="text"]:focus {
   border-color: var(--color-primary);
   outline: none;
-  box-shadow: 0 0 0 3px var(--color-primary-ring);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
 }
 
 textarea {
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
+  background: var(--color-surface-dark-tertiary);
+  border: 1px solid var(--color-border-dark-secondary);
+  color: var(--color-text-on-dark);
   padding: 12px 14px;
   border-radius: 8px;
   font-size: 14px;
-  line-height: 1.6;
-  min-height: 120px;
+  min-height: 200px;
   resize: vertical;
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-  transition: all 0.2s;
-}
-
-textarea:hover {
-  border-color: var(--color-border-hover);
+  font-family: monospace;
+  line-height: 1.6;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 textarea:focus {
   border-color: var(--color-primary);
   outline: none;
-  box-shadow: 0 0 0 3px var(--color-primary-ring);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+/* 确认预览区域 */
+.review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.review-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-on-dark-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.review-value {
+  font-size: 14px;
+  color: var(--color-text-on-dark);
+  padding: 8px 12px;
+  background: var(--color-surface-dark-secondary);
+  border-radius: 6px;
+}
+
+.review-instructions {
+  font-size: 13px;
+  color: var(--color-text-on-dark-secondary);
+  padding: 12px;
+  background: var(--color-surface-dark-secondary);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .modal-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border-dark);
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  background: var(--color-bg-secondary);
-}
-
-.btn-secondary {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background: var(--color-bg);
-  border-color: var(--color-border-hover);
-}
-
-.btn-secondary:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--color-primary-ring);
+  gap: 10px;
 }

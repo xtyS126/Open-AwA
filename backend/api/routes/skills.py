@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from db.models import get_db, Skill, ExperienceExtractionLog
+from db.models import get_db, Skill, ExperienceExtractionLog, WeixinBinding
 from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
@@ -191,6 +191,7 @@ def _save_weixin_config_to_db(
     token: str,
     base_url: str,
     timeout_seconds: int,
+    app_user_id: str = "",
     user_id: str = "",
     binding_status: str = "unbound"
 ) -> None:
@@ -198,14 +199,18 @@ def _save_weixin_config_to_db(
     处理save、weixin、config、to、db相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
+    normalized_app_user_id = str(app_user_id or "").strip()
+    normalized_user_id = str(user_id or "").strip()
+    normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
+
     skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
     config_dict = _build_weixin_config_payload(
         account_id=account_id,
         token=token,
         base_url=base_url,
         timeout_seconds=timeout_seconds,
-        user_id=user_id,
-        binding_status=binding_status
+        user_id=normalized_user_id,
+        binding_status=normalized_binding_status
     )
     if skill:
         skill.version = "1.0.0"
@@ -229,6 +234,30 @@ def _save_weixin_config_to_db(
             enabled=True
         )
         db.add(skill)
+
+    # 同步更新用户绑定表，避免“skills 配置已绑定但自动回复状态仍显示未绑定”的分叉状态。
+    if normalized_app_user_id:
+        binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == normalized_app_user_id).first()
+        if binding:
+            binding.weixin_account_id = str(account_id or "").strip()
+            binding.token = encrypt_secret_value(token) if str(token or "").strip() else ""
+            binding.base_url = str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
+            binding.bot_type = binding.bot_type or DEFAULT_BOT_TYPE
+            binding.channel_version = binding.channel_version or "1.0.2"
+            binding.binding_status = normalized_binding_status
+            binding.weixin_user_id = normalized_user_id
+        elif str(account_id or "").strip() or str(token or "").strip() or normalized_user_id:
+            binding = WeixinBinding(
+                user_id=normalized_app_user_id,
+                weixin_account_id=str(account_id or "").strip(),
+                token=encrypt_secret_value(token) if str(token or "").strip() else "",
+                base_url=str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL,
+                bot_type=DEFAULT_BOT_TYPE,
+                channel_version="1.0.2",
+                binding_status=normalized_binding_status,
+                weixin_user_id=normalized_user_id,
+            )
+            db.add(binding)
     db.commit()
 
 
@@ -725,6 +754,7 @@ async def save_weixin_config(
         token=config.token,
         base_url=config.base_url or DEFAULT_BASE_URL,
         timeout_seconds=_normalize_timeout_seconds(config.timeout_seconds, fallback=15),
+        app_user_id=str(current_user.id),
         user_id=str(config.user_id or "").strip(),
         binding_status=_normalize_binding_status(config.binding_status, user_id=str(config.user_id or "").strip())
     )
@@ -1034,6 +1064,7 @@ async def weixin_qr_wait(
             token=token,
             base_url=base_url,
             timeout_seconds=_normalize_timeout_seconds(previous_runtime.timeout_seconds, fallback=15),
+            app_user_id=str(current_user.id),
             user_id=user_id,
             binding_status=binding_status
         )
@@ -1096,6 +1127,7 @@ async def weixin_qr_exit(
             token="",
             base_url=runtime.base_url or DEFAULT_BASE_URL,
             timeout_seconds=_normalize_timeout_seconds(runtime.timeout_seconds, fallback=15),
+            app_user_id=str(current_user.id),
             user_id="",
             binding_status="unbound"
         )

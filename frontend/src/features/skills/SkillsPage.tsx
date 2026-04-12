@@ -101,7 +101,6 @@ function SkillsPage() {
             刷新列表
           </button>
           <button className={`btn btn-primary`} onClick={() => setIsModalOpen(true)}>创建技能</button>
-          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}>浏览市场</button>
         </div>
       </div>
 

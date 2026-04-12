@@ -8,11 +8,24 @@ interface Message {
   timestamp: Date
 }
 
+// 模型配置项，用于全局模型选择
+export interface ModelOption {
+  id: string
+  provider: string
+  model: string
+  display_name: string
+}
+
 interface ChatState {
   messages: Message[]
   isLoading: boolean
   sessionId: string
   outputMode: 'stream' | 'direct'
+  // 全局模型选择状态
+  selectedModel: string
+  modelOptions: ModelOption[]
+  modelLoading: boolean
+  modelError: string | null
   addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string) => void
   updateLastMessage: (content: string, reasoning_content?: string) => void
   setMessages: (messages: Message[]) => void
@@ -20,6 +33,10 @@ interface ChatState {
   clearMessages: () => void
   setSessionId: (id: string) => void
   setOutputMode: (mode: 'stream' | 'direct') => void
+  setSelectedModel: (model: string) => void
+  setModelOptions: (options: ModelOption[]) => void
+  setModelLoading: (loading: boolean) => void
+  setModelError: (error: string | null) => void
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -27,6 +44,10 @@ export const useChatStore = create<ChatState>((set) => ({
   isLoading: false,
   sessionId: 'default',
   outputMode: (localStorage.getItem('chat_output_mode') as 'stream' | 'direct') || 'stream',
+  selectedModel: localStorage.getItem('chat_selected_model') || '',
+  modelOptions: [],
+  modelLoading: false,
+  modelError: null,
   
   addMessage: (role, content, reasoning_content) =>
     set((state) => ({
@@ -69,4 +90,15 @@ export const useChatStore = create<ChatState>((set) => ({
     localStorage.setItem('chat_output_mode', mode)
     set({ outputMode: mode })
   },
+
+  setSelectedModel: (model) => {
+    localStorage.setItem('chat_selected_model', model)
+    set({ selectedModel: model })
+  },
+
+  setModelOptions: (options) => set({ modelOptions: options }),
+
+  setModelLoading: (loading) => set({ modelLoading: loading }),
+
+  setModelError: (error) => set({ modelError: error }),
 }))

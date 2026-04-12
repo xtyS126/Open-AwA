@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatAPI } from '@/shared/api/api'
-import { modelsAPI } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
-import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import { ReasoningContent } from './components/ReasoningContent'
 import styles from './ChatPage.module.css'
@@ -18,13 +16,8 @@ function sanitizeDisplayedError(message: string): string {
 
 function ChatPage() {
   const [input, setInput] = useState('')
-  const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode } = useChatStore()
+  const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode, selectedModel } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const [configurations, setConfigurations] = useState<{ id: string; provider: string; model: string; display_name: string }[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [retryCount, setRetryCount] = useState(0)
-  const retryTimeoutRef = useRef<number | null>(null)
-  const retryCountRef = useRef(0)
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
@@ -58,10 +51,6 @@ function ChatPage() {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
-      if (retryTimeoutRef.current !== null) {
-        window.clearTimeout(retryTimeoutRef.current)
-        retryTimeoutRef.current = null
-      }
       activeAbortControllerRef.current?.abort()
     }
   }, [])
@@ -78,62 +67,6 @@ function ChatPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [flushBuffer, scrollToBottom])
 
-  const loadConfigurations = useCallback(async () => {
-    setError(null)
-    
-    try {
-      const response = await modelsAPI.getProviders()
-      const providersList = response.data.providers || []
-      
-      const flatConfigs: { id: string; provider: string; model: string; display_name: string }[] = []
-      providersList.forEach((provider: { id: string; selected_models?: string[]; display_name?: string; name?: string }) => {
-        const selected = provider.selected_models || []
-        selected.forEach((modelName: string) => {
-          flatConfigs.push({
-            id: `${provider.id}:${modelName}`,
-            provider: provider.id,
-            model: modelName,
-            display_name: `${provider.display_name || provider.name || provider.id} - ${modelName}`
-          })
-        })
-      })
-
-      if (!isMountedRef.current) {
-        return
-      }
-      setConfigurations(flatConfigs)
-      
-      retryCountRef.current = 0
-      if (isMountedRef.current) {
-        setRetryCount(0)
-      }
-    } catch (err) {
-      if (!isMountedRef.current) {
-        return
-      }
-      appLogger.error({
-        event: 'chat_model_load',
-        module: 'chat_page',
-        action: 'load_configurations',
-        status: 'failure',
-        message: 'failed to load model configurations',
-        extra: { error: err instanceof Error ? err.message : String(err) },
-      })
-      setError('加载模型失败，请检查网络连接')
-      
-      if (retryCountRef.current < 3) {
-        const nextRetry = retryCountRef.current + 1
-        retryCountRef.current = nextRetry
-        setRetryCount(nextRetry)
-        retryTimeoutRef.current = window.setTimeout(() => {
-          void loadConfigurations()
-        }, 1000 * nextRetry)
-      }
-    }
-  }, [])
-
-  const { isAuthenticated } = useAuthStore()
-
   useEffect(() => {
     appLogger.info({
       event: 'page_view',
@@ -142,10 +75,23 @@ function ChatPage() {
       status: 'success',
       message: 'chat page mounted',
     })
-    if (isAuthenticated) {
-      void loadConfigurations()
+  }, [])
+
+  const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
+    if (!value) {
+      return { provider: undefined, model: undefined }
     }
-  }, [loadConfigurations, isAuthenticated])
+
+    const separatorIndex = value.indexOf(':')
+    if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
+      return { provider: undefined, model: undefined }
+    }
+
+    return {
+      provider: value.slice(0, separatorIndex),
+      model: value.slice(separatorIndex + 1)
+    }
+  }
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -170,10 +116,7 @@ function ChatPage() {
     setLoading(true)
 
     try {
-      const defaultModel = configurations.length > 0 ? configurations[0] : null
-      const { provider, model } = defaultModel
-        ? { provider: defaultModel.provider, model: defaultModel.model }
-        : { provider: undefined, model: undefined }
+      const { provider, model } = parseSelectedModel(selectedModel)
 
       if (outputMode === 'stream') {
         let isFirstChunk = true
@@ -297,41 +240,23 @@ function ChatPage() {
     }
   }
 
-  const handleRetry = () => {
-    if (retryTimeoutRef.current !== null) {
-      window.clearTimeout(retryTimeoutRef.current)
-      retryTimeoutRef.current = null
-    }
-    retryCountRef.current = 0
-    setRetryCount(0)
-    void loadConfigurations()
-  }
-
   return (
     <div className={styles['chat-page']}>
       <div className={styles['chat-header']}>
         <h1>AI 助手</h1>
-        <div className={styles['model-selector']}>
+        <div className={styles['header-controls']}>
           <select
             value={outputMode}
             onChange={(e) => setOutputMode(e.target.value as 'stream' | 'direct')}
-            className={styles['model-select']}
+            className={styles['mode-select']}
           >
             <option value="stream">流式传输</option>
             <option value="direct">直接输出</option>
           </select>
-          <span className={styles['model-hint']}>模型：使用设置中的默认模型</span>
+          {selectedModel && (
+            <span className={styles['current-model']}>{selectedModel.split(':').pop()}</span>
+          )}
         </div>
-        {error && (
-          <div className={styles['model-error']}>
-            <span>{error}</span>
-            {retryCount < 3 && (
-              <button className={`btn ${styles['btn-retry']}`} onClick={handleRetry}>
-                重试 ({3 - retryCount})
-              </button>
-            )}
-          </div>
-        )}
         <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={clearMessages}>
           新对话
         </button>

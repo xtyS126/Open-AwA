@@ -1,6 +1,7 @@
 """
 MCP 管理器模块，负责管理多个 MCP Server 的连接生命周期。
 采用单例模式，提供全局统一的 MCP Server 管理入口。
+支持配置持久化、热更新检测与版本回滚。
 """
 
 import threading
@@ -10,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from mcp.client import MCPClient, MCPClientError
+from mcp.config_store import MCPConfigStore
 from mcp.types import MCPServerConfig, MCPTool, MCPToolCallResponse
 
 
@@ -43,13 +45,16 @@ class MCPManager:
             self._lock = threading.Lock()
             self._clients: Dict[str, MCPClient] = {}
             self._configs: Dict[str, MCPServerConfig] = {}
+            self._config_store = MCPConfigStore()
             self._initialized = True
 
         logger.bind(module="mcp.manager", event="initialized").info("MCP 管理器已初始化")
+        # 启动时尝试从持久化配置恢复
+        self._restore_from_persistent_config()
 
     def add_server(self, config: MCPServerConfig, server_id: Optional[str] = None) -> str:
         """
-        添加 MCP Server 配置。
+        添加 MCP Server 配置并持久化。
         :param config: 服务器配置
         :param server_id: 可选的自定义 ID，未指定则自动生成
         :return: 分配的 server_id
@@ -59,6 +64,8 @@ class MCPManager:
         with self._lock:
             self._configs[server_id] = config
             self._clients[server_id] = MCPClient(config)
+        # 持久化到配置文件
+        self._config_store.set_server(server_id, config.model_dump())
         logger.bind(module="mcp.manager", event="server_added").info(
             f"添加 MCP Server: {config.name} (ID: {server_id})"
         )
@@ -66,15 +73,16 @@ class MCPManager:
 
     def remove_server(self, server_id: str) -> None:
         """
-        移除 MCP Server 配置并断开连接。
+        移除 MCP Server 配置、断开连接并从持久化存储中删除。
         :param server_id: 服务器 ID
         """
         with self._lock:
             if server_id not in self._clients:
                 raise MCPClientError(f"未找到 MCP Server: {server_id}")
-            # 如果当前已连接则需要先在调用方 await disconnect
             self._clients.pop(server_id, None)
             self._configs.pop(server_id, None)
+        # 从持久化存储中删除
+        self._config_store.remove_server(server_id)
         logger.bind(module="mcp.manager", event="server_removed").info(
             f"已移除 MCP Server: {server_id}"
         )
@@ -199,3 +207,97 @@ class MCPManager:
         if client is None:
             raise MCPClientError(f"未找到 MCP Server: {server_id}")
         return client
+
+    def _restore_from_persistent_config(self) -> None:
+        """启动时从持久化配置文件恢复 Server 配置（不自动连接）。"""
+        try:
+            saved_configs = self._config_store.load_all()
+            if not saved_configs:
+                return
+            restored = 0
+            for server_id, config_dict in saved_configs.items():
+                if server_id in self._configs:
+                    continue
+                try:
+                    config = MCPServerConfig(**config_dict)
+                    with self._lock:
+                        self._configs[server_id] = config
+                        self._clients[server_id] = MCPClient(config)
+                    restored += 1
+                except Exception as exc:
+                    logger.bind(
+                        module="mcp.manager", event="restore_error", server_id=server_id
+                    ).warning(f"恢复 MCP Server 配置失败: {exc}")
+            if restored > 0:
+                logger.bind(module="mcp.manager", event="restored").info(
+                    f"从持久化配置恢复了 {restored} 个 MCP Server"
+                )
+        except Exception as exc:
+            logger.bind(module="mcp.manager", event="restore_error").error(
+                f"恢复持久化 MCP 配置时发生错误: {exc}"
+            )
+
+    def check_hot_reload(self) -> bool:
+        """
+        检测配置文件是否被外部修改，如果有变更则重新加载并同步内存状态。
+        :return: 是否发生了热更新
+        """
+        new_configs = self._config_store.reload_if_changed()
+        if new_configs is None:
+            return False
+
+        with self._lock:
+            current_ids = set(self._configs.keys())
+            new_ids = set(new_configs.keys())
+
+            # 移除已删除的配置
+            for removed_id in current_ids - new_ids:
+                self._clients.pop(removed_id, None)
+                self._configs.pop(removed_id, None)
+                logger.bind(module="mcp.manager", event="hot_reload_remove").info(
+                    f"热更新：移除 Server {removed_id}"
+                )
+
+            # 添加新增或更新的配置
+            for server_id, config_dict in new_configs.items():
+                try:
+                    config = MCPServerConfig(**config_dict)
+                    if server_id not in self._configs:
+                        self._configs[server_id] = config
+                        self._clients[server_id] = MCPClient(config)
+                        logger.bind(module="mcp.manager", event="hot_reload_add").info(
+                            f"热更新：添加 Server {config.name} ({server_id})"
+                        )
+                    else:
+                        # 配置可能有变更，更新内存中的配置（客户端重连需手动触发）
+                        self._configs[server_id] = config
+                except Exception as exc:
+                    logger.bind(
+                        module="mcp.manager", event="hot_reload_error", server_id=server_id
+                    ).warning(f"热更新配置解析失败: {exc}")
+
+        return True
+
+    def list_snapshots(self) -> list:
+        """列出可用的配置版本快照。"""
+        return self._config_store.list_snapshots()
+
+    def create_snapshot(self, label: str = "") -> Optional[str]:
+        """手动创建一个配置快照。"""
+        return self._config_store.create_manual_snapshot(label)
+
+    def rollback_to_snapshot(self, snapshot_name: str) -> Dict[str, Dict[str, Any]]:
+        """
+        回滚到指定版本快照，并同步内存状态。
+        :return: 回滚后的配置
+        """
+        new_configs = self._config_store.rollback_to_snapshot(snapshot_name)
+        # 同步内存状态
+        with self._lock:
+            self._clients.clear()
+            self._configs.clear()
+        self._restore_from_persistent_config()
+        logger.bind(module="mcp.manager", event="rollback").info(
+            f"已回滚到快照: {snapshot_name}"
+        )
+        return new_configs

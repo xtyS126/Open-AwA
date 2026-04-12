@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
+import { useChatStore } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import MCPSettings from './MCPSettings'
@@ -118,10 +119,6 @@ function SettingsPage() {
   const [providerModelsError, setProviderModelsError] = useState<string | null>(null)
   const [showCreateProviderModal, setShowCreateProviderModal] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
-
-  // 主模型选择相关状态
-  const [availableModels, setAvailableModels] = useState<Array<{ id: string; provider: string; model: string; display_name: string }>>([])
-  const [defaultModel, setDefaultModel] = useState<{ id: string; provider: string; model: string; display_name: string } | null>(null)
   const [creatingProvider, setCreatingProvider] = useState(false)
   const [deletingProvider, setDeletingProvider] = useState(false)
 
@@ -170,10 +167,57 @@ function SettingsPage() {
   const [cleanupDays, setCleanupDays] = useState(30)
   const [cleaningRecords, setCleaningRecords] = useState(false)
 
+  // 全局模型选择状态（来自 chatStore）
+  const { selectedModel: globalSelectedModel, setSelectedModel: setGlobalSelectedModel, modelOptions, setModelOptions, modelLoading, setModelLoading, modelError, setModelError, outputMode, setOutputMode } = useChatStore()
+
+  // 加载可用模型列表（供通用设置页模型选择器使用）
+  const loadGlobalModelOptions = async () => {
+    setModelLoading(true)
+    setModelError(null)
+    try {
+      const response = await modelsAPI.getProviders()
+      const providersList = response.data.providers || []
+      const flatConfigs: { id: string; provider: string; model: string; display_name: string }[] = []
+      providersList.forEach((provider: { id: string; selected_models?: string[]; display_name?: string; name?: string }) => {
+        const selected = provider.selected_models || []
+        selected.forEach((modelName: string) => {
+          flatConfigs.push({
+            id: `${provider.id}:${modelName}`,
+            provider: provider.id,
+            model: modelName,
+            display_name: `${provider.display_name || provider.name || provider.id} - ${modelName}`
+          })
+        })
+      })
+      setModelOptions(flatConfigs)
+      // 如果当前没有选中模型或选中的模型不存在，自动选择第一个
+      if (flatConfigs.length > 0) {
+        const exists = flatConfigs.some(c => c.id === globalSelectedModel)
+        if (!globalSelectedModel || !exists) {
+          setGlobalSelectedModel(flatConfigs[0].id)
+        }
+      }
+    } catch (err) {
+      appLogger.error({
+        event: 'global_model_load',
+        module: 'settings',
+        action: 'load_model_options',
+        status: 'failure',
+        message: 'failed to load model configurations for global selector',
+        extra: { error: err instanceof Error ? err.message : String(err) },
+      })
+      setModelError('加载模型失败，请检查网络连接')
+    } finally {
+      setModelLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadSettings()
     loadPrompts()
-    loadDefaultModel()
+    if (activeTab === 'general') {
+      loadGlobalModelOptions()
+    }
     if (activeTab === 'billing') {
       loadBillingData()
     }
@@ -231,74 +275,6 @@ function SettingsPage() {
         appLogger.error({ event: 'settings_load_failed', message: 'Failed to load settings', module: 'settings' })
       }
     }
-  }
-
-  const loadDefaultModel = async () => {
-    try {
-      const response = await modelsAPI.getProviders()
-      const providersList = response.data.providers || []
-
-      const flatModels: Array<{ id: string; provider: string; model: string; display_name: string }> = []
-      providersList.forEach((provider: { id: string; selected_models?: string[]; display_name?: string; name?: string }) => {
-        const selected = provider.selected_models || []
-        selected.forEach((modelName: string) => {
-          flatModels.push({
-            id: `${provider.id}:${modelName}`,
-            provider: provider.id,
-            model: modelName,
-            display_name: `${provider.display_name || provider.name || provider.id} - ${modelName}`
-          })
-        })
-      })
-
-      setAvailableModels(flatModels)
-
-      const savedDefaultModelId = localStorage.getItem('default_model_id')
-      if (savedDefaultModelId) {
-        const found = flatModels.find(m => m.id === savedDefaultModelId)
-        if (found) {
-          setDefaultModel(found)
-        } else if (flatModels.length > 0) {
-          setDefaultModel(flatModels[0])
-        }
-      } else if (flatModels.length > 0) {
-        setDefaultModel(flatModels[0])
-      }
-
-      appLogger.info({
-        event: 'default_model_load_success',
-        module: 'settings',
-        action: 'load_default_model',
-        message: 'default model loaded',
-        status: 'success',
-        extra: { models_count: flatModels.length },
-      })
-    } catch (error) {
-      appLogger.error({
-        event: 'default_model_load_failed',
-        module: 'settings',
-        action: 'load_default_model',
-        message: 'default model load failed',
-        status: 'failure',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
-    }
-  }
-
-  const handleDefaultModelChange = (model: { id: string; provider: string; model: string; display_name: string }) => {
-    setDefaultModel(model)
-    localStorage.setItem('default_model_id', model.id)
-    appLogger.info({
-      event: 'default_model_changed',
-      module: 'settings',
-      action: 'change_default_model',
-      message: 'default model changed',
-      extra: {
-        provider: model.provider,
-        model: model.model,
-        display_name: model.display_name,
-      },
-    })
   }
 
   const loadPrompts = async () => {
@@ -1158,33 +1134,6 @@ function SettingsPage() {
                 <option value="en">English</option>
               </select>
             </div>
-            <div className={styles['setting-item']}>
-              <label>主模型选择</label>
-              <div className={styles['model-selector-hint']}>
-                选择默认使用的 AI 模型。设置后，所有新对话将使用此模型。
-                {defaultModel && (
-                  <span className={styles['current-model']}>
-                    当前：{defaultModel.display_name || `${defaultModel.provider}:${defaultModel.model}`}
-                  </span>
-                )}
-              </div>
-              <div className={styles['model-list']}>
-                {availableModels.length === 0 ? (
-                  <p className={styles['no-models']}>暂无可用模型，请在 API 配置中添加供应商和模型</p>
-                ) : (
-                  availableModels.map((model) => (
-                    <button
-                      key={model.id}
-                      className={`${styles['model-option']} ${defaultModel?.id === model.id ? styles['selected'] : ''}`}
-                      onClick={() => handleDefaultModelChange(model)}
-                    >
-                      <span className={styles['model-option-name']}>{model.display_name}</span>
-                      <span className={styles['model-option-provider']}>{model.provider}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
             <button
               className={`btn btn-primary`}
               onClick={saveSettings}
@@ -1192,6 +1141,48 @@ function SettingsPage() {
             >
               {saving ? '保存中...' : '保存设置'}
             </button>
+
+            <h2 style={{ marginTop: '32px' }}>主模型选择</h2>
+            <p className={styles['section-desc']}>选择聊天页面使用的默认AI模型和输出模式，对全局生效。</p>
+            <div className={styles['setting-item']}>
+              <label>输出模式</label>
+              <select
+                value={outputMode}
+                onChange={(e) => {
+                  setOutputMode(e.target.value as 'stream' | 'direct')
+                  appLogger.info({ event: 'global_output_mode_change', module: 'settings', action: 'change_output_mode', status: 'success', message: 'output mode changed', extra: { mode: e.target.value } })
+                }}
+              >
+                <option value="stream">流式传输</option>
+                <option value="direct">直接输出</option>
+              </select>
+            </div>
+            <div className={styles['setting-item']}>
+              <label>默认模型</label>
+              {modelLoading ? (
+                <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>加载模型中...</span>
+              ) : modelError ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: 'var(--color-danger)', fontSize: '13px' }}>{modelError}</span>
+                  <button className="btn btn-sm" onClick={loadGlobalModelOptions}>重试</button>
+                </div>
+              ) : modelOptions.length === 0 ? (
+                <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>暂无可用模型，请先在 API 配置中添加供应商和模型</span>
+              ) : (
+                <select
+                  value={globalSelectedModel}
+                  onChange={(e) => {
+                    setGlobalSelectedModel(e.target.value)
+                    appLogger.info({ event: 'global_model_change', module: 'settings', action: 'change_default_model', status: 'success', message: 'default model changed', extra: { model: e.target.value } })
+                    showNotification({ type: 'success', text: '默认模型已更新' })
+                  }}
+                >
+                  {modelOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.display_name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
         )}
 
