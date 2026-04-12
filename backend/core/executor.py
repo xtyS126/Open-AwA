@@ -17,12 +17,11 @@ from loguru import logger
 from config.logging import get_request_id
 from core.metrics import record_model_service_metric, record_tool_execution_metric
 from core.model_service import (
-    build_provider_request,
     build_standard_error,
-    extract_reasoning_content,
-    is_retryable_exception,
-    send_with_retries,
-    send_stream_with_retries,
+)
+from core.litellm_adapter import (
+    litellm_chat_completion,
+    litellm_chat_completion_stream,
 )
 from memory.experience_manager import ExperienceManager
 from sqlalchemy.orm import Session
@@ -390,8 +389,7 @@ class ExecutionLayer:
 
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理call、llm、api相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        通过 LiteLLM 统一调用层发起非流式聊天请求。
         """
         record_hook = context.get("_record_hook")
         started_at = time.perf_counter()
@@ -425,237 +423,68 @@ class ExecutionLayer:
                 )
             return resolved
 
-        request_spec = build_provider_request(
-            provider=resolved["provider"],
-            api_endpoint=resolved["api_endpoint"],
-            api_key=resolved["api_key"],
-            purpose="chat",
-            model=resolved["model"],
-            prompt=prompt,
-            max_tokens=self._resolve_max_tokens(resolved),
-            request_id=resolved.get("request_id"),
-            client_version=resolved.get("client_version"),
-            context=serialized_context,
-        )
+        messages = [{"role": "user", "content": prompt}]
         llm_input_payload.update({
-            "endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
-            "headers": {
-                key: ("Bearer ***" if key.lower() == "authorization" else value)
-                for key, value in request_spec.headers.items()
-            },
-            "payload": request_spec.payload,
+            "provider": resolved["provider"],
+            "model": resolved["model"],
         })
 
-        try:
-            logger.info(
-                f"Sending LLM request to {self._sanitize_api_endpoint(request_spec.endpoint)} "
-                f"for provider {resolved['provider']}, model {resolved['model']}"
-            )
-            response = await send_with_retries(request_spec)
-            result = response.json()
-            logger.info(f"Successfully received response from {self._sanitize_api_endpoint(request_spec.endpoint)}")
-            response_text = self._extract_response_text(result)
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            record_model_service_metric(resolved["provider"], "chat", "success", duration_ms)
+        result = await litellm_chat_completion(
+            provider=resolved["provider"],
+            model=resolved["model"],
+            messages=messages,
+            api_key=resolved["api_key"],
+            api_base=resolved.get("api_endpoint"),
+            max_tokens=self._resolve_max_tokens(resolved),
+            request_id=resolved.get("request_id"),
+        )
 
-            if not response_text.strip():
-                output = {
-                    "ok": False,
-                    "error": build_standard_error(
-                        "model_service_empty_response",
-                        "模型服务返回空响应",
-                        request_id=resolved.get("request_id"),
-                        details={
-                            "provider": resolved["provider"],
-                            "model": resolved["model"],
-                            "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
-                        },
-                        retryable=False,
-                    )
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+
+        if not result.get("ok"):
+            record_model_service_metric(resolved["provider"], "chat", "error", duration_ms)
+            if callable(record_hook):
+                record_hook(
+                    node_type="llm_call",
+                    user_message=context.get("message", prompt),
+                    context=context,
+                    status="error",
+                    error_message=result.get("error", {}).get("message"),
+                    llm_input=llm_input_payload,
+                    llm_output=result,
+                    execution_duration_ms=duration_ms,
+                    metadata={
+                        "provider": resolved["provider"],
+                        "model": resolved["model"],
+                    }
+                )
+            return result
+
+        record_model_service_metric(resolved["provider"], "chat", "success", duration_ms)
+
+        if callable(record_hook):
+            usage = result.get("usage")
+            tokens_used = usage.get("total_tokens") if isinstance(usage, dict) else None
+            record_hook(
+                node_type="llm_call",
+                user_message=context.get("message", prompt),
+                context=context,
+                status="success",
+                llm_input=llm_input_payload,
+                llm_output=result,
+                llm_tokens_used=tokens_used,
+                execution_duration_ms=duration_ms,
+                metadata={
+                    "provider": resolved["provider"],
+                    "model": resolved["model"],
                 }
-                if callable(record_hook):
-                    record_hook(
-                        node_type="llm_call",
-                        user_message=context.get("message", prompt),
-                        context=context,
-                        status="error",
-                        error_message=output["error"]["message"],
-                        llm_input=llm_input_payload,
-                        llm_output=output,
-                        execution_duration_ms=duration_ms,
-                        metadata={
-                            "provider": resolved["provider"],
-                            "model": resolved["model"],
-                            "status_code": response.status_code,
-                        }
-                    )
-                return output
-
-            # 从响应中提取推理内容（思维链）
-            reasoning_content = extract_reasoning_content(result, resolved["provider"])
-
-            output = {
-                "ok": True,
-                "response": response_text,
-                "reasoning_content": reasoning_content,
-                "provider": resolved["provider"],
-                "model": resolved["model"],
-                "request_id": resolved.get("request_id"),
-            }
-            if callable(record_hook):
-                usage = result.get("usage") if isinstance(result, dict) else None
-                tokens_used = None
-                if isinstance(usage, dict):
-                    tokens_used = usage.get("total_tokens")
-                record_hook(
-                    node_type="llm_call",
-                    user_message=context.get("message", prompt),
-                    context=context,
-                    status="success",
-                    llm_input=llm_input_payload,
-                    llm_output=output,
-                    llm_tokens_used=tokens_used,
-                    execution_duration_ms=duration_ms,
-                    metadata={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                        "status_code": response.status_code,
-                    }
-                )
-            return output
-        except httpx.HTTPStatusError as e:
-            logger.bind(
-                event="llm_http_error",
-                module="executor",
-                error_type="HTTPStatusError",
-                status_code=e.response.status_code,
-                provider=resolved.get("provider"),
-                model=resolved.get("model"),
-                endpoint=request_spec.endpoint,
-            ).error(f"LLM API HTTP {e.response.status_code} 错误: {self._sanitize_text_excerpt(e.response.text if e.response.text else str(e), 400)}")
-            response_text = self._sanitize_text_excerpt(e.response.text if e.response.text else "")
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            record_model_service_metric(resolved["provider"], "chat", "http_error", duration_ms)
-            output = {
-                "ok": False,
-                "error": build_standard_error(
-                    "model_service_http_error",
-                    "模型服务请求失败",
-                    request_id=resolved.get("request_id"),
-                    details={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                        "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
-                        "status_code": e.response.status_code,
-                        "response_text": response_text
-                    },
-                    retryable=is_retryable_exception(e),
-                    status_code=e.response.status_code,
-                )
-            }
-            if callable(record_hook):
-                record_hook(
-                    node_type="llm_call",
-                    user_message=context.get("message", prompt),
-                    context=context,
-                    status="error",
-                    error_message=output["error"]["message"],
-                    llm_input=llm_input_payload,
-                    llm_output=output,
-                    execution_duration_ms=duration_ms,
-                    metadata={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                        "status_code": e.response.status_code,
-                    }
-                )
-            return output
-        except httpx.HTTPError as e:
-            logger.bind(
-                event="llm_network_error",
-                module="executor",
-                error_type=type(e).__name__,
-                provider=resolved.get("provider"),
-                model=resolved.get("model"),
-                endpoint=request_spec.endpoint,
-            ).error(f"LLM API 网络异常: {self._sanitize_text_excerpt(str(e), 300)}")
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            record_model_service_metric(resolved["provider"], "chat", "network_error", duration_ms)
-            output = {
-                "ok": False,
-                "error": build_standard_error(
-                    "model_service_network_error",
-                    "模型服务网络异常",
-                    request_id=resolved.get("request_id"),
-                    details={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                        "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
-                        "reason": self._sanitize_text_excerpt(str(e))
-                    },
-                    retryable=is_retryable_exception(e),
-                )
-            }
-            if callable(record_hook):
-                record_hook(
-                    node_type="llm_call",
-                    user_message=context.get("message", prompt),
-                    context=context,
-                    status="error",
-                    error_message=output["error"]["message"],
-                    llm_input=llm_input_payload,
-                    llm_output=output,
-                    execution_duration_ms=duration_ms,
-                    metadata={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                    }
-                )
-            return output
-        except Exception as e:
-            logger.bind(
-                event="llm_unexpected_error",
-                module="executor",
-                error_type=type(e).__name__,
-                provider=resolved.get("provider"),
-                model=resolved.get("model"),
-            ).opt(exception=True).error(f"LLM 调用未知异常: {e}")
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            record_model_service_metric(resolved["provider"], "chat", "unexpected_error", duration_ms)
-            output = {
-                "ok": False,
-                "error": build_standard_error(
-                    "model_service_unexpected_error",
-                    "模型服务调用出现未知异常",
-                    request_id=resolved.get("request_id"),
-                    details={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                        "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint if "request_spec" in locals() else resolved["api_endpoint"]),
-                        "reason": self._sanitize_text_excerpt(str(e))
-                    },
-                )
-            }
-            if callable(record_hook):
-                record_hook(
-                    node_type="llm_call",
-                    user_message=context.get("message", prompt),
-                    context=context,
-                    status="error",
-                    error_message=output["error"]["message"],
-                    llm_input=llm_input_payload,
-                    llm_output=output,
-                    execution_duration_ms=duration_ms,
-                    metadata={
-                        "provider": resolved["provider"],
-                        "model": resolved["model"],
-                    }
-                )
-            return output
+            )
+        return result
 
     async def _call_llm_api_stream(self, prompt: str, context: Dict[str, Any]):
         """
-        流式请求模型服务，向外 yield { "content": "...", "reasoning_content": "..." } 结构。
+        通过 LiteLLM 统一调用层发起流式聊天请求。
+        向外 yield { "content": "...", "reasoning_content": "..." } 结构。
         """
         record_hook = context.get("_record_hook")
         started_at = time.perf_counter()
@@ -670,75 +499,52 @@ class ExecutionLayer:
             yield {"error": resolved.get("error")}
             return
 
-        request_spec = build_provider_request(
-            provider=resolved["provider"],
-            api_endpoint=resolved["api_endpoint"],
-            api_key=resolved["api_key"],
-            purpose="chat",
-            model=resolved["model"],
-            prompt=prompt,
-            max_tokens=self._resolve_max_tokens(resolved),
-            request_id=resolved.get("request_id"),
-            client_version=resolved.get("client_version"),
-            context=serialized_context,
-            stream=True,
-        )
+        full_content = ""
+        full_reasoning = ""
 
         try:
-            logger.info(
-                f"Sending streaming LLM request to {request_spec.endpoint} "
-                f"for provider {resolved['provider']}, model {resolved['model']}"
+            stream_gen = litellm_chat_completion_stream(
+                provider=resolved["provider"],
+                model=resolved["model"],
+                messages=[{"role": "user", "content": prompt}],
+                api_key=resolved["api_key"],
+                api_base=resolved.get("api_endpoint"),
+                max_tokens=self._resolve_max_tokens(resolved),
+                request_id=resolved.get("request_id"),
             )
-            stream_gen = await send_stream_with_retries(request_spec)
-            
-            full_content = ""
-            full_reasoning = ""
-            
-            async for line in stream_gen:
-                line = line.strip()
-                if not line or not line.startswith("data: "):
-                    continue
-                
-                data_str = line[6:]
-                if data_str == "[DONE]":
-                    break
-                
-                try:
-                    data = json.loads(data_str)
-                    choices = data.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        
-                        content = delta.get("content", "")
-                        reasoning = delta.get("reasoning_content", "")
-                        
-                        # Handle Google format if applicable, though usually they return full text in chunks
-                        if not content and not reasoning and "candidates" in data:
-                            cands = data["candidates"]
-                            if cands:
-                                parts = cands[0].get("content", {}).get("parts", [])
-                                if parts:
-                                    content = parts[0].get("text", "")
-                                    
-                        # Anthropic 流式格式：区分 thinking_delta 和 text_delta
-                        if "type" in data and data["type"] == "content_block_delta":
-                            delta_obj = data.get("delta", {})
-                            delta_type = delta_obj.get("type", "")
-                            if delta_type == "thinking_delta":
-                                reasoning = delta_obj.get("thinking", "")
-                            else:
-                                content = delta_obj.get("text", "")
-                            
-                        if content or reasoning:
-                            if content: full_content += content
-                            if reasoning: full_reasoning += reasoning
-                            
-                            yield {
-                                "content": content,
-                                "reasoning_content": reasoning
+
+            async for chunk in stream_gen:
+                # 错误事件直接转发
+                if "error" in chunk:
+                    duration_ms = int((time.perf_counter() - started_at) * 1000)
+                    record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
+                    if callable(record_hook):
+                        record_hook(
+                            node_type="llm_call",
+                            user_message=context.get("message", prompt),
+                            context=context,
+                            status="error",
+                            error_message=chunk["error"].get("message"),
+                            llm_input={"prompt": prompt, "context": serialized_context},
+                            llm_output=chunk,
+                            execution_duration_ms=duration_ms,
+                            metadata={
+                                "provider": resolved["provider"],
+                                "model": resolved["model"],
+                                "mode": "stream",
                             }
-                except json.JSONDecodeError:
-                    continue
+                        )
+                    yield chunk
+                    return
+
+                content = chunk.get("content", "")
+                reasoning = chunk.get("reasoning_content", "")
+                if content:
+                    full_content += content
+                if reasoning:
+                    full_reasoning += reasoning
+                if content or reasoning:
+                    yield {"content": content, "reasoning_content": reasoning}
 
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "success", duration_ms)
@@ -749,23 +555,19 @@ class ExecutionLayer:
                     user_message=context.get("message", prompt),
                     context=context,
                     status="success",
-                    llm_input={
-                        "prompt": prompt,
-                        "endpoint": request_spec.endpoint,
-                        "context": serialized_context
-                    },
+                    llm_input={"prompt": prompt, "context": serialized_context},
                     llm_output={
                         "ok": True,
                         "response": full_content,
                         "reasoning_content": full_reasoning,
                         "provider": resolved["provider"],
-                        "model": resolved["model"]
+                        "model": resolved["model"],
                     },
                     execution_duration_ms=duration_ms,
                     metadata={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "mode": "stream"
+                        "mode": "stream",
                     }
                 )
 
@@ -779,7 +581,7 @@ class ExecutionLayer:
             ).opt(exception=True).error(f"LLM 流式调用异常: {e}")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat_stream", "error", duration_ms)
-            
+
             output_error = {
                 "error": build_standard_error(
                     "model_service_stream_error",
@@ -788,11 +590,11 @@ class ExecutionLayer:
                     details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "reason": str(e)
+                        "reason": str(e),
                     },
                 )
             }
-            
+
             if callable(record_hook):
                 record_hook(
                     node_type="llm_call",
@@ -800,20 +602,16 @@ class ExecutionLayer:
                     context=context,
                     status="error",
                     error_message=output_error["error"]["message"],
-                    llm_input={
-                        "prompt": prompt,
-                        "endpoint": request_spec.endpoint,
-                        "context": serialized_context
-                    },
+                    llm_input={"prompt": prompt, "context": serialized_context},
                     llm_output=output_error,
                     execution_duration_ms=duration_ms,
                     metadata={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "mode": "stream"
+                        "mode": "stream",
                     }
                 )
-                
+
             yield output_error
 
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:

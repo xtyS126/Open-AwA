@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from loguru import logger
 
 from api.dependencies import get_current_user, get_db
-from core.model_service import discover_ollama_models, get_provider_connection_status
+from core.litellm_adapter import litellm_check_provider_connection, litellm_list_models
 from config.settings import settings
 from billing.pricing_manager import PricingManager
 from billing.models import ModelConfiguration
@@ -22,7 +22,12 @@ async def get_ollama_models(current_user=Depends(get_current_user)):
     当 Ollama 服务未运行时返回空列表。
     """
     logger.bind(event="ollama_discover", module="models").info("discovering ollama models")
-    models = await discover_ollama_models()
+    result = await litellm_list_models(
+        provider="ollama",
+        api_key="",
+        api_base=settings.OLLAMA_BASE_URL,
+    )
+    models = result.get("models", [])
     return {
         "success": True,
         "provider": "ollama",
@@ -62,14 +67,14 @@ async def get_providers_status(
     for provider_id, config in seen_providers.items():
         base_url = config.api_endpoint or config.base_url if hasattr(config, 'base_url') else config.api_endpoint
         api_key = config.api_key or ""
-        status = await get_provider_connection_status(provider_id, base_url or "", api_key)
+        status = await litellm_check_provider_connection(provider=provider_id, api_base=base_url or "", api_key=api_key)
         status["display_name"] = config.display_name or provider_id
         provider_status_list.append(status)
 
     # 如果 Ollama 不在已配置列表中，单独检测
     if "ollama" not in seen_providers:
-        ollama_status = await get_provider_connection_status(
-            "ollama", settings.OLLAMA_BASE_URL, ""
+        ollama_status = await litellm_check_provider_connection(
+            provider="ollama", api_base=settings.OLLAMA_BASE_URL, api_key=""
         )
         ollama_status["display_name"] = "Ollama (本地)"
         provider_status_list.append(ollama_status)
