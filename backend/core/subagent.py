@@ -94,6 +94,7 @@ class AgentEdge:
     source: str
     target: str
     condition: Optional[ConditionalEdgeFunc] = None
+    condition_value: Optional[str] = None
 
 
 @dataclass
@@ -165,7 +166,7 @@ class AgentGraph:
             self.conditional_edges[source] = []
         for condition_value, target in target_map.items():
             self.conditional_edges[source].append(
-                AgentEdge(source=source, target=target, condition=condition)
+                AgentEdge(source=source, target=target, condition=condition, condition_value=condition_value)
             )
         logger.debug(f"Added conditional edges from '{source}' with {len(target_map)} branches")
         return self
@@ -188,12 +189,12 @@ class AgentGraph:
         """根据当前节点和状态确定下一步要执行的节点。"""
         next_nodes = []
 
-        # 检查条件边
+        # 检查条件边 - 条件函数返回值与 condition_value 匹配则路由
         if current_node in self.conditional_edges:
             for edge in self.conditional_edges[current_node]:
                 if edge.condition:
                     result = edge.condition(state)
-                    if result == edge.target or result == True:
+                    if result == edge.condition_value:
                         next_nodes.append(edge.target)
                         break
 

@@ -23,7 +23,7 @@ _web_search: Optional[WebSearchSkill] = None
 async def _get_file_manager() -> FileManagerSkill:
     """获取或初始化文件管理工具。"""
     global _file_manager
-    if _file_manager is None or not _file_manager._initialized:
+    if _file_manager is None or not _file_manager.is_initialized():
         _file_manager = FileManagerSkill()
         await _file_manager.initialize()
     return _file_manager
@@ -32,7 +32,7 @@ async def _get_file_manager() -> FileManagerSkill:
 async def _get_terminal_executor() -> TerminalExecutorSkill:
     """获取或初始化终端执行工具。"""
     global _terminal_executor
-    if _terminal_executor is None or not _terminal_executor._initialized:
+    if _terminal_executor is None or not _terminal_executor.is_initialized():
         _terminal_executor = TerminalExecutorSkill()
         await _terminal_executor.initialize()
     return _terminal_executor
@@ -41,7 +41,7 @@ async def _get_terminal_executor() -> TerminalExecutorSkill:
 async def _get_web_search() -> WebSearchSkill:
     """获取或初始化网页搜索工具。"""
     global _web_search
-    if _web_search is None or not _web_search._initialized:
+    if _web_search is None or not _web_search.is_initialized():
         _web_search = WebSearchSkill()
         await _web_search.initialize()
     return _web_search
