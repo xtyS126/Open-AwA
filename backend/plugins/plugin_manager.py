@@ -5,12 +5,14 @@
 
 import ast
 import hashlib
+import http.client
 import importlib
 import inspect
 import io
 import os
 import re
 import shutil
+import ssl
 import tempfile
 import urllib.parse
 import zipfile
@@ -446,12 +448,14 @@ class PluginManager:
         target_dir_abs = os.path.abspath(target_dir)
         os.makedirs(target_dir_abs, exist_ok=True)
 
-        for member in archive.namelist():
-            normalized_member = member.replace("\\", "/")
-            if normalized_member.startswith("/"):
+        for member_info in archive.infolist():
+            normalized_member = member_info.filename.replace("\\", "/")
+            if normalized_member.startswith("/") or normalized_member.startswith("//"):
                 raise ValueError("Invalid zip file structure")
 
             parts = [part for part in normalized_member.split("/") if part not in ("", ".")]
+            if not parts:
+                continue
             if any(part == ".." for part in parts):
                 raise ValueError("Invalid zip file structure")
 
@@ -459,7 +463,21 @@ class PluginManager:
             if os.path.commonpath([target_dir_abs, destination]) != target_dir_abs:
                 raise ValueError("Invalid zip file structure")
 
-        archive.extractall(target_dir_abs)
+            # 阻止解压符号链接，避免写入目标目录外部或覆盖敏感文件
+            unix_mode = (member_info.external_attr >> 16) & 0o170000
+            if unix_mode == 0o120000:
+                raise ValueError("Zip archive contains unsupported symlink entry")
+
+            if member_info.is_dir():
+                os.makedirs(destination, exist_ok=True)
+                continue
+
+            parent_dir = os.path.dirname(destination)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+
+            with archive.open(member_info, "r") as source, open(destination, "wb") as target_file:
+                shutil.copyfileobj(source, target_file)
 
     def _safe_extract_zip_file(self, zip_path: str, target_dir: str) -> None:
         """
@@ -588,7 +606,44 @@ class PluginManager:
             shutil.rmtree(extract_dir, ignore_errors=True)
             raise
 
-    def _validate_remote_url(self, source_url: str) -> None:
+    def _resolve_remote_download_ips(self, hostname: str) -> List[str]:
+        """
+        解析远程下载域名并校验返回地址均为公网地址。
+        返回经过去重后的安全 IP 列表，供后续固定 IP 下载使用。
+        """
+        try:
+            resolved_ips = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError(f"无法解析域名: {hostname}") from exc
+
+        safe_ips: List[str] = []
+        for _, _, _, _, sockaddr in resolved_ips:
+            ip_str = sockaddr[0]
+            ip_addr = ipaddress.ip_address(ip_str)
+            if ip_addr.is_private or ip_addr.is_loopback or ip_addr.is_link_local or ip_addr.is_reserved:
+                raise ValueError(
+                    f"域名 '{hostname}' 解析到不安全的地址 {ip_str}，"
+                    "禁止访问内网、回环或链路本地地址"
+                )
+            if ip_str not in safe_ips:
+                safe_ips.append(ip_str)
+
+        try:
+            second_resolved = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError(f"DNS rebinding 校验时无法解析域名: {hostname}") from exc
+
+        second_ips = {sockaddr[0] for _, _, _, _, sockaddr in second_resolved}
+        first_ips = set(safe_ips)
+        if second_ips != first_ips:
+            raise ValueError(
+                f"域名 '{hostname}' DNS 解析结果不一致 (可能存在 DNS rebinding 攻击)，"
+                f"首次: {first_ips}, 二次: {second_ips}"
+            )
+
+        return safe_ips
+
+    def _validate_remote_url(self, source_url: str) -> Optional[List[str]]:
         """
         校验远程插件下载地址的安全性，防止 SSRF 攻击。
         拒绝私有网络、回环地址、链路本地地址，并校验域名白名单。
@@ -609,34 +664,79 @@ class PluginManager:
                 f"允许的域名: {sorted(self.ALLOWED_DOWNLOAD_DOMAINS)}"
             )
 
-        # 解析域名到 IP 并校验是否为内网/回环/链路本地地址
-        # 同时校验 DNS rebinding 风险：二次解析确认 IP 一致性
-        try:
-            resolved_ips = socket.getaddrinfo(hostname, None)
-        except socket.gaierror:
-            raise ValueError(f"无法解析域名: {hostname}")
+        return self._resolve_remote_download_ips(hostname)
 
-        for family, _, _, _, sockaddr in resolved_ips:
-            ip_str = sockaddr[0]
-            ip_addr = ipaddress.ip_address(ip_str)
-            if ip_addr.is_private or ip_addr.is_loopback or ip_addr.is_link_local or ip_addr.is_reserved:
-                raise ValueError(
-                    f"域名 '{hostname}' 解析到不安全的地址 {ip_str}，"
-                    "禁止访问内网、回环或链路本地地址"
-                )
+    def _download_remote_plugin_via_pinned_ip(
+        self,
+        source_url: str,
+        resolved_ips: List[str],
+        timeout: int,
+    ) -> Tuple[int, Dict[str, str], bytes]:
+        """
+        使用已校验的固定 IP 下载远程插件，避免下载阶段再次触发 DNS 解析。
+        """
+        parsed = urllib.parse.urlparse(source_url)
+        hostname = parsed.hostname or ""
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        request_path = parsed.path or "/"
+        if parsed.query:
+            request_path = f"{request_path}?{parsed.query}"
 
-        # DNS rebinding 防护：二次解析并校验 IP 未发生变化
-        try:
-            second_resolved = socket.getaddrinfo(hostname, None)
-            second_ips = {sockaddr[0] for _, _, _, _, sockaddr in second_resolved}
-            first_ips = {sockaddr[0] for _, _, _, _, sockaddr in resolved_ips}
-            if second_ips != first_ips:
-                raise ValueError(
-                    f"域名 '{hostname}' DNS 解析结果不一致 (可能存在 DNS rebinding 攻击)，"
-                    f"首次: {first_ips}, 二次: {second_ips}"
-                )
-        except socket.gaierror:
-            raise ValueError(f"DNS rebinding 校验时无法解析域名: {hostname}")
+        last_error: Optional[Exception] = None
+        for resolved_ip in resolved_ips:
+            socket_obj: Optional[socket.socket] = None
+            response: Optional[http.client.HTTPResponse] = None
+            try:
+                raw_socket = socket.create_connection((resolved_ip, port), timeout=timeout)
+                raw_socket.settimeout(timeout)
+                socket_obj = raw_socket
+                if parsed.scheme == "https":
+                    ssl_context = ssl.create_default_context()
+                    socket_obj = ssl_context.wrap_socket(raw_socket, server_hostname=hostname)
+                    socket_obj.settimeout(timeout)
+
+                request_bytes = (
+                    f"GET {request_path} HTTP/1.1\r\n"
+                    f"Host: {hostname}\r\n"
+                    "User-Agent: OpenAwAPluginManager/1.0\r\n"
+                    "Accept: application/zip, application/octet-stream\r\n"
+                    "Connection: close\r\n\r\n"
+                ).encode("ascii")
+                socket_obj.sendall(request_bytes)
+
+                response = http.client.HTTPResponse(socket_obj)
+                response.begin()
+
+                content_length = response.getheader("Content-Length")
+                if content_length is not None:
+                    try:
+                        if int(content_length) > self.MAX_DOWNLOAD_SIZE:
+                            raise ValueError(
+                                f"插件包体积 ({content_length} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
+                            )
+                    except ValueError:
+                        raise
+
+                content = response.read(self.MAX_DOWNLOAD_SIZE + 1)
+                if len(content) > self.MAX_DOWNLOAD_SIZE:
+                    raise ValueError(
+                        f"插件包体积 ({len(content)} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
+                    )
+
+                headers = {key.lower(): value for key, value in response.getheaders()}
+                return response.status, headers, content
+            except Exception as exc:
+                last_error = exc
+                continue
+            finally:
+                if response is not None:
+                    response.close()
+                if socket_obj is not None:
+                    socket_obj.close()
+
+        if last_error is None:
+            raise ValueError("远程插件下载失败")
+        raise ValueError(f"远程插件下载失败: {last_error}") from last_error
 
     def register_plugin_from_url(
         self,
@@ -662,33 +762,44 @@ class PluginManager:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Invalid remote plugin URL")
 
-        # SSRF 防护：校验域名白名单与 IP 安全性
-        self._validate_remote_url(source_url)
+        # SSRF 防护：校验域名白名单与 IP 安全性，并在下载阶段固定到已验证 IP。
+        resolved_ips = self._validate_remote_url(source_url)
 
-        response = httpx.get(
-            source_url,
-            timeout=timeout,
-            follow_redirects=False,
-            headers={"Accept": "application/zip, application/octet-stream"},
-        )
+        if resolved_ips:
+            status_code, response_headers, response_content = self._download_remote_plugin_via_pinned_ip(
+                source_url=source_url,
+                resolved_ips=resolved_ips,
+                timeout=timeout,
+            )
+        else:
+            response = httpx.get(
+                source_url,
+                timeout=timeout,
+                follow_redirects=False,
+                headers={"Accept": "application/zip, application/octet-stream"},
+            )
+            status_code = response.status_code
+            response_headers = {key.lower(): value for key, value in response.headers.items()}
+            response_content = response.content
+            if response.is_redirect:
+                status_code = 302
 
-        # 拒绝重定向，防止通过重定向绕过域名白名单校验
-        if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
+        if status_code in (301, 302, 303, 307, 308):
             raise ValueError("远程插件下载不允许重定向，请提供直链地址")
+        if status_code >= 400:
+            raise ValueError(f"远程插件下载失败，HTTP 状态码: {status_code}")
 
-        response.raise_for_status()
-
-        if not response.content:
+        if not response_content:
             raise ValueError("Remote plugin package is empty")
 
         # 校验下载体积限制
-        if len(response.content) > self.MAX_DOWNLOAD_SIZE:
+        if len(response_content) > self.MAX_DOWNLOAD_SIZE:
             raise ValueError(
-                f"插件包体积 ({len(response.content)} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
+                f"插件包体积 ({len(response_content)} bytes) 超过限制 ({self.MAX_DOWNLOAD_SIZE} bytes)"
             )
 
         # 校验内容类型
-        content_type = response.headers.get("content-type", "")
+        content_type = response_headers.get("content-type", "")
         allowed_types = {"application/zip", "application/octet-stream", "application/x-zip-compressed"}
         if content_type and not any(t in content_type for t in allowed_types):
             raise ValueError(f"不支持的内容类型: {content_type}，仅允许 ZIP 文件")
@@ -697,7 +808,7 @@ class PluginManager:
         extract_dir = self._create_source_extract_dir(source_name)
 
         try:
-            self._safe_extract_zip_bytes(response.content, extract_dir)
+            self._safe_extract_zip_bytes(response_content, extract_dir)
             discovered = self._discover_plugins_in_directory(extract_dir)
             normalized_limits = self._normalize_resource_limits(resource_limits)
             for plugin_info in discovered:

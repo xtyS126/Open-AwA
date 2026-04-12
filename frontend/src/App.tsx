@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import React, { useEffect, Suspense } from 'react'
+import React, { Suspense, useEffect, useState } from 'react'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
@@ -42,6 +42,7 @@ function NavigationLogger() {
 function App() {
   const { isInitialized, setInitialized, setAuth, logout } = useAuthStore()
   const { theme } = useThemeStore()
+  const [authWarning, setAuthWarning] = useState<string | null>(null)
 
   useEffect(() => {
     initializeApp()
@@ -64,35 +65,35 @@ function App() {
       message: 'app initialization started',
     })
 
-    const token = sessionStorage.getItem('token')
-    const username = sessionStorage.getItem('username')
-    if (token) {
-      try {
-        await authAPI.getMe()
-        appLogger.info({
-          event: 'app_initialize',
-          module: 'app',
-          action: 'token_validate',
-          status: 'success',
-          message: 'existing token validated',
-        })
-        setAuth(username ? { username } : { username: 'user' }, token)
-        setInitialized(true)
-        return
-      } catch (error) {
-        appLogger.warning({
-          event: 'app_initialize',
-          module: 'app',
-          action: 'token_validate',
-          status: 'failure',
-          message: 'token validation failed, clear local auth',
-          extra: { error: error instanceof Error ? error.message : String(error) },
-        })
-        logout()
-      }
+    try {
+      const meResponse = await authAPI.getMe()
+      appLogger.info({
+        event: 'app_initialize',
+        module: 'app',
+        action: 'session_validate',
+        status: 'success',
+        message: 'existing session validated',
+      })
+      setAuth({ username: meResponse.data?.username || 'user' }, null)
+      setAuthWarning(null)
+      setInitialized(true)
+      return
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      logout()
+      setAuthWarning(status && status !== 401 ? '登录状态校验失败，请稍后刷新页面重试。' : '当前未检测到有效登录状态。')
+      appLogger.warning({
+        event: 'app_initialize',
+        module: 'app',
+        action: 'session_validate',
+        status: 'failure',
+        message: 'session validation failed',
+        extra: { error: error instanceof Error ? error.message : String(error), status_code: status },
+      })
     }
 
-    if (import.meta.env.DEV) {
+    const allowDevAutoLogin = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_AUTO_LOGIN === 'true'
+    if (allowDevAutoLogin) {
       // 仅在环境变量中显式配置了测试凭证时才执行自动登录，避免硬编码敏感信息
       const testUsername = import.meta.env.VITE_TEST_USERNAME
       const testPassword = import.meta.env.VITE_TEST_PASSWORD
@@ -105,7 +106,8 @@ function App() {
           }
 
           const loginResponse = await authAPI.login(testUsername, testPassword)
-          setAuth({ username: testUsername }, loginResponse.data.access_token)
+          setAuth({ username: testUsername }, loginResponse.data.access_token || null)
+          setAuthWarning(null)
           appLogger.info({
             event: 'app_initialize',
             module: 'app',
@@ -154,6 +156,7 @@ function App() {
       <div className="app-container">
         <Sidebar />
         <main className="main-content">
+          {authWarning && <div className="loading-fallback">{authWarning}</div>}
           <Suspense fallback={<div className="loading-fallback">加载中...</div>}>
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />

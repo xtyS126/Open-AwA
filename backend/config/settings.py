@@ -11,6 +11,14 @@ import os
 import secrets
 
 
+def is_production_environment(environment: Optional[str]) -> bool:
+    """
+    统一识别生产环境别名，避免因环境值写法差异绕过安全检查。
+    """
+    normalized = str(environment or "development").strip().lower()
+    return normalized in {"production", "prod", "live"}
+
+
 def generate_secret_key() -> str:
     """
     生成或加载 SECRET_KEY。
@@ -22,7 +30,7 @@ def generate_secret_key() -> str:
     env_key = os.getenv("SECRET_KEY")
     environment = os.getenv("ENVIRONMENT", "development")
     
-    if environment == "production" and not env_key:
+    if is_production_environment(environment) and not env_key:
         logger.error("SECRET_KEY environment variable is required in production environment")
         raise ValueError("SECRET_KEY environment variable is required in production environment")
     

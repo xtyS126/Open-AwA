@@ -111,7 +111,7 @@ describe('ChatPage Model Selector', () => {
       })
     })
 
-    it('should restore saved model from localStorage', async () => {
+    it('should ignore insecure localStorage persisted model selection', async () => {
       localStorage.setItem('selected_model', 'anthropic:claude-3.5-sonnet')
 
       const mockConfigs = {
@@ -128,11 +128,11 @@ describe('ChatPage Model Selector', () => {
 
       await waitFor(() => {
         const select = screen.getAllByRole('combobox')[1] as HTMLSelectElement
-        expect(select.value).toBe('anthropic:claude-3.5-sonnet')
+        expect(select.value).toBe('openai:gpt-4')
       })
     })
 
-    it('should save selected model to localStorage', async () => {
+    it('should not persist selected model into localStorage', async () => {
       const mockConfigs = {
         data: {
           providers: [
@@ -155,7 +155,7 @@ describe('ChatPage Model Selector', () => {
       fireEvent.change(modelSelect, { target: { value: 'anthropic:claude-3.5-sonnet' } })
 
       await waitFor(() => {
-        expect(localStorage.getItem('selected_model')).toBe('anthropic:claude-3.5-sonnet')
+        expect(localStorage.getItem('selected_model')).toBeNull()
       })
     })
   })

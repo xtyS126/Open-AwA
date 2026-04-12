@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from loguru import logger
 
+from config.security import decrypt_secret_value, encrypt_secret_value
+
 
 DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com"
 DEFAULT_QR_BASE_URL = DEFAULT_BASE_URL
@@ -36,7 +38,7 @@ def save_binding(db, user_id: str, config: "WeixinRuntimeConfig") -> None:
     binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == str(user_id)).first()
     if binding:
         binding.weixin_account_id = config.account_id
-        binding.token = config.token
+        binding.token = encrypt_secret_value(config.token)
         binding.base_url = config.base_url
         binding.bot_type = config.bot_type
         binding.channel_version = config.channel_version
@@ -46,7 +48,7 @@ def save_binding(db, user_id: str, config: "WeixinRuntimeConfig") -> None:
         binding = WeixinBinding(
             user_id=str(user_id),
             weixin_account_id=config.account_id,
-            token=config.token,
+            token=encrypt_secret_value(config.token),
             base_url=config.base_url,
             bot_type=config.bot_type,
             channel_version=config.channel_version,
@@ -68,7 +70,7 @@ def load_binding(db, user_id: str) -> Optional["WeixinRuntimeConfig"]:
         return None
     return WeixinRuntimeConfig(
         account_id=binding.weixin_account_id or "",
-        token=binding.token or "",
+        token=decrypt_secret_value(binding.token or ""),
         base_url=binding.base_url or DEFAULT_BASE_URL,
         bot_type=binding.bot_type or DEFAULT_BOT_TYPE,
         channel_version=binding.channel_version or DEFAULT_CHANNEL_VERSION,
@@ -167,7 +169,7 @@ class WeixinSkillAdapter:
             runtime = {}
 
         account_id = self._pick_value(section, runtime, "account_id", "accountId")
-        token = self._pick_value(section, runtime, "token")
+        token = decrypt_secret_value(str(self._pick_value(section, runtime, "token") or ""))
         base_url = self._pick_value(section, runtime, "base_url", "baseUrl") or DEFAULT_BASE_URL
         bot_type = str(self._pick_value(section, runtime, "bot_type", "botType") or DEFAULT_BOT_TYPE)
         channel_version = str(self._pick_value(section, runtime, "channel_version", "channelVersion") or DEFAULT_CHANNEL_VERSION)
@@ -307,6 +309,27 @@ class WeixinSkillAdapter:
             )
             return self._error_result(action=action, started=started, runtime=runtime, error=wrapped)
 
+    async def send_text_message(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        对外暴露发送文本消息的公共方法，便于业务层在不经过 skill execute 包装时直接复用。
+        """
+        return await self._send_message(config, payload)
+
+    async def get_updates(
+        self,
+        config: WeixinRuntimeConfig,
+        cursor: str = "",
+        persist_cursor: bool = True
+    ) -> Dict[str, Any]:
+        """
+        对外暴露拉取消息的公共方法。
+        persist_cursor=False 时仅返回新游标，不会立即写盘，便于上层在完成整批处理后再推进游标。
+        """
+        payload: Dict[str, Any] = {}
+        if str(cursor or "").strip():
+            payload["cursor"] = str(cursor).strip()
+        return await self._get_updates(config, payload, persist_cursor=persist_cursor)
+
     async def _send_message(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理send、message相关逻辑，并为调用方返回对应结果。
@@ -364,7 +387,12 @@ class WeixinSkillAdapter:
             "state": {"context_token_source": "cache" if not payload.get("context_token") and not payload.get("contextToken") else "payload"}
         }
 
-    async def _get_updates(self, config: WeixinRuntimeConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def _get_updates(
+        self,
+        config: WeixinRuntimeConfig,
+        payload: Dict[str, Any],
+        persist_cursor: bool = True
+    ) -> Dict[str, Any]:
         """
         处理get、updates相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -386,7 +414,7 @@ class WeixinSkillAdapter:
             self._pause_session(config.account_id)
 
         next_buf = str(response.get("get_updates_buf") or "").strip()
-        if next_buf:
+        if next_buf and persist_cursor:
             self._save_get_updates_buf(config.account_id, next_buf)
 
         stored_context_tokens = 0
@@ -698,6 +726,58 @@ class WeixinSkillAdapter:
         safe_account_id = self._sanitize_account_id(account_id)
         return os.path.join(self._accounts_state_dir(), f"{safe_account_id}.context-tokens.json")
 
+    def _auto_reply_state_file_path(self, account_id: str) -> str:
+        """
+        自动回复运行时状态单独存放，避免与游标文件互相覆盖。
+        """
+        safe_account_id = self._sanitize_account_id(account_id)
+        return os.path.join(self._accounts_state_dir(), f"{safe_account_id}.auto-reply.json")
+
+    def load_cursor(self, account_id: str) -> str:
+        """
+        读取持久化轮询游标，供自动回复运行时在重启后恢复处理进度。
+        """
+        return self._load_get_updates_buf(account_id)
+
+    def save_cursor(self, account_id: str, cursor: str) -> None:
+        """
+        保存轮询游标。
+        """
+        self._save_get_updates_buf(account_id, cursor)
+
+    def clear_cursor(self, account_id: str) -> None:
+        """
+        清理轮询游标文件，通常在解绑账号时调用。
+        """
+        self._delete_file_if_exists(self._sync_buf_file_path(account_id))
+
+    def load_auto_reply_state(self, account_id: str) -> Dict[str, Any]:
+        """
+        读取自动回复运行时状态。
+        """
+        return self._read_json_file(self._auto_reply_state_file_path(account_id))
+
+    def save_auto_reply_state(self, account_id: str, state: Dict[str, Any]) -> None:
+        """
+        保存自动回复运行时状态。
+        """
+        self._write_json_file(self._auto_reply_state_file_path(account_id), state)
+
+    def clear_auto_reply_state(self, account_id: str) -> None:
+        """
+        清理自动回复运行时状态文件。
+        """
+        self._delete_file_if_exists(self._auto_reply_state_file_path(account_id))
+
+    def clear_account_state(self, account_id: str) -> None:
+        """
+        一次性清理账号对应的游标、上下文令牌和自动回复状态。
+        解绑账号后保留这些历史状态只会引入重复回复风险，因此直接删除更安全。
+        """
+        self._delete_file_if_exists(self._sync_buf_file_path(account_id))
+        self._delete_file_if_exists(self._context_tokens_file_path(account_id))
+        self._delete_file_if_exists(self._auto_reply_state_file_path(account_id))
+
     def _load_get_updates_buf(self, account_id: str) -> str:
         """
         处理load、get、updates、buf相关逻辑，并为调用方返回对应结果。
@@ -836,6 +916,16 @@ class WeixinSkillAdapter:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False)
+
+    @staticmethod
+    def _delete_file_if_exists(file_path: str) -> None:
+        """
+        删除状态文件时忽略文件不存在场景，避免清理流程因为历史状态缺失而失败。
+        """
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            return
 
     @staticmethod
     def _pick_value(primary: Dict[str, Any], fallback: Dict[str, Any], *keys: str) -> Any:

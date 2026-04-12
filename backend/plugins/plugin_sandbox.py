@@ -83,6 +83,20 @@ class PluginSandbox:
             f"({self._memory_bytes}B), cpu_limit={cpu_limit}"
         )
 
+    def _run_sync_with_limits(self, method_callable, kwargs: Dict[str, Any]):
+        """
+        在统一的受限执行上下文中运行同步插件方法。
+        """
+        _apply_resource_limits(self._memory_bytes, self._cpu_time_seconds)
+        return method_callable(**kwargs)
+
+    def _run_async_with_limits(self, method_callable, kwargs: Dict[str, Any]):
+        """
+        在独立线程事件循环中运行异步插件方法，尽量复用与同步路径一致的资源限制策略。
+        """
+        _apply_resource_limits(self._memory_bytes, self._cpu_time_seconds)
+        return asyncio.run(method_callable(**kwargs))
+
     async def execute_plugin(
         self,
         plugin_instance: BasePlugin,
@@ -112,16 +126,12 @@ class PluginSandbox:
         try:
             if asyncio.iscoroutinefunction(method_callable):
                 result = await asyncio.wait_for(
-                    method_callable(**kwargs),
+                    asyncio.to_thread(self._run_async_with_limits, method_callable, kwargs),
                     timeout=self.timeout
                 )
             else:
-                # 同步方法在线程中执行，先应用资源限制再调用
-                def _run_with_limits():
-                    _apply_resource_limits(self._memory_bytes, self._cpu_time_seconds)
-                    return method_callable(**kwargs)
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(_run_with_limits),
+                    asyncio.to_thread(self._run_sync_with_limits, method_callable, kwargs),
                     timeout=self.timeout
                 )
 

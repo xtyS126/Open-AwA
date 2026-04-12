@@ -95,6 +95,7 @@
   margin-top: 24px;
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .communication-health-result {
@@ -190,4 +191,14 @@
   margin-top: 12px;
   font-size: 14px;
   color: var(--color-text);
+}
+
+.communication-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 16px;
+}
+
+.communication-status-grid .communication-qr-status {
+  margin-top: 0;
 }
