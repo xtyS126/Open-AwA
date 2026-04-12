@@ -187,7 +187,7 @@ async def request_context_middleware(request: Request, call_next):
         request_id=request_id,
         http_method=method,
         path=path,
-    ).info("request started")
+    ).debug("request started")
 
     start_time = time.monotonic()
 
@@ -207,7 +207,7 @@ async def request_context_middleware(request: Request, call_next):
             path=path,
             status=response.status_code,
             duration_ms=duration_ms,
-        ).info("request completed")
+        ).info(f"{method} {path} -> {response.status_code} ({duration_ms}ms) rid={request_id}")
         return response
     except Exception as exc:
         duration_ms = round((time.monotonic() - start_time) * 1000, 2)
@@ -380,7 +380,7 @@ def run_server() -> None:
     port = get_server_port()
     logger.bind(event="server_starting", module="main", host=host, port=port).info("starting backend server")
     try:
-        uvicorn.run(app, host=host, port=port)
+        uvicorn.run(app, host=host, port=port, access_log=False, log_level="warning")
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             message = f"后端服务启动失败：端口 {port} 已被占用，请关闭占用进程或通过 BACKEND_PORT/PORT 更换端口后重试。"

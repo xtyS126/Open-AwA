@@ -365,35 +365,14 @@ function CommunicationPage() {
   }
 
   const handleUnbind = async () => {
-    appLogger.info({
-      event: 'weixin_unbind',
-      module: 'communication',
-      action: 'unbind',
-      message: 'unbind weixin',
-    })
     setUnbinding(true)
     try {
       await weixinAPI.deleteBinding()
       setBindingInfo(null)
       setAutoReplyProcessResult(null)
       showTimedMessage('success', '微信绑定已解除')
-      appLogger.info({
-        event: 'weixin_unbind_success',
-        module: 'communication',
-        action: 'unbind',
-        status: 'success',
-        message: 'weixin unbind success',
-      })
-    } catch (error) {
+    } catch {
       showTimedMessage('error', '解除绑定失败')
-      appLogger.error({
-        event: 'weixin_unbind_failed',
-        module: 'communication',
-        action: 'unbind',
-        status: 'failure',
-        message: 'weixin unbind failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setUnbinding(false)
       void loadAutoReplyStatus({ silent: true })
@@ -586,16 +565,6 @@ function CommunicationPage() {
   }
 
   const handleStartQrLogin = async () => {
-    appLogger.info({
-      event: 'weixin_qr_login_start',
-      module: 'communication',
-      action: 'start_qr_login',
-      message: 'start weixin qr login',
-      extra: {
-        base_url: weixinConfig.base_url,
-        timeout_seconds: weixinConfig.timeout_seconds,
-      },
-    })
     setStartingQrLogin(true)
     clearQrPolling()
     const pollingGeneration = pollGenerationRef.current
@@ -629,42 +598,15 @@ function CommunicationPage() {
       if (shouldContinuePolling && pollingGeneration === pollGenerationRef.current) {
         scheduleNextQrPoll(response.data.session_key, pollingGeneration)
       }
-      appLogger.info({
-        event: 'weixin_qr_login_success',
-        module: 'communication',
-        action: 'qr_code_generated',
-        message: 'qr code generated',
-        extra: {
-          session_key: response.data.session_key,
-          qr_image_ready: qrImageReady,
-        },
-      })
     } catch (error) {
       setMessage({ type: 'error', text: resolveApiErrorMessage(error, '获取二维码失败，请检查配置后重试') })
       clearQrPolling()
-      appLogger.error({
-        event: 'weixin_qr_login_failed',
-        module: 'communication',
-        action: 'start_qr_login',
-        status: 'failure',
-        message: '获取二维码失败',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setStartingQrLogin(false)
     }
   }
 
   const handleCancelQrLogin = async () => {
-    appLogger.info({
-      event: 'weixin_qr_login_cancel',
-      module: 'communication',
-      action: 'cancel_qr_login',
-      message: 'cancel qr login',
-      extra: {
-        has_session_key: Boolean(qrSessionKey),
-      },
-    })
     if (!qrSessionKey) {
       clearQrPolling()
       clearQrImage()
@@ -676,16 +618,8 @@ function CommunicationPage() {
     try {
       await weixinAPI.exitQrLogin({ session_key: qrSessionKey, clear_config: false })
       setMessage({ type: 'success', text: '已取消当前扫码登录' })
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '取消扫码登录失败' })
-      appLogger.error({
-        event: 'weixin_qr_login_cancel_failed',
-        module: 'communication',
-        action: 'cancel_qr_login',
-        status: 'failure',
-        message: 'cancel qr login failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       clearQrPolling()
       setQrSessionKey('')
@@ -698,14 +632,11 @@ function CommunicationPage() {
 
   const handleSaveWeixinConfig = async () => {
     appLogger.info({
-      event: 'weixin_config_save',
+      event: 'weixin_config_click',
       module: 'communication',
       action: 'save_config',
-      message: 'save weixin config',
-      extra: {
-        account_id: weixinConfig.account_id,
-        base_url: weixinConfig.base_url,
-      },
+      status: 'start',
+      message: '用户点击保存微信配置',
     })
     const validationMessage = validateWeixinConfig()
     if (validationMessage) {
@@ -716,23 +647,8 @@ function CommunicationPage() {
     try {
       await weixinAPI.saveConfig(weixinConfig)
       showTimedMessage('success', '微信通讯配置保存成功')
-      appLogger.info({
-        event: 'weixin_config_save_success',
-        module: 'communication',
-        action: 'save_config',
-        status: 'success',
-        message: 'weixin config saved',
-      })
-    } catch (error) {
+    } catch {
       showTimedMessage('error', '微信通讯配置保存失败')
-      appLogger.error({
-        event: 'weixin_config_save_failed',
-        module: 'communication',
-        action: 'save_config',
-        status: 'failure',
-        message: 'weixin config save failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setSavingWeixin(false)
     }
@@ -740,10 +656,11 @@ function CommunicationPage() {
 
   const handleTestWeixinConnection = async () => {
     appLogger.info({
-      event: 'weixin_connection_test',
+      event: 'weixin_config_click',
       module: 'communication',
       action: 'test_connection',
-      message: 'test weixin connection',
+      status: 'start',
+      message: '用户点击测试连接',
     })
     const validationMessage = validateWeixinConfig()
     if (validationMessage) {
@@ -757,33 +674,11 @@ function CommunicationPage() {
       setWeixinHealthResult(response.data)
       if (response.data.ok) {
         showTimedMessage('success', '测试连接成功！')
-        appLogger.info({
-          event: 'weixin_connection_test_success',
-          module: 'communication',
-          action: 'test_connection',
-          status: 'success',
-          message: 'weixin connection test success',
-        })
       } else {
         showTimedMessage('error', '测试连接失败，请查看下方详细结果')
-        appLogger.warning({
-          event: 'weixin_connection_test_failed',
-          module: 'communication',
-          action: 'test_connection',
-          status: 'failed',
-          message: 'weixin connection test failed',
-        })
       }
-    } catch (error) {
+    } catch {
       showTimedMessage('error', '测试连接请求失败')
-      appLogger.error({
-        event: 'weixin_connection_test_error',
-        module: 'communication',
-        action: 'test_connection',
-        status: 'error',
-        message: 'weixin connection test error',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setTestingWeixin(false)
     }
@@ -810,10 +705,11 @@ function CommunicationPage() {
 
   const handleStartAutoReply = async () => {
     appLogger.info({
-      event: 'weixin_auto_reply_start',
+      event: 'weixin_auto_reply_click',
       module: 'communication',
       action: 'start_auto_reply',
-      message: 'start auto reply',
+      status: 'start',
+      message: '用户点击启动自动回复',
     })
     if (!ensureAutoReplyReady('启动自动回复')) {
       return
@@ -822,25 +718,16 @@ function CommunicationPage() {
     try {
       const response = await weixinAPI.startAutoReply()
       setAutoReplyStatus(response.data)
-      showTimedMessage('success', '自动回复已启动')
       appLogger.info({
-        event: 'weixin_auto_reply_start_success',
+        event: 'weixin_auto_reply_click',
         module: 'communication',
         action: 'start_auto_reply',
         status: 'success',
-        message: 'auto reply started',
-        extra: { auto_reply_running: response.data.auto_reply_running },
+        message: '自动回复启动成功',
       })
+      showTimedMessage('success', '自动回复已启动')
     } catch (error) {
       showTimedMessage('error', getApiErrorDetail(error, '启动自动回复失败'))
-      appLogger.error({
-        event: 'weixin_auto_reply_start_failed',
-        module: 'communication',
-        action: 'start_auto_reply',
-        status: 'failure',
-        message: 'auto reply start failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setAutoReplyAction(null)
       void loadAutoReplyStatus({ silent: true })
@@ -849,34 +736,26 @@ function CommunicationPage() {
 
   const handleStopAutoReply = async () => {
     appLogger.info({
-      event: 'weixin_auto_reply_stop',
+      event: 'weixin_auto_reply_click',
       module: 'communication',
       action: 'stop_auto_reply',
-      message: 'stop auto reply',
+      status: 'start',
+      message: '用户点击停止自动回复',
     })
     setAutoReplyAction('stop')
     try {
       const response = await weixinAPI.stopAutoReply()
       setAutoReplyStatus(response.data)
-      showTimedMessage('success', '自动回复已停止')
       appLogger.info({
-        event: 'weixin_auto_reply_stop_success',
+        event: 'weixin_auto_reply_click',
         module: 'communication',
         action: 'stop_auto_reply',
         status: 'success',
-        message: 'auto reply stopped',
-        extra: { auto_reply_running: response.data.auto_reply_running },
+        message: '自动回复停止成功',
       })
+      showTimedMessage('success', '自动回复已停止')
     } catch (error) {
       showTimedMessage('error', getApiErrorDetail(error, '停止自动回复失败'))
-      appLogger.error({
-        event: 'weixin_auto_reply_stop_failed',
-        module: 'communication',
-        action: 'stop_auto_reply',
-        status: 'failure',
-        message: 'auto reply stop failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setAutoReplyAction(null)
       void loadAutoReplyStatus({ silent: true })
@@ -885,10 +764,11 @@ function CommunicationPage() {
 
   const handleRestartAutoReply = async () => {
     appLogger.info({
-      event: 'weixin_auto_reply_restart',
+      event: 'weixin_auto_reply_click',
       module: 'communication',
       action: 'restart_auto_reply',
-      message: 'restart auto reply',
+      status: 'start',
+      message: '用户点击重启自动回复',
     })
     if (!ensureAutoReplyReady('重启自动回复')) {
       return
@@ -897,25 +777,16 @@ function CommunicationPage() {
     try {
       const response = await weixinAPI.restartAutoReply()
       setAutoReplyStatus(response.data)
-      showTimedMessage('success', '自动回复已重启')
       appLogger.info({
-        event: 'weixin_auto_reply_restart_success',
+        event: 'weixin_auto_reply_click',
         module: 'communication',
         action: 'restart_auto_reply',
         status: 'success',
-        message: 'auto reply restarted',
-        extra: { auto_reply_running: response.data.auto_reply_running },
+        message: '自动回复重启成功',
       })
+      showTimedMessage('success', '自动回复已重启')
     } catch (error) {
       showTimedMessage('error', getApiErrorDetail(error, '重启自动回复失败'))
-      appLogger.error({
-        event: 'weixin_auto_reply_restart_failed',
-        module: 'communication',
-        action: 'restart_auto_reply',
-        status: 'failure',
-        message: 'auto reply restart failed',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setAutoReplyAction(null)
       void loadAutoReplyStatus({ silent: true })
@@ -924,10 +795,11 @@ function CommunicationPage() {
 
   const handleProcessAutoReplyOnce = async () => {
     appLogger.info({
-      event: 'weixin_auto_reply_process_once',
+      event: 'weixin_auto_reply_click',
       module: 'communication',
       action: 'process_once',
-      message: 'process auto reply once',
+      status: 'start',
+      message: '用户点击单次处理',
     })
     if (!ensureAutoReplyReady('执行单次处理')) {
       return
@@ -941,38 +813,11 @@ function CommunicationPage() {
           'success',
           `单次处理完成：成功 ${response.data.processed} 条，跳过 ${response.data.skipped} 条，重复 ${response.data.duplicates} 条`
         )
-        appLogger.info({
-          event: 'weixin_auto_reply_process_once_success',
-          module: 'communication',
-          action: 'process_once',
-          status: 'success',
-          message: 'auto reply processed once',
-          extra: {
-            processed: response.data.processed,
-            skipped: response.data.skipped,
-            duplicates: response.data.duplicates,
-          },
-        })
       } else {
         showTimedMessage('error', response.data.error || '单次处理失败')
-        appLogger.warning({
-          event: 'weixin_auto_reply_process_once_failed',
-          module: 'communication',
-          action: 'process_once',
-          status: 'failed',
-          message: 'auto reply process once failed',
-        })
       }
     } catch (error) {
       showTimedMessage('error', getApiErrorDetail(error, '执行单次处理失败'))
-      appLogger.error({
-        event: 'weixin_auto_reply_process_once_error',
-        module: 'communication',
-        action: 'process_once',
-        status: 'error',
-        message: 'auto reply process once error',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
     } finally {
       setAutoReplyAction(null)
       void loadAutoReplyStatus({ silent: true })

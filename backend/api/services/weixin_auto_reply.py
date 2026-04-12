@@ -459,6 +459,13 @@ class WeixinAutoReplyService:
         now_iso = _utcnow_iso()
         state = self._load_state(runtime.account_id)
 
+        logger.bind(
+            module="weixin.auto_reply",
+            user_id=user_id,
+            account_id=runtime.account_id,
+            phase="poll_start",
+        ).info("开始拉取微信入站消息")
+
         try:
             updates = await self.adapter.get_updates(
                 runtime,
@@ -466,6 +473,13 @@ class WeixinAutoReplyService:
                 persist_cursor=False,
             )
         except WeixinAdapterError as exc:
+            logger.bind(
+                module="weixin.auto_reply",
+                user_id=user_id,
+                account_id=runtime.account_id,
+                phase="poll_error",
+                error_code=exc.code,
+            ).warning(f"拉取消息失败: {exc.message}")
             state["last_poll_at"] = now_iso
             state["last_poll_status"] = "timeout" if exc.code == "WEIXIN_TIMEOUT" else "error"
             state["last_error"] = exc.message
@@ -484,6 +498,15 @@ class WeixinAutoReplyService:
 
         raw_messages = updates.get("response", {}).get("msgs") or []
         next_cursor = _safe_text(updates.get("cursor"))
+
+        logger.bind(
+            module="weixin.auto_reply",
+            user_id=user_id,
+            account_id=runtime.account_id,
+            phase="poll_received",
+            message_count=len(raw_messages),
+        ).info(f"收到 {len(raw_messages)} 条入站消息")
+
         processed_messages = self._get_processed_messages(state)
         sent_count = 0
         skipped_count = 0
@@ -518,8 +541,25 @@ class WeixinAutoReplyService:
                     continue
 
                 try:
+                    logger.bind(
+                        module="weixin.auto_reply",
+                        user_id=user_id,
+                        phase="ai_generate",
+                        message_id=inbound["message_id"],
+                        from_user_id=inbound["from_user_id"],
+                    ).info("开始调用 AI 生成回复")
+
                     ai_result = await self.ai_reply_generator(db, binding, inbound)
                     reply_text = build_weixin_reply_text(ai_result)
+
+                    logger.bind(
+                        module="weixin.auto_reply",
+                        user_id=user_id,
+                        phase="send_reply",
+                        message_id=inbound["message_id"],
+                        reply_length=len(reply_text),
+                    ).info("开始发送微信回复")
+
                     send_result = await self.adapter.send_text_message(
                         runtime,
                         {
@@ -529,6 +569,13 @@ class WeixinAutoReplyService:
                         },
                     )
                     sent_count += 1
+                    logger.bind(
+                        module="weixin.auto_reply",
+                        user_id=user_id,
+                        phase="send_success",
+                        message_id=inbound["message_id"],
+                        to_user_id=inbound["from_user_id"],
+                    ).info("微信回复发送成功")
                     state["last_reply_at"] = now_iso
                     state["last_replied_user_id"] = inbound["from_user_id"]
                     state["last_processed_message_id"] = inbound["message_id"]
@@ -541,6 +588,13 @@ class WeixinAutoReplyService:
                     )
                 except Exception as exc:
                     error_count += 1
+                    logger.bind(
+                        module="weixin.auto_reply",
+                        user_id=user_id,
+                        phase="send_error",
+                        message_id=inbound["message_id"],
+                        error_type=type(exc).__name__,
+                    ).error(f"消息处理/发送失败: {exc}")
                     state["last_error"] = str(exc)
                     state["last_error_at"] = now_iso
                     self._record_processed_message(

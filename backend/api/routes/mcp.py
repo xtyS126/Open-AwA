@@ -3,13 +3,13 @@ MCP 相关 API 路由模块，提供 MCP Server 管理、工具发现与调用�
 所有接口均需认证，通过 MCPManager 单例统一管理 Server 连接。
 """
 
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from api.dependencies import get_current_user
-from api.schemas import BaseModel, Field, MCPServerCreate, MCPServerResponse, MCPToolCallCreate, MCPToolCallResponse
+from api.schemas import MCPServerCreate, MCPServerResponse, MCPToolCallCreate, MCPToolCallResponse
 from db.models import User
 from mcp.client import MCPClientError
 from mcp.manager import MCPManager
@@ -152,157 +152,64 @@ async def call_tool(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-class ConfigSnapshotResponse(BaseModel):
-    """配置快照响应"""
-    version: str
-    timestamp: str
-    configs: List[Dict[str, Any]]
-    metadata: Dict[str, Any]
+@router.get("/config/snapshots")
+async def list_config_snapshots(current_user: User = Depends(get_current_user)):
+    """列出 MCP 配置的可用版本快照"""
+    manager = _get_manager()
+    return {"snapshots": manager.list_snapshots()}
 
 
-class ConfigImportRequest(BaseModel):
-    """配置导入请求"""
-    json_content: str = Field(..., description="JSON 格式的配置内容")
-    replace: bool = Field(default=False, description="是否替换现有配置，False 时为合并")
-
-
-class ConfigExportResponse(BaseModel):
-    """配置导出响应"""
-    version: str
-    timestamp: str
-    configs: List[Dict[str, Any]]
-
-
-@router.get("/config-center/status")
-async def get_config_center_status(current_user: User = Depends(get_current_user)):
-    """获取 MCP 配置中心状态"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
-    return {
-        "status": "ok",
-        "current_version": center.get_current_version(),
-        "configs_count": len(center.get_configs()),
-        "snapshots_count": len(center.get_snapshots()),
-    }
-
-
-@router.get("/config-center/snapshots")
-async def get_config_snapshots(current_user: User = Depends(get_current_user)):
-    """获取所有配置快照列表"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
-    snapshots = center.get_snapshots()
-    return {
-        "snapshots": [
-            ConfigSnapshotResponse(
-                version=s.version,
-                timestamp=s.timestamp,
-                configs=s.configs,
-                metadata=s.metadata,
-            )
-            for s in snapshots
-        ]
-    }
-
-
-@router.post("/config-center/snapshots")
+@router.post("/config/snapshots")
 async def create_config_snapshot(
-    metadata: Optional[Dict[str, Any]] = None,
     current_user: User = Depends(get_current_user),
 ):
-    """创建配置快照"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
-    snapshot = center.create_snapshot(metadata=metadata)
+    """手动创建 MCP 配置快照"""
+    manager = _get_manager()
+    snapshot_name = manager.create_snapshot(label="manual")
+    if not snapshot_name:
+        raise HTTPException(status_code=400, detail="当前没有可用的配置文件，无法创建快照")
     logger.bind(module="mcp.route", event="snapshot_created", user=current_user.username).info(
-        f"用户 {current_user.username} 创建了配置快照: {snapshot.version}"
+        f"用户 {current_user.username} 创建了 MCP 配置快照: {snapshot_name}"
     )
-    return {
-        "status": "ok",
-        "snapshot": ConfigSnapshotResponse(
-            version=snapshot.version,
-            timestamp=snapshot.timestamp,
-            configs=snapshot.configs,
-            metadata=snapshot.metadata,
-        ),
-    }
+    return {"status": "ok", "snapshot_name": snapshot_name}
 
 
-@router.get("/config-center/snapshots/{version}")
-async def get_config_snapshot(
-    version: str,
-    current_user: User = Depends(get_current_user),
-):
-    """获取指定版本的配置快照"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
-    snapshot = center.get_snapshot(version)
-    if not snapshot:
-        raise HTTPException(status_code=404, detail=f"未找到版本: {version}")
-    return {
-        "snapshot": ConfigSnapshotResponse(
-            version=snapshot.version,
-            timestamp=snapshot.timestamp,
-            configs=snapshot.configs,
-            metadata=snapshot.metadata,
-        )
-    }
-
-
-@router.post("/config-center/rollback/{version}")
+@router.post("/config/rollback/{snapshot_name}")
 async def rollback_config(
-    version: str,
+    snapshot_name: str,
     current_user: User = Depends(get_current_user),
 ):
-    """回滚配置到指定版本"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
-    success = center.rollback_to(version)
-    if not success:
-        raise HTTPException(status_code=404, detail=f"回滚失败，未找到版本: {version}")
-    logger.bind(module="mcp.route", event="config_rollback", user=current_user.username).info(
-        f"用户 {current_user.username} 将配置回滚到版本: {version}"
-    )
-    return {
-        "status": "ok",
-        "message": f"配置已回滚到版本: {version}",
-        "current_version": center.get_current_version(),
-    }
-
-
-@router.get("/config-center/export")
-async def export_configs(current_user: User = Depends(get_current_user)):
-    """导出当前配置"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
-    export_data = center.export_configs()
-    return ConfigExportResponse.model_validate_json(export_data)
-
-
-@router.post("/config-center/import")
-async def import_configs(
-    data: ConfigImportRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """导入配置"""
-    from config.mcp_config_center import get_config_center
-
-    center = get_config_center()
+    """回滚 MCP 配置到指定快照版本"""
+    manager = _get_manager()
     try:
-        count = center.import_configs(data.json_content, replace=data.replace)
-        logger.bind(module="mcp.route", event="configs_imported", user=current_user.username).info(
-            f"用户 {current_user.username} 导入了 {count} 个配置"
+        new_configs = manager.rollback_to_snapshot(snapshot_name)
+        logger.bind(module="mcp.route", event="config_rollback", user=current_user.username).info(
+            f"用户 {current_user.username} 回滚 MCP 配置到: {snapshot_name}"
         )
         return {
             "status": "ok",
-            "message": f"成功导入 {count} 个配置",
-            "current_version": center.get_current_version(),
+            "message": f"已回滚到快照: {snapshot_name}",
+            "server_count": len(new_configs),
         }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"导入失败: {str(e)}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"快照不存在: {snapshot_name}")
+
+
+@router.post("/config/hot-reload")
+async def hot_reload_config(current_user: User = Depends(get_current_user)):
+    """手动触发 MCP 配置热更新检测"""
+    manager = _get_manager()
+    changed = manager.check_hot_reload()
+    if changed:
+        servers = manager.get_all_servers()
+        return {
+            "status": "ok",
+            "reloaded": True,
+            "message": "配置已热更新",
+            "server_count": len(servers),
+        }
+    return {
+        "status": "ok",
+        "reloaded": False,
+        "message": "配置未发生变更",
+    }
