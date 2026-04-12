@@ -483,9 +483,8 @@ class ExecutionLayer:
 
     async def _call_llm_api_stream(self, prompt: str, context: Dict[str, Any]):
         """
-        流式请求模型服务，向外 yield { "content": "...", "reasoning_content": "..." } 结构。
-        """
         通过 LiteLLM 统一调用层发起流式聊天请求。
+        向外 yield { "content": "...", "reasoning_content": "..." } 结构。
         """
         record_hook = context.get("_record_hook")
         started_at = time.perf_counter()

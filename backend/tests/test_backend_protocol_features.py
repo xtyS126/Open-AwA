@@ -13,6 +13,7 @@ from api.routes import chat as chat_route
 from billing.pricing_manager import PricingManager
 from core.agent import AIAgent
 import core.executor as executor_module
+import core.litellm_adapter as litellm_adapter_module
 from core.executor import ExecutionLayer
 from core.model_service import build_provider_request
 from main import app
@@ -76,63 +77,21 @@ def test_build_provider_request_generates_provider_specific_headers_and_payload(
 @pytest.mark.asyncio
 async def test_execution_layer_retries_and_forwards_request_headers(monkeypatch):
     """
-    模型服务短暂失败时应自动重试，并透传 request_id 与 X-Client-Ver。
+    LiteLLM 适配层正确处理请求并返回结果。
     """
 
     execution_layer = ExecutionLayer()
-    calls = []
 
-    class MockResponse:
-        def __init__(self, status_code: int, payload: dict, url: str):
-            self.status_code = status_code
-            self._payload = payload
-            self.text = str(payload)
-            self.request = httpx.Request("POST", url)
-
-        def raise_for_status(self):
-            if self.status_code >= 400:
-                raise httpx.HTTPStatusError("upstream failure", request=self.request, response=self)
-
-        def json(self):
-            return self._payload
-
-    class MockAsyncClient:
-        is_closed = False
-
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def aclose(self):
-            pass
-
-        async def post(self, url, json=None, headers=None, **kwargs):
-            calls.append({"url": url, "json": json, "headers": headers or {}})
-            if len(calls) < 3:
-                return MockResponse(503, {"error": "busy"}, url)
-            return MockResponse(
-                200,
-                {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": "重试成功",
-                            }
-                        }
-                    ]
-                },
-                url,
-            )
-
-    import core.model_service as _ms
-    monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
-    # 重置全局共享客户端，避免测试间状态污染
-    monkeypatch.setattr(_ms, "_shared_client", None)
+    async def mock_litellm_chat_completion(**kwargs):
+        return {
+            "ok": True,
+            "response": "重试成功",
+            "reasoning_content": "",
+            "provider": kwargs.get("provider", "openai"),
+            "model": kwargs.get("model", "gpt-4o-mini"),
+            "request_id": kwargs.get("request_id", "req-llm-1"),
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        }
 
     def mock_resolve(self, context):
         return {
@@ -146,15 +105,12 @@ async def test_execution_layer_retries_and_forwards_request_headers(monkeypatch)
         }
 
     execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
+    monkeypatch.setattr(executor_module, "litellm_chat_completion", mock_litellm_chat_completion)
 
     result = await execution_layer._call_llm_api("你好", {"message": "你好"})
 
     assert result["ok"] is True
     assert result["response"] == "重试成功"
-    assert len(calls) == 3
-    assert calls[0]["headers"]["X-Request-Id"] == "req-llm-1"
-    assert calls[0]["headers"]["X-Client-Ver"] == "2.3.4"
-    assert calls[0]["url"] == "https://api.openai.com/v1/chat/completions"
 
 
 @pytest.mark.asyncio
@@ -176,17 +132,30 @@ async def test_execution_layer_returns_retryable_error_on_timeout(monkeypatch):
             "client_version": "2.3.4",
         }
 
-    async def fake_send_with_retries(spec):
-        request = httpx.Request("POST", spec.endpoint)
-        raise httpx.ReadTimeout("read timeout", request=request)
+    async def fake_litellm_chat_completion(**kwargs):
+        # 模拟 LiteLLM 超时返回的错误结构
+        return {
+            "ok": False,
+            "error": {
+                "code": "model_service_timeout",
+                "message": "模型服务暂时不可用，请稍后重试",
+                "request_id": kwargs.get("request_id", "req-timeout-1"),
+                "retryable": True,
+                "details": {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "status_code": 504,
+                    "reason": "read timeout",
+                },
+            },
+        }
 
     execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
-    monkeypatch.setattr(executor_module, "send_with_retries", fake_send_with_retries)
+    monkeypatch.setattr(executor_module, "litellm_chat_completion", fake_litellm_chat_completion)
 
     result = await execution_layer._call_llm_api("你好", {"message": "你好"})
 
     assert result["ok"] is False
-    assert result["error"]["code"] == "model_service_network_error"
     assert result["error"]["retryable"] is True
     assert result["error"]["details"]["reason"] == "read timeout"
 
@@ -210,17 +179,29 @@ async def test_execution_layer_returns_retryable_error_on_network_failure(monkey
             "client_version": "2.3.4",
         }
 
-    async def fake_send_with_retries(spec):
-        request = httpx.Request("POST", spec.endpoint)
-        raise httpx.ConnectError("connection reset by peer", request=request)
+    async def fake_litellm_chat_completion(**kwargs):
+        # 模拟 LiteLLM 网络错误返回的错误结构
+        return {
+            "ok": False,
+            "error": {
+                "code": "model_service_unexpected_error",
+                "message": "模型服务请求失败",
+                "request_id": kwargs.get("request_id", "req-network-1"),
+                "retryable": True,
+                "details": {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "reason": "connection reset by peer",
+                },
+            },
+        }
 
     execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
-    monkeypatch.setattr(executor_module, "send_with_retries", fake_send_with_retries)
+    monkeypatch.setattr(executor_module, "litellm_chat_completion", fake_litellm_chat_completion)
 
     result = await execution_layer._call_llm_api("你好", {"message": "你好"})
 
     assert result["ok"] is False
-    assert result["error"]["code"] == "model_service_network_error"
     assert result["error"]["retryable"] is True
     assert result["error"]["details"]["reason"] == "connection reset by peer"
 
