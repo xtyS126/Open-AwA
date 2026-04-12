@@ -262,3 +262,89 @@
   color: var(--color-text-secondary);
   margin-top: 4px;
 }
+
+/* 预算状态条 */
+.budget-bar {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+}
+
+.budget-bar.budget-warning {
+  background: var(--color-warning-soft-bg);
+}
+
+.budget-bar.budget-exceeded {
+  background: var(--color-error-soft-bg);
+}
+
+.budget-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.budget-pct {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.budget-progress {
+  height: 6px;
+  background: var(--color-bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.budget-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.budget-warning .budget-progress-fill {
+  background: var(--color-warning-strong);
+}
+
+.budget-exceeded .budget-progress-fill {
+  background: var(--color-error);
+}
+
+/* 内容类型分布 */
+.content-type-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.content-type-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.content-type-name {
+  font-weight: 500;
+  color: var(--color-text);
+  min-width: 100px;
+}
+
+.content-type-tokens {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.content-type-cost {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-primary);
+}

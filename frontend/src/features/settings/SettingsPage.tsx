@@ -217,6 +217,7 @@ function SettingsPage() {
     loadPrompts()
     if (activeTab === 'general') {
       loadGlobalModelOptions()
+      loadModelsData()
     }
     if (activeTab === 'billing') {
       loadBillingData()
@@ -1183,10 +1184,131 @@ function SettingsPage() {
                 </select>
               )}
             </div>
+
+            {/* AI参数配置 - 从模型管理移入通用设置 */}
+            {configurations.length > 0 && (
+              <div className={styles['model-param-panel']} style={{ marginTop: '24px' }}>
+                <h3>AI参数配置</h3>
+                <p className={styles['section-desc']}>为选定模型调整生成参数，影响输出风格和长度。</p>
+                <div className={styles['model-param-grid']}>
+                  <div className={styles['form-group']}>
+                    <label>配置模型</label>
+                    <select
+                      value={selectedModelConfigId ?? ''}
+                      onChange={(e) => {
+                        const id = Number(e.target.value)
+                        if (id) handleSelectModelConfig(id)
+                      }}
+                    >
+                      <option value="">选择模型</option>
+                      {configurations.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.display_name || c.model} ({c.provider})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className={styles['form-group']}>
+                    <label>
+                      温度 (Temperature): {editingTemperature.toFixed(1)}
+                    </label>
+                    <div className={styles['slider-row']}>
+                      <input
+                        type="range"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={editingTemperature}
+                        onChange={(e) => setEditingTemperature(parseFloat(e.target.value))}
+                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
+                        className={styles['param-slider']}
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={editingTemperature}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value)
+                          if (!isNaN(val) && val >= 0 && val <= 2) setEditingTemperature(val)
+                        }}
+                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
+                        className={styles['param-number-input']}
+                      />
+                    </div>
+                    {modelCapabilities?.capabilities.supports_temperature === false && (
+                      <span className={styles['param-hint']}>该模型不支持温度调节</span>
+                    )}
+                  </div>
+
+                  <div className={styles['form-group']}>
+                    <label>Top K / Top P</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={editingTopK}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        if (!isNaN(val) && val >= 0 && val <= 1) setEditingTopK(val)
+                      }}
+                      disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_top_k === false}
+                      className={styles['param-number-input']}
+                    />
+                    {modelCapabilities?.capabilities.supports_top_k === false && (
+                      <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
+                    )}
+                  </div>
+
+                  <div className={styles['form-group']}>
+                    <label>
+                      最大 Tokens
+                      {modelCapabilities && (
+                        <span className={styles['param-hint-inline']}>
+                          {' '}(上限: {formatTokenCount(modelCapabilities.limits.max_tokens_max)})
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={modelCapabilities?.limits.max_tokens_max ?? 999999}
+                      value={editingMaxTokens ?? modelCapabilities?.defaults.max_tokens ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? null : parseInt(e.target.value)
+                        setEditingMaxTokens(val)
+                      }}
+                      disabled={!selectedModelConfigId}
+                      placeholder={modelCapabilities ? `默认: ${formatTokenCount(modelCapabilities.defaults.max_tokens)}` : ''}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles['model-param-actions']}>
+                  <button
+                    className={`btn btn-primary`}
+                    onClick={handleSaveModelParams}
+                    disabled={!selectedModelConfigId || savingModelParams}
+                  >
+                    {savingModelParams ? '保存中...' : '保存参数'}
+                  </button>
+                  <button
+                    className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                    onClick={handleResetModelParams}
+                    disabled={!selectedModelConfigId || savingModelParams}
+                  >
+                    重置为默认
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-                        {activeTab === 'api' && (
+        {activeTab === 'api' && (
           <div className={styles['settings-section']}>
             <div className={styles['section-header']}>
               <h2>API配置</h2>
@@ -1672,125 +1794,7 @@ function SettingsPage() {
               </div>
             )}
 
-            {/* Model Parameter Configuration Panel */}
-            {configurations.length > 0 && (
-              <div className={styles['model-param-panel']}>
-                <h3>模型参数配置</h3>
-                <div className={styles['model-param-grid']}>
-                  <div className={styles['form-group']}>
-                    <label>模型选择</label>
-                    <select
-                      value={selectedModelConfigId ?? ''}
-                      onChange={(e) => {
-                        const id = Number(e.target.value)
-                        if (id) handleSelectModelConfig(id)
-                      }}
-                    >
-                      <option value="">选择模型</option>
-                      {configurations.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.display_name || c.model} ({c.provider})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className={styles['form-group']}>
-                    <label>
-                      温度 (Temperature): {editingTemperature.toFixed(1)}
-                    </label>
-                    <div className={styles['slider-row']}>
-                      <input
-                        type="range"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={editingTemperature}
-                        onChange={(e) => setEditingTemperature(parseFloat(e.target.value))}
-                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
-                        className={styles['param-slider']}
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={editingTemperature}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value)
-                          if (!isNaN(val) && val >= 0 && val <= 2) setEditingTemperature(val)
-                        }}
-                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
-                        className={styles['param-number-input']}
-                      />
-                    </div>
-                    {modelCapabilities?.capabilities.supports_temperature === false && (
-                      <span className={styles['param-hint']}>该模型不支持温度调节</span>
-                    )}
-                  </div>
-
-                  <div className={styles['form-group']}>
-                    <label>Top K / Top P</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.1}
-                      value={editingTopK}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value)
-                        if (!isNaN(val) && val >= 0 && val <= 1) setEditingTopK(val)
-                      }}
-                      disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_top_k === false}
-                      className={styles['param-number-input']}
-                    />
-                    {modelCapabilities?.capabilities.supports_top_k === false && (
-                      <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
-                    )}
-                  </div>
-
-                  <div className={styles['form-group']}>
-                    <label>
-                      最大 Tokens
-                      {modelCapabilities && (
-                        <span className={styles['param-hint-inline']}>
-                          {' '}(上限: {formatTokenCount(modelCapabilities.limits.max_tokens_max)})
-                        </span>
-                      )}
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={modelCapabilities?.limits.max_tokens_max ?? 999999}
-                      value={editingMaxTokens ?? modelCapabilities?.defaults.max_tokens ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value === '' ? null : parseInt(e.target.value)
-                        setEditingMaxTokens(val)
-                      }}
-                      disabled={!selectedModelConfigId}
-                      placeholder={modelCapabilities ? `默认: ${formatTokenCount(modelCapabilities.defaults.max_tokens)}` : ''}
-                    />
-                  </div>
-                </div>
-
-                <div className={styles['model-param-actions']}>
-                  <button
-                    className={`btn btn-primary`}
-                    onClick={handleSaveModelParams}
-                    disabled={!selectedModelConfigId || savingModelParams}
-                  >
-                    {savingModelParams ? '保存中...' : '保存参数'}
-                  </button>
-                  <button
-                    className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                    onClick={handleResetModelParams}
-                    disabled={!selectedModelConfigId || savingModelParams}
-                  >
-                    重置为默认
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* 模型参数配置已移至通用设置 -> 主模型选择 */}
 
             {/* Model Management Table */}
             {loadingConfigs ? (

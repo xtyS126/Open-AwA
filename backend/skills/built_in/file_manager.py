@@ -79,6 +79,10 @@ class FileManagerSkill:
             str(Path(d).resolve()) for d in self.allowed_directories
         ]
 
+    def is_initialized(self) -> bool:
+        """检查技能是否已初始化。"""
+        return self._initialized
+
     def _validate_path(self, file_path: str) -> bool:
         """
         处理validate、path相关逻辑，并为调用方返回对应结果。
