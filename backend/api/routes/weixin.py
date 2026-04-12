@@ -3,7 +3,8 @@
 与 skills.py 中的扫码登录路由配合使用，提供完整的微信集成管理能力。
 """
 
-from typing import Optional
+import json
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -14,17 +15,90 @@ from api.dependencies import get_current_user
 from api.services.weixin_auto_reply import WeixinAutoReplyService
 from config.security import decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
-from db.models import WeixinBinding, get_db
+from db.models import Skill, WeixinBinding, get_db
 from skills.weixin_skill_adapter import WeixinSkillAdapter
 
 
 router = APIRouter(prefix="/api/weixin", tags=["Weixin"])
 _AUTO_REPLY_MANAGER = WeixinAutoReplyService()
+_WEIXIN_SKILL_NAME = "weixin_dispatch"
 
 
 def _get_auto_reply_manager() -> WeixinAutoReplyService:
     """集中管理自动回复单例，便于测试时替换。"""
     return _AUTO_REPLY_MANAGER
+
+
+def _normalize_binding_status(binding_status: Optional[str], weixin_user_id: str = "") -> str:
+    normalized = str(binding_status or "").strip().lower()
+    if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
+        return "bound"
+    if normalized in {"pending", "confirming", "waiting"}:
+        return "pending"
+    if weixin_user_id:
+        return "bound"
+    return "unbound"
+
+
+def _deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
+    if isinstance(config_value, dict):
+        return dict(config_value)
+    if config_value is None:
+        return {}
+    text = str(config_value or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return {}
+
+
+def _recover_binding_from_skill_config(db: Session, app_user_id: str) -> Optional[WeixinBinding]:
+    """兼容历史数据：当 weixin_bindings 缺失时，尝试从 skills.weixin 配置回填。"""
+    skill = db.query(Skill).filter(Skill.name == _WEIXIN_SKILL_NAME).first()
+    if not skill:
+        return None
+
+    config = _deserialize_skill_config(skill.config)
+    weixin_config = config.get("weixin", {}) if isinstance(config.get("weixin"), dict) else {}
+
+    account_id = str(weixin_config.get("account_id") or "").strip()
+    token = decrypt_secret_value(str(weixin_config.get("token") or "")).strip()
+    base_url = str(weixin_config.get("base_url") or settings.WEIXIN_DEFAULT_BASE_URL).strip() or settings.WEIXIN_DEFAULT_BASE_URL
+    bot_type = str(weixin_config.get("bot_type") or settings.WEIXIN_DEFAULT_BOT_TYPE).strip() or settings.WEIXIN_DEFAULT_BOT_TYPE
+    channel_version = str(weixin_config.get("channel_version") or settings.WEIXIN_DEFAULT_CHANNEL_VERSION).strip() or settings.WEIXIN_DEFAULT_CHANNEL_VERSION
+    weixin_user_id = str(weixin_config.get("user_id") or "").strip()
+    binding_status = _normalize_binding_status(weixin_config.get("binding_status"), weixin_user_id)
+
+    if not account_id or not token:
+        return None
+
+    binding = WeixinBinding(
+        user_id=app_user_id,
+        weixin_account_id=account_id,
+        token=encrypt_secret_value(token),
+        base_url=base_url,
+        bot_type=bot_type,
+        channel_version=channel_version,
+        binding_status=binding_status,
+        weixin_user_id=weixin_user_id,
+    )
+    db.add(binding)
+    db.commit()
+    db.refresh(binding)
+    logger.info(f"[weixin] 用户 {app_user_id} 的绑定记录已从 skills 配置自动恢复")
+    return binding
+
+
+def _ensure_binding_exists(db: Session, app_user_id: str) -> Optional[WeixinBinding]:
+    binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == app_user_id).first()
+    if binding:
+        return binding
+    return _recover_binding_from_skill_config(db, app_user_id)
 
 
 class WeixinBindingResponse(BaseModel):
@@ -101,9 +175,7 @@ async def get_binding(
     current_user=Depends(get_current_user),
 ):
     """获取当前用户的微信绑定状态"""
-    binding = db.query(WeixinBinding).filter(
-        WeixinBinding.user_id == str(current_user.id)
-    ).first()
+    binding = _ensure_binding_exists(db, str(current_user.id))
     if not binding:
         return WeixinBindingResponse(user_id=str(current_user.id))
     return WeixinBindingResponse(
@@ -253,15 +325,23 @@ async def update_weixin_params(
 
 
 @router.get("/auto-reply/status")
-async def get_auto_reply_status(current_user=Depends(get_current_user)):
+async def get_auto_reply_status(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """获取当前用户微信自动回复运行状态。"""
+    _ensure_binding_exists(db, str(current_user.id))
     manager = _get_auto_reply_manager()
     return manager.get_status(str(current_user.id))
 
 
 @router.post("/auto-reply/start")
-async def start_auto_reply(current_user=Depends(get_current_user)):
+async def start_auto_reply(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """启动当前用户的微信自动回复后台轮询。"""
+    _ensure_binding_exists(db, str(current_user.id))
     manager = _get_auto_reply_manager()
     try:
         return await manager.start(str(current_user.id))
@@ -277,8 +357,12 @@ async def stop_auto_reply(current_user=Depends(get_current_user)):
 
 
 @router.post("/auto-reply/restart")
-async def restart_auto_reply(current_user=Depends(get_current_user)):
+async def restart_auto_reply(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """重启当前用户的微信自动回复后台轮询。"""
+    _ensure_binding_exists(db, str(current_user.id))
     manager = _get_auto_reply_manager()
     try:
         return await manager.restart(str(current_user.id))
@@ -287,10 +371,14 @@ async def restart_auto_reply(current_user=Depends(get_current_user)):
 
 
 @router.post("/auto-reply/process-once")
-async def process_auto_reply_once(current_user=Depends(get_current_user)):
+async def process_auto_reply_once(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """
     手动执行一次轮询，便于诊断、测试和观察最近一次处理结果。
     """
+    _ensure_binding_exists(db, str(current_user.id))
     manager = _get_auto_reply_manager()
     try:
         return await manager.process_once(str(current_user.id))
@@ -298,154 +386,39 @@ async def process_auto_reply_once(current_user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-class WeixinCallbackRequest(BaseModel):
-    """微信服务器回调请求模型（支持 XML 和 JSON）"""
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    ToUserName: Optional[str] = Field(default=None, max_length=128, description="接收方账号")
-    FromUserName: Optional[str] = Field(default=None, max_length=128, description="发送方账号")
-    CreateTime: Optional[int] = Field(default=None, description="创建时间戳")
-    MsgType: Optional[str] = Field(default=None, max_length=32, description="消息类型")
-    Content: Optional[str] = Field(default=None, max_length=2048, description="消息内容")
-    MsgId: Optional[str] = Field(default=None, max_length=64, description="消息 ID")
-    Event: Optional[str] = Field(default=None, max_length=32, description="事件类型")
-
-
-class WeixinCallbackResponse(BaseModel):
-    """微信回调响应模型"""
-    return_code: str = "SUCCESS"
-    return_msg: str = "OK"
-
-
-def _build_weixin_xml_reply(
-    to_user: str,
-    from_user: str,
-    content: str,
-    msg_type: str = "text"
-) -> str:
-    """
-    构建符合微信官方要求的 XML 格式回复消息。
-
-    微信消息回复 XML 结构：
-    <xml>
-      <ToUserName><![CDATA[toUser]]></ToUserName>
-      <FromUserName><![CDATA[fromUser]]></FromUserName>
-      <CreateTime>12345678</CreateTime>
-      <MsgType><![CDATA[text]]></MsgType>
-      <Content><![CDATA[content]]></Content>
-    </xml>
-    """
-    import time
-    create_time = int(time.time())
-    return (
-        f'<xml>'
-        f'<ToUserName><![CDATA[{to_user}]]></ToUserName>'
-        f'<FromUserName><![CDATA[{from_user}]]></FromUserName>'
-        f'<CreateTime>{create_time}</CreateTime>'
-        f'<MsgType><![CDATA[{msg_type}]]></MsgType>'
-        f'<Content><![CDATA[{content}]]></Content>'
-        f'</xml>'
-    )
-
-
-def _parse_weixin_xml(xml_content: str) -> dict:
-    """
-    解析微信回调的 XML 内容。
-
-    使用 Python 内置的 xml.etree.ElementTree 进行解析，
-    处理 CDATA 包裹的内容。
-    """
-    import re
-    import xml.etree.ElementTree as ET
-
-    xml_content = xml_content.strip()
-    if not xml_content.startswith('<'):
-        return {}
-
-    try:
-        root = ET.fromstring(xml_content)
-        result = {}
-        for child in root:
-            tag = child.tag
-            text = child.text or ""
-            cdata_match = re.search(r'<!\[CDATA\[(.*?)\]\]>', text, re.DOTALL)
-            if cdata_match:
-                text = cdata_match.group(1)
-            result[tag] = text.strip() if text else ""
-        return result
-    except ET.ParseError as exc:
-        logger.warning(f"[weixin] XML 解析失败: {exc}, content={xml_content[:200]}")
-        return {}
-
-
-@router.post("/callback")
-async def weixin_callback(
-    body: Optional[str] = None,
-    request_model: Optional[WeixinCallbackRequest] = None,
+@router.get("/auto-reply/diagnostics")
+async def get_auto_reply_diagnostics(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """
-    微信服务器回调接口。
-
-    支持两种输入格式：
-    1. JSON 格式：直接传递 Pydantic 模型
-    2. XML 格式：微信服务器默认使用 XML，需要解析
-
-    返回格式根据请求 Accept 头决定：
-    - application/json: 返回 JSON 格式响应
-    - text/xml 或 application/xml: 返回微信官方 XML 格式响应
-    - 其他: 默认返回 XML 格式（兼容微信服务器）
+    返回自动回复诊断信息：绑定状态、回调地址有效性、adapter 健康检查。
     """
-    from fastapi import Request, Header
+    user_id = str(current_user.id)
+    binding = db.query(WeixinBinding).filter(
+        WeixinBinding.user_id == user_id
+    ).first()
 
-    raw_body = ""
-    try:
-        body_bytes = await request_model.__class__.__module__
-    except Exception:
-        body_bytes = None
+    if not binding:
+        return {
+            "binding_valid": False,
+            "binding_status": "unbound",
+            "callback_reachable": False,
+            "health_check": None,
+            "diagnostics_message": "未找到微信绑定记录，请先完成绑定",
+        }
 
-    message_data = {}
+    adapter = WeixinSkillAdapter()
+    from skills.weixin_skill_adapter import load_binding as _load_binding
+    runtime = _load_binding(db, user_id)
+    health = adapter.check_health(runtime) if runtime else {"ok": False, "issues": ["runtime 加载失败"]}
 
-    if request_model:
-        message_data = request_model.model_dump(exclude_none=True)
-    elif body:
-        message_data = _parse_weixin_xml(body)
-
-    logger.info(f"[weixin] 收到回调: {message_data}")
-
-    return_code = message_data.get("return_code", "")
-    if return_code == "FAIL":
-        logger.warning(f"[weixin] 微信服务器返回失败: {message_data}")
-        return _build_weixin_xml_reply(
-            to_user=message_data.get("ToUserName", ""),
-            from_user=message_data.get("FromUserName", ""),
-            content="接收消息失败"
-        )
-
-    msg_type = message_data.get("MsgType", "")
-    from_user = message_data.get("FromUserName", "")
-    to_user = message_data.get("ToUserName", "")
-
-    if msg_type == "event":
-        event = message_data.get("Event", "")
-        logger.info(f"[weixin] 收到事件推送: event={event}, from={from_user}")
-        return _build_weixin_xml_reply(
-            to_user=from_user,
-            from_user=to_user,
-            content="success"
-        )
-
-    if msg_type == "text":
-        content = message_data.get("Content", "")
-        logger.info(f"[weixin] 收到文本消息: content={content[:100]}, from={from_user}")
-        return _build_weixin_xml_reply(
-            to_user=from_user,
-            from_user=to_user,
-            content="消息已收到，正在处理"
-        )
-
-    logger.info(f"[weixin] 收到其他类型消息: msg_type={msg_type}, from={from_user}")
-    return _build_weixin_xml_reply(
-        to_user=from_user,
-        from_user=to_user,
-        content="success"
-    )
+    return {
+        "binding_valid": bool(binding.weixin_account_id and binding.token),
+        "binding_status": binding.binding_status or "unknown",
+        "account_id": binding.weixin_account_id or "",
+        "base_url": binding.base_url or "",
+        "callback_reachable": health.get("ok", False),
+        "health_check": health,
+        "diagnostics_message": "诊断完成" if health.get("ok") else "检测到配置问题，请查看 health_check 详情",
+    }

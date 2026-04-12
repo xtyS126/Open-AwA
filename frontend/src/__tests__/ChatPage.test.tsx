@@ -1,8 +1,7 @@
 import '@testing-library/jest-dom/vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import ChatPage from '@/features/chat/ChatPage'
-import { modelsAPI } from '@/features/settings/modelsApi'
 
 if (!HTMLElement.prototype.scrollIntoView) {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
@@ -11,25 +10,37 @@ if (!HTMLElement.prototype.scrollIntoView) {
   })
 }
 
-
-vi.mock('@/features/settings/modelsApi', () => ({
-  modelsAPI: {
-    getProviders: vi.fn(),
-    updateConfiguration: vi.fn()
-  }
-}))
+// 模拟 chatStore —— 模型选择已迁至全局 store
+const mockAddMessage = vi.fn()
+const mockSetLoading = vi.fn()
+const mockClearMessages = vi.fn()
+const mockSetOutputMode = vi.fn()
+const mockUpdateLastMessage = vi.fn()
 
 vi.mock('@/features/chat/store/chatStore', () => ({
   useChatStore: vi.fn(() => ({
     messages: [],
-    addMessage: vi.fn(),
-    setLoading: vi.fn(),
+    addMessage: mockAddMessage,
+    updateLastMessage: mockUpdateLastMessage,
+    setLoading: mockSetLoading,
     isLoading: false,
-    clearMessages: vi.fn()
+    clearMessages: mockClearMessages,
+    sessionId: 'default',
+    outputMode: 'stream',
+    setOutputMode: mockSetOutputMode,
+    selectedModel: 'openai:gpt-4',
   }))
 }))
 
-describe('ChatPage Model Selector', () => {
+vi.mock('@/shared/utils/logger', () => ({
+  appLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+  }
+}))
+
+describe('ChatPage', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
@@ -41,204 +52,62 @@ describe('ChatPage Model Selector', () => {
     vi.restoreAllMocks()
   })
 
-  describe('Model Loading', () => {
-    it('should load configurations on mount', async () => {
-      const mockConfigs = {
-        data: {
-          providers: [
-            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] },
-            { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', selected_models: ['claude-3.5-sonnet'] }
-          ]
-        }
-      }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-
+  describe('Basic Rendering', () => {
+    it('should render chat page with header', () => {
       render(<ChatPage />)
-
-      await waitFor(() => {
-        expect(modelsAPI.getProviders).toHaveBeenCalled()
-      })
+      expect(screen.getByText('AI 助手')).toBeInTheDocument()
     })
 
-    it('should display "加载中..." while loading', () => {
-      ;(modelsAPI.getProviders as any).mockImplementation(
-        () => new Promise(() => {})
-      )
-
+    it('should render output mode selector', () => {
       render(<ChatPage />)
-
-      expect(screen.getByText('加载中...')).toBeInTheDocument()
+      expect(screen.getByText('流式传输')).toBeInTheDocument()
+      expect(screen.getByText('直接输出')).toBeInTheDocument()
     })
 
-    it('should display "暂无可用模型" when no configurations', async () => {
-      const mockConfigs = { data: { providers: [] } }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-
+    it('should render new conversation button', () => {
       render(<ChatPage />)
-
-      await waitFor(() => {
-        expect(screen.getByText('暂无可用模型')).toBeInTheDocument()
-      })
+      expect(screen.getByText('新对话')).toBeInTheDocument()
     })
 
-    it('should display error message when API fails', async () => {
-      ;(modelsAPI.getProviders as any).mockRejectedValue(new Error('Network error'))
-
+    it('should render empty state message', () => {
       render(<ChatPage />)
+      expect(screen.getByText(/有什么可以帮助你的吗/)).toBeInTheDocument()
+    })
 
-      await waitFor(() => {
-        expect(screen.getByText(/加载模型失败/)).toBeInTheDocument()
-      })
+    it('should render input field and send button', () => {
+      render(<ChatPage />)
+      expect(screen.getByPlaceholderText('输入你的问题...')).toBeInTheDocument()
+      expect(screen.getByText('发送')).toBeInTheDocument()
     })
   })
 
-  describe('Model Selection', () => {
-    it('should select default model on load', async () => {
-      const mockConfigs = {
-        data: {
-          providers: [
-            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
-          ]
-        }
-      }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-
+  describe('Model Selector Migration', () => {
+    it('should not render model dropdown (migrated to settings)', () => {
       render(<ChatPage />)
-
-      await waitFor(() => {
-        const select = screen.getAllByRole('combobox')[1] as HTMLSelectElement
-        expect(select.value).toBe('openai:gpt-4')
-      })
+      // 模型选择器已迁移至设置页面，聊天页不应包含模型下拉框
+      const selects = screen.getAllByRole('combobox')
+      // 只有输出模式选择器，不应有模型选择器
+      expect(selects.length).toBe(1)
     })
 
-    it('should ignore insecure localStorage persisted model selection', async () => {
-      localStorage.setItem('selected_model', 'anthropic:claude-3.5-sonnet')
-
-      const mockConfigs = {
-        data: {
-          providers: [
-            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] },
-            { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', selected_models: ['claude-3.5-sonnet'] }
-          ]
-        }
-      }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-
+    it('should display current model name from global store', () => {
       render(<ChatPage />)
-
-      await waitFor(() => {
-        const select = screen.getAllByRole('combobox')[1] as HTMLSelectElement
-        expect(select.value).toBe('openai:gpt-4')
-      })
-    })
-
-    it('should not persist selected model into localStorage', async () => {
-      const mockConfigs = {
-        data: {
-          providers: [
-            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] },
-            { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', selected_models: ['claude-3.5-sonnet'] }
-          ]
-        }
-      }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-
-      render(<ChatPage />)
-
-      const selects = await screen.findAllByRole('combobox')
-      const modelSelect = selects[1]
-      
-      await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'Anthropic - claude-3.5-sonnet' })).toBeInTheDocument()
-      })
-      
-      fireEvent.change(modelSelect, { target: { value: 'anthropic:claude-3.5-sonnet' } })
-
-      await waitFor(() => {
-        expect(localStorage.getItem('selected_model')).toBeNull()
-      })
+      // 当前选中模型名称应在 header 以紧凑标签显示
+      expect(screen.getByText('gpt-4')).toBeInTheDocument()
     })
   })
 
-  describe('Save Model Button', () => {
-    it('should show save button when model is selected', async () => {
-      const mockConfigs = {
-        data: {
-          providers: [
-            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
-          ]
-        }
-      }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-
+  describe('User Interaction', () => {
+    it('should clear messages when clicking new conversation button', () => {
       render(<ChatPage />)
-
-      await waitFor(() => {
-        expect(screen.getByText('保存模型')).toBeInTheDocument()
-      })
+      fireEvent.click(screen.getByText('新对话'))
+      expect(mockClearMessages).toHaveBeenCalled()
     })
 
-    it('should show success message after saving', async () => {
-      const mockConfigs = {
-        data: {
-          providers: [
-            { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
-          ]
-        }
-      }
-      ;(modelsAPI.getProviders as any).mockResolvedValue(mockConfigs)
-      ;(modelsAPI.updateConfiguration as any).mockResolvedValue({ data: { success: true } })
-
+    it('should disable send button when input is empty', () => {
       render(<ChatPage />)
-
-      await waitFor(() => {
-        const saveBtn = screen.getByText('保存模型')
-        fireEvent.click(saveBtn)
-      })
-
-      await waitFor(() => {
-        expect(screen.getByText('已保存')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('Retry Mechanism', () => {
-    it('should show retry button when loading fails', async () => {
-      ;(modelsAPI.getProviders as any).mockRejectedValue(new Error('Network error'))
-
-      render(<ChatPage />)
-
-      await waitFor(() => {
-        expect(screen.getByText(/重试/)).toBeInTheDocument()
-      })
-    })
-
-    it('should retry loading when retry button is clicked', async () => {
-      let callCount = 0
-      ;(modelsAPI.getProviders as any).mockImplementation(() => {
-        callCount++
-        if (callCount === 1) {
-          return Promise.reject(new Error('Network error'))
-        }
-        return Promise.resolve({
-          data: {
-            providers: [
-              { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', selected_models: ['gpt-4'] }
-            ]
-          }
-        })
-      })
-
-      render(<ChatPage />)
-
-      await waitFor(() => {
-        const retryBtn = screen.getByText(/重试/)
-        fireEvent.click(retryBtn)
-      })
-
-      await waitFor(() => {
-        expect(callCount).toBeGreaterThan(1)
-      })
+      const sendBtn = screen.getByText('发送')
+      expect(sendBtn).toBeDisabled()
     })
   })
 })

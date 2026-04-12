@@ -15,7 +15,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from main import app
-from db.models import Base, Skill
+from db.models import Base, Skill, WeixinBinding
 from api.dependencies import get_db, get_current_user
 from config.settings import settings
 from skills.weixin_skill_adapter import DEFAULT_QR_BASE_URL
@@ -73,6 +73,7 @@ def reset_skills_table():
     db = TestingSessionLocal()
     try:
         db.query(Skill).delete()
+        db.query(WeixinBinding).delete()
         db.commit()
     finally:
         db.close()
@@ -82,6 +83,7 @@ def reset_skills_table():
     db = TestingSessionLocal()
     try:
         db.query(Skill).delete()
+        db.query(WeixinBinding).delete()
         db.commit()
     finally:
         db.close()
@@ -244,6 +246,23 @@ def test_weixin_qr_start_and_wait_confirmed_updates_config(monkeypatch):
         assert config_data["token"] == "bot-token-1"
         assert config_data["user_id"] == "wx-user-1"
         assert config_data["binding_status"] == "bound"
+
+        binding_response = client.get(f"{settings.API_V1_STR}/weixin/binding")
+        assert binding_response.status_code == 200
+        binding_data = binding_response.json()
+        assert binding_data["weixin_account_id"] == "bot-account-1"
+        assert binding_data["weixin_user_id"] == "wx-user-1"
+        assert binding_data["binding_status"] == "bound"
+
+        db = TestingSessionLocal()
+        try:
+            binding_row = db.query(WeixinBinding).filter(WeixinBinding.user_id == "1").first()
+            assert binding_row is not None
+            assert binding_row.binding_status == "bound"
+            assert binding_row.weixin_account_id == "bot-account-1"
+            assert binding_row.weixin_user_id == "wx-user-1"
+        finally:
+            db.close()
 
 
 def test_weixin_qr_start_extracts_qrcode_from_qrcode_url_query(monkeypatch):
@@ -718,6 +737,40 @@ def test_weixin_config_accepts_json_string_payload():
         assert config_data["timeout_seconds"] == 21
         assert config_data["user_id"] == "string-user"
         assert config_data["binding_status"] == "bound"
+
+
+def test_weixin_binding_route_recovers_from_skills_config_when_binding_row_missing():
+    """
+    验证当 weixin_bindings 缺失时，/weixin/binding 会从 skills 配置自动恢复绑定记录。
+    """
+    with TestClient(app) as client:
+        save_response = client.post(
+            f"{settings.API_V1_STR}/skills/weixin/config",
+            json={
+                "account_id": "recover-account",
+                "token": "recover-token",
+                "base_url": "https://recover.url",
+                "timeout_seconds": 18,
+                "user_id": "recover-user",
+                "binding_status": "bound",
+            },
+        )
+        assert save_response.status_code == 200
+
+        binding_response = client.get(f"{settings.API_V1_STR}/weixin/binding")
+        assert binding_response.status_code == 200
+        binding_data = binding_response.json()
+        assert binding_data["weixin_account_id"] == "recover-account"
+        assert binding_data["weixin_user_id"] == "recover-user"
+        assert binding_data["binding_status"] == "bound"
+
+        db = TestingSessionLocal()
+        try:
+            binding_row = db.query(WeixinBinding).filter(WeixinBinding.user_id == "1").first()
+            assert binding_row is not None
+            assert binding_row.binding_status == "bound"
+        finally:
+            db.close()
 
 
 

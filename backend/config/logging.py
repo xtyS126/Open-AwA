@@ -227,6 +227,17 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
     _LOG_BUFFER.append(log_event)
 
 
+def _console_log_filter(record: Dict[str, Any]) -> bool:
+    """
+    控制台仅输出简洁访问日志和错误日志，减少开发终端噪音。
+    """
+    level_name = str(getattr(record.get("level"), "name", "")).upper()
+    if level_name in {"ERROR", "CRITICAL"}:
+        return True
+    event_name = str((record.get("extra") or {}).get("event") or "")
+    return event_name == "http_request_completed"
+
+
 def init_logging(
     log_level: str = "INFO",
     service_name: str = "openawa-backend",
@@ -253,7 +264,12 @@ def init_logging(
     logger.add(
         sys.stderr,
         level=level_str,
-        serialize=bool(log_serialize),
+        serialize=False,
+        format=(
+            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
+            "{message}"
+        ),
+        filter=_console_log_filter,
         enqueue=False,
         backtrace=True,
         diagnose=False,

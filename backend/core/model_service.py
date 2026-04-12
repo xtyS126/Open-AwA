@@ -230,11 +230,6 @@ def build_provider_request(
                 }
             ],
             "stream": stream,
-            "metadata": {
-                "request_id": headers[REQUEST_ID_HEADER],
-                "client_version": headers[CLIENT_VERSION_HEADER],
-                "context": serialized_context,
-            },
         }
         if temperature is not None:
             anthropic_payload["temperature"] = temperature
@@ -307,11 +302,6 @@ def build_provider_request(
         ],
         "max_tokens": max_tokens,
         "stream": stream,
-        "metadata": {
-            "request_id": headers[REQUEST_ID_HEADER],
-            "client_version": headers[CLIENT_VERSION_HEADER],
-            "context": serialized_context,
-        },
     }
     if temperature is not None:
         openai_payload["temperature"] = temperature

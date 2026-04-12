@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from billing.models import Base, ModelConfiguration, ModelPricing
 from billing.pricing_manager import PricingManager
 from core.executor import ExecutionLayer
+from core.model_service import build_provider_request
 from db.models import get_db
 from main import app
 
@@ -297,3 +298,96 @@ async def test_execution_layer_resolves_chat_endpoint_from_base_url():
     assert resolved["ok"] is True
     assert resolved["api_endpoint"] == "https://api.openai.com/v1/chat/completions"
     assert resolved["api_key"] == "secret"
+
+
+@pytest.mark.asyncio
+async def test_execution_layer_resolves_custom_model_to_selected_deepseek_model():
+    """
+    provider 级配置使用 custom-model 时，应从 selected_models 选择有效模型（DeepSeek 优先 deepseek-chat）。
+    """
+    execution_layer = ExecutionLayer()
+    execution_layer.provider_api_key_fields["deepseek"] = "DEEPSEEK_API_KEY"
+
+    db = SimpleNamespace()
+    config = SimpleNamespace(
+        provider="deepseek",
+        model="custom-model",
+        selected_models='["deepseek-reasoner","deepseek-chat"]',
+        api_key="secret",
+        api_endpoint="https://api.deepseek.com/v1",
+        max_tokens=2048,
+    )
+
+    import billing.pricing_manager as pricing_manager_module
+
+    original_pricing_manager = pricing_manager_module.PricingManager
+
+    class MockPricingManager:
+        def __init__(self, session):
+            self.session = session
+
+        @staticmethod
+        def normalize_provider(provider):
+            return original_pricing_manager.normalize_provider(provider)
+
+        @staticmethod
+        def _normalize_provider_api_endpoint(provider, api_endpoint):
+            return original_pricing_manager._normalize_provider_api_endpoint(provider, api_endpoint)
+
+        @staticmethod
+        def get_provider_endpoint_suffixes(provider):
+            return original_pricing_manager.get_provider_endpoint_suffixes(provider)
+
+        @staticmethod
+        def build_provider_api_endpoint(provider, base_url, purpose):
+            return original_pricing_manager.build_provider_api_endpoint(provider, base_url, purpose)
+
+        @staticmethod
+        def get_provider_base_suffix(provider):
+            return original_pricing_manager.get_provider_base_suffix(provider)
+
+        @staticmethod
+        def parse_selected_models(selected_models):
+            return original_pricing_manager.parse_selected_models(selected_models)
+
+        def get_configuration_by_provider_model(self, provider, model):
+            return config
+
+        def get_default_configuration(self):
+            return config
+
+    pricing_manager_module.PricingManager = MockPricingManager
+    try:
+        resolved = execution_layer._resolve_llm_configuration({
+            "provider": "deepseek",
+            "model": "custom-model",
+            "db": db,
+        })
+    finally:
+        pricing_manager_module.PricingManager = original_pricing_manager
+
+    assert resolved["ok"] is True
+    assert resolved["model"] == "deepseek-chat"
+    assert resolved["api_endpoint"] == "https://api.deepseek.com/v1/chat/completions"
+
+
+def test_build_provider_request_for_openai_compatible_excludes_metadata_payload():
+    """
+    OpenAI 兼容接口（含 DeepSeek）不应注入 metadata，避免上游 400。
+    """
+    spec = build_provider_request(
+        provider="deepseek",
+        api_endpoint="https://api.deepseek.com/v1",
+        api_key="test-key",
+        purpose="chat",
+        model="deepseek-chat",
+        prompt="hello",
+        max_tokens=128,
+        request_id="rid-1",
+        client_version="test-client",
+        context={"channel": "weixin"},
+    )
+    assert spec.endpoint.endswith("/chat/completions")
+    assert "metadata" not in spec.payload
+    assert spec.payload["model"] == "deepseek-chat"
+    assert spec.payload["messages"][0]["content"] == "hello"

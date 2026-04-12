@@ -228,6 +228,33 @@ class ExecutionLayer:
             return 8192
         return max_tokens
 
+    def _pick_effective_model(
+        self,
+        provider: str,
+        model: str,
+        selected_models: Optional[list[str]] = None,
+    ) -> str:
+        """
+        为“provider 级配置”挑选可用模型。
+        当配置里保存的是占位值 custom-model 时，优先从 selected_models 中选可用模型。
+        """
+        normalized_provider = str(provider or "").strip().lower()
+        normalized_model = str(model or "").strip()
+        candidates = [str(item or "").strip() for item in (selected_models or []) if str(item or "").strip()]
+
+        # provider 级配置常见占位值，不能直接用于真实调用
+        if normalized_model.lower() in {"custom-model", "custom_model", "custom", "default-model", "default"} or not normalized_model:
+            if normalized_provider == "deepseek":
+                if "deepseek-chat" in candidates:
+                    return "deepseek-chat"
+                if "deepseek-reasoner" in candidates:
+                    return "deepseek-reasoner"
+                return "deepseek-chat"
+            if candidates:
+                return candidates[0]
+
+        return normalized_model
+
     def _resolve_llm_configuration(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理resolve、llm、configuration相关逻辑，并为调用方返回对应结果。
@@ -259,6 +286,13 @@ class ExecutionLayer:
             api_key = config.api_key
             api_endpoint = config.api_endpoint
             max_tokens = getattr(config, "max_tokens", None)
+            selected_models: list[str] = []
+            try:
+                from billing.pricing_manager import PricingManager
+                selected_models = PricingManager.parse_selected_models(getattr(config, "selected_models", None))
+            except Exception:
+                selected_models = []
+            model = self._pick_effective_model(provider, model, selected_models)
         else:
             api_key = None
             api_endpoint = None
@@ -498,7 +532,7 @@ class ExecutionLayer:
                 provider=resolved.get("provider"),
                 model=resolved.get("model"),
                 endpoint=request_spec.endpoint,
-            ).opt(exception=True).error(f"LLM API HTTP {e.response.status_code} 错误: {e}")
+            ).error(f"LLM API HTTP {e.response.status_code} 错误: {self._sanitize_text_excerpt(e.response.text if e.response.text else str(e), 400)}")
             response_text = self._sanitize_text_excerpt(e.response.text if e.response.text else "")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "http_error", duration_ms)
@@ -544,7 +578,7 @@ class ExecutionLayer:
                 provider=resolved.get("provider"),
                 model=resolved.get("model"),
                 endpoint=request_spec.endpoint,
-            ).opt(exception=True).error(f"LLM API 网络异常: {e}")
+            ).error(f"LLM API 网络异常: {self._sanitize_text_excerpt(str(e), 300)}")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "network_error", duration_ms)
             output = {
