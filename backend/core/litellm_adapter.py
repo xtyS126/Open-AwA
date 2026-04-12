@@ -482,8 +482,9 @@ async def litellm_list_models(
 
     try:
         import httpx
+        from billing.pricing_manager import PricingManager
 
-        # 构建请求头和端点，使用通用 OpenAI 兼容的 /models 接口
+        # 构建请求头和端点
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         endpoint = str(api_base or "").rstrip("/")
 
@@ -492,18 +493,21 @@ async def litellm_list_models(
             headers["anthropic-version"] = "2023-06-01"
             if not endpoint:
                 endpoint = "https://api.anthropic.com"
-            endpoint = f"{endpoint.rstrip('/')}/v1/models"
+            # 使用 PricingManager 统一构建模型列表端点
+            endpoint = PricingManager.build_provider_api_endpoint(normalized_provider, endpoint, "models")
         elif normalized_provider == "google":
             if not endpoint:
                 endpoint = "https://generativelanguage.googleapis.com/v1beta"
-            endpoint = f"{endpoint.rstrip('/')}/models?key={api_key}"
+            endpoint = PricingManager.build_provider_api_endpoint(normalized_provider, endpoint, "models")
+            # Google API 需要通过查询参数传递 API Key
+            separator = "&" if "?" in endpoint else "?"
+            endpoint = f"{endpoint}{separator}key={api_key}"
         else:
             headers["Authorization"] = f"Bearer {api_key}"
             if not endpoint:
                 endpoint = "https://api.openai.com/v1"
-            # 确保端点以 /models 结尾
-            if not endpoint.endswith("/models"):
-                endpoint = f"{endpoint.rstrip('/')}/models"
+            # 使用 PricingManager 统一构建模型列表端点
+            endpoint = PricingManager.build_provider_api_endpoint(normalized_provider, endpoint, "models")
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(endpoint, headers=headers)
