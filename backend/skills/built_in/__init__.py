@@ -5,5 +5,7 @@
 
 from .experience_extractor import ExperienceExtractor
 from .file_manager import FileManagerSkill
+from .terminal_executor import TerminalExecutorSkill
+from .web_search import WebSearchSkill
 
-__all__ = ['ExperienceExtractor', 'FileManagerSkill']
+__all__ = ['ExperienceExtractor', 'FileManagerSkill', 'TerminalExecutorSkill', 'WebSearchSkill']
