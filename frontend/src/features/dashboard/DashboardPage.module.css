@@ -7,12 +7,20 @@
 
 .dashboard-header {
   margin-bottom: 24px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
 }
 
 .dashboard-header h1 {
   font-size: 24px;
   font-weight: 600;
   margin: 0;
+}
+
+.header-subtitle {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
 }
 
 .stats-grid {
@@ -47,6 +55,67 @@
   color: var(--color-error);
 }
 
+.stat-subtitle {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* 系统资源概览 */
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.resource-card {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.resource-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.resource-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.resource-title {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.resource-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.resource-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -67,12 +136,19 @@
   margin: 0 0 20px 0;
 }
 
+/* 底部两列布局 */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
 .top-intents-card {
   background: var(--color-bg-secondary);
   border: none;
   border-radius: var(--radius-lg);
   padding: 24px;
-  margin-bottom: 24px;
 }
 
 .top-intents-card h3 {
@@ -92,18 +168,41 @@
 
 .intent-list li {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   padding: 12px 16px;
   background: var(--color-bg-tertiary);
   border-radius: var(--radius-md);
   border: none;
 }
 
+.intent-rank {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 28px;
+}
+
 .intent-name {
   color: var(--color-text);
   font-weight: 500;
+  flex: 1;
 }
 
 .intent-count {
+  color: var(--color-text-secondary);
+}
+
+.empty-hint {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   color: var(--color-text-secondary);
 }
