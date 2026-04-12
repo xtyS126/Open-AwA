@@ -52,6 +52,13 @@
   box-shadow: 0 0 0 2px var(--color-primary-ring);
 }
 
+.model-hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  padding: 8px 0;
+  white-space: nowrap;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;

@@ -7,8 +7,6 @@ import { appLogger } from '@/shared/utils/logger'
 import { ReasoningContent } from './components/ReasoningContent'
 import styles from './ChatPage.module.css'
 
-let rememberedSelectedModel = ''
-
 function sanitizeDisplayedError(message: string): string {
   return String(message || '')
     .replace(/&/g, '&amp;')
@@ -23,11 +21,8 @@ function ChatPage() {
   const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [configurations, setConfigurations] = useState<{ id: string; provider: string; model: string; display_name: string }[]>([])
-  const [selectedModel, setSelectedModel] = useState<string>('')
-  const [loadingModels, setLoadingModels] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [saveSuccess, setSaveSuccess] = useState(false)
   const retryTimeoutRef = useRef<number | null>(null)
   const retryCountRef = useRef(0)
   const activeRequestIdRef = useRef(0)
@@ -84,7 +79,6 @@ function ChatPage() {
   }, [flushBuffer, scrollToBottom])
 
   const loadConfigurations = useCallback(async () => {
-    setLoadingModels(true)
     setError(null)
     
     try {
@@ -108,17 +102,6 @@ function ChatPage() {
         return
       }
       setConfigurations(flatConfigs)
-      
-      if (rememberedSelectedModel && flatConfigs.length > 0) {
-        const exists = flatConfigs.some(c => c.id === rememberedSelectedModel)
-        if (exists) {
-          setSelectedModel(rememberedSelectedModel)
-        } else {
-          setSelectedModel(flatConfigs[0].id)
-        }
-      } else if (flatConfigs.length > 0) {
-        setSelectedModel(flatConfigs[0].id)
-      }
       
       retryCountRef.current = 0
       if (isMountedRef.current) {
@@ -146,10 +129,6 @@ function ChatPage() {
           void loadConfigurations()
         }, 1000 * nextRetry)
       }
-    } finally {
-      if (isMountedRef.current) {
-        setLoadingModels(false)
-      }
     }
   }, [])
 
@@ -167,22 +146,6 @@ function ChatPage() {
       void loadConfigurations()
     }
   }, [loadConfigurations, isAuthenticated])
-
-  const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
-    if (!value) {
-      return { provider: undefined, model: undefined }
-    }
-
-    const separatorIndex = value.indexOf(':')
-    if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
-      return { provider: undefined, model: undefined }
-    }
-
-    return {
-      provider: value.slice(0, separatorIndex),
-      model: value.slice(separatorIndex + 1)
-    }
-  }
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -207,7 +170,10 @@ function ChatPage() {
     setLoading(true)
 
     try {
-      const { provider, model } = parseSelectedModel(selectedModel)
+      const defaultModel = configurations.length > 0 ? configurations[0] : null
+      const { provider, model } = defaultModel
+        ? { provider: defaultModel.provider, model: defaultModel.model }
+        : { provider: undefined, model: undefined }
 
       if (outputMode === 'stream') {
         let isFirstChunk = true
@@ -331,48 +297,6 @@ function ChatPage() {
     }
   }
 
-  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedModel(e.target.value)
-    rememberedSelectedModel = e.target.value
-    setSaveSuccess(false)
-  }
-
-  const handleSaveModel = async () => {
-    if (!selectedModel) return
-    
-    try {
-      const config = configurations.find(
-        (c) => c.id === selectedModel
-      )
-      
-      if (config) {
-        // Just save to localStorage as we don't have a specific is_default flag for a single model string
-        // inside the selected_models array in backend yet.
-        appLogger.info({
-          event: 'chat_model_save',
-          module: 'chat_page',
-          action: 'save_default_model',
-          status: 'success',
-          message: 'default model saved locally',
-          extra: { provider: config.provider, model: config.model },
-        })
-        setSaveSuccess(true)
-        setTimeout(() => setSaveSuccess(false), 3000)
-        rememberedSelectedModel = selectedModel
-      }
-    } catch (err) {
-      appLogger.error({
-        event: 'chat_model_save',
-        module: 'chat_page',
-        action: 'save_default_model',
-        status: 'failure',
-        message: 'failed to save default model',
-        extra: { error: err instanceof Error ? err.message : String(err) },
-      })
-      setError('保存模型失败')
-    }
-  }
-
   const handleRetry = () => {
     if (retryTimeoutRef.current !== null) {
       window.clearTimeout(retryTimeoutRef.current)
@@ -381,10 +305,6 @@ function ChatPage() {
     retryCountRef.current = 0
     setRetryCount(0)
     void loadConfigurations()
-  }
-
-  const formatModelLabel = (config: { display_name: string }) => {
-    return config.display_name
   }
 
   return (
@@ -396,41 +316,11 @@ function ChatPage() {
             value={outputMode}
             onChange={(e) => setOutputMode(e.target.value as 'stream' | 'direct')}
             className={styles['model-select']}
-            style={{ marginRight: '10px' }}
           >
             <option value="stream">流式传输</option>
             <option value="direct">直接输出</option>
           </select>
-          <select
-            value={selectedModel}
-            onChange={handleModelChange}
-            disabled={loadingModels || !!error}
-            className={styles['model-select']}
-          >
-            {loadingModels ? (
-              <option value="">加载中...</option>
-            ) : configurations.length === 0 ? (
-              <option value="">暂无可用模型</option>
-            ) : (
-              configurations.map((config) => (
-                <option
-                  key={config.id}
-                  value={config.id}
-                >
-                  {formatModelLabel(config)}
-                </option>
-              ))
-            )}
-          </select>
-          {selectedModel && (
-            <button
-              className={`btn ${styles['btn-save-model']} ${saveSuccess ? styles['success'] : ''}`}
-              onClick={handleSaveModel}
-              disabled={!selectedModel}
-            >
-              {saveSuccess ? '已保存' : '保存模型'}
-            </button>
-          )}
+          <span className={styles['model-hint']}>模型：使用设置中的默认模型</span>
         </div>
         {error && (
           <div className={styles['model-error']}>
