@@ -118,6 +118,10 @@ function SettingsPage() {
   const [providerModelsError, setProviderModelsError] = useState<string | null>(null)
   const [showCreateProviderModal, setShowCreateProviderModal] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
+
+  // 主模型选择相关状态
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; provider: string; model: string; display_name: string }>>([])
+  const [defaultModel, setDefaultModel] = useState<{ id: string; provider: string; model: string; display_name: string } | null>(null)
   const [creatingProvider, setCreatingProvider] = useState(false)
   const [deletingProvider, setDeletingProvider] = useState(false)
 
@@ -169,6 +173,7 @@ function SettingsPage() {
   useEffect(() => {
     loadSettings()
     loadPrompts()
+    loadDefaultModel()
     if (activeTab === 'billing') {
       loadBillingData()
     }
@@ -226,6 +231,74 @@ function SettingsPage() {
         appLogger.error({ event: 'settings_load_failed', message: 'Failed to load settings', module: 'settings' })
       }
     }
+  }
+
+  const loadDefaultModel = async () => {
+    try {
+      const response = await modelsAPI.getProviders()
+      const providersList = response.data.providers || []
+
+      const flatModels: Array<{ id: string; provider: string; model: string; display_name: string }> = []
+      providersList.forEach((provider: { id: string; selected_models?: string[]; display_name?: string; name?: string }) => {
+        const selected = provider.selected_models || []
+        selected.forEach((modelName: string) => {
+          flatModels.push({
+            id: `${provider.id}:${modelName}`,
+            provider: provider.id,
+            model: modelName,
+            display_name: `${provider.display_name || provider.name || provider.id} - ${modelName}`
+          })
+        })
+      })
+
+      setAvailableModels(flatModels)
+
+      const savedDefaultModelId = localStorage.getItem('default_model_id')
+      if (savedDefaultModelId) {
+        const found = flatModels.find(m => m.id === savedDefaultModelId)
+        if (found) {
+          setDefaultModel(found)
+        } else if (flatModels.length > 0) {
+          setDefaultModel(flatModels[0])
+        }
+      } else if (flatModels.length > 0) {
+        setDefaultModel(flatModels[0])
+      }
+
+      appLogger.info({
+        event: 'default_model_load_success',
+        module: 'settings',
+        action: 'load_default_model',
+        message: 'default model loaded',
+        status: 'success',
+        extra: { models_count: flatModels.length },
+      })
+    } catch (error) {
+      appLogger.error({
+        event: 'default_model_load_failed',
+        module: 'settings',
+        action: 'load_default_model',
+        message: 'default model load failed',
+        status: 'failure',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }
+
+  const handleDefaultModelChange = (model: { id: string; provider: string; model: string; display_name: string }) => {
+    setDefaultModel(model)
+    localStorage.setItem('default_model_id', model.id)
+    appLogger.info({
+      event: 'default_model_changed',
+      module: 'settings',
+      action: 'change_default_model',
+      message: 'default model changed',
+      extra: {
+        provider: model.provider,
+        model: model.model,
+        display_name: model.display_name,
+      },
+    })
   }
 
   const loadPrompts = async () => {
@@ -1084,6 +1157,33 @@ function SettingsPage() {
                 <option value="zh">中文</option>
                 <option value="en">English</option>
               </select>
+            </div>
+            <div className={styles['setting-item']}>
+              <label>主模型选择</label>
+              <div className={styles['model-selector-hint']}>
+                选择默认使用的 AI 模型。设置后，所有新对话将使用此模型。
+                {defaultModel && (
+                  <span className={styles['current-model']}>
+                    当前：{defaultModel.display_name || `${defaultModel.provider}:${defaultModel.model}`}
+                  </span>
+                )}
+              </div>
+              <div className={styles['model-list']}>
+                {availableModels.length === 0 ? (
+                  <p className={styles['no-models']}>暂无可用模型，请在 API 配置中添加供应商和模型</p>
+                ) : (
+                  availableModels.map((model) => (
+                    <button
+                      key={model.id}
+                      className={`${styles['model-option']} ${defaultModel?.id === model.id ? styles['selected'] : ''}`}
+                      onClick={() => handleDefaultModelChange(model)}
+                    >
+                      <span className={styles['model-option-name']}>{model.display_name}</span>
+                      <span className={styles['model-option-provider']}>{model.provider}</span>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
             <button
               className={`btn btn-primary`}

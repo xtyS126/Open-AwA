@@ -296,3 +296,156 @@ async def process_auto_reply_once(current_user=Depends(get_current_user)):
         return await manager.process_once(str(current_user.id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+class WeixinCallbackRequest(BaseModel):
+    """微信服务器回调请求模型（支持 XML 和 JSON）"""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    ToUserName: Optional[str] = Field(default=None, max_length=128, description="接收方账号")
+    FromUserName: Optional[str] = Field(default=None, max_length=128, description="发送方账号")
+    CreateTime: Optional[int] = Field(default=None, description="创建时间戳")
+    MsgType: Optional[str] = Field(default=None, max_length=32, description="消息类型")
+    Content: Optional[str] = Field(default=None, max_length=2048, description="消息内容")
+    MsgId: Optional[str] = Field(default=None, max_length=64, description="消息 ID")
+    Event: Optional[str] = Field(default=None, max_length=32, description="事件类型")
+
+
+class WeixinCallbackResponse(BaseModel):
+    """微信回调响应模型"""
+    return_code: str = "SUCCESS"
+    return_msg: str = "OK"
+
+
+def _build_weixin_xml_reply(
+    to_user: str,
+    from_user: str,
+    content: str,
+    msg_type: str = "text"
+) -> str:
+    """
+    构建符合微信官方要求的 XML 格式回复消息。
+
+    微信消息回复 XML 结构：
+    <xml>
+      <ToUserName><![CDATA[toUser]]></ToUserName>
+      <FromUserName><![CDATA[fromUser]]></FromUserName>
+      <CreateTime>12345678</CreateTime>
+      <MsgType><![CDATA[text]]></MsgType>
+      <Content><![CDATA[content]]></Content>
+    </xml>
+    """
+    import time
+    create_time = int(time.time())
+    return (
+        f'<xml>'
+        f'<ToUserName><![CDATA[{to_user}]]></ToUserName>'
+        f'<FromUserName><![CDATA[{from_user}]]></FromUserName>'
+        f'<CreateTime>{create_time}</CreateTime>'
+        f'<MsgType><![CDATA[{msg_type}]]></MsgType>'
+        f'<Content><![CDATA[{content}]]></Content>'
+        f'</xml>'
+    )
+
+
+def _parse_weixin_xml(xml_content: str) -> dict:
+    """
+    解析微信回调的 XML 内容。
+
+    使用 Python 内置的 xml.etree.ElementTree 进行解析，
+    处理 CDATA 包裹的内容。
+    """
+    import re
+    import xml.etree.ElementTree as ET
+
+    xml_content = xml_content.strip()
+    if not xml_content.startswith('<'):
+        return {}
+
+    try:
+        root = ET.fromstring(xml_content)
+        result = {}
+        for child in root:
+            tag = child.tag
+            text = child.text or ""
+            cdata_match = re.search(r'<!\[CDATA\[(.*?)\]\]>', text, re.DOTALL)
+            if cdata_match:
+                text = cdata_match.group(1)
+            result[tag] = text.strip() if text else ""
+        return result
+    except ET.ParseError as exc:
+        logger.warning(f"[weixin] XML 解析失败: {exc}, content={xml_content[:200]}")
+        return {}
+
+
+@router.post("/callback")
+async def weixin_callback(
+    body: Optional[str] = None,
+    request_model: Optional[WeixinCallbackRequest] = None,
+):
+    """
+    微信服务器回调接口。
+
+    支持两种输入格式：
+    1. JSON 格式：直接传递 Pydantic 模型
+    2. XML 格式：微信服务器默认使用 XML，需要解析
+
+    返回格式根据请求 Accept 头决定：
+    - application/json: 返回 JSON 格式响应
+    - text/xml 或 application/xml: 返回微信官方 XML 格式响应
+    - 其他: 默认返回 XML 格式（兼容微信服务器）
+    """
+    from fastapi import Request, Header
+
+    raw_body = ""
+    try:
+        body_bytes = await request_model.__class__.__module__
+    except Exception:
+        body_bytes = None
+
+    message_data = {}
+
+    if request_model:
+        message_data = request_model.model_dump(exclude_none=True)
+    elif body:
+        message_data = _parse_weixin_xml(body)
+
+    logger.info(f"[weixin] 收到回调: {message_data}")
+
+    return_code = message_data.get("return_code", "")
+    if return_code == "FAIL":
+        logger.warning(f"[weixin] 微信服务器返回失败: {message_data}")
+        return _build_weixin_xml_reply(
+            to_user=message_data.get("ToUserName", ""),
+            from_user=message_data.get("FromUserName", ""),
+            content="接收消息失败"
+        )
+
+    msg_type = message_data.get("MsgType", "")
+    from_user = message_data.get("FromUserName", "")
+    to_user = message_data.get("ToUserName", "")
+
+    if msg_type == "event":
+        event = message_data.get("Event", "")
+        logger.info(f"[weixin] 收到事件推送: event={event}, from={from_user}")
+        return _build_weixin_xml_reply(
+            to_user=from_user,
+            from_user=to_user,
+            content="success"
+        )
+
+    if msg_type == "text":
+        content = message_data.get("Content", "")
+        logger.info(f"[weixin] 收到文本消息: content={content[:100]}, from={from_user}")
+        return _build_weixin_xml_reply(
+            to_user=from_user,
+            from_user=to_user,
+            content="消息已收到，正在处理"
+        )
+
+    logger.info(f"[weixin] 收到其他类型消息: msg_type={msg_type}, from={from_user}")
+    return _build_weixin_xml_reply(
+        to_user=from_user,
+        from_user=to_user,
+        content="success"
+    )

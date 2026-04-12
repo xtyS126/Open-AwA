@@ -4,51 +4,58 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--color-overlay);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  backdrop-filter: blur(4px);
 }
 
 .modal-content.skill-modal {
-  background: var(--color-surface-dark);
-  color: var(--color-text-on-dark);
-  width: 600px;
-  max-width: 90vw;
+  background: var(--color-surface);
+  color: var(--color-text);
+  width: 560px;
+  max-width: 95vw;
   max-height: 90vh;
-  border-radius: 8px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
 }
 
 .modal-header {
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--color-border-dark);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background: var(--color-bg-secondary);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  color: var(--color-text);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: var(--color-text-on-dark-tertiary);
+  color: var(--color-text-tertiary);
   font-size: 24px;
   cursor: pointer;
-  padding: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
   line-height: 1;
+  transition: all 0.2s;
 }
 
 .close-btn:hover {
-  color: var(--color-text-on-dark);
+  color: var(--color-text);
+  background: var(--color-bg-tertiary);
 }
 
 .modal-body {
@@ -56,62 +63,95 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  flex: 1;
 }
 
 .upload-area {
-  border: 1px dashed var(--color-border-dark-secondary);
-  border-radius: 8px;
+  border: 2px dashed var(--color-border);
+  border-radius: 12px;
   padding: 32px 24px;
   text-align: center;
   cursor: pointer;
-  background: var(--color-surface-dark-secondary);
+  background: var(--color-bg-secondary);
   transition: all 0.2s ease;
+  outline: none;
 }
 
-.upload-area:hover {
+.upload-area:hover,
+.upload-area:focus {
   border-color: var(--color-primary);
-  background: var(--color-surface-dark-tertiary);
+  background: var(--color-bg-tertiary);
+}
+
+.upload-area:focus {
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .upload-icon {
-  font-size: 32px;
+  font-size: 36px;
   margin-bottom: 12px;
-  color: var(--color-text-on-dark-tertiary);
+  color: var(--color-primary);
+  font-weight: 300;
 }
 
 .upload-title {
   margin: 0 0 8px 0;
   font-size: 16px;
-  color: var(--color-text-on-dark-secondary);
+  font-weight: 500;
+  color: var(--color-text);
 }
 
 .upload-desc {
   margin: 0;
-  font-size: 12px;
-  color: var(--color-text-on-dark-tertiary);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 8px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .form-group.flex-1 {
   flex: 1;
+  min-height: 0;
 }
 
 .form-group label {
   font-size: 14px;
-  color: var(--color-text-on-dark-secondary);
+  font-weight: 500;
+  color: var(--color-text);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .required {
-  color: var(--color-required);
+  color: var(--color-error);
+}
+
+.error-text {
+  font-size: 12px;
+  color: var(--color-error);
+  margin-top: 2px;
 }
 
 .radio-group {
@@ -119,48 +159,102 @@
   gap: 16px;
 }
 
-.radio-group label {
+.radio-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  transition: all 0.2s;
+}
+
+.radio-label:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-bg-tertiary);
+}
+
+.radio-label input {
+  accent-color: var(--color-primary);
+}
+
+.radio-label span {
+  font-size: 14px;
+  color: var(--color-text);
 }
 
 input[type="text"] {
-  background: var(--color-surface-dark-tertiary);
-  border: 1px solid var(--color-border-dark-secondary);
-  color: var(--color-text-on-dark);
-  padding: 8px 12px;
-  border-radius: 4px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 10px 14px;
+  border-radius: 8px;
   font-size: 14px;
+  transition: all 0.2s;
+}
+
+input[type="text"]:hover {
+  border-color: var(--color-border-hover);
 }
 
 input[type="text"]:focus {
   border-color: var(--color-primary);
   outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 textarea {
-  background: var(--color-surface-dark-tertiary);
-  border: 1px solid var(--color-border-dark-secondary);
-  color: var(--color-text-on-dark);
-  padding: 12px;
-  border-radius: 4px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 12px 14px;
+  border-radius: 8px;
   font-size: 14px;
-  min-height: 160px;
+  line-height: 1.6;
+  min-height: 120px;
   resize: vertical;
-  font-family: monospace;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  transition: all 0.2s;
+}
+
+textarea:hover {
+  border-color: var(--color-border-hover);
 }
 
 textarea:focus {
   border-color: var(--color-primary);
   outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
 .modal-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--color-border-dark);
+  border-top: 1px solid var(--color-border);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  background: var(--color-bg-secondary);
+}
+
+.btn-secondary {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg);
+  border-color: var(--color-border-hover);
+}
+
+.btn-secondary:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }

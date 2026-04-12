@@ -1,10 +1,17 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { skillsAPI } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './SkillModal.module.css'
 
 interface SkillModalProps {
   onClose: () => void
   onSuccess: () => void
+}
+
+interface FormErrors {
+  name?: string
+  description?: string
+  instructions?: string
 }
 
 export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
@@ -14,14 +21,43 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
   const [description, setDescription] = useState('')
   const [instructions, setInstructions] = useState('')
   const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState<FormErrors>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    nameInputRef.current?.focus()
+  }, [])
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {}
+
+    if (!name.trim()) {
+      newErrors.name = '技能名称不能为空'
+    } else if (name.length > 50) {
+      newErrors.name = '技能名称不能超过50个字符'
+    }
+
+    if (!description.trim()) {
+      newErrors.description = '描述不能为空'
+    } else if (description.length > 200) {
+      newErrors.description = '描述不能超过200个字符'
+    }
+
+    if (!instructions.trim()) {
+      newErrors.instructions = '指令不能为空'
+    } else if (instructions.length < 10) {
+      newErrors.instructions = '指令内容过于简单，请提供更详细的描述'
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0]
       setFile(selectedFile)
-      
-      // Auto parse
 
       try {
         setLoading(true)
@@ -30,8 +66,25 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
         if (data.name) setName(data.name)
         if (data.description) setDescription(data.description)
         if (data.instructions) setInstructions(data.instructions)
+
+        appLogger.info({
+          event: 'skill_file_parsed',
+          module: 'skills',
+          action: 'parse_upload',
+          message: 'skill file parsed',
+          status: 'success',
+          extra: { file_name: selectedFile.name },
+        })
       } catch (error) {
         console.error('Failed to parse file:', error)
+        appLogger.error({
+          event: 'skill_file_parse_failed',
+          module: 'skills',
+          action: 'parse_upload',
+          message: 'skill file parse failed',
+          status: 'failure',
+          extra: { error: error instanceof Error ? error.message : String(error) },
+        })
       } finally {
         setLoading(false)
       }
@@ -39,112 +92,223 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
   }
 
   const handleSubmit = async () => {
-    if (!name || !description || !instructions) {
-      alert('请填写完整信息')
+    if (!validateForm()) {
+      appLogger.warning({
+        event: 'skill_create_validation_failed',
+        module: 'skills',
+        action: 'create_skill',
+        message: 'skill validation failed',
+        status: 'validation_error',
+      })
       return
     }
 
     try {
       setLoading(true)
-      // Create YAML config
       const config = `name: ${name}\ndescription: ${description}\ninstructions: |\n  ${instructions.split('\n').join('\n  ')}\ntype: ${skillType}`
-      
+
       await skillsAPI.install({
         name,
         version: '1.0.0',
         description,
         config
       })
+
+      appLogger.info({
+        event: 'skill_create_success',
+        module: 'skills',
+        action: 'create_skill',
+        message: 'skill created',
+        status: 'success',
+        extra: { skill_name: name, skill_type: skillType },
+      })
+
       onSuccess()
     } catch (error) {
       console.error('Failed to create skill:', error)
-      alert('创建技能失败')
+      appLogger.error({
+        event: 'skill_create_failed',
+        module: 'skills',
+        action: 'create_skill',
+        message: 'skill create failed',
+        status: 'failure',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
     } finally {
       setLoading(false)
     }
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose()
+    }
+  }
+
   return (
-    <div className={styles['modal-overlay']}>
+    <div
+      className={styles['modal-overlay']}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onKeyDown={handleKeyDown}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="skill-modal-title"
+    >
       <div className={`${styles['modal-content']} ${styles['skill-modal']}`}>
         <div className={styles['modal-header']}>
-          <h2>创建技能</h2>
-          <button className={styles['close-btn']} onClick={onClose}>&times;</button>
-        </div>
-        
-        <div className={styles['modal-body']}>
-          <div 
-            className={styles['upload-area']} 
-            onClick={() => fileInputRef.current?.click()}
+          <h2 id="skill-modal-title">创建技能</h2>
+          <button
+            className={styles['close-btn']}
+            onClick={onClose}
+            aria-label="关闭"
           >
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              style={{ display: 'none' }} 
+            &times;
+          </button>
+        </div>
+
+        <div className={styles['modal-body']}>
+          <div
+            className={styles['upload-area']}
+            onClick={() => fileInputRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+            aria-label="上传文件"
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
               accept=".zip,.skill,.md,.yaml,.yml"
               onChange={handleFileChange}
             />
-            <div className={styles['upload-icon']}>文件</div>
-            <p className={styles['upload-title']}>{file ? file.name : '上传进行智能解析'}</p>
-            <p className={styles['upload-desc']}>包含 SKILL.md 文件的 .zip 或 .skill 文件，SKILL.md 位于根目录，包含 YAML 格式的技能名称和描述。</p>
+            <div className={styles['upload-icon']} aria-hidden="true">+</div>
+            <p className={styles['upload-title']}>
+              {file ? file.name : '上传文件自动解析'}
+            </p>
+            <p className={styles['upload-desc']}>
+              支持 .zip、.skill、.md、.yaml 格式，包含 SKILL.md 配置文件
+            </p>
           </div>
 
-          <div className={styles['form-group']}>
-            <label><span className={styles['required']}>*</span>技能类型</label>
-            <div className={styles['radio-group']}>
-              <label>
-                <input 
-                  type="radio" 
-                  value="global" 
-                  checked={skillType === 'global'} 
-                  onChange={(e) => setSkillType(e.target.value)} 
-                /> 全局
+          <div className={styles['form-section']}>
+            <h3 className={styles['section-title']}>基本信息</h3>
+
+            <div className={styles['form-group']}>
+              <label htmlFor="skill-name">
+                <span className={styles['required']}>*</span>技能名称
               </label>
-              <label>
-                <input 
-                  type="radio" 
-                  value="project" 
-                  checked={skillType === 'project'} 
-                  onChange={(e) => setSkillType(e.target.value)} 
-                /> 项目
+              <input
+                id="skill-name"
+                ref={nameInputRef}
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (errors.name) setErrors({ ...errors, name: undefined })
+                }}
+                placeholder="例如：代码分析助手"
+                aria-invalid={!!errors.name}
+                aria-describedby={errors.name ? 'skill-name-error' : undefined}
+              />
+              {errors.name && (
+                <span id="skill-name-error" className={styles['error-text']} role="alert">
+                  {errors.name}
+                </span>
+              )}
+            </div>
+
+            <div className={styles['form-group']}>
+              <label htmlFor="skill-description">
+                <span className={styles['required']}>*</span>描述
               </label>
+              <input
+                id="skill-description"
+                type="text"
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  if (errors.description) setErrors({ ...errors, description: undefined })
+                }}
+                placeholder="描述技能的用途和使用场景"
+                aria-invalid={!!errors.description}
+                aria-describedby={errors.description ? 'skill-description-error' : undefined}
+              />
+              {errors.description && (
+                <span id="skill-description-error" className={styles['error-text']} role="alert">
+                  {errors.description}
+                </span>
+              )}
+            </div>
+
+            <div className={styles['form-group']}>
+              <label>技能类型</label>
+              <div className={styles['radio-group']} role="radiogroup" aria-label="技能类型">
+                <label className={styles['radio-label']}>
+                  <input
+                    type="radio"
+                    value="global"
+                    checked={skillType === 'global'}
+                    onChange={(e) => setSkillType(e.target.value)}
+                  />
+                  <span>全局</span>
+                </label>
+                <label className={styles['radio-label']}>
+                  <input
+                    type="radio"
+                    value="project"
+                    checked={skillType === 'project'}
+                    onChange={(e) => setSkillType(e.target.value)}
+                  />
+                  <span>项目</span>
+                </label>
+              </div>
             </div>
           </div>
 
-          <div className={styles['form-group']}>
-            <label><span className={styles['required']}>*</span>技能名称</label>
-            <input 
-              type="text" 
-              value={name} 
-              onChange={(e) => setName(e.target.value)} 
-              placeholder="为这个 Skill 起一个简短的名称，例如：codemap"
-            />
-          </div>
+          <div className={`${styles['form-section']} ${styles['flex-1']}`}>
+            <h3 className={styles['section-title']}>指令配置</h3>
 
-          <div className={styles['form-group']}>
-            <label><span className={styles['required']}>*</span>描述</label>
-            <input 
-              type="text" 
-              value={description} 
-              onChange={(e) => setDescription(e.target.value)} 
-              placeholder="简单描述这个 Skill 应该在什么情况下被触发，例如：分析代码库结构、依赖关系和变更"
-            />
-          </div>
-
-          <div className={`${styles['form-group']} ${styles['flex-1']}`}>
-            <label><span className={styles['required']}>*</span>指令</label>
-            <textarea 
-              value={instructions} 
-              onChange={(e) => setInstructions(e.target.value)} 
-              placeholder="当这个 Skill 被触发时，你希望模型遵循哪些规则或信息，例如：&#10;&#10;# codemap&#10;## 命令&#10;## 使用场景&#10;## 输出解释&#10;## 示例"
-            />
+            <div className={`${styles['form-group']} ${styles['flex-1']}`}>
+              <label htmlFor="skill-instructions">
+                <span className={styles['required']}>*</span>指令
+              </label>
+              <textarea
+                id="skill-instructions"
+                value={instructions}
+                onChange={(e) => {
+                  setInstructions(e.target.value)
+                  if (errors.instructions) setErrors({ ...errors, instructions: undefined })
+                }}
+                placeholder="# 技能名称&#10;## 使用场景&#10;## 行为规则&#10;## 输出格式"
+                aria-invalid={!!errors.instructions}
+                aria-describedby={errors.instructions ? 'skill-instructions-error' : undefined}
+              />
+              {errors.instructions && (
+                <span id="skill-instructions-error" className={styles['error-text']} role="alert">
+                  {errors.instructions}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className={styles['modal-footer']}>
-          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={onClose} disabled={loading}>取消</button>
-          <button className={`btn btn-primary`} onClick={handleSubmit} disabled={loading}>
-            {loading ? '处理中...' : '确认'}
+          <button
+            className={`btn ${styles['btn-secondary']}`}
+            onClick={onClose}
+            disabled={loading}
+            aria-label="取消创建"
+          >
+            取消
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={loading}
+            aria-label="确认创建"
+          >
+            {loading ? '处理中...' : '创建'}
           </button>
         </div>
       </div>
