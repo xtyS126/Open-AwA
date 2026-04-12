@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, get_optional_current_user
 from config.logging import (
     get_error_summary,
     get_log_file_list,
@@ -205,11 +205,12 @@ class ClientErrorReport(BaseModel):
 @router.post("/client-errors")
 async def report_client_error(
     report: ClientErrorReport,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     接收前端上报的错误信息，统一写入后端日志系统。
     使前端的 console.error 级别错误也能在后端日志中查看和分析。
+    未登录用户也可上报错误，user_id 为 None。
     """
     level_name = str(report.level or "ERROR").strip().upper() or "ERROR"
     if level_name not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
@@ -220,7 +221,7 @@ async def report_client_error(
         module="frontend",
         error_source=report.source,
         url=report.url,
-        user_id=current_user.id,
+        user_id=current_user.id if current_user else None,
         user_agent=report.user_agent,
         client_timestamp=report.timestamp,
         client_extra=report.extra,

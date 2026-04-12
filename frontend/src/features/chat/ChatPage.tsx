@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatAPI } from '@/shared/api/api'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
+import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import { ReasoningContent } from './components/ReasoningContent'
 import styles from './ChatPage.module.css'
@@ -152,6 +153,8 @@ function ChatPage() {
     }
   }, [])
 
+  const { isAuthenticated } = useAuthStore()
+
   useEffect(() => {
     appLogger.info({
       event: 'page_view',
@@ -160,8 +163,10 @@ function ChatPage() {
       status: 'success',
       message: 'chat page mounted',
     })
-    void loadConfigurations()
-  }, [loadConfigurations])
+    if (isAuthenticated) {
+      void loadConfigurations()
+    }
+  }, [loadConfigurations, isAuthenticated])
 
   const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
     if (!value) {

@@ -12,10 +12,12 @@ import io
 import os
 import re
 import shutil
+import sys
 import ssl
 import tempfile
 import urllib.parse
 import zipfile
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -515,6 +517,86 @@ class PluginManager:
         safe_base = re.sub(r"[^a-zA-Z0-9_.-]", "_", base_name)
         extract_dir = tempfile.mkdtemp(prefix=f"{safe_base}_", dir=self.plugins_dir)
         return extract_dir
+
+    def _get_repo_root_dir(self) -> str:
+        """
+        获取仓库根目录路径。
+        扫描插件时需要把仓库根目录加入导入搜索路径，避免示例插件引用 `backend.*` 时报错。
+        """
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.abspath(os.path.join(current_dir, "..", ".."))
+
+    def _build_scan_module_name(self, plugin_path: str) -> str:
+        """
+        为扫描阶段生成尽量贴近真实包结构的模块名。
+        这样在插件使用相对导入或依赖包上下文时，能减少与运行期环境的偏差。
+        """
+        plugin_path_abs = os.path.abspath(plugin_path)
+        repo_root_dir = self._get_repo_root_dir()
+        backend_dir = os.path.join(repo_root_dir, "backend")
+        candidate_roots = (repo_root_dir, backend_dir, os.path.abspath(self.plugins_dir))
+
+        for root_dir in candidate_roots:
+            try:
+                if os.path.commonpath([root_dir, plugin_path_abs]) != root_dir:
+                    continue
+            except ValueError:
+                continue
+
+            relative_path = os.path.relpath(plugin_path_abs, root_dir)
+            if relative_path.startswith(".."):
+                continue
+
+            module_path = os.path.splitext(relative_path)[0]
+            module_name = module_path.replace(os.sep, ".")
+            if module_name:
+                return module_name
+
+        return f"plugins.{os.path.splitext(os.path.basename(plugin_path_abs))[0]}"
+
+    @contextmanager
+    def _plugin_scan_import_context(self, plugin_path: str):
+        """
+        为扫描阶段临时补齐导入搜索路径。
+        这里同时加入仓库根目录、后端目录和插件所在目录，兼容示例插件与本地测试插件的导入方式。
+        """
+        repo_root_dir = self._get_repo_root_dir()
+        backend_dir = os.path.join(repo_root_dir, "backend")
+        plugin_dir = os.path.dirname(os.path.abspath(plugin_path))
+
+        path_candidates = []
+        for path in (repo_root_dir, backend_dir, self.plugins_dir, plugin_dir):
+            normalized = os.path.abspath(path)
+            if normalized not in path_candidates:
+                path_candidates.append(normalized)
+
+        inserted_paths: List[str] = []
+        for path in reversed(path_candidates):
+            if path and path not in sys.path:
+                sys.path.insert(0, path)
+                inserted_paths.append(path)
+
+        base_plugin_alias_key = "backend.plugins.base_plugin"
+        previous_base_plugin_alias = sys.modules.get(base_plugin_alias_key)
+        alias_created = False
+
+        try:
+            # 统一 `plugins.base_plugin` 与 `backend.plugins.base_plugin` 的模块身份，
+            # 避免同一个 BasePlugin 因为导入路径不同而让 issubclass 判断失效。
+            canonical_base_plugin_module = importlib.import_module("plugins.base_plugin")
+            if previous_base_plugin_alias is not canonical_base_plugin_module:
+                sys.modules[base_plugin_alias_key] = canonical_base_plugin_module
+                alias_created = True
+            yield
+        finally:
+            if alias_created:
+                if previous_base_plugin_alias is None:
+                    sys.modules.pop(base_plugin_alias_key, None)
+                else:
+                    sys.modules[base_plugin_alias_key] = previous_base_plugin_alias
+            for path in inserted_paths:
+                if path in sys.path:
+                    sys.path.remove(path)
 
     def _discover_plugins_in_directory(self, search_dir: str) -> List[Dict[str, Any]]:
         """
@@ -1315,10 +1397,10 @@ class PluginManager:
         处理scan、plugin、file相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        try:
-            plugin_name = os.path.splitext(os.path.basename(plugin_path))[0]
-            module_name = f"plugins.{plugin_name}"
+        plugin_name = os.path.splitext(os.path.basename(plugin_path))[0]
+        module_name = self._build_scan_module_name(plugin_path)
 
+        try:
             security_scan = self._run_static_security_scan(plugin_path)
             if security_scan["blocked"]:
                 logger.warning(f"Plugin '{plugin_name}' blocked by static security scan: {security_scan['reasons']}")
@@ -1329,7 +1411,8 @@ class PluginManager:
                 return None
 
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            with self._plugin_scan_import_context(plugin_path):
+                spec.loader.exec_module(module)
 
             plugin_classes = []
             for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -1355,8 +1438,24 @@ class PluginManager:
 
             return metadata
 
+        except (ModuleNotFoundError, ImportError) as e:
+            logger.bind(
+                event="plugin_scan_import_skipped",
+                plugin_name=plugin_name,
+                plugin_path=plugin_path,
+                module_name=module_name,
+                error_type=type(e).__name__,
+                missing_module=getattr(e, "name", None),
+            ).warning(f"Skipped plugin metadata scan because imports are unavailable: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error scanning plugin file {plugin_path}: {e}")
+            logger.bind(
+                event="plugin_scan_failed",
+                plugin_name=plugin_name,
+                plugin_path=plugin_path,
+                module_name=module_name,
+                error_type=type(e).__name__,
+            ).error(f"Error scanning plugin file {plugin_path}: {e}")
             return None
 
     def load_plugin(self, plugin_name: str) -> bool:
@@ -2521,4 +2620,3 @@ class PluginManager:
             f"Plugin '{plugin_name}' rolled back to version '{result['rolled_back_to']}'"
         )
         return result
-

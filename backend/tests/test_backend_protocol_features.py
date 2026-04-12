@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 
 from api.routes import chat as chat_route
 from billing.pricing_manager import PricingManager
+from core.agent import AIAgent
+import core.executor as executor_module
 from core.executor import ExecutionLayer
 from core.model_service import build_provider_request
 from main import app
@@ -153,6 +155,170 @@ async def test_execution_layer_retries_and_forwards_request_headers(monkeypatch)
     assert calls[0]["headers"]["X-Request-Id"] == "req-llm-1"
     assert calls[0]["headers"]["X-Client-Ver"] == "2.3.4"
     assert calls[0]["url"] == "https://api.openai.com/v1/chat/completions"
+
+
+@pytest.mark.asyncio
+async def test_execution_layer_returns_retryable_error_on_timeout(monkeypatch):
+    """
+    上游模型超时时应返回可重试错误，避免微信自动回复把暂时性故障误判为不可恢复。
+    """
+
+    execution_layer = ExecutionLayer()
+
+    def mock_resolve(self, context):
+        return {
+            "ok": True,
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "api_endpoint": "https://api.openai.com",
+            "api_key": "secret",
+            "request_id": "req-timeout-1",
+            "client_version": "2.3.4",
+        }
+
+    async def fake_send_with_retries(spec):
+        request = httpx.Request("POST", spec.endpoint)
+        raise httpx.ReadTimeout("read timeout", request=request)
+
+    execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
+    monkeypatch.setattr(executor_module, "send_with_retries", fake_send_with_retries)
+
+    result = await execution_layer._call_llm_api("你好", {"message": "你好"})
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "model_service_network_error"
+    assert result["error"]["retryable"] is True
+    assert result["error"]["details"]["reason"] == "read timeout"
+
+
+@pytest.mark.asyncio
+async def test_execution_layer_returns_retryable_error_on_network_failure(monkeypatch):
+    """
+    上游网络异常时应返回稳定错误结构，便于回归时区分超时与发送链路失败。
+    """
+
+    execution_layer = ExecutionLayer()
+
+    def mock_resolve(self, context):
+        return {
+            "ok": True,
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "api_endpoint": "https://api.openai.com",
+            "api_key": "secret",
+            "request_id": "req-network-1",
+            "client_version": "2.3.4",
+        }
+
+    async def fake_send_with_retries(spec):
+        request = httpx.Request("POST", spec.endpoint)
+        raise httpx.ConnectError("connection reset by peer", request=request)
+
+    execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
+    monkeypatch.setattr(executor_module, "send_with_retries", fake_send_with_retries)
+
+    result = await execution_layer._call_llm_api("你好", {"message": "你好"})
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "model_service_network_error"
+    assert result["error"]["retryable"] is True
+    assert result["error"]["details"]["reason"] == "connection reset by peer"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeypatch):
+    """
+    final_only 模式应从顶层和嵌套执行结果中一起剥离 reasoning_content。
+    """
+
+    agent = AIAgent()
+
+    async def fake_recognize_intent(user_input):
+        return "chat"
+
+    async def fake_extract_entities(user_input):
+        return {}
+
+    async def fake_create_plan(intent, entities, context):
+        return {
+            "intent": "chat",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "llm_chat",
+                    "message": context.get("message", ""),
+                    "purpose": "对话交流",
+                }
+            ],
+            "requires_confirmation": False,
+        }
+
+    async def fake_execute_step(step, context):
+        return {
+            "status": "completed",
+            "response": "最终回复",
+            "reasoning_content": "步骤级思维链",
+            "nested": {
+                "reasoning_content": "嵌套思维链",
+                "visible": "保留字段",
+            },
+        }
+
+    async def fake_evaluate_result(result):
+        return {}
+
+    async def fake_generate_response(results, context):
+        return "最终回复"
+
+    async def fake_update_memory(user_input, response, context):
+        return None
+
+    async def fake_retrieve_relevant_experiences(user_input, context):
+        return []
+
+    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
+    monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
+    monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
+    monkeypatch.setattr(agent.feedback, "update_memory", fake_update_memory)
+    monkeypatch.setattr(agent, "_retrieve_relevant_experiences", fake_retrieve_relevant_experiences)
+
+    result = await agent.process(
+        "你好",
+        {
+            "message": "你好",
+            "user_id": "user-1",
+            "session_id": "session-final-only",
+            "output_mode": "final_only",
+        },
+    )
+
+    assert result["status"] == "completed"
+    assert result["response"] == "最终回复"
+    assert "reasoning_content" not in result
+    assert "reasoning_content" not in result["results"][0]["result"]
+    assert result["results"][0]["result"]["nested"]["visible"] == "保留字段"
+    assert "reasoning_content" not in result["results"][0]["result"]["nested"]
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_get_available_skills_returns_empty_without_db_session(monkeypatch):
+    """
+    无数据库会话时应直接返回空列表，而不是继续访问依赖数据库的技能注册表。
+    """
+
+    agent = AIAgent()
+
+    def fail_list_all():
+        raise AssertionError("无 db_session 时不应访问 registry.list_all")
+
+    monkeypatch.setattr(agent.skill_engine.registry, "list_all", fail_list_all)
+
+    result = await agent.get_available_skills()
+
+    assert result == []
 
 
 @pytest.mark.asyncio

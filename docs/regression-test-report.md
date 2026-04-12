@@ -59,3 +59,38 @@
 经过全面的后端与前端自动化测试，共计 221 个测试用例全部通过。系统的核心功能（大模型对话、微信集成、计费控制、插件系统）表现稳定，近期引入的并发、逻辑判断及集成类 Bug 均已彻底修复。
 
 **最终结论**：系统当前版本质量达到预期标准，不存在阻碍上线的重大回归问题，准予发布并进行上线迁移。
+
+## 5. Task6 后端缺口回归记录（2026-04-12）
+
+### 5.1 问题追踪
+
+- **问题编号**：Task6
+- **问题现象**：微信自动回复链路虽然向 `AIAgent.process()` 传入了 `output_mode=final_only` 与 `suppress_reasoning=True`，但核心执行层此前并未消费这些标记，导致返回对象中的 `reasoning_content` 仍可能继续向下游透传，`final_only` 实际上只停留在“传参”阶段。
+- **影响范围**：
+  - `backend/api/services/weixin_auto_reply.py`
+  - `backend/core/agent.py`
+  - `backend/tests/test_weixin_auto_reply.py`
+  - `backend/tests/test_backend_protocol_features.py`
+
+### 5.2 修复措施
+
+1. 在 `backend/core/agent.py` 增加 `final_only` / `suppress_reasoning` 判断，并在最终返回前递归移除顶层及嵌套结果中的 `reasoning_content`。
+2. 在 `process_stream()` 中同步应用同一输出模式，避免流式场景继续向客户端发出 reasoning 事件。
+3. 在 `backend/api/services/weixin_auto_reply.py` 的默认 AI 生成器中增加 `reasoning_content` 兜底清洗，确保微信渠道边界始终只保留最终答案。
+
+### 5.3 回归用例
+
+- `backend/tests/test_weixin_auto_reply.py::test_default_ai_reply_generator_strips_reasoning_content_and_sets_final_only`
+  - 验证微信默认 AI 生成器会携带 `final_only` 上下文，并在返回对象中剥离顶层与嵌套的 `reasoning_content`。
+- `backend/tests/test_backend_protocol_features.py::test_ai_agent_process_strips_reasoning_content_when_final_only`
+  - 验证核心 `AIAgent.process()` 在 `final_only` 模式下会统一清理所有对外可见的思维链字段。
+- `backend/tests/test_backend_protocol_features.py::test_execution_layer_returns_retryable_error_on_timeout`
+  - 验证模型上游超时时会返回稳定且可重试的错误结构。
+- `backend/tests/test_backend_protocol_features.py::test_execution_layer_returns_retryable_error_on_network_failure`
+  - 验证模型上游网络失败时会返回稳定且可重试的错误结构。
+
+### 5.4 执行命令与结果
+
+- **执行命令**：`pytest backend/tests/test_weixin_auto_reply.py backend/tests/test_backend_protocol_features.py`
+- **执行结果**：16 个测试全部通过
+- **验证结论**：Task6 涉及的 `final_only` 输出裁剪、超时异常映射、网络失败映射均已落到自动化测试中，可作为后续回归检查的可追溯基线。

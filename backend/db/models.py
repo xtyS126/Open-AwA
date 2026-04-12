@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime,
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
+from fastapi import HTTPException
 from loguru import logger
 from config.settings import settings
 import json
@@ -559,6 +560,24 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except HTTPException as e:
+        # 鉴权失败等 HTTP 异常属于请求级拒绝，不应误记为数据库会话故障。
+        if e.status_code in {401, 403}:
+            logger.bind(
+                event="db_session_http_exception",
+                module="db",
+                status_code=e.status_code,
+                error_type=type(e).__name__,
+            ).info(f"数据库会话提前结束（鉴权拒绝）: {e.detail}")
+        else:
+            logger.bind(
+                event="db_session_http_exception",
+                module="db",
+                status_code=e.status_code,
+                error_type=type(e).__name__,
+            ).warning(f"数据库会话提前结束（HTTP 异常）: {e.detail}")
+        db.rollback()
+        raise
     except Exception as e:
         logger.bind(
             event="db_session_error",

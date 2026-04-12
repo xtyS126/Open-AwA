@@ -26,6 +26,7 @@ from api.services.weixin_auto_reply import (
     build_weixin_reply_text,
 )
 from config.security import encrypt_secret_value
+from core.agent import AIAgent
 from db.models import Base, WeixinBinding
 from main import app
 from skills.weixin_skill_adapter import WeixinSkillAdapter
@@ -135,6 +136,69 @@ def test_build_weixin_reply_text_filters_reasoning_content():
         }
     )
     assert reply == "你好，这里是最终回复。"
+
+
+def test_build_weixin_reply_text_truncates_chinese_on_character_boundary():
+    """验证中文回复按字符边界截断，不会产生半个字符的脏结果。"""
+    reply = build_weixin_reply_text(
+        {
+            "response": "你好世界测试文本",
+        },
+        max_length=5,
+    )
+    assert reply == "你好世界测"
+    assert reply.encode("utf-8").decode("utf-8") == "你好世界测"
+
+
+@pytest.mark.asyncio
+async def test_default_ai_reply_generator_strips_reasoning_content_and_sets_final_only(tmp_path, monkeypatch):
+    """验证默认 AI 生成器会携带 final_only 上下文，并兜底移除返回结果中的思维链字段。"""
+    _create_binding()
+    service = _build_service(tmp_path, None)
+    captured = {}
+
+    async def fake_process(self, user_input, context):
+        captured["user_input"] = user_input
+        captured["context"] = dict(context)
+        return {
+            "status": "completed",
+            "response": "最终答案：仅保留最终回复",
+            "reasoning_content": "不应继续向下游暴露",
+            "results": [
+                {
+                    "type": "execution",
+                    "result": {
+                        "response": "内部执行结果",
+                        "reasoning_content": "嵌套思维链",
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(AIAgent, "process", fake_process)
+
+    db = TestingSessionLocal()
+    try:
+        binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == "user-1").first()
+        result = await service._default_ai_reply_generator(
+            db,
+            binding,
+            {
+                "text": "帮我回复一下",
+                "message_id": "msg-final-only",
+                "context_token": "ctx-final-only",
+                "from_user_id": "friend-final-only",
+            },
+        )
+    finally:
+        db.close()
+
+    assert captured["user_input"] == "帮我回复一下"
+    assert captured["context"]["output_mode"] == "final_only"
+    assert captured["context"]["suppress_reasoning"] is True
+    assert result["response"] == "最终答案：仅保留最终回复"
+    assert "reasoning_content" not in result
+    assert "reasoning_content" not in result["results"][0]["result"]
 
 
 @pytest.mark.asyncio

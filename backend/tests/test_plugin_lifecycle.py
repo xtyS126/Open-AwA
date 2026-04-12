@@ -4,11 +4,15 @@
 """
 
 import io
+import sys
 import zipfile
 from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from plugins import plugin_manager as plugin_manager_module
 from plugins.plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
 from plugins.plugin_manager import PluginManager
 
@@ -560,3 +564,147 @@ class SafePlugin(BasePlugin):
     names = {item["name"] for item in discovered}
     assert "safe_plugin" in names
     assert "dangerous_plugin" not in names
+
+
+def test_scan_example_plugin_supports_backend_import_path():
+    """
+    验证扫描官方示例插件时，会补齐 `backend.*` 导入所需路径，避免误报导入失败。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    example_plugin_path = repo_root / "backend" / "plugins" / "examples" / "hello_world.py"
+
+    manager = PluginManager(plugins_dir=str(example_plugin_path.parent))
+    metadata = manager._scan_plugin_file(str(example_plugin_path))
+
+    assert metadata is not None
+    assert metadata["name"] == "hello_world"
+    assert metadata["module"] == "backend.plugins.examples.hello_world"
+    assert metadata["path"] == str(example_plugin_path)
+
+
+def test_scan_plugin_file_logs_warning_for_import_dependency_issue(tmp_path: Path, monkeypatch):
+    """
+    验证扫描阶段遇到缺失依赖时会按可恢复问题记为 warning，而不是误记为 error。
+    """
+    plugin_path = tmp_path / "missing_dependency_plugin.py"
+    plugin_path.write_text(
+        """import missing_demo_dependency
+from plugins.base_plugin import BasePlugin
+
+
+class MissingDependencyPlugin(BasePlugin):
+    name = "missing_dependency_plugin"
+    version = "1.0.0"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return kwargs
+""",
+        encoding="utf-8",
+    )
+
+    class StubLogger:
+        """
+        用于捕获扫描日志，方便断言日志分级是否符合预期。
+        """
+
+        def __init__(self) -> None:
+            self.records = []
+            self._bound = {}
+
+        def bind(self, **kwargs):
+            self._bound = kwargs
+            return self
+
+        def warning(self, message: str) -> None:
+            self.records.append(("warning", message, dict(self._bound)))
+
+        def error(self, message: str) -> None:
+            self.records.append(("error", message, dict(self._bound)))
+
+        def info(self, message: str) -> None:
+            self.records.append(("info", message, {}))
+
+        def debug(self, message: str) -> None:
+            self.records.append(("debug", message, {}))
+
+    stub_logger = StubLogger()
+    monkeypatch.setattr(plugin_manager_module, "logger", stub_logger)
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    metadata = manager._scan_plugin_file(str(plugin_path))
+
+    assert metadata is None
+    assert any(
+        level == "warning"
+        and extra.get("event") == "plugin_scan_import_skipped"
+        and extra.get("missing_module") == "missing_demo_dependency"
+        for level, _, extra in stub_logger.records
+    )
+    assert not any(level == "error" for level, _, _ in stub_logger.records)
+
+
+def test_scan_plugin_file_logs_error_for_runtime_failure(tmp_path: Path, monkeypatch):
+    """
+    验证扫描阶段遇到真实运行异常时仍会记为 error，便于定位插件缺陷。
+    """
+    plugin_path = tmp_path / "runtime_failure_plugin.py"
+    plugin_path.write_text(
+        """from plugins.base_plugin import BasePlugin
+
+raise RuntimeError("scan boom")
+
+
+class RuntimeFailurePlugin(BasePlugin):
+    name = "runtime_failure_plugin"
+    version = "1.0.0"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return kwargs
+""",
+        encoding="utf-8",
+    )
+
+    class StubLogger:
+        """
+        用于捕获扫描日志，验证真实异常的日志等级。
+        """
+
+        def __init__(self) -> None:
+            self.records = []
+            self._bound = {}
+
+        def bind(self, **kwargs):
+            self._bound = kwargs
+            return self
+
+        def warning(self, message: str) -> None:
+            self.records.append(("warning", message, dict(self._bound)))
+
+        def error(self, message: str) -> None:
+            self.records.append(("error", message, dict(self._bound)))
+
+        def info(self, message: str) -> None:
+            self.records.append(("info", message, {}))
+
+        def debug(self, message: str) -> None:
+            self.records.append(("debug", message, {}))
+
+    stub_logger = StubLogger()
+    monkeypatch.setattr(plugin_manager_module, "logger", stub_logger)
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    metadata = manager._scan_plugin_file(str(plugin_path))
+
+    assert metadata is None
+    assert any(
+        level == "error"
+        and extra.get("event") == "plugin_scan_failed"
+        and extra.get("error_type") == "RuntimeError"
+        for level, _, extra in stub_logger.records
+    )
