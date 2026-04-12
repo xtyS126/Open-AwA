@@ -47,12 +47,12 @@ describe('ReasoningContent', () => {
     // Click to expand
     fireEvent.click(header)
     expect(contentDiv.className).toContain('expanded')
-    expect(localStorage.setItem).toHaveBeenCalledWith('reasoning_expanded_msg-3', 'true')
+    expect(localStorage.setItem).not.toHaveBeenCalled()
     
     // Click to collapse
     fireEvent.click(header)
     expect(contentDiv.className).not.toContain('expanded')
-    expect(localStorage.setItem).toHaveBeenCalledWith('reasoning_expanded_msg-3', 'false')
+    expect(localStorage.setItem).not.toHaveBeenCalled()
   })
 
   it('auto collapses when streaming ends if user did not manually override', () => {
@@ -90,11 +90,11 @@ describe('ReasoningContent', () => {
     expect(contentDiv.className).toContain('expanded')
   })
 
-  it('reads initial state from localStorage', () => {
+  it('ignores localStorage and falls back to secure in-memory defaults', () => {
     localStorage.setItem('reasoning_expanded_msg-6', 'true')
     render(<ReasoningContent messageId="msg-6" content="Thinking..." isStreaming={false} />)
     
     const contentDiv = screen.getByText('Thinking...')
-    expect(contentDiv.className).toContain('expanded')
+    expect(contentDiv.className).not.toContain('expanded')
   })
 })

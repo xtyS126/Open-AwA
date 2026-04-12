@@ -66,7 +66,11 @@ if "sqlite" in settings.DATABASE_URL:
         """为每个 SQLite 连接启用外键约束，防止孤立数据和引用完整性违反。"""
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA foreign_keys")
+        pragma_value = cursor.fetchone()
         cursor.close()
+        if not pragma_value or int(pragma_value[0]) != 1:
+            raise RuntimeError("SQLite foreign_keys PRAGMA 未生效，无法保证外键约束")
 
 
 class Base(DeclarativeBase):

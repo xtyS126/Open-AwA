@@ -62,7 +62,15 @@ function BillingPage() {
   const handleExport = async () => {
     try {
       const response = await billingAPI.getReport({ period, format: 'csv' })
-      const blob = new Blob([response.data.content], { type: 'text/csv' })
+      const csvContent = typeof response.data === 'string'
+        ? response.data
+        : typeof response.data?.content === 'string'
+          ? response.data.content
+          : ''
+      if (!csvContent) {
+        throw new Error('empty_report_content')
+      }
+      const blob = new Blob([csvContent], { type: 'text/csv' })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

@@ -3,18 +3,53 @@
 当路由需要复用身份验证或上下文能力时，通常会先经过这一层。
 """
 
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from db.models import get_db, User
-from config.security import decode_access_token
+
+from config.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token
+from db.models import User, get_db
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+_MAX_REQUEST_TOKEN_LENGTH = 2048
+
+
+def _normalize_request_token(token: Optional[str]) -> Optional[str]:
+    """
+    规范化请求中的访问令牌，拒绝超长值和包含空白字符的异常输入。
+    """
+    if not isinstance(token, str):
+        return None
+
+    normalized_token = token.strip()
+    if not normalized_token:
+        return None
+    if len(normalized_token) > _MAX_REQUEST_TOKEN_LENGTH:
+        return None
+    if any(char.isspace() for char in normalized_token):
+        return None
+
+    return normalized_token
+
+
+def _resolve_request_token(request: Request, bearer_token: Optional[str]) -> Optional[str]:
+    """
+    优先读取 Bearer Token，缺失时回退到 HttpOnly Cookie。
+    """
+    normalized_bearer_token = _normalize_request_token(bearer_token)
+    if normalized_bearer_token:
+        return normalized_bearer_token
+
+    cookie_token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
+    return _normalize_request_token(cookie_token)
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -27,7 +62,11 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    payload = decode_access_token(token)
+    resolved_token = _resolve_request_token(request, token)
+    if not resolved_token:
+        raise credentials_exception
+
+    payload = decode_access_token(resolved_token)
     if payload is None:
         raise credentials_exception
     

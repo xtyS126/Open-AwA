@@ -6,6 +6,17 @@ import { appLogger } from '@/shared/utils/logger'
 import { ReasoningContent } from './components/ReasoningContent'
 import styles from './ChatPage.module.css'
 
+let rememberedSelectedModel = ''
+
+function sanitizeDisplayedError(message: string): string {
+  return String(message || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function ChatPage() {
   const [input, setInput] = useState('')
   const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode } = useChatStore()
@@ -16,6 +27,11 @@ function ChatPage() {
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const retryTimeoutRef = useRef<number | null>(null)
+  const retryCountRef = useRef(0)
+  const activeRequestIdRef = useRef(0)
+  const activeAbortControllerRef = useRef<AbortController | null>(null)
+  const isMountedRef = useRef(true)
 
   // Buffer references for background throttling
   const bufferRef = useRef({
@@ -41,6 +57,18 @@ function ChatPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, scrollToBottom])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      if (retryTimeoutRef.current !== null) {
+        window.clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
+      activeAbortControllerRef.current?.abort()
+    }
+  }, [])
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -74,14 +102,16 @@ function ChatPage() {
           })
         })
       })
-      
+
+      if (!isMountedRef.current) {
+        return
+      }
       setConfigurations(flatConfigs)
       
-      const savedModel = localStorage.getItem('selected_model')
-      if (savedModel && flatConfigs.length > 0) {
-        const exists = flatConfigs.some(c => c.id === savedModel)
+      if (rememberedSelectedModel && flatConfigs.length > 0) {
+        const exists = flatConfigs.some(c => c.id === rememberedSelectedModel)
         if (exists) {
-          setSelectedModel(savedModel)
+          setSelectedModel(rememberedSelectedModel)
         } else {
           setSelectedModel(flatConfigs[0].id)
         }
@@ -89,8 +119,14 @@ function ChatPage() {
         setSelectedModel(flatConfigs[0].id)
       }
       
-      setRetryCount(0)
+      retryCountRef.current = 0
+      if (isMountedRef.current) {
+        setRetryCount(0)
+      }
     } catch (err) {
+      if (!isMountedRef.current) {
+        return
+      }
       appLogger.error({
         event: 'chat_model_load',
         module: 'chat_page',
@@ -101,17 +137,20 @@ function ChatPage() {
       })
       setError('加载模型失败，请检查网络连接')
       
-      if (retryCount < 3) {
-        const nextRetry = retryCount + 1
+      if (retryCountRef.current < 3) {
+        const nextRetry = retryCountRef.current + 1
+        retryCountRef.current = nextRetry
         setRetryCount(nextRetry)
-        setTimeout(() => {
-          loadConfigurations()
+        retryTimeoutRef.current = window.setTimeout(() => {
+          void loadConfigurations()
         }, 1000 * nextRetry)
       }
     } finally {
-      setLoadingModels(false)
+      if (isMountedRef.current) {
+        setLoadingModels(false)
+      }
     }
-  }, [retryCount])
+  }, [])
 
   useEffect(() => {
     appLogger.info({
@@ -121,8 +160,8 @@ function ChatPage() {
       status: 'success',
       message: 'chat page mounted',
     })
-    loadConfigurations()
-  }, [])
+    void loadConfigurations()
+  }, [loadConfigurations])
 
   const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
     if (!value) {
@@ -144,6 +183,12 @@ function ChatPage() {
     if (!input.trim() || isLoading) return
 
     const userMessage = input.trim()
+    const requestId = activeRequestIdRef.current + 1
+    activeRequestIdRef.current = requestId
+    activeAbortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    activeAbortControllerRef.current = abortController
+    let streamErrorHandled = false
     appLogger.info({
       event: 'chat_send',
       module: 'chat_page',
@@ -169,6 +214,9 @@ function ChatPage() {
           provider,
           model,
           (content, reasoning) => {
+            if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
+              return
+            }
             if (isFirstChunk) {
               setLoading(false)
               addMessage('assistant', content, reasoning)
@@ -201,6 +249,10 @@ function ChatPage() {
             }
           },
           (error) => {
+            if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
+              return
+            }
+            streamErrorHandled = true
             flushBuffer()
             appLogger.error({
               event: 'chat_stream_error',
@@ -212,17 +264,27 @@ function ChatPage() {
             })
             if (isFirstChunk) {
               setLoading(false)
-              addMessage('assistant', `请求失败：${error.message}`)
+              addMessage('assistant', `请求失败：${sanitizeDisplayedError(error.message)}`)
               isFirstChunk = false
             } else {
-              updateLastMessage(`\n\n[流中断：${error.message}]`)
+              updateLastMessage(`\n\n[流中断：${sanitizeDisplayedError(error.message)}]`)
             }
-          }
+          },
+          { signal: abortController.signal }
         )
         // Stream completed successfully, flush any remaining buffered data
         flushBuffer()
+
+        if (!isMountedRef.current || activeRequestIdRef.current !== requestId || streamErrorHandled) {
+          return
+        }
       } else {
-        const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model, 'direct')
+        const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model, 'direct', {
+          signal: abortController.signal,
+        })
+        if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
+          return
+        }
         const assistantText = response.data.response
         const backendError = response.data.error
         const reasoningContent = response.data.reasoning_content
@@ -230,12 +292,15 @@ function ChatPage() {
         if (assistantText && assistantText.trim()) {
           addMessage('assistant', assistantText, reasoningContent || undefined)
         } else if (backendError?.message) {
-          addMessage('assistant', `请求失败：${backendError.message}`)
+          addMessage('assistant', `请求失败：${sanitizeDisplayedError(backendError.message)}`)
         } else {
           addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。')
         }
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return
+      }
       appLogger.error({
         event: 'chat_send',
         module: 'chat_page',
@@ -244,9 +309,13 @@ function ChatPage() {
         message: 'chat send failed',
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
-      addMessage('assistant', '抱歉，发生了错误。请稍后重试。')
+      if (isMountedRef.current && activeRequestIdRef.current === requestId && !streamErrorHandled) {
+        addMessage('assistant', '抱歉，发生了错误。请稍后重试。')
+      }
     } finally {
-      setLoading(false)
+      if (isMountedRef.current && activeRequestIdRef.current === requestId) {
+        setLoading(false)
+      }
     }
   }
 
@@ -259,7 +328,7 @@ function ChatPage() {
 
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedModel(e.target.value)
-    localStorage.setItem('selected_model', e.target.value)
+    rememberedSelectedModel = e.target.value
     setSaveSuccess(false)
   }
 
@@ -284,7 +353,7 @@ function ChatPage() {
         })
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
-        localStorage.setItem('selected_model', selectedModel)
+        rememberedSelectedModel = selectedModel
       }
     } catch (err) {
       appLogger.error({
@@ -300,8 +369,13 @@ function ChatPage() {
   }
 
   const handleRetry = () => {
+    if (retryTimeoutRef.current !== null) {
+      window.clearTimeout(retryTimeoutRef.current)
+      retryTimeoutRef.current = null
+    }
+    retryCountRef.current = 0
     setRetryCount(0)
-    loadConfigurations()
+    void loadConfigurations()
   }
 
   const formatModelLabel = (config: { display_name: string }) => {

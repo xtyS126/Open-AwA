@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from mcp.protocol import MCPProtocol
-from mcp.transport import MCPTransport, MCPTransportError, SSETransport, StdioTransport
+from mcp.transport import MCPTransport, MCPTransportError, SSETransport, StdioTransport  # noqa: F401
 from mcp.types import MCPResource, MCPServerConfig, MCPTool, MCPToolCallResponse, TransportType
 
 
@@ -174,12 +174,7 @@ class MCPClient:
             raise MCPClientError("未连接到 MCP Server")
 
         try:
-            # SSE 模式下使用合并的发送接收方法
-            if isinstance(self._transport, SSETransport):
-                return await self._transport.send_and_receive(message)
-            else:
-                # Stdio 模式下分别发送和接收
-                await self._transport.send(message)
-                return await self._transport.receive()
+            # 统一通过 send_and_receive 接口处理，SSE/Stdio 各自实现
+            return await self._transport.send_and_receive(message)
         except MCPTransportError as e:
             raise MCPClientError(f"请求失败: {e}")

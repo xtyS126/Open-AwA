@@ -43,6 +43,14 @@ class MCPTransport(ABC):
         """接收消息"""
         ...
 
+    async def send_and_receive(self, message: Dict[str, Any], timeout: float = DEFAULT_TIMEOUT) -> Dict[str, Any]:
+        """
+        发送请求并接收响应的统一方法。
+        默认实现依次调用 send + receive，子类可覆写以优化。
+        """
+        await self.send(message)
+        return await self.receive(timeout)
+
     @property
     @abstractmethod
     def is_connected(self) -> bool:
@@ -68,6 +76,7 @@ class StdioTransport(MCPTransport):
         self._env = env
         self._process: Optional[asyncio.subprocess.Process] = None
         self._connected = False
+        self._stderr_task: Optional[asyncio.Task] = None
 
     @property
     def is_connected(self) -> bool:
@@ -95,6 +104,8 @@ class StdioTransport(MCPTransport):
                 env=full_env,
             )
             self._connected = True
+            # 启动后台任务持续读取 stderr，防止缓冲区满导致子进程阻塞
+            self._stderr_task = asyncio.create_task(self._drain_stderr())
             logger.bind(module="mcp.transport", event="stdio_connected").info(
                 f"MCP Server 进程已启动，PID: {self._process.pid}"
             )
@@ -103,8 +114,30 @@ class StdioTransport(MCPTransport):
         except Exception as e:
             raise MCPTransportError(f"启动 MCP Server 进程失败: {e}")
 
+    async def _drain_stderr(self) -> None:
+        """持续读取子进程 stderr 并记录日志，防止缓冲区满导致进程阻塞"""
+        try:
+            while self._process and self._process.stderr:
+                line = await self._process.stderr.readline()
+                if not line:
+                    break
+                stderr_text = line.decode("utf-8", errors="replace").strip()
+                if stderr_text:
+                    logger.bind(module="mcp.transport", event="stderr").debug(
+                        f"MCP Server stderr: {stderr_text}"
+                    )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.bind(module="mcp.transport", event="stderr_error").warning(
+                f"读取 stderr 时出错: {e}"
+            )
+
     async def disconnect(self) -> None:
         """终止子进程并断开连接"""
+        if self._stderr_task is not None:
+            self._stderr_task.cancel()
+            self._stderr_task = None
         if self._process is not None:
             try:
                 self._process.terminate()
@@ -234,11 +267,12 @@ class SSETransport(MCPTransport):
 
     async def receive(self, timeout: float = DEFAULT_TIMEOUT) -> Dict[str, Any]:
         """
-        通过 HTTP POST 发送请求后从响应体中读取 JSON-RPC 结果。
-        注意：SSE 模式下 send 和 receive 合并为一次 HTTP 请求/响应周期，
-        此方法主要用于兼容接口，实际通过 _send_and_receive 统一处理。
+        SSE 模式下不支持独立接收。
+        若调用方未使用 send_and_receive，返回明确错误字典以兼容接口契约。
         """
-        raise MCPTransportError("SSE 模式请使用 send_and_receive 方法")
+        raise MCPTransportError(
+            "SSE 模式下 receive() 不可单独调用，请使用 send_and_receive() 方法"
+        )
 
     async def send_and_receive(self, message: Dict[str, Any], timeout: float = DEFAULT_TIMEOUT) -> Dict[str, Any]:
         """

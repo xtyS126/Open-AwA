@@ -95,6 +95,9 @@ class BillingReporter:
             for r in by_type_rows
         }
         
+        # 使用数据库聚合获取调用总次数，避免加载全量记录
+        total_calls = query.with_entities(func.count(UsageRecord.id)).scalar() or 0
+
         trend_days = 365 if period == "all" else 30
         trend = self.tracker.get_daily_usage_trend(user_id=user_id, days=trend_days)
         
@@ -105,7 +108,7 @@ class BillingReporter:
             "total_cost": round(total_cost, 6),
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
-            "total_calls": len(records),
+            "total_calls": total_calls,
             "by_model": list(by_model.values()),
             "by_content_type": by_content_type,
             "trend": trend,

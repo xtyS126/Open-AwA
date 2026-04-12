@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './ReasoningContent.module.css'
 
+const reasoningExpansionMemory = new Map<string, boolean>()
+
 interface ReasoningContentProps {
   messageId: string
   content: string
@@ -21,15 +23,11 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
   content,
   isStreaming,
 }) => {
-  // 从 localStorage 读取初始展开状态
+  // 仅在当前会话内保留展开状态，避免落盘到浏览器存储中。
   const getInitialState = () => {
-    try {
-      const saved = localStorage.getItem(`reasoning_expanded_${messageId}`)
-      if (saved !== null) {
-        return JSON.parse(saved)
-      }
-    } catch (e) {
-      appLogger.warning({ event: 'localstorage_read_failed', message: 'Failed to read localStorage', module: 'reasoning' })
+    const saved = reasoningExpansionMemory.get(messageId)
+    if (typeof saved === 'boolean') {
+      return saved
     }
     // 默认：流式时展开，否则收起
     return isStreaming
@@ -76,11 +74,7 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
     const newState = !isExpanded
     setIsExpanded(newState)
     setUserManuallyTouched(true)
-    try {
-      localStorage.setItem(`reasoning_expanded_${messageId}`, JSON.stringify(newState))
-    } catch (e) {
-      appLogger.warning({ event: 'localstorage_save_failed', message: 'Failed to save localStorage', module: 'reasoning' })
-    }
+    reasoningExpansionMemory.set(messageId, newState)
   }, [isExpanded, messageId])
 
   // 复制推理内容到剪贴板

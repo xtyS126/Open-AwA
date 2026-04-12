@@ -1,40 +1,106 @@
 import axios from 'axios'
+import Cookies from 'js-cookie'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 
 const API_BASE_URL = '/api'
 
-const getStoredToken = () => sessionStorage.getItem('token')
+const CSRF_EXEMPT_PATHS = new Set(['/auth/login', '/auth/register'])
+const CSRF_BOOTSTRAP_PATH = `${API_BASE_URL}/auth/me`
 
-// 从 cookie 中读取 CSRF token（Double Submit Cookie 模式）
-const getCsrfToken = (): string => {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
-  return match ? decodeURIComponent(match[1]) : ''
+export const getCsrfToken = (): string => Cookies.get('csrf_token') || ''
+
+let csrfBootstrapPromise: Promise<string> | null = null
+
+const shouldAttachCsrfToken = (method?: string, url?: string): boolean => {
+  const normalizedMethod = String(method || 'GET').toUpperCase()
+  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(normalizedMethod)) {
+    return false
+  }
+  const normalizedUrl = String(url || '').split('?')[0]
+  return !CSRF_EXEMPT_PATHS.has(normalizedUrl)
 }
 
-const api = axios.create({
+const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
+  appLogger.warning({
+    event: 'chat_stream_parse_warning',
+    module: 'api',
+    action: 'POST',
+    status: 'warning',
+    message: 'failed to parse stream payload',
+    extra: {
+      source,
+      payload_preview: payload.slice(0, 100),
+    },
+  })
+}
+
+const ensureCsrfToken = async (): Promise<string> => {
+  const csrfToken = getCsrfToken()
+  if (csrfToken) {
+    return csrfToken
+  }
+
+  appLogger.warning({
+    event: 'csrf_token_missing',
+    module: 'api',
+    action: 'BOOTSTRAP',
+    status: 'warning',
+    message: 'csrf token missing before mutating request, trying bootstrap request',
+    extra: {
+      bootstrap_path: CSRF_BOOTSTRAP_PATH,
+    },
+  })
+
+  if (!csrfBootstrapPromise) {
+    csrfBootstrapPromise = (async () => {
+      try {
+        await fetch(CSRF_BOOTSTRAP_PATH, {
+          method: 'GET',
+          credentials: 'same-origin',
+        })
+      } catch (error) {
+        appLogger.warning({
+          event: 'csrf_token_bootstrap_failed',
+          module: 'api',
+          action: 'BOOTSTRAP',
+          status: 'warning',
+          message: 'csrf token bootstrap request failed',
+          extra: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+      }
+
+      const refreshedToken = getCsrfToken()
+      if (!refreshedToken) {
+        throw new Error('CSRF token missing after bootstrap request')
+      }
+      return refreshedToken
+    })().finally(() => {
+      csrfBootstrapPromise = null
+    })
+  }
+
+  return csrfBootstrapPromise
+}
+
+export const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   const requestId = generateRequestId()
   config.headers['X-Request-Id'] = requestId
   setCurrentRequestId(requestId)
 
-  const token = getStoredToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-
   // 对状态变更请求注入 CSRF token header（Double Submit Cookie 模式）
-  const method = config.method?.toUpperCase() || 'GET'
-  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-    const csrfToken = getCsrfToken()
-    if (csrfToken) {
-      config.headers['X-CSRF-Token'] = csrfToken
-    }
+  if (shouldAttachCsrfToken(config.method, config.url)) {
+    const csrfToken = await ensureCsrfToken()
+    config.headers['X-CSRF-Token'] = csrfToken
   }
   appLogger.info({
     event: 'api_request',
@@ -129,16 +195,18 @@ export const chatAPI = {
     sessionId: string = 'default',
     provider?: string,
     model?: string,
-    mode: 'stream' | 'direct' = 'direct'
+    mode: 'stream' | 'direct' = 'direct',
+    requestOptions?: { signal?: AbortSignal }
   ) =>
-    api.post('/chat', { message, session_id: sessionId, provider, model, mode }),
+    api.post('/chat', { message, session_id: sessionId, provider, model, mode }, { signal: requestOptions?.signal }),
   sendMessageStream: async (
     message: string,
     sessionId: string = 'default',
     provider?: string,
     model?: string,
     onChunk?: (content: string, reasoning: string) => void,
-    onError?: (error: any) => void
+    onError?: (error: any) => void,
+    requestOptions?: { signal?: AbortSignal }
   ) => {
     let isErrorLogged = false
     const url = '/api/chat'
@@ -156,18 +224,18 @@ export const chatAPI = {
     })
 
     try {
-      const token = sessionStorage.getItem('token')
+      const csrfToken = await ensureCsrfToken()
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Request-Id': requestId,
-      }
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
+        'X-CSRF-Token': csrfToken,
       }
 
       const response = await fetch(url, {
         method: 'POST',
+        credentials: 'same-origin',
         headers,
+        signal: requestOptions?.signal,
         body: JSON.stringify({
           message,
           session_id: sessionId,
@@ -257,8 +325,8 @@ export const chatAPI = {
                 } else if (data.type === 'error') {
                   onError?.(new Error(data.error?.message || 'Stream error'))
                 }
-              } catch (e) {
-                // 忽略不完整 chunk 的解析错误
+              } catch {
+                logStreamParseWarning(dataStr, 'chunk')
               }
               currentEventType = ''
             }
@@ -286,8 +354,8 @@ export const chatAPI = {
                 } else if (data.type === 'error') {
                   onError?.(new Error(data.error?.message || 'Stream error'))
                 }
-              } catch (e) {
-                // 忽略不完整数据
+              } catch {
+                logStreamParseWarning(dataStr, 'tail')
               }
             }
             remainingEventType = ''
@@ -295,6 +363,9 @@ export const chatAPI = {
         }
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        throw e
+      }
       if (!isErrorLogged) {
         appLogger.error({
           event: 'api_response',
@@ -635,6 +706,38 @@ export interface WeixinQrExitResponse {
   cleared_sessions: number
 }
 
+export interface WeixinAutoReplyStatus {
+  user_id: string
+  binding_status: string
+  binding_ready: boolean
+  weixin_account_id?: string
+  weixin_user_id?: string
+  auto_reply_enabled: boolean
+  auto_reply_running: boolean
+  last_poll_at: string
+  last_poll_status: string
+  last_error: string
+  last_error_at: string
+  last_success_at: string
+  last_reply_at: string
+  last_replied_user_id: string
+  last_processed_message_id: string
+  cursor: string
+  processed_message_count: number
+}
+
+export interface WeixinAutoReplyProcessResult {
+  ok: boolean
+  status: string
+  processed: number
+  skipped: number
+  duplicates: number
+  errors: number
+  cursor_advanced: boolean
+  cursor?: string
+  error?: string
+}
+
 export const weixinAPI = {
   getConfig: () => api.get<WeixinConfig>('/skills/weixin/config'),
   saveConfig: (config: WeixinConfig) => api.post('/skills/weixin/config', config),
@@ -647,6 +750,12 @@ export const weixinAPI = {
   deleteBinding: () => api.delete('/weixin/binding'),
   getParams: () => api.get<WeixinParamsConfig>('/weixin/config'),
   updateParams: (data: WeixinParamsUpdate) => api.put<WeixinParamsConfig>('/weixin/config', data),
+  getAutoReplyStatus: () => api.get<WeixinAutoReplyStatus>('/weixin/auto-reply/status'),
+  startAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/start'),
+  stopAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/stop'),
+  restartAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/restart'),
+  processAutoReplyOnce: () => api.post<WeixinAutoReplyProcessResult>('/weixin/auto-reply/process-once'),
 }
 
+export { api as sharedApi }
 export default api

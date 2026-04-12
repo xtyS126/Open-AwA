@@ -14,6 +14,8 @@ from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from config.security import decrypt_secret_value
+
 from api.dependencies import get_current_user, get_db
 from config.logging import _LOG_BUFFER
 from config.settings import settings
@@ -109,7 +111,8 @@ def test_weixin_config_uses_dict_storage_and_skills_route_returns_normalized_con
             assert skill is not None
             assert isinstance(skill.config, dict)
             assert skill.config["weixin"]["account_id"] == "wx-account"
-            assert skill.config["weixin"]["token"] == "wx-token"
+            # 令牌已加密存储，需解密后校验原始值
+            assert decrypt_secret_value(skill.config["weixin"]["token"]) == "wx-token"
         finally:
             db.close()
 
@@ -176,6 +179,7 @@ def test_init_db_migrates_legacy_skill_yaml_config_for_skills_routes():
         assert config_response.status_code == 200
         config_data = config_response.json()
         assert config_data["account_id"] == "wx-account"
+        # GET 接口应返回解密后的原始令牌
         assert config_data["token"] == "wx-token"
         assert config_data["user_id"] == "wx-user"
         assert config_data["binding_status"] == "bound"
