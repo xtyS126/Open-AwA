@@ -81,6 +81,30 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    尝试获取当前登录用户，未认证时返回 None 而非抛出异常。
+    适用于允许匿名访问但可选附加用户信息的接口。
+    """
+    resolved_token = _resolve_request_token(request, token)
+    if not resolved_token:
+        return None
+
+    payload = decode_access_token(resolved_token)
+    if payload is None:
+        return None
+
+    username = payload.get("sub")
+    if not isinstance(username, str):
+        return None
+
+    return db.query(User).filter(User.username == username).first()
+
+
 async def get_current_admin_user(
     current_user: User = Depends(get_current_user)
 ) -> User:

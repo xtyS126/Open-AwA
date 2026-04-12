@@ -81,6 +81,19 @@ def _truncate_text(text: str, max_length: int = 200) -> str:
     return normalized[: max(0, max_length - 3)] + "..."
 
 
+def _truncate_reply_text(text: str, max_length: int) -> str:
+    """
+    按 Unicode 字符边界截断微信最终回复文本。
+
+    Python 3 的 `str` 切片基于 Unicode 码点，不会把常见中文字符切成半个字符。
+    这里单独抽成函数，便于明确表达该意图并为后续回归测试提供稳定入口。
+    """
+    normalized = _safe_text(text)
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[:max_length].rstrip()
+
+
 def extract_weixin_text(message: Dict[str, Any]) -> str:
     """
     从微信消息结构中尽量提取可回复文本。
@@ -231,9 +244,22 @@ def build_weixin_reply_text(ai_result: Dict[str, Any], max_length: int = DEFAULT
     if not cleaned:
         cleaned = DEFAULT_AUTO_REPLY_FALLBACK_TEXT
 
-    if len(cleaned) > max_length:
-        cleaned = cleaned[:max_length].rstrip()
-    return cleaned
+    return _truncate_reply_text(cleaned, max_length)
+
+
+def strip_reasoning_content(payload: Any) -> Any:
+    """
+    递归移除 `reasoning_content`，作为微信 final_only 的最后一道兜底。
+    """
+    if isinstance(payload, dict):
+        return {
+            key: strip_reasoning_content(value)
+            for key, value in payload.items()
+            if key != "reasoning_content"
+        }
+    if isinstance(payload, list):
+        return [strip_reasoning_content(item) for item in payload]
+    return payload
 
 
 def normalize_inbound_message(message: Dict[str, Any]) -> Dict[str, Any]:
@@ -577,7 +603,7 @@ class WeixinAutoReplyService:
         }
         result = await agent.process(inbound["text"], context)
         if isinstance(result, dict):
-            return result
+            return strip_reasoning_content(result)
         return {"response": _safe_text(result)}
 
     def clear_runtime_state(self, account_id: str) -> None:
