@@ -18,7 +18,8 @@ from billing.budget_manager import BudgetManager
 from billing.reporter import BillingReporter
 from config.logging import REQUEST_ID_HEADER
 from core.metrics import record_model_service_metric
-from core.model_service import build_provider_request, build_standard_error, send_with_retries
+from core.model_service import build_standard_error
+from core.litellm_adapter import litellm_list_models
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
@@ -1023,19 +1024,41 @@ async def get_models_by_provider(
         source = "local"
         if base_url:
             try:
-                request_spec = build_provider_request(
-                    provider=provider_id,
-                    api_endpoint=base_url,
-                    api_key=config.api_key if config else "",
-                    purpose="models",
-                    request_id=request_id,
-                    client_version=client_version,
-                )
                 started_at = datetime.now().timestamp()
-                response = await send_with_retries(request_spec)
-                payload = response.json()
+                result = await litellm_list_models(
+                    provider=provider_id,
+                    api_key=config.api_key if config else "",
+                    api_base=base_url,
+                    request_id=request_id,
+                )
                 duration_ms = int((datetime.now().timestamp() - started_at) * 1000)
-                record_model_service_metric(provider_id, "models", "success", duration_ms)
+                if result.get("ok"):
+                    record_model_service_metric(provider_id, "models", "success", duration_ms)
+                    data = result.get("models", [])
+                    if isinstance(data, list):
+                        for index, item in enumerate(data):
+                            if isinstance(item, dict):
+                                model_name = str(item.get("id") or item.get("name") or "").strip()
+                                if model_name.startswith("models/"):
+                                    model_name = model_name.split("/", 1)[1]
+                                if model_name:
+                                    remote_models.append({
+                                        "id": -(index + 1),
+                                        "provider": provider_id,
+                                        "model": model_name,
+                                        "input_price": 0,
+                                        "output_price": 0,
+                                        "currency": "USD",
+                                        "context_window": None,
+                                        "selected": model_name in selected_models
+                                    })
+                    source = "remote"
+                else:
+                    record_model_service_metric(provider_id, "models", "error", duration_ms)
+                    error_detail = result.get("error", {})
+                    raise RuntimeError(error_detail.get("message", "远程模型列表拉取失败"))
+            except RuntimeError:
+                raise
             except Exception as fetch_exc:
                 duration_ms = 0
                 record_model_service_metric(provider_id, "models", "error", duration_ms)
@@ -1046,30 +1069,6 @@ async def get_models_by_provider(
                     provider=provider_id,
                 ).opt(exception=True).error(f"远程模型列表拉取失败: {fetch_exc}")
                 raise fetch_exc
-
-            data = None
-            if isinstance(payload, dict):
-                data = payload.get("data")
-                if not isinstance(data, list):
-                    data = payload.get("models")
-            if isinstance(data, list):
-                for index, item in enumerate(data):
-                    if isinstance(item, dict):
-                        model_name = str(item.get("id") or item.get("name") or "").strip()
-                        if model_name.startswith("models/"):
-                            model_name = model_name.split("/", 1)[1]
-                        if model_name:
-                            remote_models.append({
-                                "id": -(index + 1),
-                                "provider": provider_id,
-                                "model": model_name,
-                                "input_price": 0,
-                                "output_price": 0,
-                                "currency": "USD",
-                                "context_window": None,
-                                "selected": model_name in selected_models
-                            })
-            source = "remote"
 
         if remote_models:
             return {

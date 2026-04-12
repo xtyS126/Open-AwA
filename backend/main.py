@@ -38,6 +38,7 @@ from core.model_service import (
     close_shared_client,
     negotiate_version_status,
 )
+from core.litellm_adapter import is_litellm_available
 from config.settings import settings
 from db.models import engine, init_db
 
@@ -64,6 +65,15 @@ async def lifespan(app: FastAPI):
     启动时会初始化主数据库、计费表与默认定价配置；关闭时负责输出应用停止日志，为后续扩展统一资源清理入口。
     """
     logger.bind(event="app_startup", module="main").info("starting up openawa")
+    # LiteLLM 依赖检测：启动时检查是否已安装
+    if is_litellm_available():
+        logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
+    else:
+        logger.bind(event="litellm_missing", module="main").warning(
+            "LiteLLM dependency not installed. "
+            "Please run `pip install litellm` to enable unified LLM gateway. "
+            "Model API requests will fail until LiteLLM is installed."
+        )
     if not os.getenv("SKIP_INIT_DB"):
         init_db()
         logger.bind(event="db_initialized", module="main").info("database initialized")
