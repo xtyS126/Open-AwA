@@ -1307,6 +1307,8 @@ function SettingsPage() {
             )}
           </div>
         )}
+
+        {activeTab === 'api' && (
           <div className={styles['settings-section']}>
             <div className={styles['section-header']}>
               <h2>API配置</h2>
