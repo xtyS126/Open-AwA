@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { WeixinConfig, WeixinHealthCheckResult, WeixinQrState, WeixinQrStatus, WeixinBindingInfo, WeixinParamsConfig, weixinAPI } from '@/shared/api/api'
+import {
+  WeixinAutoReplyProcessResult,
+  WeixinAutoReplyStatus,
+  WeixinBindingInfo,
+  WeixinConfig,
+  WeixinHealthCheckResult,
+  WeixinParamsConfig,
+  WeixinQrState,
+  WeixinQrStatus,
+  weixinAPI
+} from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './CommunicationPage.module.css'
 
@@ -35,11 +45,18 @@ function CommunicationPage() {
   const qrCodeValueRef = useRef('')
   const qrPollTokenRef = useRef('')
   const qrPollBaseUrlRef = useRef(DEFAULT_BASE_URL)
+  const pollGenerationRef = useRef(0)
+  const pollInFlightRef = useRef(false)
 
   const [bindingInfo, setBindingInfo] = useState<WeixinBindingInfo | null>(null)
   const [loadingBinding, setLoadingBinding] = useState(false)
   const [unbinding, setUnbinding] = useState(false)
   const [bindingError, setBindingError] = useState<string | null>(null)
+  const [autoReplyStatus, setAutoReplyStatus] = useState<WeixinAutoReplyStatus | null>(null)
+  const [loadingAutoReplyStatus, setLoadingAutoReplyStatus] = useState(false)
+  const [autoReplyStatusError, setAutoReplyStatusError] = useState<string | null>(null)
+  const [autoReplyAction, setAutoReplyAction] = useState<'start' | 'stop' | 'restart' | 'process' | null>(null)
+  const [autoReplyProcessResult, setAutoReplyProcessResult] = useState<WeixinAutoReplyProcessResult | null>(null)
   const [paramsConfig, setParamsConfig] = useState<WeixinParamsConfig | null>(null)
   const [paramsLoadError, setParamsLoadError] = useState<string | null>(null)
   const [editBotType, setEditBotType] = useState('')
@@ -50,6 +67,27 @@ function CommunicationPage() {
     const maybeError = error as { response?: { data?: { detail?: string } } }
     const detail = maybeError?.response?.data?.detail
     return typeof detail === 'string' && detail.trim() ? detail : fallback
+  }
+
+  const showTimedMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 3000)
+  }
+
+  const isValidHttpUrl = (value?: string) => {
+    const normalized = String(value || '').trim()
+    return !normalized || normalized.startsWith('http://') || normalized.startsWith('https://')
+  }
+
+  const formatStatusTime = (value?: string) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) {
+      return '暂无'
+    }
+    const parsed = new Date(normalized)
+    return Number.isNaN(parsed.getTime())
+      ? normalized
+      : parsed.toLocaleString('zh-CN', { hour12: false })
   }
 
   const resolveApiErrorMessage = (error: unknown, fallback: string) => {
@@ -148,6 +186,50 @@ function CommunicationPage() {
     return '后续流程：配置已更新，请先测试连接，确认账号状态无误后再进入聊天页继续后续操作。'
   }
 
+  const formatAutoReplyBindingStatus = (status?: string) => {
+    const normalized = normalizeBindingStatus(status)
+    if (normalized === 'bound') {
+      return '已绑定'
+    }
+    if (normalized === 'pending') {
+      return '处理中'
+    }
+    return '未绑定'
+  }
+
+  const formatAutoReplyPollStatus = (status?: string) => {
+    const normalized = String(status || '').trim().toLowerCase()
+    if (!normalized || normalized === 'idle') {
+      return '空闲'
+    }
+    if (normalized === 'ok') {
+      return '正常'
+    }
+    if (normalized === 'timeout') {
+      return '超时'
+    }
+    if (normalized === 'partial_error') {
+      return '部分失败'
+    }
+    if (normalized === 'error') {
+      return '失败'
+    }
+    return status || '未知'
+  }
+
+  const validateWeixinConfig = () => {
+    if (!weixinConfig.account_id || !weixinConfig.token) {
+      return '微信配置不完整，account_id 和 token 为必填项'
+    }
+    if (!isValidHttpUrl(weixinConfig.base_url)) {
+      return 'Base URL 必须以 http:// 或 https:// 开头'
+    }
+    if (!Number.isInteger(weixinConfig.timeout_seconds) || weixinConfig.timeout_seconds <= 0) {
+      return '超时时间必须是大于 0 的整数'
+    }
+    return ''
+  }
+
   const normalizeQrStatus = (rawStatus: string, connected: boolean): WeixinQrStatus => {
     if (connected || rawStatus === 'confirmed') {
       return 'confirmed'
@@ -182,6 +264,7 @@ function CommunicationPage() {
   useEffect(() => {
     void loadWeixinConfig()
     void loadBindingInfo()
+    void loadAutoReplyStatus()
     void loadParamsConfig()
 
     return () => {
@@ -191,8 +274,10 @@ function CommunicationPage() {
   }, [])
 
   const clearQrPolling = () => {
+    pollGenerationRef.current += 1
+    pollInFlightRef.current = false
     if (pollTimerRef.current !== null) {
-      window.clearInterval(pollTimerRef.current)
+      window.clearTimeout(pollTimerRef.current)
       pollTimerRef.current = null
     }
     setPollingQrLogin(false)
@@ -233,6 +318,32 @@ function CommunicationPage() {
     }
   }
 
+  const loadAutoReplyStatus = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
+    if (!silent) {
+      setLoadingAutoReplyStatus(true)
+    }
+    setAutoReplyStatusError(null)
+    try {
+      const response = await weixinAPI.getAutoReplyStatus()
+      if (response.data) {
+        setAutoReplyStatus(response.data)
+      }
+    } catch (error) {
+      setAutoReplyStatusError(getApiErrorDetail(error, '加载自动回复状态失败'))
+      appLogger.error({
+        event: 'weixin_auto_reply_status_load_failed',
+        message: '加载自动回复状态失败',
+        module: 'communication',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    } finally {
+      if (!silent) {
+        setLoadingAutoReplyStatus(false)
+      }
+    }
+  }
+
   const loadParamsConfig = async () => {
     setParamsLoadError(null)
     try {
@@ -258,12 +369,13 @@ function CommunicationPage() {
     try {
       await weixinAPI.deleteBinding()
       setBindingInfo(null)
-      setMessage({ type: 'success', text: '微信绑定已解除' })
+      setAutoReplyProcessResult(null)
+      showTimedMessage('success', '微信绑定已解除')
     } catch {
-      setMessage({ type: 'error', text: '解除绑定失败' })
+      showTimedMessage('error', '解除绑定失败')
     } finally {
       setUnbinding(false)
-      setTimeout(() => setMessage(null), 3000)
+      void loadAutoReplyStatus({ silent: true })
     }
   }
 
@@ -277,12 +389,11 @@ function CommunicationPage() {
       if (response.data) {
         setParamsConfig(response.data)
       }
-      setMessage({ type: 'success', text: '连接参数已更新' })
+      showTimedMessage('success', '连接参数已更新')
     } catch {
-      setMessage({ type: 'error', text: '更新连接参数失败，请先绑定微信账号' })
+      showTimedMessage('error', '更新连接参数失败，请先绑定微信账号')
     } finally {
       setSavingParams(false)
-      setTimeout(() => setMessage(null), 3000)
     }
   }
 
@@ -344,7 +455,11 @@ function CommunicationPage() {
     }
   }
 
-  const pollQrLoginStatus = async (sessionKey: string) => {
+  const pollQrLoginStatus = async (sessionKey: string, generation: number = pollGenerationRef.current) => {
+    if (generation !== pollGenerationRef.current) {
+      return false
+    }
+
     try {
       const response = await weixinAPI.waitQrLogin({
         session_key: sessionKey,
@@ -352,6 +467,9 @@ function CommunicationPage() {
         qrcode: qrPollTokenRef.current || undefined,
         base_url: qrPollBaseUrlRef.current || weixinConfig.base_url || undefined,
       })
+      if (generation !== pollGenerationRef.current) {
+        return false
+      }
       const data = response.data
       const state = normalizeQrState(data.state, data.status, Boolean(data.connected))
       const status = normalizeQrStatus(String(data.status || 'wait').toLowerCase(), state === 'success' || Boolean(data.connected))
@@ -398,6 +516,8 @@ function CommunicationPage() {
           text: `微信扫码登录成功，配置已自动更新；${buildBindingResultText(effectiveUserId, bindingStatus)} ${buildNextStepText(bindingStatus, effectiveUserId)}`
         })
         await loadWeixinConfig()
+        await loadBindingInfo()
+        await loadAutoReplyStatus({ silent: true })
         return false
       }
 
@@ -412,6 +532,9 @@ function CommunicationPage() {
 
       return true
     } catch {
+      if (generation !== pollGenerationRef.current) {
+        return false
+      }
       clearQrPolling()
       setQrStatusText('轮询登录状态失败，请稍后重试')
       setMessage({ type: 'error', text: '轮询登录状态失败' })
@@ -419,9 +542,32 @@ function CommunicationPage() {
     }
   }
 
+  const scheduleNextQrPoll = (sessionKey: string, generation: number) => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current)
+    }
+
+    pollTimerRef.current = window.setTimeout(async () => {
+      if (generation !== pollGenerationRef.current || pollInFlightRef.current) {
+        return
+      }
+
+      pollInFlightRef.current = true
+      try {
+        const shouldContinuePolling = await pollQrLoginStatus(sessionKey, generation)
+        if (shouldContinuePolling && generation === pollGenerationRef.current) {
+          scheduleNextQrPoll(sessionKey, generation)
+        }
+      } finally {
+        pollInFlightRef.current = false
+      }
+    }, 2000)
+  }
+
   const handleStartQrLogin = async () => {
     setStartingQrLogin(true)
     clearQrPolling()
+    const pollingGeneration = pollGenerationRef.current
     setQrStatus('idle')
     setQrState(null)
     setQrStatusText('')
@@ -448,11 +594,9 @@ function CommunicationPage() {
       setQrStatusText(response.data.message || (qrImageReady ? '等待扫码中' : '二维码已生成，请重试加载图片'))
       setQrStatusHint('')
       setPollingQrLogin(true)
-      const shouldContinuePolling = await pollQrLoginStatus(response.data.session_key)
-      if (shouldContinuePolling) {
-        pollTimerRef.current = window.setInterval(() => {
-          void pollQrLoginStatus(response.data.session_key)
-        }, 2000)
+      const shouldContinuePolling = await pollQrLoginStatus(response.data.session_key, pollingGeneration)
+      if (shouldContinuePolling && pollingGeneration === pollGenerationRef.current) {
+        scheduleNextQrPoll(response.data.session_key, pollingGeneration)
       }
     } catch (error) {
       setMessage({ type: 'error', text: resolveApiErrorMessage(error, '获取二维码失败，请检查配置后重试') })
@@ -487,27 +631,26 @@ function CommunicationPage() {
   }
 
   const handleSaveWeixinConfig = async () => {
-    if (!weixinConfig.account_id || !weixinConfig.token) {
-      setMessage({ type: 'error', text: '微信配置不完整，account_id 和 token 为必填项' })
-      setTimeout(() => setMessage(null), 3000)
+    const validationMessage = validateWeixinConfig()
+    if (validationMessage) {
+      showTimedMessage('error', validationMessage)
       return
     }
     setSavingWeixin(true)
     try {
       await weixinAPI.saveConfig(weixinConfig)
-      setMessage({ type: 'success', text: '微信通讯配置保存成功' })
+      showTimedMessage('success', '微信通讯配置保存成功')
     } catch {
-      setMessage({ type: 'error', text: '微信通讯配置保存失败' })
+      showTimedMessage('error', '微信通讯配置保存失败')
     } finally {
       setSavingWeixin(false)
-      setTimeout(() => setMessage(null), 3000)
     }
   }
 
   const handleTestWeixinConnection = async () => {
-    if (!weixinConfig.account_id || !weixinConfig.token) {
-      setMessage({ type: 'error', text: '微信配置不完整，请先填写 account_id 和 token' })
-      setTimeout(() => setMessage(null), 3000)
+    const validationMessage = validateWeixinConfig()
+    if (validationMessage) {
+      showTimedMessage('error', validationMessage)
       return
     }
     setTestingWeixin(true)
@@ -516,15 +659,105 @@ function CommunicationPage() {
       const response = await weixinAPI.healthCheck(weixinConfig)
       setWeixinHealthResult(response.data)
       if (response.data.ok) {
-        setMessage({ type: 'success', text: '测试连接成功！' })
+        showTimedMessage('success', '测试连接成功！')
       } else {
-        setMessage({ type: 'error', text: '测试连接失败，请查看下方详细结果' })
+        showTimedMessage('error', '测试连接失败，请查看下方详细结果')
       }
     } catch {
-      setMessage({ type: 'error', text: '测试连接请求失败' })
+      showTimedMessage('error', '测试连接请求失败')
     } finally {
       setTestingWeixin(false)
-      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  const currentBindingStatus = normalizeBindingStatus(
+    autoReplyStatus?.binding_status || bindingInfo?.binding_status || weixinConfig.binding_status,
+    autoReplyStatus?.weixin_user_id || bindingInfo?.weixin_user_id || weixinConfig.user_id
+  )
+  const isAutoReplyBindingReady = autoReplyStatus?.binding_ready ?? currentBindingStatus === 'bound'
+  const autoReplyBusy = autoReplyAction !== null
+  const canStartAutoReply = isAutoReplyBindingReady && !autoReplyBusy && !autoReplyStatus?.auto_reply_running
+  const canStopAutoReply = !autoReplyBusy && Boolean(autoReplyStatus?.auto_reply_running || autoReplyStatus?.auto_reply_enabled)
+  const canRestartAutoReply = isAutoReplyBindingReady && !autoReplyBusy
+  const canProcessAutoReplyOnce = isAutoReplyBindingReady && !autoReplyBusy
+
+  const ensureAutoReplyReady = (actionLabel: string) => {
+    if (!isAutoReplyBindingReady) {
+      showTimedMessage('error', `请先完成微信绑定后再${actionLabel}`)
+      return false
+    }
+    return true
+  }
+
+  const handleStartAutoReply = async () => {
+    if (!ensureAutoReplyReady('启动自动回复')) {
+      return
+    }
+    setAutoReplyAction('start')
+    try {
+      const response = await weixinAPI.startAutoReply()
+      setAutoReplyStatus(response.data)
+      showTimedMessage('success', '自动回复已启动')
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '启动自动回复失败'))
+    } finally {
+      setAutoReplyAction(null)
+      void loadAutoReplyStatus({ silent: true })
+    }
+  }
+
+  const handleStopAutoReply = async () => {
+    setAutoReplyAction('stop')
+    try {
+      const response = await weixinAPI.stopAutoReply()
+      setAutoReplyStatus(response.data)
+      showTimedMessage('success', '自动回复已停止')
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '停止自动回复失败'))
+    } finally {
+      setAutoReplyAction(null)
+      void loadAutoReplyStatus({ silent: true })
+    }
+  }
+
+  const handleRestartAutoReply = async () => {
+    if (!ensureAutoReplyReady('重启自动回复')) {
+      return
+    }
+    setAutoReplyAction('restart')
+    try {
+      const response = await weixinAPI.restartAutoReply()
+      setAutoReplyStatus(response.data)
+      showTimedMessage('success', '自动回复已重启')
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '重启自动回复失败'))
+    } finally {
+      setAutoReplyAction(null)
+      void loadAutoReplyStatus({ silent: true })
+    }
+  }
+
+  const handleProcessAutoReplyOnce = async () => {
+    if (!ensureAutoReplyReady('执行单次处理')) {
+      return
+    }
+    setAutoReplyAction('process')
+    try {
+      const response = await weixinAPI.processAutoReplyOnce()
+      setAutoReplyProcessResult(response.data)
+      if (response.data.ok) {
+        showTimedMessage(
+          'success',
+          `单次处理完成：成功 ${response.data.processed} 条，跳过 ${response.data.skipped} 条，重复 ${response.data.duplicates} 条`
+        )
+      } else {
+        showTimedMessage('error', response.data.error || '单次处理失败')
+      }
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '执行单次处理失败'))
+    } finally {
+      setAutoReplyAction(null)
+      void loadAutoReplyStatus({ silent: true })
     }
   }
 
@@ -646,6 +879,86 @@ function CommunicationPage() {
                     ) : (
                       <p className={styles['communication-qr-status']}>未绑定微信账号，请通过扫码登录进行绑定。</p>
                     )}
+                  </div>
+
+                  <div className={styles['communication-qr-login']}>
+                    <h4 className={styles['communication-qr-login-title']}>自动回复</h4>
+                    <p className={styles['communication-qr-login-desc']}>展示当前自动回复运行状态，并支持启动、停止、重启和单次处理。</p>
+                    {loadingAutoReplyStatus ? (
+                      <p>加载自动回复状态中...</p>
+                    ) : autoReplyStatusError ? (
+                      <div>
+                        <p className={styles['communication-qr-status']}>{autoReplyStatusError}</p>
+                        <button className="btn btn-primary" onClick={() => void loadAutoReplyStatus()}>重试</button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className={styles['communication-status-grid']}>
+                          <p className={styles['communication-qr-status']}>绑定状态：{formatAutoReplyBindingStatus(autoReplyStatus?.binding_status || currentBindingStatus)}</p>
+                          <p className={styles['communication-qr-status']}>运行状态：{autoReplyStatus?.auto_reply_running ? '运行中' : '已停止'}</p>
+                          <p className={styles['communication-qr-status']}>启用状态：{autoReplyStatus?.auto_reply_enabled ? '已启用' : '未启用'}</p>
+                          <p className={styles['communication-qr-status']}>最近轮询：{formatAutoReplyPollStatus(autoReplyStatus?.last_poll_status)}</p>
+                          <p className={styles['communication-qr-status']}>微信账号：{autoReplyStatus?.weixin_account_id || '暂无'}</p>
+                          <p className={styles['communication-qr-status']}>微信用户：{autoReplyStatus?.weixin_user_id || '暂无'}</p>
+                          <p className={styles['communication-qr-status']}>最近轮询时间：{formatStatusTime(autoReplyStatus?.last_poll_at)}</p>
+                          <p className={styles['communication-qr-status']}>最近成功时间：{formatStatusTime(autoReplyStatus?.last_success_at)}</p>
+                          <p className={styles['communication-qr-status']}>最近回复时间：{formatStatusTime(autoReplyStatus?.last_reply_at)}</p>
+                          <p className={styles['communication-qr-status']}>最近回复对象：{autoReplyStatus?.last_replied_user_id || '暂无'}</p>
+                          <p className={styles['communication-qr-status']}>最近处理消息：{autoReplyStatus?.last_processed_message_id || '暂无'}</p>
+                          <p className={styles['communication-qr-status']}>当前游标：{autoReplyStatus?.cursor || '暂无'}</p>
+                          <p className={styles['communication-qr-status']}>已记录消息数：{autoReplyStatus?.processed_message_count ?? 0}</p>
+                          <p className={styles['communication-qr-status']}>最近错误时间：{formatStatusTime(autoReplyStatus?.last_error_at)}</p>
+                        </div>
+                        {autoReplyStatus?.last_error && (
+                          <p className={styles['communication-qr-status']}>最近错误：{autoReplyStatus.last_error}</p>
+                        )}
+                        {autoReplyProcessResult && (
+                          <p className={styles['communication-qr-status']}>
+                            单次处理结果：状态 {formatAutoReplyPollStatus(autoReplyProcessResult.status)}，成功 {autoReplyProcessResult.processed} 条，跳过 {autoReplyProcessResult.skipped} 条，重复 {autoReplyProcessResult.duplicates} 条，错误 {autoReplyProcessResult.errors} 条
+                          </p>
+                        )}
+                        {!isAutoReplyBindingReady && (
+                          <p className={styles['communication-qr-status']}>当前未完成绑定，自动回复操作暂不可用。</p>
+                        )}
+                      </>
+                    )}
+                    <div className={`${styles['actions-row']} ${styles['communication-actions-row']}`}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => void loadAutoReplyStatus()}
+                        disabled={loadingAutoReplyStatus || autoReplyBusy}
+                      >
+                        刷新状态
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => void handleStartAutoReply()}
+                        disabled={!canStartAutoReply}
+                      >
+                        {autoReplyAction === 'start' ? '启动中...' : '启动自动回复'}
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => void handleStopAutoReply()}
+                        disabled={!canStopAutoReply}
+                      >
+                        {autoReplyAction === 'stop' ? '停止中...' : '停止自动回复'}
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => void handleRestartAutoReply()}
+                        disabled={!canRestartAutoReply}
+                      >
+                        {autoReplyAction === 'restart' ? '重启中...' : '重启自动回复'}
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => void handleProcessAutoReplyOnce()}
+                        disabled={!canProcessAutoReplyOnce}
+                      >
+                        {autoReplyAction === 'process' ? '处理中...' : '单次处理'}
+                      </button>
+                    </div>
                   </div>
 
                   <div className={styles['communication-qr-login']}>

@@ -29,6 +29,7 @@ router = APIRouter(prefix="/skills", tags=["Skills"])
 
 from pydantic import BaseModel
 from typing import Optional
+from config.security import decrypt_secret_value, encrypt_secret_value
 from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig, WeixinAdapterError, DEFAULT_BASE_URL, DEFAULT_BOT_TYPE, DEFAULT_QR_BASE_URL
 
 
@@ -175,7 +176,7 @@ def _build_weixin_config_payload(
         "adapter": "weixin",
         "weixin": {
             "account_id": account_id,
-            "token": token,
+            "token": encrypt_secret_value(token),
             "base_url": base_url,
             "timeout_seconds": timeout_seconds,
             "user_id": user_id,
@@ -748,7 +749,7 @@ async def get_weixin_config(
         user_id = str(wx_config.get("user_id", "") or "").strip()
         return {
             "account_id": wx_config.get("account_id", ""),
-            "token": wx_config.get("token", ""),
+            "token": decrypt_secret_value(wx_config.get("token", "")),
             "base_url": wx_config.get("base_url", DEFAULT_BASE_URL),
             "timeout_seconds": wx_config.get("timeout_seconds", 15),
             "user_id": user_id,

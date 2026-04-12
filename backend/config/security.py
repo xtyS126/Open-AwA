@@ -3,14 +3,29 @@
 配置项通常会在多个子模块中生效，因此理解其字段含义非常重要。
 """
 
+import base64
+import hashlib
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt, JWTError
+
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import Response
+from jose import JWTError, jwt
+from loguru import logger
 from passlib.context import CryptContext
+
 from .settings import settings
 
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
+ACCESS_TOKEN_COOKIE_NAME = "access_token"
+
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256", "bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12,
+    pbkdf2_sha256__default_rounds=600_000,
+)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -27,6 +42,80 @@ def get_password_hash(password: str) -> str:
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     return pwd_context.hash(password)
+
+
+def _build_secret_cipher() -> Fernet:
+    """
+    基于 SECRET_KEY 派生稳定的对称加密密钥，用于敏感令牌的加密存储。
+    """
+    key_material = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(key_material))
+
+
+def encrypt_secret_value(value: str) -> str:
+    """
+    对敏感字符串进行加密，空值直接返回空字符串。
+    已加密值会原样返回，避免重复加密。
+    """
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    if normalized.startswith("enc:"):
+        return normalized
+    cipher = _build_secret_cipher()
+    return f"enc:{cipher.encrypt(normalized.encode('utf-8')).decode('utf-8')}"
+
+
+def decrypt_secret_value(value: str) -> str:
+    """
+    解密敏感字符串，兼容历史明文数据。
+    解密失败时返回空字符串并记录告警，避免继续传播损坏的令牌。
+    """
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    if not normalized.startswith("enc:"):
+        return normalized
+
+    encrypted_payload = normalized[4:]
+    if not encrypted_payload:
+        return ""
+
+    try:
+        cipher = _build_secret_cipher()
+        return cipher.decrypt(encrypted_payload.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError) as exc:
+        logger.warning(f"敏感字段解密失败，已按空值处理: {type(exc).__name__}")
+        return ""
+
+
+def set_access_token_cookie(response: Response, access_token: str) -> None:
+    """
+    将访问令牌写入 HttpOnly Cookie，避免前端脚本直接读取。
+    """
+    secure_cookie = os.getenv("ENVIRONMENT", "development") == "production"
+    max_age = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=secure_cookie,
+        samesite="lax",
+        max_age=max_age,
+        expires=max_age,
+        path="/",
+    )
+
+
+def clear_access_token_cookie(response: Response) -> None:
+    """
+    清理访问令牌 Cookie。
+    """
+    response.delete_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        path="/",
+        samesite="lax",
+    )
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -51,6 +140,12 @@ def decode_access_token(token: str) -> Optional[dict]:
     """
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        expires_at = payload.get("exp")
+        if expires_at is None:
+            return None
+        expire_time = datetime.fromtimestamp(float(expires_at), tz=timezone.utc)
+        if expire_time <= datetime.now(timezone.utc):
+            return None
         return payload
-    except JWTError:
+    except (JWTError, TypeError, ValueError, OverflowError):
         return None

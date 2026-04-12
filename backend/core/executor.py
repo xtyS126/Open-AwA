@@ -6,7 +6,9 @@
 import asyncio
 import hashlib
 import json
+import re
 import time
+import urllib.parse
 from typing import Dict, Any, Optional, Callable
 
 import httpx
@@ -86,6 +88,40 @@ class ExecutionLayer:
             request_id=get_request_id(),
             details=details,
         )
+
+    def _sanitize_api_endpoint(self, endpoint: Optional[str]) -> Optional[str]:
+        """
+        对请求端点中的敏感查询参数进行脱敏，避免日志和错误响应泄露密钥。
+        """
+        normalized = str(endpoint or "").strip()
+        if not normalized:
+            return endpoint
+
+        parsed = urllib.parse.urlsplit(normalized)
+        if not parsed.query:
+            return normalized
+
+        redacted_query = urllib.parse.urlencode([
+            (
+                key,
+                "***" if any(marker in key.lower() for marker in ("key", "token", "secret", "auth")) else value,
+            )
+            for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        ])
+        return urllib.parse.urlunsplit(parsed._replace(query=redacted_query))
+
+    def _sanitize_text_excerpt(self, value: Optional[str], limit: int = 200) -> str:
+        """
+        对返回文本或异常原因进行长度截断与常见敏感片段脱敏。
+        """
+        excerpt = str(value or "")[:limit]
+        excerpt = re.sub(r'(?i)(bearer\s+)[a-z0-9._\-]+', r'\1***', excerpt)
+        excerpt = re.sub(
+            r'(?i)(api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret)("?\s*[:=]\s*"?)([^"\s,;&]+)',
+            r'\1\2***',
+            excerpt,
+        )
+        return excerpt
 
     def _build_tool_idempotency_key(self, step: Dict[str, Any], context: Dict[str, Any]) -> str:
         """
@@ -368,7 +404,7 @@ class ExecutionLayer:
             context=serialized_context,
         )
         llm_input_payload.update({
-            "endpoint": request_spec.endpoint,
+            "endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
             "headers": {
                 key: ("Bearer ***" if key.lower() == "authorization" else value)
                 for key, value in request_spec.headers.items()
@@ -378,12 +414,12 @@ class ExecutionLayer:
 
         try:
             logger.info(
-                f"Sending LLM request to {request_spec.endpoint} "
+                f"Sending LLM request to {self._sanitize_api_endpoint(request_spec.endpoint)} "
                 f"for provider {resolved['provider']}, model {resolved['model']}"
             )
             response = await send_with_retries(request_spec)
             result = response.json()
-            logger.info(f"Successfully received response from {request_spec.endpoint}")
+            logger.info(f"Successfully received response from {self._sanitize_api_endpoint(request_spec.endpoint)}")
             response_text = self._extract_response_text(result)
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "success", duration_ms)
@@ -398,7 +434,7 @@ class ExecutionLayer:
                         details={
                             "provider": resolved["provider"],
                             "model": resolved["model"],
-                            "api_endpoint": request_spec.endpoint,
+                            "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
                         },
                         retryable=False,
                     )
@@ -463,7 +499,7 @@ class ExecutionLayer:
                 model=resolved.get("model"),
                 endpoint=request_spec.endpoint,
             ).opt(exception=True).error(f"LLM API HTTP {e.response.status_code} 错误: {e}")
-            response_text = e.response.text[:1000] if e.response.text else ""
+            response_text = self._sanitize_text_excerpt(e.response.text if e.response.text else "")
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             record_model_service_metric(resolved["provider"], "chat", "http_error", duration_ms)
             output = {
@@ -475,7 +511,7 @@ class ExecutionLayer:
                     details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "api_endpoint": request_spec.endpoint,
+                        "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
                         "status_code": e.response.status_code,
                         "response_text": response_text
                     },
@@ -520,8 +556,8 @@ class ExecutionLayer:
                     details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "api_endpoint": request_spec.endpoint,
-                        "reason": str(e)
+                        "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint),
+                        "reason": self._sanitize_text_excerpt(str(e))
                     },
                     retryable=is_retryable_exception(e),
                 )
@@ -561,8 +597,8 @@ class ExecutionLayer:
                     details={
                         "provider": resolved["provider"],
                         "model": resolved["model"],
-                        "api_endpoint": request_spec.endpoint if "request_spec" in locals() else resolved["api_endpoint"],
-                        "reason": str(e)
+                        "api_endpoint": self._sanitize_api_endpoint(request_spec.endpoint if "request_spec" in locals() else resolved["api_endpoint"]),
+                        "reason": self._sanitize_text_excerpt(str(e))
                     },
                 )
             }

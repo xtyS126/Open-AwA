@@ -78,8 +78,7 @@ async def delete_server(
     manager = _get_manager()
     try:
         # 先断开连接（如果已连接）
-        client = manager._clients.get(server_id)
-        if client and client.is_connected:
+        if manager.is_server_connected(server_id):
             await manager.disconnect_server(server_id)
         manager.remove_server(server_id)
         logger.bind(module="mcp.route", event="server_deleted", user=current_user.username).info(

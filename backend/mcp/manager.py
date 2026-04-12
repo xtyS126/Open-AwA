@@ -3,6 +3,7 @@ MCP 管理器模块，负责管理多个 MCP Server 的连接生命周期。
 采用单例模式，提供全局统一的 MCP Server 管理入口。
 """
 
+import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -15,25 +16,35 @@ from mcp.types import MCPServerConfig, MCPTool, MCPToolCallResponse
 class MCPManager:
     """
     MCP 管理器，管理多个 MCP Server 的连接、工具发现与调用。
-    使用单例模式确保全局唯一实例。
+    使用单例模式确保全局唯一实例，通过 threading.RLock 保证创建与初始化都线程安全。
     """
 
     _instance: Optional["MCPManager"] = None
+    _instance_lock = threading.RLock()
 
     def __new__(cls) -> "MCPManager":
-        """单例模式：确保全局只有一个管理器实例"""
+        """单例模式：使用双重检查减少无意义加锁，并确保只创建一次实例。"""
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
-        """初始化管理器内部状态（仅首次创建时执行）"""
-        if self._initialized:
+        """初始化管理器内部状态（仅首次创建时执行）。"""
+        if getattr(self, "_initialized", False):
             return
-        self._clients: Dict[str, MCPClient] = {}
-        self._configs: Dict[str, MCPServerConfig] = {}
-        self._initialized = True
+
+        with type(self)._instance_lock:
+            if self._initialized:
+                return
+
+            self._lock = threading.Lock()
+            self._clients: Dict[str, MCPClient] = {}
+            self._configs: Dict[str, MCPServerConfig] = {}
+            self._initialized = True
+
         logger.bind(module="mcp.manager", event="initialized").info("MCP 管理器已初始化")
 
     def add_server(self, config: MCPServerConfig, server_id: Optional[str] = None) -> str:
@@ -45,8 +56,9 @@ class MCPManager:
         """
         if server_id is None:
             server_id = str(uuid.uuid4())
-        self._configs[server_id] = config
-        self._clients[server_id] = MCPClient(config)
+        with self._lock:
+            self._configs[server_id] = config
+            self._clients[server_id] = MCPClient(config)
         logger.bind(module="mcp.manager", event="server_added").info(
             f"添加 MCP Server: {config.name} (ID: {server_id})"
         )
@@ -57,11 +69,12 @@ class MCPManager:
         移除 MCP Server 配置并断开连接。
         :param server_id: 服务器 ID
         """
-        if server_id not in self._clients:
-            raise MCPClientError(f"未找到 MCP Server: {server_id}")
-        # 如果当前已连接则需要先在调用方 await disconnect
-        self._clients.pop(server_id, None)
-        self._configs.pop(server_id, None)
+        with self._lock:
+            if server_id not in self._clients:
+                raise MCPClientError(f"未找到 MCP Server: {server_id}")
+            # 如果当前已连接则需要先在调用方 await disconnect
+            self._clients.pop(server_id, None)
+            self._configs.pop(server_id, None)
         logger.bind(module="mcp.manager", event="server_removed").info(
             f"已移除 MCP Server: {server_id}"
         )
@@ -88,7 +101,10 @@ class MCPManager:
         :return: 包含 server_id 信息的工具列表
         """
         all_tools: List[Dict[str, Any]] = []
-        for server_id, client in self._clients.items():
+        # 创建字典快照，避免迭代期间并发修改导致 RuntimeError
+        with self._lock:
+            clients_snapshot = dict(self._clients)
+        for server_id, client in clients_snapshot.items():
             if client.is_connected:
                 try:
                     tools = await client.list_tools()
@@ -152,9 +168,24 @@ class MCPManager:
         :return: 服务器状态列表
         """
         servers = []
-        for server_id in self._configs:
+        # 创建快照避免并发修改
+        with self._lock:
+            config_ids = list(self._configs.keys())
+        for server_id in config_ids:
             servers.append(self.get_server_status(server_id))
         return servers
+
+    def is_server_connected(self, server_id: str) -> bool:
+        """
+        检查指定 Server 是否已连接。
+        :param server_id: 服务器 ID
+        :return: 是否已连接
+        """
+        with self._lock:
+            client = self._clients.get(server_id)
+        if client is None:
+            return False
+        return client.is_connected
 
     def _get_client(self, server_id: str) -> MCPClient:
         """
@@ -163,7 +194,8 @@ class MCPManager:
         :return: MCPClient 实例
         :raises MCPClientError: 未找到对应 ID 的客户端
         """
-        client = self._clients.get(server_id)
+        with self._lock:
+            client = self._clients.get(server_id)
         if client is None:
             raise MCPClientError(f"未找到 MCP Server: {server_id}")
         return client

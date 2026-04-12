@@ -49,11 +49,19 @@ class AuditLogger:
             return log_entry
         except Exception as e:
             self.db.rollback()
-            logger.error(
-                f"审计日志写入失败，已回滚: action={action}, resource={resource}, "
+            fallback_entry = AuditLog(
+                user_id=user_id,
+                action=action,
+                resource=resource,
+                result=f"{result}_audit_fallback",
+                details=details,
+                ip_address=ip_address,
+            )
+            logger.critical(
+                f"审计日志写入失败，已降级到文件日志: action={action}, resource={resource}, "
                 f"user_id={user_id}, error={type(e).__name__}: {e}"
             )
-            return None
+            return fallback_entry
 
     async def log(
         self,

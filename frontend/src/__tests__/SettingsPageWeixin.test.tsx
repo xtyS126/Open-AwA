@@ -18,6 +18,9 @@ vi.mock('@/shared/api/api', () => ({
     getConfig: vi.fn(),
     saveConfig: vi.fn(),
     healthCheck: vi.fn(),
+    getBinding: vi.fn(),
+    getParams: vi.fn(),
+    getAutoReplyStatus: vi.fn(),
     startQrLogin: vi.fn(),
     waitQrLogin: vi.fn(),
     exitQrLogin: vi.fn(),
@@ -55,6 +58,50 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         token: 'test_token',
         base_url: 'https://test.weixin.qq.com',
         timeout_seconds: 20
+      }
+    })
+    ;(weixinAPI.getBinding as any).mockResolvedValue({
+      data: {
+        user_id: 'user-1',
+        weixin_account_id: '',
+        base_url: 'https://test.weixin.qq.com',
+        bot_type: '3',
+        channel_version: '1.0.2',
+        binding_status: 'unbound',
+        weixin_user_id: ''
+      }
+    })
+    ;(weixinAPI.getParams as any).mockResolvedValue({
+      data: {
+        base_url: 'https://test.weixin.qq.com',
+        bot_type: '3',
+        channel_version: '1.0.2',
+        weixin_default_base_url: 'https://ilinkai.weixin.qq.com',
+        weixin_default_bot_type: '3',
+        weixin_default_channel_version: '1.0.2',
+        session_timeout_seconds: 3600,
+        token_refresh_enabled: true
+      }
+    })
+    ;(weixinAPI.getAutoReplyStatus as any).mockResolvedValue({
+      data: {
+        user_id: 'user-1',
+        binding_status: 'unbound',
+        binding_ready: false,
+        weixin_account_id: '',
+        weixin_user_id: '',
+        auto_reply_enabled: false,
+        auto_reply_running: false,
+        last_poll_at: '',
+        last_poll_status: 'idle',
+        last_error: '',
+        last_error_at: '',
+        last_success_at: '',
+        last_reply_at: '',
+        last_replied_user_id: '',
+        last_processed_message_id: '',
+        cursor: '',
+        processed_message_count: 0
       }
     })
     ;(weixinAPI.startQrLogin as any).mockResolvedValue({

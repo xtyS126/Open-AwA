@@ -53,6 +53,11 @@ class MigrationValidator:
     }
     
     COLUMN_NAME_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]*$')
+    COLUMN_TYPE_PATTERN = re.compile(
+        r"^(?:TEXT|INTEGER|REAL|BLOB|NUMERIC|BOOLEAN|DATE|DATETIME|TIMESTAMP|JSON|VARCHAR(?:\(\d+\))?)"
+        r"(?:\s+DEFAULT\s+(?:CURRENT_TIMESTAMP|NULL|TRUE|FALSE|'[^']*'|-?\d+(?:\.\d+)?))?$",
+        re.IGNORECASE,
+    )
     
     @classmethod
     def validate_table_name(cls, table_name: str) -> str:
@@ -112,7 +117,8 @@ class MigrationValidator:
         抛出:
             MigrationSecurityError: 如果列类型不在白名单中
         """
-        base_type = column_type.upper().split()[0]
+        normalized_column_type = str(column_type or '').strip()
+        base_type = normalized_column_type.upper().split()[0]
         base_type = base_type.split('(')[0]
         
         if base_type not in cls.ALLOWED_COLUMN_TYPES:
@@ -120,13 +126,18 @@ class MigrationValidator:
                 f"列类型 '{base_type}' 不在允许的白名单中。"
                 f"允许的类型: {sorted(cls.ALLOWED_COLUMN_TYPES)}"
             )
+
+        if not cls.COLUMN_TYPE_PATTERN.fullmatch(normalized_column_type):
+            raise MigrationSecurityError(
+                f"列类型定义 '{column_type}' 包含不安全的格式或约束"
+            )
         
         if not cls._validate_type_constraints(column_type):
             raise MigrationSecurityError(
                 f"列类型定义 '{column_type}' 包含不安全的字符或模式"
             )
         
-        return column_type
+        return normalized_column_type
     
     @classmethod
     def _validate_type_constraints(cls, column_type: str) -> bool:

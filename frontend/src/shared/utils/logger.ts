@@ -1,3 +1,5 @@
+import Cookies from 'js-cookie'
+
 type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
 
 interface LoggerPayload {
@@ -63,6 +65,7 @@ export function generateRequestId(): string {
 const SENSITIVE_FIELDS = new Set([
   'password', 'token', 'api_key', 'secret', 'authorization',
   'cookie', 'access_token', 'refresh_token', 'username', 'user_input',
+  'password_hash', 'session_key', 'csrf_token', 'ticket', 'auth_id',
 ])
 
 function sanitizeExtra(data: Record<string, unknown>): Record<string, unknown> {
@@ -84,19 +87,20 @@ let _reportQueue: Array<Record<string, unknown>> = []
 let _reportTimer: ReturnType<typeof setTimeout> | null = null
 const REPORT_FLUSH_INTERVAL = 3000
 const REPORT_MAX_BATCH = 10
+const REPORT_MAX_QUEUE = 100
 
 async function _flushErrorReports(): Promise<void> {
   if (_reportQueue.length === 0) return
   const batch = _reportQueue.splice(0, REPORT_MAX_BATCH)
-  const token = typeof window !== 'undefined' ? sessionStorage.getItem('token') : null
-  if (!token) return // 未登录时不上报
+  const csrfToken = Cookies.get('csrf_token') || ''
   for (const report of batch) {
     try {
       await fetch('/api/logs/client-errors', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
         },
         body: JSON.stringify(report),
       })
@@ -115,6 +119,9 @@ function _scheduleFlush(): void {
 }
 
 function _enqueueErrorReport(record: Record<string, unknown>): void {
+  if (_reportQueue.length >= REPORT_MAX_QUEUE) {
+    _reportQueue.shift()
+  }
   _reportQueue.push({
     level: record.level,
     message: String(record.message || ''),

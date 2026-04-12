@@ -3,22 +3,34 @@
 与 skills.py 中的扫码登录路由配合使用，提供完整的微信集成管理能力。
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from typing import Optional
-from loguru import logger
 
-from db.models import get_db, WeixinBinding
+from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.orm import Session
+
 from api.dependencies import get_current_user
+from api.services.weixin_auto_reply import WeixinAutoReplyService
+from config.security import decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
+from db.models import WeixinBinding, get_db
+from skills.weixin_skill_adapter import WeixinSkillAdapter
 
 
 router = APIRouter(prefix="/api/weixin", tags=["Weixin"])
+_AUTO_REPLY_MANAGER = WeixinAutoReplyService()
+
+
+def _get_auto_reply_manager() -> WeixinAutoReplyService:
+    """集中管理自动回复单例，便于测试时替换。"""
+    return _AUTO_REPLY_MANAGER
 
 
 class WeixinBindingResponse(BaseModel):
     """微信绑定状态响应模型"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: Optional[int] = None
     user_id: str = ""
     weixin_account_id: str = ""
@@ -28,26 +40,47 @@ class WeixinBindingResponse(BaseModel):
     binding_status: str = "unbound"
     weixin_user_id: str = ""
 
-    class Config:
-        from_attributes = True
-
 
 class WeixinBindingCreate(BaseModel):
     """创建或更新微信绑定的请求模型"""
-    weixin_account_id: str
-    token: str
-    base_url: Optional[str] = None
-    bot_type: Optional[str] = None
-    channel_version: Optional[str] = None
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    weixin_account_id: str = Field(..., min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:@-]+$")
+    token: str = Field(..., min_length=8, max_length=512)
+    base_url: Optional[str] = Field(default=None, max_length=512)
+    bot_type: Optional[str] = Field(default=None, max_length=32)
+    channel_version: Optional[str] = Field(default=None, max_length=32)
     binding_status: Optional[str] = "bound"
-    weixin_user_id: Optional[str] = ""
+    weixin_user_id: Optional[str] = Field(default="", max_length=128)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: Optional[str]) -> Optional[str]:
+        if value in {None, ""}:
+            return value
+        normalized = str(value).strip()
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("base_url 必须以 http:// 或 https:// 开头")
+        return normalized.rstrip("/")
 
 
 class WeixinConfigUpdate(BaseModel):
     """更新微信连接参数的请求模型"""
-    bot_type: Optional[str] = None
-    channel_version: Optional[str] = None
-    base_url: Optional[str] = None
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    bot_type: Optional[str] = Field(default=None, max_length=32)
+    channel_version: Optional[str] = Field(default=None, max_length=32)
+    base_url: Optional[str] = Field(default=None, max_length=512)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: Optional[str]) -> Optional[str]:
+        if value in {None, ""}:
+            return value
+        normalized = str(value).strip()
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("base_url 必须以 http:// 或 https:// 开头")
+        return normalized.rstrip("/")
 
 
 class WeixinConfigResponse(BaseModel):
@@ -93,16 +126,18 @@ async def save_binding(
 ):
     """保存或更新当前用户的微信绑定信息"""
     user_id = str(current_user.id)
+    adapter = WeixinSkillAdapter()
     binding = db.query(WeixinBinding).filter(
         WeixinBinding.user_id == user_id
     ).first()
+    previous_account_id = binding.weixin_account_id if binding else ""
     effective_base_url = payload.base_url or settings.WEIXIN_DEFAULT_BASE_URL
     effective_bot_type = payload.bot_type or settings.WEIXIN_DEFAULT_BOT_TYPE
     effective_channel_version = payload.channel_version or settings.WEIXIN_DEFAULT_CHANNEL_VERSION
 
     if binding:
         binding.weixin_account_id = payload.weixin_account_id
-        binding.token = payload.token
+        binding.token = encrypt_secret_value(payload.token)
         binding.base_url = effective_base_url
         binding.bot_type = effective_bot_type
         binding.channel_version = effective_channel_version
@@ -112,7 +147,7 @@ async def save_binding(
         binding = WeixinBinding(
             user_id=user_id,
             weixin_account_id=payload.weixin_account_id,
-            token=payload.token,
+            token=encrypt_secret_value(payload.token),
             base_url=effective_base_url,
             bot_type=effective_bot_type,
             channel_version=effective_channel_version,
@@ -122,6 +157,9 @@ async def save_binding(
         db.add(binding)
     db.commit()
     db.refresh(binding)
+    if previous_account_id and previous_account_id != binding.weixin_account_id:
+        # 账号切换后必须清理旧账号的游标和幂等状态，避免把历史消息带到新账号。
+        adapter.clear_account_state(previous_account_id)
     logger.info(f"[weixin] 用户 {user_id} 绑定已保存, account_id={payload.weixin_account_id}, status={binding.binding_status}")
     return WeixinBindingResponse(
         id=binding.id,
@@ -142,13 +180,19 @@ async def delete_binding(
 ):
     """解除当前用户的微信绑定"""
     user_id = str(current_user.id)
+    adapter = WeixinSkillAdapter()
+    manager = _get_auto_reply_manager()
     binding = db.query(WeixinBinding).filter(
         WeixinBinding.user_id == user_id
     ).first()
     if not binding:
         raise HTTPException(status_code=404, detail="未找到微信绑定记录")
+    account_id = binding.weixin_account_id or ""
     db.delete(binding)
     db.commit()
+    await manager.stop(user_id)
+    if account_id:
+        adapter.clear_account_state(account_id)
     logger.info(f"[weixin] 用户 {user_id} 已解除微信绑定")
     return {"message": "微信绑定已解除"}
 
@@ -206,3 +250,49 @@ async def update_weixin_params(
         session_timeout_seconds=settings.WEIXIN_SESSION_TIMEOUT_SECONDS,
         token_refresh_enabled=settings.WEIXIN_TOKEN_REFRESH_ENABLED,
     )
+
+
+@router.get("/auto-reply/status")
+async def get_auto_reply_status(current_user=Depends(get_current_user)):
+    """获取当前用户微信自动回复运行状态。"""
+    manager = _get_auto_reply_manager()
+    return manager.get_status(str(current_user.id))
+
+
+@router.post("/auto-reply/start")
+async def start_auto_reply(current_user=Depends(get_current_user)):
+    """启动当前用户的微信自动回复后台轮询。"""
+    manager = _get_auto_reply_manager()
+    try:
+        return await manager.start(str(current_user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/auto-reply/stop")
+async def stop_auto_reply(current_user=Depends(get_current_user)):
+    """停止当前用户的微信自动回复后台轮询。"""
+    manager = _get_auto_reply_manager()
+    return await manager.stop(str(current_user.id))
+
+
+@router.post("/auto-reply/restart")
+async def restart_auto_reply(current_user=Depends(get_current_user)):
+    """重启当前用户的微信自动回复后台轮询。"""
+    manager = _get_auto_reply_manager()
+    try:
+        return await manager.restart(str(current_user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/auto-reply/process-once")
+async def process_auto_reply_once(current_user=Depends(get_current_user)):
+    """
+    手动执行一次轮询，便于诊断、测试和观察最近一次处理结果。
+    """
+    manager = _get_auto_reply_manager()
+    try:
+        return await manager.process_once(str(current_user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

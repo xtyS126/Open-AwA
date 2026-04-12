@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
@@ -132,6 +132,7 @@ function SettingsPage() {
   // --------------------------------------------------------
 
   const [addProviderForm, setAddProviderForm] = useState(createInitialAddProviderForm())
+  const addProviderApiKeyInputRef = useRef<HTMLInputElement | null>(null)
 
   // Ollama 模型发现相关状态
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
@@ -152,6 +153,7 @@ function SettingsPage() {
     selected_models: [],
     max_tokens: ''
   })
+  const providerApiKeyInputRef = useRef<HTMLInputElement | null>(null)
 
   const [collectionEnabled, setCollectionEnabled] = useState(false)
   const [collectionStats, setCollectionStats] = useState<ConversationCollectionStatusResponse['stats'] | null>(null)
@@ -720,6 +722,7 @@ function SettingsPage() {
   const handleCreateProvider = async () => {
     const providerId = normalizeProviderId(addProviderForm.provider)
     const baseModel = addProviderForm.base_model.trim() || 'custom-model'
+    const nextApiKey = addProviderApiKeyInputRef.current?.value.trim() || ''
 
     if (!providerId) {
       showNotification({ type: 'error', text: '请输入供应商标识' })
@@ -745,12 +748,15 @@ function SettingsPage() {
         display_name: addProviderForm.display_name.trim() || providerId,
         icon: addProviderForm.icon.trim() || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        api_key: addProviderForm.api_key.trim() || undefined,
+        api_key: nextApiKey || undefined,
         selected_models: [],
         max_tokens: addProviderForm.max_tokens === '' ? null : Number(addProviderForm.max_tokens),
         is_default: false
       })
 
+      if (addProviderApiKeyInputRef.current) {
+        addProviderApiKeyInputRef.current.value = ''
+      }
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
       showNotification({ type: 'success', text: '供应商创建成功' })
@@ -781,6 +787,7 @@ function SettingsPage() {
 
     try {
       const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.api_endpoint)
+      const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
       const updatePayload: {
         display_name?: string
         icon?: string
@@ -796,8 +803,8 @@ function SettingsPage() {
         max_tokens: providerForm.max_tokens === '' ? null : Number(providerForm.max_tokens)
       }
 
-      if (providerForm.api_key.trim()) {
-        updatePayload.api_key = providerForm.api_key.trim()
+      if (nextApiKey) {
+        updatePayload.api_key = nextApiKey
       }
 
       setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))
@@ -807,7 +814,9 @@ function SettingsPage() {
       })
 
       // 保存成功后清空 API 密钥输入框，避免明文长期留存在前端状态中
-      setProviderForm(prev => ({ ...prev, api_key: '' }))
+      if (providerApiKeyInputRef.current) {
+        providerApiKeyInputRef.current.value = ''
+      }
       showNotification({ type: 'success', text: '供应商配置保存成功' })
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
@@ -1196,9 +1205,11 @@ function SettingsPage() {
                       <div className={styles['form-group']}>
                         <label>API Key</label>
                         <input
+                          key={`provider-api-key-${providerForm.config_id ?? providerForm.provider}`}
                           type="password"
-                          value={providerForm.api_key}
-                          onChange={(e) => setProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
+                          ref={providerApiKeyInputRef}
+                          defaultValue=""
+                          autoComplete="new-password"
                           placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
                         />
                       </div>
@@ -2022,8 +2033,9 @@ function SettingsPage() {
                   <label>API Key（可选）</label>
                   <input
                     type="password"
-                    value={addProviderForm.api_key}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_key: e.target.value }))}
+                    ref={addProviderApiKeyInputRef}
+                    defaultValue=""
+                    autoComplete="new-password"
                     placeholder="输入供应商 API Key"
                   />
                 </div>

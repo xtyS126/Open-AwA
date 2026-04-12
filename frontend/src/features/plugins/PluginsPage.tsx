@@ -5,6 +5,13 @@ import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
 import styles from './PluginsPage.module.css'
 
+const MAX_PLUGIN_UPLOAD_SIZE = 50 * 1024 * 1024
+const ALLOWED_PLUGIN_MIME_TYPES = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'multipart/x-zip',
+])
+
 function PluginsPage() {
   const navigate = useNavigate()
   const [plugins, setPlugins] = useState<Plugin[]>([])
@@ -129,8 +136,15 @@ function PluginsPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0]
-      if (!file.name.endsWith('.zip')) {
+      const isZipExtension = file.name.toLowerCase().endsWith('.zip')
+      const isAllowedMimeType = !file.type || ALLOWED_PLUGIN_MIME_TYPES.has(file.type)
+
+      if (!isZipExtension || !isAllowedMimeType) {
         alert('只支持 .zip 格式的插件包')
+        return
+      }
+      if (file.size <= 0 || file.size > MAX_PLUGIN_UPLOAD_SIZE) {
+        alert('插件包大小无效或已超过 50MB 限制')
         return
       }
 

@@ -16,31 +16,17 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: sessionStorage.getItem('token'),
-  isAuthenticated: !!sessionStorage.getItem('token'),
+  token: null,
+  isAuthenticated: false,
   isInitialized: false,
 
   setAuth: (user, token) => {
-    if (token) {
-      sessionStorage.setItem('token', token)
-    } else {
-      sessionStorage.removeItem('token')
-    }
-    
-    if (user) {
-      sessionStorage.setItem('username', user.username)
-    } else {
-      sessionStorage.removeItem('username')
-    }
-
-    set({ user, token, isAuthenticated: !!token })
+    set({ user, token, isAuthenticated: !!user })
   },
 
   setInitialized: (initialized) => set({ isInitialized: initialized }),
 
   logout: () => {
-    sessionStorage.removeItem('token')
-    sessionStorage.removeItem('username')
     set({ user: null, token: null, isAuthenticated: false })
   },
 }))

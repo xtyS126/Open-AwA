@@ -1,26 +1,7 @@
 /**
  * 安全模块 API，提供 RBAC 角色管理与审计日志查询接口。
  */
-import axios from 'axios'
-
-const API_BASE_URL = '/api'
-
-const getStoredToken = () => sessionStorage.getItem('token')
-
-const securityApi = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
-
-securityApi.interceptors.request.use((config) => {
-  const token = getStoredToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
+import api from '@/shared/api/api'
 
 // -------- 类型定义 --------
 
@@ -83,24 +64,24 @@ export interface AuditStats {
 export const securityAPI = {
   /** 获取所有角色列表 */
   getRoles() {
-    return securityApi.get<RoleInfo[]>('/security/roles')
+    return api.get<RoleInfo[]>('/security/roles')
   },
 
   /** 获取指定用户的角色信息 */
   getUserRole(userId: string) {
-    return securityApi.get<UserRoleInfo>(`/security/users/${userId}/role`)
+    return api.get<UserRoleInfo>(`/security/users/${userId}/role`)
   },
 
   /** 设置用户角色 */
   setUserRole(userId: string, roleName: string) {
-    return securityApi.put<UserRoleInfo>(`/security/users/${userId}/role`, {
+    return api.put<UserRoleInfo>(`/security/users/${userId}/role`, {
       role_name: roleName,
     })
   },
 
   /** 检查权限 */
   checkPermission(userId: string, permission: string) {
-    return securityApi.post<PermissionCheckResult>('/security/check-permission', {
+    return api.post<PermissionCheckResult>('/security/check-permission', {
       user_id: userId,
       permission,
     })
@@ -108,12 +89,12 @@ export const securityAPI = {
 
   /** 获取审计日志列表 */
   getAuditLogs(params: AuditLogQueryParams = {}) {
-    return securityApi.get<AuditLogListResult>('/security/audit-logs', { params })
+    return api.get<AuditLogListResult>('/security/audit-logs', { params })
   },
 
   /** 导出审计日志（JSONL 格式） */
   exportAuditLogs(params: AuditLogQueryParams = {}) {
-    return securityApi.get('/security/audit-logs/export', {
+    return api.get('/security/audit-logs/export', {
       params,
       responseType: 'blob',
     })
@@ -121,6 +102,6 @@ export const securityAPI = {
 
   /** 获取审计统计信息 */
   getAuditStats() {
-    return securityApi.get<AuditStats>('/security/audit-logs/stats')
+    return api.get<AuditStats>('/security/audit-logs/stats')
   },
 }
