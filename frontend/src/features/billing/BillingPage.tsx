@@ -9,15 +9,20 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  BarChart,
+  Bar,
+  Legend
 } from 'recharts'
-import { billingAPI, CostStatistics, UsageRecord } from '@/features/billing/billingApi'
+import { billingAPI, CostStatistics, UsageRecord, BudgetStatus } from '@/features/billing/billingApi'
 import styles from './BillingPage.module.css'
 
 const CHART_COLORS = {
   grid: 'var(--color-chart-grid)',
   axis: 'var(--color-chart-axis)',
   line: 'var(--color-chart-primary)',
+  input: 'var(--color-chart-primary)',
+  output: 'var(--color-chart-secondary)',
   pie: [
     'var(--color-chart-primary)',
     'var(--color-chart-secondary)',
@@ -31,6 +36,7 @@ const CHART_COLORS = {
 function BillingPage() {
   const [statistics, setStatistics] = useState<CostStatistics | null>(null)
   const [usageRecords, setUsageRecords] = useState<UsageRecord[]>([])
+  const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'all'>('monthly')
@@ -44,13 +50,15 @@ function BillingPage() {
       setLoading(true)
       setError(null)
       
-      const [statsRes, usageRes] = await Promise.all([
+      const [statsRes, usageRes, budgetRes] = await Promise.all([
         billingAPI.getCostStatistics({ period }),
-        billingAPI.getUsage({ limit: 50 })
+        billingAPI.getUsage({ limit: 50 }),
+        billingAPI.getBudget('current').catch(() => ({ data: null }))
       ])
       
       setStatistics(statsRes.data)
       setUsageRecords(usageRes.data.records || [])
+      setBudgetStatus(budgetRes.data)
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } }
       setError(axiosErr.response?.data?.detail || '加载计费数据失败')
@@ -87,6 +95,12 @@ function BillingPage() {
     return `${symbol}${amount.toFixed(6)}`
   }
 
+  const formatCurrencyShort = (amount: number, currency: string) => {
+    const symbol = currency === 'CNY' ? '¥' : '$'
+    if (amount >= 1) return `${symbol}${amount.toFixed(2)}`
+    return `${symbol}${amount.toFixed(4)}`
+  }
+
   const formatTokens = (tokens: number) => {
     if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(2)}M`
     if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`
@@ -98,6 +112,27 @@ function BillingPage() {
     return statistics.by_model.slice(0, 6).map((item, index) => ({
       name: `${item.provider}:${item.model}`,
       value: item.cost,
+      color: CHART_COLORS.pie[index % CHART_COLORS.pie.length]
+    }))
+  }
+
+  /* Token使用趋势数据（输入/输出分开展示） */
+  const getTokenTrendData = () => {
+    if (!statistics?.trend) return []
+    return statistics.trend.map(t => ({
+      date: t.date,
+      input: t.input_tokens,
+      output: t.output_tokens
+    }))
+  }
+
+  /* 内容类型分布 */
+  const getContentTypeData = () => {
+    if (!statistics?.by_content_type) return []
+    return Object.entries(statistics.by_content_type).map(([type, data], index) => ({
+      name: type,
+      tokens: data.tokens,
+      cost: data.cost,
       color: CHART_COLORS.pie[index % CHART_COLORS.pie.length]
     }))
   }
@@ -120,7 +155,7 @@ function BillingPage() {
       </div>
 
       <div className={styles['billing-filters']}>
-        <select value={period} onChange={(e) => setPeriod(e.target.value as any)}>
+        <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
           <option value="daily">今日</option>
           <option value="weekly">本周</option>
           <option value="monthly">本月</option>
@@ -129,11 +164,27 @@ function BillingPage() {
         </select>
       </div>
 
+      {/* 预算状态条 */}
+      {budgetStatus?.has_budget_configured && (
+        <div className={`${styles['budget-bar']} ${budgetStatus.is_exceeded ? styles['budget-exceeded'] : budgetStatus.is_warning ? styles['budget-warning'] : ''}`}>
+          <div className={styles['budget-info']}>
+            <span>预算: {formatCurrencyShort(budgetStatus.current_usage || 0, budgetStatus.currency || 'USD')} / {formatCurrencyShort(budgetStatus.max_amount || 0, budgetStatus.currency || 'USD')}</span>
+            <span className={styles['budget-pct']}>{(budgetStatus.usage_percentage || 0).toFixed(1)}%</span>
+          </div>
+          <div className={styles['budget-progress']}>
+            <div
+              className={styles['budget-progress-fill']}
+              style={{ width: `${Math.min(budgetStatus.usage_percentage || 0, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className={styles['billing-stats-grid']}>
         <div className={styles['billing-stat-card']}>
           <h3>总成本</h3>
           <p className={styles['stat-value']}>
-            {formatCurrency(statistics?.total_cost || 0, statistics?.currency || 'USD')}
+            {formatCurrencyShort(statistics?.total_cost || 0, statistics?.currency || 'USD')}
           </p>
           <p className={styles['stat-subtitle']}>
             {statistics?.period_start?.split('T')[0]} 至 {statistics?.period_end?.split('T')[0]}
@@ -165,7 +216,7 @@ function BillingPage() {
               <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={12} />
               <YAxis stroke={CHART_COLORS.axis} fontSize={12} />
               <Tooltip 
-                formatter={(value: number) => formatCurrency(value, statistics?.currency || 'USD')}
+                formatter={(value: number) => formatCurrencyShort(value, statistics?.currency || 'USD')}
               />
               <Line 
                 type="monotone" 
@@ -197,11 +248,45 @@ function BillingPage() {
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => formatCurrency(value, statistics?.currency || 'USD')} />
+              <Tooltip formatter={(value: number) => formatCurrencyShort(value, statistics?.currency || 'USD')} />
             </PieChart>
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Token使用趋势（输入/输出分开） */}
+      {getTokenTrendData().length > 0 && (
+        <div className={styles['billing-chart-card']} style={{ marginBottom: '24px' }}>
+          <h3>Token使用趋势</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={getTokenTrendData()}>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+              <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={11} />
+              <YAxis stroke={CHART_COLORS.axis} fontSize={11} tickFormatter={(v) => formatTokens(v)} />
+              <Tooltip formatter={(value: number) => formatTokens(value)} />
+              <Legend />
+              <Bar dataKey="input" name="输入Tokens" fill={CHART_COLORS.input} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="output" name="输出Tokens" fill={CHART_COLORS.output} radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* 内容类型分布 */}
+      {getContentTypeData().length > 0 && (
+        <div className={styles['billing-chart-card']} style={{ marginBottom: '24px' }}>
+          <h3>内容类型分布</h3>
+          <div className={styles['content-type-grid']}>
+            {getContentTypeData().map((item) => (
+              <div key={item.name} className={styles['content-type-item']}>
+                <span className={styles['content-type-name']}>{item.name}</span>
+                <span className={styles['content-type-tokens']}>{formatTokens(item.tokens)} tokens</span>
+                <span className={styles['content-type-cost']}>{formatCurrencyShort(item.cost, statistics?.currency || 'USD')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={styles['billing-usage-table']}>
         <h3>用量明细</h3>

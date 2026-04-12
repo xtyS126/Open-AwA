@@ -19,6 +19,8 @@ from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, e
 from api.routes.marketplace import router as marketplace_router
 from api.routes.security import router as security_router
 from api.routes.weixin import router as weixin_router
+from api.routes.tools import router as tools_router
+from api.routes.subagents import router as subagents_router
 from billing.models import Base as BillingBase
 from billing.routers import billing
 from config.logging import (
@@ -322,6 +324,8 @@ app.include_router(billing.router)
 app.include_router(marketplace_router)
 app.include_router(security_router)
 app.include_router(weixin_router)
+app.include_router(tools_router)
+app.include_router(subagents_router)
 
 
 @app.get("/")
