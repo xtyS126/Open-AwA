@@ -112,7 +112,7 @@ app = FastAPI(
 _CSRF_COOKIE_NAME = "csrf_token"
 _CSRF_HEADER_NAME = "X-CSRF-Token"
 # 不需要 CSRF 校验的路径前缀（公开只读接口）
-_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register"}
+_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/logs/client-errors"}
 # 需要 CSRF 校验的请求方法
 _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 

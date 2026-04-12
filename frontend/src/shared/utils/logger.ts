@@ -88,14 +88,15 @@ let _reportTimer: ReturnType<typeof setTimeout> | null = null
 const REPORT_FLUSH_INTERVAL = 3000
 const REPORT_MAX_BATCH = 10
 const REPORT_MAX_QUEUE = 100
+let _reportingDisabledByAuth = false
 
 async function _flushErrorReports(): Promise<void> {
-  if (_reportQueue.length === 0) return
+  if (_reportQueue.length === 0 || _reportingDisabledByAuth) return
   const batch = _reportQueue.splice(0, REPORT_MAX_BATCH)
   const csrfToken = Cookies.get('csrf_token') || ''
   for (const report of batch) {
     try {
-      await fetch('/api/logs/client-errors', {
+      const response = await fetch('/api/logs/client-errors', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
@@ -104,6 +105,12 @@ async function _flushErrorReports(): Promise<void> {
         },
         body: JSON.stringify(report),
       })
+      if (response.status === 401 || response.status === 403) {
+        // 当前会话无上报权限时停止继续上报，避免持续触发 401 噪音日志
+        _reportingDisabledByAuth = true
+        _reportQueue = []
+        break
+      }
     } catch {
       // 上报失败时静默忽略，避免无限循环
     }
@@ -119,6 +126,9 @@ function _scheduleFlush(): void {
 }
 
 function _enqueueErrorReport(record: Record<string, unknown>): void {
+  if (_reportingDisabledByAuth) {
+    return
+  }
   if (_reportQueue.length >= REPORT_MAX_QUEUE) {
     _reportQueue.shift()
   }

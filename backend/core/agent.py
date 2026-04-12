@@ -68,6 +68,39 @@ class AIAgent:
         except Exception as e:
             logger.warning(f"Conversation recorder task failed: {e}")
 
+    @staticmethod
+    def _is_final_only_mode(context: Dict[str, Any]) -> bool:
+        """
+        判断当前请求是否要求只返回最终答案。
+
+        `output_mode=final_only` 是显式协议约定，`suppress_reasoning`
+        则作为兼容旧调用方的兜底开关。
+        """
+        output_mode = str(context.get("output_mode", "")).strip().lower()
+        return output_mode == "final_only" or bool(context.get("suppress_reasoning"))
+
+    def _strip_reasoning_content(self, payload: Any) -> Any:
+        """
+        递归移除对外响应中的思维链字段，避免 final_only 只在顶层生效。
+        """
+        if isinstance(payload, dict):
+            return {
+                key: self._strip_reasoning_content(value)
+                for key, value in payload.items()
+                if key != "reasoning_content"
+            }
+        if isinstance(payload, list):
+            return [self._strip_reasoning_content(item) for item in payload]
+        return payload
+
+    def _apply_output_mode(self, payload: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        根据上下文裁剪对外响应，确保渠道级输出模式真正落到返回值上。
+        """
+        if not self._is_final_only_mode(context):
+            return payload
+        return self._strip_reasoning_content(payload)
+
     def _schedule_record(
         self,
         *,
@@ -293,6 +326,9 @@ class AIAgent:
         调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
         """
         logger.info("Getting available skills")
+        if self._db_session is None:
+            logger.info("No database session available, returning empty skill list")
+            return []
         try:
             registry = self.skill_engine.registry
             skills = registry.list_all()
@@ -366,6 +402,8 @@ class AIAgent:
         full_content = ""
         full_reasoning = ""
         
+        final_only_mode = self._is_final_only_mode(context)
+
         async for chunk in self.executor._call_llm_api_stream(user_input, context):
             if "error" in chunk:
                 yield {
@@ -376,15 +414,20 @@ class AIAgent:
                 
             content = chunk.get("content", "")
             reasoning = chunk.get("reasoning_content", "")
+
+            if final_only_mode:
+                reasoning = ""
             
             if content: full_content += content
             if reasoning: full_reasoning += reasoning
             
-            yield {
+            output_chunk = {
                 "type": "chunk",
                 "content": content,
-                "reasoning_content": reasoning
             }
+            if reasoning:
+                output_chunk["reasoning_content"] = reasoning
+            yield output_chunk
             
         # Update memory after stream completes
         if full_content:
@@ -551,12 +594,12 @@ class AIAgent:
             if isinstance(result, dict):
                 feedback = await self.feedback.evaluate_result(result)
                 if feedback.get("needs_confirmation"):
-                    return {
+                    return self._apply_output_mode({
                         "status": "awaiting_confirmation",
                         "message": feedback.get("message"),
                         "step": step,
                         "results": results
-                    }
+                    }, context)
                 
                 if feedback.get("needs_retry"):
                     retry_result = await self.executor.retry_step(step, context)
@@ -576,12 +619,12 @@ class AIAgent:
                 break
 
         if first_error:
-            return {
+            return self._apply_output_mode({
                 "status": "error",
                 "response": final_response,
                 "results": results,
                 "error": first_error
-            }
+            }, context)
         await self.feedback.update_memory(
             user_input=user_input,
             response=final_response,
@@ -618,7 +661,7 @@ class AIAgent:
         }
         if reasoning_parts:
             output["reasoning_content"] = "\n".join(reasoning_parts)
-        return output
+        return self._apply_output_mode(output, context)
     
     async def _auto_execute_skills_and_plugins(
         self,
