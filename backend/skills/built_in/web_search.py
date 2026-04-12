@@ -38,6 +38,10 @@ class WebSearchSkill:
         self._initialized = True
         return True
 
+    def is_initialized(self) -> bool:
+        """检查技能是否已初始化。"""
+        return self._initialized
+
     async def execute(self, **kwargs) -> Dict[str, Any]:
         """执行搜索任务。"""
         if not self._initialized:
@@ -106,9 +110,29 @@ class WebSearchSkill:
         return results
 
     def _http_get(self, host: str, path: str) -> str:
-        """同步HTTP GET请求。"""
+        """同步HTTP GET请求，包含SSRF防护。"""
         import http.client
         import ssl
+        import socket
+        import ipaddress
+
+        # SSRF防护: 检查主机名是否指向内部地址
+        if not host or host.strip() == '':
+            raise ValueError("主机名不能为空")
+
+        blocked_hosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1']
+        if host.lower() in blocked_hosts:
+            raise ValueError("不允许访问本地地址")
+
+        try:
+            resolved_ips = socket.getaddrinfo(host, None)
+            for family, socktype, proto, canonname, sockaddr in resolved_ips:
+                ip_str = sockaddr[0]
+                ip_obj = ipaddress.ip_address(ip_str)
+                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved:
+                    raise ValueError(f"不允许访问内部地址: {host}")
+        except socket.gaierror:
+            raise ValueError(f"无法解析主机名: {host}")
 
         context = ssl.create_default_context()
         conn = http.client.HTTPSConnection(host, timeout=REQUEST_TIMEOUT, context=context)
@@ -196,16 +220,23 @@ class WebSearchSkill:
         return re.sub(r'<[^>]+>', '', text)
 
     async def _fetch_url(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """获取指定URL的网页内容（纯文本）。"""
+        """获取指定URL的网页内容（纯文本），包含安全检查。"""
         url = kwargs.get('url', '').strip()
         max_length = kwargs.get('max_length', 10000)
 
         if not url:
             return {"success": False, "error": "URL不能为空"}
 
+        # 仅允许 http/https 协议
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return {"success": False, "error": "仅支持 http/https 协议"}
+
+        if not parsed.hostname:
+            return {"success": False, "error": "URL格式无效"}
+
         try:
             loop = asyncio.get_event_loop()
-            parsed = urllib.parse.urlparse(url)
             host = parsed.hostname
             path = parsed.path or '/'
             if parsed.query:

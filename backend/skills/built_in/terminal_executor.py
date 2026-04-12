@@ -59,13 +59,36 @@ class TerminalExecutorSkill:
         return True
 
     def _is_command_safe(self, command: str) -> bool:
-        """检查命令是否安全。"""
+        """
+        检查命令是否安全。
+        使用多层检查策略：危险命令前缀 + 危险符号模式。
+        """
         cmd_lower = command.lower().strip()
+
+        # 检查危险命令前缀
         for blocked in BLOCKED_COMMANDS:
             if blocked in cmd_lower:
-                logger.warning(f"Blocked dangerous command: {command}")
+                logger.warning(f"Blocked dangerous command prefix: {command}")
                 return False
+
+        # 检查危险的命令串联符号（防止绕过）
+        import re
+        # 检查反引号命令替换
+        if '`' in command:
+            logger.warning(f"Blocked command with backtick substitution: {command}")
+            return False
+
+        # 检查 $() 命令替换中的危险命令
+        subst_pattern = re.compile(r'\$\([^)]*(?:rm|mkfs|dd|shutdown|reboot|halt)\b')
+        if subst_pattern.search(command):
+            logger.warning(f"Blocked command with dangerous substitution: {command}")
+            return False
+
         return True
+
+    def is_initialized(self) -> bool:
+        """检查技能是否已初始化。"""
+        return self._initialized
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         """执行终端命令。"""
