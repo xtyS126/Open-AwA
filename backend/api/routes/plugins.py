@@ -280,11 +280,16 @@ async def install_plugin(
     """
     pm = _get_plugin_manager()
 
+    # 确保 config 为合法的 dict 类型
+    plugin_config = plugin.config if isinstance(plugin.config, dict) else {}
+    if plugin.config is not None and not isinstance(plugin.config, dict):
+        logger.warning(f"插件 '{plugin.name}' 提供的 config 类型非 dict，已回退为空配置")
+
     new_plugin = Plugin(
         id=str(uuid.uuid4()),
         name=plugin.name,
         version=plugin.version or "1.0.0",
-        config=plugin.config if isinstance(plugin.config, dict) else {},
+        config=plugin_config,
         enabled=True,
         source="manual",
     )
