@@ -139,6 +139,8 @@ class PluginEventBus:
     def emit(self, event_name: str, event_data: Optional[Dict[str, Any]] = None) -> EventResult:
         """
         同步触发事件，按优先级顺序依次调用所有订阅者的处理器。
+        注意：此方法仅支持同步处理器。异步处理器（返回协程的函数）
+        在异步上下文中会被跳过并记录警告。
 
         Args:
             event_name: 事件名称。
