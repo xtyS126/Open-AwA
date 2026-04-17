@@ -11,6 +11,7 @@ from db.models import get_db, Plugin
 from api.dependencies import get_current_user, get_current_admin_user
 from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
 from plugins.plugin_manager import PluginManager
+from plugins import plugin_instance
 from plugins.plugin_logger import LogManager
 from loguru import logger
 import uuid
@@ -23,7 +24,20 @@ import json
 
 
 router = APIRouter(prefix="/plugins", tags=["Plugins"])
-plugin_manager = PluginManager()
+
+
+def _get_plugin_manager() -> PluginManager:
+    """获取全局插件管理器单例。"""
+    return plugin_instance.get()
+
+
+# 模块级变量已废弃，内部函数应使用 _get_plugin_manager()
+# 保留此变量仅为兼容外部可能存在的直接引用
+def __getattr__(name):
+    """模块级属性懒加载，确保 plugin_manager 引用始终指向全局单例。"""
+    if name == "plugin_manager":
+        return plugin_instance.get()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
@@ -56,10 +70,10 @@ def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
     根据插件名解析插件根目录，优先使用扫描元数据，其次回退到目录与 manifest 查找。
     所有路径均验证不溢出插件根目录，防止路径遍历攻击。
     """
-    plugins_base = PathLib(plugin_manager.plugins_dir).resolve()
+    plugins_base = PathLib(_get_plugin_manager().plugins_dir).resolve()
 
     _ensure_plugin_discovered(plugin_name)
-    metadata = plugin_manager.plugin_metadata.get(plugin_name, {})
+    metadata = _get_plugin_manager().plugin_metadata.get(plugin_name, {})
     metadata_path = metadata.get("path")
     if isinstance(metadata_path, str) and metadata_path:
         # 约定插件入口通常为 <plugin_root>/src/index.py
@@ -158,10 +172,10 @@ def _persist_plugin_config(
     config_json_path = os.path.join(plugin_root, "config.json")
     _write_json_file(config_json_path, normalized_config)
 
-    if plugin.name in plugin_manager.loaded_plugins:
+    if plugin.name in _get_plugin_manager().loaded_plugins:
         try:
             # 通过重载让配置在当前会话实时生效
-            plugin_manager.reload_plugin(plugin.name)
+            _get_plugin_manager().reload_plugin(plugin.name)
         except Exception as exc:
             logger.warning(f"Plugin '{plugin.name}' reloaded with warning after config update: {exc}")
 
@@ -178,27 +192,60 @@ def _ensure_plugin_discovered(plugin_name: str) -> None:
     处理ensure、plugin、discovered相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
-    if plugin_name in plugin_manager.plugin_metadata:
+    if plugin_name in _get_plugin_manager().plugin_metadata:
         return
-    plugin_manager.discover_plugins()
+    _get_plugin_manager().discover_plugins()
 
 
 @router.get(
     "",
     response_model=List[PluginResponse],
     summary="获取插件列表",
-    description="返回数据库中已登记的插件记录列表。"
+    description="返回数据库中已登记的插件记录列表，并附带运行时状态信息。"
 )
 async def get_plugins(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """
-    获取plugins相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取所有已注册的插件列表，合并数据库记录与运行时状态。
     """
     plugins = db.query(Plugin).all()
+    pm = _get_plugin_manager()
+    for p in plugins:
+        # 将运行时加载状态注入到插件记录中（不持久化，仅作为响应补充）
+        p.runtime_loaded = p.name in pm.loaded_plugins
+        state = pm.state_machine.get_state(p.name) if p.name in pm.plugin_metadata else None
+        p.runtime_state = state.value if state else "unknown"
     return plugins
+
+
+@router.get(
+    "/discover",
+    summary="发现可用插件",
+    description="扫描插件目录，返回文件系统中发现的所有插件元数据（不依赖数据库）。"
+)
+async def discover_plugins(
+    current_user=Depends(get_current_user)
+):
+    """
+    扫描插件目录，返回可用的插件列表及其元数据。
+    """
+    pm = _get_plugin_manager()
+    discovered = pm.discover_plugins()
+    result = []
+    for info in discovered:
+        name = info.get("name", "")
+        result.append({
+            "name": name,
+            "version": info.get("version", "unknown"),
+            "description": info.get("description", ""),
+            "path": info.get("path", ""),
+            "loaded": name in pm.loaded_plugins,
+            "state": pm.state_machine.get_state(name).value if name in pm.plugin_metadata else "unknown",
+            "requested_permissions": info.get("requested_permissions", []),
+        })
+    return result
 
 
 @router.get(
@@ -229,9 +276,10 @@ async def install_plugin(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    处理install、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    安装插件：创建数据库记录，发现插件文件，并尝试加载到运行时。
     """
+    pm = _get_plugin_manager()
+
     new_plugin = Plugin(
         id=str(uuid.uuid4()),
         name=plugin.name,
@@ -243,7 +291,19 @@ async def install_plugin(
     db.add(new_plugin)
     db.commit()
     db.refresh(new_plugin)
-    
+
+    # 发现并加载插件到运行时
+    if new_plugin.name not in pm.plugin_metadata:
+        pm.discover_plugins()
+    if new_plugin.name in pm.plugin_metadata:
+        try:
+            pm.load_plugin(new_plugin.name)
+            logger.info(f"插件 '{new_plugin.name}' 安装后已成功加载")
+        except Exception as exc:
+            logger.warning(f"插件 '{new_plugin.name}' 安装成功但加载失败: {exc}")
+    else:
+        logger.warning(f"插件 '{new_plugin.name}' 已注册到数据库但未在文件系统中发现")
+
     return new_plugin
 
 
@@ -254,13 +314,21 @@ async def uninstall_plugin(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    处理uninstall、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    卸载插件：从运行时卸载并删除数据库记录。
     """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
-    
+
+    # 从运行时卸载插件
+    pm = _get_plugin_manager()
+    if plugin.name in pm.loaded_plugins:
+        try:
+            pm.unload_plugin(plugin.name)
+            logger.info(f"插件 '{plugin.name}' 已从运行时卸载")
+        except Exception as exc:
+            logger.warning(f"插件 '{plugin.name}' 运行时卸载失败: {exc}")
+
     db.delete(plugin)
     db.commit()
     
@@ -278,8 +346,7 @@ async def toggle_plugin(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    处理toggle、plugin相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    切换插件启用/禁用状态，并同步加载或卸载运行时实例。
     """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
@@ -287,6 +354,27 @@ async def toggle_plugin(
     
     plugin.enabled = not plugin.enabled
     db.commit()
+
+    # 同步运行时状态
+    pm = _get_plugin_manager()
+    if plugin.enabled:
+        # 启用：发现并加载
+        if plugin.name not in pm.plugin_metadata:
+            pm.discover_plugins()
+        if plugin.name in pm.plugin_metadata and plugin.name not in pm.loaded_plugins:
+            try:
+                pm.load_plugin(plugin.name)
+                logger.info(f"插件 '{plugin.name}' 已启用并加载")
+            except Exception as exc:
+                logger.warning(f"插件 '{plugin.name}' 启用后加载失败: {exc}")
+    else:
+        # 禁用：卸载
+        if plugin.name in pm.loaded_plugins:
+            try:
+                pm.unload_plugin(plugin.name)
+                logger.info(f"插件 '{plugin.name}' 已禁用并卸载")
+            except Exception as exc:
+                logger.warning(f"插件 '{plugin.name}' 禁用后卸载失败: {exc}")
 
     return {"message": f"Plugin {'enabled' if plugin.enabled else 'disabled'}"}
 
@@ -457,7 +545,7 @@ async def authorize_plugin_permissions(
 
     _ensure_plugin_discovered(plugin.name)
     try:
-        status = plugin_manager.authorize_plugin_permissions(plugin.name, payload.permissions)
+        status = _get_plugin_manager().authorize_plugin_permissions(plugin.name, payload.permissions)
         return PluginPermissionUpdateResponse(
             plugin_id=plugin_id,
             plugin_name=status["plugin_name"],
@@ -492,7 +580,7 @@ async def revoke_plugin_permissions(
 
     _ensure_plugin_discovered(plugin.name)
     try:
-        status = plugin_manager.revoke_plugin_permissions(plugin.name, payload.permissions)
+        status = _get_plugin_manager().revoke_plugin_permissions(plugin.name, payload.permissions)
         return PluginPermissionUpdateResponse(
             plugin_id=plugin_id,
             plugin_name=status["plugin_name"],
@@ -521,7 +609,7 @@ async def get_plugin_permissions(
 
     _ensure_plugin_discovered(plugin.name)
     try:
-        status = plugin_manager.get_plugin_permission_status(plugin.name)
+        status = _get_plugin_manager().get_plugin_permission_status(plugin.name)
         return PluginPermissionStatus(
             plugin_id=plugin_id,
             plugin_name=status["plugin_name"],
@@ -558,12 +646,12 @@ async def execute_plugin(
     try:
         _ensure_plugin_discovered(plugin.name)
 
-        if plugin.name not in plugin_manager.loaded_plugins:
-            load_success = plugin_manager.load_plugin(plugin.name)
+        if plugin.name not in _get_plugin_manager().loaded_plugins:
+            load_success = _get_plugin_manager().load_plugin(plugin.name)
             if not load_success:
                 raise HTTPException(status_code=500, detail="Failed to load plugin")
 
-        result = await plugin_manager.execute_plugin_async(
+        result = await _get_plugin_manager().execute_plugin_async(
             plugin_name=plugin.name,
             method=execution_data.method,
             **execution_data.params
@@ -603,12 +691,12 @@ async def get_plugin_tools(
     try:
         _ensure_plugin_discovered(plugin.name)
 
-        if plugin.name not in plugin_manager.loaded_plugins:
-            load_success = plugin_manager.load_plugin(plugin.name)
+        if plugin.name not in _get_plugin_manager().loaded_plugins:
+            load_success = _get_plugin_manager().load_plugin(plugin.name)
             if not load_success:
                 raise HTTPException(status_code=500, detail="Failed to load plugin")
 
-        tools = plugin_manager.get_plugin_tools(plugin.name)
+        tools = _get_plugin_manager().get_plugin_tools(plugin.name)
 
         return PluginToolsResponse(
             plugin_id=plugin_id,
@@ -697,35 +785,6 @@ async def validate_plugin(
         )
 
 
-@router.get(
-    "/discover",
-    response_model=PluginDiscoveryResult,
-    summary="发现插件",
-    description="扫描插件目录并返回可发现的插件元数据。"
-)
-async def discover_plugins(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """
-    处理discover、plugins相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
-    try:
-        plugin_manager = PluginManager()
-        discovered = plugin_manager.discover_plugins()
-
-        logger.info(f"Plugin discovery completed by user '{current_user.username}', found {len(discovered)} plugins")
-
-        return PluginDiscoveryResult(
-            discovered=discovered,
-            total_count=len(discovered)
-        )
-
-    except Exception as e:
-        logger.error(f"Error discovering plugins: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Plugin discovery failed: {str(e)}")
-
 @router.post(
     "/upload",
     summary="上传插件包",
@@ -750,7 +809,7 @@ async def upload_plugin(
     moved_dirs = []
     try:
         plugin_manager = PluginManager()
-        plugins_dir = plugin_manager.plugins_dir
+        plugins_dir = _get_plugin_manager().plugins_dir
         
         # 先解压到临时目录进行校验
         temp_dir = tempfile.mkdtemp(prefix="plugin_upload_")
@@ -763,7 +822,7 @@ async def upload_plugin(
             z.extractall(temp_dir)
         
         # 在临时目录中发现插件
-        discovered = plugin_manager._discover_plugins_in_directory(temp_dir)
+        discovered = _get_plugin_manager()._discover_plugins_in_directory(temp_dir)
         installed_count = 0
         
         for plugin_info in discovered:
@@ -939,12 +998,12 @@ async def hot_update_plugin(
     rollout_dict = payload.rollout_config.model_dump() if payload.rollout_config else None
 
     try:
-        result = plugin_manager.hot_update_plugin(
+        result = _get_plugin_manager().hot_update_plugin(
             plugin_name=plugin.name,
             rollout_policy=rollout_dict,
             strategy=payload.strategy,
         )
-        hot_status = plugin_manager.hot_update_manager.get_status(plugin.name)
+        hot_status = _get_plugin_manager().hot_update_manager.get_status(plugin.name)
         return HotUpdateResponse(
             success=result.get("success", False),
             plugin_name=plugin.name,
@@ -988,7 +1047,7 @@ async def rollback_plugin(
     _ensure_plugin_discovered(plugin.name)
 
     try:
-        result = plugin_manager.rollback_plugin(
+        result = _get_plugin_manager().rollback_plugin(
             plugin_name=plugin.name,
             snapshot_id=payload.snapshot_id,
         )

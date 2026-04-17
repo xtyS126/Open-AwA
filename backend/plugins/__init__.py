@@ -12,6 +12,7 @@ from .plugin_logger import LogManager, PluginLogger
 from .plugin_manager import PluginManager
 from .plugin_sandbox import PluginSandbox
 from .plugin_validator import PluginValidator
+from . import plugin_instance
 from .schema_validator import (
     EXTENSION_POINT_VALUES,
     EXTENSION_SCHEMA,
@@ -35,6 +36,7 @@ __all__ = [
     "PluginSandbox",
     "ExtensionPointType",
     "ExtensionRegistry",
+    "plugin_instance",
     "EXTENSION_POINT_VALUES",
     "EXTENSION_SCHEMA",
     "MANIFEST_SCHEMA",

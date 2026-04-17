@@ -17,6 +17,7 @@ from memory.experience_manager import ExperienceManager
 from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
+from plugins import plugin_instance
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
 
@@ -30,8 +31,7 @@ class AIAgent:
     """
     def __init__(self, db_session: Session = None):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化 AI Agent，包含理解层、规划层、执行层、反馈层以及记忆管理。
         """
         self.comprehension = ComprehensionLayer()
         self.planner = PlanningLayer()
@@ -41,11 +41,18 @@ class AIAgent:
         
         self._db_session = db_session
         self.skill_engine = SkillEngine(self._db_session)
-        self.plugin_manager = PluginManager()
+        self.plugin_manager = plugin_instance.get()
         self._closed = False
         
         self.skill_results: List[Dict[str, Any]] = []
         self.plugin_results: List[Dict[str, Any]] = []
+
+        # 初始化记忆管理器，并注入到反馈层
+        self.memory_manager = None
+        if self._db_session:
+            from memory.manager import MemoryManager
+            self.memory_manager = MemoryManager(self._db_session)
+            self.feedback.set_memory_manager(self.memory_manager)
         
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
     
@@ -388,9 +395,30 @@ class AIAgent:
             ).opt(exception=True).error(f"获取可用插件列表失败: {e}")
             return []
     
+    async def _build_conversation_history(self, session_id: str, max_turns: int = 20) -> list:
+        """
+        从记忆管理器中构建对话历史消息列表，用于注入到 LLM 调用中。
+        返回 [{"role": "user"|"assistant", "content": "..."}] 格式。
+        """
+        if not self.memory_manager:
+            return []
+        try:
+            memories = await self.memory_manager.get_short_term_memories(
+                session_id=session_id, limit=max_turns
+            )
+            # 按时间正序排列（get_short_term_memories 返回倒序）
+            history = []
+            for mem in reversed(memories):
+                if mem.role in ("user", "assistant"):
+                    history.append({"role": mem.role, "content": mem.content})
+            return history
+        except Exception as e:
+            logger.warning(f"构建对话历史失败: {e}")
+            return []
+
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
         """
-        流式处理用户输入，绕过复杂规划逻辑，直接调用大模型并实时 yield 数据块。
+        流式处理用户输入，注入对话历史后调用大模型并实时 yield 数据块。
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
 
@@ -398,6 +426,11 @@ class AIAgent:
             context["message"] = user_input
             
         context["_record_hook"] = self._schedule_record
+
+        # 构建对话历史并注入到上下文中
+        session_id = context.get("session_id", "default")
+        conversation_history = await self._build_conversation_history(session_id)
+        context["conversation_history"] = conversation_history
             
         full_content = ""
         full_reasoning = ""
@@ -439,14 +472,19 @@ class AIAgent:
 
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理process相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        处理用户输入的完整流程：意图识别、规划、执行、反馈。
+        自动注入对话历史以支持多轮对话上下文。
         """
         logger.info(f"Processing user input, length={len(user_input)}")
 
         if "message" not in context:
             context["message"] = user_input
         context["_record_hook"] = self._schedule_record
+
+        # 构建对话历史并注入到上下文中
+        session_id = context.get("session_id", "default")
+        conversation_history = await self._build_conversation_history(session_id)
+        context["conversation_history"] = conversation_history
 
         intent_start = time.perf_counter()
         intent = await self.comprehension.recognize_intent(user_input)

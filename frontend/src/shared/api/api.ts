@@ -389,6 +389,13 @@ export const chatAPI = {
     api.get(`/chat/history/${sessionId}`),
   confirmOperation: (confirmed: boolean, step: any) =>
     api.post('/chat/confirm', { confirmed, step }),
+  upload: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/chat/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 export const skillsAPI = {
@@ -478,7 +485,10 @@ export interface SystemLogsQueryResponse {
 export const pluginsAPI = {
   getAll: () => api.get('/plugins'),
   getOne: (id: string) => api.get(`/plugins/${id}`),
+  discover: () => api.get('/plugins/discover'),
   install: (plugin: any) => api.post('/plugins', plugin),
+  execute: (id: string, method: string, params: Record<string, unknown> = {}) =>
+    api.post(`/plugins/${id}/execute`, { method, params }),
   update: (id: string, payload: any) => api.put(`/plugins/${id}`, payload),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
   toggle: (id: string) => api.put(`/plugins/${id}/toggle`),

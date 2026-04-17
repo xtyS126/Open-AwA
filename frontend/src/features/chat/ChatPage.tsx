@@ -3,6 +3,7 @@ import { chatAPI } from '@/shared/api/api'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import { appLogger } from '@/shared/utils/logger'
 import { ReasoningContent } from './components/ReasoningContent'
+import { MessageContent } from './components/MessageContent'
 import styles from './ChatPage.module.css'
 
 function sanitizeDisplayedError(message: string): string {
@@ -14,13 +15,30 @@ function sanitizeDisplayedError(message: string): string {
     .replace(/'/g, '&#39;')
 }
 
+/* 附件类型 */
+interface FileAttachment {
+  id: string
+  file: File
+  preview?: string   // 图片 blob URL
+  uploading: boolean
+  uploaded?: { url: string; name: string; size: number; type: 'image' | 'file' }
+  error?: string
+}
+
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.txt', '.md', '.csv']
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
+
 function ChatPage() {
   const [input, setInput] = useState('')
-  const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode, selectedModel } = useChatStore()
+  const { messages, addMessage, updateLastMessage, setLoading, isLoading, clearMessages, sessionId, outputMode, setOutputMode, selectedModel, setMessages } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [attachments, setAttachments] = useState<FileAttachment[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Buffer references for background throttling
   const bufferRef = useRef({
@@ -77,6 +95,147 @@ function ChatPage() {
     })
   }, [])
 
+  // 页面挂载或会话切换时加载历史消息
+  useEffect(() => {
+    if (!sessionId || sessionId === 'default') return
+    let cancelled = false
+    const loadHistory = async () => {
+      try {
+        const response = await chatAPI.getHistory(sessionId)
+        if (cancelled) return
+        const history = response.data
+        if (Array.isArray(history) && history.length > 0) {
+          const restored = history.map((msg: { id: string; role: string; content: string; timestamp: string }) => ({
+            id: msg.id?.toString() || crypto.randomUUID(),
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content,
+            timestamp: new Date(msg.timestamp),
+          }))
+          setMessages(restored)
+          appLogger.info({
+            event: 'chat_history_loaded',
+            module: 'chat_page',
+            action: 'load_history',
+            status: 'success',
+            message: `loaded ${restored.length} history messages`,
+          })
+        }
+      } catch {
+        // 历史加载失败不阻塞用户操作
+        appLogger.warning({
+          event: 'chat_history_load_failed',
+          module: 'chat_page',
+          action: 'load_history',
+          status: 'failure',
+          message: 'failed to load chat history',
+        })
+      }
+    }
+    loadHistory()
+    return () => { cancelled = true }
+  }, [sessionId, setMessages])
+
+  /* ---- 附件处理 ---- */
+
+  const getFileExtension = (name: string) => {
+    const dot = name.lastIndexOf('.')
+    return dot >= 0 ? name.slice(dot).toLowerCase() : ''
+  }
+
+  const addAttachments = useCallback((files: File[]) => {
+    const newAttachments: FileAttachment[] = []
+    for (const file of files) {
+      const ext = getFileExtension(file.name)
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        appLogger.warning({ event: 'file_rejected', module: 'chat_page', action: 'attach', status: 'failure', message: `不支持的文件类型: ${ext}` })
+        continue
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        appLogger.warning({ event: 'file_rejected', module: 'chat_page', action: 'attach', status: 'failure', message: `文件过大: ${file.name}` })
+        continue
+      }
+      const attachment: FileAttachment = {
+        id: crypto.randomUUID(),
+        file,
+        uploading: false,
+      }
+      // 图片创建预览 URL
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        attachment.preview = URL.createObjectURL(file)
+      }
+      newAttachments.push(attachment)
+    }
+    if (newAttachments.length > 0) {
+      setAttachments(prev => [...prev, ...newAttachments])
+    }
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => {
+      const removed = prev.find(a => a.id === id)
+      if (removed?.preview) URL.revokeObjectURL(removed.preview)
+      return prev.filter(a => a.id !== id)
+    })
+  }, [])
+
+  const uploadAttachments = useCallback(async (items: FileAttachment[]): Promise<FileAttachment[]> => {
+    const results: FileAttachment[] = []
+    for (const item of items) {
+      setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, uploading: true } : a))
+      try {
+        const res = await chatAPI.upload(item.file)
+        const data = res.data
+        const uploaded = { ...item, uploading: false, uploaded: { url: data.url, name: data.original_name, size: data.size, type: data.type as 'image' | 'file' } }
+        setAttachments(prev => prev.map(a => a.id === item.id ? uploaded : a))
+        results.push(uploaded)
+      } catch {
+        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, uploading: false, error: '上传失败' } : a))
+      }
+    }
+    return results
+  }, [])
+
+  /* 拖拽事件 */
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) addAttachments(files)
+  }, [addAttachments])
+
+  /* 粘贴图片 */
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const files = Array.from(e.clipboardData.files)
+    if (files.length > 0) {
+      addAttachments(files)
+    }
+  }, [addAttachments])
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : []
+    if (files.length > 0) addAttachments(files)
+    // 重置 input 以允许选择相同文件
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [addAttachments])
+
+  /* 清理附件预览 URL */
+  useEffect(() => {
+    return () => {
+      attachments.forEach(a => { if (a.preview) URL.revokeObjectURL(a.preview) })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
     if (!value) {
       return { provider: undefined, model: undefined }
@@ -94,7 +253,7 @@ function ChatPage() {
   }
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if ((!input.trim() && attachments.length === 0) || isLoading) return
 
     const userMessage = input.trim()
     const requestId = activeRequestIdRef.current + 1
@@ -103,16 +262,41 @@ function ChatPage() {
     const abortController = new AbortController()
     activeAbortControllerRef.current = abortController
     let streamErrorHandled = false
+
+    // 先上传待上传的附件
+    let uploadedAttachments: FileAttachment[] = []
+    const pendingUploads = attachments.filter(a => !a.uploaded && !a.error)
+    if (pendingUploads.length > 0) {
+      uploadedAttachments = await uploadAttachments(pendingUploads)
+    } else {
+      uploadedAttachments = attachments.filter(a => a.uploaded)
+    }
+
+    // 构造消息文本（附件信息附加到消息末尾）
+    let fullMessage = userMessage
+    if (uploadedAttachments.length > 0) {
+      const fileRefs = uploadedAttachments
+        .filter(a => a.uploaded)
+        .map(a => `[附件: ${a.uploaded!.name}](${a.uploaded!.url})`)
+        .join('\n')
+      if (fileRefs) {
+        fullMessage = fullMessage ? `${fullMessage}\n\n${fileRefs}` : fileRefs
+      }
+    }
+
+    if (!fullMessage) return
+
     appLogger.info({
       event: 'chat_send',
       module: 'chat_page',
       action: 'send_message',
       status: 'start',
       message: 'chat send started',
-      extra: { session_id: sessionId, input_length: userMessage.length, mode: outputMode },
+      extra: { session_id: sessionId, input_length: fullMessage.length, mode: outputMode, attachments: uploadedAttachments.length },
     })
     setInput('')
-    addMessage('user', userMessage)
+    setAttachments([])
+    addMessage('user', fullMessage)
     setLoading(true)
 
     try {
@@ -123,7 +307,7 @@ function ChatPage() {
         bufferRef.current = { content: '', reasoning: '', lastUpdateTime: Date.now() }
 
         await chatAPI.sendMessageStream(
-          userMessage,
+          fullMessage,
           sessionId,
           provider,
           model,
@@ -193,7 +377,7 @@ function ChatPage() {
           return
         }
       } else {
-        const response = await chatAPI.sendMessage(userMessage, sessionId, provider, model, 'direct', {
+        const response = await chatAPI.sendMessage(fullMessage, sessionId, provider, model, 'direct', {
           signal: abortController.signal,
         })
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
@@ -262,7 +446,12 @@ function ChatPage() {
         </button>
       </div>
 
-      <div className={styles['chat-messages']}>
+      <div
+        className={`${styles['chat-messages']} ${isDragOver ? styles['drag-over'] : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {messages.length === 0 && (
           <div className={styles['chat-empty']}>
             <p>你好！有什么可以帮助你的吗？</p>
@@ -286,7 +475,7 @@ function ChatPage() {
                     isStreaming={isCurrentlyStreaming}
                   />
                 )}
-                <p>{message.content}</p>
+                <MessageContent content={message.content} role={message.role} />
               </div>
             </div>
           )
@@ -304,21 +493,71 @@ function ChatPage() {
       </div>
 
       <div className={styles['chat-input-container']}>
-        <textarea
-          className={styles['chat-input']}
-          placeholder="输入你的问题..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-          rows={1}
-        />
-        <button
-          className={`btn btn-primary ${styles['send-btn']}`}
-          onClick={handleSend}
-          disabled={!input.trim() || isLoading}
-        >
-          发送
-        </button>
+        {/* 附件预览栏 */}
+        {attachments.length > 0 && (
+          <div className={styles['attachments-preview']}>
+            {attachments.map(att => (
+              <div key={att.id} className={styles['attachment-item']}>
+                {att.preview ? (
+                  <img src={att.preview} alt={att.file.name} className={styles['attachment-thumb']} />
+                ) : (
+                  <div className={styles['attachment-file-icon']}>
+                    <span>{getFileExtension(att.file.name).slice(1).toUpperCase()}</span>
+                  </div>
+                )}
+                {att.uploading && <div className={styles['attachment-uploading']} />}
+                {att.error && <div className={styles['attachment-error']} title={att.error}>!</div>}
+                <button
+                  className={styles['attachment-remove']}
+                  onClick={() => removeAttachment(att.id)}
+                  title="移除附件"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                  </svg>
+                </button>
+                <span className={styles['attachment-name']}>{att.file.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={styles['input-row']}>
+          {/* 附件按钮 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ALLOWED_EXTENSIONS.join(',')}
+            onChange={handleFileInputChange}
+            style={{ display: 'none' }}
+          />
+          <button
+            className={styles['attach-btn']}
+            onClick={() => fileInputRef.current?.click()}
+            title="添加附件"
+            disabled={isLoading}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+          <textarea
+            className={styles['chat-input']}
+            placeholder="输入你的问题..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            onPaste={handlePaste}
+            rows={1}
+          />
+          <button
+            className={`btn btn-primary ${styles['send-btn']}`}
+            onClick={handleSend}
+            disabled={(!input.trim() && attachments.length === 0) || isLoading}
+          >
+            发送
+          </button>
+        </div>
       </div>
     </div>
   )

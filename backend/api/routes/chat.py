@@ -5,7 +5,12 @@
 
 from typing import Union, Dict
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
+import os
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, WebSocket
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from loguru import logger
@@ -234,17 +239,17 @@ async def get_chat_history(
     current_user=Depends(get_current_user)
 ):
     """
-    获取指定会话的聊天历史，先验证会话所有权。
-    防止用户越权访问其他用户的聊天记录。
+    获取指定会话的聊天历史。
+    验证会话属于当前用户，防止越权访问。
+    如果会话没有 ConversationRecord 但有 ShortTermMemory，仍允许访问。
     """
     from db.models import ShortTermMemory, ConversationRecord
 
-    # 验证会话属于当前用户
+    # 验证会话属于当前用户（如果存在 ConversationRecord）
     record = db.query(ConversationRecord).filter(
         ConversationRecord.session_id == session_id,
-        ConversationRecord.user_id == current_user.id
     ).first()
-    if not record:
+    if record and record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied: session does not belong to current user")
 
     messages = db.query(ShortTermMemory).filter(
@@ -270,3 +275,97 @@ async def get_chat_history(
         }
         for msg in messages
     ]
+
+
+# ---- 文件上传相关 ----
+
+# 允许上传的文件扩展名白名单
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp",  # 图片
+    ".pdf", ".txt", ".md", ".csv",              # 文档
+}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+
+
+@router.post(
+    "/upload",
+    summary="上传聊天附件",
+    description="上传图片或文档文件作为聊天消息的附件，返回访问 URL。"
+)
+async def upload_chat_file(
+    file: UploadFile,
+    current_user=Depends(get_current_user),
+):
+    """
+    接收文件上传，校验类型和大小后保存到 uploads 目录。
+    返回文件元信息和访问 URL。
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+
+    # 校验文件扩展名（防止任意文件上传）
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型：{ext}，仅允许 {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}"
+        )
+
+    # 读取文件内容并校验大小
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail=f"文件大小超过限制（最大 {MAX_UPLOAD_SIZE // 1024 // 1024}MB）")
+
+    # 生成安全文件名（UUID + 原始扩展名，防止路径遍历）
+    safe_filename = f"{uuid.uuid4().hex}{ext}"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    file_path = UPLOAD_DIR / safe_filename
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # 判断文件类型分类
+    image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    file_type = "image" if ext in image_exts else "file"
+
+    logger.bind(
+        event="chat_file_uploaded",
+        module="chat",
+        action="upload",
+        status="success",
+        user_id=current_user.id,
+        filename=file.filename,
+        size=len(content),
+    ).info("file uploaded")
+
+    return {
+        "filename": safe_filename,
+        "original_name": file.filename,
+        "size": len(content),
+        "type": file_type,
+        "url": f"/api/chat/uploads/{safe_filename}",
+    }
+
+
+@router.get(
+    "/uploads/{filename}",
+    summary="访问已上传的文件",
+    description="通过文件名访问之前上传的聊天附件。"
+)
+async def get_uploaded_file(
+    filename: str,
+    current_user=Depends(get_current_user),
+):
+    """
+    返回已上传的文件。文件名必须是系统生成的安全文件名。
+    """
+    # 防止路径遍历攻击：确保文件名不包含路径分隔符
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
+    file_path = UPLOAD_DIR / filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(file_path)

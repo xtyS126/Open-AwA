@@ -14,7 +14,11 @@
   --color-text: #18181b;
   --color-text-secondary: #52525b;
   --color-text-tertiary: #a1a1aa;
-  --color-border: transparent;
+  --color-border: rgba(0, 0, 0, 0.06);
+  --color-border-subtle: rgba(0, 0, 0, 0.04);
+
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 60px;
 
   --color-success: #4ecdc4;
   --color-success-bg: rgba(78, 205, 196, 0.12);
@@ -84,7 +88,8 @@
   --color-text: #fafafa;
   --color-text-secondary: #a1a1aa;
   --color-text-tertiary: #71717a;
-  --color-border: transparent;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
 
   --color-success: #4ecdc4;
   --color-success-bg: rgba(78, 205, 196, 0.2);
