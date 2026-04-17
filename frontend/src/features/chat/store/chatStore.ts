@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 
 interface Message {
   id: string
@@ -43,8 +44,8 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   isLoading: false,
   sessionId: 'default',
-  outputMode: (localStorage.getItem('chat_output_mode') as 'stream' | 'direct') || 'stream',
-  selectedModel: localStorage.getItem('chat_selected_model') || '',
+  outputMode: (safeGetItem('chat_output_mode', 'stream') as 'stream' | 'direct'),
+  selectedModel: safeGetItem('chat_selected_model', ''),
   modelOptions: [],
   modelLoading: false,
   modelError: null,
@@ -87,13 +88,13 @@ export const useChatStore = create<ChatState>((set) => ({
   setSessionId: (id) => set({ sessionId: id }),
 
   setOutputMode: (mode) => {
-    localStorage.setItem('chat_output_mode', mode)
     set({ outputMode: mode })
+    safeSetItem('chat_output_mode', mode)
   },
 
   setSelectedModel: (model) => {
-    localStorage.setItem('chat_selected_model', model)
     set({ selectedModel: model })
+    safeSetItem('chat_selected_model', model)
   },
 
   setModelOptions: (options) => set({ modelOptions: options }),

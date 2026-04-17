@@ -6,6 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Body
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
+from pathlib import Path as PathLib
 from db.models import get_db, Plugin
 from api.dependencies import get_current_user, get_current_admin_user
 from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
@@ -53,31 +54,34 @@ def _write_json_file(path: str, payload: Dict[str, Any]) -> None:
 def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
     """
     根据插件名解析插件根目录，优先使用扫描元数据，其次回退到目录与 manifest 查找。
+    所有路径均验证不溢出插件根目录，防止路径遍历攻击。
     """
+    plugins_base = PathLib(plugin_manager.plugins_dir).resolve()
+
     _ensure_plugin_discovered(plugin_name)
     metadata = plugin_manager.plugin_metadata.get(plugin_name, {})
     metadata_path = metadata.get("path")
     if isinstance(metadata_path, str) and metadata_path:
         # 约定插件入口通常为 <plugin_root>/src/index.py
-        root_candidate = os.path.abspath(os.path.join(os.path.dirname(metadata_path), ".."))
-        if os.path.isdir(root_candidate):
-            return root_candidate
+        root_candidate = PathLib(metadata_path).resolve().parent.parent
+        if root_candidate.is_dir() and root_candidate.is_relative_to(plugins_base):
+            return str(root_candidate)
 
-    direct_candidate = os.path.join(plugin_manager.plugins_dir, plugin_name)
-    if os.path.isdir(direct_candidate):
-        return direct_candidate
+    direct_candidate = plugins_base / plugin_name
+    if direct_candidate.resolve().is_relative_to(plugins_base) and direct_candidate.is_dir():
+        return str(direct_candidate)
 
-    if not os.path.isdir(plugin_manager.plugins_dir):
+    if not plugins_base.is_dir():
         return None
 
-    for child in os.listdir(plugin_manager.plugins_dir):
-        child_dir = os.path.join(plugin_manager.plugins_dir, child)
-        if not os.path.isdir(child_dir):
+    for child in os.listdir(str(plugins_base)):
+        child_dir = plugins_base / child
+        if not child_dir.is_dir():
             continue
-        manifest_path = os.path.join(child_dir, "manifest.json")
-        manifest = _read_json_file(manifest_path)
+        manifest_path = child_dir / "manifest.json"
+        manifest = _read_json_file(str(manifest_path))
         if manifest and str(manifest.get("name", "")).strip() == plugin_name:
-            return child_dir
+            return str(child_dir)
     return None
 
 

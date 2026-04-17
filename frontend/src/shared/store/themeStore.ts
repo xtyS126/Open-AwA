@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 
 type Theme = 'light' | 'dark'
 
@@ -10,7 +11,7 @@ interface ThemeState {
 
 const getInitialTheme = (): Theme => {
   if (typeof window !== 'undefined') {
-    const savedTheme = localStorage.getItem('theme') as Theme
+    const savedTheme = safeGetItem('theme', '') as Theme
     if (savedTheme) {
       return savedTheme
     }
@@ -42,13 +43,13 @@ export const useThemeStore = create<ThemeState>((set) => ({
   
   toggleTheme: () => set((state) => {
     const newTheme = state.theme === 'light' ? 'dark' : 'light'
-    localStorage.setItem('theme', newTheme)
+    safeSetItem('theme', newTheme)
     applyTheme(newTheme)
     return { theme: newTheme }
   }),
   
   setTheme: (theme: Theme) => set(() => {
-    localStorage.setItem('theme', theme)
+    safeSetItem('theme', theme)
     applyTheme(theme)
     return { theme }
   }),
