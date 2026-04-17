@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import React, { Suspense, useEffect } from 'react'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import { useAuthStore } from '@/shared/store/authStore'
@@ -111,6 +112,7 @@ function App() {
   }
 
   return (
+    <ErrorBoundary>
     <BrowserRouter future={routerFutureConfig}>
       <NavigationLogger />
       {!isAuthenticated ? (
@@ -148,6 +150,7 @@ function App() {
         </div>
       )}
     </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 
