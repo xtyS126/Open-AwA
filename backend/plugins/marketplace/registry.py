@@ -133,6 +133,18 @@ class MarketplaceRegistry:
                 "icon": "",
                 "install_count": 512,
             },
+            {
+                "id": "user-profile-chat",
+                "name": "User Profile Chat",
+                "description": "基于聊天记录分析并生成用户画像的插件，可识别用户兴趣偏好、交流风格和关注领域",
+                "author": "Open-AwA Team",
+                "version": "1.0.0",
+                "category": "tool",
+                "tags": ["用户画像", "聊天分析", "AI"],
+                "download_url": "",
+                "icon": "",
+                "install_count": 64,
+            },
         ]
 
         for plugin_meta in built_in:
