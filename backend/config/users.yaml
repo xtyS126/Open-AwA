@@ -1,0 +1,18 @@
+# 本地用户配置文件
+# 用户信息的增删仅允许通过编辑此文件进行修改，系统启动时自动同步到数据库。
+# 删除此文件中的用户条目后重启服务，对应用户将被禁用。
+#
+# 格式说明:
+#   users:
+#     - username: 用户名（唯一标识，不可重复）
+#       password: 明文密码（首次同步后系统会自动哈希存储，此处仅用于初始配置）
+#       role: 角色（admin 或 user，默认 user）
+#
+# 示例配置：
+users:
+  - username: admin
+    password: admin123
+    role: admin
+  - username: user
+    password: user123
+    role: user
