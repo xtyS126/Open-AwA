@@ -77,6 +77,9 @@ async def get_current_user(
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exception
+    # 禁用状态的用户视为无效凭证
+    if user.role == "disabled":
+        raise credentials_exception
     
     return user
 
