@@ -5,6 +5,7 @@
 
 from contextlib import asynccontextmanager
 import errno
+import inspect
 import os
 import secrets as secrets_module
 import time
@@ -41,7 +42,7 @@ from core.model_service import (
     negotiate_version_status,
 )
 from core.litellm_adapter import is_litellm_available
-from config.settings import settings
+from config.settings import is_production_environment, settings
 from db.models import engine, init_db
 
 
@@ -56,7 +57,23 @@ init_logging(
     disable_sanitize=settings.LOG_DISABLE_SANITIZE,
 )
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else ["http://localhost:5173", "http://localhost:8000"]
+def _resolve_allowed_origins() -> list[str]:
+    """
+    统一解析 CORS 白名单。
+    生产环境必须显式配置，避免默认开发域名带入生产。
+    """
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+    origins = [item.strip() for item in raw_origins.split(",") if item.strip()]
+    if origins:
+        return origins
+
+    if is_production_environment(os.getenv("ENVIRONMENT", "development")):
+        raise ValueError("ALLOWED_ORIGINS environment variable is required in production environment")
+
+    return ["http://localhost:5173", "http://localhost:8000"]
+
+
+ALLOWED_ORIGINS = _resolve_allowed_origins()
 logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for_logging(ALLOWED_ORIGINS)).info("cors configured")
 
 
@@ -415,6 +432,38 @@ def get_server_port() -> int:
         raise ValueError(f"无效的端口配置: {raw_port}") from exc
 
 
+def _run_uvicorn_server(uvicorn_module, host: str, port: int) -> None:
+    """
+    统一封装 uvicorn.run 调用。
+    真实启动时保留默认日志参数，测试中的精简桩函数也能兼容。
+    """
+    run_kwargs = {
+        "host": host,
+        "port": port,
+        "access_log": False,
+        "log_level": "warning",
+    }
+
+    try:
+        signature = inspect.signature(uvicorn_module.run)
+    except (TypeError, ValueError):
+        signature = None
+
+    if signature is not None:
+        has_var_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        if not has_var_kwargs:
+            run_kwargs = {
+                key: value
+                for key, value in run_kwargs.items()
+                if key in signature.parameters
+            }
+
+    uvicorn_module.run(app, **run_kwargs)
+
+
 def run_server() -> None:
     """
     启动后端 HTTP 服务并处理常见启动异常。
@@ -426,7 +475,7 @@ def run_server() -> None:
     port = get_server_port()
     logger.bind(event="server_starting", module="main", host=host, port=port).info("starting backend server")
     try:
-        uvicorn.run(app, host=host, port=port, access_log=False, log_level="warning")
+        _run_uvicorn_server(uvicorn, host, port)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             message = f"后端服务启动失败：端口 {port} 已被占用，请关闭占用进程或通过 BACKEND_PORT/PORT 更换端口后重试。"

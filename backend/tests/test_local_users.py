@@ -154,6 +154,28 @@ class TestLoadUsersConfig:
         assert len(result) == 1
         assert result[0]["role"] == "user"
 
+    def test_load_password_from_environment_variable(self, users_yaml, monkeypatch):
+        """支持通过环境变量提供密码，避免将真实密码提交到仓库。"""
+        monkeypatch.setenv("OPENAWA_TEST_PASSWORD", "env-pass-1234")
+        path = users_yaml({
+            "users": [
+                {"username": "alice", "password_env": "OPENAWA_TEST_PASSWORD", "role": "admin"},
+            ]
+        })
+        result = _load_users_config(path)
+        assert len(result) == 1
+        assert result[0]["password"] == "env-pass-1234"
+
+    def test_skip_placeholder_password(self, users_yaml):
+        """占位密码不应被当作有效密码同步。"""
+        path = users_yaml({
+            "users": [
+                {"username": "alice", "password": "change-me", "role": "admin"},
+            ]
+        })
+        result = _load_users_config(path)
+        assert result == []
+
 
 class TestSyncLocalUsersToDb:
     """测试 sync_local_users_to_db 函数"""

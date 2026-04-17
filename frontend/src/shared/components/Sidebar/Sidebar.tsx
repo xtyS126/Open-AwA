@@ -296,6 +296,7 @@ function Sidebar() {
                           type="button"
                           className={`${styles['sidebar-item']} ${styles['branch-toggle']} ${isActive(item.path) ? styles['active'] : ''}`}
                           title={collapsed ? item.label : undefined}
+                          aria-expanded={expandedPluginBranch}
                           onClick={() => setExpandedPluginBranch((prev) => !prev)}
                         >
                           <span className={styles['sidebar-icon']}>{icons[item.iconType]}</span>
@@ -315,8 +316,8 @@ function Sidebar() {
                           )}
                           {collapsed && <span className={styles['tooltip']}>{item.label}</span>}
                         </button>
-                        {!collapsed && (
-                          <div className={`${styles['submenu-items']} ${expandedPluginBranch ? styles['expanded'] : ''}`}>
+                        {!collapsed && expandedPluginBranch && (
+                          <div className={`${styles['submenu-items']} ${styles['expanded']}`}>
                             {item.children.map((child) => (
                               <Link
                                 key={child.path}

@@ -6,6 +6,7 @@ import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, P
 import { useChatStore } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
+import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import MCPSettings from './MCPSettings'
 import SecuritySettings from './SecuritySettings'
 import styles from './SettingsPage.module.css'
@@ -18,6 +19,33 @@ interface Settings {
   promptContent: string
   requireConfirm: boolean
   enableAudit: boolean
+}
+
+type PersistedSettings = Pick<Settings, 'theme' | 'language' | 'apiProvider' | 'requireConfirm' | 'enableAudit'>
+
+function isPersistedSettings(value: unknown): value is Partial<PersistedSettings> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Record<string, unknown>
+  return (
+    (candidate.theme === undefined || typeof candidate.theme === 'string') &&
+    (candidate.language === undefined || typeof candidate.language === 'string') &&
+    (candidate.apiProvider === undefined || typeof candidate.apiProvider === 'string') &&
+    (candidate.requireConfirm === undefined || typeof candidate.requireConfirm === 'boolean') &&
+    (candidate.enableAudit === undefined || typeof candidate.enableAudit === 'boolean')
+  )
+}
+
+function buildPersistedSettings(settings: Settings): PersistedSettings {
+  return {
+    theme: settings.theme,
+    language: settings.language,
+    apiProvider: settings.apiProvider,
+    requireConfirm: settings.requireConfirm,
+    enableAudit: settings.enableAudit,
+  }
 }
 
 interface ApiProviderFormState {
@@ -268,13 +296,13 @@ function SettingsPage() {
   }
 
   const loadSettings = () => {
-    const savedSettings = localStorage.getItem('app_settings')
+    const savedSettings = safeGetJsonItem<unknown>('app_settings', null)
+    if (savedSettings && isPersistedSettings(savedSettings)) {
+      setSettings((prev) => ({ ...prev, ...savedSettings }))
+      return
+    }
     if (savedSettings) {
-      try {
-        setSettings(JSON.parse(savedSettings))
-      } catch (e) {
-        appLogger.error({ event: 'settings_load_failed', message: 'Failed to load settings', module: 'settings' })
-      }
+      appLogger.error({ event: 'settings_load_failed', message: 'Failed to load settings', module: 'settings' })
     }
   }
 
@@ -969,7 +997,7 @@ function SettingsPage() {
     setSaving(true)
 
     try {
-      localStorage.setItem('app_settings', JSON.stringify(settings))
+      safeSetJsonItem('app_settings', buildPersistedSettings(settings))
       
       if (settings.promptContent) {
         const existingPrompts = await promptsAPI.getAll()

@@ -18,3 +18,25 @@ export function safeSetItem(key: string, value: string): void {
     // 存储不可用时静默失败，不影响内存状态
   }
 }
+
+export function safeGetJsonItem<T>(key: string, defaultValue: T): T {
+  const raw = safeGetItem(key, '')
+  if (!raw) {
+    return defaultValue
+  }
+
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return defaultValue
+  }
+}
+
+export function safeSetJsonItem(key: string, value: unknown): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
+}

@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react'
+import { appLogger } from '@/shared/utils/logger'
 
 interface Props {
   children: ReactNode
@@ -23,8 +24,18 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // 记录错误信息到控制台，生产环境可替换为日志上报
-    console.error('[ErrorBoundary] 捕获到未处理的渲染异常:', error, errorInfo)
+    appLogger.error({
+      event: 'frontend_render_error',
+      module: 'error-boundary',
+      action: 'component_did_catch',
+      status: 'failure',
+      message: 'frontend render error captured',
+      extra: {
+        error: error.message,
+        stack: error.stack || '',
+        component_stack: errorInfo.componentStack,
+      },
+    })
   }
 
   handleReload = () => {
@@ -50,7 +61,7 @@ class ErrorBoundary extends Component<Props, State> {
             应用发生了意外错误
           </h2>
           <p style={{ maxWidth: '480px', lineHeight: 1.6, marginBottom: '20px' }}>
-            {this.state.error?.message || '未知错误'}
+            页面遇到了未处理异常。详细信息已记录，建议重新加载后重试。
           </p>
           <button
             onClick={this.handleReload}

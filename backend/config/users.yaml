@@ -5,14 +5,17 @@
 # 格式说明:
 #   users:
 #     - username: 用户名（唯一标识，不可重复）
-#       password: 明文密码（首次同步后系统会自动哈希存储，此处仅用于初始配置）
+#       password_env: 从环境变量读取密码，推荐方式，避免真实密码进入仓库
+#       password: 仅限本地临时调试使用，不建议提交到版本控制
 #       role: 角色（admin 或 user，默认 user）
 #
-# 示例配置：
+# 推荐配置：
+#   1. 在环境变量中设置 OPENAWA_ADMIN_PASSWORD / OPENAWA_USER_PASSWORD
+#   2. 保持本文件仅保存用户名、角色和环境变量名
 users:
   - username: admin
-    password: admin123
+    password_env: OPENAWA_ADMIN_PASSWORD
     role: admin
   - username: user
-    password: user123
+    password_env: OPENAWA_USER_PASSWORD
     role: user

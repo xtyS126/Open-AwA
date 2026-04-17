@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.security import decrypt_secret_value
+from api.routes import chat as chat_route
 
 from api.dependencies import get_current_user, get_db
 from config.logging import _LOG_BUFFER
@@ -48,6 +49,17 @@ def override_get_current_user():
     class DummyUser:
         id = "user-1"
         username = "testuser"
+        role = "user"
+
+    return DummyUser()
+
+
+def override_get_other_user():
+    """提供另一个测试用户，用于验证跨用户访问控制。"""
+
+    class DummyUser:
+        id = "user-2"
+        username = "otheruser"
         role = "user"
 
     return DummyUser()
@@ -279,6 +291,32 @@ def test_logs_error_summary_accepts_hours_query():
         data = response.json()
         assert data["total_errors"] == 1
         assert data["error_types"][0]["type"] == "route_regression_error"
+
+
+def test_chat_uploaded_file_only_accessible_by_owner(tmp_path):
+    """聊天附件应仅允许上传者本人访问，避免跨用户文件泄露。"""
+    previous_upload_dir = chat_route.UPLOAD_DIR
+    chat_route.UPLOAD_DIR = tmp_path
+
+    try:
+        with _test_client() as client:
+            upload_response = client.post(
+                f"{settings.API_V1_STR}/chat/upload",
+                files={"file": ("private-note.txt", b"hello owner", "text/plain")},
+            )
+            assert upload_response.status_code == 200
+            uploaded_url = upload_response.json()["url"]
+
+            owner_response = client.get(uploaded_url)
+            assert owner_response.status_code == 200
+            assert owner_response.content == b"hello owner"
+
+            app.dependency_overrides[get_current_user] = override_get_other_user
+            intruder_response = client.get(uploaded_url)
+            assert intruder_response.status_code == 403
+    finally:
+        chat_route.UPLOAD_DIR = previous_upload_dir
+        app.dependency_overrides[get_current_user] = override_get_current_user
 
 
 def test_client_errors_accepts_extra_fields_that_conflict_with_bind_keywords():
