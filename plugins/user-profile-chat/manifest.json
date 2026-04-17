@@ -1,0 +1,34 @@
+{
+  "name": "user-profile-chat",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "基于聊天记录分析并生成用户画像的插件，可识别用户兴趣偏好、交流风格和关注领域",
+  "author": "Open-AwA Team",
+  "permissions": [],
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "analyze_user_profile",
+      "version": "1.0.0",
+      "config": {
+        "description": "根据用户历史聊天记录分析并生成用户画像"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_user_profile",
+      "version": "1.0.0",
+      "config": {
+        "description": "获取指定用户的已有画像数据"
+      }
+    },
+    {
+      "point": "event_handler",
+      "name": "on_chat_message",
+      "version": "1.0.0",
+      "config": {
+        "description": "监听聊天消息事件，实时更新用户画像数据"
+      }
+    }
+  ]
+}
