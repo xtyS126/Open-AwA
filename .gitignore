@@ -100,3 +100,10 @@ backend/COMPLETE_SCAN_REPORT.md
 # 后端目录下不应存在 Node.js 相关文件
 backend/package-lock.json
 backend/package.json
+
+# 临时文件与无关内容
+*.jpg
+*.jpeg
+*.png
+!frontend/public/**
+memory_skill/

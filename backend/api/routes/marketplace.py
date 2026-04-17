@@ -10,13 +10,12 @@ from api.dependencies import get_current_user
 from api.schemas import MarketplacePluginResponse, MarketplaceSearchResponse
 from db.models import get_db, Plugin
 from plugins.marketplace.registry import marketplace_registry
-from plugins.plugin_manager import PluginManager
+from plugins import plugin_instance
 from loguru import logger
 import uuid
 
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
-plugin_manager = PluginManager()
 
 
 @router.get(
@@ -93,33 +92,64 @@ async def install_plugin(
     if not plugin_meta:
         raise HTTPException(status_code=404, detail="市场中不存在该插件")
 
-    # 检查是否已安装
-    existing = db.query(Plugin).filter(Plugin.name == plugin_meta["name"]).first()
+    # 使用插件 id 作为名称（与文件系统目录名及插件类名一致），而非展示用的 name
+    plugin_name = plugin_meta["id"]
+
+    # 检查是否已安装（按插件 id 匹配）
+    existing = db.query(Plugin).filter(Plugin.name == plugin_name).first()
     if existing:
         raise HTTPException(status_code=400, detail="该插件已安装")
 
     # 创建插件记录
     new_plugin = Plugin(
         id=str(uuid.uuid4()),
-        name=plugin_meta["name"],
+        name=plugin_name,
         version=plugin_meta.get("version", "1.0.0"),
-        enabled=False,
-        config="{}",
+        enabled=True,
+        config={},
+        author=plugin_meta.get("author", "unknown"),
+        category=plugin_meta.get("category", "general"),
+        source="marketplace",
     )
     db.add(new_plugin)
     db.commit()
     db.refresh(new_plugin)
 
+    # 尝试通过全局插件管理器发现并加载插件到运行时
+    pm = plugin_instance.get()
+    if plugin_name not in pm.plugin_metadata:
+        pm.discover_plugins()
+    if plugin_name in pm.plugin_metadata:
+        try:
+            pm.load_plugin(plugin_name)
+            logger.bind(
+                event="marketplace_plugin_loaded",
+                module="marketplace",
+                plugin_name=plugin_name,
+            ).info(f"市场插件 '{plugin_name}' 安装后已成功加载")
+        except Exception as exc:
+            logger.bind(
+                event="marketplace_plugin_load_failed",
+                module="marketplace",
+                plugin_name=plugin_name,
+            ).warning(f"市场插件 '{plugin_name}' 安装成功但加载失败: {exc}")
+    else:
+        logger.bind(
+            event="marketplace_plugin_not_found",
+            module="marketplace",
+            plugin_name=plugin_name,
+        ).warning(f"市场插件 '{plugin_name}' 已注册到数据库但未在文件系统中发现")
+
     logger.bind(
         event="marketplace_install",
         module="marketplace",
         plugin_id=plugin_id,
-        plugin_name=plugin_meta["name"],
-    ).info(f"从市场安装插件: {plugin_meta['name']}")
+        plugin_name=plugin_name,
+    ).info(f"从市场安装插件: {plugin_name}")
 
     return {
         "status": "success",
-        "message": f"插件 {plugin_meta['name']} 安装成功",
+        "message": f"插件 {plugin_name} 安装成功",
         "plugin_id": new_plugin.id,
     }
 

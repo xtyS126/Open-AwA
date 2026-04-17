@@ -129,10 +129,9 @@ class PluginBase(BaseModel):
 
 class PluginCreate(PluginBase):
     """
-    封装与PluginCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件创建请求模型，包含插件名称、版本和可选配置。
     """
-    config: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
 
 
 class PluginImportUrlRequest(BaseModel):
@@ -450,12 +449,11 @@ class SkillValidationRequest(BaseModel):
 
 class PluginUpdate(BaseModel):
     """
-    封装与PluginUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件更新请求模型，支持部分字段更新。
     """
     name: Optional[str] = None
     version: Optional[str] = None
-    config: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
 
 

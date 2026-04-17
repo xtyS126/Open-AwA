@@ -127,11 +127,11 @@ class Plugin(Base):
     name: Mapped[str] = mapped_column(String)
     version: Mapped[str] = mapped_column(String)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    config: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, default=None, nullable=True)
     category: Mapped[str] = mapped_column(String, default="general")
-    author: Mapped[str] = mapped_column(String)
-    source: Mapped[str] = mapped_column(String)
-    dependencies: Mapped[List[str]] = mapped_column(JSON)
+    author: Mapped[str] = mapped_column(String, default="unknown")
+    source: Mapped[str] = mapped_column(String, default="local")
+    dependencies: Mapped[Optional[List[str]]] = mapped_column(JSON, default=None, nullable=True)
     installed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

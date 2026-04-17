@@ -283,9 +283,10 @@ async def install_plugin(
     new_plugin = Plugin(
         id=str(uuid.uuid4()),
         name=plugin.name,
-        version=plugin.version,
-        config=plugin.config,
-        enabled=True
+        version=plugin.version or "1.0.0",
+        config=plugin.config if isinstance(plugin.config, dict) else {},
+        enabled=True,
+        source="manual",
     )
     
     db.add(new_plugin)
@@ -808,7 +809,6 @@ async def upload_plugin(
     temp_dir = None
     moved_dirs = []
     try:
-        plugin_manager = PluginManager()
         plugins_dir = _get_plugin_manager().plugins_dir
         
         # 先解压到临时目录进行校验
@@ -836,8 +836,9 @@ async def upload_plugin(
                     id=str(uuid.uuid4()),
                     name=name,
                     version=version,
-                    config=f'{{"description": "{description}"}}',
-                    enabled=True
+                    config={"description": description},
+                    enabled=True,
+                    source="upload",
                 )
                 db.add(new_plugin)
                 installed_count += 1
@@ -895,8 +896,8 @@ async def import_plugin_from_url(
         raise HTTPException(status_code=400, detail="source_url is required")
 
     try:
-        plugin_manager_instance = PluginManager()
-        discovered = plugin_manager_instance.register_plugin_from_url(
+        pm = _get_plugin_manager()
+        discovered = pm.register_plugin_from_url(
             source_url=source_url,
             timeout=max(1, int(payload.timeout_seconds or 30)),
         )
