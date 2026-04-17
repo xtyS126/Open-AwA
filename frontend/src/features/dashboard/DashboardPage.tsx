@@ -40,7 +40,7 @@ function DashboardPage() {
     try {
       /* 并发加载所有数据源 */
       const [behaviorRes, billingRes, skillsRes, pluginsRes, memoryRes] = await Promise.all([
-        behaviorAPI.getStats(7),
+        behaviorAPI.getStats(7).catch(() => ({ data: null })),
         billingAPI.getCostStatistics({ period: 'monthly' }).catch(() => ({ data: null })),
         skillsAPI.getAll().catch(() => ({ data: [] })),
         pluginsAPI.getAll().catch(() => ({ data: [] })),
@@ -199,9 +199,9 @@ function DashboardPage() {
             {(stats?.top_intents || []).length === 0 ? (
               <li className={styles['empty-hint']}>暂无数据</li>
             ) : (
-              (stats?.top_intents || []).map((intent: Intent, index: number) => (
-                <li key={index}>
-                  <span className={styles['intent-rank']}>#{index + 1}</span>
+              (stats?.top_intents || []).map((intent: Intent) => (
+                <li key={`intent-${intent.intent}`}>
+                  <span className={styles['intent-rank']}>#{(stats?.top_intents || []).indexOf(intent) + 1}</span>
                   <span className={styles['intent-name']}>{intent.intent}</span>
                   <span className={styles['intent-count']}>{intent.count}次</span>
                 </li>
@@ -216,9 +216,9 @@ function DashboardPage() {
             {(billingStats?.by_model || []).length === 0 ? (
               <li className={styles['empty-hint']}>暂无数据</li>
             ) : (
-              (billingStats?.by_model || []).slice(0, 5).map((model, index: number) => (
-                <li key={index}>
-                  <span className={styles['intent-rank']}>#{index + 1}</span>
+              (billingStats?.by_model || []).slice(0, 5).map((model) => (
+                <li key={`model-${model.provider}-${model.model}`}>
+                  <span className={styles['intent-rank']}>#{(billingStats?.by_model || []).slice(0, 5).indexOf(model) + 1}</span>
                   <span className={styles['intent-name']}>{model.provider}:{model.model}</span>
                   <span className={styles['intent-count']}>{formatCurrency(model.cost, billingStats?.currency)}</span>
                 </li>

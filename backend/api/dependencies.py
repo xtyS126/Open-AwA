@@ -3,6 +3,8 @@
 当路由需要复用身份验证或上下文能力时，通常会先经过这一层。
 """
 
+import asyncio
+import re
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
@@ -15,6 +17,8 @@ from db.models import User, get_db
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 _MAX_REQUEST_TOKEN_LENGTH = 2048
+# token 合法字符集：字母、数字、点、横杠、下划线、等号
+_TOKEN_CHARSET_RE = re.compile(r'^[A-Za-z0-9._\-=]+$')
 
 
 def _normalize_request_token(token: Optional[str]) -> Optional[str]:
@@ -30,6 +34,9 @@ def _normalize_request_token(token: Optional[str]) -> Optional[str]:
     if len(normalized_token) > _MAX_REQUEST_TOKEN_LENGTH:
         return None
     if any(char.isspace() for char in normalized_token):
+        return None
+    # 验证 token 字符集，防止注入特殊字符
+    if not _TOKEN_CHARSET_RE.match(normalized_token):
         return None
 
     return normalized_token
@@ -74,7 +81,10 @@ async def get_current_user(
     if not isinstance(username, str):
         raise credentials_exception
     
-    user = db.query(User).filter(User.username == username).first()
+    # 使用 asyncio.to_thread 避免同步 ORM 查询阻塞事件循环
+    user = await asyncio.to_thread(
+        lambda: db.query(User).filter(User.username == username).first()
+    )
     if user is None:
         raise credentials_exception
     # 禁用状态的用户视为无效凭证
@@ -105,7 +115,10 @@ async def get_optional_current_user(
     if not isinstance(username, str):
         return None
 
-    return db.query(User).filter(User.username == username).first()
+    # 使用 asyncio.to_thread 避免同步 ORM 查询阻塞事件循环
+    return await asyncio.to_thread(
+        lambda: db.query(User).filter(User.username == username).first()
+    )
 
 
 async def get_current_admin_user(
