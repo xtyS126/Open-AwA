@@ -187,6 +187,7 @@ export const authAPI = {
   register: (username: string, password: string) =>
     api.post('/auth/register', { username, password }),
   getMe: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout'),
 }
 
 export const chatAPI = {
