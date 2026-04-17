@@ -3,10 +3,12 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from typing import Union, Dict
+from typing import Any, Dict, Union
 import asyncio
+import json
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, WebSocket
@@ -23,10 +25,38 @@ from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_
 from core.model_service import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
-from db.models import SessionLocal, User, get_db
+from db.models import ConversationRecord, SessionLocal, User, get_db
 
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+def _build_upload_metadata_path(filename: str) -> Path:
+    """
+    为上传文件生成元数据路径。
+    元数据用于校验文件所有权，避免不同用户互相访问附件。
+    """
+    return UPLOAD_DIR / f"{filename}.meta.json"
+
+
+def _validate_uploaded_filename(filename: str) -> None:
+    """
+    校验系统生成的上传文件名格式，避免任意路径或任意文件名探测。
+    """
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
+    stem, ext = os.path.splitext(filename)
+    if ext.lower() not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="非法文件类型")
+
+    if len(stem) != 32:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
+    try:
+        int(stem, 16)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="非法文件名") from exc
 
 
 @router.post("", response_model=Union[ChatResponse, str])
@@ -197,6 +227,28 @@ async def websocket_endpoint(
         await websocket.close(code=4004, reason="Database error")
         db.close()
         return
+
+    try:
+        existing_record = await asyncio.to_thread(
+            lambda: db.query(ConversationRecord).filter(ConversationRecord.session_id == session_id).first()
+        )
+        record_owner_id = str(getattr(existing_record, "user_id", "") or "").strip()
+        if record_owner_id and record_owner_id != str(user.id):
+            await websocket.close(code=4003, reason="Unauthorized session")
+            db.close()
+            return
+    except Exception as e:
+        logger.bind(
+            event="chat_ws_session_check_error",
+            module="chat",
+            action="websocket",
+            status="failure",
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).error("session ownership check failed")
+        await websocket.close(code=4004, reason="Database error")
+        db.close()
+        return
     
     try:
         await ws_manager.connect(session_id, websocket)
@@ -314,6 +366,8 @@ async def upload_chat_file(
 
     # 读取文件内容并校验大小
     content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件不能为空")
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail=f"文件大小超过限制（最大 {MAX_UPLOAD_SIZE // 1024 // 1024}MB）")
 
@@ -329,13 +383,26 @@ async def upload_chat_file(
     image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     file_type = "image" if ext in image_exts else "file"
 
+    metadata_path = _build_upload_metadata_path(safe_filename)
+    metadata: Dict[str, Any] = {
+        "owner_id": current_user.id,
+        "original_name": file.filename,
+        "size": len(content),
+        "type": file_type,
+        "content_type": file.content_type or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False)
+
     logger.bind(
         event="chat_file_uploaded",
         module="chat",
         action="upload",
         status="success",
         user_id=current_user.id,
-        filename=file.filename,
+        file_extension=ext,
+        file_type=file_type,
         size=len(content),
     ).info("file uploaded")
 
@@ -360,12 +427,31 @@ async def get_uploaded_file(
     """
     返回已上传的文件。文件名必须是系统生成的安全文件名。
     """
-    # 防止路径遍历攻击：确保文件名不包含路径分隔符
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise HTTPException(status_code=400, detail="非法文件名")
+    _validate_uploaded_filename(filename)
 
     file_path = UPLOAD_DIR / filename
+    metadata_path = _build_upload_metadata_path(filename)
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
+    if not metadata_path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
 
-    return FileResponse(file_path)
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.bind(
+            event="chat_file_metadata_error",
+            module="chat",
+            action="download",
+            status="failure",
+            filename=filename,
+            error_type=type(exc).__name__,
+        ).warning("file metadata missing or invalid")
+        raise HTTPException(status_code=404, detail="文件不存在") from exc
+
+    owner_id = str(metadata.get("owner_id") or "").strip()
+    if current_user.role != "admin" and owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问该文件")
+
+    return FileResponse(file_path, filename=str(metadata.get("original_name") or filename))

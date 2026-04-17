@@ -25,12 +25,18 @@ _DISABLE_SANITIZE = False
 SENSITIVE_KEYS = {
     "password",
     "token",
+    "bot_token",
     "api_key",
     "secret",
     "authorization",
     "cookie",
     "access_token",
     "refresh_token",
+    "session_key",
+    "auth_id",
+    "confirm_id",
+    "ticket",
+    "ticket_id",
     "username",
     "user_input",
     "message_content",
@@ -112,7 +118,7 @@ def _mask_secret_text(text: str) -> str:
     if not text:
         return text
 
-    key_pattern = r"(password|token|api[_-]?key|secret|authorization|cookie|access_token|refresh_token)"
+    key_pattern = r"(password|token|bot[_-]?token|api[_-]?key|secret|authorization|cookie|access_token|refresh_token|session[_-]?key|auth[_-]?id|confirm[_-]?id|ticket(?:[_-]?id)?)"
 
     text = re.sub(
         rf"({key_pattern}\s*[:=]\s*)([^\s,;\"']+)",

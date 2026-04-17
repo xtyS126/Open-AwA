@@ -213,7 +213,6 @@ def build_provider_request(
         raise ValueError(f"Provider endpoint is missing for provider '{provider_id}'")
 
     headers = _build_common_headers(request_id=request_id, client_version=client_version)
-    serialized_context = context or {}
 
     if provider_id == "anthropic":
         headers["x-api-key"] = api_key
@@ -230,6 +229,9 @@ def build_provider_request(
                 }
             ],
             "stream": stream,
+            "metadata": {
+                "request_id": headers[REQUEST_ID_HEADER],
+            },
         }
         if temperature is not None:
             anthropic_payload["temperature"] = temperature

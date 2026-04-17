@@ -3,6 +3,7 @@
 用户信息的增删仅允许通过编辑 config/users.yaml 进行，不再通过 API 注册。
 """
 
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,6 +20,33 @@ _USERS_CONFIG_PATH = Path(__file__).resolve().parent / "users.yaml"
 _MAX_USERNAME_LENGTH = 64
 _MIN_PASSWORD_LENGTH = 4
 _VALID_ROLES = {"admin", "user"}
+_PLACEHOLDER_PASSWORD_VALUES = {
+    "change-me",
+    "change_me",
+    "replace-me",
+    "replace_me",
+    "set-via-env",
+}
+
+
+def _resolve_password(entry: Dict[str, Any], index: int) -> Optional[str]:
+    """
+    解析配置条目的密码。
+    优先支持通过环境变量注入密码，避免将真实凭证提交到仓库中。
+    """
+    password_env = str(entry.get("password_env", "")).strip()
+    if password_env:
+        env_password = str(os.getenv(password_env, "")).strip()
+        if not env_password:
+            logger.warning(f"用户配置第 {index + 1} 条引用的环境变量 '{password_env}' 未设置，已跳过")
+            return None
+        return env_password
+
+    password = str(entry.get("password", "")).strip()
+    if password.lower() in _PLACEHOLDER_PASSWORD_VALUES:
+        logger.warning(f"用户配置第 {index + 1} 条仍使用占位密码，已跳过")
+        return None
+    return password
 
 
 def _load_users_config(config_path: Optional[Path] = None) -> List[Dict[str, Any]]:
@@ -58,7 +86,7 @@ def _load_users_config(config_path: Optional[Path] = None) -> List[Dict[str, Any
             continue
 
         username = str(entry.get("username", "")).strip()
-        password = str(entry.get("password", "")).strip()
+        password = _resolve_password(entry, idx) or ""
         role = str(entry.get("role", "user")).strip().lower()
 
         # 校验用户名

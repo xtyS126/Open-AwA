@@ -58,10 +58,18 @@ def override_get_current_user():
     return DummyUser()
 
 
-app.dependency_overrides[get_db] = override_get_db
-app.dependency_overrides[get_current_user] = override_get_current_user
-
-client = TestClient(app)
+@pytest.fixture(autouse=True)
+def isolate_dependency_overrides():
+    """
+    为每个用例局部设置依赖覆盖，避免与其他测试文件共享全局 app 状态。
+    """
+    previous_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides = previous_overrides
 
 
 @pytest.fixture(autouse=True)
