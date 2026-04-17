@@ -7,6 +7,17 @@ import {
 } from '@/shared/api/api'
 import type { Plugin } from '@/features/dashboard/dashboard'
 
+/** 文件系统中发现的插件元数据（来自 GET /plugins/discover） */
+export interface DiscoveredPlugin {
+  name: string
+  version: string
+  description: string
+  path: string
+  loaded: boolean
+  state: string
+  requested_permissions: string[]
+}
+
 const getErrorMessage = (error: unknown, fallback: string): string => {
   const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
   if (typeof detail === 'string' && detail.trim()) {
@@ -47,6 +58,41 @@ export function usePluginList() {
     retry: fetchPlugins,
     refresh: fetchPlugins,
     setPlugins,
+  }
+}
+
+/** 获取文件系统中发现的本地插件列表 */
+export function useDiscoveredPlugins() {
+  const [discovered, setDiscovered] = useState<DiscoveredPlugin[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchDiscovered = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await pluginsAPI.discover()
+      // 后端可能返回 { discovered: [...], total_count } 或直接返回数组
+      const data = response.data
+      const list = Array.isArray(data) ? data : (data?.discovered || [])
+      setDiscovered(list)
+    } catch (error) {
+      setError(getErrorMessage(error, '本地插件发现失败'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchDiscovered()
+  }, [fetchDiscovered])
+
+  return {
+    discovered,
+    loading,
+    error,
+    retry: fetchDiscovered,
+    refresh: fetchDiscovered,
   }
 }
 

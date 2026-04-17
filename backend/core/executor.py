@@ -387,9 +387,27 @@ class ExecutionLayer:
             "client_version": context.get("client_version"),
         }
 
+    def _build_messages_with_history(self, prompt: str, context: Dict[str, Any]) -> list:
+        """
+        从上下文中提取对话历史，构建包含历史消息的 messages 列表。
+        对话历史由 agent 层在调用前注入到 context["conversation_history"] 中。
+        """
+        messages = []
+        conversation_history = context.get("conversation_history", [])
+        if conversation_history:
+            for msg in conversation_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        # 始终追加当前用户输入
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         通过 LiteLLM 统一调用层发起非流式聊天请求。
+        支持通过 context["conversation_history"] 注入对话历史。
         """
         record_hook = context.get("_record_hook")
         started_at = time.perf_counter()
@@ -423,7 +441,7 @@ class ExecutionLayer:
                 )
             return resolved
 
-        messages = [{"role": "user", "content": prompt}]
+        messages = self._build_messages_with_history(prompt, context)
         llm_input_payload.update({
             "provider": resolved["provider"],
             "model": resolved["model"],
@@ -484,6 +502,7 @@ class ExecutionLayer:
     async def _call_llm_api_stream(self, prompt: str, context: Dict[str, Any]):
         """
         通过 LiteLLM 统一调用层发起流式聊天请求。
+        支持通过 context["conversation_history"] 注入对话历史。
         向外 yield { "content": "...", "reasoning_content": "..." } 结构。
         """
         record_hook = context.get("_record_hook")
@@ -499,6 +518,7 @@ class ExecutionLayer:
             yield {"error": resolved.get("error")}
             return
 
+        messages = self._build_messages_with_history(prompt, context)
         full_content = ""
         full_reasoning = ""
 
@@ -506,7 +526,7 @@ class ExecutionLayer:
             stream_gen = litellm_chat_completion_stream(
                 provider=resolved["provider"],
                 model=resolved["model"],
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 api_key=resolved["api_key"],
                 api_base=resolved.get("api_endpoint"),
                 max_tokens=self._resolve_max_tokens(resolved),

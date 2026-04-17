@@ -146,12 +146,13 @@ class PluginImportUrlRequest(BaseModel):
 
 class PluginResponse(PluginBase):
     """
-    封装与PluginResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    插件响应模型，包含数据库记录字段和可选的运行时状态字段。
     """
     id: str
     enabled: bool
     installed_at: datetime
+    runtime_loaded: Optional[bool] = None
+    runtime_state: Optional[str] = None
     
     class Config:
         """

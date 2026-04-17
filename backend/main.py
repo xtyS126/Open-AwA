@@ -117,6 +117,29 @@ async def lifespan(app: FastAPI):
     # 初始化插件市场内置插件
     from plugins.marketplace.registry import marketplace_registry
     marketplace_registry.seed_built_in_plugins()
+
+    # 初始化插件管理器：发现插件并加载数据库中已启用的插件
+    from plugins.plugin_manager import PluginManager
+    from plugins import plugin_instance
+    plugin_instance.init(PluginManager())
+    pm = plugin_instance.get()
+    pm.discover_plugins()
+    if not os.getenv("SKIP_INIT_DB"):
+        from db.models import SessionLocal, Plugin as PluginModel
+        db = SessionLocal()
+        try:
+            enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
+            for p in enabled_plugins:
+                if p.name in pm.plugin_metadata:
+                    try:
+                        pm.load_plugin(p.name)
+                        logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
+                    except Exception as exc:
+                        logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
+            logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
+        finally:
+            db.close()
+
     yield
     await close_shared_client()
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")

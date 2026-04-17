@@ -97,6 +97,8 @@ frontend/src/
 - **Billing tables init required**: `PricingManager.ensure_configuration_schema()` 必须在 lifespan startup 中执行
 - **SECRET_KEY auto-generated**: 不设置环境变量时自动生成，生产环境必须显式配置
 - **Chat supports both SSE and WebSocket**: 修改聊天功能时需同时测试两条路径
+- **Plugin Manager is a singleton**: 通过 `plugins.plugin_instance.get()` 获取，不要直接 `PluginManager()` 创建新实例
+- **Conversation history auto-injected**: Agent 自动从 ShortTermMemory 加载对话历史，无需手动传递
 
 ---
 

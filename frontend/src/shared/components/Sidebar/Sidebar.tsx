@@ -258,8 +258,10 @@ function Sidebar() {
       </div>
       
       <nav className={styles['sidebar-nav']}>
-        {menuGroups.map((group) => (
+        {menuGroups.map((group, groupIndex) => (
           <div key={group.id} className={styles['menu-group']}>
+            {/* 分组之间的分隔线（第一个分组前不显示） */}
+            {groupIndex > 0 && !collapsed && <div className={styles['group-divider']} />}
             <div 
               className={styles['group-header']}
               onClick={() => toggleGroup(group.id)}
@@ -280,6 +282,8 @@ function Sidebar() {
                   </svg>
                 </>
               )}
+              {/* 折叠模式下分组之间用分隔线替代 */}
+              {collapsed && groupIndex > 0 && <div className={styles['group-divider']} />}
             </div>
             
             {expandedGroups[group.id] && (
@@ -309,9 +313,10 @@ function Sidebar() {
                               <polyline points="6 9 12 15 18 9" />
                             </svg>
                           )}
+                          {collapsed && <span className={styles['tooltip']}>{item.label}</span>}
                         </button>
-                        {expandedPluginBranch && !collapsed && (
-                          <div className={styles['submenu-items']}>
+                        {!collapsed && (
+                          <div className={`${styles['submenu-items']} ${expandedPluginBranch ? styles['expanded'] : ''}`}>
                             {item.children.map((child) => (
                               <Link
                                 key={child.path}
@@ -336,6 +341,7 @@ function Sidebar() {
                     >
                       <span className={styles['sidebar-icon']}>{icons[item.iconType]}</span>
                       {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
+                      {collapsed && <span className={styles['tooltip']}>{item.label}</span>}
                     </Link>
                   )
                 })}
