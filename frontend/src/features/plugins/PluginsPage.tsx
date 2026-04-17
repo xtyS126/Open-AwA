@@ -8,7 +8,9 @@ import {
   usePluginList,
   usePluginPermissions,
   usePluginToggle,
+  useDiscoveredPlugins,
 } from '@/features/plugins/hooks'
+import { pluginsAPI } from '@/shared/api/api'
 import { useToast } from '@/shared/components/Toast'
 import styles from './PluginsPage.module.css'
 
@@ -51,6 +53,12 @@ function PluginsPage() {
     authorizePermissions,
     revokePermissions,
   } = usePluginPermissions()
+  const {
+    discovered,
+    loading: discoverLoading,
+    error: discoverError,
+    refresh: refreshDiscovered,
+  } = useDiscoveredPlugins()
   const { addToast, ToastContainer } = useToast()
   const [permissionMessage, setPermissionMessage] = useState('')
   const [permissionModalOpen, setPermissionModalOpen] = useState(false)
@@ -60,6 +68,7 @@ function PluginsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [remoteUrl, setRemoteUrl] = useState('')
   const [expandedDescriptions, setExpandedDescriptions] = useState<Record<string, boolean>>({})
+  const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filteredPlugins = useMemo(() => {
@@ -76,6 +85,31 @@ function PluginsPage() {
       )
     })
   }, [plugins, searchKeyword])
+
+  /** 过滤出未注册到数据库的本地插件（已发现但未安装） */
+  const unregisteredPlugins = useMemo(() => {
+    const registeredNames = new Set(plugins.map((p) => p.name.toLowerCase()))
+    return discovered.filter((d) => !registeredNames.has(d.name.toLowerCase()))
+  }, [discovered, plugins])
+
+  /** 安装本地发现的插件到数据库 */
+  const handleInstallLocal = async (pluginName: string, pluginVersion: string) => {
+    setInstallingPlugins((prev) => new Set(prev).add(pluginName))
+    try {
+      await pluginsAPI.install({ name: pluginName, version: pluginVersion, config: {} })
+      await refreshPlugins()
+      await refreshDiscovered()
+      addToast(`插件 "${pluginName}" 安装成功`, 'success')
+    } catch {
+      addToast(`插件 "${pluginName}" 安装失败`, 'error')
+    } finally {
+      setInstallingPlugins((prev) => {
+        const next = new Set(prev)
+        next.delete(pluginName)
+        return next
+      })
+    }
+  }
 
   const refreshPluginPermissions = async (plugin: Plugin) => {
     return refreshPermissions(plugin)
@@ -396,6 +430,52 @@ function PluginsPage() {
               </div>
             )
           })
+        )}
+      </div>
+
+      {/* 本地可用插件区域 */}
+      <div className={styles['local-plugins-section']}>
+        <h2 className={styles['section-title']}>本地可用插件</h2>
+        {discoverLoading ? (
+          <div className={styles['local-loading']}>扫描本地插件中...</div>
+        ) : discoverError ? (
+          <div className={styles['inline-error']}>
+            <span>{discoverError}</span>
+            <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={refreshDiscovered}>重试</button>
+          </div>
+        ) : unregisteredPlugins.length === 0 ? (
+          <div className={styles['local-empty']}>所有本地插件均已安装</div>
+        ) : (
+          <div className={styles['plugins-grid']}>
+            {unregisteredPlugins.map((dp) => (
+              <div key={dp.name} className={`${styles['plugin-card']} ${styles['local-card']}`}>
+                <div className={styles['plugin-header']}>
+                  <h3>{dp.name}</h3>
+                  <span className={styles['plugin-version']}>v{dp.version || '1.0.0'}</span>
+                </div>
+                <div className={styles['plugin-description']}>
+                  {dp.description || '暂无简介'}
+                </div>
+                <div className={styles['plugin-status']}>
+                  <span className={`${styles['status-badge']} ${styles['local-badge']}`}>
+                    未安装
+                  </span>
+                  {dp.state !== 'unknown' && (
+                    <span className={styles['state-info']}>{dp.state}</span>
+                  )}
+                </div>
+                <div className={styles['plugin-actions']}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleInstallLocal(dp.name, dp.version)}
+                    disabled={installingPlugins.has(dp.name)}
+                  >
+                    {installingPlugins.has(dp.name) ? '安装中...' : '安装'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

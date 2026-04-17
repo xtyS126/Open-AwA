@@ -17,6 +17,10 @@
 - 创建 FastAPI 应用
 - 配置 CORS
 - 在 `lifespan` 中初始化数据库和计费模块
+- 初始化 RBAC 内置角色
+- 同步本地用户配置
+- 初始化插件市场内置插件
+- 初始化插件管理器全局单例，发现并加载数据库中已启用的插件
 - 注册认证、聊天、技能、插件、记忆、提示词、行为、经验、会话记录、计费等路由
 - 提供根路由与健康检查路由
 
@@ -114,6 +118,19 @@ API 路由集中在 `backend/api/routes/`。
 
 从目录组织可以看出，后端将 Agent 流程拆分为理解、规划、执行、反馈等阶段。
 
+### 6.1 多轮对话上下文机制
+
+Agent 初始化时会创建 `MemoryManager` 并注入到 `FeedbackLayer`。每次处理请求时：
+
+1. `AIAgent._build_conversation_history()` 从 `ShortTermMemory` 中按 `session_id` 检索最近的对话记录
+2. 对话历史注入到 `context["conversation_history"]`
+3. `ExecutionLayer._build_messages_with_history()` 将历史消息拼接为 LLM messages 数组
+4. `FeedbackLayer.update_memory()` 在请求完成后将当前轮次的 user/assistant 消息存入 `ShortTermMemory`
+
+这套机制同时适用于前端聊天和微信聊天，不同渠道通过不同的 `session_id` 隔离上下文：
+- 前端聊天：`session_id` 由前端传入（默认 `"default"`）
+- 微信聊天：`session_id` 格式为 `"weixin:auto:{account_id}:{from_user_id}"`
+
 ### 6.1 模型服务协议与链路治理
 
 模型服务协议适配集中在：
@@ -178,20 +195,41 @@ API 路由集中在 `backend/api/routes/`。
 - [plugin_sandbox.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_sandbox.py#L8-L121)
 - [plugin_lifecycle.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_lifecycle.py#L13-L220)
 - [plugin_manager.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_manager.py)
+- [plugin_instance.py](file:///d:/代码/Open-AwA/backend/plugins/plugin_instance.py) -- 全局单例管理
 - [hot_update_manager.py](file:///d:/代码/Open-AwA/backend/plugins/hot_update_manager.py)
 
-### 8.1 当前插件接口能力
+### 8.1 插件管理器单例
+
+插件管理器通过 `plugins.plugin_instance` 模块实现全局单例模式：
+
+- `main.py lifespan` 中调用 `plugin_instance.init(PluginManager())` 初始化
+- 启动时自动发现插件并加载数据库中已启用的插件
+- 所有路由和 Agent 通过 `plugin_instance.get()` 获取同一实例
+- 避免了之前每个模块各自创建 `PluginManager()` 导致状态不一致的问题
+
+### 8.2 插件生命周期管理
+
+插件安装、卸载、启用、禁用操作现在同步更新数据库记录和运行时状态：
+
+- 安装（POST /plugins）：创建 DB 记录后自动 discover + load
+- 卸载（DELETE /plugins/{id}）：先 unload 运行时实例再删除 DB 记录
+- 启用/禁用（PUT /plugins/{id}/toggle）：切换 DB 状态后同步 load/unload
+- 列表（GET /plugins）：返回 DB 记录并附带运行时加载状态和生命周期状态
+
+### 8.3 当前插件接口能力
 
 从插件路由可以确认，后端已支持：
 
-- 插件列表与详情
+- 插件列表与详情（含运行时状态）
+- 插件发现（GET /plugins/discover）
 - 数据库层安装记录
-- 启用/禁用切换
+- 启用/禁用切换（同步运行时加载/卸载）
 - 执行插件方法
 - 获取工具描述
 - 权限查询、授权、撤销
 - 日志读取
 - 发现、上传、热更新、回滚
+- 配置 schema 查询、保存、重置、导出
 
 ## 9. 记忆与经验系统
 

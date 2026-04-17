@@ -64,9 +64,11 @@
 
 ### 4.1 ChatPage
 
-- 文件： [ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/pages/ChatPage.tsx#L1-L259)
-- 主要功能：聊天输入、消息展示、模型选择、保存默认模型
-- 依赖：`chatAPI`、`modelsAPI`、`chatStore`
+- 文件： [ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/chat/ChatPage.tsx)
+- 主要功能：聊天输入、消息展示、模型选择、输出模式切换（流式/直接）、保存默认模型
+- 上下文机制：页面挂载或会话切换时自动从后端加载历史消息，支持多轮对话
+- 流式性能优化：后台标签页时节流 DOM 更新，可见时 flush buffer
+- 依赖：`chatAPI`、`chatStore`
 
 ### 4.2 DashboardPage
 
@@ -123,13 +125,15 @@
 
 ### 6.1 通用 API 实例
 
-- [api.ts](file:///d:/代码/Open-AwA/frontend/src/services/api.ts#L1-L20)
+- [api.ts](file:///d:/代码/Open-AwA/frontend/src/shared/api/api.ts)
 
 当前特征：
 
 - 通过 Axios 创建统一实例
 - 默认 `baseURL` 为 `/api`
 - 自动附加 Bearer Token 到请求头
+- CSRF 双重提交 Cookie 保护
+- 请求/响应拦截器
 
 ### 6.2 主要服务封装
 
@@ -137,7 +141,10 @@
 
 集中定义在：
 
-- [api.ts](file:///d:/代码/Open-AwA/frontend/src/services/api.ts#L22-L216)
+- [api.ts](file:///d:/代码/Open-AwA/frontend/src/shared/api/api.ts)
+
+chatAPI 新增了 `getHistory` 方法，用于加载会话历史。
+pluginsAPI 新增了 `discover` 和 `execute` 方法，分别用于发现可用插件和执行插件方法。
 
 #### 计费服务
 
@@ -155,13 +162,16 @@
 
 当前仓库使用 Zustand，已明确可见的 store 为：
 
-- [chatStore.ts](file:///d:/代码/Open-AwA/frontend/src/stores/chatStore.ts)
+- [chatStore.ts](file:///d:/代码/Open-AwA/frontend/src/features/chat/store/chatStore.ts)
 
 聊天页通过它管理：
 
 - 消息列表
 - 加载状态
 - 会话 ID
+- 输出模式（流式/直接）
+- 全局模型选择
+- 历史消息恢复（`setMessages`）
 - 清空会话等操作
 
 ## 8. 类型定义

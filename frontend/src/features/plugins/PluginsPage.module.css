@@ -311,3 +311,38 @@
 .btn-danger:hover {
   background: rgba(239, 68, 68, 0.15);
 }
+
+/* 本地可用插件区域 */
+.local-plugins-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--color-text);
+}
+
+.local-loading,
+.local-empty {
+  padding: 24px 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.local-card {
+  border: 1px dashed var(--color-border);
+}
+
+.local-badge {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+}
+
+.state-info {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
