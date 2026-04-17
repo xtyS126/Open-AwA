@@ -441,6 +441,21 @@ export interface PluginLogLevelResponse {
   level: string
 }
 
+export interface PluginConfigSchemaResponse {
+  plugin_id: string
+  plugin_name: string
+  schema: Record<string, unknown>
+  default_config: Record<string, unknown>
+  current_config: Record<string, unknown>
+  config_file_exists: boolean
+}
+
+export interface PluginConfigResponse {
+  plugin_id: string
+  plugin_name: string
+  config: Record<string, unknown>
+}
+
 export interface SystemLogRecord {
   timestamp: string
   level: string
@@ -463,6 +478,7 @@ export const pluginsAPI = {
   getAll: () => api.get('/plugins'),
   getOne: (id: string) => api.get(`/plugins/${id}`),
   install: (plugin: any) => api.post('/plugins', plugin),
+  update: (id: string, payload: any) => api.put(`/plugins/${id}`, payload),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
   toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
   upload: (file: File) => {
@@ -474,6 +490,8 @@ export const pluginsAPI = {
       },
     })
   },
+  importFromUrl: (sourceUrl: string, timeoutSeconds: number = 30) =>
+    api.post('/plugins/import-url', { source_url: sourceUrl, timeout_seconds: timeoutSeconds }),
   getPermissions: (id: string) => api.get<PluginPermissionStatus>(`/plugins/${id}/permissions`),
   authorizePermissions: (id: string, permissions: string[]) =>
     api.post<PluginPermissionUpdateResponse>(`/plugins/${id}/permissions/authorize`, { permissions }),
@@ -483,6 +501,14 @@ export const pluginsAPI = {
     api.get<PluginLogsResponse>(`/plugins/${id}/logs`, { params: { level, limit, offset } }),
   setLogLevel: (id: string, level: string) =>
     api.put<PluginLogLevelResponse>(`/plugins/${id}/log-level`, { level }),
+  getConfigSchema: (id: string) =>
+    api.get<PluginConfigSchemaResponse>(`/plugins/${id}/config/schema`),
+  saveConfig: (id: string, config: Record<string, unknown>) =>
+    api.put<PluginConfigResponse>(`/plugins/${id}/config`, config),
+  resetConfig: (id: string) =>
+    api.post<PluginConfigResponse>(`/plugins/${id}/config/reset`),
+  exportConfig: (id: string) =>
+    api.get<PluginConfigResponse>(`/plugins/${id}/config/export`),
 }
 
 export const logsAPI = {

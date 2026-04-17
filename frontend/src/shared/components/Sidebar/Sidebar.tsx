@@ -7,6 +7,10 @@ interface MenuItem {
   path: string
   label: string
   iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication'
+  children?: Array<{
+    path: string
+    label: string
+  }>
 }
 
 interface MenuGroup {
@@ -30,7 +34,15 @@ const menuGroups: MenuGroup[] = [
     title: '代理',
     items: [
       { path: '/skills', label: '技能', iconType: 'skills' },
-      { path: '/plugins', label: '插件', iconType: 'plugins' },
+      {
+        path: '/plugins',
+        label: '插件',
+        iconType: 'plugins',
+        children: [
+          { path: '/plugins/manage', label: '插件管理' },
+          { path: '/plugins/config/default', label: '插件配置' },
+        ],
+      },
       { path: '/memory', label: '记忆', iconType: 'memory' },
       { path: '/experience', label: '经验', iconType: 'experience' },
     ]
@@ -132,6 +144,7 @@ function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   /* 移动端侧边栏展开状态 */
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [expandedPluginBranch, setExpandedPluginBranch] = useState(location.pathname.startsWith('/plugins'))
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     control: true,
     agent: true,
@@ -152,6 +165,13 @@ function Sidebar() {
   /* 路由切换时自动关闭移动端菜单 */
   useEffect(() => {
     setMobileOpen(false)
+  }, [location.pathname])
+
+  /* 在插件路由下保持插件分支展开，保证可见性 */
+  useEffect(() => {
+    if (location.pathname.startsWith('/plugins')) {
+      setExpandedPluginBranch(true)
+    }
   }, [location.pathname])
 
   /* 移动端打开时阻止背景滚动 */
@@ -178,6 +198,12 @@ function Sidebar() {
   const isActive = (path: string) => {
     if (path.includes('?')) {
       return location.pathname + location.search === path
+    }
+    if (path === '/plugins/manage') {
+      return location.pathname === '/plugins/manage' || location.pathname === '/plugins'
+    }
+    if (path === '/plugins/config/default') {
+      return location.pathname.startsWith('/plugins/config/')
     }
     if (path === '/communication') {
       return location.pathname === '/communication'
@@ -258,17 +284,61 @@ function Sidebar() {
             
             {expandedGroups[group.id] && (
               <div className={styles['group-items']}>
-                {group.items.map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`${styles['sidebar-item']} ${isActive(item.path) ? styles['active'] : ''}`}
-                    title={collapsed ? item.label : undefined}
-                  >
-                    <span className={styles['sidebar-icon']}>{icons[item.iconType]}</span>
-                    {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
-                  </Link>
-                ))}
+                {group.items.map((item) => {
+                  if (item.children) {
+                    return (
+                      <div key={item.path}>
+                        <button
+                          type="button"
+                          className={`${styles['sidebar-item']} ${styles['branch-toggle']} ${isActive(item.path) ? styles['active'] : ''}`}
+                          title={collapsed ? item.label : undefined}
+                          onClick={() => setExpandedPluginBranch((prev) => !prev)}
+                        >
+                          <span className={styles['sidebar-icon']}>{icons[item.iconType]}</span>
+                          {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
+                          {!collapsed && (
+                            <svg
+                              className={`${styles['chevron']} ${expandedPluginBranch ? styles['expanded'] : ''}`}
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          )}
+                        </button>
+                        {expandedPluginBranch && !collapsed && (
+                          <div className={styles['submenu-items']}>
+                            {item.children.map((child) => (
+                              <Link
+                                key={child.path}
+                                to={child.path}
+                                className={`${styles['sidebar-subitem']} ${isActive(child.path) ? styles['active'] : ''}`}
+                              >
+                                {child.label}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`${styles['sidebar-item']} ${isActive(item.path) ? styles['active'] : ''}`}
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <span className={styles['sidebar-icon']}>{icons[item.iconType]}</span>
+                      {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
+                    </Link>
+                  )
+                })}
               </div>
             )}
           </div>
