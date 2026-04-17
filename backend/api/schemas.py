@@ -135,6 +135,15 @@ class PluginCreate(PluginBase):
     config: Optional[str] = None
 
 
+class PluginImportUrlRequest(BaseModel):
+    """
+    封装远程 URL 导入插件所需请求参数。
+    """
+
+    source_url: str
+    timeout_seconds: Optional[int] = 30
+
+
 class PluginResponse(PluginBase):
     """
     封装与PluginResponse相关的核心逻辑与运行状态。

@@ -186,6 +186,12 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `ALLOWED_ORIGINS`
 - 各模型提供方 API Key
 
+前端开发阶段常用环境变量（`frontend/.env.development`）：
+
+- `VITE_ENABLE_DEV_AUTO_LOGIN`：是否启用开发态自动登录（`true/false`）
+- `VITE_TEST_USERNAME`：开发态自动登录用户名（仅当启用自动登录时生效）
+- `VITE_TEST_PASSWORD`：开发态自动登录密码（仅当启用自动登录时生效）
+
 ## 主要接口与页面
 
 ### 后端主要路由
@@ -222,7 +228,9 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `/dashboard`
 - `/settings`
 - `/skills`
-- `/plugins`
+- `/plugins`（自动重定向到 `/plugins/manage`）
+- `/plugins/manage`
+- `/plugins/config/:pluginId`
 - `/memory`
 - `/billing`
 
@@ -257,6 +265,35 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `d:\代码\Open-AwA\plugins\theme-switcher`
 - `d:\代码\Open-AwA\plugins\data-chart`
 
+### 插件包格式规范（ZIP）
+
+插件 ZIP 包建议以插件根目录打包，且至少包含以下文件：
+
+- `index.js`：插件入口文件，导出插件主逻辑
+- `schema.json`：配置结构定义，用于动态表单渲染与校验
+- `README.md`：插件说明文档（功能、参数、权限、使用方式）
+
+建议同时包含：
+
+- `package.json`：版本与元信息
+- `assets/`：静态资源目录（如图标、示例配置）
+
+### 本地调试步骤（插件管理与配置）
+
+1. 启动后端与前端服务（见“快速开始”）
+2. 访问 `http://127.0.0.1:5173/plugins/manage`
+3. 通过“导入插件”上传本地 ZIP 或通过“URL 导入”拉取远程包
+4. 在插件卡片点击“配置”进入 `/plugins/config/:pluginId`
+5. 修改配置并保存，确认页面提示“写入 config.json”
+6. 可通过“重置默认 / 导出配置 / 导入配置 / 回滚到导入前”验证辅助工具链
+
+### 常见排错
+
+- 导入失败：确认 ZIP 后缀、MIME 与文件大小不超过 50MB
+- URL 导入失败：确认 URL 可访问且后端白名单策略允许
+- 表单保存失败：优先检查必填项、枚举值、正则与数值范围校验提示
+- 配置未生效：确认当前插件 ID 正确，且保存接口返回成功
+
 ## 测试与质量检查
 
 ### 后端
@@ -271,6 +308,13 @@ python -m pytest
 ```powershell
 cd d:\代码\Open-AwA\frontend
 npm run test
+```
+
+### 前端覆盖率
+
+```powershell
+cd d:\代码\Open-AwA\frontend
+npm run test:coverage
 ```
 
 ### 前端类型检查
@@ -309,6 +353,7 @@ E2E 配置见：
 - [testing.md](file:///d:/代码/Open-AwA/docs/testing.md)
 - [regression-test-report.md](file:///d:/代码/Open-AwA/docs/regression-test-report.md)
 - [deployment-migration-guide.md](file:///d:/代码/Open-AwA/docs/deployment-migration-guide.md)
+- [plugin-nav-config-performance-acceptance-2026-04-12.md](file:///d:/代码/Open-AwA/docs/plugin-nav-config-performance-acceptance-2026-04-12.md)
 
 ## 已知情况说明
 

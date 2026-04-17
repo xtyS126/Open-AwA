@@ -1,8 +1,8 @@
 import '@testing-library/jest-dom/vitest'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
-import { BrowserRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
@@ -29,8 +29,31 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('Sidebar', () => {
-  it('renders without crashing', () => {
-    render(<BrowserRouter><Sidebar /></BrowserRouter>)
-    expect(true).toBe(true)
+  it('展示插件分支并提供插件管理/插件配置子入口', () => {
+    render(
+      <MemoryRouter initialEntries={['/plugins/manage']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByRole('link', { name: '插件管理' })).toHaveAttribute('href', '/plugins/manage')
+    expect(screen.getByRole('link', { name: '插件配置' })).toHaveAttribute('href', '/plugins/config/default')
+  })
+
+  it('点击插件分支可折叠和展开子入口', () => {
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+
+    const pluginBranchButton = screen.getByRole('button', { name: '插件' })
+    expect(screen.queryByRole('link', { name: '插件管理' })).not.toBeInTheDocument()
+
+    fireEvent.click(pluginBranchButton)
+    expect(screen.getByRole('link', { name: '插件管理' })).toBeInTheDocument()
+
+    fireEvent.click(pluginBranchButton)
+    expect(screen.queryByRole('link', { name: '插件管理' })).not.toBeInTheDocument()
   })
 })

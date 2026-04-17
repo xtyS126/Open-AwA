@@ -3,12 +3,12 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Body
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from db.models import get_db, Plugin
 from api.dependencies import get_current_user, get_current_admin_user
-from api.schemas import PluginCreate, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
+from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
 from plugins.plugin_manager import PluginManager
 from plugins.plugin_logger import LogManager
 from loguru import logger
@@ -18,10 +18,155 @@ import io
 import os
 import shutil
 import tempfile
+import json
 
 
 router = APIRouter(prefix="/plugins", tags=["Plugins"])
 plugin_manager = PluginManager()
+
+
+def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
+    """
+    读取 JSON 文件并返回字典结构，异常时返回 None。
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict):
+            return payload
+        return None
+    except Exception:
+        return None
+
+
+def _write_json_file(path: str, payload: Dict[str, Any]) -> None:
+    """
+    将字典按 JSON 形式写入文件，确保目录存在。
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
+    """
+    根据插件名解析插件根目录，优先使用扫描元数据，其次回退到目录与 manifest 查找。
+    """
+    _ensure_plugin_discovered(plugin_name)
+    metadata = plugin_manager.plugin_metadata.get(plugin_name, {})
+    metadata_path = metadata.get("path")
+    if isinstance(metadata_path, str) and metadata_path:
+        # 约定插件入口通常为 <plugin_root>/src/index.py
+        root_candidate = os.path.abspath(os.path.join(os.path.dirname(metadata_path), ".."))
+        if os.path.isdir(root_candidate):
+            return root_candidate
+
+    direct_candidate = os.path.join(plugin_manager.plugins_dir, plugin_name)
+    if os.path.isdir(direct_candidate):
+        return direct_candidate
+
+    if not os.path.isdir(plugin_manager.plugins_dir):
+        return None
+
+    for child in os.listdir(plugin_manager.plugins_dir):
+        child_dir = os.path.join(plugin_manager.plugins_dir, child)
+        if not os.path.isdir(child_dir):
+            continue
+        manifest_path = os.path.join(child_dir, "manifest.json")
+        manifest = _read_json_file(manifest_path)
+        if manifest and str(manifest.get("name", "")).strip() == plugin_name:
+            return child_dir
+    return None
+
+
+def _default_schema_for_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    当插件未提供 schema.json 时，根据当前配置生成最小可用的动态表单 schema。
+    """
+    properties: Dict[str, Any] = {}
+    for key, value in config.items():
+        if isinstance(value, bool):
+            properties[key] = {
+                "type": "boolean",
+                "title": key,
+                "default": value,
+                "x-component": "switch",
+            }
+        elif isinstance(value, int) and not isinstance(value, bool):
+            properties[key] = {"type": "integer", "title": key, "default": value}
+        elif isinstance(value, float):
+            properties[key] = {"type": "number", "title": key, "default": value}
+        else:
+            properties[key] = {"type": "string", "title": key, "default": "" if value is None else str(value)}
+    return {
+        "type": "object",
+        "title": "插件配置",
+        "properties": properties,
+        "required": [],
+    }
+
+
+def _extract_default_config(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从 JSON Schema 中提取默认配置，仅处理对象根与一层属性默认值。
+    """
+    defaults: Dict[str, Any] = {}
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return defaults
+    for key, prop in properties.items():
+        if isinstance(prop, dict) and "default" in prop:
+            defaults[key] = prop.get("default")
+    return defaults
+
+
+def _merge_with_schema_defaults(schema: Dict[str, Any], raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将入参配置与 schema 默认值合并，保证缺省字段可用。
+    """
+    merged = _extract_default_config(schema)
+    merged.update(raw_config)
+    return merged
+
+
+def _persist_plugin_config(
+    db: Session,
+    plugin: Plugin,
+    next_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    统一处理插件配置落库、写入 config.json 与运行时刷新。
+    """
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+
+    schema_path = os.path.join(plugin_root, "schema.json")
+    schema_payload = _read_json_file(schema_path) or _default_schema_for_config(next_config)
+    normalized_config = _merge_with_schema_defaults(schema_payload, next_config)
+
+    plugin.config = normalized_config
+    db.commit()
+    db.refresh(plugin)
+
+    config_json_path = os.path.join(plugin_root, "config.json")
+    _write_json_file(config_json_path, normalized_config)
+
+    if plugin.name in plugin_manager.loaded_plugins:
+        try:
+            # 通过重载让配置在当前会话实时生效
+            plugin_manager.reload_plugin(plugin.name)
+        except Exception as exc:
+            logger.warning(f"Plugin '{plugin.name}' reloaded with warning after config update: {exc}")
+
+    return {
+        "plugin_id": plugin.id,
+        "plugin_name": plugin.name,
+        "config": normalized_config,
+        "config_file_path": config_json_path,
+    }
 
 
 def _ensure_plugin_discovered(plugin_name: str) -> None:
@@ -177,6 +322,118 @@ async def update_plugin(
     logger.info(f"Plugin '{plugin_id}' updated by user '{current_user.username}'")
 
     return plugin
+
+
+@router.get(
+    "/{plugin_id}/config/schema",
+    summary="获取插件配置 schema",
+    description="读取插件目录中的 schema.json、config.json 与数据库配置，返回动态表单所需数据。",
+)
+async def get_plugin_config_schema(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+
+    schema_path = os.path.join(plugin_root, "schema.json")
+    config_path = os.path.join(plugin_root, "config.json")
+    schema_payload = _read_json_file(schema_path)
+
+    db_config = plugin.config if isinstance(plugin.config, dict) else {}
+    file_config = _read_json_file(config_path) or {}
+    if not schema_payload:
+        schema_payload = _default_schema_for_config({**db_config, **file_config})
+
+    default_config = _extract_default_config(schema_payload)
+    current_config = default_config.copy()
+    current_config.update(db_config)
+    current_config.update(file_config)
+
+    return {
+        "plugin_id": plugin.id,
+        "plugin_name": plugin.name,
+        "schema": schema_payload,
+        "default_config": default_config,
+        "current_config": current_config,
+        "config_file_exists": os.path.exists(config_path),
+    }
+
+
+@router.put(
+    "/{plugin_id}/config",
+    summary="保存插件配置",
+    description="保存插件配置到数据库并持久化到插件目录 config.json。",
+)
+async def save_plugin_config(
+    plugin_id: str,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_admin_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="配置体必须是 JSON 对象")
+    return _persist_plugin_config(db=db, plugin=plugin, next_config=payload)
+
+
+@router.post(
+    "/{plugin_id}/config/reset",
+    summary="重置插件配置为默认值",
+    description="按 schema 默认值重置配置并写入 config.json。",
+)
+async def reset_plugin_config(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_admin_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+    schema_payload = _read_json_file(os.path.join(plugin_root, "schema.json")) or _default_schema_for_config({})
+    next_config = _extract_default_config(schema_payload)
+    return _persist_plugin_config(db=db, plugin=plugin, next_config=next_config)
+
+
+@router.get(
+    "/{plugin_id}/config/export",
+    summary="导出插件配置",
+    description="返回当前生效配置，供前端导出为 JSON 文件。",
+)
+async def export_plugin_config(
+    plugin_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    plugin_root = _resolve_plugin_root_dir(plugin.name)
+    if not plugin_root:
+        raise HTTPException(status_code=404, detail=f"未找到插件目录: {plugin.name}")
+    config_path = os.path.join(plugin_root, "config.json")
+    file_config = _read_json_file(config_path) or {}
+    db_config = plugin.config if isinstance(plugin.config, dict) else {}
+    merged = db_config.copy()
+    merged.update(file_config)
+    return {
+        "plugin_id": plugin.id,
+        "plugin_name": plugin.name,
+        "config": merged,
+    }
 
 
 @router.post("/{plugin_id}/permissions/authorize", response_model=PluginPermissionUpdateResponse)
@@ -555,6 +812,107 @@ async def upload_plugin(
         # 清理临时目录
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@router.post(
+    "/import-url",
+    summary="通过远程 URL 导入插件",
+    description="从白名单域名下载 ZIP 插件包并导入系统。"
+)
+async def import_plugin_from_url(
+    payload: PluginImportUrlRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    处理远程 URL 插件导入，成功后写入数据库并返回导入结果。
+    """
+    source_url = (payload.source_url or "").strip()
+    if not source_url:
+        raise HTTPException(status_code=400, detail="source_url is required")
+
+    try:
+        plugin_manager_instance = PluginManager()
+        discovered = plugin_manager_instance.register_plugin_from_url(
+            source_url=source_url,
+            timeout=max(1, int(payload.timeout_seconds or 30)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Error importing plugin from URL '{source_url}': {str(exc)}")
+        raise HTTPException(status_code=500, detail=f"Failed to import plugin from URL: {str(exc)}")
+
+    if not discovered:
+        raise HTTPException(status_code=400, detail="No valid plugin found in remote package")
+
+    installed_count = 0
+    updated_count = 0
+    imported_plugins = []
+
+    try:
+        for plugin_info in discovered:
+            name = plugin_info.get("name")
+            if not name:
+                continue
+
+            manifest = plugin_info.get("manifest") if isinstance(plugin_info.get("manifest"), dict) else {}
+            version = str(plugin_info.get("version", "1.0.0"))
+            description = str(plugin_info.get("description", ""))
+            author = str(manifest.get("author", "unknown"))
+
+            dependencies: List[str] = []
+            raw_dependencies = manifest.get("dependencies")
+            if isinstance(raw_dependencies, dict):
+                dependencies = list(raw_dependencies.keys())
+            elif isinstance(raw_dependencies, list):
+                dependencies = [str(item) for item in raw_dependencies if isinstance(item, (str, int, float))]
+
+            config_payload: Dict[str, Any] = {
+                "description": description,
+                "source_url": source_url,
+                "manifest": manifest,
+            }
+
+            existing_plugin = db.query(Plugin).filter(Plugin.name == name).first()
+            if existing_plugin:
+                existing_plugin.version = version
+                existing_plugin.config = config_payload
+                existing_plugin.author = author
+                existing_plugin.source = "remote_url"
+                existing_plugin.dependencies = dependencies
+                updated_count += 1
+                imported_plugins.append(name)
+                continue
+
+            new_plugin = Plugin(
+                id=str(uuid.uuid4()),
+                name=name,
+                version=version,
+                enabled=True,
+                config=config_payload,
+                category="general",
+                author=author,
+                source="remote_url",
+                dependencies=dependencies,
+            )
+            db.add(new_plugin)
+            installed_count += 1
+            imported_plugins.append(name)
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Error persisting imported plugins from URL '{source_url}': {str(exc)}")
+        raise HTTPException(status_code=500, detail=f"Failed to persist imported plugins: {str(exc)}")
+
+    return {
+        "message": f"Imported {installed_count} plugin(s), updated {updated_count} plugin(s).",
+        "source_url": source_url,
+        "installed_count": installed_count,
+        "updated_count": updated_count,
+        "plugins": imported_plugins,
+    }
 
 
 @router.post("/{plugin_id}/hot-update", response_model=HotUpdateResponse)

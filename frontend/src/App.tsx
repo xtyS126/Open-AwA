@@ -16,6 +16,7 @@ const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPag
 const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
 const SkillsPage = React.lazy(() => import('@/features/skills/SkillsPage'))
 const PluginsPage = React.lazy(() => import('@/features/plugins/PluginsPage'))
+const PluginConfigPage = React.lazy(() => import('@/features/plugins/PluginConfigPage'))
 const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
 const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
@@ -164,7 +165,11 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/skills" element={<SkillsPage />} />
-              <Route path="/plugins" element={<PluginsPage />} />
+              <Route path="/plugins">
+                <Route index element={<Navigate to="manage" replace />} />
+                <Route path="manage" element={<PluginsPage />} />
+                <Route path="config/:pluginId" element={<PluginConfigPage />} />
+              </Route>
               <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/memory" element={<MemoryPage />} />
               <Route path="/experience" element={<ExperiencePage hideHeader />} />
