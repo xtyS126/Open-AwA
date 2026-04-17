@@ -105,6 +105,15 @@ async def lifespan(app: FastAPI):
             rbac.ensure_built_in_roles()
         finally:
             db.close()
+        # 从本地配置文件同步用户到数据库
+        from config.local_users import sync_local_users_to_db
+
+        db = SessionLocal()
+        try:
+            sync_stats = sync_local_users_to_db(db)
+            logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
+        finally:
+            db.close()
     # 初始化插件市场内置插件
     from plugins.marketplace.registry import marketplace_registry
     marketplace_registry.seed_built_in_plugins()
