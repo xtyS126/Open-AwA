@@ -8,12 +8,10 @@ from datetime import timedelta
 import math
 import threading
 import time
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from loguru import logger
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -21,7 +19,6 @@ from api.schemas import Token, UserCreate, UserResponse
 from config.security import (
     clear_access_token_cookie,
     create_access_token,
-    get_password_hash,
     set_access_token_cookie,
     verify_password,
 )
@@ -141,54 +138,19 @@ def _cleanup_expired_login_rate_limit_state(now: float) -> None:
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     """
-    创建新的本地用户账户。
-    接口会先校验用户名是否已存在，再对密码执行哈希处理并写入数据库，成功后返回新建用户的基础资料。
+    注册接口已禁用。用户信息的增删仅允许通过本地配置文件 config/users.yaml 进行修改。
+    保留此端点以保持 API 兼容性，但始终返回 403。
     """
-    db_user = db.query(UserModel).filter(UserModel.username == user.username).first()
-    if db_user:
-        logger.bind(
-            event="auth_register_conflict",
-            module="auth",
-            action="register",
-            status="failure",
-        ).warning("username already registered")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-
-    new_user = UserModel(
-        id=str(uuid.uuid4()),
-        username=user.username,
-        password_hash=get_password_hash(user.password),
-        role="user"
-    )
-    db.add(new_user)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        logger.bind(
-            event="auth_register_conflict_race",
-            module="auth",
-            action="register",
-            status="failure",
-        ).warning("concurrent registration conflict for username")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Username already registered"
-        )
-    db.refresh(new_user)
-
     logger.bind(
-        event="auth_register_success",
+        event="auth_register_rejected",
         module="auth",
         action="register",
-        status="success",
-        user_id=new_user.id,
-    ).info("user registered")
-
-    return new_user
+        status="failure",
+    ).warning("registration via API is disabled, use config/users.yaml instead")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Registration via API is disabled. Please modify config/users.yaml to add users."
+    )
 
 
 @router.post(
@@ -238,6 +200,21 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 禁用状态的用户不允许登录
+    if user.role == "disabled":
+        _record_failed_login(rate_limit_key)
+        logger.bind(
+            event="auth_login_disabled",
+            module="auth",
+            action="login",
+            status="failure",
+            client_ip=client_ip,
+        ).warning("disabled user attempted login")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled. Please contact administrator.",
         )
 
     _clear_failed_login(rate_limit_key)
