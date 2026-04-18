@@ -84,6 +84,8 @@ Thumbs.db
 # Local runtime data & Custom
 # =========================
 .openawa/
+.agents/
+.github/
 backend/openawa.db
 backend/openawa_e2e.db
 frontend/test-results/
