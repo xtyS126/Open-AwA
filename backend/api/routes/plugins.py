@@ -283,9 +283,13 @@ async def install_plugin(
     new_plugin = Plugin(
         id=str(uuid.uuid4()),
         name=plugin.name,
-        version=plugin.version,
-        config=plugin.config,
-        enabled=True
+        version=plugin.version or "1.0.0",
+        config=plugin.config or {},
+        enabled=True,
+        category="general",
+        author="unknown",
+        source="local",
+        dependencies=[],
     )
     
     db.add(new_plugin)

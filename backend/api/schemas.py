@@ -132,7 +132,7 @@ class PluginCreate(PluginBase):
     封装与PluginCreate相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    config: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PluginImportUrlRequest(BaseModel):
@@ -455,7 +455,7 @@ class PluginUpdate(BaseModel):
     """
     name: Optional[str] = None
     version: Optional[str] = None
-    config: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
 
 
