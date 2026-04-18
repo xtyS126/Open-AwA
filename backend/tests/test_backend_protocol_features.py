@@ -3,6 +3,7 @@
 这些测试直接覆盖本次修复最容易回归的关键链路。
 """
 
+import asyncio
 from types import MethodType, SimpleNamespace
 
 import httpx
@@ -11,10 +12,12 @@ from fastapi.testclient import TestClient
 
 from api.routes import chat as chat_route
 from billing.pricing_manager import PricingManager
+import core.agent as agent_module
 from core.agent import AIAgent
 import core.executor as executor_module
 import core.litellm_adapter as litellm_adapter_module
 from core.executor import ExecutionLayer
+from core.feedback import FeedbackLayer
 from core.model_service import build_provider_request
 from main import app
 
@@ -282,6 +285,139 @@ async def test_ai_agent_process_strips_reasoning_content_when_final_only(monkeyp
     assert "reasoning_content" not in result["results"][0]["result"]
     assert result["results"][0]["result"]["nested"]["visible"] == "保留字段"
     assert "reasoning_content" not in result["results"][0]["result"]["nested"]
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_process_injects_db_into_context(monkeypatch):
+    """
+    Agent 应将自身持有的数据库会话补入上下文，确保执行层能解析默认模型配置。
+    """
+
+    dummy_db = SimpleNamespace(name="scheduled-task-db")
+    agent = AIAgent(db_session=dummy_db)
+
+    async def fake_recognize_intent(user_input):
+        return "chat"
+
+    async def fake_extract_entities(user_input):
+        return {}
+
+    async def fake_create_plan(intent, entities, context):
+        return {
+            "intent": "chat",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "llm_chat",
+                    "message": context.get("message", ""),
+                }
+            ],
+            "requires_confirmation": False,
+        }
+
+    async def fake_execute_step(step, context):
+        assert context["db"] is dummy_db
+        return {
+            "status": "completed",
+            "response": "透传成功",
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+        }
+
+    async def fake_evaluate_result(result):
+        return {"needs_retry": False, "needs_confirmation": False}
+
+    async def fake_generate_response(results, context):
+        return "透传成功"
+
+    async def fake_update_memory(user_input, response, context):
+        return None
+
+    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
+    monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
+    monkeypatch.setattr(agent.feedback, "generate_response", fake_generate_response)
+    monkeypatch.setattr(agent.feedback, "update_memory", fake_update_memory)
+
+    result = await agent.process(
+        "请在晚上八点提醒我整理日报",
+        {
+            "user_id": "user-1",
+            "session_id": "session-1",
+            "retrieve_experiences": False,
+            "retrieve_long_term_memory": False,
+            "enable_skill_plugin": False,
+        },
+    )
+
+    assert result["status"] == "completed"
+    assert result["response"] == "透传成功"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_schedule_record_skips_side_effects_when_isolated(monkeypatch):
+    """
+    定时任务隔离模式下不应写入行为日志或会话记录。
+    """
+
+    agent = AIAgent()
+    behavior_calls = []
+    conversation_calls = []
+
+    async def fake_behavior_record(entry):
+        behavior_calls.append(entry)
+
+    async def fake_conversation_record(**kwargs):
+        conversation_calls.append(kwargs)
+
+    monkeypatch.setattr(agent_module.behavior_logger, "record", fake_behavior_record)
+    monkeypatch.setattr(agent_module.conversation_recorder, "record", fake_conversation_record)
+
+    agent._schedule_record(
+        node_type="llm_call",
+        user_message="定时任务测试",
+        context={
+            "user_id": "user-1",
+            "session_id": "scheduled-task-1",
+            "scheduled_execution_isolated": True,
+        },
+        llm_output={"response": "执行完成"},
+        metadata={"provider": "openai", "model": "gpt-4o-mini"},
+    )
+
+    await asyncio.sleep(0)
+
+    assert behavior_calls == []
+    assert conversation_calls == []
+
+
+@pytest.mark.asyncio
+async def test_feedback_layer_skips_memory_update_when_isolated():
+    """
+    定时任务隔离模式下不应写入短期或长期记忆。
+    """
+
+    feedback = FeedbackLayer()
+    memory_calls = []
+
+    class DummyMemoryManager:
+        async def add_short_term_memory(self, **kwargs):
+            memory_calls.append(("short", kwargs))
+
+        async def add_long_term_memory(self, **kwargs):
+            memory_calls.append(("long", kwargs))
+
+    feedback.set_memory_manager(DummyMemoryManager())
+
+    await feedback.update_memory(
+        user_input="请稍后提醒我检查日志",
+        response="好的，稍后提醒",
+        context={"scheduled_execution_isolated": True},
+    )
+
+    assert memory_calls == []
 
 
 @pytest.mark.asyncio

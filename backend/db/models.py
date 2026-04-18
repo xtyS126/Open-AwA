@@ -3,7 +3,7 @@
 这里的结构定义直接决定了持久化层能够保存哪些业务数据。
 """
 
-from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, inspect, text, event
+from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, inspect, text, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
@@ -275,6 +275,55 @@ class WorkflowExecution(Base):
     input_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     output_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    execution_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class ScheduledTask(Base):
+    """
+    定时任务模型，保存一次性任务的触发时间、提示词与运行状态。
+    """
+    __tablename__ = "scheduled_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    prompt: Mapped[str] = mapped_column(Text)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
+    provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    task_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class ScheduledTaskExecution(Base):
+    """
+    定时任务执行记录模型，保存每次调度触发后的输出结果与错误信息。
+    """
+    __tablename__ = "scheduled_task_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(Integer, ForeignKey("scheduled_tasks.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    task_title: Mapped[str] = mapped_column(String(200), default="")
+    prompt: Mapped[str] = mapped_column(Text)
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(50), default="running", index=True)
+    response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    request_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     execution_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

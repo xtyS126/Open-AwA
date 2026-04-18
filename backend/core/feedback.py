@@ -125,6 +125,10 @@ class FeedbackLayer:
         更新memory相关数据、配置或状态。
         阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
         """
+        if context.get("scheduled_execution_isolated") or context.get("disable_memory_update"):
+            logger.info("Memory update disabled for current execution context")
+            return
+
         if not self.memory_manager:
             logger.warning("Memory manager not set, skipping memory update")
             return

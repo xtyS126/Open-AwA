@@ -111,6 +111,36 @@ class AIAgent:
             return payload
         return self._strip_reasoning_content(payload)
 
+    def _apply_scheduled_execution_defaults(self, context: Dict[str, Any]) -> None:
+        """
+        为定时任务执行场景补齐隔离开关，避免污染聊天记录、记忆与经验链路。
+        """
+        if not context.get("scheduled_execution_isolated"):
+            return
+
+        context.setdefault("disable_behavior_logging", True)
+        context.setdefault("disable_conversation_record", True)
+        context.setdefault("disable_memory_update", True)
+        context.setdefault("retrieve_experiences", False)
+        context.setdefault("retrieve_long_term_memory", False)
+        context.setdefault("enable_skill_plugin", False)
+        context.setdefault("extract_experience", False)
+        context.setdefault("output_mode", "final_only")
+
+    def _prepare_context(self, user_input: str, context: Dict[str, Any]) -> None:
+        """
+        统一补齐执行上下文，保证数据库会话与隔离开关能够透传到执行层。
+        """
+        self._apply_scheduled_execution_defaults(context)
+
+        if "message" not in context:
+            context["message"] = user_input
+
+        if self._db_session and context.get("db") is None:
+            context["db"] = self._db_session
+
+        context["_record_hook"] = self._schedule_record
+
     def _schedule_record(
         self,
         *,
@@ -134,19 +164,30 @@ class AIAgent:
         if not user_id:
             return
 
-        behavior_entries = self._build_behavior_entries(
-            user_id=user_id,
-            node_type=node_type,
-            status=status,
-            error_message=error_message,
-            llm_output=llm_output,
-            llm_tokens_used=llm_tokens_used,
-            execution_duration_ms=execution_duration_ms,
-            metadata=metadata,
+        disable_behavior_logging = bool(
+            context.get("scheduled_execution_isolated") or context.get("disable_behavior_logging")
         )
-        for entry in behavior_entries:
-            task = asyncio.create_task(behavior_logger.record(entry))
-            task.add_done_callback(lambda t: self._handle_record_task_result(t))
+        disable_conversation_record = bool(
+            context.get("scheduled_execution_isolated") or context.get("disable_conversation_record")
+        )
+
+        if not disable_behavior_logging:
+            behavior_entries = self._build_behavior_entries(
+                user_id=user_id,
+                node_type=node_type,
+                status=status,
+                error_message=error_message,
+                llm_output=llm_output,
+                llm_tokens_used=llm_tokens_used,
+                execution_duration_ms=execution_duration_ms,
+                metadata=metadata,
+            )
+            for entry in behavior_entries:
+                task = asyncio.create_task(behavior_logger.record(entry))
+                task.add_done_callback(lambda t: self._handle_record_task_result(t))
+
+        if disable_conversation_record:
+            return
 
         task = asyncio.create_task(
             conversation_recorder.record(
@@ -427,10 +468,7 @@ class AIAgent:
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
 
-        if "message" not in context:
-            context["message"] = user_input
-            
-        context["_record_hook"] = self._schedule_record
+        self._prepare_context(user_input, context)
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
@@ -482,9 +520,7 @@ class AIAgent:
         """
         logger.info(f"Processing user input, length={len(user_input)}")
 
-        if "message" not in context:
-            context["message"] = user_input
-        context["_record_hook"] = self._schedule_record
+        self._prepare_context(user_input, context)
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
@@ -909,6 +945,8 @@ class AIAgent:
         处理handle、confirmation相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
+        self._prepare_context(context.get("message", ""), context)
+
         if confirmed:
             result = await self.executor.execute_step(step, context)
             return {"status": "executed", "result": result}

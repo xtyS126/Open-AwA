@@ -36,6 +36,7 @@ describe('Sidebar', () => {
       </MemoryRouter>
     )
 
+    expect(screen.getByRole('link', { name: '定时任务' })).toHaveAttribute('href', '/scheduled-tasks')
     expect(screen.getByRole('link', { name: '插件管理' })).toHaveAttribute('href', '/plugins/manage')
     expect(screen.getByRole('link', { name: '插件配置' })).toHaveAttribute('href', '/plugins/config/default')
   })

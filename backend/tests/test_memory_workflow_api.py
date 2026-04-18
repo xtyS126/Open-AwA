@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user, get_db
-from db.models import LongTermMemory, init_db
+from db.models import LongTermMemory, ScheduledTask, ScheduledTaskExecution, init_db
 from main import app
 from memory.manager import MemoryManager
 from memory.vector_store_manager import VectorStoreManager
@@ -80,6 +80,8 @@ def override_get_current_user():
 def _reset_state():
     db = TestingSessionLocal()
     try:
+        db.query(ScheduledTaskExecution).delete()
+        db.query(ScheduledTask).delete()
         db.query(LongTermMemory).delete()
         db.commit()
     finally:
@@ -255,3 +257,84 @@ def test_workflow_crud_execute_and_status_api(tmp_path):
 
         delete_response = client.delete(f"/api/workflows/{workflow_id}")
         assert delete_response.status_code == 200
+
+
+def test_scheduled_task_api_crud_and_cancel_flow():
+    """
+    验证定时任务 API 的创建、列表、更新、历史查询与取消流程。
+    """
+
+    scheduled_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+
+    with _test_client() as client:
+        create_response = client.post(
+            "/api/scheduled-tasks",
+            json={
+                "title": "晚间日报提醒",
+                "prompt": "请总结今天完成的工作并生成日报提纲",
+                "scheduled_at": scheduled_at,
+            },
+        )
+        assert create_response.status_code == 200
+        task_id = create_response.json()["id"]
+        assert create_response.json()["status"] == "pending"
+
+        list_response = client.get("/api/scheduled-tasks")
+        assert list_response.status_code == 200
+        assert len(list_response.json()) == 1
+
+        update_response = client.put(
+            f"/api/scheduled-tasks/{task_id}",
+            json={"title": "晚间日报提醒-更新版"},
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["title"] == "晚间日报提醒-更新版"
+
+        history_response = client.get("/api/scheduled-tasks/executions")
+        assert history_response.status_code == 200
+        assert history_response.json() == []
+
+        cancel_response = client.delete(f"/api/scheduled-tasks/{task_id}")
+        assert cancel_response.status_code == 200
+
+        detail_response = client.get(f"/api/scheduled-tasks/{task_id}")
+        assert detail_response.status_code == 200
+        assert detail_response.json()["status"] == "cancelled"
+
+
+def test_scheduled_task_api_rejects_update_and_cancel_for_non_pending_statuses():
+    """
+    非 pending 状态的任务不应允许更新或取消。
+    """
+
+    db = TestingSessionLocal()
+    try:
+        task_ids = {}
+        for status in ("running", "completed", "failed", "cancelled"):
+            task = ScheduledTask(
+                user_id="user-1",
+                title=f"{status}-task",
+                prompt="测试状态校验",
+                scheduled_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+                status=status,
+                task_metadata={"kind": "prompt_once"},
+            )
+            db.add(task)
+            db.flush()
+            task_ids[status] = task.id
+        db.commit()
+    finally:
+        db.close()
+
+    with _test_client() as client:
+        for status, task_id in task_ids.items():
+            update_response = client.put(
+                f"/api/scheduled-tasks/{task_id}",
+                json={"title": f"updated-{status}"},
+            )
+            cancel_response = client.delete(f"/api/scheduled-tasks/{task_id}")
+
+            assert update_response.status_code == 400
+            assert update_response.json()["error"]["message"] == "Only pending scheduled tasks can be updated"
+            assert cancel_response.status_code == 400
+            assert cancel_response.json()["error"]["message"] == "Only pending scheduled tasks can be cancelled"

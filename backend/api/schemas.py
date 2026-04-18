@@ -350,6 +350,77 @@ class WorkflowExecutionResponse(BaseModel):
         from_attributes = True
 
 
+class ScheduledTaskBase(BaseModel):
+    """
+    定时任务基础模型。
+    """
+    title: str = Field(..., min_length=1, max_length=200)
+    prompt: str = Field(..., min_length=1)
+    scheduled_at: datetime
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+class ScheduledTaskCreate(ScheduledTaskBase):
+    """
+    定时任务创建请求模型。
+    """
+    pass
+
+
+class ScheduledTaskUpdate(BaseModel):
+    """
+    定时任务更新请求模型。
+    """
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    prompt: Optional[str] = Field(default=None, min_length=1)
+    scheduled_at: Optional[datetime] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+class ScheduledTaskResponse(ScheduledTaskBase):
+    """
+    定时任务响应模型。
+    """
+    id: int
+    user_id: str
+    status: str
+    last_error_message: Optional[str] = None
+    task_metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ScheduledTaskExecutionResponse(BaseModel):
+    """
+    定时任务执行记录响应模型。
+    """
+    id: int
+    task_id: int
+    user_id: str
+    task_title: str
+    prompt: str
+    scheduled_for: datetime
+    status: str
+    response: Optional[str] = None
+    error_message: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    request_id: Optional[str] = None
+    execution_metadata: Dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class PromptConfigBase(BaseModel):
     """
     封装与PromptConfigBase相关的核心逻辑与运行状态。
