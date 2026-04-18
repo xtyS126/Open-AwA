@@ -122,7 +122,10 @@ class SkillLoader:
             return None
 
         try:
-            config = yaml.safe_load(skill_record.config) if skill_record.config else {}
+            if isinstance(skill_record.config, dict):
+                config = skill_record.config
+            else:
+                config = yaml.safe_load(skill_record.config) if skill_record.config else {}
             self._set_cache(cache_key, config)
             logger.info(f"Loaded skill from database: {skill_name}")
             return config
@@ -168,6 +171,10 @@ class SkillLoader:
         version = config.get('version', '1.0.0')
         description = config.get('description', '')
         config_text = yaml.dump(config)
+        tags = config.get('tags', [])
+        dependencies = config.get('dependencies', [])
+        author = config.get('author', 'Open-AwA')
+        category = config.get('category', 'general')
 
         existing_skill = self.db_session.query(Skill).filter(Skill.name == name).first()
 
@@ -175,6 +182,10 @@ class SkillLoader:
             existing_skill.version = version
             existing_skill.description = description
             existing_skill.config = config_text
+            existing_skill.tags = tags
+            existing_skill.dependencies = dependencies
+            existing_skill.author = author
+            existing_skill.category = category
             logger.info(f"Updated existing skill: {name}")
             return existing_skill
         else:
@@ -184,7 +195,12 @@ class SkillLoader:
                 version=version,
                 description=description,
                 config=config_text,
+                tags=tags,
+                dependencies=dependencies,
+                author=author,
+                category=category,
                 enabled=True,
+                usage_count=0,
                 installed_at=datetime.now(timezone.utc)
             )
             self.db_session.add(skill)
@@ -204,7 +220,10 @@ class SkillLoader:
         result = []
         for skill in skills:
             try:
-                config = yaml.safe_load(skill.config) if skill.config else {}
+                if isinstance(skill.config, dict):
+                    config = skill.config
+                else:
+                    config = yaml.safe_load(skill.config) if skill.config else {}
                 result.append({
                     'id': skill.id,
                     'name': skill.name,

@@ -6,7 +6,7 @@
 import asyncio
 import json
 import time
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
 from loguru import logger
 from .comprehension import ComprehensionLayer
 from .planner import PlanningLayer
@@ -18,6 +18,7 @@ from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
 from plugins import plugin_instance
+from workflow.engine import WorkflowEngine
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
 
@@ -49,10 +50,12 @@ class AIAgent:
 
         # 初始化记忆管理器，并注入到反馈层
         self.memory_manager = None
+        self.workflow_engine = None
         if self._db_session:
             from memory.manager import MemoryManager
             self.memory_manager = MemoryManager(self._db_session)
             self.feedback.set_memory_manager(self.memory_manager)
+            self.workflow_engine = WorkflowEngine(db_session=self._db_session, skill_engine=self.skill_engine)
         
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
     
@@ -343,13 +346,15 @@ class AIAgent:
             skill_list = []
             for skill in skills:
                 stats = self.skill_engine.get_skill_statistics(skill.name)
+                skill_config = self.skill_engine.loader.load_from_db(skill.name) or {}
                 skill_list.append({
                     'name': skill.name,
                     'version': skill.version,
                     'description': skill.description,
                     'enabled': skill.enabled,
                     'usage_count': skill.usage_count,
-                    'stats': stats
+                    'stats': stats,
+                    'config': skill_config,
                 })
             
             logger.info(f"Found {len(skill_list)} available skills")
@@ -513,6 +518,39 @@ class AIAgent:
             if experiences:
                 context['relevant_experiences'] = experiences
                 logger.info(f"Retrieved {len(experiences)} relevant experiences")
+
+        relevant_memories = []
+        if context.get('retrieve_long_term_memory', True):
+            relevant_memories = await self._retrieve_relevant_memories(
+                user_input=user_input,
+                context=context,
+            )
+            if relevant_memories:
+                context['vector_retrieved_memories'] = relevant_memories
+                logger.info(f"Retrieved {len(relevant_memories)} long-term memories")
+
+        workflow_result = None
+        if self.workflow_engine and (context.get('workflow_definition') is not None or context.get('workflow_id') is not None):
+            workflow_result = await self._execute_workflow_from_context(context)
+            if workflow_result:
+                context['workflow_result'] = workflow_result
+                if context.get('workflow_only'):
+                    return self._apply_output_mode(
+                        {
+                            "status": workflow_result.get("status", "completed"),
+                            "response": workflow_result.get("last_result", workflow_result),
+                            "results": [
+                                {
+                                    "type": "workflow",
+                                    "step": {"action": "workflow_execution"},
+                                    "result": workflow_result,
+                                }
+                            ],
+                            "workflows_executed": 1,
+                            "experiences_used": len(experiences),
+                        },
+                        context,
+                    )
         
         plan = await self.planner.create_plan(
             intent=intent,
@@ -692,11 +730,14 @@ class AIAgent:
             "response": final_response,
             "results": results,
             "experiences_used": len(experiences),
+            "memories_used": len(relevant_memories),
             "skills_executed": skill_count,
             "plugins_executed": plugin_count,
             "skill_results": self.skill_results.copy(),
             "plugin_results": self.plugin_results.copy()
         }
+        if workflow_result:
+            output["workflow_result"] = workflow_result
         if reasoning_parts:
             output["reasoning_content"] = "\n".join(reasoning_parts)
         return self._apply_output_mode(output, context)
@@ -748,6 +789,8 @@ class AIAgent:
 
             for skill in available_skills:
                 if not skill.get('enabled'):
+                    continue
+                if skill.get('config', {}).get('auto_executable') is False:
                     continue
 
                 skill_name = skill.get('name', '')
@@ -919,6 +962,78 @@ class AIAgent:
                 error_type=type(e).__name__,
             ).opt(exception=True).error(f"检索相关经验失败: {e}")
             return []
+
+    async def _retrieve_relevant_memories(
+        self,
+        user_input: str,
+        context: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        使用长期记忆的混合检索能力获取相关记忆，并整理为可注入上下文的结构。
+        """
+        if not self.memory_manager:
+            return []
+
+        try:
+            memories = await self.memory_manager.search_memories(
+                query=user_input,
+                limit=5,
+                user_id=context.get('user_id'),
+                include_archived=False,
+                use_vector=True,
+            )
+            return [
+                {
+                    'id': memory.id,
+                    'content': memory.content,
+                    'importance': memory.importance,
+                    'confidence': memory.confidence,
+                    'quality_score': memory.quality_score,
+                }
+                for memory in memories
+            ]
+        except Exception as e:
+            logger.bind(
+                event="long_term_memory_retrieval_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).opt(exception=True).error(f"检索长期记忆失败: {e}")
+            return []
+
+    async def _execute_workflow_from_context(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        从上下文中提取工作流定义或工作流 ID，并执行对应工作流。
+        """
+        if not self.workflow_engine:
+            return None
+
+        workflow_definition = context.get('workflow_definition')
+        workflow_id = context.get('workflow_id')
+        workflow_name = context.get('workflow_name')
+
+        if workflow_definition is None and workflow_id is not None and self._db_session is not None:
+            from db.models import Workflow
+
+            workflow_record = self._db_session.query(Workflow).filter(Workflow.id == workflow_id).first()
+            if workflow_record is None:
+                return {
+                    'status': 'failed',
+                    'error': f'Workflow {workflow_id} not found',
+                }
+            workflow_definition = workflow_record.definition
+            workflow_name = workflow_record.name
+
+        if workflow_definition is None:
+            return None
+
+        return await self.workflow_engine.execute_definition(
+            workflow_definition,
+            workflow_id=workflow_id,
+            workflow_name=workflow_name,
+            user_id=context.get('user_id'),
+            input_context=context.get('workflow_input_context', {}),
+            format_hint=context.get('workflow_format'),
+        )
     
     async def _extract_and_store_experience(
         self,

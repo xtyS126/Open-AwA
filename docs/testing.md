@@ -33,13 +33,34 @@ python -m pytest
 - [test_conversation_recorder.py](file:///d:/代码/Open-AwA/backend/tests/test_conversation_recorder.py)
 - [test_extension_protocol.py](file:///d:/代码/Open-AwA/backend/tests/test_extension_protocol.py)
 - [test_hot_update.py](file:///d:/代码/Open-AwA/backend/tests/test_hot_update.py)
+- [test_memory_workflow_api.py](file:///d:/代码/Open-AwA/backend/tests/test_memory_workflow_api.py)
+- [test_memory_workflow_edge_cases.py](file:///d:/代码/Open-AwA/backend/tests/test_memory_workflow_edge_cases.py)
+- [test_memory_workflow_enhancements.py](file:///d:/代码/Open-AwA/backend/tests/test_memory_workflow_enhancements.py)
 - [test_plugin_cli.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_cli.py#L12-L202)
 - [test_plugin_lifecycle.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_lifecycle.py)
 - [test_plugin_observability.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_observability.py)
 - [test_plugin_performance_baseline.py](file:///d:/代码/Open-AwA/backend/tests/test_plugin_performance_baseline.py)
 - [test_pricing_manager.py](file:///d:/代码/Open-AwA/backend/tests/test_pricing_manager.py)
+- [test_vector_store_manager.py](file:///d:/代码/Open-AwA/backend/tests/test_vector_store_manager.py)
 
-### 2.3 适合文档变更后的最小检查
+### 2.3 记忆与工作流定向回归
+
+如果本次改动集中在长期记忆、向量检索、工作流引擎或对应 API，推荐优先运行：
+
+```powershell
+cd d:\代码\Open-AwA\backend
+python -m pytest tests/test_vector_store_manager.py tests/test_memory_workflow_enhancements.py tests/test_memory_workflow_api.py tests/test_memory_workflow_edge_cases.py -q
+```
+
+这组测试覆盖：
+
+- 向量写入、语义检索、用户隔离与归档过滤
+- 长期记忆混合检索、归档、质量报告与统计
+- 工作流引擎的工具步骤、技能步骤与条件分支
+- 工作流与工具注册器的异常分支、占位符解析与兼容逻辑
+- 记忆增强 API 与工作流 API 的创建、执行、状态查询
+
+### 2.4 适合文档变更后的最小检查
 
 如果这次只修改文档，一般至少可以确认：
 

@@ -1,0 +1,51 @@
+name: web_search
+version: 1.0.0
+description: 网页搜索技能，支持网页搜索与内容抓取
+author: Open-AwA Team
+category: built_in
+tags:
+  - web
+  - search
+  - built_in
+builtin_tool: web_search
+auto_executable: false
+steps: []
+
+permissions:
+  - web:search
+  - web:fetch
+
+tools:
+  search:
+    name: search
+    description: 搜索网页结果
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: 搜索关键词
+        max_results:
+          type: integer
+          description: 最大结果数
+      required:
+        - query
+
+  fetch_url:
+    name: fetch_url
+    description: 获取指定网页内容
+    parameters:
+      type: object
+      properties:
+        url:
+          type: string
+          description: 网页地址
+        max_length:
+          type: integer
+          description: 最大内容长度
+      required:
+        - url
+
+metadata:
+  created_at: 2026-04-18
+  last_updated: 2026-04-18

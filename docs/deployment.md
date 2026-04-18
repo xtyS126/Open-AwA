@@ -62,7 +62,8 @@ npm run dev -- --host 127.0.0.1 --port 5173
 2. 创建计费模块数据库表
 3. 初始化默认模型定价
 4. 清理旧版默认模型配置
-5. 挂载各业务路由
+5. 同步内置工具技能配置
+6. 挂载各业务路由
 
 参考代码：
 
@@ -87,6 +88,8 @@ npm run dev -- --host 127.0.0.1 --port 5173
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 | `SANDBOX_TIMEOUT` | `30` | 插件沙箱超时秒数 |
 | `SANDBOX_MEMORY_LIMIT` | `512m` | 插件沙箱内存配置值 |
+| `VECTOR_DB_PATH` | `backend/data/vector_db` | 长期记忆 ChromaDB 持久化目录 |
+| `MEMORY_EMBEDDING_PROVIDER` | 自动选择 | 长期记忆嵌入提供方，可选 `hash`、`openai`、`sentence-transformers` |
 | `OPENAI_API_KEY` | `None` | 模型供应商配置 |
 | `ANTHROPIC_API_KEY` | `None` | 模型供应商配置 |
 | `DEEPSEEK_API_KEY` | `None` | 模型供应商配置 |
@@ -99,12 +102,22 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `ALLOWED_ORIGINS`
 - 实际使用的模型 API Key
 
+如果启用了向量记忆检索，建议同时确认：
+
+- `VECTOR_DB_PATH` 指向可写目录
+- `MEMORY_EMBEDDING_PROVIDER` 与实际部署能力匹配
+- 若使用 `openai` 嵌入，`OPENAI_API_KEY` 已配置
+
 ## 5. 数据库相关说明
 
 当前代码默认使用 SQLite：
 
 - `openawa.db`
 - E2E 测试中使用 `openawa_e2e.db`
+
+长期记忆向量数据默认使用 ChromaDB 持久化到：
+
+- `backend/data/vector_db`
 
 数据库模型集中在：
 
@@ -116,11 +129,29 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - 技能表 `skills`
 - 插件表 `plugins`
 - 记忆表 `short_term_memory`、`long_term_memory`
+- 工作流表 `workflows`、`workflow_steps`、`workflow_executions`
 - 经验表 `experience_memory`
 - 行为日志表 `behavior_logs`
 - 提示词表 `prompt_configs`
 - 会话记录表 `conversation_records`
 - 若干计费相关表
+
+## 5.1 向量记忆部署注意事项
+
+长期记忆增强能力依赖 ChromaDB 持久化目录和嵌入提供方配置。部署时建议确认：
+
+- 应用进程对 `VECTOR_DB_PATH` 拥有读写权限
+- 如使用容器部署，应为向量目录单独挂载持久卷
+- 如使用 `sentence-transformers`，镜像或运行环境中需要预装对应依赖
+- 如使用 `openai` 嵌入，需评估外部 API 延迟和成本
+
+## 5.2 工作流与工具部署注意事项
+
+工作流能力会调用文件管理、终端执行、网页搜索等内置工具。部署时建议：
+
+- 明确文件工具的允许目录范围，避免暴露整个宿主机文件系统
+- 终端执行能力仅在受控环境中启用，并结合沙箱或容器隔离
+- 对工作流执行记录和工具调用日志进行保留，便于审计与回溯
 
 ## 6. CORS 与前后端联调
 
