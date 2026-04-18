@@ -111,6 +111,101 @@ class SkillEngine:
 
         logger.info("SkillEngine initialized")
 
+    async def _execute_built_in_skill(
+        self,
+        skill_name: str,
+        skill_config: Dict[str, Any],
+        inputs: Dict[str, Any],
+        context: Dict[str, Any],
+        execution_id: str,
+        metrics: PerformanceMetrics,
+    ) -> Dict[str, Any]:
+        """
+        执行内置工具型技能。
+        该分支复用统一的内置工具注册器，避免走通用步骤执行器。
+        """
+        tool_name = skill_config.get('builtin_tool')
+        action = inputs.get('action') or context.get('action') or skill_config.get('default_action')
+        params = inputs.get('params') if isinstance(inputs.get('params'), dict) else None
+        if params is None:
+            params = {
+                key: value
+                for key, value in inputs.items()
+                if key not in {'action', 'params', 'intent', 'entities', 'context'}
+            }
+
+        if not tool_name:
+            return {
+                'success': False,
+                'skill_name': skill_name,
+                'execution_id': execution_id,
+                'error': '内置技能缺少 builtin_tool 配置',
+                'outputs': {},
+                'steps': [],
+                'metrics': metrics.to_dict(),
+            }
+
+        if not action:
+            return {
+                'success': False,
+                'skill_name': skill_name,
+                'execution_id': execution_id,
+                'error': '执行内置技能时缺少 action 参数',
+                'outputs': {},
+                'steps': [],
+                'metrics': metrics.to_dict(),
+            }
+
+        from tools.registry import built_in_tool_registry
+
+        result = await built_in_tool_registry.execute_tool(
+            tool_name,
+            action=action,
+            params=params,
+            config=skill_config,
+        )
+        metrics.finalize()
+        metrics.step_count = 1
+
+        if result.get('success'):
+            self.registry.increment_usage(skill_name)
+            return {
+                'success': True,
+                'skill_name': skill_name,
+                'execution_id': execution_id,
+                'outputs': result,
+                'steps': [
+                    {
+                        'action': action,
+                        'tool': tool_name,
+                        'success': True,
+                        'error': None,
+                        'result': result,
+                    }
+                ],
+                'metrics': metrics.to_dict(),
+                'execution_time': metrics.duration,
+            }
+
+        return {
+            'success': False,
+            'skill_name': skill_name,
+            'execution_id': execution_id,
+            'error': result.get('error', '内置工具执行失败'),
+            'outputs': result,
+            'steps': [
+                {
+                    'action': action,
+                    'tool': tool_name,
+                    'success': False,
+                    'error': result.get('error'),
+                    'result': result,
+                }
+            ],
+            'metrics': metrics.to_dict(),
+            'execution_time': metrics.duration,
+        }
+
     def _generate_log_id(self) -> str:
         """
         处理generate、log、id相关逻辑，并为调用方返回对应结果。
@@ -297,6 +392,25 @@ class SkillEngine:
                 message=f'Skill validation passed: {skill_name}',
                 details={'execution_id': execution_id}
             )
+
+            if skill_config.get('builtin_tool'):
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='BUILTIN_TOOL_ROUTED',
+                    message=f'Routing skill to built-in tool: {skill_name}',
+                    details={
+                        'execution_id': execution_id,
+                        'builtin_tool': skill_config.get('builtin_tool')
+                    }
+                )
+                return await self._execute_built_in_skill(
+                    skill_name=skill_name,
+                    skill_config=skill_config,
+                    inputs=inputs,
+                    context=context,
+                    execution_id=execution_id,
+                    metrics=metrics,
+                )
 
             merged_inputs = {**inputs, **context}
 

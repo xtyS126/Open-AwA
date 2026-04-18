@@ -40,8 +40,10 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 - 聊天接口与 WebSocket 会话通信（支持多轮对话上下文，自动注入历史消息）
 - 用户注册、登录与 `/auth/me` 鉴权信息获取
 - 技能的增删改查、执行、配置读取、上传解析与经验提取
+- 内置文件管理、终端执行、网页搜索工具统一注册，并可作为内置技能复用
 - 插件的增删改查、启用/禁用（同步运行时加载/卸载）、执行、工具描述读取、上传解包、权限授权、日志查看、热更新与回滚、插件发现
-- 短期记忆、长期记忆与经验记忆管理
+- 短期记忆、工作内存、长期记忆与经验记忆管理，支持长期记忆向量检索、质量评估、归档与统计
+- 工作流定义解析、顺序执行、条件分支，以及工具、技能、插件步骤编排
 - 提示词配置管理
 - 行为日志与统计
 - 会话记录预览、导出、清理与采集开关
@@ -180,6 +182,13 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `SANDBOX_TIMEOUT=30`
 - `SANDBOX_MEMORY_LIMIT=512m`
 - `LOG_LEVEL=INFO`
+- `VECTOR_DB_PATH=backend/data/vector_db`
+
+长期记忆向量检索默认会读取以下配置或环境变量：
+
+- `VECTOR_DB_PATH`：ChromaDB 持久化目录
+- `MEMORY_EMBEDDING_PROVIDER`：嵌入提供方，可选 `hash`、`openai`、`sentence-transformers`
+- `OPENAI_API_KEY`：当嵌入提供方为 `openai` 时使用
 
 生产环境中应显式设置：
 
@@ -205,6 +214,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `/api/skills`
 - `/api/plugins`
 - `/api/memory`
+- `/api/workflows`
 - `/api/prompts`
 - `/api/behaviors`
 - `/api/experiences`
@@ -218,6 +228,18 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - [skills.py](file:///d:/代码/Open-AwA/backend/api/routes/skills.py#L17-L368)
 - [plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L15-L519)
 - [memory.py](file:///d:/代码/Open-AwA/backend/api/routes/memory.py#L12-L121)
+
+### 记忆与工作流扩展接口
+
+本轮新增或增强的后端接口包括：
+
+- `/api/memory/vector-search`：长期记忆混合检索与语义检索入口
+- `/api/memory/archive`：执行长期记忆归档
+- `/api/memory/quality`：查看长期记忆质量报告
+- `/api/memory/stats`：查看长期记忆统计与向量库状态
+- `/api/workflows`：工作流定义的创建、查询、更新、删除
+- `/api/workflows/execute`：显式执行工作流
+- `/api/workflows/executions/{execution_id}`：查询工作流执行状态
 - [experiences.py](file:///d:/代码/Open-AwA/backend/api/routes/experiences.py#L14-L260)
 - [conversation.py](file:///d:/代码/Open-AwA/backend/api/routes/conversation.py#L14-L139)
 - [billing.py](file:///d:/代码/Open-AwA/backend/billing/routers/billing.py#L14-L260)

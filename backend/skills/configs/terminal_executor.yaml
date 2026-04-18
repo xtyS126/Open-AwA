@@ -1,0 +1,49 @@
+name: terminal_executor
+version: 1.0.0
+description: 终端执行技能，提供受控命令执行与状态查询
+author: Open-AwA Team
+category: built_in
+tags:
+  - terminal
+  - shell
+  - built_in
+builtin_tool: terminal_executor
+auto_executable: false
+steps: []
+
+permissions:
+  - shell:run
+  - system:status
+
+allowed_directories:
+  - .
+
+tools:
+  run_command:
+    name: run_command
+    description: 执行受控终端命令
+    parameters:
+      type: object
+      properties:
+        command:
+          type: string
+          description: 需要执行的命令
+        working_dir:
+          type: string
+          description: 工作目录
+        timeout:
+          type: integer
+          description: 超时时间（秒）
+      required:
+        - command
+
+  get_status:
+    name: get_status
+    description: 获取终端执行环境状态
+    parameters:
+      type: object
+      properties: {}
+
+metadata:
+  created_at: 2026-04-18
+  last_updated: 2026-04-18

@@ -215,11 +215,69 @@ class LongTermMemory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[List[float]] = mapped_column(JSON)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(JSON, nullable=True)
     importance: Mapped[float] = mapped_column(Float, default=0.5)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     access_count: Mapped[int] = mapped_column(Integer, default=0)
     last_access: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    confidence: Mapped[float] = mapped_column(Float, default=0.5, index=True)
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0)
+    archive_status: Mapped[str] = mapped_column(String(50), default="active", index=True)
+    memory_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class Workflow(Base):
+    """
+    工作流定义模型，存储用户创建的自动化流程与原始定义。
+    """
+    __tablename__ = "workflows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    format: Mapped[str] = mapped_column(String(20), default="yaml")
+    definition: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class WorkflowStep(Base):
+    """
+    工作流步骤模型，按顺序持久化顶层步骤定义，便于调试与审计。
+    """
+    __tablename__ = "workflow_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[int] = mapped_column(Integer, index=True)
+    step_key: Mapped[str] = mapped_column(String(100), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    step_type: Mapped[str] = mapped_column(String(50), index=True)
+    step_order: Mapped[int] = mapped_column(Integer, default=0)
+    definition: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WorkflowExecution(Base):
+    """
+    工作流执行记录模型，保存输入、输出、状态与错误信息。
+    """
+    __tablename__ = "workflow_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[Optional[int]] = mapped_column(Integer, index=True, nullable=True)
+    workflow_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
+    input_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    output_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    execution_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class BehaviorLog(Base):
@@ -426,6 +484,32 @@ def _migrate_long_term_memory_user_id(use_engine=None):
             logger.info("Migrated long_term_memory: added user_id column for multi-tenant isolation")
 
 
+def _migrate_long_term_memory_enhancements(use_engine=None):
+    """
+    为长期记忆补齐质量评估、归档和元数据字段，支持增强记忆工作流。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "long_term_memory" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("long_term_memory")}
+    with target_engine.begin() as connection:
+        if "confidence" not in columns:
+            connection.execute(text("ALTER TABLE long_term_memory ADD COLUMN confidence FLOAT DEFAULT 0.5"))
+            connection.execute(text("UPDATE long_term_memory SET confidence = 0.5 WHERE confidence IS NULL"))
+        if "quality_score" not in columns:
+            connection.execute(text("ALTER TABLE long_term_memory ADD COLUMN quality_score FLOAT DEFAULT 0.0"))
+            connection.execute(text("UPDATE long_term_memory SET quality_score = 0.0 WHERE quality_score IS NULL"))
+        if "archive_status" not in columns:
+            connection.execute(text("ALTER TABLE long_term_memory ADD COLUMN archive_status VARCHAR(50) DEFAULT 'active'"))
+            connection.execute(text("UPDATE long_term_memory SET archive_status = 'active' WHERE archive_status IS NULL OR archive_status = ''"))
+        if "memory_metadata" not in columns:
+            connection.execute(text("ALTER TABLE long_term_memory ADD COLUMN memory_metadata TEXT DEFAULT '{}'"))
+            connection.execute(text("UPDATE long_term_memory SET memory_metadata = '{}' WHERE memory_metadata IS NULL OR memory_metadata = ''"))
+
+
 def _migrate_audit_log_columns(use_engine=None):
     """
     为 audit_logs 表补齐 details、ip_address、created_at 列，
@@ -548,6 +632,7 @@ def init_db(bind_engine=None):
     _migrate_conversation_record_metadata_column(use_engine=use_engine)
     _migrate_plugin_columns(use_engine=use_engine)
     _migrate_long_term_memory_user_id(use_engine=use_engine)
+    _migrate_long_term_memory_enhancements(use_engine=use_engine)
     _migrate_audit_log_columns(use_engine=use_engine)
     _migrate_skill_json_columns(use_engine=use_engine)
 

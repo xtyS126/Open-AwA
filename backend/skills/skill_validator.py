@@ -57,6 +57,7 @@ class SkillValidator:
 
     VALID_PERMISSIONS = [
         'file:read', 'file:write', 'file:delete', 'file:list',
+        'directory:list', 'directory:create', 'directory:delete',
         'network:read', 'network:write', 'network:http', 'network:ping', 'network:dns',
         'process:read', 'process:write', 'process:kill', 'process:list',
         'memory:read', 'memory:write', 'memory:delete',

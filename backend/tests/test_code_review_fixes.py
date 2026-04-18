@@ -37,6 +37,7 @@ class TestMemoryManagerAsyncFix:
         chain = MagicMock()
         chain.filter.return_value = chain
         chain.order_by.return_value = chain
+        chain.offset.return_value = chain
         chain.limit.return_value = chain
         chain.all.return_value = []
         chain.first.return_value = None

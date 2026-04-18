@@ -2,49 +2,14 @@
 Agent工具管理路由 - 提供文件操作、终端执行、网页搜索等工具的统一API入口。
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from loguru import logger
+from typing import Optional, Dict, Any
 
-from skills.built_in.file_manager import FileManagerSkill
-from skills.built_in.terminal_executor import TerminalExecutorSkill
-from skills.built_in.web_search import WebSearchSkill
+from tools.registry import built_in_tool_registry
 
 
 router = APIRouter(prefix="/api/tools", tags=["agent-tools"])
-
-# 全局工具实例
-_file_manager: Optional[FileManagerSkill] = None
-_terminal_executor: Optional[TerminalExecutorSkill] = None
-_web_search: Optional[WebSearchSkill] = None
-
-
-async def _get_file_manager() -> FileManagerSkill:
-    """获取或初始化文件管理工具。"""
-    global _file_manager
-    if _file_manager is None or not _file_manager.is_initialized():
-        _file_manager = FileManagerSkill()
-        await _file_manager.initialize()
-    return _file_manager
-
-
-async def _get_terminal_executor() -> TerminalExecutorSkill:
-    """获取或初始化终端执行工具。"""
-    global _terminal_executor
-    if _terminal_executor is None or not _terminal_executor.is_initialized():
-        _terminal_executor = TerminalExecutorSkill()
-        await _terminal_executor.initialize()
-    return _terminal_executor
-
-
-async def _get_web_search() -> WebSearchSkill:
-    """获取或初始化网页搜索工具。"""
-    global _web_search
-    if _web_search is None or not _web_search.is_initialized():
-        _web_search = WebSearchSkill()
-        await _web_search.initialize()
-    return _web_search
 
 
 # --- 请求/响应模型 ---
@@ -102,36 +67,7 @@ class ToolResponse(BaseModel):
 @router.get("/list")
 async def list_tools():
     """获取所有可用的Agent工具列表。"""
-    fm = await _get_file_manager()
-    te = await _get_terminal_executor()
-    ws = await _get_web_search()
-
-    tools = {
-        "file_manager": {
-            "name": "file_manager",
-            "display_name": "文件管理器",
-            "description": "文件检索、查看、创建、编辑和删除",
-            "version": fm.version,
-            "status": "active",
-            "tools": fm.get_tools()
-        },
-        "terminal_executor": {
-            "name": "terminal_executor",
-            "display_name": "终端执行器",
-            "description": "在终端运行命令并获取状态和结果",
-            "version": te.version,
-            "status": "active",
-            "tools": te.get_tools()
-        },
-        "web_search": {
-            "name": "web_search",
-            "display_name": "网页搜索",
-            "description": "搜索和用户任务相关的网页",
-            "version": ws.version,
-            "status": "active",
-            "tools": ws.get_tools()
-        }
-    }
+    tools = await built_in_tool_registry.list_tools()
     return {"tools": tools, "count": len(tools)}
 
 
@@ -140,8 +76,11 @@ async def list_tools():
 @router.post("/file/read", response_model=ToolResponse)
 async def file_read(req: FileReadRequest):
     """读取文件内容。"""
-    fm = await _get_file_manager()
-    result = await fm.execute(action='read_file', path=req.path)
+    result = await built_in_tool_registry.execute_tool(
+        'file_manager',
+        action='read_file',
+        params={'path': req.path}
+    )
     return ToolResponse(
         success=result.get('success', False),
         data=result if result.get('success') else None,
@@ -152,8 +91,11 @@ async def file_read(req: FileReadRequest):
 @router.post("/file/write", response_model=ToolResponse)
 async def file_write(req: FileWriteRequest):
     """写入文件内容。"""
-    fm = await _get_file_manager()
-    result = await fm.execute(action='write_file', path=req.path, content=req.content)
+    result = await built_in_tool_registry.execute_tool(
+        'file_manager',
+        action='write_file',
+        params={'path': req.path, 'content': req.content}
+    )
     return ToolResponse(
         success=result.get('success', False),
         data=result if result.get('success') else None,
@@ -164,8 +106,11 @@ async def file_write(req: FileWriteRequest):
 @router.post("/file/list", response_model=ToolResponse)
 async def file_list(req: FileListRequest):
     """列出目录文件。"""
-    fm = await _get_file_manager()
-    result = await fm.execute(action='list_files', path=req.path, pattern=req.pattern)
+    result = await built_in_tool_registry.execute_tool(
+        'file_manager',
+        action='list_files',
+        params={'path': req.path, 'pattern': req.pattern}
+    )
     return ToolResponse(
         success=result.get('success', False),
         data=result if result.get('success') else None,
@@ -176,8 +121,11 @@ async def file_list(req: FileListRequest):
 @router.post("/file/delete", response_model=ToolResponse)
 async def file_delete(req: FileDeleteRequest):
     """删除文件或目录。"""
-    fm = await _get_file_manager()
-    result = await fm.execute(action='delete_file', path=req.path)
+    result = await built_in_tool_registry.execute_tool(
+        'file_manager',
+        action='delete_file',
+        params={'path': req.path}
+    )
     return ToolResponse(
         success=result.get('success', False),
         data=result if result.get('success') else None,
@@ -188,8 +136,11 @@ async def file_delete(req: FileDeleteRequest):
 @router.post("/file/exists", response_model=ToolResponse)
 async def file_exists(req: FileReadRequest):
     """检查文件是否存在。"""
-    fm = await _get_file_manager()
-    result = await fm.execute(action='file_exists', path=req.path)
+    result = await built_in_tool_registry.execute_tool(
+        'file_manager',
+        action='file_exists',
+        params={'path': req.path}
+    )
     return ToolResponse(
         success=result.get('success', False),
         data=result if result.get('success') else None,
@@ -202,12 +153,14 @@ async def file_exists(req: FileReadRequest):
 @router.post("/terminal/run", response_model=ToolResponse)
 async def terminal_run(req: CommandRequest):
     """执行终端命令。"""
-    te = await _get_terminal_executor()
-    result = await te.execute(
+    result = await built_in_tool_registry.execute_tool(
+        'terminal_executor',
         action='run_command',
-        command=req.command,
-        working_dir=req.working_dir,
-        timeout=req.timeout
+        params={
+            'command': req.command,
+            'working_dir': req.working_dir,
+            'timeout': req.timeout,
+        }
     )
     return ToolResponse(
         success=result.get('success', False),
@@ -219,8 +172,11 @@ async def terminal_run(req: CommandRequest):
 @router.get("/terminal/status", response_model=ToolResponse)
 async def terminal_status():
     """获取系统状态。"""
-    te = await _get_terminal_executor()
-    result = await te.execute(action='get_status')
+    result = await built_in_tool_registry.execute_tool(
+        'terminal_executor',
+        action='get_status',
+        params={}
+    )
     return ToolResponse(
         success=result.get('success', False),
         data=result if result.get('success') else None,
@@ -233,11 +189,13 @@ async def terminal_status():
 @router.post("/search/web", response_model=ToolResponse)
 async def web_search(req: SearchRequest):
     """搜索网页。"""
-    ws = await _get_web_search()
-    result = await ws.execute(
+    result = await built_in_tool_registry.execute_tool(
+        'web_search',
         action='search',
-        query=req.query,
-        max_results=req.max_results
+        params={
+            'query': req.query,
+            'max_results': req.max_results,
+        }
     )
     return ToolResponse(
         success=result.get('success', False),
@@ -249,11 +207,13 @@ async def web_search(req: SearchRequest):
 @router.post("/search/fetch", response_model=ToolResponse)
 async def fetch_url(req: FetchUrlRequest):
     """获取URL内容。"""
-    ws = await _get_web_search()
-    result = await ws.execute(
+    result = await built_in_tool_registry.execute_tool(
+        'web_search',
         action='fetch_url',
-        url=req.url,
-        max_length=req.max_length
+        params={
+            'url': req.url,
+            'max_length': req.max_length,
+        }
     )
     return ToolResponse(
         success=result.get('success', False),

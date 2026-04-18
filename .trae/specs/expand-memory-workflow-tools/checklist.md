@@ -1,0 +1,27 @@
+- [ ] ChromaDB向量数据库集成完成，支持向量添加/搜索/删除操作
+- [ ] 嵌入模型配置正确，支持OpenAI和本地模型两种模式
+- [ ] 长期记忆保存时自动向量化并存储到ChromaDB
+- [ ] 向量语义搜索接口返回结果准确，支持混合检索
+- [ ] 工作内存层实现LRU淘汰策略，容量限制生效
+- [ ] 记忆自动归档策略按时间和重要性正确执行
+- [ ] 置信度衰减算法正确，符合0.95^周数公式
+- [ ] 记忆质量评分系统综合多维度指标
+- [ ] /api/memory/vector-search 接口正常工作
+- [ ] /api/memory/archive 接口正常工作
+- [ ] /api/memory/quality 接口正常工作
+- [ ] /api/memory/stats 接口返回增强统计数据
+- [ ] 工作流数据模型正确，支持YAML/JSON解析
+- [ ] 工作流执行引擎支持顺序执行、条件分支、异常处理
+- [ ] 工作流与Skill/Plugin集成正常
+- [ ] FileManager工具实现read/write/edit/list功能
+- [ ] TerminalExecutor工具实现沙箱命令执行
+- [ ] WebSearch工具实现网页搜索功能
+- [ ] 内置工具注册到SkillRegistry并可调用
+- [ ] AIAgent.process集成向量检索，上下文包含相关记忆
+- [ ] AIAgent支持工作流执行
+- [ ] 所有新增模块单元测试覆盖率>=95%
+- [ ] API集成测试通过
+- [ ] 全量pytest运行通过，无失败用例
+- [ ] API文档更新完成，包含新增接口说明
+- [ ] 部署手册更新完成，包含ChromaDB配置
+- [ ] 用户操作指南更新完成

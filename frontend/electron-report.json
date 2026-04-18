@@ -1,0 +1,143 @@
+{
+  "config": {
+    "configFile": "D:\\代码\\Open-AwA\\frontend\\playwright.config.ts",
+    "rootDir": "D:/代码/Open-AwA/frontend/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "D:/代码/Open-AwA/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "D:/代码/Open-AwA/frontend/tests/e2e",
+        "testIgnore": [
+          "/.*electron-smoke\\.spec\\.ts/"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "D:/代码/Open-AwA/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "D:/代码/Open-AwA/frontend/tests/e2e",
+        "testIgnore": [
+          "/.*electron-smoke\\.spec\\.ts/"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "D:/代码/Open-AwA/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "electron",
+        "name": "electron",
+        "testDir": "D:/代码/Open-AwA/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/.*electron-smoke\\.spec\\.ts/"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 10,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "electron-smoke.spec.ts",
+      "file": "electron-smoke.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "electron 冒烟：可启动并打开插件页",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "electron",
+              "projectName": "electron",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 862,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-04-18T10:52:33.525Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "341fff21a8c3f8be7180-adb155b36a59f6241919",
+          "file": "electron-smoke.spec.ts",
+          "line": 11,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-04-18T10:52:17.585Z",
+    "duration": 17862.478000000003,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

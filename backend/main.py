@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from loguru import logger
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows
 from api.routes.marketplace import router as marketplace_router
 from api.routes.security import router as security_router
 from api.routes.weixin import router as weixin_router
@@ -44,6 +44,7 @@ from core.model_service import (
 from core.litellm_adapter import is_litellm_available
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
+from tools.registry import built_in_tool_registry
 
 
 init_logging(
@@ -129,6 +130,12 @@ async def lifespan(app: FastAPI):
         try:
             sync_stats = sync_local_users_to_db(db)
             logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
+        finally:
+            db.close()
+        db = SessionLocal()
+        try:
+            seeded_skills = built_in_tool_registry.seed_built_in_skills(db)
+            logger.bind(event="built_in_skills_seeded", module="main", count=seeded_skills).info("built-in tool skills synchronized")
         finally:
             db.close()
     # 初始化插件市场内置插件
@@ -361,6 +368,7 @@ app.include_router(chat.router, prefix=settings.API_V1_STR)
 app.include_router(skills.router, prefix=settings.API_V1_STR)
 app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
+app.include_router(workflows.router, prefix=settings.API_V1_STR)
 app.include_router(prompts.router, prefix=settings.API_V1_STR)
 app.include_router(behavior.router, prefix=settings.API_V1_STR)
 app.include_router(experiences.router, prefix=settings.API_V1_STR)

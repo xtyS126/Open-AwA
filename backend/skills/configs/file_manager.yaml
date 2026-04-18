@@ -2,6 +2,14 @@ name: file_manager
 version: 1.0.0
 description: 文件管理技能，提供文件读取、写入、列表等操作，包含权限控制
 author: Open-AwA Team
+category: built_in
+tags:
+  - file
+  - tool
+  - built_in
+builtin_tool: file_manager
+auto_executable: false
+steps: []
 
 permissions:
   - file:read
@@ -10,8 +18,7 @@ permissions:
   - directory:create
 
 allowed_directories:
-  - /workspace
-  - ./projects
+  - .
 
 tools:
   read_file:

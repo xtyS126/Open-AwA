@@ -3,6 +3,7 @@
 配置项通常会在多个子模块中生效，因此理解其字段含义非常重要。
 """
 
+import errno
 import os
 import re
 import sys
@@ -244,6 +245,52 @@ def _console_log_filter(record: Dict[str, Any]) -> bool:
     return event_name == "http_request_completed"
 
 
+def _is_retryable_file_sink_error(exc: Exception) -> bool:
+    """
+    判断日志文件 sink 初始化失败是否属于可降级处理的占用或权限错误。
+    """
+    if isinstance(exc, PermissionError):
+        return True
+    if not isinstance(exc, OSError):
+        return False
+    error_number = getattr(exc, "errno", None)
+    win_error = getattr(exc, "winerror", None)
+    return error_number in {errno.EACCES, errno.EPERM} or win_error in {32, 33}
+
+
+def _build_fallback_log_path(path: str) -> str:
+    """
+    为被占用的日志文件生成带当前进程号的备用路径，避免 Windows 下同名文件冲突。
+    """
+    directory, filename = os.path.split(path)
+    stem, ext = os.path.splitext(filename)
+    return os.path.join(directory, f"{stem}.pid-{os.getpid()}{ext}")
+
+
+def _add_file_sink_with_fallback(path: str, sink_name: str, **kwargs: Any) -> str:
+    """
+    添加文件日志 sink；若主文件因占用或权限问题失败，则自动切换到 PID 备用文件。
+    """
+    try:
+        logger.add(path, **kwargs)
+        return path
+    except Exception as exc:
+        if not _is_retryable_file_sink_error(exc):
+            raise
+
+        fallback_path = _build_fallback_log_path(path)
+        logger.add(fallback_path, **kwargs)
+        logger.bind(
+            event="logging_file_fallback",
+            module="config",
+            sink_name=sink_name,
+            original_path=path,
+            fallback_path=fallback_path,
+            error_type=type(exc).__name__,
+        ).warning(f"日志文件不可写，已切换到备用文件: {fallback_path}")
+        return fallback_path
+
+
 def init_logging(
     log_level: str = "INFO",
     service_name: str = "openawa-backend",
@@ -285,8 +332,9 @@ def init_logging(
     os.makedirs(log_dir, exist_ok=True)
 
     # 全量日志文件：所有级别
-    logger.add(
+    application_log_file = _add_file_sink_with_fallback(
         os.path.join(log_dir, "openawa_{time:YYYY-MM-DD}.log"),
+        sink_name="application",
         level=level_str,
         serialize=True,
         rotation=log_file_rotation,
@@ -299,8 +347,9 @@ def init_logging(
     )
 
     # 错误日志独立文件：仅 WARNING 及以上，方便快速定位问题
-    logger.add(
+    error_log_file = _add_file_sink_with_fallback(
         os.path.join(log_dir, "openawa_error_{time:YYYY-MM-DD}.log"),
+        sink_name="error",
         level="WARNING",
         serialize=True,
         rotation=log_file_rotation,
@@ -317,6 +366,8 @@ def init_logging(
         module="config",
         log_level=level_str,
         log_dir=log_dir,
+        application_log_file=application_log_file,
+        error_log_file=error_log_file,
         file_rotation=log_file_rotation,
         file_retention=log_file_retention,
     ).info(

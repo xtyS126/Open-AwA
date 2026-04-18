@@ -185,6 +185,8 @@ class LongTermMemoryCreate(MemoryBase):
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     importance: Optional[float] = 0.5
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    source_type: Optional[str] = Field(default="user_input", description="记忆来源类型")
 
 
 class ShortTermMemoryResponse(MemoryBase):
@@ -215,12 +217,136 @@ class LongTermMemoryResponse(MemoryBase):
     created_at: datetime
     access_count: int
     last_access: datetime
+    confidence: float
+    quality_score: float
+    archive_status: str
+    memory_metadata: Dict[str, Any]
     
     class Config:
         """
         封装与Config相关的核心逻辑与运行状态。
         该类通常是当前文件中组织数据与调度行为的主要封装单元。
         """
+        from_attributes = True
+
+
+class MemoryVectorSearchRequest(BaseModel):
+    """
+    向量检索请求模型。
+    """
+    query: str = Field(..., description="搜索文本")
+    limit: int = Field(default=10, ge=1, le=50)
+    include_archived: bool = Field(default=False)
+    keyword_weight: float = Field(default=0.35, ge=0.0, le=1.0)
+    vector_weight: float = Field(default=0.65, ge=0.0, le=1.0)
+
+
+class MemoryArchiveRequest(BaseModel):
+    """
+    记忆归档请求模型。
+    """
+    older_than_days: int = Field(default=30, ge=1, le=3650)
+    importance_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    include_low_quality: bool = Field(default=True)
+
+
+class MemoryQualityResponse(BaseModel):
+    """
+    记忆质量评估响应模型。
+    """
+    memory_id: int
+    confidence: float
+    quality_score: float
+    archive_status: str
+    importance: float
+    access_count: int
+
+
+class MemoryStatsResponse(BaseModel):
+    """
+    记忆统计响应模型。
+    """
+    total_memories: int
+    active_memories: int
+    archived_memories: int
+    average_confidence: float
+    average_quality_score: float
+    total_access_count: int
+    working_memory_count: int
+    vector_store_count: int
+    embedding_provider: str
+
+
+class WorkflowBase(BaseModel):
+    """
+    工作流基础模型。
+    """
+    name: str
+    description: Optional[str] = ""
+    format: str = "yaml"
+
+
+class WorkflowCreate(WorkflowBase):
+    """
+    工作流创建请求模型。
+    """
+    definition: Dict[str, Any] | str
+    enabled: bool = True
+
+
+class WorkflowUpdate(BaseModel):
+    """
+    工作流更新请求模型。
+    """
+    name: Optional[str] = None
+    description: Optional[str] = None
+    format: Optional[str] = None
+    definition: Optional[Dict[str, Any] | str] = None
+    enabled: Optional[bool] = None
+
+
+class WorkflowResponse(WorkflowBase):
+    """
+    工作流响应模型。
+    """
+    id: int
+    definition: Dict[str, Any]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkflowExecutionRequest(BaseModel):
+    """
+    工作流执行请求模型。
+    """
+    workflow_id: Optional[int] = None
+    workflow_name: Optional[str] = None
+    definition: Optional[Dict[str, Any] | str] = None
+    format: Optional[str] = "yaml"
+    input_context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowExecutionResponse(BaseModel):
+    """
+    工作流执行记录响应模型。
+    """
+    id: int
+    workflow_id: Optional[int]
+    workflow_name: Optional[str]
+    user_id: Optional[str]
+    status: str
+    input_payload: Dict[str, Any]
+    output_payload: Dict[str, Any]
+    error_message: Optional[str] = None
+    execution_metadata: Dict[str, Any]
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
         from_attributes = True
 
 
