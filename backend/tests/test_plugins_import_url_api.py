@@ -146,3 +146,31 @@ def test_import_plugin_from_url_returns_400_when_manager_rejects(monkeypatch):
 
     assert response.status_code == 400
     assert "域名不在白名单中" in response.text
+
+
+def test_install_plugin_accepts_object_config_payload():
+    """安装插件接口应接受对象类型配置并成功入库。"""
+
+    with _test_client() as client:
+        response = client.post(
+            "/api/plugins",
+            json={
+                "name": "local_demo",
+                "version": "0.1.0",
+                "config": {},
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "local_demo"
+    assert data["version"] == "0.1.0"
+
+    db = TestingSessionLocal()
+    try:
+        plugin = db.query(Plugin).filter(Plugin.name == "local_demo").first()
+        assert plugin is not None
+        assert isinstance(plugin.config, dict)
+        assert plugin.config == {}
+    finally:
+        db.close()
