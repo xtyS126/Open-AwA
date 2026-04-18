@@ -563,6 +563,72 @@ export const promptsAPI = {
   delete: (id: string) => api.delete(`/prompts/${id}`),
 }
 
+export interface ScheduledTask {
+  id: number
+  user_id: string
+  title: string
+  prompt: string
+  scheduled_at: string
+  status: string
+  provider: string | null
+  model: string | null
+  last_error_message: string | null
+  task_metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+  cancelled_at: string | null
+}
+
+export interface ScheduledTaskExecution {
+  id: number
+  task_id: number
+  user_id: string
+  task_title: string
+  prompt: string
+  scheduled_for: string
+  status: string
+  response: string | null
+  error_message: string | null
+  provider: string | null
+  model: string | null
+  request_id: string | null
+  execution_metadata: Record<string, unknown>
+  started_at: string
+  completed_at: string | null
+}
+
+export interface ScheduledTaskCreatePayload {
+  title: string
+  prompt: string
+  scheduled_at: string
+  provider?: string | null
+  model?: string | null
+}
+
+export interface ScheduledTaskUpdatePayload {
+  title?: string
+  prompt?: string
+  scheduled_at?: string
+  provider?: string | null
+  model?: string | null
+}
+
+export const scheduledTasksAPI = {
+  getAll: (params?: { status?: string; limit?: number }) =>
+    api.get<ScheduledTask[]>('/scheduled-tasks', { params }),
+  getOne: (id: number) =>
+    api.get<ScheduledTask>(`/scheduled-tasks/${id}`),
+  create: (payload: ScheduledTaskCreatePayload) =>
+    api.post<ScheduledTask>('/scheduled-tasks', payload),
+  update: (id: number, payload: ScheduledTaskUpdatePayload) =>
+    api.put<ScheduledTask>(`/scheduled-tasks/${id}`, payload),
+  cancel: (id: number) =>
+    api.delete<{ message: string }>(`/scheduled-tasks/${id}`),
+  getExecutions: (params?: { task_id?: number; limit?: number }) =>
+    api.get<ScheduledTaskExecution[]>('/scheduled-tasks/executions', { params }),
+}
+
 export interface ConversationRecordItem {
   id: number
   session_id: string

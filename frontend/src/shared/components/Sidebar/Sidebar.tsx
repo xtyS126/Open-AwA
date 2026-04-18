@@ -6,7 +6,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication'
   children?: Array<{
     path: string
     label: string
@@ -34,6 +34,7 @@ const menuGroups: MenuGroup[] = [
     title: '代理',
     items: [
       { path: '/skills', label: '技能', iconType: 'skills' },
+      { path: '/scheduled-tasks', label: '定时任务', iconType: 'scheduledTasks' },
       {
         path: '/plugins',
         label: '插件',
@@ -81,6 +82,13 @@ const icons = {
   skills: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  ),
+  scheduledTasks: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v4l3 2" />
+      <path d="M9 2h6" />
     </svg>
   ),
   plugins: (

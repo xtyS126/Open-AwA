@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from loguru import logger
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
 from api.routes.marketplace import router as marketplace_router
 from api.routes.security import router as security_router
 from api.routes.weixin import router as weixin_router
@@ -42,6 +42,7 @@ from core.model_service import (
     negotiate_version_status,
 )
 from core.litellm_adapter import is_litellm_available
+from core.scheduled_task_manager import scheduled_task_manager
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
 from tools.registry import built_in_tool_registry
@@ -164,7 +165,10 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
+    await scheduled_task_manager.start()
+
     yield
+    await scheduled_task_manager.stop()
     await close_shared_client()
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
 
@@ -369,6 +373,7 @@ app.include_router(skills.router, prefix=settings.API_V1_STR)
 app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
 app.include_router(workflows.router, prefix=settings.API_V1_STR)
+app.include_router(scheduled_tasks.router, prefix=settings.API_V1_STR)
 app.include_router(prompts.router, prefix=settings.API_V1_STR)
 app.include_router(behavior.router, prefix=settings.API_V1_STR)
 app.include_router(experiences.router, prefix=settings.API_V1_STR)

@@ -17,6 +17,7 @@ const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
 const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
 const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
 const SkillsPage = React.lazy(() => import('@/features/skills/SkillsPage'))
+const ScheduledTasksPage = React.lazy(() => import('@/features/scheduledTasks/ScheduledTasksPage'))
 const PluginsPage = React.lazy(() => import('@/features/plugins/PluginsPage'))
 const PluginConfigPage = React.lazy(() => import('@/features/plugins/PluginConfigPage'))
 const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
@@ -134,6 +135,7 @@ function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/skills" element={<SkillsPage />} />
+                <Route path="/scheduled-tasks" element={<ScheduledTasksPage />} />
                 <Route path="/plugins">
                   <Route index element={<Navigate to="manage" replace />} />
                   <Route path="manage" element={<PluginsPage />} />
