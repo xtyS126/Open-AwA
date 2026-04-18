@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Type
 from loguru import logger
 
 from .base_plugin import BasePlugin
+from .plugin_loader import PluginLoader
 
 
 class ValidationResult:
@@ -68,7 +69,7 @@ class PluginValidator:
                 self.logger.error(f"Plugin class must be a type, got {type(plugin_class)}")
                 return False
 
-            if not issubclass(plugin_class, BasePlugin):
+            if not PluginLoader._is_supported_plugin_class(plugin_class):
                 self.logger.error(f"Plugin class {plugin_class.__name__} does not inherit from BasePlugin")
                 return False
 
