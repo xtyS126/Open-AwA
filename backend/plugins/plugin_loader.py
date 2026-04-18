@@ -9,6 +9,8 @@ from loguru import logger
 import importlib
 import os
 import inspect
+import sys
+from pathlib import Path
 
 from .base_plugin import BasePlugin
 
@@ -31,6 +33,41 @@ class PluginLoader:
         self.loaded_plugins: Dict[str, Type[BasePlugin]] = {}
         self.loading_states: Dict[str, str] = {}
 
+    @staticmethod
+    def _ensure_project_root_on_sys_path() -> None:
+        """
+        确保仓库根目录在导入路径中，避免从 backend 目录启动时插件里的 `backend.*` 导入失败。
+        """
+        project_root = Path(__file__).resolve().parents[2]
+        project_root_str = str(project_root)
+        normalized_paths = {os.path.abspath(item) for item in sys.path if item}
+        if os.path.abspath(project_root_str) not in normalized_paths:
+            sys.path.insert(0, project_root_str)
+
+    @classmethod
+    def _get_base_plugin_types(cls) -> tuple[type, ...]:
+        """
+        同时兼容 `plugins.base_plugin` 与 `backend.plugins.base_plugin` 两种导入入口。
+        """
+        cls._ensure_project_root_on_sys_path()
+        base_plugin_types: list[type] = [BasePlugin]
+        try:
+            backend_base_plugin = importlib.import_module("backend.plugins.base_plugin").BasePlugin
+        except Exception:
+            backend_base_plugin = None
+
+        if backend_base_plugin is not None and backend_base_plugin not in base_plugin_types:
+            base_plugin_types.append(backend_base_plugin)
+        return tuple(base_plugin_types)
+
+    @classmethod
+    def _is_supported_plugin_class(cls, obj: type) -> bool:
+        """
+        判断类是否继承自受支持的插件基类，并排除基类本身。
+        """
+        base_plugin_types = cls._get_base_plugin_types()
+        return any(issubclass(obj, base_type) for base_type in base_plugin_types) and obj not in base_plugin_types
+
     def load_module(self, plugin_path: str) -> Optional[Type[BasePlugin]]:
         """
         加载module相关资源或运行时对象。
@@ -46,6 +83,7 @@ class PluginLoader:
         logger.info(f"Loading plugin module: {plugin_path}")
 
         try:
+            self._ensure_project_root_on_sys_path()
             spec = importlib_util.spec_from_file_location(plugin_name, plugin_path)
             if spec is None or spec.loader is None:
                 logger.error(f"Failed to create module spec for: {plugin_path}")
@@ -57,7 +95,7 @@ class PluginLoader:
 
             plugin_classes = []
             for _, obj in inspect.getmembers(module, inspect.isclass):
-                if issubclass(obj, BasePlugin) and obj is not BasePlugin:
+                if self._is_supported_plugin_class(obj):
                     plugin_classes.append(obj)
 
             if not plugin_classes:
@@ -84,7 +122,7 @@ class PluginLoader:
         处理instantiate、plugin相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        if not issubclass(plugin_class, BasePlugin):
+        if not self._is_supported_plugin_class(plugin_class):
             logger.error(f"Provided class is not a subclass of BasePlugin: {plugin_class}")
             return None
 

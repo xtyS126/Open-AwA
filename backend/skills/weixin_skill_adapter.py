@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -27,6 +28,22 @@ SESSION_EXPIRED_ERRCODE = -14
 SESSION_PAUSE_DURATION_SECONDS = 60 * 60
 
 _SESSION_PAUSE_UNTIL: Dict[str, float] = {}
+_STATE_FILE_LOCKS: Dict[str, threading.RLock] = {}
+_STATE_FILE_LOCKS_GUARD = threading.Lock()
+_STATE_FILE_WRITE_RETRY_DELAYS = (0.05, 0.1, 0.2)
+
+
+def _get_state_file_lock(file_path: str) -> threading.RLock:
+    """
+    为每个状态文件提供进程内共享锁，避免 Windows 下同一路径并发读写触发权限错误。
+    """
+    normalized_path = os.path.abspath(file_path)
+    with _STATE_FILE_LOCKS_GUARD:
+        lock = _STATE_FILE_LOCKS.get(normalized_path)
+        if lock is None:
+            lock = threading.RLock()
+            _STATE_FILE_LOCKS[normalized_path] = lock
+        return lock
 
 
 def save_binding(db, user_id: str, config: "WeixinRuntimeConfig") -> None:
@@ -896,15 +913,17 @@ class WeixinSkillAdapter:
         处理read、json、file相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        try:
-            with open(file_path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            if isinstance(data, dict):
-                return data
-        except FileNotFoundError:
-            return {}
-        except Exception as exc:
-            logger.warning(f"Failed to read weixin state file {file_path}: {exc}")
+        file_lock = _get_state_file_lock(file_path)
+        with file_lock:
+            try:
+                with open(file_path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, dict):
+                    return data
+            except FileNotFoundError:
+                return {}
+            except Exception as exc:
+                logger.warning(f"Failed to read weixin state file {file_path}: {exc}")
         return {}
 
     @staticmethod
@@ -914,18 +933,47 @@ class WeixinSkillAdapter:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False)
+        payload = json.dumps(data, ensure_ascii=False)
+        file_lock = _get_state_file_lock(file_path)
+        with file_lock:
+            last_error: Optional[PermissionError] = None
+            for delay_seconds in (0.0, *_STATE_FILE_WRITE_RETRY_DELAYS):
+                if delay_seconds > 0:
+                    time.sleep(delay_seconds)
+
+                temp_file_path = f"{file_path}.{uuid.uuid4().hex}.tmp"
+                try:
+                    with open(temp_file_path, "w", encoding="utf-8") as fh:
+                        fh.write(payload)
+                    os.replace(temp_file_path, file_path)
+                    return
+                except PermissionError as exc:
+                    last_error = exc
+                    try:
+                        os.remove(temp_file_path)
+                    except FileNotFoundError:
+                        pass
+                except Exception:
+                    try:
+                        os.remove(temp_file_path)
+                    except FileNotFoundError:
+                        pass
+                    raise
+
+            if last_error is not None:
+                raise last_error
 
     @staticmethod
     def _delete_file_if_exists(file_path: str) -> None:
         """
         删除状态文件时忽略文件不存在场景，避免清理流程因为历史状态缺失而失败。
         """
-        try:
-            os.remove(file_path)
-        except FileNotFoundError:
-            return
+        file_lock = _get_state_file_lock(file_path)
+        with file_lock:
+            try:
+                os.remove(file_path)
+            except FileNotFoundError:
+                return
 
     @staticmethod
     def _pick_value(primary: Dict[str, Any], fallback: Dict[str, Any], *keys: str) -> Any:

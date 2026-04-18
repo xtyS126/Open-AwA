@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from plugins import plugin_manager as plugin_manager_module
+from plugins.plugin_loader import PluginLoader
 from plugins.plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
 from plugins.plugin_manager import PluginManager
 
@@ -146,6 +147,75 @@ def test_plugin_manager_state_machine_and_idempotent_enable(plugin_workspace: Pa
 
     assert manager.unload_plugin("test_plugin") is True
     assert manager.state_machine.get_state("test_plugin") == PluginState.UNLOADED
+
+
+def test_plugin_loader_supports_backend_package_imports_when_started_from_backend_dir(monkeypatch):
+    """
+    验证从 backend 目录启动时，仓库内插件仍然可以解析 `backend.*` 导入。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    backend_root = repo_root / "backend"
+    plugin_path = repo_root / "plugins" / "hello-world" / "src" / "index.py"
+
+    filtered_sys_path = []
+    for item in sys.path:
+        if not item:
+            continue
+        try:
+            resolved = Path(item).resolve()
+        except OSError:
+            filtered_sys_path.append(item)
+            continue
+        if resolved == repo_root:
+            continue
+        filtered_sys_path.append(item)
+
+    if str(backend_root) not in filtered_sys_path:
+        filtered_sys_path.insert(0, str(backend_root))
+
+    monkeypatch.setattr(sys, "path", filtered_sys_path)
+    monkeypatch.chdir(backend_root)
+
+    loader = PluginLoader()
+    plugin_class = loader.load_module(str(plugin_path))
+
+    assert plugin_class is not None
+    assert plugin_class.name == "hello-world"
+    assert loader.get_loading_state("hello-world") == PluginLoader.LOADING_STATE_LOADED
+
+
+def test_plugin_manager_can_load_repo_plugin_when_started_from_backend_dir(monkeypatch):
+    """
+    验证从 backend 目录启动时，插件管理器也能完成实际仓库插件的扫描、校验和加载。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    backend_root = repo_root / "backend"
+    plugins_dir = repo_root / "plugins"
+
+    filtered_sys_path = []
+    for item in sys.path:
+        if not item:
+            continue
+        try:
+            resolved = Path(item).resolve()
+        except OSError:
+            filtered_sys_path.append(item)
+            continue
+        if resolved == repo_root:
+            continue
+        filtered_sys_path.append(item)
+
+    if str(backend_root) not in filtered_sys_path:
+        filtered_sys_path.insert(0, str(backend_root))
+
+    monkeypatch.setattr(sys, "path", filtered_sys_path)
+    monkeypatch.chdir(backend_root)
+
+    manager = PluginManager(plugins_dir=str(plugins_dir))
+    manager.discover_plugins()
+
+    assert manager.load_plugin("hello-world") is True
+    assert "hello-world" in manager.loaded_plugins
 
 
 def test_plugin_manager_rollback_when_enable_fails(plugin_workspace: Path):

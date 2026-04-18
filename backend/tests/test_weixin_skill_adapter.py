@@ -4,6 +4,7 @@
 """
 
 import uuid
+import os
 
 import pytest
 import yaml
@@ -456,6 +457,33 @@ async def test_weixin_adapter_send_message_generates_ilink_client_id_format(monk
     uuid_part = captured["client_id"][len("ilink-"):]
     assert len(uuid_part) == 8
     assert all(c in "0123456789abcdef" for c in uuid_part)
+
+
+def test_weixin_adapter_save_auto_reply_state_retries_when_target_file_is_temporarily_locked(tmp_path, monkeypatch):
+    """
+    验证状态文件在短暂占用时会自动重试写入，避免 Windows 下瞬时锁导致启动失败。
+    """
+    adapter = WeixinSkillAdapter(project_root=str(tmp_path))
+    target_path = adapter._auto_reply_state_file_path("test-account")
+    real_replace = os.replace
+    call_count = {"value": 0}
+
+    def flaky_replace(src: str, dst: str) -> None:
+        """
+        首次替换模拟目标文件被占用，后续调用恢复正常。
+        """
+        call_count["value"] += 1
+        if dst == target_path and call_count["value"] == 1:
+            raise PermissionError(13, "Permission denied", dst)
+        real_replace(src, dst)
+
+    monkeypatch.setattr("skills.weixin_skill_adapter.os.replace", flaky_replace)
+    monkeypatch.setattr("skills.weixin_skill_adapter.time.sleep", lambda _: None)
+
+    adapter.save_auto_reply_state("test-account", {"enabled": True, "processed_messages": {}})
+
+    assert call_count["value"] == 2
+    assert adapter.load_auto_reply_state("test-account")["enabled"] is True
 
 
 def test_weixin_adapter_check_health_validates_static_config_fields():

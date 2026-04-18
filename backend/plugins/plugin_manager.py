@@ -1416,7 +1416,7 @@ class PluginManager:
 
             plugin_classes = []
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                if inspect.isclass(obj) and issubclass(obj, BasePlugin) and obj is not BasePlugin:
+                if inspect.isclass(obj) and self.loader._is_supported_plugin_class(obj):
                     plugin_classes.append(obj)
 
             if not plugin_classes:
