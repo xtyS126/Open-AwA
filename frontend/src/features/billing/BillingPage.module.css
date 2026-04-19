@@ -1,3 +1,5 @@
+/* 用量计费页面样式 */
+
 .billing-page {
   padding: 24px;
   max-width: 1400px;
@@ -7,7 +9,8 @@
 .billing-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
@@ -18,47 +21,51 @@
   margin: 0;
 }
 
-.billing-filters {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
+.page-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
 }
 
-.billing-filters select {
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-actions select {
   padding: 8px 16px;
-  border: none;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 14px;
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-secondary);
   color: var(--color-text);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color 0.2s;
 }
 
-.billing-filters select:focus {
+.header-actions select:focus {
   outline: none;
-  background: var(--color-bg);
-  box-shadow: 0 0 0 2px var(--color-primary-softer-bg);
+  border-color: var(--color-primary);
 }
 
 .billing-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .billing-stat-card {
   background: var(--color-bg-tertiary);
-  border: none;
   border-radius: var(--radius-lg);
-  padding: 24px;
-  transition: all 0.2s ease;
+  padding: 20px;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .billing-stat-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 .billing-stat-card h3 {
@@ -84,7 +91,7 @@
 .billing-charts-grid {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
@@ -201,19 +208,22 @@
 }
 
 .export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 16px;
-  border: none;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-secondary);
   color: var(--color-text);
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color 0.2s;
 }
 
 .export-btn:hover {
-  background: var(--color-border);
-  color: var(--color-text);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .loading {

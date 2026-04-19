@@ -19,6 +19,8 @@
 
   --sidebar-width: 240px;
   --sidebar-collapsed-width: 60px;
+  --secondary-sidebar-width: 220px;
+  --color-primary-subtle: rgba(91, 141, 239, 0.08);
 
   --color-success: #4ecdc4;
   --color-success-bg: rgba(78, 205, 196, 0.12);
@@ -90,6 +92,7 @@
   --color-text-tertiary: #71717a;
   --color-border: rgba(255, 255, 255, 0.08);
   --color-border-subtle: rgba(255, 255, 255, 0.04);
+  --color-primary-subtle: rgba(91, 141, 239, 0.12);
 
   --color-success: #4ecdc4;
   --color-success-bg: rgba(78, 205, 196, 0.2);

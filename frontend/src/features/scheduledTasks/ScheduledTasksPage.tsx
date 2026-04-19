@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { Clock, RefreshCw, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 
 import {
   ScheduledTask,
@@ -211,54 +212,59 @@ function ScheduledTasksPage() {
 
   return (
     <div className={styles['scheduled-tasks-page']}>
-      <section className={styles['hero']}>
+      <div className={styles['page-header']}>
         <div>
-          <p className={styles['eyebrow']}>一次性 AI 调度</p>
           <h1>定时任务</h1>
-          <p className={styles['hero-copy']}>
-            为 AI 设置一个明确触发时间和提示词。任务执行结果只沉淀在当前页面历史中，不进入聊天会话与记忆链路。
+          <p className={styles['page-subtitle']}>
+            为 AI 设置一个明确触发时间和提示词。任务执行结果沉淀在当前页面历史中。
           </p>
         </div>
-        <div className={styles['hero-actions']}>
-          <button className="btn btn-secondary" onClick={() => void loadData()} disabled={loading || submitting}>
-            刷新数据
-          </button>
+        <button className="btn btn-secondary" onClick={() => void loadData()} disabled={loading || submitting}>
+          <RefreshCw size={14} />
+          刷新数据
+        </button>
+      </div>
+
+      {loadError && <div className={styles['error-banner']}>{loadError}</div>}
+      {actionError && <div className={styles['error-banner']}>{actionError}</div>}
+
+      {/* 统计卡片 */}
+      <div className={styles['stats-grid']}>
+        <div className={styles['stat-card']}>
+          <div className={styles['stat-icon']} data-type="pending"><Clock size={20} /></div>
+          <div className={styles['stat-info']}>
+            <span className={styles['stat-value']}>{pendingCount}</span>
+            <span className={styles['stat-label']}>待执行</span>
+          </div>
         </div>
-      </section>
-
-      {loadError && <div className={styles['status-message-error']}>{loadError}</div>}
-      {actionError && <div className={styles['status-message-error']}>{actionError}</div>}
-
-      <section className={styles['stats-grid']}>
-        <article className={styles['stat-card']}>
-          <span>待执行</span>
-          <strong>{pendingCount}</strong>
-          <p>队列中等待触发的任务数量</p>
-        </article>
-        <article className={styles['stat-card']}>
-          <span>已完成</span>
-          <strong>{completedCount}</strong>
-          <p>执行成功并已写入历史的任务数量</p>
-        </article>
-        <article className={styles['stat-card']}>
-          <span>失败任务</span>
-          <strong>{failedCount}</strong>
-          <p>需要调整提示词或模型配置的任务数量</p>
-        </article>
-        <article className={styles['stat-card']}>
-          <span>历史记录</span>
-          <strong>{executions.length}</strong>
-          <p>最近 50 条执行结果快照</p>
-        </article>
-      </section>
+        <div className={styles['stat-card']}>
+          <div className={styles['stat-icon']} data-type="completed"><CheckCircle size={20} /></div>
+          <div className={styles['stat-info']}>
+            <span className={styles['stat-value']}>{completedCount}</span>
+            <span className={styles['stat-label']}>已完成</span>
+          </div>
+        </div>
+        <div className={styles['stat-card']}>
+          <div className={styles['stat-icon']} data-type="failed"><XCircle size={20} /></div>
+          <div className={styles['stat-info']}>
+            <span className={styles['stat-value']}>{failedCount}</span>
+            <span className={styles['stat-label']}>失败</span>
+          </div>
+        </div>
+        <div className={styles['stat-card']}>
+          <div className={styles['stat-icon']} data-type="history"><AlertTriangle size={20} /></div>
+          <div className={styles['stat-info']}>
+            <span className={styles['stat-value']}>{executions.length}</span>
+            <span className={styles['stat-label']}>历史记录</span>
+          </div>
+        </div>
+      </div>
 
       <div className={styles['content-grid']}>
-        <section className={`${styles['panel']} ${styles['form-panel']}`}>
-          <div className={styles['panel-header']}>
-            <div>
-              <h2>{editingTaskId !== null ? '编辑任务' : '创建任务'}</h2>
-              <p>首版仅支持单次执行和聊天提示词。</p>
-            </div>
+        {/* 创建/编辑表单 */}
+        <section className={styles['card']}>
+          <div className={styles['card-header']}>
+            <h2>{editingTaskId !== null ? '编辑任务' : '创建任务'}</h2>
             {editingTaskId !== null && (
               <button className="btn btn-ghost" onClick={resetForm} type="button">
                 取消编辑
@@ -294,7 +300,7 @@ function ScheduledTasksPage() {
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder="输入需要 AI 在指定时间执行的内容"
-                rows={8}
+                rows={6}
                 required
               />
             </label>
@@ -305,7 +311,7 @@ function ScheduledTasksPage() {
                 <input
                   value={provider}
                   onChange={(event) => setProvider(event.target.value)}
-                  placeholder="留空时使用默认配置"
+                  placeholder="留空使用默认"
                 />
               </label>
 
@@ -314,7 +320,7 @@ function ScheduledTasksPage() {
                 <input
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
-                  placeholder="留空时使用默认模型"
+                  placeholder="留空使用默认"
                 />
               </label>
             </div>
@@ -327,12 +333,10 @@ function ScheduledTasksPage() {
           </form>
         </section>
 
-        <section className={`${styles['panel']} ${styles['queue-panel']}`}>
-          <div className={styles['panel-header']}>
-            <div>
-              <h2>任务队列</h2>
-              <p>查看当前任务状态，并对待执行任务进行调整。</p>
-            </div>
+        {/* 任务队列 */}
+        <section className={styles['card']}>
+          <div className={styles['card-header']}>
+            <h2>任务队列</h2>
           </div>
 
           <div className={styles['task-list']}>
@@ -346,7 +350,7 @@ function ScheduledTasksPage() {
                   <div className={styles['task-card-top']}>
                     <div>
                       <h3>{task.title}</h3>
-                      <p>{formatDateTime(task.scheduled_at)}</p>
+                      <p className={styles['task-time']}>{formatDateTime(task.scheduled_at)}</p>
                     </div>
                     <span className={`${styles['status-badge']} ${styles[`status-${task.status}`] || ''}`}>
                       {formatStatusLabel(task.status)}
@@ -386,27 +390,25 @@ function ScheduledTasksPage() {
         </section>
       </div>
 
-      <section className={`${styles['panel']} ${styles['history-panel']}`}>
-        <div className={styles['panel-header']}>
-          <div>
-            <h2>执行历史</h2>
-            <p>只展示定时任务自己的执行结果，不与聊天记录混用。</p>
-          </div>
+      {/* 执行历史 */}
+      <section className={styles['card']}>
+        <div className={styles['card-header']}>
+          <h2>执行历史</h2>
         </div>
 
-        <div className={styles['history-list']}>
+        <div className={styles['task-list']}>
           {executions.length === 0 ? (
             <div className={styles['empty-state']}>
               <p>暂无执行历史，任务触发后会在这里展示结果。</p>
             </div>
           ) : (
             executions.map((execution) => (
-              <article key={execution.id} className={styles['history-card']}>
-                <div className={styles['history-card-top']}>
+              <article key={execution.id} className={styles['task-card']}>
+                <div className={styles['task-card-top']}>
                   <div>
                     <h3>{execution.task_title}</h3>
-                    <p>
-                      计划时间 {formatDateTime(execution.scheduled_for)} · 开始时间 {formatDateTime(execution.started_at)}
+                    <p className={styles['task-time']}>
+                      计划 {formatDateTime(execution.scheduled_for)} · 开始 {formatDateTime(execution.started_at)}
                     </p>
                   </div>
                   <span className={`${styles['status-badge']} ${styles[`status-${execution.status}`] || ''}`}>
@@ -414,7 +416,7 @@ function ScheduledTasksPage() {
                   </span>
                 </div>
 
-                <div className={styles['history-meta']}>
+                <div className={styles['task-meta']}>
                   <span>Provider: {execution.provider || '默认'}</span>
                   <span>Model: {execution.model || '默认'}</span>
                 </div>

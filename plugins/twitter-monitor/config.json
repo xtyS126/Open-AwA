@@ -1,0 +1,8 @@
+{
+  "twitter_api_key": "new1_2ade6ba173fb4523b34db143c09af331",
+  "twitter_api_base_url": "https://api.twitterapi.io/twitter",
+  "monitored_users": "OpenAI,AnthropicAI,Alibaba_Qwen,Kimi_Moonshot,deepseek_ai",
+  "tweets_per_user": 8,
+  "include_replies": false,
+  "storage_mode": "both"
+}

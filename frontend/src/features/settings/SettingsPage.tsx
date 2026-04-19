@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { 
+  Settings as SettingsIcon, 
+  ShieldAlert, 
+  Cpu, 
+  Briefcase, 
+  Plug, 
+  HardDrive
+} from 'lucide-react'
+import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
@@ -1070,69 +1079,41 @@ function SettingsPage() {
   }
   void _getProviderName
 
+  const renderSecondarySidebar = () => {
+    const tabs = [
+      { id: 'general', label: '通用设置', icon: <SettingsIcon size={18} /> },
+      { id: 'api', label: 'API配置', icon: <Plug size={18} /> },
+      { id: 'prompts', label: '提示词', icon: <Cpu size={18} /> },
+      { id: 'billing', label: '计费配置', icon: <Briefcase size={18} /> },
+      { id: 'models', label: '模型管理', icon: <Cpu size={18} /> },
+      { id: 'data-retention', label: '数据保留', icon: <HardDrive size={18} /> },
+      { id: 'data-collection', label: '数据采集', icon: <HardDrive size={18} /> },
+      { id: 'security', label: '安全审计', icon: <ShieldAlert size={18} /> },
+      { id: 'mcp', label: 'MCP配置', icon: <SettingsIcon size={18} /> },
+    ]
+
+    return (
+      <div className={styles['secondary-nav']}>
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            className={`${styles['nav-item']} ${activeTab === tab.id ? styles['active'] : ''}`}
+            onClick={() => handleTabChange(tab.id)}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   return (
-    <div className={styles['settings-page']}>
-      <div className={styles['settings-header']}>
-        <h1>设置</h1>
-      </div>
-
-      <div className={styles['settings-tabs']}>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'general' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('general')}
-        >
-          通用设置
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'api' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('api')}
-        >
-          API配置
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'prompts' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('prompts')}
-        >
-          提示词
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'billing' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('billing')}
-        >
-          计费配置
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'models' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('models')}
-        >
-          模型管理
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'data-retention' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('data-retention')}
-        >
-          数据保留
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'data-collection' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('data-collection')}
-        >
-          数据采集
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'security' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('security')}
-        >
-          安全审计
-        </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'mcp' ? styles['active'] : ''}`}
-          onClick={() => handleTabChange('mcp')}
-        >
-          MCP 配置
-        </button>
-      </div>
-
+    <PageLayout 
+      title="设置" 
+      secondarySidebar={renderSecondarySidebar()}
+      className={styles['settings-page']}
+    >
       <div className={styles['settings-content']}>
         {message && (
           <div className={`${styles['message']} ${styles[message.type] || message.type}`}>
@@ -2297,7 +2278,7 @@ function SettingsPage() {
           </div>
         )}
       </div>
-    </div>
+    </PageLayout>
   )
 }
 

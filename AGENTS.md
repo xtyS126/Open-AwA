@@ -111,7 +111,8 @@ Before `git add` and `git commit`, complete in order:
 2. **Style check** -- 命名规范、注释完整（中文）、无 Emoji
 3. **Run tests** -- 全部测试通过，新功能有对应测试，覆盖率不降低
 4. **Dependency check** -- 新增依赖版本兼容，`requirements.txt` / `package.json` 已同步更新
-5. **Document update** -- 功能变更更新 README，接口变更更新 API 文档
+5. **Document update** -- 功能变更更新 README.md，接口变更更新 API 文档
+6. **git commit** -- 在完成一个模块的迭代并检查后提交本地的debug分支
 
 ### Commit Message Format
 

@@ -588,6 +588,164 @@ def test_runtime_permission_intercept_and_authorize(plugin_workspace: Path):
     assert denied_after_revoke["status"] == "permission_required"
 
 
+def test_plugin_manager_loads_manifest_config_and_normalizes_execute_tools(tmp_path: Path):
+    """
+    manifest.json 与 config.json 应参与扫描和加载，旧式 execute/action 工具定义也应补齐 method。
+    """
+    plugin_root = tmp_path / "config_tool_plugin"
+    src_dir = plugin_root / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+
+    (plugin_root / "manifest.json").write_text(
+        """
+{
+  "name": "config_tool_plugin",
+  "version": "1.0.0",
+  "description": "config tool plugin",
+    "pluginApiVersion": "1.0.0",
+    "permissions": ["network:http"],
+    "extensions": [
+        {
+            "point": "tool",
+            "name": "fetch_items",
+            "version": "1.0.0",
+            "config": {
+                "description": "抓取项目"
+            }
+        }
+    ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (plugin_root / "config.json").write_text(
+        """
+{
+  "api_base_url": "https://example.com",
+  "feature_flag": true
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (src_dir / "index.py").write_text(
+        '''from plugins.base_plugin import BasePlugin
+
+
+class ConfigToolPlugin(BasePlugin):
+    name = "config_tool_plugin"
+    version = "1.0.0"
+    description = "config tool plugin"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return {
+            "status": "success",
+            "received": kwargs,
+            "config_value": self.config.get("api_base_url"),
+        }
+
+    def get_tools(self):
+        return [
+            {
+                "name": "fetch_items",
+                "description": "抓取项目"
+            }
+        ]
+''',
+        encoding="utf-8",
+    )
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    discovered = manager.discover_plugins()
+
+    metadata = next(item for item in discovered if item["name"] == "config_tool_plugin")
+    assert metadata["manifest"]["name"] == "config_tool_plugin"
+    assert metadata["default_config"]["api_base_url"] == "https://example.com"
+    assert "network:http" in metadata["requested_permissions"]
+
+    assert manager.load_plugin("config_tool_plugin") is True
+    plugin_instance = manager.loaded_plugins["config_tool_plugin"]
+    assert plugin_instance.config["api_base_url"] == "https://example.com"
+    assert plugin_instance.config["feature_flag"] is True
+
+    tools = manager.get_plugin_tools("config_tool_plugin")
+    assert len(tools) == 2
+    help_tool = next(tool for tool in tools if tool["name"] == "help")
+    assert help_tool["method"] == "get_help"
+
+    fetch_tool = next(tool for tool in tools if tool["name"] == "fetch_items")
+    assert fetch_tool["method"] == "execute"
+    assert fetch_tool["default_params"]["action"] == "fetch_items"
+
+    help_result = manager.execute_plugin("config_tool_plugin", "get_help")
+    assert help_result["status"] == "success"
+    assert help_result["data"]["plugin"] == "config_tool_plugin"
+    assert any(item["name"] == "fetch_items" for item in help_result["data"]["tools"])
+
+
+def test_plugin_manager_propagates_plugin_payload_status(tmp_path: Path):
+    """
+    插件业务层返回的 status/message 应提升到管理器顶层，便于 Agent 和工作流统一判断。
+    """
+    plugin_path = tmp_path / "logic_plugin.py"
+    plugin_path.write_text(
+        '''from plugins.base_plugin import BasePlugin
+
+
+class LogicPlugin(BasePlugin):
+    name = "logic_plugin"
+    version = "1.0.0"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return {
+            "status": kwargs.get("status", "success"),
+            "message": kwargs.get("message", ""),
+            "value": kwargs.get("value"),
+        }
+''',
+        encoding="utf-8",
+    )
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    manager.discover_plugins()
+    assert manager.load_plugin("logic_plugin") is True
+
+    success_result = manager.execute_plugin("logic_plugin", "execute", status="success", value=7)
+    assert success_result["status"] == "success"
+    assert success_result["data"]["value"] == 7
+
+    error_result = manager.execute_plugin("logic_plugin", "execute", status="error", message="业务失败")
+    assert error_result["status"] == "error"
+    assert error_result["message"] == "业务失败"
+    assert error_result["data"]["status"] == "error"
+
+
+def test_repo_twitter_monitor_plugin_can_be_discovered_and_loaded():
+    """
+    仓库内新增的 twitter-monitor 插件应能被发现、加载，并暴露标准工具列表。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    manager = PluginManager(plugins_dir=str(repo_root / "plugins"))
+
+    discovered = manager.discover_plugins()
+
+    twitter_plugin = next(item for item in discovered if item["name"] == "twitter-monitor")
+    assert twitter_plugin["default_config"]["twitter_api_base_url"] == "https://api.twitterapi.io/twitter"
+    assert "ai_api_key" not in twitter_plugin["default_config"]
+
+    assert manager.load_plugin("twitter-monitor") is True
+
+    tools = manager.get_plugin_tools("twitter-monitor")
+    assert any(tool["name"] == "help" and tool["method"] == "get_help" for tool in tools)
+    assert any(tool["name"] == "fetch_twitter_tweets" for tool in tools)
+    assert any(tool["method"] == "fetch_twitter_tweets" for tool in tools)
+
+
 def test_static_scan_blocks_dangerous_plugin(tmp_path: Path):
     """
     验证static、scan、blocks、dangerous、plugin相关场景的行为是否符合预期。

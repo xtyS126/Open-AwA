@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "title": "Twitter 监控插件配置",
+  "properties": {
+    "twitter_api_key": {
+      "type": "string",
+      "title": "Twitter API Key",
+      "default": "",
+      "description": "TwitterApi.io 的 API 密钥"
+    },
+    "twitter_api_base_url": {
+      "type": "string",
+      "title": "Twitter API 基础地址",
+      "default": "https://api.twitterapi.io/twitter"
+    },
+    "monitored_users": {
+      "type": "string",
+      "title": "默认监控用户",
+      "default": "OpenAI,AnthropicAI,Alibaba_Qwen,Kimi_Moonshot,deepseek_ai",
+      "description": "多个用户名用逗号分隔，不需要带 @"
+    },
+    "tweets_per_user": {
+      "type": "integer",
+      "title": "每个用户抓取条数",
+      "default": 8
+    },
+    "include_replies": {
+      "type": "boolean",
+      "title": "包含回复推文",
+      "default": false,
+      "x-component": "switch"
+    },
+    "storage_mode": {
+      "type": "string",
+      "title": "缓存模式",
+      "default": "both",
+      "enum": [
+        "latest",
+        "daily",
+        "both"
+      ]
+    }
+  },
+  "required": []
+}

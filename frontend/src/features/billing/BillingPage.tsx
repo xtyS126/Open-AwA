@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Download } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -148,20 +149,23 @@ function BillingPage() {
   return (
     <div className={styles['billing-page']}>
       <div className={styles['billing-header']}>
-        <h1>用量计费</h1>
-        <button className={styles['export-btn']} onClick={handleExport}>
-          导出CSV
-        </button>
-      </div>
-
-      <div className={styles['billing-filters']}>
-        <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
-          <option value="daily">今日</option>
-          <option value="weekly">本周</option>
-          <option value="monthly">本月</option>
-          <option value="yearly">本年</option>
-          <option value="all">全部</option>
-        </select>
+        <div>
+          <h1>用量计费</h1>
+          <p className={styles['page-subtitle']}>查看 AI 模型调用的成本与用量统计</p>
+        </div>
+        <div className={styles['header-actions']}>
+          <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
+            <option value="daily">今日</option>
+            <option value="weekly">本周</option>
+            <option value="monthly">本月</option>
+            <option value="yearly">本年</option>
+            <option value="all">全部</option>
+          </select>
+          <button className={styles['export-btn']} onClick={handleExport}>
+            <Download size={14} />
+            导出CSV
+          </button>
+        </div>
       </div>
 
       {/* 预算状态条 */}
