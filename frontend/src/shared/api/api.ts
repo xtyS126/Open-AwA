@@ -148,6 +148,18 @@ api.interceptors.response.use(
     );
 
     if (!isExpectedAuthError) {
+      const errorUrl = error?.config?.url || 'unknown'
+      const errorStatus = error?.response?.status || 0
+      const errorMessage = error?.message || ''
+      const backendDetail = error?.response?.data?.detail || ''
+      
+      console.error(
+        `[API ERROR] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
+        (errorMessage ? ` | ${errorMessage}` : '') +
+        (backendDetail ? ` | Detail: ${backendDetail}` : '') +
+        (responseRequestId ? ` | Request-ID: ${responseRequestId}` : '')
+      )
+      
       appLogger.error({
         event: 'api_response',
         module: 'api',
@@ -156,9 +168,10 @@ api.interceptors.response.use(
         request_id: responseRequestId,
         message: 'api request failed',
         extra: {
-          url: error?.config?.url,
-          status_code: error?.response?.status,
-          error: error?.message,
+          url: errorUrl,
+          status_code: errorStatus,
+          error: errorMessage,
+          detail: backendDetail,
         },
       })
     }
@@ -205,7 +218,7 @@ export const chatAPI = {
     sessionId: string = 'default',
     provider?: string,
     model?: string,
-    onChunk?: (content: string, reasoning: string) => void,
+    onEvent?: (event: Record<string, any>) => void,
     onError?: (error: any) => void,
     requestOptions?: { signal?: AbortSignal }
   ) => {
@@ -319,12 +332,13 @@ export const chatAPI = {
               try {
                 const data = JSON.parse(dataStr)
                 if (currentEventType === 'reasoning') {
-                  // reasoning 事件仅携带推理内容
-                  onChunk?.('', data.content || '')
+                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
                 } else if (data.type === 'chunk') {
-                  onChunk?.(data.content || '', data.reasoning_content || '')
+                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
                 } else if (data.type === 'error') {
                   onError?.(new Error(data.error?.message || 'Stream error'))
+                } else if (data?.type) {
+                  onEvent?.(data)
                 }
               } catch {
                 logStreamParseWarning(dataStr, 'chunk')
@@ -349,11 +363,13 @@ export const chatAPI = {
               try {
                 const data = JSON.parse(dataStr)
                 if (remainingEventType === 'reasoning') {
-                  onChunk?.('', data.content || '')
+                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
                 } else if (data.type === 'chunk') {
-                  onChunk?.(data.content || '', data.reasoning_content || '')
+                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
                 } else if (data.type === 'error') {
                   onError?.(new Error(data.error?.message || 'Stream error'))
+                } else if (data?.type) {
+                  onEvent?.(data)
                 }
               } catch {
                 logStreamParseWarning(dataStr, 'tail')

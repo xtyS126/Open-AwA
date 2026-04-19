@@ -1148,8 +1148,17 @@ async def get_skills(
     获取skills相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
-    skills = db.query(Skill).all()
-    return [_build_skill_response(skill) for skill in skills]
+    try:
+        skills = db.query(Skill).all()
+        return [_build_skill_response(skill) for skill in skills]
+    except Exception as e:
+        logger.bind(
+            event="skills_list_error",
+            module="skills",
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).opt(exception=True).error(f"获取技能列表失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取技能列表失败: {str(e)}")
 
 
 @router.get("/{skill_id}", response_model=SkillResponse)
@@ -1162,10 +1171,22 @@ async def get_skill(
     获取skill相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
-    skill = db.query(Skill).filter(Skill.id == skill_id).first()
-    if not skill:
-        raise HTTPException(status_code=404, detail="Skill not found")
-    return _build_skill_response(skill)
+    try:
+        skill = db.query(Skill).filter(Skill.id == skill_id).first()
+        if not skill:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        return _build_skill_response(skill)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.bind(
+            event="skill_get_error",
+            module="skills",
+            skill_id=skill_id,
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).opt(exception=True).error(f"获取技能详情失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取技能详情失败: {str(e)}")
 
 
 @router.post(
