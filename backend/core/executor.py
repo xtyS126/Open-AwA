@@ -227,6 +227,105 @@ class ExecutionLayer:
             return 8192
         return max_tokens
 
+    def _build_agent_capability_system_prompt(self, context: Dict[str, Any]) -> str:
+        """
+        基于 Agent 注入的运行态能力摘要生成系统提示，避免模型把自己误判成纯文本聊天机器人。
+        """
+        capabilities = context.get("agent_capabilities")
+        if not isinstance(capabilities, dict):
+            return ""
+
+        lines = [
+            "你是 Open-AwA 平台中的 AI Agent，不是孤立的纯文本聊天模型。",
+            "回答关于自身能力的问题时，必须以当前运行态能力清单为准。",
+            "不要笼统声称自己不能调用 MCP、技能或插件；要区分平台是否支持、当前会话是否启用、当前是否已有可用工具。",
+        ]
+
+        skills_enabled = bool(capabilities.get("skills_enabled", False))
+        skills = capabilities.get("skills") if isinstance(capabilities.get("skills"), list) else []
+        if skills_enabled:
+            if skills:
+                lines.append("当前会话可用技能：")
+                for skill in skills[:12]:
+                    if not isinstance(skill, dict):
+                        continue
+                    lines.append(
+                        f"- 技能 {skill.get('name', '')}: {skill.get('description', '')}"
+                    )
+            else:
+                lines.append("当前会话未发现可用技能。")
+        else:
+            lines.append("当前会话已关闭技能自动调度。")
+
+        plugins_enabled = bool(capabilities.get("plugins_enabled", False))
+        plugins = capabilities.get("plugins") if isinstance(capabilities.get("plugins"), list) else []
+        if plugins_enabled:
+            if plugins:
+                lines.append("当前会话可用插件：")
+                for plugin in plugins[:12]:
+                    if not isinstance(plugin, dict):
+                        continue
+                    tools = plugin.get("tools") if isinstance(plugin.get("tools"), list) else []
+                    tool_names = [
+                        str(tool.get("name", "")).strip()
+                        for tool in tools
+                        if isinstance(tool, dict) and str(tool.get("name", "")).strip()
+                    ]
+                    tool_text = "、".join(tool_names) if tool_names else "无显式工具"
+                    lines.append(
+                        f"- 插件 {plugin.get('name', '')}: {plugin.get('description', '')}。工具: {tool_text}。如需了解参数，优先查看 help 工具。"
+                    )
+            else:
+                lines.append("当前会话未发现可用插件。")
+        else:
+            lines.append("当前会话已关闭插件自动调度。")
+
+        mcp_capabilities = capabilities.get("mcp") if isinstance(capabilities.get("mcp"), dict) else {}
+        if mcp_capabilities.get("platform_supported", False):
+            connected_servers = (
+                mcp_capabilities.get("connected_servers")
+                if isinstance(mcp_capabilities.get("connected_servers"), list)
+                else []
+            )
+            mcp_tools = mcp_capabilities.get("tools") if isinstance(mcp_capabilities.get("tools"), list) else []
+
+            if mcp_tools:
+                lines.append("平台当前已连接的 MCP 工具：")
+                for tool in mcp_tools[:12]:
+                    if not isinstance(tool, dict):
+                        continue
+                    lines.append(
+                        f"- MCP {tool.get('server_name', tool.get('server_id', ''))}/{tool.get('name', '')}: {tool.get('description', '')}"
+                    )
+            elif connected_servers:
+                server_names = [
+                    str(server.get("name", "")).strip()
+                    for server in connected_servers[:12]
+                    if isinstance(server, dict) and str(server.get("name", "")).strip()
+                ]
+                if server_names:
+                    lines.append(
+                        "平台已连接 MCP Server，但当前没有可直接说明的 MCP 工具摘要：" + "、".join(server_names)
+                    )
+                else:
+                    lines.append("平台已连接 MCP Server，但当前没有可直接说明的 MCP 工具摘要。")
+            else:
+                lines.append("平台支持 MCP Server 管理与工具发现，但当前没有已连接的 MCP Server。")
+
+            if not mcp_capabilities.get("chat_dispatch_enabled", False):
+                lines.append(
+                    "注意：当前聊天链路未直接暴露自动 MCP 调度。不要谎称已经调用了某个 MCP 工具；如果用户询问能力，应说明平台支持 MCP，但本轮会话是否可直接调用取决于已连接 Server 和执行链路配置。"
+                )
+
+        lines.extend([
+            "规则：",
+            "1. 不要捏造已经执行过的技能、插件或 MCP 调用。",
+            "2. 不要回答“我没有调用技能/插件/MCP 的能力”这类绝对否定句。",
+            "3. 当某类能力当前不可用时，要说明是当前会话未启用、未连接或未暴露，而不是说平台完全不支持。",
+        ])
+
+        return "\n".join(lines)
+
     def _pick_effective_model(
         self,
         provider: str,
@@ -393,6 +492,10 @@ class ExecutionLayer:
         对话历史由 agent 层在调用前注入到 context["conversation_history"] 中。
         """
         messages = []
+        system_prompt = self._build_agent_capability_system_prompt(context)
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
         conversation_history = context.get("conversation_history", [])
         if conversation_history:
             for msg in conversation_history:

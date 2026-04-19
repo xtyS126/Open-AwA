@@ -18,6 +18,7 @@ from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
 from plugins.plugin_manager import PluginManager
 from plugins import plugin_instance
+from mcp.manager import MCPManager
 from workflow.engine import WorkflowEngine
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
@@ -140,6 +141,129 @@ class AIAgent:
             context["db"] = self._db_session
 
         context["_record_hook"] = self._schedule_record
+
+    @staticmethod
+    def _summarize_skill_capabilities(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        将技能列表收敛为适合注入模型上下文的轻量摘要，避免把统计和配置细节全部暴露给提示词。
+        """
+        summarized_skills: List[Dict[str, Any]] = []
+        for skill in skills:
+            if not isinstance(skill, dict):
+                continue
+            if not skill.get("enabled"):
+                continue
+
+            summarized_skills.append({
+                "name": skill.get("name", ""),
+                "description": skill.get("description", ""),
+            })
+
+        return summarized_skills
+
+    @staticmethod
+    def _summarize_plugin_capabilities(plugins: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        仅保留插件名称、描述和工具摘要，用于让模型理解当前会话有哪些插件可被平台调度。
+        """
+        summarized_plugins: List[Dict[str, Any]] = []
+        for plugin in plugins:
+            if not isinstance(plugin, dict):
+                continue
+
+            raw_tools = plugin.get("tools") if isinstance(plugin.get("tools"), list) else []
+            summarized_tools = []
+            for tool in raw_tools:
+                if not isinstance(tool, dict):
+                    continue
+                summarized_tools.append({
+                    "name": tool.get("name", ""),
+                    "description": tool.get("description", ""),
+                    "method": tool.get("method", ""),
+                })
+
+            summarized_plugins.append({
+                "name": plugin.get("name", ""),
+                "description": plugin.get("description", ""),
+                "loaded": bool(plugin.get("loaded", False)),
+                "tools": summarized_tools,
+            })
+
+        return summarized_plugins
+
+    async def _collect_mcp_capabilities(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        采集 MCP 连接态信息，用于提示模型平台是否已接入 MCP Server 以及当前有哪些已连接工具。
+        这里只描述能力边界，不直接触发 MCP 调用。
+        """
+        chat_dispatch_enabled = bool(context.get("enable_mcp_tool_dispatch", False))
+        default_payload = {
+            "platform_supported": True,
+            "chat_dispatch_enabled": chat_dispatch_enabled,
+            "connected_servers": [],
+            "tools": [],
+        }
+
+        try:
+            manager = MCPManager()
+            servers = manager.get_all_servers()
+            tools = await manager.get_all_tools()
+
+            default_payload["connected_servers"] = [
+                {
+                    "server_id": item.get("server_id", ""),
+                    "name": item.get("name", ""),
+                    "transport_type": item.get("transport_type", ""),
+                    "connected": bool(item.get("connected", False)),
+                    "tools_count": int(item.get("tools_count", 0) or 0),
+                }
+                for item in servers
+                if isinstance(item, dict)
+            ]
+            default_payload["tools"] = [
+                {
+                    "server_id": item.get("server_id", ""),
+                    "server_name": item.get("server_name", ""),
+                    "name": item.get("tool", {}).get("name", "") if isinstance(item.get("tool"), dict) else "",
+                    "description": item.get("tool", {}).get("description", "") if isinstance(item.get("tool"), dict) else "",
+                }
+                for item in tools
+                if isinstance(item, dict)
+            ]
+            return default_payload
+        except Exception as e:
+            logger.bind(
+                event="get_mcp_capabilities_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).warning(f"获取 MCP 能力摘要失败: {e}")
+            default_payload["error"] = str(e)
+            return default_payload
+
+    async def _inject_runtime_capabilities(self, context: Dict[str, Any]) -> None:
+        """
+        在进入最终模型回答前，把当前会话可用的技能、插件和 MCP 连接态写入上下文。
+        这样模型在回答“我能不能调用某能力”时能基于真实运行态，而不是凭空猜测。
+        """
+        if isinstance(context.get("agent_capabilities"), dict):
+            return
+
+        skill_plugin_enabled = bool(context.get("enable_skill_plugin", True))
+        skills: List[Dict[str, Any]] = []
+        plugins: List[Dict[str, Any]] = []
+
+        if skill_plugin_enabled:
+            skills = self._summarize_skill_capabilities(await self.get_available_skills())
+            plugins = self._summarize_plugin_capabilities(await self.get_available_plugins())
+
+        context["agent_capabilities"] = {
+            "skills_enabled": skill_plugin_enabled,
+            "plugins_enabled": skill_plugin_enabled,
+            "tool_dispatch_mode": "platform_managed",
+            "skills": skills,
+            "plugins": plugins,
+            "mcp": await self._collect_mcp_capabilities(context),
+        }
 
     def _schedule_record(
         self,
@@ -345,19 +469,26 @@ class AIAgent:
                 'success': result.get('status') == 'success'
             })
             
-            if result.get('status') == 'success':
+            status = result.get('status', 'error')
+
+            if status == 'success':
                 logger.info(f"Plugin '{plugin_name}' method '{method}' executed successfully")
                 return {
                     'status': 'success',
-                    'data': result.get('data'),
+                    'data': result.get('data') if result.get('data') is not None else result.get('result'),
                     'message': result.get('message', '')
                 }
-            else:
-                logger.error(f"Plugin '{plugin_name}' method '{method}' failed: {result.get('message')}")
-                return {
-                    'status': 'failed',
-                    'message': result.get('message', 'Unknown error')
-                }
+
+            logger.error(f"Plugin '{plugin_name}' method '{method}' failed: {result.get('message')}")
+            response = {
+                'status': status,
+                'message': result.get('message', 'Unknown error')
+            }
+            if result.get('data') is not None:
+                response['data'] = result.get('data')
+            if result.get('required_permissions') is not None:
+                response['required_permissions'] = result.get('required_permissions')
+            return response
         except Exception as e:
             logger.bind(
                 event="plugin_execution_error",
@@ -420,8 +551,11 @@ class AIAgent:
             plugin_list = []
             for plugin_info in discovered_plugins:
                 plugin_name = plugin_info.get('name')
-                info = self.plugin_manager.get_plugin_info(plugin_name)
+                if plugin_name and plugin_name not in self.plugin_manager.loaded_plugins:
+                    self.plugin_manager.load_plugin(plugin_name)
+
                 tools = self.plugin_manager.get_plugin_tools(plugin_name)
+                info = self.plugin_manager.get_plugin_info(plugin_name)
                 
                 plugin_list.append({
                     'name': plugin_name,
@@ -469,6 +603,7 @@ class AIAgent:
         logger.info(f"Processing user input (stream), length={len(user_input)}")
 
         self._prepare_context(user_input, context)
+        await self._inject_runtime_capabilities(context)
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
@@ -521,6 +656,7 @@ class AIAgent:
         logger.info(f"Processing user input, length={len(user_input)}")
 
         self._prepare_context(user_input, context)
+        await self._inject_runtime_capabilities(context)
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
@@ -865,12 +1001,20 @@ class AIAgent:
                     if self._is_plugin_relevant(tool_name, tool_description, intent_keywords, entities_list):
                         logger.info(f"Auto-selecting plugin '{plugin_name}' tool '{tool.get('name')}'")
 
+                        plugin_kwargs: Dict[str, Any] = {}
+                        default_params = tool.get('default_params')
+                        if isinstance(default_params, dict):
+                            plugin_kwargs.update(default_params)
+                        plugin_kwargs.update({
+                            'intent': intent,
+                            'entities': entities,
+                            'context': context,
+                        })
+
                         plugin_result = await self.execute_plugin(
                             plugin_name=plugin_name,
                             method=tool.get('method'),
-                            intent=intent,
-                            entities=entities,
-                            context=context
+                            **plugin_kwargs
                         )
 
                         if plugin_result.get('status') == 'success':

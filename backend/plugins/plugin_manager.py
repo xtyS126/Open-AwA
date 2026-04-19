@@ -9,6 +9,7 @@ import http.client
 import importlib
 import inspect
 import io
+import json
 import os
 import re
 import shutil
@@ -112,6 +113,9 @@ class PluginManager:
         "file:write": ["open", "remove", "unlink", "rmtree"],
         "network:http": ["requests", "httpx", "urllib", "urlopen"],
         "command:execute": ["system", "popen", "run", "call", "exec", "eval", "compile"],
+    }
+    RUNTIME_PERMISSION_BYPASS_METHODS = {
+        "get_help",
     }
 
     def __init__(self, plugins_dir: Optional[str] = None, sandbox_defaults: Optional[Dict[str, Any]] = None):
@@ -436,6 +440,12 @@ class PluginManager:
                 f"Plugin '{plugin_name}' 缺少运行权限: {status['missing_permissions']}"
             )
 
+    def _should_bypass_runtime_permissions(self, method: str) -> bool:
+        """
+        只读型元信息接口允许在未授权前访问，便于模型先理解插件用途与参数要求。
+        """
+        return method in self.RUNTIME_PERMISSION_BYPASS_METHODS
+
     def _safe_extract_zip_archive(self, archive: zipfile.ZipFile, target_dir: str) -> None:
         """
         安全解压 ZIP 压缩包，防止路径遍历攻击。
@@ -525,6 +535,62 @@ class PluginManager:
         """
         current_dir = os.path.dirname(os.path.abspath(__file__))
         return os.path.abspath(os.path.join(current_dir, "..", ".."))
+
+    def _resolve_plugin_root_dir(self, plugin_path: str) -> str:
+        """
+        根据插件入口文件推断插件根目录。
+        约定优先支持 <plugin_root>/src/index.py 结构，其余情况回退到入口文件所在目录。
+        """
+        entry_path = os.path.abspath(plugin_path)
+        entry_dir = os.path.dirname(entry_path)
+        if os.path.basename(entry_path) == "index.py" and os.path.basename(entry_dir) == "src":
+            return os.path.dirname(entry_dir)
+        return entry_dir
+
+    def _read_plugin_json_file(self, path: str) -> Optional[Dict[str, Any]]:
+        """
+        安全读取插件目录中的 JSON 文件，异常时返回 None。
+        """
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as json_file:
+                payload = json.load(json_file)
+            if isinstance(payload, dict):
+                return payload
+        except Exception as e:
+            logger.warning(f"Failed to read plugin json file '{path}': {e}")
+        return None
+
+    def _normalize_manifest_version(self, value: Any) -> Any:
+        """
+        兼容历史 manifest 中使用的 `1.0` 版本写法，统一补齐为 semver 三段式。
+        """
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if re.fullmatch(r"\d+\.\d+", normalized):
+            return f"{normalized}.0"
+        return normalized
+
+    def _normalize_manifest_payload(self, manifest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        对 manifest 进行轻量兼容处理，避免旧插件因字段格式过旧而无法加载。
+        """
+        if not isinstance(manifest, dict):
+            return manifest
+
+        normalized = deepcopy(manifest)
+        normalized["version"] = self._normalize_manifest_version(normalized.get("version"))
+        normalized["pluginApiVersion"] = self._normalize_manifest_version(normalized.get("pluginApiVersion"))
+
+        extensions = normalized.get("extensions")
+        if isinstance(extensions, list):
+            for extension in extensions:
+                if isinstance(extension, dict):
+                    extension["version"] = self._normalize_manifest_version(extension.get("version"))
+
+        return normalized
 
     def _build_scan_module_name(self, plugin_path: str) -> str:
         """
@@ -1424,16 +1490,52 @@ class PluginManager:
 
             plugin_class = plugin_classes[0]
 
+            plugin_root_dir = self._resolve_plugin_root_dir(plugin_path)
+            manifest_path = os.path.join(plugin_root_dir, "manifest.json")
+            config_path = os.path.join(plugin_root_dir, "config.json")
+            schema_path = os.path.join(plugin_root_dir, "schema.json")
+
+            class_manifest = getattr(plugin_class, "manifest", None)
+            if not isinstance(class_manifest, dict):
+                class_manifest = None
+            file_manifest = self._read_plugin_json_file(manifest_path)
+            manifest = deepcopy(class_manifest) if class_manifest else {}
+            if file_manifest:
+                manifest.update(file_manifest)
+            if not manifest:
+                manifest = None
+            manifest = self._normalize_manifest_payload(manifest)
+
+            default_config = self._read_plugin_json_file(config_path) or {}
+            manifest_permissions = []
+            if isinstance(manifest, dict):
+                raw_permissions = manifest.get("permissions", [])
+                if isinstance(raw_permissions, list):
+                    manifest_permissions = [
+                        permission.strip()
+                        for permission in raw_permissions
+                        if isinstance(permission, str) and permission.strip()
+                    ]
+
+            requested_permissions = sorted(
+                set(security_scan["requested_permissions"]) | set(manifest_permissions)
+            )
+
             metadata = {
-                "name": getattr(plugin_class, "name", plugin_name),
-                "version": getattr(plugin_class, "version", "1.0.0"),
-                "description": getattr(plugin_class, "description", ""),
+                "name": (manifest or {}).get("name") or getattr(plugin_class, "name", plugin_name),
+                "version": (manifest or {}).get("version") or getattr(plugin_class, "version", "1.0.0"),
+                "description": (manifest or {}).get("description") or getattr(plugin_class, "description", ""),
                 "path": plugin_path,
+                "root_dir": plugin_root_dir,
                 "class_name": plugin_class.__name__,
                 "module": module_name,
-                "manifest": getattr(plugin_class, "manifest", None),
+                "manifest": manifest,
+                "manifest_path": manifest_path if os.path.exists(manifest_path) else None,
+                "config_path": config_path if os.path.exists(config_path) else None,
+                "schema_path": schema_path if os.path.exists(schema_path) else None,
+                "default_config": default_config,
                 "security_scan": security_scan,
-                "requested_permissions": security_scan["requested_permissions"],
+                "requested_permissions": requested_permissions,
             }
 
             return metadata
@@ -1491,6 +1593,22 @@ class PluginManager:
                 "version": metadata["version"],
                 "description": metadata["description"],
             }
+
+            default_config = metadata.get("default_config")
+            if isinstance(default_config, dict):
+                config.update(deepcopy(default_config))
+
+            manifest = metadata.get("manifest")
+            if isinstance(manifest, dict):
+                config["manifest"] = deepcopy(manifest)
+
+            root_dir = metadata.get("root_dir")
+            if isinstance(root_dir, str) and root_dir:
+                config["plugin_root"] = root_dir
+
+            config["name"] = metadata["name"]
+            config["version"] = metadata["version"]
+            config["description"] = metadata["description"]
 
             resource_limits = metadata.get("resource_limits")
             if resource_limits:
@@ -1723,16 +1841,17 @@ class PluginManager:
                 "message": f"Plugin '{plugin_name}' is not loaded",
             }
 
-        try:
-            self._enforce_runtime_permissions(plugin_name)
-        except PermissionError as e:
-            logger.warning(f"Plugin '{plugin_name}' runtime permission denied: {e}")
-            _perm_status = self.get_plugin_permission_status(plugin_name)
-            return {
-                "status": "permission_required",
-                "message": str(e),
-                "required_permissions": _perm_status.get("missing_permissions", []),
-            }
+        if not self._should_bypass_runtime_permissions(method):
+            try:
+                self._enforce_runtime_permissions(plugin_name)
+            except PermissionError as e:
+                logger.warning(f"Plugin '{plugin_name}' runtime permission denied: {e}")
+                _perm_status = self.get_plugin_permission_status(plugin_name)
+                return {
+                    "status": "permission_required",
+                    "message": str(e),
+                    "required_permissions": _perm_status.get("missing_permissions", []),
+                }
 
         plugin_state = self.state_machine.get_state(plugin_name)
         if plugin_state != PluginState.ENABLED:
@@ -1752,7 +1871,8 @@ class PluginManager:
             }
 
         sandbox = self._plugin_sandboxes.get(plugin_name, self.sandbox)
-        return sandbox.execute_plugin_sync(plugin_instance, method, **kwargs)
+        result = sandbox.execute_plugin_sync(plugin_instance, method, **kwargs)
+        return self._normalize_plugin_execution_result(result)
 
     async def execute_plugin_async(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
         """
@@ -1766,16 +1886,17 @@ class PluginManager:
                 "message": f"Plugin '{plugin_name}' is not loaded",
             }
 
-        try:
-            self._enforce_runtime_permissions(plugin_name)
-        except PermissionError as e:
-            logger.warning(f"Plugin '{plugin_name}' runtime permission denied: {e}")
-            _perm_status = self.get_plugin_permission_status(plugin_name)
-            return {
-                "status": "permission_required",
-                "message": str(e),
-                "required_permissions": _perm_status.get("missing_permissions", []),
-            }
+        if not self._should_bypass_runtime_permissions(method):
+            try:
+                self._enforce_runtime_permissions(plugin_name)
+            except PermissionError as e:
+                logger.warning(f"Plugin '{plugin_name}' runtime permission denied: {e}")
+                _perm_status = self.get_plugin_permission_status(plugin_name)
+                return {
+                    "status": "permission_required",
+                    "message": str(e),
+                    "required_permissions": _perm_status.get("missing_permissions", []),
+                }
 
         plugin_state = self.state_machine.get_state(plugin_name)
         if plugin_state != PluginState.ENABLED:
@@ -1787,7 +1908,172 @@ class PluginManager:
 
         plugin_instance = self.loaded_plugins[plugin_name]
         sandbox = self._plugin_sandboxes.get(plugin_name, self.sandbox)
-        return await sandbox.execute_plugin(plugin_instance, method, **kwargs)
+        result = await sandbox.execute_plugin(plugin_instance, method, **kwargs)
+        return self._normalize_plugin_execution_result(result)
+
+    def _normalize_plugin_execution_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        将沙箱执行结果与插件返回值解包为统一结构。
+        这样上层无需同时理解沙箱协议与插件内部业务状态。
+        """
+        if not isinstance(result, dict):
+            return {
+                "status": "error",
+                "message": "Invalid plugin execution result",
+            }
+
+        if result.get("status") != "success":
+            return result
+
+        payload = result.get("result")
+        normalized = dict(result)
+
+        if isinstance(payload, dict):
+            payload_status = payload.get("status")
+            if isinstance(payload_status, str) and payload_status.strip():
+                normalized["status"] = payload_status
+
+            if normalized.get("message") in {None, ""}:
+                if isinstance(payload.get("message"), str):
+                    normalized["message"] = payload.get("message", "")
+                elif payload.get("error") is not None:
+                    normalized["message"] = str(payload.get("error"))
+
+            if payload.get("data") is not None:
+                normalized["data"] = payload.get("data")
+            else:
+                normalized["data"] = payload
+            return normalized
+
+        normalized["data"] = payload
+        return normalized
+
+    def _normalize_tool_definition(
+        self,
+        plugin_name: str,
+        plugin_instance: BasePlugin,
+        tool_def: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        将插件暴露的工具描述补齐为统一协议。
+        对仅声明 name/description 的旧插件，默认映射到 execute(action=<tool_name>)。
+        """
+        if not isinstance(tool_def, dict):
+            return None
+
+        tool_name = str(tool_def.get("name") or "").strip()
+        if not tool_name:
+            return None
+
+        normalized = deepcopy(tool_def)
+        normalized["name"] = tool_name
+        normalized["plugin"] = plugin_name
+
+        method_name = str(normalized.get("method") or "").strip()
+        default_params = normalized.get("default_params")
+        if not isinstance(default_params, dict):
+            default_params = {}
+
+        if not method_name:
+            if hasattr(plugin_instance, tool_name) and callable(getattr(plugin_instance, tool_name)):
+                method_name = tool_name
+            else:
+                method_name = "execute"
+                default_params.setdefault("action", tool_name)
+
+        if not hasattr(plugin_instance, method_name) or not callable(getattr(plugin_instance, method_name)):
+            logger.warning(
+                f"Plugin '{plugin_name}' tool '{tool_name}' resolved to unavailable method '{method_name}'"
+            )
+            return None
+
+        normalized["method"] = method_name
+        normalized["default_params"] = default_params
+        return normalized
+
+    def _build_plugin_help_tool(self, plugin_name: str) -> Dict[str, Any]:
+        """
+        为每个插件提供统一的帮助工具，便于模型在实际调用前先了解插件用法。
+        """
+        return {
+            "name": "help",
+            "method": "get_help",
+            "description": (
+                f"查看插件 '{plugin_name}' 的用途、配置摘要、可用工具、参数要求和调用建议。"
+                "首次使用插件前建议先调用此工具。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "可选，只查看指定工具的用法",
+                    },
+                    "include_examples": {
+                        "type": "boolean",
+                        "description": "是否返回额外调用建议，默认 true",
+                    },
+                },
+                "required": [],
+            },
+        }
+
+    def _collect_plugin_tools(self, plugin_name: str, plugin_instance: BasePlugin) -> List[Dict[str, Any]]:
+        """
+        收集并规范化插件工具定义，同时兼容显式声明和约定式方法暴露。
+        """
+        tools: List[Dict[str, Any]] = []
+        seen_signatures: Set[Tuple[str, str]] = set()
+
+        help_tool = self._normalize_tool_definition(
+            plugin_name,
+            plugin_instance,
+            self._build_plugin_help_tool(plugin_name),
+        )
+        if help_tool is not None:
+            help_signature = (help_tool["name"], help_tool["method"])
+            seen_signatures.add(help_signature)
+            tools.append(help_tool)
+
+        if hasattr(plugin_instance, "get_tools"):
+            try:
+                plugin_tools = plugin_instance.get_tools()
+                if isinstance(plugin_tools, list):
+                    for tool_def in plugin_tools:
+                        normalized = self._normalize_tool_definition(plugin_name, plugin_instance, tool_def)
+                        if normalized is None:
+                            continue
+                        signature = (normalized["name"], normalized["method"])
+                        if signature in seen_signatures:
+                            continue
+                        seen_signatures.add(signature)
+                        tools.append(normalized)
+            except Exception as e:
+                logger.error(f"Error getting tools from plugin '{plugin_name}': {e}")
+
+        for attr_name in dir(plugin_instance):
+            if not (attr_name.startswith("tool_") or attr_name.startswith("get_tool_")):
+                continue
+
+            attr = getattr(plugin_instance, attr_name)
+            if not callable(attr):
+                continue
+
+            tool_def = {
+                "name": attr_name.replace("tool_", "").replace("get_tool_", ""),
+                "description": getattr(attr, "__doc__", "") or "",
+                "method": attr_name,
+            }
+            normalized = self._normalize_tool_definition(plugin_name, plugin_instance, tool_def)
+            if normalized is None:
+                continue
+            signature = (normalized["name"], normalized["method"])
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+            tools.append(normalized)
+
+        return tools
 
     def get_plugin_tools(self, plugin_name: str) -> List[Dict[str, Any]]:
         """
@@ -1802,27 +2088,7 @@ class PluginManager:
             return []
 
         plugin_instance = self.loaded_plugins[plugin_name]
-        tools = []
-
-        if hasattr(plugin_instance, "get_tools"):
-            try:
-                plugin_tools = plugin_instance.get_tools()
-                if isinstance(plugin_tools, list):
-                    tools = plugin_tools
-            except Exception as e:
-                logger.error(f"Error getting tools from plugin '{plugin_name}': {e}")
-
-        for attr_name in dir(plugin_instance):
-            if attr_name.startswith("tool_") or attr_name.startswith("get_tool_"):
-                attr = getattr(plugin_instance, attr_name)
-                if callable(attr):
-                    tool_def = {
-                        "name": attr_name.replace("tool_", "").replace("get_tool_", ""),
-                        "description": getattr(attr, "__doc__", ""),
-                        "method": attr_name,
-                        "plugin": plugin_name,
-                    }
-                    tools.append(tool_def)
+        tools = self._collect_plugin_tools(plugin_name, plugin_instance)
 
         self._tools_registry[plugin_name] = tools
         return tools
@@ -1843,14 +2109,10 @@ class PluginManager:
         处理register、plugin、tools相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        if not hasattr(plugin_instance, "get_tools"):
-            return
-
         try:
-            tools = plugin_instance.get_tools()
-            if isinstance(tools, list):
-                self._tools_registry[plugin_name] = tools
-                logger.debug(f"Registered {len(tools)} tools for plugin '{plugin_name}'")
+            tools = self._collect_plugin_tools(plugin_name, plugin_instance)
+            self._tools_registry[plugin_name] = tools
+            logger.debug(f"Registered {len(tools)} tools for plugin '{plugin_name}'")
         except Exception as e:
             logger.error(f"Error registering tools for plugin '{plugin_name}': {e}")
 

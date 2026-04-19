@@ -1,0 +1,70 @@
+{
+  "name": "twitter-monitor",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "抓取、缓存并整理指定 Twitter 账号内容，供当前模型直接分析总结的监控插件",
+  "author": "Open-AwA Team",
+  "permissions": [
+    "network:http",
+    "file:read",
+    "file:write"
+  ],
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "fetch_twitter_tweets",
+      "version": "1.0.0",
+      "config": {
+        "description": "抓取一个或多个 Twitter 账号的最新推文并缓存到本地"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "read_twitter_cache",
+      "version": "1.0.0",
+      "config": {
+        "description": "读取最近一次缓存的推文数据"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_twitter_daily_tweets",
+      "version": "1.0.0",
+      "config": {
+        "description": "读取某一天累积保存的推文数据"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_twitter_stats",
+      "version": "1.0.0",
+      "config": {
+        "description": "查看缓存中的推文统计信息"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "search_twitter_users",
+      "version": "1.0.0",
+      "config": {
+        "description": "按关键词搜索 Twitter 用户"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_twitter_user_info",
+      "version": "1.0.0",
+      "config": {
+        "description": "查询指定 Twitter 用户的账号信息"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "summarize_twitter_tweets",
+      "version": "1.0.0",
+      "config": {
+        "description": "整理缓存中的推文和摘要提示，由当前对话模型直接完成总结"
+      }
+    }
+  ]
+}

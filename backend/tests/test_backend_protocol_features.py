@@ -5,6 +5,7 @@
 
 import asyncio
 from types import MethodType, SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
@@ -436,6 +437,113 @@ async def test_ai_agent_get_available_skills_returns_empty_without_db_session(mo
     result = await agent.get_available_skills()
 
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_get_available_plugins_loads_plugins_before_collecting_tools():
+    """
+    Agent 获取插件列表时应先尝试加载插件，确保工具定义对 AI 可见。
+    """
+
+    agent = AIAgent()
+
+    class FakePluginManager:
+        def __init__(self) -> None:
+            self.loaded_plugins = {}
+
+        def discover_plugins(self):
+            return [
+                {
+                    "name": "demo-plugin",
+                    "version": "1.0.0",
+                    "description": "demo plugin",
+                }
+            ]
+
+        def load_plugin(self, plugin_name: str) -> bool:
+            self.loaded_plugins[plugin_name] = object()
+            return True
+
+        def get_plugin_tools(self, plugin_name: str):
+            if plugin_name not in self.loaded_plugins:
+                return []
+            return [
+                {
+                    "name": "fetch_demo_data",
+                    "method": "execute",
+                    "default_params": {"action": "fetch_demo_data"},
+                }
+            ]
+
+        def get_plugin_info(self, plugin_name: str):
+            return {"loaded": plugin_name in self.loaded_plugins}
+
+    agent.plugin_manager = FakePluginManager()
+
+    result = await agent.get_available_plugins()
+
+    assert len(result) == 1
+    assert result[0]["loaded"] is True
+    assert result[0]["tools"][0]["method"] == "execute"
+    assert result[0]["tools"][0]["default_params"]["action"] == "fetch_demo_data"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_auto_execute_plugins_merges_default_params(monkeypatch):
+    """
+    自动匹配插件工具时，应把工具默认参数与运行时上下文一起传给插件。
+    """
+
+    agent = AIAgent()
+    captured: dict[str, Any] = {}
+
+    async def fake_get_available_skills():
+        return []
+
+    async def fake_get_available_plugins():
+        return [
+            {
+                "name": "twitter-monitor",
+                "tools": [
+                    {
+                        "name": "fetch_twitter_tweets",
+                        "description": "抓取 twitter 推文",
+                        "method": "execute",
+                        "default_params": {
+                            "action": "fetch_twitter_tweets",
+                            "user_names": ["OpenAI"],
+                        },
+                    }
+                ],
+            }
+        ]
+
+    async def fake_execute_plugin(plugin_name: str, method: str, **kwargs):
+        captured.update(
+            {
+                "plugin_name": plugin_name,
+                "method": method,
+                "kwargs": kwargs,
+            }
+        )
+        return {"status": "success", "data": {"ok": True}, "message": ""}
+
+    monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
+
+    result = await agent._auto_execute_skills_and_plugins(
+        intent={"type": "fetch", "action": "tweets"},
+        entities={},
+        context={"request_id": "plugin-auto-1"},
+    )
+
+    assert captured["plugin_name"] == "twitter-monitor"
+    assert captured["method"] == "execute"
+    assert captured["kwargs"]["action"] == "fetch_twitter_tweets"
+    assert captured["kwargs"]["user_names"] == ["OpenAI"]
+    assert captured["kwargs"]["context"]["request_id"] == "plugin-auto-1"
+    assert result["plugins"][0]["plugin_name"] == "twitter-monitor"
 
 
 @pytest.mark.asyncio

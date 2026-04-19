@@ -4,6 +4,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Blocks, ShoppingCart, Settings as SettingsIcon } from 'lucide-react'
+import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import {
   getPlugins,
   searchPlugins,
@@ -114,16 +116,45 @@ function MarketplacePage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
-  return (
-    <div className={styles['marketplace-page']}>
-      {/* 页面头部 */}
-      <div className={styles['page-header']}>
-        <h1>插件市场</h1>
-        <button className={styles['back-btn']} onClick={() => navigate('/plugins')}>
-          返回插件管理
+  const renderSecondarySidebar = () => {
+    return (
+      <div className={styles['secondary-nav']}>
+        <button
+          className={`${styles['nav-item']}`}
+          onClick={() => navigate('/plugins/manage')}
+        >
+          <Blocks size={18} />
+          <span>我的插件</span>
+        </button>
+        <button
+          className={`${styles['nav-item']}`}
+          onClick={() => navigate('/plugins/config/default')}
+        >
+          <SettingsIcon size={18} />
+          <span>插件配置</span>
+        </button>
+        <button
+          className={`${styles['nav-item']} ${styles['active']}`}
+          onClick={() => navigate('/marketplace')}
+        >
+          <ShoppingCart size={18} />
+          <span>插件市场</span>
         </button>
       </div>
+    )
+  }
 
+  return (
+    <PageLayout
+      title="插件市场"
+      secondarySidebar={renderSecondarySidebar()}
+      className={styles['marketplace-page']}
+      actions={
+        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => navigate('/plugins')}>
+          返回插件管理
+        </button>
+      }
+    >
       {/* 搜索栏 */}
       <div className={styles['search-bar']}>
         <input
@@ -242,7 +273,7 @@ function MarketplacePage() {
           </button>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }
 

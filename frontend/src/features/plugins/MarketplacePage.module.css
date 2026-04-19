@@ -1,22 +1,54 @@
 /* 插件市场页面样式 */
 
 .marketplace-page {
-  padding: 24px;
-  overflow-y: auto;
-  height: 100%;
+  /* PageLayout 统一管理布局 */
 }
 
-.page-header {
+.secondary-nav {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
-  color: var(--color-text-primary);
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  text-align: left;
+  transition: all 0.15s;
+  position: relative;
+  border: none;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text);
+}
+
+.nav-item.active {
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 18px;
+  background: var(--color-primary);
+  border-radius: 0 4px 4px 0;
+}
+
+.nav-item.active svg {
+  color: var(--color-primary);
 }
 
 /* 搜索栏 */

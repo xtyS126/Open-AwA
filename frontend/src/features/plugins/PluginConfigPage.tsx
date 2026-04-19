@@ -1,5 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Blocks, ShoppingCart, Settings as SettingsIcon } from 'lucide-react'
+import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import ConfirmDialog from '@/shared/components/ConfirmDialog/ConfirmDialog'
 import { useToast } from '@/shared/components/Toast'
 import { usePluginConfigActions, usePluginConfigSchema, usePluginList } from '@/features/plugins/hooks'
@@ -204,13 +206,40 @@ function PluginConfigPage() {
 
   const properties = schema.properties || {}
 
+  const renderSecondarySidebar = () => {
+    return (
+      <div className={styles['secondary-nav']}>
+        <button
+          className={`${styles['nav-item']}`}
+          onClick={() => navigate('/plugins/manage')}
+        >
+          <Blocks size={18} />
+          <span>我的插件</span>
+        </button>
+        <button
+          className={`${styles['nav-item']} ${styles['active']}`}
+          onClick={() => navigate('/plugins/config/default')}
+        >
+          <SettingsIcon size={18} />
+          <span>插件配置</span>
+        </button>
+        <button
+          className={`${styles['nav-item']}`}
+          onClick={() => navigate('/marketplace')}
+        >
+          <ShoppingCart size={18} />
+          <span>插件市场</span>
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className={styles['plugin-config-page']}>
-      <div className={styles['header']}>
-        <div>
-          <h1>插件配置</h1>
-          <p className={styles['subtitle']}>根据 schema 动态渲染表单，实时校验后保存到插件目录 config.json</p>
-        </div>
+    <PageLayout
+      title="插件配置"
+      secondarySidebar={renderSecondarySidebar()}
+      className={styles['plugin-config-page']}
+      actions={
         <div className={styles['header-actions']}>
           <select
             value={pluginId || ''}
@@ -226,6 +255,12 @@ function PluginConfigPage() {
           <button className="btn btn-primary" onClick={handleSave} disabled={actionLoading || schemaLoading || hasValidationError}>
             {actionLoading ? '保存中...' : '保存配置'}
           </button>
+        </div>
+      }
+    >
+      <div className={styles['header']}>
+        <div>
+          <p className={styles['subtitle']}>根据 schema 动态渲染表单，实时校验后保存到插件目录 config.json</p>
         </div>
       </div>
 
@@ -311,7 +346,7 @@ function PluginConfigPage() {
         }}
       />
       <ToastContainer />
-    </div>
+    </PageLayout>
   )
 }
 

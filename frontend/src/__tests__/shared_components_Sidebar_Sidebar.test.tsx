@@ -29,32 +29,25 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('Sidebar', () => {
-  it('展示插件分支并提供插件管理/插件配置子入口', () => {
+  it('展示导航链接：插件、定时任务等', () => {
     render(
-      <MemoryRouter initialEntries={['/plugins/manage']}>
+      <MemoryRouter initialEntries={['/plugins']}>
         <Sidebar />
       </MemoryRouter>
     )
 
     expect(screen.getByRole('link', { name: '定时任务' })).toHaveAttribute('href', '/scheduled-tasks')
-    expect(screen.getByRole('link', { name: '插件管理' })).toHaveAttribute('href', '/plugins/manage')
-    expect(screen.getByRole('link', { name: '插件配置' })).toHaveAttribute('href', '/plugins/config/default')
+    expect(screen.getByRole('link', { name: '插件' })).toHaveAttribute('href', '/plugins')
   })
 
-  it('点击插件分支可折叠和展开子入口', () => {
+  it('当前路由对应的导航项高亮', () => {
     render(
-      <MemoryRouter initialEntries={['/chat']}>
+      <MemoryRouter initialEntries={['/plugins']}>
         <Sidebar />
       </MemoryRouter>
     )
 
-    const pluginBranchButton = screen.getByRole('button', { name: '插件' })
-    expect(screen.queryByRole('link', { name: '插件管理' })).not.toBeInTheDocument()
-
-    fireEvent.click(pluginBranchButton)
-    expect(screen.getByRole('link', { name: '插件管理' })).toBeInTheDocument()
-
-    fireEvent.click(pluginBranchButton)
-    expect(screen.queryByRole('link', { name: '插件管理' })).not.toBeInTheDocument()
+    const pluginLink = screen.getByRole('link', { name: '插件' })
+    expect(pluginLink.className).toMatch(/active/)
   })
 })
