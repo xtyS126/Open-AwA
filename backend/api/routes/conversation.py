@@ -6,15 +6,31 @@
 from datetime import datetime, timedelta, timezone
 import json
 from typing import Any, Dict, Optional
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
+from api.schemas import (
+    ConversationSessionBatchDeleteRequest,
+    ConversationSessionCreate,
+    ConversationSessionListResponse,
+    ConversationSessionRenameRequest,
+    ConversationSessionResponse,
+)
+from core.conversation_sessions import (
+    DEFAULT_CONVERSATION_TITLE,
+    ensure_conversation,
+    get_conversation_or_404,
+    restore_conversation,
+    soft_delete_conversation,
+)
 from core.conversation_recorder import conversation_recorder
-from db.models import ConversationRecord, User, get_db
+from db.models import Conversation, ConversationRecord, User, get_db
 
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -59,6 +75,135 @@ def _to_dict(record: ConversationRecord) -> Dict[str, Any]:
     }
 
 
+def _serialize_conversation(conversation: Conversation) -> Dict[str, Any]:
+    """
+    将会话聚合对象序列化为前端所需结构。
+    """
+    return {
+        "session_id": conversation.session_id,
+        "user_id": conversation.user_id,
+        "title": (conversation.title or "").strip() or DEFAULT_CONVERSATION_TITLE,
+        "summary": conversation.summary or "",
+        "last_message_preview": conversation.last_message_preview or "",
+        "last_message_role": conversation.last_message_role,
+        "message_count": int(conversation.message_count or 0),
+        "created_at": conversation.created_at,
+        "updated_at": conversation.updated_at,
+        "last_message_at": conversation.last_message_at,
+        "deleted_at": conversation.deleted_at,
+        "restored_at": conversation.restored_at,
+        "purge_after": conversation.purge_after,
+        "conversation_metadata": conversation.conversation_metadata or {},
+    }
+
+
+@router.get("", response_model=ConversationSessionListResponse)
+async def list_sessions(
+    search: Optional[str] = Query(None),
+    sort_by: str = Query("last_message_at", pattern="^(title|created_at|updated_at|last_message_at|message_count)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    include_deleted: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    返回当前用户的会话列表，支持搜索、排序与分页。
+    """
+    query = db.query(Conversation).filter(Conversation.user_id == current_user.id)
+    if not include_deleted:
+        query = query.filter(Conversation.deleted_at.is_(None))
+
+    normalized_search = str(search or "").strip()
+    if normalized_search:
+        like_pattern = f"%{normalized_search}%"
+        query = query.filter(
+            or_(
+                Conversation.title.ilike(like_pattern),
+                Conversation.summary.ilike(like_pattern),
+                Conversation.last_message_preview.ilike(like_pattern),
+                Conversation.session_id.ilike(like_pattern),
+            )
+        )
+
+    sort_column = {
+        "title": Conversation.title,
+        "created_at": Conversation.created_at,
+        "updated_at": Conversation.updated_at,
+        "last_message_at": Conversation.last_message_at,
+        "message_count": Conversation.message_count,
+    }[sort_by]
+    order_expression = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+    query = query.order_by(order_expression, Conversation.updated_at.desc(), Conversation.id.desc())
+
+    total = query.count()
+    offset = (page - 1) * page_size
+    items = query.offset(offset).limit(page_size).all()
+
+    logger.bind(
+        event="conversation_session_list_loaded",
+        module="conversation",
+        action="list_sessions",
+        status="success",
+        user_id=current_user.id,
+        total=total,
+        page=page,
+        page_size=page_size,
+        include_deleted=include_deleted,
+    ).info("conversation session list loaded")
+
+    return {
+        "items": [_serialize_conversation(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": offset + len(items) < total,
+    }
+
+
+@router.post("", response_model=ConversationSessionResponse)
+async def create_session(
+    payload: ConversationSessionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    创建新的用户会话，或在指定会话存在时返回该会话。
+    """
+    requested_session_id = str(payload.session_id or "").strip()
+    if not requested_session_id or requested_session_id == "default":
+        requested_session_id = uuid.uuid4().hex
+
+    conversation = ensure_conversation(
+        db,
+        session_id=requested_session_id,
+        user_id=current_user.id,
+        title=payload.title,
+    )
+    if conversation is None:
+        raise HTTPException(status_code=400, detail="Failed to create conversation")
+
+    normalized_title = str(payload.title or "").strip()
+    if normalized_title:
+        conversation.title = normalized_title[:200]
+        conversation.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(conversation)
+
+    logger.bind(
+        event="conversation_session_created",
+        module="conversation",
+        action="create_session",
+        status="success",
+        user_id=current_user.id,
+        session_id=conversation.session_id,
+    ).info("conversation session created")
+
+    return _serialize_conversation(conversation)
+
+
 @router.get("/records")
 async def get_records_preview(
     limit: int = Query(20, ge=1, le=200),
@@ -91,6 +236,47 @@ async def get_records_preview(
         "records": [_to_dict(item) for item in records],
         "count": len(records),
         "limit": limit,
+    }
+
+
+@router.post("/batch-delete", response_model=ConversationSessionListResponse)
+async def batch_delete_sessions(
+    payload: ConversationSessionBatchDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    批量软删除会话，并返回本次更新后的会话条目。
+    """
+    updated_items = []
+    for session_id in payload.session_ids:
+        conversation = soft_delete_conversation(
+            db,
+            session_id=session_id,
+            user_id=current_user.id,
+            retention_days=payload.retention_days,
+        )
+        updated_items.append(conversation)
+
+    db.commit()
+    for conversation in updated_items:
+        db.refresh(conversation)
+
+    logger.bind(
+        event="conversation_session_batch_deleted",
+        module="conversation",
+        action="batch_delete_sessions",
+        status="success",
+        user_id=current_user.id,
+        count=len(updated_items),
+    ).info("conversation sessions batch deleted")
+
+    return {
+        "items": [_serialize_conversation(item) for item in updated_items],
+        "total": len(updated_items),
+        "page": 1,
+        "page_size": len(updated_items),
+        "has_more": False,
     }
 
 
@@ -244,3 +430,92 @@ async def update_collection_status(
         "success": True,
         "enabled": conversation_recorder.is_collection_enabled(current_user=current_user),
     }
+
+
+@router.patch("/{session_id}", response_model=ConversationSessionResponse)
+async def rename_session(
+    session_id: str,
+    payload: ConversationSessionRenameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    更新指定会话标题。
+    """
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Conversation title cannot be empty")
+
+    conversation = get_conversation_or_404(db, session_id, current_user.id, include_deleted=True)
+    conversation.title = title[:200]
+    conversation.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(conversation)
+
+    logger.bind(
+        event="conversation_session_renamed",
+        module="conversation",
+        action="rename_session",
+        status="success",
+        user_id=current_user.id,
+        session_id=session_id,
+    ).info("conversation session renamed")
+
+    return _serialize_conversation(conversation)
+
+
+@router.delete("/{session_id}", response_model=ConversationSessionResponse)
+async def delete_session(
+    session_id: str,
+    retention_days: int = Query(30, ge=1, le=3650),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    软删除指定会话。
+    """
+    conversation = soft_delete_conversation(
+        db,
+        session_id=session_id,
+        user_id=current_user.id,
+        retention_days=retention_days,
+    )
+    db.commit()
+    db.refresh(conversation)
+
+    logger.bind(
+        event="conversation_session_deleted",
+        module="conversation",
+        action="delete_session",
+        status="success",
+        user_id=current_user.id,
+        session_id=session_id,
+        retention_days=retention_days,
+    ).info("conversation session deleted")
+
+    return _serialize_conversation(conversation)
+
+
+@router.post("/{session_id}/restore", response_model=ConversationSessionResponse)
+async def restore_session_route(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    恢复已软删除的会话。
+    """
+    conversation = restore_conversation(db, session_id, current_user.id)
+    db.commit()
+    db.refresh(conversation)
+
+    logger.bind(
+        event="conversation_session_restored",
+        module="conversation",
+        action="restore_session",
+        status="success",
+        user_id=current_user.id,
+        session_id=session_id,
+    ).info("conversation session restored")
+
+    return _serialize_conversation(conversation)

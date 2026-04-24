@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MarketplacePage from '@/features/plugins/MarketplacePage'
 import { getPlugins, installPlugin, searchPlugins } from '@/features/plugins/marketplaceApi'
@@ -69,8 +70,16 @@ describe('MarketplacePage', () => {
     ;(installPlugin as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ok: true } })
   })
 
+  function renderPage() {
+    return render(
+      <MemoryRouter initialEntries={['/plugins/marketplace']}>
+        <MarketplacePage />
+      </MemoryRouter>,
+    )
+  }
+
   it('应加载插件并支持分类筛选与返回按钮', async () => {
-    render(<MarketplacePage />)
+    renderPage()
 
     await waitFor(() => {
       expect(getPlugins).toHaveBeenCalledWith({ category: undefined, page: 1, page_size: 12 })
@@ -84,11 +93,11 @@ describe('MarketplacePage', () => {
     })
 
     fireEvent.click(screen.getByText('返回插件管理'))
-    expect(mockNavigate).toHaveBeenCalledWith('/plugins')
+    expect(mockNavigate).toHaveBeenCalledWith('/plugins/manage')
   })
 
   it('应支持搜索并展示搜索结果', async () => {
-    render(<MarketplacePage />)
+    renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('搜索')).toBeInTheDocument()
@@ -106,7 +115,7 @@ describe('MarketplacePage', () => {
   })
 
   it('应在安装成功后显示已安装状态', async () => {
-    render(<MarketplacePage />)
+    renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('安装')).toBeInTheDocument()
@@ -124,7 +133,7 @@ describe('MarketplacePage', () => {
     ;(installPlugin as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
       response: { data: { detail: '服务异常' } },
     })
-    render(<MarketplacePage />)
+    renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('安装')).toBeInTheDocument()

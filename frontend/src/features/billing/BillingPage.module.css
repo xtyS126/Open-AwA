@@ -27,6 +27,28 @@
   color: var(--color-text-secondary);
 }
 
+.sync-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #16a34a;
+}
+
+.sync-dot-refreshing {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -106,6 +128,15 @@
 }
 
 @media (max-width: 600px) {
+  .billing-header {
+    flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
   .billing-stats-grid {
     grid-template-columns: 1fr;
   }

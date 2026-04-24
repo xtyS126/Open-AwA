@@ -132,6 +132,7 @@ function App() {
                 <Route path="/" element={<Navigate to="/chat" replace />} />
                 <Route path="/login" element={<Navigate to="/chat" replace />} />
                 <Route path="/chat" element={<ChatPage />} />
+                <Route path="/chat/:conversationId" element={<ChatPage />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/skills" element={<SkillsPage />} />
@@ -140,8 +141,9 @@ function App() {
                   <Route index element={<Navigate to="manage" replace />} />
                   <Route path="manage" element={<PluginsPage />} />
                   <Route path="config/:pluginId" element={<PluginConfigPage />} />
+                  <Route path="marketplace" element={<MarketplacePage />} />
                 </Route>
-                <Route path="/marketplace" element={<MarketplacePage />} />
+                <Route path="/marketplace" element={<Navigate to="/plugins/marketplace" replace />} />
                 <Route path="/memory" element={<MemoryPage />} />
                 <Route path="/experience" element={<ExperiencePage hideHeader />} />
                 <Route path="/billing" element={<BillingPage />} />

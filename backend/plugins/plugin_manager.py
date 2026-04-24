@@ -1686,6 +1686,18 @@ class PluginManager:
             return False
 
         logger.info(f"Plugin '{plugin_name}' loaded successfully")
+
+        # 仅在 manifest 显式声明时才自动授权，默认仍保留运行时权限校验。
+        manifest = metadata.get("manifest") if isinstance(metadata.get("manifest"), dict) else {}
+        auto_authorize_permissions = bool(
+            metadata.get("auto_authorize_permissions")
+            or manifest.get("auto_authorize_permissions")
+        )
+        manifest_permissions = metadata.get("requested_permissions", [])
+        if auto_authorize_permissions and manifest_permissions:
+            self.authorize_plugin_permissions(plugin_name, manifest_permissions)
+            logger.info(f"Plugin '{plugin_name}' auto-authorized permissions: {manifest_permissions}")
+
         self._ensure_runtime_route(plugin_name)
         self._apply_active_route_slot(plugin_name)
         _meta = self.plugin_metadata.get(plugin_name, {})
@@ -1829,6 +1841,53 @@ class PluginManager:
 
         return self.load_plugin(plugin_name)
 
+    def _filter_plugin_method_kwargs(
+        self,
+        plugin_instance: BasePlugin,
+        method: str,
+        kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        根据插件方法签名过滤参数，避免自动注入的上下文字段污染直接方法调用。
+        对显式接受 **kwargs 的历史插件保持兼容，不做额外裁剪。
+        """
+        method_callable = getattr(plugin_instance, method, None)
+        if not callable(method_callable):
+            return kwargs
+
+        try:
+            signature = inspect.signature(method_callable)
+        except (TypeError, ValueError):
+            return kwargs
+
+        if any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        ):
+            return kwargs
+
+        allowed_kwargs = {
+            parameter_name
+            for parameter_name, parameter in signature.parameters.items()
+            if parameter.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            )
+        }
+        filtered_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key in allowed_kwargs
+        }
+
+        dropped_keys = sorted(key for key in kwargs if key not in allowed_kwargs)
+        if dropped_keys:
+            logger.debug(
+                f"Plugin '{plugin_instance.name}' method '{method}' filtered unsupported kwargs: {dropped_keys}"
+            )
+
+        return filtered_kwargs
+
     def execute_plugin(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
         """
         处理execute、plugin相关逻辑，并为调用方返回对应结果。
@@ -1871,7 +1930,8 @@ class PluginManager:
             }
 
         sandbox = self._plugin_sandboxes.get(plugin_name, self.sandbox)
-        result = sandbox.execute_plugin_sync(plugin_instance, method, **kwargs)
+        filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, method, kwargs)
+        result = sandbox.execute_plugin_sync(plugin_instance, method, **filtered_kwargs)
         return self._normalize_plugin_execution_result(result)
 
     async def execute_plugin_async(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
@@ -1907,8 +1967,16 @@ class PluginManager:
             }
 
         plugin_instance = self.loaded_plugins[plugin_name]
+        if not hasattr(plugin_instance, method):
+            logger.error(f"Plugin '{plugin_name}' does not have method '{method}'")
+            return {
+                "status": "error",
+                "message": f"Plugin '{plugin_name}' does not have method '{method}'",
+            }
+
         sandbox = self._plugin_sandboxes.get(plugin_name, self.sandbox)
-        result = await sandbox.execute_plugin(plugin_instance, method, **kwargs)
+        filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, method, kwargs)
+        result = await sandbox.execute_plugin(plugin_instance, method, **filtered_kwargs)
         return self._normalize_plugin_execution_result(result)
 
     def _normalize_plugin_execution_result(self, result: Dict[str, Any]) -> Dict[str, Any]:

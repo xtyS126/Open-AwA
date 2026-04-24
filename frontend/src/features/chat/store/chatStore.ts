@@ -1,13 +1,15 @@
 import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
-
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  reasoning_content?: string
-  timestamp: Date
-}
+import {
+  deleteCachedConversationMessages,
+  getActiveConversationId,
+  getCachedConversationMessages,
+  getCachedConversationSummaries,
+  setActiveConversationId,
+  setCachedConversationMessages,
+  setCachedConversationSummaries,
+} from '@/features/chat/utils/chatCache'
+import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 
 // 模型配置项，用于全局模型选择
 export interface ModelOption {
@@ -18,21 +20,28 @@ export interface ModelOption {
 }
 
 interface ChatState {
-  messages: Message[]
+  messages: ChatMessage[]
   isLoading: boolean
   sessionId: string
+  conversations: ConversationSessionSummary[]
+  conversationsTotal: number
+  conversationsHasMore: boolean
   outputMode: 'stream' | 'direct'
   // 全局模型选择状态
   selectedModel: string
   modelOptions: ModelOption[]
   modelLoading: boolean
   modelError: string | null
-  addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string) => void
+  addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string, id?: string) => string
   updateLastMessage: (content: string, reasoning_content?: string) => void
-  setMessages: (messages: Message[]) => void
+  setMessages: (messages: ChatMessage[]) => void
+  loadCachedMessages: (sessionId: string) => void
   setLoading: (loading: boolean) => void
   clearMessages: () => void
   setSessionId: (id: string) => void
+  setConversations: (items: ConversationSessionSummary[], total?: number, hasMore?: boolean) => void
+  upsertConversation: (item: ConversationSessionSummary) => void
+  removeConversation: (sessionId: string) => void
   setOutputMode: (mode: 'stream' | 'direct') => void
   setSelectedModel: (model: string) => void
   setModelOptions: (options: ModelOption[]) => void
@@ -40,29 +49,41 @@ interface ChatState {
   setModelError: (error: string | null) => void
 }
 
+const initialSessionId = getActiveConversationId() || 'default'
+
 export const useChatStore = create<ChatState>((set) => ({
-  messages: [],
+  messages: getCachedConversationMessages(initialSessionId),
   isLoading: false,
-  sessionId: 'default',
+  sessionId: initialSessionId,
+  conversations: getCachedConversationSummaries(),
+  conversationsTotal: getCachedConversationSummaries().length,
+  conversationsHasMore: false,
   outputMode: (safeGetItem('chat_output_mode', 'stream') as 'stream' | 'direct'),
   selectedModel: safeGetItem('chat_selected_model', ''),
   modelOptions: [],
   modelLoading: false,
   modelError: null,
   
-  addMessage: (role, content, reasoning_content) =>
+  addMessage: (role, content, reasoning_content, id) => {
+    const messageId = id || crypto.randomUUID()
     set((state) => ({
-      messages: [
-        ...state.messages,
-        {
-          id: crypto.randomUUID(),
-          role,
-          content,
-          reasoning_content,
-          timestamp: new Date(),
-        },
-      ],
-    })),
+      messages: (() => {
+        const nextMessages = [
+          ...state.messages,
+          {
+            id: messageId,
+            role,
+            content,
+            reasoning_content,
+            timestamp: new Date(),
+          },
+        ]
+        setCachedConversationMessages(state.sessionId, nextMessages)
+        return nextMessages
+      })(),
+    }))
+    return messageId
+  },
   
   updateLastMessage: (content, reasoning_content) =>
     set((state) => {
@@ -76,16 +97,67 @@ export const useChatStore = create<ChatState>((set) => ({
           lastMessage.reasoning_content = (lastMessage.reasoning_content || '') + reasoning_content
         }
       }
+      setCachedConversationMessages(state.sessionId, newMessages)
       return { messages: newMessages }
     }),
   
-  setMessages: (messages) => set({ messages }),
+  setMessages: (messages) =>
+    set((state) => {
+      setCachedConversationMessages(state.sessionId, messages)
+      return { messages }
+    }),
+
+  loadCachedMessages: (sessionId) =>
+    set({ messages: getCachedConversationMessages(sessionId) }),
   
   setLoading: (loading) => set({ isLoading: loading }),
   
-  clearMessages: () => set({ messages: [] }),
+  clearMessages: () =>
+    set((state) => {
+      setCachedConversationMessages(state.sessionId, [])
+      return { messages: [] }
+    }),
   
-  setSessionId: (id) => set({ sessionId: id }),
+  setSessionId: (id) => {
+    setActiveConversationId(id)
+    set({ sessionId: id, messages: getCachedConversationMessages(id) })
+  },
+
+  setConversations: (items, total, hasMore) => {
+    setCachedConversationSummaries(items)
+    set({
+      conversations: items,
+      conversationsTotal: total ?? items.length,
+      conversationsHasMore: hasMore ?? false,
+    })
+  },
+
+  upsertConversation: (item) =>
+    set((state) => {
+      const existingIndex = state.conversations.findIndex((entry) => entry.session_id === item.session_id)
+      const nextItems = [...state.conversations]
+      if (existingIndex >= 0) {
+        nextItems[existingIndex] = item
+      } else {
+        nextItems.unshift(item)
+      }
+      setCachedConversationSummaries(nextItems)
+      return {
+        conversations: nextItems,
+        conversationsTotal: Math.max(state.conversationsTotal, nextItems.length),
+      }
+    }),
+
+  removeConversation: (sessionId) =>
+    set((state) => {
+      const nextItems = state.conversations.filter((item) => item.session_id !== sessionId)
+      deleteCachedConversationMessages(sessionId)
+      setCachedConversationSummaries(nextItems)
+      return {
+        conversations: nextItems,
+        conversationsTotal: Math.max(0, state.conversationsTotal - 1),
+      }
+    }),
 
   setOutputMode: (mode) => {
     set({ outputMode: mode })

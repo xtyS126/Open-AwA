@@ -143,6 +143,19 @@ class AIAgent:
         context["_record_hook"] = self._schedule_record
 
     @staticmethod
+    def _build_status_event(phase: str, message: str, **extra: Any) -> Dict[str, Any]:
+        """
+        构造统一的流式阶段状态事件，便于前端在首包前显示当前进度。
+        """
+        payload: Dict[str, Any] = {
+            "type": "status",
+            "phase": phase,
+            "message": message,
+        }
+        payload.update(extra)
+        return payload
+
+    @staticmethod
     def _summarize_skill_capabilities(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         将技能列表收敛为适合注入模型上下文的轻量摘要，避免把统计和配置细节全部暴露给提示词。
@@ -602,6 +615,8 @@ class AIAgent:
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
 
+        yield self._build_status_event("starting", "正在准备对话上下文")
+
         self._prepare_context(user_input, context)
         await self._inject_runtime_capabilities(context)
 
@@ -609,6 +624,21 @@ class AIAgent:
         session_id = context.get("session_id", "default")
         conversation_history = await self._build_conversation_history(session_id)
         context["conversation_history"] = conversation_history
+
+        intent = await self.comprehension.recognize_intent(user_input)
+        entities = await self.comprehension.extract_entities(user_input)
+
+        yield self._build_status_event("planning", "正在生成执行计划")
+        plan = await self.planner.create_plan(
+            intent=intent,
+            entities=entities,
+            context=context,
+        )
+        context["plan"] = plan
+        yield {
+            "type": "plan",
+            "plan": plan,
+        }
             
         full_content = ""
         full_reasoning = ""

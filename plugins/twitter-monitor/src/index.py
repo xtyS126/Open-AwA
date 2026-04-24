@@ -12,10 +12,44 @@ from backend.plugins.base_plugin import BasePlugin
 
 
 DEFAULT_TWITTER_API_BASE_URL = "https://api.twitterapi.io/twitter"
+SUMMARY_ROLE = (
+    "你是一名 AI 行业速报编辑，擅长从高密度推文里识别真正值得关注的 AI 动态，"
+    "输出是否有重要动态、核心内容摘要和价值判断。"
+)
+SUMMARY_PRIORITY_RULES = [
+    "新开源模型: release、open source、开源、发布、SOTA、Qwen、GLM 等模型发布或更新。",
+    "商业大模型更新: ChatGPT、Claude、Gemini、Grok、Kimi、MiniMax 等闭源模型动态。",
+    "模型实测结论: 对比、跑测试、实测、差距等评测结果。",
+    "AI 产品或工具发布与更新: API、推出、试玩、Sora、Codex 等工具动态。",
+    "GitHub 开源项目: star、爆火、github.com 链接、工具分享等开源项目动态。",
+    "提示词创新: prompt、模板、工作流等有实用价值的提示词方法。",
+    "机器人或硬件相关: Boston Dynamics、Figure、Optimus、树莓派等。",
+    "重大软件更新: Chrome、VSCode 等大型软件更新。",
+]
+SUMMARY_OUTPUT_RULES = [
+    "第一部分只输出整体结论: 未检测到符合条件的内容时写“暂无重大动态。”；检测到时写“有 X 条重要动态。”。",
+    "第二部分逐条总结: 每条最多 5 行；信息量小的一句话概括，信息量大时使用“标题 + · 细节”结构。",
+    "第三部分输出“AI总结：...”并给出价值判断，聚焦对行业或使用场景的意义。",
+]
+SUMMARY_LANGUAGE_RULES = [
+    "全中文输出，但可保留必要的英文关键词。",
+    "禁止出现“以下是结果”“我认为”等 AI 自述语。",
+    "不要输出格式说明、推理过程、无关评论或再次请求调用工具。",
+    "优先精简表达，只保留真正重要的信息。",
+]
+SUMMARY_EXAMPLE = (
+    "有3条重要动态：\n"
+    "一、Sora APP 安卓版正式上线，已在加、美、日等地区开放下载。\n\n"
+    "二、Google 推出 File Search Tool\n"
+    "· 产品形态：完全托管的 RAG 系统，内置于 Gemini API\n"
+    "· 核心价值：将 RAG 简化为一行 API 调用，自动完成索引、向量嵌入与语义检索\n"
+    "· 计费模式：仅首次建立索引收费，后续查询免费\n\n"
+    "三、苹果新版 Siri 将由 Gemini 提供后台支持，预计 2026 年 3 月上线。\n\n"
+    "AI总结：谷歌推出的工具会降低企业级知识库部署门槛，RAG 技术正在平民化。"
+)
 DEFAULT_SUMMARY_GUIDANCE = (
-    "请基于返回的 digest、top_tweets 和 tweets 数据，直接在当前对话中完成中文总结。"
-    "优先关注模型发布、产品更新、重要评测、开源项目、提示词创新、机器人硬件和大型软件更新。"
-    "如果没有明显重要动态，请明确说明暂无重大动态。不要再调用额外总结模型。"
+    "请直接基于返回的 digest、top_tweets 和 tweets 数据，在当前对话中完成最终中文总结。"
+    "先判断是否存在重要动态，再输出核心摘要与 AI总结。不要再调用额外总结模型，也不要输出 JSON。"
 )
 SUPPORTED_STORAGE_MODES = {"latest", "daily", "both"}
 
@@ -60,6 +94,32 @@ def _parse_user_list(value: Any) -> List[str]:
     return result
 
 
+def _build_summary_prompt_template() -> str:
+    sections = [
+        f"角色设定: {SUMMARY_ROLE}",
+        "判断逻辑（按优先级）:",
+    ]
+    sections.extend(
+        f"{index}. {rule}"
+        for index, rule in enumerate(SUMMARY_PRIORITY_RULES, start=1)
+    )
+    sections.append("输出要求:")
+    sections.extend(
+        f"{index}. {rule}"
+        for index, rule in enumerate(SUMMARY_OUTPUT_RULES, start=1)
+    )
+    sections.append("语言要求:")
+    sections.extend(
+        f"{index}. {rule}"
+        for index, rule in enumerate(SUMMARY_LANGUAGE_RULES, start=1)
+    )
+    sections.append(f"示例输出:\n{SUMMARY_EXAMPLE}")
+    return "\n".join(sections)
+
+
+SUMMARY_PROMPT_TEMPLATE = _build_summary_prompt_template()
+
+
 class TwitterMonitorPlugin(BasePlugin):
     name: str = "twitter-monitor"
     version: str = "1.0.0"
@@ -78,6 +138,16 @@ class TwitterMonitorPlugin(BasePlugin):
         self.include_replies = False
         self.tweets_per_user = 8
         self.storage_mode = "both"
+        
+        # 自定义提示词配置
+        self.enable_custom_summary = False
+        self.custom_summary_role = ""
+        self.custom_priority_rules = ""
+        self.custom_output_rules = ""
+        self.custom_language_rules = ""
+        self.custom_summary_example = ""
+        self._custom_summary_prompt_template = ""
+        
         self._refresh_config()
 
     def _refresh_config(self) -> None:
@@ -92,6 +162,134 @@ class TwitterMonitorPlugin(BasePlugin):
         self.tweets_per_user = _coerce_int(self.config.get("tweets_per_user"), 8, minimum=1, maximum=50)
         storage_mode = str(self.config.get("storage_mode") or "both").strip().lower()
         self.storage_mode = storage_mode if storage_mode in SUPPORTED_STORAGE_MODES else "both"
+        
+        # 加载自定义提示词配置
+        self._load_summary_customization()
+
+    def _load_summary_customization(self) -> None:
+        """
+        从配置中加载自定义提示词配置。
+        如果未启用自定义提示词或配置为空，使用默认值。
+        """
+        summary_config = self.config.get("summary_customization")
+        
+        # 如果配置不是字典或为空，使用默认值
+        if not isinstance(summary_config, dict):
+            self.enable_custom_summary = False
+            self.custom_summary_role = ""
+            self.custom_priority_rules = ""
+            self.custom_output_rules = ""
+            self.custom_language_rules = ""
+            self.custom_summary_example = ""
+            self._custom_summary_prompt_template = ""
+            return
+        
+        # 读取启用状态
+        self.enable_custom_summary = _coerce_bool(summary_config.get("enable_custom_summary"), False)
+        
+        # 读取自定义字段
+        self.custom_summary_role = str(summary_config.get("custom_summary_role") or "").strip()
+        self.custom_priority_rules = str(summary_config.get("custom_priority_rules") or "").strip()
+        self.custom_output_rules = str(summary_config.get("custom_output_rules") or "").strip()
+        self.custom_language_rules = str(summary_config.get("custom_language_rules") or "").strip()
+        self.custom_summary_example = str(summary_config.get("custom_summary_example") or "").strip()
+        
+        # 如果启用了自定义提示词且配置了内容，生成自定义提示词模板
+        if self.enable_custom_summary and self._has_custom_content():
+            self._custom_summary_prompt_template = self._build_custom_summary_prompt_template()
+        else:
+            self._custom_summary_prompt_template = ""
+
+    def _has_custom_content(self) -> bool:
+        """
+        检查是否配置了任何自定义提示词内容。
+        """
+        return bool(
+            self.custom_summary_role or
+            self.custom_priority_rules or
+            self.custom_output_rules or
+            self.custom_language_rules or
+            self.custom_summary_example
+        )
+
+    def _build_custom_summary_prompt_template(self) -> str:
+        """
+        根据自定义配置构建提示词模板。
+        """
+        sections = []
+        
+        # 角色设定
+        if self.custom_summary_role:
+            sections.append(f"角色设定: {self.custom_summary_role}")
+        
+        # 优先级规则
+        if self.custom_priority_rules:
+            sections.append("判断逻辑（按优先级）:")
+            rules = [rule.strip() for rule in self.custom_priority_rules.split("\n") if rule.strip()]
+            for index, rule in enumerate(rules, start=1):
+                sections.append(f"{index}. {rule}")
+        
+        # 输出规则
+        if self.custom_output_rules:
+            sections.append("输出要求:")
+            rules = [rule.strip() for rule in self.custom_output_rules.split("\n") if rule.strip()]
+            for index, rule in enumerate(rules, start=1):
+                sections.append(f"{index}. {rule}")
+        
+        # 语言规则
+        if self.custom_language_rules:
+            sections.append("语言要求:")
+            rules = [rule.strip() for rule in self.custom_language_rules.split("\n") if rule.strip()]
+            for index, rule in enumerate(rules, start=1):
+                sections.append(f"{index}. {rule}")
+        
+        # 示例
+        if self.custom_summary_example:
+            sections.append(f"示例输出:\n{self.custom_summary_example}")
+        
+        return "\n".join(sections)
+
+    def _get_effective_summary_config(self) -> Dict[str, Any]:
+        """
+        获取生效的提示词配置。
+        如果启用了自定义提示词且配置了内容，使用自定义配置；
+        否则使用默认配置。
+        """
+        if self.enable_custom_summary and self._has_custom_content():
+            # 使用自定义配置
+            return {
+                "source": "custom",
+                "role": self.custom_summary_role or SUMMARY_ROLE,
+                "priority_rules": self._parse_rules(self.custom_priority_rules, SUMMARY_PRIORITY_RULES),
+                "output_rules": self._parse_rules(self.custom_output_rules, SUMMARY_OUTPUT_RULES),
+                "language_rules": self._parse_rules(self.custom_language_rules, SUMMARY_LANGUAGE_RULES),
+                "example": self.custom_summary_example or SUMMARY_EXAMPLE,
+                "guidance": DEFAULT_SUMMARY_GUIDANCE,
+                "prompt_template": self._custom_summary_prompt_template or SUMMARY_PROMPT_TEMPLATE,
+            }
+        else:
+            # 使用默认配置
+            return {
+                "source": "default",
+                "role": SUMMARY_ROLE,
+                "priority_rules": list(SUMMARY_PRIORITY_RULES),
+                "output_rules": list(SUMMARY_OUTPUT_RULES),
+                "language_rules": list(SUMMARY_LANGUAGE_RULES),
+                "example": SUMMARY_EXAMPLE,
+                "guidance": DEFAULT_SUMMARY_GUIDANCE,
+                "prompt_template": SUMMARY_PROMPT_TEMPLATE,
+            }
+
+    def _parse_rules(self, custom_rules: str, default_rules: List[str]) -> List[str]:
+        """
+        解析规则字符串为列表。
+        如果自定义规则为空，返回默认规则。
+        """
+        if not custom_rules:
+            return list(default_rules)
+        
+        rules = [rule.strip() for rule in custom_rules.split("\n") if rule.strip()]
+        return rules if rules else list(default_rules)
 
     def initialize(self) -> bool:
         self._refresh_config()
@@ -520,6 +718,9 @@ class TwitterMonitorPlugin(BasePlugin):
         normalized_date = source_result.get("target_date") or str(target_date or date.today().isoformat()).strip()
         digest = self._build_summary_digest(tweets)
         top_tweets = self._select_top_tweets(tweets)
+        
+        # 获取生效的提示词配置
+        effective_config = self._get_effective_summary_config()
 
         return {
             "status": "success",
@@ -527,10 +728,18 @@ class TwitterMonitorPlugin(BasePlugin):
             "target_date": normalized_date,
             "count": len(tweets),
             "summary_mode": "current_model",
-            "summary_guidance": DEFAULT_SUMMARY_GUIDANCE,
+            "prompt_source": effective_config["source"],
+            "summary_guidance": effective_config["guidance"],
+            "summary_role": effective_config["role"],
+            "summary_priority_rules": effective_config["priority_rules"],
+            "summary_output_rules": effective_config["output_rules"],
+            "summary_language_rules": effective_config["language_rules"],
+            "summary_example": effective_config["example"],
+            "summary_prompt_template": effective_config["prompt_template"],
             "summary_context": (
                 f"请基于 {normalized_source} 来源的 {len(tweets)} 条推文完成中文总结。"
-                "可优先参考 digest 的时间顺序，再结合 top_tweets 判断高价值动态。"
+                "只在推文直接提及或明显暗示发布、上线、开放、更新、宣布、推出等事件行为时，"
+                "才判定为有重要动态；可优先参考 digest 的时间顺序，再结合 top_tweets 判断高价值动态。"
             ),
             "digest": digest,
             "top_tweets": top_tweets,

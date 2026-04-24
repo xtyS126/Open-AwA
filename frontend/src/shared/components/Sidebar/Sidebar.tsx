@@ -36,7 +36,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { path: '/skills', label: '技能', iconType: 'skills' },
       { path: '/scheduled-tasks', label: '定时任务', iconType: 'scheduledTasks' },
-      { path: '/plugins', label: '插件', iconType: 'plugins' },
+      { path: '/plugins/manage', label: '插件', iconType: 'plugins' },
       { path: '/memory', label: '记忆', iconType: 'memory' },
       { path: '/experience', label: '经验', iconType: 'experience' },
     ]
@@ -120,7 +120,10 @@ const renderIcon = (type: string, size = 18) => {
     if (path.includes('?')) {
       return location.pathname + location.search === path
     }
-    if (path === '/plugins') {
+    if (path === '/chat') {
+      return location.pathname === '/chat' || location.pathname.startsWith('/chat/')
+    }
+    if (path === '/plugins/manage') {
       return location.pathname.startsWith('/plugins')
     }
     if (path === '/communication') {

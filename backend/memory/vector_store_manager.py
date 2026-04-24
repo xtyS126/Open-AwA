@@ -196,7 +196,29 @@ class VectorStoreManager:
         os.makedirs(self.persist_directory, exist_ok=True)
 
         self.embedding_provider = embedding_provider or create_embedding_provider(provider_type)
-        self.client = chromadb.PersistentClient(path=self.persist_directory)
+        try:
+            from chromadb.config import Settings as ChromaSettings
+            chroma_settings = ChromaSettings(
+                anonymized_telemetry=False,
+                chroma_product_telemetry_impl="memory.chroma_telemetry.NoOpProductTelemetryClient",
+                chroma_telemetry_impl="memory.chroma_telemetry.NoOpProductTelemetryClient",
+            )
+        except Exception as exc:
+            logger.warning(f"构建 Chroma 配置失败，回退默认配置: {exc}")
+            chroma_settings = None
+        client_kwargs = {
+            "path": self.persist_directory,
+        }
+        if chroma_settings is not None:
+            client_kwargs["settings"] = chroma_settings
+
+        try:
+            self.client = chromadb.PersistentClient(**client_kwargs)
+        except TypeError as exc:
+            if chroma_settings is None or "settings" not in str(exc):
+                raise
+            logger.warning(f"PersistentClient 不支持 settings 参数，回退默认初始化: {exc}")
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"},

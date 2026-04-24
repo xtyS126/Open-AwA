@@ -16,7 +16,7 @@
     "monitored_users": {
       "type": "string",
       "title": "默认监控用户",
-      "default": "OpenAI,AnthropicAI,Alibaba_Qwen,Kimi_Moonshot,deepseek_ai",
+      "default": "elonmusk,AndrewYNg,ylecun,JeffBezos,sama,Alibaba_Qwen,AndrewNG,arena,MiniMax__AI,KwaiAICoder,Zai_org,lmstudio,deepseek_ai,OpenRouterAI,AnthropicAI,OpenAI,huggingface,Kimi_Moonshot,Ali_TongyiLab,cline,OpenAIDevs,cerebras,Baidu_Inc,ManusAI,vista8,karminski3,op7418,geekbb",
       "description": "多个用户名用逗号分隔，不需要带 @"
     },
     "tweets_per_user": {
@@ -39,6 +39,50 @@
         "daily",
         "both"
       ]
+    },
+    "summary_customization": {
+      "type": "object",
+      "title": "AI 总结提示词自定义",
+      "description": "自定义 AI 总结时的提示词配置，不填则使用默认提示词",
+      "properties": {
+        "enable_custom_summary": {
+          "type": "boolean",
+          "title": "启用自定义提示词",
+          "default": false,
+          "x-component": "switch",
+          "description": "是否启用自定义提示词，关闭时使用默认提示词"
+        },
+        "custom_summary_role": {
+          "type": "string",
+          "title": "自定义角色设定",
+          "default": "",
+          "description": "AI 的角色定位，如：'你是一名 AI 行业速报编辑，擅长从高密度推文里识别真正值得关注的 AI 动态，输出是否有重要动态、核心内容摘要和价值判断。'"
+        },
+        "custom_priority_rules": {
+          "type": "string",
+          "title": "自定义优先级规则",
+          "default": "",
+          "description": "按优先级列出需要关注的动态类型，每条规则占一行"
+        },
+        "custom_output_rules": {
+          "type": "string",
+          "title": "自定义输出规则",
+          "default": "",
+          "description": "输出格式要求，每条规则占一行"
+        },
+        "custom_language_rules": {
+          "type": "string",
+          "title": "自定义语言规则",
+          "default": "",
+          "description": "语言风格要求，每条规则占一行"
+        },
+        "custom_summary_example": {
+          "type": "string",
+          "title": "自定义总结示例",
+          "default": "",
+          "description": "期望的输出示例，展示总结风格"
+        }
+      }
     }
   },
   "required": []

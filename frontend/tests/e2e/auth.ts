@@ -1,9 +1,10 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test'
 
-const backendApiBase = 'http://127.0.0.1:8000/api'
+const backendPort = process.env.OPENAWA_E2E_BACKEND_PORT || '18000'
+const backendApiBase = `http://127.0.0.1:${backendPort}/api`
 
 export const E2E_ADMIN_USERNAME = 'admin'
-export const E2E_ADMIN_PASSWORD = 'openawa-e2e-admin'
+export const E2E_ADMIN_PASSWORD = process.env.OPENAWA_ADMIN_PASSWORD || process.env.E2E_ADMIN_PASSWORD || 'openawa-e2e-admin'
 
 export async function loginAsAdminApi(request: APIRequestContext) {
   const loginResponse = await request.post(`${backendApiBase}/auth/login`, {

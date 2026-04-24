@@ -34,6 +34,17 @@ const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
   })
 }
 
+const isExpectedApiError = (error: unknown): boolean => {
+  const normalizedUrl = String((error as { config?: { url?: string } })?.config?.url || '').split('?')[0]
+  const statusCode = (error as { response?: { status?: number } })?.response?.status
+
+  return (
+    (normalizedUrl === '/auth/me' && statusCode === 401) ||
+    (normalizedUrl === '/auth/register' && statusCode === 400) ||
+    (statusCode === 404 && normalizedUrl.startsWith('/chat/history/'))
+  )
+}
+
 const ensureCsrfToken = async (): Promise<string> => {
   const csrfToken = getCsrfToken()
   if (csrfToken) {
@@ -141,13 +152,8 @@ api.interceptors.response.use(
     if (responseRequestId) {
       setCurrentRequestId(responseRequestId)
     }
-    
-    const isExpectedAuthError = (
-      (error?.config?.url === '/auth/me' && error?.response?.status === 401) ||
-      (error?.config?.url === '/auth/register' && error?.response?.status === 400)
-    );
 
-    if (!isExpectedAuthError) {
+    if (!isExpectedApiError(error)) {
       const errorUrl = error?.config?.url || 'unknown'
       const errorStatus = error?.response?.status || 0
       const errorMessage = error?.message || ''
@@ -240,6 +246,8 @@ export const chatAPI = {
     try {
       const csrfToken = await ensureCsrfToken()
       const headers: Record<string, string> = {
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',
         'X-Request-Id': requestId,
         'X-CSRF-Token': csrfToken,
@@ -316,16 +324,17 @@ export const chatAPI = {
           // 当前 SSE 事件类型，用于区分 reasoning 和普通 chunk
           let currentEventType = ''
           for (const line of lines) {
-            if (line.trim() === '') {
+            const normalizedLine = line.replace(/\r$/, '')
+            if (normalizedLine.trim() === '') {
               currentEventType = ''
               continue
             }
-            if (line.startsWith('event: ')) {
-              currentEventType = line.slice(7).trim()
+            if (normalizedLine.startsWith('event: ')) {
+              currentEventType = normalizedLine.slice(7).trim()
               continue
             }
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6)
+            if (normalizedLine.startsWith('data: ')) {
+              const dataStr = normalizedLine.slice(6)
               if (dataStr === '[DONE]') {
                 break
               }
@@ -353,12 +362,13 @@ export const chatAPI = {
         const remainingLines = buffer.trim().split('\n')
         let remainingEventType = ''
         for (const line of remainingLines) {
-          if (line.startsWith('event: ')) {
-            remainingEventType = line.slice(7).trim()
+          const normalizedLine = line.replace(/\r$/, '')
+          if (normalizedLine.startsWith('event: ')) {
+            remainingEventType = normalizedLine.slice(7).trim()
             continue
           }
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6)
+          if (normalizedLine.startsWith('data: ')) {
+            const dataStr = normalizedLine.slice(6)
             if (dataStr !== '[DONE]') {
               try {
                 const data = JSON.parse(dataStr)
@@ -669,6 +679,31 @@ export interface ConversationRecordsResponse {
   limit: number
 }
 
+export interface ConversationSessionItem {
+  session_id: string
+  user_id: string
+  title: string
+  summary: string
+  last_message_preview: string
+  last_message_role?: string | null
+  message_count: number
+  created_at: string
+  updated_at: string
+  last_message_at?: string | null
+  deleted_at?: string | null
+  restored_at?: string | null
+  purge_after?: string | null
+  conversation_metadata: Record<string, unknown>
+}
+
+export interface ConversationSessionListResponse {
+  items: ConversationSessionItem[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+}
+
 export interface ConversationCollectionStatusResponse {
   enabled: boolean
   stats: {
@@ -680,6 +715,27 @@ export interface ConversationCollectionStatusResponse {
 }
 
 export const conversationAPI = {
+  listSessions: (params?: {
+    search?: string
+    sort_by?: 'title' | 'created_at' | 'updated_at' | 'last_message_at' | 'message_count'
+    sort_order?: 'asc' | 'desc'
+    page?: number
+    page_size?: number
+    include_deleted?: boolean
+  }) => api.get<ConversationSessionListResponse>('/conversations', { params }),
+  createSession: (payload?: { title?: string; session_id?: string }) =>
+    api.post<ConversationSessionItem>('/conversations', payload || {}),
+  renameSession: (sessionId: string, title: string) =>
+    api.patch<ConversationSessionItem>(`/conversations/${sessionId}`, { title }),
+  deleteSession: (sessionId: string, retentionDays: number = 30) =>
+    api.delete<ConversationSessionItem>(`/conversations/${sessionId}`, { params: { retention_days: retentionDays } }),
+  restoreSession: (sessionId: string) =>
+    api.post<ConversationSessionItem>(`/conversations/${sessionId}/restore`),
+  batchDeleteSessions: (sessionIds: string[], retentionDays: number = 30) =>
+    api.post<ConversationSessionListResponse>('/conversations/batch-delete', {
+      session_ids: sessionIds,
+      retention_days: retentionDays,
+    }),
   getCollectionStatus: () =>
     api.get<ConversationCollectionStatusResponse>('/conversations/collection-status'),
   updateCollectionStatus: (enabled: boolean) =>

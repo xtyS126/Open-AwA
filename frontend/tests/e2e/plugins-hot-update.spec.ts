@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { loginAsAdminApi, loginAsAdminPage } from './auth'
 
-const backendApiBase = 'http://127.0.0.1:8000/api'
+const backendApiBase = `http://127.0.0.1:${process.env.OPENAWA_E2E_BACKEND_PORT || '18000'}/api`
 
 test('插件页冒烟可打开', async ({ page }) => {
   await loginAsAdminPage(page)

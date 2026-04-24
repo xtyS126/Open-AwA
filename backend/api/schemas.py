@@ -277,6 +277,63 @@ class MemoryStatsResponse(BaseModel):
     embedding_provider: str
 
 
+class ConversationSessionCreate(BaseModel):
+    """
+    会话创建请求模型。
+    """
+    title: Optional[str] = Field(default=None, max_length=200)
+    session_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
+
+
+class ConversationSessionRenameRequest(BaseModel):
+    """
+    会话重命名请求模型。
+    """
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+class ConversationSessionBatchDeleteRequest(BaseModel):
+    """
+    会话批量删除请求模型。
+    """
+    session_ids: List[str] = Field(..., min_length=1)
+    retention_days: int = Field(default=30, ge=1, le=3650)
+
+
+class ConversationSessionResponse(BaseModel):
+    """
+    会话响应模型。
+    """
+    session_id: str
+    user_id: str
+    title: str
+    summary: str
+    last_message_preview: str
+    last_message_role: Optional[str] = None
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+    last_message_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
+    restored_at: Optional[datetime] = None
+    purge_after: Optional[datetime] = None
+    conversation_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationSessionListResponse(BaseModel):
+    """
+    会话列表响应模型。
+    """
+    items: List[ConversationSessionResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
 class WorkflowBase(BaseModel):
     """
     工作流基础模型。
