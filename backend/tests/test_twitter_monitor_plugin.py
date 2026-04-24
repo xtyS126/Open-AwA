@@ -71,6 +71,12 @@ def test_summarize_twitter_tweets_returns_inline_summary_context(plugin):
     assert result["status"] == "success"
     assert result["summary_mode"] == "current_model"
     assert "不要再调用额外总结模型" in result["summary_guidance"]
+    assert "AI 行业速报编辑" in result["summary_role"]
+    assert any("新开源模型" in rule for rule in result["summary_priority_rules"])
+    assert any("第一部分只输出整体结论" in rule for rule in result["summary_output_rules"])
+    assert any("全中文输出" in rule for rule in result["summary_language_rules"])
+    assert "示例输出" in result["summary_prompt_template"]
+    assert "只在推文直接提及或明显暗示发布" in result["summary_context"]
     assert result["count"] == 2
     assert len(result["digest"]) == 2
     assert result["top_tweets"][0]["id"] == "2"

@@ -3,7 +3,7 @@
 这些测试专注于能力声明与提示词拼装，不依赖完整应用启动链路。
 """
 
-from types import MethodType
+from types import MethodType, SimpleNamespace
 
 import pytest
 
@@ -105,11 +105,121 @@ async def test_execution_layer_injects_capability_system_prompt(monkeypatch):
     messages = captured_messages["messages"]
     assert messages[0]["role"] == "system"
     assert "不要笼统声称自己不能调用 MCP、技能或插件" in messages[0]["content"]
+    assert "严格禁令" in messages[0]["content"]
     assert "twitter-monitor" in messages[0]["content"]
     assert "weixin_dispatch" in messages[0]["content"]
     assert "filesystem/read_file" in messages[0]["content"]
     assert messages[-1]["role"] == "user"
     assert messages[-1]["content"] == "你能调用插件和 MCP 吗"
+
+
+def test_execution_layer_build_messages_injects_auto_execution_results_prompt():
+    """
+    自动执行的插件结果应被注入到最终回答提示词，避免模型再次输出伪调用 JSON。
+    """
+
+    execution_layer = ExecutionLayer()
+    messages = execution_layer._build_messages_with_history(
+        "请总结 OpenAI 最近推文",
+        {
+            "message": "请总结 OpenAI 最近推文",
+            "auto_execution_results": {
+                "skills": [],
+                "plugins": [
+                    {
+                        "plugin_name": "twitter-monitor",
+                        "tool": "summarize_twitter_tweets",
+                        "result": {
+                            "status": "success",
+                            "message": "已整理 12 条推文摘要素材",
+                            "data": {
+                                "count": 12,
+                                "source_type": "latest",
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    )
+
+    assert messages[0]["role"] == "system"
+    assert "平台已在生成当前回答前自动执行了部分技能或插件" in messages[0]["content"]
+    assert "twitter-monitor/summarize_twitter_tweets" in messages[0]["content"]
+    assert "不要再输出任何插件、技能或 MCP 调用 JSON" in messages[0]["content"]
+    assert messages[-1] == {"role": "user", "content": "请总结 OpenAI 最近推文"}
+
+
+def test_execution_layer_build_messages_injects_twitter_summary_contract_and_materials():
+    """
+    Twitter 总结插件的角色设定、输出格式和摘要素材应进入系统提示，供主模型流式生成最终答案。
+    """
+
+    execution_layer = ExecutionLayer()
+    messages = execution_layer._build_messages_with_history(
+        "请总结 OpenAI 最近推文",
+        {
+            "message": "请总结 OpenAI 最近推文",
+            "auto_execution_results": {
+                "skills": [],
+                "plugins": [
+                    {
+                        "plugin_name": "twitter-monitor",
+                        "tool": "summarize_twitter_tweets",
+                        "result": {
+                            "status": "success",
+                            "source_type": "latest",
+                            "target_date": "2026-04-19",
+                            "count": 2,
+                            "summary_mode": "current_model",
+                            "summary_guidance": "请直接完成最终中文总结，不要再调用额外总结模型。",
+                            "summary_role": "你是一名 AI 行业速报编辑。",
+                            "summary_priority_rules": [
+                                "新开源模型。",
+                                "商业大模型更新。",
+                            ],
+                            "summary_output_rules": [
+                                "第一部分只输出整体结论。",
+                                "第三部分输出 AI总结。",
+                            ],
+                            "summary_language_rules": [
+                                "全中文输出。",
+                                "不要输出格式说明。",
+                            ],
+                            "summary_context": "请先判断是否存在重要动态，再给出核心摘要。",
+                            "digest": [
+                                "[1] @OpenAI | 2026-04-19T08:00:00 | 赞 12 转 5 回 2 | 发布了新的 API 更新说明",
+                                "[2] @AnthropicAI | 2026-04-19T09:00:00 | 赞 30 转 11 回 4 | 发布了新版 Claude 工具能力",
+                            ],
+                            "top_tweets": [
+                                {
+                                    "id": "2",
+                                    "text": "发布了新版 Claude 工具能力",
+                                    "created_at": "2026-04-19T09:00:00",
+                                    "author": {
+                                        "user_name": "AnthropicAI",
+                                        "name": "AnthropicAI",
+                                    },
+                                    "metrics": {
+                                        "likes": 30,
+                                        "retweets": 11,
+                                        "replies": 4,
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        },
+    )
+
+    assert messages[0]["role"] == "system"
+    assert "AI 行业速报编辑" in messages[0]["content"]
+    assert "第一部分只输出整体结论" in messages[0]["content"]
+    assert "发布了新的 API 更新说明" in messages[0]["content"]
+    assert "高价值候选推文" in messages[0]["content"]
+    assert "不要输出 JSON、代码块或额外调度指令" in messages[0]["content"]
 
 
 @pytest.mark.asyncio
@@ -237,3 +347,94 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
 
     assert result["status"] == "completed"
     assert result["response"] == "能力注入成功"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_collect_mcp_capabilities_handles_unavailable_manager(monkeypatch):
+    """
+    MCP 管理器不可用时，能力采集应返回稳定降级结构，而不是直接抛异常。
+    """
+
+    agent = AIAgent()
+    monkeypatch.setattr(agent_module, "MCPManager", lambda: None)
+
+    result = await agent._collect_mcp_capabilities({})
+
+    assert result["platform_supported"] is True
+    assert result["connected_servers"] == []
+    assert result["tools"] == []
+    assert result["error"] == "MCP 管理器当前不可用"
+
+
+@pytest.mark.asyncio
+async def test_execution_layer_records_billing_usage_for_llm_calls(monkeypatch):
+    """
+    非流式模型调用成功后，应把 usage 写入 billing 记录并回填到返回结果。
+    """
+
+    execution_layer = ExecutionLayer()
+    captured_record_call = {}
+
+    class FakeCalculator:
+        @staticmethod
+        def estimate_text_tokens(text):
+            return len(text)
+
+    class FakeBillingEngine:
+        def __init__(self, db_session):
+            self.db_session = db_session
+            self.calculator = FakeCalculator()
+
+        def record_call(self, **kwargs):
+            captured_record_call.update(kwargs)
+            return {
+                "call_id": "usage-1",
+                "input_tokens": kwargs["input_tokens"],
+                "output_tokens": kwargs["output_tokens"],
+                "total_cost": 0.0123,
+                "currency": "USD",
+            }
+
+    def mock_resolve(self, context):
+        return {
+            "ok": True,
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "api_endpoint": "https://api.openai.com",
+            "api_key": "secret",
+            "request_id": "req-billing-1",
+            "client_version": "2.3.4",
+        }
+
+    async def fake_litellm_chat_completion(**kwargs):
+        return {
+            "ok": True,
+            "response": "用量记录成功",
+            "reasoning_content": "",
+            "provider": kwargs.get("provider", "openai"),
+            "model": kwargs.get("model", "gpt-4o-mini"),
+            "request_id": kwargs.get("request_id", "req-billing-1"),
+            "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
+        }
+
+    execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
+    monkeypatch.setattr(executor_module, "BillingEngine", FakeBillingEngine)
+    monkeypatch.setattr(executor_module, "litellm_chat_completion", fake_litellm_chat_completion)
+
+    context = {
+        "message": "统计本次调用",
+        "db": SimpleNamespace(name="billing-db"),
+        "user_id": "user-1",
+        "session_id": "session-1",
+    }
+
+    result = await execution_layer._call_llm_api("统计本次调用", context)
+
+    assert result["ok"] is True
+    assert captured_record_call["user_id"] == "user-1"
+    assert captured_record_call["session_id"] == "session-1"
+    assert captured_record_call["input_tokens"] == 12
+    assert captured_record_call["output_tokens"] == 8
+    assert result["usage"]["call_id"] == "usage-1"
+    assert result["usage"]["provider"] == "openai"
+    assert context["_latest_llm_usage"]["model"] == "gpt-4o-mini"

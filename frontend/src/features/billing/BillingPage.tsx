@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Download } from 'lucide-react'
 import {
   LineChart,
@@ -16,6 +16,7 @@ import {
   Legend
 } from 'recharts'
 import { billingAPI, CostStatistics, UsageRecord, BudgetStatus } from '@/features/billing/billingApi'
+import { BILLING_USAGE_UPDATED_EVENT } from '@/shared/events/billingEvents'
 import styles from './BillingPage.module.css'
 
 const CHART_COLORS = {
@@ -39,16 +40,19 @@ function BillingPage() {
   const [usageRecords, setUsageRecords] = useState<UsageRecord[]>([])
   const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'all'>('monthly')
 
-  useEffect(() => {
-    loadBillingData()
-  }, [period])
-
-  const loadBillingData = async () => {
+  const loadBillingData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent)
     try {
-      setLoading(true)
+      if (silent) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       
       const [statsRes, usageRes, budgetRes] = await Promise.all([
@@ -60,13 +64,31 @@ function BillingPage() {
       setStatistics(statsRes.data)
       setUsageRecords(usageRes.data.records || [])
       setBudgetStatus(budgetRes.data)
+      setLastUpdatedAt(new Date())
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } }
       setError(axiosErr.response?.data?.detail || '加载计费数据失败')
     } finally {
-      setLoading(false)
+      if (silent) {
+        setRefreshing(false)
+      } else {
+        setLoading(false)
+      }
     }
-  }
+  }, [period])
+
+  useEffect(() => {
+    loadBillingData()
+  }, [loadBillingData])
+
+  useEffect(() => {
+    const handleUsageUpdated = () => {
+      loadBillingData({ silent: true })
+    }
+
+    window.addEventListener(BILLING_USAGE_UPDATED_EVENT, handleUsageUpdated)
+    return () => window.removeEventListener(BILLING_USAGE_UPDATED_EVENT, handleUsageUpdated)
+  }, [loadBillingData])
 
   const handleExport = async () => {
     try {
@@ -152,6 +174,11 @@ function BillingPage() {
         <div>
           <h1>用量计费</h1>
           <p className={styles['page-subtitle']}>查看 AI 模型调用的成本与用量统计</p>
+          <div className={styles['sync-status']}>
+            <span className={`${styles['sync-dot']} ${refreshing ? styles['sync-dot-refreshing'] : ''}`} />
+            <span>{refreshing ? '同步中...' : '已开启聊天用量联动'}</span>
+            {lastUpdatedAt && <span>最近更新: {lastUpdatedAt.toLocaleTimeString('zh-CN')}</span>}
+          </div>
         </div>
         <div className={styles['header-actions']}>
           <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>

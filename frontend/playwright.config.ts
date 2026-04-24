@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const reuseExistingServer = process.env.OPENAWA_E2E_REUSE_SERVER === 'true'
+const frontendPort = Number(process.env.OPENAWA_E2E_FRONTEND_PORT || 15173)
+const backendPort = Number(process.env.OPENAWA_E2E_BACKEND_PORT || 18000)
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
@@ -10,7 +14,7 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: `http://127.0.0.1:${frontendPort}`,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -32,17 +36,17 @@ export default defineConfig({
   webServer: [
     {
       command:
-        'python -c "import os, pathlib, uvicorn; db=pathlib.Path(\'openawa_e2e.db\'); db.unlink(missing_ok=True); os.environ[\'DATABASE_URL\']=\'sqlite:///./openawa_e2e.db\'; os.environ[\'SECRET_KEY\']=\'openawa-e2e-secret\'; os.environ[\'OPENAWA_ADMIN_PASSWORD\']=\'openawa-e2e-admin\'; os.environ[\'OPENAWA_USER_PASSWORD\']=\'openawa-e2e-user\'; uvicorn.run(\'main:app\', host=\'127.0.0.1\', port=8000)"',
+        `python -c "import os, pathlib, uvicorn; db=pathlib.Path('openawa_e2e.db'); db.unlink(missing_ok=True); os.environ['DATABASE_URL']='sqlite:///./openawa_e2e.db'; os.environ['SECRET_KEY']='openawa-e2e-secret'; os.environ['OPENAWA_ADMIN_PASSWORD']='openawa-e2e-admin'; os.environ['OPENAWA_USER_PASSWORD']='openawa-e2e-user'; uvicorn.run('main:app', host='127.0.0.1', port=${backendPort})"`,
       cwd: '../backend',
-      url: 'http://127.0.0.1:8000/health',
-      reuseExistingServer: true,
+      url: `http://127.0.0.1:${backendPort}/health`,
+      reuseExistingServer,
       timeout: 120_000,
     },
     {
-      command: 'npm run dev -- --host 127.0.0.1 --port 5173',
+      command: `npm run dev -- --host 127.0.0.1 --port ${frontendPort} --mode e2e`,
       cwd: '.',
-      url: 'http://127.0.0.1:5173',
-      reuseExistingServer: true,
+      url: `http://127.0.0.1:${frontendPort}`,
+      reuseExistingServer,
       timeout: 120_000,
     },
   ],

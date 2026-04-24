@@ -192,6 +192,34 @@ class PluginExecutionLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class Conversation(Base):
+    """
+    会话聚合模型，保存聊天会话的标题、摘要、最后消息和软删除状态。
+    """
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(100), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    last_message_preview: Mapped[str] = mapped_column(Text, default="")
+    last_message_role: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    last_message_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    restored_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    purge_after: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    conversation_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class ShortTermMemory(Base):
     """
     短期记忆模型，存储会话级别的对话上下文记忆。
@@ -671,6 +699,107 @@ def _migrate_skill_json_columns(use_engine=None):
             )
 
 
+def _migrate_conversation_columns(use_engine=None):
+    """
+    为 conversations 表补齐会话聚合所需字段，并从历史记录中回填缺失会话。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "conversations" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("conversations")}
+    with target_engine.begin() as connection:
+        if "summary" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN summary TEXT DEFAULT ''"))
+        if "last_message_preview" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN last_message_preview TEXT DEFAULT ''"))
+        if "last_message_role" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN last_message_role VARCHAR(20)"))
+        if "message_count" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN message_count INTEGER DEFAULT 0"))
+            connection.execute(text("UPDATE conversations SET message_count = 0 WHERE message_count IS NULL"))
+        if "created_at" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN created_at DATETIME"))
+            connection.execute(text("UPDATE conversations SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+        if "updated_at" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN updated_at DATETIME"))
+            connection.execute(text("UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+        if "last_message_at" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN last_message_at DATETIME"))
+        if "deleted_at" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN deleted_at DATETIME"))
+        if "restored_at" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN restored_at DATETIME"))
+        if "purge_after" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN purge_after DATETIME"))
+        if "conversation_metadata" not in columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN conversation_metadata TEXT DEFAULT '{}'"))
+            connection.execute(
+                text(
+                    "UPDATE conversations "
+                    "SET conversation_metadata = '{}' "
+                    "WHERE conversation_metadata IS NULL OR conversation_metadata = ''"
+                )
+            )
+
+    session_factory = sessionmaker(autocommit=False, autoflush=False, bind=target_engine)
+    db = session_factory()
+    try:
+        existing_session_ids = {
+            session_id
+            for session_id, in db.query(Conversation.session_id).all()
+        }
+        latest_records = (
+            db.query(ConversationRecord)
+            .order_by(ConversationRecord.timestamp.asc())
+            .all()
+        )
+        pending_rows: Dict[str, Conversation] = {}
+        for record in latest_records:
+            if record.session_id in existing_session_ids:
+                continue
+            preview = (record.user_message or "").strip()
+            title = preview.splitlines()[0][:80] if preview else "新对话"
+            conversation = pending_rows.get(record.session_id)
+            if conversation is None:
+                conversation = Conversation(
+                    session_id=record.session_id,
+                    user_id=record.user_id,
+                    title=title or "新对话",
+                    summary=preview[:200],
+                    last_message_preview=preview[:500],
+                    last_message_role="user",
+                    message_count=0,
+                    created_at=record.timestamp or datetime.now(timezone.utc),
+                    updated_at=record.timestamp or datetime.now(timezone.utc),
+                    last_message_at=record.timestamp,
+                    conversation_metadata={},
+                )
+                pending_rows[record.session_id] = conversation
+            else:
+                conversation.last_message_preview = preview[:500]
+                conversation.summary = preview[:200]
+                conversation.last_message_at = record.timestamp
+                conversation.updated_at = record.timestamp or conversation.updated_at
+
+        if pending_rows:
+            short_term_counts = {
+                session_id: count
+                for session_id, count in db.query(
+                    ShortTermMemory.session_id,
+                    text("COUNT(*)")
+                ).group_by(ShortTermMemory.session_id).all()
+            }
+            for conversation in pending_rows.values():
+                conversation.message_count = int(short_term_counts.get(conversation.session_id, 0))
+                db.add(conversation)
+            db.commit()
+    finally:
+        db.close()
+
+
 def init_db(bind_engine=None):
     """
     初始化数据库表结构并执行必要的迁移操作。
@@ -684,6 +813,7 @@ def init_db(bind_engine=None):
     _migrate_long_term_memory_enhancements(use_engine=use_engine)
     _migrate_audit_log_columns(use_engine=use_engine)
     _migrate_skill_json_columns(use_engine=use_engine)
+    _migrate_conversation_columns(use_engine=use_engine)
 
 
 def get_db():

@@ -13,6 +13,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from db.models import LongTermMemory, ShortTermMemory
+from core.conversation_sessions import ensure_conversation
 from memory.vector_store_manager import VectorStoreManager
 from memory.working_memory import working_memory_store
 
@@ -154,15 +155,30 @@ class MemoryManager:
         session_id: str,
         role: str,
         content: str,
+        user_id: Optional[str] = None,
     ) -> ShortTermMemory:
+        ensure_conversation(
+            self.db,
+            session_id=session_id,
+            user_id=user_id,
+            content=content,
+            role=role,
+            increment_message_count=True,
+        )
         memory = ShortTermMemory(session_id=session_id, role=role, content=content)
         self.db.add(memory)
         self.db.commit()
         self.db.refresh(memory)
         return memory
 
-    async def add_short_term_memory(self, session_id: str, role: str, content: str) -> ShortTermMemory:
-        memory = await asyncio.to_thread(self._add_short_term_memory_sync, session_id, role, content)
+    async def add_short_term_memory(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        user_id: Optional[str] = None,
+    ) -> ShortTermMemory:
+        memory = await asyncio.to_thread(self._add_short_term_memory_sync, session_id, role, content, user_id)
         logger.debug(f"Added short-term memory for session {session_id}")
         return memory
 

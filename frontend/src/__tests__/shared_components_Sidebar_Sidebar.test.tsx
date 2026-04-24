@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { MemoryRouter } from 'react-router-dom'
@@ -29,20 +29,20 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('Sidebar', () => {
-  it('展示导航链接：插件、定时任务等', () => {
+  it('展示导航链接：定时任务、插件等模块入口', () => {
     render(
-      <MemoryRouter initialEntries={['/plugins']}>
+      <MemoryRouter initialEntries={['/plugins/manage']}>
         <Sidebar />
       </MemoryRouter>
     )
 
     expect(screen.getByRole('link', { name: '定时任务' })).toHaveAttribute('href', '/scheduled-tasks')
-    expect(screen.getByRole('link', { name: '插件' })).toHaveAttribute('href', '/plugins')
+    expect(screen.getByRole('link', { name: '插件' })).toHaveAttribute('href', '/plugins/manage')
   })
 
-  it('当前路由对应的导航项高亮', () => {
+  it('任意插件子路由都应高亮同一个插件入口', () => {
     render(
-      <MemoryRouter initialEntries={['/plugins']}>
+      <MemoryRouter initialEntries={['/plugins/config/test-plugin']}>
         <Sidebar />
       </MemoryRouter>
     )

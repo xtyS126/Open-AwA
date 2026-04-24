@@ -1,13 +1,8 @@
 /* 助手消息 Markdown/数学公式渲染组件 */
-import { memo, useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import remarkGfm from 'remark-gfm'
-import rehypeKatex from 'rehype-katex'
-import rehypeHighlight from 'rehype-highlight'
-import 'katex/dist/katex.min.css'
-import 'highlight.js/styles/github-dark.min.css'
+import { lazy, memo, Suspense } from 'react'
 import styles from './MessageContent.module.css'
+
+const AssistantMarkdownContent = lazy(() => import('./AssistantMarkdownContent'))
 
 interface MessageContentProps {
   content: string
@@ -25,18 +20,10 @@ function MessageContentInner({ content, role }: MessageContentProps) {
     return <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
   }
 
-  const remarkPlugins = useMemo(() => [remarkMath, remarkGfm], [])
-  const rehypePlugins = useMemo(() => [rehypeKatex, rehypeHighlight], [])
-
   return (
-    <div className={styles['markdown-body']}>
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={rehypePlugins}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
+    <Suspense fallback={<div className={styles['markdown-body']}><span style={{ whiteSpace: 'pre-wrap' }}>{content}</span></div>}>
+      <AssistantMarkdownContent content={content} />
+    </Suspense>
   )
 }
 

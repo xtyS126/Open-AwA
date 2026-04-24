@@ -547,6 +547,252 @@ async def test_ai_agent_auto_execute_plugins_merges_default_params(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ai_agent_auto_execute_plugins_matches_user_message_keywords(monkeypatch):
+    """
+    聊天类请求也应根据用户原始消息匹配插件关键词，而不是只依赖意图类别。
+    """
+
+    agent = AIAgent()
+    captured: dict[str, Any] = {}
+
+    async def fake_get_available_skills():
+        return []
+
+    async def fake_get_available_plugins():
+        return [
+            {
+                "name": "twitter-monitor",
+                "description": "抓取、缓存并整理指定 Twitter 账号内容，供当前模型直接分析总结的监控插件",
+                "tools": [
+                    {
+                        "name": "fetch_twitter_tweets",
+                        "description": "抓取一个或多个 Twitter 账号的最新推文，并同步写入缓存",
+                        "method": "execute",
+                        "default_params": {"action": "fetch_twitter_tweets"},
+                    },
+                    {
+                        "name": "summarize_twitter_tweets",
+                        "description": "整理缓存中的推文摘要素材，由当前对话模型直接完成总结",
+                        "method": "execute",
+                        "default_params": {"action": "summarize_twitter_tweets"},
+                    },
+                ],
+            }
+        ]
+
+    async def fake_execute_plugin(plugin_name: str, method: str, **kwargs):
+        captured.update(
+            {
+                "plugin_name": plugin_name,
+                "method": method,
+                "kwargs": kwargs,
+            }
+        )
+        return {"status": "success", "data": {"ok": True}, "message": ""}
+
+    monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
+
+    result = await agent._auto_execute_skills_and_plugins(
+        intent="chat",
+        entities={},
+        context={
+            "message": "帮我总结一下 OpenAI 最近推文",
+            "request_id": "plugin-auto-2",
+        },
+    )
+
+    assert captured["plugin_name"] == "twitter-monitor"
+    assert captured["method"] == "execute"
+    assert captured["kwargs"]["action"] == "summarize_twitter_tweets"
+    assert result["plugins"][0]["tool"] == "summarize_twitter_tweets"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_auto_execute_plugins_skips_weak_chat_matches(monkeypatch):
+    """
+    普通聊天场景下，不应因为插件描述里带有“聊天”等弱关键词就误触发插件。
+    """
+
+    agent = AIAgent()
+    called = {"value": False}
+
+    async def fake_get_available_skills():
+        return []
+
+    async def fake_get_available_plugins():
+        return [
+            {
+                "name": "user-profile-chat",
+                "description": "用户画像聊天生成插件",
+                "tools": [
+                    {
+                        "name": "get_user_profile",
+                        "description": "获取指定用户的已有画像数据",
+                        "method": "execute",
+                        "default_params": {"action": "get_user_profile"},
+                    }
+                ],
+            }
+        ]
+
+    async def fake_execute_plugin(plugin_name: str, method: str, **kwargs):
+        called["value"] = True
+        return {"status": "success", "data": {"ok": True}, "message": ""}
+
+    monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
+
+    result = await agent._auto_execute_skills_and_plugins(
+        intent="chat",
+        entities={},
+        context={
+            "message": "我们来聊天吧",
+            "user_id": "alice",
+        },
+    )
+
+    assert result["plugins"] == []
+    assert called["value"] is False
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_auto_execute_plugins_injects_required_messages(monkeypatch):
+    """
+    自动触发依赖 messages 的插件时，应从上下文中补齐用户消息列表。
+    """
+
+    agent = AIAgent()
+    captured: dict[str, Any] = {}
+
+    async def fake_get_available_skills():
+        return []
+
+    async def fake_get_available_plugins():
+        return [
+            {
+                "name": "user-profile-chat",
+                "description": "分析用户画像的插件",
+                "tools": [
+                    {
+                        "name": "analyze_user_profile",
+                        "description": "根据聊天记录分析并生成用户画像",
+                        "method": "execute",
+                        "default_params": {"action": "analyze_user_profile"},
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "username": {"type": "string"},
+                                "messages": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["username", "messages"],
+                        },
+                    }
+                ],
+            }
+        ]
+
+    async def fake_execute_plugin(plugin_name: str, method: str, **kwargs):
+        captured.update(
+            {
+                "plugin_name": plugin_name,
+                "method": method,
+                "kwargs": kwargs,
+            }
+        )
+        return {"status": "success", "data": {"ok": True}, "message": ""}
+
+    monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
+
+    result = await agent._auto_execute_skills_and_plugins(
+        intent="chat",
+        entities={},
+        context={
+            "message": "请帮我分析一下我的画像",
+            "user_id": "alice",
+            "conversation_history": [
+                {"role": "user", "content": "我平时写 Python"},
+                {"role": "assistant", "content": "收到"},
+                {"role": "user", "content": "最近在研究 FastAPI"},
+            ],
+        },
+    )
+
+    assert captured["plugin_name"] == "user-profile-chat"
+    assert captured["method"] == "execute"
+    assert captured["kwargs"]["username"] == "alice"
+    assert captured["kwargs"]["messages"] == [
+        "我平时写 Python",
+        "最近在研究 FastAPI",
+        "请帮我分析一下我的画像",
+    ]
+    assert result["plugins"][0]["tool"] == "analyze_user_profile"
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_auto_execute_plugins_skips_when_required_params_missing(monkeypatch):
+    """
+    自动执行前若无法补齐工具必需参数，应直接跳过，避免把错误写进运行日志。
+    """
+
+    agent = AIAgent()
+    called = {"value": False}
+
+    async def fake_get_available_skills():
+        return []
+
+    async def fake_get_available_plugins():
+        return [
+            {
+                "name": "twitter-monitor",
+                "description": "获取 Twitter 用户账号信息的插件",
+                "tools": [
+                    {
+                        "name": "get_twitter_user_info",
+                        "description": "获取指定 Twitter 用户的账号信息",
+                        "method": "get_twitter_user_info",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "user_name": {"type": "string"},
+                            },
+                            "required": ["user_name"],
+                        },
+                    }
+                ],
+            }
+        ]
+
+    async def fake_execute_plugin(plugin_name: str, method: str, **kwargs):
+        called["value"] = True
+        return {"status": "success", "data": {"ok": True}, "message": ""}
+
+    monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
+    monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
+
+    result = await agent._auto_execute_skills_and_plugins(
+        intent="chat",
+        entities={},
+        context={
+            "message": "帮我查一下 Twitter 用户账号信息",
+            "username": "alice",
+            "user_id": "user-1",
+        },
+    )
+
+    assert result["plugins"] == []
+    assert called["value"] is False
+
+
+@pytest.mark.asyncio
 async def test_execute_step_uses_idempotency_key_cache():
     """
     同一个幂等键重复执行时，应直接复用第一次结果。

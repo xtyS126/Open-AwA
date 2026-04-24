@@ -173,6 +173,57 @@ async def test_litellm_chat_completion_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_litellm_chat_completion_returns_tool_calls(monkeypatch):
+    """非流式响应中包含 tool_calls 时应正确透传。"""
+
+    class MockFunction:
+        name = "get_weather"
+        arguments = '{"location":"Paris"}'
+
+    class MockToolCall:
+        id = "call_1"
+        function = MockFunction()
+
+    class MockChoice:
+        class MockMessage:
+            content = ""
+            reasoning_content = ""
+            tool_calls = [MockToolCall()]
+
+        message = MockMessage()
+
+    class MockResponse:
+        choices = [MockChoice()]
+        usage = None
+
+    async def mock_acompletion(**kwargs):
+        return MockResponse()
+
+    import litellm
+    monkeypatch.setattr(litellm, "acompletion", mock_acompletion)
+
+    result = await litellm_chat_completion(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "帮我查天气"}],
+        api_key="test-key",
+        tools=[{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}],
+    )
+
+    assert result["ok"] is True
+    assert result["tool_calls"] == [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "arguments": '{"location":"Paris"}',
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_litellm_chat_completion_empty_response(monkeypatch):
     """模型返回空内容时应标记为失败。"""
 
@@ -273,6 +324,65 @@ async def test_litellm_stream_completion_success(monkeypatch):
 
     assert len(chunks) == 1
     assert chunks[0]["content"] == "流式"
+
+
+@pytest.mark.asyncio
+async def test_litellm_stream_completion_emits_tool_calls(monkeypatch):
+    """流式响应中的 tool_calls delta 应聚合为最终事件。"""
+
+    class MockFunction:
+        name = "get_weather"
+        arguments = '{"location":"Paris"}'
+
+    class MockToolCall:
+        index = 0
+        id = "call_1"
+        function = MockFunction()
+
+    class MockDelta:
+        content = ""
+        reasoning_content = ""
+        tool_calls = [MockToolCall()]
+
+    class MockChoice:
+        delta = MockDelta()
+
+    class MockChunk:
+        choices = [MockChoice()]
+
+    async def mock_acompletion(**kwargs):
+        async def gen():
+            yield MockChunk()
+        return gen()
+
+    import litellm
+    monkeypatch.setattr(litellm, "acompletion", mock_acompletion)
+
+    chunks = []
+    async for chunk in litellm_chat_completion_stream(
+        provider="openai",
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "帮我查天气"}],
+        api_key="test-key",
+        tools=[{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}],
+    ):
+        chunks.append(chunk)
+
+    assert chunks == [
+        {
+            "type": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": '{"location":"Paris"}',
+                    },
+                }
+            ],
+        }
+    ]
 
 
 @pytest.mark.asyncio

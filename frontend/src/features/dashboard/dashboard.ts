@@ -53,6 +53,7 @@ export interface Plugin {
   version: string
   enabled: boolean
   description?: string
+  author?: string
   [key: string]: string | number | boolean | undefined
 }
 

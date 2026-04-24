@@ -64,8 +64,15 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
     """
     async def event_generator():
         async for chunk in stream_generator:
+            chunk_type = chunk.get("type")
+
             # 错误事件直接透传
-            if chunk.get("type") == "error":
+            if chunk_type == "error":
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                continue
+
+            # 非 chunk 事件保持原样透传，供前端消费 status/plan/task/tool/usage 等结构化事件
+            if chunk_type and chunk_type != "chunk":
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 continue
 
@@ -81,8 +88,15 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
                 yield f"data: {json.dumps({'type': 'chunk', 'content': content}, ensure_ascii=False)}\n\n"
 
         yield "data: [DONE]\n\n"
-        
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 async def handle_websocket_session(
     websocket: WebSocket,

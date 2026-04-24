@@ -4,11 +4,14 @@
 """
 
 from pathlib import Path
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr
 from typing import Optional
 import os
 import secrets
+
+
+_BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 def is_production_environment(environment: Optional[str]) -> bool:
@@ -67,8 +70,7 @@ def build_default_database_url() -> str:
     构造稳定的默认 SQLite 连接地址。
     这里显式锚定到 backend 目录，避免服务从仓库根目录启动时误连到错误的空库。
     """
-    backend_dir = Path(__file__).resolve().parents[1]
-    database_path = (backend_dir / "openawa.db").resolve()
+    database_path = (_BACKEND_DIR / "openawa.db").resolve()
     return f"sqlite:///{database_path.as_posix()}"
 
 
@@ -77,6 +79,15 @@ class Settings(BaseSettings):
     封装与Settings相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
+    model_config = SettingsConfigDict(
+        env_file=(
+            str((_BACKEND_DIR / ".env").resolve()),
+            str((_BACKEND_DIR / ".env.local").resolve()),
+        ),
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     PROJECT_NAME: str = "Open-AwA AI Agent"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
@@ -139,13 +150,4 @@ class Settings(BaseSettings):
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
     
-    class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
-        env_file = ".env"
-        case_sensitive = True
-
-
 settings = Settings()

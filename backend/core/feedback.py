@@ -132,24 +132,29 @@ class FeedbackLayer:
         if not self.memory_manager:
             logger.warning("Memory manager not set, skipping memory update")
             return
+
+        user_id = context.get("user_id")
         
         try:
             await self.memory_manager.add_short_term_memory(
                 session_id=context.get("session_id", "default"),
                 role="user",
-                content=user_input
+                content=user_input,
+                user_id=user_id,
             )
             
             await self.memory_manager.add_short_term_memory(
                 session_id=context.get("session_id", "default"),
                 role="assistant",
-                content=response
+                content=response,
+                user_id=user_id,
             )
             
             if self._should_persist(response):
                 await self.memory_manager.add_long_term_memory(
                     content=f"User asked: {user_input}\nAssistant responded: {response}",
-                    importance=0.7
+                    importance=0.7,
+                    user_id=user_id,
                 )
                 
         except Exception as e:

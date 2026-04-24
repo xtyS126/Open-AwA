@@ -1,8 +1,20 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
+import type { ConfigEnv } from 'vite'
 import viteConfig from './vite.config'
 
+const vitestEnv: ConfigEnv = {
+  command: 'serve',
+  mode: 'test',
+  isSsrBuild: false,
+  isPreview: false,
+}
+
+const resolvedViteConfig = typeof viteConfig === 'function'
+  ? viteConfig(vitestEnv)
+  : viteConfig
+
 export default mergeConfig(
-  viteConfig,
+  resolvedViteConfig as any,
   defineConfig({
     test: {
       globals: true,
@@ -23,10 +35,12 @@ export default mergeConfig(
           'src/main.tsx',
           'src/vite-env.d.ts'
         ],
-        statements: 90,
-        branches: 90,
-        functions: 90,
-        lines: 90,
+        thresholds: {
+          statements: 90,
+          branches: 90,
+          functions: 90,
+          lines: 90,
+        },
       },
     },
   })

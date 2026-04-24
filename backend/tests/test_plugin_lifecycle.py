@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from plugins import plugin_manager as plugin_manager_module
+from plugins.base_plugin import BasePlugin
 from plugins.plugin_loader import PluginLoader
 from plugins.plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
 from plugins.plugin_manager import PluginManager
@@ -216,6 +217,54 @@ def test_plugin_manager_can_load_repo_plugin_when_started_from_backend_dir(monke
 
     assert manager.load_plugin("hello-world") is True
     assert "hello-world" in manager.loaded_plugins
+
+
+class SignatureFilterPlugin(BasePlugin):
+    """用于验证参数过滤逻辑的测试插件。"""
+
+    name = "signature_filter_plugin"
+    version = "1.0.0"
+    description = "signature filter plugin"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return kwargs
+
+    def get_twitter_user_info(self, user_name: str):
+        return {
+            "status": "success",
+            "user_name": user_name,
+        }
+
+
+@pytest.mark.asyncio
+async def test_plugin_manager_filters_extra_kwargs_for_direct_method(tmp_path: Path):
+    """
+    直接方法调用应过滤掉不在签名中的自动上下文字段，避免 unexpected keyword 错误。
+    """
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    plugin = SignatureFilterPlugin()
+
+    assert plugin.initialize() is True
+
+    manager.loaded_plugins[plugin.name] = plugin
+    manager.plugin_metadata[plugin.name] = {"requested_permissions": []}
+    manager.state_machine.set_state(plugin.name, PluginState.ENABLED)
+
+    result = await manager.execute_plugin_async(
+        plugin.name,
+        "get_twitter_user_info",
+        user_name="OpenAI",
+        intent={"type": "chat"},
+        entities={"entities": []},
+        context={"request_id": "plugin-filter-1"},
+    )
+
+    assert result["status"] == "success"
+    assert result["data"]["user_name"] == "OpenAI"
 
 
 def test_plugin_manager_rollback_when_enable_fails(plugin_workspace: Path):
