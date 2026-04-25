@@ -397,6 +397,7 @@ async def litellm_chat_completion(
     last_error: Optional[Dict[str, Any]] = None
 
     for attempt in range(max(1, num_retries + 1)):
+        response = None
         try:
             logger.bind(
                 event="litellm_request",
@@ -529,6 +530,13 @@ async def litellm_chat_completion(
                 await circuit_breaker.on_failure()
                 break
 
+        finally:
+            if response is not None:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+
         if attempt < num_retries:
             await _exponential_backoff(attempt)
 
@@ -628,6 +636,7 @@ async def litellm_chat_completion_stream(
 
     stream_success = False
 
+    response = None
     for attempt in range(max(1, num_retries + 1)):
         try:
             logger.bind(
@@ -703,6 +712,7 @@ async def litellm_chat_completion_stream(
             return
 
         except asyncio.TimeoutError:
+
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             logger.bind(
                 event="litellm_stream_timeout",
@@ -727,6 +737,7 @@ async def litellm_chat_completion_stream(
                 }
 
         except Exception as exc:
+
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             logger.bind(
                 event="litellm_stream_error",

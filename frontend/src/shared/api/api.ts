@@ -212,188 +212,211 @@ export const chatAPI = {
     onError?: (error: any) => void,
     requestOptions?: { signal?: AbortSignal }
   ) => {
-    let isErrorLogged = false
-    const url = '/api/chat'
-    const requestId = generateRequestId()
-    setCurrentRequestId(requestId)
+    const MAX_RETRIES = 3
+    const RETRY_DELAYS = [1000, 2000, 4000]
+    let lastError: Error | null = null
+    let hasReceivedData = false
 
-    appLogger.info({
-      event: 'api_request',
-      module: 'api',
-      action: 'POST',
-      status: 'start',
-      request_id: requestId,
-      message: 'api request started',
-      extra: { url },
-    })
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      let isErrorLogged = false
+      const url = '/api/chat'
+      const requestId = generateRequestId()
+      setCurrentRequestId(requestId)
 
-    try {
-      const csrfToken = await ensureCsrfToken()
-      const headers: Record<string, string> = {
-        'Accept': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Content-Type': 'application/json',
-        'X-Request-Id': requestId,
-        'X-CSRF-Token': csrfToken,
-      }
-
-      const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        signal: requestOptions?.signal,
-        body: JSON.stringify({
-          message,
-          session_id: sessionId,
-          provider,
-          model,
-          mode: 'stream'
-        })
-      })
-
-      const responseRequestId = response.headers.get('x-request-id') || requestId
-      if (responseRequestId) {
-        setCurrentRequestId(responseRequestId)
-      }
-
-      if (!response.ok) {
-        isErrorLogged = true
-        const err = await response.json().catch(() => ({}))
-        const errorMessage = err?.detail || err?.error?.message || 'Request failed'
-        
-        appLogger.error({
-          event: 'api_response',
+      if (attempt > 0) {
+        const delayMs = RETRY_DELAYS[attempt - 1]
+        appLogger.warning({
+          event: 'api_retry',
           module: 'api',
           action: 'POST',
-          status: 'failure',
-          request_id: responseRequestId,
-          message: 'api request failed',
-          extra: {
-            url,
-            status_code: response.status,
-            error: errorMessage,
-          },
+          status: 'retry',
+          request_id: requestId,
+          message: `retrying stream request (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
+          extra: { url, delay_ms: delayMs },
         })
-        throw new Error(errorMessage)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
       }
 
-      appLogger.info({
-        event: 'api_response',
-        module: 'api',
-        action: 'POST',
-        status: 'success',
-        request_id: responseRequestId,
-        message: 'api request finished',
-        extra: {
-          url,
-          status_code: response.status,
-        },
-      })
+      try {
+        const csrfToken = await ensureCsrfToken()
+        const headers: Record<string, string> = {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Content-Type': 'application/json',
+          'X-Request-Id': requestId,
+          'X-CSRF-Token': csrfToken,
+        }
 
-      if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
+        const response = await fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          signal: requestOptions?.signal,
+          body: JSON.stringify({
+            message,
+            session_id: sessionId,
+            provider,
+            model,
+            mode: 'stream'
+          })
+        })
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder('utf-8')
-      let done = false
-      let buffer = ''
+        const responseRequestId = response.headers.get('x-request-id') || requestId
+        if (responseRequestId) {
+          setCurrentRequestId(responseRequestId)
+        }
 
-      while (!done) {
-        const { value, done: doneReading } = await reader.read()
-        done = doneReading
-        if (value) {
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
+        if (!response.ok) {
+          isErrorLogged = true
+          const err = await response.json().catch(() => ({}))
+          const errorMessage = err?.detail || err?.error?.message || 'Request failed'
 
-          // 当前 SSE 事件类型，用于区分 reasoning 和普通 chunk
-          let currentEventType = ''
-          for (const line of lines) {
-            const normalizedLine = line.replace(/\r$/, '')
-            if (normalizedLine.trim() === '') {
-              currentEventType = ''
-              continue
+          appLogger.error({
+            event: 'api_response',
+            module: 'api',
+            action: 'POST',
+            status: 'failure',
+            request_id: responseRequestId,
+            message: 'api request failed',
+            extra: {
+              url,
+              status_code: response.status,
+              error: errorMessage,
+            },
+          })
+          throw new Error(errorMessage)
+        }
+
+        if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder('utf-8')
+        let done = false
+        let buffer = ''
+
+        while (!done) {
+          const { value, done: doneReading } = await reader.read()
+          done = doneReading
+          if (value) {
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            let currentEventType = ''
+            for (const line of lines) {
+              const normalizedLine = line.replace(/\r$/, '')
+              if (normalizedLine.trim() === '') {
+                currentEventType = ''
+                continue
+              }
+              if (normalizedLine.startsWith('event: ')) {
+                currentEventType = normalizedLine.slice(7).trim()
+                continue
+              }
+              if (normalizedLine.startsWith('data: ')) {
+                const dataStr = normalizedLine.slice(6)
+                if (dataStr === '[DONE]') {
+                  break
+                }
+                try {
+                  const data = JSON.parse(dataStr)
+                  hasReceivedData = true
+                  if (currentEventType === 'reasoning') {
+                    onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
+                  } else if (data.type === 'chunk') {
+                    onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
+                  } else if (data.type === 'error') {
+                    onError?.(new Error(data.error?.message || 'Stream error'))
+                  } else if (data?.type) {
+                    onEvent?.(data)
+                  }
+                } catch {
+                  logStreamParseWarning(dataStr, 'chunk')
+                }
+                currentEventType = ''
+              }
             }
+          }
+        }
+
+        if (buffer.trim()) {
+          const remainingLines = buffer.trim().split('\n')
+          let remainingEventType = ''
+          for (const line of remainingLines) {
+            const normalizedLine = line.replace(/\r$/, '')
             if (normalizedLine.startsWith('event: ')) {
-              currentEventType = normalizedLine.slice(7).trim()
+              remainingEventType = normalizedLine.slice(7).trim()
               continue
             }
             if (normalizedLine.startsWith('data: ')) {
               const dataStr = normalizedLine.slice(6)
-              if (dataStr === '[DONE]') {
-                break
-              }
-              try {
-                const data = JSON.parse(dataStr)
-                if (currentEventType === 'reasoning') {
-                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
-                } else if (data.type === 'chunk') {
-                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
-                } else if (data.type === 'error') {
-                  onError?.(new Error(data.error?.message || 'Stream error'))
-                } else if (data?.type) {
-                  onEvent?.(data)
+              if (dataStr !== '[DONE]') {
+                try {
+                  const data = JSON.parse(dataStr)
+                  if (remainingEventType === 'reasoning') {
+                    onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
+                  } else if (data.type === 'chunk') {
+                    onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
+                  } else if (data.type === 'error') {
+                    onError?.(new Error(data.error?.message || 'Stream error'))
+                  } else if (data?.type) {
+                    onEvent?.(data)
+                  }
+                } catch {
+                  logStreamParseWarning(dataStr, 'tail')
                 }
-              } catch {
-                logStreamParseWarning(dataStr, 'chunk')
               }
-              currentEventType = ''
+              remainingEventType = ''
             }
           }
         }
-      }
 
-      if (buffer.trim()) {
-        const remainingLines = buffer.trim().split('\n')
-        let remainingEventType = ''
-        for (const line of remainingLines) {
-          const normalizedLine = line.replace(/\r$/, '')
-          if (normalizedLine.startsWith('event: ')) {
-            remainingEventType = normalizedLine.slice(7).trim()
-            continue
+        return
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          throw e
+        }
+        lastError = e instanceof Error ? e : new Error(String(e))
+        if (hasReceivedData) {
+          if (!isErrorLogged) {
+            appLogger.error({
+              event: 'api_response',
+              module: 'api',
+              action: 'POST',
+              status: 'failure',
+              request_id: requestId,
+              message: 'stream connection lost after partial data received',
+              extra: { url, error: lastError.message },
+            })
           }
-          if (normalizedLine.startsWith('data: ')) {
-            const dataStr = normalizedLine.slice(6)
-            if (dataStr !== '[DONE]') {
-              try {
-                const data = JSON.parse(dataStr)
-                if (remainingEventType === 'reasoning') {
-                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
-                } else if (data.type === 'chunk') {
-                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
-                } else if (data.type === 'error') {
-                  onError?.(new Error(data.error?.message || 'Stream error'))
-                } else if (data?.type) {
-                  onEvent?.(data)
-                }
-              } catch {
-                logStreamParseWarning(dataStr, 'tail')
-              }
-            }
-            remainingEventType = ''
-          }
+          onError?.(lastError)
+          throw lastError
+        }
+        if (!isErrorLogged) {
+          appLogger.warning({
+            event: 'api_retry',
+            module: 'api',
+            action: 'POST',
+            status: 'retry',
+            request_id: requestId,
+            message: `stream attempt ${attempt + 1} failed, scheduling retry`,
+            extra: { url, error: lastError.message },
+          })
         }
       }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        throw e
-      }
-      if (!isErrorLogged) {
-        appLogger.error({
-          event: 'api_response',
-          module: 'api',
-          action: 'POST',
-          status: 'failure',
-          request_id: requestId,
-          message: 'api stream request failed',
-          extra: {
-            url,
-            error: e instanceof Error ? e.message : String(e),
-          },
-        })
-      }
-      onError?.(e)
-      throw e
     }
+
+    appLogger.error({
+      event: 'api_response',
+      module: 'api',
+      action: 'POST',
+      status: 'failure',
+      request_id: '',
+      message: 'stream request failed after all retries',
+      extra: { error: lastError?.message },
+    })
+    onError?.(lastError)
+    throw lastError || new Error('Stream request failed after max retries')
   },
   getHistory: (sessionId: string) =>
     api.get(`/chat/history/${sessionId}`),

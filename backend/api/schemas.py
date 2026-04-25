@@ -63,7 +63,7 @@ class ChatMessage(BaseModel):
     封装与ChatMessage相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    message: str
+    message: str = Field(..., max_length=32000, description="用户消息内容")
     session_id: Optional[str] = "default"
     provider: Optional[str] = None
     model: Optional[str] = None

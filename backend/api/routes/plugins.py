@@ -14,6 +14,10 @@ from plugins.plugin_manager import PluginManager
 from plugins import plugin_instance
 from plugins.plugin_logger import LogManager
 from loguru import logger
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_ZIP_FILES = 100
+MAX_ZIP_EXTRACTION_SIZE = 200 * 1024 * 1024  # 200MB
 import uuid
 import zipfile
 import io
@@ -805,8 +809,14 @@ async def upload_plugin(
     """
     if not file.filename or not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Only .zip files are supported")
+    if file.content_type and file.content_type not in ["application/zip", "application/x-zip-compressed"]:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file MIME type")
+    if file.size is not None and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail=f"File size exceeds limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
         
     content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail=f"File size exceeds limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
     
     # 使用临时目录解压，校验通过后再原子移动到插件目录
     temp_dir = None
@@ -819,9 +829,19 @@ async def upload_plugin(
         temp_dir = tempfile.mkdtemp(prefix="plugin_upload_")
         
         with zipfile.ZipFile(io.BytesIO(content)) as z:
-            for member in z.namelist():
+            all_members = z.namelist()
+            if len(all_members) > MAX_ZIP_FILES:
+                raise HTTPException(status_code=400, detail=f"ZIP file contains too many files ({len(all_members)} > {MAX_ZIP_FILES})")
+            total_size = 0
+            for member in all_members:
                 if member.startswith('/') or '..' in member:
                     raise HTTPException(status_code=400, detail="Invalid zip file structure")
+                info = z.getinfo(member)
+                total_size += info.file_size
+                if info.file_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=400, detail=f"Individual file in ZIP exceeds size limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+            if total_size > MAX_ZIP_EXTRACTION_SIZE:
+                raise HTTPException(status_code=400, detail=f"Total extraction size exceeds limit ({MAX_ZIP_EXTRACTION_SIZE // (1024*1024)}MB)")
             
             z.extractall(temp_dir)
         

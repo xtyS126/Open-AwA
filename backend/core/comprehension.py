@@ -27,11 +27,10 @@ class ComprehensionLayer:
         logger.info("ComprehensionLayer initialized")
     
     async def recognize_intent(self, user_input: str) -> str:
-        """
-        处理recognize、intent相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
-        user_input_lower = user_input.lower()
+        if not user_input or not user_input.strip():
+            logger.debug("Empty user_input, defaulting to 'chat' intent")
+            return "chat"
+        user_input_lower = user_input.strip().lower()
         
         for intent, keywords in self.intent_patterns.items():
             for keyword in keywords:
@@ -43,29 +42,29 @@ class ComprehensionLayer:
         return "chat"
     
     async def extract_entities(self, user_input: str) -> Dict[str, Any]:
-        """
-        处理extract、entities相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        if not user_input or not user_input.strip():
+            logger.debug("Empty user_input, returning empty entities")
+            return {}
         entities = {}
+        sanitized_input = user_input.strip()
         
         file_pattern = r'([a-zA-Z0-9_\-\.]+\.(?:py|js|ts|md|txt|json|yaml|yml))'
-        files = re.findall(file_pattern, user_input)
+        files = re.findall(file_pattern, sanitized_input)
         if files:
             entities["files"] = files
         
         path_pattern = r'/[\w/\\\-.]+'
-        paths = re.findall(path_pattern, user_input)
+        paths = re.findall(path_pattern, sanitized_input)
         if paths:
             entities["paths"] = paths
         
         command_pattern = r'`([^`]+)`'
-        commands = re.findall(command_pattern, user_input)
+        commands = re.findall(command_pattern, sanitized_input)
         if commands:
             entities["commands"] = commands
         
         url_pattern = r'https?://[^\s]+'
-        urls = re.findall(url_pattern, user_input)
+        urls = re.findall(url_pattern, sanitized_input)
         if urls:
             entities["urls"] = urls
         
@@ -73,17 +72,17 @@ class ComprehensionLayer:
         return entities
     
     async def parse_parameters(self, user_input: str, intent: str) -> Dict[str, Any]:
-        """
-        解析parameters相关输入内容，并转换为内部可用结构。
-        它常用于屏蔽外部协议差异并统一上层业务使用的数据格式。
-        """
+        if not user_input or not user_input.strip():
+            logger.debug("Empty user_input, returning empty params")
+            return {}
         params = {}
+        sanitized_input = user_input.strip()
         
         if intent == "execute":
-            params["task"] = user_input
+            params["task"] = sanitized_input
         elif intent == "query":
-            params["query"] = user_input
+            params["query"] = sanitized_input
         elif intent == "explain":
-            params["target"] = user_input
+            params["target"] = sanitized_input
         
         return params

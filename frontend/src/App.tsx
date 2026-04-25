@@ -113,13 +113,13 @@ function App() {
   }
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary name="Root">
     <BrowserRouter future={routerFutureConfig}>
       <NavigationLogger />
       {!isAuthenticated ? (
         <Suspense fallback={<div className="loading-fallback">加载中...</div>}>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={<ErrorBoundary name="Login"><LoginPage /></ErrorBoundary>} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Suspense>
@@ -131,23 +131,23 @@ function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/chat" replace />} />
                 <Route path="/login" element={<Navigate to="/chat" replace />} />
-                <Route path="/chat" element={<ChatPage />} />
-                <Route path="/chat/:conversationId" element={<ChatPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/skills" element={<SkillsPage />} />
-                <Route path="/scheduled-tasks" element={<ScheduledTasksPage />} />
+                <Route path="/chat" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
+                <Route path="/chat/:conversationId" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
+                <Route path="/dashboard" element={<ErrorBoundary name="Dashboard"><DashboardPage /></ErrorBoundary>} />
+                <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
+                <Route path="/skills" element={<ErrorBoundary name="Skills"><SkillsPage /></ErrorBoundary>} />
+                <Route path="/scheduled-tasks" element={<ErrorBoundary name="ScheduledTasks"><ScheduledTasksPage /></ErrorBoundary>} />
                 <Route path="/plugins">
                   <Route index element={<Navigate to="manage" replace />} />
-                  <Route path="manage" element={<PluginsPage />} />
-                  <Route path="config/:pluginId" element={<PluginConfigPage />} />
-                  <Route path="marketplace" element={<MarketplacePage />} />
+                  <Route path="manage" element={<ErrorBoundary name="Plugins"><PluginsPage /></ErrorBoundary>} />
+                  <Route path="config/:pluginId" element={<ErrorBoundary name="PluginConfig"><PluginConfigPage /></ErrorBoundary>} />
+                  <Route path="marketplace" element={<ErrorBoundary name="Marketplace"><MarketplacePage /></ErrorBoundary>} />
                 </Route>
                 <Route path="/marketplace" element={<Navigate to="/plugins/marketplace" replace />} />
-                <Route path="/memory" element={<MemoryPage />} />
-                <Route path="/experience" element={<ExperiencePage hideHeader />} />
-                <Route path="/billing" element={<BillingPage />} />
-                <Route path="/communication" element={<CommunicationPage />} />
+                <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
+                <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
+                <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
+                <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
               </Routes>
             </Suspense>
           </main>

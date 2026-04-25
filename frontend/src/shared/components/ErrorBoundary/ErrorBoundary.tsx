@@ -3,6 +3,7 @@ import { appLogger } from '@/shared/utils/logger'
 
 interface Props {
   children: ReactNode
+  name?: string
 }
 
 interface State {
@@ -11,7 +12,8 @@ interface State {
 }
 
 /**
- * 全局错误边界组件，捕获子组件树中未处理的渲染异常，防止整个应用白屏崩溃。
+ * 错误边界组件，捕获子组件树中未处理的渲染异常，防止整个应用白屏崩溃。
+ * name 属性用于标识出错的模块，可嵌套使用实现分层容错。
  */
 class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -26,10 +28,10 @@ class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     appLogger.error({
       event: 'frontend_render_error',
-      module: 'error-boundary',
+      module: this.props.name || 'error-boundary',
       action: 'component_did_catch',
       status: 'failure',
-      message: 'frontend render error captured',
+      message: `frontend render error captured in module: ${this.props.name || 'unknown'}`,
       extra: {
         error: error.message,
         stack: error.stack || '',
@@ -45,6 +47,7 @@ class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const moduleName = this.props.name || '应用'
       return (
         <div style={{
           display: 'flex',
@@ -58,10 +61,10 @@ class ErrorBoundary extends Component<Props, State> {
           fontFamily: 'system-ui, sans-serif',
         }}>
           <h2 style={{ color: 'var(--color-text-primary, #333)', marginBottom: '12px' }}>
-            应用发生了意外错误
+            {moduleName} 发生了意外错误
           </h2>
           <p style={{ maxWidth: '480px', lineHeight: 1.6, marginBottom: '20px' }}>
-            页面遇到了未处理异常。详细信息已记录，建议重新加载后重试。
+            该模块遇到了未处理异常。详细信息已记录，建议重新加载后重试。
           </p>
           <button
             onClick={this.handleReload}

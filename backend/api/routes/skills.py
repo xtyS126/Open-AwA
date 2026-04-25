@@ -27,16 +27,57 @@ from urllib.parse import parse_qs, urlparse
 router = APIRouter(prefix="/skills", tags=["Skills"])
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from config.security import decrypt_secret_value, encrypt_secret_value
 from skills.weixin_skill_adapter import WeixinSkillAdapter, WeixinRuntimeConfig, WeixinAdapterError, DEFAULT_BASE_URL, DEFAULT_BOT_TYPE, DEFAULT_QR_BASE_URL
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_ZIP_FILES = 100
+MAX_ZIP_EXTRACTION_SIZE = 200 * 1024 * 1024  # 200MB
 
 
 WEIXIN_SKILL_NAME = "weixin_dispatch"
 WEIXIN_QR_SESSION_TTL_SECONDS = 300
 WEIXIN_QR_SESSIONS: Dict[str, Dict[str, Any]] = {}
 WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
+# 微信二维码图片代理允许的域名白名单，防止 SSRF 攻击
+WEIXIN_QR_ALLOWED_DOMAINS = frozenset({
+    "wx.qq.com",
+    "weixin.qq.com",
+    "open.weixin.qq.com",
+    "ilinkai.weixin.qq.com",
+    "mmbiz.qpic.cn",
+    "mmbiz.qlogo.cn",
+    "res.wx.qq.com",
+})
+
+
+def _validate_qrcode_url(url: str) -> str:
+    """
+    校验二维码图片 URL 的安全性，防止 SSRF（服务器端请求伪造）。
+    只允许访问微信官方域名下的图片资源，拒绝私有网络 IP。
+    """
+    normalized_url = str(url).strip()
+    if not normalized_url:
+        raise ValueError("二维码 URL 为空")
+
+    parsed = urlparse(normalized_url)
+    hostname = str(parsed.hostname or "").lower()
+
+    # 拒绝无域名或协议不完整的 URL
+    if not hostname:
+        raise ValueError(f"二维码 URL 缺少合法域名: {normalized_url[:120]}")
+
+    # 仅允许 https 协议避免中间人
+    if parsed.scheme != "https":
+        raise ValueError(f"二维码 URL 仅允许 https 协议: {normalized_url[:120]}")
+
+    # 校验域名白名单
+    if hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
+        raise ValueError(f"二维码 URL 域名 '{hostname}' 不在允许的白名单中")
+
+    return normalized_url
 
 
 def _build_default_weixin_config() -> Dict[str, Any]:
@@ -606,14 +647,14 @@ class WeixinConfigReq(BaseModel):
     """
     微信配置请求模型，包含连接参数和绑定信息。
     """
-    account_id: str
-    token: str
-    base_url: Optional[str] = DEFAULT_BASE_URL
-    timeout_seconds: Optional[int] = 15
-    user_id: Optional[str] = ""
-    binding_status: Optional[str] = "unbound"
-    bot_type: Optional[str] = None
-    channel_version: Optional[str] = None
+    account_id: str = Field(..., min_length=1, max_length=128, description="微信账号ID")
+    token: str = Field(..., min_length=1, max_length=512, description="认证Token")
+    base_url: Optional[str] = Field(default=DEFAULT_BASE_URL, max_length=512, description="基础URL")
+    timeout_seconds: Optional[int] = Field(default=15, ge=1, le=300, description="超时秒数")
+    user_id: Optional[str] = Field(default="", max_length=128, description="用户ID")
+    binding_status: Optional[str] = Field(default="unbound", pattern=r"^(unbound|binding|bound|failed)$", description="绑定状态")
+    bot_type: Optional[str] = Field(default=None, max_length=64, description="机器人类型")
+    channel_version: Optional[str] = Field(default=None, max_length=32, description="渠道版本")
 
 
 class WeixinQrStartReq(BaseModel):
@@ -874,6 +915,12 @@ async def weixin_qr_image(
     resolved_qrcode_url = str((session or {}).get("qrcode_url") or qrcode_url or "").strip()
     if not resolved_qrcode_url:
         raise HTTPException(status_code=404, detail="当前没有进行中的登录，请先发起登录。")
+
+    try:
+        resolved_qrcode_url = _validate_qrcode_url(resolved_qrcode_url)
+    except ValueError as exc:
+        _build_qr_logger(session_key or "unknown", "qr_image_ssrf_rejected", qrcode_url=resolved_qrcode_url[:120], reason=str(exc)).warning("qrcode url validation failed")
+        raise HTTPException(status_code=400, detail=f"二维码图片代理被拒绝: {str(exc)}")
 
     try:
         timeout_seconds = _normalize_timeout_seconds((session or {}).get("timeout_seconds"), fallback=15)
@@ -1537,8 +1584,24 @@ async def install_skill_from_package(
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     try:
+        if file.content_type and file.content_type not in ["application/zip", "application/x-zip-compressed"]:
+            raise HTTPException(status_code=400, detail="Only ZIP files are allowed")
+        if file.size is not None and file.size > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
         content = await file.read()
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
         zip_file = zipfile.ZipFile(io.BytesIO(content))
+        
+        if len(zip_file.namelist()) > MAX_ZIP_FILES:
+            raise HTTPException(status_code=400, detail=f"ZIP文件中文件数量超过限制 ({MAX_ZIP_FILES})")
+        
+        for member in zip_file.namelist():
+            if member.startswith('/') or '..' in member:
+                raise HTTPException(status_code=400, detail="非法的ZIP文件路径")
+            info = zip_file.getinfo(member)
+            if info.file_size > MAX_UPLOAD_SIZE:
+                raise HTTPException(status_code=400, detail=f"ZIP中单个文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
         
         config_files = [name for name in zip_file.namelist() if name.endswith('skill.yaml') or name.endswith('skill.yml')]
         if not config_files:
