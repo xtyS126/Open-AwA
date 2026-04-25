@@ -666,6 +666,8 @@ class ExecutionLayer:
         # 支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM
         max_rounds = 5
         round_count = 0
+        consecutive_errors = 0
+        max_consecutive_errors = 3
         tool_events = []
 
         while round_count < max_rounds:
@@ -674,8 +676,22 @@ class ExecutionLayer:
                 break
 
             round_count += 1
+            _abort = False
             for tc in tool_calls:
                 exec_result = await self._execute_tool_call(tc, context)
+                if exec_result.get("ok"):
+                    consecutive_errors = 0
+                else:
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.bind(
+                            event="tool_calls_max_consecutive_errors",
+                            module="executor",
+                            consecutive_errors=consecutive_errors,
+                            threshold=max_consecutive_errors,
+                        ).warning(f"工具调用连续失败 {consecutive_errors} 次，终止 tool_calls 循环")
+                        _abort = True
+                        break
                 tool_events.append({
                     "name": tc.get("function", {}).get("name", "unknown"),
                     "status": "completed" if exec_result.get("ok") else "error",
@@ -683,6 +699,8 @@ class ExecutionLayer:
                 })
                 tool_message = self._build_tool_message(tc, exec_result)
                 messages.append(tool_message)
+            if _abort:
+                break
 
             # 将 assistant 消息也加入（包含 tool_calls）
             assistant_msg = {
@@ -934,7 +952,7 @@ class ExecutionLayer:
         return {
             "role": "tool",
             "tool_call_id": tool_call.get("id", ""),
-            "content": json.dumps(exec_result, ensure_ascii=False),
+            "content": json.dumps(exec_result, ensure_ascii=False, default=str),
         }
 
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -943,6 +961,18 @@ class ExecutionLayer:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         action = step.get("action")
+        if action is None:
+            logger.bind(
+                event="execute_step_missing_action",
+                module="executor",
+                step_keys=list(step.keys()) if isinstance(step, dict) else None,
+            ).warning("execute_step 收到 action=None 的步骤，跳过执行")
+            return {
+                "status": "error",
+                "error": "步骤缺少 action 字段",
+                "step": step.get("step"),
+                "action": None,
+            }
         logger.info(f"Executing step: {action}")
         idempotency_key = self._build_tool_idempotency_key(step, context)
         cached_result = self._get_cached_tool_result(idempotency_key)
@@ -1055,6 +1085,22 @@ class ExecutionLayer:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         command = step.get("command", "")
+        
+        # 命令长度限制，防止超长命令被注入
+        if len(command) > 512:
+            return {
+                "status": "error",
+                "message": f"Command too long: {len(command)} characters (max 512)"
+            }
+        
+        # 过滤危险shell字符，防止命令注入
+        dangerous_chars = ["&", "|", ";", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"]
+        for ch in dangerous_chars:
+            if ch in command:
+                return {
+                    "status": "error",
+                    "message": f"Command contains dangerous shell character: {repr(ch)}"
+                }
         
         try:
             proc = await asyncio.create_subprocess_shell(

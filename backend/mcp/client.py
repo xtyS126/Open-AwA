@@ -89,8 +89,8 @@ class MCPClient:
             if self._transport is not None:
                 try:
                     await self._transport.disconnect()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"MCP transport disconnect failed: {e}")
                 self._transport = None
             raise MCPClientError(f"连接 MCP Server 失败: {e}")
 
