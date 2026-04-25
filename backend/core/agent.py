@@ -22,6 +22,7 @@ from mcp.manager import MCPManager
 from workflow.engine import WorkflowEngine
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
+from api.services.chat_protocol import emit_task_event, emit_tool_event
 
 
 from sqlalchemy.orm import Session
@@ -612,6 +613,7 @@ class AIAgent:
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
         """
         流式处理用户输入，注入对话历史后调用大模型并实时 yield 数据块。
+        支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM。
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
 
@@ -639,37 +641,106 @@ class AIAgent:
             "type": "plan",
             "plan": plan,
         }
-            
+
         full_content = ""
         full_reasoning = ""
-        
+
         final_only_mode = self._is_final_only_mode(context)
 
-        async for chunk in self.executor._call_llm_api_stream(user_input, context):
-            if "error" in chunk:
-                yield {
-                    "type": "error",
-                    "error": chunk["error"]
-                }
-                return
-                
-            content = chunk.get("content", "")
-            reasoning = chunk.get("reasoning_content", "")
+        round_count = 0
+        max_rounds = 5
 
-            if final_only_mode:
-                reasoning = ""
-            
-            if content: full_content += content
-            if reasoning: full_reasoning += reasoning
-            
-            output_chunk = {
-                "type": "chunk",
-                "content": content,
-            }
-            if reasoning:
-                output_chunk["reasoning_content"] = reasoning
-            yield output_chunk
-            
+        while round_count < max_rounds:
+            round_count += 1
+            tool_calls_detected = False
+
+            async for chunk in self.executor._call_llm_api_stream(user_input, context):
+                if "error" in chunk:
+                    yield {
+                        "type": "error",
+                        "error": chunk["error"]
+                    }
+                    return
+
+                # 检测工具调用事件
+                if chunk.get("type") == "tool_calls":
+                    tool_calls_detected = True
+                    tool_calls = chunk.get("tool_calls", [])
+
+                    logger.info(f"Detected {len(tool_calls)} tool_calls in stream mode, executing...")
+
+                    # 发射 task 事件
+                    yield emit_task_event({
+                        "step_count": len(tool_calls),
+                        "steps": [{"name": tc.get("function", {}).get("name", "unknown")} for tc in tool_calls],
+                    })
+
+                    # 执行每个工具
+                    tool_results = []
+                    for tc in tool_calls:
+                        tool_name = tc.get("function", {}).get("name", "unknown")
+                        tool_id = tc.get("id", "")
+
+                        yield emit_tool_event({
+                            "id": tool_id,
+                            "name": tool_name,
+                            "status": "running",
+                        })
+
+                        result = await self.executor._execute_tool_call(tc, context)
+
+                        yield emit_tool_event({
+                            "id": tool_id,
+                            "name": tool_name,
+                            "status": "done",
+                            "result": result,
+                        })
+
+                        tool_results.append({"tool_call": tc, "result": result})
+
+                    # 构建工具调用消息并注入到上下文中
+                    tool_messages = []
+                    tool_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": tc.get("id", ""),
+                                "type": "function",
+                                "function": {
+                                    "name": tc.get("function", {}).get("name", ""),
+                                    "arguments": tc.get("function", {}).get("arguments", ""),
+                                }
+                            }
+                            for tc in tool_calls
+                        ]
+                    })
+                    for tr in tool_results:
+                        tool_messages.append(self.executor._build_tool_message(tr["tool_call"], tr["result"]))
+
+                    context["_tool_messages"] = tool_messages
+                    break  # 跳出 async for 循环，重新进入 while 循环进行下一轮 LLM 调用
+
+                content = chunk.get("content", "")
+                reasoning = chunk.get("reasoning_content", "")
+
+                if final_only_mode:
+                    reasoning = ""
+
+                if content: full_content += content
+                if reasoning: full_reasoning += reasoning
+
+                output_chunk = {
+                    "type": "chunk",
+                    "content": content,
+                }
+                if reasoning:
+                    output_chunk["reasoning_content"] = reasoning
+                yield output_chunk
+
+            if not tool_calls_detected:
+                break  # 没有工具调用，退出 while 循环
+
         # Update memory after stream completes
         if full_content:
             await self.feedback.update_memory(

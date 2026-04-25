@@ -1,0 +1,18 @@
+- [x] BasePlugin 的 `__init__` 包含 `self.context` 属性声明
+- [x] BasePlugin 提供 `set_context()` 方法
+- [x] PluginManager.__init__ 接受可选的 `db_session_factory` 参数
+- [x] PluginManager._load_action 在 initialize() 前构造并注入 PluginContext
+- [x] schema.json 删除 ai_api_key/ai_base_url/ai_model，添加 ai_model_config_id
+- [x] schema.json 的 ai_model_config_id 标记为 x-component: "model-selector"
+- [x] config.json 更新默认值（ai_model_config_id: null）
+- [x] TwitterMonitorPlugin._refresh_config 正确解析 ai_model_config_id
+- [x] TwitterMonitorPlugin._call_external_ai_for_summary 通过 PricingManager 解析模型配置
+- [x] TwitterMonitorPlugin 在无 ai_model_config_id 时自动总结返回友好提示
+- [x] 自动获取调度器的 AI 总结调用使用新凭据解析方式
+- [x] Database session 在使用后正确关闭（无泄漏）
+- [x] 前端 PluginConfigPage 的 resolveFieldComponent 识别 "model-selector"
+- [x] 前端 PluginConfigPage 的 renderFieldControl 渲染 model-selector 下拉框
+- [x] 前端 model-selector 下拉框从 /api/billing/configurations 动态加载数据
+- [x] 前端 model-selector 下拉框选项显示格式为 "display_name (provider/model)"
+- [x] 后端所有修改文件通过 py_compile 语法检查
+- [x] 前端 TypeScript 编译无错误

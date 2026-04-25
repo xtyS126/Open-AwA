@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -9,6 +11,11 @@ import requests
 from loguru import logger
 
 from backend.plugins.base_plugin import BasePlugin
+from backend.billing.pricing_manager import PricingManager
+
+from .twitter_api import TwitterAPI
+from .storage import TweetStorage
+from .summarizer import AISummarizer, DEFAULT_SYSTEM_PROMPT
 
 
 DEFAULT_TWITTER_API_BASE_URL = "https://api.twitterapi.io/twitter"
@@ -27,13 +34,13 @@ SUMMARY_PRIORITY_RULES = [
     "重大软件更新: Chrome、VSCode 等大型软件更新。",
 ]
 SUMMARY_OUTPUT_RULES = [
-    "第一部分只输出整体结论: 未检测到符合条件的内容时写“暂无重大动态。”；检测到时写“有 X 条重要动态。”。",
-    "第二部分逐条总结: 每条最多 5 行；信息量小的一句话概括，信息量大时使用“标题 + · 细节”结构。",
-    "第三部分输出“AI总结：...”并给出价值判断，聚焦对行业或使用场景的意义。",
+    "第一部分只输出整体结论: 未检测到符合条件的内容时写\u201c暂无重大动态。\u201d；检测到时写\u201c有 X 条重要动态。\u201d。",
+    "第二部分逐条总结: 每条最多 5 行；信息量小的一句话概括，信息量大时使用\u201c标题 + \u00b7 细节\u201d结构。",
+    "第三部分输出\u201cAI总结：...\u201d并给出价值判断，聚焦对行业或使用场景的意义。",
 ]
 SUMMARY_LANGUAGE_RULES = [
     "全中文输出，但可保留必要的英文关键词。",
-    "禁止出现“以下是结果”“我认为”等 AI 自述语。",
+    "禁止出现\u201c以下是结果\u201d\u201c我认为\u201d等 AI 自述语。",
     "不要输出格式说明、推理过程、无关评论或再次请求调用工具。",
     "优先精简表达，只保留真正重要的信息。",
 ]
@@ -41,10 +48,10 @@ SUMMARY_EXAMPLE = (
     "有3条重要动态：\n"
     "一、Sora APP 安卓版正式上线，已在加、美、日等地区开放下载。\n\n"
     "二、Google 推出 File Search Tool\n"
-    "· 产品形态：完全托管的 RAG 系统，内置于 Gemini API\n"
-    "· 核心价值：将 RAG 简化为一行 API 调用，自动完成索引、向量嵌入与语义检索\n"
-    "· 计费模式：仅首次建立索引收费，后续查询免费\n\n"
-    "三、苹果新版 Siri 将由 Gemini 提供后台支持，预计 2026 年 3 月上线。\n\n"
+    "\u00b7 产品形态：完全托管的 RAG 系统，内置于 Gemini API\n"
+    "\u00b7 核心价值：将 RAG 简化为一行 API 调用，自动完成索引、向量嵌入与语义检索\n"
+    "\u00b7 计费模式：仅首次建立索引收费，后续查询免费\n\n"
+    "三、苹果新版 Siri 将由 Gemini 提供后台支持，预计 2026 年 3 月发布。\n\n"
     "AI总结：谷歌推出的工具会降低企业级知识库部署门槛，RAG 技术正在平民化。"
 )
 DEFAULT_SUMMARY_GUIDANCE = (
@@ -122,15 +129,15 @@ SUMMARY_PROMPT_TEMPLATE = _build_summary_prompt_template()
 
 class TwitterMonitorPlugin(BasePlugin):
     name: str = "twitter-monitor"
-    version: str = "1.0.0"
-    description: str = "抓取、缓存并整理指定 Twitter 账号内容，供当前模型直接分析总结的监控插件"
+    version: str = "2.0.0"
+    description: str = "抓取、缓存并整理指定 Twitter 账号内容，支持搜索用户、指定数量获取推文、每日自动获取并 AI 总结"
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
         self.plugin_root = Path(__file__).resolve().parents[1]
         self.data_dir = self.plugin_root / "data"
         self.daily_dir = self.data_dir / "daily"
-        self.latest_path = self.data_dir / "latest.json"
+        self.summaries_dir = self.data_dir / "summaries"
 
         self.twitter_api_key = ""
         self.twitter_api_base_url = DEFAULT_TWITTER_API_BASE_URL
@@ -138,8 +145,9 @@ class TwitterMonitorPlugin(BasePlugin):
         self.include_replies = False
         self.tweets_per_user = 8
         self.storage_mode = "both"
-        
-        # 自定义提示词配置
+        self.auto_fetch_interval_hours = 24
+        self.ai_model_config_id: Optional[int] = None
+
         self.enable_custom_summary = False
         self.custom_summary_role = ""
         self.custom_priority_rules = ""
@@ -147,7 +155,15 @@ class TwitterMonitorPlugin(BasePlugin):
         self.custom_language_rules = ""
         self.custom_summary_example = ""
         self._custom_summary_prompt_template = ""
-        
+
+        self._twitter_api: Optional[TwitterAPI] = None
+        self._storage: Optional[TweetStorage] = None
+        self._summarizer: Optional[AISummarizer] = None
+
+        self._scheduler_thread: Optional[threading.Thread] = None
+        self._scheduler_stop = threading.Event()
+        self._scheduler_lock = threading.Lock()
+
         self._refresh_config()
 
     def _refresh_config(self) -> None:
@@ -162,18 +178,28 @@ class TwitterMonitorPlugin(BasePlugin):
         self.tweets_per_user = _coerce_int(self.config.get("tweets_per_user"), 8, minimum=1, maximum=50)
         storage_mode = str(self.config.get("storage_mode") or "both").strip().lower()
         self.storage_mode = storage_mode if storage_mode in SUPPORTED_STORAGE_MODES else "both"
-        
-        # 加载自定义提示词配置
+        self.auto_fetch_interval_hours = _coerce_int(
+            self.config.get("auto_fetch_interval_hours"), 24, minimum=1, maximum=168
+        )
+        self.ai_model_config_id = self.config.get("ai_model_config_id")
+
         self._load_summary_customization()
 
+        if self.twitter_api_key:
+            self._twitter_api = TwitterAPI(self.twitter_api_key)
+        else:
+            self._twitter_api = None
+
+        self._storage = TweetStorage(str(self.data_dir))
+
+        self._summarizer = AISummarizer(
+            summaries_dir=str(self.summaries_dir),
+            ai_call_func=self._call_external_ai_for_summary,
+            system_prompt=SUMMARY_PROMPT_TEMPLATE
+        )
+
     def _load_summary_customization(self) -> None:
-        """
-        从配置中加载自定义提示词配置。
-        如果未启用自定义提示词或配置为空，使用默认值。
-        """
         summary_config = self.config.get("summary_customization")
-        
-        # 如果配置不是字典或为空，使用默认值
         if not isinstance(summary_config, dict):
             self.enable_custom_summary = False
             self.custom_summary_role = ""
@@ -183,27 +209,20 @@ class TwitterMonitorPlugin(BasePlugin):
             self.custom_summary_example = ""
             self._custom_summary_prompt_template = ""
             return
-        
-        # 读取启用状态
+
         self.enable_custom_summary = _coerce_bool(summary_config.get("enable_custom_summary"), False)
-        
-        # 读取自定义字段
         self.custom_summary_role = str(summary_config.get("custom_summary_role") or "").strip()
         self.custom_priority_rules = str(summary_config.get("custom_priority_rules") or "").strip()
         self.custom_output_rules = str(summary_config.get("custom_output_rules") or "").strip()
         self.custom_language_rules = str(summary_config.get("custom_language_rules") or "").strip()
         self.custom_summary_example = str(summary_config.get("custom_summary_example") or "").strip()
-        
-        # 如果启用了自定义提示词且配置了内容，生成自定义提示词模板
+
         if self.enable_custom_summary and self._has_custom_content():
             self._custom_summary_prompt_template = self._build_custom_summary_prompt_template()
         else:
             self._custom_summary_prompt_template = ""
 
     def _has_custom_content(self) -> bool:
-        """
-        检查是否配置了任何自定义提示词内容。
-        """
         return bool(
             self.custom_summary_role or
             self.custom_priority_rules or
@@ -213,50 +232,30 @@ class TwitterMonitorPlugin(BasePlugin):
         )
 
     def _build_custom_summary_prompt_template(self) -> str:
-        """
-        根据自定义配置构建提示词模板。
-        """
         sections = []
-        
-        # 角色设定
         if self.custom_summary_role:
             sections.append(f"角色设定: {self.custom_summary_role}")
-        
-        # 优先级规则
         if self.custom_priority_rules:
             sections.append("判断逻辑（按优先级）:")
             rules = [rule.strip() for rule in self.custom_priority_rules.split("\n") if rule.strip()]
             for index, rule in enumerate(rules, start=1):
                 sections.append(f"{index}. {rule}")
-        
-        # 输出规则
         if self.custom_output_rules:
             sections.append("输出要求:")
             rules = [rule.strip() for rule in self.custom_output_rules.split("\n") if rule.strip()]
             for index, rule in enumerate(rules, start=1):
                 sections.append(f"{index}. {rule}")
-        
-        # 语言规则
         if self.custom_language_rules:
             sections.append("语言要求:")
             rules = [rule.strip() for rule in self.custom_language_rules.split("\n") if rule.strip()]
             for index, rule in enumerate(rules, start=1):
                 sections.append(f"{index}. {rule}")
-        
-        # 示例
         if self.custom_summary_example:
             sections.append(f"示例输出:\n{self.custom_summary_example}")
-        
         return "\n".join(sections)
 
     def _get_effective_summary_config(self) -> Dict[str, Any]:
-        """
-        获取生效的提示词配置。
-        如果启用了自定义提示词且配置了内容，使用自定义配置；
-        否则使用默认配置。
-        """
         if self.enable_custom_summary and self._has_custom_content():
-            # 使用自定义配置
             return {
                 "source": "custom",
                 "role": self.custom_summary_role or SUMMARY_ROLE,
@@ -268,7 +267,6 @@ class TwitterMonitorPlugin(BasePlugin):
                 "prompt_template": self._custom_summary_prompt_template or SUMMARY_PROMPT_TEMPLATE,
             }
         else:
-            # 使用默认配置
             return {
                 "source": "default",
                 "role": SUMMARY_ROLE,
@@ -281,13 +279,8 @@ class TwitterMonitorPlugin(BasePlugin):
             }
 
     def _parse_rules(self, custom_rules: str, default_rules: List[str]) -> List[str]:
-        """
-        解析规则字符串为列表。
-        如果自定义规则为空，返回默认规则。
-        """
         if not custom_rules:
             return list(default_rules)
-        
         rules = [rule.strip() for rule in custom_rules.split("\n") if rule.strip()]
         return rules if rules else list(default_rules)
 
@@ -295,6 +288,8 @@ class TwitterMonitorPlugin(BasePlugin):
         self._refresh_config()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.daily_dir.mkdir(parents=True, exist_ok=True)
+        self.summaries_dir.mkdir(parents=True, exist_ok=True)
+        self._start_auto_fetch_scheduler()
         self._initialized = True
         logger.info(
             f"[{self.name}] 初始化完成，默认监控 {len(self.monitored_users)} 个账号，"
@@ -313,12 +308,17 @@ class TwitterMonitorPlugin(BasePlugin):
         action = str(kwargs.get("action") or "").strip()
         actions = {
             "fetch_twitter_tweets": self.fetch_twitter_tweets,
+            "fetch_user_tweets": self.fetch_user_tweets,
             "read_twitter_cache": self.read_twitter_cache,
             "get_twitter_daily_tweets": self.get_twitter_daily_tweets,
             "get_twitter_stats": self.get_twitter_stats,
             "search_twitter_users": self.search_twitter_users,
             "get_twitter_user_info": self.get_twitter_user_info,
             "summarize_twitter_tweets": self.summarize_twitter_tweets,
+            "trigger_auto_fetch": self.trigger_auto_fetch,
+            "start_auto_fetch_scheduler": self.start_auto_fetch_scheduler,
+            "stop_auto_fetch_scheduler": self.stop_auto_fetch_scheduler,
+            "get_scheduler_status": self.get_scheduler_status,
         }
 
         if not action:
@@ -334,6 +334,7 @@ class TwitterMonitorPlugin(BasePlugin):
 
     def cleanup(self) -> None:
         logger.info(f"[{self.name}] 清理 Twitter 监控插件")
+        self._stop_auto_fetch_scheduler()
         super().cleanup()
 
     def _twitter_headers(self) -> Dict[str, str]:
@@ -400,7 +401,7 @@ class TwitterMonitorPlugin(BasePlugin):
 
         deduplicated = self._deduplicate_tweets(tweets)
         if normalized_mode in {"latest", "both"}:
-            self._write_json_payload(self.latest_path, "latest", deduplicated)
+            self._write_json_payload(self.plugin_root / "data" / "latest.json", "latest", deduplicated)
 
         if normalized_mode in {"daily", "both"}:
             return self._append_daily_tweets(deduplicated, date.today().isoformat())
@@ -444,7 +445,6 @@ class TwitterMonitorPlugin(BasePlugin):
     def _request_twitter_api(self, endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
         if not self.twitter_api_key:
             return {"status": "error", "message": "未配置 twitter_api_key"}
-
         url = f"{self.twitter_api_base_url}/{endpoint.lstrip('/')}"
         try:
             response = requests.get(url, headers=self._twitter_headers(), params=params, timeout=30)
@@ -460,6 +460,38 @@ class TwitterMonitorPlugin(BasePlugin):
                 "message": str(payload.get("msg") or payload.get("message") or "Twitter API 返回失败"),
             }
         return {"status": "success", "data": payload.get("data", {})}
+
+    def fetch_user_tweets(
+        self,
+        user_name: str = None,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        normalized_user = str(user_name or "").strip().lstrip("@")
+        normalized_limit = _coerce_int(limit, 10, minimum=1, maximum=100)
+        if not normalized_user:
+            return {"status": "error", "message": "user_name 不能为空，请用户提供要搜索的 Twitter 用户名"}
+        request_result = self._request_twitter_api(
+            "user/last_tweets",
+            {"userName": normalized_user, "includeReplies": str(self.include_replies).lower()},
+        )
+        if request_result.get("status") != "success":
+            return request_result
+
+        payload = request_result.get("data", {})
+        raw_tweets = payload.get("tweets", []) if isinstance(payload, dict) else []
+        simplified = [self._simplify_tweet(item) for item in raw_tweets[:normalized_limit]]
+
+        deduplicated = self._deduplicate_tweets(simplified)
+        added_count = self._save_fetched_tweets(deduplicated)
+
+        return {
+            "status": "success",
+            "user_name": normalized_user,
+            "limit": normalized_limit,
+            "fetched_count": len(deduplicated),
+            "new_daily_count": added_count,
+            "tweets": deduplicated,
+        }
 
     def fetch_twitter_tweets(
         self,
@@ -528,7 +560,8 @@ class TwitterMonitorPlugin(BasePlugin):
         user_name: Optional[str] = None,
         limit: Optional[int] = 20,
     ) -> Dict[str, Any]:
-        payload = self._read_json_payload(self.latest_path)
+        latest_path = self.plugin_root / "data" / "latest.json"
+        payload = self._read_json_payload(latest_path)
         tweets = payload.get("tweets", []) if isinstance(payload.get("tweets"), list) else []
         filtered = self._filter_tweets(tweets, user_name=user_name, limit=limit)
         return {
@@ -574,7 +607,8 @@ class TwitterMonitorPlugin(BasePlugin):
             return {"status": "error", "message": f"不支持的 storage_type: {normalized_storage}"}
 
         if normalized_storage == "latest":
-            payload = self._read_json_payload(self.latest_path)
+            latest_path = self.plugin_root / "data" / "latest.json"
+            payload = self._read_json_payload(latest_path)
             normalized_date = None
         else:
             normalized_date = str(target_date or date.today().isoformat()).strip()
@@ -680,7 +714,6 @@ class TwitterMonitorPlugin(BasePlugin):
                 f"赞 {metrics.get('likes', 0)} 转 {metrics.get('retweets', 0)} 回 {metrics.get('replies', 0)} | "
                 f"{tweet.get('text', '')}"
             )
-
         return lines
 
     def _select_top_tweets(self, tweets: List[Dict[str, Any]], top_n: int = 5) -> List[Dict[str, Any]]:
@@ -718,8 +751,7 @@ class TwitterMonitorPlugin(BasePlugin):
         normalized_date = source_result.get("target_date") or str(target_date or date.today().isoformat()).strip()
         digest = self._build_summary_digest(tweets)
         top_tweets = self._select_top_tweets(tweets)
-        
-        # 获取生效的提示词配置
+
         effective_config = self._get_effective_summary_config()
 
         return {
@@ -746,12 +778,270 @@ class TwitterMonitorPlugin(BasePlugin):
             "tweets": tweets,
         }
 
+    def _call_external_ai_for_summary(self, prompt: str, system_prompt: str = None) -> str:
+        effective_system = system_prompt or DEFAULT_SYSTEM_PROMPT
+
+        if self.ai_model_config_id is None:
+            return "未配置 AI 模型（ai_model_config_id 为空），请在插件设置中选择一个平台已配置的 AI 模型。"
+
+        db = None
+        try:
+            if self.context is None:
+                return "插件上下文不可用，无法解析模型配置。请联系管理员。"
+            db = self.context.get_db_session()
+            if db is None:
+                return "无法获取数据库会话，无法解析模型配置。"
+            pricing_mgr = PricingManager(db)
+            config = pricing_mgr.get_configuration(self.ai_model_config_id)
+            if config is None:
+                return f"未找到 ID 为 {self.ai_model_config_id} 的模型配置，请检查插件设置中的 AI 模型选择。"
+            if not config.api_key or not config.api_endpoint:
+                return f"模型配置 '{config.display_name or config.model}' 缺少 API 密钥或端点，请检查平台计费配置。"
+
+            selected_models = PricingManager.parse_selected_models(getattr(config, "selected_models", None))
+            effective_model = config.model
+            placeholder_keywords = {"custom-model", "custom_model", "custom", "default-model", "default"}
+            if effective_model.lower() in placeholder_keywords or not effective_model:
+                effective_model = selected_models[0] if selected_models else effective_model
+
+            endpoint_suffixes = PricingManager.get_provider_endpoint_suffixes(config.provider)
+            chat_suffix = endpoint_suffixes.get("chat", "/chat/completions")
+            url = f"{config.api_endpoint.rstrip('/')}{chat_suffix}"
+
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config.api_key}"
+            }
+            payload = {
+                "model": effective_model,
+                "messages": [
+                    {"role": "system", "content": effective_system},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 4096
+            }
+
+            response = requests.post(url, headers=headers, json=payload, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return content
+        except Exception as e:
+            logger.error(f"[{self.name}] AI 总结调用失败: {e}")
+            return f"AI 总结调用失败: {e}"
+        finally:
+            if db is not None:
+                db.close()
+
+    def trigger_auto_fetch(self) -> Dict[str, Any]:
+        if not self.monitored_users:
+            return {"status": "error", "message": "未配置 monitored_users，请在插件设置中添加要监控的用户"}
+        if not self.twitter_api_key:
+            return {"status": "error", "message": "未配置 twitter_api_key，请在插件设置中添加 Twitter API 密钥"}
+
+        result = self.fetch_twitter_tweets(
+            user_names=self.monitored_users,
+            limit=self.tweets_per_user,
+            storage_mode="both"
+        )
+
+        if result.get("status") != "success":
+            return result
+
+        tweets = result.get("tweets", [])
+        summary_result = None
+
+        if tweets:
+            if self._summarizer:
+                today_date = date.today()
+                summary_filename = f"summary_{today_date.isoformat()}_daily.txt"
+                summary_path = str(self.summaries_dir / summary_filename)
+
+                summary_result = self._summarizer.summarize_by_user(
+                    tweets=tweets,
+                    save_path=summary_path
+                )
+
+        return {
+            "status": "success",
+            "message": f"自动获取完成，已抓取 {len(self.monitored_users)} 个用户的推文",
+            "fetched_count": result.get("fetched_count", 0),
+            "new_daily_count": result.get("new_daily_count", 0),
+            "monitored_users": self.monitored_users,
+            "tweets_per_user": self.tweets_per_user,
+            "summary": summary_result.get("content") if summary_result and summary_result.get("success") else "未生成总结（如需自动总结请在插件设置中选择 AI 模型）"
+        }
+
+    def start_auto_fetch_scheduler(self) -> Dict[str, Any]:
+        if self._scheduler_thread and self._scheduler_thread.is_alive():
+            return {"status": "info", "message": "自动获取调度器已在运行中"}
+
+        if not self.monitored_users:
+            return {"status": "error", "message": "未配置 monitored_users，无法启动调度器"}
+        if not self.twitter_api_key:
+            return {"status": "error", "message": "未配置 twitter_api_key，无法启动调度器"}
+
+        self._start_auto_fetch_scheduler()
+        return {
+            "status": "success",
+            "message": f"自动获取调度器已启动，间隔 {self.auto_fetch_interval_hours} 小时",
+            "auto_fetch_interval_hours": self.auto_fetch_interval_hours,
+            "monitored_users": self.monitored_users,
+            "tweets_per_user": self.tweets_per_user
+        }
+
+    def stop_auto_fetch_scheduler(self) -> Dict[str, Any]:
+        self._stop_auto_fetch_scheduler()
+        return {"status": "success", "message": "自动获取调度器已停止"}
+
+    def get_scheduler_status(self) -> Dict[str, Any]:
+        is_running = self._scheduler_thread is not None and self._scheduler_thread.is_alive()
+        return {
+            "status": "success",
+            "scheduler_running": is_running,
+            "monitored_users": self.monitored_users,
+            "tweets_per_user": self.tweets_per_user,
+            "auto_fetch_interval_hours": self.auto_fetch_interval_hours,
+            "has_twitter_api_key": bool(self.twitter_api_key),
+            "has_ai_model_config": self.ai_model_config_id is not None
+        }
+
+    def _start_auto_fetch_scheduler(self) -> None:
+        with self._scheduler_lock:
+            if self._scheduler_thread and self._scheduler_thread.is_alive():
+                return
+            self._scheduler_stop.clear()
+            self._scheduler_thread = threading.Thread(
+                target=self._auto_fetch_loop,
+                daemon=True,
+                name=f"{self.name}-auto-fetch-scheduler"
+            )
+            self._scheduler_thread.start()
+            logger.info(f"[{self.name}] 自动获取调度器已启动")
+
+    def _stop_auto_fetch_scheduler(self) -> None:
+        with self._scheduler_lock:
+            if self._scheduler_thread and self._scheduler_thread.is_alive():
+                self._scheduler_stop.set()
+                self._scheduler_thread.join(timeout=10)
+                self._scheduler_thread = None
+                logger.info(f"[{self.name}] 自动获取调度器已停止")
+
+    def _auto_fetch_loop(self) -> None:
+        interval_seconds = self.auto_fetch_interval_hours * 3600
+        logger.info(
+            f"[{self.name}] 自动获取循环已启动，间隔 {self.auto_fetch_interval_hours} 小时"
+        )
+
+        while not self._scheduler_stop.is_set():
+            self._refresh_config()
+            current_users = self.monitored_users
+            current_count = self.tweets_per_user
+            current_interval = self.auto_fetch_interval_hours
+
+            if not current_users or not self.twitter_api_key:
+                logger.warning(f"[{self.name}] 自动获取跳过：未配置 monitored_users 或 api_key")
+            else:
+                try:
+                    logger.info(
+                        f"[{self.name}] 开始自动获取 {len(current_users)} 个用户的推文"
+                    )
+                    for user in current_users:
+                        if self._scheduler_stop.is_set():
+                            break
+                        user_result = self._request_twitter_api(
+                            "user/last_tweets",
+                            {"userName": user, "includeReplies": str(self.include_replies).lower()},
+                        )
+                        if user_result.get("status") == "success":
+                            payload = user_result.get("data", {})
+                            raw_tweets = payload.get("tweets", []) if isinstance(payload, dict) else []
+                            simplified = [self._simplify_tweet(t) for t in raw_tweets[:current_count]]
+                            if simplified:
+                                added = self._save_fetched_tweets(simplified)
+                                logger.info(
+                                    f"[{self.name}] 自动获取 @{user}: "
+                                    f"获取 {len(simplified)} 条，新增 {added} 条"
+                                )
+
+                    all_daily_tweets = []
+                    today = date.today()
+                    for user in current_users:
+                        user_tweets_path = self.daily_dir / f"{today.isoformat()}.json"
+                        payload = self._read_json_payload(user_tweets_path)
+                        tweets = payload.get("tweets", []) if isinstance(payload.get("tweets"), list) else []
+                        for t in tweets:
+                            if t.get("author", {}).get("user_name", "").lower() == user.lower():
+                                all_daily_tweets.append(t)
+
+                    if all_daily_tweets and self.ai_model_config_id is not None:
+                        summary_filename = f"summary_{today.isoformat()}_daily.txt"
+                        summary_path = str(self.summaries_dir / summary_filename)
+
+                        summary_result = self._summarizer.summarize_by_user(
+                            tweets=all_daily_tweets,
+                            save_path=summary_path
+                        )
+
+                        if summary_result.get("success"):
+                            logger.info(
+                                f"[{self.name}] 自动总结完成: "
+                                f"{summary_result.get('tweets_count', 0)} 条推文"
+                            )
+                        else:
+                            logger.warning(
+                                f"[{self.name}] 自动总结失败: {summary_result.get('error', '未知错误')}"
+                            )
+                    elif all_daily_tweets:
+                        logger.info(
+                            f"[{self.name}] 推文已保存，未配置 AI API 密钥，跳过自动总结"
+                        )
+
+                except Exception as e:
+                    logger.error(f"[{self.name}] 自动获取过程出错: {e}")
+
+            if self._scheduler_stop.wait(interval_seconds):
+                break
+
     def get_tools(self) -> List[Dict[str, Any]]:
         return [
             {
+                "name": "fetch_user_tweets",
+                "method": "fetch_user_tweets",
+                "description": "获取指定 Twitter 用户的指定数量推文（用户必须提供推文数量），同时写入缓存",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_name": {
+                            "type": "string",
+                            "description": "要获取推文的 Twitter 用户名（必填）"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "要获取的推文数量，用户必须填写具体数字（必填）"
+                        }
+                    },
+                    "required": ["user_name", "limit"]
+                }
+            },
+            {
+                "name": "search_twitter_users",
+                "method": "search_twitter_users",
+                "description": "按关键词搜索 Twitter 用户",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "搜索关键词"},
+                        "limit": {"type": "integer", "description": "最多返回多少个用户"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
                 "name": "fetch_twitter_tweets",
                 "method": "fetch_twitter_tweets",
-                "description": "抓取一个或多个 Twitter 账号的最新推文，并同步写入 latest 与 daily 缓存",
+                "description": "批量抓取一个或多个 Twitter 账号的最新推文，并同步写入 latest 与 daily 缓存",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -809,19 +1099,6 @@ class TwitterMonitorPlugin(BasePlugin):
                 }
             },
             {
-                "name": "search_twitter_users",
-                "method": "search_twitter_users",
-                "description": "按关键词搜索 Twitter 用户",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "搜索关键词"},
-                        "limit": {"type": "integer", "description": "最多返回多少个用户"}
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
                 "name": "get_twitter_user_info",
                 "method": "get_twitter_user_info",
                 "description": "获取指定 Twitter 用户的账号信息",
@@ -845,6 +1122,42 @@ class TwitterMonitorPlugin(BasePlugin):
                         "user_name": {"type": "string", "description": "可选，只总结指定用户"},
                         "limit": {"type": "integer", "description": "最多纳入总结的推文条数"}
                     }
+                }
+            },
+            {
+                "name": "trigger_auto_fetch",
+                "method": "trigger_auto_fetch",
+                "description": "手动触发一次自动获取：获取插件配置中 monitored_users 的最新推文并自动总结",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "start_auto_fetch_scheduler",
+                "method": "start_auto_fetch_scheduler",
+                "description": "启动后台自动获取调度器，按配置的间隔定时获取推文",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "stop_auto_fetch_scheduler",
+                "method": "stop_auto_fetch_scheduler",
+                "description": "停止后台自动获取调度器",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "get_scheduler_status",
+                "method": "get_scheduler_status",
+                "description": "查看自动获取调度器的运行状态和配置",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
                 }
             }
         ]

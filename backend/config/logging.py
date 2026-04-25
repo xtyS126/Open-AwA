@@ -20,8 +20,6 @@ from loguru import logger
 REQUEST_ID_HEADER = "X-Request-Id"
 _REQUEST_ID_CTX: ContextVar[str] = ContextVar("request_id", default="")
 _LOG_BUFFER = deque(maxlen=5000)
-# 全局脱敏开关，init_logging 时根据配置设置
-_DISABLE_SANITIZE = False
 
 SENSITIVE_KEYS = {
     "password",
@@ -135,11 +133,7 @@ def _mask_secret_text(text: str) -> str:
 
 
 def sanitize_for_logging(value: Any, key_name: str = "") -> Any:
-    """
-    对日志内容进行脱敏处理。当全局脱敏开关 _DISABLE_SANITIZE 为 True 时跳过脱敏，方便开发调试。
-    """
-    if _DISABLE_SANITIZE:
-        return value
+    """对日志内容进行脱敏处理，所有日志都会经过脱敏，不可跳过。"""
     normalized_key = str(key_name or "").strip().lower()
 
     if isinstance(value, dict):
@@ -299,15 +293,11 @@ def init_logging(
     log_file_rotation: str = "10 MB",
     log_file_retention: str = "30 days",
     log_file_compression: str = "gz",
-    disable_sanitize: bool = False,
 ) -> None:
     """
     初始化日志系统：控制台输出 + 文件持久化 + 错误日志独立文件。
     日志文件按大小自动轮转，按保留天数自动清理，支持压缩归档。
     """
-    global _DISABLE_SANITIZE
-    _DISABLE_SANITIZE = disable_sanitize
-
     logger.remove()
     logger.configure(patcher=lambda record: _patch_record(record, service_name=service_name))
 

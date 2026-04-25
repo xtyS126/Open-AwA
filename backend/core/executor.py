@@ -14,7 +14,8 @@ from typing import Dict, Any, Optional, Callable
 import httpx
 from loguru import logger
 
-from config.logging import get_request_id
+from config.logging import generate_request_id, get_request_id, sanitize_for_logging
+from config.settings import settings
 from core.metrics import record_model_service_metric, record_tool_execution_metric
 from core.model_service import (
     build_standard_error,
@@ -25,6 +26,53 @@ from core.litellm_adapter import (
 )
 from memory.experience_manager import ExperienceManager
 from sqlalchemy.orm import Session
+
+
+def validate_parameters_against_schema(
+    parameters: Dict[str, Any],
+    schema: Optional[Dict[str, Any]],
+    tool_name: str,
+) -> Optional[str]:
+    """
+    校验工具调用参数是否匹配其声明的 JSON Schema。
+    返回 None 表示校验通过，返回字符串表示错误信息。
+    """
+    if not schema or not isinstance(schema, dict):
+        return None
+
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+    param_type = schema.get("type", "object")
+
+    # 校验 type（只校验 object 类型）
+    if param_type != "object":
+        return None
+
+    # 检查必填参数
+    for field in required:
+        if field not in parameters or parameters[field] is None:
+            return f"缺少必填参数: {field}"
+
+    # 检查参数类型（基础类型校验）
+    for key, value in parameters.items():
+        field_schema = properties.get(key)
+        if not field_schema or value is None:
+            continue
+        expected_type = field_schema.get("type", "")
+        if expected_type == "string" and not isinstance(value, str):
+            return f"参数 {key} 期望类型为 string，实际为 {type(value).__name__}"
+        if expected_type == "integer" and not isinstance(value, int):
+            return f"参数 {key} 期望类型为 integer，实际为 {type(value).__name__}"
+        if expected_type == "number" and not isinstance(value, (int, float)):
+            return f"参数 {key} 期望类型为 number，实际为 {type(value).__name__}"
+        if expected_type == "boolean" and not isinstance(value, bool):
+            return f"参数 {key} 期望类型为 boolean，实际为 {type(value).__name__}"
+        if expected_type == "array" and not isinstance(value, (list, tuple)):
+            return f"参数 {key} 期望类型为 array，实际为 {type(value).__name__}"
+        if expected_type == "object" and not isinstance(value, dict):
+            return f"参数 {key} 期望类型为 object，实际为 {type(value).__name__}"
+
+    return None
 
 
 class ExecutionLayer:
@@ -122,11 +170,64 @@ class ExecutionLayer:
         )
         return excerpt
 
+    def _validate_step_params(self, action: str, step: Dict[str, Any]) -> Optional[str]:
+        """
+        校验步骤参数是否完整有效。
+        返回 None 表示通过，返回字符串表示错误信息。
+        """
+        action_schemas = {
+            "read_files": {
+                "param_key": "files",
+                "param_type": list,
+                "label": "文件路径列表",
+            },
+            "execute_command": {
+                "param_key": "command",
+                "param_type": str,
+                "label": "命令",
+            },
+            "llm_generate": {
+                "param_key": "prompt",
+                "param_type": str,
+                "label": "提示词",
+            },
+            "llm_query": {
+                "param_key": "prompt",
+                "param_type": str,
+                "label": "查询提示词",
+            },
+            "llm_explain": {
+                "param_key": "prompt",
+                "param_type": str,
+                "label": "解释提示词",
+            },
+            "llm_chat": {
+                "param_key": "message",
+                "param_type": str,
+                "label": "聊天消息",
+            },
+        }
+
+        schema = action_schemas.get(action)
+        if not schema:
+            return None
+
+        param_key = schema["param_key"]
+        param_value = step.get(param_key) or step.get("parameters", {}).get(param_key)
+
+        if param_value is None or param_value == "":
+            return f"缺少必填参数 '{param_key}' ({schema['label']})"
+
+        if schema["param_type"] is list and not isinstance(param_value, list):
+            return f"参数 '{param_key}' 应为 {schema['param_type'].__name__} 类型，实际为 {type(param_value).__name__}"
+
+        if schema["param_type"] is str and not isinstance(param_value, str):
+            return f"参数 '{param_key}' 应为 {schema['param_type'].__name__} 类型，实际为 {type(param_value).__name__}"
+
+        return None
+
     def _build_tool_idempotency_key(self, step: Dict[str, Any], context: Dict[str, Any]) -> str:
-        """
-        为工具执行生成稳定幂等键。
-        如果调用方已显式传入幂等键，则优先复用该值。
-        """
+        """构建工具执行的幂等键，如果调用方已显式传入幂等键，则优先复用该值。"""
 
         explicit_key = str(step.get("idempotency_key") or context.get("idempotency_key") or "").strip()
         if explicit_key:
@@ -550,6 +651,7 @@ class ExecutionLayer:
             "model": resolved["model"],
         })
 
+        _tools = context.get("_tools")
         result = await litellm_chat_completion(
             provider=resolved["provider"],
             model=resolved["model"],
@@ -558,7 +660,56 @@ class ExecutionLayer:
             api_base=resolved.get("api_endpoint"),
             max_tokens=self._resolve_max_tokens(resolved),
             request_id=resolved.get("request_id"),
+            tools=_tools,
         )
+
+        # 支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM
+        max_rounds = 5
+        round_count = 0
+        tool_events = []
+
+        while round_count < max_rounds:
+            tool_calls = result.get("tool_calls")
+            if not tool_calls:
+                break
+
+            round_count += 1
+            for tc in tool_calls:
+                exec_result = await self._execute_tool_call(tc, context)
+                tool_events.append({
+                    "name": tc.get("function", {}).get("name", "unknown"),
+                    "status": "completed" if exec_result.get("ok") else "error",
+                    "result": exec_result.get("result", exec_result.get("error")),
+                })
+                tool_message = self._build_tool_message(tc, exec_result)
+                messages.append(tool_message)
+
+            # 将 assistant 消息也加入（包含 tool_calls）
+            assistant_msg = {
+                "role": "assistant",
+                "content": result.get("response") or None,
+            }
+            if tool_calls:
+                assistant_msg["tool_calls"] = tool_calls
+            messages.append(assistant_msg)
+
+            result = await litellm_chat_completion(
+                provider=resolved["provider"],
+                model=resolved["model"],
+                messages=messages,
+                api_key=resolved["api_key"],
+                api_base=resolved.get("api_endpoint"),
+                max_tokens=self._resolve_max_tokens(resolved),
+                request_id=resolved.get("request_id"),
+                tools=_tools,
+            )
+
+            if not result.get("ok"):
+                break
+
+        # 将 tool_events 注入到返回结果中
+        if tool_events:
+            result["tool_events"] = tool_events
 
         duration_ms = int((time.perf_counter() - started_at) * 1000)
 
@@ -622,6 +773,10 @@ class ExecutionLayer:
             return
 
         messages = self._build_messages_with_history(prompt, context)
+        tool_messages = context.get("_tool_messages", [])
+        if tool_messages:
+            messages.extend(tool_messages)
+            context.pop("_tool_messages", None)
         full_content = ""
         full_reasoning = ""
 
@@ -657,6 +812,10 @@ class ExecutionLayer:
                                 "mode": "stream",
                             }
                         )
+                    yield chunk
+                    return
+
+                if chunk.get("type") == "tool_calls":
                     yield chunk
                     return
 
@@ -737,6 +896,47 @@ class ExecutionLayer:
 
             yield output_error
 
+    async def _execute_tool_call(self, tool_call: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行单个工具调用，根据 function name 分发到对应的处理器。
+        """
+        func_name = tool_call.get("function", {}).get("name", "")
+        func_args_str = tool_call.get("function", {}).get("arguments", "{}")
+
+        try:
+            func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+        except json.JSONDecodeError:
+            return {"ok": False, "error": f"Invalid JSON in tool_call arguments: {func_args_str[:200]}"}
+
+        if not func_name:
+            return {"ok": False, "error": "tool_call missing function name"}
+
+        if func_name.startswith("plugin_"):
+            remaining = func_name[len("plugin_"):]
+            if "/" in remaining:
+                plugin_name, plugin_method = remaining.split("/", 1)
+            else:
+                return {"ok": False, "error": f"plugin tool name missing '/' separator: {func_name}"}
+            from plugins.plugin_manager import PluginManager
+            pm = PluginManager()
+            pm.discover_plugins()
+            pm.load_plugin(plugin_name)
+            result = await pm.execute_plugin_async(plugin_name, plugin_method, **func_args)
+            return {"ok": True, "result": result, "tool_name": func_name}
+
+        return {"ok": False, "error": f"No handler for tool: {func_name}"}
+
+    @staticmethod
+    def _build_tool_message(tool_call: Dict[str, Any], exec_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        根据工具调用及其执行结果构建 tool role 消息，用于后续 LLM 轮次。
+        """
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.get("id", ""),
+            "content": json.dumps(exec_result, ensure_ascii=False),
+        }
+
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理execute、step相关逻辑，并为调用方返回对应结果。
@@ -757,6 +957,24 @@ class ExecutionLayer:
             ).debug(f"工具执行命中缓存，跳过重复执行: {action}")
             return cached_result
         
+        # 执行前的参数 Schema 校验
+        validation_error = self._validate_step_params(action, step)
+        if validation_error:
+            logger.bind(
+                event="tool_param_validation_failed",
+                module="executor",
+                action=action,
+            ).warning(f"步骤参数校验失败: {validation_error}")
+            result = {
+                "status": "error",
+                "error": validation_error,
+                "action": action,
+                "step": step.get("step"),
+                "idempotency_key": idempotency_key,
+            }
+            record_tool_execution_metric(str(action or "unknown"), "validation_error")
+            return result
+
         try:
             if action == "read_files":
                 result = await self._execute_read_files(step)

@@ -8,6 +8,7 @@ from datetime import timedelta
 import math
 import threading
 import time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -17,8 +18,11 @@ from sqlalchemy.orm import Session
 from api.dependencies import get_current_user
 from api.schemas import Token, UserCreate, UserResponse
 from config.security import (
+    ACCESS_TOKEN_COOKIE_NAME,
+    add_to_blacklist,
     clear_access_token_cookie,
     create_access_token,
+    decode_access_token,
     set_access_token_cookie,
     verify_password,
 )
@@ -242,12 +246,22 @@ async def login(
     description="清理当前会话的访问令牌 Cookie。"
 )
 async def logout(
+    request: Request,
     response: Response,
     current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
-    清理当前访问令牌 Cookie，并返回统一登出结果。
+    清理当前访问令牌 Cookie，将当前 token 加入数据库黑名单防止重放，
+    并返回统一登出结果。
     """
+    raw_token = _resolve_token_for_blacklist(request)
+    if raw_token:
+        payload = decode_access_token(raw_token)
+        if payload:
+            jti = payload.get("jti")
+            if jti:
+                add_to_blacklist(str(jti), db)
     clear_access_token_cookie(response)
     logger.bind(
         event="auth_logout_success",
@@ -257,6 +271,14 @@ async def logout(
         user_id=current_user.id,
     ).info("user logged out")
     return {"message": "logout success"}
+
+
+def _resolve_token_for_blacklist(request: Request) -> Optional[str]:
+    """从请求中提取原始 token 字符串用于黑名单记录。"""
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
 
 
 @router.get(

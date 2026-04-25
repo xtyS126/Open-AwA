@@ -14,11 +14,36 @@ from fastapi import Response
 from jose import JWTError, jwt
 from loguru import logger
 from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 
+from db.models import TokenBlacklist
 from .settings import settings
 
 
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
+
+
+def add_to_blacklist(jti: str, db: Session) -> None:
+    """将指定 jti 加入数据库黑名单，同时清理已过期的黑名单记录。"""
+    if not jti:
+        return
+    now = datetime.now(timezone.utc)
+    db.query(TokenBlacklist).filter(TokenBlacklist.expires_at < now).delete()
+    expires_at = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    db.add(TokenBlacklist(jti=jti, expires_at=expires_at))
+    db.commit()
+    logger.bind(
+        event="token_blacklist_add",
+        module="security",
+    ).debug(f"token {jti[:8]}... added to blacklist")
+
+
+def is_token_blacklisted(jti: str, db: Session) -> bool:
+    """检查指定 jti 是否在数据库黑名单中（自动忽略已过期记录）。"""
+    return db.query(TokenBlacklist).filter(
+        TokenBlacklist.jti == jti,
+        TokenBlacklist.expires_at > datetime.now(timezone.utc),
+    ).first() is not None
 
 pwd_context = CryptContext(
     schemes=["pbkdf2_sha256", "bcrypt"],
@@ -123,12 +148,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     创建access、token相关对象、记录或执行结果。
     实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
     """
+    import uuid
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 

@@ -122,6 +122,15 @@
   font-size: 13px;
 }
 
+.model-selector {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
 .field-card input[type='checkbox'] {
   width: 18px;
   height: 18px;

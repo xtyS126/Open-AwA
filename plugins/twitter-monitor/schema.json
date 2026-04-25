@@ -40,6 +40,21 @@
         "both"
       ]
     },
+    "auto_fetch_interval_hours": {
+      "type": "integer",
+      "title": "自动获取间隔（小时）",
+      "default": 24,
+      "minimum": 1,
+      "maximum": 168,
+      "description": "后台自动获取推文的间隔时间，单位为小时（1-168小时，即1小时到7天）"
+    },
+    "ai_model_config_id": {
+      "type": "integer",
+      "title": "AI 模型配置",
+      "description": "选择平台已配置的 AI 模型（在设置-模型提供商管理中配置）",
+      "x-component": "model-selector",
+      "default": null
+    },
     "summary_customization": {
       "type": "object",
       "title": "AI 总结提示词自定义",

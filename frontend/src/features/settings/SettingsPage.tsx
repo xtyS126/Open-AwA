@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { 
   Settings as SettingsIcon, 
@@ -131,6 +131,13 @@ function SettingsPage() {
   const [configurations, setConfigurations] = useState<ModelConfiguration[]>([])
   const [loadingConfigs, setLoadingConfigs] = useState(false)
   const [providers, setProviders] = useState<ModelProvider[]>([])
+  const providerNameMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    providers.forEach((p) => {
+      map[p.id] = p.display_name || p.name || p.id
+    })
+    return map
+  }, [providers])
   const [providerModels, setProviderModels] = useState<ProviderModel[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [newConfig, setNewConfig] = useState({
@@ -1210,11 +1217,15 @@ function SettingsPage() {
                       }}
                     >
                       <option value="">选择模型</option>
-                      {configurations.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.display_name || c.model} ({c.provider})
-                        </option>
-                      ))}
+                      {configurations.map(c => {
+                        const displayProvider = providerNameMap[c.provider] || c.provider
+                        const models = c.selected_models && c.selected_models.length > 0 ? c.selected_models : [c.model]
+                        return models.map(modelName => (
+                          <option key={`${c.id}:${modelName}`} value={c.id}>
+                            {displayProvider} / {modelName}
+                          </option>
+                        ))
+                      })}
                     </select>
                   </div>
 

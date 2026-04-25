@@ -490,6 +490,20 @@ class ConversationRecord(Base):
     record_metadata: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class TokenBlacklist(Base):
+    """
+    JWT 令牌黑名单模型，持久化存储已登出令牌，防止服务器重启后黑名单丢失。
+    """
+    __tablename__ = "token_blacklist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    jti: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 def _migrate_conversation_record_metadata_column(use_engine=None):
     """
     迁移 conversation_records 表的 metadata 列到 record_metadata 列。
