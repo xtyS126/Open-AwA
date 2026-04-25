@@ -5,6 +5,7 @@ import ConfirmDialog from '@/shared/components/ConfirmDialog/ConfirmDialog'
 import { useToast } from '@/shared/components/Toast'
 import PluginSectionNav from '@/features/plugins/PluginSectionNav'
 import { usePluginConfigActions, usePluginConfigSchema, usePluginList } from '@/features/plugins/hooks'
+import { modelsAPI } from '@/features/settings/modelsApi'
 import styles from './PluginConfigPage.module.css'
 
 type FormValue = Record<string, unknown>
@@ -32,6 +33,14 @@ interface JsonSchemaRoot {
 }
 
 type ConfirmAction = 'reset' | 'export' | 'import' | null
+
+interface ModelOption {
+  config_id: number
+  display_name: string
+  provider: string
+  model: string
+  selected_models?: string[]
+}
 
 function PluginConfigPage() {
   const { pluginId } = useParams<{ pluginId: string }>()
@@ -154,7 +163,7 @@ function PluginConfigPage() {
         await saveConfig(pendingImportConfig)
         setFormValues(pendingImportConfig)
         setPendingImportConfig(null)
-        addToast('导入配置成功，已覆盖并持久化，可使用“回滚到导入前”恢复', 'success')
+        addToast('导入配置成功，已覆盖并持久化，可使用"回滚到导入前"恢复', 'success')
       }
     } catch {
       addToast('操作执行失败', 'error')
@@ -322,6 +331,71 @@ function PluginConfigPage() {
   )
 }
 
+function ModelSelectorField(props: {
+  value: unknown
+  onChange: (value: unknown) => void
+}) {
+  const { value, onChange } = props
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
+  const [providerNameMap, setProviderNameMap] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      modelsAPI.getConfigurations(),
+      modelsAPI.getProviders()
+    ]).then(([configsRes, providersRes]) => {
+      if (cancelled) return
+      const configs: ModelOption[] = (configsRes.data.configurations || []).map(
+        (cfg: { id: number; display_name: string | null; provider: string; model: string; selected_models?: string[] }) => ({
+          config_id: cfg.id,
+          display_name: cfg.display_name || cfg.model,
+          provider: cfg.provider,
+          model: cfg.model,
+          selected_models: cfg.selected_models,
+        })
+      )
+      setModelOptions(configs)
+
+      const map: Record<string, string> = {}
+      ;(providersRes.data.providers || []).forEach(
+        (p: { id: string; display_name?: string; name?: string }) => {
+          map[p.id] = p.display_name || p.name || p.id
+        }
+      )
+      setProviderNameMap(map)
+    }).catch(() => {
+      if (!cancelled) {
+        setModelOptions([])
+        setProviderNameMap({})
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  return (
+    <select
+      className={styles['model-selector']}
+      value={value != null ? String(value) : ''}
+      onChange={(event) => {
+        const val = event.target.value
+        onChange(val ? Number(val) : null)
+      }}
+    >
+      <option value="">请选择 AI 模型</option>
+      {modelOptions.map((opt) => {
+        const displayProvider = providerNameMap[opt.provider] || opt.provider
+        const models = opt.selected_models && opt.selected_models.length > 0 ? opt.selected_models : [opt.model]
+        return models.map((modelName) => (
+          <option key={`${opt.config_id}:${modelName}`} value={opt.config_id}>
+            {displayProvider} / {modelName}
+          </option>
+        ))
+      })}
+    </select>
+  )
+}
+
 function renderFieldControl(props: {
   fieldKey: string
   fieldSchema: JsonSchemaField
@@ -387,6 +461,10 @@ function renderFieldControl(props: {
     )
   }
 
+  if (componentType === 'model-selector') {
+    return <ModelSelectorField value={value} onChange={onChange} />
+  }
+
   if (fieldSchema.type === 'integer' || fieldSchema.type === 'number') {
     return (
       <input
@@ -406,9 +484,9 @@ function renderFieldControl(props: {
   )
 }
 
-function resolveFieldComponent(fieldSchema: JsonSchemaField): 'input' | 'select' | 'switch' | 'code-editor' | 'file-picker' {
+function resolveFieldComponent(fieldSchema: JsonSchemaField): 'input' | 'select' | 'switch' | 'code-editor' | 'file-picker' | 'model-selector' {
   const markedComponent = fieldSchema['x-component']
-  if (markedComponent === 'select' || markedComponent === 'switch' || markedComponent === 'code-editor' || markedComponent === 'file-picker') {
+  if (markedComponent === 'select' || markedComponent === 'switch' || markedComponent === 'code-editor' || markedComponent === 'file-picker' || markedComponent === 'model-selector') {
     return markedComponent
   }
   if (fieldSchema.type === 'boolean') {

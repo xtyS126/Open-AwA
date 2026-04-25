@@ -6,6 +6,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, ClassVar
 
+from .plugin_context import PluginContext
+
 
 class BasePlugin(ABC):
     """
@@ -31,9 +33,13 @@ class BasePlugin(ABC):
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         self.config = config or {}
+        self.context: Optional[PluginContext] = None
         self._initialized = False
         self._state = "registered"
         self.rollback_events = []
+
+    def set_context(self, context: PluginContext) -> None:
+        self.context = context
 
     @abstractmethod
     def initialize(self) -> bool:

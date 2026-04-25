@@ -4,7 +4,7 @@
 
 import hashlib
 import json
-from typing import Dict, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -217,3 +217,25 @@ async def handle_websocket_session(
             await websocket.close(code=4005, reason="Internal server error")
     finally:
         ws_manager.disconnect(session_id)
+
+
+def emit_task_event(task_data: Dict[str, Any]) -> Dict[str, Any]:
+    # chunk_type 设置为 "task"
+    # type 设置为 "task"
+    # task 键设置为 task_data
+    return {
+        "type": "task",
+        "chunk_type": "task",
+        "task": task_data,
+    }
+
+
+def emit_tool_event(tool_data: Dict[str, Any]) -> Dict[str, Any]:
+    # chunk_type 设置为 "tool"
+    # type 设置为 "tool"
+    # tool 键设置为 tool_data
+    return {
+        "type": "tool",
+        "chunk_type": "tool",
+        "tool": tool_data,
+    }

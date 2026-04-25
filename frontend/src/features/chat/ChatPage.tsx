@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { X, Paperclip, Send, Square, PanelLeft } from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import { chatAPI, conversationAPI } from '@/shared/api/api'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import { getActiveConversationId } from '@/features/chat/utils/chatCache'
@@ -20,9 +20,9 @@ import {
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
 import ConversationSidebar from './components/ConversationSidebar'
-import AssistantExecutionDetails from './components/AssistantExecutionDetails'
-import { ReasoningContent } from './components/ReasoningContent'
-import { MessageContent } from './components/MessageContent'
+import { MessageList } from './components/MessageList'
+import { ChatInput } from './components/ChatInput'
+import type { FileAttachment } from './components/ChatInput'
 import styles from './ChatPage.module.css'
 
 function sanitizeDisplayedError(message: string): string {
@@ -33,20 +33,6 @@ function sanitizeDisplayedError(message: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }
-
-/* 附件类型 */
-interface FileAttachment {
-  id: string
-  file: File
-  preview?: string   // 图片 blob URL
-  uploading: boolean
-  uploaded?: { url: string; name: string; size: number; type: 'image' | 'file' }
-  error?: string
-}
-
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.txt', '.md', '.csv']
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
 type StreamConnectionState = 'idle' | 'connecting' | 'streaming' | 'retrying' | 'error'
 
@@ -105,7 +91,6 @@ function mergeConversationSummaries(
 function ChatPage() {
   const navigate = useNavigate()
   const { conversationId } = useParams<{ conversationId?: string }>()
-  const [input, setInput] = useState('')
   const {
     messages,
     addMessage,
@@ -129,10 +114,7 @@ function ChatPage() {
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
-  const [attachments, setAttachments] = useState<FileAttachment[]>([])
-  const [isDragOver, setIsDragOver] = useState(false)
   const [messageMeta, setMessageMeta] = useState<Record<string, AssistantExecutionMeta>>({})
   const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null)
   const [historySidebarOpen, setHistorySidebarOpen] = useState(() => window.innerWidth > 960)
@@ -149,7 +131,6 @@ function ChatPage() {
   const [streamErrorMessage, setStreamErrorMessage] = useState<string | null>(null)
   const [streamStageMessage, setStreamStageMessage] = useState<string | null>(null)
 
-  // Buffer references for background throttling
   const bufferRef = useRef({
     content: '',
     reasoning: '',
@@ -186,7 +167,6 @@ function ChatPage() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         flushBuffer()
-        // Adding a slight delay to ensure DOM is updated before scrolling
         setTimeout(scrollToBottom, 50)
       }
     }
@@ -339,7 +319,6 @@ function ChatPage() {
     void createConversationAndNavigate(true)
   }, [conversationId, conversations, createConversationAndNavigate, historyInitialized, includeDeleted, navigate, sessionId])
 
-  // 页面挂载或会话切换时加载历史消息
   useEffect(() => {
     if (!historyInitialized) {
       return
@@ -394,7 +373,6 @@ function ChatPage() {
           return
         }
 
-        // 历史加载失败不阻塞用户操作
         appLogger.warning({
           event: 'chat_history_load_failed',
           module: 'chat_page',
@@ -415,107 +393,6 @@ function ChatPage() {
     }))
   }, [])
 
-  /* ---- 附件处理 ---- */
-
-  const getFileExtension = (name: string) => {
-    const dot = name.lastIndexOf('.')
-    return dot >= 0 ? name.slice(dot).toLowerCase() : ''
-  }
-
-  const addAttachments = useCallback((files: File[]) => {
-    const newAttachments: FileAttachment[] = []
-    for (const file of files) {
-      const ext = getFileExtension(file.name)
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        appLogger.warning({ event: 'file_rejected', module: 'chat_page', action: 'attach', status: 'failure', message: `不支持的文件类型: ${ext}` })
-        continue
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        appLogger.warning({ event: 'file_rejected', module: 'chat_page', action: 'attach', status: 'failure', message: `文件过大: ${file.name}` })
-        continue
-      }
-      const attachment: FileAttachment = {
-        id: crypto.randomUUID(),
-        file,
-        uploading: false,
-      }
-      // 图片创建预览 URL
-      if (IMAGE_EXTENSIONS.has(ext)) {
-        attachment.preview = URL.createObjectURL(file)
-      }
-      newAttachments.push(attachment)
-    }
-    if (newAttachments.length > 0) {
-      setAttachments(prev => [...prev, ...newAttachments])
-    }
-  }, [])
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments(prev => {
-      const removed = prev.find(a => a.id === id)
-      if (removed?.preview) URL.revokeObjectURL(removed.preview)
-      return prev.filter(a => a.id !== id)
-    })
-  }, [])
-
-  const uploadAttachments = useCallback(async (items: FileAttachment[]): Promise<FileAttachment[]> => {
-    const results: FileAttachment[] = []
-    for (const item of items) {
-      setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, uploading: true } : a))
-      try {
-        const res = await chatAPI.upload(item.file)
-        const data = res.data
-        const uploaded = { ...item, uploading: false, uploaded: { url: data.url, name: data.original_name, size: data.size, type: data.type as 'image' | 'file' } }
-        setAttachments(prev => prev.map(a => a.id === item.id ? uploaded : a))
-        results.push(uploaded)
-      } catch {
-        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, uploading: false, error: '上传失败' } : a))
-      }
-    }
-    return results
-  }, [])
-
-  /* 拖拽事件 */
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) addAttachments(files)
-  }, [addAttachments])
-
-  /* 粘贴图片 */
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const files = Array.from(e.clipboardData.files)
-    if (files.length > 0) {
-      addAttachments(files)
-    }
-  }, [addAttachments])
-
-  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files ? Array.from(e.target.files) : []
-    if (files.length > 0) addAttachments(files)
-    // 重置 input 以允许选择相同文件
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [addAttachments])
-
-  /* 清理附件预览 URL */
-  useEffect(() => {
-    return () => {
-      attachments.forEach(a => { if (a.preview) URL.revokeObjectURL(a.preview) })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
     if (!value) {
       return { provider: undefined, model: undefined }
@@ -532,15 +409,17 @@ function ChatPage() {
     }
   }
 
-  const handleSend = async () => {
-    if ((!input.trim() && attachments.length === 0) || isLoading) return
+  const handleSend = async (userMessage?: string, uploadedAttachments?: FileAttachment[]) => {
+    const messageText = (userMessage || '').trim()
+    const safeAttachments = uploadedAttachments || []
+    if (!messageText && safeAttachments.length === 0) return
+    if (isLoading) return
 
     let targetSessionId = sessionId
     if (!targetSessionId || targetSessionId === 'default') {
       targetSessionId = await ensureConversationSession()
     }
 
-    const userMessage = input.trim()
     const requestId = activeRequestIdRef.current + 1
     activeRequestIdRef.current = requestId
     activeAbortControllerRef.current?.abort()
@@ -564,19 +443,9 @@ function ChatPage() {
       return false
     }
 
-    // 先上传待上传的附件
-    let uploadedAttachments: FileAttachment[] = []
-    const pendingUploads = attachments.filter(a => !a.uploaded && !a.error)
-    if (pendingUploads.length > 0) {
-      uploadedAttachments = await uploadAttachments(pendingUploads)
-    } else {
-      uploadedAttachments = attachments.filter(a => a.uploaded)
-    }
-
-    // 构造消息文本（附件信息附加到消息末尾）
-    let fullMessage = userMessage
-    if (uploadedAttachments.length > 0) {
-      const fileRefs = uploadedAttachments
+    let fullMessage = messageText
+    if (safeAttachments.length > 0) {
+      const fileRefs = safeAttachments
         .filter(a => a.uploaded)
         .map(a => `[附件: ${a.uploaded!.name}](${a.uploaded!.url})`)
         .join('\n')
@@ -592,9 +461,9 @@ function ChatPage() {
     if (currentConversation) {
       upsertConversation({
         ...currentConversation,
-        title: currentConversation.title || userMessage.slice(0, 80) || '新对话',
-        summary: userMessage.slice(0, 160),
-        last_message_preview: userMessage.slice(0, 160),
+        title: currentConversation.title || messageText.slice(0, 80) || '新对话',
+        summary: messageText.slice(0, 160),
+        last_message_preview: messageText.slice(0, 160),
         last_message_role: 'user',
         updated_at: nowIso,
         last_message_at: nowIso,
@@ -608,10 +477,8 @@ function ChatPage() {
       action: 'send_message',
       status: 'start',
       message: 'chat send started',
-      extra: { session_id: targetSessionId, input_length: fullMessage.length, mode: outputMode, attachments: uploadedAttachments.length },
+      extra: { session_id: targetSessionId, input_length: fullMessage.length, mode: outputMode, attachments: safeAttachments.length },
     })
-    setInput('')
-    setAttachments([])
     addMessage('user', fullMessage, undefined, userMessageId)
     setLoading(true)
     setStreamingAssistantId(null)
@@ -947,13 +814,6 @@ function ChatPage() {
     void loadConversationList(1, false)
   }, [conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation])
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
   const getStatusIcon = (status: TaskStatus) => {
     switch (status) {
       case 'completed': return <span className={styles['status-dot-completed']} title="已完成" />
@@ -1103,133 +963,23 @@ function ChatPage() {
         />
 
         <div className={styles['chat-main']}>
-          <div
-            className={`${styles['chat-messages']} ${isDragOver ? styles['drag-over'] : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            {messages.length === 0 && (
-              <div className={styles['chat-empty']}>
-                <p>你好！有什么可以帮助你的吗？</p>
-              </div>
-            )}
-
-            {messages.map((message, index) => {
-              const isLastMessage = index === messages.length - 1
-              const isCurrentlyStreaming = streamingAssistantId === message.id && isLastMessage && message.role === 'assistant'
-              
-              return (
-                <div
-                  key={message.id}
-                  className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}
-                >
-                  <div className={styles['message-content']}>
-                    {message.reasoning_content && (
-                      <ReasoningContent 
-                        messageId={message.id}
-                        content={message.reasoning_content}
-                        isStreaming={isCurrentlyStreaming}
-                      />
-                    )}
-                    {message.content && <MessageContent content={message.content} role={message.role} />}
-                    {message.role === 'assistant' && messageMeta[message.id] && hasExecutionMeta(messageMeta[message.id]) && (
-                      <AssistantExecutionDetails
-                        messageId={message.id}
-                        meta={messageMeta[message.id]}
-                        isStreaming={isCurrentlyStreaming}
-                      />
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-
-            {isLoading && !streamingAssistantId && (
-              <div className={`${styles['message']} ${styles['assistant']}`}>
-                <div className={styles['message-content']}>
-                  <p className={styles['loading-text']}>
-                    {outputMode === 'stream' && streamStatusText ? `${streamStatusText}...` : '思考中...'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
+          <MessageList
+            messages={messages}
+            messageMeta={messageMeta}
+            streamingAssistantId={streamingAssistantId}
+            isLoading={isLoading}
+            outputMode={outputMode}
+            streamStatusText={streamStatusText}
+            messagesEndRef={messagesEndRef}
+          />
 
           {renderFloatingExecutionPanel()}
-          <div className={styles['chat-input-container']}>
-            {attachments.length > 0 && (
-              <div className={styles['attachments-preview']}>
-                {attachments.map(att => (
-                  <div key={att.id} className={styles['attachment-item']}>
-                    {att.preview ? (
-                      <img src={att.preview} alt={att.file.name} className={styles['attachment-thumb']} />
-                    ) : (
-                      <div className={styles['attachment-file-icon']}>
-                        <span>{getFileExtension(att.file.name).slice(1).toUpperCase()}</span>
-                      </div>
-                    )}
-                    {att.uploading && <div className={styles['attachment-uploading']} />}
-                    {att.error && <div className={styles['attachment-error']} title={att.error}>!</div>}
-                    <button
-                      className={styles['attachment-remove']}
-                      onClick={() => removeAttachment(att.id)}
-                      title="移除附件"
-                    >
-                      <X size={10} strokeWidth={2.5} />
-                    </button>
-                    <span className={styles['attachment-name']}>{att.file.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className={styles['input-row']}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={ALLOWED_EXTENSIONS.join(',')}
-                onChange={handleFileInputChange}
-                style={{ display: 'none' }}
-              />
-              <button
-                className={styles['attach-btn']}
-                onClick={() => fileInputRef.current?.click()}
-                title="添加附件"
-                disabled={isLoading}
-              >
-                <Paperclip size={20} strokeWidth={2} />
-              </button>
-              <textarea
-                className={styles['chat-input']}
-                placeholder="输入你的问题..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                onPaste={handlePaste}
-                rows={1}
-              />
-              {streamingAssistantId ? (
-                <button
-                  className={`btn ${styles['stop-btn']}`}
-                  onClick={() => activeAbortControllerRef.current?.abort()}
-                  title="停止生成"
-                >
-                  <Square size={18} />
-                </button>
-              ) : (
-                <button
-                  className={`btn btn-primary ${styles['send-btn']}`}
-                  onClick={() => void handleSend()}
-                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                >
-                  <Send size={18} />
-                </button>
-              )}
-            </div>
-          </div>
+          <ChatInput
+            onSend={(content, atts) => void handleSend(content, atts)}
+            isLoading={isLoading}
+            streamingAssistantId={streamingAssistantId}
+            onAbort={() => activeAbortControllerRef.current?.abort()}
+          />
         </div>
       </div>
     </div>

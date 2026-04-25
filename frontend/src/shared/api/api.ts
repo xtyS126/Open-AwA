@@ -1,15 +1,13 @@
 import axios from 'axios'
-import Cookies from 'js-cookie'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 
 const API_BASE_URL = '/api'
 
 const CSRF_EXEMPT_PATHS = new Set(['/auth/login', '/auth/register'])
-const CSRF_BOOTSTRAP_PATH = `${API_BASE_URL}/auth/me`
+const CSRF_TOKEN_ENDPOINT = `${API_BASE_URL}/auth/csrf-token`
 
-export const getCsrfToken = (): string => Cookies.get('csrf_token') || ''
-
-let csrfBootstrapPromise: Promise<string> | null = null
+let csrfTokenValue = ''
+let csrfTokenPromise: Promise<void> | null = null
 
 const shouldAttachCsrfToken = (method?: string, url?: string): boolean => {
   const normalizedMethod = String(method || 'GET').toUpperCase()
@@ -45,54 +43,47 @@ const isExpectedApiError = (error: unknown): boolean => {
   )
 }
 
+const fetchCsrfToken = async (): Promise<string> => {
+  try {
+    const response = await fetch(CSRF_TOKEN_ENDPOINT, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' },
+    })
+    if (!response.ok) {
+      throw new Error(`csrf token fetch failed: ${response.status}`)
+    }
+    const data = await response.json()
+    csrfTokenValue = data.csrf_token || ''
+    return csrfTokenValue
+  } catch (error) {
+    appLogger.warning({
+      event: 'csrf_token_fetch_failed',
+      module: 'api',
+      action: 'BOOTSTRAP',
+      status: 'warning',
+      message: 'csrf token fetch failed',
+      extra: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
+    return ''
+  }
+}
+
 const ensureCsrfToken = async (): Promise<string> => {
-  const csrfToken = getCsrfToken()
-  if (csrfToken) {
-    return csrfToken
+  if (csrfTokenValue) {
+    return csrfTokenValue
   }
 
-  appLogger.warning({
-    event: 'csrf_token_missing',
-    module: 'api',
-    action: 'BOOTSTRAP',
-    status: 'warning',
-    message: 'csrf token missing before mutating request, trying bootstrap request',
-    extra: {
-      bootstrap_path: CSRF_BOOTSTRAP_PATH,
-    },
-  })
-
-  if (!csrfBootstrapPromise) {
-    csrfBootstrapPromise = (async () => {
-      try {
-        await fetch(CSRF_BOOTSTRAP_PATH, {
-          method: 'GET',
-          credentials: 'same-origin',
-        })
-      } catch (error) {
-        appLogger.warning({
-          event: 'csrf_token_bootstrap_failed',
-          module: 'api',
-          action: 'BOOTSTRAP',
-          status: 'warning',
-          message: 'csrf token bootstrap request failed',
-          extra: {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        })
-      }
-
-      const refreshedToken = getCsrfToken()
-      if (!refreshedToken) {
-        throw new Error('CSRF token missing after bootstrap request')
-      }
-      return refreshedToken
-    })().finally(() => {
-      csrfBootstrapPromise = null
+  if (!csrfTokenPromise) {
+    csrfTokenPromise = fetchCsrfToken().then(() => {}).finally(() => {
+      csrfTokenPromise = null
     })
   }
 
-  return csrfBootstrapPromise
+  await csrfTokenPromise
+  return csrfTokenValue
 }
 
 export const api = axios.create({
@@ -158,14 +149,7 @@ api.interceptors.response.use(
       const errorStatus = error?.response?.status || 0
       const errorMessage = error?.message || ''
       const backendDetail = error?.response?.data?.detail || ''
-      
-      console.error(
-        `[API ERROR] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
-        (errorMessage ? ` | ${errorMessage}` : '') +
-        (backendDetail ? ` | Detail: ${backendDetail}` : '') +
-        (responseRequestId ? ` | Request-ID: ${responseRequestId}` : '')
-      )
-      
+
       appLogger.error({
         event: 'api_response',
         module: 'api',

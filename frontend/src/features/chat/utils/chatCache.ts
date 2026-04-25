@@ -5,6 +5,7 @@ const CHAT_CACHE_STORAGE_KEY = 'chat_cache_v1'
 const CHAT_CACHE_VERSION = 1
 const MAX_CACHED_MESSAGES = 200
 const MAX_CACHED_CONVERSATIONS = 100
+const MESSAGE_CACHE_THROTTLE_MS = 1000
 
 interface SerializedChatMessage {
   id: string
@@ -166,7 +167,26 @@ export function getCachedConversationMessages(sessionId: string): ChatMessage[] 
   return deserializeMessages(bucket.messages)
 }
 
+let _lastMessageCacheWrite = 0
+
 export function setCachedConversationMessages(sessionId: string, messages: ChatMessage[]): void {
+  if (!sessionId || sessionId === 'default') {
+    return
+  }
+  const now = Date.now()
+  if (now - _lastMessageCacheWrite < MESSAGE_CACHE_THROTTLE_MS) {
+    return
+  }
+  _lastMessageCacheWrite = now
+  const payload = readChatCache()
+  payload.messageBuckets[sessionId] = {
+    updated_at: new Date().toISOString(),
+    messages: serializeMessages(messages),
+  }
+  writeChatCache(payload)
+}
+
+export function flushCachedConversationMessages(sessionId: string, messages: ChatMessage[]): void {
   if (!sessionId || sessionId === 'default') {
     return
   }
@@ -176,6 +196,7 @@ export function setCachedConversationMessages(sessionId: string, messages: ChatM
     messages: serializeMessages(messages),
   }
   writeChatCache(payload)
+  _lastMessageCacheWrite = Date.now()
 }
 
 export function deleteCachedConversationMessages(sessionId: string): void {

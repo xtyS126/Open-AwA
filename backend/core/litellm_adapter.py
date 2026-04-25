@@ -11,6 +11,8 @@ LiteLLM 统一调用适配层。
 
 from __future__ import annotations
 
+import asyncio
+import random
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -71,6 +73,115 @@ STATUS_CODE_ERROR_MAP: Dict[int, str] = {
 
 # 可重试的状态码集合
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+
+# 熔断器默认配置
+_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5  # 连续失败阈值
+_CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 60  # 熔断恢复等待时间（秒）
+_CIRCUIT_BREAKER_HALF_OPEN_MAX_REQUESTS = 1  # 半开状态最大请求数
+
+
+class CircuitBreakerState:
+    """熔断器状态枚举。"""
+    CLOSED = "closed"       # 正常状态
+    OPEN = "open"           # 熔断状态
+    HALF_OPEN = "half_open" # 半开状态（试探性恢复）
+
+
+class CircuitBreaker:
+    """
+    简单的每供应商熔断器。
+    
+    当连续失败达到阈值时打开电路，阻止后续请求；
+    经过恢复时间后进入半开状态，允许少量试探请求；
+    试探成功则关闭电路，失败则继续保持熔断。
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = _CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        recovery_timeout: float = _CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+        half_open_max_requests: int = _CIRCUIT_BREAKER_HALF_OPEN_MAX_REQUESTS,
+    ):
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._half_open_max_requests = half_open_max_requests
+        self._state = CircuitBreakerState.CLOSED
+        self._failure_count = 0
+        self._last_failure_time = 0.0
+        self._half_open_requests = 0
+        self._lock = asyncio.Lock()
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    async def can_request(self) -> bool:
+        """检查是否允许发起请求。"""
+        async with self._lock:
+            if self._state == CircuitBreakerState.CLOSED:
+                return True
+
+            if self._state == CircuitBreakerState.OPEN:
+                if time.monotonic() - self._last_failure_time >= self._recovery_timeout:
+                    self._state = CircuitBreakerState.HALF_OPEN
+                    self._half_open_requests = 0
+                    return True
+                return False
+
+            if self._state == CircuitBreakerState.HALF_OPEN:
+                if self._half_open_requests < self._half_open_max_requests:
+                    self._half_open_requests += 1
+                    return True
+                return False
+
+            return False
+
+    async def on_success(self) -> None:
+        """请求成功时重置熔断器状态。"""
+        async with self._lock:
+            if self._state == CircuitBreakerState.HALF_OPEN:
+                self._state = CircuitBreakerState.CLOSED
+                self._failure_count = 0
+                self._half_open_requests = 0
+            elif self._state == CircuitBreakerState.CLOSED:
+                self._failure_count = 0
+
+    async def on_failure(self) -> None:
+        """请求失败时累加失败计数。"""
+        async with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = time.monotonic()
+            if self._failure_count >= self._failure_threshold:
+                self._state = CircuitBreakerState.OPEN
+                self._half_open_requests = 0
+
+
+# 每供应商熔断器实例缓存
+_circuit_breakers: Dict[str, CircuitBreaker] = {}
+
+
+def _get_circuit_breaker(provider: str) -> CircuitBreaker:
+    """获取指定供应商的熔断器实例（单例）。"""
+    if provider not in _circuit_breakers:
+        _circuit_breakers[provider] = CircuitBreaker()
+    return _circuit_breakers[provider]
+
+
+async def _exponential_backoff(attempt: int, base_delay: float = 1.0, max_delay: float = 30.0) -> None:
+    """
+    指数退避等待。
+    计算公式: delay = min(base_delay * 2^attempt + random_jitter, max_delay)
+    """
+    delay = min(base_delay * (2 ** attempt) + random.uniform(0, 0.5), max_delay)
+    await asyncio.sleep(delay)
+
+
+async def _call_with_timeout(coro, timeout: float, label: str = "litellm_request") -> Any:
+    """
+    使用 asyncio.wait_for 包装的异步调用，确保不会无限等待。
+    超时后抛出 asyncio.TimeoutError。
+    """
+    return await asyncio.wait_for(coro, timeout=timeout)
 
 
 def check_litellm_available() -> None:
@@ -200,6 +311,7 @@ async def litellm_chat_completion(
     request_id: Optional[str] = None,
     timeout: float = 120.0,
     num_retries: int = 2,
+    tools: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     通过 LiteLLM 发起非流式聊天补全请求。
@@ -252,93 +364,179 @@ async def litellm_chat_completion(
     if api_base:
         call_kwargs["api_base"] = api_base
 
+    if tools:
+        call_kwargs["tools"] = tools
+
     started_at = time.perf_counter()
 
-    try:
-        logger.bind(
-            event="litellm_request",
-            module="litellm_adapter",
-            provider=provider,
-            model=model,
-            request_id=resolved_request_id,
-        ).info(f"发起 LiteLLM 请求: provider={provider}, model={model}")
+    circuit_breaker = _get_circuit_breaker(provider)
 
-        response = await litellm.acompletion(**call_kwargs)
+    if not await circuit_breaker.can_request():
         duration_ms = int((time.perf_counter() - started_at) * 1000)
-
-        # 提取响应文本
-        response_text = ""
-        reasoning_content = ""
-        usage = None
-
-        if hasattr(response, "choices") and response.choices:
-            first_choice = response.choices[0]
-            if hasattr(first_choice, "message") and first_choice.message:
-                response_text = first_choice.message.content or ""
-                # 提取推理内容（DeepSeek / OpenAI 兼容格式）
-                if hasattr(first_choice.message, "reasoning_content"):
-                    reasoning_content = first_choice.message.reasoning_content or ""
-
-        if hasattr(response, "usage") and response.usage:
-            usage = {
-                "prompt_tokens": getattr(response.usage, "prompt_tokens", 0),
-                "completion_tokens": getattr(response.usage, "completion_tokens", 0),
-                "total_tokens": getattr(response.usage, "total_tokens", 0),
-            }
-
         logger.bind(
-            event="litellm_response",
+            event="circuit_breaker_open",
             module="litellm_adapter",
             provider=provider,
             model=model,
             request_id=resolved_request_id,
             duration_ms=duration_ms,
-            has_content=bool(response_text),
-        ).info(f"LiteLLM 请求完成: duration={duration_ms}ms")
-
-        if not response_text.strip():
-            return {
-                "ok": False,
-                "error": build_standard_error(
-                    "model_service_empty_response",
-                    "模型服务返回空响应",
-                    request_id=resolved_request_id,
-                    details={"provider": provider, "model": model},
-                    retryable=False,
-                ),
-            }
-
-        return {
-            "ok": True,
-            "response": response_text,
-            "reasoning_content": reasoning_content,
-            "provider": provider,
-            "model": model,
-            "request_id": resolved_request_id,
-            "usage": usage,
-        }
-
-    except Exception as exc:
-        duration_ms = int((time.perf_counter() - started_at) * 1000)
-        logger.bind(
-            event="litellm_error",
-            module="litellm_adapter",
-            provider=provider,
-            model=model,
-            request_id=resolved_request_id,
-            error_type=type(exc).__name__,
-            duration_ms=duration_ms,
-        ).error(f"LiteLLM 请求失败: {type(exc).__name__}: {str(exc)[:300]}")
+        ).warning(f"熔断器开启，拒绝 {provider}/{model} 请求")
 
         return {
             "ok": False,
-            "error": _map_litellm_error(
+            "error": build_standard_error(
+                "model_service_circuit_breaker_open",
+                f"模型服务 {provider} 当前处于熔断状态，请稍后重试",
+                request_id=resolved_request_id,
+                details={"provider": provider, "model": model},
+                retryable=True,
+                status_code=503,
+            ),
+        }
+
+    last_error: Optional[Dict[str, Any]] = None
+
+    for attempt in range(max(1, num_retries + 1)):
+        try:
+            logger.bind(
+                event="litellm_request",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                attempt=attempt + 1,
+            ).info(f"发起 LiteLLM 请求: provider={provider}, model={model}, attempt={attempt + 1}")
+
+            response = await _call_with_timeout(
+                litellm.acompletion(**call_kwargs),
+                timeout=timeout,
+            )
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+
+            # 请求成功，通知熔断器
+            await circuit_breaker.on_success()
+
+            # 提取响应文本
+            response_text = ""
+            reasoning_content = ""
+            usage = None
+
+            if hasattr(response, "choices") and response.choices:
+                first_choice = response.choices[0]
+                if hasattr(first_choice, "message") and first_choice.message:
+                    response_text = first_choice.message.content or ""
+                    if hasattr(first_choice.message, "reasoning_content"):
+                        reasoning_content = first_choice.message.reasoning_content or ""
+
+                    # 提取工具调用
+                    tool_calls = None
+                    if hasattr(first_choice.message, "tool_calls") and first_choice.message.tool_calls:
+                        tool_calls = []
+                        for tc in first_choice.message.tool_calls:
+                            tc_entry = {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments,
+                                }
+                            }
+                            tool_calls.append(tc_entry)
+
+            if hasattr(response, "usage") and response.usage:
+                usage = {
+                    "prompt_tokens": getattr(response.usage, "prompt_tokens", 0),
+                    "completion_tokens": getattr(response.usage, "completion_tokens", 0),
+                    "total_tokens": getattr(response.usage, "total_tokens", 0),
+                }
+
+            logger.bind(
+                event="litellm_response",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                duration_ms=duration_ms,
+                has_content=bool(response_text),
+            ).info(f"LiteLLM 请求完成: duration={duration_ms}ms")
+
+            if not response_text.strip() and not tool_calls:
+                return {
+                    "ok": False,
+                    "error": build_standard_error(
+                        "model_service_empty_response",
+                        "模型服务返回空响应",
+                        request_id=resolved_request_id,
+                        details={"provider": provider, "model": model},
+                        retryable=False,
+                    ),
+                }
+
+            return {
+                "ok": True,
+                "response": response_text,
+                "reasoning_content": reasoning_content,
+                "provider": provider,
+                "model": model,
+                "request_id": resolved_request_id,
+                "usage": usage,
+                "tool_calls": tool_calls,
+            }
+
+        except asyncio.TimeoutError:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.bind(
+                event="litellm_timeout",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                attempt=attempt + 1,
+                duration_ms=duration_ms,
+            ).error(f"LiteLLM 请求超时: provider={provider}, model={model}")
+
+            last_error = build_standard_error(
+                "model_service_timeout",
+                f"模型服务请求超时（{timeout}s），请稍后重试",
+                request_id=resolved_request_id,
+                details={"provider": provider, "model": model, "timeout": timeout},
+                retryable=True,
+                status_code=504,
+            )
+
+        except Exception as exc:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.bind(
+                event="litellm_error",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                error_type=type(exc).__name__,
+                attempt=attempt + 1,
+                duration_ms=duration_ms,
+            ).error(f"LiteLLM 请求失败: {type(exc).__name__}: {str(exc)[:300]}")
+
+            mapped = _map_litellm_error(
                 exc,
                 provider=provider,
                 model=model,
                 request_id=resolved_request_id,
-            ),
-        }
+            )
+            last_error = mapped.get("error", mapped) if isinstance(mapped, dict) else mapped
+
+            if isinstance(last_error, dict) and not last_error.get("retryable", False):
+                await circuit_breaker.on_failure()
+                break
+
+        if attempt < num_retries:
+            await _exponential_backoff(attempt)
+
+    await circuit_breaker.on_failure()
+    return {
+        "ok": False,
+        "error": last_error,
+    }
 
 
 async def litellm_chat_completion_stream(
@@ -354,6 +552,7 @@ async def litellm_chat_completion_stream(
     request_id: Optional[str] = None,
     timeout: float = 120.0,
     num_retries: int = 2,
+    tools: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     通过 LiteLLM 发起流式聊天补全请求。
@@ -398,63 +597,171 @@ async def litellm_chat_completion_stream(
     if api_base:
         call_kwargs["api_base"] = api_base
 
+    if tools:
+        call_kwargs["tools"] = tools
+
     started_at = time.perf_counter()
 
-    try:
-        logger.bind(
-            event="litellm_stream_request",
-            module="litellm_adapter",
-            provider=provider,
-            model=model,
-            request_id=resolved_request_id,
-        ).info(f"发起 LiteLLM 流式请求: provider={provider}, model={model}")
+    circuit_breaker = _get_circuit_breaker(provider)
 
-        response = await litellm.acompletion(**call_kwargs)
-
-        async for chunk in response:
-            content = ""
-            reasoning = ""
-
-            if hasattr(chunk, "choices") and chunk.choices:
-                delta = chunk.choices[0].delta
-                if delta:
-                    content = delta.content or ""
-                    if hasattr(delta, "reasoning_content"):
-                        reasoning = delta.reasoning_content or ""
-
-            if content or reasoning:
-                yield {"content": content, "reasoning_content": reasoning}
-
+    if not await circuit_breaker.can_request():
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         logger.bind(
-            event="litellm_stream_complete",
+            event="circuit_breaker_open",
             module="litellm_adapter",
             provider=provider,
             model=model,
             request_id=resolved_request_id,
             duration_ms=duration_ms,
-        ).info(f"LiteLLM 流式请求完成: duration={duration_ms}ms")
-
-    except Exception as exc:
-        duration_ms = int((time.perf_counter() - started_at) * 1000)
-        logger.bind(
-            event="litellm_stream_error",
-            module="litellm_adapter",
-            provider=provider,
-            model=model,
-            request_id=resolved_request_id,
-            error_type=type(exc).__name__,
-            duration_ms=duration_ms,
-        ).error(f"LiteLLM 流式请求失败: {type(exc).__name__}: {str(exc)[:300]}")
-
+        ).warning(f"熔断器开启，拒绝 {provider}/{model} 流式请求")
         yield {
-            "error": _map_litellm_error(
+            "error": build_standard_error(
+                "model_service_circuit_breaker_open",
+                f"模型服务 {provider} 当前处于熔断状态，请稍后重试",
+                request_id=resolved_request_id,
+                details={"provider": provider, "model": model},
+                retryable=True,
+                status_code=503,
+            ),
+        }
+        return
+
+    stream_success = False
+
+    for attempt in range(max(1, num_retries + 1)):
+        try:
+            logger.bind(
+                event="litellm_stream_request",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                attempt=attempt + 1,
+            ).info(f"发起 LiteLLM 流式请求: provider={provider}, model={model}, attempt={attempt + 1}")
+
+            response = await _call_with_timeout(
+                litellm.acompletion(**call_kwargs),
+                timeout=timeout,
+            )
+
+            delta_tool_calls: Dict[int, Dict[str, Any]] = {}
+
+            async for chunk in response:
+                content = ""
+                reasoning = ""
+
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if delta:
+                        content = delta.content or ""
+                        if hasattr(delta, "reasoning_content"):
+                            reasoning = delta.reasoning_content or ""
+
+                        # 累积 tool_calls delta
+                        if hasattr(delta, "tool_calls") and delta.tool_calls:
+                            for tc_delta in delta.tool_calls:
+                                idx = tc_delta.index
+                                if idx not in delta_tool_calls:
+                                    delta_tool_calls[idx] = {"id": None, "function": {"name": "", "arguments": ""}}
+                                if tc_delta.id:
+                                    delta_tool_calls[idx]["id"] = tc_delta.id
+                                if hasattr(tc_delta, "function"):
+                                    if tc_delta.function.name:
+                                        delta_tool_calls[idx]["function"]["name"] = tc_delta.function.name
+                                    if tc_delta.function.arguments:
+                                        delta_tool_calls[idx]["function"]["arguments"] += tc_delta.function.arguments
+
+                if content or reasoning:
+                    yield {"content": content, "reasoning_content": reasoning}
+
+            # 如果有累积的 tool_calls，发出 tool_calls 事件
+            if delta_tool_calls:
+                tool_calls_list = []
+                for idx in sorted(delta_tool_calls.keys()):
+                    tc = delta_tool_calls[idx]
+                    tool_calls_list.append({
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        }
+                    })
+                yield {"type": "tool_calls", "tool_calls": tool_calls_list}
+
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            await circuit_breaker.on_success()
+            stream_success = True
+            logger.bind(
+                event="litellm_stream_complete",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                duration_ms=duration_ms,
+            ).info(f"LiteLLM 流式请求完成: duration={duration_ms}ms")
+            return
+
+        except asyncio.TimeoutError:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.bind(
+                event="litellm_stream_timeout",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                attempt=attempt + 1,
+                duration_ms=duration_ms,
+            ).error(f"LiteLLM 流式请求超时: provider={provider}, model={model}")
+
+            if attempt == num_retries:
+                yield {
+                    "error": build_standard_error(
+                        "model_service_timeout",
+                        f"模型服务请求超时（{timeout}s），请稍后重试",
+                        request_id=resolved_request_id,
+                        details={"provider": provider, "model": model, "timeout": timeout},
+                        retryable=True,
+                        status_code=504,
+                    ),
+                }
+
+        except Exception as exc:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.bind(
+                event="litellm_stream_error",
+                module="litellm_adapter",
+                provider=provider,
+                model=model,
+                request_id=resolved_request_id,
+                error_type=type(exc).__name__,
+                attempt=attempt + 1,
+                duration_ms=duration_ms,
+            ).error(f"LiteLLM 流式请求失败: {type(exc).__name__}: {str(exc)[:300]}")
+
+            mapped = _map_litellm_error(
                 exc,
                 provider=provider,
                 model=model,
                 request_id=resolved_request_id,
-            ),
-        }
+            )
+            mapped_error = mapped.get("error", mapped) if isinstance(mapped, dict) else mapped
+
+            if isinstance(mapped_error, dict) and not mapped_error.get("retryable", False):
+                await circuit_breaker.on_failure()
+                yield {"error": mapped_error}
+                return
+
+            if attempt == num_retries:
+                await circuit_breaker.on_failure()
+                yield {"error": mapped_error}
+                return
+
+        if attempt < num_retries:
+            await _exponential_backoff(attempt)
+
+    if not stream_success:
+        await circuit_breaker.on_failure()
 
 
 async def litellm_list_models(

@@ -8,10 +8,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from db.models import Conversation, ConversationRecord
+from db.models import Conversation, ConversationRecord, ShortTermMemory
 
 
 DEFAULT_CONVERSATION_TITLE = "新对话"
@@ -260,11 +261,8 @@ def ensure_conversation(
 
 
 def sync_conversation_message_count(db: Session, conversation: Conversation) -> Conversation:
-    count = db.execute(
-        db.bind.text(
-            "SELECT COUNT(*) FROM short_term_memory WHERE session_id = :session_id"
-        ),
-        {"session_id": conversation.session_id},
+    count = db.query(func.count(ShortTermMemory.id)).filter(
+        ShortTermMemory.session_id == conversation.session_id
     ).scalar() or 0
     conversation.message_count = int(count)
     db.flush()

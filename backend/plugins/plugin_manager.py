@@ -21,7 +21,7 @@ import zipfile
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import ipaddress
 import socket
@@ -35,6 +35,7 @@ from .plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecuto
 from .plugin_loader import PluginLoader
 from .plugin_sandbox import PluginSandbox
 from .plugin_validator import PluginValidator
+from .plugin_context import build_plugin_context
 
 
 class PluginManager:
@@ -118,13 +119,14 @@ class PluginManager:
         "get_help",
     }
 
-    def __init__(self, plugins_dir: Optional[str] = None, sandbox_defaults: Optional[Dict[str, Any]] = None):
+    def __init__(self, plugins_dir: Optional[str] = None, sandbox_defaults: Optional[Dict[str, Any]] = None, db_session_factory: Optional[Callable[[], Any]] = None):
         """
         初始化插件管理器。
         
         Args:
             plugins_dir: 插件目录路径，默认为项目根目录下的 plugins 文件夹。
             sandbox_defaults: 沙箱默认资源配置。
+            db_session_factory: 数据库会话工厂，用于构建插件上下文。
         """
         self.plugins_dir = plugins_dir or self._get_default_plugins_dir()
         self.loader = PluginLoader()
@@ -144,6 +146,7 @@ class PluginManager:
         self._rollout_release_counter = 0
         self.rollback_manager = RollbackManager()
         self.hot_update_manager = HotUpdateManager(rollback_manager=self.rollback_manager)
+        self.db_session_factory = db_session_factory
         logger.info(f"PluginManager initialized with plugins_dir: {self.plugins_dir}")
 
     def _get_default_plugins_dir(self) -> str:
@@ -653,6 +656,14 @@ class PluginManager:
             if previous_base_plugin_alias is not canonical_base_plugin_module:
                 sys.modules[base_plugin_alias_key] = canonical_base_plugin_module
                 alias_created = True
+
+            # 将用户实际插件目录加入 plugins 包的搜索路径，
+            # 确保 plugins/twitter-monitor/ 等用户插件可通过相对导入被找到
+            plugins_module = sys.modules.get("plugins")
+            if plugins_module is not None and hasattr(plugins_module, "__path__"):
+                user_plugins_dir = os.path.abspath(self.plugins_dir)
+                if user_plugins_dir not in plugins_module.__path__:
+                    plugins_module.__path__.append(user_plugins_dir)
             yield
         finally:
             if alias_created:
@@ -1480,65 +1491,65 @@ class PluginManager:
             with self._plugin_scan_import_context(plugin_path):
                 spec.loader.exec_module(module)
 
-            plugin_classes = []
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if inspect.isclass(obj) and self.loader._is_supported_plugin_class(obj):
-                    plugin_classes.append(obj)
+                plugin_classes = []
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if inspect.isclass(obj) and self.loader._is_supported_plugin_class(obj):
+                        plugin_classes.append(obj)
 
-            if not plugin_classes:
-                return None
+                if not plugin_classes:
+                    return None
 
-            plugin_class = plugin_classes[0]
+                plugin_class = plugin_classes[0]
 
-            plugin_root_dir = self._resolve_plugin_root_dir(plugin_path)
-            manifest_path = os.path.join(plugin_root_dir, "manifest.json")
-            config_path = os.path.join(plugin_root_dir, "config.json")
-            schema_path = os.path.join(plugin_root_dir, "schema.json")
+                plugin_root_dir = self._resolve_plugin_root_dir(plugin_path)
+                manifest_path = os.path.join(plugin_root_dir, "manifest.json")
+                config_path = os.path.join(plugin_root_dir, "config.json")
+                schema_path = os.path.join(plugin_root_dir, "schema.json")
 
-            class_manifest = getattr(plugin_class, "manifest", None)
-            if not isinstance(class_manifest, dict):
-                class_manifest = None
-            file_manifest = self._read_plugin_json_file(manifest_path)
-            manifest = deepcopy(class_manifest) if class_manifest else {}
-            if file_manifest:
-                manifest.update(file_manifest)
-            if not manifest:
-                manifest = None
-            manifest = self._normalize_manifest_payload(manifest)
+                class_manifest = getattr(plugin_class, "manifest", None)
+                if not isinstance(class_manifest, dict):
+                    class_manifest = None
+                file_manifest = self._read_plugin_json_file(manifest_path)
+                manifest = deepcopy(class_manifest) if class_manifest else {}
+                if file_manifest:
+                    manifest.update(file_manifest)
+                if not manifest:
+                    manifest = None
+                manifest = self._normalize_manifest_payload(manifest)
 
-            default_config = self._read_plugin_json_file(config_path) or {}
-            manifest_permissions = []
-            if isinstance(manifest, dict):
-                raw_permissions = manifest.get("permissions", [])
-                if isinstance(raw_permissions, list):
-                    manifest_permissions = [
-                        permission.strip()
-                        for permission in raw_permissions
-                        if isinstance(permission, str) and permission.strip()
-                    ]
+                default_config = self._read_plugin_json_file(config_path) or {}
+                manifest_permissions = []
+                if isinstance(manifest, dict):
+                    raw_permissions = manifest.get("permissions", [])
+                    if isinstance(raw_permissions, list):
+                        manifest_permissions = [
+                            permission.strip()
+                            for permission in raw_permissions
+                            if isinstance(permission, str) and permission.strip()
+                        ]
 
-            requested_permissions = sorted(
-                set(security_scan["requested_permissions"]) | set(manifest_permissions)
-            )
+                requested_permissions = sorted(
+                    set(security_scan["requested_permissions"]) | set(manifest_permissions)
+                )
 
-            metadata = {
-                "name": (manifest or {}).get("name") or getattr(plugin_class, "name", plugin_name),
-                "version": (manifest or {}).get("version") or getattr(plugin_class, "version", "1.0.0"),
-                "description": (manifest or {}).get("description") or getattr(plugin_class, "description", ""),
-                "path": plugin_path,
-                "root_dir": plugin_root_dir,
-                "class_name": plugin_class.__name__,
-                "module": module_name,
-                "manifest": manifest,
-                "manifest_path": manifest_path if os.path.exists(manifest_path) else None,
-                "config_path": config_path if os.path.exists(config_path) else None,
-                "schema_path": schema_path if os.path.exists(schema_path) else None,
-                "default_config": default_config,
-                "security_scan": security_scan,
-                "requested_permissions": requested_permissions,
-            }
+                metadata = {
+                    "name": (manifest or {}).get("name") or getattr(plugin_class, "name", plugin_name),
+                    "version": (manifest or {}).get("version") or getattr(plugin_class, "version", "1.0.0"),
+                    "description": (manifest or {}).get("description") or getattr(plugin_class, "description", ""),
+                    "path": plugin_path,
+                    "root_dir": plugin_root_dir,
+                    "class_name": plugin_class.__name__,
+                    "module": module_name,
+                    "manifest": manifest,
+                    "manifest_path": manifest_path if os.path.exists(manifest_path) else None,
+                    "config_path": config_path if os.path.exists(config_path) else None,
+                    "schema_path": schema_path if os.path.exists(schema_path) else None,
+                    "default_config": default_config,
+                    "security_scan": security_scan,
+                    "requested_permissions": requested_permissions,
+                }
 
-            return metadata
+                return metadata
 
         except (ModuleNotFoundError, ImportError) as e:
             logger.bind(
@@ -1624,6 +1635,9 @@ class PluginManager:
             plugin_instance = self.loader.instantiate_plugin(plugin_class, config)
             if plugin_instance is None:
                 raise RuntimeError(f"Failed to instantiate plugin '{plugin_name}'")
+
+            context = build_plugin_context(db_session_factory=self.db_session_factory)
+            plugin_instance.set_context(context)
 
             init_result = plugin_instance.initialize()
             if inspect.isawaitable(init_result):

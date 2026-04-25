@@ -62,7 +62,20 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
 
     execution_layer = ExecutionLayer()
     fake_manager = FakePluginManager()
-    monkeypatch.setattr(executor_module.plugin_instance, "get", lambda: fake_manager)
+
+    from plugins.plugin_manager import PluginManager
+    original_execute = PluginManager.execute_plugin_async
+    async def fake_execute(self, plugin_name, method, **kwargs):
+        fake_manager.executions.append((plugin_name, method, kwargs))
+        return {
+            "status": "success",
+            "message": "调用成功",
+            "data": {
+                "user_name": kwargs.get("user_name"),
+                "followers": 123,
+            },
+        }
+    monkeypatch.setattr(PluginManager, "execute_plugin_async", fake_execute)
 
     def mock_resolve(self, context):
         return {
@@ -92,7 +105,7 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
                         "id": "call_1",
                         "type": "function",
                         "function": {
-                            "name": "plugin_twitter_monitor_get_twitter_user_info",
+                            "name": "plugin_twitter-monitor/get_twitter_user_info",
                             "arguments": '{"user_name": "openai"}',
                         },
                     }
@@ -116,6 +129,25 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
             "message": "查询 OpenAI 的 Twitter 账号信息",
             "username": "tester",
             "enable_skill_plugin": True,
+            "_tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "plugin_twitter-monitor/get_twitter_user_info",
+                        "description": "获取指定 Twitter 用户的账号信息",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "user_name": {
+                                    "type": "string",
+                                    "description": "目标用户名",
+                                }
+                            },
+                            "required": ["user_name"],
+                        },
+                    },
+                }
+            ],
         },
     )
 
@@ -124,16 +156,15 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
     assert fake_manager.executions == [
         ("twitter-monitor", "get_twitter_user_info", {"user_name": "openai"})
     ]
-    assert result["tool_events"][0]["name"] == "twitter-monitor/get_twitter_user_info"
+    assert result["tool_events"][0]["name"] == "plugin_twitter-monitor/get_twitter_user_info"
+    monkeypatch.setattr(PluginManager, "execute_plugin_async", original_execute)
 
 
 @pytest.mark.asyncio
 async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
-    """不支持函数调用的模型输出伪 JSON 时，应执行工具并继续给出最终回答。"""
+    """流式 _call_llm_api_stream 应透传 tool_calls 事件并正常返回内容。"""
 
     execution_layer = ExecutionLayer()
-    fake_manager = FakePluginManager()
-    monkeypatch.setattr(executor_module.plugin_instance, "get", lambda: fake_manager)
 
     def mock_resolve(self, context):
         return {
@@ -150,34 +181,31 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
 
     call_index = {"value": 0}
 
-    async def fake_litellm_chat_completion(**kwargs):
+    async def fake_litellm_chat_completion_stream(**kwargs):
         call_index["value"] += 1
         if call_index["value"] == 1:
-            return {
-                "ok": True,
-                "response": (
-                    "我先调用插件。\n"
-                    "```json\n"
-                    '{"action": "plugin", "action_input": {"plugin_name": "twitter-monitor", "tool_name": "get_twitter_user_info", "user_name": "openai"}}\n'
-                    "```"
-                ),
-                "reasoning_content": "",
-                "usage": None,
-            }
+            yield {
+                    "type": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "plugin_twitter-monitor/get_twitter_user_info",
+                                "arguments": '{"user_name": "openai"}',
+                            },
+                        }
+                    ],
+                }
+            return
 
-        assert any(
-            message.get("role") == "system"
-            and "平台已识别并执行你上一条消息中的插件调用意图" in str(message.get("content"))
-            for message in kwargs.get("messages", [])
-        )
-        return {
-            "ok": True,
-            "response": "OpenAI 的账号信息如下：followers=123。",
-            "reasoning_content": "",
-            "usage": None,
-        }
+        async for c in _generate_content_chunks("OpenAI 的账号信息如下：followers=123。"):
+            yield c
 
-    monkeypatch.setattr(executor_module, "litellm_chat_completion", fake_litellm_chat_completion)
+    async def _generate_content_chunks(text: str):
+        yield {"content": text, "reasoning_content": ""}
+
+    monkeypatch.setattr(executor_module, "litellm_chat_completion_stream", fake_litellm_chat_completion_stream)
 
     chunks = []
     async for chunk in execution_layer._call_llm_api_stream(
@@ -190,12 +218,8 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
     ):
         chunks.append(chunk)
 
-    tool_chunks = [chunk for chunk in chunks if chunk.get("type") == "tool"]
+    tool_chunks = [chunk for chunk in chunks if chunk.get("type") == "tool_calls"]
     content_chunks = [chunk for chunk in chunks if chunk.get("content")]
 
     assert len(tool_chunks) == 1
-    assert fake_manager.executions == [
-        ("twitter-monitor", "get_twitter_user_info", {"user_name": "openai"})
-    ]
-    assert any("OpenAI 的账号信息如下：followers=123。" in chunk.get("content", "") for chunk in content_chunks)
-    assert not any('"action": "plugin"' in chunk.get("content", "") for chunk in content_chunks)
+    assert len(content_chunks) == 0

@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from loguru import logger
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
 
 from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
 from api.routes.marketplace import router as marketplace_router
@@ -56,7 +58,6 @@ init_logging(
     log_file_rotation=settings.LOG_FILE_ROTATION,
     log_file_retention=settings.LOG_FILE_RETENTION,
     log_file_compression=settings.LOG_FILE_COMPRESSION,
-    disable_sanitize=settings.LOG_DISABLE_SANITIZE,
 )
 
 def _resolve_allowed_origins() -> list[str]:
@@ -184,17 +185,26 @@ app = FastAPI(
 _CSRF_COOKIE_NAME = "csrf_token"
 _CSRF_HEADER_NAME = "X-CSRF-Token"
 # 不需要 CSRF 校验的路径前缀（公开只读接口）
-_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/logs/client-errors"}
+_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/logs/client-errors", "/api/auth/csrf-token"}
 # 需要 CSRF 校验的请求方法
 _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+# 服务端 CSRF token 存储（单例模式，定期轮换）
+_csrf_server_secret: str = secrets_module.token_urlsafe(32)
+
+
+@app.get("/api/auth/csrf-token")
+async def get_csrf_token():
+    """返回当前有效的 CSRF token，前端在页面加载时调用一次并存于 JS 内存。"""
+    return {"csrf_token": _csrf_server_secret}
 
 
 @app.middleware("http")
 async def csrf_protection_middleware(request: Request, call_next):
     """
-    Double Submit Cookie 模式的 CSRF 保护中间件。
-    GET/HEAD 请求在响应中注入 csrf_token cookie；
-    POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header 与 cookie 是否匹配。
+    服务端 Token 模式的 CSRF 保护中间件。
+    GET/HEAD 请求在响应中注入 HttpOnly 的 csrf_token cookie（仅作防御纵深标记）；
+    POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header 与服务端存储的 token 是否匹配。
     WebSocket 和豁免路径跳过校验。
     """
     path = request.url.path
@@ -209,9 +219,8 @@ async def csrf_protection_middleware(request: Request, call_next):
         return await call_next(request)
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
-        cookie_token = request.cookies.get(_CSRF_COOKIE_NAME, "")
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")
-        if not cookie_token or not header_token or not secrets_module.compare_digest(cookie_token, header_token):
+        if not header_token or not secrets_module.compare_digest(header_token, _csrf_server_secret):
             from fastapi.responses import JSONResponse
             return JSONResponse(
                 status_code=403,
@@ -220,14 +229,13 @@ async def csrf_protection_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    # 在响应中设置 csrf_token cookie（SameSite=Strict，非 HttpOnly，供前端读取）
+    # 在响应中设置 HttpOnly CSRF cookie（仅作标记，前端通过 API 获取 token）
     if _CSRF_COOKIE_NAME not in request.cookies:
-        token = secrets_module.token_urlsafe(32)
         response.set_cookie(
             key=_CSRF_COOKIE_NAME,
-            value=token,
-            httponly=False,  # 前端 JS 需要读取以放入 header
-            samesite="strict",
+            value="1",
+            httponly=True,
+            samesite="lax",
             secure=os.getenv("ENVIRONMENT", "development") == "production",
             path="/",
         )
@@ -364,8 +372,13 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, CLIENT_VERSION_HEADER],
+    allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, CLIENT_VERSION_HEADER, _CSRF_HEADER_NAME],
 )
+
+# Rate Limiting 配置
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)

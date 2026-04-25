@@ -11,7 +11,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from config.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token
+from config.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token, is_token_blacklisted
 from db.models import User, get_db
 
 
@@ -76,6 +76,10 @@ async def get_current_user(
     payload = decode_access_token(resolved_token)
     if payload is None:
         raise credentials_exception
+
+    jti = payload.get("jti")
+    if jti and is_token_blacklisted(str(jti), db):
+        raise credentials_exception
     
     username = payload.get("sub")
     if not isinstance(username, str):
@@ -109,6 +113,10 @@ async def get_optional_current_user(
 
     payload = decode_access_token(resolved_token)
     if payload is None:
+        return None
+
+    jti = payload.get("jti")
+    if jti and is_token_blacklisted(str(jti), db):
         return None
 
     username = payload.get("sub")

@@ -144,8 +144,6 @@ class Settings(BaseSettings):
     LOG_FILE_ROTATION: str = "10 MB"
     LOG_FILE_RETENTION: str = "30 days"
     LOG_FILE_COMPRESSION: str = "gz"
-    # 开发环境脱敏开关（True 时禁用脱敏，方便调试）
-    LOG_DISABLE_SANITIZE: bool = False
     
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
