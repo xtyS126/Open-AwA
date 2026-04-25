@@ -16,11 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.security import decrypt_secret_value
 from api.routes import chat as chat_route
+import api.routes.skills as skills_module
 
 from api.dependencies import get_current_user, get_db
 from config.logging import _LOG_BUFFER
 from config.settings import settings
-from db.models import Base, ConversationRecord, LongTermMemory, ShortTermMemory, Skill, init_db
+from db.models import Base, ConversationRecord, LongTermMemory, ShortTermMemory, Skill, WeixinBinding, init_db
 from main import app
 
 
@@ -67,12 +68,14 @@ def override_get_other_user():
 
 def _reset_tables():
     """清理本测试文件涉及的表。"""
+    skills_module._weixin_config_migrated = False
     db = TestingSessionLocal()
     try:
         db.query(ShortTermMemory).delete()
         db.query(LongTermMemory).delete()
         db.query(ConversationRecord).delete()
         db.query(Skill).delete()
+        db.execute(text("DELETE FROM weixin_bindings"))
         db.commit()
     finally:
         db.close()
@@ -103,7 +106,7 @@ def _test_client():
 
 
 def test_weixin_config_uses_dict_storage_and_skills_route_returns_normalized_config():
-    """验证微信配置写入后采用字典存储，且技能列表返回统一配置结构。"""
+    """验证微信配置写入后存入 WeixinBinding 表，且配置接口返回统一配置结构。"""
     payload = {
         "account_id": "wx-account",
         "token": "wx-token",
@@ -115,29 +118,32 @@ def test_weixin_config_uses_dict_storage_and_skills_route_returns_normalized_con
 
     with _test_client() as client:
         response = client.post(f"{settings.API_V1_STR}/skills/weixin/config", json=payload)
-        assert response.status_code == 200
+        assert response.status_code == 200, f"post config failed: {response.text}"
 
         db = TestingSessionLocal()
         try:
-            skill = db.query(Skill).filter(Skill.name == "weixin_dispatch").first()
-            assert skill is not None
-            assert isinstance(skill.config, dict)
-            assert skill.config["weixin"]["account_id"] == "wx-account"
-            # 令牌已加密存储，需解密后校验原始值
-            assert decrypt_secret_value(skill.config["weixin"]["token"]) == "wx-token"
+            binding = db.query(WeixinBinding).filter(
+                WeixinBinding.user_id == "user-1"
+            ).first()
+            assert binding is not None, "WeixinBinding should exist after config save"
+            assert binding.weixin_account_id == "wx-account"
+            assert decrypt_secret_value(binding.token) == "wx-token"
+            assert binding.base_url == "https://wx.example.com"
+            assert binding.timeout_seconds == 25
+            assert binding.binding_status == "bound"
         finally:
             db.close()
 
-        skills_response = client.get(f"{settings.API_V1_STR}/skills")
-        assert skills_response.status_code == 200
-        skills_data = skills_response.json()
-        assert len(skills_data) == 1
-        assert skills_data[0]["config"]["weixin"]["account_id"] == "wx-account"
-        assert skills_data[0]["config"]["weixin"]["binding_status"] == "bound"
+        config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
+        assert config_response.status_code == 200, f"get config failed: {config_response.text}"
+        config_data = config_response.json()
+        assert config_data["account_id"] == "wx-account"
+        assert config_data["binding_status"] == "bound"
+        assert config_data["timeout_seconds"] == 25
 
 
 def test_init_db_migrates_legacy_skill_yaml_config_for_skills_routes():
-    """验证启动初始化会将历史 YAML 技能配置迁移为合法 JSON，避免技能相关接口返回 500。"""
+    """验证启动初始化会将历史 YAML 技能配置迁移为合法 JSON，且首次读配置时自动迁移到 WeixinBinding。"""
     legacy_yaml = (
         "adapter: weixin\n"
         "description: Weixin Clawbot communication skill\n"
@@ -148,7 +154,7 @@ def test_init_db_migrates_legacy_skill_yaml_config_for_skills_routes():
         "  token: wx-token\n"
         "  base_url: https://wx.example.com\n"
         "  timeout_seconds: 20\n"
-        "  user_id: wx-user\n"
+        "  user_id: user-1\n"
         "  binding_status: bound\n"
     )
 
@@ -183,18 +189,27 @@ def test_init_db_migrates_legacy_skill_yaml_config_for_skills_routes():
         skills_response = client.get(f"{settings.API_V1_STR}/skills")
         assert skills_response.status_code == 200
         skills_data = skills_response.json()
-        assert len(skills_data) == 1
-        assert skills_data[0]["name"] == "weixin_dispatch"
-        assert skills_data[0]["config"]["weixin"]["account_id"] == "wx-account"
+        assert any(s["name"] == "weixin_dispatch" for s in skills_data)
+        weixin_skill = next(s for s in skills_data if s["name"] == "weixin_dispatch")
+        assert weixin_skill["config"]["weixin"]["account_id"] == "wx-account"
 
         config_response = client.get(f"{settings.API_V1_STR}/skills/weixin/config")
         assert config_response.status_code == 200
         config_data = config_response.json()
         assert config_data["account_id"] == "wx-account"
-        # GET 接口应返回解密后的原始令牌
         assert config_data["token"] == "wx-token"
-        assert config_data["user_id"] == "wx-user"
+        assert config_data["user_id"] == "user-1"
         assert config_data["binding_status"] == "bound"
+
+        db = TestingSessionLocal()
+        try:
+            binding = db.query(WeixinBinding).filter(
+                WeixinBinding.user_id == "user-1"
+            ).first()
+            assert binding is not None, "迁移后应在 WeixinBinding 中有对应记录"
+            assert binding.weixin_account_id == "wx-account"
+        finally:
+            db.close()
 
 
 def test_get_short_term_default_returns_empty_list_when_session_not_created():

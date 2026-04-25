@@ -102,17 +102,6 @@ def _normalize_binding_status(binding_status: Optional[str], user_id: str = "", 
     return fallback
 
 
-def _load_weixin_skill_config_dict(db: Session) -> Dict[str, Any]:
-    """
-    处理load、weixin、skill、config、dict相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
-    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
-    if not skill:
-        return {}
-    return _deserialize_skill_config(skill.config)
-
-
 def _deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
     """
     统一解析 Skill.config，兼容 JSON 列中的字典对象以及历史遗留的 YAML/JSON 字符串。
@@ -157,33 +146,6 @@ def _build_skill_response(skill: Skill) -> SkillResponse:
     )
 
 
-def _build_weixin_config_payload(
-    account_id: str,
-    token: str,
-    base_url: str,
-    timeout_seconds: int,
-    user_id: str = "",
-    binding_status: str = "unbound"
-) -> Dict[str, Any]:
-    """
-    处理build、weixin、config、payload相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
-    return {
-        "name": WEIXIN_SKILL_NAME,
-        "version": "1.0.0",
-        "description": "Weixin Clawbot communication skill",
-        "adapter": "weixin",
-        "weixin": {
-            "account_id": account_id,
-            "token": encrypt_secret_value(token),
-            "base_url": base_url,
-            "timeout_seconds": timeout_seconds,
-            "user_id": user_id,
-            "binding_status": _normalize_binding_status(binding_status, user_id=user_id)
-        }
-    }
-
 
 def _save_weixin_config_to_db(
     db: Session,
@@ -203,83 +165,95 @@ def _save_weixin_config_to_db(
     normalized_user_id = str(user_id or "").strip()
     normalized_binding_status = _normalize_binding_status(binding_status, user_id=normalized_user_id)
 
-    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
-    config_dict = _build_weixin_config_payload(
-        account_id=account_id,
-        token=token,
-        base_url=base_url,
-        timeout_seconds=timeout_seconds,
-        user_id=normalized_user_id,
-        binding_status=normalized_binding_status
-    )
-    if skill:
-        skill.version = "1.0.0"
-        skill.description = "Weixin Clawbot communication skill"
-        skill.config = config_dict
-        skill.category = skill.category or "general"
-        skill.tags = skill.tags if isinstance(skill.tags, list) else []
-        skill.dependencies = skill.dependencies if isinstance(skill.dependencies, list) else []
-        skill.author = skill.author or "system"
-    else:
-        skill = Skill(
-            id=str(uuid.uuid4()),
-            name=WEIXIN_SKILL_NAME,
-            version="1.0.0",
-            description="Weixin Clawbot communication skill",
-            config=config_dict,
-            category="general",
-            tags=[],
-            dependencies=[],
-            author="system",
-            enabled=True
-        )
-        db.add(skill)
+    if not normalized_app_user_id:
+        db.commit()
+        return
 
-    # 同步更新用户绑定表，避免“skills 配置已绑定但自动回复状态仍显示未绑定”的分叉状态。
-    if normalized_app_user_id:
-        binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == normalized_app_user_id).first()
-        if binding:
-            binding.weixin_account_id = str(account_id or "").strip()
-            binding.token = encrypt_secret_value(token) if str(token or "").strip() else ""
-            binding.base_url = str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
-            binding.bot_type = binding.bot_type or DEFAULT_BOT_TYPE
-            binding.channel_version = binding.channel_version or "1.0.2"
-            binding.binding_status = normalized_binding_status
-            binding.weixin_user_id = normalized_user_id
-        elif str(account_id or "").strip() or str(token or "").strip() or normalized_user_id:
-            binding = WeixinBinding(
-                user_id=normalized_app_user_id,
-                weixin_account_id=str(account_id or "").strip(),
-                token=encrypt_secret_value(token) if str(token or "").strip() else "",
-                base_url=str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL,
-                bot_type=DEFAULT_BOT_TYPE,
-                channel_version="1.0.2",
-                binding_status=normalized_binding_status,
-                weixin_user_id=normalized_user_id,
-            )
-            db.add(binding)
+    binding = db.query(WeixinBinding).filter(WeixinBinding.user_id == normalized_app_user_id).first()
+    if binding:
+        binding.weixin_account_id = str(account_id or "").strip()
+        binding.token = encrypt_secret_value(token) if str(token or "").strip() else ""
+        binding.base_url = str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
+        binding.bot_type = binding.bot_type or DEFAULT_BOT_TYPE
+        binding.channel_version = binding.channel_version or "1.0.2"
+        binding.binding_status = normalized_binding_status
+        binding.weixin_user_id = normalized_user_id
+        binding.timeout_seconds = timeout_seconds
+    elif str(account_id or "").strip() or str(token or "").strip() or normalized_user_id:
+        binding = WeixinBinding(
+            user_id=normalized_app_user_id,
+            weixin_account_id=str(account_id or "").strip(),
+            token=encrypt_secret_value(token) if str(token or "").strip() else "",
+            base_url=str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL,
+            bot_type=DEFAULT_BOT_TYPE,
+            channel_version="1.0.2",
+            binding_status=normalized_binding_status,
+            weixin_user_id=normalized_user_id,
+            timeout_seconds=timeout_seconds,
+        )
+        db.add(binding)
     db.commit()
 
 
-def _build_runtime_config_from_db(db: Session) -> WeixinRuntimeConfig:
-    """
-    处理build、runtime、config、from、db相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
-    adapter = WeixinSkillAdapter()
-    config_dict = _load_weixin_skill_config_dict(db)
-    if config_dict:
-        runtime = adapter.map_skill_config(config_dict)
-        if runtime.base_url:
-            return runtime
+def load_weixin_binding_config(db: Session, user_id: str) -> WeixinRuntimeConfig:
+    """从用户绑定表读取微信运行时配置，不再依赖全局 Skill 记录"""
+    binding = db.query(WeixinBinding).filter(
+        WeixinBinding.user_id == user_id
+    ).first()
+    if not binding:
+        return WeixinRuntimeConfig(
+            account_id="",
+            token="",
+            base_url=DEFAULT_BASE_URL,
+            bot_type=DEFAULT_BOT_TYPE,
+            channel_version="1.0.2",
+            timeout_seconds=15
+        )
     return WeixinRuntimeConfig(
-        account_id="",
-        token="",
-        base_url=DEFAULT_BASE_URL,
+        account_id=binding.weixin_account_id or "",
+        token=decrypt_secret_value(binding.token or ""),
+        base_url=binding.base_url or DEFAULT_BASE_URL,
+        bot_type=binding.bot_type or DEFAULT_BOT_TYPE,
+        channel_version=binding.channel_version or "1.0.2",
+        timeout_seconds=binding.timeout_seconds or 15
+    )
+
+
+def _migrate_weixin_config_from_skill(db: Session) -> None:
+    """一次性迁移：将旧 Skill.config.weixin 中的配置搬到用户绑定表"""
+    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
+    if not skill:
+        return
+    config_dict = _deserialize_skill_config(skill.config)
+    wx_config = config_dict.get("weixin", {})
+    account_id = str(wx_config.get("account_id") or "").strip()
+    token = str(wx_config.get("token") or "").strip()
+    migrated_user_id = str(wx_config.get("user_id") or "").strip()
+    if not migrated_user_id:
+        return
+    existing = db.query(WeixinBinding).filter(
+        WeixinBinding.user_id == migrated_user_id
+    ).first()
+    if existing:
+        return
+    binding = WeixinBinding(
+        user_id=migrated_user_id,
+        weixin_account_id=account_id,
+        token=token if not token else token,
+        base_url=str(wx_config.get("base_url") or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL,
         bot_type=DEFAULT_BOT_TYPE,
         channel_version="1.0.2",
-        timeout_seconds=15
+        binding_status=_normalize_binding_status(str(wx_config.get("binding_status", "")), user_id=migrated_user_id),
+        weixin_user_id=migrated_user_id,
+        timeout_seconds=wx_config.get("timeout_seconds", 15),
     )
+    db.add(binding)
+    db.commit()
+    logger.bind(
+        event="weixin_config_migrated",
+        module="skills",
+        user_id=migrated_user_id,
+    ).info("已将历史 Skill 配置迁移到 WeixinBinding")
 
 
 def _coerce_weixin_response_payload(payload: Any) -> Dict[str, Any]:
@@ -408,7 +382,8 @@ def _build_qr_session(
     login_base_url: str,
     poll_base_url: str,
     bot_type: str,
-    timeout_seconds: int
+    timeout_seconds: int,
+    user_id: str = ""
 ) -> Dict[str, Any]:
     """
     处理build、qr、session相关逻辑，并为调用方返回对应结果。
@@ -424,7 +399,8 @@ def _build_qr_session(
         "created_at": time.time(),
         "timeout_seconds": timeout_seconds,
         "confirmed_payload": None,
-        "confirmed_snapshot": _build_weixin_bound_snapshot()
+        "confirmed_snapshot": _build_weixin_bound_snapshot(),
+        "user_id": user_id
     }
 
 
@@ -760,6 +736,9 @@ async def save_weixin_config(
     )
     return {"message": "success"}
 
+_weixin_config_migrated = False
+
+
 @router.get("/weixin/config")
 async def get_weixin_config(
     db: Session = Depends(get_db),
@@ -769,23 +748,26 @@ async def get_weixin_config(
     获取weixin、config相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
-    skill = db.query(Skill).filter(Skill.name == WEIXIN_SKILL_NAME).first()
-    if not skill:
-        return _build_default_weixin_config()
-    
+    global _weixin_config_migrated
+    if not _weixin_config_migrated:
+        _migrate_weixin_config_from_skill(db)
+        _weixin_config_migrated = True
+
     try:
-        config_dict = _deserialize_skill_config(skill.config)
-        wx_config = config_dict.get("weixin", {})
-        user_id = str(wx_config.get("user_id", "") or "").strip()
+        binding = db.query(WeixinBinding).filter(
+            WeixinBinding.user_id == str(current_user.id)
+        ).first()
+        if not binding:
+            return _build_default_weixin_config()
         return {
-            "account_id": wx_config.get("account_id", ""),
-            "token": decrypt_secret_value(wx_config.get("token", "")),
-            "base_url": wx_config.get("base_url", DEFAULT_BASE_URL),
-            "timeout_seconds": wx_config.get("timeout_seconds", 15),
-            "user_id": user_id,
-            "binding_status": _normalize_binding_status(wx_config.get("binding_status"), user_id=user_id),
-            "bot_type": wx_config.get("bot_type", DEFAULT_BOT_TYPE),
-            "channel_version": wx_config.get("channel_version", "1.0.2"),
+            "account_id": binding.weixin_account_id or "",
+            "token": decrypt_secret_value(binding.token or ""),
+            "base_url": binding.base_url or DEFAULT_BASE_URL,
+            "timeout_seconds": binding.timeout_seconds or 15,
+            "user_id": binding.weixin_user_id or "",
+            "binding_status": _normalize_binding_status(binding.binding_status, user_id=binding.weixin_user_id or ""),
+            "bot_type": binding.bot_type or DEFAULT_BOT_TYPE,
+            "channel_version": binding.channel_version or "1.0.2",
         }
     except Exception as e:
         logger.bind(
@@ -809,8 +791,8 @@ async def weixin_qr_start(
     payload = WeixinQrStartReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     adapter = WeixinSkillAdapter()
-    runtime = _build_runtime_config_from_db(db)
-    session_key = str(payload.session_key or runtime.account_id or uuid.uuid4())
+    runtime = load_weixin_binding_config(db, str(current_user.id))
+    session_key = str(payload.session_key or uuid.uuid4())
 
     with WEIXIN_QR_SESSIONS_LOCK:
         existing = WEIXIN_QR_SESSIONS.get(session_key)
@@ -855,7 +837,8 @@ async def weixin_qr_start(
             login_base_url=login_base_url,
             poll_base_url=poll_base_url,
             bot_type=bot_type,
-            timeout_seconds=timeout_seconds
+            timeout_seconds=timeout_seconds,
+            user_id=str(current_user.id)
         )
 
     _build_qr_logger(session_key, "qr_started", poll_base_url=poll_base_url, has_qrcode_url=bool(qrcode_url)).info("weixin qr session started")
@@ -1028,7 +1011,7 @@ async def weixin_qr_wait(
         user_id = base_response["user_id"]
         binding_status = base_response["binding_status"]
         base_url = str(normalized_status_result.get("baseurl") or normalized_status_result.get("base_url") or poll_base_url or DEFAULT_BASE_URL).strip().rstrip("/")
-        previous_runtime = _build_runtime_config_from_db(db)
+        previous_runtime = load_weixin_binding_config(db, str(current_user.id))
         if not account_id or not token:
             response = _build_qr_response(
                 session_key=payload.session_key,
@@ -1120,7 +1103,7 @@ async def weixin_qr_exit(
             WEIXIN_QR_SESSIONS.clear()
 
     if payload.clear_config:
-        runtime = _build_runtime_config_from_db(db)
+        runtime = load_weixin_binding_config(db, str(current_user.id))
         _save_weixin_config_to_db(
             db=db,
             account_id="",
