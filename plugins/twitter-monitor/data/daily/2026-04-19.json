@@ -1,0 +1,607 @@
+{
+  "storage_type": "daily",
+  "last_updated": "2026-04-19T13:58:03.258451",
+  "total_count": 40,
+  "tweets": [
+    {
+      "id": "1894710448676884671",
+      "text": "🚨 Off-Peak Discounts Alert!\n\nStarting today, enjoy off-peak discounts on the DeepSeek API Platform from 16:30–00:30 UTC daily:\n\n🔹 DeepSeek-V3 at 50% off\n🔹 DeepSeek-R1 at a massive 75% off\n\nMaximize your resources smarter — save more during these high-value hours! https://t.co/00Qa6iNbcG",
+      "created_at": "Wed Feb 26 11:25:47 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1894710448676884671",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 6649,
+        "retweets": 632,
+        "replies": 535
+      }
+    },
+    {
+      "id": "2044493337835802948",
+      "text": "Research we co-authored on subliminal learning—how LLMs can pass on traits like preferences or misalignment through hidden signals in data—was published today in @Nature. \n\nRead the paper: https://t.co/b1BYwcW9dH",
+      "created_at": "Wed Apr 15 19:09:31 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2044493337835802948",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 2654,
+        "retweets": 325,
+        "replies": 195
+      }
+    },
+    {
+      "id": "2044427258526581148",
+      "text": "It’s finally here! 🚀 Huge thanks to the @opencode  team for the seamless integration. Qwen3.6-Plus and Qwen3.5-Plus are now live in Go!\n\nUpdate now to try it out! 👇",
+      "created_at": "Wed Apr 15 14:46:56 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2044427258526581148",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 1900,
+        "retweets": 132,
+        "replies": 59
+      }
+    },
+    {
+      "id": "2041929199976640948",
+      "text": "New on the Engineering Blog: \n\nBuilding Managed Agents—our hosted service for long-running agents—meant solving an old problem in computing: how to design a system for “programs as yet unthought of.”\n\nRead more: https://t.co/YYaEub2QGV",
+      "created_at": "Wed Apr 08 17:20:33 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2041929199976640948",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 3607,
+        "retweets": 450,
+        "replies": 390
+      }
+    },
+    {
+      "id": "2041912173363085511",
+      "text": "🚀🚀",
+      "created_at": "Wed Apr 08 16:12:53 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2041912173363085511",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 447,
+        "retweets": 10,
+        "replies": 26
+      }
+    },
+    {
+      "id": "2041871541080924477",
+      "text": "🏆 Qwen3.6-Plus just swept OpenRouter’s Daily, Weekly & Trending charts!\nThe trial has wrapped. The model is fully live & production-ready.\n📉 Lower latency | 🔥 Top-tier reasoning | 💰 Unmatched $/token value\nKeep shipping. Integrate now 👇\n🔗 Model Studio：https://t.co/937Qkc9AMy\n🔗 OpenRouter: https://t.co/kfWMAUkyDT\n🔗 Fireworks AI: https://t.co/o25xAW629t\n\n#OpenRouter #Qwen #AlibabaCloud #AI",
+      "created_at": "Wed Apr 08 13:31:26 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2041871541080924477",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 843,
+        "retweets": 65,
+        "replies": 63
+      }
+    },
+    {
+      "id": "1904526863604883661",
+      "text": "🚀 DeepSeek-V3-0324 is out now!\n\n🔹 Major boost in reasoning performance\n🔹 Stronger front-end development skills\n🔹 Smarter tool-use capabilities\n\n✅ For non-complex reasoning tasks, we recommend using V3 — just turn off “DeepThink”\n🔌 API usage remains unchanged\n📜 Models are now released under the MIT License, just like DeepSeek-R1!\n🔗 Open-source weights: https://t.co/DmaMLhfngk",
+      "created_at": "Tue Mar 25 13:32:43 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1904526863604883661",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 11743,
+        "retweets": 1908,
+        "replies": 681
+      }
+    },
+    {
+      "id": "2044161906936791179",
+      "text": "We’re expanding Trusted Access for Cyber with additional tiers for authenticated cybersecurity defenders. \n\nCustomers in the highest tiers can request access to GPT-5.4-Cyber, a version of GPT-5.4 fine-tuned for cybersecurity use cases, enabling more advanced defensive workflows.\nhttps://t.co/RMMXQklFar",
+      "created_at": "Tue Apr 14 21:12:31 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2044161906936791179",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 5127,
+        "retweets": 633,
+        "replies": 455
+      }
+    },
+    {
+      "id": "2044138481790648323",
+      "text": "New Anthropic Fellows research: developing an Automated Alignment Researcher.\n\nWe ran an experiment to learn whether Claude Opus 4.6 could accelerate research on a key alignment problem: using a weak AI model to supervise the training of a stronger one.\n\nhttps://t.co/OAxCjOiWTm",
+      "created_at": "Tue Apr 14 19:39:26 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2044138481790648323",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 2364,
+        "retweets": 278,
+        "replies": 219
+      }
+    },
+    {
+      "id": "2044057406167232964",
+      "text": "Our Long-Term Benefit Trust has appointed Vas Narasimhan to Anthropic's Board of Directors.\n\nVas brings more than two decades of experience in medicine and global health, including as CEO of Novartis.\n\nRead more: https://t.co/DSvtZUTone",
+      "created_at": "Tue Apr 14 14:17:17 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2044057406167232964",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 1651,
+        "retweets": 151,
+        "replies": 150
+      }
+    },
+    {
+      "id": "2041578392852517128",
+      "text": "Introducing Project Glasswing: an urgent initiative to help secure the world’s most critical software.\n\nIt’s powered by our newest frontier model, Claude Mythos Preview, which can find software vulnerabilities better than all but the most skilled humans.\nhttps://t.co/NQ7IfEtYk7",
+      "created_at": "Tue Apr 07 18:06:34 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2041578392852517128",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 43973,
+        "retweets": 6686,
+        "replies": 2003
+      }
+    },
+    {
+      "id": "1928061589107900779",
+      "text": "🚀 DeepSeek-R1-0528 is here!\n\n🔹 Improved benchmark performance\n🔹 Enhanced front-end capabilities\n🔹 Reduced hallucinations\n🔹 Supports JSON output & function calling\n\n✅ Try it now: https://t.co/n8tODcbEz2\n🔌 No change to API usage — docs here: https://t.co/hhLp6et35u\n🔗 Open-source weights: https://t.co/HefyhHptsC",
+      "created_at": "Thu May 29 12:11:19 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1928061589107900779",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 9758,
+        "retweets": 1496,
+        "replies": 559
+      }
+    },
+    {
+      "id": "2037010118957817988",
+      "text": "Zhilin at GTC: Introducing Attention Residuals\n\nLearning selective memory, rather than mechanically accumulating everything, is the beauty of attention.\n\nMany of you have probably read Attention Is All You Need, the 2017 Transformer paper that brought “human-like” attention into the model’s field of view. From that point on, models no longer simply read everything in a mechanical way. Instead, they began to develop a sense of what matters more and what matters less across the text, choosing to retain the more important information.\n\nRecently, Kimi applied this idea of attention to the temporal dimension, then rotated it 90 degrees into the model’s depth dimension. This allows the model to have attention not only over time, but also throughout the process of information transmission across layers—giving it a more intelligent way to understand and process information.",
+      "created_at": "Thu Mar 26 03:33:52 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2037010118957817988",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 1442,
+        "retweets": 155,
+        "replies": 50
+      }
+    },
+    {
+      "id": "1894931931554558199",
+      "text": "🚀 Day 4 of #OpenSourceWeek: Optimized Parallelism Strategies\n\n✅ DualPipe - a bidirectional pipeline parallelism algorithm for computation-communication overlap in V3/R1 training.\n🔗 https://t.co/NR3047Nnpo\n\n✅ EPLB - an expert-parallel load balancer for V3/R1.\n🔗 https://t.co/IilrQUfn49\n\n📊 Analyze computation-communication overlap in V3/R1.\n🔗 https://t.co/tY1WujA1Lw",
+      "created_at": "Thu Feb 27 02:05:53 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1894931931554558199",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 5830,
+        "retweets": 801,
+        "replies": 441
+      }
+    },
+    {
+      "id": "2044861690911850863",
+      "text": "Introducing GPT-Rosalind, our frontier reasoning model built to support research across biology, drug discovery, and translational medicine. https://t.co/PubLU0FkSv",
+      "created_at": "Thu Apr 16 19:33:13 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2044861690911850863",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 12691,
+        "retweets": 1274,
+        "replies": 465
+      }
+    },
+    {
+      "id": "2044827705406062670",
+      "text": "Codex for (almost) everything.\n\nIt can now use apps on your Mac, connect to more of your tools, create images, learn from previous actions, remember how you like to work, and take on ongoing and repeatable tasks. https://t.co/UEEsYBDYfo",
+      "created_at": "Thu Apr 16 17:18:10 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2044827705406062670",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 14311,
+        "retweets": 1479,
+        "replies": 832
+      }
+    },
+    {
+      "id": "2044786024644301250",
+      "text": "RT @claudeai: Introducing Claude Opus 4.7, our most capable Opus model yet.\n\nIt handles long-running tasks with more rigor, follows instruc…",
+      "created_at": "Thu Apr 16 14:32:33 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2044786024644301250",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 80854,
+        "retweets": 10310,
+        "replies": 4683
+      }
+    },
+    {
+      "id": "2044768734234243427",
+      "text": "⚡ Meet Qwen3.6-35B-A3B：Now Open-Source！🚀🚀\n\nA sparse MoE model, 35B total params, 3B active. Apache 2.0 license.\n\n🔥 Agentic coding on par with models 10x its active size\n📷 Strong multimodal perception and reasoning ability\n🧠 Multimodal thinking + non-thinking modes\n\nEfficient. Powerful. Versatile. Try it now👇\n\nBlog：https://t.co/EXx5y466su\nQwen Studio：https://t.co/bg4tAU1p74\nHuggingFace：https://t.co/w4pDX14DZS\nModelScope：https://t.co/SuRyLzdQiO\nAPI（‘Qwen3.6-Flash’ on Model Studio）：Coming soon～ Stay tuned",
+      "created_at": "Thu Apr 16 13:23:50 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2044768734234243427",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 11523,
+        "retweets": 1650,
+        "replies": 441
+      }
+    },
+    {
+      "id": "2042296046009626989",
+      "text": "Our existing $200 Pro tier still remains our highest usage option. And as a thank you to our existing Pro users on the $200 tier, we’re extending our 2x Codex usage promo (until May 31st) and we’ve reset your Codex rate limits (yes, again).",
+      "created_at": "Thu Apr 09 17:38:16 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2042296046009626989",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 5255,
+        "retweets": 294,
+        "replies": 369
+      }
+    },
+    {
+      "id": "2042295688323875316",
+      "text": "We’re updating our ChatGPT Pro and Plus subscriptions to better support the growing use of Codex.\n\nWe’re introducing a new $100/month Pro tier. This new tier offers 5x more Codex usage than Plus and is best for longer, high-effort Codex sessions. \n\nIn ChatGPT, this new Pro tier still offers access to all Pro features, including the exclusive Pro model and unlimited access to Instant and Thinking models.\n\nTo celebrate the launch, we’re increasing Codex usage for a limited time through May 31st so that Pro $100 subscribers get up to 10x usage of ChatGPT Plus on Codex to build your most ambitious ideas.",
+      "created_at": "Thu Apr 09 17:36:50 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2042295688323875316",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 16060,
+        "retweets": 1397,
+        "replies": 1264
+      }
+    },
+    {
+      "id": "2039731620438241403",
+      "text": "Come introduce yourself to the team, we have your slippers ready.\n\nReach out at:  talent@moonshot.ai",
+      "created_at": "Thu Apr 02 15:48:09 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2039731620438241403",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 1352,
+        "retweets": 26,
+        "replies": 60
+      }
+    },
+    {
+      "id": "1895688300574462431",
+      "text": "🚀 Day 6 of #OpenSourceWeek: One More Thing – DeepSeek-V3/R1 Inference System Overview\n\nOptimized throughput and latency via:\n🔧 Cross-node EP-powered batch scaling\n🔄 Computation-communication overlap\n⚖️ Load balancing\n\nStatistics of DeepSeek's Online Service:\n⚡ 73.7k/14.8k input/output tokens per second per H800 node\n🚀 Cost profit margin 545%\n\n💡 We hope this week's insights offer value to the community and contribute to our shared AGI goals.\n📖 Deep Dive: https://t.co/x1rt3mCxF5",
+      "created_at": "Sat Mar 01 04:11:25 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1895688300574462431",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 9143,
+        "retweets": 1218,
+        "replies": 777
+      }
+    },
+    {
+      "id": "2045461663898599472",
+      "text": "We push Prefill/Decode disaggregation beyond a single cluster: cross-datacenter + heterogeneous hardware, unlocking the potential for significantly lower cost per token.\n\nThis was previously blocked by KV cache transfer overhead. The key enabler is our hybrid model (Kimi Linear), which reduces KV cache size and makes cross-DC PD practical.\n\nValidated on a 20x scaled-up Kimi Linear model:\n✅ 1.54× throughput \n✅ 64% ↓ P90 TTFT \n→ Directly translating into lower token cost.\n\nMore in Prefill-as-a-Service: https://t.co/If8fA3t9Og",
+      "created_at": "Sat Apr 18 11:17:18 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2045461663898599472",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 2194,
+        "retweets": 271,
+        "replies": 45
+      }
+    },
+    {
+      "id": "2045342163534528723",
+      "text": "We don't know what Kimi + Hermes agents will look like in the wild yet. That's why we built the hackathon.\n\nPresented by @Kimi_Moonshot &amp; @NousResearch. Come find out with us.",
+      "created_at": "Sat Apr 18 03:22:27 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2045342163534528723",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 782,
+        "retweets": 51,
+        "replies": 32
+      }
+    },
+    {
+      "id": "2043088430763250067",
+      "text": "RT @thsottiaux: Hi! Getting a lot of questions on Pro plan rate limits, so I wanted to clarify a few things:\n\n- Your Pro $100 plan includes…",
+      "created_at": "Sat Apr 11 22:06:55 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2043088430763250067",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 1917,
+        "retweets": 111,
+        "replies": 448
+      }
+    },
+    {
+      "id": "2042780052669239782",
+      "text": "We recently identified a security issue involving the third-party developer library Axios that was part of a broader industry incident. We found no evidence that OpenAI user data was accessed, that our systems were compromised, or that our software was altered.\n\nOut of an abundance of caution we are taking steps to protect the process that certifies our macOS applications are legitimate OpenAI apps.\n\nWe are updating our security certifications, which will require all macOS users to update their OpenAI apps to the latest versions. This helps prevent any risk—however unlikely—of someone attempting to distribute a fake app that appears to be from OpenAI. You can update safely through an in-app update or at the official links below. 🧵",
+      "created_at": "Sat Apr 11 01:41:32 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2042780052669239782",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 5825,
+        "retweets": 520,
+        "replies": 368
+      }
+    },
+    {
+      "id": "2040242594719158460",
+      "text": "Qwen3.6-Plus ranks # 1 on @OpenRouter , and  the first model on OpenRouter to break 1 Trillion tokens processed in a single day！!🥇🔥\n\nWe are thrilled to see Qwen3.6-Plus topping the charts so quickly. This milestone wouldn't be possible without our amazing developers. ❤️Thank you！！",
+      "created_at": "Sat Apr 04 01:38:35 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2040242594719158460",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 1544,
+        "retweets": 120,
+        "replies": 98
+      }
+    },
+    {
+      "id": "2040240727331082660",
+      "text": "RT @OpenRouter: Qwen 3.6 Plus from @Alibaba_Qwen is officially the first model on OpenRouter to break 1 Trillion tokens processed in a sing…",
+      "created_at": "Sat Apr 04 01:31:09 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2040240727331082660",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 4463,
+        "retweets": 387,
+        "replies": 151
+      }
+    },
+    {
+      "id": "1972604768309871061",
+      "text": "🚀 Introducing DeepSeek-V3.2-Exp — our latest experimental model!\n\n✨ Built on V3.1-Terminus, it debuts DeepSeek Sparse Attention(DSA) for faster, more efficient training & inference on long context.\n👉 Now live on App, Web, and API.\n💰 API prices cut by 50%+!\n\n1/n",
+      "created_at": "Mon Sep 29 10:10:00 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1972604768309871061",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 7033,
+        "retweets": 898,
+        "replies": 321
+      }
+    },
+    {
+      "id": "1970117808035074215",
+      "text": "🚀 DeepSeek-V3.1 → DeepSeek-V3.1-Terminus\nThe latest update builds on V3.1’s strengths while addressing key user feedback.\n\n✨ What’s improved?\n🌐 Language consistency: fewer CN/EN mix-ups & no more random chars.\n🤖 Agent upgrades: stronger Code Agent & Search Agent performance.\n\n1/2",
+      "created_at": "Mon Sep 22 13:27:43 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1970117808035074215",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 4593,
+        "retweets": 532,
+        "replies": 184
+      }
+    },
+    {
+      "id": "2035971296165802198",
+      "text": "We've migrated our API payments to @Stripe for better tax support & auto-invoicing!\n\n> Invoices are now auto-generated and downloadable anytime from your dashboard.\n\nYour first top-up on the new system may ask you to re-enter your card details. That's a one-time security handshake, takes 30 seconds.",
+      "created_at": "Mon Mar 23 06:45:58 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2035971296165802198",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 525,
+        "retweets": 20,
+        "replies": 26
+      }
+    },
+    {
+      "id": "2041275561704931636",
+      "text": "We've signed an agreement with Google and Broadcom for multiple gigawatts of next-generation TPU capacity, coming online starting in 2027, to train and serve frontier Claude models.",
+      "created_at": "Mon Apr 06 22:03:13 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2041275561704931636",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 20927,
+        "retweets": 1336,
+        "replies": 617
+      }
+    },
+    {
+      "id": "2035074972943831491",
+      "text": "Congrats to the @cursor_ai team on the launch of Composer 2!   \n\nWe are proud to see Kimi-k2.5 provide the foundation. Seeing our model integrated effectively through Cursor's continued pretraining & high-compute RL training is the open model ecosystem we love to support.  \n\nNote: Cursor accesses Kimi-k2.5 via @FireworksAI_HQ ' hosted RL and inference platform as part of an authorized commercial partnership.",
+      "created_at": "Fri Mar 20 19:24:18 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2035074972943831491",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 20338,
+        "retweets": 1394,
+        "replies": 521
+      }
+    },
+    {
+      "id": "2035011542115393973",
+      "text": "Zhilin's full GTC 2026 keynote is here. \n\nIf you're curious about the \"how\" behind scaling Kimi’s latest models, this is the session you can't miss. :) https://t.co/rRgPzau6e5",
+      "created_at": "Fri Mar 20 15:12:14 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2035011542115393973",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 1098,
+        "retweets": 138,
+        "replies": 32
+      }
+    },
+    {
+      "id": "1895279409185390655",
+      "text": "🚀 Day 5 of #OpenSourceWeek: 3FS, Thruster for All DeepSeek Data Access\n\nFire-Flyer File System (3FS) - a parallel file system that utilizes the full bandwidth of modern SSDs and RDMA networks.\n\n⚡ 6.6 TiB/s aggregate read throughput in a 180-node cluster\n⚡ 3.66 TiB/min throughput on GraySort benchmark in a 25-node cluster\n⚡ 40+ GiB/s peak throughput per client node for KVCache lookup\n🧬 Disaggregated architecture with strong consistency semantics\n✅ Training data preprocessing, dataset loading, checkpoint saving/reloading, embedding vector search & KVCache lookups for inference in V3/R1\n\n📥 3FS → https://t.co/JRZ2eYk1aK\n⛲ Smallpond - data processing framework on 3FS → https://t.co/BoUA6YNjZK",
+      "created_at": "Fri Feb 28 01:06:38 +0000 2025",
+      "url": "https://x.com/deepseek_ai/status/1895279409185390655",
+      "author": {
+        "user_name": "deepseek_ai",
+        "name": "DeepSeek"
+      },
+      "metrics": {
+        "likes": 10228,
+        "retweets": 1243,
+        "replies": 525
+      }
+    },
+    {
+      "id": "2044938017530577210",
+      "text": "To go deeper on our new Life Sciences model series, research lead @joyjiao12 and product lead Yunyun Wang joined @AndrewMayne on the OpenAI Podcast to discuss how we’re building models for biology, drug discovery, and translational medicine.\n\nThey cover both the opportunity and the responsibility ahead: better research workflows today, more autonomous labs over time, and careful deployment from day one.",
+      "created_at": "Fri Apr 17 00:36:31 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2044938017530577210",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 1004,
+        "retweets": 99,
+        "replies": 77
+      }
+    },
+    {
+      "id": "2042551216769765449",
+      "text": "🚀 Qwen Code v0.14.0 – v0.14.2 are now available\n\nChannels：Control Qwen Code remotely from Telegram, DingTalk, or WeChat — send a message from your phone, get results on your server\nCron Jobs ：Schedule recurring AI tasks — auto-run tests every 30 min, pull & build every morning, monitor logs on a timer\nQwen3.6-Plus ：New flagship model with 1M token context, 1,000 free daily requests\nSub-agent Model Selection：Assign different models to sub-agents — use a powerful model for the main task, a fast one for subtasks, save tokens without sacrificing quality\n/plan：Enter planning mode before execution — AI maps out all files and steps first, you confirm, then it executes\nFollow-up Suggestions：AI suggests 2-3 next steps after completing a task — \"Add unit tests?\" \"Check similar files?\" — click to continue\nAdaptive Output Tokens ：Default 8K output, auto-escalates to 64K when truncated — no more manually tuning max_tokens\nCtrl+O Verbosity Toggle ：Switch between verbose and compact output mid-conversation — debug mode when you need it, clean mode when you don't\n\n📋 Full changelog: https://t.co/zPMyCVIskN",
+      "created_at": "Fri Apr 10 10:32:13 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2042551216769765449",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 2975,
+        "retweets": 362,
+        "replies": 90
+      }
+    },
+    {
+      "id": "2040179539738030182",
+      "text": "New Anthropic Fellows Research: a new method for surfacing behavioral differences between AI models.\n\nWe apply the “diff” principle from software development to compare open-weight AI models and identify features unique to each. \n\nRead more: https://t.co/VAsu2PSgCX",
+      "created_at": "Fri Apr 03 21:28:01 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2040179539738030182",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 2767,
+        "retweets": 351,
+        "replies": 265
+      }
+    },
+    {
+      "id": "2040079034290409692",
+      "text": "https://t.co/CCSaYHQJ2O",
+      "created_at": "Fri Apr 03 14:48:39 +0000 2026",
+      "url": "https://x.com/Kimi_Moonshot/status/2040079034290409692",
+      "author": {
+        "user_name": "Kimi_Moonshot",
+        "name": "Kimi.ai"
+      },
+      "metrics": {
+        "likes": 1106,
+        "retweets": 73,
+        "replies": 27
+      }
+    },
+    {
+      "id": "2039894785482522790",
+      "text": "👏👏Improved a lot on running a business over long time horizons.😂🤣 @andonlabs",
+      "created_at": "Fri Apr 03 02:36:30 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2039894785482522790",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 231,
+        "retweets": 6,
+        "replies": 18
+      }
+    }
+  ]
+}

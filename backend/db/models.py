@@ -168,6 +168,7 @@ class WeixinBinding(Base):
     channel_version: Mapped[str] = mapped_column(String(20), default="1.0.2")
     binding_status: Mapped[str] = mapped_column(String(50), default="unbound")
     weixin_user_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=15)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
