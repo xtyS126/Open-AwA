@@ -1646,6 +1646,7 @@ function SettingsPage() {
                       <thead>
                         <tr>
                           <th>模型</th>
+                          <th>模态</th>
                           <th>输入价格</th>
                           <th>输出价格</th>
                           <th>缓存价格</th>
@@ -1657,6 +1658,18 @@ function SettingsPage() {
                         {providerModels.map((model) => (
                           <tr key={model.id}>
                             <td className={styles['model-name']}>{model.model}</td>
+                            <td>
+                              <span className={[
+                                styles['modality-badge'],
+                                model.is_multimodal ? styles['modality-multimodal'] : 
+                                model.supports_vision ? styles['modality-vision'] : 
+                                styles['modality-text']
+                              ].join(' ')}>
+                                {model.is_multimodal ? '文本+图像+音视频' : 
+                                 model.supports_vision ? '文本+图像' : 
+                                 '文本'}
+                              </span>
+                            </td>
                             <td>
                               {editingModel === model.id ? (
                                 <input

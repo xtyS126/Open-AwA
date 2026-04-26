@@ -7,6 +7,7 @@ from sqlalchemy import text, or_
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
 from billing.models import ModelPricing, ModelConfiguration
+from config.config_loader import config_loader
 from datetime import datetime, timezone
 import json
 
@@ -67,7 +68,8 @@ class PricingManager:
         Returns:
             元组，第一个元素表示是否唯一，第二个元素为重复项列表。
         """
-        return PricingManager._validate_configurations_uniqueness(PricingManager.DEFAULT_CONFIGURATIONS)
+        configurations = config_loader.load_default_configurations()
+        return PricingManager._validate_configurations_uniqueness(configurations)
 
     @staticmethod
     def normalize_provider(provider: Optional[str]) -> str:
@@ -244,337 +246,29 @@ class PricingManager:
 
         return json.dumps(normalized, ensure_ascii=False)
 
-    LEGACY_DEFAULT_CONFIGURATION_KEYS = [
-        ("openai", "gpt-4"),
-        ("openai", "gpt-4o-mini"),
-        ("anthropic", "claude-3.5-sonnet"),
-        ("google", "gemini-2.0-flash"),
-        ("deepseek", "deepseek-chat")
-    ]
+    
 
-    DEFAULT_CONFIGURATIONS = [
-        {
-            "provider": "openai",
-            "model": "gpt-4",
-            "display_name": "GPT-4",
-            "description": "最强大的通用AI模型",
-            "is_active": True,
-            "is_default": True,
-            "sort_order": 0,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "display_name": "GPT-4o Mini",
-            "description": "兼顾速度与成本的轻量模型",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 1,
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-sonnet",
-            "display_name": "Claude 3.5 Sonnet",
-            "description": "适合复杂推理与长文本处理",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 2,
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-flash",
-            "display_name": "Gemini 2.0 Flash",
-            "description": "响应快速，适合高频交互场景",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 3,
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "display_name": "DeepSeek Chat",
-            "description": "适用于中文对话与通用生成任务",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 4,
-        },
-    ]
+    
 
-    MODEL_CAPABILITY_DEFAULTS: Dict[Tuple[str, str], Dict] = {
-        ("openai", "gpt-4"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 8192, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4o"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4o-mini"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-3.5-turbo"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 16385, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("anthropic", "claude-3.5-sonnet"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("anthropic", "claude-3-haiku"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("deepseek", "deepseek-chat"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 65536, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("deepseek", "deepseek-reasoner"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": False, "supports_top_k": False,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 65536, "max_output_tokens": 4096, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("google", "gemini-2.0-flash"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 1048576, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("alibaba", "qwen-plus"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 131072, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("moonshot", "moonshot-v1-128k"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("zhipu", "glm-4"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-    }
+    @property
+    def _default_pricing_data(self):
+        """从JSON文件加载默认定价数据"""
+        return config_loader.load_pricing_data()
 
-    DEFAULT_PRICING_DATA = [
-        {
-            "provider": "openai",
-            "model": "gpt-4.1",
-            "input_price": 6.00,
-            "output_price": 18.00,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4.1-mini",
-            "input_price": 0.30,
-            "output_price": 1.20,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4.1-nano",
-            "input_price": 0.10,
-            "output_price": 0.40,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "openai",
-            "model": "o1",
-            "input_price": 15.00,
-            "output_price": 60.00,
-            "currency": "USD",
-            "context_window": 100000
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o",
-            "input_price": 6.00,
-            "output_price": 18.00,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "input_price": 0.30,
-            "output_price": 1.20,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-sonnet",
-            "input_price": 3.00,
-            "output_price": 15.00,
-            "currency": "USD",
-            "context_window": 200000
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-haiku",
-            "input_price": 0.80,
-            "output_price": 4.00,
-            "currency": "USD",
-            "context_window": 200000
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-flash",
-            "input_price": 0.075,
-            "output_price": 0.30,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "google",
-            "model": "gemini-3.1-flash-lite",
-            "input_price": 0.25,
-            "output_price": 1.50,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-pro",
-            "input_price": 1.25,
-            "output_price": 10.00,
-            "currency": "USD",
-            "context_window": 2000000
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-v3",
-            "input_price": 2.00,
-            "output_price": 8.00,
-            "currency": "CNY",
-            "cache_hit_price": 1.00,
-            "context_window": 640000
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-r1",
-            "input_price": 4.00,
-            "output_price": 16.00,
-            "currency": "CNY",
-            "cache_hit_price": 1.00,
-            "context_window": 640000
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "input_price": 2.00,
-            "output_price": 8.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen-long",
-            "input_price": 0.50,
-            "output_price": 2.00,
-            "currency": "CNY",
-            "context_window": 10000000
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen3",
-            "input_price": 0.80,
-            "output_price": 3.20,
-            "currency": "CNY",
-            "context_window": 1000000
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen2.5-turbo",
-            "input_price": 0.60,
-            "output_price": 2.40,
-            "currency": "CNY",
-            "context_window": 1000000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-128k",
-            "input_price": 60.00,
-            "output_price": 60.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-vision-8k",
-            "input_price": 12.00,
-            "output_price": 12.00,
-            "currency": "CNY",
-            "context_window": 8000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-vision-32k",
-            "input_price": 24.00,
-            "output_price": 24.00,
-            "currency": "CNY",
-            "context_window": 32000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-vision-128k",
-            "input_price": 60.00,
-            "output_price": 60.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "zhipu",
-            "model": "glm-4",
-            "input_price": 0.50,
-            "output_price": 1.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "zhipu",
-            "model": "glm-4-plus",
-            "input_price": 1.00,
-            "output_price": 2.00,
-            "currency": "CNY",
-            "context_window": 128000
-        }
-    ]
+    @property
+    def _default_configurations(self):
+        """从JSON文件加载默认模型配置"""
+        return config_loader.load_default_configurations()
+
+    @property
+    def _model_capability_defaults(self):
+        """从JSON文件加载模型能力默认值"""
+        return config_loader.load_model_capabilities()
+
+    @property
+    def _legacy_configuration_keys(self):
+        """从JSON文件加载遗留配置键列表"""
+        return config_loader.load_legacy_config_keys()
 
     def __init__(self, db: Session):
         """
@@ -584,6 +278,22 @@ class PricingManager:
             db: 数据库会话对象。
         """
         self.db = db
+
+    def _ensure_model_pricing_schema(self) -> None:
+        """
+        确保 model_pricing 表包含 supports_vision 和 is_multimodal 列。
+        SQLite 不支持 ALTER TABLE ADD COLUMN 带非默认值约束，
+        这里通过 PRAGMA table_info 检查列是否存在，不存在则动态添加。
+        """
+        columns = {
+            row[1]
+            for row in self.db.execute(text("PRAGMA table_info(model_pricing)")).fetchall()
+        }
+        if "supports_vision" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN supports_vision BOOLEAN DEFAULT 0"))
+        if "is_multimodal" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN is_multimodal BOOLEAN DEFAULT 0"))
+        self.db.commit()
 
     def ensure_configuration_schema(self) -> None:
         """
@@ -758,10 +468,14 @@ class PricingManager:
     def initialize_default_pricing(self) -> int:
         """
         初始化默认价格配置数据。
-        
+        确保 model_pricing 表包含新列，创建记录后从模型能力数据回填模态字段。
+
         Returns:
             新创建的记录数量。
         """
+        # 确保新字段列存在
+        self._ensure_model_pricing_schema()
+
         existing_keys = {
             (m.provider, m.model)
             for m in self.db.query(
@@ -769,14 +483,72 @@ class PricingManager:
             ).all()
         }
         count = 0
-        for data in self.DEFAULT_PRICING_DATA:
+        for data in self._default_pricing_data:
             if (data["provider"], data["model"]) not in existing_keys:
                 pricing = ModelPricing(**data)
                 self.db.add(pricing)
                 count += 1
         
         self.db.commit()
+
+        # 为新创建的记录回填模态能力字段
+        if count > 0:
+            cap_dict = self._model_capability_defaults
+            for data in self._default_pricing_data:
+                key = (data["provider"], data["model"])
+                if key in existing_keys:
+                    continue
+                cap = cap_dict.get(key)
+                if cap:
+                    self.db.query(ModelPricing).filter(
+                        ModelPricing.provider == data["provider"],
+                        ModelPricing.model == data["model"]
+                    ).update({
+                        "supports_vision": cap.get("supports_vision", False),
+                        "is_multimodal": cap.get("is_multimodal", False),
+                    })
+            self.db.commit()
+
         return count
+
+    def backfill_modality_fields(self) -> int:
+        """
+        为已有的 ModelPricing 记录批量补齐模态能力字段。
+        遍历所有 supports_vision 为 NULL 的记录，从模型能力数据中查找并更新。
+
+        Returns:
+            更新的记录数量。
+        """
+        # 确保新字段列存在
+        self._ensure_model_pricing_schema()
+
+        # 查询 supports_vision 为 NULL 的记录（即旧记录，未设置模态字段）
+        records = self.db.query(ModelPricing).filter(
+            ModelPricing.supports_vision.is_(None)
+        ).all()
+
+        if not records:
+            return 0
+
+        cap_dict = self._model_capability_defaults
+        updated_count = 0
+
+        for record in records:
+            key = (record.provider, record.model)
+            cap = cap_dict.get(key)
+            if cap:
+                record.supports_vision = cap.get("supports_vision", False)
+                record.is_multimodal = cap.get("is_multimodal", False)
+            else:
+                # 未找到匹配的能力数据，使用默认值 False
+                record.supports_vision = False
+                record.is_multimodal = False
+            updated_count += 1
+
+        if updated_count > 0:
+            self.db.commit()
+
+        return updated_count
 
     def initialize_default_configurations(self) -> int:
         """
@@ -797,7 +569,7 @@ class PricingManager:
             raise ValueError(f"Duplicate default configurations found: {duplicate_text}")
 
         count = 0
-        for data in self.DEFAULT_CONFIGURATIONS:
+        for data in self._default_configurations:
             normalized = self._normalize_configuration_payload(data)
             config = ModelConfiguration(**normalized)
             self.db.add(config)
@@ -817,7 +589,7 @@ class PricingManager:
 
         conditions = [
             (ModelConfiguration.provider == provider) & (ModelConfiguration.model == model)
-            for provider, model in self.LEGACY_DEFAULT_CONFIGURATION_KEYS
+            for provider, model in self._legacy_configuration_keys
         ]
 
         if not conditions:
@@ -1135,13 +907,25 @@ class PricingManager:
             model: 模型名称。
 
         Returns:
-            默认参数字典。
+            默认参数字典，包含 temperature、top_k、max_tokens_limit。
         """
         key = (self.normalize_provider(provider), self.normalize_model(model))
-        defaults = self.MODEL_CAPABILITY_DEFAULTS.get(key, {})
+        defaults = self._model_capability_defaults.get(key, {})
+        spec = defaults.get("model_spec", {})
+        max_output_tokens = None
+        if isinstance(spec, dict):
+            max_output_tokens = spec.get("max_output_tokens")
+        elif isinstance(spec, str):
+            try:
+                import json
+                parsed = json.loads(spec)
+                max_output_tokens = parsed.get("max_output_tokens")
+            except (TypeError, ValueError):
+                pass
         return {
             "temperature": defaults.get("temperature", 0.7),
             "top_k": defaults.get("top_k", 0.9),
+            "max_tokens_limit": max_output_tokens,
         }
 
     def batch_update_status(self, config_ids: List[int], status: str) -> int:
@@ -1185,7 +969,7 @@ class PricingManager:
 
         for config in configs:
             key = (self.normalize_provider(config.provider), self.normalize_model(config.model))
-            defaults = self.MODEL_CAPABILITY_DEFAULTS.get(key)
+            defaults = self._model_capability_defaults.get(key)
             if not defaults:
                 continue
 

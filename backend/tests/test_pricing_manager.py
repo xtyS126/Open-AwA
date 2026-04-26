@@ -46,16 +46,19 @@ class TestInitializeDefaultConfigurations:
         """
         count = pricing_manager.initialize_default_configurations()
 
-        assert count == 5, "Should create 5 default configurations"
+        assert count == 17, "Should create 17 default configurations"
 
         configs = db_session.query(ModelConfiguration).all()
-        assert len(configs) == 5, "Should have 5 configurations in database"
+        assert len(configs) == 17, "Should have 17 configurations in database"
 
         providers = [c.provider for c in configs]
         assert "openai" in providers
         assert "anthropic" in providers
         assert "google" in providers
         assert "deepseek" in providers
+        assert "alibaba" in providers
+        assert "moonshot" in providers
+        assert "zhipu" in providers
 
     def test_initialize_skips_when_configurations_exist(self, pricing_manager, db_session):
         """
@@ -89,7 +92,7 @@ class TestInitializeDefaultConfigurations:
         default_configs = [c for c in configs if c.is_default]
 
         assert len(default_configs) == 1, "Should have exactly one default configuration"
-        assert default_configs[0].model == "gpt-4", "GPT-4 should be the default"
+        assert default_configs[0].model == "gpt-4.1", "GPT-4.1 should be the default"
         assert default_configs[0].provider == "openai"
 
     def test_initialize_respects_sort_order(self, pricing_manager, db_session):
@@ -114,14 +117,14 @@ class TestInitializeDefaultConfigurations:
         """
         pricing_manager.initialize_default_configurations()
 
-        gpt4 = db_session.query(ModelConfiguration).filter(
+        gpt41 = db_session.query(ModelConfiguration).filter(
             ModelConfiguration.provider == "openai",
-            ModelConfiguration.model == "gpt-4"
+            ModelConfiguration.model == "gpt-4.1"
         ).first()
 
-        assert gpt4 is not None
-        assert gpt4.display_name == "GPT-4"
-        assert "最强大的通用AI模型" in gpt4.description
+        assert gpt41 is not None
+        assert gpt41.display_name == "GPT-4.1"
+        assert "复杂推理与长文本" in gpt41.description
 
     def test_initialize_all_active(self, pricing_manager, db_session):
         """
@@ -146,7 +149,7 @@ class TestInitializeDefaultConfigurations:
 
         assert count2 == 0, "Second initialization should return 0"
         configs = db_session.query(ModelConfiguration).all()
-        assert len(configs) == 5, "Should still have only 5 configurations"
+        assert len(configs) == 17, "Should still have only 17 configurations"
 
     def test_initialize_no_duplicate_provider_model_combinations(self, pricing_manager, db_session):
         """
@@ -163,7 +166,7 @@ class TestInitializeDefaultConfigurations:
             assert key not in seen, f"Duplicate configuration: {key}"
             seen.add(key)
 
-        assert len(seen) == 5, "Should have 5 unique provider:model combinations"
+        assert len(seen) == 17, "Should have 17 unique provider:model combinations"
 
 
 class TestGetActiveConfigurations:
@@ -181,7 +184,7 @@ class TestGetActiveConfigurations:
 
         active = pricing_manager.get_active_configurations()
 
-        assert len(active) == 5
+        assert len(active) == 17
         for config in active:
             assert config.is_active is True
 
@@ -198,7 +201,7 @@ class TestGetActiveConfigurations:
 
         active = pricing_manager.get_active_configurations()
 
-        assert len(active) == 4
+        assert len(active) == 16
         inactive_ids = [c.id for c in db_session.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == False
         ).all()]
@@ -235,7 +238,7 @@ class TestDefaultConfiguration:
 
         assert default is not None
         assert default.is_default is True
-        assert default.model == "gpt-4"
+        assert default.model == "gpt-4.1"
 
     def test_get_default_returns_none_when_no_default(self, pricing_manager, db_session):
         """
@@ -329,19 +332,19 @@ class TestConfigurationUniquenessValidation:
         验证initialize、raises、error、on、duplicate、configurations相关场景的行为是否符合预期。
         通过断言结果可以帮助定位实现与预期行为之间的偏差。
         """
-        original_data = PricingManager.DEFAULT_CONFIGURATIONS.copy()
-        try:
-            PricingManager.DEFAULT_CONFIGURATIONS.extend([
-                {"provider": "openai", "model": "gpt-4", "display_name": "Duplicate", "description": "Test", "is_active": True, "is_default": False, "sort_order": 99}
-            ])
-            
+        from unittest.mock import patch
+
+        duplicate_configs = [
+            {"provider": "openai", "model": "gpt-4", "display_name": "GPT-4", "description": "Original", "is_active": True, "is_default": True, "sort_order": 0},
+            {"provider": "openai", "model": "gpt-4", "display_name": "GPT-4 Duplicate", "description": "Duplicate", "is_active": True, "is_default": False, "sort_order": 99},
+        ]
+
+        with patch("config.config_loader.config_loader.load_default_configurations", return_value=duplicate_configs):
             with pytest.raises(ValueError) as excinfo:
                 pricing_manager.initialize_default_configurations()
-            
+
             assert "duplicate" in str(excinfo.value).lower()
             assert "openai/gpt-4" in str(excinfo.value)
-        finally:
-            PricingManager.DEFAULT_CONFIGURATIONS[:] = original_data
 
     def test_initialize_creates_unique_constraint_index(self, db_session):
         """

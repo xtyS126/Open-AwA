@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        `python -c "import os, pathlib, uvicorn; db=pathlib.Path('openawa_e2e.db'); db.unlink(missing_ok=True); os.environ['DATABASE_URL']='sqlite:///./openawa_e2e.db'; os.environ['SECRET_KEY']='openawa-e2e-secret'; os.environ['OPENAWA_ADMIN_PASSWORD']='openawa-e2e-admin'; os.environ['OPENAWA_USER_PASSWORD']='openawa-e2e-user'; uvicorn.run('main:app', host='127.0.0.1', port=${backendPort})"`,
+        `python -c "import os, pathlib, uvicorn; db=pathlib.Path('openawa_e2e.db'); db.unlink(missing_ok=True); os.environ['DATABASE_URL']='sqlite:///./openawa_e2e.db'; os.environ['SECRET_KEY']='openawa-e2e-secret'; os.environ['OPENAWA_ADMIN_PASSWORD']='openawa-e2e-admin'; os.environ['OPENAWA_USER_PASSWORD']='openawa-e2e-user'; os.environ['TESTING']='true'; uvicorn.run('main:app', host='127.0.0.1', port=${backendPort})"`,
       cwd: '../backend',
       url: `http://127.0.0.1:${backendPort}/health`,
       reuseExistingServer,

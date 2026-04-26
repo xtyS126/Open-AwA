@@ -3,6 +3,8 @@
 这一部分直接关联成本核算、调用统计以及运维观测。
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -16,6 +18,7 @@ from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
 from billing.budget_manager import BudgetManager
 from billing.reporter import BillingReporter
+from config.config_loader import config_loader
 from config.logging import REQUEST_ID_HEADER
 from core.metrics import record_model_service_metric
 from core.model_service import build_standard_error
@@ -300,6 +303,8 @@ async def get_models(
                 "cache_hit_price": m.cache_hit_price,
                 "context_window": m.context_window,
                 "is_active": m.is_active,
+                "supports_vision": m.supports_vision,
+                "is_multimodal": m.is_multimodal,
                 "updated_at": m.updated_at.isoformat() if m.updated_at else None
             }
             for m in models
@@ -869,7 +874,7 @@ async def reset_configuration_parameters(
     update_dict = {
         "temperature": defaults.get("temperature", 0.7),
         "top_k": defaults.get("top_k", 0.9),
-        "max_tokens_limit": None,
+        "max_tokens_limit": defaults.get("max_tokens_limit"),
     }
 
     updated = pricing_manager.update_configuration(config_id, update_dict)
@@ -1163,3 +1168,58 @@ async def update_retention(
         "new_retention_days": retention_days,
         "deleted_records": deleted_count
     }
+
+CONFIG_TYPE_MAP = {
+    "pricing": ("pricing_data", "load_pricing_data_async"),
+    "configurations": ("default_configurations", "load_default_configurations_async"),
+    "capabilities": ("model_capabilities", "load_model_capabilities_async"),
+    "legacy-keys": ("legacy_config_keys", "load_legacy_config_keys_async"),
+}
+
+
+@router.get("/configs")
+async def get_all_configs(current_user = Depends(get_current_user)):
+    try:
+        pricing_task = config_loader.load_pricing_data_async()
+        configs_task = config_loader.load_default_configurations_async()
+        caps_task = config_loader.load_model_capabilities_async()
+        legacy_task = config_loader.load_legacy_config_keys_async()
+
+        pricing, configs, capabilities, legacy_keys = await asyncio.gather(
+            pricing_task, configs_task, caps_task, legacy_task
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "pricing": pricing,
+                "configurations": configs,
+                "capabilities": capabilities,
+                "legacy_keys": legacy_keys,
+            }
+        }
+    except Exception as e:
+        logger.error("获取配置数据失败: %s", e)
+        raise HTTPException(status_code=500, detail=f"获取配置数据失败: {str(e)}")
+
+
+@router.get("/configs/{config_type}")
+async def get_config_by_type(
+    config_type: str,
+    current_user = Depends(get_current_user),
+):
+    if config_type not in CONFIG_TYPE_MAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的配置类型: {config_type}，可选值: {', '.join(CONFIG_TYPE_MAP.keys())}"
+        )
+
+    method_name = CONFIG_TYPE_MAP[config_type][1]
+    load_method = getattr(config_loader, method_name)
+
+    try:
+        data = await load_method()
+        return {"success": True, "data": data}
+    except Exception as e:
+        logger.error("获取配置[%s]失败: %s", config_type, e)
+        raise HTTPException(status_code=500, detail=f"获取配置[{config_type}]失败: {str(e)}")

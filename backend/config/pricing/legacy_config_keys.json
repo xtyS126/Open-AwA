@@ -1,0 +1,11 @@
+[
+  ["openai", "gpt-4"],
+  ["openai", "gpt-4o-mini"],
+  ["openai", "gpt-4o"],
+  ["anthropic", "claude-3.5-sonnet"],
+  ["google", "gemini-2.0-flash"],
+  ["deepseek", "deepseek-chat"],
+  ["deepseek", "deepseek-reasoner"],
+  ["moonshot", "moonshot-v1-128k"],
+  ["alibaba", "qwen-plus"]
+]

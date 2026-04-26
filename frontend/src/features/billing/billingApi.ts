@@ -28,6 +28,8 @@ export interface ModelPricing {
   cache_hit_price: number | null
   context_window: number | null
   is_active: boolean
+  supports_vision: boolean
+  is_multimodal: boolean
   updated_at: string | null
 }
 

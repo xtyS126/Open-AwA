@@ -1013,7 +1013,8 @@ class ExecutionLayer:
             else:
                 return {"ok": False, "error": f"plugin tool name missing '/' separator: {func_name}"}
             from plugins.plugin_manager import PluginManager
-            pm = PluginManager()
+            from db.models import SessionLocal
+            pm = PluginManager(db_session_factory=SessionLocal)
             pm.discover_plugins()
             pm.load_plugin(plugin_name)
             result = await pm.execute_plugin_async(plugin_name, plugin_method, **func_args)

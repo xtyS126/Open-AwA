@@ -1,0 +1,1387 @@
+[
+  {
+    "provider_model": "openai/gpt-4",
+    "provider": "openai",
+    "model": "gpt-4",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-4o",
+    "provider": "openai",
+    "model": "gpt-4o",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-4o-mini",
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-4.1",
+    "provider": "openai",
+    "model": "gpt-4.1",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-4.1-mini",
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-4.1-nano",
+    "provider": "openai",
+    "model": "gpt-4.1-nano",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/o1",
+    "provider": "openai",
+    "model": "o1",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 100000,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/o3",
+    "provider": "openai",
+    "model": "o3",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 100000,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/o4-mini",
+    "provider": "openai",
+    "model": "o4-mini",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 100000,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.2",
+    "provider": "openai",
+    "model": "gpt-5.2",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.5",
+    "provider": "openai",
+    "model": "gpt-5.5",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 65536,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.4",
+    "provider": "openai",
+    "model": "gpt-5.4",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.4-mini",
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.4-nano",
+    "provider": "openai",
+    "model": "gpt-5.4-nano",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.3",
+    "provider": "openai",
+    "model": "gpt-5.3",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5.1",
+    "provider": "openai",
+    "model": "gpt-5.1",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5",
+    "provider": "openai",
+    "model": "gpt-5",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5-mini",
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5-nano",
+    "provider": "openai",
+    "model": "gpt-5-nano",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/gpt-5-pro",
+    "provider": "openai",
+    "model": "gpt-5-pro",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 65536,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/o3-pro",
+    "provider": "openai",
+    "model": "o3-pro",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 100000,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/o3-mini",
+    "provider": "openai",
+    "model": "o3-mini",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 100000,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "openai/o1-pro",
+    "provider": "openai",
+    "model": "o1-pro",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 100000,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-3.5-sonnet",
+    "provider": "anthropic",
+    "model": "claude-3.5-sonnet",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-3.5-haiku",
+    "provider": "anthropic",
+    "model": "claude-3.5-haiku",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-3-haiku",
+    "provider": "anthropic",
+    "model": "claude-3-haiku",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-haiku-4-5",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-sonnet-4-6",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-opus-4-7",
+    "provider": "anthropic",
+    "model": "claude-opus-4-7",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-opus-4-6",
+    "provider": "anthropic",
+    "model": "claude-opus-4-6",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-opus-4-5",
+    "provider": "anthropic",
+    "model": "claude-opus-4-5",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-opus-4-1",
+    "provider": "anthropic",
+    "model": "claude-opus-4-1",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-opus-4",
+    "provider": "anthropic",
+    "model": "claude-opus-4",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-sonnet-4-5",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "anthropic/claude-sonnet-4",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-chat",
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 65536,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-reasoner",
+    "provider": "deepseek",
+    "model": "deepseek-reasoner",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 65536,
+      "max_output_tokens": 4096,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-v3",
+    "provider": "deepseek",
+    "model": "deepseek-v3",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 640000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-r1",
+    "provider": "deepseek",
+    "model": "deepseek-r1",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 640000,
+      "max_output_tokens": 8192,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-v4-flash",
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-v4-pro",
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-v3-official",
+    "provider": "deepseek",
+    "model": "deepseek-v3-official",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-r1-official",
+    "provider": "deepseek",
+    "model": "deepseek-r1-official",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": false,
+    "supports_top_k": false,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-v3.1",
+    "provider": "deepseek",
+    "model": "deepseek-v3.1",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "deepseek/deepseek-v3.2",
+    "provider": "deepseek",
+    "model": "deepseek-v3.2",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "google/gemini-2.5-flash-lite",
+    "provider": "google",
+    "model": "gemini-2.5-flash-lite",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "google/gemini-2.5-flash",
+    "provider": "google",
+    "model": "gemini-2.5-flash",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "google/gemini-2.5-pro",
+    "provider": "google",
+    "model": "gemini-2.5-pro",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 2000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "google/gemini-3.1-pro",
+    "provider": "google",
+    "model": "gemini-3.1-pro",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 65536,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "google/gemini-3-flash",
+    "provider": "google",
+    "model": "gemini-3-flash",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 32768,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "google/gemini-3.1-flash-lite",
+    "provider": "google",
+    "model": "gemini-3.1-flash-lite",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 16384,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-long",
+    "provider": "alibaba",
+    "model": "qwen-long",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-plus",
+    "provider": "alibaba",
+    "model": "qwen-plus",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen3",
+    "provider": "alibaba",
+    "model": "qwen3",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen3.5-flash",
+    "provider": "alibaba",
+    "model": "qwen3.5-flash",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen3.5-plus",
+    "provider": "alibaba",
+    "model": "qwen3.5-plus",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 262000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen3-max",
+    "provider": "alibaba",
+    "model": "qwen3-max",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 262000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-max",
+    "provider": "alibaba",
+    "model": "qwen-max",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-max-2025-01-25",
+    "provider": "alibaba",
+    "model": "qwen-max-2025-01-25",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-turbo",
+    "provider": "alibaba",
+    "model": "qwen-turbo",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-flash",
+    "provider": "alibaba",
+    "model": "qwen-flash",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen3-235b-a40b",
+    "provider": "alibaba",
+    "model": "qwen3-235b-a40b",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 262144,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen3-flash-lite",
+    "provider": "alibaba",
+    "model": "qwen3-flash-lite",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-vl-max",
+    "provider": "alibaba",
+    "model": "qwen-vl-max",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen-vl-plus",
+    "provider": "alibaba",
+    "model": "qwen-vl-plus",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen2.5-72b-instruct",
+    "provider": "alibaba",
+    "model": "qwen2.5-72b-instruct",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "alibaba/qwen2.5-14b-instruct",
+    "provider": "alibaba",
+    "model": "qwen2.5-14b-instruct",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "moonshot/moonshot-v1-128k",
+    "provider": "moonshot",
+    "model": "moonshot-v1-128k",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 4096,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "moonshot/kimi-k2.6",
+    "provider": "moonshot",
+    "model": "kimi-k2.6",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 262000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "moonshot/kimi-k2",
+    "provider": "moonshot",
+    "model": "kimi-k2",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "zhipu/glm-4",
+    "provider": "zhipu",
+    "model": "glm-4",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "zhipu/glm-5",
+    "provider": "zhipu",
+    "model": "glm-5",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "zhipu/glm-4-air",
+    "provider": "zhipu",
+    "model": "glm-4-air",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 4096,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "zhipu/glm-4v-plus",
+    "provider": "zhipu",
+    "model": "glm-4v-plus",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": true,
+    "is_multimodal": true,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true,
+      "supports_vision": true
+    },
+    "status": "active"
+  },
+  {
+    "provider_model": "zhipu/glm-4-plus",
+    "provider": "zhipu",
+    "model": "glm-4-plus",
+    "temperature": 0.7,
+    "top_k": 0.9,
+    "supports_temperature": true,
+    "supports_top_k": true,
+    "supports_vision": false,
+    "is_multimodal": false,
+    "model_spec": {
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "supports_function_calling": true,
+      "supports_streaming": true
+    },
+    "status": "active"
+  }
+]

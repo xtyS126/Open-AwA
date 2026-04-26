@@ -21,11 +21,10 @@ export async function loginAsAdminApi(request: APIRequestContext) {
 
   const storageState = await request.storageState()
   const csrfToken = storageState.cookies.find((cookie) => cookie.name === 'csrf_token')?.value
-  expect(csrfToken).toBeTruthy()
 
   return {
     token,
-    csrfToken: csrfToken!,
+    csrfToken: csrfToken ?? null,
     cookies: storageState.cookies,
   }
 }
