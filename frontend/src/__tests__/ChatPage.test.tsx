@@ -141,12 +141,12 @@ describe('ChatPage', () => {
 
     it('should render empty state message', async () => {
       await renderChatPage()
-      expect(screen.getByText(/有什么可以帮助你的吗/)).toBeInTheDocument()
+      expect(screen.getByText('Hello! How can I help you?')).toBeInTheDocument()
     })
 
     it('should render input field and send button', async () => {
       await renderChatPage()
-      expect(screen.getByPlaceholderText('输入你的问题...')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('type your question...')).toBeInTheDocument()
       // 发送按钮现在是图标，通过 role 查找
       const buttons = screen.getAllByRole('button')
       expect(buttons.length).toBeGreaterThan(0)

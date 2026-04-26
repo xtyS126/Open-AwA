@@ -84,7 +84,17 @@ class PluginLoader:
 
         try:
             self._ensure_project_root_on_sys_path()
-            spec = importlib_util.spec_from_file_location(plugin_name, plugin_path)
+
+            plugin_dir = Path(plugin_path).resolve().parent
+            if plugin_dir.joinpath('__init__.py').exists():
+                parent_dir = str(plugin_dir.parent)
+                if parent_dir not in sys.path:
+                    sys.path.insert(0, parent_dir)
+                package_name = plugin_dir.name
+                spec = importlib_util.spec_from_file_location(f"{package_name}.{plugin_name}", plugin_path)
+            else:
+                spec = importlib_util.spec_from_file_location(plugin_name, plugin_path)
+
             if spec is None or spec.loader is None:
                 logger.error(f"Failed to create module spec for: {plugin_path}")
                 self.loading_states[plugin_name] = self.LOADING_STATE_FAILED

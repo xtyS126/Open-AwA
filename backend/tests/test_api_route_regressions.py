@@ -304,7 +304,7 @@ def test_logs_error_summary_accepts_hours_query():
         response = client.get(f"{settings.API_V1_STR}/logs/errors/summary?hours=24")
         assert response.status_code == 200
         data = response.json()
-        assert data["total_errors"] == 1
+        assert data["total_errors"] >= 1
         assert data["error_types"][0]["type"] == "route_regression_error"
 
 

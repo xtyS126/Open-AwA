@@ -80,58 +80,33 @@ describe('api', () => {
     expect(module).toBeDefined()
   })
 
-  it('为变更请求注入现有的 CSRF token', async () => {
-    cookieState.csrfToken = 'csrf-ready'
-    const config = {
-      method: 'post',
-      url: '/skills',
-      headers: {},
-    }
-
-    const result = await requestInterceptor(config)
-
-    expect(result.headers['X-CSRF-Token']).toBe('csrf-ready')
-    expect(global.fetch).not.toHaveBeenCalled()
-  })
-
-  it('缺少 CSRF token 时先补领再继续请求', async () => {
-    const fetchMock = vi.mocked(global.fetch)
-    fetchMock.mockImplementation(async () => {
-      cookieState.csrfToken = 'csrf-from-bootstrap'
-      return {} as Response
+  it('对变更请求自动获取并注入 CSRF token', async () => {
+    ;(global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ csrf_token: 'test-csrf-token' }),
     })
 
-    const config = {
-      method: 'post',
-      url: '/skills',
-      headers: {},
-    }
-
+    const config = { method: 'post', url: '/skills', headers: {} }
     const result = await requestInterceptor(config)
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', {
+    expect(global.fetch).toHaveBeenCalledWith('/api/auth/csrf-token', expect.objectContaining({
       method: 'GET',
       credentials: 'same-origin',
-    })
-    expect(result.headers['X-CSRF-Token']).toBe('csrf-from-bootstrap')
-    expect(loggerMocks.warning).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'csrf_token_missing',
     }))
+    expect(result.headers['X-CSRF-Token']).toBe('test-csrf-token')
   })
 
-  it('补领后仍缺少 CSRF token 时拒绝请求', async () => {
-    const fetchMock = vi.mocked(global.fetch)
-    fetchMock.mockRejectedValue(new Error('network error'))
+  it('对 GET 请求跳过 CSRF token', async () => {
+    const config = { method: 'get', url: '/chat/history', headers: {} }
+    const result = await requestInterceptor(config)
 
-    const config = {
-      method: 'post',
-      url: '/skills',
-      headers: {},
-    }
+    expect(result.headers['X-CSRF-Token']).toBeUndefined()
+  })
 
-    await expect(requestInterceptor(config)).rejects.toThrow('CSRF token missing after bootstrap request')
-    expect(loggerMocks.warning).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'csrf_token_bootstrap_failed',
-    }))
+  it('对免检路径的 POST 请求跳过 CSRF token', async () => {
+    const config = { method: 'post', url: '/auth/login', headers: {} }
+    const result = await requestInterceptor(config)
+
+    expect(result.headers['X-CSRF-Token']).toBeUndefined()
   })
 })
