@@ -4,6 +4,7 @@
 """
 
 import sys
+from unittest.mock import patch
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from billing.models import Base, ModelConfiguration
@@ -84,21 +85,12 @@ def test_code_validation():
     """
     print("\n=== 测试代码层面验证 ===\n")
 
-    # 保存原始数据
-    original = PricingManager.DEFAULT_CONFIGURATIONS.copy()
+    duplicate_configs = [
+        {"provider": "openai", "model": "gpt-4", "display_name": "GPT-4", "description": "Original", "is_active": True, "is_default": True, "sort_order": 0},
+        {"provider": "openai", "model": "gpt-4", "display_name": "GPT-4 Duplicate", "description": "Duplicate", "is_active": True, "is_default": False, "sort_order": 99},
+    ]
 
-    try:
-        # 添加重复
-        PricingManager.DEFAULT_CONFIGURATIONS.append({
-            "provider": "openai",
-            "model": "gpt-4",
-            "display_name": "Duplicate",
-            "description": "Test",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 99
-        })
-
+    with patch("config.config_loader.config_loader.load_default_configurations", return_value=duplicate_configs):
         # 创建数据库
         engine = create_engine('sqlite:///:memory:', echo=False)
         Base.metadata.create_all(engine)
@@ -117,9 +109,6 @@ def test_code_validation():
             print(f"  异常信息: {str(e)[:100]}...")
             session.close()
             return True
-
-    finally:
-        PricingManager.DEFAULT_CONFIGURATIONS[:] = original
 
 
 def test_normal_case():

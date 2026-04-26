@@ -1,0 +1,591 @@
+[
+  {
+    "provider": "openai",
+    "model": "gpt-4.1",
+    "input_price": 2.00,
+    "output_price": 8.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "input_price": 0.40,
+    "output_price": 1.60,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-4.1-nano",
+    "input_price": 0.10,
+    "output_price": 0.40,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "input_price": 2.50,
+    "output_price": 10.00,
+    "currency": "USD",
+    "context_window": 128000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "input_price": 0.15,
+    "output_price": 0.60,
+    "currency": "USD",
+    "context_window": 128000
+  },
+  {
+    "provider": "openai",
+    "model": "o1",
+    "input_price": 15.00,
+    "output_price": 60.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "openai",
+    "model": "o3",
+    "input_price": 2.00,
+    "output_price": 8.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "openai",
+    "model": "o4-mini",
+    "input_price": 1.10,
+    "output_price": 4.40,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.2",
+    "input_price": 1.75,
+    "output_price": 14.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.5",
+    "input_price": 5.00,
+    "output_price": 30.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.4",
+    "input_price": 2.50,
+    "output_price": 15.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "input_price": 0.75,
+    "output_price": 4.50,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.4-nano",
+    "input_price": 0.20,
+    "output_price": 1.25,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.3",
+    "input_price": 1.75,
+    "output_price": 14.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.1",
+    "input_price": 1.25,
+    "output_price": 10.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5",
+    "input_price": 1.25,
+    "output_price": 10.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "input_price": 0.25,
+    "output_price": 2.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5-nano",
+    "input_price": 0.05,
+    "output_price": 0.40,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5-pro",
+    "input_price": 15.00,
+    "output_price": 120.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "openai",
+    "model": "o3-pro",
+    "input_price": 20.00,
+    "output_price": 80.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "openai",
+    "model": "o3-mini",
+    "input_price": 1.10,
+    "output_price": 4.40,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "openai",
+    "model": "o1-pro",
+    "input_price": 150.00,
+    "output_price": 600.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-3.5-sonnet",
+    "input_price": 3.00,
+    "output_price": 15.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-3.5-haiku",
+    "input_price": 0.80,
+    "output_price": 4.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-3-haiku",
+    "input_price": 0.25,
+    "output_price": 1.25,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "input_price": 1.00,
+    "output_price": 5.00,
+    "currency": "USD",
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "input_price": 3.00,
+    "output_price": 15.00,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-opus-4-7",
+    "input_price": 5.00,
+    "output_price": 25.00,
+    "currency": "USD",
+    "cache_hit_price": 0.50,
+    "context_window": 1000000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-opus-4-6",
+    "input_price": 5.00,
+    "output_price": 25.00,
+    "currency": "USD",
+    "cache_hit_price": 0.50,
+    "context_window": 1000000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-opus-4-5",
+    "input_price": 5.00,
+    "output_price": 25.00,
+    "currency": "USD",
+    "cache_hit_price": 0.50,
+    "context_window": 1000000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-opus-4-1",
+    "input_price": 15.00,
+    "output_price": 75.00,
+    "currency": "USD",
+    "cache_hit_price": 1.50,
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-opus-4",
+    "input_price": 15.00,
+    "output_price": 75.00,
+    "currency": "USD",
+    "cache_hit_price": 1.50,
+    "context_window": 200000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "input_price": 3.00,
+    "output_price": 15.00,
+    "currency": "USD",
+    "cache_hit_price": 0.30,
+    "context_window": 1000000
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4",
+    "input_price": 3.00,
+    "output_price": 15.00,
+    "currency": "USD",
+    "cache_hit_price": 0.30,
+    "context_window": 200000
+  },
+  {
+    "provider": "google",
+    "model": "gemini-2.5-flash-lite",
+    "input_price": 0.10,
+    "output_price": 0.40,
+    "currency": "USD",
+    "context_window": 1000000
+  },
+  {
+    "provider": "google",
+    "model": "gemini-2.5-flash",
+    "input_price": 0.30,
+    "output_price": 2.50,
+    "currency": "USD",
+    "cache_hit_price": 0.075,
+    "context_window": 1000000
+  },
+  {
+    "provider": "google",
+    "model": "gemini-2.5-pro",
+    "input_price": 1.25,
+    "output_price": 10.00,
+    "currency": "USD",
+    "cache_hit_price": 0.3125,
+    "context_window": 1000000
+  },
+  {
+    "provider": "google",
+    "model": "gemini-3.1-pro",
+    "input_price": 2.00,
+    "output_price": 12.00,
+    "currency": "USD",
+    "cache_hit_price": 0.20,
+    "context_window": 1000000
+  },
+  {
+    "provider": "google",
+    "model": "gemini-3-flash",
+    "input_price": 0.50,
+    "output_price": 3.00,
+    "currency": "USD",
+    "cache_hit_price": 0.05,
+    "context_window": 1000000
+  },
+  {
+    "provider": "google",
+    "model": "gemini-3.1-flash-lite",
+    "input_price": 0.25,
+    "output_price": 1.50,
+    "currency": "USD",
+    "cache_hit_price": 0.025,
+    "context_window": 1000000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-v3",
+    "input_price": 2.00,
+    "output_price": 8.00,
+    "currency": "CNY",
+    "cache_hit_price": 1.00,
+    "context_window": 640000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-r1",
+    "input_price": 4.00,
+    "output_price": 16.00,
+    "currency": "CNY",
+    "cache_hit_price": 1.00,
+    "context_window": 640000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "input_price": 0.14,
+    "output_price": 0.28,
+    "currency": "USD",
+    "cache_hit_price": 0.028,
+    "context_window": 1000000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "input_price": 1.74,
+    "output_price": 3.48,
+    "currency": "USD",
+    "cache_hit_price": 0.145,
+    "context_window": 1000000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-v3-official",
+    "input_price": 0.14,
+    "output_price": 0.28,
+    "currency": "USD",
+    "cache_hit_price": 0.014,
+    "context_window": 128000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-r1-official",
+    "input_price": 0.55,
+    "output_price": 2.19,
+    "currency": "USD",
+    "cache_hit_price": 0.014,
+    "context_window": 128000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-v3.1",
+    "input_price": 0.27,
+    "output_price": 1.10,
+    "currency": "USD",
+    "cache_hit_price": 0.027,
+    "context_window": 128000
+  },
+  {
+    "provider": "deepseek",
+    "model": "deepseek-v3.2",
+    "input_price": 0.28,
+    "output_price": 0.42,
+    "currency": "USD",
+    "cache_hit_price": 0.028,
+    "context_window": 128000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-long",
+    "input_price": 0.50,
+    "output_price": 2.00,
+    "currency": "CNY",
+    "context_window": 10000000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen3",
+    "input_price": 0.80,
+    "output_price": 3.20,
+    "currency": "CNY",
+    "context_window": 1000000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen3.5-flash",
+    "input_price": 0.20,
+    "output_price": 3.00,
+    "currency": "CNY",
+    "context_window": 1000000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen3.5-plus",
+    "input_price": 0.80,
+    "output_price": 4.80,
+    "currency": "CNY",
+    "context_window": 262000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen3-max",
+    "input_price": 1.60,
+    "output_price": 6.40,
+    "currency": "CNY",
+    "context_window": 262000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-max",
+    "input_price": 2.00,
+    "output_price": 12.00,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-max-2025-01-25",
+    "input_price": 5.00,
+    "output_price": 48.00,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-plus",
+    "input_price": 0.40,
+    "output_price": 0.80,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-turbo",
+    "input_price": 0.30,
+    "output_price": 0.60,
+    "currency": "CNY",
+    "context_window": 1000000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-flash",
+    "input_price": 0.10,
+    "output_price": 0.30,
+    "currency": "CNY",
+    "context_window": 1000000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen3-235b-a40b",
+    "input_price": 2.00,
+    "output_price": 8.00,
+    "currency": "CNY",
+    "context_window": 262144
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen3-flash-lite",
+    "input_price": 0.30,
+    "output_price": 0.60,
+    "currency": "CNY",
+    "context_window": 1000000
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-vl-max",
+    "input_price": 5.871,
+    "output_price": 23.486,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen-vl-plus",
+    "input_price": 3.00,
+    "output_price": 12.00,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen2.5-72b-instruct",
+    "input_price": 4.00,
+    "output_price": 12.00,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "alibaba",
+    "model": "qwen2.5-14b-instruct",
+    "input_price": 0.50,
+    "output_price": 2.00,
+    "currency": "CNY",
+    "context_window": 131072
+  },
+  {
+    "provider": "moonshot",
+    "model": "kimi-k2.6",
+    "input_price": 0.95,
+    "output_price": 4.00,
+    "currency": "USD",
+    "cache_hit_price": 0.16,
+    "context_window": 262000
+  },
+  {
+    "provider": "moonshot",
+    "model": "kimi-k2",
+    "input_price": 2.00,
+    "output_price": 8.00,
+    "currency": "CNY",
+    "context_window": 128000
+  },
+  {
+    "provider": "zhipu",
+    "model": "glm-4",
+    "input_price": 0.50,
+    "output_price": 1.00,
+    "currency": "CNY",
+    "context_window": 128000
+  },
+  {
+    "provider": "zhipu",
+    "model": "glm-4-plus",
+    "input_price": 1.00,
+    "output_price": 2.00,
+    "currency": "CNY",
+    "context_window": 128000
+  },
+  {
+    "provider": "zhipu",
+    "model": "glm-5",
+    "input_price": 10.00,
+    "output_price": 10.00,
+    "currency": "CNY",
+    "context_window": 128000
+  },
+  {
+    "provider": "zhipu",
+    "model": "glm-4-air",
+    "input_price": 0.50,
+    "output_price": 1.00,
+    "currency": "CNY",
+    "context_window": 128000
+  },
+  {
+    "provider": "zhipu",
+    "model": "glm-4v-plus",
+    "input_price": 10.00,
+    "output_price": 10.00,
+    "currency": "CNY",
+    "context_window": 128000
+  }
+]

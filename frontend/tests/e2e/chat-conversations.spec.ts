@@ -14,7 +14,7 @@ async function createConversationSession(request: APIRequestContext, title: stri
   const response = await request.post(`${backendApiBase}/conversations`, {
     headers: {
       Authorization: `Bearer ${token}`,
-      'X-CSRF-Token': csrfToken,
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
     },
     data: { title },
   })
@@ -38,7 +38,7 @@ async function addShortTermMessage(
   const response = await request.post(`${backendApiBase}/memory/short-term`, {
     headers: {
       Authorization: `Bearer ${token}`,
-      'X-CSRF-Token': csrfToken,
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
     },
     data: {
       session_id: sessionId,

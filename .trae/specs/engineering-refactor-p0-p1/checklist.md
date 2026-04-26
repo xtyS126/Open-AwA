@@ -1,8 +1,0 @@
-- [x] Frontend `App.tsx` correctly skips `test_user_default` auto-login in production (i.e. when `import.meta.env.DEV` is false).
-- [x] Frontend `chatAPI.sendMessageStream` properly injects `X-Request-Id` and logs start/success/failure events, matching the `axios` interceptor behavior.
-- [x] Backend `db/models.py` uses SQLAlchemy's `JSON` type for high-frequency structured fields (e.g. `Skill.config`, `Skill.tags`, `Skill.dependencies`, `Plugin.config`, `Plugin.dependencies`, `ExperienceMemory.trigger_conditions`, `ExperienceMemory.experience_metadata`, `ConversationRecord.llm_input`, `ConversationRecord.llm_output`, `BehaviorLog.details`).
-- [x] The global `agent = AIAgent()` singleton in `backend/api/routes/chat.py` is completely removed.
-- [x] `AIAgent` instances are instantiated locally per HTTP request or WebSocket connection and provided with an explicit, caller-managed `db` session.
-- [x] `backend/core/agent.py` no longer creates or manages its own `SessionLocal()`.
-- [x] WebSocket connections keep their `db` session alive for the duration of the connection.
-- [x] `backend/api/routes/chat.py` is slimmed down by extracting chunking and WebSocket logic into a separate service or protocol layer.

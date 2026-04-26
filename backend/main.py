@@ -147,11 +147,12 @@ async def lifespan(app: FastAPI):
     # 初始化插件管理器：发现插件并加载数据库中已启用的插件
     from plugins.plugin_manager import PluginManager
     from plugins import plugin_instance
-    plugin_instance.init(PluginManager())
+    from db.models import SessionLocal
+    plugin_instance.init(PluginManager(db_session_factory=SessionLocal))
     pm = plugin_instance.get()
     pm.discover_plugins()
     if not os.getenv("SKIP_INIT_DB"):
-        from db.models import SessionLocal, Plugin as PluginModel
+        from db.models import Plugin as PluginModel
         db = SessionLocal()
         try:
             enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()

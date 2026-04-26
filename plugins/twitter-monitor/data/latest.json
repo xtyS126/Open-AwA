@@ -1,126 +1,126 @@
 {
   "storage_type": "latest",
-  "last_updated": "2026-04-26T10:21:50.072673",
+  "last_updated": "2026-04-26T21:52:51.025543",
   "total_count": 8,
   "tweets": [
     {
-      "id": "1978505070322057562",
-      "text": "Learn to build your own voice-activated AI assistant that can execute tasks like gathering recent AI news from the web, scripting out a podcast, and using tools to put all that into a multi-speaker podcast. See our new short course: \"Building Live Voice Agents with Google’s ADK (Agent Development Kit),”  taught by Google’s @lavinigam and @sitalakshmi_s.\n\nADK provides modular components that make it easy to build and debug agents. It also includes a built-in web interface for tracing agentic reasoning. This course illustrates these concepts via  building a live voice agent that can chain actions to complete a complex task like creating a podcast. This requires maintaining context, implementing guardrails, reasoning, and handling audio streaming, while keeping latency low.\n\nYou’ll learn to:\n- Build voice agents that listen, reason, and respond\n- Guide your agent to follow a specific workflow to accomplish a task\n- Coordinate specialized agents to build an agentic podcast workflow that researches topics and produces multi-speaker audio\n- Understand how to deploy an agent into production\n\nEven if you’re not yet building voice systems, you'll find understanding how realtime agents stream data and maintain reliability useful for designing modern agentic applications.\n\nPlease join here: https://t.co/OcBbPHsQIH",
-      "created_at": "Wed Oct 15 16:55:42 +0000 2025",
-      "url": "https://x.com/AndrewYNg/status/1978505070322057562",
+      "id": "2047085950808047658",
+      "text": "Kimi K2.6 免费提供 24 小时🥳",
+      "created_at": "Wed Apr 22 22:51:38 +0000 2026",
+      "url": "https://x.com/geekbb/status/2047085950808047658",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 1843,
-        "retweets": 348,
-        "replies": 71
+        "likes": 14,
+        "retweets": 0,
+        "replies": 1
       }
     },
     {
-      "id": "2034314027678192114",
-      "text": "New course: Agent Memory: Building Memory-Aware Agents, built in partnership with @Oracle and taught by  @richmondalake and Nacho Martínez.\n\nMany agents work well within a single session but their memory resets once the session ends. Consider a research agent working on dozens of papers across multiple days: without memory, it has no way to store and retrieve what it learned across sessions. This short course teaches you to build a memory system that enables agents to persist memory and thereby learn across sessions.\n\nYou'll design a Memory Manager that handles different memory types, implement semantic tool retrieval that scales without bloating the context, and build write-back pipelines that let your agent autonomously update and refine what it knows over time.\n\nSkills you'll gain:\n- Build persistent memory stores for different agent memory types\n- Implement a Memory Manager that orchestrates how your agent reads, writes, and retrieves memory\n- Treat tools as procedural memory and retrieve only relevant ones at inference time using semantic search\n\nJoin and learn to build agents that remember and improve over time!\n\nhttps://t.co/nxNSEHGmr9",
-      "created_at": "Wed Mar 18 17:00:34 +0000 2026",
-      "url": "https://x.com/AndrewYNg/status/2034314027678192114",
+      "id": "2046895358148739109",
+      "text": "@tutulifestyle 我就知道",
+      "created_at": "Wed Apr 22 10:14:17 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046895358148739109",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 1596,
-        "retweets": 235,
-        "replies": 200
+        "likes": 3,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
-      "id": "2044449830605582629",
-      "text": "New course: Spec-Driven Development with Coding Agents, built in partnership with @jetbrains, and taught by @paulweveritt.\n\nVibe coding is fast, but often produces code that doesn't match what you asked for. This short course teaches you spec-driven development: write a detailed spec defining what to build, and work with your coding agent to implement it. Many of the best developers already build this way.\n\nA spec lets you control large code changes with a few words, preserve context across agent sessions, and stay in control as your project grows in complexity.\n\nSkills you'll gain:\n- Write a detailed specification to define your mission, tech stack, and roadmap, giving your agent the context it needs from the start\n- Plan, implement, and validate features in iterative loops using a spec as your agent's guide\n- Apply the same repeatable workflow to both new and legacy codebases\n- Package your workflow into a portable agent skill that works across agents and IDEs\n\nJoin and write specs that keep your coding agent on track!\nhttps://t.co/hI4GwuvhtN",
-      "created_at": "Wed Apr 15 16:16:38 +0000 2026",
-      "url": "https://x.com/AndrewYNg/status/2044449830605582629",
+      "id": "2046886421584375837",
+      "text": "@LotusDecoder @Zai_org 是要靠抢的哪家吗",
+      "created_at": "Wed Apr 22 09:38:46 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046886421584375837",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 2767,
-        "retweets": 405,
-        "replies": 150
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
       }
     },
     {
-      "id": "1973090336068215058",
-      "text": "Announcing a significant upgrade to Agentic Document Extraction! \n\nLandingAI's new DPT (Document Pre-trained Transformer) accurately extracts even from complex docs. For example, from large, complex tables, which is important for many finance and healthcare applications. And a new SDK makes using it require only 3 simple lines of code. Please see the video for technical details. I hope this unlocks a lot of value from the \"dark data\" currently stuck in PDF files, and that you'll build something cool with this!",
-      "created_at": "Tue Sep 30 18:19:29 +0000 2025",
-      "url": "https://x.com/AndrewYNg/status/1973090336068215058",
+      "id": "2046886126762463386",
+      "text": "@JustRiceo 🤣",
+      "created_at": "Wed Apr 22 09:37:36 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046886126762463386",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 3632,
-        "retweets": 547,
-        "replies": 98
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
-      "id": "2039051446084153834",
-      "text": "The anti-AI coalition continues to maneuver to find arguments to slow down AI progress. If someone has a sincere concern about a specific effect of AI, for instance that it may lead to human extinction, I respect their intellectual honesty, even if I deeply disagree with their position. However, I am concerned about organizations that are surveying the public to find whatever messages will turn people against AI, and how the public reacts as these messages are spread by lobbyists or by politicians seeking to alarm constituents, companies pursuing regulatory capture or seeking to promote the power of their technology, and individuals seeking to gain attention or to profit by being provocative.\n\nA large study (link in original article below; h/t to the AI Panic blog) by a UK group tested different messages that are designed to raise alarm about AI. Their study found that saying AI will cause human extinction has largely failed. Doomsayers were pushing this argument a couple of years ago, and fortunately our community beat it back. But AI-enabled warfare and environmental concerns resonate better. We should be prepared for a flood of messages (which is already underway) arguing against AI on these grounds. Further, job loss and harm to children are messages that motivate people to act.\n\nTo be clear, I find AI-enabled warfare alarming; we need to continue serious efforts to monitor and mitigate the environmental impact of AI; any job losses are tragic and hurt individuals and families; and as a father, I hold dearly the importance of every child’s welfare. Each of these topics deserves serious attention and treatment with the greatest of care.\n\nBut when anti-AI propagandists take a one-sided view of complex issues to benefit their own organizations at the expense of the public at large — for instance, when big AI companies argue that AI is dangerous to block the free distribution of open source projects that compete with their offerings — then we all lose.\n\nFor example, public perception of data centers’ environmental impact is already far worse than the reality — data centers are incredibly efficient for the work they do, and hampering their buildout will hurt rather than help the environment. While job loss is a real problem, the “AI washing” of layoffs — in which businesses that had over-hired during the pandemic blame AI for recent layoffs, although AI hasn’t yet affected their operations — has led to overblown fears about the impact of AI on employment.\n\nUnfortunately, this sort of propaganda easily leads to regulations that create worse outcomes for everyone. For example, oil companies worked for years to create fear of nuclear energy. The result is that overblown concerns about the safety of nuclear power plants has stifled nuclear power development, leading to millions of premature deaths from air pollution that was caused by other energy sources and a massive increase in CO2 emissions. Let’s make sure overblown concerns about AI do not lead to a similar fate for the many people that would benefit from faster AI development.\n\nLast week, the White House proposed a national legislative framework for AI. A key component is a federal preemption framework to prevent a patchwork of state regulations that hamper AI development. I support this. \n\nAfter failing to gain traction at the federal level, a lot of anti-AI propaganda has shifted to the state level. If just one of the 50 states passes a law that limits AI in an unproductive way, it could lead to stifling AI development across all the states and potentially across the globe. The White House proposal rightfully respects each state’s rights to control its own zoning, how it enforces general laws to protect consumers, and how it uses AI. But if a state were to pass laws that limit AI development, federal rules would preempt the state law.\n\nThe White House proposal remains a proposal for now. However, if the U.S. Congress enacts it, it will clear the way for ongoing efforts to develop AI in beneficial ways.\n\nWhere do we go from here? Let’s support limiting applications — those that use AI, and those that don’t — that harm people. When the anti-AI coalition argues against AI, in addition to considering the merits of the argument, I consider whether their position is consistent and persuasive, or if they are just promoting whatever concerns they think will sway the public at a given moment. And, let’s also keep using a scientific approach to weighing AI’s benefits against likely harms, so we don’t end up with overblown concerns that limit the benefits that AI can bring everyone.\n\n[Original text with links: https://t.co/kfZY7mo0Mi ]",
-      "created_at": "Tue Mar 31 18:45:23 +0000 2026",
-      "url": "https://x.com/AndrewYNg/status/2039051446084153834",
+      "id": "2046840692664828188",
+      "text": "在R站看到一个网友分享，说他朋友有一辆漂亮的车，把它拍了发给 OpenAI，GPT Image 2 画出来的那引擎细节夯爆了。 https://t.co/kt8kJq0BEG",
+      "created_at": "Wed Apr 22 06:37:04 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046840692664828188",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 452,
-        "retweets": 73,
-        "replies": 184
+        "likes": 30,
+        "retweets": 1,
+        "replies": 3
       }
     },
     {
-      "id": "2044088884989177991",
-      "text": "I'm excited about voice as a UI layer for existing visual applications — where speech and screen update together. This goes well beyond voice-only use cases like call center automation.\n\nThe barrier has been a hard technical tradeoff: low-latency voice models lack reliability, while agentic pipelines (speech-to-text → LLM → text-to-speech) are intelligent but too slow for conversation. Ashwyn Sharma and team at Vocal Bridge (an AI Fund portfolio company) address this with a dual-agent architecture: a foreground agent for real-time conversation, a background agent for reasoning, guardrails, and tool calls.\n\nI used Vocal Bridge to add voice to a math-quiz app I'd built for my daughter; this took less than an hour with Claude Code. She speaks her answers, the app responds verbally and updates the questions and animations on screen.\n\nOnly a tiny fraction of developers have ever built a voice app. If you'd like to try building one, check out Vocal Bridge for free: https://t.co/nGrFznAMLh",
-      "created_at": "Tue Apr 14 16:22:22 +0000 2026",
-      "url": "https://x.com/AndrewYNg/status/2044088884989177991",
+      "id": "2046838474893107553",
+      "text": "@GeekCatX 你们的脑子是真活啊👍",
+      "created_at": "Wed Apr 22 06:28:15 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046838474893107553",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 736,
-        "retweets": 102,
-        "replies": 94
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
-      "id": "2042289428702642588",
-      "text": "New course: Efficient Inference with SGLang: Text and Image Generation, built in partnership with LMSys @lmsysorg and RadixArk @radixark, and taught by Richard Chen @richardczl, a Member of Technical Staff at RadixArk.\n\nRunning LLMs in production is expensive, and much of that cost comes from redundant computation. This short course teaches you to eliminate that waste using SGLang, an open-source inference framework that caches computation already done and reuses it across future requests.\n\nWhen ten users share the same system prompt, SGLang processes it once, not ten times. The speedups compound quickly, especially when there's a lot of shared context across requests.\n\nSkills you'll gain:\n- Implement a KV cache from scratch to eliminate redundant computation within a single request\n- Scale caching across users and requests with RadixAttention, so shared context is only processed once\n- Accelerate image generation with diffusion models using SGLang's caching and multi-GPU parallelism\n\nJoin and learn to make LLM inference faster and more cost-efficient at scale!\nhttps://t.co/vUiu6goWCO",
-      "created_at": "Thu Apr 09 17:11:58 +0000 2026",
-      "url": "https://x.com/AndrewYNg/status/2042289428702642588",
+      "id": "2046838275357515899",
+      "text": "@freesisx 我试了很多提示词，过不了啊，没想到你过了",
+      "created_at": "Wed Apr 22 06:27:27 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046838275357515899",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 521,
-        "retweets": 78,
-        "replies": 64
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
       }
     },
     {
-      "id": "2043742105852621052",
-      "text": "As AI agents accelerate coding, what is the future of software engineering? Some trends are clear, such as the Product Management Bottleneck, referring to the idea that we are more constrained by deciding what to build rather than the actual building. But many implications, like AI’s impact on the job market, how software teams will be organized, and more, are still being sorted out.\n\nThe theme of our AI Developer Conference on April 28-29 in San Francisco is The Future of Software Engineering. I look forward to speaking about this topic there, hearing from other speakers on this theme, and chatting with attendees about it. We’re shaping the future, and I hope you will join me there!\n\nIt is currently trendy in some technology and policy circles to forecast massive job losses due to AI. Even if they have not yet materialized, these losses certainly must be just over the horizon! I have a contrarian view that the AI jobpocalypse — the notion that AI will lead to massive unemployment, perhaps even rioting in the streets — won’t be nearly as bad as dire forecasts by pundits, especially pundits who are trying to paint a picture of how powerful their AI technology is.\n\nAmong professions, AI is accelerating software engineering most, given the rise of coding agents. According to a new report by Citadel Research, software engineering job postings are rising rapidly. So if software engineering is a harbinger of the impact AI will have on other professions, this expansion of software engineering jobs is encouraging.\n\nYes, fresh college graduates are having a hard time finding jobs. And yes, there have been layoffs that CEOs have attributed to AI, even if a large fraction of this was “AI washing,” where businesses choose to attribute layoffs to AI, even though AI has not changed their internal operations much yet. And yes, there is a subset of job roles, such as call center operator, that are more heavily impacted. Many people are feeling significant job insecurity, and I feel for everyone struggling with employment, whether or not the cause is AI-related. And many other factors, such as over-hiring during the pandemic and high interest rates, have contributed to the slowdown in the labor market, and the notion that AI is leading to unemployment is oversimplified.\n\nIn software engineering, I see a lot of exciting work ahead to adapt our workflows. It is already clear that: (i) As AI makes coding easier, a lot more people will be doing it. (ii) Writing code by hand and even reading (generated) code is not that important, because we can ask an LLM about the code and operate at a higher level than the raw syntax (although how high we can or should go is rapidly changing). (iii) There will be a lot more custom applications, because now it’s economical to write software for smaller and smaller audiences. (iv) Deciding what to build, more than the actual building, is becoming a bottleneck. (v) The cost of paying down technical debt is decreasing (since AI can refactor for you).\n\nAt the same time, there are also a lot of open questions for our profession, such as:\n- In the future, what will be the key skills of a senior software engineer? And for junior levels, what should be the new Computer Science curriculum?\n- If everyone can build features, what skills, strategies, or resources create competitive advantage for individuals and for businesses?\n- What are the new building blocks (libraries, SDKs, etc.) of software? How do we organize coding agents to create software?\n- What should a software team look like? For example, how many engineers, product managers, designers, and so on. What tooling do we need to manage their workflow?\n- How do AI agents change the workflow of machine learning engineers and data scientists? For example, how can we use agents to accelerate exploring data, identifying hypotheses, and testing them?\n\nI’m excited to explore these and other questions about the future of software engineering at AI Dev. I expect this to be an exciting event. Please join us!\n\n[Original text: The Batch newsletter.]\n\nhttps://t.co/i4bQevDG4i",
-      "created_at": "Mon Apr 13 17:24:23 +0000 2026",
-      "url": "https://x.com/AndrewYNg/status/2043742105852621052",
+      "id": "2046838203873906926",
+      "text": "@Shark2376533113 分享出来就瞬秒",
+      "created_at": "Wed Apr 22 06:27:10 +0000 2026",
+      "url": "https://x.com/geekbb/status/2046838203873906926",
       "author": {
-        "user_name": "AndrewYNg",
-        "name": "Andrew Ng"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 868,
-        "retweets": 161,
-        "replies": 134
+        "likes": 2,
+        "retweets": 0,
+        "replies": 1
       }
     }
   ]

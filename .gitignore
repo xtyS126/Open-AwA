@@ -117,6 +117,8 @@ desktop.ini
 # =========================
 .vscode/
 .idea/
+.trae/
+.github/
 *.suo
 *.ntvs*
 *.njsproj

@@ -1,0 +1,32 @@
+=== @unknown 的推文总结 ===
+
+有6条重要动态：
+
+一、DeepSeek-V4 正式开源并上线 API
+· DeepSeek-V4-Pro（1.6T / 49B active）与 DeepSeek-V4-Flash（284B / 13B active）均已发布，支持 1M token 上下文、双模式（Thinking / Non-Thinking）。
+· V4-Pro 在 Agentic Coding、Math/STEM/Coding 上逼近顶级闭源模型，V4-Flash 性价比极高。
+· API 目前 75% 折扣至 5月5日，旧模型 deepseek-chat/reasoner 将于7月24日退役。
+
+二、OpenAI 发布 GPT-5.5 与 GPT-5.5 Pro
+· GPT-5.5 已向 Plus/Pro/Business/Enterprise 用户推送，支持 ChatGPT 和 Codex；Pro 版本仅限更高阶用户。
+· 速度与 GPT-5.4 持平，但智能显著提升，在 agentic coding、computer use、科学推理上效果突出，被早期测试者称为“研究伙伴”。
+· 同时推出 Workspace Agents（研究预览）与 ChatGPT for Clinicians（免费版）。
+
+三、Qwen-Image-2.0-Pro 上线
+· 开源图像生成模型，提升视觉保真度、多语言文本渲染、指令遵循与风格一致性。
+· 在文本到图像 Arena 排名 #9，支持 API 与本地运行（已接入 Ollama）。
+
+四、腾讯混元3（Hy3）预览版发布
+· 295B A21B 参数的开源模型，在 Arena 上提供评测，集成注意力、MoE 架构（融合 Qwen3、DeepSeek V3、MiniMax M2 等组件）。
+· 编程能力接近 GLM-4.7，但距离最新 SOTA 仍有差距，作为 Preview 版本期待后续优化。
+
+五、Kimi K2.6 开源并排名领先
+· 1T MoE 模型，256K 上下文，在 MathArena 成为 #1 开源模型，在 Vision & Document Arena 也取得 #1。
+· 被 Cline 集成并提供 3 天免费使用，终端评测（Terminal-Bench）以约 1/6 成本超越 Opus 4.6 / GPT-5.4。
+
+六、ERNIE-Image 开源，百度发布 8B 文本到图像模型
+· 在 GenEval、OneIG 上领先同尺寸开源模型，LongText-Bench 上成为 #1 开源模型，已获 50+ 平台集成。
+· 同时 PaddleOCR 成为 GitHub 上星数最多的 OCR 仓库。
+
+AI总结：本周是模型密集发布周，DeepSeek V4 和 GPT-5.5 分别代表开源与闭源的最新进展，降低长上下文门槛；Qwen-Image 2.0 Pro 和 ERNIE-Image 推动图像生成开源生态；Kimi K2.6 和混元3 显示国内模型正在多个基准上追赶。这些动态加速了AI能力的普惠化，尤其在长上下文、图像生成和编程 agent 方面。
+

@@ -61,6 +61,11 @@ class ModelPricing(Base):
     token_per_second_video: Mapped[int] = mapped_column(Integer, default=2880)
     context_window: Mapped[int] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # 模型模态能力字段
+    supports_vision: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_multimodal: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc),

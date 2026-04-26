@@ -25,7 +25,7 @@ test('热更新流程冒烟', async ({ request }) => {
 
   const mutatingHeaders = {
     ...authHeaders,
-    'X-CSRF-Token': csrfToken,
+    ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
   }
 
   if (Array.isArray(plugins) && plugins.length > 0) {
