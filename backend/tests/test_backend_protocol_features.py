@@ -595,7 +595,7 @@ async def test_ai_agent_auto_execute_plugins_matches_user_message_keywords(monke
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
     result = await agent._auto_execute_skills_and_plugins(
-        intent="chat",
+        intent={"type": "summarize"},
         entities={},
         context={
             "message": "帮我总结一下 OpenAI 最近推文",
@@ -646,7 +646,7 @@ async def test_ai_agent_auto_execute_plugins_skips_weak_chat_matches(monkeypatch
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
     result = await agent._auto_execute_skills_and_plugins(
-        intent="chat",
+        intent={"type": "summarize"},
         entities={},
         context={
             "message": "我们来聊天吧",
@@ -712,7 +712,7 @@ async def test_ai_agent_auto_execute_plugins_injects_required_messages(monkeypat
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
     result = await agent._auto_execute_skills_and_plugins(
-        intent="chat",
+        intent={"type": "analyze"},
         entities={},
         context={
             "message": "请帮我分析一下我的画像",
@@ -727,11 +727,12 @@ async def test_ai_agent_auto_execute_plugins_injects_required_messages(monkeypat
 
     assert captured["plugin_name"] == "user-profile-chat"
     assert captured["method"] == "execute"
-    assert captured["kwargs"]["username"] == "alice"
-    assert captured["kwargs"]["messages"] == [
-        "我平时写 Python",
-        "最近在研究 FastAPI",
-        "请帮我分析一下我的画像",
+    assert captured["kwargs"]["action"] == "analyze_user_profile"
+    assert captured["kwargs"]["context"]["user_id"] == "alice"
+    assert captured["kwargs"]["context"]["conversation_history"] == [
+        {"role": "user", "content": "我平时写 Python"},
+        {"role": "assistant", "content": "收到"},
+        {"role": "user", "content": "最近在研究 FastAPI"},
     ]
     assert result["plugins"][0]["tool"] == "analyze_user_profile"
 
@@ -779,7 +780,7 @@ async def test_ai_agent_auto_execute_plugins_skips_when_required_params_missing(
     monkeypatch.setattr(agent, "execute_plugin", fake_execute_plugin)
 
     result = await agent._auto_execute_skills_and_plugins(
-        intent="chat",
+        intent={"type": "summarize"},
         entities={},
         context={
             "message": "帮我查一下 Twitter 用户账号信息",

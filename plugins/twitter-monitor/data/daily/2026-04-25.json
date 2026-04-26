@@ -1,0 +1,622 @@
+{
+  "storage_type": "daily",
+  "last_updated": "2026-04-25T23:16:55.677912",
+  "total_count": 41,
+  "tweets": [
+    {
+      "id": "2039372675211301259",
+      "text": "Let’s go! https://t.co/dYJVT3loel",
+      "created_at": "Wed Apr 01 16:01:50 +0000 2026",
+      "url": "https://x.com/JeffBezos/status/2039372675211301259",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 14691,
+        "retweets": 921,
+        "replies": 914
+      }
+    },
+    {
+      "id": "391913972",
+      "text": "You are most welcomed.. Andrew",
+      "created_at": "Tue Nov 06 09:24:09 +0000 2007",
+      "url": "https://x.com/andrewng/status/391913972",
+      "author": {
+        "user_name": "andrewng",
+        "name": "andrewng"
+      },
+      "metrics": {
+        "likes": 7,
+        "retweets": 0,
+        "replies": 3
+      }
+    },
+    {
+      "id": "1973545586159943742",
+      "text": "17 minute burn — beautifully boring",
+      "created_at": "Thu Oct 02 00:28:29 +0000 2025",
+      "url": "https://x.com/JeffBezos/status/1973545586159943742",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 5053,
+        "retweets": 370,
+        "replies": 1444
+      }
+    },
+    {
+      "id": "2047201919110988127",
+      "text": "👀👀",
+      "created_at": "Thu Apr 23 06:32:27 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2047201919110988127",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 417,
+        "retweets": 17,
+        "replies": 21
+      }
+    },
+    {
+      "id": "2047201597089050741",
+      "text": "🐦🐦‍⬛🐤",
+      "created_at": "Thu Apr 23 06:31:10 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2047201597089050741",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 148,
+        "retweets": 2,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2047201376518930904",
+      "text": "Available on @ollama ! 🤝🤝",
+      "created_at": "Thu Apr 23 06:30:17 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2047201376518930904",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 543,
+        "retweets": 17,
+        "replies": 15
+      }
+    },
+    {
+      "id": "2044788684223066396",
+      "text": "https://t.co/CJZ2M5TjoI",
+      "created_at": "Thu Apr 16 14:43:07 +0000 2026",
+      "url": "https://x.com/JeffBezos/status/2044788684223066396",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 10445,
+        "retweets": 867,
+        "replies": 615
+      }
+    },
+    {
+      "id": "2045874068763632017",
+      "text": "https://t.co/0WzaWjjjL9",
+      "created_at": "Sun Apr 19 14:36:03 +0000 2026",
+      "url": "https://x.com/JeffBezos/status/2045874068763632017",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 205255,
+        "retweets": 14648,
+        "replies": 11350
+      }
+    },
+    {
+      "id": "2048041081032294845",
+      "text": "RT @TheCaptainEli: Grok is better than Gemini even in Hebrew.\n\nI asked exactly the same question about the Hubble Space Telescope, which wa…",
+      "created_at": "Sat Apr 25 14:06:59 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048041081032294845",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1100,
+        "retweets": 182,
+        "replies": 168
+      }
+    },
+    {
+      "id": "2048040275327537520",
+      "text": "RT @MarioNawfal: Grok Voice Think Fast 1.0 set the bar. #1 spot. A strong start.\n\n67.3% on the board… others are way behind.\n\nNot demos. Re…",
+      "created_at": "Sat Apr 25 14:03:47 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048040275327537520",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 827,
+        "retweets": 179,
+        "replies": 197
+      }
+    },
+    {
+      "id": "2048040191630135355",
+      "text": "RT @KnowledgeArchiv: The Tesla \"T\" logo comes from Nikola Tesla's original electric motor patent btw\n\nPretty cool. https://t.co/vV1eZ1MaIk",
+      "created_at": "Sat Apr 25 14:03:27 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048040191630135355",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 4617,
+        "retweets": 532,
+        "replies": 182
+      }
+    },
+    {
+      "id": "2048039949287514512",
+      "text": "@Chesschick01 😂",
+      "created_at": "Sat Apr 25 14:02:29 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048039949287514512",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1757,
+        "retweets": 66,
+        "replies": 178
+      }
+    },
+    {
+      "id": "2048039569195446397",
+      "text": "RT @Handre: The Japanese railway privatization of 1987 stands as one of the most devastating defeats ever dealt to statist transportation m…",
+      "created_at": "Sat Apr 25 14:00:58 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048039569195446397",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 3537,
+        "retweets": 958,
+        "replies": 243
+      }
+    },
+    {
+      "id": "2048039351863406736",
+      "text": "https://t.co/BpmIpYrzqR",
+      "created_at": "Sat Apr 25 14:00:06 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048039351863406736",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 26521,
+        "retweets": 4180,
+        "replies": 1578
+      }
+    },
+    {
+      "id": "2048035037057048824",
+      "text": "Exactly",
+      "created_at": "Sat Apr 25 13:42:58 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048035037057048824",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 13440,
+        "retweets": 1917,
+        "replies": 1188
+      }
+    },
+    {
+      "id": "2048034956908077173",
+      "text": "RT @kylenabecker: You can't trust Chat GPT. It is funding partisan left-wing groups while pretending to be 'unbiased.' https://t.co/UeKL8pF…",
+      "created_at": "Sat Apr 25 13:42:39 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2048034956908077173",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1805,
+        "retweets": 417,
+        "replies": 165
+      }
+    },
+    {
+      "id": "2048028263423819853",
+      "text": "RT @Discoplomacy: Feel like very few serious people make the argument Britain should develop its own LLM? Certainly not an argument you see…",
+      "created_at": "Sat Apr 25 13:16:03 +0000 2026",
+      "url": "https://x.com/ylecun/status/2048028263423819853",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 38,
+        "retweets": 3,
+        "replies": 15
+      }
+    },
+    {
+      "id": "2048024946342072482",
+      "text": "Balanced Performance Across Artistic Styles：\nMore uniform quality across diverse aesthetic domains, effectively reducing style-dependent quality variance.🏖️ https://t.co/3FY3E9VHEp",
+      "created_at": "Sat Apr 25 13:02:52 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024946342072482",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 22,
+        "retweets": 2,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048024942286147822",
+      "text": "Comprehensive Multilingual Text Rendering：\nBetter glyph accuracy, more consistent typography, and cleaner layouts even in complex compositions.\nIt handles mixed-language scenarios more gracefully as well.\nIf you’re building posters, UI mockups, ads, or anything text-heavy, this should feel like a meaningful step forward.🪄",
+      "created_at": "Sat Apr 25 13:02:51 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024942286147822",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 30,
+        "retweets": 4,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048024937999577533",
+      "text": "Substantially Elevated Visual Fidelity：\nWe’ve made major improvements in texture detail, lighting coherence, and material realism. This applies across both photorealistic scenes and stylized outputs, so you don’t have to trade realism for style anymore.\nYes, this is not a selfie.📸",
+      "created_at": "Sat Apr 25 13:02:50 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024937999577533",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 37,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048024933805244779",
+      "text": "Sharper Instruction Following: \nThe model now adheres more closely to prompt semantics, especially for complex compositions. Better handling of multiple objects, spatial relationships and attribute binding\nYes, this is not a screenshot.📲 https://t.co/Bjs1zgT4mF",
+      "created_at": "Sat Apr 25 13:02:49 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024933805244779",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 65,
+        "retweets": 1,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048022731548229869",
+      "text": "Qwen-Image-2.0-Pro is now live 🚀🚀\n\nWe’ve pushed image quality, multilingual text rendering, and instruction following to a new level, while making performance much more consistent across styles.🌅🌃\n\nRanked #9 worldwide for Text-to-Image on @arena \n\n🔗Try it now on \nModelScope:\nhttps://t.co/pPtrbjzzBK\nhttps://t.co/raB6WWMEMP\nAPI：https://t.co/EgYS5qt2bF",
+      "created_at": "Sat Apr 25 12:54:04 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048022731548229869",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 1007,
+        "retweets": 117,
+        "replies": 62
+      }
+    },
+    {
+      "id": "2047994914575683917",
+      "text": "RT @maddenifico: Trump completely passed out, reawakened, then passed out again during today's pressor in the Oval Office. 😂🤣👇 https://t.co…",
+      "created_at": "Sat Apr 25 11:03:32 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047994914575683917",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 67546,
+        "retweets": 16081,
+        "replies": 4854
+      }
+    },
+    {
+      "id": "2047994812335378552",
+      "text": "RT @Strandjunker: Number of people who go bankrupt every year because of medical bills or illness-related work loss:\n\n🇦🇺 0\n🇨🇦 0\n🇩🇰 0\n🇫🇮 0…",
+      "created_at": "Sat Apr 25 11:03:07 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047994812335378552",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 35629,
+        "retweets": 8379,
+        "replies": 1129
+      }
+    },
+    {
+      "id": "2047991445483589885",
+      "text": "RT @ELLISforEurope: 🎓 Register now for ML &amp; Advanced Stats Summer School, an intensive set of courses on theoretical foundations &amp; applicat…",
+      "created_at": "Sat Apr 25 10:49:45 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047991445483589885",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 63,
+        "retweets": 12,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2047990820582625511",
+      "text": "RT @ziv_ravid: New episode of The Information Bottleneck is out, this time with @liuzhuang1234  (Princeton).\n\nWe talked about ConvNeXt and…",
+      "created_at": "Sat Apr 25 10:47:16 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047990820582625511",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 26,
+        "retweets": 8,
+        "replies": 5
+      }
+    },
+    {
+      "id": "2047989607094968730",
+      "text": "RT @AYi_AInotes: 图灵奖获得者、 AI 三大教父之一的 LeCun在达沃斯的发言，算是把整个硅谷的遮羞布扯了。\n\n他说现在整个行业都被LLM彻底洗脑了，所有人都在同一条赛道上互相挖人，谁敢偏离主流谁就被骂落后。\n\n这也是他离开Meta的真正原因，连Meta都已经…",
+      "created_at": "Sat Apr 25 10:42:26 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047989607094968730",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 589,
+        "retweets": 133,
+        "replies": 29
+      }
+    },
+    {
+      "id": "2047891793359024547",
+      "text": "RT @TencentHunyuan: Excited to see Hy3 preview live on @arena. Try it out and let us know what you think!",
+      "created_at": "Sat Apr 25 04:13:46 +0000 2026",
+      "url": "https://x.com/arena/status/2047891793359024547",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 48,
+        "retweets": 4,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2047871324878696748",
+      "text": "Start prompting and voting in Battle mode at: https://t.co/yZiJuG8ica",
+      "created_at": "Sat Apr 25 02:52:26 +0000 2026",
+      "url": "https://x.com/arena/status/2047871324878696748",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 6,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2047871322647318901",
+      "text": "Hy3 preview (295B A21B) an open source model by @TencentHunyuan is now live on Arena.\n\nEvaluate it across Text &amp; Code Arena in Battle mode. Scores incoming soon. https://t.co/5nU6tLSKvK",
+      "created_at": "Sat Apr 25 02:52:25 +0000 2026",
+      "url": "https://x.com/arena/status/2047871322647318901",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 61,
+        "retweets": 4,
+        "replies": 5
+      }
+    },
+    {
+      "id": "2042798237367833014",
+      "text": "Welcome home, Reid, Victor, Christina, and Jeremy! Huge congrats to all of NASA. Gradatim Ferociter!",
+      "created_at": "Sat Apr 11 02:53:47 +0000 2026",
+      "url": "https://x.com/JeffBezos/status/2042798237367833014",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 10363,
+        "retweets": 531,
+        "replies": 276
+      }
+    },
+    {
+      "id": "1911745155960299648",
+      "text": "I love this crew! https://t.co/KfcKkdNQGp",
+      "created_at": "Mon Apr 14 11:35:38 +0000 2025",
+      "url": "https://x.com/JeffBezos/status/1911745155960299648",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 17890,
+        "retweets": 1521,
+        "replies": 11471
+      }
+    },
+    {
+      "id": "2043744899678515256",
+      "text": "https://t.co/XIP11PYMLn",
+      "created_at": "Mon Apr 13 17:35:29 +0000 2026",
+      "url": "https://x.com/JeffBezos/status/2043744899678515256",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 23903,
+        "retweets": 1489,
+        "replies": 1074
+      }
+    },
+    {
+      "id": "2047788811518701940",
+      "text": "RT @internetarchive: The web is disappearing 🕳️\n\nAccording to a Pew Research Center report, 26% of pages from 2013-2023 are no longer acces…",
+      "created_at": "Fri Apr 24 21:24:33 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047788811518701940",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 10289,
+        "retweets": 3806,
+        "replies": 138
+      }
+    },
+    {
+      "id": "2047788737342390641",
+      "text": "RT @mengyer: New preprint: The Self Requires Learning. Self-consciousness requires continual learning + world-modeling. I introduce \"bounde…",
+      "created_at": "Fri Apr 24 21:24:15 +0000 2026",
+      "url": "https://x.com/ylecun/status/2047788737342390641",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 364,
+        "retweets": 61,
+        "replies": 13
+      }
+    },
+    {
+      "id": "2047774043118723293",
+      "text": "Review DeepSeek’s scores across all categories and customize the data views for what matters most to your use cases here: https://t.co/q0J9NAytLa",
+      "created_at": "Fri Apr 24 20:25:52 +0000 2026",
+      "url": "https://x.com/arena/status/2047774043118723293",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 9,
+        "retweets": 1,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2047774039557759333",
+      "text": "Watch first impressions on DeepSeek V4 with @petergostev on YouTube: https://t.co/58KHMqdbCQ",
+      "created_at": "Fri Apr 24 20:25:51 +0000 2026",
+      "url": "https://x.com/arena/status/2047774039557759333",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 12,
+        "retweets": 1,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2047774037204742255",
+      "text": "Let’s dive deeper into the difference between DeepSeek V4 Pro & V4 Flash by @DeepSeek_AI.\n- Both support 1M token context and V4 Flash Thinking shifts the price Pareto frontier.\n\nV4 Pro ranks ~30 places higher than the V4 Flash variants,  but costs 12x more at launch pricing.\n\nFlash models are competitive in Chinese (#28), Medicine & Healthcare (#31), and Math (#45) — categories where the cost advantage compounds already strong performance.",
+      "created_at": "Fri Apr 24 20:25:50 +0000 2026",
+      "url": "https://x.com/arena/status/2047774037204742255",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 155,
+        "retweets": 11,
+        "replies": 7
+      }
+    },
+    {
+      "id": "2047745984915247330",
+      "text": "Arena rankings are powered by real-world community use cases. Head over and weigh in by voting in Battle mode at: https://t.co/yZiJuG8ica",
+      "created_at": "Fri Apr 24 18:34:22 +0000 2026",
+      "url": "https://x.com/arena/status/2047745984915247330",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 9,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2047745983459791228",
+      "text": "Get a peek at first impressions of GPT-5.5 on Arena’s YouTube: https://t.co/y2atadPPgp",
+      "created_at": "Fri Apr 24 18:34:22 +0000 2026",
+      "url": "https://x.com/arena/status/2047745983459791228",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 12,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2040151081171468749",
+      "text": "🙂",
+      "created_at": "Fri Apr 03 19:34:56 +0000 2026",
+      "url": "https://x.com/JeffBezos/status/2040151081171468749",
+      "author": {
+        "user_name": "JeffBezos",
+        "name": "Jeff Bezos"
+      },
+      "metrics": {
+        "likes": 29593,
+        "retweets": 1768,
+        "replies": 783
+      }
+    }
+  ]
+}

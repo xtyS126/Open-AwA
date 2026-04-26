@@ -12,12 +12,17 @@ import pytest
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-_plugin_path = Path(__file__).resolve().parents[2] / "plugins" / "twitter-monitor" / "src" / "index.py"
-_spec = importlib.util.spec_from_file_location("twitter_monitor_plugin", _plugin_path)
-_module = importlib.util.module_from_spec(_spec)
+# 加载 twitter-monitor 插件（需要包上下文以支持相对导入）
+_plugin_src_dir = Path(__file__).resolve().parents[2] / "plugins" / "twitter-monitor" / "src"
+_parent_dir = str(_plugin_src_dir.parent)
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
+
 sys.modules["backend.plugins.base_plugin"] = importlib.import_module("plugins.base_plugin")
-_spec.loader.exec_module(_module)
+_pkg = importlib.import_module(_plugin_src_dir.name)
+_module = importlib.import_module(_plugin_src_dir.name + ".index")
 TwitterMonitorPlugin = _module.TwitterMonitorPlugin
 
 

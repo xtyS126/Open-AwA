@@ -560,8 +560,7 @@ class TwitterMonitorPlugin(BasePlugin):
         user_name: Optional[str] = None,
         limit: Optional[int] = 20,
     ) -> Dict[str, Any]:
-        latest_path = self.plugin_root / "data" / "latest.json"
-        payload = self._read_json_payload(latest_path)
+        payload = self._read_json_payload(self.data_dir / "latest.json")
         tweets = payload.get("tweets", []) if isinstance(payload.get("tweets"), list) else []
         filtered = self._filter_tweets(tweets, user_name=user_name, limit=limit)
         return {

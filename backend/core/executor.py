@@ -587,6 +587,77 @@ class ExecutionLayer:
             "client_version": context.get("client_version"),
         }
 
+    def _build_auto_execution_system_prompt(self, auto_execution_results: Dict[str, Any]) -> str:
+        lines = []
+        skills = auto_execution_results.get("skills", []) or []
+        plugins = auto_execution_results.get("plugins", []) or []
+
+        if not skills and not plugins:
+            return ""
+
+        if skills:
+            lines.append("平台已在生成当前回答前自动执行了部分技能：")
+            for skill in skills:
+                lines.append(f"- {skill.get('name', 'unknown')}")
+            lines.append("")
+
+        # 处理插件结果
+        for plugin in plugins:
+            plugin_name = plugin.get("plugin_name", "unknown")
+            tool = plugin.get("tool", "unknown")
+            result = plugin.get("result", {}) or {}
+
+            if result.get("summary_mode") == "current_model":
+                lines.append(f"平台已在生成当前回答前自动执行了插件 {plugin_name}/{tool}：")
+                lines.append("")
+
+                if result.get("summary_role"):
+                    lines.append(result["summary_role"])
+
+                if result.get("summary_guidance"):
+                    lines.append(result["summary_guidance"])
+
+                if result.get("summary_output_rules"):
+                    lines.append("")
+                    lines.append("输出规则：")
+                    for rule in result["summary_output_rules"]:
+                        lines.append(f"- {rule}")
+
+                if result.get("summary_priority_rules"):
+                    lines.append("")
+                    lines.append("优先级规则：")
+                    for rule in result["summary_priority_rules"]:
+                        lines.append(f"- {rule}")
+
+                if result.get("summary_context"):
+                    lines.append("")
+                    lines.append(result["summary_context"])
+
+                if result.get("digest"):
+                    lines.append("")
+                    lines.append("推文摘要：")
+                    for item in result["digest"]:
+                        lines.append(f"- {item}")
+
+                if result.get("top_tweets"):
+                    lines.append("")
+                    lines.append("高价值候选推文：")
+                    for tweet in result["top_tweets"]:
+                        lines.append(f"- {tweet.get('text', '')}")
+
+                lines.append("")
+                lines.append("不要输出 JSON、代码块或额外调度指令，直接基于以上素材回答用户。")
+            else:
+                if not lines:
+                    lines.append("平台已在生成当前回答前自动执行了部分技能或插件：")
+                lines.append(f"- {plugin_name}/{tool}")
+
+        if lines and "不要输出 JSON" not in lines[-1]:
+            lines.append("")
+            lines.append("不要再输出任何插件、技能或 MCP 调用 JSON。")
+
+        return "\n".join(lines).strip()
+
     def _build_messages_with_history(self, prompt: str, context: Dict[str, Any]) -> list:
         """
         从上下文中提取对话历史，构建包含历史消息的 messages 列表。
@@ -596,6 +667,12 @@ class ExecutionLayer:
         system_prompt = self._build_agent_capability_system_prompt(context)
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+
+        auto_execution_results = context.get("auto_execution_results")
+        if auto_execution_results:
+            auto_prompt = self._build_auto_execution_system_prompt(auto_execution_results)
+            if auto_prompt:
+                messages.append({"role": "system", "content": auto_prompt})
 
         conversation_history = context.get("conversation_history", [])
         if conversation_history:

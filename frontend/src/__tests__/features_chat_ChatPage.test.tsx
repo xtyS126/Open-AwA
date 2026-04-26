@@ -193,7 +193,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('输入你的问题...'), {
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
       target: { value: '帮我检查配置文件' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -237,7 +237,7 @@ describe('ChatPage', () => {
     )
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('输入你的问题...'), {
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
       target: { value: '请先显示阶段状态' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -269,7 +269,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('输入你的问题...'), {
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
       target: { value: '请在失败后自动重试' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
