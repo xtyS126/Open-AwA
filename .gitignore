@@ -1,5 +1,5 @@
 # =========================
-# Python
+# Python 字节码与缓存
 # =========================
 __pycache__/
 *.py[cod]
@@ -7,26 +7,20 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Environments
-.env
+# =========================
+# Python 虚拟环境
+# =========================
+.venv/
 .venv
-env/
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/
 
-# Testing & Linting
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.mypy_cache/
-.ruff_cache/
-.hypothesis/
-
-# Packaging
+# =========================
+# Python 包构建输出
+# =========================
 build/
 dist/
 eggs/
@@ -35,35 +29,79 @@ eggs/
 *.egg
 
 # =========================
-# Node / Frontend
+# Python 测试与代码质量工具
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# =========================
+# Node.js / 前端依赖
 # =========================
 node_modules/
+
+# =========================
+# 前端构建输出
+# =========================
+frontend/dist/
 dist/
 dist-ssr/
-*.local
-coverage/
+
+# =========================
+# 前端测试报告
+# =========================
+frontend/test-results/
+frontend/coverage/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
+frontend/electron-report.json
+frontend/playwright-full-report.json
+
+# =========================
+# TypeScript 构建信息
+# =========================
 *.tsbuildinfo
 .vite/
 
-# npm/yarn/pnpm logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Playwright
-test-results/
-playwright-report/
-blob-report/
-playwright/.cache/
+# =========================
+# 环境变量文件（含敏感信息）
+# =========================
+.env
+.env.*
+!.env.example
 
 # =========================
-# Logs
+# 包管理锁文件（仅根目录保留）
+# =========================
+backend/package-lock.json
+backend/package.json
+backend/yarn.lock
+backend/pnpm-lock.yaml
+
+# =========================
+# 日志文件
 # =========================
 *.log
+logs/
 
 # =========================
-# OS / IDE
+# 数据库文件（运行态生成，不提交）
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+backend/openawa_e2e.db
+backend/openawa_e2e_debug.db
+
+# =========================
+# 操作系统文件
 # =========================
 .DS_Store
 .DS_Store?
@@ -72,6 +110,11 @@ playwright/.cache/
 .Trashes
 ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# =========================
+# IDE / 编辑器
+# =========================
 .vscode/
 .idea/
 *.suo
@@ -79,26 +122,31 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.swo
+*~
 
 # =========================
-# Local runtime data & Custom
+# 项目运行时数据
 # =========================
 .openawa/
 .agents/
-.github/
-backend/openawa.db
-backend/openawa_e2e.db
-frontend/test-results/
 
-# Root directory database files (should be in backend/)
-/*.db
-/*.sqlite
-/*.sqlite3
+# =========================
+# 参考 / 归档文件夹（非项目源码）
+# =========================
+参考用文件夹/
+archive/
 
-# Local generated reports
+# =========================
+# 生成的报告文件
+# =========================
 backend/scan_report.txt
 backend/COMPLETE_SCAN_REPORT.md
 
-# 后端目录下不应存在 Node.js 相关文件
-backend/package-lock.json
-backend/package.json
+# =========================
+# 临时文件 / 杂项
+# =========================
+*.orig
+*.bak
+*.tmp
