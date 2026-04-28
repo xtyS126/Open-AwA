@@ -2,7 +2,7 @@
 模型管理路由，提供 Ollama 本地模型发现和提供商连接状态查询接口。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from api.dependencies import get_current_user, get_db
@@ -83,3 +83,41 @@ async def get_providers_status(
         "success": True,
         "providers": provider_status_list,
     }
+
+
+@router.get("/{provider}/{model}/capabilities")
+async def get_model_capabilities(
+    provider: str,
+    model: str,
+    current_user=Depends(get_current_user),
+):
+    """
+    获取指定模型的能力参数（是否支持视觉、多模态、函数调用等）。
+    从 model_capabilities.json 配置文件中读取。
+    """
+    from pathlib import Path as FsPath
+    import json
+
+    capabilities_path = FsPath("config/pricing/model_capabilities.json")
+    if not capabilities_path.exists():
+        raise HTTPException(status_code=404, detail="模型能力配置文件未找到")
+
+    capabilities_data = json.loads(capabilities_path.read_text(encoding="utf-8"))
+
+    for entry in capabilities_data:
+        provider_model = entry.get("provider_model", "")
+        entry_provider = entry.get("provider", "")
+        entry_model = entry.get("model", "")
+        if (provider_model == f"{provider}/{model}" or
+                (entry_provider == provider and entry_model == model)):
+            return {
+                "provider": entry_provider,
+                "model": entry_model,
+                "supports_vision": entry.get("supports_vision", False),
+                "is_multimodal": entry.get("is_multimodal", False),
+                "supports_temperature": entry.get("supports_temperature", True),
+                "supports_top_k": entry.get("supports_top_k", True),
+                "model_spec": entry.get("model_spec", {}),
+            }
+
+    raise HTTPException(status_code=404, detail=f"模型 {provider}/{model} 的能力信息未找到")

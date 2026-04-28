@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { X, Paperclip, Send, Square } from 'lucide-react'
-import { chatAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import styles from '../ChatPage.module.css'
 
@@ -8,25 +7,46 @@ export interface FileAttachment {
   id: string
   file: File
   preview?: string
+  base64Data?: string
+  mimeType?: string
   uploading: boolean
   uploaded?: { url: string; name: string; size: number; type: 'image' | 'file' }
   error?: string
 }
 
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.txt', '.md', '.csv']
-const MAX_FILE_SIZE = 10 * 1024 * 1024
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
+const AUDIO_VIDEO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.mp4'])
+const MULTIMODAL_EXTENSIONS = [...ALLOWED_EXTENSIONS, '.mp3', '.wav', '.ogg', '.mp4']
+const MAX_FILE_SIZE = 10 * 1024 * 1024
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024
 
 interface ChatInputProps {
   onSend: (content: string, attachments: FileAttachment[]) => void | Promise<void>
   isLoading: boolean
   streamingAssistantId: string | null
   onAbort: () => void
+  selectedProvider?: string
+  selectedModel?: string
 }
 
 function getFileExtension(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot >= 0 ? name.slice(dot).toLowerCase() : ''
+}
+
+function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // 提取纯 base64（去掉 data:xxx;base64, 前缀）
+      const base64 = result.split(',')[1] || result
+      resolve({ data: base64, mimeType: file.type })
+    }
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsDataURL(file)
+  })
 }
 
 export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: ChatInputProps) {
@@ -46,11 +66,13 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: 
     const newAttachments: FileAttachment[] = []
     for (const file of files) {
       const ext = getFileExtension(file.name)
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!MULTIMODAL_EXTENSIONS.includes(ext)) {
         appLogger.warning({ event: 'file_rejected', module: 'chat_input', action: 'attach', status: 'failure', message: `unsupported file type: ${ext}` })
         continue
       }
-      if (file.size > MAX_FILE_SIZE) {
+      const isVideo = ext === '.mp4'
+      const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_FILE_SIZE
+      if (file.size > maxSize) {
         appLogger.warning({ event: 'file_rejected', module: 'chat_input', action: 'attach', status: 'failure', message: `file too large: ${file.name}` })
         continue
       }
@@ -75,23 +97,6 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: 
       if (removed?.preview) URL.revokeObjectURL(removed.preview)
       return prev.filter(a => a.id !== id)
     })
-  }, [])
-
-  const uploadAttachments = useCallback(async (items: FileAttachment[]): Promise<FileAttachment[]> => {
-    const results: FileAttachment[] = []
-    for (const item of items) {
-      setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, uploading: true } : a))
-      try {
-        const res = await chatAPI.upload(item.file)
-        const data = res.data
-        const uploaded = { ...item, uploading: false, uploaded: { url: data.url, name: data.original_name, size: data.size, type: data.type as 'image' | 'file' } }
-        setAttachments(prev => prev.map(a => a.id === item.id ? uploaded : a))
-        results.push(uploaded)
-      } catch {
-        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, uploading: false, error: 'upload failed' } : a))
-      }
-    }
-    return results
   }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -137,17 +142,25 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: 
     const userMessage = input.trim()
     const currentAttachments = attachments
 
-    const pendingUploads = currentAttachments.filter(a => !a.uploaded && !a.error)
-    let uploadedAttachments: FileAttachment[] = []
-    if (pendingUploads.length > 0) {
-      uploadedAttachments = await uploadAttachments(pendingUploads)
-    } else {
-      uploadedAttachments = currentAttachments.filter(a => a.uploaded)
+    // 将图片/音频/视频附件编码为 base64，用于多模态 API 调用
+    const attachmentsWithBase64: FileAttachment[] = []
+    for (const att of currentAttachments) {
+      const ext = getFileExtension(att.file.name)
+      if (IMAGE_EXTENSIONS.has(ext) || AUDIO_VIDEO_EXTENSIONS.has(ext)) {
+        try {
+          const { data, mimeType } = await fileToBase64(att.file)
+          attachmentsWithBase64.push({ ...att, base64Data: data, mimeType })
+        } catch {
+          appLogger.warning({ event: 'base64_encode_failed', module: 'chat_input', message: `failed to encode: ${att.file.name}` })
+        }
+      } else {
+        attachmentsWithBase64.push(att)
+      }
     }
 
     setInput('')
     setAttachments([])
-    await onSend(userMessage, uploadedAttachments)
+    await onSend(userMessage, attachmentsWithBase64)
   }
 
   return (

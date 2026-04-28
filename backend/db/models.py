@@ -84,6 +84,7 @@ class Base(DeclarativeBase):
 class User(Base):
     """
     用户模型，存储用户身份认证信息，包括用户名、密码哈希和角色。
+    扩展支持用户画像：头像、昵称、邮箱、电话、AI 画像数据。
     """
     __tablename__ = "users"
 
@@ -91,10 +92,33 @@ class User(Base):
     username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default="user")
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    nickname: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    profile_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
+
+
+class LoginDevice(Base):
+    """
+    登录设备记录，追踪用户的登录设备和会话信息。
+    用于设备管理和远程登出功能。
+    """
+    __tablename__ = "login_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    device_type: Mapped[str] = mapped_column(String(50), default="unknown")
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    logged_in_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_active_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    is_online: Mapped[bool] = mapped_column(Boolean, default=True)
+    jti: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
 
 class Skill(Base):
@@ -311,7 +335,7 @@ class WorkflowExecution(Base):
 
 class ScheduledTask(Base):
     """
-    定时任务模型，保存一次性任务的触发时间、提示词与运行状态。
+    定时任务模型，保存一次性或每日重复任务的调度信息、提示词与运行状态。
     """
     __tablename__ = "scheduled_tasks"
 
@@ -323,6 +347,10 @@ class ScheduledTask(Base):
     status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
     provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    is_daily: Mapped[bool] = mapped_column(Boolean, default=False)
+    cron_expression: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    weekdays: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    daily_time: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     task_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
@@ -815,6 +843,50 @@ def _migrate_conversation_columns(use_engine=None):
         db.close()
 
 
+def _migrate_user_profile_columns(use_engine=None):
+    """
+    为 users 表补齐用户画像相关字段（头像、昵称、邮箱、电话、画像数据）。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "users" not in table_names:
+        return
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    with target_engine.begin() as connection:
+        if "avatar_url" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
+        if "nickname" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN nickname VARCHAR(100)"))
+        if "email" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(200)"))
+        if "phone" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(50)"))
+        if "profile_data" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN profile_data TEXT DEFAULT '{}'"))
+
+
+def _migrate_scheduled_task_daily_columns(use_engine=None):
+    """
+    为 scheduled_tasks 表补齐每日执行相关字段。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "scheduled_tasks" not in table_names:
+        return
+    columns = {column["name"] for column in inspector.get_columns("scheduled_tasks")}
+    with target_engine.begin() as connection:
+        if "is_daily" not in columns:
+            connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN is_daily BOOLEAN DEFAULT 0"))
+        if "cron_expression" not in columns:
+            connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN cron_expression VARCHAR(100)"))
+        if "weekdays" not in columns:
+            connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN weekdays VARCHAR(50)"))
+        if "daily_time" not in columns:
+            connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN daily_time VARCHAR(10)"))
+
+
 def init_db(bind_engine=None):
     """
     初始化数据库表结构并执行必要的迁移操作。
@@ -829,6 +901,8 @@ def init_db(bind_engine=None):
     _migrate_audit_log_columns(use_engine=use_engine)
     _migrate_skill_json_columns(use_engine=use_engine)
     _migrate_conversation_columns(use_engine=use_engine)
+    _migrate_user_profile_columns(use_engine=use_engine)
+    _migrate_scheduled_task_daily_columns(use_engine=use_engine)
 
 
 def get_db():

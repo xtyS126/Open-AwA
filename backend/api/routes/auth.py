@@ -23,11 +23,13 @@ from config.security import (
     clear_access_token_cookie,
     create_access_token,
     decode_access_token,
+    get_password_hash,
     set_access_token_cookie,
     verify_password,
 )
 from config.settings import settings
-from db.models import User as UserModel, get_db
+from db.models import LoginDevice, User as UserModel, get_db
+from pydantic import BaseModel, Field
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -229,6 +231,21 @@ async def login(
     )
     set_access_token_cookie(response, access_token)
 
+    # 解析 token 的 jti 并记录登录设备
+    payload = decode_access_token(access_token)
+    jti = payload.get("jti") if payload else None
+    device_type = _parse_device_type(request.headers.get("user-agent", ""))
+    login_device = LoginDevice(
+        user_id=user.id,
+        device_type=device_type,
+        ip_address=client_ip,
+        user_agent=request.headers.get("user-agent", "")[:500],
+        is_online=True,
+        jti=str(jti) if jti else None,
+    )
+    db.add(login_device)
+    db.commit()
+
     logger.bind(
         event="auth_login_success",
         module="auth",
@@ -256,12 +273,20 @@ async def logout(
     并返回统一登出结果。
     """
     raw_token = _resolve_token_for_blacklist(request)
+    jti_value: Optional[str] = None
     if raw_token:
         payload = decode_access_token(raw_token)
         if payload:
-            jti = payload.get("jti")
-            if jti:
-                add_to_blacklist(str(jti), db)
+            jti_value = payload.get("jti")
+            if jti_value:
+                add_to_blacklist(str(jti_value), db)
+                # 将对应设备标记为离线
+                device = db.query(LoginDevice).filter(LoginDevice.jti == str(jti_value)).first()
+                if device:
+                    from datetime import datetime as dt_module, timezone as tz
+                    device.is_online = False
+                    device.last_active_at = dt_module.now(tz.utc)
+                    db.commit()
     clear_access_token_cookie(response)
     logger.bind(
         event="auth_logout_success",
@@ -279,6 +304,25 @@ def _resolve_token_for_blacklist(request: Request) -> Optional[str]:
     if auth_header.lower().startswith("bearer "):
         return auth_header[7:].strip()
     return request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+
+
+def _parse_device_type(user_agent: str) -> str:
+    """根据 User-Agent 字符串判断设备类型。"""
+    ua = user_agent.lower()
+    if "mobile" in ua or "android" in ua or "iphone" in ua:
+        return "mobile"
+    if "tablet" in ua or "ipad" in ua:
+        return "tablet"
+    if "bot" in ua or "crawler" in ua or "spider" in ua:
+        return "bot"
+    return "desktop"
+
+
+class PasswordChangeRequest(BaseModel):
+    """修改密码请求体，包含旧密码和新密码的强度校验。"""
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str = Field(..., min_length=8, max_length=128)
 
 
 @router.get(
@@ -300,3 +344,51 @@ async def get_me(current_user: UserModel = Depends(get_current_user)):
         user_id=current_user.id,
     ).info("fetched current user")
     return current_user
+
+
+@router.put(
+    "/me/password",
+    summary="修改密码",
+    description="验证旧密码后设置新密码，新密码需满足强度要求（至少8位，含大小写字母和数字）。"
+)
+async def change_password(
+    request_body: PasswordChangeRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    修改当前用户的登录密码。
+    要求提供旧密码进行验证，新密码需满足强度规则。
+    """
+    # 验证旧密码
+    if not verify_password(request_body.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="旧密码不正确")
+
+    # 确认密码一致性
+    if request_body.new_password != request_body.confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+
+    # 密码强度校验：至少8位，含大写、小写、数字
+    new_pwd = request_body.new_password
+    if len(new_pwd) < 8:
+        raise HTTPException(status_code=400, detail="新密码长度至少为 8 位")
+    if not any(c.isupper() for c in new_pwd):
+        raise HTTPException(status_code=400, detail="新密码需要包含至少一个大写字母")
+    if not any(c.islower() for c in new_pwd):
+        raise HTTPException(status_code=400, detail="新密码需要包含至少一个小写字母")
+    if not any(c.isdigit() for c in new_pwd):
+        raise HTTPException(status_code=400, detail="新密码需要包含至少一个数字")
+
+    # 更新密码
+    current_user.password_hash = get_password_hash(new_pwd)
+    db.commit()
+
+    logger.bind(
+        event="auth_password_changed",
+        module="auth",
+        action="change_password",
+        status="success",
+        user_id=current_user.id,
+    ).info("password changed successfully")
+
+    return {"message": "密码修改成功"}

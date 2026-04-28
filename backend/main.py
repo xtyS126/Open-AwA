@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -24,6 +25,7 @@ from api.routes.security import router as security_router
 from api.routes.weixin import router as weixin_router
 from api.routes.tools import router as tools_router
 from api.routes.subagents import router as subagents_router
+from api.routes.user import router as user_router
 from billing.models import Base as BillingBase
 from billing.routers import billing
 from config.logging import (
@@ -402,6 +404,13 @@ app.include_router(security_router)
 app.include_router(weixin_router)
 app.include_router(tools_router)
 app.include_router(subagents_router)
+app.include_router(user_router, prefix=settings.API_V1_STR)
+
+# 挂载用户头像静态文件目录
+from pathlib import Path as FsPath
+_avatars_dir = FsPath("uploads/avatars")
+_avatars_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/api/user/avatar", StaticFiles(directory=str(_avatars_dir)), name="user_avatar")
 
 
 @app.get("/")

@@ -272,6 +272,7 @@ class ScheduledTaskManager:
     ) -> None:
         """
         将任务和执行记录更新为成功完成状态。
+        如果是每日任务，则重新排程到下一次执行时间。
         """
         now = self._utcnow()
         provider, model = self._extract_provider_and_model(result)
@@ -285,9 +286,23 @@ class ScheduledTaskManager:
             if task is None or execution is None:
                 return
 
-            task.status = "completed"
-            task.completed_at = now
-            task.last_error_message = None
+            # 每日任务：执行后重新排程而非标记为完成
+            if task.is_daily and task.cron_expression:
+                next_exec = self._calculate_next_cron_execution(task.cron_expression)
+                if next_exec:
+                    task.status = "pending"
+                    task.scheduled_at = next_exec
+                    task.last_error_message = None
+                    task.completed_at = None
+                else:
+                    task.status = "completed"
+                    task.completed_at = now
+                    task.last_error_message = "无法计算下一次执行时间，任务已标记为完成"
+            else:
+                task.status = "completed"
+                task.completed_at = now
+                task.last_error_message = None
+
             if provider:
                 task.provider = provider
             if model:
@@ -304,6 +319,36 @@ class ScheduledTaskManager:
             db.commit()
         finally:
             db.close()
+
+    @staticmethod
+    def _calculate_next_cron_execution(cron_expression: str) -> Optional[datetime]:
+        """
+        根据 cron 表达式（分 时 * * 星期）计算下一次执行时间。
+        使用简单的日期遍历，最多查找 14 天。
+        """
+        if not cron_expression:
+            return None
+        from datetime import timedelta
+        parts = cron_expression.strip().split()
+        if len(parts) != 5:
+            return None
+        try:
+            target_minute = int(parts[0])
+            target_hour = int(parts[1])
+            target_weekdays = set(int(d) for d in parts[4].split(","))
+        except (ValueError, IndexError):
+            return None
+
+        now = datetime.now(timezone.utc)
+        check = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        check = check.replace(hour=target_hour, minute=target_minute)
+
+        for _ in range(14):
+            weekday = (check.weekday() + 1) % 7
+            if weekday in target_weekdays and check > now:
+                return check
+            check += timedelta(days=1)
+        return None
 
     async def _mark_task_failed(
         self,

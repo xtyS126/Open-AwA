@@ -79,6 +79,9 @@ async def chat(
         "db": db,
         "request_id": getattr(request.state, "request_id", ""),
         "client_version": request.headers.get(CLIENT_VERSION_HEADER, ""),
+        "attachments": [a.dict() for a in message.attachments] if message.attachments else None,
+        "thinking_enabled": message.thinking_enabled,
+        "thinking_depth": message.thinking_depth,
     }
 
     logger.bind(

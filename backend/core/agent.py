@@ -143,6 +143,38 @@ class AIAgent:
 
         context["_record_hook"] = self._schedule_record
 
+    def _build_multimodal_context(self, user_input: str, context: Dict[str, Any]) -> None:
+        """
+        根据上下文中的 attachments 构建多模态消息内容。
+        若存在附件且 provider 支持多模态，则生成 content parts 数组；
+        否则保持纯文本格式以保证向后兼容。
+        """
+        attachments = context.get("attachments")
+        if not attachments:
+            return
+        provider = context.get("provider", "")
+        model = context.get("model", "")
+        from core.model_service import build_multimodal_message
+        multimodal_content = build_multimodal_message(user_input, attachments, provider)
+        context["_multimodal_content"] = multimodal_content
+
+    def _build_thinking_context(self, context: Dict[str, Any]) -> None:
+        """
+        根据上下文中的 thinking_enabled 和 thinking_depth 构建思考参数。
+        仅当 thinking_enabled 为 True 时才生成参数。
+        """
+        if not context.get("thinking_enabled"):
+            return
+        thinking_depth = context.get("thinking_depth", 0)
+        if not thinking_depth or thinking_depth < 1:
+            return
+        provider = context.get("provider", "")
+        model = context.get("model", "")
+        from core.model_service import build_thinking_params
+        thinking_params = build_thinking_params(provider, model, thinking_depth)
+        if thinking_params:
+            context["_thinking_params"] = thinking_params
+
     @staticmethod
     def _build_status_event(phase: str, message: str, **extra: Any) -> Dict[str, Any]:
         """
@@ -614,6 +646,7 @@ class AIAgent:
         """
         流式处理用户输入，注入对话历史后调用大模型并实时 yield 数据块。
         支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM。
+        支持多模态附件和思考模式参数。
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
 
@@ -621,6 +654,12 @@ class AIAgent:
 
         self._prepare_context(user_input, context)
         await self._inject_runtime_capabilities(context)
+
+        # 构建多模态消息内容（若用户上传了附件）
+        self._build_multimodal_context(user_input, context)
+
+        # 构建思考模式参数（若用户开启了思考）
+        self._build_thinking_context(context)
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
@@ -753,11 +792,18 @@ class AIAgent:
         """
         处理用户输入的完整流程：意图识别、规划、执行、反馈。
         自动注入对话历史以支持多轮对话上下文。
+        支持多模态附件和思考模式参数。
         """
         logger.info(f"Processing user input, length={len(user_input)}")
 
         self._prepare_context(user_input, context)
         await self._inject_runtime_capabilities(context)
+
+        # 构建多模态消息内容（若用户上传了附件）
+        self._build_multimodal_context(user_input, context)
+
+        # 构建思考模式参数（若用户开启了思考）
+        self._build_thinking_context(context)
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")

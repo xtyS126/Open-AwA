@@ -109,6 +109,10 @@ function ChatPage() {
     upsertConversation,
     removeConversation,
     conversationsHasMore,
+    thinkingEnabled,
+    setThinkingEnabled,
+    thinkingDepth,
+    setThinkingDepth,
   } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activeRequestIdRef = useRef(0)
@@ -444,13 +448,25 @@ function ChatPage() {
     }
 
     let fullMessage = messageText
+    // 构建多模态附件载荷
+    const chatAttachments: { type: string; data: string; mime_type: string; file_name?: string }[] = []
     if (safeAttachments.length > 0) {
-      const fileRefs = safeAttachments
-        .filter(a => a.uploaded)
-        .map(a => `[附件: ${a.uploaded!.name}](${a.uploaded!.url})`)
-        .join('\n')
-      if (fileRefs) {
-        fullMessage = fullMessage ? `${fullMessage}\n\n${fileRefs}` : fileRefs
+      for (const att of safeAttachments) {
+        if (att.base64Data && att.mimeType) {
+          chatAttachments.push({
+            type: att.mimeType.startsWith('image/') ? 'image' :
+                  att.mimeType.startsWith('audio/') ? 'audio' :
+                  att.mimeType.startsWith('video/') ? 'video' : 'image',
+            data: att.base64Data,
+            mime_type: att.mimeType,
+            file_name: att.file.name,
+          })
+        }
+        if (att.uploaded) {
+          fullMessage = fullMessage
+            ? `${fullMessage}\n[附件: ${att.uploaded.name}](${att.uploaded.url})`
+            : `[附件: ${att.uploaded.name}](${att.uploaded.url})`
+        }
       }
     }
 
@@ -588,7 +604,9 @@ function ChatPage() {
               (error) => {
                 runtimeError = error instanceof Error ? error : new Error(String(error))
               },
-              { signal: abortController.signal }
+              { signal: abortController.signal },
+              thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : undefined,
+              chatAttachments.length > 0 ? chatAttachments : undefined
             )
 
             if (runtimeError) {
@@ -641,7 +659,7 @@ function ChatPage() {
       } else {
         const response = await chatAPI.sendMessage(fullMessage, targetSessionId, provider, model, 'direct', {
           signal: abortController.signal,
-        })
+        }, thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : undefined, chatAttachments.length > 0 ? chatAttachments : undefined)
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
           return
         }
@@ -917,6 +935,30 @@ function ChatPage() {
               <span className={styles['stream-status-dot']} />
               {streamStatusText}
             </span>
+          )}
+          {/* 思考模式开关 */}
+          <label className={styles['thinking-toggle']} title={isLoading ? '发送中不可修改' : '启用 AI 思考模式'}>
+            <input
+              type="checkbox"
+              checked={thinkingEnabled}
+              onChange={(e) => setThinkingEnabled(e.target.checked)}
+              disabled={isLoading}
+            />
+            <span>思考</span>
+          </label>
+          {thinkingEnabled && (
+            <div className={styles['thinking-depth']}>
+              <input
+                type="range"
+                min="0"
+                max="5"
+                value={thinkingDepth}
+                onChange={(e) => setThinkingDepth(Number(e.target.value))}
+                disabled={isLoading}
+                title={`思考深度: ${thinkingDepth}`}
+              />
+              <span className={styles['thinking-depth-value']}>{thinkingDepth}</span>
+            </div>
           )}
           <select
             value={outputMode}

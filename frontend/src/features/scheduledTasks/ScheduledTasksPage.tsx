@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { Clock, RefreshCw, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 
 import {
@@ -81,6 +81,34 @@ function ScheduledTasksPage() {
   const [scheduledAt, setScheduledAt] = useState(createDefaultScheduledAt)
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
+  // 每日执行相关状态
+  const [isDaily, setIsDaily] = useState(false)
+  const [dailyTime, setDailyTime] = useState('09:00')
+  const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(
+    new Set([0, 1, 2, 3, 4, 5, 6])
+  )
+
+  const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+  // 根据选中星期和每日时间生成 cron 表达式
+  const cronPreview = useMemo(() => {
+    if (!isDaily || selectedWeekdays.size === 0) return ''
+    const [hour, minute] = dailyTime.split(':')
+    const dayStr = Array.from(selectedWeekdays).sort().join(',')
+    return `${minute} ${hour} * * ${dayStr}`
+  }, [isDaily, dailyTime, selectedWeekdays])
+
+  const toggleWeekday = (day: number) => {
+    setSelectedWeekdays((prev) => {
+      const next = new Set(prev)
+      if (next.has(day)) {
+        next.delete(day)
+      } else {
+        next.add(day)
+      }
+      return next
+    })
+  }
 
   const resetForm = useCallback(() => {
     setEditingTaskId(null)
@@ -89,6 +117,9 @@ function ScheduledTasksPage() {
     setScheduledAt(createDefaultScheduledAt())
     setProvider('')
     setModel('')
+    setIsDaily(false)
+    setDailyTime('09:00')
+    setSelectedWeekdays(new Set([0, 1, 2, 3, 4, 5, 6]))
   }, [])
 
   const loadData = useCallback(async () => {
@@ -132,6 +163,13 @@ function ScheduledTasksPage() {
     setScheduledAt(toLocalDateTimeInput(task.scheduled_at))
     setProvider(task.provider || '')
     setModel(task.model || '')
+    setIsDaily(!!task.is_daily)
+    setDailyTime(task.daily_time || '09:00')
+    if (task.weekdays) {
+      setSelectedWeekdays(new Set(task.weekdays.split(',').map(Number)))
+    } else {
+      setSelectedWeekdays(new Set([0, 1, 2, 3, 4, 5, 6]))
+    }
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -139,12 +177,23 @@ function ScheduledTasksPage() {
     setSubmitting(true)
     setActionError(null)
 
+    // 每日执行校验
+    if (isDaily && selectedWeekdays.size === 0) {
+      setActionError('请至少选择一天')
+      setSubmitting(false)
+      return
+    }
+
     const payload: ScheduledTaskCreatePayload = {
       title,
       prompt,
       scheduled_at: toIsoString(scheduledAt),
       provider: provider.trim() || null,
       model: model.trim() || null,
+      is_daily: isDaily,
+      daily_time: isDaily ? dailyTime : null,
+      weekdays: isDaily ? Array.from(selectedWeekdays).sort().join(',') : null,
+      cron_expression: isDaily ? cronPreview : null,
     }
 
     try {
@@ -325,6 +374,53 @@ function ScheduledTasksPage() {
               </label>
             </div>
 
+            {/* 每日执行配置 */}
+            <label className={styles['checkbox-field']}>
+              <input
+                type="checkbox"
+                checked={isDaily}
+                onChange={(event) => setIsDaily(event.target.checked)}
+              />
+              <span>是否每日执行</span>
+            </label>
+
+            {isDaily && (
+              <div className={styles['daily-config']}>
+                <label className={styles['form-field']}>
+                  <span>每日执行时间</span>
+                  <input
+                    type="time"
+                    value={dailyTime}
+                    onChange={(event) => setDailyTime(event.target.value)}
+                    required={isDaily}
+                  />
+                </label>
+
+                <div className={styles['form-field']}>
+                  <span>选择星期</span>
+                  <div className={styles['weekday-toggles']}>
+                    {WEEKDAY_LABELS.map((label, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className={`${styles['weekday-btn']} ${selectedWeekdays.has(index) ? styles['weekday-active'] : ''}`}
+                        onClick={() => toggleWeekday(index)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {cronPreview && (
+                  <div className={styles['cron-preview']}>
+                    <span>Cron 表达式</span>
+                    <code>{cronPreview}</code>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className={styles['form-actions']}>
               <button className="btn btn-primary" type="submit" disabled={submitting}>
                 {submitting ? '提交中...' : editingTaskId !== null ? '保存修改' : '创建任务'}
@@ -362,7 +458,16 @@ function ScheduledTasksPage() {
                   <div className={styles['task-meta']}>
                     <span>Provider: {task.provider || '默认'}</span>
                     <span>Model: {task.model || '默认'}</span>
+                    {task.is_daily && task.cron_expression && (
+                      <span>Cron: {task.cron_expression}</span>
+                    )}
                   </div>
+
+                  {task.next_execution_at && (
+                    <div className={styles['task-next-execution']}>
+                      下次执行: {formatDateTime(task.next_execution_at)}
+                    </div>
+                  )}
 
                   {task.last_error_message && (
                     <div className={styles['task-error']}>{task.last_error_message}</div>
