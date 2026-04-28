@@ -232,6 +232,7 @@ def _build_litellm_optional_params(
     top_p: Optional[float] = None,
     max_tokens: int = 8192,
     stream: bool = False,
+    thinking_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     构造 LiteLLM 调用的可选参数。
@@ -245,6 +246,8 @@ def _build_litellm_optional_params(
         params["temperature"] = temperature
     if top_p is not None:
         params["top_p"] = top_p
+    if thinking_params:
+        params.update(thinking_params)
     return params
 
 
@@ -312,6 +315,7 @@ async def litellm_chat_completion(
     timeout: float = 120.0,
     num_retries: int = 2,
     tools: Optional[List[Dict[str, Any]]] = None,
+    thinking_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     通过 LiteLLM 发起非流式聊天补全请求。
@@ -349,6 +353,7 @@ async def litellm_chat_completion(
         top_p=top_p,
         max_tokens=max_tokens,
         stream=False,
+        thinking_params=thinking_params,
     )
 
     # 构造 LiteLLM 调用参数
@@ -561,6 +566,7 @@ async def litellm_chat_completion_stream(
     timeout: float = 120.0,
     num_retries: int = 2,
     tools: Optional[List[Dict[str, Any]]] = None,
+    thinking_params: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     通过 LiteLLM 发起流式聊天补全请求。
@@ -591,6 +597,7 @@ async def litellm_chat_completion_stream(
         top_p=top_p,
         max_tokens=max_tokens,
         stream=True,
+        thinking_params=thinking_params,
     )
 
     call_kwargs: Dict[str, Any] = {

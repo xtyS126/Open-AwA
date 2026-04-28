@@ -1,10 +1,10 @@
 """
-定时任务路由，提供一次性任务的创建、查询、更新、取消与执行历史接口。
+定时任务路由，提供一次性任务和每日重复任务的创建、查询、更新、取消与执行历史接口。
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -74,6 +74,62 @@ def _ensure_task_status_allowed(task: ScheduledTask, allowed_statuses: set[str],
     )
 
 
+def _build_cron_expression(weekdays: str, daily_time: str) -> str:
+    """
+    根据选中的星期和每日时间构建 cron 表达式。
+    weekdays: 逗号分隔的数字（0=周日, 1=周一, ... 6=周六）
+    daily_time: HH:MM 格式
+    返回 cron 表达式：分 时 * * 星期
+    """
+    parts = daily_time.split(":")
+    hour = int(parts[0])
+    minute = int(parts[1])
+    return f"{minute} {hour} * * {weekdays}"
+
+
+def _calculate_next_execution(cron_expression: str, from_time: Optional[datetime] = None) -> Optional[datetime]:
+    """
+    根据 cron 表达式计算下一次执行时间。
+    使用简单的日期遍历实现，最多向前查找 14 天。
+    """
+    if not cron_expression or not cron_expression.strip():
+        return None
+    parts = cron_expression.strip().split()
+    if len(parts) != 5:
+        return None
+    try:
+        target_minute = int(parts[0])
+        target_hour = int(parts[1])
+        target_weekdays = set(int(d) for d in parts[4].split(","))
+    except (ValueError, IndexError):
+        return None
+
+    now = from_time or datetime.now(timezone.utc)
+    # 从当前时间后一分钟开始查找
+    check = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    check = check.replace(hour=target_hour, minute=target_minute)
+
+    for _ in range(14):  # 最多查找 14 天
+        weekday = (check.weekday() + 1) % 7  # Python weekday(): 0=周一, 转为 cron: 0=周日
+        if weekday in target_weekdays and check > now:
+            return check
+        check += timedelta(days=1)
+
+    return None
+
+
+def _set_task_daily_fields(task: ScheduledTask, request) -> None:
+    """将请求中的每日任务字段同步到模型实例。"""
+    if request.is_daily is not None:
+        task.is_daily = request.is_daily
+    if request.cron_expression is not None:
+        task.cron_expression = _normalize_optional_text(request.cron_expression)
+    if request.weekdays is not None:
+        task.weekdays = _normalize_optional_text(request.weekdays)
+    if request.daily_time is not None:
+        task.daily_time = _normalize_optional_text(request.daily_time)
+
+
 @router.get("", response_model=List[ScheduledTaskResponse])
 async def list_scheduled_tasks(
     status: Optional[str] = Query(default=None),
@@ -121,6 +177,13 @@ async def create_scheduled_task(
     title = _require_non_empty_text(request.title, "title")
     prompt = _require_non_empty_text(request.prompt, "prompt")
 
+    # 处理每日执行模式：生成 cron 表达式
+    cron_expr = _normalize_optional_text(request.cron_expression)
+    if request.is_daily and not cron_expr:
+        if not request.weekdays or not request.daily_time:
+            raise HTTPException(status_code=400, detail="每日执行任务必须选择至少一天和指定时间")
+        cron_expr = _build_cron_expression(request.weekdays, request.daily_time)
+
     task = ScheduledTask(
         user_id=str(current_user.id),
         title=title,
@@ -129,12 +192,21 @@ async def create_scheduled_task(
         provider=_normalize_optional_text(request.provider),
         model=_normalize_optional_text(request.model),
         status="pending",
-        task_metadata={"kind": "prompt_once"},
+        is_daily=bool(request.is_daily),
+        cron_expression=_normalize_optional_text(cron_expr or request.cron_expression),
+        weekdays=_normalize_optional_text(request.weekdays),
+        daily_time=_normalize_optional_text(request.daily_time),
+        task_metadata={"kind": "daily" if request.is_daily else "prompt_once"},
     )
     db.add(task)
     db.commit()
     db.refresh(task)
-    return task
+
+    # 计算并附加 next_execution_at
+    next_exec = _calculate_next_execution(task.cron_expression) if task.cron_expression else None
+    task_dict = ScheduledTaskResponse.from_orm(task).dict()
+    task_dict["next_execution_at"] = next_exec.isoformat() if next_exec else task.scheduled_at.isoformat()
+    return task_dict
 
 
 @router.get("/{task_id}", response_model=ScheduledTaskResponse)
@@ -167,9 +239,20 @@ async def update_scheduled_task(
     if request.model is not None:
         task.model = _normalize_optional_text(request.model)
 
+    # 处理每日任务字段
+    _set_task_daily_fields(task, request)
+    if request.is_daily:
+        task.task_metadata["kind"] = "daily"
+        if request.weekdays and request.daily_time:
+            task.cron_expression = _build_cron_expression(request.weekdays, request.daily_time)
+
     db.commit()
     db.refresh(task)
-    return task
+
+    next_exec = _calculate_next_execution(task.cron_expression) if task.cron_expression else None
+    task_dict = ScheduledTaskResponse.from_orm(task).dict()
+    task_dict["next_execution_at"] = next_exec.isoformat() if next_exec else task.scheduled_at.isoformat()
+    return task_dict
 
 
 @router.delete("/{task_id}")

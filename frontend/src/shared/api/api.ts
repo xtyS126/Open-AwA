@@ -193,6 +193,13 @@ export const authAPI = {
   logout: () => api.post('/auth/logout'),
 }
 
+export interface ChatAttachmentPayload {
+  type: string
+  data: string
+  mime_type: string
+  file_name?: string
+}
+
 export const chatAPI = {
   sendMessage: (
     message: string,
@@ -200,9 +207,20 @@ export const chatAPI = {
     provider?: string,
     model?: string,
     mode: 'stream' | 'direct' = 'direct',
-    requestOptions?: { signal?: AbortSignal }
-  ) =>
-    api.post('/chat', { message, session_id: sessionId, provider, model, mode }, { signal: requestOptions?.signal }),
+    requestOptions?: { signal?: AbortSignal },
+    thinkingOptions?: { thinking_enabled?: boolean; thinking_depth?: number },
+    attachments?: ChatAttachmentPayload[]
+  ) => {
+    const body: Record<string, unknown> = { message, session_id: sessionId, provider, model, mode }
+    if (thinkingOptions?.thinking_enabled) {
+      body.thinking_enabled = true
+      body.thinking_depth = thinkingOptions.thinking_depth ?? 0
+    }
+    if (attachments && attachments.length > 0) {
+      body.attachments = attachments
+    }
+    return api.post('/chat', body, { signal: requestOptions?.signal })
+  },
   sendMessageStream: async (
     message: string,
     sessionId: string = 'default',
@@ -210,7 +228,9 @@ export const chatAPI = {
     model?: string,
     onEvent?: (event: Record<string, any>) => void,
     onError?: (error: any) => void,
-    requestOptions?: { signal?: AbortSignal }
+    requestOptions?: { signal?: AbortSignal },
+    thinkingOptions?: { thinking_enabled?: boolean; thinking_depth?: number },
+    attachments?: ChatAttachmentPayload[]
   ) => {
     const MAX_RETRIES = 3
     const RETRY_DELAYS = [1000, 2000, 4000]
@@ -247,18 +267,27 @@ export const chatAPI = {
           'X-CSRF-Token': csrfToken,
         }
 
+        const streamBody: Record<string, unknown> = {
+          message,
+          session_id: sessionId,
+          provider,
+          model,
+          mode: 'stream',
+        }
+        if (thinkingOptions?.thinking_enabled) {
+          streamBody.thinking_enabled = true
+          streamBody.thinking_depth = thinkingOptions.thinking_depth ?? 0
+        }
+        if (attachments && attachments.length > 0) {
+          streamBody.attachments = attachments
+        }
+
         const response = await fetch(url, {
           method: 'POST',
           credentials: 'same-origin',
           headers,
           signal: requestOptions?.signal,
-          body: JSON.stringify({
-            message,
-            session_id: sessionId,
-            provider,
-            model,
-            mode: 'stream'
-          })
+          body: JSON.stringify(streamBody)
         })
 
         const responseRequestId = response.headers.get('x-request-id') || requestId
@@ -605,6 +634,11 @@ export interface ScheduledTask {
   status: string
   provider: string | null
   model: string | null
+  is_daily: boolean
+  cron_expression: string | null
+  weekdays: string | null
+  daily_time: string | null
+  next_execution_at: string | null
   last_error_message: string | null
   task_metadata: Record<string, unknown>
   created_at: string
@@ -637,6 +671,10 @@ export interface ScheduledTaskCreatePayload {
   scheduled_at: string
   provider?: string | null
   model?: string | null
+  is_daily?: boolean
+  cron_expression?: string | null
+  weekdays?: string | null
+  daily_time?: string | null
 }
 
 export interface ScheduledTaskUpdatePayload {
@@ -645,6 +683,10 @@ export interface ScheduledTaskUpdatePayload {
   scheduled_at?: string
   provider?: string | null
   model?: string | null
+  is_daily?: boolean
+  cron_expression?: string | null
+  weekdays?: string | null
+  daily_time?: string | null
 }
 
 export const scheduledTasksAPI = {
@@ -660,6 +702,67 @@ export const scheduledTasksAPI = {
     api.delete<{ message: string }>(`/scheduled-tasks/${id}`),
   getExecutions: (params?: { task_id?: number; limit?: number }) =>
     api.get<ScheduledTaskExecution[]>('/scheduled-tasks/executions', { params }),
+}
+
+export interface ModelCapabilities {
+  provider: string
+  model: string
+  supports_vision: boolean
+  is_multimodal: boolean
+  supports_temperature: boolean
+  supports_top_k: boolean
+  model_spec: Record<string, unknown>
+}
+
+export const modelAPI = {
+  getCapabilities: (provider: string, model: string) =>
+    api.get<ModelCapabilities>(`/api/models/${provider}/${model}/capabilities`),
+}
+
+export interface UserProfile {
+  user_id: string
+  username: string
+  nickname: string | null
+  avatar_url: string | null
+  email: string | null
+  phone: string | null
+  profile: Record<string, unknown>
+}
+
+export interface LoginDeviceItem {
+  id: number
+  device_type: string
+  ip_address: string | null
+  user_agent: string | null
+  logged_in_at: string
+  last_active_at: string
+  is_online: boolean
+  is_current: boolean
+}
+
+export const userAPI = {
+  getProfile: () => api.get<UserProfile>('/user/profile'),
+  updateProfile: (data: { nickname?: string; email?: string; phone?: string }) =>
+    api.put<{ message: string }>('/user/profile', data),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<{ avatar_url: string; message: string }>('/user/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  getDevices: () => api.get<LoginDeviceItem[]>('/user/devices'),
+  revokeDevice: (deviceId: number) =>
+    api.post<{ message: string }>(`/user/devices/${deviceId}/revoke`),
+}
+
+export const passwordAPI = {
+  change: (oldPassword: string, newPassword: string, confirmPassword: string) =>
+    api.put<{ message: string }>('/auth/me/password', {
+      old_password: oldPassword,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
 }
 
 export interface ConversationRecordItem {

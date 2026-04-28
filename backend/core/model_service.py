@@ -368,6 +368,149 @@ async def send_with_retries(
     raise RuntimeError("Model service request failed without explicit error")
 
 
+def build_thinking_params(provider: str, model: str, thinking_depth: int) -> Dict[str, Any]:
+    """
+    根据厂商和模型映射思考深度到具体的 API 参数字典。
+    深度 0-5 映射策略：
+    - OpenAI o 系列: reasoning_effort（0-1→low, 2-3→medium, 4-5→high）
+    - Anthropic: thinking.type=enabled + budget_tokens（深度×4000）
+    - DeepSeek R1/Reasoner: thinking.type=enabled（无分档深度）
+    - Zhipu GLM: thinking.type=enabled
+    - 其他模型返回空字典
+    """
+    from billing.pricing_manager import PricingManager
+
+    normalized = PricingManager.normalize_provider(provider)
+    if not model or thinking_depth < 1:
+        return {}
+
+    model_lower = model.lower()
+
+    # OpenAI o 系列推理模型
+    if normalized in ("openai",) and any(
+        model_lower.startswith(prefix) for prefix in ("o1", "o3", "o4")
+    ):
+        if thinking_depth <= 1:
+            effort = "low"
+        elif thinking_depth <= 3:
+            effort = "medium"
+        else:
+            effort = "high"
+        return {"reasoning_effort": effort}
+
+    # Anthropic 扩展思考
+    if normalized == "anthropic":
+        budget_tokens = thinking_depth * 4000
+        return {"thinking": {"type": "enabled", "budget_tokens": budget_tokens}}
+
+    # DeepSeek 推理模型
+    if normalized == "deepseek" and model_lower in ("deepseek-reasoner", "deepseek-r1"):
+        return {"thinking": {"type": "enabled"}}
+
+    # Zhipu GLM 推理模型
+    if normalized == "zhipu" and "glm" in model_lower:
+        return {"thinking": {"type": "enabled"}}
+
+    return {}
+
+
+def build_multimodal_message(
+    text: str,
+    attachments: Optional[List[Dict[str, Any]]] = None,
+    provider: str = "",
+) -> Union[str, List[Dict[str, Any]]]:
+    """
+    根据 provider 将文本和附件构建为多模态消息格式。
+    无附件时返回纯文本字符串以保证向后兼容。
+    """
+    from billing.pricing_manager import PricingManager
+
+    if not attachments:
+        return text
+
+    normalized = PricingManager.normalize_provider(provider)
+
+    if normalized == "anthropic":
+        # Anthropic content blocks 格式
+        content_blocks: List[Dict[str, Any]] = []
+        if text:
+            content_blocks.append({"type": "text", "text": text})
+        for att in attachments:
+            att_type = att.get("type", "")
+            mime = att.get("mime_type", "")
+            data = att.get("data", "")
+            if att_type == "image":
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": data,
+                    },
+                })
+            elif att_type == "audio":
+                content_blocks.append({
+                    "type": "audio",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": data,
+                    },
+                })
+            elif att_type == "video":
+                content_blocks.append({
+                    "type": "video",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": data,
+                    },
+                })
+        return content_blocks
+
+    if normalized == "google":
+        # Google Gemini parts 格式
+        parts: List[Dict[str, Any]] = []
+        if text:
+            parts.append({"text": text})
+        for att in attachments:
+            att_type = att.get("type", "")
+            mime = att.get("mime_type", "")
+            data = att.get("data", "")
+            if att_type == "image":
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+            elif att_type == "audio":
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+            elif att_type == "video":
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+        return parts
+
+    # OpenAI 兼容格式（OpenAI / DeepSeek / Alibaba / Moonshot / Zhipu）
+    content_parts: List[Dict[str, Any]] = []
+    if text:
+        content_parts.append({"type": "text", "text": text})
+    for att in attachments:
+        att_type = att.get("type", "")
+        mime = att.get("mime_type", "")
+        data = att.get("data", "")
+        if att_type == "image":
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{data}"},
+            })
+        elif att_type == "audio":
+            content_parts.append({
+                "type": "audio_url",
+                "audio_url": {"url": f"data:{mime};base64,{data}"},
+            })
+        elif att_type == "video":
+            content_parts.append({
+                "type": "video_url",
+                "video_url": {"url": f"data:{mime};base64,{data}"},
+            })
+    return content_parts
+
+
 def extract_reasoning_content(response_data: Dict[str, Any], provider: str = "") -> str:
     """
     从模型非流式响应中提取推理内容（思维链）。

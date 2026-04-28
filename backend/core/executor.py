@@ -662,6 +662,7 @@ class ExecutionLayer:
         """
         从上下文中提取对话历史，构建包含历史消息的 messages 列表。
         对话历史由 agent 层在调用前注入到 context["conversation_history"] 中。
+        支持多模态内容：若 context 含 _multimodal_content 则使用数组格式。
         """
         messages = []
         system_prompt = self._build_agent_capability_system_prompt(context)
@@ -681,8 +682,12 @@ class ExecutionLayer:
                 content = msg.get("content", "")
                 if role in ("user", "assistant") and content:
                     messages.append({"role": role, "content": content})
-        # 始终追加当前用户输入
-        messages.append({"role": "user", "content": prompt})
+        # 始终追加当前用户输入；若有多模态内容则使用数组格式
+        multimodal_content = context.get("_multimodal_content")
+        if multimodal_content:
+            messages.append({"role": "user", "content": multimodal_content})
+        else:
+            messages.append({"role": "user", "content": prompt})
         return messages
 
     async def _call_llm_api(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -729,6 +734,7 @@ class ExecutionLayer:
         })
 
         _tools = context.get("_tools")
+        _thinking_params = context.get("_thinking_params")
         result = await litellm_chat_completion(
             provider=resolved["provider"],
             model=resolved["model"],
@@ -738,6 +744,7 @@ class ExecutionLayer:
             max_tokens=self._resolve_max_tokens(resolved),
             request_id=resolved.get("request_id"),
             tools=_tools,
+            thinking_params=_thinking_params,
         )
 
         # 支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM
@@ -797,6 +804,7 @@ class ExecutionLayer:
                 max_tokens=self._resolve_max_tokens(resolved),
                 request_id=resolved.get("request_id"),
                 tools=_tools,
+                thinking_params=_thinking_params,
             )
 
             if not result.get("ok"):
@@ -876,6 +884,7 @@ class ExecutionLayer:
         full_reasoning = ""
 
         try:
+            _thinking_params = context.get("_thinking_params")
             stream_gen = litellm_chat_completion_stream(
                 provider=resolved["provider"],
                 model=resolved["model"],
@@ -884,6 +893,7 @@ class ExecutionLayer:
                 api_base=resolved.get("api_endpoint"),
                 max_tokens=self._resolve_max_tokens(resolved),
                 request_id=resolved.get("request_id"),
+                thinking_params=_thinking_params,
             )
 
             async for chunk in stream_gen:

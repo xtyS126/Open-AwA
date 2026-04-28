@@ -593,4 +593,66 @@
   }
 }
 
+/* 思考模式开关与深度滑块 */
+
+.thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  user-select: none;
+}
+
+.thinking-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-primary);
+}
+
+.thinking-toggle:has(input:checked) {
+  color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.thinking-toggle:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.thinking-depth {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+}
+
+.thinking-depth input[type="range"] {
+  width: 60px;
+  height: 4px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.thinking-depth input[type="range"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.thinking-depth-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 12px;
+  text-align: center;
+}
+
 

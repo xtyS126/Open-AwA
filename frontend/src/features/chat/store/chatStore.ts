@@ -32,6 +32,9 @@ interface ChatState {
   modelOptions: ModelOption[]
   modelLoading: boolean
   modelError: string | null
+  // 思考模式状态
+  thinkingEnabled: boolean
+  thinkingDepth: number
   addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string, id?: string) => string
   updateLastMessage: (content: string, reasoning_content?: string) => void
   setMessages: (messages: ChatMessage[]) => void
@@ -47,6 +50,8 @@ interface ChatState {
   setModelOptions: (options: ModelOption[]) => void
   setModelLoading: (loading: boolean) => void
   setModelError: (error: string | null) => void
+  setThinkingEnabled: (enabled: boolean) => void
+  setThinkingDepth: (depth: number) => void
 }
 
 const initialSessionId = getActiveConversationId() || 'default'
@@ -63,6 +68,8 @@ export const useChatStore = create<ChatState>((set) => ({
   modelOptions: [],
   modelLoading: false,
   modelError: null,
+  thinkingEnabled: false,
+  thinkingDepth: 0,
   
   addMessage: (role, content, reasoning_content, id) => {
     const messageId = id || crypto.randomUUID()
@@ -174,4 +181,7 @@ export const useChatStore = create<ChatState>((set) => ({
   setModelLoading: (loading) => set({ modelLoading: loading }),
 
   setModelError: (error) => set({ modelError: error }),
+
+  setThinkingEnabled: (enabled) => set({ thinkingEnabled: enabled }),
+  setThinkingDepth: (depth) => set({ thinkingDepth: Math.max(0, Math.min(5, depth)) }),
 }))

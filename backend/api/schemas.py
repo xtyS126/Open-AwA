@@ -26,18 +26,18 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     """
-    封装与UserResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    用户响应模型，包含完整的用户信息和画像数据。
     """
     id: str
     role: str
+    avatar_url: Optional[str] = None
+    nickname: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    profile_data: Optional[Dict[str, Any]] = None
     created_at: datetime
     
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
         from_attributes = True
 
 
@@ -58,16 +58,28 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
+class AttachmentItem(BaseModel):
+    """
+    多模态附件项，包含文件类型、base64 数据和 MIME 类型。
+    """
+    type: str = Field(..., description="附件类型：image/audio/video")
+    data: str = Field(..., description="base64 编码的文件内容")
+    mime_type: str = Field(..., description="MIME 类型，如 image/png")
+    file_name: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
     """
-    封装与ChatMessage相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    聊天消息请求体，支持文本、多模态附件和思考模式参数。
     """
     message: str = Field(..., max_length=32000, description="用户消息内容")
     session_id: Optional[str] = "default"
     provider: Optional[str] = None
     model: Optional[str] = None
     mode: Optional[str] = "stream"
+    attachments: Optional[List[AttachmentItem]] = None
+    thinking_enabled: Optional[bool] = None
+    thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度 0-5")
 
 
 class ChatResponse(BaseModel):
@@ -409,13 +421,17 @@ class WorkflowExecutionResponse(BaseModel):
 
 class ScheduledTaskBase(BaseModel):
     """
-    定时任务基础模型。
+    定时任务基础模型，支持单次和每日重复任务。
     """
     title: str = Field(..., min_length=1, max_length=200)
     prompt: str = Field(..., min_length=1)
     scheduled_at: datetime
     provider: Optional[str] = None
     model: Optional[str] = None
+    is_daily: Optional[bool] = False
+    cron_expression: Optional[str] = None
+    weekdays: Optional[str] = None
+    daily_time: Optional[str] = None
 
 
 class ScheduledTaskCreate(ScheduledTaskBase):
@@ -434,6 +450,10 @@ class ScheduledTaskUpdate(BaseModel):
     scheduled_at: Optional[datetime] = None
     provider: Optional[str] = None
     model: Optional[str] = None
+    is_daily: Optional[bool] = None
+    cron_expression: Optional[str] = None
+    weekdays: Optional[str] = None
+    daily_time: Optional[str] = None
 
 
 class ScheduledTaskResponse(ScheduledTaskBase):
@@ -449,6 +469,7 @@ class ScheduledTaskResponse(ScheduledTaskBase):
     updated_at: datetime
     completed_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
+    next_execution_at: Optional[str] = None
 
     class Config:
         from_attributes = True
