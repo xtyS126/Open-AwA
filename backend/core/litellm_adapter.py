@@ -157,13 +157,17 @@ class CircuitBreaker:
 
 
 # 每供应商熔断器实例缓存
+import threading
 _circuit_breakers: Dict[str, CircuitBreaker] = {}
+_circuit_breakers_lock = threading.Lock()
 
 
 def _get_circuit_breaker(provider: str) -> CircuitBreaker:
     """获取指定供应商的熔断器实例（单例）。"""
     if provider not in _circuit_breakers:
-        _circuit_breakers[provider] = CircuitBreaker()
+        with _circuit_breakers_lock:
+            if provider not in _circuit_breakers:  # 双重检查锁定
+                _circuit_breakers[provider] = CircuitBreaker()
     return _circuit_breakers[provider]
 
 

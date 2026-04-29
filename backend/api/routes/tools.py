@@ -6,10 +6,28 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
+from loguru import logger
+
 from tools.registry import built_in_tool_registry
 
 
 router = APIRouter(prefix="/api/tools", tags=["agent-tools"])
+
+
+async def _safe_execute_tool(tool_name: str, action: str, params: dict) -> dict:
+    """安全执行内置工具，捕获所有异常并返回结构化错误响应。"""
+    try:
+        return await built_in_tool_registry.execute_tool(
+            tool_name, action=action, params=params
+        )
+    except Exception as exc:
+        logger.bind(
+            module="tools",
+            event="tool_execution_error",
+            tool_name=tool_name,
+            action=action,
+        ).error(f"工具执行异常: {exc}")
+        return {"success": False, "error": str(exc)}
 
 
 # --- 请求/响应模型 ---
@@ -76,7 +94,7 @@ async def list_tools():
 @router.post("/file/read", response_model=ToolResponse)
 async def file_read(req: FileReadRequest):
     """读取文件内容。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'file_manager',
         action='read_file',
         params={'path': req.path}
@@ -91,7 +109,7 @@ async def file_read(req: FileReadRequest):
 @router.post("/file/write", response_model=ToolResponse)
 async def file_write(req: FileWriteRequest):
     """写入文件内容。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'file_manager',
         action='write_file',
         params={'path': req.path, 'content': req.content}
@@ -106,7 +124,7 @@ async def file_write(req: FileWriteRequest):
 @router.post("/file/list", response_model=ToolResponse)
 async def file_list(req: FileListRequest):
     """列出目录文件。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'file_manager',
         action='list_files',
         params={'path': req.path, 'pattern': req.pattern}
@@ -121,7 +139,7 @@ async def file_list(req: FileListRequest):
 @router.post("/file/delete", response_model=ToolResponse)
 async def file_delete(req: FileDeleteRequest):
     """删除文件或目录。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'file_manager',
         action='delete_file',
         params={'path': req.path}
@@ -136,7 +154,7 @@ async def file_delete(req: FileDeleteRequest):
 @router.post("/file/exists", response_model=ToolResponse)
 async def file_exists(req: FileReadRequest):
     """检查文件是否存在。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'file_manager',
         action='file_exists',
         params={'path': req.path}
@@ -153,7 +171,7 @@ async def file_exists(req: FileReadRequest):
 @router.post("/terminal/run", response_model=ToolResponse)
 async def terminal_run(req: CommandRequest):
     """执行终端命令。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'terminal_executor',
         action='run_command',
         params={
@@ -172,7 +190,7 @@ async def terminal_run(req: CommandRequest):
 @router.get("/terminal/status", response_model=ToolResponse)
 async def terminal_status():
     """获取系统状态。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'terminal_executor',
         action='get_status',
         params={}
@@ -189,7 +207,7 @@ async def terminal_status():
 @router.post("/search/web", response_model=ToolResponse)
 async def web_search(req: SearchRequest):
     """搜索网页。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'web_search',
         action='search',
         params={
@@ -207,7 +225,7 @@ async def web_search(req: SearchRequest):
 @router.post("/search/fetch", response_model=ToolResponse)
 async def fetch_url(req: FetchUrlRequest):
     """获取URL内容。"""
-    result = await built_in_tool_registry.execute_tool(
+    result = await _safe_execute_tool(
         'web_search',
         action='fetch_url',
         params={

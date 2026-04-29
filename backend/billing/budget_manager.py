@@ -99,6 +99,11 @@ class BudgetManager:
             )
         ).first()
 
+    ALLOWED_UPDATE_FIELDS = {
+        "max_amount", "period_type", "currency", "warning_threshold",
+        "is_active", "scope_id", "budget_type",
+    }
+
     def update_budget(self, budget_id: int, budget_data: Dict) -> Optional[BudgetConfig]:
         """
         更新budget相关数据、配置或状态。
@@ -107,6 +112,9 @@ class BudgetManager:
         budget = self.get_budget(budget_id)
         if budget:
             for key, value in budget_data.items():
+                if key not in self.ALLOWED_UPDATE_FIELDS:
+                    logger.warning(f"拒绝更新不允许的字段: {key}")
+                    continue
                 setattr(budget, key, value)
             budget.updated_at = datetime.now(timezone.utc)
             self.db.commit()

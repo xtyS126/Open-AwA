@@ -21,7 +21,7 @@ class UserCreate(UserBase):
     封装与UserCreate相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    password: str
+    password: str = Field(..., min_length=8)
 
 
 class UserResponse(UserBase):
@@ -63,7 +63,7 @@ class AttachmentItem(BaseModel):
     多模态附件项，包含文件类型、base64 数据和 MIME 类型。
     """
     type: str = Field(..., description="附件类型：image/audio/video")
-    data: str = Field(..., description="base64 编码的文件内容")
+    data: str = Field(..., max_length=14_000_000, description="base64 编码的文件内容（最大约10MB）")
     mime_type: str = Field(..., description="MIME 类型，如 image/png")
     file_name: Optional[str] = None
 

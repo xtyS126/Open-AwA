@@ -1024,11 +1024,21 @@ class ExecutionLayer:
                 return {"ok": False, "error": f"plugin tool name missing '/' separator: {func_name}"}
             from plugins.plugin_manager import PluginManager
             from db.models import SessionLocal
-            pm = PluginManager(db_session_factory=SessionLocal)
-            pm.discover_plugins()
-            pm.load_plugin(plugin_name)
-            result = await pm.execute_plugin_async(plugin_name, plugin_method, **func_args)
-            return {"ok": True, "result": result, "tool_name": func_name}
+            try:
+                pm = PluginManager(db_session_factory=SessionLocal)
+                pm.discover_plugins()
+                if not pm.load_plugin(plugin_name):
+                    return {"ok": False, "error": f"Failed to load plugin: {plugin_name}"}
+                result = await pm.execute_plugin_async(plugin_name, plugin_method, **func_args)
+                return {"ok": True, "result": result, "tool_name": func_name}
+            except Exception as exc:
+                logger.bind(
+                    module="executor",
+                    event="plugin_execution_error",
+                    plugin_name=plugin_name,
+                    plugin_method=plugin_method,
+                ).error(f"插件执行异常: {exc}")
+                return {"ok": False, "error": f"Plugin execution error: {str(exc)}"}
 
         return {"ok": False, "error": f"No handler for tool: {func_name}"}
 
@@ -1144,9 +1154,18 @@ class ExecutionLayer:
         files = step.get("targets", [])
         results = {}
         
+        import os as _os
+        _workspace = _os.path.abspath(_os.environ.get("OPENAWA_WORKSPACE", _os.getcwd()))
         for file_path in files:
+            resolved = _os.path.abspath(_os.path.join(_workspace, str(file_path).lstrip("/\\")))
+            if not resolved.startswith(_workspace + _os.sep) and resolved != _workspace:
+                results[file_path] = {
+                    "status": "error",
+                    "message": "Path traversal denied"
+                }
+                continue
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(resolved, 'r', encoding='utf-8') as f:
                     results[file_path] = {
                         "status": "success",
                         "content": f.read()
@@ -1190,18 +1209,21 @@ class ExecutionLayer:
                     "message": f"Command contains dangerous shell character: {repr(ch)}"
                 }
         
+        import shlex
+        proc = None
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            args = shlex.split(command)
+            proc = await asyncio.create_subprocess_exec(
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            
+
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=30
             )
-            
+
             return {
                 "status": "completed",
                 "returncode": proc.returncode,
@@ -1209,11 +1231,23 @@ class ExecutionLayer:
                 "stderr": stderr.decode() if stderr else ""
             }
         except asyncio.TimeoutError:
+            if proc is not None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
             return {
                 "status": "error",
                 "message": "Command execution timeout"
             }
         except Exception as e:
+            if proc is not None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
             return {
                 "status": "error",
                 "message": str(e)

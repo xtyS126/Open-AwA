@@ -88,7 +88,19 @@ class StdioTransport(MCPTransport):
             return
         try:
             import os
-            full_env = os.environ.copy()
+            # 过滤敏感环境变量，防止 API key、数据库密码等泄露给 MCP 子进程
+            SENSITIVE_ENV_PATTERNS = (
+                "KEY", "SECRET", "PASSWORD", "TOKEN", "PASSWD", "CREDENTIAL",
+                "DATABASE_URL", "DB_URL", "REDIS_URL", "SENTRY_DSN",
+            )
+            full_env = {}
+            for env_key, env_value in os.environ.items():
+                is_sensitive = any(
+                    pattern in env_key.upper() for pattern in SENSITIVE_ENV_PATTERNS
+                )
+                if not is_sensitive:
+                    full_env[env_key] = env_value
+            # 用户显式指定的环境变量优先级最高
             if self._env:
                 full_env.update(self._env)
 

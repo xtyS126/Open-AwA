@@ -1,0 +1,607 @@
+{
+  "storage_type": "daily",
+  "last_updated": "2026-04-28T23:55:17.241657",
+  "total_count": 40,
+  "tweets": [
+    {
+      "id": "1978505070322057562",
+      "text": "Learn to build your own voice-activated AI assistant that can execute tasks like gathering recent AI news from the web, scripting out a podcast, and using tools to put all that into a multi-speaker podcast. See our new short course: \"Building Live Voice Agents with Google’s ADK (Agent Development Kit),”  taught by Google’s @lavinigam and @sitalakshmi_s.\n\nADK provides modular components that make it easy to build and debug agents. It also includes a built-in web interface for tracing agentic reasoning. This course illustrates these concepts via  building a live voice agent that can chain actions to complete a complex task like creating a podcast. This requires maintaining context, implementing guardrails, reasoning, and handling audio streaming, while keeping latency low.\n\nYou’ll learn to:\n- Build voice agents that listen, reason, and respond\n- Guide your agent to follow a specific workflow to accomplish a task\n- Coordinate specialized agents to build an agentic podcast workflow that researches topics and produces multi-speaker audio\n- Understand how to deploy an agent into production\n\nEven if you’re not yet building voice systems, you'll find understanding how realtime agents stream data and maintain reliability useful for designing modern agentic applications.\n\nPlease join here: https://t.co/OcBbPHsQIH",
+      "created_at": "Wed Oct 15 16:55:42 +0000 2025",
+      "url": "https://x.com/AndrewYNg/status/1978505070322057562",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 1839,
+        "retweets": 344,
+        "replies": 71
+      }
+    },
+    {
+      "id": "2046975708124086559",
+      "text": "RT @ZixuanLi_: Truly sorry for any confusion or frustration caused by unclear, misleading, or inappropriate rules in our moderation system…",
+      "created_at": "Wed Apr 22 15:33:34 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2046975708124086559",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 685,
+        "retweets": 30,
+        "replies": 62
+      }
+    },
+    {
+      "id": "2044449830605582629",
+      "text": "New course: Spec-Driven Development with Coding Agents, built in partnership with @jetbrains, and taught by @paulweveritt.\n\nVibe coding is fast, but often produces code that doesn't match what you asked for. This short course teaches you spec-driven development: write a detailed spec defining what to build, and work with your coding agent to implement it. Many of the best developers already build this way.\n\nA spec lets you control large code changes with a few words, preserve context across agent sessions, and stay in control as your project grows in complexity.\n\nSkills you'll gain:\n- Write a detailed specification to define your mission, tech stack, and roadmap, giving your agent the context it needs from the start\n- Plan, implement, and validate features in iterative loops using a spec as your agent's guide\n- Apply the same repeatable workflow to both new and legacy codebases\n- Package your workflow into a portable agent skill that works across agents and IDEs\n\nJoin and write specs that keep your coding agent on track!\nhttps://t.co/hI4GwuvhtN",
+      "created_at": "Wed Apr 15 16:16:38 +0000 2026",
+      "url": "https://x.com/AndrewYNg/status/2044449830605582629",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 2785,
+        "retweets": 409,
+        "replies": 158
+      }
+    },
+    {
+      "id": "1973090336068215058",
+      "text": "Announcing a significant upgrade to Agentic Document Extraction! \n\nLandingAI's new DPT (Document Pre-trained Transformer) accurately extracts even from complex docs. For example, from large, complex tables, which is important for many finance and healthcare applications. And a new SDK makes using it require only 3 simple lines of code. Please see the video for technical details. I hope this unlocks a lot of value from the \"dark data\" currently stuck in PDF files, and that you'll build something cool with this!",
+      "created_at": "Tue Sep 30 18:19:29 +0000 2025",
+      "url": "https://x.com/AndrewYNg/status/1973090336068215058",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 3629,
+        "retweets": 547,
+        "replies": 98
+      }
+    },
+    {
+      "id": "2039051446084153834",
+      "text": "The anti-AI coalition continues to maneuver to find arguments to slow down AI progress. If someone has a sincere concern about a specific effect of AI, for instance that it may lead to human extinction, I respect their intellectual honesty, even if I deeply disagree with their position. However, I am concerned about organizations that are surveying the public to find whatever messages will turn people against AI, and how the public reacts as these messages are spread by lobbyists or by politicians seeking to alarm constituents, companies pursuing regulatory capture or seeking to promote the power of their technology, and individuals seeking to gain attention or to profit by being provocative.\n\nA large study (link in original article below; h/t to the AI Panic blog) by a UK group tested different messages that are designed to raise alarm about AI. Their study found that saying AI will cause human extinction has largely failed. Doomsayers were pushing this argument a couple of years ago, and fortunately our community beat it back. But AI-enabled warfare and environmental concerns resonate better. We should be prepared for a flood of messages (which is already underway) arguing against AI on these grounds. Further, job loss and harm to children are messages that motivate people to act.\n\nTo be clear, I find AI-enabled warfare alarming; we need to continue serious efforts to monitor and mitigate the environmental impact of AI; any job losses are tragic and hurt individuals and families; and as a father, I hold dearly the importance of every child’s welfare. Each of these topics deserves serious attention and treatment with the greatest of care.\n\nBut when anti-AI propagandists take a one-sided view of complex issues to benefit their own organizations at the expense of the public at large — for instance, when big AI companies argue that AI is dangerous to block the free distribution of open source projects that compete with their offerings — then we all lose.\n\nFor example, public perception of data centers’ environmental impact is already far worse than the reality — data centers are incredibly efficient for the work they do, and hampering their buildout will hurt rather than help the environment. While job loss is a real problem, the “AI washing” of layoffs — in which businesses that had over-hired during the pandemic blame AI for recent layoffs, although AI hasn’t yet affected their operations — has led to overblown fears about the impact of AI on employment.\n\nUnfortunately, this sort of propaganda easily leads to regulations that create worse outcomes for everyone. For example, oil companies worked for years to create fear of nuclear energy. The result is that overblown concerns about the safety of nuclear power plants has stifled nuclear power development, leading to millions of premature deaths from air pollution that was caused by other energy sources and a massive increase in CO2 emissions. Let’s make sure overblown concerns about AI do not lead to a similar fate for the many people that would benefit from faster AI development.\n\nLast week, the White House proposed a national legislative framework for AI. A key component is a federal preemption framework to prevent a patchwork of state regulations that hamper AI development. I support this. \n\nAfter failing to gain traction at the federal level, a lot of anti-AI propaganda has shifted to the state level. If just one of the 50 states passes a law that limits AI in an unproductive way, it could lead to stifling AI development across all the states and potentially across the globe. The White House proposal rightfully respects each state’s rights to control its own zoning, how it enforces general laws to protect consumers, and how it uses AI. But if a state were to pass laws that limit AI development, federal rules would preempt the state law.\n\nThe White House proposal remains a proposal for now. However, if the U.S. Congress enacts it, it will clear the way for ongoing efforts to develop AI in beneficial ways.\n\nWhere do we go from here? Let’s support limiting applications — those that use AI, and those that don’t — that harm people. When the anti-AI coalition argues against AI, in addition to considering the merits of the argument, I consider whether their position is consistent and persuasive, or if they are just promoting whatever concerns they think will sway the public at a given moment. And, let’s also keep using a scientific approach to weighing AI’s benefits against likely harms, so we don’t end up with overblown concerns that limit the benefits that AI can bring everyone.\n\n[Original text with links: https://t.co/kfZY7mo0Mi ]",
+      "created_at": "Tue Mar 31 18:45:23 +0000 2026",
+      "url": "https://x.com/AndrewYNg/status/2039051446084153834",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 463,
+        "retweets": 76,
+        "replies": 185
+      }
+    },
+    {
+      "id": "2049012394920460764",
+      "text": "@Alt_Azn 💯",
+      "created_at": "Tue Apr 28 06:26:38 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049012394920460764",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 4886,
+        "retweets": 177,
+        "replies": 220
+      }
+    },
+    {
+      "id": "2049012216591188136",
+      "text": "RT @SawyerMerritt: South Korean reporter after experiencing @Tesla FSD (Supervised) in the country for the first time:\n\n\"It flawlessly perf…",
+      "created_at": "Tue Apr 28 06:25:55 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049012216591188136",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 4622,
+        "retweets": 809,
+        "replies": 333
+      }
+    },
+    {
+      "id": "2049011600359936136",
+      "text": "@AustinJustice Imprisoning murderous psychopaths works",
+      "created_at": "Tue Apr 28 06:23:28 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049011600359936136",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 10708,
+        "retweets": 642,
+        "replies": 434
+      }
+    },
+    {
+      "id": "2049010754012209457",
+      "text": "💯",
+      "created_at": "Tue Apr 28 06:20:07 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049010754012209457",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 77310,
+        "retweets": 13829,
+        "replies": 3271
+      }
+    },
+    {
+      "id": "2049010038174515223",
+      "text": "RT @MarioNawfal: 🇺🇸 Another deranged liberal openly disappointed Trump wasn’t assassinated.\n\nThese people are actually upset he survived. W…",
+      "created_at": "Tue Apr 28 06:17:16 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049010038174515223",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 4630,
+        "retweets": 1118,
+        "replies": 614
+      }
+    },
+    {
+      "id": "2049009933757354116",
+      "text": "@JamesOKeefeIII @thackerpd 😂",
+      "created_at": "Tue Apr 28 06:16:51 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049009933757354116",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 3588,
+        "retweets": 148,
+        "replies": 191
+      }
+    },
+    {
+      "id": "2049009537752109373",
+      "text": "RT @ArthurMacwaters: Let me get this straight:\n\n&gt; the top 1% earners in CA pay a cumulative $40-$50b/yr in income tax \n\n&gt; yet CA Medicaid a…",
+      "created_at": "Tue Apr 28 06:15:17 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049009537752109373",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 9310,
+        "retweets": 2145,
+        "replies": 300
+      }
+    },
+    {
+      "id": "2049008179913392505",
+      "text": "RT @dvorahfr: To those who pit Sam Altman and Elon Musk against each other like a billionaire feud, look, do your own research. \n\nWhen have…",
+      "created_at": "Tue Apr 28 06:09:53 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049008179913392505",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 6708,
+        "retweets": 1042,
+        "replies": 471
+      }
+    },
+    {
+      "id": "2044088884989177991",
+      "text": "I'm excited about voice as a UI layer for existing visual applications — where speech and screen update together. This goes well beyond voice-only use cases like call center automation.\n\nThe barrier has been a hard technical tradeoff: low-latency voice models lack reliability, while agentic pipelines (speech-to-text → LLM → text-to-speech) are intelligent but too slow for conversation. Ashwyn Sharma and team at Vocal Bridge (an AI Fund portfolio company) address this with a dual-agent architecture: a foreground agent for real-time conversation, a background agent for reasoning, guardrails, and tool calls.\n\nI used Vocal Bridge to add voice to a math-quiz app I'd built for my daughter; this took less than an hour with Claude Code. She speaks her answers, the app responds verbally and updates the questions and animations on screen.\n\nOnly a tiny fraction of developers have ever built a voice app. If you'd like to try building one, check out Vocal Bridge for free: https://t.co/nGrFznAMLh",
+      "created_at": "Tue Apr 14 16:22:22 +0000 2026",
+      "url": "https://x.com/AndrewYNg/status/2044088884989177991",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 743,
+        "retweets": 103,
+        "replies": 97
+      }
+    },
+    {
+      "id": "2044064276919259180",
+      "text": "RT @gmi_cloud: GMI Cloud and @Zai_org  are bringing fast inference + frontier models around the globe.\n\nFirst stop: Singapore.\n\nBig congrat…",
+      "created_at": "Tue Apr 14 14:44:35 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2044064276919259180",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 41,
+        "retweets": 5,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2047201919110988127",
+      "text": "👀👀",
+      "created_at": "Thu Apr 23 06:32:27 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2047201919110988127",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 421,
+        "retweets": 17,
+        "replies": 22
+      }
+    },
+    {
+      "id": "2047201597089050741",
+      "text": "🐦🐦‍⬛🐤",
+      "created_at": "Thu Apr 23 06:31:10 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2047201597089050741",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 152,
+        "retweets": 2,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2047201376518930904",
+      "text": "Available on @ollama ! 🤝🤝",
+      "created_at": "Thu Apr 23 06:30:17 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2047201376518930904",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 549,
+        "retweets": 17,
+        "replies": 16
+      }
+    },
+    {
+      "id": "2044741938604093443",
+      "text": "GLM-5.1 Tool Calling Issue Fix & Chat Template Update\n\nIf you are running GLM-5.1 with vLLM/SGLang and using tool calling, please update your chat template. https://t.co/XyyCucws82\n\nIssue \nWhen using tool calling, frameworks including vLLM automatically convert plain-text tool message content into an array of content parts (`[{\"type\": \"text\", \"text\": \"...\"}]`) before passing it to the chat template. \n\nThe original template only supported string-formatted tool content, causing array-formatted tool outputs to render empty. \n\nAs a result, the model does not receive tool results and repeatedly triggers the same tool call in a loop.  \n\nAffected Models \nAll GLM-5.1 variants deployed with vLLM or SGLang.  \n\nFix \nSimply replace your existing `chat_template.jinja` with the updated version from the repository.",
+      "created_at": "Thu Apr 16 11:37:22 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2044741938604093443",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 1120,
+        "retweets": 84,
+        "replies": 55
+      }
+    },
+    {
+      "id": "2042289428702642588",
+      "text": "New course: Efficient Inference with SGLang: Text and Image Generation, built in partnership with LMSys @lmsysorg and RadixArk @radixark, and taught by Richard Chen @richardczl, a Member of Technical Staff at RadixArk.\n\nRunning LLMs in production is expensive, and much of that cost comes from redundant computation. This short course teaches you to eliminate that waste using SGLang, an open-source inference framework that caches computation already done and reuses it across future requests.\n\nWhen ten users share the same system prompt, SGLang processes it once, not ten times. The speedups compound quickly, especially when there's a lot of shared context across requests.\n\nSkills you'll gain:\n- Implement a KV cache from scratch to eliminate redundant computation within a single request\n- Scale caching across users and requests with RadixAttention, so shared context is only processed once\n- Accelerate image generation with diffusion models using SGLang's caching and multi-GPU parallelism\n\nJoin and learn to make LLM inference faster and more cost-efficient at scale!\nhttps://t.co/vUiu6goWCO",
+      "created_at": "Thu Apr 09 17:11:58 +0000 2026",
+      "url": "https://x.com/AndrewYNg/status/2042289428702642588",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 527,
+        "retweets": 80,
+        "replies": 65
+      }
+    },
+    {
+      "id": "2043235585452576923",
+      "text": "RT @ZixuanLi_: Trending #1 on @huggingface. The hardest one yet. https://t.co/Y1Kbo5unei",
+      "created_at": "Sun Apr 12 07:51:39 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2043235585452576923",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 1338,
+        "retweets": 54,
+        "replies": 63
+      }
+    },
+    {
+      "id": "2048024946342072482",
+      "text": "Balanced Performance Across Artistic Styles：\nMore uniform quality across diverse aesthetic domains, effectively reducing style-dependent quality variance.🏖️ https://t.co/3FY3E9VHEp",
+      "created_at": "Sat Apr 25 13:02:52 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024946342072482",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 76,
+        "retweets": 3,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048024942286147822",
+      "text": "Comprehensive Multilingual Text Rendering：\nBetter glyph accuracy, more consistent typography, and cleaner layouts even in complex compositions.\nIt handles mixed-language scenarios more gracefully as well.\nIf you’re building posters, UI mockups, ads, or anything text-heavy, this should feel like a meaningful step forward.🪄",
+      "created_at": "Sat Apr 25 13:02:51 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024942286147822",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 88,
+        "retweets": 8,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2048024937999577533",
+      "text": "Substantially Elevated Visual Fidelity：\nWe’ve made major improvements in texture detail, lighting coherence, and material realism. This applies across both photorealistic scenes and stylized outputs, so you don’t have to trade realism for style anymore.\nYes, this is not a selfie.📸",
+      "created_at": "Sat Apr 25 13:02:50 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024937999577533",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 91,
+        "retweets": 1,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048024933805244779",
+      "text": "Sharper Instruction Following: \nThe model now adheres more closely to prompt semantics, especially for complex compositions. Better handling of multiple objects, spatial relationships and attribute binding\nYes, this is not a screenshot.📲 https://t.co/Bjs1zgT4mF",
+      "created_at": "Sat Apr 25 13:02:49 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048024933805244779",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 159,
+        "retweets": 7,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2048022731548229869",
+      "text": "Qwen-Image-2.0-Pro is now live 🚀🚀\n\nWe’ve pushed image quality, multilingual text rendering, and instruction following to a new level, while making performance much more consistent across styles.🌅🌃\n\nRanked #9 worldwide for Text-to-Image on @arena \n\n🔗Try it now on \nModelScope:\nhttps://t.co/pPtrbjzzBK\nhttps://t.co/raB6WWMEMP\nAPI：https://t.co/EgYS5qt2bF",
+      "created_at": "Sat Apr 25 12:54:04 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2048022731548229869",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 3039,
+        "retweets": 355,
+        "replies": 124
+      }
+    },
+    {
+      "id": "2045513811411558556",
+      "text": "Fantastic to see GLM being applied to such fresh, dynamic scenarios.",
+      "created_at": "Sat Apr 18 14:44:31 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2045513811411558556",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 336,
+        "retweets": 20,
+        "replies": 17
+      }
+    },
+    {
+      "id": "2043001835099951474",
+      "text": "@AmineYagoube created CodeTribunal to help teams audit freelance code more effectively.\n\nIt sets up an \"AI Courtroom\" where GLM-5.1 agents debate as prosecutor and defense to uncover hidden logical risks that standard linters might miss.\nhttps://t.co/Bo17XGYYhD https://t.co/RLqh1l0uQ4",
+      "created_at": "Sat Apr 11 16:22:49 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2043001835099951474",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 89,
+        "retweets": 18,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2048890298210959397",
+      "text": "RT @ml_angelopoulos: Why GPT-5.5 is lower than Claude?\n\nThe answer is simple: Code Arena currently only supports frontend/web development t…",
+      "created_at": "Mon Apr 27 22:21:28 +0000 2026",
+      "url": "https://x.com/arena/status/2048890298210959397",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 625,
+        "retweets": 36,
+        "replies": 40
+      }
+    },
+    {
+      "id": "2048846896744247468",
+      "text": "GPT-5.5 xHigh is in Battle Mode in the Code Arena.\nEvaluate models on agentic coding tasks for front-end websites and apps.\n\nScores coming soon! https://t.co/Rrgd3YGgBE",
+      "created_at": "Mon Apr 27 19:29:00 +0000 2026",
+      "url": "https://x.com/arena/status/2048846896744247468",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 171,
+        "retweets": 7,
+        "replies": 11
+      }
+    },
+    {
+      "id": "2048820224938631492",
+      "text": "To clarify, the Arena community evaluated GPT-5.5 with reasoning effort medium (default) and high.\n\nThe best of GPT-5.5 with xHigh is still incoming! Stay tuned.",
+      "created_at": "Mon Apr 27 17:43:01 +0000 2026",
+      "url": "https://x.com/arena/status/2048820224938631492",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 184,
+        "retweets": 10,
+        "replies": 27
+      }
+    },
+    {
+      "id": "2048819628294672517",
+      "text": "@OpenAI To clarify, the Arena community evaluated GPT-5.5 with reasoning effort: medium (default) and high.\n\nThe best GPT-5.5 with xHigh is still incoming!",
+      "created_at": "Mon Apr 27 17:40:39 +0000 2026",
+      "url": "https://x.com/arena/status/2048819628294672517",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 35,
+        "retweets": 1,
+        "replies": 4
+      }
+    },
+    {
+      "id": "2048814267227664642",
+      "text": "@OpenAI Check out GPT-5.5's Expert Arena ranking here:\nhttps://t.co/6081SvW95e",
+      "created_at": "Mon Apr 27 17:19:21 +0000 2026",
+      "url": "https://x.com/arena/status/2048814267227664642",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 28,
+        "retweets": 2,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048808512453767478",
+      "text": "Check out GPT-5.5's Expert Arena ranking here:\nhttps://t.co/E5mME0HyGx",
+      "created_at": "Mon Apr 27 16:56:29 +0000 2026",
+      "url": "https://x.com/arena/status/2048808512453767478",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 11,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2048808366810800259",
+      "text": "In Expert Arena, GPT-5.5-High ranks #5 - trailing only Claude Opus 4.6 and 4.7.\n\nExpert Arena evaluates models on advanced expert-level prompts in the Text Arena, with a focus on real-world professional use cases. This demonstrates GPT-5.5’s strong performance on complex, domain-specific tasks. \n\nCongrats @OpenAI on this impressive release!",
+      "created_at": "Mon Apr 27 16:55:54 +0000 2026",
+      "url": "https://x.com/arena/status/2048808366810800259",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 179,
+        "retweets": 10,
+        "replies": 14
+      }
+    },
+    {
+      "id": "2048794489951756330",
+      "text": "Dive deeper into each category leaderboard ranking at https://t.co/PjWOaDEXWR",
+      "created_at": "Mon Apr 27 16:00:45 +0000 2026",
+      "url": "https://x.com/arena/status/2048794489951756330",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 18,
+        "retweets": 1,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2048793852702757151",
+      "text": "AI-native software engineering teams operate very differently than traditional teams. The obvious difference is that AI-native teams use coding agents to build products much faster, but this leads to many other changes in how we operate. For example, some great engineers now play broader roles than just writing code. They are partly product managers, designers, sometimes marketers. Further, small teams who work in the same office, where they can communicate face-to-face, can move incredibly quickly.\n\nBecause we can now build fast, a greater fraction of time must be spent deciding what to build. To deal with this project-management bottleneck, some teams are pushing engineer:product manager (PM) some teams are pushing engineer:product manager (PM) ratios downward from, say, 8:1 to as low as 1:1. But we can do even better: If we have one PM who decides what to build and one engineer who builds it, the communication between them becomes a bottleneck. This is why the fastest-moving teams I see tend to have engineers who know how to do some product work (and, optionally, some PMs who know how to do some engineering work). When an engineer understands users and can make decisions on what to build and build it directly, they can execute incredibly quickly.\n\nI’ve seen engineers successfully expand their roles to including making product decisions, and PMs expand their roles to building software. The tech industry has more engineers than PMs, but both are promising paths. If you are an engineer, you’ll find it useful to learn some product management skills, and if you’re a PM, please learn to build!\n\nLooking beyond the product-management bottleneck, I also see bottlenecks in design, marketing, legal compliance, and much more. When we speed up coding 10x or 100x, everything else becomes slow in comparison. For example, some of my teams have built great features so quickly that the marketing organization was left scrambling to figure out how to communicate them to users — a marketing bottleneck. Or when a team can build software in a day that the legal department needs a week to review, that’s a legal compliance bottleneck. In this way, agentic coding isn’t just changing the workflow of software engineering, it’s also changing all the teams around it.\n\nWhen smaller, AI-enabled teams can get more done, generalists excel. Traditional companies need to pull together people from many specialties — engineering, product management, design, marketing, legal, etc. — to execute projects and create value. This has resulted in large teams of specialists who work together. But if a team of 2 persons is to get work done that require 5 different specialities, then some of those individuals must play roles outside a single speciality. In some small teams, individuals do have deep specializations. For example, one might be a great engineer and another a great PM. But they also understand the other key functions needed to move a project forward, and can jump into thinking through other kinds of problems as needed. Of course, proficiency with AI tools is a big help, since it helps us to think through problems that involve different roles.\n\nEven in a two-person team, to move fast, communication bottlenecks also must be minimized. This is why I value teams that work in the same location. Remote teams can perform well too, but the highest speed is achieved by having everyone in the room, able to communicate instantaneously to solve problems.\n\nThis post focuses on AI-native teams with around 2-10 persons, but not everything can be done by a small team. I'll address the coordination of larger teams in the future.\n\nI realize these shifts to job roles are tough to navigate for many people. At the same time, I am encouraged that individuals and small teams who are willing to learn the relevant skills are now able to get far more done than was possible before. This is the golden age of learning and building!\n\n[Original text: https://t.co/1pUxNC5UXk ]",
+      "created_at": "Mon Apr 27 15:58:13 +0000 2026",
+      "url": "https://x.com/AndrewYNg/status/2048793852702757151",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 1503,
+        "retweets": 283,
+        "replies": 154
+      }
+    },
+    {
+      "id": "2048784274523148750",
+      "text": "The \"triple usage\" period for GLM-5.1 and GLM-5-Turbo is now extended to June 30.\n\nAvailability: Anytime except 2-6 AM ET.",
+      "created_at": "Mon Apr 27 15:20:10 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2048784274523148750",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 1174,
+        "retweets": 59,
+        "replies": 61
+      }
+    },
+    {
+      "id": "2043742105852621052",
+      "text": "As AI agents accelerate coding, what is the future of software engineering? Some trends are clear, such as the Product Management Bottleneck, referring to the idea that we are more constrained by deciding what to build rather than the actual building. But many implications, like AI’s impact on the job market, how software teams will be organized, and more, are still being sorted out.\n\nThe theme of our AI Developer Conference on April 28-29 in San Francisco is The Future of Software Engineering. I look forward to speaking about this topic there, hearing from other speakers on this theme, and chatting with attendees about it. We’re shaping the future, and I hope you will join me there!\n\nIt is currently trendy in some technology and policy circles to forecast massive job losses due to AI. Even if they have not yet materialized, these losses certainly must be just over the horizon! I have a contrarian view that the AI jobpocalypse — the notion that AI will lead to massive unemployment, perhaps even rioting in the streets — won’t be nearly as bad as dire forecasts by pundits, especially pundits who are trying to paint a picture of how powerful their AI technology is.\n\nAmong professions, AI is accelerating software engineering most, given the rise of coding agents. According to a new report by Citadel Research, software engineering job postings are rising rapidly. So if software engineering is a harbinger of the impact AI will have on other professions, this expansion of software engineering jobs is encouraging.\n\nYes, fresh college graduates are having a hard time finding jobs. And yes, there have been layoffs that CEOs have attributed to AI, even if a large fraction of this was “AI washing,” where businesses choose to attribute layoffs to AI, even though AI has not changed their internal operations much yet. And yes, there is a subset of job roles, such as call center operator, that are more heavily impacted. Many people are feeling significant job insecurity, and I feel for everyone struggling with employment, whether or not the cause is AI-related. And many other factors, such as over-hiring during the pandemic and high interest rates, have contributed to the slowdown in the labor market, and the notion that AI is leading to unemployment is oversimplified.\n\nIn software engineering, I see a lot of exciting work ahead to adapt our workflows. It is already clear that: (i) As AI makes coding easier, a lot more people will be doing it. (ii) Writing code by hand and even reading (generated) code is not that important, because we can ask an LLM about the code and operate at a higher level than the raw syntax (although how high we can or should go is rapidly changing). (iii) There will be a lot more custom applications, because now it’s economical to write software for smaller and smaller audiences. (iv) Deciding what to build, more than the actual building, is becoming a bottleneck. (v) The cost of paying down technical debt is decreasing (since AI can refactor for you).\n\nAt the same time, there are also a lot of open questions for our profession, such as:\n- In the future, what will be the key skills of a senior software engineer? And for junior levels, what should be the new Computer Science curriculum?\n- If everyone can build features, what skills, strategies, or resources create competitive advantage for individuals and for businesses?\n- What are the new building blocks (libraries, SDKs, etc.) of software? How do we organize coding agents to create software?\n- What should a software team look like? For example, how many engineers, product managers, designers, and so on. What tooling do we need to manage their workflow?\n- How do AI agents change the workflow of machine learning engineers and data scientists? For example, how can we use agents to accelerate exploring data, identifying hypotheses, and testing them?\n\nI’m excited to explore these and other questions about the future of software engineering at AI Dev. I expect this to be an exciting event. Please join us!\n\n[Original text: The Batch newsletter.]\n\nhttps://t.co/i4bQevDG4i",
+      "created_at": "Mon Apr 13 17:24:23 +0000 2026",
+      "url": "https://x.com/AndrewYNg/status/2043742105852621052",
+      "author": {
+        "user_name": "AndrewYNg",
+        "name": "Andrew Ng"
+      },
+      "metrics": {
+        "likes": 874,
+        "retweets": 161,
+        "replies": 137
+      }
+    },
+    {
+      "id": "2047535825844339043",
+      "text": "@deepseek_ai Really impressive work! If you need a higher rate limit to keep those evals moving forward, we are definitely here to support you. https://t.co/TvYoLoWRR3",
+      "created_at": "Fri Apr 24 04:39:16 +0000 2026",
+      "url": "https://x.com/Zai_org/status/2047535825844339043",
+      "author": {
+        "user_name": "Zai_org",
+        "name": "Z.ai"
+      },
+      "metrics": {
+        "likes": 1603,
+        "retweets": 28,
+        "replies": 29
+      }
+    }
+  ]
+}

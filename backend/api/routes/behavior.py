@@ -50,13 +50,13 @@ async def get_behavior_stats(
         BehaviorLog.action_type == "error"
     ).scalar() or 0
     
-    # 工具使用分布统计 - 仅加载details字段进行聚合
+    # 工具使用分布统计 - 仅加载details字段进行聚合，限制最大50000条
     tool_counts: dict[str, int] = {}
     tool_details = db.query(BehaviorLog.details).filter(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "tool_usage"
-    ).all()
+    ).limit(50000).all()
     for (details,) in tool_details:
         details = details or ""
         tool_name = details.split(":")[0] if ":" in details else "unknown"
@@ -67,13 +67,13 @@ async def get_behavior_stats(
         for tool, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
     
-    # 意图分布统计 - 仅加载details字段进行聚合
+    # 意图分布统计 - 仅加载details字段进行聚合，限制最大50000条
     intent_counts: dict[str, int] = {}
     intent_details = db.query(BehaviorLog.details).filter(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "intent"
-    ).all()
+    ).limit(50000).all()
     
     for (details,) in intent_details:
         details = details or "unknown"
@@ -88,7 +88,7 @@ async def get_behavior_stats(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "llm_call"
-    ).all()
+    ).limit(50000).all()
 
     total_duration = 0
     valid_duration_count = 0

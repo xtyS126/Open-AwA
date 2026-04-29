@@ -325,7 +325,10 @@ class WorkflowEngine:
 
     def _evaluate_condition(self, expression: str, runtime: Dict[str, Any]) -> bool:
         validator = _ConditionValidator()
-        tree = ast.parse(expression, mode="eval")
+        try:
+            tree = ast.parse(expression, mode="eval")
+        except SyntaxError as exc:
+            raise ValueError(f"Invalid condition expression: {exc}") from exc
         validator.visit(tree)
         if validator.errors:
             raise ValueError("; ".join(validator.errors))
@@ -335,7 +338,22 @@ class WorkflowEngine:
             "steps": self._to_namespace(runtime["steps"]),
             "last_result": self._to_namespace(runtime["last_result"]),
         }
-        return bool(eval(compile(tree, "<workflow-condition>", "eval"), {"__builtins__": {}}, safe_locals))
+        # 使用受限的 __builtins__ 仅允许安全的内置函数
+        safe_builtins = {
+            "True": True, "False": False, "None": None,
+            "abs": abs, "min": min, "max": max, "sum": sum,
+            "len": len, "str": str, "int": int, "float": float,
+            "bool": bool, "list": list, "dict": dict, "tuple": tuple,
+            "round": round, "isinstance": isinstance, "type": type,
+        }
+        try:
+            compiled = compile(tree, "<workflow-condition>", "eval")
+            return bool(eval(compiled, {"__builtins__": safe_builtins}, safe_locals))
+        except Exception as exc:
+            logger.bind(module="workflow", action="evaluate_condition").warning(
+                f"Condition evaluation failed: {exc}"
+            )
+            return False
 
     def _to_namespace(self, value: Any) -> Any:
         if isinstance(value, dict):
