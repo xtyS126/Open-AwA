@@ -51,6 +51,9 @@ async def get_active_prompt(
     if prompt:
         return prompt
 
+    # 原子操作：先停用所有已激活的提示词，再激活回退项
+    db.query(PromptConfig).filter(PromptConfig.is_active == True).update({"is_active": False})
+
     fallback_prompt = db.query(PromptConfig).order_by(PromptConfig.updated_at.desc()).first()
     if fallback_prompt:
         fallback_prompt.is_active = True

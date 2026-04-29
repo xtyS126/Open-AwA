@@ -25,10 +25,14 @@ const SERVICE = 'openawa-frontend'
 const REQUEST_ID_KEY = 'current_request_id'
 
 function getConfiguredLevel(): LogLevel {
-  const fromStorage = typeof window !== 'undefined' ? localStorage.getItem('log_level') : null
-  const raw = String(fromStorage || DEFAULT_LEVEL).toUpperCase()
-  if (raw in LOG_LEVEL_ORDER) {
-    return raw as LogLevel
+  try {
+    const fromStorage = typeof window !== 'undefined' ? localStorage.getItem('log_level') : null
+    const raw = String(fromStorage || DEFAULT_LEVEL).toUpperCase()
+    if (raw in LOG_LEVEL_ORDER) {
+      return raw as LogLevel
+    }
+  } catch {
+    // 隐私模式或存储不可用时回退到默认级别
   }
   return DEFAULT_LEVEL
 }
@@ -49,11 +53,20 @@ export function setCurrentRequestId(requestId: string): void {
   if (!requestId) {
     return
   }
-  sessionStorage.setItem(REQUEST_ID_KEY, requestId)
+  try {
+    sessionStorage.setItem(REQUEST_ID_KEY, requestId)
+  } catch {
+    // 存储不可用时静默忽略（隐私模式/配额满/iframe沙箱）
+  }
 }
 
 export function getCurrentRequestId(): string {
-  return sessionStorage.getItem(REQUEST_ID_KEY) || ''
+  try {
+    return sessionStorage.getItem(REQUEST_ID_KEY) || ''
+  } catch {
+    // 存储不可用时返回空字符串
+    return ''
+  }
 }
 
 export function generateRequestId(): string {

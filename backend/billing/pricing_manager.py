@@ -424,14 +424,19 @@ class PricingManager:
         self.db.refresh(pricing)
         return pricing
 
+    PRICING_UPDATE_ALLOWED_FIELDS = {
+        "provider", "model", "input_price", "output_price",
+        "currency", "unit", "is_active", "description",
+    }
+
     def update_pricing(self, pricing_id: int, pricing_data: Dict) -> Optional[ModelPricing]:
         """
         更新指定 ID 的价格配置。
-        
+
         Args:
             pricing_id: 价格配置 ID。
             pricing_data: 更新数据字典。
-            
+
         Returns:
             更新后的价格配置对象，若不存在则返回 None。
         """
@@ -442,6 +447,9 @@ class PricingManager:
             if "model" in pricing_data:
                 pricing_data["model"] = self.normalize_model(pricing_data.get("model"))
             for key, value in pricing_data.items():
+                if key not in self.PRICING_UPDATE_ALLOWED_FIELDS:
+                    logger.warning(f"拒绝更新不允许的字段: {key}")
+                    continue
                 setattr(pricing, key, value)
             pricing.updated_at = datetime.now(timezone.utc)
             self.db.commit()
@@ -785,14 +793,20 @@ class PricingManager:
         self.db.refresh(config)
         return config
 
+    CONFIG_UPDATE_ALLOWED_FIELDS = {
+        "provider", "model", "api_base", "api_key", "description",
+        "is_default", "is_active", "max_tokens", "temperature",
+        "top_p", "frequency_penalty", "presence_penalty",
+    }
+
     def update_configuration(self, config_id: int, config_data: Dict) -> Optional[ModelConfiguration]:
         """
         更新指定 ID 的模型配置。
-        
+
         Args:
             config_id: 配置 ID。
             config_data: 更新数据字典。
-            
+
         Returns:
             更新后的模型配置对象，若不存在则返回 None。
         """
@@ -800,7 +814,7 @@ class PricingManager:
         config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.id == config_id
         ).first()
-        
+
         if config:
             normalized = self._normalize_configuration_payload(config_data)
 
@@ -809,14 +823,16 @@ class PricingManager:
                     ModelConfiguration.is_default == True,
                     ModelConfiguration.id != config_id
                 ).update({"is_default": False})
-            
+
             for key, value in normalized.items():
-                if key != "id":
+                if key != "id" and key in self.CONFIG_UPDATE_ALLOWED_FIELDS:
                     setattr(config, key, value)
+                elif key != "id":
+                    logger.warning(f"拒绝更新不允许的配置字段: {key}")
             config.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(config)
-        
+
         return config
 
     def delete_configuration(self, config_id: int) -> bool:

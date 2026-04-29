@@ -116,9 +116,11 @@ class TerminalExecutorSkill:
             return {"success": False, "error": "命令被安全策略拦截"}
 
         start_time = time.time()
+        process = None
         try:
-            process = await asyncio.create_subprocess_shell(
-                command,
+            args = shlex.split(command)
+            process = await asyncio.create_subprocess_exec(
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=working_dir,

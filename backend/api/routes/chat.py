@@ -96,12 +96,29 @@ async def chat(
         mode=message.mode,
     ).info("chat request received")
 
-    agent = AIAgent(db_session=db)
+    try:
+        agent = AIAgent(db_session=db)
 
-    if message.mode == "stream":
-        return await build_sse_response(agent.process_stream(message.message, context))
+        if message.mode == "stream":
+            return await build_sse_response(agent.process_stream(message.message, context))
 
-    result = await agent.process(message.message, context)
+        result = await agent.process(message.message, context)
+    except Exception as exc:
+        logger.bind(
+            event="chat_error",
+            module="chat",
+            action="chat",
+            status="error",
+            user_id=current_user.id,
+            session_id=message.session_id,
+        ).error(f"Agent处理异常: {exc}")
+        return ChatResponse(
+            status="error",
+            response="",
+            session_id=message.session_id,
+            error=f"处理请求时发生内部错误: {str(exc)}",
+            request_id=context["request_id"],
+        )
 
     status_value = result.get("status") or "error"
     logger.bind(
