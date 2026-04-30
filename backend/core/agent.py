@@ -189,6 +189,37 @@ class AIAgent:
         return payload
 
     @staticmethod
+    def _get_stream_tool_kind(tool_name: str) -> str:
+        """
+        根据原生 function name 推断工具类别，便于前端展示正确的分组标签。
+        """
+        normalized = str(tool_name or "").strip()
+        if normalized.startswith("plugin_"):
+            return "plugin"
+        if normalized.startswith("mcp_"):
+            return "mcp"
+        return "tool"
+
+    @staticmethod
+    def _summarize_stream_tool_result(exec_result: Dict[str, Any]) -> str:
+        """
+        为流式工具事件生成简短摘要，避免前端只能看到空的占位节点。
+        """
+        if not isinstance(exec_result, dict):
+            return ""
+
+        if not exec_result.get("ok"):
+            return str(exec_result.get("error") or "工具调用失败")
+
+        payload = exec_result.get("result")
+        if isinstance(payload, dict):
+            for key in ("message", "response", "stdout", "status"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return "工具调用完成"
+
+    @staticmethod
     def _summarize_skill_capabilities(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         将技能列表收敛为适合注入模型上下文的轻量摘要，避免把统计和配置细节全部暴露给提示词。
@@ -812,9 +843,11 @@ class AIAgent:
                     for tc in tool_calls:
                         tool_name = tc.get("function", {}).get("name", "unknown")
                         tool_id = tc.get("id", "")
+                        tool_kind = self._get_stream_tool_kind(tool_name)
 
                         yield emit_tool_event({
                             "id": tool_id,
+                            "kind": tool_kind,
                             "name": tool_name,
                             "status": "running",
                         })
@@ -823,9 +856,11 @@ class AIAgent:
 
                         yield emit_tool_event({
                             "id": tool_id,
+                            "kind": tool_kind,
                             "name": tool_name,
-                            "status": "done",
-                            "result": result,
+                            "status": "completed" if result.get("ok") else "error",
+                            "detail": self._summarize_stream_tool_result(result),
+                            "output": result.get("result") if result.get("ok") else result.get("error"),
                         })
 
                         tool_results.append({"tool_call": tc, "result": result})

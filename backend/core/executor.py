@@ -881,6 +881,7 @@ class ExecutionLayer:
         if tool_messages:
             messages.extend(tool_messages)
             context.pop("_tool_messages", None)
+        _tools = context.get("_tools")
         full_content = ""
         full_reasoning = ""
 
@@ -894,6 +895,7 @@ class ExecutionLayer:
                 api_base=resolved.get("api_endpoint"),
                 max_tokens=self._resolve_max_tokens(resolved),
                 request_id=resolved.get("request_id"),
+                tools=_tools,
                 thinking_params=_thinking_params,
             )
 
@@ -1026,9 +1028,39 @@ class ExecutionLayer:
             from plugins import plugin_instance
             try:
                 pm = plugin_instance.get()
-                if plugin_name not in pm.loaded_plugins and not pm.load_plugin(plugin_name):
-                    return {"ok": False, "error": f"Failed to load plugin: {plugin_name}"}
-                result = await pm.execute_plugin_async(plugin_name, plugin_method, **func_args)
+                candidate_names = []
+                for candidate in (
+                    plugin_name,
+                    plugin_name.replace("_", "-"),
+                    plugin_name.replace("-", "_"),
+                ):
+                    if candidate and candidate not in candidate_names:
+                        candidate_names.append(candidate)
+
+                if not any(candidate in getattr(pm, "plugin_metadata", {}) for candidate in candidate_names):
+                    discovered = pm.discover_plugins()
+                    logger.bind(
+                        module="executor",
+                        event="plugin_metadata_refreshed",
+                        requested_plugin=plugin_name,
+                        discovered_count=len(discovered) if isinstance(discovered, list) else None,
+                    ).debug(f"工具调用前刷新插件元数据: {plugin_name}")
+
+                resolved_plugin_name = next(
+                    (
+                        candidate
+                        for candidate in candidate_names
+                        if candidate in getattr(pm, "plugin_metadata", {}) or candidate in getattr(pm, "loaded_plugins", {})
+                    ),
+                    plugin_name,
+                )
+
+                if (
+                    resolved_plugin_name not in pm.loaded_plugins
+                    and not pm.load_plugin(resolved_plugin_name)
+                ):
+                    return {"ok": False, "error": f"Failed to load plugin: {resolved_plugin_name}"}
+                result = await pm.execute_plugin_async(resolved_plugin_name, plugin_method, **func_args)
                 return {"ok": True, "result": result, "tool_name": func_name}
             except Exception as exc:
                 logger.bind(

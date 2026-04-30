@@ -9,7 +9,7 @@ export function createEmptyExecutionMeta(): AssistantExecutionMeta {
 
 export function normalizeTaskStatus(status: unknown): TaskStatus {
   const raw = String(status || '').trim().toLowerCase()
-  if (raw === 'completed' || raw === 'success') return 'completed'
+  if (raw === 'completed' || raw === 'success' || raw === 'done') return 'completed'
   if (raw === 'running' || raw === 'processing' || raw === 'in_progress') return 'running'
   if (raw === 'error' || raw === 'failed' || raw === 'failure') return 'error'
   return 'pending'
@@ -73,14 +73,15 @@ export function applyTaskUpdate(meta: AssistantExecutionMeta, task: Record<strin
 
 export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<string, unknown>): AssistantExecutionMeta {
   const id = String(tool.id || `${tool.kind || 'tool'}:${tool.name || '未知工具'}`)
+  const output = tool.output !== undefined ? tool.output : tool.result
   const nextTool: ToolEventMeta = {
     id,
     kind: String(tool.kind || 'tool'),
     name: String(tool.name || '未知工具'),
     status: normalizeTaskStatus(tool.status),
-    detail: typeof tool.detail === 'string' ? tool.detail : undefined,
+    detail: typeof tool.detail === 'string' ? tool.detail : summarizeExecutionResult(output),
     input: tool.input && typeof tool.input === 'object' ? (tool.input as Record<string, unknown>) : undefined,
-    output: tool.output !== undefined ? tool.output : undefined,
+    output,
     sequence: typeof tool.sequence === 'number' ? tool.sequence : undefined,
     startedAt: typeof tool.startedAt === 'number' ? tool.startedAt : (tool.status === 'running' ? Date.now() : undefined),
     completedAt: typeof tool.completedAt === 'number' ? tool.completedAt : (tool.status === 'completed' || tool.status === 'error' ? Date.now() : undefined),
