@@ -1,0 +1,62 @@
+.stepContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stepHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iconWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.iconCompleted {
+  color: var(--color-success-accent);
+}
+
+.iconProgress {
+  color: var(--color-primary);
+  animation: spin 1.5s linear infinite;
+}
+
+.iconFailed {
+  color: var(--color-error-strong);
+}
+
+.iconPending {
+  color: var(--color-text-tertiary);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.title {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.titleCompleted {
+  color: var(--color-text-secondary);
+}
+
+.stepContent {
+  margin-left: 26px; /* 16px icon + 10px gap */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

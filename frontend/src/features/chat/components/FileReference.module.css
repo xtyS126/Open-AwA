@@ -1,0 +1,32 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 9999px; /* 药丸状 */
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  max-width: 100%;
+}
+
+.pill:hover {
+  background-color: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  border-color: var(--color-primary-ring);
+}
+
+.icon {
+  flex-shrink: 0;
+}
+
+.fileName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
