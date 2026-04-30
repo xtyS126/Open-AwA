@@ -79,6 +79,11 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
     name: String(tool.name || '未知工具'),
     status: normalizeTaskStatus(tool.status),
     detail: typeof tool.detail === 'string' ? tool.detail : undefined,
+    input: tool.input && typeof tool.input === 'object' ? (tool.input as Record<string, unknown>) : undefined,
+    output: tool.output !== undefined ? tool.output : undefined,
+    sequence: typeof tool.sequence === 'number' ? tool.sequence : undefined,
+    startedAt: typeof tool.startedAt === 'number' ? tool.startedAt : (tool.status === 'running' ? Date.now() : undefined),
+    completedAt: typeof tool.completedAt === 'number' ? tool.completedAt : (tool.status === 'completed' || tool.status === 'error' ? Date.now() : undefined),
   }
   const nextEvents = [...meta.toolEvents]
   const targetIndex = nextEvents.findIndex((item) => item.id === id)
@@ -87,6 +92,11 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
       ...nextEvents[targetIndex],
       ...nextTool,
       detail: nextTool.detail || nextEvents[targetIndex].detail,
+      input: nextTool.input || nextEvents[targetIndex].input,
+      output: nextTool.output !== undefined ? nextTool.output : nextEvents[targetIndex].output,
+      sequence: nextTool.sequence ?? nextEvents[targetIndex].sequence,
+      startedAt: nextTool.startedAt ?? nextEvents[targetIndex].startedAt,
+      completedAt: nextTool.completedAt ?? nextEvents[targetIndex].completedAt,
     }
   } else {
     nextEvents.push(nextTool)

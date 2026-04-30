@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
 import { chatAPI, conversationAPI } from '@/shared/api/api'
 import { useChatStore } from '@/features/chat/store/chatStore'
-import { getActiveConversationId } from '@/features/chat/utils/chatCache'
+import { getActiveConversationId, getCachedConversationMessages } from '@/features/chat/utils/chatCache'
 import type { AssistantExecutionMeta, ConversationSessionSummary, TaskStatus } from '@/features/chat/types'
 import {
   applyTaskUpdate,
@@ -103,6 +103,7 @@ function ChatPage() {
     setOutputMode,
     selectedModel,
     setMessages,
+    updateMessage,
     loadCachedMessages,
     conversations,
     setConversations,
@@ -297,8 +298,19 @@ function ChatPage() {
   useEffect(() => {
     if (conversationId && conversationId !== sessionId) {
       setSessionId(conversationId)
+      const cachedMsgs = getCachedConversationMessages(conversationId)
+      // 从缓存恢复 messageMeta
+      const restoredMeta: Record<string, AssistantExecutionMeta> = {}
+      for (const msg of cachedMsgs) {
+        if (msg.role === 'assistant' && msg.toolEvents && msg.toolEvents.length > 0) {
+          restoredMeta[msg.id] = {
+            steps: [],
+            toolEvents: msg.toolEvents,
+          }
+        }
+      }
       loadCachedMessages(conversationId)
-      setMessageMeta({})
+      setMessageMeta(restoredMeta)
       setStreamingAssistantId(null)
       setStreamConnectionState('idle')
       setStreamRetryCount(0)
@@ -572,7 +584,24 @@ function ChatPage() {
 
                 if (event?.type === 'plan' || event?.type === 'result') {
                   const nextMeta = buildExecutionMetaFromPayload(event)
-                  updateAssistantMeta(assistantMessageId, (current) => mergeExecutionMeta(current, nextMeta))
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    const merged = mergeExecutionMeta(current, nextMeta)
+                    // 对于 result 事件，尝试提取 output 更新到对应 toolEvent
+                    if (event?.type === 'result' && event.result && typeof event.result === 'object') {
+                      const resultData = event.result as Record<string, unknown>
+                      const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
+                      const output = resultData.output !== undefined ? resultData.output : resultData
+                      if (toolId && output) {
+                        const toolEvents = merged.toolEvents.map((t) =>
+                          t.id === toolId
+                            ? { ...t, output, completedAt: t.completedAt || Date.now(), status: t.status === 'running' ? ('completed' as const) : t.status }
+                            : t
+                        )
+                        return { ...merged, toolEvents }
+                      }
+                    }
+                    return merged
+                  })
                   return
                 }
 
@@ -582,7 +611,17 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'tool' && event.tool && typeof event.tool === 'object') {
-                  updateAssistantMeta(assistantMessageId, (current) => applyToolUpdate(current, event.tool))
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    // 自动计算 sequence 序号
+                    const toolData = event.tool as Record<string, unknown>
+                    const nextSequence = current.toolEvents.length + 1
+                    return applyToolUpdate(current, {
+                      ...toolData,
+                      sequence: toolData.sequence ?? nextSequence,
+                      // 捕获 input 字段
+                      input: toolData.input || toolData.arguments || toolData.args,
+                    })
+                  })
                   return
                 }
 
@@ -599,6 +638,17 @@ function ChatPage() {
                       model: usage.model,
                     })
                   }
+                  // 流结束时的持久化同步
+                  setMessageMeta((prev) => {
+                    const currentMeta = prev[assistantMessageId]
+                    if (currentMeta?.toolEvents && currentMeta.toolEvents.length > 0) {
+                      updateMessage(assistantMessageId, (msg) => ({
+                        ...msg,
+                        toolEvents: currentMeta.toolEvents,
+                      }))
+                    }
+                    return prev
+                  })
                 }
               },
               (error) => {
@@ -653,6 +703,18 @@ function ChatPage() {
         setStreamStageMessage(null)
         setStreamConnectionState('idle')
 
+        // 流式完成时，将 toolEvents 持久化到消息对象
+        setMessageMeta((prev) => {
+          const metaForMsg = prev[assistantMessageId]
+          if (metaForMsg?.toolEvents && metaForMsg.toolEvents.length > 0) {
+            updateMessage(assistantMessageId, (msg) => ({
+              ...msg,
+              toolEvents: metaForMsg.toolEvents,
+            }))
+          }
+          return prev
+        })
+
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId || streamErrorHandled) {
           return
         }
@@ -672,6 +734,13 @@ function ChatPage() {
           addMessage('assistant', assistantText, reasoningContent || undefined, assistantMessageId)
           if (hasExecutionMeta(nextMeta)) {
             setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
+            // 直接模式下同步持久化 toolEvents
+            if (nextMeta.toolEvents.length > 0) {
+              updateMessage(assistantMessageId, (msg) => ({
+                ...msg,
+                toolEvents: nextMeta.toolEvents,
+              }))
+            }
           }
           if (nextMeta.usage) {
             dispatchBillingUsageUpdated({

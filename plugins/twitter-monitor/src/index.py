@@ -446,20 +446,37 @@ class TwitterMonitorPlugin(BasePlugin):
         if not self.twitter_api_key:
             return {"status": "error", "message": "未配置 twitter_api_key"}
         url = f"{self.twitter_api_base_url}/{endpoint.lstrip('/')}"
-        try:
-            response = requests.get(url, headers=self._twitter_headers(), params=params, timeout=30)
-            response.raise_for_status()
-            payload = response.json()
-        except Exception as e:
-            logger.error(f"[{self.name}] Twitter API 请求失败: {e}")
-            return {"status": "error", "message": f"Twitter API 请求失败: {e}"}
-
-        if payload.get("status") != "success":
-            return {
-                "status": "error",
-                "message": str(payload.get("msg") or payload.get("message") or "Twitter API 返回失败"),
-            }
-        return {"status": "success", "data": payload.get("data", {})}
+        max_retries = 3
+        base_delay = 1.0
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self._twitter_headers(), params=params, timeout=25)
+                response.raise_for_status()
+                payload = response.json()
+                if payload.get("status") != "success":
+                    return {
+                        "status": "error",
+                        "message": str(payload.get("msg") or payload.get("message") or "Twitter API 返回失败"),
+                    }
+                return {"status": "success", "data": payload.get("data", {})}
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                logger.warning(f"[{self.name}] Twitter API 请求超时 (第{attempt+1}/{max_retries}次): {e}")
+            except requests.exceptions.ConnectionError as e:
+                last_error = e
+                logger.warning(f"[{self.name}] Twitter API 连接错误 (第{attempt+1}/{max_retries}次): {e}")
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                logger.warning(f"[{self.name}] Twitter API 请求失败 (第{attempt+1}/{max_retries}次): {e}")
+            except Exception as e:
+                logger.error(f"[{self.name}] Twitter API 未知异常: {e}")
+                return {"status": "error", "message": f"Twitter API 请求失败: {e}"}
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                time.sleep(delay)
+        logger.error(f"[{self.name}] Twitter API 请求最终失败 (已重试{max_retries}次): {last_error}")
+        return {"status": "error", "message": f"Twitter API 请求失败: {last_error}"}
 
     def fetch_user_tweets(
         self,
@@ -949,6 +966,7 @@ class TwitterMonitorPlugin(BasePlugin):
                     for user in current_users:
                         if self._scheduler_stop.is_set():
                             break
+                        time.sleep(1.5)
                         user_result = self._request_twitter_api(
                             "user/last_tweets",
                             {"userName": user, "includeReplies": str(self.include_replies).lower()},

@@ -1,7 +1,7 @@
 {
   "storage_type": "daily",
-  "last_updated": "2026-04-30T20:42:26.230386",
-  "total_count": 213,
+  "last_updated": "2026-04-30T23:35:17.020315",
+  "total_count": 214,
   "tweets": [
     {
       "id": "1978505070322057562",
@@ -13,8 +13,8 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 1838,
-        "retweets": 343,
+        "likes": 1837,
+        "retweets": 342,
         "replies": 71
       }
     },
@@ -28,9 +28,9 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 685,
-        "retweets": 71,
-        "replies": 12
+        "likes": 733,
+        "retweets": 74,
+        "replies": 14
       }
     },
     {
@@ -43,9 +43,9 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 26,
-        "retweets": 1,
-        "replies": 6
+        "likes": 29,
+        "retweets": 3,
+        "replies": 8
       }
     },
     {
@@ -73,7 +73,7 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 25,
+        "likes": 26,
         "retweets": 1,
         "replies": 1
       }
@@ -88,8 +88,8 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 659,
-        "retweets": 25,
+        "likes": 715,
+        "retweets": 29,
         "replies": 23
       }
     },
@@ -103,9 +103,9 @@
         "name": "Anthropic"
       },
       "metrics": {
-        "likes": 252,
+        "likes": 266,
         "retweets": 27,
-        "replies": 16
+        "replies": 17
       }
     },
     {
@@ -118,9 +118,9 @@
         "name": "Anthropic"
       },
       "metrics": {
-        "likes": 1810,
-        "retweets": 165,
-        "replies": 133
+        "likes": 1916,
+        "retweets": 177,
+        "replies": 143
       }
     },
     {
@@ -133,24 +133,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 247,
-        "retweets": 31,
+        "likes": 262,
+        "retweets": 32,
         "replies": 4
-      }
-    },
-    {
-      "id": "2049615817201836531",
-      "text": "RT @JimPethokoukis: \"A decade ago, AI was supposed to replace radiologists. Today, radiologists make more than $500,000 per year, and their…",
-      "created_at": "Wed Apr 29 22:24:25 +0000 2026",
-      "url": "https://x.com/ylecun/status/2049615817201836531",
-      "author": {
-        "user_name": "ylecun",
-        "name": "Yann LeCun"
-      },
-      "metrics": {
-        "likes": 1175,
-        "retweets": 253,
-        "replies": 52
       }
     },
     {
@@ -163,8 +148,8 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 332,
-        "retweets": 19,
+        "likes": 349,
+        "retweets": 20,
         "replies": 15
       }
     },
@@ -238,7 +223,7 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 64,
+        "likes": 66,
         "retweets": 2,
         "replies": 1
       }
@@ -253,24 +238,9 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 734,
-        "retweets": 70,
+        "likes": 774,
+        "retweets": 75,
         "replies": 29
-      }
-    },
-    {
-      "id": "2049595890395152728",
-      "text": "⚙️ We made agent loops faster with WebSockets in the Responses API\n\nAs Codex got faster, the bottleneck moved from inference to inefficient API calls\n\nWebSockets keep response state warm across tool calls, helping workflows run up to 40% faster end to end\n\nhttps://t.co/nFeUEdRdKt",
-      "created_at": "Wed Apr 29 21:05:14 +0000 2026",
-      "url": "https://x.com/OpenAIDevs/status/2049595890395152728",
-      "author": {
-        "user_name": "OpenAIDevs",
-        "name": "OpenAI Developers"
-      },
-      "metrics": {
-        "likes": 898,
-        "retweets": 57,
-        "replies": 21
       }
     },
     {
@@ -283,7 +253,7 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 2,
+        "likes": 3,
         "retweets": 0,
         "replies": 0
       }
@@ -313,9 +283,9 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 24,
-        "retweets": 1,
-        "replies": 2
+        "likes": 26,
+        "retweets": 2,
+        "replies": 3
       }
     },
     {
@@ -328,7 +298,7 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 140,
+        "likes": 141,
         "retweets": 7,
         "replies": 6
       }
@@ -343,7 +313,7 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 290,
+        "likes": 292,
         "retweets": 7,
         "replies": 9
       }
@@ -358,7 +328,7 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 301,
+        "likes": 304,
         "retweets": 8,
         "replies": 9
       }
@@ -373,7 +343,7 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 4,
+        "likes": 5,
         "retweets": 0,
         "replies": 0
       }
@@ -388,8 +358,8 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 142,
-        "retweets": 14,
+        "likes": 158,
+        "retweets": 17,
         "replies": 7
       }
     },
@@ -403,24 +373,9 @@
         "name": "Anthropic"
       },
       "metrics": {
-        "likes": 1177,
-        "retweets": 114,
-        "replies": 121
-      }
-    },
-    {
-      "id": "2049563350476993011",
-      "text": "RT @alvarobartt: IBM Granite just released two multilingual embedding models with 97M and 311M parameters 🤏🏻\n\nModernBERT-based, 200+ langua…",
-      "created_at": "Wed Apr 29 18:55:56 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049563350476993011",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 382,
-        "retweets": 49,
-        "replies": 5
+        "likes": 1233,
+        "retweets": 119,
+        "replies": 125
       }
     },
     {
@@ -448,69 +403,9 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 290,
-        "retweets": 40,
-        "replies": 21
-      }
-    },
-    {
-      "id": "2049520134570516727",
-      "text": "RT @axisrobotics: Wondering what your contributed data looks like before and after smoothing?\n\nAxis’ Task 74 sample dataset is now live on…",
-      "created_at": "Wed Apr 29 16:04:12 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049520134570516727",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 134,
-        "retweets": 31,
-        "replies": 50
-      }
-    },
-    {
-      "id": "2049520062923489754",
-      "text": "RT @lablabai: Just when you thought this hackathon couldn't get any more powerful...\n\n@huggingface is in. \n2,000,000+ models. 50,000+ datas…",
-      "created_at": "Wed Apr 29 16:03:55 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049520062923489754",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 100,
-        "retweets": 14,
-        "replies": 4
-      }
-    },
-    {
-      "id": "2049520019680165889",
-      "text": "RT @NVIDIARobotics: The Physical AI Robotics GR00T‑X Embodiment Sim dataset has surpassed 10 million downloads on @HuggingFace. 🥳\n\nA huge s…",
-      "created_at": "Wed Apr 29 16:03:45 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049520019680165889",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 149,
-        "retweets": 21,
-        "replies": 7
-      }
-    },
-    {
-      "id": "2049514594872242465",
-      "text": "RT @scaling01: Mistral Medium 3.5 is out\n\nand it's a dense 128B model https://t.co/n87jZ6Irld",
-      "created_at": "Wed Apr 29 15:42:12 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049514594872242465",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 1120,
-        "retweets": 50,
-        "replies": 66
+        "likes": 302,
+        "retweets": 41,
+        "replies": 22
       }
     },
     {
@@ -523,7 +418,7 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 13,
+        "likes": 15,
         "retweets": 0,
         "replies": 2
       }
@@ -538,9 +433,9 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 706,
-        "retweets": 49,
-        "replies": 43
+        "likes": 738,
+        "retweets": 56,
+        "replies": 44
       }
     },
     {
@@ -553,9 +448,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 2624,
+        "likes": 2654,
         "retweets": 79,
-        "replies": 334
+        "replies": 335
       }
     },
     {
@@ -568,9 +463,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 9698,
-        "retweets": 241,
-        "replies": 1004
+        "likes": 9862,
+        "retweets": 248,
+        "replies": 1012
       }
     },
     {
@@ -598,7 +493,7 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 80,
+        "likes": 81,
         "retweets": 1,
         "replies": 3
       }
@@ -613,9 +508,9 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 862,
-        "retweets": 98,
-        "replies": 33
+        "likes": 877,
+        "retweets": 99,
+        "replies": 32
       }
     },
     {
@@ -628,9 +523,9 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 1189,
-        "retweets": 141,
-        "replies": 28
+        "likes": 1204,
+        "retweets": 146,
+        "replies": 29
       }
     },
     {
@@ -643,24 +538,9 @@
         "name": "Kimi.ai"
       },
       "metrics": {
-        "likes": 166,
+        "likes": 169,
         "retweets": 15,
         "replies": 5
-      }
-    },
-    {
-      "id": "2049322718802112581",
-      "text": "RT @BasileTerv987: What a week at @iclr_conf in Rio 🇧🇷 !\n\nAs my first conference, it would have been hard to ask for a better experience 😍.…",
-      "created_at": "Wed Apr 29 02:59:45 +0000 2026",
-      "url": "https://x.com/ylecun/status/2049322718802112581",
-      "author": {
-        "user_name": "ylecun",
-        "name": "Yann LeCun"
-      },
-      "metrics": {
-        "likes": 122,
-        "retweets": 8,
-        "replies": 6
       }
     },
     {
@@ -673,9 +553,9 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 6175,
-        "retweets": 525,
-        "replies": 236
+        "likes": 6206,
+        "retweets": 528,
+        "replies": 238
       }
     },
     {
@@ -688,7 +568,7 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 178,
+        "likes": 179,
         "retweets": 9,
         "replies": 12
       }
@@ -720,7 +600,7 @@
       "metrics": {
         "likes": 2792,
         "retweets": 409,
-        "replies": 161
+        "replies": 162
       }
     },
     {
@@ -733,7 +613,7 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 14851,
+        "likes": 14852,
         "retweets": 949,
         "replies": 915
       }
@@ -808,8 +688,8 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 3628,
-        "retweets": 546,
+        "likes": 3626,
+        "retweets": 545,
         "replies": 98
       }
     },
@@ -898,8 +778,8 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 1140,
-        "retweets": 58,
+        "likes": 1145,
+        "retweets": 59,
         "replies": 46
       }
     },
@@ -919,36 +799,6 @@
       }
     },
     {
-      "id": "2049221589971935601",
-      "text": "RT @akseljoonas: new in ml-intern: you can now actually see what's going on inside\n\nadded native metric logging + trackio integration. ever…",
-      "created_at": "Tue Apr 28 20:17:54 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049221589971935601",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 253,
-        "retweets": 24,
-        "replies": 25
-      }
-    },
-    {
-      "id": "2049217960833601755",
-      "text": "@nsrt_py @mervenoyann 🤗 🇹🇷",
-      "created_at": "Tue Apr 28 20:03:29 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049217960833601755",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 3,
-        "retweets": 1,
-        "replies": 0
-      }
-    },
-    {
       "id": "2049172192705864091",
       "text": "Nemotron 3 Nano Omni is now in LM Studio!\n\nA new 30B multi-modal MoE from @nvidia\n\nSupports Image input, reasoning, and tool use\n\nRequires ~25GB to run locally 🔥🚀\n\nhttps://t.co/0pdO0WU7Gc",
       "created_at": "Tue Apr 28 17:01:37 +0000 2026",
@@ -958,7 +808,7 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 542,
+        "likes": 543,
         "retweets": 43,
         "replies": 23
       }
@@ -973,7 +823,7 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 8,
+        "likes": 9,
         "retweets": 1,
         "replies": 1
       }
@@ -988,8 +838,8 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 1652,
-        "retweets": 140,
+        "likes": 1659,
+        "retweets": 145,
         "replies": 34
       }
     },
@@ -1018,7 +868,7 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 98,
+        "likes": 97,
         "retweets": 6,
         "replies": 2
       }
@@ -1069,10 +919,205 @@
       }
     },
     {
-      "id": "2049831626352525533",
-      "text": "感觉 DeepSeek 多模态快来了，推理轨迹里插空间标记（点、框），像人用手指头数数或走迷宫那样，把抽象概念钉到具体位置上。\n\n底层用 DeepSeek-V4-Flash，每 4 个视觉 token 压成 1 个 KV cache 条目，省 token 但不省推理能力。计数和空间推理测试上，模型小、token 花得少，跑出来的成绩跟 GPT-5.4、Claude-Sonnet-4.6、Gemini-3-Flash 差不多。\n\n技术报告已出，后续会放评测基准和冷启动数据。\n\nhttps://t.co/Avdbfi2u5g",
-      "created_at": "Thu Apr 30 12:41:58 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049831626352525533",
+      "id": "2049873940433314081",
+      "text": "X 将于 2026 年 4 月起分阶段推出全新广告平台，这将是其 20 年来最大规模的广告系统重建。\n\n新平台将通过 AI 简化广告创建、提升广告主控制力，并用更先进的检索和排序系统提高投放精准度、相关性、互动率和 ROI。未来几个月，X 还会陆续上线更多新功能。",
+      "created_at": "Thu Apr 30 15:30:06 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049873940433314081",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049871702793064656",
+      "text": "RT @XFreeze: Just uploaded my Apple Watch data straight into Grok… and it was insanely good\n\nGrok gave me a full, detailed analysis of ever…",
+      "created_at": "Thu Apr 30 15:21:13 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049871702793064656",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 626,
+        "retweets": 90,
+        "replies": 153
+      }
+    },
+    {
+      "id": "2049871537025777895",
+      "text": "RT @ResisttheMS: Big Balls explains what working with Elon Musk taught him.\n\n\"You've gotta do what you think is right. That's the biggest t…",
+      "created_at": "Thu Apr 30 15:20:33 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049871537025777895",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 4519,
+        "retweets": 521,
+        "replies": 122
+      }
+    },
+    {
+      "id": "2049871483544248736",
+      "text": "RT @SpaceX: Falcon Heavy launches the @viasat-3 F3 mission to orbit from Florida https://t.co/InhpZOjPMg",
+      "created_at": "Thu Apr 30 15:20:21 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049871483544248736",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 8142,
+        "retweets": 1099,
+        "replies": 343
+      }
+    },
+    {
+      "id": "2049870862921474086",
+      "text": "RT @SawyerMerritt: The Tesla Model X was the fastest-selling used vehicle in the U.S. in March 2026, according to a new study by iSeeCars.…",
+      "created_at": "Thu Apr 30 15:17:53 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049870862921474086",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1055,
+        "retweets": 105,
+        "replies": 136
+      }
+    },
+    {
+      "id": "2049870724744229066",
+      "text": "@C_3C_3 True",
+      "created_at": "Thu Apr 30 15:17:20 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049870724744229066",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 385,
+        "retweets": 31,
+        "replies": 138
+      }
+    },
+    {
+      "id": "2049870085997892008",
+      "text": "Read the full launch post for everything you can build with your Cloud Computer!\n\nTeam plan coming soon! \n\nhttps://t.co/Wlvqcq0yJr",
+      "created_at": "Thu Apr 30 15:14:47 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049870085997892008",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 8,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049870082759950689",
+      "text": "Here's what you can now build and run 24/7 without writing a single line of code:\n\n- 24/7 bots on Slack, Discord, Telegram\n-Live databases and persistent knowledge bases\n-Self-hosted open-source tools (WordPress, Metabase, Home Assistant, Odoo)\n-Scheduled scrapers and reports",
+      "created_at": "Thu Apr 30 15:14:47 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049870082759950689",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 15,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049870078896963962",
+      "text": "Introducing Cloud Computer for Manus.\n\nYour always on machine in the cloud, so anything you build keeps running 24/7, even when your laptop is off. \n\nAnyone can build, and anything can run. \n\nAvailable on web and mobile https://t.co/PL6qj72KCg",
+      "created_at": "Thu Apr 30 15:14:46 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049870078896963962",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 76,
+        "retweets": 6,
+        "replies": 6
+      }
+    },
+    {
+      "id": "2049866769180053558",
+      "text": "Major upgrade to 𝕏 advertising",
+      "created_at": "Thu Apr 30 15:01:37 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049866769180053558",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 5177,
+        "retweets": 670,
+        "replies": 1533
+      }
+    },
+    {
+      "id": "2049861145574690992",
+      "text": "Today we’re releasing Qwen-Scope 🔭, an open suite of sparse autoencoders for the Qwen model family. It turns SAE features into practical tools：\n\n🎯 Inference — Steer model outputs by directly manipulating internal features, no prompt engineering needed\n📂 Data — Classify & synthesize targeted data with minimal seed examples, boosting long-tail capabilities\n🏋️ Training — Trace code-switching & repetitive generation back to their source, fix them at the root\n📊 Evaluation — Analyze feature activation patterns to select smarter benchmarks and cut redundancy\n\nWe hope the community uses Qwen-Scope to uncover new mechanisms inside Qwen models and build applications beyond what we explored.Excited to see what you build! 🚀\n\n🔗🔗\nBlog: https://t.co/ndwiE1tnb9\nHuggingFace: https://t.co/1kICpK8eXG\nModelScope: https://t.co/U7v1FjmPaW\nTechnical Report: https://t.co/CZMjEZK0sa",
+      "created_at": "Thu Apr 30 14:39:16 +0000 2026",
+      "url": "https://x.com/Alibaba_Qwen/status/2049861145574690992",
+      "author": {
+        "user_name": "Alibaba_Qwen",
+        "name": "Qwen"
+      },
+      "metrics": {
+        "likes": 349,
+        "retweets": 58,
+        "replies": 24
+      }
+    },
+    {
+      "id": "2049857018295377941",
+      "text": "RT @Dan_Jeffries1: These folks are trying to ban open source. \n\nThey're looking to take away your freedom to choose.\n\nThey're also looking…",
+      "created_at": "Thu Apr 30 14:22:52 +0000 2026",
+      "url": "https://x.com/ylecun/status/2049857018295377941",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 48,
+        "retweets": 14,
+        "replies": 6
+      }
+    },
+    {
+      "id": "2049856703735230795",
+      "text": "RT @JeanRemiKing: ✨🧠 Tribe v2, our latest model of human brain responses to sound, sight and language can now be (partly) explored on your…",
+      "created_at": "Thu Apr 30 14:21:37 +0000 2026",
+      "url": "https://x.com/ylecun/status/2049856703735230795",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 94,
+        "retweets": 21,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049853084000780508",
+      "text": "@paulwalker99318 😂",
+      "created_at": "Thu Apr 30 14:07:14 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049853084000780508",
       "author": {
         "user_name": "geekbb",
         "name": "Geek"
@@ -1084,10 +1129,70 @@
       }
     },
     {
-      "id": "2049830577822707985",
-      "text": "Codex 给整的图标，是那个味了 https://t.co/4s2f6n1Mw4",
-      "created_at": "Thu Apr 30 12:37:48 +0000 2026",
-      "url": "https://x.com/op7418/status/2049830577822707985",
+      "id": "2049852283765285028",
+      "text": "https://t.co/8GTu9uddLL",
+      "created_at": "Thu Apr 30 14:04:03 +0000 2026",
+      "url": "https://x.com/Baidu_Inc/status/2049852283765285028",
+      "author": {
+        "user_name": "Baidu_Inc",
+        "name": "Baidu Inc."
+      },
+      "metrics": {
+        "likes": 4,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049850895207473418",
+      "text": "@xiaoniaoziming OK",
+      "created_at": "Thu Apr 30 13:58:32 +0000 2026",
+      "url": "https://x.com/op7418/status/2049850895207473418",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049849890616832178",
+      "text": "RT @pycharm: Train a TensorFlow object detection model – then deploy it on a robot 🤖\n\nIulia Feroli (@iuliaferoli) shows how to turn a noteb…",
+      "created_at": "Thu Apr 30 13:54:32 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049849890616832178",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 18,
+        "retweets": 5,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049847272188301408",
+      "text": "RT @NielsRogge: The @huggingface CLI now includes a command to find the best open-source models for a given dataset!\n\nThis is going to be v…",
+      "created_at": "Thu Apr 30 13:44:08 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049847272188301408",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 50,
+        "retweets": 9,
+        "replies": 6
+      }
+    },
+    {
+      "id": "2049846900908814396",
+      "text": "@LuJia32473 是的",
+      "created_at": "Thu Apr 30 13:42:40 +0000 2026",
+      "url": "https://x.com/op7418/status/2049846900908814396",
       "author": {
         "user_name": "op7418",
         "name": "歸藏(guizang.ai)"
@@ -1096,6 +1201,201 @@
         "likes": 1,
         "retweets": 0,
         "replies": 0
+      }
+    },
+    {
+      "id": "2049846486955864313",
+      "text": "RT @ClementDelangue: Trying @OpenAI GPT 5.5 in ml intern to create datasets, train models, optimize models (or create reachy mini apps). Ve…",
+      "created_at": "Thu Apr 30 13:41:01 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049846486955864313",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 41,
+        "retweets": 6,
+        "replies": 7
+      }
+    },
+    {
+      "id": "2049846454450016594",
+      "text": "RT @NielsRogge: People may bash on @MistralAI...\n\n...but it's also the only non-Chinese model in the top 25 (!) of open models on SWE-Bench…",
+      "created_at": "Thu Apr 30 13:40:53 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049846454450016594",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 124,
+        "retweets": 11,
+        "replies": 9
+      }
+    },
+    {
+      "id": "2049845467593552164",
+      "text": "@xiaoniaoziming 哈哈 感谢",
+      "created_at": "Thu Apr 30 13:36:58 +0000 2026",
+      "url": "https://x.com/op7418/status/2049845467593552164",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049845275007815983",
+      "text": "@xingbugengming 也行的，现在主要看你对游戏设计的理解，而不是代码和技术",
+      "created_at": "Thu Apr 30 13:36:12 +0000 2026",
+      "url": "https://x.com/op7418/status/2049845275007815983",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049845127364137194",
+      "text": "@GeekCatX 哈哈 是这样的",
+      "created_at": "Thu Apr 30 13:35:37 +0000 2026",
+      "url": "https://x.com/op7418/status/2049845127364137194",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049843519469092973",
+      "text": "RT @dru_blackberry: If @julien_c can flex, we all can flex 💪Qwen-3.5 35B on llama.cpp harnessed by pi. https://t.co/iJabwc4Rgj",
+      "created_at": "Thu Apr 30 13:29:13 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049843519469092973",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 274,
+        "retweets": 13,
+        "replies": 15
+      }
+    },
+    {
+      "id": "2049843422849069281",
+      "text": "RT @_lewtun: GPT-5.5 is now available in the ml-intern app ⚡️!\n\nAs others have noted, it's a very good research partner and is now hard at…",
+      "created_at": "Thu Apr 30 13:28:50 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049843422849069281",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 27,
+        "retweets": 5,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2049839496758473032",
+      "text": "@duange6099 小红书故意把举报流程设计得巨长，而且你要举报就得证明“你是你”，你得把你的身份证照片、身份证信息、来源，以及各种著作权都填上去，而人家搬运只需要复制粘贴点发送。",
+      "created_at": "Thu Apr 30 13:13:14 +0000 2026",
+      "url": "https://x.com/op7418/status/2049839496758473032",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049839181858517388",
+      "text": "@yangyi 嗯嗯 时间上划不来，我后面看看，搞个自动的东西",
+      "created_at": "Thu Apr 30 13:11:59 +0000 2026",
+      "url": "https://x.com/op7418/status/2049839181858517388",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049838530952941664",
+      "text": "@yangyi 这个不错，但有些图片加了水印以后，小红书会一视同仁地限流，你自己都发不了",
+      "created_at": "Thu Apr 30 13:09:24 +0000 2026",
+      "url": "https://x.com/op7418/status/2049838530952941664",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049838004693520546",
+      "text": "@markksantos @OpenAI The spell to unleash the goblins in Codex is hiding in the blog 👀",
+      "created_at": "Thu Apr 30 13:07:19 +0000 2026",
+      "url": "https://x.com/OpenAIDevs/status/2049838004693520546",
+      "author": {
+        "user_name": "OpenAIDevs",
+        "name": "OpenAI Developers"
+      },
+      "metrics": {
+        "likes": 2,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049832334241779849",
+      "text": "如果你用Dia 浏览器，可以新开一个Tab，对话框中输入：coffeeonjosh，体验这个新功能。\n\n会自动连接Gmail，也可以连接Notion等工具，制作一份晨间早报。",
+      "created_at": "Thu Apr 30 12:44:47 +0000 2026",
+      "url": "https://x.com/vista8/status/2049832334241779849",
+      "author": {
+        "user_name": "vista8",
+        "name": "向阳乔木"
+      },
+      "metrics": {
+        "likes": 2,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049831626352525533",
+      "text": "感觉 DeepSeek 多模态快来了，推理轨迹里插空间标记（点、框），像人用手指头数数或走迷宫那样，把抽象概念钉到具体位置上。\n\n底层用 DeepSeek-V4-Flash，每 4 个视觉 token 压成 1 个 KV cache 条目，省 token 但不省推理能力。计数和空间推理测试上，模型小、token 花得少，跑出来的成绩跟 GPT-5.4、Claude-Sonnet-4.6、Gemini-3-Flash 差不多。\n\n技术报告已出，后续会放评测基准和冷启动数据。\n\nhttps://t.co/Avdbfi2u5g",
+      "created_at": "Thu Apr 30 12:41:58 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049831626352525533",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 2,
+        "replies": 1
       }
     },
     {
@@ -1108,24 +1408,9 @@
         "name": "Hugging Face"
       },
       "metrics": {
-        "likes": 95,
-        "retweets": 18,
+        "likes": 142,
+        "retweets": 27,
         "replies": 1
-      }
-    },
-    {
-      "id": "2049827916540944502",
-      "text": "论文发了：https://t.co/HXItUfDZA1",
-      "created_at": "Thu Apr 30 12:27:13 +0000 2026",
-      "url": "https://x.com/op7418/status/2049827916540944502",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
       }
     },
     {
@@ -1138,54 +1423,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 486,
-        "retweets": 172,
-        "replies": 65
-      }
-    },
-    {
-      "id": "2049823570159972674",
-      "text": "详情：https://t.co/wRK4qJkjgy",
-      "created_at": "Thu Apr 30 12:09:57 +0000 2026",
-      "url": "https://x.com/op7418/status/2049823570159972674",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049823491017592924",
-      "text": "DeepSeek 多模态大语言模型的论文《Thinking with Visual Primitives》已经公开\n\n底座是 DeepSeek-V4-Flash，MoE架构，总参数量 284B，激活参数量 13B。\n\n自研 DeepSeek‑ViT 视觉编码模型，14×14 patch，输出后 3×3 空间压缩，再接入 LLM。\n\n模型在回答时不仅进行文字推理，还会同时通过画框、打点等“视觉原语”进行思考。\n\n在极低的 Token 成本下，其效果能和 GPT-5.4、Claude 以及 Gemini 在一些前沿指标上对齐，甚至有的指标能反超。",
-      "created_at": "Thu Apr 30 12:09:38 +0000 2026",
-      "url": "https://x.com/op7418/status/2049823491017592924",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 3,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2049818991062069536",
-      "text": "@Rambo_31X @Datou 我也没说啥呀，这游戏圈的人如果自己懂的话，他就自己来呀。不懂的话，数值做的就差。也不是说人人有了这套东西都能做牛逼游戏的，只是门槛变低了。",
-      "created_at": "Thu Apr 30 11:51:45 +0000 2026",
-      "url": "https://x.com/op7418/status/2049818991062069536",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
+        "likes": 588,
+        "retweets": 190,
+        "replies": 76
       }
     },
     {
@@ -1198,39 +1438,9 @@
         "name": "Hugging Face"
       },
       "metrics": {
-        "likes": 1376,
-        "retweets": 282,
-        "replies": 45
-      }
-    },
-    {
-      "id": "2049797158036271132",
-      "text": "基本上今天晚上或者明天就会有安装包，然后整个代码也会开源",
-      "created_at": "Thu Apr 30 10:25:00 +0000 2026",
-      "url": "https://x.com/op7418/status/2049797158036271132",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 20,
-        "retweets": 1,
-        "replies": 4
-      }
-    },
-    {
-      "id": "2049797114079985713",
-      "text": "基本上今天晚上或者明天就会有安装包，然后整个代码也会开源",
-      "created_at": "Thu Apr 30 10:24:50 +0000 2026",
-      "url": "https://x.com/op7418/status/2049797114079985713",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 4,
-        "retweets": 0,
-        "replies": 1
+        "likes": 1479,
+        "retweets": 300,
+        "replies": 47
       }
     },
     {
@@ -1264,36 +1474,6 @@
       }
     },
     {
-      "id": "2049789299063914813",
-      "text": "@Datou 数字自己来就行。\n\n原来阻挡大部分人的就是这块，就是交互、壳子这部分。",
-      "created_at": "Thu Apr 30 09:53:46 +0000 2026",
-      "url": "https://x.com/op7418/status/2049789299063914813",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2049787823088439511",
-      "text": "@vista8 哈哈哈哈 做游戏太好玩了",
-      "created_at": "Thu Apr 30 09:47:54 +0000 2026",
-      "url": "https://x.com/op7418/status/2049787823088439511",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
       "id": "2049786107164774470",
       "text": "太牛逼了，今天刚在小群里聊各种游戏，提到杀戮尖塔2，藏师傅Codex里试了下，然后就一发不可收拾了。",
       "created_at": "Thu Apr 30 09:41:05 +0000 2026",
@@ -1303,24 +1483,9 @@
         "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 2,
+        "likes": 4,
         "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2049784553771024696",
-      "text": "声音和表现上还可以更卷，正在迭代",
-      "created_at": "Thu Apr 30 09:34:55 +0000 2026",
-      "url": "https://x.com/op7418/status/2049784553771024696",
-      "author": {
-        "user_name": "op7418",
-        "name": "歸藏(guizang.ai)"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
+        "replies": 2
       }
     },
     {
@@ -1333,8 +1498,8 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 23,
-        "retweets": 2,
+        "likes": 24,
+        "retweets": 3,
         "replies": 3
       }
     },
@@ -1348,9 +1513,9 @@
         "name": "Elon Musk"
       },
       "metrics": {
-        "likes": 2215,
-        "retweets": 425,
-        "replies": 464
+        "likes": 3186,
+        "retweets": 617,
+        "replies": 628
       }
     },
     {
@@ -1363,54 +1528,9 @@
         "name": "Elon Musk"
       },
       "metrics": {
-        "likes": 40929,
-        "retweets": 4033,
-        "replies": 4045
-      }
-    },
-    {
-      "id": "2049757179662807307",
-      "text": "@beffjezos Might actually happen",
-      "created_at": "Thu Apr 30 07:46:08 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049757179662807307",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 4876,
-        "retweets": 189,
-        "replies": 500
-      }
-    },
-    {
-      "id": "2049757086591103140",
-      "text": "@edwards345 lol",
-      "created_at": "Thu Apr 30 07:45:46 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049757086591103140",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 781,
-        "retweets": 57,
-        "replies": 158
-      }
-    },
-    {
-      "id": "2049756754058342448",
-      "text": "Congrats to the @SpaceX Falcon Team!",
-      "created_at": "Thu Apr 30 07:44:27 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049756754058342448",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 2057,
-        "retweets": 411,
-        "replies": 600
+        "likes": 64936,
+        "retweets": 6474,
+        "replies": 5182
       }
     },
     {
@@ -1423,8 +1543,8 @@
         "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 50,
-        "retweets": 6,
+        "likes": 71,
+        "retweets": 8,
         "replies": 24
       }
     },
@@ -1438,7 +1558,7 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 11,
+        "likes": 12,
         "retweets": 1,
         "replies": 3
       }
@@ -1453,7 +1573,7 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 7,
+        "likes": 10,
         "retweets": 0,
         "replies": 1
       }
@@ -1489,81 +1609,6 @@
       }
     },
     {
-      "id": "2049733735181095068",
-      "text": "@nexmoe 什么小型、中型、大型。\n是中杯、大杯，超大杯",
-      "created_at": "Thu Apr 30 06:12:59 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049733735181095068",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 1,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049733531321151997",
-      "text": "@outsource_ Looks great.",
-      "created_at": "Thu Apr 30 06:12:10 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049733531321151997",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 1,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2049729777251275130",
-      "text": "@teslaownersSV @tesla_semi Should we give Billy G a Semi? 😉",
-      "created_at": "Thu Apr 30 05:57:15 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049729777251275130",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 2476,
-        "retweets": 168,
-        "replies": 624
-      }
-    },
-    {
-      "id": "2049728808178331780",
-      "text": "RT @Tesla: A thousand little conveniences add up to a seamless experience",
-      "created_at": "Thu Apr 30 05:53:24 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049728808178331780",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 7738,
-        "retweets": 980,
-        "replies": 601
-      }
-    },
-    {
-      "id": "2049723344245948667",
-      "text": "RT @tesla_semi: First Semi off high volume line https://t.co/fI1AdQrJFH",
-      "created_at": "Thu Apr 30 05:31:41 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049723344245948667",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 17914,
-        "retweets": 2205,
-        "replies": 867
-      }
-    },
-    {
       "id": "2049716631828640135",
       "text": "@app_sail @LuoSays 哈哈哈，这个月偷懒了，净想着去哪儿钓鱼",
       "created_at": "Thu Apr 30 05:05:01 +0000 2026",
@@ -1588,9 +1633,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 2848,
-        "retweets": 65,
-        "replies": 237
+        "likes": 3329,
+        "retweets": 77,
+        "replies": 265
       }
     },
     {
@@ -1603,9 +1648,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 7933,
-        "retweets": 498,
-        "replies": 793
+        "likes": 9185,
+        "retweets": 567,
+        "replies": 862
       }
     },
     {
@@ -1618,9 +1663,9 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 155,
-        "retweets": 14,
-        "replies": 15
+        "likes": 165,
+        "retweets": 15,
+        "replies": 16
       }
     },
     {
@@ -1633,8 +1678,8 @@
         "name": "Tongyi Lab"
       },
       "metrics": {
-        "likes": 24,
-        "retweets": 3,
+        "likes": 29,
+        "retweets": 4,
         "replies": 2
       }
     },
@@ -1648,9 +1693,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 1042,
-        "retweets": 68,
-        "replies": 102
+        "likes": 1084,
+        "retweets": 74,
+        "replies": 104
       }
     },
     {
@@ -1663,9 +1708,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 2561,
-        "retweets": 84,
-        "replies": 384
+        "likes": 2755,
+        "retweets": 85,
+        "replies": 396
       }
     },
     {
@@ -1678,9 +1723,9 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 473,
+        "likes": 549,
         "retweets": 19,
-        "replies": 38
+        "replies": 40
       }
     },
     {
@@ -1693,9 +1738,9 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 520,
-        "retweets": 19,
-        "replies": 34
+        "likes": 591,
+        "retweets": 20,
+        "replies": 37
       }
     },
     {
@@ -1708,9 +1753,9 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 440,
-        "retweets": 15,
-        "replies": 31
+        "likes": 496,
+        "retweets": 16,
+        "replies": 33
       }
     },
     {
@@ -1723,9 +1768,9 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 777,
-        "retweets": 26,
-        "replies": 23
+        "likes": 866,
+        "retweets": 27,
+        "replies": 24
       }
     },
     {
@@ -1738,9 +1783,9 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 703,
+        "likes": 782,
         "retweets": 17,
-        "replies": 9
+        "replies": 10
       }
     },
     {
@@ -1753,9 +1798,9 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 5801,
-        "retweets": 632,
-        "replies": 378
+        "likes": 6466,
+        "retweets": 684,
+        "replies": 411
       }
     },
     {
@@ -1768,9 +1813,9 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 155,
-        "retweets": 14,
-        "replies": 15
+        "likes": 165,
+        "retweets": 15,
+        "replies": 16
       }
     },
     {
@@ -1783,9 +1828,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 8699,
-        "retweets": 3842,
-        "replies": 1035
+        "likes": 10475,
+        "retweets": 4664,
+        "replies": 1252
       }
     },
     {
@@ -1798,9 +1843,9 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 290,
-        "retweets": 40,
-        "replies": 21
+        "likes": 302,
+        "retweets": 41,
+        "replies": 22
       }
     },
     {
@@ -1813,8 +1858,8 @@
         "name": "Tongyi Lab"
       },
       "metrics": {
-        "likes": 25,
-        "retweets": 3,
+        "likes": 29,
+        "retweets": 4,
         "replies": 1
       }
     },
@@ -1843,7 +1888,7 @@
         "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 55,
+        "likes": 63,
         "retweets": 12,
         "replies": 4
       }
@@ -1858,9 +1903,9 @@
         "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 37,
+        "likes": 38,
         "retweets": 0,
-        "replies": 39
+        "replies": 41
       }
     },
     {
@@ -1873,9 +1918,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 1050,
-        "retweets": 26,
-        "replies": 163
+        "likes": 1084,
+        "retweets": 29,
+        "replies": 164
       }
     },
     {
@@ -1888,9 +1933,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 4934,
-        "retweets": 306,
-        "replies": 1634
+        "likes": 5172,
+        "retweets": 327,
+        "replies": 1688
       }
     },
     {
@@ -1909,21 +1954,6 @@
       }
     },
     {
-      "id": "2049653035362918600",
-      "text": "@BOX_IN_Ai 赞，感谢分享实战经验",
-      "created_at": "Thu Apr 30 00:52:18 +0000 2026",
-      "url": "https://x.com/vista8/status/2049653035362918600",
-      "author": {
-        "user_name": "vista8",
-        "name": "向阳乔木"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
       "id": "2049649049729466532",
       "text": "RT @KenRoth: This is what an impending midterm disaster looks like for Republicans. https://t.co/da1q35cmwm https://t.co/m5GIRaI6J4",
       "created_at": "Thu Apr 30 00:36:28 +0000 2026",
@@ -1933,7 +1963,7 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 165,
+        "likes": 178,
         "retweets": 53,
         "replies": 6
       }
@@ -1948,9 +1978,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 1443,
-        "retweets": 312,
-        "replies": 1
+        "likes": 0,
+        "retweets": 314,
+        "replies": 0
       }
     },
     {
@@ -1963,9 +1993,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 580,
-        "retweets": 123,
-        "replies": 38
+        "likes": 663,
+        "retweets": 137,
+        "replies": 47
       }
     },
     {
@@ -2119,21 +2149,6 @@
       }
     },
     {
-      "id": "2047162053685907879",
-      "text": "📢 ERNIE-Image is live on ERNIE Bot!\n\nBuilt for precise text rendering, complex instruction following, and structured image generation, our open-source 8B text-to-image model lowers the hardware and cost barriers to advanced image creation.\n\nIt has already been integrated by 50+ creative platforms and validated by 30+ partner organizations.\n\nTry it here: https://t.co/Cl1U0P0SLV\n\nBenchmarks in thread ↓",
-      "created_at": "Thu Apr 23 03:54:02 +0000 2026",
-      "url": "https://x.com/Baidu_Inc/status/2047162053685907879",
-      "author": {
-        "user_name": "Baidu_Inc",
-        "name": "Baidu Inc."
-      },
-      "metrics": {
-        "likes": 65,
-        "retweets": 9,
-        "replies": 5
-      }
-    },
-    {
       "id": "2047150057548562770",
       "text": "@ajie_run_CL Thanks for your contribution!",
       "created_at": "Thu Apr 23 03:06:22 +0000 2026",
@@ -2173,7 +2188,7 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 10482,
+        "likes": 10484,
         "retweets": 877,
         "replies": 630
       }
@@ -2203,9 +2218,9 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 7661,
+        "likes": 7669,
         "retweets": 725,
-        "replies": 355
+        "replies": 356
       }
     },
     {
@@ -2218,9 +2233,9 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 205304,
-        "retweets": 14720,
-        "replies": 11417
+        "likes": 205308,
+        "retweets": 14723,
+        "replies": 11422
       }
     },
     {
@@ -2233,9 +2248,9 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 9302,
-        "retweets": 927,
-        "replies": 333
+        "likes": 9306,
+        "retweets": 928,
+        "replies": 334
       }
     },
     {
@@ -2248,7 +2263,7 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 78,
+        "likes": 79,
         "retweets": 3,
         "replies": 1
       }
@@ -2263,7 +2278,7 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 90,
+        "likes": 91,
         "retweets": 8,
         "replies": 3
       }
@@ -2458,7 +2473,7 @@
         "name": "Cline"
       },
       "metrics": {
-        "likes": 6,
+        "likes": 7,
         "retweets": 0,
         "replies": 0
       }
@@ -2473,7 +2488,7 @@
         "name": "Cline"
       },
       "metrics": {
-        "likes": 11,
+        "likes": 12,
         "retweets": 4,
         "replies": 1
       }
@@ -2548,9 +2563,9 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 1790,
-        "retweets": 344,
-        "replies": 185
+        "likes": 1798,
+        "retweets": 345,
+        "replies": 187
       }
     },
     {
@@ -2563,7 +2578,7 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 1209,
+        "likes": 1208,
         "retweets": 62,
         "replies": 65
       }
@@ -2593,7 +2608,7 @@
         "name": "Kimi.ai"
       },
       "metrics": {
-        "likes": 2410,
+        "likes": 2413,
         "retweets": 146,
         "replies": 119
       }
@@ -2668,8 +2683,8 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 17962,
-        "retweets": 1529,
+        "likes": 17964,
+        "retweets": 1530,
         "replies": 11469
       }
     },
@@ -2684,8 +2699,8 @@
       },
       "metrics": {
         "likes": 23952,
-        "retweets": 1497,
-        "replies": 1082
+        "retweets": 1496,
+        "replies": 1083
       }
     },
     {
@@ -3103,7 +3118,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 2040,
+        "likes": 2042,
         "retweets": 128,
         "replies": 23
       }
@@ -3133,7 +3148,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 2074,
+        "likes": 2075,
         "retweets": 150,
         "replies": 20
       }
@@ -3193,7 +3208,7 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 29722,
+        "likes": 29725,
         "retweets": 1786,
         "replies": 787
       }

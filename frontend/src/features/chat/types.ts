@@ -4,6 +4,7 @@ export interface ChatMessage {
   content: string
   reasoning_content?: string
   timestamp: Date
+  toolEvents?: ToolEventMeta[]
 }
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'error'
@@ -22,6 +23,11 @@ export interface ToolEventMeta {
   name: string
   status: TaskStatus
   detail?: string
+  input?: Record<string, unknown>
+  output?: unknown
+  sequence?: number
+  startedAt?: number
+  completedAt?: number
 }
 
 export interface UsageMeta {
@@ -42,6 +48,7 @@ export interface AssistantExecutionMeta {
   steps: TaskStepMeta[]
   toolEvents: ToolEventMeta[]
   usage?: UsageMeta
+  totalDuration?: number
 }
 
 export interface ConversationSessionSummary {

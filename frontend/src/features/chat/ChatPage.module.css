@@ -241,9 +241,63 @@
   animation: dotPulse 1s ease-in-out infinite;
 }
 
+/* 内联工具调用卡片容器 */
+.inline-tools {
+  margin: 8px 0;
+}
+
 @keyframes dotPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+
+/* 卡片滑入动画 */
+@keyframes cardSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 时间线连线生长动画 */
+@keyframes lineGrow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* 完成打勾滑入动画 */
+@keyframes checkSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-45deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* 错误抖动动画 */
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+/* 状态徽章脉冲动画 */
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .floating-execution-usage {

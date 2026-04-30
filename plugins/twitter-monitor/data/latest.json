@@ -1,8 +1,38 @@
 {
   "storage_type": "latest",
-  "last_updated": "2026-04-30T20:42:26.228220",
+  "last_updated": "2026-04-30T23:35:17.017825",
   "total_count": 8,
   "tweets": [
+    {
+      "id": "2049873940433314081",
+      "text": "X 将于 2026 年 4 月起分阶段推出全新广告平台，这将是其 20 年来最大规模的广告系统重建。\n\n新平台将通过 AI 简化广告创建、提升广告主控制力，并用更先进的检索和排序系统提高投放精准度、相关性、互动率和 ROI。未来几个月，X 还会陆续上线更多新功能。",
+      "created_at": "Thu Apr 30 15:30:06 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049873940433314081",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049853084000780508",
+      "text": "@paulwalker99318 😂",
+      "created_at": "Thu Apr 30 14:07:14 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049853084000780508",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
     {
       "id": "2049831626352525533",
       "text": "感觉 DeepSeek 多模态快来了，推理轨迹里插空间标记（点、框），像人用手指头数数或走迷宫那样，把抽象概念钉到具体位置上。\n\n底层用 DeepSeek-V4-Flash，每 4 个视觉 token 压成 1 个 KV cache 条目，省 token 但不省推理能力。计数和空间推理测试上，模型小、token 花得少，跑出来的成绩跟 GPT-5.4、Claude-Sonnet-4.6、Gemini-3-Flash 差不多。\n\n技术报告已出，后续会放评测基准和冷启动数据。\n\nhttps://t.co/Avdbfi2u5g",
@@ -13,9 +43,9 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
+        "likes": 6,
+        "retweets": 2,
+        "replies": 1
       }
     },
     {
@@ -58,7 +88,7 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 11,
+        "likes": 12,
         "retweets": 1,
         "replies": 3
       }
@@ -73,7 +103,7 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 8,
+        "likes": 12,
         "retweets": 0,
         "replies": 1
       }
@@ -91,36 +121,6 @@
         "likes": 1,
         "retweets": 0,
         "replies": 1
-      }
-    },
-    {
-      "id": "2049733991016923287",
-      "text": "@skywind3000 国家队平准金",
-      "created_at": "Thu Apr 30 06:14:00 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049733991016923287",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049733735181095068",
-      "text": "@nexmoe 什么小型、中型、大型。\n是中杯、大杯，超大杯",
-      "created_at": "Thu Apr 30 06:12:59 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049733735181095068",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 1,
-        "retweets": 0,
-        "replies": 0
       }
     }
   ]

@@ -38,6 +38,7 @@ interface ChatState {
   addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string, id?: string) => string
   updateLastMessage: (content: string, reasoning_content?: string) => void
   setMessages: (messages: ChatMessage[]) => void
+  updateMessage: (messageId: string, updater: (msg: ChatMessage) => ChatMessage) => void
   loadCachedMessages: (sessionId: string) => void
   setLoading: (loading: boolean) => void
   clearMessages: () => void
@@ -117,6 +118,15 @@ export const useChatStore = create<ChatState>((set) => ({
     set((state) => {
       setCachedConversationMessages(state.sessionId, messages)
       return { messages }
+    }),
+
+  updateMessage: (messageId: string, updater: (msg: ChatMessage) => ChatMessage) =>
+    set((state) => {
+      const nextMessages = state.messages.map((msg) =>
+        msg.id === messageId ? updater(msg) : msg
+      )
+      setCachedConversationMessages(state.sessionId, nextMessages)
+      return { messages: nextMessages }
     }),
 
   loadCachedMessages: (sessionId) =>
