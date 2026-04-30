@@ -70,7 +70,7 @@ export const useChatStore = create<ChatState>((set) => ({
   modelError: null,
   thinkingEnabled: false,
   thinkingDepth: 0,
-  
+
   addMessage: (role, content, reasoning_content, id) => {
     const messageId = id || crypto.randomUUID()
     set((state) => ({
@@ -91,23 +91,28 @@ export const useChatStore = create<ChatState>((set) => ({
     }))
     return messageId
   },
-  
+
   updateLastMessage: (content, reasoning_content) =>
     set((state) => {
       if (state.messages.length === 0) return state
-      const newMessages = [...state.messages]
-      const lastMessage = newMessages[newMessages.length - 1]
-      
+      const lastMessage = state.messages[state.messages.length - 1]
+
       if (lastMessage.role === 'assistant') {
-        lastMessage.content += content
-        if (reasoning_content) {
-          lastMessage.reasoning_content = (lastMessage.reasoning_content || '') + reasoning_content
+        // 创建新对象而非修改原对象，保持 Zustand 不可变性
+        const updatedMessage = {
+          ...lastMessage,
+          content: lastMessage.content + content,
+          reasoning_content: reasoning_content
+            ? (lastMessage.reasoning_content || '') + reasoning_content
+            : lastMessage.reasoning_content,
         }
+        const newMessages = [...state.messages.slice(0, -1), updatedMessage]
+        setCachedConversationMessages(state.sessionId, newMessages)
+        return { messages: newMessages }
       }
-      setCachedConversationMessages(state.sessionId, newMessages)
-      return { messages: newMessages }
+      return state
     }),
-  
+
   setMessages: (messages) =>
     set((state) => {
       setCachedConversationMessages(state.sessionId, messages)
@@ -116,15 +121,15 @@ export const useChatStore = create<ChatState>((set) => ({
 
   loadCachedMessages: (sessionId) =>
     set({ messages: getCachedConversationMessages(sessionId) }),
-  
+
   setLoading: (loading) => set({ isLoading: loading }),
-  
+
   clearMessages: () =>
     set((state) => {
       setCachedConversationMessages(state.sessionId, [])
       return { messages: [] }
     }),
-  
+
   setSessionId: (id) => {
     setActiveConversationId(id)
     set({ sessionId: id, messages: getCachedConversationMessages(id) })

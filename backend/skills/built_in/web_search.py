@@ -136,16 +136,18 @@ class WebSearchSkill:
 
         context = ssl.create_default_context()
         conn = http.client.HTTPSConnection(host, timeout=REQUEST_TIMEOUT, context=context)
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; Open-AwA/1.0)',
-            'Accept': 'text/html',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-        }
-        conn.request("GET", path, headers=headers)
-        response = conn.getresponse()
-        data = response.read().decode('utf-8', errors='replace')
-        conn.close()
-        return data
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (compatible; Open-AwA/1.0)',
+                'Accept': 'text/html',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+            }
+            conn.request("GET", path, headers=headers)
+            response = conn.getresponse()
+            data = response.read().decode('utf-8', errors='replace')
+            return data
+        finally:
+            conn.close()
 
     def _parse_ddg_html(self, html_content: str, max_results: int) -> List[Dict[str, str]]:
         """

@@ -1349,14 +1349,22 @@ async def extract_experience(
     """
     from skills.experience_extractor import ExperienceExtractor
 
-    extractor = ExperienceExtractor()
-    experience = await extractor.extract_from_session(
-        user_goal=user_goal,
-        execution_steps=execution_steps,
-        final_result=final_result,
-        status=status,
-        session_id=session_id
-    )
+    try:
+        extractor = ExperienceExtractor()
+        experience = await extractor.extract_from_session(
+            user_goal=user_goal,
+            execution_steps=execution_steps,
+            final_result=final_result,
+            status=status,
+            session_id=session_id
+        )
+    except Exception as exc:
+        logger.bind(
+            event="experience_extraction_error",
+            module="skills",
+            session_id=session_id,
+        ).error(f"经验提取失败: {exc}")
+        return {"status": "error", "message": f"经验提取失败: {str(exc)}"}
 
     if not experience:
         return {"status": "no_experience", "message": "未发现值得提取的经验"}

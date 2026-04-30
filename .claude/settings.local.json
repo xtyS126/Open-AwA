@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(icacls *)",
+      "Bash(attrib *)",
+      "PowerShell(icacls *)",
+      "PowerShell($content = Get-Content -Path \"D:\\\\代码\\\\Open-AwA\\\\backend\\\\mcp\\\\client.py\" -Raw -Encoding UTF8; $old = '    async def disconnect\\(self\\) -> None:'; if \\($content -match [regex]::Escape\\($old\\)\\) { Write-Host \"Found target method\" } else { Write-Host \"Not found\" })",
+      "Bash(python *)",
+      "Bash(npx tsc *)",
+      "PowerShell(D:\\\\代码\\\\Open-AwA\\\\apply_all_fixes.ps1)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Copy-Item *)",
+      "Bash(git *)",
+      "Bash(sqlite3 *)",
+      "Bash(../.venv/Scripts/python.exe fix_weixin_db.py)",
+      "Bash(../.venv/Scripts/python.exe -c ' *)"
+    ]
+  }
+}

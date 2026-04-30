@@ -396,8 +396,11 @@ async def upload_chat_file(
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     file_path = UPLOAD_DIR / safe_filename
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"文件写入失败: {exc}")
 
     # 判断文件类型分类
     image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}

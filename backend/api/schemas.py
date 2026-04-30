@@ -21,7 +21,7 @@ class UserCreate(UserBase):
     封装与UserCreate相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class UserResponse(UserBase):

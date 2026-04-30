@@ -74,13 +74,17 @@ class MCPManager:
     def remove_server(self, server_id: str) -> None:
         """
         移除 MCP Server 配置、断开连接并从持久化存储中删除。
+        如果客户端已连接，会先尽力通过 cleanup_sync 清理子进程资源。
         :param server_id: 服务器 ID
         """
         with self._lock:
             if server_id not in self._clients:
                 raise MCPClientError(f"未找到 MCP Server: {server_id}")
-            self._clients.pop(server_id, None)
+            client = self._clients.pop(server_id, None)
             self._configs.pop(server_id, None)
+        # 尽力清理客户端持有的子进程资源
+        if client is not None:
+            client.cleanup_sync()
         # 从持久化存储中删除
         self._config_store.remove_server(server_id)
         logger.bind(module="mcp.manager", event="server_removed").info(
@@ -250,10 +254,12 @@ class MCPManager:
             current_ids = set(self._configs.keys())
             new_ids = set(new_configs.keys())
 
-            # 移除已删除的配置
+            # 移除已删除的配置——先清理子进程资源再移除
             for removed_id in current_ids - new_ids:
-                self._clients.pop(removed_id, None)
+                old_client = self._clients.pop(removed_id, None)
                 self._configs.pop(removed_id, None)
+                if old_client is not None:
+                    old_client.cleanup_sync()
                 logger.bind(module="mcp.manager", event="hot_reload_remove").info(
                     f"热更新：移除 Server {removed_id}"
                 )
@@ -289,13 +295,17 @@ class MCPManager:
     def rollback_to_snapshot(self, snapshot_name: str) -> Dict[str, Dict[str, Any]]:
         """
         回滚到指定版本快照，并同步内存状态。
+        回滚前会先清理所有现有客户端的子进程资源。
         :return: 回滚后的配置
         """
         new_configs = self._config_store.rollback_to_snapshot(snapshot_name)
-        # 同步内存状态
+        # 同步内存状态——先清理旧客户端资源再清空
         with self._lock:
+            old_clients = dict(self._clients)
             self._clients.clear()
             self._configs.clear()
+        for client in old_clients.values():
+            client.cleanup_sync()
         self._restore_from_persistent_config()
         logger.bind(module="mcp.manager", event="rollback").info(
             f"已回滚到快照: {snapshot_name}"

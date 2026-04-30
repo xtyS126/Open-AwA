@@ -220,8 +220,12 @@ class PlanningLayer:
         prompt_parts.append("根据历史经验，以下列方法可能对当前任务有帮助：\n")
         
         for i, exp in enumerate(experiences, 1):
-            prompt_parts.append(f"\n{i}. **{exp['title']}** (置信度: {exp['confidence']:.2f})\n")
-            prompt_parts.append(f"   {exp['content']}\n")
-            prompt_parts.append(f"   适用场景：{exp['trigger']}\n")
+            title = exp.get('title', '无标题')
+            confidence = exp.get('confidence', 0)
+            content = exp.get('content', '')
+            trigger = exp.get('trigger', '通用')
+            prompt_parts.append(f"\n{i}. **{title}** (置信度: {confidence:.2f})\n")
+            prompt_parts.append(f"   {content}\n")
+            prompt_parts.append(f"   适用场景：{trigger}\n")
         
         return "".join(prompt_parts)

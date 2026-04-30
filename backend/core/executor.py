@@ -1022,12 +1022,10 @@ class ExecutionLayer:
                 plugin_name, plugin_method = remaining.split("/", 1)
             else:
                 return {"ok": False, "error": f"plugin tool name missing '/' separator: {func_name}"}
-            from plugins.plugin_manager import PluginManager
-            from db.models import SessionLocal
+            from plugins import plugin_instance
             try:
-                pm = PluginManager(db_session_factory=SessionLocal)
-                pm.discover_plugins()
-                if not pm.load_plugin(plugin_name):
+                pm = plugin_instance.get()
+                if plugin_name not in pm.loaded_plugins and not pm.load_plugin(plugin_name):
                     return {"ok": False, "error": f"Failed to load plugin: {plugin_name}"}
                 result = await pm.execute_plugin_async(plugin_name, plugin_method, **func_args)
                 return {"ok": True, "result": result, "tool_name": func_name}

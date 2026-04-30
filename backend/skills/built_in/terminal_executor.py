@@ -11,19 +11,49 @@ from typing import Dict, Any, List, Optional
 from loguru import logger
 
 
-# 禁止执行的危险命令前缀
+# 禁止执行的危险命令名（完整匹配命令名，非子串匹配）
 BLOCKED_COMMANDS = [
-    'rm -rf /',
-    'mkfs',
-    'dd if=',
-    ':(){',
-    'fork',
-    'shutdown',
-    'reboot',
-    'halt',
-    'poweroff',
-    'init 0',
-    'init 6',
+    'rm', 'rmdir', 'mv', 'cp',
+    'mkfs', 'mke2fs', 'mkfs.ext2', 'mkfs.ext3', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs',
+    'dd', 'shred',
+    'shutdown', 'reboot', 'halt', 'poweroff', 'init',
+    'chmod', 'chown', 'chgrp', 'chattr', 'setfacl', 'getfacl',
+    'kill', 'pkill', 'killall', 'xkill',
+    'iptables', 'ip6tables', 'nft', 'ufw', 'firewall-cmd',
+    'mount', 'umount', 'fdisk', 'parted', 'losetup',
+    'useradd', 'userdel', 'usermod', 'groupadd', 'groupdel',
+    'passwd', 'su', 'sudo', 'doas',
+    'wget', 'curl',
+    'nc', 'ncat', 'netcat', 'socat', 'telnet',
+    'ssh', 'scp', 'sftp', 'rsync',
+    'crontab', 'at', 'systemctl', 'service',
+    'export', 'unset', 'alias', 'source',
+    'chroot', 'nsenter', 'unshare',
+    ':(){', 'fork', 'exec',
+]
+
+# 禁止出现在命令参数中的高危路径
+BLOCKED_PATHS = [
+    '/etc/passwd', '/etc/shadow', '/etc/sudoers', '/etc/crontab',
+    '/etc/ssh/', '/root/', '/boot/', '/sys/', '/proc/',
+    '/dev/sda', '/dev/sdb', '/dev/sdc', '/dev/sdd',
+    '/dev/nvme', '/dev/mem', '/dev/kmem', '/dev/port',
+    r'\.ssh/', r'\.gnupg/',
+]
+
+# 禁止的命令行中出现的模式（正则）
+BLOCKED_PATTERNS = [
+    r'>\s*/dev/',           # 重定向到设备文件
+    r'>>\s*/dev/',
+    r'<\s*/dev/zero',      # 从 /dev/zero 读取输入
+    r'\$\s*\(',            # $() 命令替换
+    r'`[^`]+`',            # 反引号命令替换
+    r';\s*\w',             # 命令串联
+    r'\|\s*\w',            # 管道（可能用于串联恶意命令）
+    r'&&\s*\w',            # 逻辑与串联
+    r'\|\|\s*\w',          # 逻辑或串联
+    r'\\x[0-9a-fA-F]{2}', # 十六进制编码绕过
+    r'base64\s.*-d',       # base64 解码绕过
 ]
 
 # 最大输出长度（字符）
@@ -61,28 +91,36 @@ class TerminalExecutorSkill:
     def _is_command_safe(self, command: str) -> bool:
         """
         检查命令是否安全。
-        使用多层检查策略：危险命令前缀 + 危险符号模式。
+        多层检查：危险命令名 + 高危路径 + 危险正则模式 + 命令名白名单。
         """
-        cmd_lower = command.lower().strip()
+        import re
+        try:
+            cmd_parts = shlex.split(command)
+        except ValueError:
+            logger.warning(f"命令解析失败（可能包含未闭合的引号等）: {command}")
+            return False
+        if not cmd_parts:
+            return False
 
-        # 检查危险命令前缀
-        for blocked in BLOCKED_COMMANDS:
-            if blocked in cmd_lower:
-                logger.warning(f"Blocked dangerous command prefix: {command}")
+        cmd_name = os.path.basename(cmd_parts[0]).lower()
+
+        # 1. 检查命令名是否在禁止列表中
+        if cmd_name in BLOCKED_COMMANDS:
+            logger.warning(f"禁止的危险命令: {cmd_parts[0]}")
+            return False
+
+        # 2. 检查参数中是否包含高危路径
+        cmd_full = command.lower()
+        for blocked_path in BLOCKED_PATHS:
+            if blocked_path.lower() in cmd_full:
+                logger.warning(f"命令中包含禁止的路径: {blocked_path}")
                 return False
 
-        # 检查危险的命令串联符号（防止绕过）
-        import re
-        # 检查反引号命令替换
-        if '`' in command:
-            logger.warning(f"Blocked command with backtick substitution: {command}")
-            return False
-
-        # 检查 $() 命令替换中的危险命令
-        subst_pattern = re.compile(r'\$\([^)]*(?:rm|mkfs|dd|shutdown|reboot|halt)\b')
-        if subst_pattern.search(command):
-            logger.warning(f"Blocked command with dangerous substitution: {command}")
-            return False
+        # 3. 检查是否匹配禁止的正则模式
+        for pattern in BLOCKED_PATTERNS:
+            if re.search(pattern, command):
+                logger.warning(f"命令匹配禁止模式 '{pattern}': {command}")
+                return False
 
         return True
 

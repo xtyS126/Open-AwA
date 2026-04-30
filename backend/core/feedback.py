@@ -64,16 +64,19 @@ class FeedbackLayer:
         if not results:
             response_text = "No results to report."
             if context and callable(context.get("_record_hook")):
-                context["_record_hook"](
-                    node_type="feedback_generation",
-                    user_message=context.get("message", ""),
-                    context=context,
-                    llm_output=response_text,
-                    execution_duration_ms=int((time.perf_counter() - started_at) * 1000),
-                    metadata={
-                        "results_count": 0
-                    }
-                )
+                try:
+                    context["_record_hook"](
+                        node_type="feedback_generation",
+                        user_message=context.get("message", ""),
+                        context=context,
+                        llm_output=response_text,
+                        execution_duration_ms=int((time.perf_counter() - started_at) * 1000),
+                        metadata={
+                            "results_count": 0
+                        }
+                    )
+                except Exception:
+                    pass
             return response_text
 
         responses = []
@@ -102,16 +105,19 @@ class FeedbackLayer:
             response_text = "\n\n".join(responses)
 
         if context and callable(context.get("_record_hook")):
-            context["_record_hook"](
-                node_type="feedback_generation",
-                user_message=context.get("message", ""),
-                context=context,
-                llm_output=response_text,
-                execution_duration_ms=int((time.perf_counter() - started_at) * 1000),
-                metadata={
-                    "results_count": len(results)
-                }
-            )
+            try:
+                context["_record_hook"](
+                    node_type="feedback_generation",
+                    user_message=context.get("message", ""),
+                    context=context,
+                    llm_output=response_text,
+                    execution_duration_ms=int((time.perf_counter() - started_at) * 1000),
+                    metadata={
+                        "results_count": len(results)
+                    }
+                )
+            except Exception:
+                pass
 
         return response_text
     
