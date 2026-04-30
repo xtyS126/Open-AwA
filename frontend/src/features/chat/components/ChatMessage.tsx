@@ -60,7 +60,7 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
             ))}
           </div>
         )}
-        {message.content && <MessageContent content={message.content} role={message.role} />}
+        {message.content && <MessageContent content={message.content} role={message.role} isStreaming={isCurrentlyStreaming} />}
         {message.role === 'assistant' && messageMeta[message.id] && hasExecutionMeta(messageMeta[message.id]) && (
           <AssistantExecutionDetails
             messageId={message.id}
