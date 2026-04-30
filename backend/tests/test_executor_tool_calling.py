@@ -184,6 +184,7 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
     async def fake_litellm_chat_completion_stream(**kwargs):
         call_index["value"] += 1
         if call_index["value"] == 1:
+            assert kwargs.get("tools")
             yield {
                     "type": "tool_calls",
                     "tool_calls": [
@@ -214,6 +215,25 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
             "message": "查询 OpenAI 的 Twitter 账号信息",
             "username": "tester",
             "enable_skill_plugin": True,
+            "_tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "plugin_twitter-monitor/get_twitter_user_info",
+                        "description": "获取指定 Twitter 用户的账号信息",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "user_name": {
+                                    "type": "string",
+                                    "description": "目标用户名",
+                                }
+                            },
+                            "required": ["user_name"],
+                        },
+                    },
+                }
+            ],
         },
     ):
         chunks.append(chunk)

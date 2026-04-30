@@ -1,126 +1,126 @@
 {
   "storage_type": "latest",
-  "last_updated": "2026-04-30T23:35:17.017825",
+  "last_updated": "2026-05-01T00:26:22.886356",
   "total_count": 8,
   "tweets": [
     {
-      "id": "2049873940433314081",
-      "text": "X 将于 2026 年 4 月起分阶段推出全新广告平台，这将是其 20 年来最大规模的广告系统重建。\n\n新平台将通过 AI 简化广告创建、提升广告主控制力，并用更先进的检索和排序系统提高投放精准度、相关性、互动率和 ROI。未来几个月，X 还会陆续上线更多新功能。",
-      "created_at": "Thu Apr 30 15:30:06 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049873940433314081",
+      "id": "2049504041487507858",
+      "text": "Check out the blog for more 👀\nhttps://t.co/ikfWNdzVDq",
+      "created_at": "Wed Apr 29 15:00:16 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049504041487507858",
       "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
+        "user_name": "ManusAI",
+        "name": "Manus"
       },
       "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2049853084000780508",
-      "text": "@paulwalker99318 😂",
-      "created_at": "Thu Apr 30 14:07:14 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049853084000780508",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049831626352525533",
-      "text": "感觉 DeepSeek 多模态快来了，推理轨迹里插空间标记（点、框），像人用手指头数数或走迷宫那样，把抽象概念钉到具体位置上。\n\n底层用 DeepSeek-V4-Flash，每 4 个视觉 token 压成 1 个 KV cache 条目，省 token 但不省推理能力。计数和空间推理测试上，模型小、token 花得少，跑出来的成绩跟 GPT-5.4、Claude-Sonnet-4.6、Gemini-3-Flash 差不多。\n\n技术报告已出，后续会放评测基准和冷启动数据。\n\nhttps://t.co/Avdbfi2u5g",
-      "created_at": "Thu Apr 30 12:41:58 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049831626352525533",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 6,
-        "retweets": 2,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2049792632780689755",
-      "text": "@lumao_2026 对的，一些小任务完全可以用",
-      "created_at": "Thu Apr 30 10:07:01 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049792632780689755",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049792566594572596",
-      "text": "@998potato 😅",
-      "created_at": "Thu Apr 30 10:06:45 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049792566594572596",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 0,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049749158857421003",
-      "text": "再次回顾人类全马破二！ https://t.co/t1LprKN7Zt",
-      "created_at": "Thu Apr 30 07:14:16 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049749158857421003",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 12,
+        "likes": 17,
         "retweets": 1,
-        "replies": 3
+        "replies": 2
       }
     },
     {
-      "id": "2049745756714844520",
-      "text": "@tutulifestyle 这件衣服要被干下架",
-      "created_at": "Thu Apr 30 07:00:45 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049745756714844520",
+      "id": "2049504040094933384",
+      "text": "You can now use GPT Image 2 on Manus Slides! \n\n👉 Edit text or visuals with point-and-click precision\n👉Swap elements or update imagery with a prompt\n👉Add speaker notes — or let Manus write them\n👉Export to Google Slides, PowerPoint, PDF, Drive, or OneDrive https://t.co/rdQ6Evv8vZ",
+      "created_at": "Wed Apr 29 15:00:15 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049504040094933384",
       "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
+        "user_name": "ManusAI",
+        "name": "Manus"
       },
       "metrics": {
-        "likes": 12,
-        "retweets": 0,
+        "likes": 755,
+        "retweets": 56,
+        "replies": 45
+      }
+    },
+    {
+      "id": "2049870085997892008",
+      "text": "Read the full launch post for everything you can build with your Cloud Computer!\n\nTeam plan coming soon! \n\nhttps://t.co/Wlvqcq0yJr",
+      "created_at": "Thu Apr 30 15:14:47 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049870085997892008",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 23,
+        "retweets": 1,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049870082759950689",
+      "text": "Here's what you can now build and run 24/7 without writing a single line of code:\n\n- 24/7 bots on Slack, Discord, Telegram\n-Live databases and persistent knowledge bases\n-Self-hosted open-source tools (WordPress, Metabase, Home Assistant, Odoo)\n-Scheduled scrapers and reports",
+      "created_at": "Thu Apr 30 15:14:47 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049870082759950689",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 35,
+        "retweets": 1,
         "replies": 1
       }
     },
     {
-      "id": "2049734633684898229",
-      "text": "@wangyg 我也准备舍了，感觉太重了",
-      "created_at": "Thu Apr 30 06:16:33 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049734633684898229",
+      "id": "2049870078896963962",
+      "text": "Introducing Cloud Computer for Manus.\n\nYour always on machine in the cloud, so anything you build keeps running 24/7, even when your laptop is off. \n\nAnyone can build, and anything can run. \n\nAvailable on web and mobile https://t.co/PL6qj72KCg",
+      "created_at": "Thu Apr 30 15:14:46 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2049870078896963962",
       "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 447,
+        "retweets": 46,
+        "replies": 31
+      }
+    },
+    {
+      "id": "2047340757389107653",
+      "text": "@AbhiSuryawanshi @manuscommunity Glad to have you!",
+      "created_at": "Thu Apr 23 15:44:08 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2047340757389107653",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
       },
       "metrics": {
         "likes": 1,
         "retweets": 0,
-        "replies": 1
+        "replies": 0
+      }
+    },
+    {
+      "id": "2047331573775978657",
+      "text": "Help us continue writing our story: Apply for the Manus Fellow Program here: https://t.co/HtGeSOJFPQ",
+      "created_at": "Thu Apr 23 15:07:39 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2047331573775978657",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 24,
+        "retweets": 1,
+        "replies": 5
+      }
+    },
+    {
+      "id": "2047331570173030601",
+      "text": "The Manus Fellow program is now open!\n\nHere’s your chance to be part of Manus in the most meaningful way!",
+      "created_at": "Thu Apr 23 15:07:38 +0000 2026",
+      "url": "https://x.com/ManusAI/status/2047331570173030601",
+      "author": {
+        "user_name": "ManusAI",
+        "name": "Manus"
+      },
+      "metrics": {
+        "likes": 491,
+        "retweets": 34,
+        "replies": 24
       }
     }
   ]
