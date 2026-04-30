@@ -111,6 +111,34 @@ class MCPClient:
                     f"已断开 MCP Server: {self._config.name}"
                 )
 
+    def cleanup_sync(self) -> None:
+        """
+        同步方式尽力清理客户端持有的子进程资源。
+        在无法等待异步 disconnect 的场景下使用（如 remove_server/rollback_to_snapshot）。
+        """
+        if self._transport is None:
+            return
+        from mcp.transport import StdioTransport
+        try:
+            if isinstance(self._transport, StdioTransport) and self._transport._process is not None:
+                proc = self._transport._process
+                if proc.returncode is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2.0)
+                    except Exception:
+                        proc.kill()
+                        proc.wait(timeout=1.0)
+                self._transport._process = None
+        except Exception as e:
+            logger.bind(module="mcp.client", event="cleanup_sync_error").warning(
+                f"同步清理客户端资源时出错: {e}"
+            )
+        finally:
+            self._transport = None
+            self._server_info = None
+            self._tools = []
+
     async def list_tools(self) -> List[MCPTool]:
         """
         获取 MCP Server 提供的工具列表。

@@ -1,0 +1,34 @@
+=== @unknown 的推文总结 ===
+
+有5条重要动态：
+
+一、DeepSeek-V4-Pro 与 DeepSeek-V4-Flash 正式发布
+· 结构创新：Token-wise 压缩 + DeepSeek Sparse Attention，1M 上下文成默认配置
+· 两个版本：V4-Pro 旗舰、V4-Flash 轻量（推理接近 Pro，Agent 任务持平）
+· API 即日起可用，支持 OpenAI ChatCompletions 和 Anthropic 两种协议
+· 75% 折扣至 5 月 5 日，Input Cache 价格降至原价 1/10
+· 已集成 Claude Code、OpenClaw、OpenCode 等主流 Agent 工具
+
+二、Kimi K2.6 成为 OpenRouter 每周 LLM 排行榜第一，Vision & Document Arena 最佳开源模型
+· 在 Vals Index 跃居开源第一（总榜第八），MathArena 开源第一
+· 提供限时充值奖励：最高 30% 返券
+· 被评价为“最稳的工程选择”，复用了 DSv3 文本架构并增加视觉能力
+
+三、GPT-5.5-Cyber 发布 + Codex 重大更新 + “Goblin” 现象解密
+· GPT-5.5-Cyber：前沿网络安全模型，向关键防御者逐步开放
+· Codex：支持 Figma 插件生成 FigJam 规划图、WebSocket 使 Agent 循环提速 40%、上线“Goblin”风格（后经分析确认是 Nerdy 人格训练过奖励所致，已修正）
+· GPT-5.5 将在 5 月 5 日举办派对，开放报名
+
+四、Cline Kanban v0.1.64 上线，支持多 Agent 并行与远程服务器
+· 每个任务可选用不同 Agent/模型（Claude Code、Codex、Cline 等并行）
+· 完整远程服务器支持（通过 URL 克隆仓库、HTTPS+密码认证）
+· 增量展开 diff、新颜色主题、团队/额度管理
+· 新增 @kirodotdev CLI 代理支持
+
+五、FlashQLA：基于 TileLang 的高性能线性注意力内核开源
+· 前向 2–3 倍加速，反向 2 倍加速，针对边缘设备与长上下文 Agent 场景优化
+· 采用门控驱动自动片内计算、硬件友好的代数重写、TileLang 融合 Warp 专用内核
+· 代码与博客已发布
+
+AI总结：本周 AI 行业进入密集交付期——DeepSeek-V4 在长上下文与 Agent 集成上树立新标杆，Kimi K2.6 成为开源新王，GPT-5.5 与 Codex 则继续夯实 OpenAI 的 Agent 生态。Cline 的更新让本地多 Agent 协作成为可操作方案，FlashQLA 则为边缘侧推理性能带来实用改进。模型能力持续提升的同时，工程工具链也在快速成熟，Agent 应用进入可规模化落地阶段。
+

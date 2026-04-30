@@ -181,9 +181,9 @@ class BehaviorLogger:
             for item in batch:
                 db.add(
                     BehaviorLog(
-                        user_id=item["user_id"],
-                        action_type=item["action_type"],
-                        details=item["details"],
+                        user_id=item.get("user_id", "unknown"),
+                        action_type=item.get("action_type", "unknown"),
+                        details=str(item.get("details", "")),
                         timestamp=item.get("timestamp") or datetime.now(timezone.utc),
                     )
                 )

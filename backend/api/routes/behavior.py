@@ -3,7 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
@@ -195,13 +195,23 @@ async def log_behavior(
     处理log、behavior相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
+    # 输入校验：防止超长字段写入
+    if not action_type or len(action_type) > 64:
+        raise HTTPException(status_code=400, detail="action_type 长度须为 1-64 个字符")
+    if not details or len(details) > 4096:
+        raise HTTPException(status_code=400, detail="details 长度须为 1-4096 个字符")
+
     log_entry = BehaviorLog(
         user_id=current_user.id,
         action_type=action_type,
         details=details
     )
-    
-    db.add(log_entry)
-    db.commit()
-    
+
+    try:
+        db.add(log_entry)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="行为日志写入失败")
+
     return {"message": "Behavior logged successfully"}

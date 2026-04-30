@@ -1,126 +1,126 @@
 {
   "storage_type": "latest",
-  "last_updated": "2026-04-28T23:55:17.239704",
+  "last_updated": "2026-04-30T20:42:26.228220",
   "total_count": 8,
   "tweets": [
     {
-      "id": "2046975708124086559",
-      "text": "RT @ZixuanLi_: Truly sorry for any confusion or frustration caused by unclear, misleading, or inappropriate rules in our moderation system…",
-      "created_at": "Wed Apr 22 15:33:34 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2046975708124086559",
+      "id": "2049831626352525533",
+      "text": "感觉 DeepSeek 多模态快来了，推理轨迹里插空间标记（点、框），像人用手指头数数或走迷宫那样，把抽象概念钉到具体位置上。\n\n底层用 DeepSeek-V4-Flash，每 4 个视觉 token 压成 1 个 KV cache 条目，省 token 但不省推理能力。计数和空间推理测试上，模型小、token 花得少，跑出来的成绩跟 GPT-5.4、Claude-Sonnet-4.6、Gemini-3-Flash 差不多。\n\n技术报告已出，后续会放评测基准和冷启动数据。\n\nhttps://t.co/Avdbfi2u5g",
+      "created_at": "Thu Apr 30 12:41:58 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049831626352525533",
       "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 685,
-        "retweets": 30,
-        "replies": 62
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
-      "id": "2044064276919259180",
-      "text": "RT @gmi_cloud: GMI Cloud and @Zai_org  are bringing fast inference + frontier models around the globe.\n\nFirst stop: Singapore.\n\nBig congrat…",
-      "created_at": "Tue Apr 14 14:44:35 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2044064276919259180",
+      "id": "2049792632780689755",
+      "text": "@lumao_2026 对的，一些小任务完全可以用",
+      "created_at": "Thu Apr 30 10:07:01 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049792632780689755",
       "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 41,
-        "retweets": 5,
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049792566594572596",
+      "text": "@998potato 😅",
+      "created_at": "Thu Apr 30 10:06:45 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049792566594572596",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049749158857421003",
+      "text": "再次回顾人类全马破二！ https://t.co/t1LprKN7Zt",
+      "created_at": "Thu Apr 30 07:14:16 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049749158857421003",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 11,
+        "retweets": 1,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2049745756714844520",
+      "text": "@tutulifestyle 这件衣服要被干下架",
+      "created_at": "Thu Apr 30 07:00:45 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049745756714844520",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 8,
+        "retweets": 0,
         "replies": 1
       }
     },
     {
-      "id": "2044741938604093443",
-      "text": "GLM-5.1 Tool Calling Issue Fix & Chat Template Update\n\nIf you are running GLM-5.1 with vLLM/SGLang and using tool calling, please update your chat template. https://t.co/XyyCucws82\n\nIssue \nWhen using tool calling, frameworks including vLLM automatically convert plain-text tool message content into an array of content parts (`[{\"type\": \"text\", \"text\": \"...\"}]`) before passing it to the chat template. \n\nThe original template only supported string-formatted tool content, causing array-formatted tool outputs to render empty. \n\nAs a result, the model does not receive tool results and repeatedly triggers the same tool call in a loop.  \n\nAffected Models \nAll GLM-5.1 variants deployed with vLLM or SGLang.  \n\nFix \nSimply replace your existing `chat_template.jinja` with the updated version from the repository.",
-      "created_at": "Thu Apr 16 11:37:22 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2044741938604093443",
+      "id": "2049734633684898229",
+      "text": "@wangyg 我也准备舍了，感觉太重了",
+      "created_at": "Thu Apr 30 06:16:33 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049734633684898229",
       "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 1120,
-        "retweets": 84,
-        "replies": 55
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
       }
     },
     {
-      "id": "2043235585452576923",
-      "text": "RT @ZixuanLi_: Trending #1 on @huggingface. The hardest one yet. https://t.co/Y1Kbo5unei",
-      "created_at": "Sun Apr 12 07:51:39 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2043235585452576923",
+      "id": "2049733991016923287",
+      "text": "@skywind3000 国家队平准金",
+      "created_at": "Thu Apr 30 06:14:00 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049733991016923287",
       "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 1338,
-        "retweets": 54,
-        "replies": 63
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
-      "id": "2045513811411558556",
-      "text": "Fantastic to see GLM being applied to such fresh, dynamic scenarios.",
-      "created_at": "Sat Apr 18 14:44:31 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2045513811411558556",
+      "id": "2049733735181095068",
+      "text": "@nexmoe 什么小型、中型、大型。\n是中杯、大杯，超大杯",
+      "created_at": "Thu Apr 30 06:12:59 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049733735181095068",
       "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 336,
-        "retweets": 20,
-        "replies": 17
-      }
-    },
-    {
-      "id": "2043001835099951474",
-      "text": "@AmineYagoube created CodeTribunal to help teams audit freelance code more effectively.\n\nIt sets up an \"AI Courtroom\" where GLM-5.1 agents debate as prosecutor and defense to uncover hidden logical risks that standard linters might miss.\nhttps://t.co/Bo17XGYYhD https://t.co/RLqh1l0uQ4",
-      "created_at": "Sat Apr 11 16:22:49 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2043001835099951474",
-      "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
-      },
-      "metrics": {
-        "likes": 89,
-        "retweets": 18,
-        "replies": 2
-      }
-    },
-    {
-      "id": "2048784274523148750",
-      "text": "The \"triple usage\" period for GLM-5.1 and GLM-5-Turbo is now extended to June 30.\n\nAvailability: Anytime except 2-6 AM ET.",
-      "created_at": "Mon Apr 27 15:20:10 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2048784274523148750",
-      "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
-      },
-      "metrics": {
-        "likes": 1174,
-        "retweets": 59,
-        "replies": 61
-      }
-    },
-    {
-      "id": "2047535825844339043",
-      "text": "@deepseek_ai Really impressive work! If you need a higher rate limit to keep those evals moving forward, we are definitely here to support you. https://t.co/TvYoLoWRR3",
-      "created_at": "Fri Apr 24 04:39:16 +0000 2026",
-      "url": "https://x.com/Zai_org/status/2047535825844339043",
-      "author": {
-        "user_name": "Zai_org",
-        "name": "Z.ai"
-      },
-      "metrics": {
-        "likes": 1603,
-        "retweets": 28,
-        "replies": 29
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
       }
     }
   ]

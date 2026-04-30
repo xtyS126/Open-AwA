@@ -99,8 +99,12 @@ async def lifespan(app: FastAPI):
             "Model API requests will fail until LiteLLM is installed."
         )
     if not os.getenv("SKIP_INIT_DB"):
-        init_db()
-        logger.bind(event="db_initialized", module="main").info("database initialized")
+        try:
+            init_db()
+            logger.bind(event="db_initialized", module="main").info("database initialized")
+        except Exception as exc:
+            logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
+            raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
         BillingBase.metadata.create_all(bind=engine)
         logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
         from billing.pricing_manager import PricingManager

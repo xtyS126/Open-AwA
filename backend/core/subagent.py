@@ -193,7 +193,13 @@ class AgentGraph:
         if current_node in self.conditional_edges:
             for edge in self.conditional_edges[current_node]:
                 if edge.condition:
-                    result = edge.condition(state)
+                    try:
+                        result = edge.condition(state)
+                    except Exception as exc:
+                        logger.bind(module="subagent", event="condition_error").warning(
+                            f"条件边回调异常: {exc}"
+                        )
+                        continue
                     if result == edge.condition_value:
                         next_nodes.append(edge.target)
                         break

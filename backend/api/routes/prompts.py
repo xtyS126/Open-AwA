@@ -3,6 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
+import threading
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -13,6 +14,9 @@ import uuid
 
 
 router = APIRouter(prefix="/prompts", tags=["Prompts"])
+
+# 保护 fallback/default prompt 创建路径，防止并发竞态
+_active_prompt_lock = threading.Lock()
 
 
 @router.get(
@@ -51,27 +55,34 @@ async def get_active_prompt(
     if prompt:
         return prompt
 
-    # 原子操作：先停用所有已激活的提示词，再激活回退项
-    db.query(PromptConfig).filter(PromptConfig.is_active == True).update({"is_active": False})
+    # 锁保护 fallback/default 创建路径，防止并发竞态
+    with _active_prompt_lock:
+        # 在锁内再次检查（双重检查锁定模式）
+        prompt = db.query(PromptConfig).filter(PromptConfig.is_active == True).first()
+        if prompt:
+            return prompt
 
-    fallback_prompt = db.query(PromptConfig).order_by(PromptConfig.updated_at.desc()).first()
-    if fallback_prompt:
-        fallback_prompt.is_active = True
+        # 原子操作：先停用所有已激活的提示词，再激活回退项
+        db.query(PromptConfig).filter(PromptConfig.is_active == True).update({"is_active": False})
+
+        fallback_prompt = db.query(PromptConfig).order_by(PromptConfig.updated_at.desc()).first()
+        if fallback_prompt:
+            fallback_prompt.is_active = True
+            db.commit()
+            db.refresh(fallback_prompt)
+            return fallback_prompt
+
+        default_prompt = PromptConfig(
+            id=str(uuid.uuid4()),
+            name="System Prompt",
+            content="",
+            variables="{}",
+            is_active=True
+        )
+        db.add(default_prompt)
         db.commit()
-        db.refresh(fallback_prompt)
-        return fallback_prompt
-
-    default_prompt = PromptConfig(
-        id=str(uuid.uuid4()),
-        name="System Prompt",
-        content="",
-        variables="{}",
-        is_active=True
-    )
-    db.add(default_prompt)
-    db.commit()
-    db.refresh(default_prompt)
-    return default_prompt
+        db.refresh(default_prompt)
+        return default_prompt
 
 
 @router.get(
