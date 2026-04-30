@@ -63,7 +63,7 @@ class PluginSandbox:
     memory_limit 和 cpu_limit 参数仅作为配置占位，尚未实现真正的进程级资源隔离。
     如需生产级沙箱隔离，应接入容器或 cgroup 等机制。
     """
-    def __init__(self, timeout: int = 30, memory_limit: str = "512m", cpu_limit: float = 1.0):
+    def __init__(self, timeout: int = 60, memory_limit: str = "512m", cpu_limit: float = 1.0):
         """
         初始化插件沙箱。
 

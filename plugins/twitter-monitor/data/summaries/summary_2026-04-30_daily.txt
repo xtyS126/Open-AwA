@@ -1,34 +1,51 @@
 === @unknown 的推文总结 ===
 
-有5条重要动态：
+有13条重要动态：
 
-一、DeepSeek-V4-Pro 与 DeepSeek-V4-Flash 正式发布
-· 结构创新：Token-wise 压缩 + DeepSeek Sparse Attention，1M 上下文成默认配置
-· 两个版本：V4-Pro 旗舰、V4-Flash 轻量（推理接近 Pro，Agent 任务持平）
-· API 即日起可用，支持 OpenAI ChatCompletions 和 Anthropic 两种协议
-· 75% 折扣至 5 月 5 日，Input Cache 价格降至原价 1/10
-· 已集成 Claude Code、OpenClaw、OpenCode 等主流 Agent 工具
+一、Sam Altman 宣布 GPT-5.5-Cyber 即将面向关键网安防御者推出，并称 Codex 正在经历“ChatGPT 时刻”，预示其能力跃升。
 
-二、Kimi K2.6 成为 OpenRouter 每周 LLM 排行榜第一，Vision & Document Arena 最佳开源模型
-· 在 Vals Index 跃居开源第一（总榜第八），MathArena 开源第一
-· 提供限时充值奖励：最高 30% 返券
-· 被评价为“最稳的工程选择”，复用了 DSv3 文本架构并增加视觉能力
+二、Qwen 发布多项更新：
+· FlashQLA：基于 TileLang 的线性注意力核，前向 2-3× 加速，后向 2× 加速，针对个人设备 Agent 场景。
+· Qwen-Scope：开源稀疏自编码器套件，支持推理操控、数据分类、训练溯源等。
+· Qwen-Image-2.0-Pro 上线，图像质量、文本渲染、指令遵循显著提升，Text-to-Image 排名全球第9。
 
-三、GPT-5.5-Cyber 发布 + Codex 重大更新 + “Goblin” 现象解密
-· GPT-5.5-Cyber：前沿网络安全模型，向关键防御者逐步开放
-· Codex：支持 Figma 插件生成 FigJam 规划图、WebSocket 使 Agent 循环提速 40%、上线“Goblin”风格（后经分析确认是 Nerdy 人格训练过奖励所致，已修正）
-· GPT-5.5 将在 5 月 5 日举办派对，开放报名
+三、Arena.ai 排行榜更新：
+· MiMo-V2.5 Pro 升至 Code Arena 第11（开源第3），定价极低。
+· Ernie-5.1 升至 Text Arena 第13，成为中文实验室最高排名模型，在数学、法律、政府类别表现突出。
 
-四、Cline Kanban v0.1.64 上线，支持多 Agent 并行与远程服务器
-· 每个任务可选用不同 Agent/模型（Claude Code、Codex、Cline 等并行）
-· 完整远程服务器支持（通过 URL 克隆仓库、HTTPS+密码认证）
-· 增量展开 diff、新颜色主题、团队/额度管理
-· 新增 @kirodotdev CLI 代理支持
+四、KwaiKAT 发布 KAT-Coder-Pro V2，在 AA 评估中成为非推理模型第一名，定位高性价比编程模型。
 
-五、FlashQLA：基于 TileLang 的高性能线性注意力内核开源
-· 前向 2–3 倍加速，反向 2 倍加速，针对边缘设备与长上下文 Agent 场景优化
-· 采用门控驱动自动片内计算、硬件友好的代数重写、TileLang 融合 Warp 专用内核
-· 代码与博客已发布
+五、LM Studio 集成 Nemotron 3 Nano Omni（NVIDIA 30B 多模态 MoE），支持图像输入、推理和工具调用，本地可运行。
 
-AI总结：本周 AI 行业进入密集交付期——DeepSeek-V4 在长上下文与 Agent 集成上树立新标杆，Kimi K2.6 成为开源新王，GPT-5.5 与 Codex 则继续夯实 OpenAI 的 Agent 生态。Cline 的更新让本地多 Agent 协作成为可操作方案，FlashQLA 则为边缘侧推理性能带来实用改进。模型能力持续提升的同时，工程工具链也在快速成熟，Agent 应用进入可规模化落地阶段。
+六、DeepSeek-V4 系列 API 重大更新：
+· 支持 1M context，提供 Thinking/Non-Thinking 双模式。
+· 输入缓存价格降至原价 1/10，V4-Pro 75% 折扣延长至 5 月 5 日。
+· 已集成 Claude Code、OpenCode、OpenClaw 等 Agent 工具。
+
+七、Anthropic 发布多项研究：
+· BioMysteryBench 评估显示 Claude 解决约 30% 专家无法解决的生信问题。
+· “introspection adapters” 让模型可自报训练中习得的行为，包括潜在 misalignment。
+· AI agent 市场实验发现高模型质量优势不明显且参与者未察觉。
+
+八、OpenAI Codex 新功能及“哥布林”事件：
+· Codex 可分析 Slack、Gmail、Calendar 并生成摘要，支持 Figma 插件转 FigJam 看板。
+· GPT 模型因训练奖励偏向出现大量“goblin”及奇幻生物输出，已定位并修复。
+
+九、Kimi K2.6 登顶多个排行榜：
+· OpenRouter 周榜、Vision & Document Arena 均为开源第一，且成为 MathArena 开源第一。
+
+十、通义实验室发布 Qwen3.6-27B：
+· 紧凑型 27B 密集模型，具备旗舰级 Agenti c 编程性能；同时发布 Fun-ASR1.5，覆盖更多语言并优化文本输出。
+
+十一、百度发布 ERNIE 5.1 Preview 及 GenFlow 4.0：
+· ERNIE 5.1 在 Text Arena 排名第13，成为中文实验室最高；在 GenEval、OneIG、LongText-Bench 上领先同规模开源模型。
+· GenFlow 4.0 月活超 1 亿，整合 Office Agent，支持并行调用 PPT/Excel/Word，并与 OpenClaw 集成。
+
+十二、Manus 推出 Cloud Computer 及 Slides 升级：
+· Cloud Computer：云上 24/7 运行，支持 Slack/Discord/Telegram 机器人、数据库、自托管工具等，无需代码。
+· Manus Slides 集成 GPT Image 2，支持点选编辑、提示词换图、导出到 Google Slides/PPT 等。
+
+十三、DeepSeek 多模态即将发布：推理轨迹中插入空间标记（点、框），基于 DeepSeek-V4-Flash，KV 缓存压缩至 1/4，计数和空间推理接近 GPT-5.4、Claude-Sonnet-4.6 水平。
+
+AI总结：本周 AI 行业进入密集发布期，头部大模型厂商在文生图、编码 Agent、多模态、长期推理及 API 定价上全面角力。Qwen、DeepSeek、Kimi 等国产开源模型以极低价格或更高性能不断刷新排行榜，生态竞争加剧。同时 Codex、Manus、Cline 等工具正在让 AI 编程和自动化向更多开发者开放，AI 能力向真实工作流深度渗透。
 

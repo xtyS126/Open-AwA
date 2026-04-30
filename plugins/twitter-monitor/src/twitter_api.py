@@ -13,11 +13,6 @@ class TwitterAPI:
     BASE_URL = "https://api.twitterapi.io/twitter"
 
     def __init__(self, api_key: str):
-        """初始化 Twitter API 客户端
-
-        参数:
-            api_key: TwitterApi.io 的 API 密钥
-        """
         self.api_key = api_key
         self.headers = {"X-API-Key": api_key}
 
@@ -28,17 +23,6 @@ class TwitterAPI:
         include_replies: bool = False,
         limit: int = 20
     ) -> Dict:
-        """获取指定用户的最新推文
-
-        参数:
-            user_name: Twitter 用户名，例如 "elonmusk"
-            user_id: Twitter 用户 ID（推荐使用，更稳定）
-            include_replies: 是否包含回复推文，默认 False
-            limit: 最多返回的推文数量
-
-        返回:
-            包含 success/tweets/has_next_page/error 的字典
-        """
         url = f"{self.BASE_URL}/user/last_tweets"
 
         params = {
@@ -51,7 +35,7 @@ class TwitterAPI:
             params["userName"] = user_name
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            response = requests.get(url, headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 
@@ -82,19 +66,11 @@ class TwitterAPI:
             }
 
     def search_users(self, query: str) -> Dict:
-        """通过关键词搜索 Twitter 用户
-
-        参数:
-            query: 搜索关键词，例如 "AI" 或 "Elon"
-
-        返回:
-            包含 success/users/has_next_page/error 的字典
-        """
         url = f"{self.BASE_URL}/user/search"
         params = {"query": query}
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            response = requests.get(url, headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 
@@ -124,19 +100,11 @@ class TwitterAPI:
             }
 
     def get_user_info(self, user_name: str) -> Dict:
-        """获取指定用户的详细信息
-
-        参数:
-            user_name: Twitter 用户名
-
-        返回:
-            包含 success/user/error 的字典
-        """
         url = f"{self.BASE_URL}/user/search"
         params = {"query": user_name}
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            response = requests.get(url, headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 

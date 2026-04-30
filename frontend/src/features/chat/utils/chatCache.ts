@@ -1,5 +1,5 @@
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
-import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
+import type { ChatMessage, ConversationSessionSummary, ToolEventMeta } from '@/features/chat/types'
 
 const CHAT_CACHE_STORAGE_KEY = 'chat_cache_v1'
 const CHAT_CACHE_VERSION = 1
@@ -7,12 +7,26 @@ const MAX_CACHED_MESSAGES = 200
 const MAX_CACHED_CONVERSATIONS = 100
 const MESSAGE_CACHE_THROTTLE_MS = 1000
 
+interface SerializedToolEvent {
+  id: string
+  kind: string
+  name: string
+  status: string
+  detail?: string
+  input?: Record<string, unknown>
+  output?: unknown
+  sequence?: number
+  startedAt?: number
+  completedAt?: number
+}
+
 interface SerializedChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   reasoning_content?: string
   timestamp: string
+  toolEvents?: SerializedToolEvent[]
 }
 
 interface SerializedConversationBucket {
@@ -116,6 +130,38 @@ function writeChatCache(payload: ChatCachePayload): void {
   safeSetJsonItem(CHAT_CACHE_STORAGE_KEY, payload)
 }
 
+function serializeToolEvents(events: ToolEventMeta[] | undefined): SerializedToolEvent[] | undefined {
+  if (!events || events.length === 0) return undefined
+  return events.map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    name: e.name,
+    status: e.status,
+    detail: e.detail,
+    input: e.input,
+    output: e.output,
+    sequence: e.sequence,
+    startedAt: e.startedAt,
+    completedAt: e.completedAt,
+  }))
+}
+
+function deserializeToolEvents(events: SerializedToolEvent[] | undefined): ToolEventMeta[] | undefined {
+  if (!events || events.length === 0) return undefined
+  return events.map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    name: e.name,
+    status: e.status as ToolEventMeta['status'],
+    detail: e.detail,
+    input: e.input,
+    output: e.output,
+    sequence: e.sequence,
+    startedAt: e.startedAt,
+    completedAt: e.completedAt,
+  }))
+}
+
 function serializeMessages(messages: ChatMessage[]): SerializedChatMessage[] {
   return messages.slice(-MAX_CACHED_MESSAGES).map((message) => ({
     id: message.id,
@@ -123,6 +169,7 @@ function serializeMessages(messages: ChatMessage[]): SerializedChatMessage[] {
     content: message.content,
     reasoning_content: message.reasoning_content,
     timestamp: message.timestamp.toISOString(),
+    toolEvents: serializeToolEvents(message.toolEvents),
   }))
 }
 
@@ -133,6 +180,7 @@ function deserializeMessages(messages: SerializedChatMessage[]): ChatMessage[] {
     content: message.content,
     reasoning_content: message.reasoning_content,
     timestamp: new Date(message.timestamp),
+    toolEvents: deserializeToolEvents(message.toolEvents),
   }))
 }
 

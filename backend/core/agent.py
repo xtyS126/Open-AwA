@@ -226,6 +226,8 @@ class AIAgent:
                     "name": tool.get("name", ""),
                     "description": tool.get("description", ""),
                     "method": tool.get("method", ""),
+                    "parameters": tool.get("parameters"),
+                    "default_params": tool.get("default_params"),
                 })
 
             summarized_plugins.append({
@@ -310,6 +312,97 @@ class AIAgent:
             "plugins": plugins,
             "mcp": await self._collect_mcp_capabilities(context),
         }
+
+        # 从运行态能力摘要构建原生 tool_calls 定义，使 LLM 能通过 function calling 协议触发工具
+        if not context.get("_tools"):
+            context["_tools"] = self._build_native_tools(context["agent_capabilities"])
+
+    @staticmethod
+    def _build_native_tools(capabilities: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        将 agent_capabilities 中的插件/MCP 工具转换为 OpenAI 兼容的 tools 参数格式，
+        使 LLM 能通过原生 function calling 协议触发工具调用，而不是在文本中模拟。
+        """
+        tools: List[Dict[str, Any]] = []
+        seen_names: set = set()
+
+        plugins = (
+            capabilities.get("plugins")
+            if isinstance(capabilities.get("plugins"), list)
+            else []
+        )
+        for plugin in plugins:
+            if not isinstance(plugin, dict):
+                continue
+            plugin_name = str(plugin.get("name", "")).strip()
+            if not plugin_name:
+                continue
+            plugin_tools = plugin.get("tools") if isinstance(plugin.get("tools"), list) else []
+            for tool_def in plugin_tools:
+                if not isinstance(tool_def, dict):
+                    continue
+                tool_name = str(tool_def.get("name", "")).strip()
+                if not tool_name:
+                    continue
+
+                func_name = f"plugin_{plugin_name}/{tool_name}"
+                if func_name in seen_names:
+                    continue
+                seen_names.add(func_name)
+
+                params = tool_def.get("parameters")
+                if not isinstance(params, dict) or not params:
+                    params = {"type": "object", "properties": {}}
+
+                tool_entry = {
+                    "type": "function",
+                    "function": {
+                        "name": func_name,
+                        "description": str(tool_def.get("description", "")),
+                        "parameters": params,
+                    },
+                }
+                tools.append(tool_entry)
+
+        # MCP 工具也转换为原生 tool_calls
+        mcp = capabilities.get("mcp") if isinstance(capabilities.get("mcp"), dict) else {}
+        if mcp.get("chat_dispatch_enabled", False):
+            mcp_tools = mcp.get("tools") if isinstance(mcp.get("tools"), list) else []
+            for mcp_tool in mcp_tools:
+                if not isinstance(mcp_tool, dict):
+                    continue
+                server_name = str(mcp_tool.get("server_name", mcp_tool.get("server_id", ""))).strip()
+                tool_name = str(mcp_tool.get("name", "")).strip()
+                if not server_name or not tool_name:
+                    continue
+
+                func_name = f"mcp_{server_name}/{tool_name}"
+                if func_name in seen_names:
+                    continue
+                seen_names.add(func_name)
+
+                mcP_params = mcp_tool.get("parameters")
+                if not isinstance(mcP_params, dict) or not mcP_params:
+                    mcP_params = {"type": "object", "properties": {}}
+
+                tool_entry = {
+                    "type": "function",
+                    "function": {
+                        "name": func_name,
+                        "description": str(mcp_tool.get("description", "")),
+                        "parameters": mcP_params,
+                    },
+                }
+                tools.append(tool_entry)
+
+        if tools:
+            logger.bind(
+                event="native_tools_built",
+                module="agent",
+                tool_count=len(tools),
+            ).debug(f"已构建 {len(tools)} 个原生工具定义")
+
+        return tools
 
     def _schedule_record(
         self,

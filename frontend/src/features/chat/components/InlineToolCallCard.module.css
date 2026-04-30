@@ -1,0 +1,249 @@
+.card-wrapper {
+  display: flex;
+  gap: 0;
+  margin: 4px 0;
+  animation: cardSlideIn 0.3s ease-out;
+}
+
+/* 卡片入场动画 */
+@keyframes cardSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 时间线连接器 */
+.timeline-connector {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 24px;
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+.timeline-line {
+  width: 2px;
+  flex: 1;
+  min-height: 10px;
+  background: var(--color-border-subtle);
+  animation: lineGrow 0.3s ease-out;
+  transform-origin: top;
+}
+
+@keyframes lineGrow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-line-bottom {
+  width: 2px;
+  flex: 1;
+  min-height: 10px;
+  background: var(--color-border-subtle);
+  animation: lineGrow 0.3s ease-out;
+  transform-origin: top;
+}
+
+/* 状态圆点 */
+.dot-pending {
+  border: 2px solid #94a3b8;
+  background: transparent;
+}
+
+.dot-running {
+  border: 2px solid #2563eb;
+  background: rgba(37, 99, 235, 0.15);
+  animation: dotPulse 1s ease-in-out infinite;
+}
+
+.dot-completed {
+  border: none;
+  background: #16a34a;
+}
+
+.dot-error {
+  border: none;
+  background: #dc2626;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.15); }
+}
+
+.check-mark {
+  font-size: 8px;
+  color: white;
+  font-weight: 700;
+  animation: checkSlideIn 0.25s ease-out;
+}
+
+@keyframes checkSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5) rotate(-45deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.error-mark {
+  font-size: 8px;
+  color: white;
+  font-weight: 700;
+}
+
+/* 卡片主体 */
+.card {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.card-running {
+  border-left: 3px solid #2563eb;
+}
+
+.card-completed {
+  border-left: 3px solid #16a34a;
+}
+
+.card-error {
+  border-left: 3px solid #dc2626;
+}
+
+.card-pending {
+  border-left: 3px solid #94a3b8;
+}
+
+/* 卡片头部 */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  flex-wrap: wrap;
+}
+
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.kind-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.tool-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duration {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 状态徽章 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.status-pending {
+  background: rgba(148, 163, 184, 0.12);
+  color: #64748b;
+}
+
+.status-running {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  animation: badgePulse 1s ease-in-out infinite;
+}
+
+.status-completed {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.status-error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 错误详情 */
+.error-detail {
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.06);
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}

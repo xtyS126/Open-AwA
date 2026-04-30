@@ -25,6 +25,7 @@ from core.litellm_adapter import (
     litellm_chat_completion_stream,
 )
 from memory.experience_manager import ExperienceManager
+from mcp.manager import MCPManager
 from sqlalchemy.orm import Session
 
 
@@ -1037,6 +1038,25 @@ class ExecutionLayer:
                     plugin_method=plugin_method,
                 ).error(f"插件执行异常: {exc}")
                 return {"ok": False, "error": f"Plugin execution error: {str(exc)}"}
+
+        if func_name.startswith("mcp_"):
+            remaining = func_name[len("mcp_"):]
+            if "/" in remaining:
+                server_id, mcp_tool_name = remaining.split("/", 1)
+            else:
+                return {"ok": False, "error": f"MCP tool name missing '/' separator: {func_name}"}
+            try:
+                manager = MCPManager()
+                result = await manager.call_tool(server_id, mcp_tool_name, func_args)
+                return {"ok": True, "result": result, "tool_name": func_name}
+            except Exception as exc:
+                logger.bind(
+                    module="executor",
+                    event="mcp_execution_error",
+                    server_id=server_id,
+                    tool_name=mcp_tool_name,
+                ).error(f"MCP工具执行异常: {exc}")
+                return {"ok": False, "error": f"MCP tool execution error: {str(exc)}"}
 
         return {"ok": False, "error": f"No handler for tool: {func_name}"}
 
