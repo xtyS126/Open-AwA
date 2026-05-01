@@ -3,10 +3,13 @@
   overflow-y: auto;
   height: 100%;
   background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
 }
 
 .communication-header {
   margin-bottom: 24px;
+  flex-shrink: 0;
 }
 
 .communication-header h1 {
@@ -15,190 +18,59 @@
   margin: 0;
 }
 
-.communication-content {
-  max-width: 100%;
+.communication-layout {
+  display: flex;
+  flex: 1;
+  gap: 24px;
+  min-height: 0; /* Important for inner scroll */
 }
 
-.message {
-  margin-bottom: 16px;
+.communication-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  padding-right: 16px;
+}
+
+.sidebar-menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar-item {
   padding: 12px 16px;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-}
-
-.message.success,
-.success {
-  background: rgba(34, 197, 94, 0.12);
-  color: var(--color-success, #15803d);
-}
-
-.message.error,
-.error {
-  background: var(--color-error-bg);
-  color: var(--color-error);
-}
-
-.communication-section-desc {
-  margin-bottom: 20px;
-  color: var(--color-text-secondary);
-}
-
-.communication-card {
-  padding: 24px;
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-  border: none;
-}
-
-.communication-card-title {
-  margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.communication-form-item {
-  margin-bottom: 20px;
-}
-
-.communication-label {
-  display: block;
   margin-bottom: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 15px;
   font-weight: 500;
   color: var(--color-text-secondary);
+  transition: all 0.2s ease;
 }
 
-.communication-required {
-  color: var(--color-danger);
-}
-
-.communication-input {
-  width: 100%;
-  max-width: none;
-  background: var(--color-bg-tertiary);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 12px 16px;
-  color: var(--color-text);
-  font-size: 14px;
-  transition: background 0.2s, box-shadow 0.2s;
-}
-
-.communication-input:focus {
-  outline: none;
-  background: var(--color-bg);
-  box-shadow: 0 0 0 2px var(--color-primary-ring);
-}
-
-.communication-actions-row {
-  margin-top: 24px;
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.communication-health-result {
-  margin-top: 24px;
-  padding: 20px;
-  border-radius: var(--radius-md);
-  border: none;
-}
-
-.communication-health-result.success {
-  background-color: var(--color-success-soft-bg, rgba(76, 175, 80, 0.1));
-}
-
-.communication-health-result.error {
-  background-color: var(--color-error-soft-bg, rgba(244, 67, 54, 0.1));
-}
-
-.communication-health-title {
-  margin-top: 0;
-  margin-bottom: 12px;
-  font-size: 16px;
-}
-
-.communication-health-title.success {
-  color: var(--color-success, #2e7d32);
-}
-
-.communication-health-title.error {
-  color: var(--color-danger, #c62828);
-}
-
-.communication-health-section {
-  margin-top: 12px;
-}
-
-.communication-health-strong {
+.sidebar-item:hover {
+  background: var(--color-bg-hover);
   color: var(--color-text);
 }
 
-.communication-health-list {
-  padding-left: 20px;
-  margin-top: 8px;
-  color: var(--color-text);
-}
-
-.communication-health-issue {
-  color: var(--color-danger, #d32f2f);
-}
-
-.communication-health-ok {
-  color: var(--color-success, #2e7d32);
-  margin-top: 12px;
-  margin-bottom: 0;
-}
-
-.communication-qr-login {
-  margin-top: 32px;
-  padding: 24px;
-  border-top: none;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-lg);
-}
-
-.communication-qr-login-title {
-  margin: 0 0 8px;
-  font-size: 16px;
+.sidebar-item.active {
+  background: var(--color-primary-soft-bg, rgba(var(--color-primary-rgb), 0.1));
+  color: var(--color-primary);
   font-weight: 600;
 }
 
-.communication-qr-login-desc {
+.communication-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 8px; /* For scrollbar */
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 14px;
   color: var(--color-text-secondary);
-  margin-bottom: 16px;
-  font-size: 14px;
-}
-
-.communication-qr-preview {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  border: none;
-  width: fit-content;
-}
-
-.communication-qr-image {
-  display: block;
-  width: 220px;
-  height: 220px;
-  object-fit: contain;
-}
-
-.communication-qr-status {
-  margin-top: 12px;
-  font-size: 14px;
-  color: var(--color-text);
-}
-
-.communication-status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px 16px;
-}
-
-.communication-status-grid .communication-qr-status {
-  margin-top: 0;
 }

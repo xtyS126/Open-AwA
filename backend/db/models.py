@@ -199,6 +199,27 @@ class WeixinBinding(Base):
     )
 
 
+class WeixinAutoReplyRule(Base):
+    """
+    微信自动回复规则模型，支持关键词和正则匹配。
+    """
+    __tablename__ = "weixin_auto_reply_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    rule_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    match_type: Mapped[str] = mapped_column(String(20), default="keyword") # keyword, regex
+    match_pattern: Mapped[str] = mapped_column(String(500), nullable=False)
+    reply_content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+
 class PluginExecutionLog(Base):
     """
     插件执行日志，记录插件方法调用的详细信息。

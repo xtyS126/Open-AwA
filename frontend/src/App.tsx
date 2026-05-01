@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import React, { Suspense, useEffect } from 'react'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
-import { UserFloatingArea } from '@/shared/components/UserFloatingArea'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
@@ -27,6 +26,7 @@ const ExperiencePage = React.lazy(() => import('@/features/experiences/Experienc
 const CommunicationPage = React.lazy(() => import('@/features/chat/CommunicationPage'))
 const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
 const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplacePage'))
+const TestPage = React.lazy(() => import('@/features/test/TestPage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -151,10 +151,10 @@ function App() {
                 <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
                 <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
                 <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
+                <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
               </Routes>
             </Suspense>
           </main>
-          <UserFloatingArea />
         </div>
       )}
     </BrowserRouter>

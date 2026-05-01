@@ -105,7 +105,7 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
                         "id": "call_1",
                         "type": "function",
                         "function": {
-                            "name": "plugin_twitter-monitor/get_twitter_user_info",
+                            "name": "plugin_twitter-monitor__get_twitter_user_info",
                             "arguments": '{"user_name": "openai"}',
                         },
                     }
@@ -133,7 +133,7 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
                 {
                     "type": "function",
                     "function": {
-                        "name": "plugin_twitter-monitor/get_twitter_user_info",
+                        "name": "plugin_twitter-monitor__get_twitter_user_info",
                         "description": "获取指定 Twitter 用户的账号信息",
                         "parameters": {
                             "type": "object",
@@ -156,7 +156,7 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
     assert fake_manager.executions == [
         ("twitter-monitor", "get_twitter_user_info", {"user_name": "openai"})
     ]
-    assert result["tool_events"][0]["name"] == "plugin_twitter-monitor/get_twitter_user_info"
+    assert result["tool_events"][0]["name"] == "plugin_twitter-monitor__get_twitter_user_info"
     monkeypatch.setattr(PluginManager, "execute_plugin_async", original_execute)
 
 
@@ -192,7 +192,7 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
                             "id": "call_1",
                             "type": "function",
                             "function": {
-                                "name": "plugin_twitter-monitor/get_twitter_user_info",
+                                "name": "plugin_twitter-monitor__get_twitter_user_info",
                                 "arguments": '{"user_name": "openai"}',
                             },
                         }
@@ -219,7 +219,7 @@ async def test_call_llm_api_stream_handles_pseudo_json_tool_call(monkeypatch):
                 {
                     "type": "function",
                     "function": {
-                        "name": "plugin_twitter-monitor/get_twitter_user_info",
+                        "name": "plugin_twitter-monitor__get_twitter_user_info",
                         "description": "获取指定 Twitter 用户的账号信息",
                         "parameters": {
                             "type": "object",
