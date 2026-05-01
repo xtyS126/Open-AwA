@@ -258,16 +258,40 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                   </div>
                   <div className={styles['itemActions']} onClick={(event) => event.stopPropagation()}>
                     {!isDeleted && (
-                      <button className={styles['actionButton']} type="button" onClick={() => startRename(item)} title="重命名对话">
+                      <button
+                        className={styles['actionButton']}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          startRename(item)
+                        }}
+                        title="重命名对话"
+                      >
                         <PencilLine size={15} />
                       </button>
                     )}
                     {isDeleted ? (
-                      <button className={styles['actionButton']} type="button" onClick={() => onRestoreConversation(item.session_id)} title="恢复对话">
+                      <button
+                        className={styles['actionButton']}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onRestoreConversation(item.session_id)
+                        }}
+                        title="恢复对话"
+                      >
                         <RotateCcw size={15} />
                       </button>
                     ) : (
-                      <button className={styles['actionButton']} type="button" onClick={() => onDeleteConversation(item.session_id)} title="删除对话">
+                      <button
+                        className={styles['actionButton']}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onDeleteConversation(item.session_id)
+                        }}
+                        title="删除对话"
+                      >
                         <Trash2 size={15} />
                       </button>
                     )}

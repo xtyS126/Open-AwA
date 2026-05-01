@@ -1,48 +1,71 @@
 === @unknown 的推文总结 ===
 
-有8条重要动态：
+有14条重要动态：
 
-一、DeepSeek-V4 系列（Pro/Flash）正式发布
-- API 即日可用，支持 1M 上下文，双模式（思考/非思考）
-- V4-Pro 效率 75% off 截止 5 月 5 日，Input Cache 降价至 1/10
-- V4-Flash 推理能力接近 Pro，API 价格更低
-- 集成 Claude Code、OpenClaw、OpenCode 等工具
+一、DeepSeek 正式发布 V4 系列模型
+· 推出 DeepSeek-V4-Pro 和 DeepSeek-V4-Flash，均支持 1M 上下文和 Thinking/Non-Thinking 双模式
+· 核心创新：Token-wise 压缩 + DSA 稀疏注意力，降低长上下文计算成本
+· V4-Pro 提供 75% 折扣（至5月5日），缓存命中价格降至原价 1/10
+· 已集成 Claude Code、OpenCode、OpenClaw 等主流 agent 工具
 
-二、OpenAI Codex 重大更新：个人助理模式
-- 选择角色后连接 Slack、Google Workspace、Office 365 等应用
-- 可直接执行日常办公任务：总结数据、规划、写文档、做幻灯片
-- 实时可见任务进度、所用工具，支持循环修改
-- 同时推出 Advanced Account Security 高级安全设置
+二、OpenAI 发布 GPT-5.5-Cyber
+· 前沿网络安全模型，面向关键网络防御者，未来几天开始推送
+· 将与政府和行业生态协作，确定可信访问方案
 
-三、Grok 4.3 登顶多个评测排行榜
-- ValsAI 榜上 CaseLaw v2 跃居第一，领先 25 分
-- 前端设计能力被展示：单行提示生成 WWE 摔跤网站
-- 已进入 Arena Text/Vision/Document/Code 战斗模式供用户测试
+三、OpenAI Codex 正式升级，支持非编程电脑操作
+· Codex 现在可以连接 Slack、Google Workspace、Microsoft 365 等日常办公应用
+· 支持跨应用数据汇总、起草文档、制作幻灯片、整理研究等工作
+· 新增非编码任务支持，用户可选择角色并获取推荐插件
 
-四、Kimi K2.6 成为 OpenRouter 周榜第一、ValsAI 开源模型第一
-- Vals 指数上 K2.6 排名开源权重模型 #1（总榜 #8）
-- 在 Vision Arena 和 Document Arena 也取得开源第一
-- 推出限时充值返利活动（截止 5 月 3 日）
+四、百度发布 ERNIE 5.1 Preview
+· 更轻量高效的架构，在 Text Arena 排名第 13，成中国实验室最高分
+· 在 GenEval、OneIG 等基准媲美顶级闭源模型；LongText-Bench 开源模型第一（0.9733）
+· 更多 ERNIE 更新将在 Baidu Create 2026（5月13-14日）公布
 
-五、Qwen 开源 FlashQLA 和 Qwen-Scope
-- FlashQLA：基于 TileLang 的高性能线性注意力内核，2–3 倍前向加速，专为端侧 Agent 设计
-- Qwen-Scope：稀疏自编码器工具套件，支持操控内部特征、分类数据、调试训练
-- 同时 Qwen-Image 在指令遵循、视觉质量、多语言文字渲染上有显著提升
+五、Anthropic 公开 Claude 谄媚行为研究及改进
+· 分析百万级对话，发现关系指导场景中谄媚率最高
+· 针对特定触发词（批评分析、单方信息倾泻）构建合成训练场景
+· Opus 4.7 谄媚率减半，Mythos Preview 在此基础上再减半
 
-六、Cline 完全重写进入 Beta
-- 从零构建 SDK，支持插件架构，可集成任意 provider、模型、LSP、代码搜索
-- 重写了 CLI 和 VS Code 扩展，性能与 token 效率大幅提升
-- 推出 $20 体验金和漏洞悬赏计划，在 Discord #beta 频道招募用户
+六、腾讯混元发布 Hy3-Preview
+· 295B MoE 模型（21B 激活），在 Text Arena 排名第 80，开源模型第 7
+· 定价 $0.29 / $1.17 每百万 token
+· 工程亮点：router_scaling_factor=2.826、MoE 合并时临时使用 fp32 防止数值丢失
 
-七、Manus 推出“Cloud Computer”功能
-- 让用户构建的 Agent 和工具 24/7 持续运行（服务器端）
-- 可自托管开源工具（WordPress、Metabase）、运行定时爬虫、持久化数据库
-- 支持 Slack/Discord/Telegram 机器人，无需编写代码
+七、Qwen 推出 FlashQLA 与 Qwen-Scope 工具
+· FlashQLA：基于 TileLang 的高性能线性注意力 kernel，2-3 倍前向、2 倍反向加速，专为边缘设备 agent 设计
+· Qwen-Scope：开源稀疏自编码器工具集，支持通过内部特征直接操控模型输出、分类合成数据、追踪重复生成根因
 
-八、腾讯混元 Hy3-Preview 排名及百度 ERNIE 5.1 Preview 上线
-- Hy3-Preview：295B MoE 模型（21B 活跃），在 Text Arena 排 #80，开源模型中前 7
-- ERNIE 5.1 Preview：轻量高效架构，在 Text Arena 排 #13，为国内实验室最高位
-- 同时百度发布 GenFlow 4.0 办公 Agent，支持并行调用 PPT/Excel/Word Agent
+八、Kimi K2.6 登顶多个开源模型榜单
+· 在 OpenRouter 周榜、Vals Index 开放权重模型、MathArena、Vision & Document Arena 等多个平台排名第一
+· 推出限时充值返赠活动（最高 30%），持续至5月3日
 
-AI总结：本周 AI 行业进入密集发布期。DeepSeek-V4 系列以 1M 上下文和 Agent 优化抢占市场；Codex 升级为个人助理标志着 AI 工作流从编码扩展到全办公场景；Kimi K2.6 和 Grok 4.3 在评测上持续领跑；Cline 和 Manus 则展示了开源与工具平台的迭代方向。总体上，大模型竞争已从单点性能转向“模型+工具+生态”的综合体验。
+九、xAI Grok 4.3 在多项基准测试中登顶
+· 在 CaseLaw v2 和多个排行榜上跃居第一
+· 已开放 Arena 评测入口，支持文本、视觉、文档和代码前端场景
+
+十、Manus 推出 Cloud Computer 功能
+· 云端始终运行的机器，让平台构建的应用 24/7 持续在线
+· 可部署 Slack/Discord/Telegram 机器人、实时数据库、自助开源工具、定时爬虫等
+· 无需写代码即可构建和运行
+
+十一、Cline 从底层重写为新 SDK
+· 基于全新插件架构，支持更多 providers、模型、LSP、代码搜索等
+· CLI 和 IDE 扩展均重构，解决原有架构与 IDE 语义耦合问题
+· 开放 beta 测试，提供 $20 信用额度和 bug 修复赏金计划
+
+十二、开源语音输入工具 OpenLess 发布
+· 按住快捷键说话，松开后自动录音、转写、AI 润色，结果直接插入光标位置
+· 对标 Typeless、Wispr Flow 等付费产品
+
+十三、DeepSeek 多模态信号浮出水面
+· 技术报告显示在推理轨迹中引入空间标记（点、框）以增强空间推理
+· 基于 DeepSeek-V4-Flash，每 4 个视觉 token 压缩为 1 个 KV 缓存项
+· 在计数和空间推理测试上与 GPT-5.4、Claude-Sonnet-4.6 等持平
+
+十四、归藏使用 Codex 在一下午开发出类《杀戮尖塔》卡牌游戏
+· Codex 浏览上千张素材图片并自动筛选可用资源
+· 生成完整游戏逻辑和界面，已开源
+
+AI总结：本周大模型发布密集，DeepSeek-V4 的稀疏注意力和折扣策略、Codex 的办公 agent 化、ERNIE 5.1 的 Benchmarks 表现以及 Anthropic 针对谄媚的精准改进都是值得关注的信号。侧面来看，Agent 工具链（Cline 重构、Manus Cloud Computer）正在向更易用的平台化方向演进。
 
