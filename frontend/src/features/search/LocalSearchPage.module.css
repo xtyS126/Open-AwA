@@ -1,0 +1,294 @@
+/* 本地搜索页面样式 */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.header {
+  margin-bottom: 28px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  margin: 0;
+}
+
+/* 搜索栏 */
+.searchBar {
+  margin-bottom: 24px;
+}
+
+.searchInputWrap {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.searchInput {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 15px;
+  border: 2px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: var(--bg-input, #fff);
+  color: var(--text-primary, #1a1a1a);
+}
+
+.searchInput:focus {
+  border-color: var(--accent-color, #4a90d9);
+}
+
+.searchButton {
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--accent-color, #4a90d9);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.searchButton:hover:not(:disabled) {
+  background: var(--accent-hover, #357abd);
+}
+
+.searchButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.searchOptions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+}
+
+.docCount {
+  font-size: 12px;
+  color: var(--text-tertiary, #999);
+  margin-left: auto;
+}
+
+/* 错误 */
+.error {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--error-bg, #fff0f0);
+  color: var(--error-color, #d32f2f);
+  border-radius: 6px;
+  font-size: 14px;
+  border: 1px solid var(--error-border, #fcc);
+}
+
+/* 搜索结果 */
+.results {
+  margin-bottom: 32px;
+}
+
+.resultCount {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin: 0 0 12px;
+}
+
+.resultItem {
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 8px;
+  transition: box-shadow 0.2s;
+}
+
+.resultItem:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.resultTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--link-color, #1a56db);
+  text-decoration: none;
+}
+
+.resultTitle:hover {
+  text-decoration: underline;
+}
+
+.resultScore {
+  font-size: 12px;
+  color: var(--text-tertiary, #999);
+  background: var(--bg-tag, #f0f4ff);
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.resultSnippet {
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  margin: 4px 0;
+  line-height: 1.5;
+}
+
+.resultPreview {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin: 4px 0 0;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.noResults {
+  font-size: 14px;
+  color: var(--text-tertiary, #999);
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* 索引管理 */
+.indexSection {
+  margin-bottom: 32px;
+  padding: 24px;
+  background: var(--bg-card, #fafafa);
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 10px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.indexForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.indexInput {
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-input, #fff);
+  color: var(--text-primary, #1a1a1a);
+}
+
+.indexInput:focus {
+  border-color: var(--accent-color, #4a90d9);
+}
+
+.indexTextarea {
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  background: var(--bg-input, #fff);
+  color: var(--text-primary, #1a1a1a);
+}
+
+.indexTextarea:focus {
+  border-color: var(--accent-color, #4a90d9);
+}
+
+.indexActions {
+  display: flex;
+  gap: 8px;
+}
+
+.indexButton {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent-color, #4a90d9);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.indexButton:hover:not(:disabled) {
+  background: var(--accent-hover, #357abd);
+}
+
+.indexButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 统计 */
+.statsSection {
+  padding: 24px;
+  background: var(--bg-card, #fafafa);
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 10px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px;
+  background: var(--bg-input, #fff);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #eee);
+}
+
+.statValue {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent-color, #4a90d9);
+}
+
+.statLabel {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin-top: 4px;
+}

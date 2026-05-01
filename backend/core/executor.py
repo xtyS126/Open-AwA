@@ -1090,6 +1090,21 @@ class ExecutionLayer:
                 ).error(f"MCP工具执行异常: {exc}")
                 return {"ok": False, "error": f"MCP tool execution error: {str(exc)}"}
 
+        if func_name.startswith("builtin_"):
+            builtin_name = func_name[len("builtin_"):]
+            from core.builtin_tools.manager import builtin_tool_manager
+            try:
+                result = await builtin_tool_manager.execute_tool(builtin_name, func_args)
+                ok = bool(result.get("success"))
+                return {"ok": ok, "result": result, "tool_name": func_name}
+            except Exception as exc:
+                logger.bind(
+                    module="executor",
+                    event="builtin_execution_error",
+                    tool_name=builtin_name,
+                ).error(f"内置工具执行异常: {exc}")
+                return {"ok": False, "error": f"Builtin tool execution error: {str(exc)}"}
+
         return {"ok": False, "error": f"No handler for tool: {func_name}"}
 
     @staticmethod

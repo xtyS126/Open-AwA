@@ -426,6 +426,18 @@ class AIAgent:
                 }
                 tools.append(tool_entry)
 
+        # 内置工具（文件管理、终端执行、网页搜索）
+        try:
+            from core.builtin_tools.manager import builtin_tool_manager
+            builtin_defs = builtin_tool_manager.get_tool_definitions()
+            for bt in builtin_defs:
+                func_name = bt.get("function", {}).get("name", "")
+                if func_name and func_name not in seen_names:
+                    seen_names.add(func_name)
+                    tools.append(bt)
+        except Exception:
+            pass
+
         if tools:
             logger.bind(
                 event="native_tools_built",

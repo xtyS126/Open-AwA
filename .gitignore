@@ -152,3 +152,4 @@ backend/COMPLETE_SCAN_REPORT.md
 *.orig
 *.bak
 *.tmp
+references/

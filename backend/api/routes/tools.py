@@ -238,3 +238,118 @@ async def fetch_url(req: FetchUrlRequest):
         data=result if result.get('success') else None,
         error=result.get('error')
     )
+
+
+# --- 本地搜索 ---
+
+class LocalSearchRequest(BaseModel):
+    """本地搜索请求。"""
+    query: str = Field(..., description="搜索关键词")
+    max_results: int = Field(default=20, ge=1, le=100, description="最大结果数")
+    mode: str = Field(default="tfidf", description="搜索模式: tfidf/exact/prefix")
+
+
+class IndexDocumentRequest(BaseModel):
+    """文档索引请求。"""
+    id: str = Field(..., description="文档唯一标识")
+    title: str = Field(..., description="文档标题")
+    url: str = Field(default="", description="文档URL")
+    content: str = Field(..., description="文档文本内容")
+
+
+class IndexDirectoryRequest(BaseModel):
+    """目录索引请求。"""
+    directory: str = Field(..., description="要索引的目录路径")
+    pattern: str = Field(default="*.html,*.htm,*.txt,*.md", description="匹配模式")
+
+
+class RemoveDocumentRequest(BaseModel):
+    """文档移除请求。"""
+    id: str = Field(..., description="要移除的文档ID")
+
+
+@router.post("/search/local", response_model=ToolResponse)
+async def local_search(req: LocalSearchRequest):
+    """在本地索引中搜索文档。"""
+    result = await _safe_execute_tool(
+        'local_search',
+        action='search',
+        params={
+            'query': req.query,
+            'max_results': req.max_results,
+            'mode': req.mode,
+        }
+    )
+    return ToolResponse(
+        success=result.get('success', False),
+        data=result if result.get('success') else None,
+        error=result.get('error')
+    )
+
+
+@router.post("/search/index", response_model=ToolResponse)
+async def index_document(req: IndexDocumentRequest):
+    """索引文档到本地搜索引擎。"""
+    result = await _safe_execute_tool(
+        'local_search',
+        action='index',
+        params={
+            'id': req.id,
+            'title': req.title,
+            'url': req.url,
+            'content': req.content,
+        }
+    )
+    return ToolResponse(
+        success=result.get('success', False),
+        data=result if result.get('success') else None,
+        error=result.get('error')
+    )
+
+
+@router.post("/search/index-directory", response_model=ToolResponse)
+async def index_directory(req: IndexDirectoryRequest):
+    """批量索引目录文件。"""
+    result = await _safe_execute_tool(
+        'local_search',
+        action='index_directory',
+        params={
+            'directory': req.directory,
+            'pattern': req.pattern,
+        }
+    )
+    return ToolResponse(
+        success=result.get('success', False),
+        data=result if result.get('success') else None,
+        error=result.get('error')
+    )
+
+
+@router.post("/search/remove", response_model=ToolResponse)
+async def remove_document(req: RemoveDocumentRequest):
+    """从索引中移除文档。"""
+    result = await _safe_execute_tool(
+        'local_search',
+        action='remove',
+        params={'id': req.id}
+    )
+    return ToolResponse(
+        success=result.get('success', False),
+        data=result if result.get('success') else None,
+        error=result.get('error')
+    )
+
+
+@router.get("/search/stats", response_model=ToolResponse)
+async def search_stats():
+    """获取本地搜索索引统计。"""
+    result = await _safe_execute_tool(
+        'local_search',
+        action='stats',
+        params={}
+    )
+    return ToolResponse(
+        success=result.get('success', False),
+        data=result if result.get('success') else None,
+        error=result.get('error')
+    )
