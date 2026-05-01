@@ -175,10 +175,9 @@ async def test_workflow_engine_executes_tool_and_condition_steps(tmp_path):
 @pytest.mark.asyncio
 async def test_workflow_engine_executes_built_in_skill_step(tmp_path):
     """
-    验证工作流引擎可通过技能步骤调用已注册的内置工具技能。
+    验证工作流引擎可通过工具步骤调用内置工具（原技能步骤已统一为工具步骤）。
     """
     session = build_session()
-    built_in_tool_registry.seed_built_in_skills(session)
     built_in_tool_registry._instances.clear()
 
     engine = WorkflowEngine(db_session=session)
@@ -196,13 +195,12 @@ async def test_workflow_engine_executes_built_in_skill_step(tmp_path):
             "name": "skill_pipeline",
             "steps": [
                 {
-                    "id": "read_via_skill",
-                    "type": "skill",
-                    "skill_name": "file_manager",
-                    "inputs": {
-                        "action": "read_file",
-                        "params": {"path": str(source_file)},
-                    },
+                    "id": "read_via_tool",
+                    "type": "tool",
+                    "tool": "file_manager",
+                    "action": "read_file",
+                    "config": {"allowed_directories": [str(workdir)]},
+                    "params": {"path": str(source_file)},
                 },
                 {
                     "id": "write_via_tool",
@@ -212,7 +210,7 @@ async def test_workflow_engine_executes_built_in_skill_step(tmp_path):
                     "config": {"allowed_directories": [str(workdir)]},
                     "params": {
                         "path": str(target_file),
-                        "content": "{{steps.read_via_skill.outputs.content}}",
+                        "content": "{{steps.read_via_tool.content}}",
                     },
                 },
             ],

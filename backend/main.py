@@ -51,7 +51,6 @@ from core.litellm_adapter import is_litellm_available
 from core.scheduled_task_manager import scheduled_task_manager
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
-from tools.registry import built_in_tool_registry
 
 
 init_logging(
@@ -140,12 +139,6 @@ async def lifespan(app: FastAPI):
         try:
             sync_stats = sync_local_users_to_db(db)
             logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
-        finally:
-            db.close()
-        db = SessionLocal()
-        try:
-            seeded_skills = built_in_tool_registry.seed_built_in_skills(db)
-            logger.bind(event="built_in_skills_seeded", module="main", count=seeded_skills).info("built-in tool skills synchronized")
         finally:
             db.close()
     # 初始化插件市场内置插件

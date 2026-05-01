@@ -147,5 +147,12 @@ class Settings(BaseSettings):
     
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
-    
+
+    # 本地搜索功能开关
+    # True: 使用本地搜索引擎（离线，无外部API依赖）
+    # False: 使用DuckDuckGo联网搜索
+    LOCAL_SEARCH_ENABLED: bool = True
+    # 本地搜索索引存储目录
+    LOCAL_SEARCH_INDEX_DIR: str = str(Path(__file__).resolve().parents[1] / "data" / "local_search_index")
+
 settings = Settings()

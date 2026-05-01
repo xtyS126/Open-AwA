@@ -31,7 +31,7 @@ from memory.vector_store_manager import (
     create_embedding_provider,
 )
 from memory.working_memory import WorkingMemoryStore
-from tools import registry as registry_module
+from core.builtin_tools.manager import BuiltInToolManager
 from tools.registry import BuiltInToolRegistry
 from workflow.engine import WorkflowEngine
 from workflow.parser import WorkflowParser
@@ -540,34 +540,36 @@ async def test_memory_manager_long_term_listing_search_archive_and_delete():
 
 
 @pytest.mark.asyncio
-async def test_tool_registry_and_seed_paths(monkeypatch):
+async def test_tool_registry_and_builtin_manager(monkeypatch):
     """
-    验证工具注册器的缓存、重建、列出、执行与技能同步逻辑。
+    验证内置工具管理器的初始化、缓存、列出、执行以及兼容层委托逻辑。
     """
-    registry = BuiltInToolRegistry()
-    monkeypatch.setattr(registry_module, "FileManagerSkill", FakeTool)
-    monkeypatch.setattr(registry_module, "TerminalExecutorSkill", FakeTool)
-    monkeypatch.setattr(registry_module, "WebSearchSkill", FakeTool)
+    # monkeypatch 替换各工具模块中的类为 FakeTool
+    monkeypatch.setattr("core.builtin_tools.file_manager.FileManagerSkill", FakeTool)
+    monkeypatch.setattr("core.builtin_tools.terminal_executor.TerminalExecutorSkill", FakeTool)
+    monkeypatch.setattr("core.builtin_tools.web_search.WebSearchSkill", FakeTool)
 
-    first = await registry._initialize_tool("file_manager")
-    second = await registry._initialize_tool("file_manager")
-    third = await registry._initialize_tool("file_manager", config={"name": "custom"})
-    tool_list = await registry.list_tools()
-    execution = await registry.execute_tool("terminal_executor", action="run_command", params={"command": "echo hi"})
+    mgr = BuiltInToolManager()
+    first = await mgr._initialize_tool("file_manager")
+    second = await mgr._initialize_tool("file_manager")
+    tool_list = await mgr.list_tools()
+    execution = await mgr.execute_tool("run_command", {"command": "echo hi"})
 
     assert first is second
-    assert third is not first
     assert tool_list["file_manager"]["version"] == "9.9.9"
     assert execution["success"] is True
 
     with pytest.raises(ValueError):
-        await registry._initialize_tool("unknown")
+        await mgr._initialize_tool("unknown")
 
-    monkeypatch.setattr(registry_module, "SkillLoader", FakeLoader)
-    monkeypatch.setattr(registry, "_config_files", lambda: [Path("file_manager.yaml"), Path("skip.yaml")])
+    # 测试兼容层委托
+    registry = BuiltInToolRegistry()
+    compat_execution = await registry.execute_tool("terminal_executor", action="run_command", params={"command": "echo hi"})
+    assert compat_execution["success"] is True
+
+    # seed_built_in_skills 已废弃，应返回 0
     fake_db = FakeDbSession()
-    assert registry.seed_built_in_skills(fake_db) == 1
-    assert fake_db.commit_count == 1
+    assert registry.seed_built_in_skills(fake_db) == 0
 
 
 def test_workflow_parser_covers_json_yaml_and_validation_errors():

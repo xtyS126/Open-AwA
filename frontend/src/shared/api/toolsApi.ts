@@ -65,11 +65,30 @@ export const toolsAPI = {
     api.post<ToolResponse>('/terminal/run', { command, working_dir, timeout: timeout || 30 }),
   terminalStatus: () => api.get<ToolResponse>('/terminal/status'),
 
-  /* 网页搜索 */
+  /* 网页搜索（联网） */
   webSearch: (query: string, max_results?: number) =>
     api.post<ToolResponse>('/search/web', { query, max_results: max_results || 10 }),
   fetchUrl: (url: string, max_length?: number) =>
     api.post<ToolResponse>('/search/fetch', { url, max_length: max_length || 10000 }),
+
+  /* 本地搜索（离线） */
+  localSearch: (query: string, max_results?: number, mode?: string) =>
+    api.post<ToolResponse>('/search/local', {
+      query,
+      max_results: max_results || 20,
+      mode: mode || 'tfidf',
+    }),
+  indexDocument: (id: string, title: string, content: string, url?: string) =>
+    api.post<ToolResponse>('/search/index', { id, title, url: url || '', content }),
+  indexDirectory: (directory: string, pattern?: string) =>
+    api.post<ToolResponse>('/search/index-directory', {
+      directory,
+      pattern: pattern || '*.html,*.htm,*.txt,*.md',
+    }),
+  removeDocument: (id: string) =>
+    api.post<ToolResponse>('/search/remove', { id }),
+  searchStats: () =>
+    api.get<ToolResponse>('/search/stats'),
 }
 
 /* 子Agent API */
