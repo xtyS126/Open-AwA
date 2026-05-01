@@ -1,43 +1,28 @@
 {
   "storage_type": "latest",
-  "last_updated": "2026-05-01T11:24:11.339721",
+  "last_updated": "2026-05-01T13:43:48.606938",
   "total_count": 8,
   "tweets": [
     {
-      "id": "2049992989670555788",
-      "text": "@perrin365520 氛围真好",
-      "created_at": "Thu Apr 30 23:23:10 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049992989670555788",
+      "id": "2050077628913345007",
+      "text": "又一款开源语音输入工具 OpenLess：按住快捷键即可说话，松开后自动完成录音、转写和 AI 润色，结果会直接插入光标所在位置；若无法插入，则自动复制到剪贴板，定位上对标 Typeless、Wispr Flow 这类付费产品。\n\n我现在在用 Type4Me，最近几次迭代之后体验越来越顺手，算是豆包语音输入法的完美平替了。\n\nhttps://t.co/N8PQ3J0Pl3",
+      "created_at": "Fri May 01 04:59:29 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050077628913345007",
       "author": {
         "user_name": "geekbb",
         "name": "Geek"
       },
       "metrics": {
-        "likes": 0,
+        "likes": 10,
         "retweets": 0,
         "replies": 0
       }
     },
     {
-      "id": "2049992860859306230",
-      "text": "@Cavon525 好看",
-      "created_at": "Thu Apr 30 23:22:39 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049992860859306230",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 1,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049873940433314081",
-      "text": "X 将于 2026 年 4 月起分阶段推出全新广告平台，这将是其 20 年来最大规模的广告系统重建。\n\n新平台将通过 AI 简化广告创建、提升广告主控制力，并用更先进的检索和排序系统提高投放精准度、相关性、互动率和 ROI。未来几个月，X 还会陆续上线更多新功能。",
-      "created_at": "Thu Apr 30 15:30:06 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049873940433314081",
+      "id": "2050076425554919893",
+      "text": "@dddanielwang 哈哈哈哈",
+      "created_at": "Fri May 01 04:54:43 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050076425554919893",
       "author": {
         "user_name": "geekbb",
         "name": "Geek"
@@ -49,10 +34,10 @@
       }
     },
     {
-      "id": "2049853084000780508",
-      "text": "@paulwalker99318 😂",
-      "created_at": "Thu Apr 30 14:07:14 +0000 2026",
-      "url": "https://x.com/geekbb/status/2049853084000780508",
+      "id": "2050064706661134451",
+      "text": "@lamara953 人类的多样性",
+      "created_at": "Fri May 01 04:08:09 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050064706661134451",
       "author": {
         "user_name": "geekbb",
         "name": "Geek"
@@ -61,6 +46,51 @@
         "likes": 0,
         "retweets": 0,
         "replies": 0
+      }
+    },
+    {
+      "id": "2050064606018875583",
+      "text": "@KaiwenR1 🤣",
+      "created_at": "Fri May 01 04:07:45 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050064606018875583",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050064485164187767",
+      "text": "@RocM301 😅",
+      "created_at": "Fri May 01 04:07:16 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050064485164187767",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050055276821463497",
+      "text": "看到一篇博文：依赖 AI 的人终将被时代抛弃…… https://t.co/t4BCOK6cTN",
+      "created_at": "Fri May 01 03:30:40 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050055276821463497",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 15,
+        "retweets": 0,
+        "replies": 8
       }
     },
     {
@@ -73,9 +103,9 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 1,
+        "likes": 20,
         "retweets": 0,
-        "replies": 0
+        "replies": 1
       }
     },
     {
@@ -88,39 +118,9 @@
         "name": "Geek"
       },
       "metrics": {
-        "likes": 8,
-        "retweets": 0,
+        "likes": 17,
+        "retweets": 2,
         "replies": 0
-      }
-    },
-    {
-      "id": "2050015514806899011",
-      "text": "@xiongchun007 好的，Claude Code + DeepSeek V4",
-      "created_at": "Fri May 01 00:52:40 +0000 2026",
-      "url": "https://x.com/geekbb/status/2050015514806899011",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 1,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2050007123011276956",
-      "text": "看到一网友上传清晰的手掌照片，然后让 ChatGPT 看手相，要是再配上打印机和相框，拿上小马扎，AI 看相算命，我是不是可以在路边摆摊去了。 https://t.co/Thy6G44Nqa",
-      "created_at": "Fri May 01 00:19:20 +0000 2026",
-      "url": "https://x.com/geekbb/status/2050007123011276956",
-      "author": {
-        "user_name": "geekbb",
-        "name": "Geek"
-      },
-      "metrics": {
-        "likes": 22,
-        "retweets": 0,
-        "replies": 3
       }
     }
   ]

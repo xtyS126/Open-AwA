@@ -1,7 +1,7 @@
 {
   "storage_type": "daily",
-  "last_updated": "2026-05-01T11:24:11.341680",
-  "total_count": 229,
+  "last_updated": "2026-05-01T13:43:48.609733",
+  "total_count": 244,
   "tweets": [
     {
       "id": "1978505070322057562",
@@ -2611,6 +2611,231 @@
         "likes": 884,
         "retweets": 162,
         "replies": 137
+      }
+    },
+    {
+      "id": "2050079838179135746",
+      "text": "这个 GPT-Image-2.0 标注图片的提示词最近在抖音也很火，晒照片的时候会用到。\n\n提示词：\n请观察照片中的元素、并为每个物件加上有意义的 手绘风注解。请填写照片中的物品。\n描述规则：•使用像白色笔画的细线手绘线条•一笔画风格、随性、略带不均匀感•沿着物件外围加上描边轮廓•用箭头或虚线做出视线引导\n文字规则：•手写风格字体（日系可爱感）•句子简短、像自言自语的小碎念•语气偏日记感、带一点情绪\n注解生成规则：不要过度装饰，保留空白空间\n\n这个是我在抖音刷到的，不知道提示词是谁原创的。",
+      "created_at": "Fri May 01 05:08:16 +0000 2026",
+      "url": "https://x.com/op7418/status/2050079838179135746",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 3,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050077628913345007",
+      "text": "又一款开源语音输入工具 OpenLess：按住快捷键即可说话，松开后自动完成录音、转写和 AI 润色，结果会直接插入光标所在位置；若无法插入，则自动复制到剪贴板，定位上对标 Typeless、Wispr Flow 这类付费产品。\n\n我现在在用 Type4Me，最近几次迭代之后体验越来越顺手，算是豆包语音输入法的完美平替了。\n\nhttps://t.co/N8PQ3J0Pl3",
+      "created_at": "Fri May 01 04:59:29 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050077628913345007",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050076458266308853",
+      "text": "类似 Roblox 这样的社区型游戏和社交驱动的小游戏产品会很火。\n\n以前构建这种游戏的类型非常少，而且成本也比较高。但现在其实每个人都能构建各种游戏。\n\n像早期的 Dota 和 PUBG 的原始玩法，其实都是一些游戏的Mod演变出来的。\n\n所以理论上，现在基于 AI 也可以演变出非常可能是下一个爆款的游戏类型，目前只是缺一个将这些能力整合到一起的游戏平台和工具。",
+      "created_at": "Fri May 01 04:54:50 +0000 2026",
+      "url": "https://x.com/op7418/status/2050076458266308853",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 3,
+        "retweets": 0,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2050076425554919893",
+      "text": "@dddanielwang 哈哈哈哈",
+      "created_at": "Fri May 01 04:54:43 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050076425554919893",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050075295823339919",
+      "text": "这个网页效果太好了，动效非常舒适",
+      "created_at": "Fri May 01 04:50:13 +0000 2026",
+      "url": "https://x.com/op7418/status/2050075295823339919",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 3,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050075020714815898",
+      "text": "最近 GPT-Image-2.0 很多提示词又火了，比如这个拉跨鼠标手绘图，原贴有提示 https://t.co/KMgmP7dVMA",
+      "created_at": "Fri May 01 04:49:08 +0000 2026",
+      "url": "https://x.com/op7418/status/2050075020714815898",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 6,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050074256365744308",
+      "text": "@goodhunt 笑死 才反应过来鲸鱼兄弟啥意思",
+      "created_at": "Fri May 01 04:46:05 +0000 2026",
+      "url": "https://x.com/op7418/status/2050074256365744308",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050073827615588784",
+      "text": "@AutismCapital @DINOR0AR 😂",
+      "created_at": "Fri May 01 04:44:23 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050073827615588784",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 614,
+        "retweets": 40,
+        "replies": 242
+      }
+    },
+    {
+      "id": "2050073387645747651",
+      "text": "RT @JamesZmSun: We added a device tool bar to the Codex in-app browser, so it's easier to build and test responsive apps! \n\nNow, you can ha…",
+      "created_at": "Fri May 01 04:42:38 +0000 2026",
+      "url": "https://x.com/OpenAIDevs/status/2050073387645747651",
+      "author": {
+        "user_name": "OpenAIDevs",
+        "name": "OpenAI Developers"
+      },
+      "metrics": {
+        "likes": 291,
+        "retweets": 22,
+        "replies": 20
+      }
+    },
+    {
+      "id": "2050069446149214213",
+      "text": "RT @GadSaad: Stating that women do not have penises is conservative.\n\nStating that the scientific method is superior to ancestral tribal da…",
+      "created_at": "Fri May 01 04:26:59 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050069446149214213",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1358,
+        "retweets": 227,
+        "replies": 205
+      }
+    },
+    {
+      "id": "2050069178552549401",
+      "text": "@yunta_tsai 🎯",
+      "created_at": "Fri May 01 04:25:55 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050069178552549401",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 426,
+        "retweets": 34,
+        "replies": 173
+      }
+    },
+    {
+      "id": "2050064706661134451",
+      "text": "@lamara953 人类的多样性",
+      "created_at": "Fri May 01 04:08:09 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050064706661134451",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050064606018875583",
+      "text": "@KaiwenR1 🤣",
+      "created_at": "Fri May 01 04:07:45 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050064606018875583",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050064485164187767",
+      "text": "@RocM301 😅",
+      "created_at": "Fri May 01 04:07:16 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050064485164187767",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050055276821463497",
+      "text": "看到一篇博文：依赖 AI 的人终将被时代抛弃…… https://t.co/t4BCOK6cTN",
+      "created_at": "Fri May 01 03:30:40 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050055276821463497",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 0,
+        "replies": 4
       }
     },
     {

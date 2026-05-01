@@ -1,22 +1,27 @@
 """
 微信绑定管理路由，负责微信绑定状态的增删改查及连接参数配置。
 与 skills.py 中的扫码登录路由配合使用，提供完整的微信集成管理能力。
+
+v2: 新增微信对话历史查询端点，实现跨渠道上下文可视化。
 """
 
 import json
 from typing import Any, Dict, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
-from api.services.weixin_auto_reply import WeixinAutoReplyService
+from api.services.weixin_auto_reply import (
+    WeixinAutoReplyService,
+    DEFAULT_CROSS_CHANNEL_CONTEXT_TURNS,
+)
 from config.security import decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
-from db.models import Skill, WeixinBinding, WeixinAutoReplyRule, get_db
+from db.models import ShortTermMemory, Skill, WeixinBinding, WeixinAutoReplyRule, get_db
 from skills.weixin_skill_adapter import WeixinSkillAdapter
 
 
@@ -231,7 +236,6 @@ async def save_binding(
     db.commit()
     db.refresh(binding)
     if previous_account_id and previous_account_id != binding.weixin_account_id:
-        # 账号切换后必须清理旧账号的游标和幂等状态，避免把历史消息带到新账号。
         adapter.clear_account_state(previous_account_id)
     logger.info(f"[weixin] 用户 {user_id} 绑定已保存, account_id={payload.weixin_account_id}, status={binding.binding_status}")
     return WeixinBindingResponse(
@@ -541,7 +545,167 @@ async def delete_auto_reply_rule(
     ).first()
     if not rule:
         raise HTTPException(status_code=404, detail="未找到该规则")
-    
+
     db.delete(rule)
     db.commit()
     return {"message": "规则已删除"}
+
+
+# ──────────────────────────────────────────────
+#  跨渠道对话上下文 API
+# ──────────────────────────────────────────────
+
+class WeixinConversationSummary(BaseModel):
+    """微信对话会话摘要"""
+    session_id: str
+    from_user_id: str = ""
+    weixin_account_id: str = ""
+    last_message: str = ""
+    last_message_at: str = ""
+    total_turns: int = 0
+    unread_count: int = 0
+
+
+class WeixinConversationMessage(BaseModel):
+    """微信对话消息"""
+    role: str
+    content: str
+    timestamp: str = ""
+
+
+@router.get("/conversations", response_model=List[WeixinConversationSummary])
+async def list_weixin_conversations(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """
+    列出当前用户的所有微信对话会话摘要。
+    聚合 ShortTermMemory 中 weixin:auto: 前缀的 session，按最近活跃排序。
+    """
+    user_id = str(current_user.id)
+    try:
+        # 查询所有微信渠道的短时记忆记录
+        all_sessions = (
+            db.query(ShortTermMemory)
+            .filter(ShortTermMemory.session_id.like("weixin:auto:%"))
+            .order_by(ShortTermMemory.timestamp.desc())
+            .limit(limit * 50)
+            .all()
+        )
+    except Exception:
+        return []
+
+    # 按 session_id 聚合
+    sessions: Dict[str, Dict[str, Any]] = {}
+    for mem in all_sessions:
+        sid = mem.session_id or ""
+        if sid not in sessions:
+            # 解析 session_id: weixin:auto:{account_id}:{from_user_id}
+            parts = sid.replace("weixin:auto:", "").split(":", 1)
+            sessions[sid] = {
+                "session_id": sid,
+                "weixin_account_id": parts[0] if len(parts) > 0 else "",
+                "from_user_id": parts[1] if len(parts) > 1 else "",
+                "last_message": str(mem.content or "")[:120],
+                "last_message_at": (mem.timestamp.isoformat() if mem.timestamp else ""),
+                "total_turns": 0,
+                "unread_count": 0,
+            }
+        sessions[sid]["total_turns"] += 1
+
+    return [
+        WeixinConversationSummary(**summary)
+        for summary in list(sessions.values())[:limit]
+    ]
+
+
+@router.get("/conversations/{session_id:path}", response_model=List[WeixinConversationMessage])
+async def get_weixin_conversation(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """
+    获取指定微信对话会话的完整消息历史。
+
+    session_id 格式: weixin:auto:{account_id}:{from_user_id}
+    """
+    if not session_id.startswith("weixin:auto:"):
+        raise HTTPException(status_code=400, detail="无效的微信会话 ID")
+
+    try:
+        messages = (
+            db.query(ShortTermMemory)
+            .filter(ShortTermMemory.session_id == session_id)
+            .order_by(ShortTermMemory.timestamp.asc())
+            .limit(limit)
+            .all()
+        )
+    except Exception as exc:
+        logger.error(f"[weixin] 查询对话历史失败: {exc}")
+        raise HTTPException(status_code=500, detail="查询对话历史失败")
+
+    return [
+        WeixinConversationMessage(
+            role=mem.role or "unknown",
+            content=str(mem.content or "")[:1000],
+            timestamp=mem.timestamp.isoformat() if mem.timestamp else "",
+        )
+        for mem in messages
+    ]
+
+
+@router.get("/cross-channel/context")
+async def get_cross_channel_context(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(default=DEFAULT_CROSS_CHANNEL_CONTEXT_TURNS, ge=1, le=50),
+):
+    """
+    获取跨渠道上下文预览：主用户 Web UI 最近对话 + 所有微信对话会话列表。
+    用于诊断和可视化 AI 在生成微信回复时的上下文来源。
+    """
+    user_id = str(current_user.id)
+    manager = _get_auto_reply_manager()
+
+    # 主用户 Web UI 最近对话（排除微信渠道）
+    web_conversations = manager._load_main_user_recent_conversations(db, user_id, max_turns=limit)
+
+    # 微信对话会话列表
+    try:
+        weixin_memories = (
+            db.query(ShortTermMemory)
+            .filter(ShortTermMemory.session_id.like("weixin:auto:%"))
+            .order_by(ShortTermMemory.timestamp.desc())
+            .limit(limit * 20)
+            .all()
+        )
+    except Exception:
+        weixin_memories = []
+
+    weixin_sessions: Dict[str, Dict[str, Any]] = {}
+    for mem in weixin_memories:
+        sid = mem.session_id or ""
+        if sid not in weixin_sessions:
+            parts = sid.replace("weixin:auto:", "").split(":", 1)
+            weixin_sessions[sid] = {
+                "session_id": sid,
+                "from_user_id": parts[1] if len(parts) > 1 else "",
+                "last_message": str(mem.content or "")[:120],
+                "last_at": mem.timestamp.isoformat() if mem.timestamp else "",
+                "message_count": 0,
+            }
+        weixin_sessions[sid]["message_count"] += 1
+
+    return {
+        "user_id": user_id,
+        "web_context_turns": len(web_conversations),
+        "web_context": [
+            {"role": msg["role"], "preview": str(msg["content"])[:200]}
+            for msg in web_conversations[-10:]
+        ],
+        "weixin_sessions_count": len(weixin_sessions),
+        "weixin_sessions": list(weixin_sessions.values())[:limit],
+    }

@@ -297,7 +297,7 @@ async def test_default_ai_reply_generator_strips_reasoning_content_and_sets_fina
     finally:
         db.close()
 
-    assert captured["user_input"] == "帮我回复一下"
+    assert "帮我回复一下" in captured["user_input"]
     assert captured["context"]["output_mode"] == "final_only"
     assert captured["context"]["suppress_reasoning"] is True
     assert result["response"] == "最终答案：仅保留最终回复"
