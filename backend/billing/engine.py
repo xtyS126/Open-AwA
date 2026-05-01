@@ -55,9 +55,10 @@ class BillingEngine:
             text=text,
             num_images=num_images,
             audio_seconds=audio_seconds,
-            video_seconds=video_seconds
+            video_seconds=video_seconds,
+            provider=provider,
         )
-        
+
         budget_check = self.budget_manager.check_budget(
             user_id=user_id,
             proposed_cost=0
@@ -107,7 +108,7 @@ class BillingEngine:
         if api_response_usage and "completion_tokens" in api_response_usage:
             output_tokens = api_response_usage["completion_tokens"]
         elif output_tokens is None:
-            output_tokens = self.calculator.estimate_text_tokens(output_text)
+            output_tokens = self.calculator.estimate_text_tokens(output_text, provider=before_result.get("provider"))
         
         cost_result = self.calculator.calculate_cost(
             input_tokens=input_tokens,
@@ -226,21 +227,22 @@ class BillingEngine:
             text=text,
             num_images=num_images,
             audio_seconds=audio_seconds,
-            video_seconds=video_seconds
+            video_seconds=video_seconds,
+            provider=provider,
         )
-        
+
         cost_result = self.calculator.calculate_cost(
             input_tokens=tokens_result["total_tokens"],
             output_tokens=0,
             input_price=pricing.input_price,
-            output_price=pricing.output_price
+            output_price=pricing.output_price,
         )
-        
+
         return {
             "provider": provider,
             "model": model,
             "input_tokens": tokens_result["total_tokens"],
             "tokens_breakdown": tokens_result,
             "estimated_input_cost": cost_result["input_cost"],
-            "currency": pricing.currency
+            "currency": pricing.currency,
         }
