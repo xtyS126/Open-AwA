@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import QRCode from 'qrcode'
 import {
   WeixinAutoReplyProcessResult,
+  WeixinAutoReplyRule,
+  WeixinAutoReplyRuleCreate,
+  WeixinAutoReplyRuleUpdate,
   WeixinAutoReplyStatus,
   WeixinBindingInfo,
   WeixinConfig,
@@ -61,6 +64,12 @@ export function useWechatConfig() {
   const [editBotType, setEditBotType] = useState('')
   const [editChannelVersion, setEditChannelVersion] = useState('')
   const [savingParams, setSavingParams] = useState(false)
+
+  const [rules, setRules] = useState<WeixinAutoReplyRule[]>([])
+  const [loadingRules, setLoadingRules] = useState(false)
+  const [rulesError, setRulesError] = useState<string | null>(null)
+  const [editingRule, setEditingRule] = useState<WeixinAutoReplyRule | Partial<WeixinAutoReplyRuleCreate> | null>(null)
+  const [savingRule, setSavingRule] = useState(false)
 
   const getApiErrorDetail = (error: unknown, fallback: string) => {
     const maybeError = error as { response?: { data?: { detail?: string } } }
@@ -351,6 +360,31 @@ export function useWechatConfig() {
     }
   }, [])
 
+  const loadRules = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoadingRules(true)
+    }
+    setRulesError(null)
+    try {
+      const response = await weixinAPI.getRules()
+      if (response.data) {
+        setRules(response.data)
+      }
+    } catch (error) {
+      setRulesError(getApiErrorDetail(error, '加载自动回复规则失败'))
+      appLogger.error({
+        event: 'weixin_auto_reply_rules_load_failed',
+        message: '加载自动回复规则失败',
+        module: 'communication',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    } finally {
+      if (!silent) {
+        setLoadingRules(false)
+      }
+    }
+  }, [])
+
   const loadWeixinConfig = useCallback(async () => {
     setLoadingWeixin(true)
     setConfigLoadError(null)
@@ -389,6 +423,7 @@ export function useWechatConfig() {
     void loadBindingInfo()
     void loadAutoReplyStatus()
     void loadParamsConfig()
+    void loadRules()
 
     return () => {
       clearQrPolling()
@@ -823,6 +858,71 @@ export function useWechatConfig() {
     }
   }
 
+  const handleSaveRule = async (ruleData: WeixinAutoReplyRule | WeixinAutoReplyRuleCreate) => {
+    setSavingRule(true)
+    try {
+      if ('id' in ruleData) {
+        await weixinAPI.updateRule(ruleData.id, ruleData as WeixinAutoReplyRuleUpdate)
+        showTimedMessage('success', '规则更新成功')
+      } else {
+        await weixinAPI.createRule(ruleData as WeixinAutoReplyRuleCreate)
+        showTimedMessage('success', '规则创建成功')
+      }
+      setEditingRule(null)
+      await loadRules(true)
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '保存规则失败'))
+    } finally {
+      setSavingRule(false)
+    }
+  }
+
+  const handleDeleteRule = async (id: number) => {
+    if (!window.confirm('确定要删除这条规则吗？')) return
+    try {
+      await weixinAPI.deleteRule(id)
+      showTimedMessage('success', '规则删除成功')
+      await loadRules(true)
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '删除规则失败'))
+    }
+  }
+
+  const handleToggleRuleActive = async (rule: WeixinAutoReplyRule) => {
+    try {
+      await weixinAPI.updateRule(rule.id, { is_active: !rule.is_active })
+      await loadRules(true)
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '切换规则状态失败'))
+    }
+  }
+
+  const handleRestoreDefaultRules = async () => {
+    if (!window.confirm('这将清空所有当前规则并恢复为系统默认规则，确定要继续吗？')) return
+    setSavingRule(true)
+    try {
+      // Delete all existing rules
+      for (const rule of rules) {
+        await weixinAPI.deleteRule(rule.id)
+      }
+      // Create a default rule
+      await weixinAPI.createRule({
+        rule_name: '默认回复',
+        match_type: 'regex',
+        match_pattern: '.*',
+        reply_content: '我暂时无法生成合适的回复，请稍后再试。',
+        is_active: true,
+        priority: -100
+      })
+      showTimedMessage('success', '已恢复默认规则')
+      await loadRules(true)
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, '恢复默认规则失败'))
+    } finally {
+      setSavingRule(false)
+    }
+  }
+
   return {
     message,
     weixinConfig, setWeixinConfig,
@@ -831,12 +931,14 @@ export function useWechatConfig() {
     bindingInfo, loadingBinding, unbinding, bindingError,
     autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult,
     paramsConfig, paramsLoadError, editBotType, setEditBotType, editChannelVersion, setEditChannelVersion, savingParams,
+    rules, loadingRules, rulesError, editingRule, setEditingRule, savingRule,
     
     currentBindingStatus, isAutoReplyBindingReady, autoReplyBusy, canStartAutoReply, canStopAutoReply, canRestartAutoReply, canProcessAutoReplyOnce,
 
     formatStatusTime, buildBindingResultText, buildNextStepText, formatAutoReplyBindingStatus, formatAutoReplyPollStatus,
-    loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadWeixinConfig,
+    loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadWeixinConfig, loadRules,
     handleUnbind, handleSaveParams, handleStartQrLogin, handleCancelQrLogin, handleSaveWeixinConfig, handleTestWeixinConnection,
-    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce
+    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce,
+    handleSaveRule, handleDeleteRule, handleToggleRuleActive, handleRestoreDefaultRules
   }
 }

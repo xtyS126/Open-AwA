@@ -10,13 +10,15 @@ export default function WechatConfigModule() {
     bindingInfo, loadingBinding, unbinding, bindingError,
     autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult,
     paramsConfig, paramsLoadError, editBotType, setEditBotType, editChannelVersion, setEditChannelVersion, savingParams,
+    rules, loadingRules, rulesError, editingRule, setEditingRule, savingRule,
     
     currentBindingStatus, isAutoReplyBindingReady, autoReplyBusy, canStartAutoReply, canStopAutoReply, canRestartAutoReply, canProcessAutoReplyOnce,
 
     formatStatusTime, buildBindingResultText, buildNextStepText, formatAutoReplyBindingStatus, formatAutoReplyPollStatus,
-    loadBindingInfo, loadAutoReplyStatus, loadParamsConfig,
+    loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadRules,
     handleUnbind, handleSaveParams, handleStartQrLogin, handleCancelQrLogin, handleSaveWeixinConfig, handleTestWeixinConnection,
-    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce
+    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce,
+    handleSaveRule, handleDeleteRule, handleToggleRuleActive, handleRestoreDefaultRules
   } = useWechatConfig()
 
   return (
@@ -213,6 +215,150 @@ export default function WechatConfigModule() {
                     {autoReplyAction === 'process' ? '处理中...' : '单次处理'}
                   </button>
                 </div>
+              </div>
+
+              <div className={styles['qr-login']}>
+                <h4 className={styles['qr-login-title']}>自动回复规则配置</h4>
+                <p className={styles['qr-login-desc']}>管理微信自动回复的关键词和正则规则。支持实时生效。</p>
+                {rulesError && (
+                  <div className={`${styles['message']} ${styles['error']}`}>
+                    {rulesError}
+                  </div>
+                )}
+                
+                {editingRule ? (
+                  <div className={styles['form-item']}>
+                    <div className={styles['form-item']}>
+                      <label className={styles['label']}>规则名称 <span className={styles['required']}>*</span></label>
+                      <input
+                        type="text"
+                        value={editingRule.rule_name || ''}
+                        onChange={(e) => setEditingRule({ ...editingRule, rule_name: e.target.value })}
+                        placeholder="输入规则名称"
+                        className={styles['input']}
+                      />
+                    </div>
+                    <div className={styles['form-item']}>
+                      <label className={styles['label']}>匹配类型 <span className={styles['required']}>*</span></label>
+                      <select
+                        value={editingRule.match_type || 'keyword'}
+                        onChange={(e) => setEditingRule({ ...editingRule, match_type: e.target.value as 'keyword' | 'regex' })}
+                        className={styles['input']}
+                      >
+                        <option value="keyword">关键词 (包含)</option>
+                        <option value="regex">正则表达式</option>
+                      </select>
+                    </div>
+                    <div className={styles['form-item']}>
+                      <label className={styles['label']}>匹配模式 <span className={styles['required']}>*</span></label>
+                      <input
+                        type="text"
+                        value={editingRule.match_pattern || ''}
+                        onChange={(e) => setEditingRule({ ...editingRule, match_pattern: e.target.value })}
+                        placeholder={editingRule.match_type === 'regex' ? '输入正则表达式' : '输入触发关键词'}
+                        className={styles['input']}
+                      />
+                    </div>
+                    <div className={styles['form-item']}>
+                      <label className={styles['label']}>回复内容 <span className={styles['required']}>*</span></label>
+                      <textarea
+                        value={editingRule.reply_content || ''}
+                        onChange={(e) => setEditingRule({ ...editingRule, reply_content: e.target.value })}
+                        placeholder="输入自动回复内容"
+                        className={styles['input']}
+                        rows={4}
+                      />
+                    </div>
+                    <div className={styles['form-item']}>
+                      <label className={styles['label']}>优先级 (数字越大越优先)</label>
+                      <input
+                        type="number"
+                        value={editingRule.priority ?? 0}
+                        onChange={(e) => setEditingRule({ ...editingRule, priority: parseInt(e.target.value, 10) || 0 })}
+                        className={styles['input']}
+                      />
+                    </div>
+                    <div className={styles['actions-row']}>
+                      <button
+                        className={`btn btn-primary`}
+                        onClick={() => void handleSaveRule(editingRule as any)}
+                        disabled={savingRule || !editingRule.rule_name || !editingRule.match_pattern || !editingRule.reply_content}
+                      >
+                        {savingRule ? '保存中...' : '保存规则'}
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => setEditingRule(null)}
+                        disabled={savingRule}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles['actions-row']} style={{ marginBottom: '16px' }}>
+                      <button
+                        className={`btn btn-primary`}
+                        onClick={() => setEditingRule({ rule_name: '', match_type: 'keyword', match_pattern: '', reply_content: '', is_active: true, priority: 0 })}
+                      >
+                        添加规则
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => void loadRules()}
+                        disabled={loadingRules}
+                      >
+                        {loadingRules ? '加载中...' : '刷新规则'}
+                      </button>
+                      <button
+                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                        onClick={() => void handleRestoreDefaultRules()}
+                        disabled={savingRule}
+                      >
+                        一键恢复默认
+                      </button>
+                    </div>
+
+                    {rules.length === 0 ? (
+                      <p className={styles['qr-status']}>暂无配置任何自动回复规则</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {rules.map(rule => (
+                          <div key={rule.id} style={{ padding: '16px', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <h5 style={{ margin: 0, fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {rule.rule_name}
+                                <span style={{ fontSize: '12px', padding: '2px 6px', background: 'var(--color-bg-tertiary)', borderRadius: '4px' }}>
+                                  {rule.match_type === 'keyword' ? '关键词' : '正则'}
+                                </span>
+                              </h5>
+                              <div>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', marginRight: '12px', fontSize: '14px' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={rule.is_active} 
+                                    onChange={() => void handleToggleRuleActive(rule)} 
+                                  />
+                                  启用
+                                </label>
+                                <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} style={{ padding: '4px 8px', fontSize: '12px', marginRight: '8px' }} onClick={() => setEditingRule(rule)}>编辑</button>
+                                <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} style={{ padding: '4px 8px', fontSize: '12px', color: 'var(--color-danger)' }} onClick={() => void handleDeleteRule(rule.id)}>删除</button>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
+                              匹配模式: <code style={{ background: 'var(--color-bg-tertiary)', padding: '2px 4px', borderRadius: '4px' }}>{rule.match_pattern}</code>
+                              <span style={{ marginLeft: '12px' }}>优先级: {rule.priority}</span>
+                            </div>
+                            <div style={{ fontSize: '14px', color: 'var(--color-text)', whiteSpace: 'pre-wrap', marginTop: '8px', padding: '8px', background: 'var(--color-bg-tertiary)', borderRadius: '4px' }}>
+                              {rule.reply_content}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               <div className={styles['qr-login']}>

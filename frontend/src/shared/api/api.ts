@@ -1023,6 +1023,37 @@ export interface WeixinAutoReplyProcessResult {
   error?: string
 }
 
+export interface WeixinAutoReplyRule {
+  id: number
+  user_id: string
+  rule_name: string
+  match_type: 'keyword' | 'regex'
+  match_pattern: string
+  reply_content: string
+  is_active: boolean
+  priority: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WeixinAutoReplyRuleCreate {
+  rule_name: string
+  match_type: 'keyword' | 'regex'
+  match_pattern: string
+  reply_content: string
+  is_active?: boolean
+  priority?: number
+}
+
+export interface WeixinAutoReplyRuleUpdate {
+  rule_name?: string
+  match_type?: 'keyword' | 'regex'
+  match_pattern?: string
+  reply_content?: string
+  is_active?: boolean
+  priority?: number
+}
+
 export const weixinAPI = {
   getConfig: () => api.get<WeixinConfig>('/skills/weixin/config'),
   saveConfig: (config: WeixinConfig) => api.post('/skills/weixin/config', config),
@@ -1040,6 +1071,10 @@ export const weixinAPI = {
   stopAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/stop'),
   restartAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/restart'),
   processAutoReplyOnce: () => api.post<WeixinAutoReplyProcessResult>('/weixin/auto-reply/process-once'),
+  getRules: () => api.get<WeixinAutoReplyRule[]>('/weixin/auto-reply/rules'),
+  createRule: (data: WeixinAutoReplyRuleCreate) => api.post<WeixinAutoReplyRule>('/weixin/auto-reply/rules', data),
+  updateRule: (id: number, data: WeixinAutoReplyRuleUpdate) => api.put<WeixinAutoReplyRule>(`/weixin/auto-reply/rules/${id}`, data),
+  deleteRule: (id: number) => api.delete(`/weixin/auto-reply/rules/${id}`),
 }
 
 // ---- 系统诊断API类型 ----
