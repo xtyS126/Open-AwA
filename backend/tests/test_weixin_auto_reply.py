@@ -27,7 +27,7 @@ from api.services.weixin_auto_reply import (
 )
 from config.security import encrypt_secret_value
 from core.agent import AIAgent
-from db.models import Base, WeixinBinding
+from db.models import Base, WeixinBinding, WeixinAutoReplyRule
 from main import app
 from skills.weixin_skill_adapter import WeixinSkillAdapter
 
@@ -66,6 +66,7 @@ def _reset_bindings_table() -> None:
     db = TestingSessionLocal()
     try:
         db.query(WeixinBinding).delete()
+        db.query(WeixinAutoReplyRule).delete()
         db.commit()
     finally:
         db.close()
@@ -136,6 +137,109 @@ def test_build_weixin_reply_text_filters_reasoning_content():
         }
     )
     assert reply == "你好，这里是最终回复。"
+
+
+@pytest.mark.asyncio
+async def test_auto_reply_rule_engine(tmp_path, monkeypatch):
+    """验证自动回复规则引擎优先于 AI。"""
+    _create_binding()
+    
+    db = TestingSessionLocal()
+    try:
+        rule1 = WeixinAutoReplyRule(
+            user_id="user-1",
+            rule_name="Keyword Test",
+            match_type="keyword",
+            match_pattern="规则测试",
+            reply_content="触发关键词规则",
+            priority=10
+        )
+        rule2 = WeixinAutoReplyRule(
+            user_id="user-1",
+            rule_name="Regex Test",
+            match_type="regex",
+            match_pattern=r"正则.*测试",
+            reply_content="触发正则规则",
+            priority=5
+        )
+        db.add(rule1)
+        db.add(rule2)
+        db.commit()
+    finally:
+        db.close()
+
+    class DummyAdapter(WeixinSkillAdapter):
+        def __init__(self):
+            super().__init__(project_root=str(tmp_path))
+            self.get_updates_calls = 0
+            self.send_calls = []
+
+        async def get_updates(self, runtime, cursor, persist_cursor):
+            self.get_updates_calls += 1
+            if self.get_updates_calls == 1:
+                return {
+                    "cursor": "cursor-1",
+                    "response": {
+                        "msgs": [
+                            {
+                                "message_id": "msg-1",
+                                "from_user_id": "user-A",
+                                "context_token": "token-1",
+                                "text": "这是一条规则测试消息",
+                            },
+                            {
+                                "message_id": "msg-2",
+                                "from_user_id": "user-B",
+                                "context_token": "token-2",
+                                "text": "这是一个正则表达式测试",
+                            },
+                            {
+                                "message_id": "msg-3",
+                                "from_user_id": "user-C",
+                                "context_token": "token-3",
+                                "text": "这是普通消息，不会触发规则",
+                            }
+                        ]
+                    }
+                }
+            return {"cursor": cursor, "response": {"msgs": []}}
+
+        async def send_text_message(self, runtime, payload):
+            self.send_calls.append(payload)
+            return {"request": payload}
+
+    dummy_adapter = DummyAdapter()
+    
+    async def dummy_ai_generator(db_session, binding, inbound):
+        return {"response": "AI生成的回复"}
+
+    manager = WeixinAutoReplyService(
+        adapter=dummy_adapter,
+        session_factory=TestingSessionLocal,
+    )
+    
+    # 将 AI 生成器替换，以便验证 fallback
+    original_default_generator = manager._default_ai_reply_generator
+    async def mock_generator(db_session, binding, inbound):
+        # 让默认生成器中用 mock AI Agent 替代真实 Agent 的过程有点麻烦，直接使用 manager._default_ai_reply_generator 并且 mock AIAgent
+        pass
+    
+    class MockAIAgent:
+        def __init__(self, db_session=None):
+            pass
+        async def process(self, text, context):
+            return {"response": "AI生成的回复"}
+
+    monkeypatch.setattr("api.services.weixin_auto_reply.AIAgent", MockAIAgent)
+
+    result = await manager.process_once("user-1")
+    assert result["ok"] is True
+    assert result["processed"] == 3
+    
+    assert len(dummy_adapter.send_calls) == 3
+    assert dummy_adapter.send_calls[0]["text"] == "触发关键词规则"
+    assert dummy_adapter.send_calls[1]["text"] == "触发正则规则"
+    assert dummy_adapter.send_calls[2]["text"] == "AI生成的回复"
 
 
 def test_build_weixin_reply_text_truncates_chinese_on_character_boundary():

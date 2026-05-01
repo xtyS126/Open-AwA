@@ -4,7 +4,8 @@
 """
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -15,7 +16,7 @@ from api.dependencies import get_current_user
 from api.services.weixin_auto_reply import WeixinAutoReplyService
 from config.security import decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
-from db.models import Skill, WeixinBinding, get_db
+from db.models import Skill, WeixinBinding, WeixinAutoReplyRule, get_db
 from skills.weixin_skill_adapter import WeixinSkillAdapter
 
 
@@ -422,3 +423,125 @@ async def get_auto_reply_diagnostics(
         "health_check": health,
         "diagnostics_message": "诊断完成" if health.get("ok") else "检测到配置问题，请查看 health_check 详情",
     }
+
+
+class WeixinAutoReplyRuleCreate(BaseModel):
+    """创建微信自动回复规则的请求模型"""
+    rule_name: str = Field(..., min_length=1, max_length=100)
+    match_type: str = Field(default="keyword", pattern=r"^(keyword|regex)$")
+    match_pattern: str = Field(..., min_length=1, max_length=500)
+    reply_content: str = Field(..., min_length=1, max_length=4000)
+    is_active: bool = Field(default=True)
+    priority: int = Field(default=0)
+
+
+class WeixinAutoReplyRuleUpdate(BaseModel):
+    """更新微信自动回复规则的请求模型"""
+    rule_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    match_type: Optional[str] = Field(default=None, pattern=r"^(keyword|regex)$")
+    match_pattern: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    reply_content: Optional[str] = Field(default=None, min_length=1, max_length=4000)
+    is_active: Optional[bool] = None
+    priority: Optional[int] = None
+
+
+class WeixinAutoReplyRuleResponse(BaseModel):
+    """微信自动回复规则响应模型"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: str
+    rule_name: str
+    match_type: str
+    match_pattern: str
+    reply_content: str
+    is_active: bool
+    priority: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@router.get("/auto-reply/rules", response_model=List[WeixinAutoReplyRuleResponse])
+async def list_auto_reply_rules(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """获取当前用户的所有微信自动回复规则"""
+    rules = db.query(WeixinAutoReplyRule).filter(
+        WeixinAutoReplyRule.user_id == str(current_user.id)
+    ).order_by(WeixinAutoReplyRule.priority.desc(), WeixinAutoReplyRule.created_at.desc()).all()
+    return rules
+
+
+@router.post("/auto-reply/rules", response_model=WeixinAutoReplyRuleResponse)
+async def create_auto_reply_rule(
+    payload: WeixinAutoReplyRuleCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """创建新的微信自动回复规则"""
+    rule = WeixinAutoReplyRule(
+        user_id=str(current_user.id),
+        rule_name=payload.rule_name,
+        match_type=payload.match_type,
+        match_pattern=payload.match_pattern,
+        reply_content=payload.reply_content,
+        is_active=payload.is_active,
+        priority=payload.priority,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.put("/auto-reply/rules/{rule_id}", response_model=WeixinAutoReplyRuleResponse)
+async def update_auto_reply_rule(
+    rule_id: int,
+    payload: WeixinAutoReplyRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """更新微信自动回复规则"""
+    rule = db.query(WeixinAutoReplyRule).filter(
+        WeixinAutoReplyRule.id == rule_id,
+        WeixinAutoReplyRule.user_id == str(current_user.id)
+    ).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="未找到该规则")
+
+    if payload.rule_name is not None:
+        rule.rule_name = payload.rule_name
+    if payload.match_type is not None:
+        rule.match_type = payload.match_type
+    if payload.match_pattern is not None:
+        rule.match_pattern = payload.match_pattern
+    if payload.reply_content is not None:
+        rule.reply_content = payload.reply_content
+    if payload.is_active is not None:
+        rule.is_active = payload.is_active
+    if payload.priority is not None:
+        rule.priority = payload.priority
+
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.delete("/auto-reply/rules/{rule_id}")
+async def delete_auto_reply_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """删除微信自动回复规则"""
+    rule = db.query(WeixinAutoReplyRule).filter(
+        WeixinAutoReplyRule.id == rule_id,
+        WeixinAutoReplyRule.user_id == str(current_user.id)
+    ).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="未找到该规则")
+    
+    db.delete(rule)
+    db.commit()
+    return {"message": "规则已删除"}

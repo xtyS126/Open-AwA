@@ -1042,5 +1042,60 @@ export const weixinAPI = {
   processAutoReplyOnce: () => api.post<WeixinAutoReplyProcessResult>('/weixin/auto-reply/process-once'),
 }
 
+// ---- 系统诊断API类型 ----
+
+export interface SysDiagnosticsCheck {
+  name: string
+  label: string
+  ok: boolean
+  detail: Record<string, unknown> | null
+}
+
+export interface SysDiagnosticsResponse {
+  timestamp: number
+  overall: string
+  passed: number
+  total: number
+  checks: SysDiagnosticsCheck[]
+}
+
+export const systemAPI = {
+  diagnostics: () => api.get<SysDiagnosticsResponse>("/system/diagnostics"),
+  ping: () => api.get<{ pong: boolean; timestamp: number }>("/system/ping"),
+}
+
+// ---- 测试场景API类型 ----
+
+export interface ScenarioDef {
+  name: string
+  label: string
+  category: string
+  description: string
+}
+
+export interface ScenarioResult {
+  name: string
+  label: string
+  category: string
+  status: 'idle' | 'ok' | 'fail'
+  duration_ms: number
+  message: string
+  detail: Record<string, unknown> | null
+}
+
+export interface ScenarioRunResponse {
+  results: ScenarioResult[]
+  passed: number
+  failed: number
+  total: number
+  duration_ms: number
+}
+
+export const testRunnerAPI = {
+  listScenarios: () => api.get<{ total: number; scenarios: ScenarioDef[] }>('/test-scenarios'),
+  runScenario: (name: string) => api.post<ScenarioRunResponse>('/test-scenarios/run', { name }),
+  runAllScenarios: () => api.post<ScenarioRunResponse>('/test-scenarios/run-all'),
+}
+
 export { api as sharedApi }
 export default api

@@ -6,6 +6,7 @@ import {
   Cat, Sun, Moon, Menu, ChevronDown
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
+import { UserFloatingArea } from '../UserFloatingArea'
 import styles from './Sidebar.module.css'
 
 interface MenuItem {
@@ -209,6 +210,10 @@ const renderIcon = (type: string, size = 18) => {
             )}
           </div>
         ))}
+        
+        {/* User Floating Area inserted at the bottom of the nav */}
+        <div className={styles['nav-bottom-spacer']}></div>
+        <UserFloatingArea collapsed={collapsed} />
       </nav>
       
       <div className={styles['sidebar-footer']}>

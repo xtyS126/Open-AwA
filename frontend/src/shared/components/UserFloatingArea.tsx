@@ -5,7 +5,11 @@ import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './UserFloatingArea.module.css'
 
-export function UserFloatingArea() {
+interface UserFloatingAreaProps {
+  collapsed?: boolean;
+}
+
+export function UserFloatingArea({ collapsed = false }: UserFloatingAreaProps) {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
 
@@ -33,14 +37,14 @@ export function UserFloatingArea() {
   const initial = (user.username || 'U')[0].toUpperCase()
 
   return (
-    <div className={styles['floating-area']}>
+    <div className={`${styles['floating-area']} ${collapsed ? styles['collapsed'] : ''}`}>
       <button
         className={styles['user-btn']}
         onClick={handleNavigateToUser}
         title="用户中心"
       >
         <div className={styles['avatar']}>{initial}</div>
-        <span className={styles['username']}>{user.username}</span>
+        {!collapsed && <span className={styles['username']}>{user.username}</span>}
       </button>
       <button
         className={styles['logout-btn']}
@@ -52,3 +56,4 @@ export function UserFloatingArea() {
     </div>
   )
 }
+

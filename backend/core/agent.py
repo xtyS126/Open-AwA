@@ -376,7 +376,7 @@ class AIAgent:
                 if not tool_name:
                     continue
 
-                func_name = f"plugin_{plugin_name}/{tool_name}"
+                func_name = f"plugin_{plugin_name}__{tool_name}"
                 if func_name in seen_names:
                     continue
                 seen_names.add(func_name)
@@ -407,7 +407,7 @@ class AIAgent:
                 if not server_name or not tool_name:
                     continue
 
-                func_name = f"mcp_{server_name}/{tool_name}"
+                func_name = f"mcp_{server_name}__{tool_name}"
                 if func_name in seen_names:
                     continue
                 seen_names.add(func_name)
@@ -585,7 +585,7 @@ class AIAgent:
             if result.get('success'):
                 logger.info(f"Skill '{skill_name}' executed successfully")
                 return {
-                    'status': 'success',
+                    'status': 'completed',
                     'skill_name': skill_name,
                     'outputs': result.get('outputs', {}),
                     'steps': result.get('steps', []),
@@ -595,7 +595,7 @@ class AIAgent:
             else:
                 logger.error(f"Skill '{skill_name}' execution failed: {result.get('error')}")
                 return {
-                    'status': 'failed',
+                    'status': 'error',
                     'skill_name': skill_name,
                     'error': result.get('error', 'Unknown error'),
                     'outputs': result.get('outputs', {}),
@@ -644,14 +644,14 @@ class AIAgent:
             if status == 'success':
                 logger.info(f"Plugin '{plugin_name}' method '{method}' executed successfully")
                 return {
-                    'status': 'success',
+                    'status': 'completed',
                     'data': result.get('data') if result.get('data') is not None else result.get('result'),
                     'message': result.get('message', '')
                 }
 
             logger.error(f"Plugin '{plugin_name}' method '{method}' failed: {result.get('message')}")
             response = {
-                'status': status,
+                'status': 'error' if status == 'error' else status,
                 'message': result.get('message', 'Unknown error')
             }
             if result.get('data') is not None:
@@ -1051,7 +1051,7 @@ class AIAgent:
                         node_type="tool_execution",
                         user_message=user_input,
                         context=context,
-                        status="success" if skill_result.get('status') == 'success' else "error",
+                        status="success" if skill_result.get('status') in ('completed', 'success') else "error",
                         error_message=skill_result.get('error'),
                         llm_input=step,
                         llm_output=skill_result,
@@ -1081,7 +1081,7 @@ class AIAgent:
                         node_type="tool_execution",
                         user_message=user_input,
                         context=context,
-                        status="success" if plugin_result.get('status') == 'success' else "error",
+                        status="success" if plugin_result.get('status') in ('completed', 'success') else "error",
                         error_message=plugin_result.get('message'),
                         llm_input=step,
                         llm_output=plugin_result,
@@ -1258,7 +1258,7 @@ class AIAgent:
                         context=context
                     )
 
-                    if skill_result.get('status') == 'success':
+                    if skill_result.get('status') in ('completed', 'success'):
                         auto_results['skills'].append({
                             'skill_name': skill_name,
                             'result': skill_result,
@@ -1292,7 +1292,7 @@ class AIAgent:
                             **plugin_kwargs
                         )
 
-                        if plugin_result.get('status') == 'success':
+                        if plugin_result.get('status') in ('completed', 'success'):
                             auto_results['plugins'].append({
                                 'plugin_name': plugin_name,
                                 'tool': tool.get('name'),

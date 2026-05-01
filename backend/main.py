@@ -26,6 +26,8 @@ from api.routes.weixin import router as weixin_router
 from api.routes.tools import router as tools_router
 from api.routes.subagents import router as subagents_router
 from api.routes.user import router as user_router
+from api.routes.system import router as system_router
+from api.routes.test_runner import router as test_runner_router
 from billing.models import Base as BillingBase
 from billing.routers import billing
 from config.logging import (
@@ -409,6 +411,8 @@ app.include_router(weixin_router)
 app.include_router(tools_router)
 app.include_router(subagents_router)
 app.include_router(user_router, prefix=settings.API_V1_STR)
+app.include_router(system_router)
+app.include_router(test_runner_router)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath

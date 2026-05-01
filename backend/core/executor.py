@@ -1021,10 +1021,10 @@ class ExecutionLayer:
 
         if func_name.startswith("plugin_"):
             remaining = func_name[len("plugin_"):]
-            if "/" in remaining:
-                plugin_name, plugin_method = remaining.split("/", 1)
+            if "__" in remaining:
+                plugin_name, plugin_method = remaining.split("__", 1)
             else:
-                return {"ok": False, "error": f"plugin tool name missing '/' separator: {func_name}"}
+                return {"ok": False, "error": f"plugin tool name missing '__' separator: {func_name}"}
             from plugins import plugin_instance
             try:
                 pm = plugin_instance.get()
@@ -1073,10 +1073,10 @@ class ExecutionLayer:
 
         if func_name.startswith("mcp_"):
             remaining = func_name[len("mcp_"):]
-            if "/" in remaining:
-                server_id, mcp_tool_name = remaining.split("/", 1)
+            if "__" in remaining:
+                server_id, mcp_tool_name = remaining.split("__", 1)
             else:
-                return {"ok": False, "error": f"MCP tool name missing '/' separator: {func_name}"}
+                return {"ok": False, "error": f"MCP tool name missing '__' separator: {func_name}"}
             try:
                 manager = MCPManager()
                 result = await manager.call_tool(server_id, mcp_tool_name, func_args)

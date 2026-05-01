@@ -18,7 +18,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from core.agent import AIAgent
-from db.models import SessionLocal, WeixinBinding
+from db.models import SessionLocal, WeixinBinding, WeixinAutoReplyRule
 from skills.weixin_skill_adapter import (
     WeixinAdapterError,
     WeixinRuntimeConfig,
@@ -635,11 +635,40 @@ class WeixinAutoReplyService:
         inbound: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        默认 AI 生成入口。
-
-        这里仍然复用现有 `AIAgent.process()`，但显式在上下文里标记微信渠道和最终答案模式，
-        上游即使返回 reasoning_content，最终发送前也会再次经过微信专用清洗。
+        默认回复生成入口：优先匹配用户定义的自动回复规则，如果无匹配再调用 AI。
         """
+        inbound_text = inbound.get("text", "").strip()
+        
+        # 1. 规则匹配引擎 (Rule Engine)
+        rules = db.query(WeixinAutoReplyRule).filter(
+            WeixinAutoReplyRule.user_id == binding.user_id,
+            WeixinAutoReplyRule.is_active == True
+        ).order_by(WeixinAutoReplyRule.priority.desc(), WeixinAutoReplyRule.created_at.desc()).all()
+
+        for rule in rules:
+            if rule.match_type == "keyword":
+                if rule.match_pattern in inbound_text:
+                    logger.bind(
+                        module="weixin.auto_reply",
+                        user_id=binding.user_id,
+                        rule_id=rule.id,
+                        match_type="keyword"
+                    ).info(f"触发关键词回复规则: {rule.rule_name}")
+                    return {"response": rule.reply_content}
+            elif rule.match_type == "regex":
+                try:
+                    if re.search(rule.match_pattern, inbound_text):
+                        logger.bind(
+                            module="weixin.auto_reply",
+                            user_id=binding.user_id,
+                            rule_id=rule.id,
+                            match_type="regex"
+                        ).info(f"触发正则回复规则: {rule.rule_name}")
+                        return {"response": rule.reply_content}
+                except re.error as e:
+                    logger.warning(f"规则 {rule.id} 的正则表达式错误: {e}")
+
+        # 2. AI 回复生成 (Fallback)
         agent = AIAgent(db_session=db)
         context = {
             "user_id": binding.user_id,
@@ -649,13 +678,13 @@ class WeixinAutoReplyService:
             "channel": "weixin",
             "output_mode": "final_only",
             "suppress_reasoning": True,
-            "message": inbound["text"],
+            "message": inbound_text,
             "weixin_account_id": binding.weixin_account_id,
             "weixin_message_id": inbound["message_id"],
             "weixin_context_token": inbound["context_token"],
             "weixin_from_user_id": inbound["from_user_id"],
         }
-        result = await agent.process(inbound["text"], context)
+        result = await agent.process(inbound_text, context)
         if isinstance(result, dict):
             return strip_reasoning_content(result)
         return {"response": _safe_text(result)}

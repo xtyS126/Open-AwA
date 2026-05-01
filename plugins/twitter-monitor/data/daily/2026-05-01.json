@@ -1,7 +1,7 @@
 {
   "storage_type": "daily",
-  "last_updated": "2026-05-01T00:26:22.888079",
-  "total_count": 177,
+  "last_updated": "2026-05-01T11:24:11.341680",
+  "total_count": 229,
   "tweets": [
     {
       "id": "1978505070322057562",
@@ -13,7 +13,7 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 1837,
+        "likes": 1836,
         "retweets": 342,
         "replies": 71
       }
@@ -28,9 +28,9 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 774,
-        "retweets": 78,
-        "replies": 18
+        "likes": 833,
+        "retweets": 92,
+        "replies": 24
       }
     },
     {
@@ -43,8 +43,8 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 42,
-        "retweets": 8,
+        "likes": 50,
+        "retweets": 10,
         "replies": 9
       }
     },
@@ -73,7 +73,7 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 26,
+        "likes": 31,
         "retweets": 1,
         "replies": 1
       }
@@ -88,69 +88,9 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 774,
-        "retweets": 34,
-        "replies": 23
-      }
-    },
-    {
-      "id": "2049624602486383078",
-      "text": "BioMysteryBench, our new bioinformatics eval, tests whether Claude can devise creative solutions to open-ended research problems.\n\nRead more: https://t.co/iKDWA76Nu9",
-      "created_at": "Wed Apr 29 22:59:20 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2049624602486383078",
-      "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
-      },
-      "metrics": {
-        "likes": 274,
-        "retweets": 30,
-        "replies": 17
-      }
-    },
-    {
-      "id": "2049624600741560340",
-      "text": "New on the Science Blog: We gave Claude 99 problems analyzing real biological data and compared its performance against an expert panel.\n\nOn 23 problems, the experts were stumped. Our most recent models solved roughly 30% of those—and most of the rest. https://t.co/BYqr76zxhk",
-      "created_at": "Wed Apr 29 22:59:19 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2049624600741560340",
-      "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
-      },
-      "metrics": {
-        "likes": 1997,
-        "retweets": 185,
-        "replies": 152
-      }
-    },
-    {
-      "id": "2049617427705524460",
-      "text": "RT @JitendraMalikCV: @jon_barron \"World models\" has a technical meaning - the transition model/dynamics model from Bellman/Kalman  in the c…",
-      "created_at": "Wed Apr 29 22:30:49 +0000 2026",
-      "url": "https://x.com/ylecun/status/2049617427705524460",
-      "author": {
-        "user_name": "ylecun",
-        "name": "Yann LeCun"
-      },
-      "metrics": {
-        "likes": 265,
-        "retweets": 34,
-        "replies": 4
-      }
-    },
-    {
-      "id": "2049605820351230158",
-      "text": "With the Figma plugin, Codex can now turn implementation plans into visual FigJam boards.",
-      "created_at": "Wed Apr 29 21:44:42 +0000 2026",
-      "url": "https://x.com/OpenAIDevs/status/2049605820351230158",
-      "author": {
-        "user_name": "OpenAIDevs",
-        "name": "OpenAI Developers"
-      },
-      "metrics": {
-        "likes": 375,
-        "retweets": 22,
-        "replies": 15
+        "likes": 937,
+        "retweets": 38,
+        "replies": 29
       }
     },
     {
@@ -223,7 +163,7 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 68,
+        "likes": 69,
         "retweets": 2,
         "replies": 1
       }
@@ -238,9 +178,9 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 795,
-        "retweets": 77,
-        "replies": 29
+        "likes": 825,
+        "retweets": 79,
+        "replies": 30
       }
     },
     {
@@ -253,8 +193,8 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 3,
-        "retweets": 0,
+        "likes": 4,
+        "retweets": 1,
         "replies": 0
       }
     },
@@ -268,144 +208,9 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 15,
+        "likes": 16,
         "retweets": 3,
         "replies": 0
-      }
-    },
-    {
-      "id": "2049588128080699710",
-      "text": "\"Everyone wants faster agents. And you know what sucks... people think it's my fault. But it's actually the inference.\"\n\n@pk_iv, CEO of @Browserbase, sits down with @MilksandMatcha on why inference speed is the real bottleneck for browser agents, and why Browserbase + Cerebras gets you the fastest agents possible.",
-      "created_at": "Wed Apr 29 20:34:23 +0000 2026",
-      "url": "https://x.com/cerebras/status/2049588128080699710",
-      "author": {
-        "user_name": "cerebras",
-        "name": "Cerebras"
-      },
-      "metrics": {
-        "likes": 27,
-        "retweets": 2,
-        "replies": 3
-      }
-    },
-    {
-      "id": "2049583379709124865",
-      "text": "Codex can help you compare choices against your criteria and keep track of the tradeoffs. https://t.co/WOomDx4S72",
-      "created_at": "Wed Apr 29 20:15:31 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049583379709124865",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 143,
-        "retweets": 7,
-        "replies": 6
-      }
-    },
-    {
-      "id": "2049583308305252620",
-      "text": "Use Codex to analyze a data export, flag what changed, and help draft the readout. https://t.co/EhsMTk8R9l",
-      "created_at": "Wed Apr 29 20:15:14 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049583308305252620",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 294,
-        "retweets": 8,
-        "replies": 9
-      }
-    },
-    {
-      "id": "2049583239606780296",
-      "text": "Catch up on what changed across @SlackHQ, @gmail, @googlecalendar, and what needs your attention. https://t.co/ZvsXNDmJrD",
-      "created_at": "Wed Apr 29 20:14:58 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049583239606780296",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 306,
-        "retweets": 11,
-        "replies": 9
-      }
-    },
-    {
-      "id": "2049582976019906937",
-      "text": "Dig into the Pareto details for Code Arena: Frontend WebDev at https://t.co/QfiNrCehbV",
-      "created_at": "Wed Apr 29 20:13:55 +0000 2026",
-      "url": "https://x.com/arena/status/2049582976019906937",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 5,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049582973926949116",
-      "text": "MiMo-V2.5 Pro by @XiaomiMiMo  is the #11 model (#3 among open) in Code Arena: Frontend WebDev and has shifted the Pareto frontier with $1 input / $3 output per MToken. https://t.co/6UfMtrVlGK",
-      "created_at": "Wed Apr 29 20:13:55 +0000 2026",
-      "url": "https://x.com/arena/status/2049582973926949116",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 163,
-        "retweets": 17,
-        "replies": 7
-      }
-    },
-    {
-      "id": "2049576143653929153",
-      "text": "In new Anthropic Fellows research, we discuss “introspection adapters\": a tool that allows language models to self-report behaviors they've learned during training—including potential misalignment.",
-      "created_at": "Wed Apr 29 19:46:46 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2049576143653929153",
-      "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
-      },
-      "metrics": {
-        "likes": 1268,
-        "retweets": 121,
-        "replies": 128
-      }
-    },
-    {
-      "id": "2049522956267844049",
-      "text": "Filter and view the leaderboard details by the filters and categories that matter most to you at: https://t.co/sn807FDZ65",
-      "created_at": "Wed Apr 29 16:15:25 +0000 2026",
-      "url": "https://x.com/arena/status/2049522956267844049",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 8,
-        "retweets": 2,
-        "replies": 0
-      }
-    },
-    {
-      "id": "2049522953793274197",
-      "text": "Ernie-5.1 from @ErnieforDevs lands at #13 in Text Arena — now the #1 highest-ranked model from a Chinese lab.\n\nStrongest categories:\n- #9 Math\n- #1 Legal & Government\n- #4 Business, Management & Financial Ops\n- #7 Software & IT Services\n\nCongrats to the Baidu @ErnieforDevs team on this achievement!",
-      "created_at": "Wed Apr 29 16:15:25 +0000 2026",
-      "url": "https://x.com/arena/status/2049522953793274197",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 315,
-        "retweets": 41,
-        "replies": 22
       }
     },
     {
@@ -418,7 +223,7 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 17,
+        "likes": 19,
         "retweets": 1,
         "replies": 2
       }
@@ -433,9 +238,9 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 755,
-        "retweets": 56,
-        "replies": 45
+        "likes": 775,
+        "retweets": 55,
+        "replies": 46
       }
     },
     {
@@ -448,7 +253,7 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 2672,
+        "likes": 2674,
         "retweets": 78,
         "replies": 336
       }
@@ -463,9 +268,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 9973,
+        "likes": 9998,
         "retweets": 248,
-        "replies": 1015
+        "replies": 1016
       }
     },
     {
@@ -478,7 +283,7 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 25,
+        "likes": 26,
         "retweets": 6,
         "replies": 2
       }
@@ -493,8 +298,8 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 83,
-        "retweets": 1,
+        "likes": 85,
+        "retweets": 3,
         "replies": 3
       }
     },
@@ -508,9 +313,9 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 886,
-        "retweets": 100,
-        "replies": 32
+        "likes": 904,
+        "retweets": 104,
+        "replies": 34
       }
     },
     {
@@ -523,9 +328,9 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 1214,
-        "retweets": 147,
-        "replies": 29
+        "likes": 1237,
+        "retweets": 149,
+        "replies": 31
       }
     },
     {
@@ -538,7 +343,7 @@
         "name": "Kimi.ai"
       },
       "metrics": {
-        "likes": 171,
+        "likes": 175,
         "retweets": 15,
         "replies": 5
       }
@@ -553,24 +358,9 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 6228,
-        "retweets": 529,
-        "replies": 238
-      }
-    },
-    {
-      "id": "2049282657566290059",
-      "text": "RT @petergostev: Note we've renamed Code Arena to Frontend Design: WebDev for these chats. I hope this is less confusing, but lmk if you ha…",
-      "created_at": "Wed Apr 29 00:20:34 +0000 2026",
-      "url": "https://x.com/arena/status/2049282657566290059",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 179,
-        "retweets": 9,
-        "replies": 12
+        "likes": 6280,
+        "retweets": 532,
+        "replies": 242
       }
     },
     {
@@ -583,7 +373,7 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 2793,
+        "likes": 2797,
         "retweets": 409,
         "replies": 162
       }
@@ -598,9 +388,9 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 14853,
-        "retweets": 950,
-        "replies": 915
+        "likes": 14852,
+        "retweets": 949,
+        "replies": 916
       }
     },
     {
@@ -613,9 +403,9 @@
         "name": "KwaiKAT"
       },
       "metrics": {
-        "likes": 1,
+        "likes": 0,
         "retweets": 0,
-        "replies": 1
+        "replies": 0
       }
     },
     {
@@ -733,24 +523,9 @@
         "name": "OpenRouter"
       },
       "metrics": {
-        "likes": 290,
+        "likes": 289,
         "retweets": 18,
         "replies": 14
-      }
-    },
-    {
-      "id": "2049270072934617090",
-      "text": "It's true. Here's a plot of GPT models and their usage of \"goblin\", \"gremlin\", \"troll\", etc over time. There's no anti-gremlin system instruction on our side, we get to see GPT-5.5 run free. https://t.co/Z8F6mTtJSS",
-      "created_at": "Tue Apr 28 23:30:33 +0000 2026",
-      "url": "https://x.com/arena/status/2049270072934617090",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 1146,
-        "retweets": 59,
-        "replies": 45
       }
     },
     {
@@ -778,24 +553,9 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 544,
+        "likes": 549,
         "retweets": 44,
         "replies": 23
-      }
-    },
-    {
-      "id": "2049172077748298145",
-      "text": "Dig into the leaderboard details at: https://t.co/PjWOaDEq7j",
-      "created_at": "Tue Apr 28 17:01:09 +0000 2026",
-      "url": "https://x.com/arena/status/2049172077748298145",
-      "author": {
-        "user_name": "arena",
-        "name": "Arena.ai"
-      },
-      "metrics": {
-        "likes": 9,
-        "retweets": 1,
-        "replies": 1
       }
     },
     {
@@ -808,7 +568,7 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 1662,
+        "likes": 1667,
         "retweets": 147,
         "replies": 35
       }
@@ -868,7 +628,7 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 751,
+        "likes": 753,
         "retweets": 103,
         "replies": 97
       }
@@ -883,9 +643,774 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 5068,
+        "likes": 5069,
         "retweets": 370,
         "replies": 1444
+      }
+    },
+    {
+      "id": "2050002083387191629",
+      "text": "RT @ValsAI: Today @xai  just rearranged our leaderboards… Grok 4.3 jumped 25 points to take #1 on CaseLaw v2 and climbed 21 spots to lead C…",
+      "created_at": "Thu Apr 30 23:59:18 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050002083387191629",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1906,
+        "retweets": 335,
+        "replies": 272
+      }
+    },
+    {
+      "id": "2049998562260668620",
+      "text": "RT @MilksandMatcha: watching devs misuse fast inference is almost painful right now. I feel like people are missing the point\n\n1. any bad h…",
+      "created_at": "Thu Apr 30 23:45:19 +0000 2026",
+      "url": "https://x.com/cerebras/status/2049998562260668620",
+      "author": {
+        "user_name": "cerebras",
+        "name": "Cerebras"
+      },
+      "metrics": {
+        "likes": 34,
+        "retweets": 3,
+        "replies": 6
+      }
+    },
+    {
+      "id": "2049992989670555788",
+      "text": "@perrin365520 氛围真好",
+      "created_at": "Thu Apr 30 23:23:10 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049992989670555788",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049992860859306230",
+      "text": "@Cavon525 好看",
+      "created_at": "Thu Apr 30 23:22:39 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049992860859306230",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049992559070712284",
+      "text": "Come evaluate the latest from @xAI, Grok 4.3 at: https://t.co/yZiJuG8ica",
+      "created_at": "Thu Apr 30 23:21:27 +0000 2026",
+      "url": "https://x.com/arena/status/2049992559070712284",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 1,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049992557527187794",
+      "text": "Grok 4.3 by @xAI is in Battle Mode in the Text, Vision, Document &amp; Code Arena: Front-end.\n\nCome test it out with your toughest prompts. Scores coming soon! https://t.co/6gWt5Ba87d",
+      "created_at": "Thu Apr 30 23:21:27 +0000 2026",
+      "url": "https://x.com/arena/status/2049992557527187794",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 138,
+        "retweets": 11,
+        "replies": 6
+      }
+    },
+    {
+      "id": "2049981601476706546",
+      "text": "RT @ml_angelopoulos: Excited to join Stanford CS 153 Office Hours tomorrow: Friday, May 1st at 12PM PT with @AnjneyMidha and @Mabb0tt. \n\nLi…",
+      "created_at": "Thu Apr 30 22:37:55 +0000 2026",
+      "url": "https://x.com/arena/status/2049981601476706546",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 29,
+        "retweets": 6,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049962868519641091",
+      "text": "Starlink in Gibraltar! 🇬🇮",
+      "created_at": "Thu Apr 30 21:23:28 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049962868519641091",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 34042,
+        "retweets": 3236,
+        "replies": 2720
+      }
+    },
+    {
+      "id": "2049946805220327791",
+      "text": "@jamesjyu @arrakis_ai !",
+      "created_at": "Thu Apr 30 20:19:39 +0000 2026",
+      "url": "https://x.com/sama/status/2049946805220327791",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 40,
+        "retweets": 0,
+        "replies": 19
+      }
+    },
+    {
+      "id": "2049946444422123738",
+      "text": "RT @arrakis_ai: This GPT Image 2 prompt is going insanely viral right now.\n\n“Redraw the attached image in the most clumsy, scribbly, and ut…",
+      "created_at": "Thu Apr 30 20:18:13 +0000 2026",
+      "url": "https://x.com/sama/status/2049946444422123738",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 5930,
+        "retweets": 647,
+        "replies": 257
+      }
+    },
+    {
+      "id": "2049946147125625199",
+      "text": "RT @OpenAI: It's never been easier to do everyday work with Codex.\n\nChoose your role, connect the apps you use every day, and try suggested…",
+      "created_at": "Thu Apr 30 20:17:02 +0000 2026",
+      "url": "https://x.com/sama/status/2049946147125625199",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 3703,
+        "retweets": 269,
+        "replies": 229
+      }
+    },
+    {
+      "id": "2049946120441520624",
+      "text": "big upgrade for codex today!\n\ntry it for non-coding computer work.",
+      "created_at": "Thu Apr 30 20:16:55 +0000 2026",
+      "url": "https://x.com/sama/status/2049946120441520624",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 6358,
+        "retweets": 205,
+        "replies": 556
+      }
+    },
+    {
+      "id": "2049944981750833659",
+      "text": "it does seem cool",
+      "created_at": "Thu Apr 30 20:12:24 +0000 2026",
+      "url": "https://x.com/sama/status/2049944981750833659",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 750,
+        "retweets": 29,
+        "replies": 86
+      }
+    },
+    {
+      "id": "2049943699682165159",
+      "text": "RT @AriX: Computer Use runs this use case 42% faster in today's Codex app update. https://t.co/cEqNbf0INJ",
+      "created_at": "Thu Apr 30 20:07:18 +0000 2026",
+      "url": "https://x.com/sama/status/2049943699682165159",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 1629,
+        "retweets": 83,
+        "replies": 83
+      }
+    },
+    {
+      "id": "2049942305663012975",
+      "text": "RT @ClementDelangue: Great to be included in the @TIME 10 Most Influential AI Companies of 2026! Let's go open-source AI! https://t.co/pKiG…",
+      "created_at": "Thu Apr 30 20:01:46 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049942305663012975",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 190,
+        "retweets": 20,
+        "replies": 23
+      }
+    },
+    {
+      "id": "2049938418034266532",
+      "text": "Watch on YouTube to see all the whiteboard details → https://t.co/sKkl4ouml2",
+      "created_at": "Thu Apr 30 19:46:19 +0000 2026",
+      "url": "https://x.com/arena/status/2049938418034266532",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049938415672815756",
+      "text": "Where do autoraters break down?\n\nArena researchers Li Chen and I-Hung Hsu walk through how they'd build an autorater from scratch — different kinds of autoraters, training objectives, what dimensions actually matter to rate on — then get into what makes it hard in practice: preference drift, multi-turn evaluation, tie threshold variance, and the gap between LLM-as-a-judge and real human subjectivity.\n\nWatch on YouTube to see the whiteboard details (link in 🧵 thread)\n\n0:00 Evaluation granularity: general vs. per-category vs. per-response\n2:05 Applications of autoraters as RL reward signals and test-time scaling\n3:03 Output design for pairwise autorater: scores, comparison, and ties\n4:03 Verbal and visual feedback autoraters\n4:48 Training for pairwise autorater: Bradley-Terry loss, threshold design\n9:43 Real-world challenges: preference shifts over time\n10:30 Multi-turn autorating and usage simulation\n11:35 Tie threshold variance across annotators\n12:18 Long-context evaluation challenges\n13:02 Confidence intervals and score uncertainty\n14:00 Why LLM-as-a-judge fails to capture subjective human preference\n15:20 The private information unobservable in human evaluation\n16:14 Model evolved to be stronger makes training data harder\n17:08 Signal vs. noise in human preference data\n18:04 How do you autorate an autorater?",
+      "created_at": "Thu Apr 30 19:46:18 +0000 2026",
+      "url": "https://x.com/arena/status/2049938415672815756",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 53,
+        "retweets": 8,
+        "replies": 5
+      }
+    },
+    {
+      "id": "2049929697921003809",
+      "text": "Work faster with Codex. https://t.co/1yvZfXASQx",
+      "created_at": "Thu Apr 30 19:11:40 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049929697921003809",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 180,
+        "retweets": 15,
+        "replies": 14
+      }
+    },
+    {
+      "id": "2049928782019256561",
+      "text": "From draft to deck, review the work as it takes shape inside Codex. \n\nOpen the file, ask for changes, and keep tweaking it in the same thread. https://t.co/9NJV2pwAxZ",
+      "created_at": "Thu Apr 30 19:08:02 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049928782019256561",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 218,
+        "retweets": 10,
+        "replies": 8
+      }
+    },
+    {
+      "id": "2049928780588966270",
+      "text": "As Codex works, you can see what’s happening at a glance, including task progress, the files and tools it used, and what comes next. https://t.co/pjYv9A32BZ",
+      "created_at": "Thu Apr 30 19:08:01 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049928780588966270",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 165,
+        "retweets": 7,
+        "replies": 4
+      }
+    },
+    {
+      "id": "2049928779083219105",
+      "text": "With Codex, everyone has a personal assistant.\n\nCodex will summarize data from different apps and docs, plan next steps, draft work, organize research, or create a project plan. https://t.co/Bgpye1KNDz",
+      "created_at": "Thu Apr 30 19:08:01 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049928779083219105",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 227,
+        "retweets": 8,
+        "replies": 8
+      }
+    },
+    {
+      "id": "2049928777480974606",
+      "text": "During setup, Codex recommends useful plugins for your role and guides you through connecting apps like @SlackHQ, @GoogleWorkspace, @Microsoft365, and more. https://t.co/MuCzMVzILz",
+      "created_at": "Thu Apr 30 19:08:01 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049928777480974606",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 342,
+        "retweets": 11,
+        "replies": 8
+      }
+    },
+    {
+      "id": "2049928776147230886",
+      "text": "It's never been easier to do everyday work with Codex.\n\nChoose your role, connect the apps you use every day, and try suggested prompts.\n\nCodex helps with everything from research and planning to docs, slides, spreadsheets, and more. https://t.co/zDtYnMSqvn",
+      "created_at": "Thu Apr 30 19:08:00 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049928776147230886",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 3706,
+        "retweets": 269,
+        "replies": 229
+      }
+    },
+    {
+      "id": "2049927629420245494",
+      "text": "All data in this study was collected and analyzed using our privacy-preserving tool.\n\nRead more: https://t.co/X82ttb7f4b",
+      "created_at": "Thu Apr 30 19:03:27 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927629420245494",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 73,
+        "retweets": 4,
+        "replies": 8
+      }
+    },
+    {
+      "id": "2049927628161999317",
+      "text": "This work is part of a loop we're working to close between societal impacts and model training. One of our goals is to study how people use Claude, find where it falls short of its principles, and use what we learned in training new models.\n\nRead more: https://t.co/6tjY58uBhk",
+      "created_at": "Thu Apr 30 19:03:27 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927628161999317",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 98,
+        "retweets": 5,
+        "replies": 7
+      }
+    },
+    {
+      "id": "2049927626215825734",
+      "text": "When stress-tested on real conversations where Claude previously showed sycophancy, Opus 4.7 had half the sycophancy rate of Opus 4.6 on relationship guidance. Mythos Preview cut that in half again. \n\nThis generalized across domains—though this training is one of several causes. https://t.co/ofgiYFTnor",
+      "created_at": "Thu Apr 30 19:03:26 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927626215825734",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 70,
+        "retweets": 5,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2049927624852652457",
+      "text": "Claude is most sycophantic under pushback, and relationship conversations are where people push back most. \n\nWe identified some of the specific triggers—criticism of Claude's analysis, floods of one-sided detail—and built synthetic training scenarios from them.",
+      "created_at": "Thu Apr 30 19:03:26 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927624852652457",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 65,
+        "retweets": 4,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2049927623732777150",
+      "text": "We focused on relationship guidance because that's where the most sycophantic conversations occur. In this setting, Claude telling someone what they want to hear can harden a divide or convince them a signal means more than it does.",
+      "created_at": "Thu Apr 30 19:03:25 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927623732777150",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 76,
+        "retweets": 4,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2049927621891534874",
+      "text": "Claude mostly avoids sycophancy when giving guidance—it shows up in just 9% of conversations.\n\nBut the rate is particularly high in conversations on spirituality and relationship guidance. https://t.co/mgix5ejTZw",
+      "created_at": "Thu Apr 30 19:03:25 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927621891534874",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 150,
+        "retweets": 11,
+        "replies": 5
+      }
+    },
+    {
+      "id": "2049927619915976789",
+      "text": "About 6% of all conversations are people asking Claude for personal guidance—whether to take a job, how to handle a conflict, if they should move.\n\nOver 75% of these conversations fell into four domains: health &amp; wellness, career, relationships, and personal finance. https://t.co/SQamPx0jWt",
+      "created_at": "Thu Apr 30 19:03:25 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927619915976789",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 213,
+        "retweets": 11,
+        "replies": 7
+      }
+    },
+    {
+      "id": "2049927618397614466",
+      "text": "How do people seek guidance from Claude?\n\nWe looked at 1M conversations to understand what questions people ask, how Claude responds, and where it slips into sycophancy. We used what we found to improve how we trained Opus 4.7 and Mythos Preview.\nhttps://t.co/6tjY58uBhk",
+      "created_at": "Thu Apr 30 19:03:24 +0000 2026",
+      "url": "https://x.com/AnthropicAI/status/2049927618397614466",
+      "author": {
+        "user_name": "AnthropicAI",
+        "name": "Anthropic"
+      },
+      "metrics": {
+        "likes": 1419,
+        "retweets": 135,
+        "replies": 165
+      }
+    },
+    {
+      "id": "2049926993236590654",
+      "text": "POV 在这里 https://t.co/q1OyhYhubH",
+      "created_at": "Thu Apr 30 19:00:55 +0000 2026",
+      "url": "https://x.com/karminski3/status/2049926993236590654",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 11,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049926904120267144",
+      "text": "给大家说下目前使用 DeepSeek-V4 (pro/flash) 的最需要注意的问题. 本身其实并不算 bug, 但是却很致命.\n\n问题大概是这样的, 在请求 DeepSeek API 或者 terminal coding agent (claude code, kimi cli 等) / AI IDE (cursor 等) 用 DeepSeek 的时候偶尔会遇到报错:\n\nHTTP 400\n{\"error\":{\"message\":\"The `reasoning_content` in the thinking mode must be passed back to the API.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}\n\n这个报错的意思是, 请求 DeepSeek API 必须在 tool_call 的时候回传 reasoning_content 这个字段. 听上去没问题, 开了思考模式那肯定要把 reasoning_content 作为上下文回传.\n\n但是来了, 如果任务的这一步制定的 tool_call 过于显而易见, deepseek 返回的 reasoning_content 其实是空字符串. 这就导致了有些写代码的 IDE 直接过滤掉了这个字段, 不回传, 导致 DeepSeek API 报错, 编码任务或者 Agent 就直接挂了.\n\nDeepSeek-V4 API会不会真的有的时候 reasoning_content 空字符串? 答案是会的, 我专门构建了个 POV 场景, 复现概率高达 59%.\n\n那么出现 reasoning_content 为空字符串的时候该怎么办?\n\n经过验证, 答案是必须原样传回去. 即也在 context 中保留这个值为空字符串的字段. 不能是空对象, 也不能丢掉.\n\n那就原样传回去呗? 废什么话呀?\n\n关键是, 现有的各种 terminal coding agent 或者 AI IDE 这并不是默认行为, 它们大部分的默认行为是直接把字段丢掉了, 导致 DeepSeek-V4 API 报错.\n\n所以现在的解决方法是, 要么等 IDE 的官方修复, 要么你用的 IDE 或者 coding agent 是开源的, 自己 fork 一个版本魔改. \n\n另外, 如果你的 Agent 项目要使用 DeepSeek-V4 也要注意这个坑. 避免运行到一半直接报错退出. \n\n以及, 报错重试不太行的, 因为 DeepSeek-V4 在我 POV 这个场景, 59% 的概率都会为空. 如果重试次数为 3, 那偶尔都不够用. 所以还是老实的把问题解决为好.\n\n#deepseek #deepseekv4",
+      "created_at": "Thu Apr 30 19:00:34 +0000 2026",
+      "url": "https://x.com/karminski3/status/2049926904120267144",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 150,
+        "retweets": 14,
+        "replies": 36
+      }
+    },
+    {
+      "id": "2049923788574273768",
+      "text": "RT @mercor_ai: APEX-Agents now has a @huggingface leaderboard for open-source models.\n\nAPEX-Agents is our frontier benchmark for whether mo…",
+      "created_at": "Thu Apr 30 18:48:11 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049923788574273768",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 25,
+        "retweets": 11,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2049923770257699296",
+      "text": "RT @maximelabonne: AgentTrove: new agentic dataset with 1.7M samples\n\nThanks to OpenThoughts for this great work\n\nThe @huggingface Hub need…",
+      "created_at": "Thu Apr 30 18:48:07 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049923770257699296",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 152,
+        "retweets": 22,
+        "replies": 4
+      }
+    },
+    {
+      "id": "2049922047921545439",
+      "text": "@paulsperry_ Wow",
+      "created_at": "Thu Apr 30 18:41:16 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2049922047921545439",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 7546,
+        "retweets": 296,
+        "replies": 341
+      }
+    },
+    {
+      "id": "2049911945000559066",
+      "text": "RT @badlogicgames: turns out not killing the prefix cache all the time and notnhaving a humongous set of tools and a massive system prompt…",
+      "created_at": "Thu Apr 30 18:01:07 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049911945000559066",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 1192,
+        "retweets": 63,
+        "replies": 32
+      }
+    },
+    {
+      "id": "2049907392108986418",
+      "text": "https://t.co/qrEzhiooh2",
+      "created_at": "Thu Apr 30 17:43:02 +0000 2026",
+      "url": "https://x.com/cline/status/2049907392108986418",
+      "author": {
+        "user_name": "cline",
+        "name": "Cline"
+      },
+      "metrics": {
+        "likes": 18,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049907390871679212",
+      "text": "We spent the last two months rewriting Cline from the ground up.\n\nThe original Cline shipped right after Claude 3.5 Sonnet dropped. It was the first coding agent that actually worked, and we built it extension-first for the IDE. Great in its time, but the architecture got tightly coupled to IDE semantics, which made it painful to evolve the harness for the CLI and to extend into things like flexible agent profiles and agent teams..\n\nSo we took every hard lesson from the past year and started fresh. Built an SDK with better performance and token efficiency, with a plugin architecture for providers, models, LSPs, code search, themes, all of it. Then rebuilt the CLI and the extension on top.\n\nWe're at the last mile and want folks in the beta with us. There will be breaking changes and missing features, and we'd like your help to close the gaps.\n\nWe are offering $20 in credits to get started, plus a bounty program for contributors who help us fix bugs and make plugins. \n\nJoin the #beta channel in our Discord and build with us! 👇",
+      "created_at": "Thu Apr 30 17:43:02 +0000 2026",
+      "url": "https://x.com/cline/status/2049907390871679212",
+      "author": {
+        "user_name": "cline",
+        "name": "Cline"
+      },
+      "metrics": {
+        "likes": 312,
+        "retweets": 16,
+        "replies": 20
+      }
+    },
+    {
+      "id": "2049905968256008296",
+      "text": "Explore the full Text Arena leaderboard — filter by lab, open source, and more: https://t.co/sn807FDZ65",
+      "created_at": "Thu Apr 30 17:37:22 +0000 2026",
+      "url": "https://x.com/arena/status/2049905968256008296",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 4,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049905966188249230",
+      "text": "Hy3-Preview by @TencentHunyuan is top 7 among labs with open models in Text Arena. \n\nTheir newest model ranks #80 overall. It is an MoE model with 295B total parameters, 21B active. Priced at $0.29 / $1.17 per 1M tokens.\n\nCongrats to the @TencentHunyuan team! https://t.co/NzAYHEHXQ9",
+      "created_at": "Thu Apr 30 17:37:22 +0000 2026",
+      "url": "https://x.com/arena/status/2049905966188249230",
+      "author": {
+        "user_name": "arena",
+        "name": "Arena.ai"
+      },
+      "metrics": {
+        "likes": 71,
+        "retweets": 6,
+        "replies": 10
+      }
+    },
+    {
+      "id": "2049903530014621850",
+      "text": "RT @cmpatino_: Introducing Agent Collabs: Bring your own ml-interns and agents for collaborative autoresearch!\n\nWe built a simple platform…",
+      "created_at": "Thu Apr 30 17:27:41 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049903530014621850",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 72,
+        "retweets": 16,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049903265819639875",
+      "text": "RT @hasantoxr: China just open-sourced a trillion-parameter model that burns fewer tokens than your favorite \"efficient\" US model.\n\nLing-2.…",
+      "created_at": "Thu Apr 30 17:26:38 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049903265819639875",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 1168,
+        "retweets": 108,
+        "replies": 42
+      }
+    },
+    {
+      "id": "2049903228486042038",
+      "text": "RT @ben_burtenshaw: Open source projects like transformers are drowning in AI agent PRs, so we auto-merged everything to see what would hap…",
+      "created_at": "Thu Apr 30 17:26:29 +0000 2026",
+      "url": "https://x.com/huggingface/status/2049903228486042038",
+      "author": {
+        "user_name": "huggingface",
+        "name": "Hugging Face"
+      },
+      "metrics": {
+        "likes": 43,
+        "retweets": 10,
+        "replies": 8
+      }
+    },
+    {
+      "id": "2049902506881462613",
+      "text": "Now available for ChatGPT accounts: Advanced Account Security, a new opt-in setting for people at higher risk of digital attacks, with stronger protections including phishing-resistant sign-in and more secure account recovery.\n\nhttps://t.co/KhBGENuXzT",
+      "created_at": "Thu Apr 30 17:23:37 +0000 2026",
+      "url": "https://x.com/OpenAI/status/2049902506881462613",
+      "author": {
+        "user_name": "OpenAI",
+        "name": "OpenAI"
+      },
+      "metrics": {
+        "likes": 1798,
+        "retweets": 173,
+        "replies": 142
+      }
+    },
+    {
+      "id": "2049902076642435576",
+      "text": "@xingbugengming 笑死 那你机会来了",
+      "created_at": "Thu Apr 30 17:21:55 +0000 2026",
+      "url": "https://x.com/op7418/status/2049902076642435576",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049896683744498078",
+      "text": "@JitendraMalikCV @pmddomingos @keenanisalive I started using the concept in 2016 (e.g. in my NIPS 216 keynote, in which I called it a \"world simulator\"). \nI published papers on video prediction in 2016.\nThis was meant to be a key step to train world models.\nHa&Schmi appeared in 2018.\n\nThe slide below is from a talk I gave at Brown in Nov 2017.\nFull deck here: https://t.co/gwG1gypq5I\nWe were hoping to train world models through video prediction.\nAt the time, we were using generative architectures.\nWe tried latent-variable models and GAN-style training.\nBut never quite worked on natural video.\nAround 2021, I realized that predicting at the pixel level was not a good idea.\nThat's when the JEPA concept emerged: find an abstract representation within which predictions are performed.",
+      "created_at": "Thu Apr 30 17:00:29 +0000 2026",
+      "url": "https://x.com/ylecun/status/2049896683744498078",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 2,
+        "retweets": 0,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2049892103002390737",
+      "text": "https://t.co/zgOLrZFGqb",
+      "created_at": "Thu Apr 30 16:42:17 +0000 2026",
+      "url": "https://x.com/vista8/status/2049892103002390737",
+      "author": {
+        "user_name": "vista8",
+        "name": "向阳乔木"
+      },
+      "metrics": {
+        "likes": 2,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2049890663739646348",
+      "text": "终于读完DeepSeek最新论文，一万三千字 AI 解读。\n\n论文中的所有图表都手动截图，累死了。\n\nDeepSeek 这篇论文牛逼，独立思考的光辉在闪耀。\n\n数据清洗也做的细致，把近 10 万数据用各种条件过滤到 3 万。\n\n造训练数据的过程也特别有意思，比如大量迷宫题的设计，哈哈哈！！！",
+      "created_at": "Thu Apr 30 16:36:34 +0000 2026",
+      "url": "https://x.com/vista8/status/2049890663739646348",
+      "author": {
+        "user_name": "vista8",
+        "name": "向阳乔木"
+      },
+      "metrics": {
+        "likes": 26,
+        "retweets": 4,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2049889069295976951",
+      "text": "https://t.co/84slfIzgSz",
+      "created_at": "Thu Apr 30 16:30:13 +0000 2026",
+      "url": "https://x.com/vista8/status/2049889069295976951",
+      "author": {
+        "user_name": "vista8",
+        "name": "向阳乔木"
+      },
+      "metrics": {
+        "likes": 24,
+        "retweets": 4,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049888218464870670",
+      "text": "Students are learning to build with Codex, and building to learn.\n\nHere’s what @UCBerkeley students built at the Codex Creator Challenge with @joinHandshake. https://t.co/NyyBvrXxx5",
+      "created_at": "Thu Apr 30 16:26:51 +0000 2026",
+      "url": "https://x.com/OpenAIDevs/status/2049888218464870670",
+      "author": {
+        "user_name": "OpenAIDevs",
+        "name": "OpenAI Developers"
+      },
+      "metrics": {
+        "likes": 392,
+        "retweets": 28,
+        "replies": 30
       }
     },
     {
@@ -898,9 +1423,9 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 18,
-        "retweets": 3,
-        "replies": 2
+        "likes": 1421,
+        "retweets": 229,
+        "replies": 77
       }
     },
     {
@@ -913,7 +1438,7 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 68,
+        "likes": 74,
         "retweets": 2,
         "replies": 8
       }
@@ -928,9 +1453,9 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 14,
+        "likes": 17,
         "retweets": 3,
-        "replies": 2
+        "replies": 3
       }
     },
     {
@@ -943,9 +1468,9 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 172,
-        "retweets": 14,
-        "replies": 7
+        "likes": 332,
+        "retweets": 23,
+        "replies": 10
       }
     },
     {
@@ -958,9 +1483,9 @@
         "name": "Cerebras"
       },
       "metrics": {
-        "likes": 3,
-        "retweets": 2,
-        "replies": 2
+        "likes": 13,
+        "retweets": 3,
+        "replies": 3
       }
     },
     {
@@ -973,9 +1498,9 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 11,
-        "retweets": 1,
-        "replies": 0
+        "likes": 31,
+        "retweets": 2,
+        "replies": 1
       }
     },
     {
@@ -988,9 +1513,9 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 110,
-        "retweets": 12,
-        "replies": 7
+        "likes": 766,
+        "retweets": 68,
+        "replies": 30
       }
     },
     {
@@ -1003,84 +1528,24 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 342,
-        "retweets": 26,
-        "replies": 27
+        "likes": 1348,
+        "retweets": 99,
+        "replies": 79
       }
     },
     {
-      "id": "2049871702793064656",
-      "text": "RT @XFreeze: Just uploaded my Apple Watch data straight into Grok… and it was insanely good\n\nGrok gave me a full, detailed analysis of ever…",
-      "created_at": "Thu Apr 30 15:21:13 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049871702793064656",
+      "id": "2049873940433314081",
+      "text": "X 将于 2026 年 4 月起分阶段推出全新广告平台，这将是其 20 年来最大规模的广告系统重建。\n\n新平台将通过 AI 简化广告创建、提升广告主控制力，并用更先进的检索和排序系统提高投放精准度、相关性、互动率和 ROI。未来几个月，X 还会陆续上线更多新功能。",
+      "created_at": "Thu Apr 30 15:30:06 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049873940433314081",
       "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
+        "user_name": "geekbb",
+        "name": "Geek"
       },
       "metrics": {
-        "likes": 1402,
-        "retweets": 194,
-        "replies": 287
-      }
-    },
-    {
-      "id": "2049871537025777895",
-      "text": "RT @ResisttheMS: Big Balls explains what working with Elon Musk taught him.\n\n\"You've gotta do what you think is right. That's the biggest t…",
-      "created_at": "Thu Apr 30 15:20:33 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049871537025777895",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 7191,
-        "retweets": 878,
-        "replies": 215
-      }
-    },
-    {
-      "id": "2049871483544248736",
-      "text": "RT @SpaceX: Falcon Heavy launches the @viasat-3 F3 mission to orbit from Florida https://t.co/InhpZOjPMg",
-      "created_at": "Thu Apr 30 15:20:21 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049871483544248736",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 8999,
-        "retweets": 1229,
-        "replies": 396
-      }
-    },
-    {
-      "id": "2049870862921474086",
-      "text": "RT @SawyerMerritt: The Tesla Model X was the fastest-selling used vehicle in the U.S. in March 2026, according to a new study by iSeeCars.…",
-      "created_at": "Thu Apr 30 15:17:53 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049870862921474086",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 1704,
-        "retweets": 187,
-        "replies": 187
-      }
-    },
-    {
-      "id": "2049870724744229066",
-      "text": "@C_3C_3 True",
-      "created_at": "Thu Apr 30 15:17:20 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049870724744229066",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 4400,
-        "retweets": 174,
-        "replies": 396
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
       }
     },
     {
@@ -1093,9 +1558,9 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 23,
-        "retweets": 1,
-        "replies": 0
+        "likes": 62,
+        "retweets": 5,
+        "replies": 4
       }
     },
     {
@@ -1108,8 +1573,8 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 35,
-        "retweets": 1,
+        "likes": 68,
+        "retweets": 3,
         "replies": 1
       }
     },
@@ -1123,24 +1588,9 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 447,
-        "retweets": 46,
-        "replies": 31
-      }
-    },
-    {
-      "id": "2049866769180053558",
-      "text": "Major upgrade to 𝕏 advertising",
-      "created_at": "Thu Apr 30 15:01:37 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049866769180053558",
-      "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
-      },
-      "metrics": {
-        "likes": 10558,
-        "retweets": 1406,
-        "replies": 2500
+        "likes": 1406,
+        "retweets": 134,
+        "replies": 100
       }
     },
     {
@@ -1153,9 +1603,9 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 538,
-        "retweets": 84,
-        "replies": 30
+        "likes": 1264,
+        "retweets": 173,
+        "replies": 50
       }
     },
     {
@@ -1168,9 +1618,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 61,
-        "retweets": 15,
-        "replies": 8
+        "likes": 92,
+        "retweets": 24,
+        "replies": 17
       }
     },
     {
@@ -1183,8 +1633,23 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 114,
-        "retweets": 25,
+        "likes": 183,
+        "retweets": 41,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2049853084000780508",
+      "text": "@paulwalker99318 😂",
+      "created_at": "Thu Apr 30 14:07:14 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049853084000780508",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
         "replies": 0
       }
     },
@@ -1198,7 +1663,7 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 9,
+        "likes": 14,
         "retweets": 1,
         "replies": 0
       }
@@ -1213,84 +1678,9 @@
         "name": "Hugging Face"
       },
       "metrics": {
-        "likes": 63,
-        "retweets": 9,
+        "likes": 148,
+        "retweets": 19,
         "replies": 1
-      }
-    },
-    {
-      "id": "2049847272188301408",
-      "text": "RT @NielsRogge: The @huggingface CLI now includes a command to find the best open-source models for a given dataset!\n\nThis is going to be v…",
-      "created_at": "Thu Apr 30 13:44:08 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049847272188301408",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 81,
-        "retweets": 16,
-        "replies": 9
-      }
-    },
-    {
-      "id": "2049846486955864313",
-      "text": "RT @ClementDelangue: Trying @OpenAI GPT 5.5 in ml intern to create datasets, train models, optimize models (or create reachy mini apps). Ve…",
-      "created_at": "Thu Apr 30 13:41:01 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049846486955864313",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 70,
-        "retweets": 7,
-        "replies": 9
-      }
-    },
-    {
-      "id": "2049846454450016594",
-      "text": "RT @NielsRogge: People may bash on @MistralAI...\n\n...but it's also the only non-Chinese model in the top 25 (!) of open models on SWE-Bench…",
-      "created_at": "Thu Apr 30 13:40:53 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049846454450016594",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 366,
-        "retweets": 25,
-        "replies": 22
-      }
-    },
-    {
-      "id": "2049843519469092973",
-      "text": "RT @dru_blackberry: If @julien_c can flex, we all can flex 💪Qwen-3.5 35B on llama.cpp harnessed by pi. https://t.co/iJabwc4Rgj",
-      "created_at": "Thu Apr 30 13:29:13 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049843519469092973",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 329,
-        "retweets": 14,
-        "replies": 17
-      }
-    },
-    {
-      "id": "2049843422849069281",
-      "text": "RT @_lewtun: GPT-5.5 is now available in the ml-intern app ⚡️!\n\nAs others have noted, it's a very good research partner and is now hard at…",
-      "created_at": "Thu Apr 30 13:28:50 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049843422849069281",
-      "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
-      },
-      "metrics": {
-        "likes": 49,
-        "retweets": 6,
-        "replies": 5
       }
     },
     {
@@ -1309,17 +1699,32 @@
       }
     },
     {
-      "id": "2049828124372701541",
-      "text": "RT @HuggingPapers: Qwen just released their interpretability toolkit on Hugging Face\n\nQwen-Scope adds Sparse Autoencoders to Qwen3.5-27B, e…",
-      "created_at": "Thu Apr 30 12:28:03 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049828124372701541",
+      "id": "2049832334241779849",
+      "text": "如果你用Dia 浏览器，可以新开一个Tab，对话框中输入：coffeeonjosh，体验这个新功能。\n\n会自动连接Gmail，也可以连接Notion等工具，制作一份晨间早报。",
+      "created_at": "Thu Apr 30 12:44:47 +0000 2026",
+      "url": "https://x.com/vista8/status/2049832334241779849",
       "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
+        "user_name": "vista8",
+        "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 162,
-        "retweets": 31,
+        "likes": 5,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2049831626352525533",
+      "text": "感觉 DeepSeek 多模态快来了，推理轨迹里插空间标记（点、框），像人用手指头数数或走迷宫那样，把抽象概念钉到具体位置上。\n\n底层用 DeepSeek-V4-Flash，每 4 个视觉 token 压成 1 个 KV cache 条目，省 token 但不省推理能力。计数和空间推理测试上，模型小、token 花得少，跑出来的成绩跟 GPT-5.4、Claude-Sonnet-4.6、Gemini-3-Flash 差不多。\n\n技术报告已出，后续会放评测基准和冷启动数据。\n\nhttps://t.co/Avdbfi2u5g",
+      "created_at": "Thu Apr 30 12:41:58 +0000 2026",
+      "url": "https://x.com/geekbb/status/2049831626352525533",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 8,
+        "retweets": 4,
         "replies": 1
       }
     },
@@ -1333,24 +1738,24 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 621,
-        "retweets": 199,
-        "replies": 80
+        "likes": 780,
+        "retweets": 244,
+        "replies": 87
       }
     },
     {
-      "id": "2049810959854682305",
-      "text": "RT @cgeorgiaw: 🤗🤗🤗introducing Hugging Science -- the home of AI for science 🤗🤗🤗\n\nopen models and datasets are the powerhouse of science (se…",
-      "created_at": "Thu Apr 30 11:19:51 +0000 2026",
-      "url": "https://x.com/huggingface/status/2049810959854682305",
+      "id": "2049786107164774470",
+      "text": "太牛逼了，今天刚在小群里聊各种游戏，提到杀戮尖塔2，藏师傅Codex里试了下，然后就一发不可收拾了。",
+      "created_at": "Thu Apr 30 09:41:05 +0000 2026",
+      "url": "https://x.com/vista8/status/2049786107164774470",
       "author": {
-        "user_name": "huggingface",
-        "name": "Hugging Face"
+        "user_name": "vista8",
+        "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 1525,
-        "retweets": 305,
-        "replies": 48
+        "likes": 6,
+        "retweets": 0,
+        "replies": 2
       }
     },
     {
@@ -1363,39 +1768,39 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 26,
-        "retweets": 3,
-        "replies": 3
+        "likes": 35,
+        "retweets": 5,
+        "replies": 5
       }
     },
     {
-      "id": "2049760093647024601",
-      "text": "RT @XFreeze: Grok Imagine Agent Mode (Beta) just went live on Grok web\n\nIt’s a full creative agent working on one infinite open canvas\n\nGro…",
-      "created_at": "Thu Apr 30 07:57:43 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049760093647024601",
+      "id": "2049750576422879728",
+      "text": "姚老师又开始掏箱底了，哈哈哈。",
+      "created_at": "Thu Apr 30 07:19:54 +0000 2026",
+      "url": "https://x.com/vista8/status/2049750576422879728",
       "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
+        "user_name": "vista8",
+        "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 3293,
-        "retweets": 656,
-        "replies": 639
+        "likes": 154,
+        "retweets": 22,
+        "replies": 24
       }
     },
     {
-      "id": "2049759063681184128",
-      "text": "𝕏",
-      "created_at": "Thu Apr 30 07:53:38 +0000 2026",
-      "url": "https://x.com/elonmusk/status/2049759063681184128",
+      "id": "2049716631828640135",
+      "text": "@app_sail @LuoSays 哈哈哈，这个月偷懒了，净想着去哪儿钓鱼",
+      "created_at": "Thu Apr 30 05:05:01 +0000 2026",
+      "url": "https://x.com/vista8/status/2049716631828640135",
       "author": {
-        "user_name": "elonmusk",
-        "name": "Elon Musk"
+        "user_name": "vista8",
+        "name": "向阳乔木"
       },
       "metrics": {
-        "likes": 69353,
-        "retweets": 6992,
-        "replies": 5375
+        "likes": 1,
+        "retweets": 0,
+        "replies": 1
       }
     },
     {
@@ -1408,9 +1813,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 3671,
-        "retweets": 83,
-        "replies": 284
+        "likes": 3721,
+        "retweets": 84,
+        "replies": 288
       }
     },
     {
@@ -1423,9 +1828,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 9903,
-        "retweets": 618,
-        "replies": 904
+        "likes": 10064,
+        "retweets": 627,
+        "replies": 909
       }
     },
     {
@@ -1438,9 +1843,9 @@
         "name": "Arena.ai"
       },
       "metrics": {
-        "likes": 172,
-        "retweets": 15,
-        "replies": 17
+        "likes": 204,
+        "retweets": 18,
+        "replies": 19
       }
     },
     {
@@ -1453,8 +1858,8 @@
         "name": "Tongyi Lab"
       },
       "metrics": {
-        "likes": 31,
-        "retweets": 4,
+        "likes": 42,
+        "retweets": 6,
         "replies": 2
       }
     },
@@ -1468,9 +1873,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 1107,
+        "likes": 1109,
         "retweets": 74,
-        "replies": 108
+        "replies": 109
       }
     },
     {
@@ -1483,9 +1888,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 2873,
+        "likes": 2888,
         "retweets": 88,
-        "replies": 403
+        "replies": 407
       }
     },
     {
@@ -1498,9 +1903,9 @@
         "name": "OpenAI Developers"
       },
       "metrics": {
-        "likes": 623,
-        "retweets": 20,
-        "replies": 42
+        "likes": 704,
+        "retweets": 22,
+        "replies": 45
       }
     },
     {
@@ -1513,69 +1918,9 @@
         "name": "OpenAI"
       },
       "metrics": {
-        "likes": 635,
-        "retweets": 22,
-        "replies": 39
-      }
-    },
-    {
-      "id": "2049690541269688478",
-      "text": "Goblin and related magical mentions were overrewarded in training, and the behavior was reinforced over successive models.\n\nWe removed the goblin-affine reward signal for future models, and filtered training data where creatures appeared in irrelevant contexts. https://t.co/25kv9ZXNPk",
-      "created_at": "Thu Apr 30 03:21:21 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049690541269688478",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 529,
-        "retweets": 17,
-        "replies": 36
-      }
-    },
-    {
-      "id": "2049690536832127482",
-      "text": "We solved the goblin mystery—with the help of Codex.\n\nThe culprit: Nerdy personality (RIP). https://t.co/S1c5bsRTln",
-      "created_at": "Thu Apr 30 03:21:20 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049690536832127482",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 921,
-        "retweets": 30,
-        "replies": 25
-      }
-    },
-    {
-      "id": "2049690535087214876",
-      "text": "The goblins crept in alongside the launch of GPT-5.1. https://t.co/2Dyv7tOj8I",
-      "created_at": "Thu Apr 30 03:21:19 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049690535087214876",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 832,
-        "retweets": 20,
-        "replies": 10
-      }
-    },
-    {
-      "id": "2049690533845663830",
-      "text": "We’re talking about Goblins. \nhttps://t.co/dqmcLGCW71",
-      "created_at": "Thu Apr 30 03:21:19 +0000 2026",
-      "url": "https://x.com/OpenAI/status/2049690533845663830",
-      "author": {
-        "user_name": "OpenAI",
-        "name": "OpenAI"
-      },
-      "metrics": {
-        "likes": 6905,
-        "retweets": 723,
-        "replies": 437
+        "likes": 699,
+        "retweets": 21,
+        "replies": 43
       }
     },
     {
@@ -1588,9 +1933,9 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 173,
-        "retweets": 15,
-        "replies": 17
+        "likes": 205,
+        "retweets": 19,
+        "replies": 19
       }
     },
     {
@@ -1603,9 +1948,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 10876,
-        "retweets": 4839,
-        "replies": 1299
+        "likes": 12721,
+        "retweets": 5744,
+        "replies": 1486
       }
     },
     {
@@ -1618,9 +1963,9 @@
         "name": "Baidu Inc."
       },
       "metrics": {
-        "likes": 315,
-        "retweets": 41,
-        "replies": 22
+        "likes": 329,
+        "retweets": 42,
+        "replies": 24
       }
     },
     {
@@ -1633,9 +1978,24 @@
         "name": "Tongyi Lab"
       },
       "metrics": {
-        "likes": 31,
+        "likes": 39,
         "retweets": 4,
         "replies": 1
+      }
+    },
+    {
+      "id": "2049665697333334219",
+      "text": "@jkk2073303 Mac也没专用手柄啊，网上说微软和Mac有合作，这个手柄适配反而是最好的。",
+      "created_at": "Thu Apr 30 01:42:37 +0000 2026",
+      "url": "https://x.com/vista8/status/2049665697333334219",
+      "author": {
+        "user_name": "vista8",
+        "name": "向阳乔木"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
@@ -1648,9 +2008,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 1106,
+        "likes": 1111,
         "retweets": 29,
-        "replies": 167
+        "replies": 168
       }
     },
     {
@@ -1663,9 +2023,9 @@
         "name": "Sam Altman"
       },
       "metrics": {
-        "likes": 5324,
-        "retweets": 336,
-        "replies": 1729
+        "likes": 5361,
+        "retweets": 337,
+        "replies": 1741
       }
     },
     {
@@ -1678,9 +2038,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 182,
-        "retweets": 53,
-        "replies": 6
+        "likes": 193,
+        "retweets": 56,
+        "replies": 9
       }
     },
     {
@@ -1693,24 +2053,9 @@
         "name": "Yann LeCun"
       },
       "metrics": {
-        "likes": 1455,
-        "retweets": 314,
+        "likes": 1468,
+        "retweets": 316,
         "replies": 1
-      }
-    },
-    {
-      "id": "2049641252287607241",
-      "text": "Trump's war on science.",
-      "created_at": "Thu Apr 30 00:05:29 +0000 2026",
-      "url": "https://x.com/ylecun/status/2049641252287607241",
-      "author": {
-        "user_name": "ylecun",
-        "name": "Yann LeCun"
-      },
-      "metrics": {
-        "likes": 677,
-        "retweets": 138,
-        "replies": 47
       }
     },
     {
@@ -1738,7 +2083,7 @@
         "name": "Manus"
       },
       "metrics": {
-        "likes": 24,
+        "likes": 25,
         "retweets": 1,
         "replies": 5
       }
@@ -1756,6 +2101,21 @@
         "likes": 491,
         "retweets": 34,
         "replies": 24
+      }
+    },
+    {
+      "id": "2047331068630769704",
+      "text": "并不是哈, 如果这么算, Kimi-k2.6 可是完全复用了 DSv3 的文本模型架构, 只是加了个视觉.\n\n在我来看这次的新模型, 反而是最稳的工程选择. 混元3将这些成熟方案组合起来, 然后在几个具体的配比上下了功夫:\n\n`router_scaling_factor = 2.826`. MoE 路由选出 top-8 专家, 权重归一化后 Hy3 乘了个 2.826, 相当于把 MoE 分支整体\"声音调大\" 2.8 倍. 说明这附近是这一代大 MoE 的甜区. (DSv3-Chat 是 x2.5)\n\n`enable_moe_fp32_combine = True`. bf16 训练里, \"路由专家\"和\"共享专家\"两路输出要加到一起. 两边数值量级常常差出 bf16 能分辨的精度范围. Hy3 的做法是这一步加法临时升到 fp32 再加, 加完再转回 bf16. 算是吞吐掉一点换稳定性 .\n\n所以结论而言, 这次 hy3-preview 更多的意义我觉得反而证明了腾讯已经搭建了现代化了训练流程, 然后打开了流水线, 试生产了第一个热机产品: hy3-preview\n\n期待一波接下来马力全开的 hy3 正式版.",
+      "created_at": "Thu Apr 23 15:05:38 +0000 2026",
+      "url": "https://x.com/karminski3/status/2047331068630769704",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 11,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
@@ -1819,21 +2179,6 @@
       }
     },
     {
-      "id": "2047149625396904342",
-      "text": "@adelbucetta @ajie_run_CL So we need more things like this",
-      "created_at": "Thu Apr 23 03:04:39 +0000 2026",
-      "url": "https://x.com/Ali_TongyiLab/status/2047149625396904342",
-      "author": {
-        "user_name": "Ali_TongyiLab",
-        "name": "Tongyi Lab"
-      },
-      "metrics": {
-        "likes": 1,
-        "retweets": 0,
-        "replies": 0
-      }
-    },
-    {
       "id": "2044788684223066396",
       "text": "https://t.co/CJZ2M5TjoI",
       "created_at": "Thu Apr 16 14:43:07 +0000 2026",
@@ -1843,9 +2188,9 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 10483,
-        "retweets": 878,
-        "replies": 630
+        "likes": 10484,
+        "retweets": 879,
+        "replies": 631
       }
     },
     {
@@ -1858,7 +2203,7 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 530,
+        "likes": 532,
         "retweets": 80,
         "replies": 65
       }
@@ -1873,9 +2218,9 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 7672,
-        "retweets": 726,
-        "replies": 357
+        "likes": 7692,
+        "retweets": 729,
+        "replies": 362
       }
     },
     {
@@ -1888,9 +2233,9 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 205312,
-        "retweets": 14722,
-        "replies": 11423
+        "likes": 205308,
+        "retweets": 14723,
+        "replies": 11432
       }
     },
     {
@@ -1903,9 +2248,9 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 9306,
-        "retweets": 928,
-        "replies": 334
+        "likes": 9310,
+        "retweets": 929,
+        "replies": 335
       }
     },
     {
@@ -1918,8 +2263,8 @@
         "name": "Qwen"
       },
       "metrics": {
-        "likes": 79,
-        "retweets": 3,
+        "likes": 80,
+        "retweets": 4,
         "replies": 1
       }
     },
@@ -2059,21 +2404,6 @@
       }
     },
     {
-      "id": "2048837721293292004",
-      "text": "https://t.co/2BbhLH2m2T",
-      "created_at": "Mon Apr 27 18:52:32 +0000 2026",
-      "url": "https://x.com/cerebras/status/2048837721293292004",
-      "author": {
-        "user_name": "cerebras",
-        "name": "Cerebras"
-      },
-      "metrics": {
-        "likes": 13,
-        "retweets": 1,
-        "replies": 1
-      }
-    },
-    {
       "id": "2048820397106429987",
       "text": "@ErRahul337 💪💪💪",
       "created_at": "Mon Apr 27 17:43:42 +0000 2026",
@@ -2134,66 +2464,6 @@
       }
     },
     {
-      "id": "2048814655876010000",
-      "text": "4) Incremental expand in the diff viewer. Collapsed diff blocks now have a \"show 20 more lines\" button so you can view surrounding code more easily. https://t.co/6aX7NT02ZX",
-      "created_at": "Mon Apr 27 17:20:53 +0000 2026",
-      "url": "https://x.com/cline/status/2048814655876010000",
-      "author": {
-        "user_name": "cline",
-        "name": "Cline"
-      },
-      "metrics": {
-        "likes": 2,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2048814653128745366",
-      "text": "3) More customizability. Choose from 10 new color themes and edit task titles to more easily manage your board. https://t.co/hE2gqTBNMP",
-      "created_at": "Mon Apr 27 17:20:53 +0000 2026",
-      "url": "https://x.com/cline/status/2048814653128745366",
-      "author": {
-        "user_name": "cline",
-        "name": "Cline"
-      },
-      "metrics": {
-        "likes": 7,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2048814651593708023",
-      "text": "2) Full remote server support - easily clone repos by URL &amp; connect securely with HTTPS and passcode auth.\n\nThis means you can run Kanban on a remote machine or Docker container and connect to it from any browser on your network or on your phone!\n\nhttps://t.co/PGX2iYnhU2",
-      "created_at": "Mon Apr 27 17:20:52 +0000 2026",
-      "url": "https://x.com/cline/status/2048814651593708023",
-      "author": {
-        "user_name": "cline",
-        "name": "Cline"
-      },
-      "metrics": {
-        "likes": 6,
-        "retweets": 0,
-        "replies": 1
-      }
-    },
-    {
-      "id": "2048814649513275448",
-      "text": "Cline Kanban v0.1.64 update 🧵\n\n1) Pick a different agent or model per task! Run Claude Code on one card, Codex on another, Cline with Kimi on a third, all in parallel on the same project. https://t.co/KLh32ZqEWr",
-      "created_at": "Mon Apr 27 17:20:52 +0000 2026",
-      "url": "https://x.com/cline/status/2048814649513275448",
-      "author": {
-        "user_name": "cline",
-        "name": "Cline"
-      },
-      "metrics": {
-        "likes": 113,
-        "retweets": 16,
-        "replies": 8
-      }
-    },
-    {
       "id": "2048793852702757151",
       "text": "AI-native software engineering teams operate very differently than traditional teams. The obvious difference is that AI-native teams use coding agents to build products much faster, but this leads to many other changes in how we operate. For example, some great engineers now play broader roles than just writing code. They are partly product managers, designers, sometimes marketers. Further, small teams who work in the same office, where they can communicate face-to-face, can move incredibly quickly.\n\nBecause we can now build fast, a greater fraction of time must be spent deciding what to build. To deal with this project-management bottleneck, some teams are pushing engineer:product manager (PM) some teams are pushing engineer:product manager (PM) ratios downward from, say, 8:1 to as low as 1:1. But we can do even better: If we have one PM who decides what to build and one engineer who builds it, the communication between them becomes a bottleneck. This is why the fastest-moving teams I see tend to have engineers who know how to do some product work (and, optionally, some PMs who know how to do some engineering work). When an engineer understands users and can make decisions on what to build and build it directly, they can execute incredibly quickly.\n\nI’ve seen engineers successfully expand their roles to including making product decisions, and PMs expand their roles to building software. The tech industry has more engineers than PMs, but both are promising paths. If you are an engineer, you’ll find it useful to learn some product management skills, and if you’re a PM, please learn to build!\n\nLooking beyond the product-management bottleneck, I also see bottlenecks in design, marketing, legal compliance, and much more. When we speed up coding 10x or 100x, everything else becomes slow in comparison. For example, some of my teams have built great features so quickly that the marketing organization was left scrambling to figure out how to communicate them to users — a marketing bottleneck. Or when a team can build software in a day that the legal department needs a week to review, that’s a legal compliance bottleneck. In this way, agentic coding isn’t just changing the workflow of software engineering, it’s also changing all the teams around it.\n\nWhen smaller, AI-enabled teams can get more done, generalists excel. Traditional companies need to pull together people from many specialties — engineering, product management, design, marketing, legal, etc. — to execute projects and create value. This has resulted in large teams of specialists who work together. But if a team of 2 persons is to get work done that require 5 different specialities, then some of those individuals must play roles outside a single speciality. In some small teams, individuals do have deep specializations. For example, one might be a great engineer and another a great PM. But they also understand the other key functions needed to move a project forward, and can jump into thinking through other kinds of problems as needed. Of course, proficiency with AI tools is a big help, since it helps us to think through problems that involve different roles.\n\nEven in a two-person team, to move fast, communication bottlenecks also must be minimized. This is why I value teams that work in the same location. Remote teams can perform well too, but the highest speed is achieved by having everyone in the room, able to communicate instantaneously to solve problems.\n\nThis post focuses on AI-native teams with around 2-10 persons, but not everything can be done by a small team. I'll address the coordination of larger teams in the future.\n\nI realize these shifts to job roles are tough to navigate for many people. At the same time, I am encouraged that individuals and small teams who are willing to learn the relevant skills are now able to get far more done than was possible before. This is the golden age of learning and building!\n\n[Original text: https://t.co/1pUxNC5UXk ]",
       "created_at": "Mon Apr 27 15:58:13 +0000 2026",
@@ -2203,9 +2473,9 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 1799,
-        "retweets": 346,
-        "replies": 187
+        "likes": 1819,
+        "retweets": 351,
+        "replies": 189
       }
     },
     {
@@ -2218,7 +2488,7 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 1206,
+        "likes": 1207,
         "retweets": 62,
         "replies": 65
       }
@@ -2248,7 +2518,7 @@
         "name": "Kimi.ai"
       },
       "metrics": {
-        "likes": 2413,
+        "likes": 2415,
         "retweets": 146,
         "replies": 119
       }
@@ -2266,6 +2536,21 @@
         "likes": 210,
         "retweets": 12,
         "replies": 21
+      }
+    },
+    {
+      "id": "2048641801243033605",
+      "text": "给大家同步一下DeepSeek-V4 的测试进度，目前前面几项大家熟悉的测试都已经跑完了，还缺少大家期待的GPT-5.5-Pro (我去攒点银子), xiaomi-mimo, hunyuan-3-preview 的测试，这几个正在跑了。\n\n然后这次我还增加了【大模型工程能力测试】，说下测试核心设计思路：\n首先工程项目我选择了酒馆（SillyTavern-1.17.0），然后写的需求文档是让被测试大模型给酒馆增加一个支持实时解释器的数值系统。大家都知道酒馆其实搭配各种插件其实是可以实现数值系统的，比如RPG数值系统。\n\n但是，大模型是没办法凭空创造数值逻辑的，所以本次的需求就是让大模型通过tool_call可以创建新的数值系统，比如属性，状态，天赋等等，并且定义数值与现有数值系统的逻辑，即，它可以注入一段js代码，与已有的js代码交互，形成新的逻辑。\n\n比如现在只有hp，数值100/100, 然后AI可以通过调用我们的数值系统，创建一个新的状态，叫做中毒，中毒状态持续10个tik, 然后每个tik会减少10点生命值。这一切全是我们的数值系统在AI创建这个js代码逻辑后自动执行的，不需要AI再接管。\n\n这样一来是可以大大拓展可玩性，二来是大模型不会因为玩家【求求你了我快寄了给我加1000HP】轻松实现作弊。\n\n然后，我还需要魔改terminal coding cli (本次使用的是kimi cli), 即，大模型需要使用魔改后的kimi-cli 来fork一份酒馆源代码来实现我们这个新需求，而这个魔改的kimi-cli 可以监督大模型的实现过程，统计大模型的token使用，使用工具的情况和能力，最终再运行我们专门为这个需求定制的黑盒测试，实现真正的【工程级别分析】。酒馆源代码足足有20万行，纯js也有13万行，作为测试项目工程量足够大了。\n\n除此之外，我还魔改了酒馆源代码模板（就是AI要fork那一份），增加了酒馆cli模式，这个模式可以让被测试大模型实现harness闭环，即模型修改完代码了，可以进入cli模式自己玩酒馆测试一下，看看对不对，从而反复迭代自己的代码，还顺便考验了大模型的 Agent能力。\n\n总之，还请大家稍安勿躁，我会尽快放出测试视频。【跪谢大家】\n#deepseekv4",
+      "created_at": "Mon Apr 27 05:54:01 +0000 2026",
+      "url": "https://x.com/karminski3/status/2048641801243033605",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 190,
+        "retweets": 11,
+        "replies": 20
       }
     },
     {
@@ -2293,9 +2578,9 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 17964,
+        "likes": 17959,
         "retweets": 1530,
-        "replies": 11469
+        "replies": 11467
       }
     },
     {
@@ -2308,9 +2593,9 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 23952,
+        "likes": 23947,
         "retweets": 1496,
-        "replies": 1083
+        "replies": 1086
       }
     },
     {
@@ -2323,84 +2608,549 @@
         "name": "Andrew Ng"
       },
       "metrics": {
-        "likes": 881,
+        "likes": 884,
         "retweets": 162,
         "replies": 137
       }
     },
     {
-      "id": "2047728386148122990",
-      "text": "To read our write-up in full, see here: https://t.co/Myerlx5khU",
-      "created_at": "Fri Apr 24 17:24:26 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2047728386148122990",
+      "id": "2050052707441131574",
+      "text": "RT @XFreeze: Grok 4.3 beta just went insane with front-end design\n\nI gave it one single prompt:\n“Build a WWE-style Fight Club website with…",
+      "created_at": "Fri May 01 03:20:28 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050052707441131574",
       "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
       },
       "metrics": {
-        "likes": 394,
-        "retweets": 30,
-        "replies": 41
+        "likes": 317,
+        "retweets": 53,
+        "replies": 68
       }
     },
     {
-      "id": "2047728384503939464",
-      "text": "Markets of AI agents could provide value, but there are plenty of rough edges. Access to higher-quality models conferred a real advantage—and participants didn’t notice. There are plenty of other ways they can go wrong.\n\nPolicy and legal frameworks will need to adapt to keep up.",
-      "created_at": "Fri Apr 24 17:24:26 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2047728384503939464",
+      "id": "2050052615690678293",
+      "text": "@libsoftiktok Wow",
+      "created_at": "Fri May 01 03:20:06 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050052615690678293",
       "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
       },
       "metrics": {
-        "likes": 367,
-        "retweets": 16,
-        "replies": 53
+        "likes": 77,
+        "retweets": 7,
+        "replies": 30
       }
     },
     {
-      "id": "2047728380997455928",
-      "text": "To our amazement, another Claude agent modeled its human’s preferences so accurately that—based on only an offhand mention of an interest in skiing—Claude bought him the exact snowboard he already owned. (Here he is, duplicate snowboard in hand.) https://t.co/SsAyeB9pcI",
-      "created_at": "Fri Apr 24 17:24:25 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2047728380997455928",
+      "id": "2050052406738911332",
+      "text": "@meathill1 对，数值设计和游戏的玩法这些就纯靠个人能力了，AI 没办法，这是创造力的领域。\n\n所以我觉得对于那种优秀的游戏制作人，如果他原来可能受限于成本，或者受限于自己不会编程，这反而是一个很好的机会。",
+      "created_at": "Fri May 01 03:19:16 +0000 2026",
+      "url": "https://x.com/op7418/status/2050052406738911332",
       "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
       },
       "metrics": {
-        "likes": 445,
-        "retweets": 11,
-        "replies": 16
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
       }
     },
     {
-      "id": "2047728378275381427",
-      "text": "Our experiment had a few quirks. \n\nOne of our colleagues told Claude it could purchase something for itself. It chose to acquire 19 ping-pong balls. \n\nWe’re keeping them in our office on Claude’s behalf.",
-      "created_at": "Fri Apr 24 17:24:24 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2047728378275381427",
+      "id": "2050052347699810318",
+      "text": "RT @Teslaconomics: Is it just me, or does it feel like the only AI I can truly trust is the one being built by Elon Musk at xAI?",
+      "created_at": "Fri May 01 03:19:02 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050052347699810318",
       "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
       },
       "metrics": {
-        "likes": 963,
-        "retweets": 59,
-        "replies": 40
+        "likes": 1127,
+        "retweets": 117,
+        "replies": 201
       }
     },
     {
-      "id": "2047728375251227111",
-      "text": "The custom instructions didn’t matter much. Claude followed them well: as you can see here, one conducted negotiations entirely in the persona of an exasperated, down-and-out cowboy. \n\nBut “hardballing Claudes” didn’t generally fare better than “courteous Claudes.” https://t.co/h77eB3ksaa",
-      "created_at": "Fri Apr 24 17:24:24 +0000 2026",
-      "url": "https://x.com/AnthropicAI/status/2047728375251227111",
+      "id": "2050052258801602743",
+      "text": "RT @Tesla: Directly compare different Tesla models &amp; features\n\nhttps://t.co/wNAn3Upcvh https://t.co/ttbhxZAzen",
+      "created_at": "Fri May 01 03:18:41 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050052258801602743",
       "author": {
-        "user_name": "AnthropicAI",
-        "name": "Anthropic"
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
       },
       "metrics": {
-        "likes": 277,
-        "retweets": 5,
+        "likes": 1064,
+        "retweets": 137,
+        "replies": 112
+      }
+    },
+    {
+      "id": "2050051253036794133",
+      "text": "@goodhunt 鲸鱼兄弟 😅😅😅\n我的翻墙技能仅限于写代码，微信到现在都没搞定，属实有点丢人。",
+      "created_at": "Fri May 01 03:14:41 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050051253036794133",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050050573366628545",
+      "text": "@yacineMTB you can pay us more if you want to!",
+      "created_at": "Fri May 01 03:11:59 +0000 2026",
+      "url": "https://x.com/sama/status/2050050573366628545",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 265,
+        "retweets": 2,
+        "replies": 54
+      }
+    },
+    {
+      "id": "2050046602258288682",
+      "text": "最近 AI 参与的高品质游戏内容越来越多了。\n\n又发现一个，这个看起来会上架 Steam，是一个国风的恐怖探案类游戏。",
+      "created_at": "Fri May 01 02:56:12 +0000 2026",
+      "url": "https://x.com/op7418/status/2050046602258288682",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 4,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050045706673824228",
+      "text": "@vista8 哈哈 做游戏真好玩",
+      "created_at": "Fri May 01 02:52:39 +0000 2026",
+      "url": "https://x.com/op7418/status/2050045706673824228",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050045636419125320",
+      "text": "@Caldis_Chen 嗯嗯 我没自己做过游戏 还以为他自己想出来的 哈哈",
+      "created_at": "Fri May 01 02:52:22 +0000 2026",
+      "url": "https://x.com/op7418/status/2050045636419125320",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050044423061610793",
+      "text": "牛逼的狠，昨天聊游戏提到杀戮尖塔，没想到歸藏自己写了一个，哈哈哈。\n\n完整教程放出来了，游戏能给人很多启发和灵感，假期计划多玩会儿游戏。",
+      "created_at": "Fri May 01 02:47:33 +0000 2026",
+      "url": "https://x.com/vista8/status/2050044423061610793",
+      "author": {
+        "user_name": "vista8",
+        "name": "向阳乔木"
+      },
+      "metrics": {
+        "likes": 2,
+        "retweets": 0,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2050041028510708086",
+      "text": "Codex 更新了，现在可以连接 Slack、邮箱以及你的谷歌云盘，从里面获取内容来执行任务，也可以把你的信息添加到谷歌日历。 https://t.co/9bayvEQy5j",
+      "created_at": "Fri May 01 02:34:03 +0000 2026",
+      "url": "https://x.com/op7418/status/2050041028510708086",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 1,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050039348679024779",
+      "text": "RT @ClementDelangue: I think the expression is “pulling the ladder”! All labs trained their models by distilling (at the very least distill…",
+      "created_at": "Fri May 01 02:27:23 +0000 2026",
+      "url": "https://x.com/ylecun/status/2050039348679024779",
+      "author": {
+        "user_name": "ylecun",
+        "name": "Yann LeCun"
+      },
+      "metrics": {
+        "likes": 43,
+        "retweets": 7,
         "replies": 8
+      }
+    },
+    {
+      "id": "2050036082969055451",
+      "text": "https://t.co/WXTB8mdd7Y",
+      "created_at": "Fri May 01 02:14:24 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050036082969055451",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 4267,
+        "retweets": 432,
+        "replies": 993
+      }
+    },
+    {
+      "id": "2050035003527242227",
+      "text": "True",
+      "created_at": "Fri May 01 02:10:07 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050035003527242227",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 5909,
+        "retweets": 555,
+        "replies": 632
+      }
+    },
+    {
+      "id": "2050034861273227678",
+      "text": "Try it out!",
+      "created_at": "Fri May 01 02:09:33 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050034861273227678",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 1766,
+        "retweets": 233,
+        "replies": 569
+      }
+    },
+    {
+      "id": "2050034277375672520",
+      "text": "Grok",
+      "created_at": "Fri May 01 02:07:14 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050034277375672520",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 2209,
+        "retweets": 253,
+        "replies": 554
+      }
+    },
+    {
+      "id": "2050034090280452545",
+      "text": "这里尝试：https://t.co/GraJKc6YOJ",
+      "created_at": "Fri May 01 02:06:29 +0000 2026",
+      "url": "https://x.com/op7418/status/2050034090280452545",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050034016620057064",
+      "text": "这里尝试：https://t.co/GraJKc6YOJ",
+      "created_at": "Fri May 01 02:06:12 +0000 2026",
+      "url": "https://x.com/op7418/status/2050034016620057064",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050032461950660831",
+      "text": "See inside the machine. ⚙️📦\nPresenting our 3rd prize winner: Omni-Section-V2-Clean by @webdevdeep\n\nThis commercial-grade LoRA fine-tuned on Qwen-Image 2.0 brings Z-axis geometric reasoning to the generative pipeline, enabling the instant generation of precise 3D spatial disaggregation (exploded views) of complex objects.\n\nGet the LoRA: \nhttps://t.co/XDbX7OMkh6",
+      "created_at": "Fri May 01 02:00:01 +0000 2026",
+      "url": "https://x.com/Ali_TongyiLab/status/2050032461950660831",
+      "author": {
+        "user_name": "Ali_TongyiLab",
+        "name": "Tongyi Lab"
+      },
+      "metrics": {
+        "likes": 5,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050030364018819581",
+      "text": "整个过程里边，Codex 最震惊我的就是这个：\n\n给他找了一个有上千张图的游戏素材包，然后让他从里边找一些能用的素材。\n\n我也没说怎么找，他自己给每个文件的图片都拼成了一张大图，上面是图片和文件名。\n\n这样的话，他只需要通过一张图就可以了解这个文件夹中所有的素材图样式。找到以后，直接把文件名拉到素材库里改了就行，太牛了！",
+      "created_at": "Fri May 01 01:51:41 +0000 2026",
+      "url": "https://x.com/op7418/status/2050030364018819581",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 17,
+        "retweets": 1,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2050024324204277943",
+      "text": "游戏发了：\nhttps://t.co/AwT5WgkRIP",
+      "created_at": "Fri May 01 01:27:41 +0000 2026",
+      "url": "https://x.com/op7418/status/2050024324204277943",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050024234160910627",
+      "text": "游戏发了：https://t.co/AwT5WgkRIP",
+      "created_at": "Fri May 01 01:27:19 +0000 2026",
+      "url": "https://x.com/op7418/status/2050024234160910627",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 1
+      }
+    },
+    {
+      "id": "2050024106578661458",
+      "text": "本来是想随便玩一下的。\n\n没想到 Codex 真的用一下午帮我开发了一个非常完整的类似《杀戮尖塔》的卡牌游戏。\n\n代码和客户端都已经开源了，大家可以试试 https://t.co/ldJn21Fsy0",
+      "created_at": "Fri May 01 01:26:49 +0000 2026",
+      "url": "https://x.com/op7418/status/2050024106578661458",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 52,
+        "retweets": 4,
+        "replies": 5
+      }
+    },
+    {
+      "id": "2050023375746285747",
+      "text": "https://t.co/AJy4X7Wu5x",
+      "created_at": "Fri May 01 01:23:55 +0000 2026",
+      "url": "https://x.com/op7418/status/2050023375746285747",
+      "author": {
+        "user_name": "op7418",
+        "name": "歸藏(guizang.ai)"
+      },
+      "metrics": {
+        "likes": 23,
+        "retweets": 5,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2050022936820797772",
+      "text": "用极短的 Python 脚本证明 CVE-2026-31431 的可利用性。\n\n一个 732 字节的 Python 脚本，利用 Linux 内核 authencesn 加密模板的越界写入漏洞（CVE-2026-31431）\n\nhttps://t.co/sgUzgtLwa8",
+      "created_at": "Fri May 01 01:22:10 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050022936820797772",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 2,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050021875867426904",
+      "text": "@IncomprisSage2 ?",
+      "created_at": "Fri May 01 01:17:57 +0000 2026",
+      "url": "https://x.com/sama/status/2050021875867426904",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 67,
+        "retweets": 1,
+        "replies": 23
+      }
+    },
+    {
+      "id": "2050021650641695108",
+      "text": "artificial goblin intelligence\n\nachieved",
+      "created_at": "Fri May 01 01:17:03 +0000 2026",
+      "url": "https://x.com/sama/status/2050021650641695108",
+      "author": {
+        "user_name": "sama",
+        "name": "Sam Altman"
+      },
+      "metrics": {
+        "likes": 2800,
+        "retweets": 223,
+        "replies": 720
+      }
+    },
+    {
+      "id": "2050020544666571259",
+      "text": "@ArtificialAnlys @Scobleizer @xai Progress",
+      "created_at": "Fri May 01 01:12:40 +0000 2026",
+      "url": "https://x.com/elonmusk/status/2050020544666571259",
+      "author": {
+        "user_name": "elonmusk",
+        "name": "Elon Musk"
+      },
+      "metrics": {
+        "likes": 973,
+        "retweets": 97,
+        "replies": 297
+      }
+    },
+    {
+      "id": "2050015514806899011",
+      "text": "@xiongchun007 好的，Claude Code + DeepSeek V4",
+      "created_at": "Fri May 01 00:52:40 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050015514806899011",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050013891011514864",
+      "text": "RT @kylejeong: I don’t have children yet (I’m 21) but when I do they will learn about chips\n\nThanks @MilksandMatcha &amp; @zhennydez this is ve…",
+      "created_at": "Fri May 01 00:46:13 +0000 2026",
+      "url": "https://x.com/cerebras/status/2050013891011514864",
+      "author": {
+        "user_name": "cerebras",
+        "name": "Cerebras"
+      },
+      "metrics": {
+        "likes": 26,
+        "retweets": 2,
+        "replies": 3
+      }
+    },
+    {
+      "id": "2050007123011276956",
+      "text": "看到一网友上传清晰的手掌照片，然后让 ChatGPT 看手相，要是再配上打印机和相框，拿上小马扎，AI 看相算命，我是不是可以在路边摆摊去了。 https://t.co/Thy6G44Nqa",
+      "created_at": "Fri May 01 00:19:20 +0000 2026",
+      "url": "https://x.com/geekbb/status/2050007123011276956",
+      "author": {
+        "user_name": "geekbb",
+        "name": "Geek"
+      },
+      "metrics": {
+        "likes": 14,
+        "retweets": 0,
+        "replies": 2
+      }
+    },
+    {
+      "id": "2050006508247880074",
+      "text": "@latentlocal Join the discord for cli install instructions!",
+      "created_at": "Fri May 01 00:16:53 +0000 2026",
+      "url": "https://x.com/cline/status/2050006508247880074",
+      "author": {
+        "user_name": "cline",
+        "name": "Cline"
+      },
+      "metrics": {
+        "likes": 1,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2050006405965558226",
+      "text": "@aindrei TypeScript!",
+      "created_at": "Fri May 01 00:16:29 +0000 2026",
+      "url": "https://x.com/cline/status/2050006405965558226",
+      "author": {
+        "user_name": "cline",
+        "name": "Cline"
+      },
+      "metrics": {
+        "likes": 0,
+        "retweets": 0,
+        "replies": 0
+      }
+    },
+    {
+      "id": "2047750733777469724",
+      "text": "不是...等会.... DeepSeek-V4-Pro API 这么贵的吗? 我都没看定价就直接开测了...测到一半提示我API欠费了..... https://t.co/yqll5eJIbo",
+      "created_at": "Fri Apr 24 18:53:14 +0000 2026",
+      "url": "https://x.com/karminski3/status/2047750733777469724",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 112,
+        "retweets": 0,
+        "replies": 61
+      }
+    },
+    {
+      "id": "2047711335207842129",
+      "text": "给大家带来 DeepSeek-V4-Pro & Flash 的测试速报, 由于case 还在跑, 所以说一下大家最熟悉的大象牙膏测试.\n\n这个测试要求大模型建模一个锥形瓶, 然后发生化学反应, 造成泡沫喷发而出的效果. 主要考验大模型的建模, 粒子, 物理模拟, 光照等广义上的前端能力.\n\nDeepSeek-V4 从这个 Case 来看比之前的 V3 整个系列都好了很多, 效果很不错, 不过大家注意一下细节, 这个锥形瓶的表面看上去不是很透明, 我仔细分析了6次生成的代码 (测试是 pass@6, 每个大模型都有6次生成机会, 取最好的一次).\n\n结果发现它指令遵循有点问题, 提示词要求玻璃的材质是roughness: 0.95, metalness: 0.35, 结果它没有一次写对. 而且很值执拗的写成了roughness: 0.12, metalness: 0.05 (50%概率).\n\n目前还不确定是不是普遍问题, 等我全部测完给大家带来全面的编程能力评测视频~ 敬请期待.\n\n#deepseek #deepseekv4 #deepseekv4pro #deepseekv4flash",
+      "created_at": "Fri Apr 24 16:16:41 +0000 2026",
+      "url": "https://x.com/karminski3/status/2047711335207842129",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 136,
+        "retweets": 8,
+        "replies": 14
       }
     },
     {
@@ -2464,6 +3214,36 @@
       }
     },
     {
+      "id": "2047651980613677311",
+      "text": "好奇这次是全国产卡训练了吗？",
+      "created_at": "Fri Apr 24 12:20:50 +0000 2026",
+      "url": "https://x.com/karminski3/status/2047651980613677311",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 38,
+        "retweets": 0,
+        "replies": 21
+      }
+    },
+    {
+      "id": "2047635675584008545",
+      "text": "来了老铁们. 我刚到家，已经开始测了.... 白天在山里赫然收到推送DSv4发了，这会也回不去下也下不来。爬的我脑瓜子嗡嗡的....\n\n一会先放速报哈，完整测评视频全部评测完毕放出，本次内容会包括近半年所有大模型的编程能力横评。\n\n#deepseekv4 https://t.co/SjXP8CUapU",
+      "created_at": "Fri Apr 24 11:16:02 +0000 2026",
+      "url": "https://x.com/karminski3/status/2047635675584008545",
+      "author": {
+        "user_name": "karminski3",
+        "name": "karminski-牙医"
+      },
+      "metrics": {
+        "likes": 89,
+        "retweets": 0,
+        "replies": 13
+      }
+    },
+    {
       "id": "2047561894534447359",
       "text": "Hello, creators and builders,\n\nThis week brings us major releases in Qwen and Fun-ASR1.5. Qwen3.6-27B delivers flagship-level agentic coding performance in a compact 27B dense model, while Fun-ASR1.5 brings broader language coverage and production-ready text output. Plus, community-built LoRAs continue to push creative boundaries.\n\nLet’s dive in.\nhttps://t.co/9irBugUNDv",
       "created_at": "Fri Apr 24 06:22:52 +0000 2026",
@@ -2488,7 +3268,7 @@
         "name": "Kimi.ai"
       },
       "metrics": {
-        "likes": 1,
+        "likes": 2,
         "retweets": 0,
         "replies": 0
       }
@@ -2533,7 +3313,7 @@
         "name": "Z.ai"
       },
       "metrics": {
-        "likes": 1608,
+        "likes": 1609,
         "retweets": 28,
         "replies": 29
       }
@@ -2548,7 +3328,7 @@
         "name": "LM Studio"
       },
       "metrics": {
-        "likes": 1491,
+        "likes": 1493,
         "retweets": 72,
         "replies": 16
       }
@@ -2563,7 +3343,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 2161,
+        "likes": 2164,
         "retweets": 87,
         "replies": 27
       }
@@ -2578,7 +3358,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 2042,
+        "likes": 2043,
         "retweets": 128,
         "replies": 23
       }
@@ -2593,7 +3373,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 1366,
+        "likes": 1367,
         "retweets": 72,
         "replies": 12
       }
@@ -2608,7 +3388,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 2075,
+        "likes": 2077,
         "retweets": 150,
         "replies": 20
       }
@@ -2623,7 +3403,7 @@
         "name": "DeepSeek"
       },
       "metrics": {
-        "likes": 2080,
+        "likes": 2081,
         "retweets": 137,
         "replies": 17
       }
@@ -2653,7 +3433,7 @@
         "name": "Jeff Bezos"
       },
       "metrics": {
-        "likes": 29728,
+        "likes": 29725,
         "retweets": 1787,
         "replies": 787
       }
