@@ -421,10 +421,10 @@ class WorkflowExecutionResponse(BaseModel):
 
 class ScheduledTaskBase(BaseModel):
     """
-    定时任务基础模型，支持单次和每日重复任务。
+    定时任务基础模型，支持单次和每日重复任务，以及AI提示词/插件命令两种任务类型。
     """
     title: str = Field(..., min_length=1, max_length=200)
-    prompt: str = Field(..., min_length=1)
+    prompt: str = Field(default="")
     scheduled_at: datetime
     provider: Optional[str] = None
     model: Optional[str] = None
@@ -432,6 +432,10 @@ class ScheduledTaskBase(BaseModel):
     cron_expression: Optional[str] = None
     weekdays: Optional[str] = None
     daily_time: Optional[str] = None
+    task_type: Optional[str] = "ai_prompt"
+    plugin_name: Optional[str] = None
+    command_name: Optional[str] = None
+    command_params: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ScheduledTaskCreate(ScheduledTaskBase):
@@ -454,6 +458,10 @@ class ScheduledTaskUpdate(BaseModel):
     cron_expression: Optional[str] = None
     weekdays: Optional[str] = None
     daily_time: Optional[str] = None
+    task_type: Optional[str] = None
+    plugin_name: Optional[str] = None
+    command_name: Optional[str] = None
+    command_params: Optional[Dict[str, Any]] = None
 
 
 class ScheduledTaskResponse(ScheduledTaskBase):
@@ -473,6 +481,19 @@ class ScheduledTaskResponse(ScheduledTaskBase):
 
     class Config:
         from_attributes = True
+
+
+class PluginCommandInfo(BaseModel):
+    """
+    插件命令信息，用于前端展示可选命令列表。
+    """
+    plugin_name: str
+    plugin_version: str
+    plugin_description: str
+    command_name: str
+    command_description: str
+    command_method: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ScheduledTaskExecutionResponse(BaseModel):

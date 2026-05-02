@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { authAPI } from '@/shared/api/api'
+import { authAPI, getApiErrorDetail } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './LoginPage.module.css'
@@ -42,7 +42,7 @@ function LoginPage() {
       })
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       if (status === 401) {
         setError('用户名或密码错误')
       } else if (status === 403) {

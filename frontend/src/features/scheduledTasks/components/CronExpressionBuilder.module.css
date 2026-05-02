@@ -1,0 +1,191 @@
+/* Cron表达式生成器样式 */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  user-select: none;
+}
+
+.toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 预设网格 */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--color-text-secondary);
+}
+
+.preset-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-softest-bg);
+}
+
+.preset-card.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+.preset-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.preset-card.active .preset-label {
+  color: var(--color-primary);
+}
+
+.preset-desc {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+/* 时间选择器 */
+.time-input {
+  width: 160px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.time-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
+}
+
+/* 星期选择 */
+.weekday-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.weekday-btn {
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.weekday-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.weekday-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.weekday-active:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Cron预览 */
+.cron-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cron-code {
+  padding: 6px 14px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 14px;
+  color: var(--color-primary);
+  letter-spacing: 2px;
+}
+
+.cron-human {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  padding: 6px 12px;
+  background: var(--color-success-soft-bg);
+  border-radius: var(--radius-sm);
+  color: var(--color-success-strong);
+}
+
+@media (max-width: 768px) {
+  .preset-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

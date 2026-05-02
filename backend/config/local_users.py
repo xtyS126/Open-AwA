@@ -37,10 +37,13 @@ def _resolve_password(entry: Dict[str, Any], index: int) -> Optional[str]:
     password_env = str(entry.get("password_env", "")).strip()
     if password_env:
         env_password = str(os.getenv(password_env, "")).strip()
-        if not env_password:
-            logger.warning(f"用户配置第 {index + 1} 条引用的环境变量 '{password_env}' 未设置，已跳过")
-            return None
-        return env_password
+        if env_password:
+            return env_password
+        # 环境变量未设置时，回退到 password 字段
+        logger.warning(
+            f"用户配置第 {index + 1} 条引用的环境变量 '{password_env}' 未设置，"
+            f"回退到 password 字段"
+        )
 
     password = str(entry.get("password", "")).strip()
     if password.lower() in _PLACEHOLDER_PASSWORD_VALUES:

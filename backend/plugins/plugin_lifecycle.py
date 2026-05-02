@@ -53,7 +53,8 @@ class PluginStateMachine:
         PluginState.LOADED: {PluginState.ENABLED, PluginState.UNLOADED, PluginState.ERROR},
         PluginState.ENABLED: {PluginState.DISABLED, PluginState.UPDATING, PluginState.ERROR},
         PluginState.DISABLED: {PluginState.ENABLED, PluginState.UNLOADED, PluginState.ERROR},
-        PluginState.UPDATING: {PluginState.LOADED, PluginState.ERROR},
+        # 热更新链路会先进入 updating，再卸载旧实例并重新 load。
+        PluginState.UPDATING: {PluginState.LOADED, PluginState.UNLOADED, PluginState.ERROR},
         PluginState.ERROR: {PluginState.UNLOADED, PluginState.LOADED},
         PluginState.UNLOADED: {PluginState.LOADED},
     }
