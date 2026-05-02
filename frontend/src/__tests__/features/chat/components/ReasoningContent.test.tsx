@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { ReasoningContent } from '../features/chat/components/ReasoningContent'
+import { ReasoningContent } from '@/features/chat/components/ReasoningContent'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 describe('ReasoningContent', () => {

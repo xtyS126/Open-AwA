@@ -19,17 +19,9 @@ import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import MCPSettings from './MCPSettings'
 import SecuritySettings from './SecuritySettings'
 import styles from './SettingsPage.module.css'
+import { getProviderIcon, getProviderDisplayName, PROVIDER_NAMES } from '@/assets/providers'
 
-// 已知供应商及其显示名称（用于新增供应商弹窗的下拉选择）
-const KNOWN_PROVIDERS: Record<string, string> = {
-  'openai': 'OpenAI',
-  'anthropic': 'Anthropic',
-  'google': 'Google',
-  'deepseek': 'DeepSeek',
-  'alibaba': '阿里通义千问',
-  'moonshot': 'Kimi',
-  'zhipu': '智谱AI',
-}
+// 已知供应商显示名称由 @/assets/providers 统一提供，参见 PROVIDER_NAMES 与 getProviderDisplayName()
 
 interface Settings {
   theme: string
@@ -1380,11 +1372,16 @@ function SettingsPage() {
                           }}
                         >
                           <span className={styles['provider-avatar']}>
-                            {provider.icon ? (
-                              <img src={provider.icon} alt={displayName} />
-                            ) : (
-                              <span>{displayName.slice(0, 1).toUpperCase()}</span>
-                            )}
+                            {(() => {
+                              const localIcon = getProviderIcon(provider.id)
+                              if (localIcon) {
+                                return <img src={localIcon} alt={displayName} />
+                              }
+                              if (provider.icon) {
+                                return <img src={provider.icon} alt={displayName} />
+                              }
+                              return <span>{displayName.slice(0, 1).toUpperCase()}</span>
+                            })()}
                           </span>
                           <span className={styles['provider-item-content']}>
                             <span className={styles['provider-item-title']}>{displayName}</span>
@@ -1872,7 +1869,16 @@ function SettingsPage() {
                         <tr key={config.id} className={selectedModelConfigId === config.id ? styles['selected-row'] : ''}>
                           <td>
                             <span className={styles['model-icon-badge']}>
-                              {config.icon || config.provider.charAt(0).toUpperCase()}
+                              {(() => {
+                                const icon = getProviderIcon(config.provider)
+                                if (icon) {
+                                  return <img src={icon} alt={config.provider} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                }
+                                if (config.icon) {
+                                  return <img src={config.icon} alt={config.provider} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                }
+                                return config.provider.charAt(0).toUpperCase()
+                              })()}
                             </span>
                           </td>
                           <td>
@@ -2131,14 +2137,14 @@ function SettingsPage() {
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === '__custom__') {
-                        setAddProviderForm(prev => ({ ...prev, is_custom: true, provider: '', display_name: '' }))
+                        setAddProviderForm(prev => ({ ...prev, is_custom: true, provider: '', display_name: '', base_model: '' }))
                       } else {
-                        setAddProviderForm(prev => ({ ...prev, is_custom: false, provider: val, display_name: KNOWN_PROVIDERS[val] || '' }))
+                        setAddProviderForm(prev => ({ ...prev, is_custom: false, provider: val, display_name: PROVIDER_NAMES[val] || '', base_model: '' }))
                       }
                     }}
                   >
                     <option value="">请选择供应商</option>
-                    {Object.entries(KNOWN_PROVIDERS).map(([id, name]) => (
+                    {Object.entries(PROVIDER_NAMES).map(([id, name]) => (
                       <option key={id} value={id}>{id} — {name}</option>
                     ))}
                     <option value="__custom__">自定义...</option>
