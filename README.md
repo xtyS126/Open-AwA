@@ -29,9 +29,9 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 相关代码可参考：
 
-- [main.py](file:///d:/代码/Open-AwA/backend/main.py#L1-L95)
-- [settings.py](file:///d:/代码/Open-AwA/backend/config/settings.py#L24-L59)
-- [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx#L1-L91)
+- [main.py](backend/main.py#L1-L95)
+- [settings.py](backend/config/settings.py#L24-L59)
+- [App.tsx](frontend/src/App.tsx#L1-L91)
 
 ## 当前能力
 
@@ -51,11 +51,11 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 后端路由注册见：
 
-- [main.py](file:///d:/代码/Open-AwA/backend/main.py#L52-L76)
+- [main.py](backend/main.py#L52-L76)
 
 数据库模型见：
 
-- [models.py](file:///d:/代码/Open-AwA/backend/db/models.py#L20-L235)
+- [models.py](backend/db/models.py#L20-L235)
 
 ## 技术栈
 
@@ -71,7 +71,7 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 依赖文件：
 
-- [requirements.txt](file:///d:/代码/Open-AwA/backend/requirements.txt)
+- [requirements.txt](backend/requirements.txt)
 
 ### 前端
 
@@ -87,7 +87,7 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 依赖与脚本：
 
-- [package.json](file:///d:/代码/Open-AwA/frontend/package.json#L1-L38)
+- [package.json](frontend/package.json#L1-L38)
 
 ## 仓库结构
 
@@ -170,11 +170,11 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 代码位置：
 
-- [main.py](file:///d:/代码/Open-AwA/backend/main.py#L22-L76)
+- [main.py](backend/main.py#L22-L76)
 
 ### 默认配置
 
-默认配置来自 [settings.py](file:///d:/代码/Open-AwA/backend/config/settings.py#L24-L59)，其中较重要的项包括：
+默认配置来自 [settings.py](backend/config/settings.py#L24-L59)，其中较重要的项包括：
 
 - `API_V1_STR=/api`
 - `DATABASE_URL=sqlite:///./backend/openawa.db`
@@ -223,11 +223,11 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 可参考以下代码：
 
-- [auth.py](file:///d:/代码/Open-AwA/backend/api/routes/auth.py#L14-L62)
-- [chat.py](file:///d:/代码/Open-AwA/backend/api/routes/chat.py#L14-L190)
-- [skills.py](file:///d:/代码/Open-AwA/backend/api/routes/skills.py#L17-L368)
-- [plugins.py](file:///d:/代码/Open-AwA/backend/api/routes/plugins.py#L15-L519)
-- [memory.py](file:///d:/代码/Open-AwA/backend/api/routes/memory.py#L12-L121)
+- [auth.py](backend/api/routes/auth.py#L14-L62)
+- [chat.py](backend/api/routes/chat.py#L14-L190)
+- [skills.py](backend/api/routes/skills.py#L17-L368)
+- [plugins.py](backend/api/routes/plugins.py#L15-L519)
+- [memory.py](backend/api/routes/memory.py#L12-L121)
 
 ### 记忆与工作流扩展接口
 
@@ -240,9 +240,9 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `/api/workflows`：工作流定义的创建、查询、更新、删除
 - `/api/workflows/execute`：显式执行工作流
 - `/api/workflows/executions/{execution_id}`：查询工作流执行状态
-- [experiences.py](file:///d:/代码/Open-AwA/backend/api/routes/experiences.py#L14-L260)
-- [conversation.py](file:///d:/代码/Open-AwA/backend/api/routes/conversation.py#L14-L139)
-- [billing.py](file:///d:/代码/Open-AwA/backend/billing/routers/billing.py#L14-L260)
+- [experiences.py](backend/api/routes/experiences.py#L14-L260)
+- [conversation.py](backend/api/routes/conversation.py#L14-L139)
+- [billing.py](backend/billing/routers/billing.py#L14-L260)
 
 ### 前端页面
 
@@ -260,34 +260,34 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 代码位置：
 
-- [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx#L70-L88)
+- [App.tsx](frontend/src/App.tsx#L70-L88)
 
 其中几个核心页面对应实现：
 
-- [ChatPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/chat/ChatPage.tsx#L1-L259)
-- [DashboardPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/dashboard/DashboardPage.tsx#L1-L128)
-- [PluginsPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/plugins/PluginsPage.tsx#L1-L260)
-- [MemoryPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/memory/MemoryPage.tsx#L1-L154)
-- [BillingPage.tsx](file:///d:/代码/Open-AwA/frontend/src/features/billing/BillingPage.tsx#L1-L249)
+- [ChatPage.tsx](frontend/src/features/chat/ChatPage.tsx#L1-L259)
+- [DashboardPage.tsx](frontend/src/features/dashboard/DashboardPage.tsx#L1-L128)
+- [PluginsPage.tsx](frontend/src/features/plugins/PluginsPage.tsx#L1-L260)
+- [MemoryPage.tsx](frontend/src/features/memory/MemoryPage.tsx#L1-L154)
+- [BillingPage.tsx](frontend/src/features/billing/BillingPage.tsx#L1-L249)
 
 ## 插件开发文档
 
 仓库已经包含插件开发手册，现已按当前代码重新整理。入口文档：
 
-- [README.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/README.md)
+- [插件开发手册.md](docs/插件开发手册/插件开发手册.md)
 
 建议阅读顺序：
 
-1. [1-getting-started.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/1-getting-started.md)
-2. [2-api-reference.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/2-api-reference.md)
-3. [3-best-practices.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/3-best-practices.md)
-4. [4-faq.md](file:///d:/代码/Open-AwA/docs/plugin-developer-handbook/4-faq.md)
+1. [一-快速开始.md](docs/插件开发手册/一-快速开始.md)
+2. [二-API参考.md](docs/插件开发手册/二-API参考.md)
+3. [三-最佳实践.md](docs/插件开发手册/三-最佳实践.md)
+4. [四-常见问题.md](docs/插件开发手册/四-常见问题.md)
 
 示例插件目录：
 
-- `d:\代码\Open-AwA\plugins\hello-world`
-- `d:\代码\Open-AwA\plugins\theme-switcher`
-- `d:\代码\Open-AwA\plugins\data-chart`
+- [plugins/hello-world](plugins/hello-world)
+- [plugins/theme-switcher](plugins/theme-switcher)
+- [plugins/data-chart](plugins/data-chart)
 
 ### 插件包格式规范（ZIP）
 
@@ -364,25 +364,24 @@ npm run e2e
 
 E2E 配置见：
 
-- [playwright.config.ts](file:///d:/代码/Open-AwA/frontend/playwright.config.ts#L1-L54)
+- [playwright.config.ts](frontend/playwright.config.ts#L1-L54)
 
 ## 更多文档
 
-新增与更新后的中文文档位于 `docs/`：
+完整文档导航见 [docs/文档导航.md](docs/文档导航.md)。常用入口如下：
 
-- [README.md](file:///d:/代码/Open-AwA/docs/README.md)
-- [deployment.md](file:///d:/代码/Open-AwA/docs/deployment.md)
-- [backend-architecture.md](file:///d:/代码/Open-AwA/docs/backend-architecture.md)
-- [frontend-architecture.md](file:///d:/代码/Open-AwA/docs/frontend-architecture.md)
-- [testing.md](file:///d:/代码/Open-AwA/docs/testing.md)
-- [regression-test-report.md](file:///d:/代码/Open-AwA/docs/regression-test-report.md)
-- [deployment-migration-guide.md](file:///d:/代码/Open-AwA/docs/deployment-migration-guide.md)
-- [plugin-nav-config-performance-acceptance-2026-04-12.md](file:///d:/代码/Open-AwA/docs/plugin-nav-config-performance-acceptance-2026-04-12.md)
+- [部署与开发](docs/指南/部署与运行说明.md)
+- [后端架构](docs/架构/后端架构说明.md)
+- [前端架构](docs/架构/前端架构说明.md)
+- [测试策略](docs/指南/测试说明.md)
+- [部署迁移指南](docs/指南/上线迁移指南.md)
+- [回归测试报告](docs/报告/回归测试报告.md)
+- [插件开发手册](docs/插件开发手册/插件开发手册.md)
 
 ## 已知情况说明
 
 以下内容是根据当前代码观察得到，建议在后续开发中继续收敛：
 
-- 前端初始化流程会自动注册并登录测试用户，属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](file:///d:/代码/Open-AwA/frontend/src/App.tsx#L20-L53)
+- 前端初始化流程会自动注册并登录测试用户，属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](frontend/src/App.tsx#L20-L53)
 - `PluginsPage` 中存在“浏览插件市场”按钮，但当前仓库未看到对应市场实现
 - README 只描述已存在的接口与页面，不对未完成功能做保证

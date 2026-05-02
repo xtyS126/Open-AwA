@@ -16,9 +16,9 @@
 
 - `README.md`
 - `PROJECT_DOCUMENTATION.md`
-- `docs/FUTURE_ROADMAP.md`
-- `docs/audit/competitive-research.md`
-- `docs/audit/open-source-evaluation.md`
+- `docs/架构/未来路线图.md`
+- `docs/审计/竞品调研报告.md`
+- `docs/审计/开源方案评估报告.md`
 - `frontend/src/App.tsx`
 - `frontend/src/features/plugins/MarketplacePage.tsx`
 - `backend/api/routes/marketplace.py`

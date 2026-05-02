@@ -230,6 +230,54 @@ async def create_scheduled_task(
     return task_dict
 
 
+@router.get("/plugin-commands", response_model=List[PluginCommandInfo])
+async def list_plugin_commands(
+    current_user=Depends(get_current_user),
+):
+    """
+    列出所有已加载插件的可用命令，供前端插件命令选择器使用。
+    """
+    pm = plugin_instance.get()
+    commands: List[PluginCommandInfo] = []
+
+    for plugin_name in pm.list_loaded_plugins():
+        plugin_info = pm.get_plugin_info(plugin_name) or {}
+        tools = pm.get_plugin_tools(plugin_name)
+
+        for tool in tools:
+            tool_name = tool.get("name", "")
+            # 获取命令参数schema
+            params_schema: Dict[str, Any] = {}
+
+            # 尝试从工具定义中获取参数信息
+            if isinstance(tool.get("parameters"), dict):
+                params_schema = tool["parameters"]
+            elif hasattr(tool, "parameters"):
+                params_schema = tool.parameters or {}
+
+            # 如果插件实例有更详细的参数定义，优先使用
+            plugin_instance_ref = pm.loaded_plugins.get(plugin_name)
+            if plugin_instance_ref and hasattr(plugin_instance_ref, "get_tool_schema"):
+                try:
+                    detailed_schema = plugin_instance_ref.get_tool_schema(tool_name)
+                    if isinstance(detailed_schema, dict):
+                        params_schema = detailed_schema
+                except Exception:
+                    pass
+
+            commands.append(PluginCommandInfo(
+                plugin_name=plugin_name,
+                plugin_version=plugin_info.get("version", "unknown"),
+                plugin_description=plugin_info.get("description", ""),
+                command_name=tool_name,
+                command_description=tool.get("description", ""),
+                command_method=tool.get("method", tool_name),
+                parameters=params_schema,
+            ))
+
+    return commands
+
+
 @router.get("/{task_id}", response_model=ScheduledTaskResponse)
 async def get_scheduled_task(
     task_id: int,
@@ -301,51 +349,3 @@ async def cancel_scheduled_task(
     db.commit()
 
     return {"message": "Scheduled task cancelled successfully"}
-
-
-@router.get("/plugin-commands", response_model=List[PluginCommandInfo])
-async def list_plugin_commands(
-    current_user=Depends(get_current_user),
-):
-    """
-    列出所有已加载插件的可用命令，供前端插件命令选择器使用。
-    """
-    pm = plugin_instance.get()
-    commands: List[PluginCommandInfo] = []
-
-    for plugin_name in pm.list_loaded_plugins():
-        plugin_info = pm.get_plugin_info(plugin_name) or {}
-        tools = pm.get_plugin_tools(plugin_name)
-
-        for tool in tools:
-            tool_name = tool.get("name", "")
-            # 获取命令参数schema
-            params_schema: Dict[str, Any] = {}
-
-            # 尝试从工具定义中获取参数信息
-            if isinstance(tool.get("parameters"), dict):
-                params_schema = tool["parameters"]
-            elif hasattr(tool, "parameters"):
-                params_schema = tool.parameters or {}
-
-            # 如果插件实例有更详细的参数定义，优先使用
-            plugin_instance_ref = pm.loaded_plugins.get(plugin_name)
-            if plugin_instance_ref and hasattr(plugin_instance_ref, "get_tool_schema"):
-                try:
-                    detailed_schema = plugin_instance_ref.get_tool_schema(tool_name)
-                    if isinstance(detailed_schema, dict):
-                        params_schema = detailed_schema
-                except Exception:
-                    pass
-
-            commands.append(PluginCommandInfo(
-                plugin_name=plugin_name,
-                plugin_version=plugin_info.get("version", "unknown"),
-                plugin_description=plugin_info.get("description", ""),
-                command_name=tool_name,
-                command_description=tool.get("description", ""),
-                command_method=tool.get("method", tool_name),
-                parameters=params_schema,
-            ))
-
-    return commands

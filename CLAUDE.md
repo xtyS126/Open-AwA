@@ -206,8 +206,8 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 - [AGENTS.md](AGENTS.md) — Extended guidelines, pre-commit checklist, git rules
 - [README.md](README.md) — Project overview, capabilities, quick start
 - [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) — Detailed technical documentation
-- [docs/backend-architecture.md](docs/backend-architecture.md) — Backend architecture details
-- [docs/frontend-architecture.md](docs/frontend-architecture.md) — Frontend architecture details
-- [docs/deployment.md](docs/deployment.md) — Deployment guide
-- [docs/testing.md](docs/testing.md) — Testing strategy
-- [docs/plugin-developer-handbook/](docs/plugin-developer-handbook/) — Plugin development guide
+- [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) — Backend architecture details
+- [docs/架构/前端架构说明.md](docs/架构/前端架构说明.md) — Frontend architecture details
+- [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md) — Deployment guide
+- [docs/指南/测试说明.md](docs/指南/测试说明.md) — Testing strategy
+- [docs/插件开发手册/](docs/插件开发手册/) — Plugin development guide
