@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, 
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
 from pathlib import Path as PathLib
+from copy import deepcopy
 from db.models import get_db, Plugin
 from api.dependencies import get_current_user, get_current_admin_user
 from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
@@ -67,6 +68,29 @@ def _write_json_file(path: str, payload: Dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _write_json_file_atomic(path: str, payload: Dict[str, Any]) -> None:
+    """
+    通过临时文件 + 原子替换写入 JSON，避免配置文件处于半写入状态。
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp_file_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=os.path.dirname(path),
+            delete=False,
+        ) as temp_file:
+            json.dump(payload, temp_file, ensure_ascii=False, indent=2)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_file_path = temp_file.name
+        os.replace(temp_file_path, path)
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
 
 def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
@@ -169,19 +193,52 @@ def _persist_plugin_config(
     schema_payload = _read_json_file(schema_path) or _default_schema_for_config(next_config)
     normalized_config = _merge_with_schema_defaults(schema_payload, next_config)
 
-    plugin.config = normalized_config
-    db.commit()
-    db.refresh(plugin)
-
     config_json_path = os.path.join(plugin_root, "config.json")
-    _write_json_file(config_json_path, normalized_config)
+    previous_db_config = deepcopy(plugin.config) if isinstance(plugin.config, dict) else {}
+    previous_file_config = _read_json_file(config_json_path)
+    config_file_previously_exists = os.path.exists(config_json_path)
+    plugin_manager = _get_plugin_manager()
+    plugin_was_loaded = plugin.name in plugin_manager.loaded_plugins
 
-    if plugin.name in _get_plugin_manager().loaded_plugins:
+    try:
+        _write_json_file_atomic(config_json_path, normalized_config)
+        plugin_manager.refresh_plugin_config(plugin.name, normalized_config)
+
+        plugin.config = normalized_config
+
+        if plugin_was_loaded:
+            # 配置接口成功返回前，确保当前会话中的插件实例已经切换到新配置。
+            reloaded = plugin_manager.reload_plugin(plugin.name)
+            if not reloaded:
+                raise RuntimeError(f"插件 '{plugin.name}' 重载失败，配置未生效")
+
+        db.commit()
+        db.refresh(plugin)
+    except Exception as exc:
+        db.rollback()
+
         try:
-            # 通过重载让配置在当前会话实时生效
-            _get_plugin_manager().reload_plugin(plugin.name)
-        except Exception as exc:
-            logger.warning(f"Plugin '{plugin.name}' reloaded with warning after config update: {exc}")
+            if config_file_previously_exists and isinstance(previous_file_config, dict):
+                _write_json_file_atomic(config_json_path, previous_file_config)
+            elif not config_file_previously_exists and os.path.exists(config_json_path):
+                os.remove(config_json_path)
+        except Exception as restore_error:
+            logger.error(f"Failed to restore plugin config file for '{plugin.name}': {restore_error}")
+
+        plugin_manager.refresh_plugin_config(plugin.name, previous_db_config)
+
+        if plugin_was_loaded:
+            try:
+                recovered = plugin_manager.reload_plugin(plugin.name)
+                if not recovered:
+                    logger.error(f"Plugin '{plugin.name}' failed to recover previous runtime config after rollback")
+            except Exception as recovery_error:
+                logger.error(
+                    f"Plugin '{plugin.name}' runtime recovery failed after config rollback: {recovery_error}"
+                )
+
+        logger.error(f"Failed to persist config for plugin '{plugin.name}': {exc}")
+        raise HTTPException(status_code=500, detail=f"保存插件配置失败: {exc}") from exc
 
     return {
         "plugin_id": plugin.id,

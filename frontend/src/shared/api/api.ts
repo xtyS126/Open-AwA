@@ -38,9 +38,15 @@ const isExpectedApiError = (error: unknown): boolean => {
 
   return (
     (normalizedUrl === '/auth/me' && statusCode === 401) ||
+    (normalizedUrl === '/auth/login' && statusCode === 401) ||
     (normalizedUrl === '/auth/register' && statusCode === 400) ||
     (statusCode === 404 && normalizedUrl.startsWith('/chat/history/'))
   )
+}
+
+export const getApiErrorDetail = (error: unknown): string => {
+  const err = error as any
+  return err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message || '未知错误'
 }
 
 const fetchCsrfToken = async (): Promise<string> => {
@@ -148,7 +154,7 @@ api.interceptors.response.use(
       const errorUrl = error?.config?.url || 'unknown'
       const errorStatus = error?.response?.status || 0
       const errorMessage = error?.message || ''
-      const backendDetail = error?.response?.data?.detail || ''
+      const backendDetail = getApiErrorDetail(error)
 
       appLogger.error({
         event: 'api_response',
@@ -638,6 +644,10 @@ export interface ScheduledTask {
   cron_expression: string | null
   weekdays: string | null
   daily_time: string | null
+  task_type: string
+  plugin_name: string | null
+  command_name: string | null
+  command_params: Record<string, unknown>
   next_execution_at: string | null
   last_error_message: string | null
   task_metadata: Record<string, unknown>
@@ -667,7 +677,7 @@ export interface ScheduledTaskExecution {
 
 export interface ScheduledTaskCreatePayload {
   title: string
-  prompt: string
+  prompt?: string
   scheduled_at: string
   provider?: string | null
   model?: string | null
@@ -675,6 +685,10 @@ export interface ScheduledTaskCreatePayload {
   cron_expression?: string | null
   weekdays?: string | null
   daily_time?: string | null
+  task_type?: string
+  plugin_name?: string | null
+  command_name?: string | null
+  command_params?: Record<string, unknown>
 }
 
 export interface ScheduledTaskUpdatePayload {
@@ -687,6 +701,20 @@ export interface ScheduledTaskUpdatePayload {
   cron_expression?: string | null
   weekdays?: string | null
   daily_time?: string | null
+  task_type?: string
+  plugin_name?: string | null
+  command_name?: string | null
+  command_params?: Record<string, unknown>
+}
+
+export interface PluginCommandInfo {
+  plugin_name: string
+  plugin_version: string
+  plugin_description: string
+  command_name: string
+  command_description: string
+  command_method: string
+  parameters: Record<string, unknown>
 }
 
 export const scheduledTasksAPI = {
@@ -702,6 +730,8 @@ export const scheduledTasksAPI = {
     api.delete<{ message: string }>(`/scheduled-tasks/${id}`),
   getExecutions: (params?: { task_id?: number; limit?: number }) =>
     api.get<ScheduledTaskExecution[]>('/scheduled-tasks/executions', { params }),
+  getPluginCommands: () =>
+    api.get<PluginCommandInfo[]>('/scheduled-tasks/plugin-commands'),
 }
 
 export interface ModelCapabilities {

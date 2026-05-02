@@ -1,23 +1,26 @@
 """
 定时任务路由，提供一次性任务和每日重复任务的创建、查询、更新、取消与执行历史接口。
+支持AI提示词任务和插件命令任务两种类型。
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from api.schemas import (
+    PluginCommandInfo,
     ScheduledTaskCreate,
     ScheduledTaskExecutionResponse,
     ScheduledTaskResponse,
     ScheduledTaskUpdate,
 )
 from db.models import ScheduledTask, ScheduledTaskExecution, get_db
+from plugins import plugin_instance
 
 
 router = APIRouter(prefix="/scheduled-tasks", tags=["ScheduledTasks"])
@@ -175,7 +178,21 @@ async def create_scheduled_task(
     current_user=Depends(get_current_user),
 ):
     title = _require_non_empty_text(request.title, "title")
-    prompt = _require_non_empty_text(request.prompt, "prompt")
+    prompt = (request.prompt or "").strip()
+
+    task_type = (request.task_type or "ai_prompt").strip()
+    if task_type not in ("ai_prompt", "plugin_command"):
+        raise HTTPException(status_code=400, detail="task_type 必须为 ai_prompt 或 plugin_command")
+
+    # AI任务必须有提示词
+    if task_type == "ai_prompt" and not prompt:
+        raise HTTPException(status_code=400, detail="AI任务必须提供提示词")
+    # 插件命令任务必须有插件名和命令名
+    if task_type == "plugin_command":
+        plugin_name = (request.plugin_name or "").strip()
+        command_name = (request.command_name or "").strip()
+        if not plugin_name or not command_name:
+            raise HTTPException(status_code=400, detail="插件命令任务必须指定 plugin_name 和 command_name")
 
     # 处理每日执行模式：生成 cron 表达式
     cron_expr = _normalize_optional_text(request.cron_expression)
@@ -196,7 +213,11 @@ async def create_scheduled_task(
         cron_expression=_normalize_optional_text(cron_expr or request.cron_expression),
         weekdays=_normalize_optional_text(request.weekdays),
         daily_time=_normalize_optional_text(request.daily_time),
-        task_metadata={"kind": "daily" if request.is_daily else "prompt_once"},
+        task_type=task_type,
+        plugin_name=_normalize_optional_text(request.plugin_name) if task_type == "plugin_command" else None,
+        command_name=_normalize_optional_text(request.command_name) if task_type == "plugin_command" else None,
+        command_params=request.command_params if task_type == "plugin_command" else {},
+        task_metadata={"kind": "daily" if request.is_daily else "prompt_once", "task_type": task_type},
     )
     db.add(task)
     db.commit()
@@ -238,6 +259,14 @@ async def update_scheduled_task(
         task.provider = _normalize_optional_text(request.provider)
     if request.model is not None:
         task.model = _normalize_optional_text(request.model)
+    if request.task_type is not None:
+        task.task_type = request.task_type
+    if request.plugin_name is not None:
+        task.plugin_name = _normalize_optional_text(request.plugin_name)
+    if request.command_name is not None:
+        task.command_name = _normalize_optional_text(request.command_name)
+    if request.command_params is not None:
+        task.command_params = request.command_params
 
     # 处理每日任务字段
     _set_task_daily_fields(task, request)
@@ -272,3 +301,51 @@ async def cancel_scheduled_task(
     db.commit()
 
     return {"message": "Scheduled task cancelled successfully"}
+
+
+@router.get("/plugin-commands", response_model=List[PluginCommandInfo])
+async def list_plugin_commands(
+    current_user=Depends(get_current_user),
+):
+    """
+    列出所有已加载插件的可用命令，供前端插件命令选择器使用。
+    """
+    pm = plugin_instance.get()
+    commands: List[PluginCommandInfo] = []
+
+    for plugin_name in pm.list_loaded_plugins():
+        plugin_info = pm.get_plugin_info(plugin_name) or {}
+        tools = pm.get_plugin_tools(plugin_name)
+
+        for tool in tools:
+            tool_name = tool.get("name", "")
+            # 获取命令参数schema
+            params_schema: Dict[str, Any] = {}
+
+            # 尝试从工具定义中获取参数信息
+            if isinstance(tool.get("parameters"), dict):
+                params_schema = tool["parameters"]
+            elif hasattr(tool, "parameters"):
+                params_schema = tool.parameters or {}
+
+            # 如果插件实例有更详细的参数定义，优先使用
+            plugin_instance_ref = pm.loaded_plugins.get(plugin_name)
+            if plugin_instance_ref and hasattr(plugin_instance_ref, "get_tool_schema"):
+                try:
+                    detailed_schema = plugin_instance_ref.get_tool_schema(tool_name)
+                    if isinstance(detailed_schema, dict):
+                        params_schema = detailed_schema
+                except Exception:
+                    pass
+
+            commands.append(PluginCommandInfo(
+                plugin_name=plugin_name,
+                plugin_version=plugin_info.get("version", "unknown"),
+                plugin_description=plugin_info.get("description", ""),
+                command_name=tool_name,
+                command_description=tool.get("description", ""),
+                command_method=tool.get("method", tool_name),
+                parameters=params_schema,
+            ))
+
+    return commands

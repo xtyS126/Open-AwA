@@ -565,6 +565,52 @@ class PluginManager:
             logger.warning(f"Failed to read plugin json file '{path}': {e}")
         return None
 
+    def _resolve_plugin_config_path(self, metadata: Dict[str, Any]) -> Optional[str]:
+        """
+        根据扫描元数据解析插件配置文件路径。
+        优先使用已记录的 config_path，缺失时回退到 <plugin_root>/config.json。
+        """
+        config_path = metadata.get("config_path")
+        if isinstance(config_path, str) and config_path:
+            return config_path
+
+        root_dir = metadata.get("root_dir")
+        if isinstance(root_dir, str) and root_dir:
+            return os.path.join(root_dir, "config.json")
+        return None
+
+    def _load_latest_plugin_config(self, plugin_name: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        加载插件最新配置，并同步回写元数据缓存，避免 reload 后继续沿用旧快照。
+        """
+        config_path = self._resolve_plugin_config_path(metadata)
+        latest_config = self._read_plugin_json_file(config_path) if config_path else None
+        if isinstance(latest_config, dict):
+            metadata["default_config"] = deepcopy(latest_config)
+            if config_path:
+                metadata["config_path"] = config_path
+            return deepcopy(latest_config)
+
+        default_config = metadata.get("default_config")
+        if isinstance(default_config, dict):
+            return deepcopy(default_config)
+
+        logger.debug(f"Plugin '{plugin_name}' has no persisted config, using empty defaults")
+        return {}
+
+    def refresh_plugin_config(self, plugin_name: str, config: Dict[str, Any]) -> None:
+        """
+        刷新插件元数据中的配置快照，保证后续加载与发现接口读取一致。
+        """
+        metadata = self.plugin_metadata.get(plugin_name)
+        if not metadata:
+            return
+
+        metadata["default_config"] = deepcopy(config)
+        config_path = self._resolve_plugin_config_path(metadata)
+        if config_path:
+            metadata["config_path"] = config_path
+
     def _normalize_manifest_version(self, value: Any) -> Any:
         """
         兼容历史 manifest 中使用的 `1.0` 版本写法，统一补齐为 semver 三段式。
@@ -1159,6 +1205,28 @@ class PluginManager:
         self._runtime_routes[plugin_name] = route
         return route
 
+    def _sync_runtime_route_active_slot(self, plugin_name: str) -> None:
+        """
+        将当前已加载实例同步回运行时路由，避免 reload 后被旧 active_slot 覆盖。
+        """
+        route = self._runtime_routes.get(plugin_name)
+        plugin_instance = self.loaded_plugins.get(plugin_name)
+        metadata = self.plugin_metadata.get(plugin_name)
+        if route is None or plugin_instance is None or metadata is None:
+            return
+
+        active_slot_name = route.get("active_slot", "active")
+        route.setdefault("slots", {})[active_slot_name] = {
+            "slot": active_slot_name,
+            "release_id": self._build_release_id(plugin_name, metadata),
+            "metadata": deepcopy(metadata),
+            "plugin_instance": plugin_instance,
+            "sandbox": self._plugin_sandboxes.get(plugin_name, self.sandbox),
+            "tools": deepcopy(self._tools_registry.get(plugin_name, [])),
+            "loaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        route["last_update"] = datetime.now(timezone.utc).isoformat()
+
     def _version_matches(self, selector_version: str, rule: str) -> bool:
         """
         处理version、matches相关逻辑，并为调用方返回对应结果。
@@ -1605,9 +1673,7 @@ class PluginManager:
                 "description": metadata["description"],
             }
 
-            default_config = metadata.get("default_config")
-            if isinstance(default_config, dict):
-                config.update(deepcopy(default_config))
+            config.update(self._load_latest_plugin_config(plugin_name, metadata))
 
             manifest = metadata.get("manifest")
             if isinstance(manifest, dict):
@@ -1713,6 +1779,7 @@ class PluginManager:
             logger.info(f"Plugin '{plugin_name}' auto-authorized permissions: {manifest_permissions}")
 
         self._ensure_runtime_route(plugin_name)
+        self._sync_runtime_route_active_slot(plugin_name)
         self._apply_active_route_slot(plugin_name)
         _meta = self.plugin_metadata.get(plugin_name, {})
         self.hot_update_manager.register_initial(
@@ -1845,13 +1912,6 @@ class PluginManager:
             if not self.unload_plugin(plugin_name):
                 logger.error(f"Failed to unload plugin '{plugin_name}' before reload")
                 return False
-
-        if plugin_name in self.plugin_metadata:
-            metadata = self.plugin_metadata[plugin_name]
-            spec = importlib.util.spec_from_file_location(metadata["module"], metadata["path"])
-            if spec and spec.loader:
-                mod = importlib.util.module_from_spec(spec)
-                importlib.reload(mod)
 
         return self.load_plugin(plugin_name)
 

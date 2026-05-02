@@ -148,7 +148,7 @@ class ScheduledTaskManager:
 
     async def _execute_task(self, task_id: int) -> None:
         """
-        执行单个定时任务。
+        执行单个定时任务，根据任务类型分流到AI Agent或插件命令执行。
         """
         try:
             claimed_task, execution_id = self._claim_task_for_execution(task_id)
@@ -165,7 +165,11 @@ class ScheduledTaskManager:
             return
 
         try:
-            result = await self._run_agent(claimed_task)
+            task_type = claimed_task.get("task_type", "ai_prompt")
+            if task_type == "plugin_command":
+                result = await self._run_plugin_command(claimed_task)
+            else:
+                result = await self._run_agent(claimed_task)
             await self._mark_task_completed(
                 task_id=claimed_task["id"],
                 execution_id=execution_id,
@@ -211,6 +215,9 @@ class ScheduledTaskManager:
                     model=task.model,
                     execution_metadata={
                         "source": "scheduled_task_manager",
+                        "task_type": task.task_type,
+                        "plugin_name": task.plugin_name,
+                        "command_name": task.command_name,
                     },
                 )
                 db.add(execution)
@@ -224,6 +231,10 @@ class ScheduledTaskManager:
                     "scheduled_at": task.scheduled_at,
                     "provider": task.provider,
                     "model": task.model,
+                    "task_type": task.task_type,
+                    "plugin_name": task.plugin_name,
+                    "command_name": task.command_name,
+                    "command_params": task.command_params,
                 }
                 execution_id = execution.id
 
@@ -259,6 +270,44 @@ class ScheduledTaskManager:
             error = result.get("error") or {}
             error_message = error.get("message") or result.get("response") or "定时任务执行失败"
             raise RuntimeError(str(error_message))
+
+        return result
+
+    async def _run_plugin_command(self, scheduled_task: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        直接调用插件命令，不经过AI Agent。
+        """
+        from plugins import plugin_instance
+
+        plugin_name = scheduled_task.get("plugin_name", "")
+        command_name = scheduled_task.get("command_name", "")
+        command_params = scheduled_task.get("command_params", {})
+
+        if not plugin_name or not command_name:
+            raise RuntimeError("插件命令任务缺少 plugin_name 或 command_name")
+
+        pm = plugin_instance.get()
+        if plugin_name not in pm.loaded_plugins:
+            # 尝试加载插件
+            if plugin_name in pm.plugin_metadata:
+                success = pm.load_plugin(plugin_name)
+                if not success:
+                    raise RuntimeError(f"无法加载插件: {plugin_name}")
+            else:
+                raise RuntimeError(f"插件未找到: {plugin_name}")
+
+        result = await pm.execute_plugin_async(
+            plugin_name=plugin_name,
+            method=command_name,
+            **command_params,
+        )
+
+        if not isinstance(result, dict):
+            return {"status": "completed", "response": str(result)}
+
+        if result.get("status") == "error":
+            error_msg = result.get("error", result.get("message", "插件命令执行失败"))
+            raise RuntimeError(str(error_msg))
 
         return result
 

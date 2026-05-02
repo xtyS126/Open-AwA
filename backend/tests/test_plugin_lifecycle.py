@@ -734,6 +734,91 @@ class ConfigToolPlugin(BasePlugin):
     assert any(item["name"] == "fetch_items" for item in help_result["data"]["tools"])
 
 
+def test_plugin_manager_reload_uses_latest_config_file(tmp_path: Path):
+    """
+    修改 config.json 后重新加载插件，应读取最新配置而不是沿用扫描阶段缓存。
+    """
+    plugin_root = tmp_path / "reloadable_config_plugin"
+    src_dir = plugin_root / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+
+    (plugin_root / "manifest.json").write_text(
+        """
+{
+  "name": "reloadable_config_plugin",
+  "version": "1.0.0",
+  "description": "reloadable config plugin",
+  "pluginApiVersion": "1.0.0",
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "execute",
+      "version": "1.0.0",
+      "config": {
+        "description": "读取当前配置"
+      }
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    config_path = plugin_root / "config.json"
+    config_path.write_text(
+        """
+{
+  "api_base_url": "https://old.example.com"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (src_dir / "index.py").write_text(
+        '''from plugins.base_plugin import BasePlugin
+
+
+class ReloadableConfigPlugin(BasePlugin):
+    name = "reloadable_config_plugin"
+    version = "1.0.0"
+    description = "reloadable config plugin"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return {
+            "status": "success",
+            "api_base_url": self.config.get("api_base_url"),
+        }
+''',
+        encoding="utf-8",
+    )
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    manager.discover_plugins()
+
+    assert manager.load_plugin("reloadable_config_plugin") is True
+    first_instance = manager.loaded_plugins["reloadable_config_plugin"]
+    assert first_instance.config["api_base_url"] == "https://old.example.com"
+
+    config_path.write_text(
+        """
+{
+  "api_base_url": "https://new.example.com"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert manager.reload_plugin("reloadable_config_plugin") is True
+
+    reloaded_instance = manager.loaded_plugins["reloadable_config_plugin"]
+    assert reloaded_instance.config["api_base_url"] == "https://new.example.com"
+
+    result = manager.execute_plugin("reloadable_config_plugin", "execute")
+    assert result["status"] == "success"
+    assert result["data"]["api_base_url"] == "https://new.example.com"
+
+
 def test_plugin_manager_propagates_plugin_payload_status(tmp_path: Path):
     """
     插件业务层返回的 status/message 应提升到管理器顶层，便于 Agent 和工作流统一判断。
