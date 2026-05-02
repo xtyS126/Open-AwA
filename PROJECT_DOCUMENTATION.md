@@ -445,10 +445,10 @@ v1.3 已落地：RBAC 三级权限模型、AuditLogger 异步审计日志、Fern
 
 ### 10.2 架构与运行文档
 
-- deployment.md：本地开发与部署说明
-- backend-architecture.md：后端结构、核心模块与数据层说明
-- frontend-architecture.md：前端页面、服务层与状态管理说明
-- testing.md：后端、前端、E2E 测试与建议检查项
+- docs/指南/部署与运行说明.md：本地开发与部署说明
+- docs/架构/后端架构说明.md：后端结构、核心模块与数据层说明
+- docs/架构/前端架构说明.md：前端页面、服务层与状态管理说明
+- docs/指南/测试说明.md：后端、前端、E2E 测试与建议检查项
 
 ### 10.3 插件开发文档
 
@@ -460,7 +460,7 @@ v1.3 已落地：RBAC 三级权限模型、AuditLogger 异步审计日志、Fern
 
 ### 10.4 推荐阅读顺序
 
-初次接手项目建议按以下顺序阅读文档：根 README；deployment.md；backend-architecture.md；frontend-architecture.md；testing.md；如果需要开发插件，再阅读插件开发手册。
+初次接手项目建议按以下顺序阅读文档：根 README；docs/指南/部署与运行说明.md；docs/架构/后端架构说明.md；docs/架构/前端架构说明.md；docs/指南/测试说明.md；如果需要开发插件，再阅读插件开发手册。
 
 ---
 

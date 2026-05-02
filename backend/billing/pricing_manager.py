@@ -350,20 +350,36 @@ class PricingManager:
 
     def get_provider_catalog(self) -> List[Dict]:
         """
-        获取供应商目录，包含每个供应商的配置信息和已选模型列表。
-        
+        获取供应商目录，合并数据库配置与 pricing_data.json 中的默认定价厂商。
+
+        - 数据库中已存在的供应商标记 source: \"database\"，数据以数据库为准
+        - 仅存在于 JSON 中的供应商标记 source: \"pricing_json\"，作为 fallback 条目
+        - selected_models 为数据库配置与 JSON 模型的并集
+
         Returns:
-            供应商信息字典列表。
+            供应商信息字典列表，数据库条目优先，JSON fallback 条目追加在末尾。
         """
+        # 1. 从数据库查询已有的供应商
         config_rows = self.db.query(ModelConfiguration.provider).filter(
             ModelConfiguration.is_active == True
         ).distinct().all()
 
-        provider_ids = sorted({
+        db_provider_ids = {
             self.normalize_provider(row[0])
             for row in config_rows
             if self.normalize_provider(row[0])
-        })
+        }
+
+        # 2. 从定价 JSON 中提取所有唯一供应商及其模型
+        pricing_data = config_loader.load_pricing_data()
+        json_provider_models: Dict[str, set] = {}
+        for entry in pricing_data:
+            pid = self.normalize_provider(entry.get("provider"))
+            if not pid:
+                continue
+            model = self.normalize_model(entry.get("model", ""))
+            if model:
+                json_provider_models.setdefault(pid, set()).add(model)
 
         provider_names = {
             "openai": "OpenAI",
@@ -376,12 +392,19 @@ class PricingManager:
         }
 
         result = []
-        for provider_id in provider_ids:
+
+        # 3. 处理数据库已有供应商（source: \"database\"）
+        for provider_id in sorted(db_provider_ids):
             config = self.get_default_provider_configuration(provider_id)
             if not config:
                 continue
 
-            selected_models = self.parse_selected_models(config.selected_models)
+            db_models = self.parse_selected_models(config.selected_models)
+            json_models = json_provider_models.get(provider_id, set())
+            # 数据库选中的模型在前，JSON 独有模型在后（去重保持顺序）
+            merged_models = list(dict.fromkeys(
+                db_models + [m for m in sorted(json_models) if m not in set(db_models)]
+            ))
             result.append({
                 "id": provider_id,
                 "name": provider_names.get(provider_id, provider_id.upper()),
@@ -389,12 +412,29 @@ class PricingManager:
                 "icon": config.icon,
                 "api_endpoint": config.api_endpoint,
                 "has_api_key": bool(config.api_key),
-                "selected_models": selected_models,
+                "selected_models": merged_models,
                 "configuration_count": self.db.query(ModelConfiguration).filter(
                     ModelConfiguration.provider == provider_id,
                     ModelConfiguration.is_active == True
-                ).count()
+                ).count(),
+                "source": "database",
             })
+
+        # 4. 追加仅存在于 JSON 的供应商（source: \"pricing_json\"）
+        json_only_ids = sorted(json_provider_models.keys() - db_provider_ids)
+        for provider_id in json_only_ids:
+            result.append({
+                "id": provider_id,
+                "name": provider_names.get(provider_id, provider_id.upper()),
+                "display_name": provider_names.get(provider_id, provider_id.upper()),
+                "icon": None,
+                "api_endpoint": None,
+                "has_api_key": False,
+                "selected_models": sorted(json_provider_models.get(provider_id, set())),
+                "configuration_count": 0,
+                "source": "pricing_json",
+            })
+
         return result
 
     def get_providers(self) -> List[str]:

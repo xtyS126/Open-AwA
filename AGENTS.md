@@ -55,9 +55,9 @@ frontend/src/
   __tests__/       # 单元测试
 ```
 
-详细架构说明见 [docs/backend-architecture.md](docs/backend-architecture.md) 和 [docs/frontend-architecture.md](docs/frontend-architecture.md)。
-部署指南见 [docs/deployment.md](docs/deployment.md)，测试策略见 [docs/testing.md](docs/testing.md)。
-插件开发见 [docs/plugin-developer-handbook/](docs/plugin-developer-handbook/)。
+详细架构说明见 [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) 和 [docs/架构/前端架构说明.md](docs/架构/前端架构说明.md)。
+部署指南见 [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md)，测试策略见 [docs/指南/测试说明.md](docs/指南/测试说明.md)。
+插件开发见 [docs/插件开发手册/](docs/插件开发手册/)。
 
 ---
 

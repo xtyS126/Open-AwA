@@ -1,27 +1,27 @@
 .container {
-  margin-bottom: 8px;
-  background-color: rgba(0, 0, 0, 0.05);
-  border-left: 4px solid #888;
-  border-radius: 4px;
-  overflow: hidden;
-  transition: all 0.3s ease;
+  display: inline-block;
+  margin-right: 8px;
+  margin-bottom: 4px;
+  vertical-align: middle;
 }
 
 .header {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 2px 6px;
   cursor: pointer;
   user-select: none;
   color: #666;
-  font-size: 0.9em;
-  font-weight: bold;
-  background-color: rgba(0, 0, 0, 0.02);
+  font-size: 13px;
+  background-color: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
   transition: background-color 0.2s;
+  white-space: nowrap;
 }
 
 .header:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .headerText {
@@ -29,85 +29,61 @@
 }
 
 .icon {
-  margin-right: 6px;
-  transition: transform 0.3s ease;
   display: inline-block;
+  font-style: normal;
 }
 
 .icon.expanded {
-  transform: rotate(90deg);
+  color: #333;
 }
 
 .metaInfo {
-  margin-left: auto;
-  display: flex;
+  margin-left: 4px;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85em;
-  font-weight: normal;
+  gap: 4px;
+  font-size: 0.9em;
   color: #999;
 }
 
-.tokenCount {
-  white-space: nowrap;
-}
-
-.elapsed {
+.tokenCount, .elapsed {
   white-space: nowrap;
 }
 
 .copyBtn {
-  margin-left: 8px;
-  padding: 2px 8px;
-  border: 1px solid #ccc;
-  border-radius: 3px;
-  background: transparent;
-  color: #666;
-  font-size: 0.8em;
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.copyBtn:hover {
-  background-color: rgba(0, 0, 0, 0.06);
-  border-color: #999;
-}
-
-.copyBtn.copySuccess {
-  color: #52c41a;
-  border-color: #52c41a;
+  display: none;
 }
 
 .contentWrapper {
-  max-height: 0;
-  overflow-y: auto;
-  transition: max-height 0.3s ease, padding 0.3s ease;
-  padding: 0 12px;
-  color: #666;
+  display: none;
   font-style: italic;
-  font-size: 0.9em;
+  font-size: 13px;
+  color: #666;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background-color: #fafafa;
+  border-left: 3px solid #ccc;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .contentWrapper.expanded {
-  max-height: 320px;
-  padding: 8px 12px 12px;
+  display: block;
 }
 
 /* 滚动条样式优化 */
 .contentWrapper::-webkit-scrollbar {
   width: 6px;
 }
-
 .contentWrapper::-webkit-scrollbar-track {
   background: transparent;
 }
-
 .contentWrapper::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 3px;
 }
-
 .contentWrapper::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
 }

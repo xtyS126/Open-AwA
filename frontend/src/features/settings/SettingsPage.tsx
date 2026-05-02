@@ -20,6 +20,17 @@ import MCPSettings from './MCPSettings'
 import SecuritySettings from './SecuritySettings'
 import styles from './SettingsPage.module.css'
 
+// 已知供应商及其显示名称（用于新增供应商弹窗的下拉选择）
+const KNOWN_PROVIDERS: Record<string, string> = {
+  'openai': 'OpenAI',
+  'anthropic': 'Anthropic',
+  'google': 'Google',
+  'deepseek': 'DeepSeek',
+  'alibaba': '阿里通义千问',
+  'moonshot': 'Kimi',
+  'zhipu': '智谱AI',
+}
+
 interface Settings {
   theme: string
   language: string
@@ -82,7 +93,8 @@ function SettingsPage() {
     api_endpoint: '',
     api_key: '',
     base_model: '',
-    max_tokens: '' as number | ''
+    max_tokens: '' as number | '',
+    is_custom: false
   })
 
   const [activeTab, setActiveTab] = useState(initialTab)
@@ -420,18 +432,18 @@ function SettingsPage() {
     }
   }
 
-  const loadBillingData = async () => {
+  function loadBillingData() {
     setLoadingModels(true)
-    try {
-      const [modelsRes] = await Promise.all([
-        billingAPI.getModels()
-      ])
-      setModels(modelsRes.data.models || [])
-    } catch (error) {
-      appLogger.error({ event: 'billing_data_load_failed', message: 'Failed to load billing data', module: 'settings' })
-    } finally {
-      setLoadingModels(false)
-    }
+    billingAPI.getModels()
+      .then(modelsRes => {
+        setModels(modelsRes.data.models || [])
+      })
+      .catch(() => {
+        appLogger.error({ event: 'billing_data_load_failed', message: 'Failed to load billing data', module: 'settings' })
+      })
+      .finally(() => {
+        setLoadingModels(false)
+      })
   }
 
   const loadModelsData = async () => {
@@ -2114,12 +2126,32 @@ function SettingsPage() {
               <div className={styles['provider-modal-body']}>
                 <div className={styles['form-group']}>
                   <label>供应商标识</label>
-                  <input
-                    type="text"
-                    value={addProviderForm.provider}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
-                    placeholder="例如 free-api"
-                  />
+                  <select
+                    value={addProviderForm.is_custom ? '__custom__' : addProviderForm.provider}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === '__custom__') {
+                        setAddProviderForm(prev => ({ ...prev, is_custom: true, provider: '', display_name: '' }))
+                      } else {
+                        setAddProviderForm(prev => ({ ...prev, is_custom: false, provider: val, display_name: KNOWN_PROVIDERS[val] || '' }))
+                      }
+                    }}
+                  >
+                    <option value="">请选择供应商</option>
+                    {Object.entries(KNOWN_PROVIDERS).map(([id, name]) => (
+                      <option key={id} value={id}>{id} — {name}</option>
+                    ))}
+                    <option value="__custom__">自定义...</option>
+                  </select>
+                  {addProviderForm.is_custom && (
+                    <input
+                      type="text"
+                      value={addProviderForm.provider}
+                      onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
+                      placeholder="输入自定义供应商标识"
+                      style={{ marginTop: 8 }}
+                    />
+                  )}
                 </div>
                 <div className={styles['form-group']}>
                   <label>显示名称（可选）</label>
