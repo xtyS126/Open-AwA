@@ -88,6 +88,7 @@ export interface ModelProvider {
   has_api_key?: boolean
   selected_models?: string[]
   configuration_count?: number
+  source?: 'database' | 'pricing_json'
 }
 
 export interface ProviderDetailResponse {

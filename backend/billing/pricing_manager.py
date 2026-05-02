@@ -388,7 +388,8 @@ class PricingManager:
             "deepseek": "DeepSeek",
             "alibaba": "阿里通义千问",
             "moonshot": "Kimi",
-            "zhipu": "智谱AI"
+            "zhipu": "智谱AI",
+            "ollama": "Ollama",
         }
 
         result = []
