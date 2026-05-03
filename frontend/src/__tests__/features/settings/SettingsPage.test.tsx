@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from '@/features/settings/SettingsPage'
 import { useChatStore } from '@/features/chat/store/chatStore'
@@ -147,7 +147,6 @@ describe('SettingsPage', () => {
         defaults: {
           temperature: 0.7,
           top_k: 0.9,
-          max_tokens: 8192,
         },
         limits: {
           temperature_min: 0,
@@ -158,6 +157,23 @@ describe('SettingsPage', () => {
           max_tokens_max: 128000,
         },
       },
+    })
+    modelApiMocks.getProviderDetail.mockImplementation(async (provider: string) => {
+      return {
+        data: {
+          configuration: {
+            id: provider === 'openai' ? 11 : 99,
+            provider,
+            selected_models: provider === 'openai' ? ['legacy-local-model'] : ['fallback-local-model'],
+            has_api_key: true
+          },
+          provider: {
+            id: provider,
+            name: provider,
+            has_api_key: true
+          }
+        }
+      }
     })
     modelApiMocks.getModelsByProvider.mockImplementation(async (provider: string) => {
       if (provider === 'openai') {
@@ -228,15 +244,16 @@ describe('SettingsPage', () => {
 
     fireEvent.click(await screen.findByText('新增供应商'))
 
-    expect(screen.getByLabelText('显示名称（可选）')).toBeInTheDocument()
-    expect(screen.getByLabelText('基础 URL（可选）')).toBeInTheDocument()
-    expect(screen.queryByText('图标地址（可选）')).not.toBeInTheDocument()
-    expect(screen.queryByText('默认模型（可选）')).not.toBeInTheDocument()
-    expect(screen.queryByText('API URL（可选）')).not.toBeInTheDocument()
-    expect(screen.queryByText('API Key（可选）')).not.toBeInTheDocument()
-    expect(screen.queryByText('最大 Token 数（可选）')).not.toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: '新增供应商' })
+    expect(within(dialog).getByLabelText('显示名称（可选）')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('基础 URL（可选）')).toBeInTheDocument()
+    expect(within(dialog).queryByText('图标地址（可选）')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('默认模型（可选）')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('API URL（可选）')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('API Key（可选）')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('最大 Token 数（可选）')).not.toBeInTheDocument()
 
-    const providerSelect = screen.getByLabelText('供应商标识')
+    const providerSelect = within(dialog).getByLabelText('供应商标识')
     fireEvent.change(providerSelect, { target: { value: 'openai' } })
 
     const baseUrlInput = screen.getByPlaceholderText('https://api.example.com/v1') as HTMLInputElement
@@ -317,5 +334,65 @@ describe('SettingsPage', () => {
     expect(screen.getByText('函数调用')).toBeInTheDocument()
     expect(screen.getByText('流式输出')).toBeInTheDocument()
     expect(screen.getByText('8K')).toBeInTheDocument()
+  })
+
+  it('在导入模型时会自动保存整个供应商配置', async () => {
+    renderSettingsApiTab()
+    
+    const providerItem = await screen.findByText('OpenAI')
+    fireEvent.click(providerItem)
+    
+    const baseUrlInput = await screen.findByPlaceholderText('https://api.example.com')
+    fireEvent.change(baseUrlInput, { target: { value: 'https://api.openai.com/v1' } })
+    const apiKeyInput = screen.getByPlaceholderText('已配置密钥，留空表示不修改')
+    fireEvent.change(apiKeyInput, { target: { value: 'draft-api-key' } })
+
+    const getModelsBtn = screen.getByText('获取模型列表')
+    fireEvent.click(getModelsBtn)
+
+    await waitFor(() => {
+      expect(modelApiMocks.getModelsByProvider).toHaveBeenCalledWith('openai', {
+        api_endpoint: 'https://api.openai.com/v1',
+        api_key: 'draft-api-key',
+      })
+    })
+    
+    expect(await screen.findByText('导入模型')).toBeInTheDocument()
+    const checkbox = await screen.findByLabelText('gpt-4.1')
+    fireEvent.click(checkbox)
+
+    const confirmBtn = screen.getByText('确认导入')
+    fireEvent.click(confirmBtn)
+    
+    await waitFor(() => {
+      expect(modelApiMocks.updateConfiguration).toHaveBeenCalledWith(11, expect.objectContaining({
+        api_endpoint: 'https://api.openai.com/v1',
+        selected_models: ['legacy-local-model', 'gpt-4.1']
+      }))
+    })
+    
+    expect(modelApiMocks.getConfigurations).toHaveBeenCalled()
+  })
+
+  it('在批量删除模型时会自动保存整个供应商配置', async () => {
+    renderSettingsApiTab()
+    
+    const providerItem = await screen.findByText('OpenAI')
+    fireEvent.click(providerItem)
+    
+    const claudeCheckbox = await screen.findByLabelText('legacy-local-model')
+    fireEvent.click(claudeCheckbox)
+    
+    const batchDeleteBtn = await screen.findByText(/批量删除 \(\d+\)/)
+    fireEvent.click(batchDeleteBtn)
+    
+    const confirmBtn = await screen.findByText('确认删除')
+    fireEvent.click(confirmBtn)
+    
+    await waitFor(() => {
+      expect(modelApiMocks.updateConfiguration).toHaveBeenCalledWith(11, expect.objectContaining({
+        selected_models: []
+      }))
+    })
   })
 })

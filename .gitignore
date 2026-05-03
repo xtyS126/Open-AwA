@@ -121,7 +121,6 @@ desktop.ini
 .github/
 .claude/
 .trae/
-.learnings/
 *.suo
 *.ntvs*
 *.njsproj

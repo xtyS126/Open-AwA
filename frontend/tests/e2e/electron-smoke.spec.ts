@@ -6,7 +6,8 @@ import { loginAsAdminApi } from './auth'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const frontendRoot = path.resolve(__dirname, '..', '..')
-const frontendBaseUrl = 'http://127.0.0.1:5173'
+const frontendPort = process.env.OPENAWA_E2E_FRONTEND_PORT || '15173'
+const frontendBaseUrl = `http://127.0.0.1:${frontendPort}`
 
 test('electron 冒烟：可启动并打开插件页', async ({ request }) => {
   const { cookies } = await loginAsAdminApi(request)

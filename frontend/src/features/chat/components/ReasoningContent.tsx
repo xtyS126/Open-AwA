@@ -19,15 +19,29 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
     if (typeof saved === 'boolean') {
       return saved
     }
-    return false // 默认折叠以保证极简
+    return isStreaming
   }
 
   const [isExpanded, setIsExpanded] = useState<boolean>(getInitialState)
   const contentRef = useRef<HTMLDivElement>(null)
+  const hasManualOverrideRef = useRef(reasoningExpansionMemory.has(messageId))
   
   const streamingStartRef = useRef<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState<number>(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    const saved = reasoningExpansionMemory.get(messageId)
+    hasManualOverrideRef.current = typeof saved === 'boolean'
+    setIsExpanded(typeof saved === 'boolean' ? saved : isStreaming)
+  }, [messageId, isStreaming])
+
+  useEffect(() => {
+    if (hasManualOverrideRef.current) {
+      return
+    }
+    setIsExpanded(isStreaming)
+  }, [isStreaming])
 
   useEffect(() => {
     if (isStreaming && streamingStartRef.current === null) {
@@ -57,6 +71,7 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
     const newState = !isExpanded
     setIsExpanded(newState)
     reasoningExpansionMemory.set(messageId, newState)
+    hasManualOverrideRef.current = true
   }, [isExpanded, messageId])
 
   useEffect(() => {
@@ -83,7 +98,7 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
           🧠
         </span>
         <span className={styles.headerText}>
-          {isStreaming ? '思考中' : '思考过程'}
+          {isStreaming ? '思考过程 (思考中...)' : '思考过程'}
         </span>
         {elapsedTime > 0 && <span className={styles.elapsed}>{elapsedTime}s</span>}
       </div>

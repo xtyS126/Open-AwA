@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Response
 from jose import JWTError, jwt
@@ -53,12 +54,36 @@ pwd_context = CryptContext(
 )
 
 
+def _is_legacy_bcrypt_hash(hashed_password: str) -> bool:
+    """识别历史 bcrypt 哈希，避免 passlib 在部分 bcrypt 版本组合下初始化失败。"""
+    return hashed_password.startswith(("$2a$", "$2b$", "$2y$"))
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     处理verify、password相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    normalized_hash = str(hashed_password or "")
+    if not normalized_hash:
+        return False
+
+    # 兼容历史 bcrypt 哈希，规避 passlib + bcrypt 新版本组合下的 72 字节探测异常。
+    if _is_legacy_bcrypt_hash(normalized_hash):
+        try:
+            return bcrypt.checkpw(
+                str(plain_password or "").encode("utf-8"),
+                normalized_hash.encode("utf-8"),
+            )
+        except ValueError as exc:
+            logger.warning(f"bcrypt 密码校验失败，已按不匹配处理: {exc}")
+            return False
+
+    try:
+        return pwd_context.verify(plain_password, normalized_hash)
+    except ValueError as exc:
+        logger.warning(f"密码校验失败，已按不匹配处理: {exc}")
+        return False
 
 
 def get_password_hash(password: str) -> str:

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const reuseExistingServer = process.env.OPENAWA_E2E_REUSE_SERVER === 'true'
+const reuseExistingServer = process.env.OPENAWA_E2E_REUSE_SERVER
+  ? process.env.OPENAWA_E2E_REUSE_SERVER === 'true'
+  : process.env.CI !== 'true'
 const frontendPort = Number(process.env.OPENAWA_E2E_FRONTEND_PORT || 15173)
 const backendPort = Number(process.env.OPENAWA_E2E_BACKEND_PORT || 18000)
 

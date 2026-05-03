@@ -12,7 +12,8 @@ function createWindow() {
     },
   })
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5173/plugins'
+  const frontendPort = process.env.OPENAWA_E2E_FRONTEND_PORT || '15173'
+  const frontendUrl = process.env.FRONTEND_URL || `http://127.0.0.1:${frontendPort}/plugins`
   win.loadURL(frontendUrl)
 }
 

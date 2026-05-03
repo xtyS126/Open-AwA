@@ -97,6 +97,14 @@ class ProviderModelSelectionRequest(BaseModel):
     selected_models: List[str] = []
 
 
+class ProviderModelsFetchRequest(BaseModel):
+    """
+    获取供应商模型列表时允许临时透传凭证与端点。
+    """
+    api_endpoint: Optional[str] = None
+    api_key: Optional[str] = None
+
+
 class ModelConfigCreateRequest(BaseModel):
     """
     封装与ModelConfigCreateRequest相关的核心逻辑与运行状态。
@@ -110,7 +118,6 @@ class ModelConfigCreateRequest(BaseModel):
     api_key: Optional[str] = None
     api_endpoint: Optional[str] = None
     selected_models: List[str] = []
-    max_tokens: Optional[int] = None
     is_active: bool = True
     is_default: bool = False
     sort_order: int = 0
@@ -129,7 +136,6 @@ class ModelConfigUpdateRequest(BaseModel):
     api_key: Optional[str] = None
     api_endpoint: Optional[str] = None
     selected_models: Optional[List[str]] = None
-    max_tokens: Optional[int] = None
     is_active: Optional[bool] = None
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
@@ -190,7 +196,6 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "base_url": config.api_endpoint,
         "has_api_key": bool(config.api_key),
         "selected_models": selected_models,
-        "max_tokens": getattr(config, "max_tokens", None),
         "is_active": config.is_active,
         "is_default": config.is_default,
         "sort_order": config.sort_order,
@@ -830,7 +835,7 @@ async def get_configuration_capabilities(
         raise HTTPException(status_code=404, detail="Configuration not found")
 
     spec = _parse_model_spec(config)
-    context_window = (spec or {}).get("context_window") or getattr(config, "max_tokens", None) or 128000
+    context_window = (spec or {}).get("context_window") or 128000
 
     return {
         "config_id": config.id,
@@ -1012,11 +1017,13 @@ async def update_provider_selected_models(
     }
 
 
-@router.get("/models-by-provider/{provider}")
+@router.post("/models-by-provider/{provider}")
 async def get_models_by_provider(
     provider: str,
     request: Request,
-    db: Session = Depends(get_db)
+    payload: Optional[ProviderModelsFetchRequest] = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
 ):
     """
     获取models、by、provider相关数据或当前状态。
@@ -1026,7 +1033,14 @@ async def get_models_by_provider(
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
     selected_models = pricing_manager.parse_selected_models(config.selected_models if config else None)
-    base_url = config.api_endpoint if config else None
+    
+    # 优先使用本次请求临时传入的凭证，否则回退到已保存配置
+    request_api_endpoint = payload.api_endpoint if payload else None
+    request_api_key = payload.api_key if payload else None
+    base_url = request_api_endpoint if request_api_endpoint is not None else (config.api_endpoint if config else None)
+    base_url = PricingManager._normalize_provider_api_endpoint(provider_id, base_url)
+    actual_api_key = request_api_key if request_api_key else (config.api_key if config else "")
+
     request_id = getattr(request.state, "request_id", "") or request.headers.get(REQUEST_ID_HEADER, "")
     client_version = request.headers.get("X-Client-Ver", "")
 
@@ -1038,7 +1052,7 @@ async def get_models_by_provider(
                 started_at = datetime.now().timestamp()
                 result = await litellm_list_models(
                     provider=provider_id,
-                    api_key=config.api_key if config else "",
+                    api_key=actual_api_key,
                     api_base=base_url,
                     request_id=request_id,
                 )
@@ -1067,7 +1081,10 @@ async def get_models_by_provider(
                 else:
                     record_model_service_metric(provider_id, "models", "error", duration_ms)
                     error_detail = result.get("error", {})
-                    raise RuntimeError(error_detail.get("message", "远程模型列表拉取失败"))
+                    raise HTTPException(
+                        status_code=error_detail.get("status_code") or 502,
+                        detail=error_detail,
+                    )
             except RuntimeError:
                 raise
             except Exception as fetch_exc:
@@ -1112,35 +1129,50 @@ async def get_models_by_provider(
             "source": source,
             "error": None
         }
-    except Exception as exc:
+    except HTTPException as exc:
+        error_detail = exc.detail if isinstance(exc.detail, dict) else {}
+        error_code = error_detail.get("code", "provider_models_fetch_failed")
+        error_message = error_detail.get("message", "模型列表获取失败")
+        error_status = error_detail.get("status_code", exc.status_code)
+        error_reason = error_detail.get("details", {}).get("reason") or str(exc.detail)
         logger.bind(
-            event="provider_models_fallback",
+            event="provider_models_fetch_failed",
             module="billing",
             error_type=type(exc).__name__,
             provider=provider_id,
-        ).opt(exception=True).warning(f"模型列表获取失败，回退到本地列表: {exc}")
-        models = pricing_manager.get_all_pricing(provider=provider_id)
+            status_code=error_status,
+        ).warning(f"模型列表获取失败: {error_reason}")
         return {
             "success": False,
             "provider": provider_id,
-            "models": [
-                {
-                    "id": m.id,
-                    "provider": m.provider,
-                    "model": m.model,
-                    "input_price": m.input_price,
-                    "output_price": m.output_price,
-                    "currency": m.currency,
-                    "context_window": m.context_window,
-                    "selected": m.model in selected_models
-                }
-                for m in models
-            ],
+            "models": [],
             "selected_models": selected_models,
-            "source": "local",
+            "source": "remote",
+            "error": build_standard_error(
+                error_code,
+                error_message,
+                request_id=request_id,
+                details={"reason": error_reason, "provider": provider_id},
+                retryable=bool(error_detail.get("retryable", False)),
+                status_code=error_status,
+            ),
+        }
+    except Exception as exc:
+        logger.bind(
+            event="provider_models_fetch_failed",
+            module="billing",
+            error_type=type(exc).__name__,
+            provider=provider_id,
+        ).opt(exception=True).error(f"模型列表获取失败: {exc}")
+        return {
+            "success": False,
+            "provider": provider_id,
+            "models": [],
+            "selected_models": selected_models,
+            "source": "remote",
             "error": build_standard_error(
                 "provider_models_fetch_failed",
-                "模型列表获取失败，已回退到本地模型列表",
+                "模型列表获取失败",
                 request_id=request_id,
                 details={"reason": str(exc), "provider": provider_id},
                 retryable=True,

@@ -70,7 +70,6 @@ interface ApiProviderFormState {
   api_key: string
   has_api_key: boolean
   selected_models: string[]
-  max_tokens: number | ''
 }
 
 interface AddProviderFormState {
@@ -213,6 +212,7 @@ function SettingsPage() {
   const [modelCapabilities, setModelCapabilities] = useState<ModelCapabilitiesResponse | null>(null)
   const [editingTemperature, setEditingTemperature] = useState(0.7)
   const [editingTopK, setEditingTopK] = useState(0.9)
+  const [editingMaxTokensLimit, setEditingMaxTokensLimit] = useState<number | ''>('')
   const [savingModelParams, setSavingModelParams] = useState(false)
   const [hasAttemptedGlobalModelLoad, setHasAttemptedGlobalModelLoad] = useState(false)
   const [globalModelLoadSummary, setGlobalModelLoadSummary] = useState<string | null>(null)
@@ -256,8 +256,7 @@ function SettingsPage() {
     api_endpoint: '',
     api_key: '',
     has_api_key: false,
-    selected_models: [],
-    max_tokens: ''
+    selected_models: []
   })
   const providerApiKeyInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -440,9 +439,12 @@ function SettingsPage() {
 
       setModelOptions(nextOptions)
 
-      if (nextOptions.length > 0) {
-        const exists = nextOptions.some((option) => option.id === globalSelectedModel)
-        if (!globalSelectedModel || !exists) {
+      if (!globalSelectedModel) {
+        if (configurations.length > 0) {
+          const defaultConfig = configurations.find((config) => config.is_default) || configurations[0]
+          const defaultModelName = defaultConfig.selected_models?.[0] || defaultConfig.model
+          setGlobalSelectedModel(`${defaultConfig.provider}:${defaultModelName}`)
+        } else if (nextOptions.length > 0) {
           setGlobalSelectedModel(nextOptions[0].id)
         }
       }
@@ -687,7 +689,14 @@ function SettingsPage() {
       if (nextConfigModelOptions.length > 0 && !hasSelectedOption) {
         const defaultConfig = configs.find((config) => config.is_default) || configs[0]
         const defaultModelName = defaultConfig.selected_models?.[0] || defaultConfig.model
-        await handleSelectModelConfig(`${defaultConfig.id}:${defaultModelName}`, configs)
+        await handleSelectModelConfig(`${defaultConfig.id}:${defaultModelName}`, configs, true)
+      }
+
+      // Sync global selected model if it's empty
+      if (!globalSelectedModel && configs.length > 0) {
+        const defaultConfig = configs.find((config) => config.is_default) || configs[0]
+        const defaultModelName = defaultConfig.selected_models?.[0] || defaultConfig.model
+        setGlobalSelectedModel(`${defaultConfig.provider}:${defaultModelName}`)
       }
     } catch (error) {
       appLogger.error({ event: 'models_data_load_failed', message: 'Failed to load models data', module: 'settings' })
@@ -696,23 +705,30 @@ function SettingsPage() {
     }
   }
 
-  const handleSelectModelConfig = async (optionKey: string, configsList?: ModelConfiguration[]) => {
+  const handleSelectModelConfig = async (optionKey: string, configsList?: ModelConfiguration[], skipGlobalSync: boolean = false) => {
     setSelectedConfigModelOptionKey(optionKey)
-    const [configIdText] = optionKey.split(':')
+    const [configIdText, modelName] = optionKey.split(':')
     const configId = Number(configIdText)
     const configs = configsList || configurations
     const config = configs.find(c => c.id === configId)
+
+    if (!skipGlobalSync && config && modelName) {
+      setGlobalSelectedModel(`${config.provider}:${modelName}`)
+      appLogger.info({ event: 'global_model_change', module: 'settings', action: 'change_default_model_from_param_panel', status: 'success', message: 'default model changed via param panel', extra: { model: `${config.provider}:${modelName}` } })
+    }
 
     try {
       const capRes = await modelsAPI.getCapabilities(configId)
       setModelCapabilities(capRes.data)
       setEditingTemperature(config?.temperature ?? capRes.data.defaults.temperature)
       setEditingTopK(config?.top_k ?? capRes.data.defaults.top_k)
+      setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
     } catch {
       // Fallback to config values
       setModelCapabilities(null)
       setEditingTemperature(config?.temperature ?? 0.7)
       setEditingTopK(config?.top_k ?? 0.9)
+      setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
     }
   }
 
@@ -723,6 +739,7 @@ function SettingsPage() {
       await modelsAPI.updateParameters(selectedConfigModelOption.configId, {
         temperature: editingTemperature,
         top_k: editingTopK,
+        max_tokens_limit: editingMaxTokensLimit === '' ? null : editingMaxTokensLimit,
       })
       showNotification({ type: 'success', text: '模型参数保存成功' })
       await loadModelsData()
@@ -741,6 +758,7 @@ function SettingsPage() {
       const config = res.data.configuration
       setEditingTemperature(config?.temperature ?? 0.7)
       setEditingTopK(config?.top_k ?? 0.9)
+      setEditingMaxTokensLimit(config?.max_tokens_limit ?? '')
       showNotification({ type: 'success', text: '已重置为默认参数' })
       await loadModelsData()
     } catch {
@@ -818,8 +836,7 @@ function SettingsPage() {
           api_endpoint: '',
           api_key: '',
           has_api_key: false,
-          selected_models: [],
-          max_tokens: ''
+          selected_models: []
         })
         return
       }
@@ -853,20 +870,21 @@ function SettingsPage() {
         ? config.selected_models
         : (providerData.selected_models || [])
 
+      const api_endpoint = (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string
+      
       setProviderForm({
         config_id: config.id,
         provider: config.provider || providerId,
         display_name: config.display_name || providerData.display_name || providerData.name || providerId,
         icon: config.icon || providerData.icon || '',
-        api_endpoint: (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string,
+        api_endpoint,
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
-        selected_models: selectedModels,
-        max_tokens: config.max_tokens ?? ''
+        selected_models: selectedModels
       })
       setSelectedProviderId(providerId)
 
-      await fetchProviderModels(providerId, selectedModels, false)
+      await fetchProviderModels(providerId, selectedModels, false, { api_endpoint })
     } catch (error) {
       showNotification({ type: 'error', text: '加载供应商详情失败' })
     } finally {
@@ -874,7 +892,12 @@ function SettingsPage() {
     }
   }
 
-  const fetchProviderModels = async (providerId: string, fallbackSelectedModels: string[] = [], openModal: boolean = true) => {
+  const fetchProviderModels = async (
+    providerId: string, 
+    fallbackSelectedModels: string[] = [], 
+    openModal: boolean = true,
+    credentials?: { api_endpoint?: string; api_key?: string }
+  ) => {
     if (!providerId) return
 
     setLoadingProviderModels(true)
@@ -882,7 +905,7 @@ function SettingsPage() {
 
     try {
       setProviderModelsError(null)
-      const response = await modelsAPI.getModelsByProvider(providerId)
+      const response = await modelsAPI.getModelsByProvider(providerId, credentials)
       const data = response.data as ProviderModelsResponse
       const selectedModels = Array.isArray(data.selected_models)
         ? data.selected_models
@@ -894,14 +917,15 @@ function SettingsPage() {
       // Update provider form's selected_models so the main page displays them
       setProviderForm(prev => ({ ...prev, selected_models: selectedModels }))
 
+      if (!data.success) {
+        setProviderModelsError(data.error?.message || '获取模型列表失败')
+        return // 获取失败时，不再打开弹窗或覆盖 models
+      }
+
       if (openModal) {
         // Open the modal with pre-selected models
         setModalSelectedModels(selectedModels)
         setShowImportModal(true)
-      }
-
-      if (!data.success && data.error?.message) {
-        setProviderModelsError(data.error.message)
       }
     } catch (error) {
       setFetchedRemoteModels([])
@@ -912,35 +936,116 @@ function SettingsPage() {
   }
 
   const handleImportModels = async () => {
-    if (!providerForm.provider) return
+    if (!providerForm.config_id || !providerForm.provider) {
+      showNotification({ type: 'error', text: '当前供应商配置不完整' })
+      return
+    }
+
+    if (providerForm.api_endpoint) {
+      try {
+        new URL(providerForm.api_endpoint)
+      } catch (error) {
+        showNotification({ type: 'error', text: 'API URL 格式不正确，请输入包含 http:// 或 https:// 的完整链接' })
+        return
+      }
+    }
+
     setImporting(true)
     try {
       const newSelected = [...modalSelectedModels]
-      await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
-      setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
+      const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
+      const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
+      const updatePayload: {
+        display_name?: string
+        icon?: string
+        api_endpoint?: string
+        api_key?: string
+        selected_models?: string[]
+      } = {
+        display_name: providerForm.display_name.trim() || undefined,
+        icon: providerForm.icon.trim() || undefined,
+        api_endpoint: normalizedBaseUrl || undefined,
+        selected_models: newSelected
+      }
+
+      if (nextApiKey) {
+        updatePayload.api_key = nextApiKey
+      }
+
+      await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
+      
+      setProviderForm(prev => ({ 
+        ...prev, 
+        selected_models: newSelected,
+        api_endpoint: normalizedBaseUrl
+      }))
+      
+      if (providerApiKeyInputRef.current) {
+        providerApiKeyInputRef.current.value = ''
+      }
+
       invalidateRemoteModelCache(providerForm.provider)
-      showNotification({ type: 'success', text: '模型导入成功' })
+      showNotification({ type: 'success', text: '模型导入及配置保存成功' })
       setShowImportModal(false)
+      
+      await Promise.all([
+        loadModelsData(), // Refresh AI parameters options
+        loadApiProvidersData(providerForm.provider) // Refresh provider details to ensure UI sync
+      ])
     } catch (error) {
-      showNotification({ type: 'error', text: '模型导入失败' })
+      showNotification({ type: 'error', text: `模型导入失败：${getApiErrorDetail(error)}` })
     } finally {
       setImporting(false)
     }
   }
 
   const handleBatchDeleteModels = async () => {
-    if (!providerForm.provider) return
+    if (!providerForm.config_id || !providerForm.provider) return
     setDeletingModels(true)
     try {
       const newSelected = providerForm.selected_models.filter(m => !selectedForDeletion.includes(m))
-      await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
-      setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
+      const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
+      const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
+      const updatePayload: {
+        display_name?: string
+        icon?: string
+        api_endpoint?: string
+        api_key?: string
+        selected_models?: string[]
+      } = {
+        display_name: providerForm.display_name.trim() || undefined,
+        icon: providerForm.icon.trim() || undefined,
+        api_endpoint: normalizedBaseUrl || undefined,
+        selected_models: newSelected
+      }
+
+      if (nextApiKey) {
+        updatePayload.api_key = nextApiKey
+      }
+
+      await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
+      
+      setProviderForm(prev => ({ 
+        ...prev, 
+        selected_models: newSelected,
+        api_endpoint: normalizedBaseUrl
+      }))
+      
+      if (providerApiKeyInputRef.current) {
+        providerApiKeyInputRef.current.value = ''
+      }
+
       invalidateRemoteModelCache(providerForm.provider)
       setSelectedForDeletion([])
-      showNotification({ type: 'success', text: '批量删除成功' })
+      showNotification({ type: 'success', text: '批量删除及配置保存成功' })
       setShowDeleteModelsModal(false)
+      
+      await Promise.all([
+        loadModelsData(), // Refresh AI parameters options
+        loadApiProvidersData(providerForm.provider) // Refresh provider details to ensure UI sync
+      ])
     } catch (error) {
-      showNotification({ type: 'error', text: '批量删除失败' })
+      showNotification({ type: 'error', text: `批量删除失败：${getApiErrorDetail(error)}` })
     } finally {
       setDeletingModels(false)
     }
@@ -1102,13 +1207,11 @@ function SettingsPage() {
         api_endpoint?: string
         api_key?: string
         selected_models?: string[]
-        max_tokens?: number | null
       } = {
         display_name: providerForm.display_name.trim() || undefined,
         icon: providerForm.icon.trim() || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        selected_models: providerForm.selected_models,
-        max_tokens: providerForm.max_tokens === '' ? null : Number(providerForm.max_tokens)
+        selected_models: providerForm.selected_models
       }
 
       if (nextApiKey) {
@@ -1220,6 +1323,13 @@ function SettingsPage() {
     try {
       await modelsAPI.setDefaultConfiguration(configId)
       showNotification({ type: 'success', text: '设置成功' })
+      
+      const config = configurations.find(c => c.id === configId)
+      if (config) {
+        const defaultModelName = config.selected_models?.[0] || config.model
+        setGlobalSelectedModel(`${config.provider}:${defaultModelName}`)
+      }
+      
       loadModelsData()
     } catch (error) {
       showNotification({ type: 'error', text: '设置失败' })
@@ -1522,6 +1632,29 @@ function SettingsPage() {
                       <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
                     )}
                   </div>
+
+                  <div className={styles['form-group']}>
+                    <label>最大 Tokens (可选)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={editingMaxTokensLimit === '' ? '' : editingMaxTokensLimit}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        if (val === '') {
+                          setEditingMaxTokensLimit('')
+                        } else {
+                          const parsed = parseInt(val, 10)
+                          if (!isNaN(parsed) && parsed > 0) setEditingMaxTokensLimit(parsed)
+                        }
+                      }}
+                      placeholder="默认使用模型上限"
+                      disabled={!selectedConfigModelOption}
+                      className={styles['param-number-input']}
+                    />
+                    <span className={styles['param-hint']}>留空表示使用当前模型的默认限制</span>
+                  </div>
                 </div>
 
                 <div className={styles['model-detail-card']}>
@@ -1743,23 +1876,16 @@ function SettingsPage() {
                           placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
                         />
                       </div>
-                      <div className={styles['form-group']}>
-                        <label>最大 Token 数 (可选)</label>
-                        <input
-                          type="number"
-                          value={providerForm.max_tokens}
-                          onChange={(e) => setProviderForm(prev => ({ ...prev, max_tokens: e.target.value === '' ? '' : Number(e.target.value) }))}
-                          placeholder="例如 4096"
-                          min="1"
-                        />
-                      </div>
                     </div>
 
                     <div className={styles['provider-detail-actions']}>
                       <button
                         type="button"
                         className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models, true)}
+                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models, true, {
+                          api_endpoint: providerForm.api_endpoint,
+                          api_key: providerApiKeyInputRef.current?.value.trim() || providerForm.api_key
+                        })}
                         disabled={loadingProviderModels || deletingProvider}
                       >
                         {loadingProviderModels ? '获取中...' : '获取模型列表'}
