@@ -1,69 +1,31 @@
-## [ERR-20260503-001] frontend-test-command
+## [ERR-20260503-001] git-add-dot-powershell
 
-**Logged**: 2026-05-03T18:42:30+08:00
+**Logged**: 2026-05-03T23:16:00+08:00
 **Priority**: medium
-**Status**: resolved
-**Area**: tests
+**Status**: pending
+**Area**: config
 
 ### Summary
-`frontend` 目录没有 `npm run vitest` 脚本，单测应使用 `npm test -- <file>` 或直接调用 `vitest run`
+在本项目的 Windows PowerShell 环境中执行 `git add .` 可能异常失败，但按文件显式 `git add <paths>` 可以成功。
 
 ### Error
 ```text
-npm error Missing script: "vitest"
+git add .
+退出码：1
+输出为空
 ```
 
 ### Context
-- Command attempted: `npm run vitest -- src/__tests__/features/settings/SettingsPage.test.tsx`
-- Environment: `d:\代码\Open-AwA\frontend`
-- Relevant file: `frontend/package.json`
+- Command/operation attempted: `git add .`
+- Environment: Windows 11, PowerShell, 仓库路径包含中文目录 `d:\代码\Open-AwA`
+- Follow-up command: `git add frontend/src/features/settings/SettingsPage.tsx frontend/src/features/settings/SettingsPage.module.css frontend/src/__tests__/features/settings/SettingsPage.test.tsx`
+- Result: 按显式路径暂存成功
 
 ### Suggested Fix
-- 优先使用 `npm test -- <测试文件>` 运行单测
-- 如果需要 watch 模式，使用 `npm run test:watch`
+在该项目的 Windows 环境中，如 `git add .` 无输出失败，优先回退为显式文件路径暂存，并保留一条经验，后续再排查是否与 shell、编码或工作目录状态有关。
 
 ### Metadata
-- Reproducible: yes
-- Related Files: frontend/package.json
-
-### Resolution
-- **Resolved**: 2026-05-03T18:42:30+08:00
-- **Notes**: 已改用 `npm test -- src/__tests__/features/settings/SettingsPage.test.tsx`，测试通过
-
----
-
-## [ERR-20260503-002] playwright-e2e-webserver
-
-**Logged**: 2026-05-03T18:55:00+08:00
-**Priority**: medium
-**Status**: resolved
-**Area**: tests
-
-### Summary
-Playwright E2E 默认后端端口被占用或 `openawa_e2e.db` 被锁定时，`config.webServer` 会在启动阶段直接失败
-
-### Error
-```text
-Error: http://127.0.0.1:18000/health is already used, make sure that nothing is running on the port/url or set reuseExistingServer:true in config.webServer.
-
-PermissionError: [WinError 32] 另一个程序正在使用此文件，进程无法访问: 'openawa_e2e.db'
-```
-
-### Context
-- Command attempted: `npx playwright test tests/e2e/settings-provider-modal.spec.ts --project=chromium`
-- Environment: `d:\代码\Open-AwA\frontend` on Windows 11
-- Relevant files: `frontend/playwright.config.ts`, `frontend/tests/e2e/settings-provider-modal.spec.ts`
-
-### Suggested Fix
-- 如果 `18000` 已有同项目后端可用，设置 `OPENAWA_E2E_REUSE_SERVER=true` 复用现有服务
-- 如果需要独立环境，除了切换端口，还要确保 `openawa_e2e.db` 未被其他进程占用
-
-### Metadata
-- Reproducible: yes
-- Related Files: frontend/playwright.config.ts, frontend/tests/e2e/settings-provider-modal.spec.ts
-
-### Resolution
-- **Resolved**: 2026-05-03T18:55:00+08:00
-- **Notes**: 本次改用 `OPENAWA_E2E_REUSE_SERVER=true` 复用现有 `18000` 后端后，Playwright 用例通过
+- Reproducible: unknown
+- Related Files: .gitignore, AGENTS.md
 
 ---
