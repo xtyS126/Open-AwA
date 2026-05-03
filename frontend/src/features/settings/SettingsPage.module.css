@@ -586,6 +586,7 @@
   margin-bottom: 0;
 }
 
+.provider-modal-body select,
 .provider-modal-body input[type='text'],
 .provider-modal-body input[type='password'] {
   width: 100%;
@@ -598,6 +599,7 @@
   transition: all 0.2s;
 }
 
+.provider-modal-body select:focus,
 .provider-modal-body input[type='text']:focus,
 .provider-modal-body input[type='password']:focus {
   background: var(--color-bg);

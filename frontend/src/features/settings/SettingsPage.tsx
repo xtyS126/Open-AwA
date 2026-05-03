@@ -9,7 +9,7 @@ import {
   HardDrive
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
-import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse } from '@/shared/api/api'
+import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
@@ -19,7 +19,7 @@ import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import MCPSettings from './MCPSettings'
 import SecuritySettings from './SecuritySettings'
 import styles from './SettingsPage.module.css'
-import { getProviderIcon, getProviderDisplayName, PROVIDER_NAMES } from '@/assets/providers'
+import { getProviderIcon, PROVIDER_NAMES } from '@/assets/providers'
 
 // 已知供应商显示名称由 @/assets/providers 统一提供，参见 PROVIDER_NAMES 与 getProviderDisplayName()
 
@@ -72,20 +72,58 @@ interface ApiProviderFormState {
   max_tokens: number | ''
 }
 
+interface AddProviderFormState {
+  provider: string
+  display_name: string
+  api_endpoint: string
+  is_custom: boolean
+}
+
+const PROVIDER_BASE_SUFFIXES: Record<string, string> = {
+  openai: '/v1',
+  anthropic: '/v1',
+  deepseek: '/v1',
+  google: '/v1beta',
+  alibaba: '/compatible-mode/v1',
+  qwen: '/compatible-mode/v1',
+  moonshot: '/v1',
+  zhipu: '/api/paas/v4',
+  ollama: '/v1',
+}
+
+const PRESET_PROVIDER_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  google: 'https://generativelanguage.googleapis.com/v1beta',
+  deepseek: 'https://api.deepseek.com/v1',
+  alibaba: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  moonshot: 'https://api.moonshot.cn/v1',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  ollama: 'http://127.0.0.1:11434/v1',
+}
+
+function normalizeProviderId(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '-')
+}
+
+function getProviderBaseSuffix(provider: string) {
+  return PROVIDER_BASE_SUFFIXES[normalizeProviderId(provider)] || '/v1'
+}
+
+function getPresetProviderBaseUrl(provider: string) {
+  return PRESET_PROVIDER_BASE_URLS[normalizeProviderId(provider)] || ''
+}
+
 function SettingsPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const queryParams = new URLSearchParams(location.search)
   const initialTab = queryParams.get('tab') || 'general'
 
-  const createInitialAddProviderForm = () => ({
+  const createInitialAddProviderForm = (): AddProviderFormState => ({
     provider: '',
     display_name: '',
-    icon: '',
     api_endpoint: '',
-    api_key: '',
-    base_model: '',
-    max_tokens: '' as number | '',
     is_custom: false
   })
 
@@ -181,7 +219,6 @@ function SettingsPage() {
   // --------------------------------------------------------
 
   const [addProviderForm, setAddProviderForm] = useState(createInitialAddProviderForm())
-  const addProviderApiKeyInputRef = useRef<HTMLInputElement | null>(null)
 
   // Ollama 模型发现相关状态
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
@@ -524,10 +561,7 @@ function SettingsPage() {
     return String(tokens)
   }
 
-
-  const normalizeProviderId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-')
-
-  const normalizeProviderBaseUrl = (apiEndpoint: string) => {
+  const normalizeProviderBaseUrl = (provider: string, apiEndpoint: string) => {
     let raw = apiEndpoint.trim()
     if (!raw) {
       return ''
@@ -560,8 +594,9 @@ function SettingsPage() {
       }
     }
 
-    if (!trimmed.toLowerCase().endsWith('/v1')) {
-      trimmed = `${trimmed}/v1`
+    const baseSuffix = getProviderBaseSuffix(provider)
+    if (!trimmed.toLowerCase().endsWith(baseSuffix.toLowerCase())) {
+      trimmed = `${trimmed}${baseSuffix}`
     }
 
     return trimmed
@@ -573,26 +608,9 @@ function SettingsPage() {
     try {
       const providersRes = await modelsAPI.getProviders()
       const providerList: ModelProvider[] = providersRes.data.providers || []
-      setProviders(providerList)
-
-      if (providerList.length === 0) {
-        setSelectedProviderId('')
-        setProviderModels([])
-        setProviderForm({
-          config_id: null,
-          provider: '',
-          display_name: '',
-          icon: '',
-          api_endpoint: '',
-          api_key: '',
-          has_api_key: false,
-          selected_models: [],
-          max_tokens: ''
-        })
-        return
-      }
-
       const validProviders = providerList.filter(item => (item.configuration_count || 0) > 0)
+      setProviders(validProviders)
+
       if (validProviders.length === 0) {
         setSelectedProviderId('')
         setProviderModels([])
@@ -819,8 +837,7 @@ function SettingsPage() {
 
   const handleCreateProvider = async () => {
     const providerId = normalizeProviderId(addProviderForm.provider)
-    const baseModel = addProviderForm.base_model.trim() || 'custom-model'
-    const nextApiKey = addProviderApiKeyInputRef.current?.value.trim() || ''
+    const nextDisplayName = addProviderForm.display_name.trim()
 
     if (!providerId) {
       showNotification({ type: 'error', text: '请输入供应商标识' })
@@ -839,28 +856,21 @@ function SettingsPage() {
     setCreatingProvider(true)
 
     try {
-      const normalizedBaseUrl = normalizeProviderBaseUrl(addProviderForm.api_endpoint)
+      const normalizedBaseUrl = normalizeProviderBaseUrl(providerId, addProviderForm.api_endpoint)
       await modelsAPI.createConfiguration({
         provider: providerId,
-        model: baseModel,
-        display_name: addProviderForm.display_name.trim() || providerId,
-        icon: addProviderForm.icon.trim() || undefined,
+        model: 'custom-model',
+        display_name: nextDisplayName || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        api_key: nextApiKey || undefined,
-        selected_models: [],
-        max_tokens: addProviderForm.max_tokens === '' ? null : Number(addProviderForm.max_tokens),
         is_default: false
       })
 
-      if (addProviderApiKeyInputRef.current) {
-        addProviderApiKeyInputRef.current.value = ''
-      }
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
       showNotification({ type: 'success', text: '供应商创建成功' })
       await loadApiProvidersData(providerId)
     } catch (error) {
-      showNotification({ type: 'error', text: '供应商创建失败' })
+      showNotification({ type: 'error', text: `供应商创建失败：${getApiErrorDetail(error)}` })
     } finally {
       setCreatingProvider(false)
     }
@@ -884,7 +894,7 @@ function SettingsPage() {
     setSaving(true)
 
     try {
-      const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.api_endpoint)
+      const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
       const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
       const updatePayload: {
         display_name?: string
@@ -918,7 +928,7 @@ function SettingsPage() {
       showNotification({ type: 'success', text: '供应商配置保存成功' })
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
-      showNotification({ type: 'error', text: '保存供应商配置失败' })
+      showNotification({ type: 'error', text: `保存供应商配置失败：${getApiErrorDetail(error)}` })
     } finally {
       setSaving(false)
     }
@@ -2125,21 +2135,38 @@ function SettingsPage() {
 
         {showCreateProviderModal && (
           <div className={styles['provider-modal-overlay']} onClick={handleCloseCreateProviderModal}>
-            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()}>
+            <div
+              className={styles['provider-modal']}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-provider-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className={styles['provider-modal-header']}>
-                <h3>新增供应商</h3>
+                <h3 id="create-provider-modal-title">新增供应商</h3>
               </div>
               <div className={styles['provider-modal-body']}>
                 <div className={styles['form-group']}>
-                  <label>供应商标识</label>
+                  <label htmlFor="add-provider-select">供应商标识</label>
                   <select
+                    id="add-provider-select"
                     value={addProviderForm.is_custom ? '__custom__' : addProviderForm.provider}
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === '__custom__') {
-                        setAddProviderForm(prev => ({ ...prev, is_custom: true, provider: '', display_name: '', base_model: '' }))
+                        setAddProviderForm({
+                          provider: '',
+                          display_name: '',
+                          api_endpoint: '',
+                          is_custom: true
+                        })
                       } else {
-                        setAddProviderForm(prev => ({ ...prev, is_custom: false, provider: val, display_name: PROVIDER_NAMES[val] || '', base_model: '' }))
+                        setAddProviderForm({
+                          provider: val,
+                          display_name: PROVIDER_NAMES[val] || val,
+                          api_endpoint: getPresetProviderBaseUrl(val),
+                          is_custom: false
+                        })
                       }
                     }}
                   >
@@ -2151,6 +2178,7 @@ function SettingsPage() {
                   </select>
                   {addProviderForm.is_custom && (
                     <input
+                      id="add-provider-custom-id"
                       type="text"
                       value={addProviderForm.provider}
                       onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
@@ -2160,59 +2188,23 @@ function SettingsPage() {
                   )}
                 </div>
                 <div className={styles['form-group']}>
-                  <label>显示名称（可选）</label>
+                  <label htmlFor="add-provider-display-name">显示名称（可选）</label>
                   <input
+                    id="add-provider-display-name"
                     type="text"
                     value={addProviderForm.display_name}
                     onChange={(e) => setAddProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
-                    placeholder="例如 Free API"
+                    placeholder="例如：OpenAI"
                   />
                 </div>
                 <div className={styles['form-group']}>
-                  <label>图标地址（可选）</label>
+                  <label htmlFor="add-provider-base-url">基础 URL（可选）</label>
                   <input
-                    type="text"
-                    value={addProviderForm.icon}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, icon: e.target.value }))}
-                    placeholder="https://example.com/icon.png"
-                  />
-                </div>
-                <div className={styles['form-group']}>
-                  <label>默认模型（可选）</label>
-                  <input
-                    type="text"
-                    value={addProviderForm.base_model}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, base_model: e.target.value }))}
-                    placeholder="custom-model"
-                  />
-                </div>
-                <div className={styles['form-group']}>
-                  <label>API URL（可选）</label>
-                  <input
+                    id="add-provider-base-url"
                     type="text"
                     value={addProviderForm.api_endpoint}
                     onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
-                    placeholder="https://api.example.com/v1/chat/completions"
-                  />
-                </div>
-                <div className={styles['form-group']}>
-                  <label>API Key（可选）</label>
-                  <input
-                    type="password"
-                    ref={addProviderApiKeyInputRef}
-                    defaultValue=""
-                    autoComplete="new-password"
-                    placeholder="输入供应商 API Key"
-                  />
-                </div>
-                <div className={styles['form-group']}>
-                  <label>最大 Token 数（可选）</label>
-                  <input
-                    type="number"
-                    value={addProviderForm.max_tokens}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, max_tokens: e.target.value === '' ? '' : Number(e.target.value) }))}
-                    placeholder="例如 4096"
-                    min="1"
+                    placeholder="https://api.example.com/v1"
                   />
                 </div>
               </div>
