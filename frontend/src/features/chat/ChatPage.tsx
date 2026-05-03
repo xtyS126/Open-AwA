@@ -17,6 +17,7 @@ import {
   mergeExecutionMeta,
   normalizeUsage,
 } from '@/features/chat/utils/executionMeta'
+import { stopAgent } from '@/shared/api/taskRuntimeApi'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
 import ConversationSidebar from './components/ConversationSidebar'
@@ -625,6 +626,96 @@ function ChatPage() {
                   return
                 }
 
+                if (event?.type === 'subagent_start' && event.agent_id) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    const toolId = event.agent_id as string
+                    return applyToolUpdate(current, {
+                      id: toolId,
+                      kind: 'task',
+                      name: `子代理: ${event.agent_type || 'unknown'}`,
+                      status: 'running',
+                      detail: typeof event.description === 'string' ? event.description : '子代理已启动',
+                    })
+                  })
+                  return
+                }
+
+                if (event?.type === 'subagent_stop' && event.agent_id) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    const toolId = event.agent_id as string
+                    return applyToolUpdate(current, {
+                      id: toolId,
+                      kind: 'task',
+                      name: `子代理: ${event.agent_type || 'unknown'}`,
+                      status: event.state === 'completed' ? 'completed' : 'error',
+                      detail: typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`,
+                    })
+                  })
+                  return
+                }
+
+                if (event?.type === 'agent_message' && event.agent_id) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    const toolId = event.agent_id as string
+                    return applyToolUpdate(current, {
+                      id: toolId,
+                      kind: 'task',
+                      name: `子代理: ${event.agent_type || 'unknown'}`,
+                      status: 'completed',
+                      detail: typeof event.message === 'string' ? event.message : '子代理消息',
+                    })
+                  })
+                  return
+                }
+
+                // 任务清单生命周期事件
+                if (event?.type === 'task_created' && event.task) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    return applyTaskUpdate(current, {
+                      ...event.task,
+                      status: 'created',
+                    })
+                  })
+                  return
+                }
+
+                if (event?.type === 'task_updated' && event.task) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    return applyTaskUpdate(current, event.task)
+                  })
+                  return
+                }
+
+                if (event?.type === 'task_stopped' && event.task_id) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    return applyToolUpdate(current, {
+                      id: event.task_id as string,
+                      kind: 'task',
+                      name: '任务已停止',
+                      status: 'completed',
+                      detail: typeof event.summary === 'string' ? event.summary : '任务已停止',
+                    })
+                  })
+                  return
+                }
+
+                // 团队生命周期事件（Phase 4）
+                if (event?.type === 'team_event' && event.team) {
+                  updateAssistantMeta(assistantMessageId, (current) => {
+                    return applyToolUpdate(current, {
+                      id: event.team.team_id || `team_${Date.now()}`,
+                      kind: 'task',
+                      name: `团队: ${event.team.name || '未命名'}`,
+                      status: event.team.ok === false ? 'failed' : 'running',
+                      detail:
+                        typeof event.team.state === 'string'
+                          ? `团队状态: ${event.team.state}`
+                          : '团队操作已完成',
+                    })
+                  })
+                  return
+                }
+
                 if (event?.type === 'usage' && event.usage) {
                   const usage = normalizeUsage(event.usage)
                   updateAssistantMeta(assistantMessageId, (current) => ({
@@ -901,6 +992,29 @@ function ChatPage() {
     void loadConversationList(1, false)
   }, [conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation])
 
+  const handleStopAgent = useCallback(async (agentId: string) => {
+    try {
+      const result = await stopAgent(agentId)
+      if (result.ok) {
+        updateAssistantMeta(streamingAssistantId || '', (current) =>
+          applyToolUpdate(current, {
+            id: agentId,
+            kind: 'task',
+            status: 'completed',
+            detail: '已手动停止',
+          })
+        )
+      }
+    } catch (error) {
+      appLogger.warning({
+        event: 'stop_agent_failed',
+        module: 'chat_page',
+        message: 'failed to stop agent',
+        extra: { agentId },
+      })
+    }
+  }, [streamingAssistantId, updateAssistantMeta])
+
   const getStatusIcon = (status: TaskStatus) => {
     switch (status) {
       case 'completed': return <span className={styles['status-dot-completed']} title="已完成" />
@@ -963,6 +1077,16 @@ function ChatPage() {
                 {getStatusIcon(tool.status)}
                 <span className={styles['floating-tool-kind']}>{tool.kind}</span>
                 <span className={styles['floating-tool-name']}>{tool.name}</span>
+                {tool.kind === 'task' && tool.status === 'running' && (
+                  <button
+                    type="button"
+                    className={styles['stop-agent-btn']}
+                    onClick={() => void handleStopAgent(tool.id)}
+                    title="停止此代理"
+                  >
+                    x
+                  </button>
+                )}
               </div>
             ))}
           </div>

@@ -4,8 +4,10 @@
 """
 
 from sqlalchemy import text, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
+from loguru import logger
 from billing.models import ModelPricing, ModelConfiguration
 from config.config_loader import config_loader
 from datetime import datetime, timezone
@@ -810,6 +812,32 @@ class PricingManager:
 
         return normalized
 
+    def _get_configuration_by_provider_model(
+        self,
+        provider: Optional[str],
+        model: Optional[str],
+        exclude_id: Optional[int] = None,
+    ) -> Optional[ModelConfiguration]:
+        """
+        根据 provider/model 查找配置记录。
+
+        该查询不会过滤 `is_active`，用于在新增或更新前统一处理：
+        1. 阻止激活中的重复记录。
+        2. 兼容软删除记录的重新启用，避免再次插入时触发唯一索引冲突。
+        """
+        normalized_provider = self.normalize_provider(provider)
+        normalized_model = self.normalize_model(model)
+        if not normalized_provider or not normalized_model:
+            return None
+
+        query = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == normalized_provider,
+            ModelConfiguration.model == normalized_model,
+        )
+        if exclude_id is not None:
+            query = query.filter(ModelConfiguration.id != exclude_id)
+        return query.first()
+
     def create_configuration(self, config_data: Dict) -> ModelConfiguration:
         """
         创建新的模型配置。
@@ -823,6 +851,33 @@ class PricingManager:
         self.ensure_configuration_schema()
         normalized = self._normalize_configuration_payload(config_data)
 
+        existing = self._get_configuration_by_provider_model(
+            normalized.get("provider"),
+            normalized.get("model"),
+        )
+        if existing:
+            if existing.is_active:
+                raise ValueError(
+                    f"Configuration already exists for provider '{existing.provider}' and model '{existing.model}'"
+                )
+
+            # 软删除记录重新创建时直接复用原记录，避免再次插入触发唯一索引冲突。
+            for key, value in normalized.items():
+                if key != "id":
+                    setattr(existing, key, value)
+            existing.is_active = normalized.get("is_active", True)
+            existing.updated_at = datetime.now(timezone.utc)
+
+            if normalized.get("is_default", False):
+                self.db.query(ModelConfiguration).filter(
+                    ModelConfiguration.is_default == True,
+                    ModelConfiguration.id != existing.id,
+                ).update({"is_default": False})
+
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+
         if normalized.get("is_default", False):
             self.db.query(ModelConfiguration).filter(
                 ModelConfiguration.is_default == True
@@ -830,7 +885,13 @@ class PricingManager:
         
         config = ModelConfiguration(**normalized)
         self.db.add(config)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError(
+                f"Configuration already exists for provider '{normalized.get('provider')}' and model '{normalized.get('model')}'"
+            ) from exc
         self.db.refresh(config)
         return config
 
@@ -859,6 +920,18 @@ class PricingManager:
         if config:
             normalized = self._normalize_configuration_payload(config_data)
 
+            next_provider = normalized.get("provider", config.provider)
+            next_model = normalized.get("model", config.model)
+            duplicate = self._get_configuration_by_provider_model(
+                next_provider,
+                next_model,
+                exclude_id=config_id,
+            )
+            if duplicate and duplicate.is_active:
+                raise ValueError(
+                    f"Configuration already exists for provider '{duplicate.provider}' and model '{duplicate.model}'"
+                )
+
             if normalized.get("is_default", False):
                 self.db.query(ModelConfiguration).filter(
                     ModelConfiguration.is_default == True,
@@ -871,7 +944,13 @@ class PricingManager:
                 elif key != "id":
                     logger.warning(f"拒绝更新不允许的配置字段: {key}")
             config.updated_at = datetime.now(timezone.utc)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except IntegrityError as exc:
+                self.db.rollback()
+                raise ValueError(
+                    f"Configuration already exists for provider '{next_provider}' and model '{next_model}'"
+                ) from exc
             self.db.refresh(config)
 
         return config

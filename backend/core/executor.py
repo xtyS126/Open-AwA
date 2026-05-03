@@ -1019,6 +1019,25 @@ class ExecutionLayer:
         if not func_name:
             return {"ok": False, "error": "tool_call missing function name"}
 
+        # PreToolUse 钩子：分发前校验工具调用权限
+        try:
+            from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_PRE_TOOL_USE
+            results = await hook_dispatcher.dispatch(HOOK_PRE_TOOL_USE, {
+                "tool_name": func_name,
+                "tool_args": func_args,
+                "context": context,
+            })
+            deny_result = hook_dispatcher.has_deny(results)
+            if deny_result:
+                return {"ok": False, "error": deny_result.reason or f"工具调用被阻止: {func_name}",
+                        "blocked_by_hook": True}
+            # 合并钩子对参数的覆写
+            updated_input = hook_dispatcher.get_updated_input(results)
+            if updated_input:
+                func_args = {**func_args, **updated_input}
+        except ImportError:
+            pass
+
         if func_name.startswith("plugin_"):
             remaining = func_name[len("plugin_"):]
             if "__" in remaining:
@@ -1104,6 +1123,148 @@ class ExecutionLayer:
                     tool_name=builtin_name,
                 ).error(f"内置工具执行异常: {exc}")
                 return {"ok": False, "error": f"Builtin tool execution error: {str(exc)}"}
+
+        # 任务运行时工具（task_spawn_agent / task_send_message / task_stop_agent / task_create_team 等）
+        if func_name.startswith("task_"):
+            task_action = func_name[len("task_"):]
+            from core.task_runtime import task_runtime
+
+            await task_runtime.initialize()
+
+            if task_action == "spawn_agent":
+                agent_type = func_args.get("agent_type", "Explore")
+                prompt = func_args.get("prompt", "")
+                description = func_args.get("description", "")
+                model = func_args.get("model")
+                background = func_args.get("background", False)
+                result = await task_runtime.spawn_agent(
+                    agent_type=agent_type,
+                    prompt=prompt,
+                    description=description,
+                    model=model,
+                    background=background,
+                    context=context,
+                )
+                if isinstance(result, dict):
+                    return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+                # 前台模式返回 AsyncGenerator，暂不支持在工具调用中直接消费
+                return {"ok": True, "result": {"message": "前台子代理已启动，通过 SSE 流获取结果"}, "tool_name": func_name}
+
+            elif task_action == "send_message":
+                to = func_args.get("to", "")
+                message = func_args.get("message", "")
+                result = await task_runtime.send_message(to=to, message=message)
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "stop_agent":
+                agent_id = func_args.get("agent_id", "")
+                result = await task_runtime.stop_agent(agent_id)
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "list_agents":
+                agent_type_filter = func_args.get("agent_type")
+                state_filter = func_args.get("state")
+                result = await task_runtime.list_agents(state=state_filter)
+                return {"ok": True, "result": {"agents": result}, "tool_name": func_name}
+
+            elif task_action == "list_agent_types":
+                result = await task_runtime.list_agent_types()
+                return {"ok": True, "result": {"agent_types": result}, "tool_name": func_name}
+
+            elif task_action == "create_task":
+                result = await task_runtime.create_task_item(
+                    list_id=func_args.get("list_id"),
+                    subject=func_args.get("subject", ""),
+                    description=func_args.get("description"),
+                    dependencies=func_args.get("dependencies"),
+                    owner_agent_id=func_args.get("owner_agent_id"),
+                )
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "list_tasks":
+                result = await task_runtime.list_task_items(
+                    list_id=func_args.get("list_id"),
+                    status=func_args.get("status"),
+                )
+                return {"ok": True, "result": {"tasks": result}, "tool_name": func_name}
+
+            elif task_action == "update_task":
+                result = await task_runtime.update_task_item(
+                    func_args.get("task_id", ""),
+                    status=func_args.get("status"),
+                    subject=func_args.get("subject"),
+                    owner_agent_id=func_args.get("owner_agent_id"),
+                    result_summary=func_args.get("result_summary"),
+                )
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "claim_task":
+                task_id = func_args.get("task_id", "")
+                agent_id = context.get("agent_id", context.get("session_id", "unknown"))
+                result = await task_runtime.claim_task_item(task_id=task_id, agent_id=agent_id)
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "get_task":
+                task_id = func_args.get("task_id", "")
+                result = await task_runtime.get_task_item(task_id)
+                if not result:
+                    return {"ok": False, "error": f"任务不存在: {task_id}"}
+                return {"ok": True, "result": result, "tool_name": func_name}
+
+            elif task_action == "create_team":
+                result = await task_runtime.create_team(
+                    lead_agent_id=func_args.get("lead_agent_id", ""),
+                    name=func_args.get("name", ""),
+                    teammate_agent_ids=func_args.get("teammate_agent_ids"),
+                    task_list_id=func_args.get("task_list_id"),
+                )
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "delete_team":
+                result = await task_runtime.delete_team(func_args.get("team_id", ""))
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "list_teams":
+                result = await task_runtime.list_teams(state=func_args.get("state"))
+                return {"ok": True, "result": {"teams": result}, "tool_name": func_name}
+
+            elif task_action == "get_team":
+                result = await task_runtime.get_team(func_args.get("team_id", ""))
+                if not result:
+                    return {"ok": False, "error": f"团队不存在: {func_args.get('team_id')}"}
+                return {"ok": True, "result": result, "tool_name": func_name}
+
+            elif task_action == "add_teammate":
+                result = await task_runtime.add_teammate(
+                    func_args.get("team_id", ""),
+                    func_args.get("agent_id", ""),
+                    func_args.get("name", ""),
+                )
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "remove_teammate":
+                result = await task_runtime.remove_teammate(
+                    func_args.get("team_id", ""),
+                    func_args.get("agent_id", ""),
+                )
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            elif task_action == "get_mailbox":
+                result = await task_runtime.get_mailbox(
+                    agent_id=func_args.get("agent_id", ""),
+                    unread_only=func_args.get("unread_only", False),
+                )
+                return {"ok": True, "result": {"messages": result}, "tool_name": func_name}
+
+            elif task_action == "todo_write":
+                result = await task_runtime.sync_todo_snapshot(
+                    list_id=func_args.get("list_id"),
+                    todos=func_args.get("todos", []),
+                )
+                return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
+
+            else:
+                return {"ok": False, "error": f"未知任务运行时工具: {task_action}"}
 
         return {"ok": False, "error": f"No handler for tool: {func_name}"}
 

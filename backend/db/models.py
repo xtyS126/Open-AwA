@@ -558,6 +558,150 @@ class TokenBlacklist(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class TaskAgentDefinition(Base):
+    """
+    代理类型定义持久化模型，存储用户自定义代理类型的静态配置。
+    内置代理类型（Explore/Plan/general-purpose）仍由代码定义，用户可通过此表扩展。
+    """
+    __tablename__ = "task_agent_definitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), default="user")  # system / project / user / plugin
+    description: Mapped[str] = mapped_column(String(500), default="")
+    system_prompt: Mapped[str] = mapped_column(Text, default="")
+    tools_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    disallowed_tools_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    permission_mode: Mapped[str] = mapped_column(String(30), default="default")
+    memory_mode: Mapped[str] = mapped_column(String(20), default="none")
+    background_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    isolation_mode: Mapped[str] = mapped_column(String(20), default="inherit")
+    color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class TaskAgentSession(Base):
+    """
+    代理运行实例模型，记录每一次子代理派生的会话状态、运行模式与结果摘要。
+    支持显式事务领取与超时回收，确保分布式场景下的运行权安全。
+    """
+    __tablename__ = "task_agent_sessions"
+
+    agent_id: Mapped[str] = mapped_column(String(50), primary_key=True, index=True)
+    parent_session_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    root_chat_session_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    agent_type: Mapped[str] = mapped_column(String(100), default="general-purpose")
+    state: Mapped[str] = mapped_column(String(50), default="created", index=True)
+    run_mode: Mapped[str] = mapped_column(String(20), default="foreground")
+    isolation_mode: Mapped[str] = mapped_column(String(20), default="inherit")
+    transcript_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class TaskItem(Base):
+    """
+    共享任务清单项模型，记录任务主题、描述、状态、依赖与执行结果。
+    支持多代理协同更新同一任务清单。
+    """
+    __tablename__ = "task_items"
+
+    task_id: Mapped[str] = mapped_column(String(50), primary_key=True, index=True)
+    list_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    subject: Mapped[str] = mapped_column(String(300), default="")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
+    dependencies_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    owner_agent_id: Mapped[Optional[str]] = mapped_column(String(50), index=True, nullable=True)
+    result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_ref: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class TaskEvent(Base):
+    """
+    任务事件审计模型，记录代理生命周期与任务状态变更的结构化日志。
+    """
+    __tablename__ = "task_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(100), index=True)
+    entity_type: Mapped[str] = mapped_column(String(50), index=True)
+    entity_id: Mapped[str] = mapped_column(String(100), index=True)
+    payload_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class TaskTeam(Base):
+    """
+    代理团队元数据模型，记录团队的 lead、状态与共享任务清单。
+    支持实验性多代理协作场景。
+    """
+    __tablename__ = "task_teams"
+
+    team_id: Mapped[str] = mapped_column(String(50), primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    lead_agent_id: Mapped[Optional[str]] = mapped_column(String(50), index=True, nullable=True)
+    state: Mapped[str] = mapped_column(String(50), default="starting", index=True)
+    task_list_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    member_snapshot_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class TaskTeamMember(Base):
+    """
+    团队成员模型，记录成员代理 ID、角色与当前状态。
+    """
+    __tablename__ = "task_team_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[str] = mapped_column(String(50), ForeignKey("task_teams.team_id"), index=True)
+    agent_id: Mapped[str] = mapped_column(String(50), index=True)
+    name: Mapped[str] = mapped_column(String(100), default="")
+    role: Mapped[str] = mapped_column(String(50), default="teammate")  # lead / teammate
+    state: Mapped[str] = mapped_column(String(50), default="active")  # active / idle / stopped
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class TaskMailboxMessage(Base):
+    """
+    代理间消息模型，记录队友之间的消息传递与送达状态。
+    支持 SendMessage 的 team 通信路径。
+    """
+    __tablename__ = "task_mailbox_messages"
+
+    message_id: Mapped[str] = mapped_column(String(50), primary_key=True, index=True)
+    from_agent_id: Mapped[str] = mapped_column(String(50), index=True)
+    to_agent_id: Mapped[str] = mapped_column(String(50), index=True)
+    team_id: Mapped[Optional[str]] = mapped_column(String(50), index=True, nullable=True)
+    payload_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    delivered: Mapped[bool] = mapped_column(Boolean, default=False)
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 def _migrate_conversation_record_metadata_column(use_engine=None):
     """
     迁移 conversation_records 表的 metadata 列到 record_metadata 列。

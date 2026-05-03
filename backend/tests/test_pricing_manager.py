@@ -446,3 +446,70 @@ class TestDeleteProviderConfigurations:
         deleted_count = pricing_manager.delete_provider_configurations("  DeepSeek  ")
 
         assert deleted_count == 1
+
+
+class TestCreateConfiguration:
+    """
+    覆盖新增模型配置时的重复保护与软删除重建场景。
+    """
+
+    def test_create_configuration_raises_value_error_when_active_duplicate_exists(self, pricing_manager, db_session):
+        """
+        已有激活配置时再次创建相同 provider/model，应返回明确业务错误而不是数据库 500。
+        """
+        db_session.add(
+            ModelConfiguration(
+                provider="deepseek",
+                model="custom-model",
+                display_name="DeepSeek",
+                is_active=True,
+                is_default=False,
+            )
+        )
+        db_session.commit()
+
+        with pytest.raises(ValueError) as excinfo:
+            pricing_manager.create_configuration({
+                "provider": "deepseek",
+                "model": "custom-model",
+                "display_name": "DeepSeek Duplicate",
+                "api_endpoint": "https://api.deepseek.com/v1",
+                "is_default": False,
+            })
+
+        assert "already exists" in str(excinfo.value)
+
+    def test_create_configuration_reuses_soft_deleted_record(self, pricing_manager, db_session):
+        """
+        软删除后重新创建相同 provider/model，应复用原记录并重新激活，避免唯一索引冲突。
+        """
+        deleted_config = ModelConfiguration(
+            provider="deepseek",
+            model="custom-model",
+            display_name="旧配置",
+            api_endpoint="https://old.example.com/v1",
+            is_active=False,
+            is_default=False,
+        )
+        db_session.add(deleted_config)
+        db_session.commit()
+        deleted_id = deleted_config.id
+
+        recreated = pricing_manager.create_configuration({
+            "provider": "deepseek",
+            "model": "custom-model",
+            "display_name": "DeepSeek",
+            "api_endpoint": "https://api.deepseek.com/v1",
+            "is_default": False,
+        })
+
+        assert recreated.id == deleted_id
+        assert recreated.is_active is True
+        assert recreated.display_name == "DeepSeek"
+        assert recreated.api_endpoint == "https://api.deepseek.com/v1"
+
+        rows = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "deepseek",
+            ModelConfiguration.model == "custom-model",
+        ).all()
+        assert len(rows) == 1

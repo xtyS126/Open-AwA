@@ -119,6 +119,9 @@ desktop.ini
 .idea/
 .trae/
 .github/
+.claude/
+.trae/
+.learnings/
 *.suo
 *.ntvs*
 *.njsproj

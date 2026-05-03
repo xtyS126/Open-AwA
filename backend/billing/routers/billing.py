@@ -671,7 +671,10 @@ async def create_configuration(
     实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
     """
     pricing_manager = PricingManager(db)
-    config = pricing_manager.create_configuration(config_data.dict())
+    try:
+        config = pricing_manager.create_configuration(config_data.dict())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     
     return {
         "success": True,
@@ -695,8 +698,11 @@ async def update_configuration(
     
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update")
-    
-    updated = pricing_manager.update_configuration(config_id, update_dict)
+
+    try:
+        updated = pricing_manager.update_configuration(config_id, update_dict)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     
     if not updated:
         raise HTTPException(status_code=404, detail="Configuration not found")
