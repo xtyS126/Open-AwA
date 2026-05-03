@@ -9,6 +9,7 @@ const {
   getBindingMock,
   getParamsMock,
   getAutoReplyStatusMock,
+  getRulesMock,
   startAutoReplyMock,
   stopAutoReplyMock,
   restartAutoReplyMock,
@@ -19,6 +20,7 @@ const {
   getBindingMock: vi.fn(),
   getParamsMock: vi.fn(),
   getAutoReplyStatusMock: vi.fn(),
+  getRulesMock: vi.fn(),
   startAutoReplyMock: vi.fn(),
   stopAutoReplyMock: vi.fn(),
   restartAutoReplyMock: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('@/shared/api/api', () => ({
     getBinding: getBindingMock,
     getParams: getParamsMock,
     getAutoReplyStatus: getAutoReplyStatusMock,
+    getRules: getRulesMock,
     startAutoReply: startAutoReplyMock,
     stopAutoReply: stopAutoReplyMock,
     restartAutoReply: restartAutoReplyMock,
@@ -120,6 +123,9 @@ describe('CommunicationPage', () => {
     })
     getAutoReplyStatusMock.mockResolvedValue({
       data: buildAutoReplyStatus()
+    })
+    getRulesMock.mockResolvedValue({
+      data: []
     })
     startAutoReplyMock.mockResolvedValue({
       data: buildAutoReplyStatus({ auto_reply_running: true })

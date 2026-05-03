@@ -37,3 +37,7 @@ export async function loginAsAdminPage(page: Page, loginUrl = '/login') {
   await page.getByRole('button', { name: '登录' }).click()
   await page.waitForURL(/\/chat/, { timeout: 30_000 })
 }
+
+export async function loginAndSaveState(page: Page, loginUrl = '/login') {
+  await loginAsAdminPage(page, loginUrl)
+}

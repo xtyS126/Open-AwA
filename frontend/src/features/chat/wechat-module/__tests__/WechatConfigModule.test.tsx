@@ -125,7 +125,7 @@ describe('WechatConfigModule', () => {
     render(<WechatConfigModule />)
     
     // Check if adding new rule works
-    const addBtn = screen.getByText('添加新规则')
+    const addBtn = screen.getByText('添加规则')
     fireEvent.click(addBtn)
     expect(mockHookReturn.setEditingRule).toHaveBeenCalled()
   })
@@ -142,6 +142,8 @@ describe('WechatConfigModule', () => {
     expect(screen.getByText('获取登录二维码')).toBeInTheDocument()
     expect(screen.getByAltText('微信登录二维码')).toBeInTheDocument()
   })
+
+  it('shows stop button enabled when auto reply is running', () => {
     vi.mocked(useWechatConfig).mockReturnValue({
       ...mockHookReturn,
       autoReplyStatus: { auto_reply_running: true, binding_ready: true },

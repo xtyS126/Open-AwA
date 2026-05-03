@@ -266,6 +266,9 @@ def _map_litellm_error(
     将 LiteLLM 异常映射为统一业务错误结构。
     """
     status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
     error_code = STATUS_CODE_ERROR_MAP.get(
         status_code, "model_service_unexpected_error"
     ) if status_code else "model_service_unexpected_error"

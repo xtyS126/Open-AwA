@@ -310,8 +310,6 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN icon VARCHAR"))
         if "selected_models" not in columns:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN selected_models TEXT"))
-        if "max_tokens" not in columns:
-            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN max_tokens INTEGER"))
 
         self.db.commit()
 
@@ -806,9 +804,6 @@ class PricingManager:
             normalized["api_key"] = normalized["api_key"].strip() or None
         if "selected_models" in normalized:
             normalized["selected_models"] = self.serialize_selected_models(normalized.get("selected_models"))
-        if "max_tokens" in normalized:
-            val = normalized.get("max_tokens")
-            normalized["max_tokens"] = int(val) if val is not None else None
 
         return normalized
 
@@ -896,9 +891,11 @@ class PricingManager:
         return config
 
     CONFIG_UPDATE_ALLOWED_FIELDS = {
-        "provider", "model", "api_base", "api_key", "description",
-        "is_default", "is_active", "max_tokens", "temperature",
-        "top_p", "frequency_penalty", "presence_penalty",
+        "provider", "model", "display_name", "description", "icon",
+        "api_endpoint", "api_key", "selected_models",
+        "is_default", "is_active", "sort_order", "status",
+        "temperature", "top_k", "top_p", "max_tokens_limit",
+        "frequency_penalty", "presence_penalty",
     }
 
     def update_configuration(self, config_id: int, config_data: Dict) -> Optional[ModelConfiguration]:

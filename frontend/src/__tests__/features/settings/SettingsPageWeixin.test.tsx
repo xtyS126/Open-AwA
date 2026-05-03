@@ -21,6 +21,7 @@ vi.mock('@/shared/api/api', () => ({
     getBinding: vi.fn(),
     getParams: vi.fn(),
     getAutoReplyStatus: vi.fn(),
+    getRules: vi.fn().mockResolvedValue({ data: [] }),
     startQrLogin: vi.fn(),
     waitQrLogin: vi.fn(),
     exitQrLogin: vi.fn(),
@@ -150,8 +151,8 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
       expect(weixinAPI.getConfig).toHaveBeenCalledTimes(1)
     })
 
-    const accountIdInput = screen.getByPlaceholderText('输入微信通讯账户 ID') as HTMLInputElement
-    const tokenInput = screen.getByPlaceholderText('输入 iLink Bot Token') as HTMLInputElement
+    const accountIdInput = await screen.findByPlaceholderText('输入微信通讯账户 ID') as HTMLInputElement
+    const tokenInput = await screen.findByPlaceholderText('输入 iLink Bot Token') as HTMLInputElement
 
     expect(accountIdInput.value).toBe('test_account')
     expect(tokenInput.value).toBe('test_token')

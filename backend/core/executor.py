@@ -473,6 +473,10 @@ class ExecutionLayer:
                 pricing_manager = PricingManager(db)
                 if provider and model:
                     config = pricing_manager.get_configuration_by_provider_model(provider, model)
+                if not config and provider:
+                    # 当聊天页传入的是 selected_models 中的真实模型名时，
+                    # 数据库里通常只保存 provider 级的 custom-model 配置。
+                    config = pricing_manager.get_default_provider_configuration(provider)
                 if not config:
                     config = pricing_manager.get_default_configuration()
             except Exception as e:
@@ -485,7 +489,7 @@ class ExecutionLayer:
             model = model or config.model
             api_key = config.api_key
             api_endpoint = config.api_endpoint
-            max_tokens = getattr(config, "max_tokens", None)
+            max_tokens = getattr(config, "max_tokens_limit", None)
             selected_models: list[str] = []
             try:
                 from billing.pricing_manager import PricingManager
