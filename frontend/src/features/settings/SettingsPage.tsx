@@ -13,6 +13,7 @@ import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollec
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
+import type { ModelOption } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
@@ -78,6 +79,23 @@ interface AddProviderFormState {
   api_endpoint: string
   is_custom: boolean
 }
+
+interface ConfigModelOption {
+  key: string
+  configId: number
+  provider: string
+  providerDisplayName: string
+  modelName: string
+  configuration: ModelConfiguration
+}
+
+interface RemoteModelCacheEntry {
+  signature: string
+  fetchedAt: number
+  options: ModelOption[]
+}
+
+const REMOTE_MODEL_CACHE_TTL_MS = 5 * 60 * 1000
 
 const PROVIDER_BASE_SUFFIXES: Record<string, string> = {
   openai: '/v1',
@@ -191,12 +209,14 @@ function SettingsPage() {
   })
 
   // Model parameter panel state
-  const [selectedModelConfigId, setSelectedModelConfigId] = useState<number | null>(null)
+  const [selectedConfigModelOptionKey, setSelectedConfigModelOptionKey] = useState('')
   const [modelCapabilities, setModelCapabilities] = useState<ModelCapabilitiesResponse | null>(null)
   const [editingTemperature, setEditingTemperature] = useState(0.7)
   const [editingTopK, setEditingTopK] = useState(0.9)
-  const [editingMaxTokens, setEditingMaxTokens] = useState<number | null>(null)
   const [savingModelParams, setSavingModelParams] = useState(false)
+  const [hasAttemptedGlobalModelLoad, setHasAttemptedGlobalModelLoad] = useState(false)
+  const [globalModelLoadSummary, setGlobalModelLoadSummary] = useState<string | null>(null)
+  const remoteModelCacheRef = useRef<Map<string, RemoteModelCacheEntry>>(new Map())
 
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [loadingApiProviders, setLoadingApiProviders] = useState(false)
@@ -255,32 +275,196 @@ function SettingsPage() {
   // 全局模型选择状态（来自 chatStore）
   const { selectedModel: globalSelectedModel, setSelectedModel: setGlobalSelectedModel, modelOptions, setModelOptions, modelLoading, setModelLoading, modelError, setModelError, outputMode, setOutputMode } = useChatStore()
 
-  // 加载可用模型列表（供通用设置页模型选择器使用）
+  const configModelOptions = useMemo<ConfigModelOption[]>(() => {
+    return configurations.flatMap((configuration) => {
+      const providerDisplayName = providerNameMap[configuration.provider] || configuration.provider
+      const candidateModels = configuration.selected_models && configuration.selected_models.length > 0
+        ? configuration.selected_models
+        : [configuration.model]
+
+      return candidateModels.map((modelName) => ({
+        key: `${configuration.id}:${modelName}`,
+        configId: configuration.id,
+        provider: configuration.provider,
+        providerDisplayName,
+        modelName,
+        configuration,
+      }))
+    })
+  }, [configurations, providerNameMap])
+
+  const selectedConfigModelOption = useMemo(
+    () => configModelOptions.find((option) => option.key === selectedConfigModelOptionKey) ?? null,
+    [configModelOptions, selectedConfigModelOptionKey]
+  )
+
+  const selectedBillingModel = useMemo(() => {
+    if (!selectedConfigModelOption) {
+      return null
+    }
+
+    return models.find((model) => (
+      model.provider === selectedConfigModelOption.provider &&
+      model.model === selectedConfigModelOption.modelName
+    )) ?? null
+  }, [models, selectedConfigModelOption])
+
+  const linkedModelMaxTokens = useMemo(() => {
+    if (!selectedConfigModelOption) {
+      return null
+    }
+
+    return (
+      selectedConfigModelOption.configuration.max_tokens_limit ??
+      selectedConfigModelOption.configuration.model_spec?.max_output_tokens ??
+      modelCapabilities?.limits.max_tokens_max ??
+      selectedBillingModel?.context_window ??
+      null
+    )
+  }, [modelCapabilities, selectedBillingModel, selectedConfigModelOption])
+
+  const linkedModelContextWindow = useMemo(() => {
+    if (!selectedConfigModelOption) {
+      return null
+    }
+
+    return (
+      selectedBillingModel?.context_window ??
+      selectedConfigModelOption.configuration.model_spec?.context_window ??
+      modelCapabilities?.limits.max_tokens_max ??
+      null
+    )
+  }, [modelCapabilities, selectedBillingModel, selectedConfigModelOption])
+
+  const resetGlobalModelOptionsState = () => {
+    setHasAttemptedGlobalModelLoad(false)
+    setGlobalModelLoadSummary(null)
+    setModelOptions([])
+    setModelError(null)
+  }
+
+  const invalidateRemoteModelCache = (providerId?: string) => {
+    if (providerId) {
+      remoteModelCacheRef.current.delete(providerId)
+    } else {
+      remoteModelCacheRef.current.clear()
+    }
+    resetGlobalModelOptionsState()
+  }
+
+  const buildProviderCacheSignature = (provider: ModelProvider): string => {
+    return [
+      provider.id,
+      provider.base_url || provider.api_endpoint || '',
+      provider.has_api_key ? 'with-key' : 'without-key',
+      String(provider.configuration_count || 0),
+    ].join('|')
+  }
+
+  const buildRemoteModelOptions = (provider: ModelProvider, remoteModels: ProviderModel[]): ModelOption[] => {
+    const displayProvider = provider.display_name || provider.name || provider.id
+    const uniqueModels = Array.from(new Set(remoteModels.map((item) => item.model).filter(Boolean)))
+
+    return uniqueModels.map((modelName) => ({
+      id: `${provider.id}:${modelName}`,
+      provider: provider.id,
+      model: modelName,
+      display_name: `${displayProvider} - ${modelName}`,
+    }))
+  }
+
+  // 加载可用远端模型列表（供通用设置页模型选择器使用）
   const loadGlobalModelOptions = async () => {
+    setHasAttemptedGlobalModelLoad(true)
     setModelLoading(true)
     setModelError(null)
+    setGlobalModelLoadSummary(null)
     try {
       const response = await modelsAPI.getProviders()
-      const providersList = response.data.providers || []
-      const flatConfigs: { id: string; provider: string; model: string; display_name: string }[] = []
-      providersList.forEach((provider: { id: string; selected_models?: string[]; display_name?: string; name?: string }) => {
-        const selected = provider.selected_models || []
-        selected.forEach((modelName: string) => {
-          flatConfigs.push({
-            id: `${provider.id}:${modelName}`,
-            provider: provider.id,
-            model: modelName,
-            display_name: `${provider.display_name || provider.name || provider.id} - ${modelName}`
-          })
-        })
-      })
-      setModelOptions(flatConfigs)
-      // 如果当前没有选中模型或选中的模型不存在，自动选择第一个
-      if (flatConfigs.length > 0) {
-        const exists = flatConfigs.some(c => c.id === globalSelectedModel)
-        if (!globalSelectedModel || !exists) {
-          setGlobalSelectedModel(flatConfigs[0].id)
+      const providersList: ModelProvider[] = response.data.providers || []
+      const validProviders = providersList.filter((provider) => (provider.configuration_count || 0) > 0)
+
+      if (validProviders.length === 0) {
+        setModelOptions([])
+        setGlobalModelLoadSummary('暂无已配置的供应商，请先前往 API 配置添加并保存供应商。')
+        return
+      }
+
+      const providerResults = await Promise.all(validProviders.map(async (provider) => {
+        const signature = buildProviderCacheSignature(provider)
+        const cached = remoteModelCacheRef.current.get(provider.id)
+        const cacheValid = cached &&
+          cached.signature === signature &&
+          Date.now() - cached.fetchedAt < REMOTE_MODEL_CACHE_TTL_MS
+
+        if (cacheValid) {
+          return {
+            provider,
+            options: cached.options,
+            ignoredLocalFallback: false,
+            emptyRemoteResult: cached.options.length === 0,
+          }
         }
+
+        const providerModelsResponse = await modelsAPI.getModelsByProvider(provider.id)
+        const providerModelsData = providerModelsResponse.data as ProviderModelsResponse
+
+        if (providerModelsData.source !== 'remote') {
+          remoteModelCacheRef.current.delete(provider.id)
+          return {
+            provider,
+            options: [],
+            ignoredLocalFallback: true,
+            emptyRemoteResult: false,
+          }
+        }
+
+        const options = buildRemoteModelOptions(provider, providerModelsData.models || [])
+        remoteModelCacheRef.current.set(provider.id, {
+          signature,
+          fetchedAt: Date.now(),
+          options,
+        })
+
+        return {
+          provider,
+          options,
+          ignoredLocalFallback: false,
+          emptyRemoteResult: options.length === 0,
+        }
+      }))
+
+      const nextOptions = providerResults
+        .flatMap((result) => result.options)
+        .sort((left, right) => left.display_name.localeCompare(right.display_name, 'zh-CN'))
+
+      setModelOptions(nextOptions)
+
+      if (nextOptions.length > 0) {
+        const exists = nextOptions.some((option) => option.id === globalSelectedModel)
+        if (!globalSelectedModel || !exists) {
+          setGlobalSelectedModel(nextOptions[0].id)
+        }
+      }
+
+      const ignoredProviders = providerResults
+        .filter((result) => result.ignoredLocalFallback)
+        .map((result) => result.provider.display_name || result.provider.name || result.provider.id)
+      const emptyProviders = providerResults
+        .filter((result) => result.emptyRemoteResult)
+        .map((result) => result.provider.display_name || result.provider.name || result.provider.id)
+
+      if (ignoredProviders.length > 0 || emptyProviders.length > 0) {
+        const messages: string[] = []
+        if (ignoredProviders.length > 0) {
+          messages.push(`以下供应商未返回远端模型，已忽略本地回退结果：${ignoredProviders.join('、')}`)
+        }
+        if (emptyProviders.length > 0) {
+          messages.push(`以下供应商当前未返回可用远端模型：${emptyProviders.join('、')}`)
+        }
+        setGlobalModelLoadSummary(messages.join('；'))
+      } else if (nextOptions.length === 0) {
+        setGlobalModelLoadSummary('当前已配置供应商暂未返回可用远端模型，请检查基础 URL、API Key 或稍后重试。')
       }
     } catch (err) {
       appLogger.error({
@@ -292,6 +476,7 @@ function SettingsPage() {
         extra: { error: err instanceof Error ? err.message : String(err) },
       })
       setModelError('加载模型失败，请检查网络连接')
+      setModelOptions([])
     } finally {
       setModelLoading(false)
     }
@@ -301,8 +486,8 @@ function SettingsPage() {
     loadSettings()
     loadPrompts()
     if (activeTab === 'general') {
-      loadGlobalModelOptions()
       loadModelsData()
+      loadBillingData()
     }
     if (activeTab === 'billing') {
       loadBillingData()
@@ -487,9 +672,22 @@ function SettingsPage() {
       setProviders(providersRes.data.providers || [])
 
       // Auto-select default model or first model
-      if (configs.length > 0 && !selectedModelConfigId) {
-        const defaultConfig = configs.find(c => c.is_default) || configs[0]
-        await handleSelectModelConfig(defaultConfig.id, configs)
+      const nextConfigModelOptions = configs.flatMap((configuration) => {
+        const candidateModels = configuration.selected_models && configuration.selected_models.length > 0
+          ? configuration.selected_models
+          : [configuration.model]
+
+        return candidateModels.map((modelName) => ({
+          key: `${configuration.id}:${modelName}`,
+          configId: configuration.id,
+        }))
+      })
+
+      const hasSelectedOption = nextConfigModelOptions.some((option) => option.key === selectedConfigModelOptionKey)
+      if (nextConfigModelOptions.length > 0 && !hasSelectedOption) {
+        const defaultConfig = configs.find((config) => config.is_default) || configs[0]
+        const defaultModelName = defaultConfig.selected_models?.[0] || defaultConfig.model
+        await handleSelectModelConfig(`${defaultConfig.id}:${defaultModelName}`, configs)
       }
     } catch (error) {
       appLogger.error({ event: 'models_data_load_failed', message: 'Failed to load models data', module: 'settings' })
@@ -498,8 +696,10 @@ function SettingsPage() {
     }
   }
 
-  const handleSelectModelConfig = async (configId: number, configsList?: ModelConfiguration[]) => {
-    setSelectedModelConfigId(configId)
+  const handleSelectModelConfig = async (optionKey: string, configsList?: ModelConfiguration[]) => {
+    setSelectedConfigModelOptionKey(optionKey)
+    const [configIdText] = optionKey.split(':')
+    const configId = Number(configIdText)
     const configs = configsList || configurations
     const config = configs.find(c => c.id === configId)
 
@@ -508,24 +708,21 @@ function SettingsPage() {
       setModelCapabilities(capRes.data)
       setEditingTemperature(config?.temperature ?? capRes.data.defaults.temperature)
       setEditingTopK(config?.top_k ?? capRes.data.defaults.top_k)
-      setEditingMaxTokens(config?.max_tokens_limit ?? null)
     } catch {
       // Fallback to config values
       setModelCapabilities(null)
       setEditingTemperature(config?.temperature ?? 0.7)
       setEditingTopK(config?.top_k ?? 0.9)
-      setEditingMaxTokens(config?.max_tokens_limit ?? null)
     }
   }
 
   const handleSaveModelParams = async () => {
-    if (!selectedModelConfigId) return
+    if (!selectedConfigModelOption) return
     setSavingModelParams(true)
     try {
-      await modelsAPI.updateParameters(selectedModelConfigId, {
+      await modelsAPI.updateParameters(selectedConfigModelOption.configId, {
         temperature: editingTemperature,
         top_k: editingTopK,
-        max_tokens_limit: editingMaxTokens,
       })
       showNotification({ type: 'success', text: '模型参数保存成功' })
       await loadModelsData()
@@ -537,14 +734,13 @@ function SettingsPage() {
   }
 
   const handleResetModelParams = async () => {
-    if (!selectedModelConfigId) return
+    if (!selectedConfigModelOption) return
     setSavingModelParams(true)
     try {
-      const res = await modelsAPI.resetParameters(selectedModelConfigId)
+      const res = await modelsAPI.resetParameters(selectedConfigModelOption.configId)
       const config = res.data.configuration
       setEditingTemperature(config?.temperature ?? 0.7)
       setEditingTopK(config?.top_k ?? 0.9)
-      setEditingMaxTokens(config?.max_tokens_limit ?? null)
       showNotification({ type: 'success', text: '已重置为默认参数' })
       await loadModelsData()
     } catch {
@@ -682,6 +878,7 @@ function SettingsPage() {
     if (!providerId) return
 
     setLoadingProviderModels(true)
+    invalidateRemoteModelCache(providerId)
 
     try {
       setProviderModelsError(null)
@@ -721,6 +918,7 @@ function SettingsPage() {
       const newSelected = [...modalSelectedModels]
       await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
       setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
+      invalidateRemoteModelCache(providerForm.provider)
       showNotification({ type: 'success', text: '模型导入成功' })
       setShowImportModal(false)
     } catch (error) {
@@ -737,6 +935,7 @@ function SettingsPage() {
       const newSelected = providerForm.selected_models.filter(m => !selectedForDeletion.includes(m))
       await modelsAPI.updateProviderSelectedModels(providerForm.provider, { selected_models: newSelected })
       setProviderForm(prev => ({ ...prev, selected_models: newSelected }))
+      invalidateRemoteModelCache(providerForm.provider)
       setSelectedForDeletion([])
       showNotification({ type: 'success', text: '批量删除成功' })
       setShowDeleteModelsModal(false)
@@ -867,6 +1066,7 @@ function SettingsPage() {
 
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
+      invalidateRemoteModelCache(providerId)
       showNotification({ type: 'success', text: '供应商创建成功' })
       await loadApiProvidersData(providerId)
     } catch (error) {
@@ -925,6 +1125,7 @@ function SettingsPage() {
       if (providerApiKeyInputRef.current) {
         providerApiKeyInputRef.current.value = ''
       }
+      invalidateRemoteModelCache(providerForm.provider)
       showNotification({ type: 'success', text: '供应商配置保存成功' })
       await loadApiProvidersData(providerForm.provider)
     } catch (error) {
@@ -954,6 +1155,7 @@ function SettingsPage() {
 
     try {
       await modelsAPI.deleteProvider(providerForm.provider)
+      invalidateRemoteModelCache(providerForm.provider)
       showNotification({ type: 'success', text: '供应商删除成功' })
       setShowDeleteConfirmModal(false)
       await loadApiProvidersData()
@@ -995,6 +1197,7 @@ function SettingsPage() {
       showNotification({ type: 'success', text: '添加成功' })
       setNewConfig({ provider: '', model: '', display_name: '', description: '', is_default: false })
       setShowAddForm(false)
+      invalidateRemoteModelCache(newConfig.provider)
       loadModelsData()
     } catch (error) {
       showNotification({ type: 'error', text: '添加失败' })
@@ -1084,6 +1287,10 @@ function SettingsPage() {
   const formatPrice = (price: number, currency: string) => {
     const symbol = currency === 'CNY' ? '¥' : '$'
     return `${symbol}${price.toFixed(4)}`
+  }
+
+  const formatBooleanLabel = (value: boolean | null | undefined): string => {
+    return value ? '支持' : '不支持'
   }
 
   const groupedModels = models.reduce((acc, model) => {
@@ -1190,28 +1397,50 @@ function SettingsPage() {
             </div>
             <div className={styles['setting-item']}>
               <label>默认模型</label>
-              {modelLoading ? (
-                <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>加载模型中...</span>
+              {!hasAttemptedGlobalModelLoad ? (
+                <div className={styles['remote-model-hint']}>
+                  <span>默认不在进入页面时自动拉取远端模型列表，点击下方按钮后再读取。</span>
+                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadGlobalModelOptions}>
+                    加载远端模型
+                  </button>
+                </div>
+              ) : modelLoading ? (
+                <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>加载远端模型中...</span>
               ) : modelError ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: 'var(--color-danger)', fontSize: '13px' }}>{modelError}</span>
                   <button className="btn btn-sm" onClick={loadGlobalModelOptions}>重试</button>
                 </div>
               ) : modelOptions.length === 0 ? (
-                <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>暂无可用模型，请先在 API 配置中添加供应商和模型</span>
+                <div className={styles['remote-model-hint']}>
+                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>
+                    {globalModelLoadSummary || '暂无可用远端模型，请先在 API 配置中检查供应商状态。'}
+                  </span>
+                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadGlobalModelOptions}>
+                    重新读取
+                  </button>
+                </div>
               ) : (
-                <select
-                  value={globalSelectedModel}
-                  onChange={(e) => {
-                    setGlobalSelectedModel(e.target.value)
-                    appLogger.info({ event: 'global_model_change', module: 'settings', action: 'change_default_model', status: 'success', message: 'default model changed', extra: { model: e.target.value } })
-                    showNotification({ type: 'success', text: '默认模型已更新' })
-                  }}
-                >
-                  {modelOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>{opt.display_name}</option>
-                  ))}
-                </select>
+                <div className={styles['remote-model-picker']}>
+                  <select
+                    value={globalSelectedModel}
+                    onChange={(e) => {
+                      setGlobalSelectedModel(e.target.value)
+                      appLogger.info({ event: 'global_model_change', module: 'settings', action: 'change_default_model', status: 'success', message: 'default model changed', extra: { model: e.target.value } })
+                      showNotification({ type: 'success', text: '默认模型已更新' })
+                    }}
+                  >
+                    {modelOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.display_name}</option>
+                    ))}
+                  </select>
+                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadGlobalModelOptions}>
+                    重新读取
+                  </button>
+                </div>
+              )}
+              {hasAttemptedGlobalModelLoad && globalModelLoadSummary && (
+                <span className={styles['param-hint']}>{globalModelLoadSummary}</span>
               )}
             </div>
 
@@ -1224,22 +1453,19 @@ function SettingsPage() {
                   <div className={styles['form-group']}>
                     <label>配置模型</label>
                     <select
-                      value={selectedModelConfigId ?? ''}
+                      value={selectedConfigModelOptionKey}
                       onChange={(e) => {
-                        const id = Number(e.target.value)
-                        if (id) handleSelectModelConfig(id)
+                        if (e.target.value) {
+                          void handleSelectModelConfig(e.target.value)
+                        }
                       }}
                     >
                       <option value="">选择模型</option>
-                      {configurations.map(c => {
-                        const displayProvider = providerNameMap[c.provider] || c.provider
-                        const models = c.selected_models && c.selected_models.length > 0 ? c.selected_models : [c.model]
-                        return models.map(modelName => (
-                          <option key={`${c.id}:${modelName}`} value={c.id}>
-                            {displayProvider} / {modelName}
-                          </option>
-                        ))
-                      })}
+                      {configModelOptions.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.providerDisplayName} / {option.modelName}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -1255,7 +1481,7 @@ function SettingsPage() {
                         step={0.1}
                         value={editingTemperature}
                         onChange={(e) => setEditingTemperature(parseFloat(e.target.value))}
-                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
+                        disabled={!selectedConfigModelOption || modelCapabilities?.capabilities.supports_temperature === false}
                         className={styles['param-slider']}
                       />
                       <input
@@ -1268,7 +1494,7 @@ function SettingsPage() {
                           const val = parseFloat(e.target.value)
                           if (!isNaN(val) && val >= 0 && val <= 2) setEditingTemperature(val)
                         }}
-                        disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_temperature === false}
+                        disabled={!selectedConfigModelOption || modelCapabilities?.capabilities.supports_temperature === false}
                         className={styles['param-number-input']}
                       />
                     </div>
@@ -1289,50 +1515,102 @@ function SettingsPage() {
                         const val = parseFloat(e.target.value)
                         if (!isNaN(val) && val >= 0 && val <= 1) setEditingTopK(val)
                       }}
-                      disabled={!selectedModelConfigId || modelCapabilities?.capabilities.supports_top_k === false}
+                      disabled={!selectedConfigModelOption || modelCapabilities?.capabilities.supports_top_k === false}
                       className={styles['param-number-input']}
                     />
                     {modelCapabilities?.capabilities.supports_top_k === false && (
                       <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
                     )}
                   </div>
+                </div>
 
-                  <div className={styles['form-group']}>
-                    <label>
-                      最大 Tokens
-                      {modelCapabilities && (
-                        <span className={styles['param-hint-inline']}>
-                          {' '}(上限: {formatTokenCount(modelCapabilities.limits.max_tokens_max)})
-                        </span>
+                <div className={styles['model-detail-card']}>
+                  <h4>当前模型详情</h4>
+                  {!selectedConfigModelOption ? (
+                    <div className={styles['model-detail-empty']}>
+                      请选择模型后查看计费配置详情。
+                    </div>
+                  ) : (
+                    <>
+                      <div className={styles['model-detail-grid']}>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>供应商</span>
+                          <span>{selectedConfigModelOption.providerDisplayName}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>模型名称</span>
+                          <span>{selectedConfigModelOption.modelName}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>当前最大 Tokens</span>
+                          <span>{formatTokenCount(linkedModelMaxTokens)}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>上下文窗口</span>
+                          <span>{formatTokenCount(linkedModelContextWindow)}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>输入价格</span>
+                          <span>{selectedBillingModel ? formatPrice(selectedBillingModel.input_price, selectedBillingModel.currency) : '-'}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>输出价格</span>
+                          <span>{selectedBillingModel ? formatPrice(selectedBillingModel.output_price, selectedBillingModel.currency) : '-'}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>缓存价格</span>
+                          <span>{selectedBillingModel?.cache_hit_price != null ? formatPrice(selectedBillingModel.cache_hit_price, selectedBillingModel.currency) : '-'}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>计费币种</span>
+                          <span>{selectedBillingModel?.currency || '-'}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>视觉能力</span>
+                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.supports_vision ?? selectedBillingModel?.supports_vision ?? null)}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>多模态</span>
+                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.is_multimodal ?? selectedBillingModel?.is_multimodal ?? null)}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>函数调用</span>
+                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.model_spec?.supports_function_calling ?? modelCapabilities?.capabilities.supports_function_calling ?? null)}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>流式输出</span>
+                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.model_spec?.supports_streaming ?? modelCapabilities?.capabilities.supports_streaming ?? null)}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>状态</span>
+                          <span>{selectedConfigModelOption.configuration.status || 'active'}</span>
+                        </div>
+                        <div className={styles['model-detail-item']}>
+                          <span className={styles['model-detail-label']}>更新时间</span>
+                          <span>{selectedConfigModelOption.configuration.updated_at ? new Date(selectedConfigModelOption.configuration.updated_at).toLocaleString('zh-CN') : '-'}</span>
+                        </div>
+                      </div>
+                      {!selectedBillingModel && (
+                        <div className={`${styles['message']} ${styles['error']}`} style={{ marginTop: '16px', marginBottom: 0 }}>
+                          当前模型未在计费模型表中找到对应详情，已仅展示模型配置与能力信息。
+                        </div>
                       )}
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={modelCapabilities?.limits.max_tokens_max ?? 999999}
-                      value={editingMaxTokens ?? modelCapabilities?.defaults.max_tokens ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value === '' ? null : parseInt(e.target.value)
-                        setEditingMaxTokens(val)
-                      }}
-                      disabled={!selectedModelConfigId}
-                      placeholder={modelCapabilities ? `默认: ${formatTokenCount(modelCapabilities.defaults.max_tokens)}` : ''}
-                    />
-                  </div>
+                    </>
+                  )}
                 </div>
 
                 <div className={styles['model-param-actions']}>
                   <button
                     className={`btn btn-primary`}
                     onClick={handleSaveModelParams}
-                    disabled={!selectedModelConfigId || savingModelParams}
+                    disabled={!selectedConfigModelOption || savingModelParams}
                   >
                     {savingModelParams ? '保存中...' : '保存参数'}
                   </button>
                   <button
                     className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
                     onClick={handleResetModelParams}
-                    disabled={!selectedModelConfigId || savingModelParams}
+                    disabled={!selectedConfigModelOption || savingModelParams}
                   >
                     重置为默认
                   </button>
@@ -1876,7 +2154,7 @@ function SettingsPage() {
                     {configurations.map(config => {
                       const contextWindow = config.model_spec?.context_window
                       return (
-                        <tr key={config.id} className={selectedModelConfigId === config.id ? styles['selected-row'] : ''}>
+                        <tr key={config.id} className={selectedConfigModelOption?.configId === config.id ? styles['selected-row'] : ''}>
                           <td>
                             <span className={styles['model-icon-badge']}>
                               {(() => {
