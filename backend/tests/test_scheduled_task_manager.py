@@ -245,3 +245,239 @@ def test_claim_task_for_execution_rejects_second_claim(monkeypatch, testing_sess
     assert task is not None
     assert task.status == "running"
     assert len(executions) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_missing_plugin_name_raises(monkeypatch):
+    """缺少 plugin_name 时应抛出 RuntimeError"""
+    from plugins import plugin_instance
+
+    manager = ScheduledTaskManager()
+    # 确保 PluginManager 存在以避免导入阶段报错
+    monkeypatch.setattr(
+        plugin_instance, "get",
+        lambda: _FakePluginManager({}, {}, [])
+    )
+
+    with pytest.raises(RuntimeError, match="缺少 plugin_name 或 command_name"):
+        await manager._run_plugin_command({
+            "plugin_name": "",
+            "command_name": "",
+            "command_params": {},
+        })
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_missing_command_name_raises(monkeypatch):
+    """缺少 command_name 时应抛出 RuntimeError"""
+    from plugins import plugin_instance
+
+    manager = ScheduledTaskManager()
+    monkeypatch.setattr(
+        plugin_instance, "get",
+        lambda: _FakePluginManager({}, {}, [])
+    )
+
+    with pytest.raises(RuntimeError, match="缺少 plugin_name 或 command_name"):
+        await manager._run_plugin_command({
+            "plugin_name": "test_plugin",
+            "command_name": "",
+            "command_params": {},
+        })
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_plugin_not_found(monkeypatch):
+    """插件未在 metadata 中注册时抛出 RuntimeError"""
+    from plugins import plugin_instance
+
+    manager = ScheduledTaskManager()
+    monkeypatch.setattr(
+        plugin_instance, "get",
+        lambda: _FakePluginManager({}, {}, [])
+    )
+
+    with pytest.raises(RuntimeError, match="插件未找到"):
+        await manager._run_plugin_command({
+            "plugin_name": "nonexistent_plugin",
+            "command_name": "some_cmd",
+            "command_params": {},
+        })
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_load_failure(monkeypatch):
+    """插件加载失败时抛出 RuntimeError"""
+    from plugins import plugin_instance
+
+    manager = ScheduledTaskManager()
+    pm = _FakePluginManager(
+        loaded={},
+        metadata={"lazy_plugin": {}},
+        tools=[],
+        load_success=False,
+    )
+    monkeypatch.setattr(plugin_instance, "get", lambda: pm)
+
+    with pytest.raises(RuntimeError, match="无法加载插件"):
+        await manager._run_plugin_command({
+            "plugin_name": "lazy_plugin",
+            "command_name": "cmd",
+            "command_params": {},
+        })
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_success(monkeypatch):
+    """成功执行插件命令返回结果"""
+    from plugins import plugin_instance
+
+    pm = _FakePluginManager(
+        loaded={"test_plugin": object()},
+        metadata={},
+        tools=[],
+        exec_result={"status": "completed", "response": "done"},
+    )
+    monkeypatch.setattr(plugin_instance, "get", lambda: pm)
+
+    manager = ScheduledTaskManager()
+    result = await manager._run_plugin_command({
+        "plugin_name": "test_plugin",
+        "command_name": "greet",
+        "command_params": {"name": "world"},
+    })
+
+    assert result["status"] == "completed"
+    assert result["response"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_non_dict_result_wrapped(monkeypatch):
+    """非字典返回值自动包装为 completed 状态"""
+    from plugins import plugin_instance
+
+    pm = _FakePluginManager(
+        loaded={"test_plugin": object()},
+        metadata={},
+        tools=[],
+        exec_result="plain string result",
+    )
+    monkeypatch.setattr(plugin_instance, "get", lambda: pm)
+
+    manager = ScheduledTaskManager()
+    result = await manager._run_plugin_command({
+        "plugin_name": "test_plugin",
+        "command_name": "run",
+        "command_params": {},
+    })
+
+    assert result["status"] == "completed"
+    assert result["response"] == "plain string result"
+
+
+@pytest.mark.asyncio
+async def test_run_plugin_command_error_status_raises(monkeypatch):
+    """插件返回 error 状态时抛出 RuntimeError"""
+    from plugins import plugin_instance
+
+    pm = _FakePluginManager(
+        loaded={"test_plugin": object()},
+        metadata={},
+        tools=[],
+        exec_result={"status": "error", "error": "插件内部错误"},
+    )
+    monkeypatch.setattr(plugin_instance, "get", lambda: pm)
+
+    manager = ScheduledTaskManager()
+    with pytest.raises(RuntimeError, match="插件内部错误"):
+        await manager._run_plugin_command({
+            "plugin_name": "test_plugin",
+            "command_name": "broken_cmd",
+            "command_params": {},
+        })
+
+
+@pytest.mark.asyncio
+async def test_execute_task_branches_to_plugin_command(monkeypatch, testing_session_local):
+    """_execute_task 根据 task_type=plugin_command 分流到 _run_plugin_command"""
+    from plugins import plugin_instance
+
+    seed_session = testing_session_local()
+    try:
+        seed_session.add(
+            User(
+                id="user-pc",
+                username="plugin_user",
+                password_hash="hashed",
+                role="user",
+            )
+        )
+        task = ScheduledTask(
+            user_id="user-pc",
+            title="插件命令任务",
+            prompt="",
+            scheduled_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            status="pending",
+            task_type="plugin_command",
+            plugin_name="test_plugin",
+            command_name="hello",
+            command_params={"arg": "val"},
+            task_metadata={"kind": "prompt_once"},
+        )
+        seed_session.add(task)
+        seed_session.commit()
+        task_id = task.id
+    finally:
+        seed_session.close()
+
+    pm = _FakePluginManager(
+        loaded={"test_plugin": object()},
+        metadata={},
+        tools=[],
+        exec_result={"status": "completed", "response": "plugin done"},
+    )
+    monkeypatch.setattr(plugin_instance, "get", lambda: pm)
+    monkeypatch.setattr(
+        scheduled_task_manager_module, "SessionLocal", testing_session_local
+    )
+
+    manager = ScheduledTaskManager()
+    await manager._execute_task(task_id)
+
+    verify_session = testing_session_local()
+    try:
+        task = verify_session.query(ScheduledTask).filter(
+            ScheduledTask.id == task_id
+        ).first()
+        execution = (
+            verify_session.query(ScheduledTaskExecution)
+            .filter(ScheduledTaskExecution.task_id == task_id)
+            .first()
+        )
+    finally:
+        verify_session.close()
+
+    assert task is not None
+    assert task.status == "completed"
+    assert execution is not None
+    assert execution.status == "completed"
+    assert "plugin done" in (execution.response or "")
+
+
+class _FakePluginManager:
+    """模拟 PluginManager 用于隔离测试 _run_plugin_command 路径"""
+
+    def __init__(self, loaded, metadata, tools, load_success=True, exec_result=None):
+        self.loaded_plugins = loaded
+        self.plugin_metadata = metadata
+        self._tools = tools
+        self._load_success = load_success
+        self._exec_result = exec_result
+
+    def load_plugin(self, name):
+        if self._load_success:
+            self.loaded_plugins[name] = object()
+        return self._load_success
+
+    async def execute_plugin_async(self, plugin_name, method, **kwargs):
+        return self._exec_result

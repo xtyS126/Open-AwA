@@ -63,7 +63,39 @@
       "name": "get_twitter_user_info",
       "version": "2.0.0",
       "config": {
-        "description": "查询指定 Twitter 用户的账号信息"
+        "description": "查询指定 Twitter 用户的详细账号信息"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "search_tweets",
+      "version": "2.0.0",
+      "config": {
+        "description": "高级推文搜索，支持 from:user、关键词、时间范围等过滤条件，结果自动缓存"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_tweet_replies",
+      "version": "2.0.0",
+      "config": {
+        "description": "获取指定推文的回复列表"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_user_followers",
+      "version": "2.0.0",
+      "config": {
+        "description": "获取指定 Twitter 用户的粉丝列表"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_user_following",
+      "version": "2.0.0",
+      "config": {
+        "description": "获取指定 Twitter 用户关注的用户列表"
       }
     },
     {

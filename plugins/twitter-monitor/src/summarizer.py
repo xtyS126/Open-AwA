@@ -70,7 +70,7 @@ class AISummarizer:
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
 
     def format_tweets(self, tweets: List[Dict]) -> str:
-        """将推文数据格式化为易读文本"""
+        """将推文数据格式化为易读文本，使用统一 snake_case 字段"""
         if not tweets:
             return "没有找到推文数据。"
 
@@ -79,17 +79,27 @@ class AISummarizer:
         for i, tweet in enumerate(tweets, 1):
             author = tweet.get("author", {})
             author_name = author.get("name", "Unknown")
-            author_username = author.get("userName", "unknown")
+            author_username = author.get("user_name", "unknown")
             text = tweet.get("text", "")
-            created_at = tweet.get("createdAt", "")
-            like_count = tweet.get("likeCount", 0)
-            retweet_count = tweet.get("retweetCount", 0)
+            created_at = tweet.get("created_at", "")
+            url = tweet.get("url", "")
+            lang = tweet.get("lang", "")
+            metrics = tweet.get("metrics", {})
+            likes = metrics.get("likes", 0)
+            retweets = metrics.get("retweets", 0)
+            replies = metrics.get("replies", 0)
+            quotes = metrics.get("quotes", 0)
+            views = metrics.get("views", 0)
 
             formatted_text += f"--- 推文 {i} ---\n"
             formatted_text += f"作者: {author_name} (@{author_username})\n"
             formatted_text += f"时间: {created_at}\n"
+            if lang:
+                formatted_text += f"语言: {lang}\n"
             formatted_text += f"内容: {text}\n"
-            formatted_text += f"点赞: {like_count} | 转发: {retweet_count}\n\n"
+            if url:
+                formatted_text += f"链接: {url}\n"
+            formatted_text += f"点赞: {likes} | 转发: {retweets} | 回复: {replies} | 引用: {quotes} | 浏览: {views}\n\n"
 
         return formatted_text
 
@@ -151,7 +161,7 @@ class AISummarizer:
 
         user_tweets = {}
         for tweet in tweets:
-            username = tweet.get("author", {}).get("userName", "unknown")
+            username = tweet.get("author", {}).get("user_name", "unknown")
             if username not in user_tweets:
                 user_tweets[username] = []
             user_tweets[username].append(tweet)
