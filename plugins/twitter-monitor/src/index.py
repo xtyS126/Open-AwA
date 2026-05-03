@@ -313,7 +313,11 @@ class TwitterMonitorPlugin(BasePlugin):
             "get_twitter_daily_tweets": self.get_twitter_daily_tweets,
             "get_twitter_stats": self.get_twitter_stats,
             "search_twitter_users": self.search_twitter_users,
+            "search_tweets": self.search_tweets,
             "get_twitter_user_info": self.get_twitter_user_info,
+            "get_tweet_replies": self.get_tweet_replies,
+            "get_user_followers": self.get_user_followers,
+            "get_user_following": self.get_user_following,
             "summarize_twitter_tweets": self.summarize_twitter_tweets,
             "trigger_auto_fetch": self.trigger_auto_fetch,
             "start_auto_fetch_scheduler": self.start_auto_fetch_scheduler,
@@ -336,9 +340,6 @@ class TwitterMonitorPlugin(BasePlugin):
         logger.info(f"[{self.name}] 清理 Twitter 监控插件")
         self._stop_auto_fetch_scheduler()
         super().cleanup()
-
-    def _twitter_headers(self) -> Dict[str, str]:
-        return {"X-API-Key": self.twitter_api_key}
 
     def _read_json_payload(self, file_path: Path) -> Dict[str, Any]:
         if not file_path.exists():
@@ -425,12 +426,66 @@ class TwitterMonitorPlugin(BasePlugin):
         return filtered
 
     def _simplify_tweet(self, tweet: Dict[str, Any]) -> Dict[str, Any]:
+        """将 API 原始推文数据简化为统一字段结构（snake_case）
+
+        参数:
+            tweet: Twitter API 返回的原始推文字典
+
+        返回:
+            简化后的推文字典，包含 author、metrics、entities 等完整字段
+        """
         author = tweet.get("author") or {}
+
+        # 简化 entities（hashtags / urls / user_mentions）
+        entities = tweet.get("entities") or {}
+        if isinstance(entities, dict):
+            hashtags = [h.get("text", "") for h in entities.get("hashtags", []) if isinstance(h, dict)]
+            urls = [
+                {"display_url": u.get("display_url", ""), "expanded_url": u.get("expanded_url", "")}
+                for u in entities.get("urls", []) if isinstance(u, dict)
+            ]
+            user_mentions = [
+                {"screen_name": m.get("screen_name", ""), "name": m.get("name", "")}
+                for m in entities.get("user_mentions", []) if isinstance(m, dict)
+            ]
+        else:
+            hashtags = []
+            urls = []
+            user_mentions = []
+
+        # 简化引用推文（quoted_tweet）
+        quoted = tweet.get("quoted_tweet") or {}
+        quoted_simplified = None
+        if isinstance(quoted, dict) and quoted.get("id"):
+            q_author = quoted.get("author") or {}
+            quoted_simplified = {
+                "id": str(quoted.get("id", "")),
+                "text": str(quoted.get("text", ""))[:200],
+                "author": {"user_name": str(q_author.get("userName") or "").strip()},
+            }
+
+        # 简化转推（retweeted_tweet）
+        retweeted = tweet.get("retweeted_tweet") or {}
+        retweeted_simplified = None
+        if isinstance(retweeted, dict) and retweeted.get("id"):
+            r_author = retweeted.get("author") or {}
+            retweeted_simplified = {
+                "id": str(retweeted.get("id", "")),
+                "text": str(retweeted.get("text", ""))[:200],
+                "author": {"user_name": str(r_author.get("userName") or "").strip()},
+            }
+
         return {
             "id": str(tweet.get("id") or ""),
             "text": str(tweet.get("text") or "").strip(),
             "created_at": str(tweet.get("createdAt") or tweet.get("created_at") or ""),
             "url": str(tweet.get("url") or tweet.get("twitterUrl") or ""),
+            "lang": str(tweet.get("lang") or ""),
+            "is_reply": bool(tweet.get("isReply")),
+            "in_reply_to_id": str(tweet.get("inReplyToId") or ""),
+            "in_reply_to_user_id": str(tweet.get("inReplyToUserId") or ""),
+            "in_reply_to_username": str(tweet.get("inReplyToUsername") or ""),
+            "conversation_id": str(tweet.get("conversationId") or ""),
             "author": {
                 "user_name": str(author.get("userName") or author.get("user_name") or "").strip(),
                 "name": str(author.get("name") or "").strip(),
@@ -439,44 +494,24 @@ class TwitterMonitorPlugin(BasePlugin):
                 "likes": int(tweet.get("likeCount") or tweet.get("like_count") or 0),
                 "retweets": int(tweet.get("retweetCount") or tweet.get("retweet_count") or 0),
                 "replies": int(tweet.get("replyCount") or tweet.get("reply_count") or 0),
+                "quotes": int(tweet.get("quoteCount") or tweet.get("quote_count") or 0),
+                "views": int(tweet.get("viewCount") or tweet.get("view_count") or 0),
+                "bookmarks": int(tweet.get("bookmarkCount") or tweet.get("bookmark_count") or 0),
             },
+            "entities": {
+                "hashtags": hashtags,
+                "urls": urls,
+                "user_mentions": user_mentions,
+            },
+            "quoted_tweet": quoted_simplified,
+            "retweeted_tweet": retweeted_simplified,
         }
 
-    def _request_twitter_api(self, endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        if not self.twitter_api_key:
-            return {"status": "error", "message": "未配置 twitter_api_key"}
-        url = f"{self.twitter_api_base_url}/{endpoint.lstrip('/')}"
-        max_retries = 3
-        base_delay = 1.0
-        last_error = None
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(url, headers=self._twitter_headers(), params=params, timeout=25)
-                response.raise_for_status()
-                payload = response.json()
-                if payload.get("status") != "success":
-                    return {
-                        "status": "error",
-                        "message": str(payload.get("msg") or payload.get("message") or "Twitter API 返回失败"),
-                    }
-                return {"status": "success", "data": payload.get("data", {})}
-            except requests.exceptions.Timeout as e:
-                last_error = e
-                logger.warning(f"[{self.name}] Twitter API 请求超时 (第{attempt+1}/{max_retries}次): {e}")
-            except requests.exceptions.ConnectionError as e:
-                last_error = e
-                logger.warning(f"[{self.name}] Twitter API 连接错误 (第{attempt+1}/{max_retries}次): {e}")
-            except requests.exceptions.RequestException as e:
-                last_error = e
-                logger.warning(f"[{self.name}] Twitter API 请求失败 (第{attempt+1}/{max_retries}次): {e}")
-            except Exception as e:
-                logger.error(f"[{self.name}] Twitter API 未知异常: {e}")
-                return {"status": "error", "message": f"Twitter API 请求失败: {e}"}
-            if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)
-                time.sleep(delay)
-        logger.error(f"[{self.name}] Twitter API 请求最终失败 (已重试{max_retries}次): {last_error}")
-        return {"status": "error", "message": f"Twitter API 请求失败: {last_error}"}
+    def _check_api_ready(self) -> Optional[Dict[str, Any]]:
+        """检查 API 客户端是否可用，不可用时返回错误信息"""
+        if self._twitter_api is None:
+            return {"status": "error", "message": "未配置 twitter_api_key，请在插件设置中添加 Twitter API 密钥"}
+        return None
 
     def fetch_user_tweets(
         self,
@@ -487,15 +522,20 @@ class TwitterMonitorPlugin(BasePlugin):
         normalized_limit = _coerce_int(limit, 10, minimum=1, maximum=100)
         if not normalized_user:
             return {"status": "error", "message": "user_name 不能为空，请用户提供要搜索的 Twitter 用户名"}
-        request_result = self._request_twitter_api(
-            "user/last_tweets",
-            {"userName": normalized_user, "includeReplies": str(self.include_replies).lower()},
-        )
-        if request_result.get("status") != "success":
-            return request_result
 
-        payload = request_result.get("data", {})
-        raw_tweets = payload.get("tweets", []) if isinstance(payload, dict) else []
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
+        api_result = self._twitter_api.get_user_last_tweets(
+            user_name=normalized_user,
+            include_replies=self.include_replies,
+            limit=normalized_limit,
+        )
+        if not api_result.get("success"):
+            return {"status": "error", "message": api_result.get("error", "Twitter API 请求失败")}
+
+        raw_tweets = api_result.get("tweets", [])
         simplified = [self._simplify_tweet(item) for item in raw_tweets[:normalized_limit]]
 
         deduplicated = self._deduplicate_tweets(simplified)
@@ -521,6 +561,10 @@ class TwitterMonitorPlugin(BasePlugin):
         if not selected_users:
             return {"status": "error", "message": "未提供 user_names，且默认监控列表为空"}
 
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
         per_user_limit = _coerce_int(limit, self.tweets_per_user, minimum=1, maximum=50)
         include_reply_flag = self.include_replies if include_replies is None else _coerce_bool(include_replies)
 
@@ -529,24 +573,21 @@ class TwitterMonitorPlugin(BasePlugin):
         errors: List[Dict[str, Any]] = []
 
         for user_name in selected_users:
-            request_result = self._request_twitter_api(
-                "user/last_tweets",
-                {
-                    "userName": user_name,
-                    "includeReplies": str(include_reply_flag).lower(),
-                },
+            api_result = self._twitter_api.get_user_last_tweets(
+                user_name=user_name,
+                include_replies=include_reply_flag,
+                limit=per_user_limit,
             )
-            if request_result.get("status") != "success":
+            if not api_result.get("success"):
                 error_item = {
                     "user_name": user_name,
-                    "message": request_result.get("message", "抓取失败"),
+                    "message": api_result.get("error", "抓取失败"),
                 }
                 errors.append(error_item)
                 results.append({"user_name": user_name, "status": "error", "count": 0, "message": error_item["message"]})
                 continue
 
-            payload = request_result.get("data", {})
-            raw_tweets = payload.get("tweets", []) if isinstance(payload, dict) else []
+            raw_tweets = api_result.get("tweets", [])
             simplified = [self._simplify_tweet(item) for item in raw_tweets[:per_user_limit]]
             collected_tweets.extend(simplified)
             results.append({"user_name": user_name, "status": "success", "count": len(simplified)})
@@ -663,12 +704,15 @@ class TwitterMonitorPlugin(BasePlugin):
         if not normalized_query:
             return {"status": "error", "message": "query 不能为空"}
 
-        request_result = self._request_twitter_api("user/search", {"query": normalized_query})
-        if request_result.get("status") != "success":
-            return request_result
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
 
-        payload = request_result.get("data", {})
-        users = payload.get("users", []) if isinstance(payload, dict) else []
+        api_result = self._twitter_api.search_users(normalized_query)
+        if not api_result.get("success"):
+            return {"status": "error", "message": api_result.get("error", "搜索用户失败")}
+
+        users = api_result.get("users", [])
         normalized_limit = _coerce_int(limit, 10, minimum=1, maximum=50)
         results = []
         for user in users[:normalized_limit]:
@@ -695,15 +739,33 @@ class TwitterMonitorPlugin(BasePlugin):
         if not normalized_user:
             return {"status": "error", "message": "user_name 不能为空"}
 
-        result = self.search_twitter_users(query=normalized_user, limit=1)
-        if result.get("status") != "success":
-            return result
-        users = result.get("users", [])
-        if not users:
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
+        api_result = self._twitter_api.get_user_info(normalized_user)
+        if not api_result.get("success"):
             return {"status": "not_found", "message": f"未找到用户: {normalized_user}"}
+
+        user = api_result.get("user", {})
         return {
             "status": "success",
-            "user": users[0],
+            "user": {
+                "id": str(user.get("id") or ""),
+                "user_name": str(user.get("userName") or "").strip(),
+                "name": str(user.get("name") or "").strip(),
+                "description": str(user.get("description") or "").strip(),
+                "followers": int(user.get("followers") or 0),
+                "following": int(user.get("following") or 0),
+                "profile_picture": str(user.get("profilePicture") or ""),
+                "cover_picture": str(user.get("coverPicture") or ""),
+                "is_blue_verified": bool(user.get("isBlueVerified")),
+                "verified_type": str(user.get("verifiedType") or ""),
+                "location": str(user.get("location") or ""),
+                "statuses_count": int(user.get("statusesCount") or 0),
+                "favourites_count": int(user.get("favouritesCount") or 0),
+                "created_at": str(user.get("createdAt") or ""),
+            },
         }
 
     def _load_summary_source(
@@ -967,13 +1029,13 @@ class TwitterMonitorPlugin(BasePlugin):
                         if self._scheduler_stop.is_set():
                             break
                         time.sleep(1.5)
-                        user_result = self._request_twitter_api(
-                            "user/last_tweets",
-                            {"userName": user, "includeReplies": str(self.include_replies).lower()},
+                        user_result = self._twitter_api.get_user_last_tweets(
+                            user_name=user,
+                            include_replies=self.include_replies,
+                            limit=current_count,
                         )
-                        if user_result.get("status") == "success":
-                            payload = user_result.get("data", {})
-                            raw_tweets = payload.get("tweets", []) if isinstance(payload, dict) else []
+                        if user_result.get("success"):
+                            raw_tweets = user_result.get("tweets", [])
                             simplified = [self._simplify_tweet(t) for t in raw_tweets[:current_count]]
                             if simplified:
                                 added = self._save_fetched_tweets(simplified)
@@ -1020,6 +1082,220 @@ class TwitterMonitorPlugin(BasePlugin):
 
             if self._scheduler_stop.wait(interval_seconds):
                 break
+
+    # ==================== 新增工具：推文高级搜索 ====================
+
+    def search_tweets(
+        self,
+        query: str,
+        query_type: str = "Latest",
+        limit: Optional[int] = 20,
+    ) -> Dict[str, Any]:
+        """高级推文搜索并缓存结果
+
+        使用 Twitter 高级搜索语法搜索推文，支持 from:user、关键词、
+        since_time/until_time 等语法。结果会写入 latest 和 daily 缓存。
+
+        参数:
+            query: 搜索查询（必填），支持 Twitter 高级搜索语法
+            query_type: 搜索类型，"Latest" 或 "Top"，默认 "Latest"
+            limit: 最多返回多少条推文
+
+        返回:
+            包含搜索结果的字典
+        """
+        normalized_query = str(query or "").strip()
+        if not normalized_query:
+            return {"status": "error", "message": "query 不能为空"}
+
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
+        normalized_limit = _coerce_int(limit, 20, minimum=1, maximum=100)
+        normalized_query_type = "Latest"
+        if str(query_type).strip().lower() == "top":
+            normalized_query_type = "Top"
+
+        api_result = self._twitter_api.search_tweets(
+            query=normalized_query,
+            query_type=normalized_query_type,
+        )
+        if not api_result.get("success"):
+            return {"status": "error", "message": api_result.get("error", "推文搜索失败")}
+
+        raw_tweets = api_result.get("tweets", [])
+        simplified = [self._simplify_tweet(item) for item in raw_tweets[:normalized_limit]]
+        deduplicated = self._deduplicate_tweets(simplified)
+        added_count = self._save_fetched_tweets(deduplicated)
+
+        return {
+            "status": "success",
+            "query": normalized_query,
+            "query_type": normalized_query_type,
+            "fetched_count": len(deduplicated),
+            "new_daily_count": added_count,
+            "has_next_page": api_result.get("has_next_page", False),
+            "next_cursor": api_result.get("next_cursor", ""),
+            "tweets": deduplicated,
+        }
+
+    # ==================== 新增工具：推文回复 ====================
+
+    def get_tweet_replies(
+        self,
+        tweet_id: str,
+        limit: Optional[int] = 20,
+    ) -> Dict[str, Any]:
+        """获取指定推文的回复列表
+
+        使用 GET /twitter/tweet/replies 端点获取推文回复。
+        注意：仅支持查询原始推文（非回复推文）的回复。
+
+        参数:
+            tweet_id: 要查询回复的推文 ID（必填）
+            limit: 最多返回多少条回复
+
+        返回:
+            包含回复列表的字典
+        """
+        normalized_tweet_id = str(tweet_id or "").strip()
+        if not normalized_tweet_id:
+            return {"status": "error", "message": "tweet_id 不能为空"}
+
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
+        normalized_limit = _coerce_int(limit, 20, minimum=1, maximum=100)
+
+        api_result = self._twitter_api.get_tweet_replies(tweet_id=normalized_tweet_id)
+        if not api_result.get("success"):
+            return {"status": "error", "message": api_result.get("error", "获取推文回复失败")}
+
+        raw_replies = api_result.get("replies", [])
+        simplified = [self._simplify_tweet(item) for item in raw_replies[:normalized_limit]]
+
+        return {
+            "status": "success",
+            "tweet_id": normalized_tweet_id,
+            "count": len(simplified),
+            "has_next_page": api_result.get("has_next_page", False),
+            "next_cursor": api_result.get("next_cursor", ""),
+            "replies": simplified,
+        }
+
+    # ==================== 新增工具：粉丝与关注列表 ====================
+
+    def get_user_followers(
+        self,
+        user_name: str,
+        limit: Optional[int] = 100,
+    ) -> Dict[str, Any]:
+        """获取用户粉丝列表
+
+        使用 GET /twitter/user/followers 端点，按关注时间倒序排列。
+        每页最多返回 200 条。
+
+        参数:
+            user_name: Twitter 用户名（不含 @，必填）
+            limit: 最多返回多少粉丝
+
+        返回:
+            包含粉丝列表的字典
+        """
+        normalized_user = str(user_name or "").strip().lstrip("@")
+        if not normalized_user:
+            return {"status": "error", "message": "user_name 不能为空"}
+
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
+        normalized_limit = _coerce_int(limit, 100, minimum=1, maximum=500)
+
+        api_result = self._twitter_api.get_user_followers(
+            user_name=normalized_user,
+            page_size=min(normalized_limit, 200),
+        )
+        if not api_result.get("success"):
+            return {"status": "error", "message": api_result.get("error", "获取粉丝列表失败")}
+
+        # 简化用户数据
+        simplified_users = []
+        for follower in api_result.get("followers", [])[:normalized_limit]:
+            simplified_users.append({
+                "user_name": str(follower.get("userName") or "").strip(),
+                "name": str(follower.get("name") or "").strip(),
+                "description": str(follower.get("description") or "").strip(),
+                "followers": int(follower.get("followers") or 0),
+                "following": int(follower.get("following") or 0),
+                "profile_picture": str(follower.get("profilePicture") or ""),
+                "is_blue_verified": bool(follower.get("isBlueVerified")),
+            })
+
+        return {
+            "status": "success",
+            "user_name": normalized_user,
+            "count": len(simplified_users),
+            "has_next_page": api_result.get("has_next_page", False),
+            "followers": simplified_users,
+        }
+
+    def get_user_following(
+        self,
+        user_name: str,
+        limit: Optional[int] = 100,
+    ) -> Dict[str, Any]:
+        """获取用户关注列表
+
+        使用 GET /twitter/user/followings 端点，按关注时间倒序排列。
+        每页最多返回 200 条。
+
+        参数:
+            user_name: Twitter 用户名（不含 @，必填）
+            limit: 最多返回多少关注用户
+
+        返回:
+            包含关注列表的字典
+        """
+        normalized_user = str(user_name or "").strip().lstrip("@")
+        if not normalized_user:
+            return {"status": "error", "message": "user_name 不能为空"}
+
+        api_error = self._check_api_ready()
+        if api_error:
+            return api_error
+
+        normalized_limit = _coerce_int(limit, 100, minimum=1, maximum=500)
+
+        api_result = self._twitter_api.get_user_followings(
+            user_name=normalized_user,
+            page_size=min(normalized_limit, 200),
+        )
+        if not api_result.get("success"):
+            return {"status": "error", "message": api_result.get("error", "获取关注列表失败")}
+
+        # 简化用户数据
+        simplified_users = []
+        for following in api_result.get("followings", [])[:normalized_limit]:
+            simplified_users.append({
+                "user_name": str(following.get("userName") or "").strip(),
+                "name": str(following.get("name") or "").strip(),
+                "description": str(following.get("description") or "").strip(),
+                "followers": int(following.get("followers") or 0),
+                "following": int(following.get("following") or 0),
+                "profile_picture": str(following.get("profilePicture") or ""),
+                "is_blue_verified": bool(following.get("isBlueVerified")),
+            })
+
+        return {
+            "status": "success",
+            "user_name": normalized_user,
+            "count": len(simplified_users),
+            "has_next_page": api_result.get("has_next_page", False),
+            "followings": simplified_users,
+        }
 
     def get_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -1118,11 +1394,92 @@ class TwitterMonitorPlugin(BasePlugin):
             {
                 "name": "get_twitter_user_info",
                 "method": "get_twitter_user_info",
-                "description": "获取指定 Twitter 用户的账号信息",
+                "description": "获取指定 Twitter 用户的详细账号信息（包含认证状态、简介、粉丝数等）",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "user_name": {"type": "string", "description": "目标用户名"}
+                    },
+                    "required": ["user_name"]
+                }
+            },
+            {
+                "name": "search_tweets",
+                "method": "search_tweets",
+                "description": "使用 Twitter 高级搜索语法搜索推文，支持 from:user、关键词、时间范围等过滤条件，结果会自动缓存",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "搜索查询（必填），支持 Twitter 高级搜索语法，如 'AI from:elonmusk'"
+                        },
+                        "query_type": {
+                            "type": "string",
+                            "enum": ["Latest", "Top"],
+                            "description": "搜索类型：Latest 按时间排序，Top 按热度排序，默认 Latest"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "最多返回多少条推文，默认 20"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "get_tweet_replies",
+                "method": "get_tweet_replies",
+                "description": "获取指定推文的回复列表，仅支持查询原始推文（非回复推文）的回复",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tweet_id": {
+                            "type": "string",
+                            "description": "要查询回复的推文 ID（必填）"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "最多返回多少条回复，默认 20"
+                        }
+                    },
+                    "required": ["tweet_id"]
+                }
+            },
+            {
+                "name": "get_user_followers",
+                "method": "get_user_followers",
+                "description": "获取指定 Twitter 用户的粉丝列表，按关注时间倒序排列",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_name": {
+                            "type": "string",
+                            "description": "Twitter 用户名（必填，不含 @）"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "最多返回多少粉丝，默认 100"
+                        }
+                    },
+                    "required": ["user_name"]
+                }
+            },
+            {
+                "name": "get_user_following",
+                "method": "get_user_following",
+                "description": "获取指定 Twitter 用户关注的用户列表，按关注时间倒序排列",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_name": {
+                            "type": "string",
+                            "description": "Twitter 用户名（必填，不含 @）"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "最多返回多少关注用户，默认 100"
+                        }
                     },
                     "required": ["user_name"]
                 }

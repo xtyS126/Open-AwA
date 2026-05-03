@@ -19,10 +19,14 @@ def test_build_default_database_url_points_to_backend_db():
     assert build_default_database_url() == expected_url
 
 
-def test_settings_ignore_unrelated_env_entries(tmp_path: Path):
+def test_settings_ignore_unrelated_env_entries(tmp_path: Path, monkeypatch):
     """
     设置加载应忽略 `.env` 中与 Settings 无关的字段，避免本地用户密码变量打断启动。
     """
+    # 清除可能已存在的同名环境变量，确保 dotenv 文件的值被读取
+    for key in ("OPENAWA_ADMIN_PASSWORD", "LOG_LEVEL"):
+        monkeypatch.delenv(key, raising=False)
+
     env_file = tmp_path / ".env"
     env_file.write_text(
         "OPENAWA_ADMIN_PASSWORD=admin123\nLOG_LEVEL=DEBUG\n",
@@ -32,3 +36,4 @@ def test_settings_ignore_unrelated_env_entries(tmp_path: Path):
     settings = Settings(_env_file=env_file)
 
     assert settings.LOG_LEVEL == "DEBUG"
+    # 确认与 Settings 无关的字段不会导致加载失败
