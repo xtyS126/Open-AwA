@@ -16,6 +16,7 @@
     "e2e:install": "playwright install chromium firefox"
   },
   "dependencies": {
+    "ansi-html-community": "^0.0.8",
     "axios": "^1.6.7",
     "highlight.js": "^11.11.1",
     "js-cookie": "^3.0.5",

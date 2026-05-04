@@ -343,21 +343,24 @@ class TestSSEEvents:
         assert event["agent_type"] == "Explore"
 
     def test_subagent_stop_event(self):
-        event = emit_subagent_stop_event("agt_001", "completed", "任务完成")
+        event = emit_subagent_stop_event("agt_001", "completed", "任务完成", agent_type="Explore")
         assert event["type"] == "subagent_stop"
         assert event["state"] == "completed"
         assert event["summary"] == "任务完成"
+        assert event["agent_type"] == "Explore"
 
     def test_agent_message_event(self):
-        event = emit_agent_message_event("agt_001", "摘要消息内容")
+        event = emit_agent_message_event("agt_001", "摘要消息内容", agent_type="Explore")
         assert event["type"] == "agent_message"
         assert event["agent_id"] == "agt_001"
         assert event["message"] == "摘要消息内容"
+        assert event["agent_type"] == "Explore"
 
     def test_subagent_stop_failed(self):
-        event = emit_subagent_stop_event("agt_002", "failed", "执行错误")
+        event = emit_subagent_stop_event("agt_002", "failed", "执行错误", agent_type="Executor")
         assert event["type"] == "subagent_stop"
         assert event["state"] == "failed"
+        assert event["agent_type"] == "Executor"
 
 
 # -- 代理定义 ----------------------------------------------------------
