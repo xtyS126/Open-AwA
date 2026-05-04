@@ -35,7 +35,8 @@ class MigrationValidator:
         'short_term_memory',
         'long_term_memory',
         'skill_execution_logs',
-        'plugin_execution_logs'
+        'plugin_execution_logs',
+        'weixin_bindings',
     }
     
     ALLOWED_COLUMN_TYPES: Set[str] = {
@@ -282,6 +283,12 @@ def migrate_database():
             except MigrationSecurityError as e:
                 logger.error(f"[安全错误] 迁移失败: {e}")
                 raise
+
+        # 检查 weixin_bindings 表是否存在，如果存在则添加字段
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='weixin_bindings'")
+        if cursor.fetchone():
+            logger.info("当前weixin_bindings表列: {}", get_existing_columns(cursor, 'weixin_bindings'))
+            add_column_safely(cursor, 'weixin_bindings', 'auto_start_reply', 'BOOLEAN DEFAULT FALSE')
 
         conn.commit()
 

@@ -94,7 +94,6 @@ def load_binding(db, user_id: str) -> Optional["WeixinRuntimeConfig"]:
         timeout_seconds=15,
         user_id=binding.weixin_user_id or "",
         binding_status=binding.binding_status or "unbound",
-        auto_start_enabled=bool(binding.auto_start_enabled),
     )
 
 
@@ -147,7 +146,6 @@ class WeixinRuntimeConfig:
     timeout_seconds: int
     user_id: str = ""
     binding_status: str = "unbound"
-    auto_start_enabled: bool = False
 
 
 class WeixinSkillAdapter:

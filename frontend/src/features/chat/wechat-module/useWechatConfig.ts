@@ -6,7 +6,6 @@ import {
   WeixinAutoReplyRuleCreate,
   WeixinAutoReplyRuleUpdate,
   WeixinAutoReplyStatus,
-  WeixinAutoReplyConfigUpdate,
   WeixinBindingInfo,
   WeixinConfig,
   WeixinHealthCheckResult,
@@ -60,11 +59,11 @@ export function useWechatConfig() {
   const [autoReplyStatusError, setAutoReplyStatusError] = useState<string | null>(null)
   const [autoReplyAction, setAutoReplyAction] = useState<'start' | 'stop' | 'restart' | 'process' | null>(null)
   const [autoReplyProcessResult, setAutoReplyProcessResult] = useState<WeixinAutoReplyProcessResult | null>(null)
-  const [savingAutoStart, setSavingAutoStart] = useState(false)
   const [paramsConfig, setParamsConfig] = useState<WeixinParamsConfig | null>(null)
   const [paramsLoadError, setParamsLoadError] = useState<string | null>(null)
   const [editBotType, setEditBotType] = useState('')
   const [editChannelVersion, setEditChannelVersion] = useState('')
+  const [editAutoStartReply, setEditAutoStartReply] = useState(false)
   const [savingParams, setSavingParams] = useState(false)
 
   const [rules, setRules] = useState<WeixinAutoReplyRule[]>([])
@@ -350,6 +349,7 @@ export function useWechatConfig() {
         setParamsConfig(response.data)
         setEditBotType(response.data.bot_type || '')
         setEditChannelVersion(response.data.channel_version || '')
+        setEditAutoStartReply(response.data.auto_start_reply || false)
       }
     } catch (error) {
       setParamsLoadError(getApiErrorDetail(error, '加载连接参数失败，请稍后重试'))
@@ -454,6 +454,7 @@ export function useWechatConfig() {
       const response = await weixinAPI.updateParams({
         bot_type: editBotType || undefined,
         channel_version: editChannelVersion || undefined,
+        auto_start_reply: editAutoStartReply,
       })
       if (response.data) {
         setParamsConfig(response.data)
@@ -860,22 +861,6 @@ export function useWechatConfig() {
     }
   }
 
-  const handleToggleAutoStart = async (enabled: boolean) => {
-    setSavingAutoStart(true)
-    try {
-      const payload: WeixinAutoReplyConfigUpdate = { auto_start_enabled: enabled }
-      await weixinAPI.updateAutoReplyConfig(payload)
-      if (autoReplyStatus) {
-        setAutoReplyStatus({ ...autoReplyStatus, auto_start_enabled: enabled })
-      }
-      showTimedMessage('success', enabled ? '已开启开机自启自动回复' : '已关闭开机自启自动回复')
-    } catch (error) {
-      showTimedMessage('error', getApiErrorDetail(error, enabled ? '开启开机自启失败' : '关闭开机自启失败'))
-    } finally {
-      setSavingAutoStart(false)
-    }
-  }
-
   const handleSaveRule = async (ruleData: WeixinAutoReplyRule | WeixinAutoReplyRuleCreate) => {
     setSavingRule(true)
     try {
@@ -947,8 +932,8 @@ export function useWechatConfig() {
     loadingWeixin, configLoadError, savingWeixin, testingWeixin, weixinHealthResult,
     startingQrLogin, pollingQrLogin, qrSessionKey, qrCodeUrl, qrImageLoadError, qrStatus, qrState, qrStatusText, qrStatusHint, qrBindingResult,
     bindingInfo, loadingBinding, unbinding, bindingError,
-    autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult, savingAutoStart,
-    paramsConfig, paramsLoadError, editBotType, setEditBotType, editChannelVersion, setEditChannelVersion, savingParams,
+    autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult,
+    paramsConfig, paramsLoadError, editBotType, setEditBotType, editChannelVersion, setEditChannelVersion, editAutoStartReply, setEditAutoStartReply, savingParams,
     rules, loadingRules, rulesError, editingRule, setEditingRule, savingRule,
     
     currentBindingStatus, isAutoReplyBindingReady, autoReplyBusy, canStartAutoReply, canStopAutoReply, canRestartAutoReply, canProcessAutoReplyOnce,
@@ -956,7 +941,7 @@ export function useWechatConfig() {
     formatStatusTime, buildBindingResultText, buildNextStepText, formatAutoReplyBindingStatus, formatAutoReplyPollStatus,
     loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadWeixinConfig, loadRules,
     handleUnbind, handleSaveParams, handleStartQrLogin, handleCancelQrLogin, handleSaveWeixinConfig, handleTestWeixinConnection,
-    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce, handleToggleAutoStart,
+    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce,
     handleSaveRule, handleDeleteRule, handleToggleRuleActive, handleRestoreDefaultRules
   }
 }

@@ -193,7 +193,7 @@ class WeixinBinding(Base):
     binding_status: Mapped[str] = mapped_column(String(50), default="unbound")
     weixin_user_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=15)
-    auto_start_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_start_reply: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
