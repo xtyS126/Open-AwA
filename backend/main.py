@@ -174,7 +174,7 @@ async def lifespan(app: FastAPI):
     # 根据配置启动微信自动回复
     if not os.getenv("SKIP_INIT_DB"):
         from db.models import WeixinBinding, SessionLocal
-        from api.routes.weixin import _get_auto_reply_manager
+        from api.services.weixin_auto_reply import get_auto_reply_manager
         db = SessionLocal()
         try:
             bindings = db.query(WeixinBinding).filter(
@@ -182,13 +182,15 @@ async def lifespan(app: FastAPI):
                 WeixinBinding.auto_start_reply == True
             ).all()
             if bindings:
-                manager = _get_auto_reply_manager()
+                manager = get_auto_reply_manager()
                 for binding in bindings:
                     try:
                         await manager.start(binding.user_id)
                         logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
+                    except ValueError as e:
+                        logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
                     except Exception as e:
-                        logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复失败: {e}")
+                        logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
         finally:
             db.close()
 

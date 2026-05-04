@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from api.dependencies import get_current_user
 from api.services.weixin_auto_reply import (
     WeixinAutoReplyService,
+    get_auto_reply_manager,
+    _AUTO_REPLY_MANAGER,
     DEFAULT_CROSS_CHANNEL_CONTEXT_TURNS,
 )
 from config.security import decrypt_secret_value, encrypt_secret_value
@@ -26,13 +28,7 @@ from skills.weixin_skill_adapter import WeixinSkillAdapter
 
 
 router = APIRouter(prefix="/api/weixin", tags=["Weixin"])
-_AUTO_REPLY_MANAGER = WeixinAutoReplyService()
 _WEIXIN_SKILL_NAME = "weixin_dispatch"
-
-
-def _get_auto_reply_manager() -> WeixinAutoReplyService:
-    """集中管理自动回复单例，便于测试时替换。"""
-    return _AUTO_REPLY_MANAGER
 
 
 def _normalize_binding_status(binding_status: Optional[str], weixin_user_id: str = "") -> str:
@@ -260,7 +256,7 @@ async def delete_binding(
     """解除当前用户的微信绑定"""
     user_id = str(current_user.id)
     adapter = WeixinSkillAdapter()
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
     binding = db.query(WeixinBinding).filter(
         WeixinBinding.user_id == user_id
     ).first()
@@ -341,7 +337,7 @@ async def get_auto_reply_status(
 ):
     """获取当前用户微信自动回复运行状态。"""
     _ensure_binding_exists(db, str(current_user.id))
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
     return manager.get_status(str(current_user.id))
 
 
@@ -352,7 +348,7 @@ async def start_auto_reply(
 ):
     """启动当前用户的微信自动回复后台轮询。"""
     _ensure_binding_exists(db, str(current_user.id))
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
     try:
         return await manager.start(str(current_user.id))
     except ValueError as exc:
@@ -362,7 +358,7 @@ async def start_auto_reply(
 @router.post("/auto-reply/stop")
 async def stop_auto_reply(current_user=Depends(get_current_user)):
     """停止当前用户的微信自动回复后台轮询。"""
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
     return await manager.stop(str(current_user.id))
 
 
@@ -373,7 +369,7 @@ async def restart_auto_reply(
 ):
     """重启当前用户的微信自动回复后台轮询。"""
     _ensure_binding_exists(db, str(current_user.id))
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
     try:
         return await manager.restart(str(current_user.id))
     except ValueError as exc:
@@ -389,7 +385,7 @@ async def process_auto_reply_once(
     手动执行一次轮询，便于诊断、测试和观察最近一次处理结果。
     """
     _ensure_binding_exists(db, str(current_user.id))
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
     try:
         return await manager.process_once(str(current_user.id))
     except ValueError as exc:
@@ -673,7 +669,7 @@ async def get_cross_channel_context(
     用于诊断和可视化 AI 在生成微信回复时的上下文来源。
     """
     user_id = str(current_user.id)
-    manager = _get_auto_reply_manager()
+    manager = get_auto_reply_manager()
 
     # 主用户 Web UI 最近对话（排除微信渠道）
     web_conversations = manager._load_main_user_recent_conversations(db, user_id, max_turns=limit)
