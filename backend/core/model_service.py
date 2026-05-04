@@ -368,27 +368,46 @@ async def send_with_retries(
     raise RuntimeError("Model service request failed without explicit error")
 
 
-def build_thinking_params(provider: str, model: str, thinking_depth: int) -> Dict[str, Any]:
+def build_thinking_params(provider: str, model: str, thinking_depth: int, thinking_enabled: Optional[bool] = None) -> Dict[str, Any]:
     """
     根据厂商和模型映射思考深度到具体的 API 参数字典。
     深度 0-5 映射策略：
-    - OpenAI o 系列: reasoning_effort（0-1→low, 2-3→medium, 4-5→high）
-    - Anthropic: thinking.type=enabled + budget_tokens（深度×4000）
-    - DeepSeek R1/Reasoner: thinking.type=enabled（无分档深度）
-    - Zhipu GLM: thinking.type=enabled
+    - OpenAI (o1/o3/o4/gpt-5): reasoning_effort（0-1→low, 2-3→medium, 4-5→high）
+    - Anthropic (Claude 4.6/4.7): thinking.type=adaptive + output_config.effort（low/medium/high/xhigh/max）
+    - Anthropic (Claude旧版): thinking.type=enabled + budget_tokens（深度×4000，最低1024）
+    - DeepSeek (V4/R1): extra_body.thinking.type=enabled/disabled + reasoning_effort（high/max）
+    - Gemini (2.5/3.0): reasoning_effort（none/low/medium/high）
+    - Zhipu GLM: thinking.type=enabled/disabled
+    - Aliyun Qwen/QwQ: extra_body={"enable_thinking": True/False}
     - 其他模型返回空字典
     """
     from billing.pricing_manager import PricingManager
 
     normalized = PricingManager.normalize_provider(provider)
-    if not model or thinking_depth < 1:
+    if not model:
         return {}
 
     model_lower = model.lower()
 
-    # OpenAI o 系列推理模型
+    # 处理明确关闭思考的情况
+    if thinking_enabled is False:
+        if normalized == "deepseek" or "deepseek" in model_lower:
+            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        if normalized == "google" or "gemini" in model_lower:
+            return {"reasoning_effort": "none"}
+        if normalized == "zhipu" and "glm" in model_lower:
+            return {"thinking": {"type": "disabled"}}
+        if normalized == "aliyun" or "qwen" in model_lower or "qwq" in model_lower:
+            return {"extra_body": {"enable_thinking": False}}
+        return {}
+
+    # 如果没有开启思考，且 depth < 1，返回空
+    if thinking_depth < 1 and thinking_enabled is not True:
+        return {}
+
+    # OpenAI (o系列/gpt-5)
     if normalized in ("openai",) and any(
-        model_lower.startswith(prefix) for prefix in ("o1", "o3", "o4")
+        model_lower.startswith(prefix) for prefix in ("o1", "o3", "o4", "gpt-5")
     ):
         if thinking_depth <= 1:
             effort = "low"
@@ -398,18 +417,54 @@ def build_thinking_params(provider: str, model: str, thinking_depth: int) -> Dic
             effort = "high"
         return {"reasoning_effort": effort}
 
-    # Anthropic 扩展思考
+    # Anthropic (Claude)
     if normalized == "anthropic":
-        budget_tokens = thinking_depth * 4000
-        return {"thinking": {"type": "enabled", "budget_tokens": budget_tokens}}
+        # 新版 Claude 4.6/4.7 系列使用 Adaptive thinking
+        if any(v in model_lower for v in ("claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7")):
+            if thinking_depth <= 1:
+                effort = "low"
+            elif thinking_depth == 2:
+                effort = "medium"
+            elif thinking_depth == 3:
+                effort = "high"
+            elif thinking_depth == 4:
+                effort = "xhigh"
+            else:
+                effort = "max"
+            return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
+        else:
+            # 旧版使用 budget_tokens
+            budget_tokens = max(1024, thinking_depth * 4000 if thinking_depth > 0 else 4000)
+            return {"thinking": {"type": "enabled", "budget_tokens": budget_tokens}}
 
     # DeepSeek 推理模型
-    if normalized == "deepseek" and model_lower in ("deepseek-reasoner", "deepseek-r1"):
-        return {"thinking": {"type": "enabled"}}
+    if normalized == "deepseek" or "deepseek" in model_lower:
+        if thinking_depth <= 3:
+            effort = "high"
+        else:
+            effort = "max"
+        return {
+            "extra_body": {"thinking": {"type": "enabled"}},
+            "reasoning_effort": effort
+        }
+
+    # Gemini (2.5/3.0)
+    if normalized == "google" or "gemini" in model_lower:
+        if thinking_depth <= 1:
+            effort = "low"
+        elif thinking_depth <= 3:
+            effort = "medium"
+        else:
+            effort = "high"
+        return {"reasoning_effort": effort}
 
     # Zhipu GLM 推理模型
     if normalized == "zhipu" and "glm" in model_lower:
         return {"thinking": {"type": "enabled"}}
+        
+    # 阿里云 Qwen/QwQ 推理模型
+    if normalized == "aliyun" or "qwen" in model_lower or "qwq" in model_lower:
+        return {"extra_body": {"enable_thinking": True}}
 
     return {}
 

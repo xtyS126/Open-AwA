@@ -183,6 +183,12 @@ class ExecutionLayer:
         某些开启思考模式的模型在 tool call 之后继续续写时，
         要求把上一轮 assistant 的 `reasoning_content` 原样回传。
         """
+        if tool_calls is not None and not isinstance(tool_calls, list):
+            raise ValueError("tool_calls must be a list")
+
+        if reasoning_content is not None and not isinstance(reasoning_content, str):
+            reasoning_content = str(reasoning_content)
+
         assistant_message: Dict[str, Any] = {
             "role": "assistant",
             "content": content or None,
@@ -526,18 +532,6 @@ class ExecutionLayer:
 
         provider = (provider or "").strip().lower()
         model = (model or "").strip()
-
-        # 根据 DeepSeek 官方文档，deepseek-reasoner 无法在 API 层关闭推理过程。
-        # 为避免浪费用户 token 和时间，基于 thinking_enabled 状态在 V3 和 R1 间自动切换
-        if provider == "deepseek" or "deepseek" in model:
-            if context.get("thinking_enabled") is False and model in ("deepseek-reasoner", "deepseek-r1"):
-                from loguru import logger
-                logger.info(f"思考模式已关闭，自动将 {model} 降级为 deepseek-chat")
-                model = "deepseek-chat"
-            elif context.get("thinking_enabled") is True and model == "deepseek-chat":
-                from loguru import logger
-                logger.info(f"思考模式已开启，自动将 {model} 升级为 deepseek-reasoner")
-                model = "deepseek-reasoner"
 
         if not provider:
             return {

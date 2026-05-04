@@ -19,8 +19,19 @@ import core.executor as executor_module
 import core.litellm_adapter as litellm_adapter_module
 from core.executor import ExecutionLayer
 from core.feedback import FeedbackLayer
-from core.model_service import build_provider_request
+from core.model_service import build_provider_request, build_thinking_params
 from main import app
+
+
+def test_ai_agent_is_final_only_mode_accepts_thinking_disabled():
+    """
+    显式关闭 thinking 时，也应按 final_only 语义处理对外输出。
+    """
+
+    assert AIAgent._is_final_only_mode({"thinking_enabled": False}) is True
+    assert AIAgent._is_final_only_mode({"thinking_enabled": True}) is False
+    assert AIAgent._is_final_only_mode({"suppress_reasoning": True}) is True
+    assert AIAgent._is_final_only_mode({"output_mode": "final_only"}) is True
 
 
 def test_pricing_manager_normalizes_provider_specific_base_suffix():
@@ -76,6 +87,24 @@ def test_build_provider_request_generates_provider_specific_headers_and_payload(
     assert google_request.endpoint.endswith("/v1beta/models/gemini-2.0-flash:generateContent?key=google-secret")
     assert google_request.payload["contents"][0]["parts"][0]["text"] == "你好"
     assert "request_id=req-g" in google_request.payload["systemInstruction"]["parts"][0]["text"]
+
+
+def test_build_thinking_params_keeps_deepseek_thinking_and_reasoning_effort():
+    """
+    DeepSeek OpenAI 兼容接口允许同时传 thinking 开关与 reasoning_effort。
+    """
+
+    params = build_thinking_params(
+        provider="deepseek",
+        model="deepseek-v4-pro",
+        thinking_depth=4,
+        thinking_enabled=True,
+    )
+
+    assert params == {
+        "extra_body": {"thinking": {"type": "enabled"}},
+        "reasoning_effort": "max",
+    }
 
 
 @pytest.mark.asyncio
