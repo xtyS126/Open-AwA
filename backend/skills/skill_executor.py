@@ -62,7 +62,7 @@ class SecurityValidationError(Exception):
 # ---------------------------------------------------------------------------
 
 def execute_with_timeout(
-    code: str,
+    code: Any,
     exec_globals: Dict[str, Any],
     local_vars: Dict[str, Any],
     timeout: float,
@@ -74,7 +74,7 @@ def execute_with_timeout(
     对于更严格的隔离需求应使用进程级沙箱。
 
     Args:
-        code: 已通过安全校验的 Python 代码字符串。
+        code: 已通过安全校验的 Python 代码字符串或预编译的 code object。
         exec_globals: exec 使用的全局命名空间（已限制 __builtins__）。
         local_vars: exec 使用的局部命名空间，执行结果写入此处。
         timeout: 超时秒数。
@@ -183,6 +183,12 @@ class CodeValidator(ast.NodeVisitor):
     })
 
     def __init__(self) -> None:
+        import warnings
+        warnings.warn(
+            "CodeValidator 已弃用，请使用 security.backends.RestrictedPythonBackend",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.errors: List[str] = []
         self.depth = 0
         self.max_depth = 10  # 降低最大嵌套深度
@@ -462,10 +468,10 @@ class SkillExecutor:
 
     async def _execute_code_action(self, action: str, params: Dict) -> Any:
         """
-        在受限沙箱内执行 Python 代码。
+        在沙箱后端中执行 Python 代码。
 
-        代码在执行前经过 AST 静态分析校验，执行时使用受限的
-        __builtins__ 命名空间，防止访问危险模块和函数。
+        使用 get_sandbox_backend() 获取当前配置的沙箱后端，
+        支持 RestrictedPython（默认）和 E2B（可选）两种后端。
 
         Args:
             action: 动作名称（用于日志记录）。
@@ -485,38 +491,17 @@ class SkillExecutor:
             logger.warning(f"Unsupported code language: {language!r}, skipping execution")
             return {'status': 'skipped', 'reason': f'不支持的语言: {language}'}
 
-        # AST 安全校验
-        validator = CodeValidator()
-        is_safe, error_msg = validator.validate_code(code)
-        if not is_safe:
-            raise RuntimeError(f"代码安全校验失败: {error_msg}")
+        # 使用统一沙箱后端执行
+        from security.backends import get_sandbox_backend
+        backend = get_sandbox_backend()
+        result = await backend.execute_code(code, timeout=timeout)
 
-        # 构建受限执行环境（不包含 getattr/setattr/delattr）
-        safe_builtins: Dict[str, Any] = {
-            'abs': abs, 'min': min, 'max': max, 'sum': sum,
-            'len': len, 'range': range, 'print': print,
-            'str': str, 'int': int, 'float': float, 'bool': bool,
-            'list': list, 'dict': dict, 'set': set, 'tuple': tuple,
-            'type': type, 'isinstance': isinstance, 'issubclass': issubclass,
-            'hasattr': hasattr,
-            'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
-            'zip': zip, 'map': map, 'filter': filter, 'any': any, 'all': all,
-            'round': round, 'pow': pow, 'divmod': divmod, 'format': format,
-            'hex': hex, 'oct': oct, 'bin': bin, 'chr': chr, 'ord': ord,
-            'slice': slice, 'True': True, 'False': False, 'None': None,
-        }
-        exec_globals: Dict[str, Any] = {'__builtins__': safe_builtins}
-        local_vars: Dict[str, Any] = {}
-
-        try:
-            execute_with_timeout(code, exec_globals, local_vars, timeout)
-            return local_vars.get('result', {'status': 'executed'})
-        except ExecutionTimeoutException:
+        if result.status == 'error':
+            raise RuntimeError(f"代码执行失败: {result.error}")
+        if result.status == 'timeout':
             raise RuntimeError(f"代码执行超时（超过 {timeout} 秒）")
-        except SyntaxError as e:
-            raise RuntimeError(f"代码语法错误: {e}")
-        except Exception as e:
-            raise RuntimeError(f"代码执行错误: {e}")
+
+        return result.result if result.result is not None else {'status': 'executed'}
 
     async def _execute_file_action(self, action: str, params: Dict) -> Any:
         """
