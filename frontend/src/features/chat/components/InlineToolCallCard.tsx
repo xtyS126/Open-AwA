@@ -5,15 +5,14 @@ import { useState } from 'react'
 
 interface InlineToolCallCardProps {
   tool: ToolEventMeta
-  isLast: boolean
 }
 
-function getStatusIcon(status: string): string {
+function getStatusLabel(status: string): string {
   switch (status) {
-    case 'completed': return '✅'
-    case 'running': return '🔄'
-    case 'error': return '❌'
-    default: return '⏳'
+    case 'completed': return '已完成'
+    case 'running': return '执行中'
+    case 'error': return '失败'
+    default: return '等待中'
   }
 }
 
@@ -27,7 +26,7 @@ export function InlineToolCallCard({ tool }: InlineToolCallCardProps) {
         onClick={() => setExpanded(!expanded)}
         title={`${tool.kind}: ${tool.name}`}
       >
-        <span className={isRunning ? styles.spin : ''}>{getStatusIcon(tool.status)}</span>
+        <span className={`${styles.statusText} ${isRunning ? styles.spin : ''}`}>{getStatusLabel(tool.status)}</span>
         <span className={styles.inlineText}>{tool.name}</span>
       </div>
       {expanded && (

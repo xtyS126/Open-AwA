@@ -1962,6 +1962,39 @@ class PluginManager:
 
         return filtered_kwargs
 
+    def _resolve_plugin_method_and_kwargs(
+        self,
+        plugin_name: str,
+        plugin_instance: BasePlugin,
+        method: str,
+        kwargs: Dict[str, Any],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """
+        统一解析插件执行入口。
+        对直接方法调用保持兼容；对仅通过 get_tools 暴露的历史工具，自动回落到 execute(action=<tool_name>)。
+        """
+        if hasattr(plugin_instance, method) and callable(getattr(plugin_instance, method)):
+            return method, kwargs
+
+        normalized_tool = self._normalize_tool_definition(
+            plugin_name,
+            plugin_instance,
+            {
+                "name": method,
+            },
+        )
+        if normalized_tool:
+            resolved_method = str(normalized_tool.get("method") or method)
+            default_params = normalized_tool.get("default_params")
+            merged_kwargs = dict(default_params) if isinstance(default_params, dict) else {}
+            merged_kwargs.update(kwargs)
+            return resolved_method, merged_kwargs
+
+        if method == "help" and hasattr(plugin_instance, "get_help") and callable(getattr(plugin_instance, "get_help")):
+            return "get_help", kwargs
+
+        return method, kwargs
+
     def execute_plugin(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
         """
         处理execute、plugin相关逻辑，并为调用方返回对应结果。
@@ -1995,8 +2028,14 @@ class PluginManager:
             }
 
         plugin_instance = self.loaded_plugins[plugin_name]
+        resolved_method, resolved_kwargs = self._resolve_plugin_method_and_kwargs(
+            plugin_name,
+            plugin_instance,
+            method,
+            kwargs,
+        )
 
-        if not hasattr(plugin_instance, method):
+        if not hasattr(plugin_instance, resolved_method):
             logger.error(f"Plugin '{plugin_name}' does not have method '{method}'")
             return {
                 "status": "error",
@@ -2004,8 +2043,8 @@ class PluginManager:
             }
 
         sandbox = self._plugin_sandboxes.get(plugin_name, self.sandbox)
-        filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, method, kwargs)
-        result = sandbox.execute_plugin_sync(plugin_instance, method, **filtered_kwargs)
+        filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, resolved_method, resolved_kwargs)
+        result = sandbox.execute_plugin_sync(plugin_instance, resolved_method, **filtered_kwargs)
         return self._normalize_plugin_execution_result(result)
 
     async def execute_plugin_async(self, plugin_name: str, method: str, **kwargs) -> Dict[str, Any]:
@@ -2041,7 +2080,13 @@ class PluginManager:
             }
 
         plugin_instance = self.loaded_plugins[plugin_name]
-        if not hasattr(plugin_instance, method):
+        resolved_method, resolved_kwargs = self._resolve_plugin_method_and_kwargs(
+            plugin_name,
+            plugin_instance,
+            method,
+            kwargs,
+        )
+        if not hasattr(plugin_instance, resolved_method):
             logger.error(f"Plugin '{plugin_name}' does not have method '{method}'")
             return {
                 "status": "error",
@@ -2049,8 +2094,8 @@ class PluginManager:
             }
 
         sandbox = self._plugin_sandboxes.get(plugin_name, self.sandbox)
-        filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, method, kwargs)
-        result = await sandbox.execute_plugin(plugin_instance, method, **filtered_kwargs)
+        filtered_kwargs = self._filter_plugin_method_kwargs(plugin_instance, resolved_method, resolved_kwargs)
+        result = await sandbox.execute_plugin(plugin_instance, resolved_method, **filtered_kwargs)
         return self._normalize_plugin_execution_result(result)
 
     def _normalize_plugin_execution_result(self, result: Dict[str, Any]) -> Dict[str, Any]:

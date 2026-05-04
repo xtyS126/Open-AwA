@@ -1,0 +1,100 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.segmentGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intent {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.reasoningText {
+  white-space: pre-wrap;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+}
+
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stepItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--color-bg-tertiary);
+}
+
+.stepStatus {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-completed {
+  color: #15803d;
+}
+
+.status-running {
+  color: #2563eb;
+}
+
+.status-error {
+  color: #b91c1c;
+}
+
+.status-pending {
+  color: var(--color-text-tertiary);
+}
+
+.stepTitle {
+  font-weight: 500;
+}
+
+.stepSummary {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.toolList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usageGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.usageItem {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--color-bg-tertiary);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}

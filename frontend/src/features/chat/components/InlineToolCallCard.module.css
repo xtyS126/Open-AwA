@@ -27,6 +27,11 @@
   font-family: monospace;
 }
 
+.statusText {
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .status-error {
   color: #dc2626;
   background-color: rgba(220, 38, 38, 0.1);

@@ -3,9 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
 import { chatAPI, conversationAPI } from '@/shared/api/api'
 import { useChatStore } from '@/features/chat/store/chatStore'
-import { getActiveConversationId, getCachedConversationMessages } from '@/features/chat/utils/chatCache'
-import type { AssistantExecutionMeta, ConversationSessionSummary, TaskStatus } from '@/features/chat/types'
 import {
+  flushCachedConversationMessages,
+  getActiveConversationId,
+  getCachedConversationMessages,
+} from '@/features/chat/utils/chatCache'
+import { safeGetJsonItem } from '@/shared/utils/safeStorage'
+import type {
+  AssistantExecutionMeta,
+  AssistantMessageSegment,
+  ChatMessage,
+  ConversationSessionSummary,
+  TaskStatus,
+} from '@/features/chat/types'
+import {
+  summarizeExecutionResult,
   applyTaskUpdate,
   applyToolUpdate,
   buildExecutionMetaFromPayload,
@@ -17,6 +29,16 @@ import {
   mergeExecutionMeta,
   normalizeUsage,
 } from '@/features/chat/utils/executionMeta'
+import {
+  appendAssistantChunk,
+  applyIntentToSegments,
+  applyStepToSegments,
+  applyToolEventToSegments,
+  applyToolPatchToSegments,
+  applyUsageToSegments,
+  finalizeAssistantSegments,
+  buildSegmentsFromLegacyMessage,
+} from '@/features/chat/utils/assistantSegments'
 import { stopAgent } from '@/shared/api/taskRuntimeApi'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
@@ -73,6 +95,10 @@ function getStreamStatusText(
 
 type ConversationSortKey = 'last_message_at' | 'title'
 
+interface ChatAppSettings {
+  maxToolCallRounds?: number
+}
+
 const HISTORY_PAGE_SIZE = 20
 
 function mergeConversationSummaries(
@@ -87,6 +113,124 @@ function mergeConversationSummaries(
     nextMap.set(item.session_id, item)
   }
   return Array.from(nextMap.values())
+}
+
+function buildMessageMetaFromSegments(
+  segments: AssistantMessageSegment[] | undefined
+): AssistantExecutionMeta | undefined {
+  if (!segments || segments.length === 0) {
+    return undefined
+  }
+
+  let meta = createEmptyExecutionMeta()
+  for (const segment of segments) {
+    if (segment.kind !== 'thought') {
+      continue
+    }
+    if (segment.intent) {
+      meta.intent = segment.intent
+    }
+    for (const step of segment.steps) {
+      meta = applyTaskUpdate(meta, step as unknown as Record<string, unknown>)
+    }
+    for (const tool of segment.toolEvents) {
+      meta = applyToolUpdate(meta, tool as unknown as Record<string, unknown>)
+    }
+    if (segment.usage) {
+      meta.usage = segment.usage
+    }
+  }
+
+  return hasExecutionMeta(meta) ? meta : undefined
+}
+
+function buildMessageMetaFromMessages(messages: ChatMessage[]): Record<string, AssistantExecutionMeta> {
+  const restoredMeta: Record<string, AssistantExecutionMeta> = {}
+
+  for (const message of messages) {
+    if (message.role !== 'assistant') {
+      continue
+    }
+
+    const segmentMeta = buildMessageMetaFromSegments(message.segments)
+    if (segmentMeta) {
+      restoredMeta[message.id] = segmentMeta
+      continue
+    }
+
+    if (message.toolEvents && message.toolEvents.length > 0) {
+      restoredMeta[message.id] = {
+        steps: [],
+        toolEvents: message.toolEvents,
+      }
+    }
+  }
+
+  return restoredMeta
+}
+
+function mergeServerHistoryWithCached(
+  remoteMessages: ChatMessage[],
+  cachedMessages: ChatMessage[]
+): ChatMessage[] {
+  if (remoteMessages.length === 0) {
+    return cachedMessages
+  }
+
+  const mergedMessages = remoteMessages.map((remoteMessage, index) => {
+    const cachedMessage = cachedMessages[index]
+    if (
+      !cachedMessage ||
+      cachedMessage.role !== remoteMessage.role ||
+      cachedMessage.content !== remoteMessage.content
+    ) {
+      return remoteMessage
+    }
+
+    if (remoteMessage.role !== 'assistant') {
+      return remoteMessage
+    }
+
+    return {
+      ...remoteMessage,
+      reasoning_content: remoteMessage.reasoning_content ?? cachedMessage.reasoning_content,
+      toolEvents: remoteMessage.toolEvents?.length ? remoteMessage.toolEvents : cachedMessage.toolEvents,
+      segments: remoteMessage.segments?.length ? remoteMessage.segments : cachedMessage.segments,
+    }
+  })
+
+  const isPrefixMatch = remoteMessages.every((remoteMessage, index) => {
+    const cachedMessage = cachedMessages[index]
+    return Boolean(
+      cachedMessage &&
+      cachedMessage.role === remoteMessage.role &&
+      cachedMessage.content === remoteMessage.content
+    )
+  })
+
+  if (isPrefixMatch && cachedMessages.length > remoteMessages.length) {
+    return [...mergedMessages, ...cachedMessages.slice(remoteMessages.length)]
+  }
+
+  return mergedMessages
+}
+
+function getLocalMessagesForRestore(targetSessionId: string): ChatMessage[] {
+  const state = useChatStore.getState()
+  if (state.sessionId === targetSessionId && state.messages.length > 0) {
+    return state.messages
+  }
+
+  return getCachedConversationMessages(targetSessionId)
+}
+
+function getConfiguredMaxToolCallRounds(): number {
+  const appSettings = safeGetJsonItem<ChatAppSettings | null>('app_settings', null)
+  const rawValue = appSettings?.maxToolCallRounds
+  if (typeof rawValue !== 'number' || Number.isNaN(rawValue)) {
+    return 12
+  }
+  return Math.max(1, Math.min(50000, Math.trunc(rawValue)))
 }
 
 function ChatPage() {
@@ -151,6 +295,14 @@ function ChatPage() {
       bufferRef.current.lastUpdateTime = Date.now()
     }
   }, [updateLastMessage])
+
+  const flushConversationCache = useCallback((targetSessionId?: string) => {
+    const resolvedSessionId = targetSessionId || useChatStore.getState().sessionId
+    if (!resolvedSessionId || resolvedSessionId === 'default') {
+      return
+    }
+    flushCachedConversationMessages(resolvedSessionId, useChatStore.getState().messages)
+  }, [])
 
   const scrollToBottom = useCallback(() => {
     if (document.hidden) return
@@ -299,19 +451,9 @@ function ChatPage() {
   useEffect(() => {
     if (conversationId && conversationId !== sessionId) {
       setSessionId(conversationId)
-      const cachedMsgs = getCachedConversationMessages(conversationId)
-      // 从缓存恢复 messageMeta
-      const restoredMeta: Record<string, AssistantExecutionMeta> = {}
-      for (const msg of cachedMsgs) {
-        if (msg.role === 'assistant' && msg.toolEvents && msg.toolEvents.length > 0) {
-          restoredMeta[msg.id] = {
-            steps: [],
-            toolEvents: msg.toolEvents,
-          }
-        }
-      }
+      const cachedMsgs = getLocalMessagesForRestore(conversationId)
       loadCachedMessages(conversationId)
-      setMessageMeta(restoredMeta)
+      setMessageMeta(buildMessageMetaFromMessages(cachedMsgs))
       setStreamingAssistantId(null)
       setStreamConnectionState('idle')
       setStreamRetryCount(0)
@@ -356,21 +498,35 @@ function ChatPage() {
         const response = await chatAPI.getHistory(sessionId)
         if (cancelled) return
         const history = response.data
-        if (Array.isArray(history) && history.length > 0) {
-          const restored = history.map((msg: { id: string; role: string; content: string; timestamp: string }) => ({
+        if (Array.isArray(history)) {
+          const restored = history.map((msg: {
+            id: string
+            role: string
+            content: string
+            timestamp: string
+            reasoning_content?: string
+            toolEvents?: ChatMessage['toolEvents']
+            segments?: AssistantMessageSegment[]
+          }) => ({
             id: msg.id?.toString() || crypto.randomUUID(),
             role: msg.role as 'user' | 'assistant',
             content: msg.content,
+            reasoning_content: typeof msg.reasoning_content === 'string' ? msg.reasoning_content : undefined,
             timestamp: new Date(msg.timestamp),
+            toolEvents: Array.isArray(msg.toolEvents) ? msg.toolEvents : undefined,
+            segments: Array.isArray(msg.segments) ? msg.segments : undefined,
           }))
-          setMessages(restored)
-          setMessageMeta({})
+          const cachedMessages = getLocalMessagesForRestore(sessionId)
+          const mergedMessages = mergeServerHistoryWithCached(restored, cachedMessages)
+          setMessages(mergedMessages)
+          setMessageMeta(buildMessageMetaFromMessages(mergedMessages))
+          flushConversationCache(sessionId)
           appLogger.info({
             event: 'chat_history_loaded',
             module: 'chat_page',
             action: 'load_history',
             status: 'success',
-            message: `loaded ${restored.length} history messages`,
+            message: `loaded ${mergedMessages.length} history messages`,
           })
         }
       } catch (error) {
@@ -401,7 +557,7 @@ function ChatPage() {
     }
     loadHistory()
     return () => { cancelled = true }
-  }, [historyInitialized, recoverUnavailableConversation, sessionId, setMessages])
+  }, [flushConversationCache, historyInitialized, recoverUnavailableConversation, sessionId, setMessages])
 
   const updateAssistantMeta = useCallback((messageId: string, updater: (current: AssistantExecutionMeta) => AssistantExecutionMeta) => {
     setMessageMeta((prev) => ({
@@ -409,6 +565,25 @@ function ChatPage() {
       [messageId]: updater(prev[messageId] || createEmptyExecutionMeta()),
     }))
   }, [])
+
+  const updateAssistantSegments = useCallback((
+    messageId: string,
+    updater: (current: AssistantMessageSegment[] | undefined) => AssistantMessageSegment[]
+  ) => {
+    updateMessage(messageId, (message) => {
+      if (message.role !== 'assistant') {
+        return message
+      }
+      return {
+        ...message,
+        segments: updater(message.segments),
+      }
+    })
+  }, [updateMessage])
+
+  const finalizeAssistantMessageSegments = useCallback((messageId: string) => {
+    updateAssistantSegments(messageId, (segments) => finalizeAssistantSegments(segments))
+  }, [updateAssistantSegments])
 
   const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
     if (!value) {
@@ -455,6 +630,12 @@ function ChatPage() {
         addMessage('assistant', content, reasoning || undefined, assistantMessageId)
         assistantMessageCreated = true
         setStreamingAssistantId(assistantMessageId)
+        if (content || reasoning) {
+          updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+            content,
+            reasoningContent: reasoning,
+          }))
+        }
         return true
       }
       return false
@@ -518,6 +699,10 @@ function ChatPage() {
 
     try {
       const { provider, model } = parseSelectedModel(selectedModel)
+      const executionOptions = {
+        ...(thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : {}),
+        max_tool_call_rounds: getConfiguredMaxToolCallRounds(),
+      }
 
       if (outputMode === 'stream') {
         bufferRef.current = { content: '', reasoning: '', lastUpdateTime: Date.now() }
@@ -556,6 +741,13 @@ function ChatPage() {
                     ensureAssistantMessage(content, reasoning)
                     bufferRef.current.lastUpdateTime = Date.now()
                     return
+                  }
+
+                  if (content || reasoning) {
+                    updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+                      content,
+                      reasoningContent: reasoning,
+                    }))
                   }
 
                   if (document.hidden) {
@@ -603,68 +795,115 @@ function ChatPage() {
                     }
                     return merged
                   })
+                  if (nextMeta.intent) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyIntentToSegments(segments, nextMeta.intent!))
+                  }
+                  if (nextMeta.steps.length > 0) {
+                    updateAssistantSegments(assistantMessageId, (segments) => {
+                      let nextSegments = segments || []
+                      for (const step of nextMeta.steps) {
+                        nextSegments = applyStepToSegments(nextSegments, step)
+                      }
+                      return nextSegments
+                    })
+                  }
+                  if (event?.type === 'result' && event.result && typeof event.result === 'object') {
+                    const resultData = event.result as Record<string, unknown>
+                    const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
+                    const output = resultData.output !== undefined ? resultData.output : resultData
+                    if (toolId && output !== undefined) {
+                      updateAssistantSegments(assistantMessageId, (segments) => applyToolPatchToSegments(segments, toolId, {
+                        output,
+                        detail: summarizeExecutionResult(output),
+                        status: 'completed',
+                        completedAt: Date.now(),
+                      }))
+                    }
+                  }
                   return
                 }
 
                 if (event?.type === 'task' && event.task && typeof event.task === 'object') {
                   updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, event.task))
+                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), event.task as Record<string, unknown>).steps[0]
+                  if (stepMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+                  }
                   return
                 }
 
                 if (event?.type === 'tool' && event.tool && typeof event.tool === 'object') {
+                  const toolData = event.tool as Record<string, unknown>
+                  const normalizedToolData = {
+                    ...toolData,
+                    sequence: toolData.sequence ?? ((messageMeta[assistantMessageId]?.toolEvents.length || 0) + 1),
+                    input: toolData.input || toolData.arguments || toolData.args,
+                  }
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    // 自动计算 sequence 序号
-                    const toolData = event.tool as Record<string, unknown>
                     const nextSequence = current.toolEvents.length + 1
                     return applyToolUpdate(current, {
-                      ...toolData,
+                      ...normalizedToolData,
                       sequence: toolData.sequence ?? nextSequence,
-                      // 捕获 input 字段
-                      input: toolData.input || toolData.arguments || toolData.args,
                     })
                   })
+                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), normalizedToolData).toolEvents[0]
+                  if (toolMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
                   return
                 }
 
                 if (event?.type === 'subagent_start' && event.agent_id) {
+                  const toolPayload = {
+                    id: event.agent_id as string,
+                    kind: 'task',
+                    name: `子代理: ${event.agent_type || 'unknown'}`,
+                    status: 'running',
+                    detail: typeof event.description === 'string' ? event.description : '子代理已启动',
+                  }
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    const toolId = event.agent_id as string
-                    return applyToolUpdate(current, {
-                      id: toolId,
-                      kind: 'task',
-                      name: `子代理: ${event.agent_type || 'unknown'}`,
-                      status: 'running',
-                      detail: typeof event.description === 'string' ? event.description : '子代理已启动',
-                    })
+                    return applyToolUpdate(current, toolPayload)
                   })
+                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  if (toolMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
                   return
                 }
 
                 if (event?.type === 'subagent_stop' && event.agent_id) {
+                  const toolPayload = {
+                    id: event.agent_id as string,
+                    kind: 'task',
+                    name: `子代理: ${event.agent_type || 'unknown'}`,
+                    status: event.state === 'completed' ? 'completed' : 'error',
+                    detail: typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`,
+                  }
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    const toolId = event.agent_id as string
-                    return applyToolUpdate(current, {
-                      id: toolId,
-                      kind: 'task',
-                      name: `子代理: ${event.agent_type || 'unknown'}`,
-                      status: event.state === 'completed' ? 'completed' : 'error',
-                      detail: typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`,
-                    })
+                    return applyToolUpdate(current, toolPayload)
                   })
+                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  if (toolMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
                   return
                 }
 
                 if (event?.type === 'agent_message' && event.agent_id) {
+                  const toolPayload = {
+                    id: event.agent_id as string,
+                    kind: 'task',
+                    name: `子代理: ${event.agent_type || 'unknown'}`,
+                    status: 'completed',
+                    detail: typeof event.message === 'string' ? event.message : '子代理消息',
+                  }
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    const toolId = event.agent_id as string
-                    return applyToolUpdate(current, {
-                      id: toolId,
-                      kind: 'task',
-                      name: `子代理: ${event.agent_type || 'unknown'}`,
-                      status: 'completed',
-                      detail: typeof event.message === 'string' ? event.message : '子代理消息',
-                    })
+                    return applyToolUpdate(current, toolPayload)
                   })
+                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  if (toolMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
                   return
                 }
 
@@ -676,6 +915,13 @@ function ChatPage() {
                       status: 'created',
                     })
                   })
+                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), {
+                    ...(event.task as Record<string, unknown>),
+                    status: 'created',
+                  }).steps[0]
+                  if (stepMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+                  }
                   return
                 }
 
@@ -683,36 +929,50 @@ function ChatPage() {
                   updateAssistantMeta(assistantMessageId, (current) => {
                     return applyTaskUpdate(current, event.task)
                   })
+                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), event.task as Record<string, unknown>).steps[0]
+                  if (stepMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+                  }
                   return
                 }
 
                 if (event?.type === 'task_stopped' && event.task_id) {
+                  const toolPayload = {
+                    id: event.task_id as string,
+                    kind: 'task',
+                    name: '任务已停止',
+                    status: 'completed',
+                    detail: typeof event.summary === 'string' ? event.summary : '任务已停止',
+                  }
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, {
-                      id: event.task_id as string,
-                      kind: 'task',
-                      name: '任务已停止',
-                      status: 'completed',
-                      detail: typeof event.summary === 'string' ? event.summary : '任务已停止',
-                    })
+                    return applyToolUpdate(current, toolPayload)
                   })
+                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  if (toolMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
                   return
                 }
 
                 // 团队生命周期事件（Phase 4）
                 if (event?.type === 'team_event' && event.team) {
+                  const toolPayload = {
+                    id: event.team.team_id || `team_${Date.now()}`,
+                    kind: 'task',
+                    name: `团队: ${event.team.name || '未命名'}`,
+                    status: event.team.ok === false ? 'failed' : 'running',
+                    detail:
+                      typeof event.team.state === 'string'
+                        ? `团队状态: ${event.team.state}`
+                        : '团队操作已完成',
+                  }
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, {
-                      id: event.team.team_id || `team_${Date.now()}`,
-                      kind: 'task',
-                      name: `团队: ${event.team.name || '未命名'}`,
-                      status: event.team.ok === false ? 'failed' : 'running',
-                      detail:
-                        typeof event.team.state === 'string'
-                          ? `团队状态: ${event.team.state}`
-                          : '团队操作已完成',
-                    })
+                    return applyToolUpdate(current, toolPayload)
                   })
+                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  if (toolMeta) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
                   return
                 }
 
@@ -729,24 +989,16 @@ function ChatPage() {
                       model: usage.model,
                     })
                   }
-                  // 流结束时的持久化同步
-                  setMessageMeta((prev) => {
-                    const currentMeta = prev[assistantMessageId]
-                    if (currentMeta?.toolEvents && currentMeta.toolEvents.length > 0) {
-                      updateMessage(assistantMessageId, (msg) => ({
-                        ...msg,
-                        toolEvents: currentMeta.toolEvents,
-                      }))
-                    }
-                    return prev
-                  })
+                  if (usage) {
+                    updateAssistantSegments(assistantMessageId, (segments) => applyUsageToSegments(segments, usage))
+                  }
                 }
               },
               (error) => {
                 runtimeError = error instanceof Error ? error : new Error(String(error))
               },
               { signal: abortController.signal },
-              thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : undefined,
+              executionOptions,
               chatAttachments.length > 0 ? chatAttachments : undefined
             )
 
@@ -784,27 +1036,23 @@ function ChatPage() {
             if (!assistantMessageCreated) {
               addMessage('assistant', `请求失败：${sanitizeDisplayedError(normalizedError.message)}`, undefined, assistantMessageId)
               assistantMessageCreated = true
+              updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+                content: `请求失败：${sanitizeDisplayedError(normalizedError.message)}`,
+              }))
             } else {
               updateLastMessage(`\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`)
+              updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+                content: `\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`,
+              }))
             }
+            finalizeAssistantMessageSegments(assistantMessageId)
             throw normalizedError
           }
         }
         flushBuffer()
+        finalizeAssistantMessageSegments(assistantMessageId)
         setStreamStageMessage(null)
         setStreamConnectionState('idle')
-
-        // 流式完成时，将 toolEvents 持久化到消息对象
-        setMessageMeta((prev) => {
-          const metaForMsg = prev[assistantMessageId]
-          if (metaForMsg?.toolEvents && metaForMsg.toolEvents.length > 0) {
-            updateMessage(assistantMessageId, (msg) => ({
-              ...msg,
-              toolEvents: metaForMsg.toolEvents,
-            }))
-          }
-          return prev
-        })
 
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId || streamErrorHandled) {
           return
@@ -812,7 +1060,7 @@ function ChatPage() {
       } else {
         const response = await chatAPI.sendMessage(fullMessage, targetSessionId, provider, model, 'direct', {
           signal: abortController.signal,
-        }, thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : undefined, chatAttachments.length > 0 ? chatAttachments : undefined)
+        }, executionOptions, chatAttachments.length > 0 ? chatAttachments : undefined)
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
           return
         }
@@ -823,6 +1071,14 @@ function ChatPage() {
 
         if (assistantText && assistantText.trim()) {
           addMessage('assistant', assistantText, reasoningContent || undefined, assistantMessageId)
+          updateMessage(assistantMessageId, (message) => ({
+            ...message,
+            segments: buildSegmentsFromLegacyMessage({
+              content: assistantText,
+              reasoningContent: reasoningContent || undefined,
+              meta: nextMeta,
+            }),
+          }))
           if (hasExecutionMeta(nextMeta)) {
             setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
             // 直接模式下同步持久化 toolEvents
@@ -842,8 +1098,47 @@ function ChatPage() {
           }
         } else if (backendError?.message) {
           addMessage('assistant', `请求失败：${sanitizeDisplayedError(backendError.message)}`)
+          updateMessage(assistantMessageId, (message) => ({
+            ...message,
+            segments: buildSegmentsFromLegacyMessage({
+              content: `请求失败：${sanitizeDisplayedError(backendError.message)}`,
+            }),
+          }))
+        } else if (reasoningContent || hasExecutionMeta(nextMeta)) {
+          addMessage('assistant', '', reasoningContent || undefined, assistantMessageId)
+          updateMessage(assistantMessageId, (message) => ({
+            ...message,
+            segments: buildSegmentsFromLegacyMessage({
+              reasoningContent: reasoningContent || undefined,
+              meta: nextMeta,
+            }),
+          }))
+          if (hasExecutionMeta(nextMeta)) {
+            setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
+            if (nextMeta.toolEvents.length > 0) {
+              updateMessage(assistantMessageId, (msg) => ({
+                ...msg,
+                toolEvents: nextMeta.toolEvents,
+              }))
+            }
+          }
+          if (nextMeta.usage) {
+            dispatchBillingUsageUpdated({
+              callId: nextMeta.usage.call_id,
+              provider: nextMeta.usage.provider,
+              model: nextMeta.usage.model,
+            })
+          }
         } else {
           addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。', undefined, assistantMessageId)
+          updateMessage(assistantMessageId, (message) => ({
+            ...message,
+            segments: buildSegmentsFromLegacyMessage({
+              content: '抱歉，当前未返回有效内容，请稍后重试。',
+              reasoningContent: reasoningContent || undefined,
+              meta: nextMeta,
+            }),
+          }))
           if (hasExecutionMeta(nextMeta)) {
             setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
           }
@@ -872,8 +1167,12 @@ function ChatPage() {
       })
       if (isMountedRef.current && activeRequestIdRef.current === requestId && !streamErrorHandled) {
         addMessage('assistant', '抱歉，发生了错误。请稍后重试。')
+        updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+          content: '抱歉，发生了错误。请稍后重试。',
+        }))
       }
     } finally {
+      flushConversationCache(targetSessionId)
       if (targetSessionId && targetSessionId !== 'default') {
         void loadConversationList(1, false)
       }
@@ -1004,6 +1303,13 @@ function ChatPage() {
             detail: '已手动停止',
           })
         )
+        if (streamingAssistantId) {
+          updateAssistantSegments(streamingAssistantId, (segments) => applyToolPatchToSegments(segments, agentId, {
+            status: 'completed',
+            detail: '已手动停止',
+            completedAt: Date.now(),
+          }))
+        }
       }
     } catch (error) {
       appLogger.warning({
@@ -1013,7 +1319,7 @@ function ChatPage() {
         extra: { agentId },
       })
     }
-  }, [streamingAssistantId, updateAssistantMeta])
+  }, [streamingAssistantId, updateAssistantMeta, updateAssistantSegments])
 
   const getStatusIcon = (status: TaskStatus) => {
     switch (status) {
@@ -1208,7 +1514,7 @@ function ChatPage() {
             messagesEndRef={messagesEndRef}
           />
 
-          {renderFloatingExecutionPanel()}
+          {false && renderFloatingExecutionPanel()}
           <ChatInput
             onSend={(content, atts) => void handleSend(content, atts)}
             isLoading={isLoading}

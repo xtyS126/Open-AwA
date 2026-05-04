@@ -1,11 +1,13 @@
 import { memo, useMemo } from 'react'
-import type { ChatMessage as ChatMessageType, ToolEventMeta } from '@/features/chat/types'
-import type { AssistantExecutionMeta } from '@/features/chat/types'
-import { ReasoningContent } from './ReasoningContent'
+import type {
+  AssistantExecutionMeta,
+  AssistantMessageSegment,
+  ChatMessage as ChatMessageType,
+} from '@/features/chat/types'
+import { buildSegmentsFromLegacyMessage } from '@/features/chat/utils/assistantSegments'
+import type { AssistantThoughtSegment as AssistantThoughtSegmentData, AssistantReplySegment } from '@/features/chat/types'
 import { MessageContent } from './MessageContent'
-import InlineToolCallCard from './InlineToolCallCard'
-import AssistantExecutionDetails from './AssistantExecutionDetails'
-import { hasExecutionMeta } from '@/features/chat/utils/executionMeta'
+import AssistantThoughtSegment from './AssistantThoughtSegment'
 import styles from '../ChatPage.module.css'
 
 interface ChatMessageProps {
@@ -15,59 +17,84 @@ interface ChatMessageProps {
   isLastMessage: boolean
 }
 
-function getSortedToolEvents(message: ChatMessageType, meta: AssistantExecutionMeta | undefined): ToolEventMeta[] {
-  // 优先使用 messageMeta 中的实时数据
-  const source = meta?.toolEvents || message.toolEvents || []
-  return [...source].sort((a, b) => {
-    if (a.sequence !== undefined && b.sequence !== undefined) {
-      return a.sequence - b.sequence
+type GroupedSegment = 
+  | { kind: 'thought_group', id: string, segments: AssistantThoughtSegmentData[] }
+  | AssistantReplySegment
+
+function groupAssistantSegments(segments: AssistantMessageSegment[]): GroupedSegment[] {
+  const result: GroupedSegment[] = []
+  let currentThoughtGroup: AssistantThoughtSegmentData[] | null = null
+
+  for (const segment of segments) {
+    if (segment.kind === 'thought') {
+      if (!currentThoughtGroup) {
+        currentThoughtGroup = []
+        result.push({ kind: 'thought_group', id: `group-${segment.id}`, segments: currentThoughtGroup })
+      }
+      currentThoughtGroup.push(segment)
+    } else {
+      currentThoughtGroup = null
+      result.push(segment)
     }
-    if (a.sequence !== undefined) return -1
-    if (b.sequence !== undefined) return 1
-    return 0
+  }
+
+  return result
+}
+
+function getAssistantSegments(
+  message: ChatMessageType,
+  meta: AssistantExecutionMeta | undefined
+): AssistantMessageSegment[] {
+  if (message.segments && message.segments.length > 0) {
+    return message.segments
+  }
+
+  const fallbackMeta = meta || {
+    steps: [],
+    toolEvents: message.toolEvents || [],
+  }
+
+  return buildSegmentsFromLegacyMessage({
+    content: message.content,
+    reasoningContent: message.reasoning_content,
+    meta: fallbackMeta,
   })
 }
 
 function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMessage }: ChatMessageProps) {
   const isCurrentlyStreaming = streamingAssistantId === message.id && isLastMessage && message.role === 'assistant'
 
-  const toolEvents = useMemo(() => {
+  const assistantSegments = useMemo(() => {
     if (message.role !== 'assistant') return []
-    return getSortedToolEvents(message, messageMeta[message.id])
+    return getAssistantSegments(message, messageMeta[message.id])
   }, [message, messageMeta])
 
-  const hasTools = toolEvents.length > 0
+  const groupedSegments = useMemo(() => {
+    return groupAssistantSegments(assistantSegments)
+  }, [assistantSegments])
 
   return (
     <div className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}>
       <div className={styles['message-content']}>
-        {message.reasoning_content && (
-          <ReasoningContent
-            messageId={message.id}
-            content={message.reasoning_content}
-            isStreaming={isCurrentlyStreaming}
-          />
+        {message.role === 'user' && (
+          <MessageContent content={message.content} role={message.role} isStreaming={isCurrentlyStreaming} />
         )}
-        {/* 内联工具调用卡片 */}
-        {hasTools && (
-          <div className={styles['inline-tools']}>
-            {toolEvents.map((tool, index) => (
-              <InlineToolCallCard
-                key={tool.id}
-                tool={tool}
-                isLast={index === toolEvents.length - 1}
-              />
-            ))}
-          </div>
-        )}
-        {message.content && <MessageContent content={message.content} role={message.role} isStreaming={isCurrentlyStreaming} />}
-        {message.role === 'assistant' && messageMeta[message.id] && hasExecutionMeta(messageMeta[message.id]) && (
-          <AssistantExecutionDetails
-            messageId={message.id}
-            meta={messageMeta[message.id]}
-            isStreaming={isCurrentlyStreaming}
-          />
-        )}
+        {message.role === 'assistant' && groupedSegments.map((group) => (
+          group.kind === 'thought_group' ? (
+            <AssistantThoughtSegment
+              key={group.id}
+              segments={group.segments}
+              isStreaming={isCurrentlyStreaming && group.segments.some(s => s.status === 'running')}
+            />
+          ) : (
+            <MessageContent
+              key={group.id}
+              content={group.content}
+              role={message.role}
+              isStreaming={isCurrentlyStreaming}
+            />
+          )
+        ))}
       </div>
     </div>
   )

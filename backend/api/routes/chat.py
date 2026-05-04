@@ -82,6 +82,7 @@ async def chat(
         "attachments": [a.dict() for a in message.attachments] if message.attachments else None,
         "thinking_enabled": message.thinking_enabled,
         "thinking_depth": message.thinking_depth,
+        "max_tool_call_rounds": message.max_tool_call_rounds,
     }
 
     logger.bind(

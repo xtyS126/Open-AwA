@@ -76,7 +76,10 @@ class WebSearchSkill:
                 "count": len(results)
             }
         except Exception as e:
-            logger.error(f"Web search error: {e}")
+            if "搜索请求超时" in str(e):
+                logger.warning(f"Web search timed out: {e}")
+            else:
+                logger.error(f"Web search error: {e}")
             return {"success": False, "error": f"搜索失败: {str(e)}"}
 
     async def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict[str, str]]:

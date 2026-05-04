@@ -32,9 +32,10 @@ interface Settings {
   promptContent: string
   requireConfirm: boolean
   enableAudit: boolean
+  maxToolCallRounds: number
 }
 
-type PersistedSettings = Pick<Settings, 'theme' | 'language' | 'apiProvider' | 'requireConfirm' | 'enableAudit'>
+type PersistedSettings = Pick<Settings, 'theme' | 'language' | 'apiProvider' | 'requireConfirm' | 'enableAudit' | 'maxToolCallRounds'>
 
 function isPersistedSettings(value: unknown): value is Partial<PersistedSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -47,7 +48,8 @@ function isPersistedSettings(value: unknown): value is Partial<PersistedSettings
     (candidate.language === undefined || typeof candidate.language === 'string') &&
     (candidate.apiProvider === undefined || typeof candidate.apiProvider === 'string') &&
     (candidate.requireConfirm === undefined || typeof candidate.requireConfirm === 'boolean') &&
-    (candidate.enableAudit === undefined || typeof candidate.enableAudit === 'boolean')
+    (candidate.enableAudit === undefined || typeof candidate.enableAudit === 'boolean') &&
+    (candidate.maxToolCallRounds === undefined || typeof candidate.maxToolCallRounds === 'number')
   )
 }
 
@@ -58,6 +60,7 @@ function buildPersistedSettings(settings: Settings): PersistedSettings {
     apiProvider: settings.apiProvider,
     requireConfirm: settings.requireConfirm,
     enableAudit: settings.enableAudit,
+    maxToolCallRounds: settings.maxToolCallRounds,
   }
 }
 
@@ -175,6 +178,7 @@ function SettingsPage() {
     promptContent: '',
     requireConfirm: true,
     enableAudit: true,
+    maxToolCallRounds: 12,
   })
   const [saving, setSaving] = useState(false)
   const { message, showNotification } = useNotification(3000)
@@ -542,7 +546,14 @@ function SettingsPage() {
   const loadSettings = () => {
     const savedSettings = safeGetJsonItem<unknown>('app_settings', null)
     if (savedSettings && isPersistedSettings(savedSettings)) {
-      setSettings((prev) => ({ ...prev, ...savedSettings }))
+      const normalizedRounds = typeof savedSettings.maxToolCallRounds === 'number'
+        ? Math.max(1, Math.min(50000, Math.trunc(savedSettings.maxToolCallRounds)))
+        : undefined
+      setSettings((prev) => ({
+        ...prev,
+        ...savedSettings,
+        maxToolCallRounds: normalizedRounds ?? prev.maxToolCallRounds,
+      }))
       return
     }
     if (savedSettings) {
@@ -1481,6 +1492,25 @@ function SettingsPage() {
                 <option value="zh">中文</option>
                 <option value="en">English</option>
               </select>
+            </div>
+            <div className={styles['setting-item']}>
+              <label htmlFor="max-tool-call-rounds">工具回环次数上限</label>
+              <input
+                id="max-tool-call-rounds"
+                type="number"
+                min={1}
+                max={50000}
+                step={1}
+                value={settings.maxToolCallRounds}
+                onChange={(e) => {
+                  const nextValue = Number.parseInt(e.target.value, 10)
+                  if (Number.isNaN(nextValue)) {
+                    return
+                  }
+                  handleChange('maxToolCallRounds', Math.max(1, Math.min(50000, nextValue)))
+                }}
+              />
+              <span className={styles['param-hint']}>控制单次对话中 AI 连续工具调用的最大轮次，默认 12。</span>
             </div>
             <button
               className={`btn btn-primary`}

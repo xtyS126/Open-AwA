@@ -321,6 +321,19 @@ describe('SettingsPage', () => {
     })
   })
 
+  it('通用设置支持保存工具回环次数上限', async () => {
+    renderSettingsGeneralTab()
+
+    const roundsInput = await screen.findByLabelText('工具回环次数上限') as HTMLInputElement
+    fireEvent.change(roundsInput, { target: { value: '18' } })
+    fireEvent.click(screen.getByText('保存设置'))
+
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem('app_settings') || '{}')
+      expect(saved.maxToolCallRounds).toBe(18)
+    })
+  })
+
   it('AI 参数区移除最大 Tokens 输入，并展示模型级计费详情', async () => {
     renderSettingsGeneralTab()
 
