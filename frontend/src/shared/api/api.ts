@@ -796,6 +796,9 @@ export const userAPI = {
   getDevices: () => api.get<LoginDeviceItem[]>('/user/devices'),
   revokeDevice: (deviceId: number) =>
     api.post<{ message: string }>(`/user/devices/${deviceId}/revoke`),
+  getPreferences: () => api.get<{ preferences: Record<string, any> }>('/user/preferences'),
+  updatePreferences: (preferences: Record<string, any>) =>
+    api.put<{ preferences: Record<string, any> }>('/user/preferences', { preferences }),
 }
 
 export const passwordAPI = {

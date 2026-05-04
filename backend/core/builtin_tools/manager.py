@@ -28,6 +28,11 @@ BUILTIN_TOOL_ACTION_MAP: Dict[str, tuple[str, str]] = {
     "index_directory": ("local_search", "index_directory"),
     "remove_document": ("local_search", "remove"),
     "search_stats": ("local_search", "stats"),
+    "memory_remember": ("memory_manager", "remember"),
+    "memory_recall": ("memory_manager", "recall"),
+    "memory_forget": ("memory_manager", "forget"),
+    "memory_list": ("memory_manager", "list"),
+    "memory_stats": ("memory_manager", "stats"),
 }
 
 # 旧式 API（通过 tools/registry.py 和 workflow）使用的 action 到内部 tool_name 的反向映射
@@ -222,6 +227,88 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_memory_remember",
+            "description": "将一段重要信息存入长期记忆，下次对话时可通过 memory_recall 检索。适合存储用户偏好、决策结果、重要上下文等",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "要记住的内容"},
+                    "importance": {
+                        "type": "number",
+                        "description": "重要度 0.0-1.0，默认 0.5",
+                        "default": 0.5,
+                    },
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_memory_recall",
+            "description": "根据关键词检索长期记忆（混合搜索：向量 + 关键词），返回匹配的记忆列表",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回条数，默认 5，最大 20",
+                        "default": 5,
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_memory_forget",
+            "description": "删除指定 ID 的长期记忆",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "memory_id": {"type": "integer", "description": "要删除的记忆 ID"},
+                },
+                "required": ["memory_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_memory_list",
+            "description": "列出最近存入的长期记忆摘要",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回条数，默认 10，最大 50",
+                        "default": 10,
+                    },
+                    "include_archived": {
+                        "type": "boolean",
+                        "description": "是否包含已归档记忆，默认 false",
+                        "default": False,
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_memory_stats",
+            "description": "查看当前记忆系统的整体统计信息（总量、活跃数、归档数、平均置信度等）",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]
 
 
@@ -255,6 +342,10 @@ class BuiltInToolManager:
             from .local_search import LocalSearchEngine
 
             instance = LocalSearchEngine(config or {})
+        elif tool_name == "memory_manager":
+            from .memory_tools import MemoryTools
+
+            instance = MemoryTools()
         else:
             raise ValueError(f"未知内置工具: {tool_name}")
 
@@ -299,7 +390,7 @@ class BuiltInToolManager:
     async def list_tools(self) -> Dict[str, Dict[str, Any]]:
         """返回全部内置工具的定义与状态（供 /api/tools/list 使用）。"""
         tools = {}
-        for tool_name in ["file_manager", "terminal_executor", "web_search", "local_search"]:
+        for tool_name in ["file_manager", "terminal_executor", "web_search", "local_search", "memory_manager"]:
             instance = await self._initialize_tool(tool_name)
             tools[tool_name] = {
                 "name": tool_name,

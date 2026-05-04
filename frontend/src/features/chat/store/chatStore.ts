@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
+import { syncPreferenceToServer } from '@/shared/utils/preferenceSync'
 import {
   deleteCachedConversationMessages,
   getActiveConversationId,
@@ -187,11 +188,13 @@ export const useChatStore = create<ChatState>((set) => ({
   setOutputMode: (mode) => {
     set({ outputMode: mode })
     safeSetItem('chat_output_mode', mode)
+    syncPreferenceToServer('outputMode', mode)
   },
 
   setSelectedModel: (model) => {
     set({ selectedModel: model })
     safeSetItem('chat_selected_model', model)
+    syncPreferenceToServer('selectedModel', model)
     // 如果选择了推理模型，自动开启思考模式
     if (model.toLowerCase().includes('reasoner') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('o1') || model.toLowerCase().includes('o3')) {
       set({ thinkingEnabled: true })
@@ -207,10 +210,12 @@ export const useChatStore = create<ChatState>((set) => ({
   setThinkingEnabled: (enabled) => {
     set({ thinkingEnabled: enabled })
     safeSetItem('chat_thinking_enabled', enabled ? 'true' : 'false')
+    syncPreferenceToServer('thinkingEnabled', enabled)
   },
   setThinkingDepth: (depth) => {
     const validDepth = Math.max(0, Math.min(5, depth))
     set({ thinkingDepth: validDepth })
     safeSetItem('chat_thinking_depth', String(validDepth))
+    syncPreferenceToServer('thinkingDepth', validDepth)
   },
 }))

@@ -4,7 +4,10 @@ import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
+import { loadServerPreferences } from '@/shared/utils/preferenceSync'
+import { safeGetItem } from '@/shared/utils/safeStorage'
 import { useAuthStore } from '@/shared/store/authStore'
+import { useChatStore } from '@/features/chat/store/chatStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 
 const routerFutureConfig = {
@@ -80,6 +83,11 @@ function App() {
         message: 'existing session validated',
       })
       setAuth({ username: meResponse.data?.username || 'user' }, null)
+
+      // 从服务端加载偏好并写入 localStorage，然后刷新 Zustand store
+      await loadServerPreferences()
+      rehydrateStores()
+
       setInitialized(true)
       return
     } catch (error) {
@@ -97,6 +105,36 @@ function App() {
 
     // 未认证时标记初始化完成，由路由守卫跳转到登录页
     setInitialized(true)
+  }
+
+  function rehydrateStores() {
+    const theme = safeGetItem('theme', '')
+    if (theme === 'dark' || theme === 'light') {
+      useThemeStore.getState().setTheme(theme)
+    }
+
+    const selectedModel = safeGetItem('chat_selected_model', '')
+    if (selectedModel) {
+      useChatStore.getState().setSelectedModel(selectedModel)
+    }
+
+    const outputMode = safeGetItem('chat_output_mode', '') as 'stream' | 'direct'
+    if (outputMode === 'stream' || outputMode === 'direct') {
+      useChatStore.getState().setOutputMode(outputMode)
+    }
+
+    const thinkingEnabled = safeGetItem('chat_thinking_enabled', '')
+    if (thinkingEnabled !== '') {
+      useChatStore.getState().setThinkingEnabled(thinkingEnabled === 'true')
+    }
+
+    const thinkingDepth = safeGetItem('chat_thinking_depth', '')
+    if (thinkingDepth !== '') {
+      const parsed = Number(thinkingDepth)
+      if (parsed >= 0 && parsed <= 5) {
+        useChatStore.getState().setThinkingDepth(parsed)
+      }
+    }
   }
 
   if (!isInitialized) {

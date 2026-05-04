@@ -61,11 +61,6 @@
   color: var(--color-text-tertiary);
 }
 
-.experience-tab-content .experience-page {
-  padding: 0;
-  height: auto;
-}
-
 .memory-importance,
 .memory-access {
   background: var(--color-bg-secondary);

@@ -1088,3 +1088,13 @@ class AuditLogListResponse(BaseModel):
     total: int = Field(default=0, description="总数")
     page: int = Field(default=1, description="当前页码")
     page_size: int = Field(default=20, description="每页数量")
+
+
+class UserPreferencesUpdate(BaseModel):
+    """用户偏好更新请求，增量合并到 profile_data["preferences"] 中。"""
+    preferences: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UserPreferencesResponse(BaseModel):
+    """用户偏好响应，包含 preferences 子对象。"""
+    preferences: Dict[str, Any]

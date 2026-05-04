@@ -1050,6 +1050,7 @@ class ExecutionLayer:
         执行单个工具调用，根据 function name 分发到对应的处理器。
         """
         func_name = tool_call.get("function", {}).get("name", "")
+        raw_func_name = func_name
         func_args_str = tool_call.get("function", {}).get("arguments", "{}")
 
         try:
@@ -1059,6 +1060,21 @@ class ExecutionLayer:
 
         if not func_name:
             return {"ok": False, "error": "tool_call missing function name"}
+
+        # 部分模型会把工具前缀首字母错误大写成 Task_/Plugin_/Builtin_/Mcp_，
+        # 这里仅归一化已知前缀，避免破坏后续名称解析。
+        if "_" in func_name:
+            prefix, remainder = func_name.split("_", 1)
+            normalized_prefix = prefix.lower()
+            if normalized_prefix in {"plugin", "mcp", "builtin", "task"}:
+                func_name = f"{normalized_prefix}_{remainder}"
+                if func_name != raw_func_name:
+                    logger.bind(
+                        module="executor",
+                        event="tool_name_prefix_normalized",
+                        raw_tool_name=raw_func_name,
+                        normalized_tool_name=func_name,
+                    ).warning(f"检测到工具名前缀大小写异常，已自动归一化: {raw_func_name} -> {func_name}")
 
         # PreToolUse 钩子：分发前校验工具调用权限
         try:

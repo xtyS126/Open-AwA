@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
+import { syncPreferenceToServer } from '@/shared/utils/preferenceSync'
 
 type Theme = 'light' | 'dark'
 
@@ -40,17 +41,19 @@ if (typeof document !== 'undefined') {
 
 export const useThemeStore = create<ThemeState>((set) => ({
   theme: getInitialTheme(),
-  
+
   toggleTheme: () => set((state) => {
     const newTheme = state.theme === 'light' ? 'dark' : 'light'
     safeSetItem('theme', newTheme)
     applyTheme(newTheme)
+    syncPreferenceToServer('theme', newTheme)
     return { theme: newTheme }
   }),
-  
+
   setTheme: (theme: Theme) => set(() => {
     safeSetItem('theme', theme)
     applyTheme(theme)
+    syncPreferenceToServer('theme', theme)
     return { theme }
   }),
 }))
