@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from loguru import logger
 
 from api.dependencies import get_current_user
+from api.schemas import UserPreferencesUpdate
 from config.security import add_to_blacklist
 from db.models import LoginDevice, User as UserModel, BehaviorLog, get_db
 
@@ -253,6 +254,54 @@ async def revoke_device(
     ).info("device revoked")
 
     return {"message": "远程登出成功"}
+
+
+@router.get("/preferences")
+async def get_user_preferences(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户的偏好设置。
+    返回 profile_data["preferences"]，不存在则返回空字典。
+    """
+    profile = current_user.profile_data or {}
+    preferences = profile.get("preferences", {})
+    logger.bind(
+        event="user_preferences_get",
+        module="user",
+        action="get_preferences",
+        status="success",
+        user_id=current_user.id,
+    ).debug("user preferences fetched")
+    return {"preferences": preferences}
+
+
+@router.put("/preferences")
+async def update_user_preferences(
+    body: "UserPreferencesUpdate",
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    增量更新用户偏好设置。
+    将传入的键值对合并到 profile_data["preferences"] 中，不影响其他键。
+    """
+    profile = current_user.profile_data or {}
+    existing_prefs = profile.get("preferences", {})
+    existing_prefs.update(body.preferences)
+    profile["preferences"] = existing_prefs
+    current_user.profile_data = profile
+    db.commit()
+    logger.bind(
+        event="user_preferences_put",
+        module="user",
+        action="update_preferences",
+        status="success",
+        user_id=current_user.id,
+        keys=list(body.preferences.keys()),
+    ).info("user preferences updated")
+    return {"preferences": existing_prefs}
 
 
 def _generate_user_profile(db: Session, user_id: str) -> dict:

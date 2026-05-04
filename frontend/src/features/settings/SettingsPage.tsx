@@ -9,7 +9,7 @@ import {
   HardDrive
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
-import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail } from '@/shared/api/api'
+import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail, userAPI } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
 import { useChatStore } from '@/features/chat/store/chatStore'
@@ -1352,7 +1352,19 @@ function SettingsPage() {
 
     try {
       safeSetJsonItem('app_settings', buildPersistedSettings(settings))
-      
+
+      // 同步偏好到服务端，实现跨浏览器持久化
+      userAPI.updatePreferences({
+        theme: settings.theme,
+        language: settings.language,
+        apiProvider: settings.apiProvider,
+        requireConfirm: settings.requireConfirm,
+        enableAudit: settings.enableAudit,
+        maxToolCallRounds: settings.maxToolCallRounds,
+      }).catch(() => {
+        // 静默失败，localStorage 已保存
+      })
+
       if (settings.promptContent) {
         const existingPrompts = await promptsAPI.getAll()
         if (existingPrompts.data && existingPrompts.data.length > 0) {

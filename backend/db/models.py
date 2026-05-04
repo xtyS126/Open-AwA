@@ -1035,6 +1035,24 @@ def _migrate_user_profile_columns(use_engine=None):
             connection.execute(text("ALTER TABLE users ADD COLUMN profile_data TEXT DEFAULT '{}'"))
 
 
+def _migrate_task_runtime_columns(use_engine=None):
+    """
+    为 task runtime 相关表补齐历史缺失列，兼容旧版本地数据库。
+    当前重点修复 task_items 缺失 started_at/completed_at 时导致任务创建失败的问题。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+
+    if "task_items" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("task_items")}
+        with target_engine.begin() as connection:
+            if "started_at" not in columns:
+                connection.execute(text("ALTER TABLE task_items ADD COLUMN started_at DATETIME"))
+            if "completed_at" not in columns:
+                connection.execute(text("ALTER TABLE task_items ADD COLUMN completed_at DATETIME"))
+
+
 def _migrate_scheduled_task_daily_columns(use_engine=None):
     """
     为 scheduled_tasks 表补齐每日执行相关字段。
@@ -1071,6 +1089,7 @@ def init_db(bind_engine=None):
     _migrate_skill_json_columns(use_engine=use_engine)
     _migrate_conversation_columns(use_engine=use_engine)
     _migrate_user_profile_columns(use_engine=use_engine)
+    _migrate_task_runtime_columns(use_engine=use_engine)
     _migrate_scheduled_task_daily_columns(use_engine=use_engine)
 
 

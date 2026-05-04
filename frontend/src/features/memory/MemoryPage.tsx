@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { conversationAPI, memoryAPI } from '@/shared/api/api'
 import { ShortTermMemory, LongTermMemory } from '@/shared/types/api'
-import ExperiencePage from '@/features/experiences/ExperiencePage'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './MemoryPage.module.css'
@@ -162,11 +161,9 @@ function MemoryPage() {
     <div className={styles['memory-page']}>
       <div className={styles['page-header']}>
         <h1>记忆管理</h1>
-        {activeTab !== 'experience' && (
-          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => void loadMemories()} disabled={loading}>
-            刷新当前列表
-          </button>
-        )}
+        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => void loadMemories()} disabled={loading}>
+          刷新当前列表
+        </button>
       </div>
 
       <div className={styles['memory-tabs']}>
@@ -182,12 +179,6 @@ function MemoryPage() {
         >
           长期记忆
         </button>
-        <button
-          className={`${styles['tab-btn']} ${activeTab === 'experience' ? styles['active'] : ''}`}
-          onClick={() => setActiveTab('experience')}
-        >
-          经验记忆
-        </button>
       </div>
 
       <div className={styles['memory-content']}>
@@ -196,12 +187,6 @@ function MemoryPage() {
         )}
         {actionError && (
           <div className={styles['status-message-error']}>{actionError}</div>
-        )}
-
-        {activeTab === 'experience' && (
-          <div className={styles['experience-tab-content']}>
-            <ExperiencePage hideHeader={true} />
-          </div>
         )}
 
         {activeTab === 'short-term' && (

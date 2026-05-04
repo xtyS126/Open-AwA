@@ -9,6 +9,7 @@ from loguru import logger
 
 from api.dependencies import get_current_user
 from core.task_runtime import task_runtime
+from db.models import User
 
 router = APIRouter(prefix="/api/task-runtime", tags=["task-runtime"])
 
@@ -36,7 +37,7 @@ async def startup():
 async def list_agents(
     state: Optional[str] = Query(None, description="按状态过滤: running/completed/failed/stopped"),
     agent_type: Optional[str] = Query(None, description="按代理类型过滤"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """列出活跃与历史代理会话。"""
     result = await task_runtime.list_agents(state=state)
@@ -46,7 +47,7 @@ async def list_agents(
 
 
 @router.get("/agents/{agent_id}")
-async def get_agent(agent_id: str, _current_user=Depends(get_current_user)):
+async def get_agent(agent_id: str, current_user: User = Depends(get_current_user)):
     """获取单个代理会话详情。"""
     agent = await task_runtime.get_agent(agent_id)
     if not agent:
@@ -55,7 +56,7 @@ async def get_agent(agent_id: str, _current_user=Depends(get_current_user)):
 
 
 @router.post("/agents/{agent_id}/stop")
-async def stop_agent(agent_id: str, _current_user=Depends(get_current_user)):
+async def stop_agent(agent_id: str, current_user: User = Depends(get_current_user)):
     """停止运行中的后台代理。"""
     result = await task_runtime.stop_agent(agent_id)
     _raise_not_found_from_result(result)
@@ -63,7 +64,7 @@ async def stop_agent(agent_id: str, _current_user=Depends(get_current_user)):
 
 
 @router.get("/agents/{agent_id}/transcript")
-async def get_agent_transcript(agent_id: str, _current_user=Depends(get_current_user)):
+async def get_agent_transcript(agent_id: str, current_user: User = Depends(get_current_user)):
     """获取代理的完整执行 transcript。"""
     agent = await task_runtime.get_agent(agent_id)
     if not agent:
@@ -73,7 +74,7 @@ async def get_agent_transcript(agent_id: str, _current_user=Depends(get_current_
 
 
 @router.get("/agent-types")
-async def list_agent_types(_current_user=Depends(get_current_user)):
+async def list_agent_types(current_user: User = Depends(get_current_user)):
     """列出所有可用代理类型。"""
     result = await task_runtime.list_agent_types()
     return {"agent_types": result}
@@ -83,7 +84,7 @@ async def list_agent_types(_current_user=Depends(get_current_user)):
 async def list_tasks(
     list_id: Optional[str] = Query(None, description="按清单 ID 过滤"),
     status: Optional[str] = Query(None, description="按状态过滤"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """列出共享任务清单中的任务项。"""
     result = await task_runtime.list_task_items(list_id=list_id, status=status)
@@ -91,7 +92,7 @@ async def list_tasks(
 
 
 @router.get("/tasks/{task_id}")
-async def get_task(task_id: str, _current_user=Depends(get_current_user)):
+async def get_task(task_id: str, current_user: User = Depends(get_current_user)):
     """获取单个任务项详情。"""
     task = await task_runtime.get_task_item(task_id)
     if not task:
@@ -103,7 +104,7 @@ async def get_task(task_id: str, _current_user=Depends(get_current_user)):
 async def claim_task(
     task_id: str,
     agent_id: str = Query(..., description="领取任务的代理 ID"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """事务性领取一个待执行的任务项。"""
     result = await task_runtime.claim_task_item(task_id=task_id, agent_id=agent_id)
@@ -112,7 +113,7 @@ async def claim_task(
 
 
 @router.post("/tasks/{task_id}/stop")
-async def stop_task(task_id: str, _current_user=Depends(get_current_user)):
+async def stop_task(task_id: str, current_user: User = Depends(get_current_user)):
     """取消/停止一个任务项（仅限非终态）。"""
     result = await task_runtime.update_task_item(task_id, status="cancelled")
     _raise_not_found_from_result(result)
@@ -124,7 +125,7 @@ async def stop_task(task_id: str, _current_user=Depends(get_current_user)):
 @router.get("/teams")
 async def list_teams(
     state: Optional[str] = Query(None, description="按状态过滤: active/cleaning/stopped/failed"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """列出所有代理团队。"""
     result = await task_runtime.list_teams(state=state)
@@ -132,7 +133,7 @@ async def list_teams(
 
 
 @router.get("/teams/{team_id}")
-async def get_team(team_id: str, _current_user=Depends(get_current_user)):
+async def get_team(team_id: str, current_user: User = Depends(get_current_user)):
     """获取单个团队详情。"""
     team = await task_runtime.get_team(team_id)
     if not team:
@@ -145,7 +146,7 @@ async def create_team(
     lead_agent_id: str = Query(..., description="团队负责人 agent_id"),
     name: str = Query("", description="团队名称"),
     task_list_id: Optional[str] = Query(None, description="共享任务清单 ID"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """创建代理团队。"""
     result = await task_runtime.create_team(
@@ -157,7 +158,7 @@ async def create_team(
 
 
 @router.delete("/teams/{team_id}")
-async def delete_team(team_id: str, _current_user=Depends(get_current_user)):
+async def delete_team(team_id: str, current_user: User = Depends(get_current_user)):
     """删除代理团队。"""
     result = await task_runtime.delete_team(team_id)
     _raise_not_found_from_result(result)
@@ -169,7 +170,7 @@ async def add_teammate(
     team_id: str,
     agent_id: str = Query(..., description="要添加的代理 ID"),
     name: str = Query("", description="成员名称"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """向团队添加成员。"""
     result = await task_runtime.add_teammate(team_id, agent_id, name)
@@ -178,7 +179,7 @@ async def add_teammate(
 
 
 @router.delete("/teams/{team_id}/members/{agent_id}")
-async def remove_teammate(team_id: str, agent_id: str, _current_user=Depends(get_current_user)):
+async def remove_teammate(team_id: str, agent_id: str, current_user: User = Depends(get_current_user)):
     """从团队移除成员。"""
     result = await task_runtime.remove_teammate(team_id, agent_id)
     _raise_not_found_from_result(result)
@@ -190,7 +191,7 @@ async def update_teammate_state(
     team_id: str,
     agent_id: str,
     new_state: str = Query(..., description="新状态: active/idle/stopped"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """更新团队成员状态。"""
     result = await task_runtime.update_teammate_state(team_id, agent_id, new_state)
@@ -202,7 +203,7 @@ async def update_teammate_state(
 async def get_mailbox(
     agent_id: str,
     unread_only: bool = Query(False, description="是否仅获取未读消息"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取代理的邮箱消息。"""
     messages = await task_runtime.get_mailbox(agent_id, unread_only=unread_only)
@@ -210,7 +211,7 @@ async def get_mailbox(
 
 
 @router.post("/mailbox/{message_id}/read")
-async def read_message(message_id: str, _current_user=Depends(get_current_user)):
+async def read_message(message_id: str, current_user: User = Depends(get_current_user)):
     """标记消息为已读。"""
     result = await task_runtime.read_message(message_id)
     _raise_not_found_from_result(result)
@@ -223,7 +224,7 @@ async def send_teammate_message(
     to_agent_id: str = Query(..., description="接收方 agent_id"),
     message: str = Query(..., description="消息内容"),
     team_id: Optional[str] = Query(None, description="所属团队 ID"),
-    _current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """向队友发送消息。"""
     result = await task_runtime.send_teammate_message(

@@ -46,6 +46,7 @@ import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
 import type { FileAttachment } from './components/ChatInput'
+import { TaskPanel } from './components/TaskPanel'
 import styles from './ChatPage.module.css'
 
 function sanitizeDisplayedError(message: string): string {
@@ -280,6 +281,8 @@ function ChatPage() {
   const [streamRetryCount, setStreamRetryCount] = useState(0)
   const [streamErrorMessage, setStreamErrorMessage] = useState<string | null>(null)
   const [streamStageMessage, setStreamStageMessage] = useState<string | null>(null)
+  const [taskPanelManuallyToggled, setTaskPanelManuallyToggled] = useState(false)
+  const [taskPanelExpanded, setTaskPanelExpanded] = useState(false)
 
   const bufferRef = useRef({
     content: '',
@@ -1194,6 +1197,8 @@ function ChatPage() {
     setStreamRetryCount(0)
     setStreamErrorMessage(null)
     setStreamStageMessage(null)
+    setTaskPanelManuallyToggled(false)
+    setTaskPanelExpanded(false)
     await createConversationAndNavigate(false)
   }, [createConversationAndNavigate])
 
@@ -1210,6 +1215,8 @@ function ChatPage() {
     setStreamRetryCount(0)
     setStreamErrorMessage(null)
     setStreamStageMessage(null)
+    setTaskPanelManuallyToggled(false)
+    setTaskPanelExpanded(false)
     navigate(`/chat/${nextSessionId}`)
     if (window.innerWidth <= 960) {
       setHistorySidebarOpen(false)
@@ -1345,6 +1352,19 @@ function ChatPage() {
     }
     return null
   }
+
+  // 任务面板自动折叠/展开
+  const activeMetaForPanel = getLatestActiveExecution()
+  const hasActiveTasks = activeMetaForPanel
+    ? activeMetaForPanel.meta.steps.some((s) => s.status === 'running' || s.status === 'pending') ||
+      activeMetaForPanel.meta.toolEvents.some((t) => t.status === 'running' || t.status === 'pending') ||
+      activeMetaForPanel.isStreaming
+    : false
+
+  useEffect(() => {
+    if (taskPanelManuallyToggled) return
+    setTaskPanelExpanded(hasActiveTasks)
+  }, [hasActiveTasks, taskPanelManuallyToggled])
 
   const renderFloatingExecutionPanel = () => {
     const active = getLatestActiveExecution()
@@ -1515,6 +1535,19 @@ function ChatPage() {
           />
 
           {false && renderFloatingExecutionPanel()}
+
+          <TaskPanel
+            steps={activeMetaForPanel?.meta.steps || []}
+            toolEvents={activeMetaForPanel?.meta.toolEvents || []}
+            isStreaming={activeMetaForPanel?.isStreaming || false}
+            onStopAgent={(agentId) => void handleStopAgent(agentId)}
+            expanded={taskPanelExpanded}
+            onToggle={() => {
+              setTaskPanelManuallyToggled(true)
+              setTaskPanelExpanded((prev) => !prev)
+            }}
+          />
+
           <ChatInput
             onSend={(content, atts) => void handleSend(content, atts)}
             isLoading={isLoading}

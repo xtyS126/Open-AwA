@@ -8,6 +8,7 @@ from types import MethodType
 import pytest
 
 import core.executor as executor_module
+import core.task_runtime as task_runtime_module
 from core.executor import ExecutionLayer
 
 
@@ -74,6 +75,50 @@ def test_build_assistant_tool_call_message_validates_inputs():
             reasoning_content="需要调用工具",
             tool_calls={"id": "call_1"},
         )
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_normalizes_task_prefix_case(monkeypatch):
+    """工具前缀首字母被模型错误大写时，执行层仍应正确路由到 task runtime。"""
+
+    execution_layer = ExecutionLayer()
+    captured: dict[str, object] = {}
+
+    class FakeTaskRuntime:
+        async def initialize(self):
+            captured["initialized"] = True
+
+        async def create_task_item(self, **kwargs):
+            captured["kwargs"] = kwargs
+            return {"ok": True, "task_id": "task_123", "subject": kwargs.get("subject")}
+
+    monkeypatch.setattr(task_runtime_module, "task_runtime", FakeTaskRuntime())
+
+    result = await execution_layer._execute_tool_call(
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "Task_create_task",
+                "arguments": '{"subject":"修复工具调用卡住问题"}',
+            },
+        },
+        {"session_id": "sess_1", "agent_id": "agt_1"},
+    )
+
+    assert captured["initialized"] is True
+    assert captured["kwargs"] == {
+        "list_id": None,
+        "subject": "修复工具调用卡住问题",
+        "description": None,
+        "dependencies": None,
+        "owner_agent_id": None,
+    }
+    assert result == {
+        "ok": True,
+        "result": {"ok": True, "task_id": "task_123", "subject": "修复工具调用卡住问题"},
+        "tool_name": "task_create_task",
+    }
 
 
 @pytest.mark.asyncio

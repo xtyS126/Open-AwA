@@ -471,7 +471,7 @@ def get_server_port() -> int:
         raise ValueError(f"无效的端口配置: {raw_port}") from exc
 
 
-def _run_uvicorn_server(uvicorn_module, host: str, port: int) -> None:
+def _run_uvicorn_server(uvicorn_module, host: str, port: int, debug_mode: bool = False) -> None:
     """
     统一封装 uvicorn.run 调用。
     真实启动时保留默认日志参数，测试中的精简桩函数也能兼容。
@@ -479,9 +479,15 @@ def _run_uvicorn_server(uvicorn_module, host: str, port: int) -> None:
     run_kwargs = {
         "host": host,
         "port": port,
-        "access_log": False,
-        "log_level": "warning",
+        "access_log": debug_mode,
+        "log_level": "debug" if debug_mode else "warning",
     }
+
+    # uvicorn 的热重载依赖导入字符串形式的 app 目标，直接传入 app 对象时无法启用 reload。
+    # 这里在调试模式下切换为模块导入路径，便于通过修改 DEBUG_MODE 快速开启本地调试体验。
+    app_target = "main:app" if debug_mode else app
+    if debug_mode:
+        run_kwargs["reload"] = True
 
     try:
         signature = inspect.signature(uvicorn_module.run)
@@ -500,10 +506,10 @@ def _run_uvicorn_server(uvicorn_module, host: str, port: int) -> None:
                 if key in signature.parameters
             }
 
-    uvicorn_module.run(app, **run_kwargs)
+    uvicorn_module.run(app_target, **run_kwargs)
 
 
-def run_server() -> None:
+def run_server(debug_mode: bool = False) -> None:
     """
     启动后端 HTTP 服务并处理常见启动异常。
     发生端口占用时输出更友好的提示，帮助调用方快速定位冲突端口或调整配置。
@@ -512,9 +518,15 @@ def run_server() -> None:
 
     host = get_server_host()
     port = get_server_port()
-    logger.bind(event="server_starting", module="main", host=host, port=port).info("starting backend server")
+    logger.bind(
+        event="server_starting",
+        module="main",
+        host=host,
+        port=port,
+        debug_mode=debug_mode,
+    ).info("starting backend server")
     try:
-        _run_uvicorn_server(uvicorn, host, port)
+        _run_uvicorn_server(uvicorn, host, port, debug_mode=debug_mode)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             message = f"后端服务启动失败：端口 {port} 已被占用，请关闭占用进程或通过 BACKEND_PORT/PORT 更换端口后重试。"
@@ -524,4 +536,6 @@ def run_server() -> None:
 
 
 if __name__ == "__main__":
-    run_server()
+    # 在此处切换本地调试模式：True 启用 debug/reload/access_log，False 使用常规启动参数。
+    DEBUG_MODE = True
+    run_server(debug_mode=DEBUG_MODE)
