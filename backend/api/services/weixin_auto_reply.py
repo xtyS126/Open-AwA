@@ -996,3 +996,15 @@ class WeixinAutoReplyService:
             ),
         }
         state["processed_messages"] = processed_messages
+
+
+_AUTO_REPLY_MANAGER: WeixinAutoReplyService = WeixinAutoReplyService()
+"""
+全局自动回复管理器单例，用于在整个应用中共享同一个 WeixinAutoReplyService 实例。
+位于服务层而非路由层，避免路由模块被 main.py 或其他模块导入时产生循环依赖。
+"""
+
+
+def get_auto_reply_manager() -> WeixinAutoReplyService:
+    """集中管理自动回复单例，便于测试时替换。"""
+    return _AUTO_REPLY_MANAGER

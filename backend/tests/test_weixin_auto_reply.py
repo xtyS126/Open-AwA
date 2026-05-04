@@ -25,6 +25,7 @@ from api.services.weixin_auto_reply import (
     WeixinAutoReplyService,
     build_weixin_reply_text,
 )
+import api.services.weixin_auto_reply as auto_reply_service
 from config.security import encrypt_secret_value
 from core.agent import AIAgent
 from db.models import Base, WeixinBinding, WeixinAutoReplyRule
@@ -108,16 +109,16 @@ def _build_service(tmp_path: Path, ai_reply_generator):
 def _test_client(service: WeixinAutoReplyService):
     """为 API 测试临时注入依赖与自动回复管理器。"""
     previous_overrides = dict(app.dependency_overrides)
-    previous_manager = weixin_routes._AUTO_REPLY_MANAGER
+    previous_manager = auto_reply_service._AUTO_REPLY_MANAGER
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
-    weixin_routes._AUTO_REPLY_MANAGER = service
+    auto_reply_service._AUTO_REPLY_MANAGER = service
     try:
         with TestClient(app) as client:
             yield client
     finally:
         app.dependency_overrides = previous_overrides
-        weixin_routes._AUTO_REPLY_MANAGER = previous_manager
+        auto_reply_service._AUTO_REPLY_MANAGER = previous_manager
 
 
 @pytest.fixture(autouse=True)
