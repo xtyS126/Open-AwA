@@ -56,6 +56,26 @@ class FakePluginManager:
         }
 
 
+def test_build_assistant_tool_call_message_validates_inputs():
+    """构造 assistant tool_call 消息时应校验入参与兜底转换类型。"""
+
+    message = ExecutionLayer.build_assistant_tool_call_message(
+        content="处理中",
+        reasoning_content=123,
+        tool_calls=[],
+    )
+
+    assert message["reasoning_content"] == "123"
+    assert "tool_calls" not in message
+
+    with pytest.raises(ValueError, match="tool_calls must be a list"):
+        ExecutionLayer.build_assistant_tool_call_message(
+            content="处理中",
+            reasoning_content="需要调用工具",
+            tool_calls={"id": "call_1"},
+        )
+
+
 @pytest.mark.asyncio
 async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
     """支持函数调用的模型应执行 tool_calls 后再生成最终文本。"""

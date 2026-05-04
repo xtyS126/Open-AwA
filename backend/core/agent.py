@@ -99,14 +99,12 @@ class AIAgent:
         则作为兼容旧调用方的兜底开关。
         """
         output_mode = str(context.get("output_mode", "")).strip().lower()
-        if output_mode == "final_only" or bool(context.get("suppress_reasoning")):
-            return True
-            
-        # 如果明确禁用了思考模式，则在向外输出时剥离模型自发产生的推理内容
-        if context.get("thinking_enabled") is False:
-            return True
-            
-        return False
+        # 如果明确禁用了思考模式，也应对外按 final_only 语义剥离推理内容。
+        return (
+            output_mode == "final_only"
+            or bool(context.get("suppress_reasoning"))
+            or context.get("thinking_enabled") is False
+        )
 
     def _strip_reasoning_content(self, payload: Any) -> Any:
         """
@@ -178,17 +176,13 @@ class AIAgent:
     def _build_thinking_context(self, context: Dict[str, Any]) -> None:
         """
         根据上下文中的 thinking_enabled 和 thinking_depth 构建思考参数。
-        仅当 thinking_enabled 为 True 时才生成参数。
         """
-        if not context.get("thinking_enabled"):
-            return
+        thinking_enabled = context.get("thinking_enabled")
         thinking_depth = context.get("thinking_depth", 0)
-        if not thinking_depth or thinking_depth < 1:
-            return
         provider = context.get("provider", "")
         model = context.get("model", "")
         from core.model_service import build_thinking_params
-        thinking_params = build_thinking_params(provider, model, thinking_depth)
+        thinking_params = build_thinking_params(provider, model, thinking_depth, thinking_enabled)
         if thinking_params:
             context["_thinking_params"] = thinking_params
 
