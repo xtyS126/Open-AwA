@@ -9,6 +9,8 @@ const CSRF_TOKEN_ENDPOINT = `${API_BASE_URL}/auth/csrf-token`
 let csrfTokenValue = ''
 let csrfTokenPromise: Promise<void> | null = null
 
+const CSRF_RETRY_SYMBOL = Symbol('csrfRetried')
+
 const shouldAttachCsrfToken = (method?: string, url?: string): boolean => {
   const normalizedMethod = String(method || 'GET').toUpperCase()
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(normalizedMethod)) {
@@ -144,15 +146,41 @@ api.interceptors.response.use(
     })
     return response
   },
-  (error) => {
+  async (error) => {
     const responseRequestId = String(error?.response?.headers?.['x-request-id'] || '')
     if (responseRequestId) {
       setCurrentRequestId(responseRequestId)
     }
 
+    const errorStatus = error?.response?.status || 0
+    const originalConfig = error?.config
+
+    if (
+      errorStatus === 403 &&
+      originalConfig &&
+      !originalConfig[CSRF_RETRY_SYMBOL] &&
+      shouldAttachCsrfToken(originalConfig.method, originalConfig.url)
+    ) {
+      const errorBody = error?.response?.data
+      const errorCode = errorBody?.error?.code || errorBody?.error || ''
+      const isCsrfError =
+        errorCode === 'invalid_csrf_token' ||
+        String(errorBody?.error?.message || '').includes('CSRF')
+
+      if (isCsrfError) {
+        originalConfig[CSRF_RETRY_SYMBOL] = true
+        csrfTokenValue = ''
+        csrfTokenPromise = null
+
+        const newToken = await ensureCsrfToken()
+        originalConfig.headers['X-CSRF-Token'] = newToken
+
+        return api.request(originalConfig)
+      }
+    }
+
     if (!isExpectedApiError(error)) {
       const errorUrl = error?.config?.url || 'unknown'
-      const errorStatus = error?.response?.status || 0
       const errorMessage = error?.message || ''
       const backendDetail = getApiErrorDetail(error)
 

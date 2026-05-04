@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     
     SANDBOX_TIMEOUT: int = 30
     SANDBOX_MEMORY_LIMIT: str = "512m"
+    SANDBOX_BACKEND: str = "restricted_python"
+    E2B_API_KEY: Optional[SecretStr] = None
+    E2B_TIMEOUT: int = 60
     
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True

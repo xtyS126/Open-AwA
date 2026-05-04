@@ -16,3 +16,4 @@ aiofiles==23.2.1
 python-dotenv==1.0.0
 click~=8.1.0
 slowapi~=0.1.9
+RestrictedPython>=5.0,<8.0
