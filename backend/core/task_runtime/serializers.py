@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from config.settings import settings
+from loguru import logger
 
 
 def get_transcript_dir() -> Path:
@@ -43,13 +44,20 @@ def read_transcript(agent_id: str) -> list:
         return []
     entries = []
     with open(transcript_path, "r", encoding="utf-8") as f:
-        for line in f:
+        for line_number, line in enumerate(f, start=1):
             line = line.strip()
             if line:
                 try:
                     entries.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as exc:
+                    logger.bind(
+                        module="task_runtime",
+                        agent_id=agent_id,
+                        transcript_path=str(transcript_path),
+                        line_number=line_number,
+                    ).warning(
+                        f"transcript 存在损坏行，已跳过: agent_id={agent_id}, line={line_number}, error={exc.msg}"
+                    )
     return entries
 
 

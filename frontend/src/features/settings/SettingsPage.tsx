@@ -1379,7 +1379,7 @@ function SettingsPage() {
     }
   }
 
-  const handleChange = (key: keyof Settings, value: string | boolean) => {
+  const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 

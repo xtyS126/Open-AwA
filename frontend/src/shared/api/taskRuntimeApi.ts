@@ -2,25 +2,9 @@
  * 任务运行时 API 模块——提供代理会话查询、停止与 transcript 读取接口。
  */
 
-import axios from 'axios'
+import { sharedApi } from '@/shared/api/api'
 
-const api = axios.create({
-  baseURL: '/api/task-runtime',
-  timeout: 30000,
-  withCredentials: true,
-})
-
-/* 请求拦截器: CSRF token */
-api.interceptors.request.use((config) => {
-  const csrfToken = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith('csrf_token='))
-    ?.split('=')[1]
-  if (csrfToken) {
-    config.headers['X-CSRF-Token'] = csrfToken
-  }
-  return config
-})
+const TASK_RUNTIME_BASE_URL = '/task-runtime'
 
 /* 类型定义 */
 export interface AgentSessionInfo {
@@ -64,29 +48,29 @@ export async function listAgents(params?: {
   state?: string
   agent_type?: string
 }): Promise<{ agents: AgentSessionInfo[]; total: number }> {
-  const { data } = await api.get('/agents', { params })
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/agents`, { params })
   return data
 }
 
 export async function getAgent(agentId: string): Promise<{ agent: AgentDetail }> {
-  const { data } = await api.get(`/agents/${agentId}`)
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/agents/${agentId}`)
   return data
 }
 
 export async function stopAgent(agentId: string): Promise<{ ok: boolean; agent_id: string; status: string }> {
-  const { data } = await api.post(`/agents/${agentId}/stop`)
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/agents/${agentId}/stop`)
   return data
 }
 
 export async function getTranscript(
   agentId: string
 ): Promise<{ agent_id: string; transcript: unknown[]; entry_count: number }> {
-  const { data } = await api.get(`/agents/${agentId}/transcript`)
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/agents/${agentId}/transcript`)
   return data
 }
 
 export async function listAgentTypes(): Promise<{ agent_types: { name: string; description: string }[] }> {
-  const { data } = await api.get('/agent-types')
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/agent-types`)
   return data
 }
 
@@ -94,7 +78,7 @@ export async function listTasks(params?: {
   list_id?: string
   status?: string
 }): Promise<{ tasks: TaskItemInfo[]; total: number }> {
-  const { data } = await api.get('/tasks', { params })
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/tasks`, { params })
   return data
 }
 
@@ -113,7 +97,7 @@ export interface TaskItemDetail {
 }
 
 export async function getTask(taskId: string): Promise<{ task: TaskItemInfo }> {
-  const { data } = await api.get(`/tasks/${taskId}`)
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/tasks/${taskId}`)
   return data
 }
 
@@ -121,12 +105,14 @@ export async function claimTask(
   taskId: string,
   agentId: string
 ): Promise<{ ok: boolean; task_id: string; status: string }> {
-  const { data } = await api.post(`/tasks/${taskId}/claim`, null, { params: { agent_id: agentId } })
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/tasks/${taskId}/claim`, null, {
+    params: { agent_id: agentId },
+  })
   return data
 }
 
 export async function stopTask(taskId: string): Promise<{ ok: boolean; task_id: string; status: string }> {
-  const { data } = await api.post(`/tasks/${taskId}/stop`)
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/tasks/${taskId}/stop`)
   return data
 }
 
@@ -174,12 +160,12 @@ export interface MailboxMessage {
 export async function listTeams(params?: {
   state?: string
 }): Promise<{ teams: TeamInfo[]; total: number }> {
-  const { data } = await api.get('/teams', { params })
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/teams`, { params })
   return data
 }
 
 export async function getTeam(teamId: string): Promise<{ team: TeamDetail }> {
-  const { data } = await api.get(`/teams/${teamId}`)
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/teams/${teamId}`)
   return data
 }
 
@@ -188,12 +174,12 @@ export async function createTeam(params: {
   name?: string
   task_list_id?: string
 }): Promise<{ ok: boolean; team_id: string; name: string; lead_agent_id: string; state: string; members: TeamMember[] }> {
-  const { data } = await api.post('/teams', null, { params })
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/teams`, null, { params })
   return data
 }
 
 export async function deleteTeam(teamId: string): Promise<{ ok: boolean; team_id: string; status: string }> {
-  const { data } = await api.delete(`/teams/${teamId}`)
+  const { data } = await sharedApi.delete(`${TASK_RUNTIME_BASE_URL}/teams/${teamId}`)
   return data
 }
 
@@ -202,7 +188,7 @@ export async function addTeammate(
   agentId: string,
   name?: string
 ): Promise<{ ok: boolean; team_id: string; agent_id: string; name: string }> {
-  const { data } = await api.post(`/teams/${teamId}/members`, null, {
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/teams/${teamId}/members`, null, {
     params: { agent_id: agentId, name: name || '' },
   })
   return data
@@ -212,7 +198,7 @@ export async function removeTeammate(
   teamId: string,
   agentId: string
 ): Promise<{ ok: boolean; team_id: string; agent_id: string; status: string }> {
-  const { data } = await api.delete(`/teams/${teamId}/members/${agentId}`)
+  const { data } = await sharedApi.delete(`${TASK_RUNTIME_BASE_URL}/teams/${teamId}/members/${agentId}`)
   return data
 }
 
@@ -221,7 +207,7 @@ export async function updateTeammateState(
   agentId: string,
   newState: string
 ): Promise<{ ok: boolean; team_id: string; agent_id: string; state: string }> {
-  const { data } = await api.patch(`/teams/${teamId}/members/${agentId}/state`, null, {
+  const { data } = await sharedApi.patch(`${TASK_RUNTIME_BASE_URL}/teams/${teamId}/members/${agentId}/state`, null, {
     params: { new_state: newState },
   })
   return data
@@ -231,14 +217,16 @@ export async function getMailbox(
   agentId: string,
   unreadOnly?: boolean
 ): Promise<{ agent_id: string; messages: MailboxMessage[]; total: number }> {
-  const { data } = await api.get(`/mailbox/${agentId}`, { params: { unread_only: unreadOnly || false } })
+  const { data } = await sharedApi.get(`${TASK_RUNTIME_BASE_URL}/mailbox/${agentId}`, {
+    params: { unread_only: unreadOnly || false },
+  })
   return data
 }
 
 export async function readMessage(
   messageId: string
 ): Promise<{ ok: boolean; message_id: string; delivered: boolean }> {
-  const { data } = await api.post(`/mailbox/${messageId}/read`)
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/mailbox/${messageId}/read`)
   return data
 }
 
@@ -254,6 +242,6 @@ export async function sendTeammateMessage(params: {
   to_agent_id: string
   delivered: boolean
 }> {
-  const { data } = await api.post('/messages', null, { params })
+  const { data } = await sharedApi.post(`${TASK_RUNTIME_BASE_URL}/messages`, null, { params })
   return data
 }
