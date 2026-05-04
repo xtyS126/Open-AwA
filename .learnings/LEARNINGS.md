@@ -44,3 +44,26 @@ Always await the initial loading state of a hook using `await waitFor(() => expe
 - Tags: settings, providers, preset-map, playwright
 
 ---
+
+## [LRN-20260504-003] best_practice
+
+**Logged**: 2026-05-04T10:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: tests
+
+### Summary
+本项目运行后端 pytest 时需要以 `backend` 作为工作目录，或显式补齐 `PYTHONPATH`，否则测试收集阶段会找不到 `api`、`db`、`core` 包。
+
+### Details
+在仓库根目录直接执行 `pytest backend/tests/test_task_runtime_api.py ...` 时，pytest 收集阶段出现 `ModuleNotFoundError: No module named 'api'`、`No module named 'db'`、`No module named 'core'`。原因是项目中的后端测试默认依赖 `backend` 目录作为 Python 导入根，而不是仓库根目录。切换到 `d:\代码\Open-AwA\backend` 后再执行同类测试命令，可正常按包路径导入。
+
+### Suggested Action
+执行后端测试时优先使用 `cwd=backend`，命令写成 `pytest tests/<file>.py`；如果必须在仓库根目录执行，则先设置等效的 `PYTHONPATH=backend`。后续新增后端测试文件时，也应尽量沿用已有测试文件中的导入方式和工作目录约定。
+
+### Metadata
+- Source: error
+- Related Files: backend/tests/test_task_runtime_api.py, backend/tests/test_task_runtime_phase1.py, backend/tests/test_task_runtime_phase2.py, backend/tests/test_task_runtime_phase3.py, backend/tests/test_task_runtime_phase4.py
+- Tags: pytest, backend, pythonpath, windows, task-runtime
+
+---

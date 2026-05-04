@@ -36,7 +36,7 @@ function AssistantThoughtSegmentInner({ segments, isStreaming }: AssistantThough
         defaultExpanded={isStreaming}
         isThinking={isStreaming}
       >
-        {segments.map((segment, index) => (
+        {segments.map((segment) => (
           <div key={segment.id} className={styles.segmentGroup}>
             {segment.intent && (
               <div className={styles.intent}>意图：{segment.intent}</div>
