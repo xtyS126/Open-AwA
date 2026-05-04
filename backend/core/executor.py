@@ -171,6 +171,28 @@ class ExecutionLayer:
         )
         return excerpt
 
+    @staticmethod
+    def build_assistant_tool_call_message(
+        content: Optional[str],
+        reasoning_content: Optional[str] = None,
+        tool_calls: Optional[list[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        构造发回模型的 assistant 工具调用消息。
+
+        某些开启思考模式的模型在 tool call 之后继续续写时，
+        要求把上一轮 assistant 的 `reasoning_content` 原样回传。
+        """
+        assistant_message: Dict[str, Any] = {
+            "role": "assistant",
+            "content": content or None,
+        }
+        if reasoning_content:
+            assistant_message["reasoning_content"] = reasoning_content
+        if tool_calls:
+            assistant_message["tool_calls"] = tool_calls
+        return assistant_message
+
     def _validate_step_params(self, action: str, step: Dict[str, Any]) -> Optional[str]:
         """
         校验步骤参数是否完整有效。
@@ -505,6 +527,18 @@ class ExecutionLayer:
         provider = (provider or "").strip().lower()
         model = (model or "").strip()
 
+        # 根据 DeepSeek 官方文档，deepseek-reasoner 无法在 API 层关闭推理过程。
+        # 为避免浪费用户 token 和时间，基于 thinking_enabled 状态在 V3 和 R1 间自动切换
+        if provider == "deepseek" or "deepseek" in model:
+            if context.get("thinking_enabled") is False and model in ("deepseek-reasoner", "deepseek-r1"):
+                from loguru import logger
+                logger.info(f"思考模式已关闭，自动将 {model} 降级为 deepseek-chat")
+                model = "deepseek-chat"
+            elif context.get("thinking_enabled") is True and model == "deepseek-chat":
+                from loguru import logger
+                logger.info(f"思考模式已开启，自动将 {model} 升级为 deepseek-reasoner")
+                model = "deepseek-reasoner"
+
         if not provider:
             return {
                 "ok": False,
@@ -765,6 +799,13 @@ class ExecutionLayer:
                 break
 
             round_count += 1
+            assistant_msg = self.build_assistant_tool_call_message(
+                content=result.get("response"),
+                reasoning_content=result.get("reasoning_content"),
+                tool_calls=tool_calls,
+            )
+            messages.append(assistant_msg)
+
             _abort = False
             for tc in tool_calls:
                 exec_result = await self._execute_tool_call(tc, context)
@@ -790,15 +831,6 @@ class ExecutionLayer:
                 messages.append(tool_message)
             if _abort:
                 break
-
-            # 将 assistant 消息也加入（包含 tool_calls）
-            assistant_msg = {
-                "role": "assistant",
-                "content": result.get("response") or None,
-            }
-            if tool_calls:
-                assistant_msg["tool_calls"] = tool_calls
-            messages.append(assistant_msg)
 
             result = await litellm_chat_completion(
                 provider=resolved["provider"],
