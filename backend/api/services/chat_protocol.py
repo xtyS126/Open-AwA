@@ -252,22 +252,24 @@ def emit_subagent_start_event(agent_id: str, agent_type: str, description: str =
     }
 
 
-def emit_subagent_stop_event(agent_id: str, state: str, summary: str = "") -> Dict[str, Any]:
+def emit_subagent_stop_event(agent_id: str, state: str, summary: str = "", agent_type: str = "") -> Dict[str, Any]:
     """子代理完成/失败事件，通知前端代理已结束。"""
     return {
         "type": "subagent_stop",
         "agent_id": agent_id,
+        "agent_type": agent_type,
         "state": state,
         "summary": summary,
         "chunk_type": "subagent_stop",
     }
 
 
-def emit_agent_message_event(agent_id: str, message: str) -> Dict[str, Any]:
+def emit_agent_message_event(agent_id: str, message: str, agent_type: str = "") -> Dict[str, Any]:
     """代理消息事件，用于子代理摘要回传主线程。"""
     return {
         "type": "agent_message",
         "agent_id": agent_id,
+        "agent_type": agent_type,
         "message": message,
         "chunk_type": "agent_message",
     }

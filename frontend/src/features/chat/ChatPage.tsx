@@ -47,6 +47,9 @@ import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
 import type { FileAttachment } from './components/ChatInput'
 import { TaskPanel } from './components/TaskPanel'
+import { useSubagentManager } from './components/useSubagentManager'
+import type { SubagentStepType } from './components/useSubagentManager'
+import { SubagentContainer } from './components/SubagentContainer'
 import styles from './ChatPage.module.css'
 
 function sanitizeDisplayedError(message: string): string {
@@ -56,6 +59,32 @@ function sanitizeDisplayedError(message: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function classifyAgentMessage(message: string): SubagentStepType | null {
+  const trimmed = message.trim()
+  if (!trimmed) return null
+
+  if (trimmed.startsWith('Thought') || trimmed.startsWith('思考')) {
+    return 'thought'
+  }
+
+  if (trimmed.startsWith('Reading file:') || trimmed.startsWith('阅读文件') ||
+      trimmed.includes('\\') && (trimmed.includes('.tsx') || trimmed.includes('.ts') || trimmed.includes('.py') || trimmed.includes('.js'))) {
+    return 'file_read'
+  }
+
+  if (trimmed.startsWith('Searching:') || trimmed.startsWith('搜索') ||
+      trimmed.startsWith('在工作区搜索') || trimmed.includes('|')) {
+    return 'search'
+  }
+
+  if (trimmed.startsWith('Tool:') || trimmed.startsWith('工具') ||
+      trimmed.startsWith('Calling tool') || trimmed.startsWith('调用工具')) {
+    return 'tool_call'
+  }
+
+  return 'generic'
 }
 
 type StreamConnectionState = 'idle' | 'connecting' | 'streaming' | 'retrying' | 'error'
@@ -283,6 +312,10 @@ function ChatPage() {
   const [streamStageMessage, setStreamStageMessage] = useState<string | null>(null)
   const [taskPanelManuallyToggled, setTaskPanelManuallyToggled] = useState(false)
   const [taskPanelExpanded, setTaskPanelExpanded] = useState(false)
+
+  const { tasks: subagentTasks, startTask: startSubagent, appendLog: appendSubagentLog, appendStep: appendSubagentStep, stopTask: stopSubagent } = useSubagentManager((aggregatedText) => {
+    void handleSend(aggregatedText)
+  })
 
   const bufferRef = useRef({
     content: '',
@@ -857,6 +890,7 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'subagent_start' && event.agent_id) {
+                  startSubagent(event.agent_id, `子代理: ${event.agent_type || 'unknown'}`)
                   const toolPayload = {
                     id: event.agent_id as string,
                     kind: 'task',
@@ -875,6 +909,7 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'subagent_stop' && event.agent_id) {
+                  stopSubagent(event.agent_id, event.state === 'completed' ? 'completed' : 'error')
                   const toolPayload = {
                     id: event.agent_id as string,
                     kind: 'task',
@@ -893,6 +928,17 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'agent_message' && event.agent_id) {
+                  if (typeof event.message === 'string') {
+                    appendSubagentLog(event.agent_id, event.message)
+                    const stepType = classifyAgentMessage(event.message)
+                    if (stepType) {
+                      appendSubagentStep(event.agent_id, {
+                        type: stepType,
+                        label: event.message.slice(0, 200),
+                        timestamp: Date.now(),
+                      })
+                    }
+                  }
                   const toolPayload = {
                     id: event.agent_id as string,
                     kind: 'task',
@@ -1533,6 +1579,22 @@ function ChatPage() {
             streamStatusText={streamStatusText}
             messagesEndRef={messagesEndRef}
           />
+
+          {subagentTasks.length > 0 && (
+            <div className={styles['subagent-container-wrapper']} style={{ padding: '0 24px' }}>
+              {subagentTasks.map(task => (
+                <SubagentContainer
+                  key={task.id}
+                  agentId={task.id}
+                  name={task.name}
+                  status={task.status}
+                  content={task.content}
+                  exitCode={task.exitCode}
+                  steps={task.steps}
+                />
+              ))}
+            </div>
+          )}
 
           {false && renderFloatingExecutionPanel()}
 

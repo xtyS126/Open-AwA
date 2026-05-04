@@ -169,8 +169,8 @@ async def run_foreground(
         })
 
         # 发射完成事件 + 摘要消息
-        yield emit_subagent_stop_event(agent_id, "completed", summary)
-        yield emit_agent_message_event(agent_id, summary)
+        yield emit_subagent_stop_event(agent_id, "completed", summary, agent_type=agent_type)
+        yield emit_agent_message_event(agent_id, summary, agent_type=agent_type)
 
     except Exception as exc:
         error_msg = f"{type(exc).__name__}: {str(exc)}"
@@ -200,7 +200,7 @@ async def run_foreground(
             "error": error_msg,
         })
 
-        yield emit_subagent_stop_event(agent_id, "failed", error_msg)
+        yield emit_subagent_stop_event(agent_id, "failed", error_msg, agent_type=agent_type)
         yield {"type": "error", "error": f"子代理执行失败: {error_msg}"}
 
     finally:

@@ -1308,6 +1308,7 @@ class AIAgent:
                             sub_desc = func_args.get("description", "")
                             sub_agent_id = f"sub_{uuid.uuid4().hex[:8]}"
                             context["_last_subagent_id"] = sub_agent_id
+                            context["_last_subagent_type"] = sub_agent_type
                             yield emit_subagent_start_event(sub_agent_id, sub_agent_type, sub_desc)
 
                         yield emit_tool_event({
@@ -1344,12 +1345,13 @@ class AIAgent:
                         # 对 task_spawn_agent 发射子代理完成事件
                         if tool_name == "task_spawn_agent":
                             sub_agent_id = context.get("_last_subagent_id", "unknown")
+                            sub_agent_type = context.get("_last_subagent_type", "Explore")
                             sub_state = "completed" if result.get("ok") else "failed"
                             sub_summary = self._summarize_stream_tool_result(result)
-                            yield emit_subagent_stop_event(sub_agent_id, sub_state, sub_summary)
+                            yield emit_subagent_stop_event(sub_agent_id, sub_state, sub_summary, agent_type=sub_agent_type)
                             if result.get("ok") and result.get("result"):
                                 msg = sub_summary or "子代理已完成"
-                                yield emit_agent_message_event(sub_agent_id, msg)
+                                yield emit_agent_message_event(sub_agent_id, msg, agent_type=sub_agent_type)
 
                         # 对任务清单操作发射生命周期事件
                         if tool_name == "task_create_task" and result.get("ok"):
