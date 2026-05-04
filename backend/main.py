@@ -171,43 +171,26 @@ async def lifespan(app: FastAPI):
 
     await scheduled_task_manager.start()
 
-    # 根据用户配置自动启动微信自动回复
-    if not os.getenv("SKIP_AUTO_START_AUTO_REPLY"):
+    # 根据配置启动微信自动回复
+    if not os.getenv("SKIP_INIT_DB"):
+        from db.models import WeixinBinding, SessionLocal
+        from api.routes.weixin import _get_auto_reply_manager
+        db = SessionLocal()
         try:
-            from db.models import SessionLocal, WeixinBinding
-            from api.services.weixin_auto_reply import WeixinAutoReplyService
-
-            db = SessionLocal()
-            try:
-                auto_start_bindings = db.query(WeixinBinding).filter(
-                    WeixinBinding.auto_start_enabled == True,
-                    WeixinBinding.binding_status == "bound"
-                ).all()
-                if auto_start_bindings:
-                    auto_reply_service = WeixinAutoReplyService()
-                    for binding in auto_start_bindings:
-                        try:
-                            await auto_reply_service.start(str(binding.user_id))
-                            logger.bind(
-                                event="auto_start_auto_reply", module="main", user_id=binding.user_id
-                            ).info("auto-started weixin auto reply")
-                        except ValueError as exc:
-                            logger.bind(
-                                event="auto_start_auto_reply_skip", module="main", user_id=binding.user_id
-                            ).info(f"skip auto-start weixin auto reply: {exc}")
-                        except Exception as exc:
-                            logger.bind(
-                                event="auto_start_auto_reply_error", module="main", user_id=binding.user_id
-                            ).warning(f"failed to auto-start weixin auto reply: {exc}")
-                    logger.bind(
-                        event="auto_start_auto_reply_done", module="main", count=len(auto_start_bindings)
-                    ).info("auto-start weixin auto reply completed")
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.bind(event="auto_start_auto_reply_init_error", module="main").warning(
-                f"failed to initialize auto-start auto reply: {exc}"
-            )
+            bindings = db.query(WeixinBinding).filter(
+                WeixinBinding.binding_status == "bound",
+                WeixinBinding.auto_start_reply == True
+            ).all()
+            if bindings:
+                manager = _get_auto_reply_manager()
+                for binding in bindings:
+                    try:
+                        await manager.start(binding.user_id)
+                        logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
+                    except Exception as e:
+                        logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复失败: {e}")
+        finally:
+            db.close()
 
     yield
     await scheduled_task_manager.stop()
