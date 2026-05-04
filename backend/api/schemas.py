@@ -80,6 +80,7 @@ class ChatMessage(BaseModel):
     attachments: Optional[List[AttachmentItem]] = None
     thinking_enabled: Optional[bool] = None
     thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度 0-5")
+    max_tool_call_rounds: Optional[int] = Field(None, ge=1, le=50000, description="单次对话允许的最大工具回环轮次")
 
 
 class ChatResponse(BaseModel):

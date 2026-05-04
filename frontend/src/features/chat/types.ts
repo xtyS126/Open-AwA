@@ -5,6 +5,7 @@ export interface ChatMessage {
   reasoning_content?: string
   timestamp: Date
   toolEvents?: ToolEventMeta[]
+  segments?: AssistantMessageSegment[]
 }
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'error'
@@ -41,6 +42,25 @@ export interface UsageMeta {
   duration_ms?: number
   estimated?: boolean
 }
+
+export interface AssistantThoughtSegment {
+  id: string
+  kind: 'thought'
+  reasoningContent: string
+  toolEvents: ToolEventMeta[]
+  steps: TaskStepMeta[]
+  usage?: UsageMeta
+  intent?: string
+  status: 'running' | 'completed'
+}
+
+export interface AssistantReplySegment {
+  id: string
+  kind: 'reply'
+  content: string
+}
+
+export type AssistantMessageSegment = AssistantThoughtSegment | AssistantReplySegment
 
 export interface AssistantExecutionMeta {
   intent?: string

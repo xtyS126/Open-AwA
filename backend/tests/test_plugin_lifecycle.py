@@ -859,6 +859,82 @@ class LogicPlugin(BasePlugin):
     assert error_result["data"]["status"] == "error"
 
 
+@pytest.mark.asyncio
+async def test_plugin_manager_executes_tool_alias_via_execute_action(tmp_path: Path):
+    """
+    对仅通过 get_tools 暴露的历史工具，应自动桥接到 execute(action=<tool_name>)，避免误报方法不存在。
+    """
+    plugin_root = tmp_path / "tool_alias_plugin"
+    src_dir = plugin_root / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+
+    (plugin_root / "manifest.json").write_text(
+        """
+{
+  "name": "tool_alias_plugin",
+  "version": "1.0.0",
+  "description": "tool alias plugin",
+  "pluginApiVersion": "1.0.0",
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "get_theme",
+      "version": "1.0.0",
+      "config": {
+        "description": "获取当前主题"
+      }
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (src_dir / "index.py").write_text(
+        '''from plugins.base_plugin import BasePlugin
+
+
+class ToolAliasPlugin(BasePlugin):
+    name = "tool_alias_plugin"
+    version = "1.0.0"
+    description = "tool alias plugin"
+
+    def initialize(self):
+        return True
+
+    def execute(self, **kwargs):
+        return {
+            "status": "success",
+            "action": kwargs.get("action"),
+            "theme": "dark",
+        }
+
+    def get_tools(self):
+        return [
+            {
+                "name": "get_theme",
+                "description": "获取当前主题",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        ]
+''',
+        encoding="utf-8",
+    )
+
+    manager = PluginManager(plugins_dir=str(tmp_path))
+    manager.discover_plugins()
+    assert manager.load_plugin("tool_alias_plugin") is True
+
+    result = await manager.execute_plugin_async("tool_alias_plugin", "get_theme")
+
+    assert result["status"] == "success"
+    assert result["data"]["action"] == "get_theme"
+    assert result["data"]["theme"] == "dark"
+
+
 def test_repo_twitter_monitor_plugin_can_be_discovered_and_loaded():
     """
     仓库内新增的 twitter-monitor 插件应能被发现、加载，并暴露标准工具列表。

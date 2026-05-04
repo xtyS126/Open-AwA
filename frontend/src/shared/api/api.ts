@@ -206,6 +206,12 @@ export interface ChatAttachmentPayload {
   file_name?: string
 }
 
+export interface ChatExecutionOptions {
+  thinking_enabled?: boolean
+  thinking_depth?: number
+  max_tool_call_rounds?: number
+}
+
 export const chatAPI = {
   sendMessage: (
     message: string,
@@ -214,13 +220,16 @@ export const chatAPI = {
     model?: string,
     mode: 'stream' | 'direct' = 'direct',
     requestOptions?: { signal?: AbortSignal },
-    thinkingOptions?: { thinking_enabled?: boolean; thinking_depth?: number },
+    executionOptions?: ChatExecutionOptions,
     attachments?: ChatAttachmentPayload[]
   ) => {
     const body: Record<string, unknown> = { message, session_id: sessionId, provider, model, mode }
-    if (thinkingOptions?.thinking_enabled) {
+    if (executionOptions?.thinking_enabled) {
       body.thinking_enabled = true
-      body.thinking_depth = thinkingOptions.thinking_depth ?? 0
+      body.thinking_depth = executionOptions.thinking_depth ?? 0
+    }
+    if (typeof executionOptions?.max_tool_call_rounds === 'number') {
+      body.max_tool_call_rounds = executionOptions.max_tool_call_rounds
     }
     if (attachments && attachments.length > 0) {
       body.attachments = attachments
@@ -235,7 +244,7 @@ export const chatAPI = {
     onEvent?: (event: Record<string, any>) => void,
     onError?: (error: any) => void,
     requestOptions?: { signal?: AbortSignal },
-    thinkingOptions?: { thinking_enabled?: boolean; thinking_depth?: number },
+    executionOptions?: ChatExecutionOptions,
     attachments?: ChatAttachmentPayload[]
   ) => {
     const MAX_RETRIES = 3
@@ -280,9 +289,12 @@ export const chatAPI = {
           model,
           mode: 'stream',
         }
-        if (thinkingOptions?.thinking_enabled) {
+        if (executionOptions?.thinking_enabled) {
           streamBody.thinking_enabled = true
-          streamBody.thinking_depth = thinkingOptions.thinking_depth ?? 0
+          streamBody.thinking_depth = executionOptions.thinking_depth ?? 0
+        }
+        if (typeof executionOptions?.max_tool_call_rounds === 'number') {
+          streamBody.max_tool_call_rounds = executionOptions.max_tool_call_rounds
         }
         if (attachments && attachments.length > 0) {
           streamBody.attachments = attachments

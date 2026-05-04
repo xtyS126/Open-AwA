@@ -193,3 +193,78 @@ async def test_ai_agent_process_stream_replays_reasoning_content_after_tool_call
     assert assistant_message["tool_calls"][0]["function"]["name"] == "plugin_demo__lookup"
     assert tool_message["role"] == "tool"
     assert any(event.get("content") == "查询完成。" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeypatch):
+    """
+    多轮工具调用超过 5 轮时不应被固定上限提前截断。
+    """
+
+    agent = AIAgent()
+    stream_call_count = {"value": 0}
+
+    async def fake_inject_runtime_capabilities(context):
+        return None
+
+    async def fake_build_conversation_history(session_id):
+        return []
+
+    async def fake_recognize_intent(user_input):
+        return "chat"
+
+    async def fake_extract_entities(user_input):
+        return {}
+
+    async def fake_create_plan(intent, entities, context):
+        return {
+            "intent": "chat",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "llm_chat",
+                    "message": context.get("message", ""),
+                    "purpose": "连续调用工具",
+                }
+            ],
+            "requires_confirmation": False,
+        }
+
+    async def fake_stream_call(prompt, context):
+        stream_call_count["value"] += 1
+        if stream_call_count["value"] <= 6:
+            yield {"content": f"第{stream_call_count['value']}轮。", "reasoning_content": ""}
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": f"call_{stream_call_count['value']}",
+                        "type": "function",
+                        "function": {
+                            "name": "plugin_demo__loop",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+            }
+            return
+
+        yield {"content": "第七轮完成。", "reasoning_content": ""}
+
+    async def fake_execute_tool_call(tool_call, context):
+        return {"ok": True, "result": {"tool_id": tool_call.get("id"), "status": "completed"}}
+
+    monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
+    monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
+    monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
+
+    events = []
+    async for event in agent.process_stream("连续调用 6 次工具", {"session_id": "session-3"}):
+        events.append(event)
+
+    assert stream_call_count["value"] == 7
+    assert any(event.get("content") == "第七轮完成。" for event in events)

@@ -49,6 +49,7 @@ MANIFEST_SCHEMA: Dict[str, Any] = {
             "type": "array",
             "items": {"type": "string"},
         },
+        "auto_authorize_permissions": {"type": "boolean"},
         "extensions": {
             "type": "array",
             "minItems": 1,
@@ -113,7 +114,7 @@ class JsonSchemaValidator:
             if not isinstance(expected_type, (type, tuple)):
                 errors.append(f"{path}: unsupported schema type '{schema_type}'")
                 return
-            if not isinstance(data, expected_type) or (isinstance(data, bool) and expected_type is bool):
+            if not isinstance(data, expected_type) or (isinstance(data, bool) and expected_type in (int, (int, float))):
                 errors.append(f"{path}: expected type {schema_type}")
                 return
 

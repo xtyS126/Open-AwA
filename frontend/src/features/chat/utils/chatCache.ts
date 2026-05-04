@@ -1,5 +1,10 @@
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
-import type { ChatMessage, ConversationSessionSummary, ToolEventMeta } from '@/features/chat/types'
+import type {
+  AssistantMessageSegment,
+  ChatMessage,
+  ConversationSessionSummary,
+  ToolEventMeta,
+} from '@/features/chat/types'
 
 const CHAT_CACHE_STORAGE_KEY = 'chat_cache_v1'
 const CHAT_CACHE_VERSION = 1
@@ -27,6 +32,7 @@ interface SerializedChatMessage {
   reasoning_content?: string
   timestamp: string
   toolEvents?: SerializedToolEvent[]
+  segments?: AssistantMessageSegment[]
 }
 
 interface SerializedConversationBucket {
@@ -170,6 +176,7 @@ function serializeMessages(messages: ChatMessage[]): SerializedChatMessage[] {
     reasoning_content: message.reasoning_content,
     timestamp: message.timestamp.toISOString(),
     toolEvents: serializeToolEvents(message.toolEvents),
+    segments: message.segments,
   }))
 }
 
@@ -181,6 +188,7 @@ function deserializeMessages(messages: SerializedChatMessage[]): ChatMessage[] {
     reasoning_content: message.reasoning_content,
     timestamp: new Date(message.timestamp),
     toolEvents: deserializeToolEvents(message.toolEvents),
+    segments: Array.isArray(message.segments) ? message.segments : undefined,
   }))
 }
 

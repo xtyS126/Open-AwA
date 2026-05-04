@@ -37,6 +37,17 @@ from api.services.chat_protocol import (
 
 from sqlalchemy.orm import Session
 
+MAX_TOOL_CALL_ROUNDS = 12
+
+
+def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
+    raw_value = context.get("max_tool_call_rounds")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return MAX_TOOL_CALL_ROUNDS
+    return max(1, min(50000, value))
+
 class AIAgent:
     """
     封装与AIAgent相关的核心逻辑与运行状态。
@@ -1250,7 +1261,7 @@ class AIAgent:
         final_only_mode = self._is_final_only_mode(context)
 
         round_count = 0
-        max_rounds = 5
+        max_rounds = resolve_max_tool_call_rounds(context)
 
         while round_count < max_rounds:
             round_count += 1

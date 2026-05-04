@@ -87,6 +87,7 @@ vi.mock('@/features/settings/modelsApi', () => ({
 describe('ChatPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     if (!HTMLElement.prototype.scrollIntoView) {
       Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
         value: vi.fn(),
@@ -137,6 +138,11 @@ describe('ChatPage', () => {
   it('在流式结构化事件中展示悬浮任务面板并支持展开工具详情', async () => {
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       onEvent({
+        type: 'chunk',
+        content: '',
+        reasoning_content: '先规划，再调用工具。',
+      })
+      onEvent({
         type: 'status',
         phase: 'planning',
         message: '正在生成执行计划',
@@ -176,7 +182,7 @@ describe('ChatPage', () => {
       onEvent({
         type: 'chunk',
         content: '已经读取完成。',
-        reasoning_content: '先规划，再调用工具。',
+        reasoning_content: '',
       })
       onEvent({
         type: 'usage',
@@ -200,20 +206,84 @@ describe('ChatPage', () => {
     fireEvent.click(sendBtn)
 
     await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalled())
+    fireEvent.click(await screen.findByText(/思维链/))
     const stepTitles = await screen.findAllByText('读取配置文件')
     expect(stepTitles.length).toBeGreaterThan(0)
-    expect(screen.getAllByText('mcp').length).toBeGreaterThan(0)
     expect(screen.getAllByText('filesystem/read_file').length).toBeGreaterThan(0)
     expect(screen.getByText('已经读取完成。')).toBeInTheDocument()
     expect(screen.getByText('先规划，再调用工具。')).toBeInTheDocument()
-    expect(screen.getAllByText(/\$0\.0123/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/245ms/).length).toBeGreaterThan(0)
+    expect(screen.getByText('工具调用')).toBeInTheDocument()
+    expect(screen.getByText('用量信息')).toBeInTheDocument()
+    expect(screen.getByText(/\$0\.0123/)).toBeInTheDocument()
+    expect(screen.getByText(/245ms/)).toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: /工具与执行详情/i }))
-    expect(await screen.findByText('工具调用')).toBeInTheDocument()
-    expect(screen.getByText('已完成 filesystem/read_file')).toBeInTheDocument()
-    expect(screen.getByText('模型')).toBeInTheDocument()
-    expect(screen.getAllByText('gpt-4o-mini').length).toBeGreaterThan(0)
+  it('按回复边界拆分多轮思维链与回复段', async () => {
+    apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
+      onEvent({
+        type: 'chunk',
+        content: '',
+        reasoning_content: '先思考第一轮。',
+      })
+      onEvent({
+        type: 'tool',
+        tool: {
+          id: 'tool-1',
+          kind: 'mcp',
+          name: 'filesystem/read_file',
+          status: 'completed',
+          detail: '读取完成',
+        },
+      })
+      onEvent({
+        type: 'chunk',
+        content: '第一轮回复。',
+        reasoning_content: '',
+      })
+      onEvent({
+        type: 'chunk',
+        content: '',
+        reasoning_content: '继续思考第二轮。',
+      })
+      onEvent({
+        type: 'tool',
+        tool: {
+          id: 'tool-2',
+          kind: 'mcp',
+          name: 'filesystem/list_dir',
+          status: 'completed',
+          detail: '列举完成',
+        },
+      })
+      onEvent({
+        type: 'chunk',
+        content: '第二轮回复-A',
+        reasoning_content: '',
+      })
+      onEvent({
+        type: 'chunk',
+        content: '第二轮回复-B',
+        reasoning_content: '',
+      })
+    })
+
+    await renderChatPage()
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+      target: { value: '请演示多轮工具调用' },
+    })
+    const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
+    fireEvent.click(sendBtn)
+
+    await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalled())
+    const thoughtHeaders = await screen.findAllByText(/思维链/)
+    thoughtHeaders.forEach((header) => {
+      fireEvent.click(header)
+    })
+    expect(await screen.findByText('先思考第一轮。')).toBeInTheDocument()
+    expect(screen.getByText('第一轮回复。')).toBeInTheDocument()
+    expect(screen.getByText('继续思考第二轮。')).toBeInTheDocument()
+    expect(screen.getByText('第二轮回复-A第二轮回复-B')).toBeInTheDocument()
+    expect(screen.getAllByText('思维链').length).toBeGreaterThanOrEqual(2)
   })
 
   it('在收到流式阶段事件时展示实时状态文本', async () => {
@@ -254,6 +324,72 @@ describe('ChatPage', () => {
     expect(await screen.findByText('分析完成')).toBeInTheDocument()
   })
 
+  it('服务端历史缺少思维链字段时保留本地缓存中的思考与工具记录', async () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: 'cached-user-1',
+          role: 'user',
+          content: '帮我执行多轮调用',
+          timestamp: new Date('2026-04-19T00:00:00Z'),
+        },
+        {
+          id: 'cached-assistant-1',
+          role: 'assistant',
+          content: '最终回复。',
+          reasoning_content: '先分析再调用工具。',
+          timestamp: new Date('2026-04-19T00:00:05Z'),
+          segments: [
+            {
+              id: 'thought-1',
+              kind: 'thought',
+              reasoningContent: '先分析再调用工具。',
+              toolEvents: [
+                {
+                  id: 'tool-1',
+                  kind: 'mcp',
+                  name: 'filesystem/read_file',
+                  status: 'completed',
+                  detail: '读取完成',
+                },
+              ],
+              steps: [],
+              status: 'completed',
+            },
+            {
+              id: 'reply-1',
+              kind: 'reply',
+              content: '最终回复。',
+            },
+          ],
+        },
+      ],
+    })
+    apiMocks.getHistory.mockResolvedValue({
+      data: [
+        {
+          id: '101',
+          role: 'user',
+          content: '帮我执行多轮调用',
+          timestamp: '2026-04-19T00:00:00Z',
+        },
+        {
+          id: '102',
+          role: 'assistant',
+          content: '最终回复。',
+          timestamp: '2026-04-19T00:00:05Z',
+        },
+      ],
+    })
+
+    await renderChatPage()
+    fireEvent.click(await screen.findByText(/思维链/))
+
+    expect(screen.getByText('先分析再调用工具。')).toBeInTheDocument()
+    expect(screen.getByText('filesystem/read_file')).toBeInTheDocument()
+    expect(screen.getByText('最终回复。')).toBeInTheDocument()
+  })
+
   it('在首次流式失败且尚未返回内容时自动重试一次', async () => {
     let attempt = 0
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
@@ -281,4 +417,5 @@ describe('ChatPage', () => {
     await waitFor(() => expect(screen.getByText('重试成功')).toBeInTheDocument())
     expect(screen.queryByText(/请求失败：Failed to fetch/)).not.toBeInTheDocument()
   })
+
 })

@@ -28,6 +28,17 @@ from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
 from sqlalchemy.orm import Session
 
+MAX_TOOL_CALL_ROUNDS = 12
+
+
+def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
+    raw_value = context.get("max_tool_call_rounds")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return MAX_TOOL_CALL_ROUNDS
+    return max(1, min(50000, value))
+
 
 def validate_parameters_against_schema(
     parameters: Dict[str, Any],
@@ -781,7 +792,7 @@ class ExecutionLayer:
         )
 
         # 支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM
-        max_rounds = 5
+        max_rounds = resolve_max_tool_call_rounds(context)
         round_count = 0
         consecutive_errors = 0
         max_consecutive_errors = 3

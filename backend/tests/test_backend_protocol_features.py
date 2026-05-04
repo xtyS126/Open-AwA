@@ -15,9 +15,11 @@ from api.routes import chat as chat_route
 from billing.pricing_manager import PricingManager
 import core.agent as agent_module
 from core.agent import AIAgent
+from core.agent import resolve_max_tool_call_rounds as resolve_agent_max_tool_call_rounds
 import core.executor as executor_module
 import core.litellm_adapter as litellm_adapter_module
 from core.executor import ExecutionLayer
+from core.executor import resolve_max_tool_call_rounds as resolve_executor_max_tool_call_rounds
 from core.feedback import FeedbackLayer
 from core.model_service import build_provider_request, build_thinking_params
 from main import app
@@ -32,6 +34,20 @@ def test_ai_agent_is_final_only_mode_accepts_thinking_disabled():
     assert AIAgent._is_final_only_mode({"thinking_enabled": True}) is False
     assert AIAgent._is_final_only_mode({"suppress_reasoning": True}) is True
     assert AIAgent._is_final_only_mode({"output_mode": "final_only"}) is True
+
+
+def test_tool_call_round_settings_are_clamped_and_defaulted():
+    """
+    工具回环次数应允许从上下文覆盖，并对非法值回退到默认范围。
+    """
+
+    assert resolve_agent_max_tool_call_rounds({}) == 12
+    assert resolve_executor_max_tool_call_rounds({}) == 12
+    assert resolve_agent_max_tool_call_rounds({"max_tool_call_rounds": 18}) == 18
+    assert resolve_executor_max_tool_call_rounds({"max_tool_call_rounds": "21"}) == 21
+    assert resolve_agent_max_tool_call_rounds({"max_tool_call_rounds": 999}) == 999
+    assert resolve_agent_max_tool_call_rounds({"max_tool_call_rounds": 999999}) == 50000
+    assert resolve_executor_max_tool_call_rounds({"max_tool_call_rounds": 0}) == 1
 
 
 def test_pricing_manager_normalizes_provider_specific_base_suffix():
