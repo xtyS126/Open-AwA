@@ -99,7 +99,14 @@ class AIAgent:
         则作为兼容旧调用方的兜底开关。
         """
         output_mode = str(context.get("output_mode", "")).strip().lower()
-        return output_mode == "final_only" or bool(context.get("suppress_reasoning"))
+        if output_mode == "final_only" or bool(context.get("suppress_reasoning")):
+            return True
+            
+        # 如果明确禁用了思考模式，则在向外输出时剥离模型自发产生的推理内容
+        if context.get("thinking_enabled") is False:
+            return True
+            
+        return False
 
     def _strip_reasoning_content(self, payload: Any) -> Any:
         """
@@ -1254,6 +1261,8 @@ class AIAgent:
         while round_count < max_rounds:
             round_count += 1
             tool_calls_detected = False
+            round_content = ""
+            round_reasoning = ""
 
             async for chunk in self.executor._call_llm_api_stream(user_input, context):
                 if "error" in chunk:
@@ -1351,21 +1360,24 @@ class AIAgent:
 
                     # 构建工具调用消息并注入到上下文中
                     tool_messages = []
-                    tool_messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": tc.get("id", ""),
-                                "type": "function",
-                                "function": {
-                                    "name": tc.get("function", {}).get("name", ""),
-                                    "arguments": tc.get("function", {}).get("arguments", ""),
-                                }
+                    assistant_tool_calls = [
+                        {
+                            "id": tc.get("id", ""),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("function", {}).get("name", ""),
+                                "arguments": tc.get("function", {}).get("arguments", ""),
                             }
-                            for tc in tool_calls
-                        ]
-                    })
+                        }
+                        for tc in tool_calls
+                    ]
+                    tool_messages.append(
+                        self.executor.build_assistant_tool_call_message(
+                            content=round_content,
+                            reasoning_content=round_reasoning,
+                            tool_calls=assistant_tool_calls,
+                        )
+                    )
                     for tr in tool_results:
                         tool_messages.append(self.executor._build_tool_message(tr["tool_call"], tr["result"]))
 
@@ -1373,13 +1385,18 @@ class AIAgent:
                     break  # 跳出 async for 循环，重新进入 while 循环进行下一轮 LLM 调用
 
                 content = chunk.get("content", "")
-                reasoning = chunk.get("reasoning_content", "")
+                raw_reasoning = chunk.get("reasoning_content", "")
+                reasoning = raw_reasoning
 
                 if final_only_mode:
                     reasoning = ""
 
-                if content: full_content += content
-                if reasoning: full_reasoning += reasoning
+                if content:
+                    full_content += content
+                    round_content += content
+                if raw_reasoning:
+                    full_reasoning += raw_reasoning
+                    round_reasoning += raw_reasoning
 
                 output_chunk = {
                     "type": "chunk",

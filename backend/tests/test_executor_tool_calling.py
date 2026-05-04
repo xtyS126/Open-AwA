@@ -91,6 +91,7 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
     execution_layer._resolve_llm_configuration = MethodType(mock_resolve, execution_layer)
 
     call_index = {"value": 0}
+    captured_messages = {"value": []}
 
     async def fake_litellm_chat_completion(**kwargs):
         call_index["value"] += 1
@@ -98,8 +99,8 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
             assert kwargs.get("tools")
             return {
                 "ok": True,
-                "response": "",
-                "reasoning_content": "",
+                "response": "我先调用工具查询一下。",
+                "reasoning_content": "需要先拿到实时账号信息再总结。",
                 "tool_calls": [
                     {
                         "id": "call_1",
@@ -113,7 +114,8 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
                 "usage": None,
             }
 
-        assert any(message.get("role") == "tool" for message in kwargs.get("messages", []))
+        captured_messages["value"] = kwargs.get("messages", [])
+        assert any(message.get("role") == "tool" for message in captured_messages["value"])
         return {
             "ok": True,
             "response": "OpenAI 的账号信息已经获取完成。",
@@ -157,6 +159,16 @@ async def test_call_llm_api_executes_real_tool_calls(monkeypatch):
         ("twitter-monitor", "get_twitter_user_info", {"user_name": "openai"})
     ]
     assert result["tool_events"][0]["name"] == "plugin_twitter-monitor__get_twitter_user_info"
+    assistant_index = next(
+        index for index, message in enumerate(captured_messages["value"])
+        if message.get("role") == "assistant" and message.get("tool_calls")
+    )
+    tool_index = next(
+        index for index, message in enumerate(captured_messages["value"])
+        if message.get("role") == "tool"
+    )
+    assert assistant_index < tool_index
+    assert captured_messages["value"][assistant_index]["reasoning_content"] == "需要先拿到实时账号信息再总结。"
     monkeypatch.setattr(PluginManager, "execute_plugin_async", original_execute)
 
 

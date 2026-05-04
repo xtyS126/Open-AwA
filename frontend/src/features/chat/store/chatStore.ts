@@ -57,6 +57,9 @@ interface ChatState {
 
 const initialSessionId = getActiveConversationId() || 'default'
 
+const initialSelectedModel = safeGetItem('chat_selected_model', '')
+const isInitialReasoner = initialSelectedModel.toLowerCase().includes('reasoner') || initialSelectedModel.toLowerCase().includes('r1') || initialSelectedModel.toLowerCase().includes('o1') || initialSelectedModel.toLowerCase().includes('o3')
+
 export const useChatStore = create<ChatState>((set) => ({
   messages: getCachedConversationMessages(initialSessionId),
   isLoading: false,
@@ -65,12 +68,12 @@ export const useChatStore = create<ChatState>((set) => ({
   conversationsTotal: getCachedConversationSummaries().length,
   conversationsHasMore: false,
   outputMode: (safeGetItem('chat_output_mode', 'stream') as 'stream' | 'direct'),
-  selectedModel: safeGetItem('chat_selected_model', ''),
+  selectedModel: initialSelectedModel,
   modelOptions: [],
   modelLoading: false,
   modelError: null,
-  thinkingEnabled: false,
-  thinkingDepth: 0,
+  thinkingEnabled: safeGetItem('chat_thinking_enabled', isInitialReasoner ? 'true' : 'false') === 'true',
+  thinkingDepth: Number(safeGetItem('chat_thinking_depth', '0')) || 0,
 
   addMessage: (role, content, reasoning_content, id) => {
     const messageId = id || crypto.randomUUID()
@@ -103,7 +106,7 @@ export const useChatStore = create<ChatState>((set) => ({
         const updatedMessage = {
           ...lastMessage,
           content: lastMessage.content + content,
-          reasoning_content: reasoning_content
+          reasoning_content: (state.thinkingEnabled && reasoning_content)
             ? (lastMessage.reasoning_content || '') + reasoning_content
             : lastMessage.reasoning_content,
         }
@@ -189,6 +192,10 @@ export const useChatStore = create<ChatState>((set) => ({
   setSelectedModel: (model) => {
     set({ selectedModel: model })
     safeSetItem('chat_selected_model', model)
+    // 如果选择了推理模型，自动开启思考模式
+    if (model.toLowerCase().includes('reasoner') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('o1') || model.toLowerCase().includes('o3')) {
+      set({ thinkingEnabled: true })
+    }
   },
 
   setModelOptions: (options) => set({ modelOptions: options }),
@@ -197,6 +204,13 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setModelError: (error) => set({ modelError: error }),
 
-  setThinkingEnabled: (enabled) => set({ thinkingEnabled: enabled }),
-  setThinkingDepth: (depth) => set({ thinkingDepth: Math.max(0, Math.min(5, depth)) }),
+  setThinkingEnabled: (enabled) => {
+    set({ thinkingEnabled: enabled })
+    safeSetItem('chat_thinking_enabled', enabled ? 'true' : 'false')
+  },
+  setThinkingDepth: (depth) => {
+    const validDepth = Math.max(0, Math.min(5, depth))
+    set({ thinkingDepth: validDepth })
+    safeSetItem('chat_thinking_depth', String(validDepth))
+  },
 }))
