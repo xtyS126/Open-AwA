@@ -8,7 +8,7 @@ export default function WechatConfigModule() {
     loadingWeixin, configLoadError, savingWeixin, testingWeixin, weixinHealthResult,
     startingQrLogin, pollingQrLogin, qrSessionKey, qrCodeUrl, qrImageLoadError, qrStatus, qrState, qrStatusText, qrStatusHint, qrBindingResult,
     bindingInfo, loadingBinding, unbinding, bindingError,
-    autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult,
+    autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult, savingAutoStart,
     paramsConfig, paramsLoadError, editBotType, setEditBotType, editChannelVersion, setEditChannelVersion, savingParams,
     rules, loadingRules, rulesError, editingRule, setEditingRule, savingRule,
     
@@ -17,7 +17,7 @@ export default function WechatConfigModule() {
     formatStatusTime, buildBindingResultText, buildNextStepText, formatAutoReplyBindingStatus, formatAutoReplyPollStatus,
     loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadRules,
     handleUnbind, handleSaveParams, handleStartQrLogin, handleCancelQrLogin, handleSaveWeixinConfig, handleTestWeixinConnection,
-    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce,
+    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce, handleToggleAutoStart,
     handleSaveRule, handleDeleteRule, handleToggleRuleActive, handleRestoreDefaultRules
   } = useWechatConfig()
 
@@ -178,6 +178,20 @@ export default function WechatConfigModule() {
                     )}
                   </>
                 )}
+                <div className={styles['auto-start-toggle']}>
+                  <label className={styles['toggle-label']}>
+                    <input
+                      type="checkbox"
+                      checked={autoReplyStatus?.auto_start_enabled ?? false}
+                      disabled={savingAutoStart || !isAutoReplyBindingReady}
+                      onChange={(e) => void handleToggleAutoStart(e.target.checked)}
+                    />
+                    <span className={styles['toggle-text']}>
+                      服务启动时自动运行自动回复
+                      {savingAutoStart && ' (保存中...)'}
+                    </span>
+                  </label>
+                </div>
                 <div className={styles['actions-row']}>
                   <button
                     className="btn btn-primary"

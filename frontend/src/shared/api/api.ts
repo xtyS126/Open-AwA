@@ -1072,6 +1072,7 @@ export interface WeixinAutoReplyStatus {
   weixin_user_id?: string
   auto_reply_enabled: boolean
   auto_reply_running: boolean
+  auto_start_enabled: boolean
   last_poll_at: string
   last_poll_status: string
   last_error: string
@@ -1127,6 +1128,10 @@ export interface WeixinAutoReplyRuleUpdate {
   priority?: number
 }
 
+export interface WeixinAutoReplyConfigUpdate {
+  auto_start_enabled: boolean
+}
+
 export const weixinAPI = {
   getConfig: () => api.get<WeixinConfig>('/skills/weixin/config'),
   saveConfig: (config: WeixinConfig) => api.post('/skills/weixin/config', config),
@@ -1140,6 +1145,7 @@ export const weixinAPI = {
   getParams: () => api.get<WeixinParamsConfig>('/weixin/config'),
   updateParams: (data: WeixinParamsUpdate) => api.put<WeixinParamsConfig>('/weixin/config', data),
   getAutoReplyStatus: () => api.get<WeixinAutoReplyStatus>('/weixin/auto-reply/status'),
+  updateAutoReplyConfig: (data: WeixinAutoReplyConfigUpdate) => api.put<{ auto_start_enabled: boolean }>('/weixin/auto-reply/config', data),
   startAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/start'),
   stopAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/stop'),
   restartAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/restart'),
