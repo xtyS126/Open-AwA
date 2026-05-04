@@ -119,6 +119,7 @@ class WeixinBindingResponse(BaseModel):
     channel_version: str = ""
     binding_status: str = "unbound"
     weixin_user_id: str = ""
+    auto_start_enabled: bool = False
 
 
 class WeixinBindingCreate(BaseModel):
@@ -193,6 +194,7 @@ async def get_binding(
         channel_version=binding.channel_version or "",
         binding_status=binding.binding_status or "unbound",
         weixin_user_id=binding.weixin_user_id or "",
+        auto_start_enabled=bool(binding.auto_start_enabled),
     )
 
 
@@ -327,6 +329,33 @@ async def update_weixin_params(
         session_timeout_seconds=settings.WEIXIN_SESSION_TIMEOUT_SECONDS,
         token_refresh_enabled=settings.WEIXIN_TOKEN_REFRESH_ENABLED,
     )
+
+
+class WeixinAutoReplyConfigUpdate(BaseModel):
+    """自动回复配置更新请求"""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    auto_start_enabled: bool = Field(..., description="是否在服务启动时自动启动自动回复")
+
+
+@router.put("/auto-reply/config")
+async def update_auto_reply_config(
+    payload: WeixinAutoReplyConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """更新当前用户的自动回复配置（如开机自启等）"""
+    user_id = str(current_user.id)
+    binding = db.query(WeixinBinding).filter(
+        WeixinBinding.user_id == user_id
+    ).first()
+    if not binding:
+        raise HTTPException(status_code=404, detail="请先完成微信绑定后再修改自动回复配置")
+    binding.auto_start_enabled = payload.auto_start_enabled
+    db.commit()
+    db.refresh(binding)
+    logger.info(f"[weixin] 用户 {user_id} 自动回复配置已更新, auto_start_enabled={binding.auto_start_enabled}")
+    return {"auto_start_enabled": bool(binding.auto_start_enabled)}
 
 
 @router.get("/auto-reply/status")

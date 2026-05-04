@@ -6,6 +6,7 @@ import {
   WeixinAutoReplyRuleCreate,
   WeixinAutoReplyRuleUpdate,
   WeixinAutoReplyStatus,
+  WeixinAutoReplyConfigUpdate,
   WeixinBindingInfo,
   WeixinConfig,
   WeixinHealthCheckResult,
@@ -59,6 +60,7 @@ export function useWechatConfig() {
   const [autoReplyStatusError, setAutoReplyStatusError] = useState<string | null>(null)
   const [autoReplyAction, setAutoReplyAction] = useState<'start' | 'stop' | 'restart' | 'process' | null>(null)
   const [autoReplyProcessResult, setAutoReplyProcessResult] = useState<WeixinAutoReplyProcessResult | null>(null)
+  const [savingAutoStart, setSavingAutoStart] = useState(false)
   const [paramsConfig, setParamsConfig] = useState<WeixinParamsConfig | null>(null)
   const [paramsLoadError, setParamsLoadError] = useState<string | null>(null)
   const [editBotType, setEditBotType] = useState('')
@@ -858,6 +860,22 @@ export function useWechatConfig() {
     }
   }
 
+  const handleToggleAutoStart = async (enabled: boolean) => {
+    setSavingAutoStart(true)
+    try {
+      const payload: WeixinAutoReplyConfigUpdate = { auto_start_enabled: enabled }
+      await weixinAPI.updateAutoReplyConfig(payload)
+      if (autoReplyStatus) {
+        setAutoReplyStatus({ ...autoReplyStatus, auto_start_enabled: enabled })
+      }
+      showTimedMessage('success', enabled ? '已开启开机自启自动回复' : '已关闭开机自启自动回复')
+    } catch (error) {
+      showTimedMessage('error', getApiErrorDetail(error, enabled ? '开启开机自启失败' : '关闭开机自启失败'))
+    } finally {
+      setSavingAutoStart(false)
+    }
+  }
+
   const handleSaveRule = async (ruleData: WeixinAutoReplyRule | WeixinAutoReplyRuleCreate) => {
     setSavingRule(true)
     try {
@@ -929,7 +947,7 @@ export function useWechatConfig() {
     loadingWeixin, configLoadError, savingWeixin, testingWeixin, weixinHealthResult,
     startingQrLogin, pollingQrLogin, qrSessionKey, qrCodeUrl, qrImageLoadError, qrStatus, qrState, qrStatusText, qrStatusHint, qrBindingResult,
     bindingInfo, loadingBinding, unbinding, bindingError,
-    autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult,
+    autoReplyStatus, loadingAutoReplyStatus, autoReplyStatusError, autoReplyAction, autoReplyProcessResult, savingAutoStart,
     paramsConfig, paramsLoadError, editBotType, setEditBotType, editChannelVersion, setEditChannelVersion, savingParams,
     rules, loadingRules, rulesError, editingRule, setEditingRule, savingRule,
     
@@ -938,7 +956,7 @@ export function useWechatConfig() {
     formatStatusTime, buildBindingResultText, buildNextStepText, formatAutoReplyBindingStatus, formatAutoReplyPollStatus,
     loadBindingInfo, loadAutoReplyStatus, loadParamsConfig, loadWeixinConfig, loadRules,
     handleUnbind, handleSaveParams, handleStartQrLogin, handleCancelQrLogin, handleSaveWeixinConfig, handleTestWeixinConnection,
-    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce,
+    handleStartAutoReply, handleStopAutoReply, handleRestartAutoReply, handleProcessAutoReplyOnce, handleToggleAutoStart,
     handleSaveRule, handleDeleteRule, handleToggleRuleActive, handleRestoreDefaultRules
   }
 }
