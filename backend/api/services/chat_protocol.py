@@ -241,18 +241,30 @@ def emit_tool_event(tool_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def emit_subagent_start_event(agent_id: str, agent_type: str, description: str = "") -> Dict[str, Any]:
+def emit_subagent_start_event(
+    agent_id: str,
+    agent_type: str,
+    description: str = "",
+    run_mode: str = "",
+) -> Dict[str, Any]:
     """子代理启动事件，通知前端有新代理开始执行。"""
     return {
         "type": "subagent_start",
         "agent_id": agent_id,
         "agent_type": agent_type,
         "description": description,
+        "run_mode": run_mode,
         "chunk_type": "subagent_start",
     }
 
 
-def emit_subagent_stop_event(agent_id: str, state: str, summary: str = "", agent_type: str = "") -> Dict[str, Any]:
+def emit_subagent_stop_event(
+    agent_id: str,
+    state: str,
+    summary: str = "",
+    agent_type: str = "",
+    run_mode: str = "",
+) -> Dict[str, Any]:
     """子代理完成/失败事件，通知前端代理已结束。"""
     return {
         "type": "subagent_stop",
@@ -260,6 +272,7 @@ def emit_subagent_stop_event(agent_id: str, state: str, summary: str = "", agent
         "agent_type": agent_type,
         "state": state,
         "summary": summary,
+        "run_mode": run_mode,
         "chunk_type": "subagent_stop",
     }
 

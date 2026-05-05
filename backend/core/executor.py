@@ -9,7 +9,7 @@ import json
 import re
 import time
 import urllib.parse
-from typing import Dict, Any, Optional, Callable
+from typing import Awaitable, Dict, Any, Optional, Callable
 
 import httpx
 from loguru import logger
@@ -218,31 +218,37 @@ class ExecutionLayer:
         action_schemas = {
             "read_files": {
                 "param_key": "files",
+                "param_aliases": (),
                 "param_type": list,
                 "label": "文件路径列表",
             },
             "execute_command": {
                 "param_key": "command",
+                "param_aliases": (),
                 "param_type": str,
                 "label": "命令",
             },
             "llm_generate": {
                 "param_key": "prompt",
+                "param_aliases": ("task",),
                 "param_type": str,
                 "label": "提示词",
             },
             "llm_query": {
                 "param_key": "prompt",
+                "param_aliases": ("query",),
                 "param_type": str,
                 "label": "查询提示词",
             },
             "llm_explain": {
                 "param_key": "prompt",
+                "param_aliases": ("target",),
                 "param_type": str,
                 "label": "解释提示词",
             },
             "llm_chat": {
                 "param_key": "message",
+                "param_aliases": (),
                 "param_type": str,
                 "label": "聊天消息",
             },
@@ -253,7 +259,11 @@ class ExecutionLayer:
             return None
 
         param_key = schema["param_key"]
-        param_value = step.get(param_key) or step.get("parameters", {}).get(param_key)
+        param_value = self._resolve_step_param(
+            step,
+            param_key,
+            *schema.get("param_aliases", ()),
+        )
 
         if param_value is None or param_value == "":
             return f"缺少必填参数 '{param_key}' ({schema['label']})"
@@ -264,6 +274,22 @@ class ExecutionLayer:
         if schema["param_type"] is str and not isinstance(param_value, str):
             return f"参数 '{param_key}' 应为 {schema['param_type'].__name__} 类型，实际为 {type(param_value).__name__}"
 
+        return None
+
+    @staticmethod
+    def _resolve_step_param(step: Dict[str, Any], *param_keys: str) -> Any:
+        """统一从步骤根字段或 parameters 中解析参数，并兼容历史别名。"""
+        parameters = step.get("parameters")
+        for param_key in param_keys:
+            if not param_key:
+                continue
+            direct_value = step.get(param_key)
+            if direct_value is not None and direct_value != "":
+                return direct_value
+            if isinstance(parameters, dict):
+                nested_value = parameters.get(param_key)
+                if nested_value is not None and nested_value != "":
+                    return nested_value
         return None
 
     def _build_tool_idempotency_key(self, step: Dict[str, Any], context: Dict[str, Any]) -> str:
@@ -421,6 +447,31 @@ class ExecutionLayer:
         else:
             lines.append("当前会话已关闭插件自动调度。")
 
+        configured_model_catalog = (
+            capabilities.get("configured_models")
+            if isinstance(capabilities.get("configured_models"), dict)
+            else {}
+        )
+        configured_model_entries = (
+            configured_model_catalog.get("entries")
+            if isinstance(configured_model_catalog.get("entries"), list)
+            else []
+        )
+        if configured_model_entries:
+            lines.append("当前可用于派生子代理的已配置模型：")
+            for entry in configured_model_entries[:12]:
+                if not isinstance(entry, dict):
+                    continue
+                label = str(entry.get("label", "")).strip()
+                if not label:
+                    continue
+                lines.append(f"- {label}")
+            lines.append(
+                "调用 task_spawn_agent 时，优先同时传 provider 和 model；也支持把 model 写成 provider:model。仅传 provider 时，系统会自动选用该 provider 的默认或已选模型。"
+            )
+        else:
+            lines.append("当前未提供已配置模型目录；派生子代理时若省略 provider/model，将回退到系统默认模型配置。")
+
         mcp_capabilities = capabilities.get("mcp") if isinstance(capabilities.get("mcp"), dict) else {}
         if mcp_capabilities.get("platform_supported", False):
             connected_servers = (
@@ -466,6 +517,261 @@ class ExecutionLayer:
         ])
 
         return "\n".join(lines)
+
+    def _normalize_subagent_model_selection(
+        self,
+        provider: Any,
+        model: Any,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        规范化子代理模型选择参数，兼容 provider:model 单字段格式。
+        """
+        normalized_provider = str(provider or "").strip().lower() or None
+        normalized_model = str(model or "").strip() or None
+        if not normalized_model or normalized_provider:
+            return normalized_provider, normalized_model
+
+        provider_candidate = None
+        model_candidate = None
+        if ":" in normalized_model:
+            raw_provider, raw_model = normalized_model.split(":", 1)
+            provider_candidate = raw_provider.strip().lower()
+            model_candidate = raw_model.strip()
+        elif "/" in normalized_model:
+            raw_provider, raw_model = normalized_model.split("/", 1)
+            known_providers = set(self.default_provider_endpoints) | set(self.provider_api_key_fields) | {"ollama", "qwen"}
+            if raw_provider.strip().lower() in known_providers:
+                provider_candidate = raw_provider.strip().lower()
+                model_candidate = raw_model.strip()
+
+        if provider_candidate and model_candidate:
+            return provider_candidate, model_candidate
+
+        catalog = self._get_configured_model_catalog(context or {})
+        if normalized_model and not normalized_provider:
+            matched_provider = self._find_provider_for_model(
+                normalized_model,
+                catalog,
+                preferred_provider=str((context or {}).get("provider", "") or "").strip().lower() or None,
+            )
+            if matched_provider:
+                return matched_provider, normalized_model
+
+        return normalized_provider, normalized_model
+
+    @staticmethod
+    def _get_configured_model_catalog(context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从上下文中提取已配置模型目录。
+        """
+        catalog = context.get("configured_model_catalog")
+        if isinstance(catalog, dict):
+            return catalog
+
+        capabilities = context.get("agent_capabilities")
+        if isinstance(capabilities, dict):
+            nested_catalog = capabilities.get("configured_models")
+            if isinstance(nested_catalog, dict):
+                return nested_catalog
+
+        return {}
+
+    @staticmethod
+    def _pick_catalog_model_for_provider(provider: Optional[str], catalog: Dict[str, Any]) -> Optional[str]:
+        """
+        从模型目录中挑选指定 provider 的首个可用模型。
+        """
+        normalized_provider = str(provider or "").strip().lower()
+        if not normalized_provider:
+            return None
+
+        providers = catalog.get("providers") if isinstance(catalog.get("providers"), list) else []
+        for item in providers:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("provider", "")).strip().lower() != normalized_provider:
+                continue
+            models = item.get("models") if isinstance(item.get("models"), list) else []
+            for model in models:
+                normalized_model = str(model or "").strip()
+                if normalized_model:
+                    return normalized_model
+
+        entries = catalog.get("entries") if isinstance(catalog.get("entries"), list) else []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("provider", "")).strip().lower() != normalized_provider:
+                continue
+            normalized_model = str(entry.get("model", "")).strip()
+            if normalized_model:
+                return normalized_model
+
+        return None
+
+    @staticmethod
+    def _find_provider_for_model(
+        model: Optional[str],
+        catalog: Dict[str, Any],
+        preferred_provider: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        在模型目录中查找模型所属 provider。
+        若存在多个候选，则优先返回 preferred_provider。
+        """
+        normalized_model = str(model or "").strip()
+        if not normalized_model:
+            return None
+
+        matches: list[str] = []
+        entries = catalog.get("entries") if isinstance(catalog.get("entries"), list) else []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("model", "")).strip() != normalized_model:
+                continue
+            provider = str(entry.get("provider", "")).strip().lower()
+            if provider and provider not in matches:
+                matches.append(provider)
+
+        if preferred_provider and preferred_provider in matches:
+            return preferred_provider
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    def _resolve_subagent_model_selection(
+        self,
+        context: Dict[str, Any],
+        provider: Any,
+        model: Any,
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        解析子代理的最终 provider/model。
+        若无法确定，返回明确错误信息而不是静默回退。
+        """
+        catalog = self._get_configured_model_catalog(context)
+        provider, model = self._normalize_subagent_model_selection(provider, model, context)
+        current_provider, current_model = self._normalize_subagent_model_selection(
+            context.get("provider"),
+            context.get("model"),
+            context,
+        )
+
+        if not provider and model:
+            provider = self._find_provider_for_model(model, catalog, preferred_provider=current_provider)
+
+        if not provider and current_provider:
+            provider = current_provider
+        if not model and current_model:
+            model = current_model
+
+        if provider and not model:
+            model = self._pick_catalog_model_for_provider(provider, catalog)
+
+        if not provider or not model:
+            resolved = self._resolve_llm_configuration(
+                {
+                    **context,
+                    "provider": provider or current_provider or context.get("provider"),
+                    "model": model,
+                }
+            )
+            if resolved.get("ok"):
+                resolved_provider = str(resolved.get("provider", "")).strip().lower() or None
+                resolved_model = str(resolved.get("model", "")).strip() or None
+                if not provider:
+                    provider = resolved_provider
+                if not model:
+                    model = resolved_model
+
+        if not provider and model:
+            provider = self._find_provider_for_model(model, catalog, preferred_provider=current_provider)
+        if provider and not model:
+            model = self._pick_catalog_model_for_provider(provider, catalog)
+
+        if not provider or not model:
+            return None, None, "未能解析子代理模型，请指定 provider/model 参数或确保主会话已配置模型"
+
+        return provider, model, None
+
+    async def _consume_foreground_subagent_stream(
+        self,
+        stream: Any,
+        tool_name: str,
+        on_subagent_event: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        消费前台子代理生成器，实时转发子代理事件，并返回最终摘要结果。
+        """
+        agent_id: Optional[str] = None
+        agent_type: Optional[str] = None
+        summary = ""
+        state = "completed"
+
+        try:
+            async for chunk in stream:
+                if not isinstance(chunk, dict):
+                    continue
+
+                chunk_type = str(chunk.get("type") or "").strip()
+                if chunk_type in {"subagent_start", "agent_message", "subagent_stop"}:
+                    agent_id = str(chunk.get("agent_id") or agent_id or "").strip() or agent_id
+                    agent_type = str(chunk.get("agent_type") or agent_type or "").strip() or agent_type
+                    if chunk_type == "subagent_stop":
+                        summary = str(chunk.get("summary") or summary or "").strip()
+                        state = str(chunk.get("state") or state or "completed").strip().lower() or "completed"
+                    if callable(on_subagent_event):
+                        await on_subagent_event(chunk)
+                    continue
+
+                if chunk_type == "error":
+                    state = "failed"
+                    error_message = str(chunk.get("error") or "子代理执行失败").strip() or "子代理执行失败"
+                    summary = summary or error_message
+
+            if not agent_id:
+                return {
+                    "ok": False,
+                    "error": "前台子代理未返回可追踪的 agent_id",
+                    "tool_name": tool_name,
+                }
+
+            result_payload = {
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "run_mode": "foreground",
+                "status": state,
+                "summary": summary,
+                "message": summary or ("子代理执行完成" if state == "completed" else "子代理执行失败"),
+            }
+
+            logger.bind(
+                module="executor",
+                event="subagent_foreground_completed",
+                agent_id=agent_id,
+                agent_type=agent_type,
+                state=state,
+            ).info(f"前台子代理执行结束: {agent_id}")
+
+            if state in {"failed", "error", "stopped", "timeout"}:
+                return {
+                    "ok": False,
+                    "error": summary or "子代理执行失败",
+                    "result": result_payload,
+                    "tool_name": tool_name,
+                }
+
+            return {
+                "ok": True,
+                "result": result_payload,
+                "tool_name": tool_name,
+            }
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if callable(aclose):
+                await aclose()
 
     def _pick_effective_model(
         self,
@@ -1045,7 +1351,12 @@ class ExecutionLayer:
 
             yield output_error
 
-    async def _execute_tool_call(self, tool_call: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_tool_call(
+        self,
+        tool_call: Dict[str, Any],
+        context: Dict[str, Any],
+        on_subagent_event: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
+    ) -> Dict[str, Any]:
         """
         执行单个工具调用，根据 function name 分发到对应的处理器。
         """
@@ -1192,20 +1503,44 @@ class ExecutionLayer:
                 agent_type = func_args.get("agent_type", "Explore")
                 prompt = func_args.get("prompt", "")
                 description = func_args.get("description", "")
-                model = func_args.get("model")
+                provider, model, model_error = self._resolve_subagent_model_selection(
+                    context,
+                    func_args.get("provider"),
+                    func_args.get("model"),
+                )
+                if model_error:
+                    logger.bind(
+                        module="executor",
+                        event="subagent_model_resolution_failed",
+                        agent_type=agent_type,
+                    ).warning(model_error)
+                    return {"ok": False, "error": model_error, "tool_name": func_name}
+
                 background = func_args.get("background", False)
+                logger.bind(
+                    module="executor",
+                    event="subagent_spawn_requested",
+                    agent_type=agent_type,
+                    provider=provider,
+                    model=model,
+                    background=background,
+                ).info(f"准备启动子代理: {agent_type}")
                 result = await task_runtime.spawn_agent(
                     agent_type=agent_type,
                     prompt=prompt,
                     description=description,
+                    provider=provider,
                     model=model,
                     background=background,
                     context=context,
                 )
                 if isinstance(result, dict):
                     return {"ok": result.get("ok", True), "result": result, "tool_name": func_name}
-                # 前台模式返回 AsyncGenerator，暂不支持在工具调用中直接消费
-                return {"ok": True, "result": {"message": "前台子代理已启动，通过 SSE 流获取结果"}, "tool_name": func_name}
+                return await self._consume_foreground_subagent_stream(
+                    result,
+                    func_name,
+                    on_subagent_event=on_subagent_event,
+                )
 
             elif task_action == "send_message":
                 to = func_args.get("to", "")
@@ -1541,8 +1876,8 @@ class ExecutionLayer:
         处理execute、llm相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        task = step.get("task", "")
-        result = await self._call_llm_api(task, context)
+        prompt = self._resolve_step_param(step, "prompt", "task") or ""
+        result = await self._call_llm_api(prompt, context)
         if not result.get("ok"):
             return {
                 "status": "error",
@@ -1563,8 +1898,8 @@ class ExecutionLayer:
         处理execute、llm、query相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        query = step.get("query", "")
-        result = await self._call_llm_api(query, context)
+        prompt = self._resolve_step_param(step, "prompt", "query") or ""
+        result = await self._call_llm_api(prompt, context)
         if not result.get("ok"):
             return {
                 "status": "error",
@@ -1584,8 +1919,11 @@ class ExecutionLayer:
         处理execute、llm、explain相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        target = step.get("target", "")
-        result = await self._call_llm_api(f"Explain: {target}", context)
+        prompt = self._resolve_step_param(step, "prompt")
+        if prompt is None or prompt == "":
+            target = self._resolve_step_param(step, "target") or ""
+            prompt = f"Explain: {target}" if target else ""
+        result = await self._call_llm_api(prompt, context)
         if not result.get("ok"):
             return {
                 "status": "error",

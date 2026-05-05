@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "请用中文搜索\"中国最高的山峰是什么\"，并告诉我它的名字和海拔高度。", "description": "探索任务：中国最高峰", "run_mode": "background", "_ts": "2026-05-05T04:45:15.714066+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:45:15.721971+00:00"}

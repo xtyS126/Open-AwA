@@ -1,4 +1,178 @@
-import type { AssistantExecutionMeta, TaskStatus, TaskStepMeta, ToolEventMeta, UsageMeta } from '@/features/chat/types'
+import type {
+  AssistantExecutionMeta,
+  SubagentAggregationMeta,
+  SubagentExecutionState,
+  TaskStatus,
+  TaskStepMeta,
+  ToolEventMeta,
+  UsageMeta,
+} from '@/features/chat/types'
+
+export const SUBAGENT_LOG_LIMIT = 50000
+export const SUBAGENT_LOG_TRUNCATE_RATIO = 0.1
+export const SUBAGENT_MAX_VISIBLE_CONTAINERS = 20
+export const SUBAGENT_INACTIVITY_TIMEOUT_MS = 30000
+
+const SUBAGENT_TRUNCATION_NOTICE = '[日志过长，已截断]\n'
+const SUBAGENT_ERROR_PREFIX = /^error\s*[:：]/i
+
+function normalizeSubagentName(agentType: unknown): string {
+  const normalizedType = String(agentType || '').trim() || 'unknown'
+  return `子代理: ${normalizedType}`
+}
+
+function appendSubagentLogs(existingLogs: string, chunk: string): Pick<SubagentExecutionState, 'logs' | 'truncated'> {
+  const normalizedChunk = String(chunk || '')
+  const baseLogs = String(existingLogs || '')
+  const nextRawLogs = baseLogs
+    ? `${baseLogs}${baseLogs.endsWith('\n') ? '' : '\n'}${normalizedChunk}`
+    : normalizedChunk
+
+  const withoutNotice = nextRawLogs.startsWith(SUBAGENT_TRUNCATION_NOTICE)
+    ? nextRawLogs.slice(SUBAGENT_TRUNCATION_NOTICE.length)
+    : nextRawLogs
+
+  if (withoutNotice.length <= SUBAGENT_LOG_LIMIT) {
+    return {
+      logs: nextRawLogs,
+      truncated: nextRawLogs.startsWith(SUBAGENT_TRUNCATION_NOTICE),
+    }
+  }
+
+  const truncateOffset = Math.max(1, Math.floor(withoutNotice.length * SUBAGENT_LOG_TRUNCATE_RATIO))
+  return {
+    logs: `${SUBAGENT_TRUNCATION_NOTICE}${withoutNotice.slice(truncateOffset)}`,
+    truncated: true,
+  }
+}
+
+function normalizeSubagentState(
+  incoming: Partial<SubagentExecutionState> | undefined,
+  fallbackId: string,
+  fallbackStartedAt?: number,
+  fallbackCompletedAt?: number
+): SubagentExecutionState | undefined {
+  if (!incoming) {
+    return undefined
+  }
+
+  return {
+    agentId: incoming.agentId || fallbackId,
+    agentType: incoming.agentType,
+    logs: String(incoming.logs || ''),
+    archivedLogs: typeof incoming.archivedLogs === 'string' ? incoming.archivedLogs : undefined,
+    summary: typeof incoming.summary === 'string' ? incoming.summary : undefined,
+    errorText: typeof incoming.errorText === 'string' ? incoming.errorText : undefined,
+    lastOutputAt: typeof incoming.lastOutputAt === 'number' ? incoming.lastOutputAt : fallbackStartedAt,
+    createdAt: typeof incoming.createdAt === 'number' ? incoming.createdAt : fallbackStartedAt,
+    completedAt: typeof incoming.completedAt === 'number' ? incoming.completedAt : fallbackCompletedAt,
+    exitCode: typeof incoming.exitCode === 'number' ? incoming.exitCode : undefined,
+    truncated: Boolean(incoming.truncated),
+    timedOut: Boolean(incoming.timedOut),
+    visible: incoming.visible !== false,
+  }
+}
+
+function mergeSubagentState(
+  current: SubagentExecutionState | undefined,
+  next: SubagentExecutionState | undefined,
+  fallbackId: string,
+  fallbackStartedAt?: number,
+  fallbackCompletedAt?: number
+): SubagentExecutionState | undefined {
+  if (!current && !next) {
+    return undefined
+  }
+
+  return normalizeSubagentState(
+    {
+      ...current,
+      ...next,
+      logs: typeof next?.logs === 'string' ? next.logs : current?.logs || '',
+      archivedLogs: typeof next?.archivedLogs === 'string' ? next.archivedLogs : current?.archivedLogs,
+      visible: next?.visible ?? current?.visible,
+    },
+    fallbackId,
+    fallbackStartedAt,
+    fallbackCompletedAt
+  )
+}
+
+function compactSubagentContainers(toolEvents: ToolEventMeta[]): ToolEventMeta[] {
+  const subagentEvents = toolEvents
+    .filter((tool) => tool.kind === 'subagent' && tool.subagent?.visible !== false)
+    .filter((tool) => tool.status === 'completed' || tool.status === 'error')
+    .sort((left, right) => (left.completedAt || 0) - (right.completedAt || 0))
+
+  const overflow = toolEvents.filter((tool) => tool.kind === 'subagent' && tool.subagent?.visible !== false).length - SUBAGENT_MAX_VISIBLE_CONTAINERS
+  if (overflow <= 0 || subagentEvents.length === 0) {
+    return toolEvents
+  }
+
+  const hiddenIds = new Set(subagentEvents.slice(0, overflow).map((tool) => tool.id))
+  return toolEvents.map((tool) => {
+    if (!hiddenIds.has(tool.id) || !tool.subagent) {
+      return tool
+    }
+
+    return {
+      ...tool,
+      subagent: {
+        ...tool.subagent,
+        archivedLogs: tool.subagent.archivedLogs || tool.subagent.logs,
+        logs: '',
+        visible: false,
+      },
+    }
+  })
+}
+
+function isSubagentFailure(state: unknown, summary: unknown): boolean {
+  const normalizedState = String(state || '').trim().toLowerCase()
+  const normalizedSummary = String(summary || '').trim()
+  if (normalizedState === 'failed' || normalizedState === 'error') {
+    return true
+  }
+  return SUBAGENT_ERROR_PREFIX.test(normalizedSummary)
+}
+
+function normalizeRuntimeSubagentStatus(state: unknown, hasError: boolean): TaskStatus {
+  const normalizedState = String(state || '').trim().toLowerCase()
+  if (normalizedState === 'completed' || normalizedState === 'success' || normalizedState === 'done') {
+    return 'completed'
+  }
+  if (hasError || normalizedState === 'failed' || normalizedState === 'error' || normalizedState === 'stopped' || normalizedState === 'timeout') {
+    return 'error'
+  }
+  return 'running'
+}
+
+function normalizeSubagentSnapshotLogs(logs: string): Pick<SubagentExecutionState, 'logs' | 'truncated'> {
+  const normalizedLogs = String(logs || '')
+  if (!normalizedLogs) {
+    return {
+      logs: '',
+      truncated: false,
+    }
+  }
+  return appendSubagentLogs('', normalizedLogs)
+}
+
+function transcriptEntryToText(entry: unknown): string {
+  if (!entry || typeof entry !== 'object') {
+    return String(entry || '').trim()
+  }
+
+  const record = entry as Record<string, unknown>
+  for (const key of ['message', 'content', 'response', 'summary', 'error', 'data']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  return JSON.stringify(record)
+}
 
 export function createEmptyExecutionMeta(): AssistantExecutionMeta {
   return {
@@ -75,6 +249,9 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
   const id = String(tool.id || `${tool.kind || 'tool'}:${tool.name || '未知工具'}`)
   const output = tool.output !== undefined ? tool.output : tool.result
   const normalizedStatus = normalizeTaskStatus(tool.status)
+  const rawSubagent = tool.subagent && typeof tool.subagent === 'object'
+    ? tool.subagent as Partial<SubagentExecutionState>
+    : undefined
   const nextTool: ToolEventMeta = {
     id,
     kind: String(tool.kind || 'tool'),
@@ -86,6 +263,7 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
     sequence: typeof tool.sequence === 'number' ? tool.sequence : undefined,
     startedAt: typeof tool.startedAt === 'number' ? tool.startedAt : (normalizedStatus === 'running' ? Date.now() : undefined),
     completedAt: typeof tool.completedAt === 'number' ? tool.completedAt : (normalizedStatus === 'completed' || normalizedStatus === 'error' ? Date.now() : undefined),
+    subagent: normalizeSubagentState(rawSubagent, id),
   }
   const nextEvents = [...meta.toolEvents]
   const targetIndex = nextEvents.findIndex((item) => item.id === id)
@@ -99,6 +277,13 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
       sequence: nextTool.sequence ?? nextEvents[targetIndex].sequence,
       startedAt: nextTool.startedAt ?? nextEvents[targetIndex].startedAt,
       completedAt: nextTool.completedAt ?? nextEvents[targetIndex].completedAt,
+      subagent: mergeSubagentState(
+        nextEvents[targetIndex].subagent,
+        nextTool.subagent,
+        id,
+        nextTool.startedAt ?? nextEvents[targetIndex].startedAt,
+        nextTool.completedAt ?? nextEvents[targetIndex].completedAt
+      ),
     }
   } else {
     nextEvents.push(nextTool)
@@ -106,7 +291,204 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
 
   return {
     ...meta,
-    toolEvents: nextEvents,
+    toolEvents: compactSubagentContainers(nextEvents),
+  }
+}
+
+export function applySubagentStart(
+  meta: AssistantExecutionMeta,
+  payload: { agentId: string; agentType?: string; description?: string }
+): AssistantExecutionMeta {
+  const now = Date.now()
+  return applyToolUpdate(meta, {
+    id: payload.agentId,
+    kind: 'subagent',
+    name: normalizeSubagentName(payload.agentType),
+    status: 'running',
+    detail: payload.description || '子代理已启动',
+    startedAt: now,
+    subagent: {
+      agentId: payload.agentId,
+      agentType: payload.agentType,
+      logs: payload.description || '',
+      summary: payload.description,
+      lastOutputAt: now,
+      createdAt: now,
+      visible: true,
+    },
+  })
+}
+
+export function applySubagentMessage(
+  meta: AssistantExecutionMeta,
+  payload: { agentId: string; agentType?: string; message: string }
+): AssistantExecutionMeta {
+  const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
+  const nextOutputAt = Date.now()
+  const nextLogs = appendSubagentLogs(existing?.subagent?.logs || '', payload.message)
+
+  return applyToolUpdate(meta, {
+    id: payload.agentId,
+    kind: 'subagent',
+    name: normalizeSubagentName(payload.agentType || existing?.subagent?.agentType),
+    status: existing?.status === 'error' ? 'error' : 'running',
+    detail: payload.message,
+    startedAt: existing?.startedAt,
+    subagent: {
+      agentId: payload.agentId,
+      agentType: payload.agentType || existing?.subagent?.agentType,
+      logs: nextLogs.logs,
+      archivedLogs: existing?.subagent?.archivedLogs,
+      lastOutputAt: nextOutputAt,
+      createdAt: existing?.subagent?.createdAt || existing?.startedAt || nextOutputAt,
+      truncated: nextLogs.truncated,
+      visible: existing?.subagent?.visible ?? true,
+    },
+  })
+}
+
+export function applySubagentStop(
+  meta: AssistantExecutionMeta,
+  payload: { agentId: string; agentType?: string; state?: string; summary?: string }
+): AssistantExecutionMeta {
+  const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
+  const finishedAt = Date.now()
+  const hasError = isSubagentFailure(payload.state, payload.summary)
+  const summaryText = String(payload.summary || '').trim()
+  const nextLogs = summaryText
+    ? appendSubagentLogs(existing?.subagent?.logs || '', summaryText)
+    : {
+        logs: existing?.subagent?.logs || '',
+        truncated: Boolean(existing?.subagent?.truncated),
+      }
+
+  return applyToolUpdate(meta, {
+    id: payload.agentId,
+    kind: 'subagent',
+    name: normalizeSubagentName(payload.agentType || existing?.subagent?.agentType),
+    status: hasError ? 'error' : 'completed',
+    detail: summaryText || (hasError ? '子代理执行失败' : '子代理已完成'),
+    startedAt: existing?.startedAt,
+    completedAt: finishedAt,
+    subagent: {
+      agentId: payload.agentId,
+      agentType: payload.agentType || existing?.subagent?.agentType,
+      logs: nextLogs.logs,
+      archivedLogs: existing?.subagent?.archivedLogs,
+      summary: summaryText || existing?.subagent?.summary,
+      errorText: hasError ? (summaryText || existing?.subagent?.errorText || '子代理执行失败') : existing?.subagent?.errorText,
+      lastOutputAt: summaryText ? finishedAt : existing?.subagent?.lastOutputAt,
+      createdAt: existing?.subagent?.createdAt || existing?.startedAt || finishedAt,
+      completedAt: finishedAt,
+      exitCode: hasError ? 1 : 0,
+      truncated: nextLogs.truncated,
+      timedOut: Boolean(existing?.subagent?.timedOut),
+      visible: existing?.subagent?.visible ?? true,
+    },
+  })
+}
+
+export function applySubagentTimeout(
+  meta: AssistantExecutionMeta,
+  payload: { agentId: string; agentType?: string; message?: string }
+): AssistantExecutionMeta {
+  const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
+  const timeoutMessage = payload.message || `Subagent ${payload.agentType || payload.agentId} 执行失败`
+  const finishedAt = Date.now()
+  const nextLogs = appendSubagentLogs(existing?.subagent?.logs || '', `[ERROR] ${timeoutMessage}`)
+
+  return applyToolUpdate(meta, {
+    id: payload.agentId,
+    kind: 'subagent',
+    name: normalizeSubagentName(payload.agentType || existing?.subagent?.agentType),
+    status: 'error',
+    detail: timeoutMessage,
+    startedAt: existing?.startedAt,
+    completedAt: finishedAt,
+    subagent: {
+      agentId: payload.agentId,
+      agentType: payload.agentType || existing?.subagent?.agentType,
+      logs: nextLogs.logs,
+      archivedLogs: existing?.subagent?.archivedLogs,
+      summary: timeoutMessage,
+      errorText: timeoutMessage,
+      lastOutputAt: finishedAt,
+      createdAt: existing?.subagent?.createdAt || existing?.startedAt || finishedAt,
+      completedAt: finishedAt,
+      exitCode: 1,
+      truncated: nextLogs.truncated,
+      timedOut: true,
+      visible: existing?.subagent?.visible ?? true,
+    },
+  })
+}
+
+export function syncSubagentSnapshot(
+  meta: AssistantExecutionMeta,
+  payload: {
+    agentId: string
+    agentType?: string
+    state?: string
+    logs?: string
+    summary?: string
+    errorText?: string
+  }
+): AssistantExecutionMeta {
+  const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
+  const summaryText = String(payload.summary || existing?.subagent?.summary || '').trim()
+  const errorText = String(payload.errorText || existing?.subagent?.errorText || '').trim()
+  const hasError = isSubagentFailure(payload.state, errorText || summaryText)
+  const nextStatus = normalizeRuntimeSubagentStatus(payload.state, hasError)
+  const nextLogs = normalizeSubagentSnapshotLogs(
+    payload.logs || existing?.subagent?.archivedLogs || existing?.subagent?.logs || ''
+  )
+  const now = Date.now()
+  const completedAt = nextStatus === 'running' ? existing?.completedAt : now
+
+  return applyToolUpdate(meta, {
+    id: payload.agentId,
+    kind: 'subagent',
+    name: normalizeSubagentName(payload.agentType || existing?.subagent?.agentType),
+    status: nextStatus,
+    detail: errorText || summaryText || (nextStatus === 'running' ? '子代理运行中' : '子代理已完成'),
+    startedAt: existing?.startedAt,
+    completedAt,
+    subagent: {
+      agentId: payload.agentId,
+      agentType: payload.agentType || existing?.subagent?.agentType,
+      logs: nextLogs.logs,
+      archivedLogs: existing?.subagent?.archivedLogs,
+      summary: summaryText || existing?.subagent?.summary,
+      errorText: nextStatus === 'error' ? (errorText || summaryText || '子代理执行失败') : undefined,
+      lastOutputAt: nextLogs.logs ? now : existing?.subagent?.lastOutputAt,
+      createdAt: existing?.subagent?.createdAt || existing?.startedAt || now,
+      completedAt,
+      exitCode: nextStatus === 'running' ? existing?.subagent?.exitCode : (nextStatus === 'completed' ? 0 : 1),
+      truncated: nextLogs.truncated,
+      timedOut: Boolean(existing?.subagent?.timedOut),
+      visible: existing?.subagent?.visible ?? true,
+    },
+  })
+}
+
+export function getVisibleSubagentTools(toolEvents: ToolEventMeta[]): ToolEventMeta[] {
+  return toolEvents.filter((tool) => tool.kind === 'subagent' && tool.subagent?.visible !== false)
+}
+
+export function buildSubagentTranscriptText(transcript: unknown[]): string {
+  return transcript
+    .map((entry) => transcriptEntryToText(entry))
+    .filter((line) => line.trim().length > 0)
+    .join('\n')
+}
+
+export function setSubagentAggregation(
+  meta: AssistantExecutionMeta,
+  aggregation: SubagentAggregationMeta
+): AssistantExecutionMeta {
+  return {
+    ...meta,
+    subagentAggregation: aggregation,
   }
 }
 
@@ -255,12 +637,15 @@ export function mergeExecutionMeta(base: AssistantExecutionMeta | undefined, inc
   if (incoming.usage) {
     merged.usage = incoming.usage
   }
+  if (incoming.subagentAggregation) {
+    merged.subagentAggregation = incoming.subagentAggregation
+  }
   return merged
 }
 
 export function hasExecutionMeta(meta: AssistantExecutionMeta | undefined): boolean {
   if (!meta) return false
-  return Boolean(meta.intent || meta.steps.length || meta.toolEvents.length || meta.usage)
+  return Boolean(meta.intent || meta.steps.length || meta.toolEvents.length || meta.usage || meta.subagentAggregation)
 }
 
 export function getTaskTitle(step: TaskStepMeta): string {

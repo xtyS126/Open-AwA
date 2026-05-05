@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请用中文列出一个简单的三件事日程：早上、中午、晚上各做一件健康的事。简洁回答。", "description": "规划健康日程三件事", "run_mode": "background", "_ts": "2026-05-05T04:49:52.051842+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:49:52.061744+00:00"}

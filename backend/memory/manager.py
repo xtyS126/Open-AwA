@@ -182,6 +182,55 @@ class MemoryManager:
         logger.debug(f"Added short-term memory for session {session_id}")
         return memory
 
+    def _append_to_last_assistant_memory_sync(
+        self,
+        session_id: str,
+        content: str,
+        user_id: Optional[str] = None,
+    ) -> ShortTermMemory:
+        normalized_content = str(content or "").strip()
+        if not normalized_content:
+            raise ValueError("content cannot be empty")
+
+        memory = (
+            self.db.query(ShortTermMemory)
+            .filter(
+                ShortTermMemory.session_id == session_id,
+                ShortTermMemory.role == "assistant",
+            )
+            .order_by(ShortTermMemory.timestamp.desc(), ShortTermMemory.id.desc())
+            .first()
+        )
+
+        if memory is None:
+            return self._add_short_term_memory_sync(session_id, "assistant", normalized_content, user_id)
+
+        previous_content = str(memory.content or "").strip()
+        memory.content = f"{previous_content}\n\n{normalized_content}" if previous_content else normalized_content
+        memory.timestamp = datetime.now(timezone.utc)
+        ensure_conversation(
+            self.db,
+            session_id=session_id,
+            user_id=user_id,
+            content=memory.content,
+            role="assistant",
+            occurred_at=memory.timestamp,
+            increment_message_count=False,
+        )
+        self.db.commit()
+        self.db.refresh(memory)
+        return memory
+
+    async def append_to_last_assistant_memory(
+        self,
+        session_id: str,
+        content: str,
+        user_id: Optional[str] = None,
+    ) -> ShortTermMemory:
+        memory = await asyncio.to_thread(self._append_to_last_assistant_memory_sync, session_id, content, user_id)
+        logger.debug(f"Appended assistant short-term memory for session {session_id}")
+        return memory
+
     def _get_short_term_memories_sync(self, session_id: str, limit: int) -> List[ShortTermMemory]:
         return (
             self.db.query(ShortTermMemory)

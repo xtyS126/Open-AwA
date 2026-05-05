@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请用一句话向用户问好（中文），并告诉用户你的Agent类型是\"general-purpose（通用型）\"。", "description": "通用任务：输出一句问候", "run_mode": "background", "_ts": "2026-05-05T04:41:34.499172+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:41:34.507235+00:00"}

@@ -17,6 +17,12 @@ const apiMocks = vi.hoisted(() => ({
   batchDeleteSessions: vi.fn(),
 }))
 
+const taskRuntimeMocks = vi.hoisted(() => ({
+  getAgent: vi.fn(),
+  stopAgent: vi.fn(),
+  getTranscript: vi.fn(),
+}))
+
 function buildConversationSummary(sessionId: string) {
   return {
     session_id: sessionId,
@@ -73,6 +79,12 @@ vi.mock('@/shared/utils/logger', () => ({
   },
 }))
 
+vi.mock('@/shared/api/taskRuntimeApi', () => ({
+  getAgent: taskRuntimeMocks.getAgent,
+  stopAgent: taskRuntimeMocks.stopAgent,
+  getTranscript: taskRuntimeMocks.getTranscript,
+}))
+
 vi.mock('@/shared/events/billingEvents', () => ({
   dispatchBillingUsageUpdated: vi.fn(),
 }))
@@ -109,6 +121,17 @@ describe('ChatPage', () => {
     apiMocks.restoreSession.mockResolvedValue({ data: buildConversationSummary('session-1') })
     apiMocks.batchDeleteSessions.mockResolvedValue({ data: { items: [], total: 0, page: 1, page_size: 0, has_more: false } })
     apiMocks.getHistory.mockResolvedValue({ data: [] })
+    taskRuntimeMocks.getAgent.mockResolvedValue({
+      agent: {
+        agent_id: 'agt-1',
+        agent_type: 'planner',
+        state: 'completed',
+        run_mode: 'background',
+        isolation_mode: 'inherit',
+      },
+    })
+    taskRuntimeMocks.stopAgent.mockResolvedValue({ ok: true, agent_id: 'agt-1', status: 'stopped' })
+    taskRuntimeMocks.getTranscript.mockResolvedValue({ agent_id: 'agt-1', transcript: [], entry_count: 0 })
     useChatStore.setState({
       messages: [],
       isLoading: false,
@@ -218,6 +241,232 @@ describe('ChatPage', () => {
     expect(screen.getByText(/245ms/)).toBeInTheDocument()
   })
 
+  it('为后台子代理建立独立同步，并在全部结束后一次性拉取 transcript', async () => {
+    const streamMessages: string[] = []
+    const continuationPayloads: Array<Record<string, unknown> | undefined> = []
+
+    taskRuntimeMocks.getAgent
+      .mockResolvedValueOnce({
+        agent: {
+          agent_id: 'agt-1',
+          agent_type: 'planner',
+          state: 'completed',
+          run_mode: 'background',
+          isolation_mode: 'inherit',
+          summary: '规划完成',
+        },
+      })
+      .mockResolvedValueOnce({
+        agent: {
+          agent_id: 'agt-2',
+          agent_type: 'coder',
+          state: 'completed',
+          run_mode: 'background',
+          isolation_mode: 'inherit',
+          summary: '编码完成',
+        },
+      })
+
+    taskRuntimeMocks.getTranscript
+      .mockResolvedValueOnce({
+        agent_id: 'agt-1',
+        transcript: [{ message: '子代理一完整输出' }],
+        entry_count: 1,
+      })
+      .mockResolvedValueOnce({
+        agent_id: 'agt-2',
+        transcript: [{ message: '子代理二完整输出' }],
+        entry_count: 1,
+      })
+
+    apiMocks.sendMessageStream.mockImplementation(async (message, _sessionId, _provider, _model, onEvent, _onError, _requestOptions, executionOptions) => {
+      streamMessages.push(String(message))
+      continuationPayloads.push((executionOptions as { continuation?: Record<string, unknown> } | undefined)?.continuation)
+
+      if (streamMessages.length === 1) {
+        onEvent({
+          type: 'chunk',
+          content: '',
+          reasoning_content: '准备分派两个子代理。',
+        })
+        onEvent({
+          type: 'subagent_start',
+          agent_id: 'agt-1',
+          agent_type: 'planner',
+          description: '规划任务',
+        })
+        onEvent({
+          type: 'subagent_start',
+          agent_id: 'agt-2',
+          agent_type: 'coder',
+          description: '编码任务',
+        })
+        onEvent({
+          type: 'status',
+          phase: 'waiting_subagents',
+          message: '子代理已创建，等待运行结果',
+        })
+        return
+      }
+
+      onEvent({
+        type: 'chunk',
+        content: '主代理继续完成。',
+        reasoning_content: '',
+      })
+    })
+
+    await renderChatPage()
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+      target: { value: '执行两个子任务' },
+    })
+    const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
+    fireEvent.click(sendBtn)
+
+    await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByText(/思维链/)).toBeInTheDocument())
+    await waitFor(() => expect(taskRuntimeMocks.getAgent).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(taskRuntimeMocks.getTranscript).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalledTimes(2))
+    expect(taskRuntimeMocks.getAgent).toHaveBeenNthCalledWith(1, 'agt-1')
+    expect(taskRuntimeMocks.getAgent).toHaveBeenNthCalledWith(2, 'agt-2')
+    expect(taskRuntimeMocks.getTranscript).toHaveBeenNthCalledWith(1, 'agt-1')
+    expect(taskRuntimeMocks.getTranscript).toHaveBeenNthCalledWith(2, 'agt-2')
+    expect(streamMessages[1]).toContain('请基于刚刚完成的子代理输出继续完成上一轮任务')
+    expect(continuationPayloads[1]).toEqual({
+      source: 'subagent',
+      aggregated_context: 'Subagent 子代理: planner: 子代理一完整输出\n\nSubagent 子代理: coder: 子代理二完整输出',
+      merge_with_last_assistant: true,
+    })
+    expect(screen.queryByText('请基于刚刚完成的子代理输出继续完成上一轮任务，并直接给出后续分析或最终答复。')).not.toBeInTheDocument()
+    expect(screen.getByText('主代理继续完成。')).toBeInTheDocument()
+  })
+
+  it('遇到伪子代理 id 时只使用回退日志聚合，不请求 transcript', async () => {
+    const continuationPayloads: Array<Record<string, unknown> | undefined> = []
+
+    apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent, _onError, _requestOptions, executionOptions) => {
+      continuationPayloads.push((executionOptions as { continuation?: Record<string, unknown> } | undefined)?.continuation)
+
+      if (continuationPayloads.length === 1) {
+        onEvent({
+          type: 'subagent_start',
+          agent_id: 'sub_deadbeef',
+          agent_type: 'planner',
+          description: '规划任务',
+        })
+        onEvent({
+          type: 'agent_message',
+          agent_id: 'sub_deadbeef',
+          agent_type: 'planner',
+          message: '回退日志输出',
+        })
+        onEvent({
+          type: 'subagent_stop',
+          agent_id: 'sub_deadbeef',
+          agent_type: 'planner',
+          state: 'completed',
+          summary: '规划完成',
+        })
+        return
+      }
+
+      onEvent({
+        type: 'chunk',
+        content: '续流完成。',
+        reasoning_content: '',
+      })
+    })
+
+    await renderChatPage()
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+      target: { value: '执行一个伪子任务' },
+    })
+    const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
+    fireEvent.click(sendBtn)
+
+    await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalledTimes(2))
+    expect(taskRuntimeMocks.getTranscript).not.toHaveBeenCalled()
+    expect(continuationPayloads[1]).toEqual({
+      source: 'subagent',
+      aggregated_context: 'Subagent 子代理: planner: 规划任务\n回退日志输出\n规划完成',
+      merge_with_last_assistant: true,
+    })
+    expect(screen.getByText('续流完成。')).toBeInTheDocument()
+  })
+
+  it('前台子代理事件流不触发 runtime 轮询并直接渲染摘要', async () => {
+    apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
+      onEvent({
+        type: 'tool',
+        tool: {
+          id: 'call-subagent-1',
+          kind: 'task',
+          name: 'task_spawn_agent',
+          status: 'running',
+          detail: '前台子代理执行中',
+        },
+      })
+      onEvent({
+        type: 'subagent_start',
+        agent_id: 'agt-foreground-1',
+        agent_type: 'planner',
+        description: '前台规划任务',
+        run_mode: 'foreground',
+      })
+      onEvent({
+        type: 'agent_message',
+        agent_id: 'agt-foreground-1',
+        agent_type: 'planner',
+        message: '子代理实时输出',
+      })
+      onEvent({
+        type: 'subagent_stop',
+        agent_id: 'agt-foreground-1',
+        agent_type: 'planner',
+        state: 'completed',
+        summary: '子代理摘要',
+        run_mode: 'foreground',
+      })
+      onEvent({
+        type: 'tool',
+        tool: {
+          id: 'call-subagent-1',
+          kind: 'task',
+          name: 'task_spawn_agent',
+          status: 'completed',
+          detail: '子代理摘要',
+          output: {
+            agent_id: 'agt-foreground-1',
+            run_mode: 'foreground',
+            summary: '子代理摘要',
+          },
+        },
+      })
+      onEvent({
+        type: 'chunk',
+        content: '主代理完成回复。',
+        reasoning_content: '',
+      })
+    })
+
+    await renderChatPage()
+    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+      target: { value: '执行一个前台子任务' },
+    })
+    const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
+    fireEvent.click(sendBtn)
+
+    await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalled())
+    expect(taskRuntimeMocks.getAgent).not.toHaveBeenCalled()
+    expect(taskRuntimeMocks.getTranscript).not.toHaveBeenCalled()
+
+    fireEvent.click(await screen.findByText(/思维链/))
+    expect(await screen.findByText('子代理执行')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByText('子代理摘要').length).toBeGreaterThan(0))
+    expect(screen.getByText('主代理完成回复。')).toBeInTheDocument()
+  })
+
   it('按回复边界拆分多轮思维链与回复段', async () => {
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       onEvent({
@@ -315,7 +564,7 @@ describe('ChatPage', () => {
       fireEvent.click(sendBtn)
     })
 
-    expect(await screen.findByText('正在分析你的问题...')).toBeInTheDocument()
+    expect(await screen.findByText(/正在分析你的问题/)).toBeInTheDocument()
 
     await act(async () => {
       continueStream?.()

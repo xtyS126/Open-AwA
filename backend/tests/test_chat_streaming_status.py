@@ -196,6 +196,133 @@ async def test_ai_agent_process_stream_replays_reasoning_content_after_tool_call
 
 
 @pytest.mark.asyncio
+async def test_ai_agent_process_stream_forwards_foreground_subagent_events_before_tool_completion(monkeypatch):
+    """前台子代理事件应在工具完成前实时转发到主 SSE 流。"""
+
+    agent = AIAgent()
+    stream_call_count = {"value": 0}
+    captured_tool_messages = {"value": None}
+
+    async def fake_inject_runtime_capabilities(context):
+        return None
+
+    async def fake_build_conversation_history(session_id):
+        return []
+
+    async def fake_recognize_intent(user_input):
+        return "chat"
+
+    async def fake_extract_entities(user_input):
+        return {}
+
+    async def fake_create_plan(intent, entities, context):
+        return {
+            "intent": "chat",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "llm_chat",
+                    "message": context.get("message", ""),
+                    "purpose": "调度前台子代理",
+                }
+            ],
+            "requires_confirmation": False,
+        }
+
+    async def fake_stream_call(prompt, context):
+        stream_call_count["value"] += 1
+        if stream_call_count["value"] == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "call_subagent_1",
+                        "type": "function",
+                        "function": {
+                            "name": "task_spawn_agent",
+                            "arguments": '{"agent_type":"Explore","prompt":"执行子任务","description":"前台子代理","provider":"openai","model":"gpt-4o-mini"}',
+                        },
+                    }
+                ],
+            }
+            return
+
+        captured_tool_messages["value"] = context.get("_tool_messages")
+        yield {"content": "主代理继续回复。", "reasoning_content": ""}
+
+    async def fake_execute_tool_call(tool_call, context, on_subagent_event=None):
+        assert callable(on_subagent_event)
+        await on_subagent_event({
+            "type": "subagent_start",
+            "agent_id": "agt_fg_stream_1",
+            "agent_type": "Explore",
+            "description": "前台子代理",
+        })
+        await on_subagent_event({
+            "type": "agent_message",
+            "agent_id": "agt_fg_stream_1",
+            "agent_type": "Explore",
+            "message": "子代理实时输出",
+        })
+        await on_subagent_event({
+            "type": "subagent_stop",
+            "agent_id": "agt_fg_stream_1",
+            "agent_type": "Explore",
+            "state": "completed",
+            "summary": "子代理摘要",
+        })
+        return {
+            "ok": True,
+            "result": {
+                "agent_id": "agt_fg_stream_1",
+                "run_mode": "foreground",
+                "status": "completed",
+                "summary": "子代理摘要",
+                "message": "子代理摘要",
+            },
+            "tool_name": "task_spawn_agent",
+        }
+
+    monkeypatch.setattr(agent, "_inject_runtime_capabilities", fake_inject_runtime_capabilities)
+    monkeypatch.setattr(agent, "_build_conversation_history", fake_build_conversation_history)
+    monkeypatch.setattr(agent.comprehension, "recognize_intent", fake_recognize_intent)
+    monkeypatch.setattr(agent.comprehension, "extract_entities", fake_extract_entities)
+    monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
+    monkeypatch.setattr(agent.executor, "_call_llm_api_stream", fake_stream_call)
+    monkeypatch.setattr(agent.executor, "_execute_tool_call", fake_execute_tool_call)
+
+    events = []
+    async for event in agent.process_stream(
+        "请派生前台子代理",
+        {
+            "session_id": "session-subagent-foreground",
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+        },
+    ):
+        events.append(event)
+
+    event_types = [event.get("type") for event in events]
+    assert event_types.count("subagent_start") == 1
+    assert event_types.count("agent_message") == 1
+    assert event_types.count("subagent_stop") == 1
+
+    subagent_stop_index = next(index for index, event in enumerate(events) if event.get("type") == "subagent_stop")
+    tool_completed_index = next(
+        index for index, event in enumerate(events)
+        if event.get("type") == "tool" and event.get("tool", {}).get("status") == "completed"
+    )
+
+    assert subagent_stop_index < tool_completed_index
+    assert captured_tool_messages["value"] is not None
+    assert any(
+        message.get("role") == "tool" and "子代理摘要" in str(message.get("content") or "")
+        for message in captured_tool_messages["value"]
+    )
+    assert any(event.get("content") == "主代理继续回复。" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeypatch):
     """
     多轮工具调用超过 5 轮时不应被固定上限提前截断。

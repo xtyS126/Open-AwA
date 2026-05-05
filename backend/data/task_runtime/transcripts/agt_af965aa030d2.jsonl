@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请制定一个简单的\"学习一门新语言（例如法语）\"的30天学习计划，分4个阶段，每个阶段用一两句话描述核心目标和方法。", "description": "制定30天语言学习计划", "run_mode": "background", "_ts": "2026-05-05T04:24:46.968698+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:24:46.975749+00:00"}

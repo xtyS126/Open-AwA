@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请告诉我们法国的首都是哪个城市，只用给出城市名，不要多余的话。", "description": "Agent-2: 说出法国首都", "run_mode": "background", "_ts": "2026-05-05T04:28:15.205191+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:28:15.213158+00:00"}

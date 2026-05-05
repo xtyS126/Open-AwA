@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请用中文制定一个简单的一日北京旅游计划，包含上午、中午和下午各一个活动。", "description": "规划任务：北京一日游", "run_mode": "background", "_ts": "2026-05-05T04:45:16.068126+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:45:16.077026+00:00"}

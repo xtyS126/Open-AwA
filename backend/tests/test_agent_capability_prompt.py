@@ -76,6 +76,27 @@ async def test_execution_layer_injects_capability_system_prompt(monkeypatch):
                         ],
                     }
                 ],
+                "configured_models": {
+                    "count": 2,
+                    "provider_count": 2,
+                    "entries": [
+                        {
+                            "provider": "openai",
+                            "model": "gpt-4o",
+                            "label": "openai:gpt-4o",
+                        },
+                        {
+                            "provider": "anthropic",
+                            "model": "claude-3-5-sonnet",
+                            "label": "anthropic:claude-3-5-sonnet",
+                        },
+                    ],
+                    "providers": [
+                        {"provider": "openai", "models": ["gpt-4o"]},
+                        {"provider": "anthropic", "models": ["claude-3-5-sonnet"]},
+                    ],
+                    "summary": "openai:gpt-4o、anthropic:claude-3-5-sonnet",
+                },
                 "mcp": {
                     "platform_supported": True,
                     "chat_dispatch_enabled": False,
@@ -108,6 +129,8 @@ async def test_execution_layer_injects_capability_system_prompt(monkeypatch):
     assert "twitter-monitor" in messages[0]["content"]
     assert "weixin_dispatch" in messages[0]["content"]
     assert "filesystem/read_file" in messages[0]["content"]
+    assert "openai:gpt-4o" in messages[0]["content"]
+    assert "task_spawn_agent" in messages[0]["content"]
     assert messages[-1]["role"] == "user"
     assert messages[-1]["content"] == "你能调用插件和 MCP 吗"
 
@@ -268,6 +291,29 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
                     {
                         "name": "help",
                         "description": "查看帮助",
+
+        def fake_collect_configured_model_capabilities(context):
+            return {
+                "count": 2,
+                "provider_count": 2,
+                "entries": [
+                    {
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "label": "openai:gpt-4o",
+                    },
+                    {
+                        "provider": "anthropic",
+                        "model": "claude-3-5-sonnet",
+                        "label": "anthropic:claude-3-5-sonnet",
+                    },
+                ],
+                "providers": [
+                    {"provider": "openai", "models": ["gpt-4o"]},
+                    {"provider": "anthropic", "models": ["claude-3-5-sonnet"]},
+                ],
+                "summary": "openai:gpt-4o、anthropic:claude-3-5-sonnet",
+            }
                         "method": "get_help",
                     }
                 ],
@@ -304,6 +350,7 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
         assert capabilities["skills"][0]["name"] == "weixin_dispatch"
         assert capabilities["plugins"][0]["name"] == "twitter-monitor"
         assert capabilities["plugins"][0]["tools"][0]["name"] == "help"
+        assert capabilities["configured_models"]["entries"][0]["label"] == "openai:gpt-4o"
         assert capabilities["mcp"]["connected_servers"][0]["server_id"] == "server-1"
         assert capabilities["mcp"]["tools"][0]["name"] == "read_file"
         return {
@@ -327,6 +374,7 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
     monkeypatch.setattr(agent.planner, "create_plan", fake_create_plan)
     monkeypatch.setattr(agent, "get_available_skills", fake_get_available_skills)
     monkeypatch.setattr(agent, "get_available_plugins", fake_get_available_plugins)
+    monkeypatch.setattr(agent, "_collect_configured_model_capabilities", fake_collect_configured_model_capabilities)
     monkeypatch.setattr(agent_module, "MCPManager", lambda: FakeMCPManager())
     monkeypatch.setattr(agent.executor, "execute_step", fake_execute_step)
     monkeypatch.setattr(agent.feedback, "evaluate_result", fake_evaluate_result)
@@ -346,6 +394,42 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
 
     assert result["status"] == "completed"
     assert result["response"] == "能力注入成功"
+
+
+def test_build_native_tools_exposes_configured_models_for_subagent_selection():
+    """
+    子代理工具定义应显式暴露已配置模型目录与 provider 参数，方便模型自行选型。
+    """
+
+    tools = AIAgent._build_native_tools(
+        {
+            "configured_models": {
+                "count": 2,
+                "entries": [
+                    {
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "label": "openai:gpt-4o",
+                    },
+                    {
+                        "provider": "anthropic",
+                        "model": "claude-3-5-sonnet",
+                        "label": "anthropic:claude-3-5-sonnet",
+                    },
+                ],
+            }
+        }
+    )
+
+    spawn_tool = next(
+        tool for tool in tools if tool.get("function", {}).get("name") == "task_spawn_agent"
+    )
+    properties = spawn_tool["function"]["parameters"]["properties"]
+
+    assert "openai:gpt-4o" in spawn_tool["function"]["description"]
+    assert "anthropic:claude-3-5-sonnet" in properties["model"]["description"]
+    assert "provider" in properties
+    assert "provider:model" in properties["model"]["description"]
 
 
 @pytest.mark.asyncio

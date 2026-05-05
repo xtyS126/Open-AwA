@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "法国的首都是哪里？人口大约是多少？用中文简短回答。", "description": "法国首都和人口", "run_mode": "background", "_ts": "2026-05-05T09:22:41.995618+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T09:22:42.001512+00:00"}

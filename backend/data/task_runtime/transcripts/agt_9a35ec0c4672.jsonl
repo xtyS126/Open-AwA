@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请用中文回答以下问题：计算 25 × 48 的结果是多少？你只需要输出计算结果和一句简短的说明。", "description": "Subagent-1: 计算 25×48", "run_mode": "background", "_ts": "2026-05-05T09:32:24.512357+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T09:32:24.522748+00:00"}

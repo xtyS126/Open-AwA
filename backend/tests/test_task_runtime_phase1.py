@@ -13,6 +13,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import core.agent as agent_module
+import core.task_runtime.runners as runners_module
+
 from db.models import TaskAgentSession, init_db
 from core.task_runtime.sessions import (
     create_session,
@@ -361,6 +364,56 @@ class TestSSEEvents:
         assert event["type"] == "subagent_stop"
         assert event["state"] == "failed"
         assert event["agent_type"] == "Executor"
+
+
+class TestSubagentRunnerContext:
+    """子代理运行上下文测试。"""
+
+    def test_create_subagent_execution_bundle_uses_dedicated_db_session(self, monkeypatch):
+        class FakeSession:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        fake_session = FakeSession()
+        captured: dict[str, object] = {}
+
+        class FakeAgent:
+            def __init__(self, db_session=None):
+                captured["db_session"] = db_session
+
+        monkeypatch.setattr(runners_module, "SessionLocal", lambda: fake_session)
+        monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
+
+        sub_agent, subagent_db, sub_context = runners_module._create_subagent_execution_bundle(
+            agent_id="agt_runner_1",
+            agent_type="Explore",
+            provider=None,
+            model=None,
+            context={
+                "user_id": "user-1",
+                "username": "tester",
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "configured_model_catalog": {
+                    "providers": [
+                        {"provider": "deepseek", "models": ["deepseek-chat"]},
+                    ],
+                    "entries": [
+                        {"provider": "deepseek", "model": "deepseek-chat", "label": "deepseek:deepseek-chat"},
+                    ],
+                },
+            },
+        )
+
+        assert isinstance(sub_agent, FakeAgent)
+        assert subagent_db is fake_session
+        assert captured["db_session"] is fake_session
+        assert sub_context["db"] is fake_session
+        assert sub_context["provider"] == "deepseek"
+        assert sub_context["model"] == "deepseek-chat"
 
 
 # -- 代理定义 ----------------------------------------------------------

@@ -27,6 +27,15 @@ class PlanningLayer:
         """
         self.available_tools.append(tool)
         logger.debug(f"Registered tool: {tool.get('name')}")
+
+    @staticmethod
+    def _resolve_llm_prompt(context: Dict[str, Any], *preferred_keys: str) -> str:
+        """为 LLM 步骤选择首个可用提示词，默认回退到当前用户消息。"""
+        for key in preferred_keys:
+            value = str(context.get(key, "") or "").strip()
+            if value:
+                return value
+        return str(context.get("message", "") or "").strip()
     
     async def create_plan(
         self,
@@ -87,7 +96,7 @@ class PlanningLayer:
             steps.append({
                 "step": len(steps) + 1,
                 "action": "llm_generate",
-                "task": context.get("task", ""),
+                "prompt": self._resolve_llm_prompt(context, "prompt", "task"),
                 "purpose": "生成执行计划"
             })
         
@@ -112,7 +121,7 @@ class PlanningLayer:
                 {
                     "step": 1,
                     "action": "llm_query",
-                    "query": context.get("query", ""),
+                    "prompt": self._resolve_llm_prompt(context, "prompt", "query"),
                     "purpose": "查询信息"
                 }
             ],
@@ -134,7 +143,7 @@ class PlanningLayer:
                 {
                     "step": 1,
                     "action": "llm_explain",
-                    "target": context.get("target", ""),
+                    "prompt": self._resolve_llm_prompt(context, "prompt", "target"),
                     "purpose": "解释说明"
                 }
             ],

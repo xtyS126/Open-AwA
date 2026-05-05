@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请列出从1到10的质数，只输出这些数字本身，用逗号分隔，不要输出其他内容。", "description": "列出1-10的质数", "run_mode": "background", "_ts": "2026-05-05T09:31:11.214880+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T09:31:11.224489+00:00"}

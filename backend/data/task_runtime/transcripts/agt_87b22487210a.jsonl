@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "你是一个探索型子代理。请回答一个简单问题：请说出3种编程语言的名称，并对每种语言用一句话描述它的主要用途。", "description": "子代理1：探索任务", "run_mode": "background", "_ts": "2026-05-05T09:21:16.583792+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T09:21:16.595410+00:00"}

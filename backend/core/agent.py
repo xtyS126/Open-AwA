@@ -198,6 +198,31 @@ class AIAgent:
             context["_thinking_params"] = thinking_params
 
     @staticmethod
+    def _build_effective_user_input(user_input: str, context: Dict[str, Any]) -> str:
+        """
+        为 continuation 请求拼接内部补充上下文，使模型在同一轮任务中继续推进。
+        """
+        continuation = context.get("continuation")
+        if not isinstance(continuation, dict):
+            return user_input
+
+        aggregated_context = str(continuation.get("aggregated_context") or "").strip()
+        if not aggregated_context:
+            return user_input
+
+        source = str(continuation.get("source") or "subagent").strip() or "subagent"
+        instruction = (
+            f"以下内容是同一轮任务中来自 {source} 的补充执行结果。"
+            "请将其视为当前任务的内部上下文，基于这些结果继续完成上一轮任务。"
+            "除非确有必要，否则不要重复启动已经完成的子代理。"
+        )
+
+        normalized_user_input = str(user_input or "").strip()
+        if normalized_user_input:
+            return f"{normalized_user_input}\n\n{instruction}\n\n[子代理聚合结果]\n{aggregated_context}"
+        return f"{instruction}\n\n[子代理聚合结果]\n{aggregated_context}"
+
+    @staticmethod
     def _build_status_event(phase: str, message: str, **extra: Any) -> Dict[str, Any]:
         """
         构造统一的流式阶段状态事件，便于前端在首包前显示当前进度。
@@ -242,6 +267,34 @@ class AIAgent:
                 if isinstance(value, str) and value.strip():
                     return value.strip()
         return "工具调用完成"
+
+    @staticmethod
+    def _extract_spawned_subagent_result(exec_result: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        """
+        从 task_spawn_agent 的执行结果中提取真实子代理标识与运行模式。
+        """
+        if not isinstance(exec_result, dict) or not exec_result.get("ok"):
+            return None
+
+        payload = exec_result.get("result")
+        if not isinstance(payload, dict):
+            return None
+
+        nested_payload = payload.get("result")
+        if isinstance(nested_payload, dict) and nested_payload.get("agent_id"):
+            payload = nested_payload
+
+        agent_id = payload.get("agent_id")
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            return None
+
+        run_mode = str(payload.get("run_mode") or "").strip().lower()
+        status = str(payload.get("status") or "").strip().lower()
+        return {
+            "agent_id": agent_id.strip(),
+            "run_mode": run_mode,
+            "status": status,
+        }
 
     @staticmethod
     def _summarize_skill_capabilities(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -343,6 +396,122 @@ class AIAgent:
             default_payload["error"] = str(e)
             return default_payload
 
+    def _collect_configured_model_capabilities(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        汇总当前会话可见的已配置模型目录，供主 Agent 为子代理选择模型时参考。
+        """
+        default_payload = {
+            "count": 0,
+            "provider_count": 0,
+            "entries": [],
+            "providers": [],
+            "summary": "",
+        }
+
+        cached_payload = context.get("configured_model_catalog")
+        if isinstance(cached_payload, dict):
+            return cached_payload
+
+        db_session = context.get("db") or self._db_session
+        if not db_session:
+            return default_payload
+
+        try:
+            from billing.pricing_manager import PricingManager
+
+            pricing_manager = PricingManager(db_session)
+            configurations = pricing_manager.get_active_configurations()
+            placeholder_models = {
+                "custom-model",
+                "custom_model",
+                "custom",
+                "default-model",
+                "default",
+            }
+
+            provider_models: Dict[str, List[str]] = {}
+            for config in configurations:
+                provider = pricing_manager.normalize_provider(getattr(config, "provider", None))
+                if not provider:
+                    continue
+
+                candidates: List[str] = []
+                base_model = pricing_manager.normalize_model(getattr(config, "model", None))
+                if base_model and base_model.lower() not in placeholder_models:
+                    candidates.append(base_model)
+
+                selected_models = pricing_manager.parse_selected_models(
+                    getattr(config, "selected_models", None)
+                )
+                for candidate in selected_models:
+                    if candidate not in candidates:
+                        candidates.append(candidate)
+
+                if not candidates:
+                    continue
+
+                bucket = provider_models.setdefault(provider, [])
+                for candidate in candidates:
+                    if candidate not in bucket:
+                        bucket.append(candidate)
+
+            entries: List[Dict[str, str]] = []
+            providers: List[Dict[str, Any]] = []
+            for provider, models in provider_models.items():
+                providers.append({"provider": provider, "models": list(models)})
+                for model_name in models:
+                    entries.append(
+                        {
+                            "provider": provider,
+                            "model": model_name,
+                            "label": f"{provider}:{model_name}",
+                        }
+                    )
+
+            summary_labels = [entry["label"] for entry in entries[:12]]
+            summary = "、".join(summary_labels)
+            if len(entries) > len(summary_labels) and summary:
+                summary = f"{summary} 等"
+
+            payload = {
+                "count": len(entries),
+                "provider_count": len(providers),
+                "entries": entries,
+                "providers": providers,
+                "summary": summary,
+            }
+            context["configured_model_catalog"] = payload
+            return payload
+        except Exception as e:
+            logger.bind(
+                event="get_configured_model_capabilities_error",
+                module="agent",
+                error_type=type(e).__name__,
+            ).warning(f"获取已配置模型目录失败: {e}")
+            return default_payload
+
+    @staticmethod
+    def _build_configured_model_hint(capabilities: Dict[str, Any], limit: int = 12) -> str:
+        """
+        为 task_spawn_agent 生成精简的模型目录提示，帮助模型自行选择已配置模型。
+        """
+        configured_models = (
+            capabilities.get("configured_models")
+            if isinstance(capabilities.get("configured_models"), dict)
+            else {}
+        )
+        entries = configured_models.get("entries") if isinstance(configured_models.get("entries"), list) else []
+        labels = [
+            str(entry.get("label", "")).strip()
+            for entry in entries[:limit]
+            if isinstance(entry, dict) and str(entry.get("label", "")).strip()
+        ]
+        if not labels:
+            return "当前未发现可枚举的已配置模型；若省略 provider 和 model，将回退到系统默认配置。"
+
+        suffix = " 等" if len(entries) > len(labels) else ""
+        return f"当前可选的已配置模型: {'、'.join(labels)}{suffix}。"
+
     async def _inject_runtime_capabilities(self, context: Dict[str, Any]) -> None:
         """
         在进入最终模型回答前，把当前会话可用的技能、插件和 MCP 连接态写入上下文。
@@ -359,12 +528,15 @@ class AIAgent:
             skills = self._summarize_skill_capabilities(await self.get_available_skills())
             plugins = self._summarize_plugin_capabilities(await self.get_available_plugins())
 
+        configured_models = self._collect_configured_model_capabilities(context)
+
         context["agent_capabilities"] = {
             "skills_enabled": skill_plugin_enabled,
             "plugins_enabled": skill_plugin_enabled,
             "tool_dispatch_mode": "platform_managed",
             "skills": skills,
             "plugins": plugins,
+            "configured_models": configured_models,
             "mcp": await self._collect_mcp_capabilities(context),
         }
 
@@ -472,18 +644,25 @@ class AIAgent:
         # 追加任务运行时工具定义
         try:
             from core.task_runtime.definitions import list_agent_types
+            agent_types = list_agent_types()
+            model_hint = AIAgent._build_configured_model_hint(capabilities)
             task_tools = [
                 {
                     "type": "function",
                     "function": {
                         "name": "task_spawn_agent",
-                        "description": f"派生子代理执行任务。可用代理类型: {', '.join(list_agent_types())}。子代理拥有独立上下文窗口，完成后只回传摘要。",
+                        "description": (
+                            f"派生子代理执行任务。可用代理类型: {', '.join(agent_types)}。"
+                            f"子代理拥有独立上下文窗口，完成后只回传摘要。{model_hint}"
+                            "如需指定跨供应商模型，优先同时传 provider 和 model；"
+                            "也支持在 model 中使用 provider:model。"
+                        ),
                         "parameters": {
                             "type": "object",
                             "properties": {
                                 "agent_type": {
                                     "type": "string",
-                                    "description": f"代理类型: {', '.join(list_agent_types())}",
+                                    "description": f"代理类型: {', '.join(agent_types)}",
                                 },
                                 "prompt": {
                                     "type": "string",
@@ -493,9 +672,17 @@ class AIAgent:
                                     "type": "string",
                                     "description": "任务短描述，用于状态展示",
                                 },
+                                "provider": {
+                                    "type": "string",
+                                    "description": "可选的供应商覆盖。仅传 provider 时，系统会使用该供应商的默认或已选模型。",
+                                },
                                 "model": {
                                     "type": "string",
-                                    "description": "可选的模型覆盖（如 haiku/sonnet/opus）",
+                                    "description": (
+                                        "可选的模型覆盖。建议填写该 provider 下已配置的模型名；"
+                                        "也支持 provider:model 单字段格式。"
+                                        f"{model_hint}"
+                                    ),
                                 },
                                 "background": {
                                     "type": "boolean",
@@ -1240,8 +1427,10 @@ class AIAgent:
         conversation_history = await self._build_conversation_history(session_id)
         context["conversation_history"] = conversation_history
 
-        intent = await self.comprehension.recognize_intent(user_input)
-        entities = await self.comprehension.extract_entities(user_input)
+        effective_user_input = self._build_effective_user_input(user_input, context)
+
+        intent = await self.comprehension.recognize_intent(effective_user_input)
+        entities = await self.comprehension.extract_entities(effective_user_input)
 
         yield self._build_status_event("planning", "正在生成执行计划")
         plan = await self.planner.create_plan(
@@ -1268,8 +1457,9 @@ class AIAgent:
             tool_calls_detected = False
             round_content = ""
             round_reasoning = ""
+            background_subagents_spawned = False
 
-            async for chunk in self.executor._call_llm_api_stream(user_input, context):
+            async for chunk in self.executor._call_llm_api_stream(effective_user_input, context):
                 if "error" in chunk:
                     yield {
                         "type": "error",
@@ -1296,20 +1486,17 @@ class AIAgent:
                         tool_name = tc.get("function", {}).get("name", "unknown")
                         tool_id = tc.get("id", "")
                         tool_kind = self._get_stream_tool_kind(tool_name)
+                        spawn_agent_type = "Explore"
+                        spawn_description = ""
 
-                        # 对 task_spawn_agent 发射子代理启动事件
                         if tool_name == "task_spawn_agent":
                             func_args_str = tc.get("function", {}).get("arguments", "{}")
                             try:
                                 func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
                             except json.JSONDecodeError:
                                 func_args = {}
-                            sub_agent_type = func_args.get("agent_type", "Explore")
-                            sub_desc = func_args.get("description", "")
-                            sub_agent_id = f"sub_{uuid.uuid4().hex[:8]}"
-                            context["_last_subagent_id"] = sub_agent_id
-                            context["_last_subagent_type"] = sub_agent_type
-                            yield emit_subagent_start_event(sub_agent_id, sub_agent_type, sub_desc)
+                            spawn_agent_type = func_args.get("agent_type", "Explore")
+                            spawn_description = func_args.get("description", "")
 
                         yield emit_tool_event({
                             "id": tool_id,
@@ -1318,7 +1505,35 @@ class AIAgent:
                             "status": "running",
                         })
 
-                        result = await self.executor._execute_tool_call(tc, context)
+                        if tool_name == "task_spawn_agent":
+                            subagent_event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+
+                            async def on_subagent_event(event: Dict[str, Any]) -> None:
+                                await subagent_event_queue.put(event)
+
+                            exec_task = asyncio.create_task(
+                                self.executor._execute_tool_call(
+                                    tc,
+                                    context,
+                                    on_subagent_event=on_subagent_event,
+                                )
+                            )
+
+                            while True:
+                                if exec_task.done() and subagent_event_queue.empty():
+                                    break
+                                try:
+                                    subagent_event = await asyncio.wait_for(
+                                        subagent_event_queue.get(),
+                                        timeout=0.05,
+                                    )
+                                except asyncio.TimeoutError:
+                                    continue
+                                yield subagent_event
+
+                            result = await exec_task
+                        else:
+                            result = await self.executor._execute_tool_call(tc, context)
 
                         # PostToolUse 钩子：工具调用后审计与后处理
                         try:
@@ -1342,16 +1557,16 @@ class AIAgent:
                             "output": result.get("result") if result.get("ok") else result.get("error"),
                         })
 
-                        # 对 task_spawn_agent 发射子代理完成事件
                         if tool_name == "task_spawn_agent":
-                            sub_agent_id = context.get("_last_subagent_id", "unknown")
-                            sub_agent_type = context.get("_last_subagent_type", "Explore")
-                            sub_state = "completed" if result.get("ok") else "failed"
-                            sub_summary = self._summarize_stream_tool_result(result)
-                            yield emit_subagent_stop_event(sub_agent_id, sub_state, sub_summary, agent_type=sub_agent_type)
-                            if result.get("ok") and result.get("result"):
-                                msg = sub_summary or "子代理已完成"
-                                yield emit_agent_message_event(sub_agent_id, msg, agent_type=sub_agent_type)
+                            spawned_subagent = self._extract_spawned_subagent_result(result)
+                            if spawned_subagent and spawned_subagent.get("run_mode") == "background":
+                                background_subagents_spawned = True
+                                yield emit_subagent_start_event(
+                                    spawned_subagent["agent_id"],
+                                    spawn_agent_type,
+                                    spawn_description,
+                                    run_mode="background",
+                                )
 
                         # 对任务清单操作发射生命周期事件
                         if tool_name == "task_create_task" and result.get("ok"):
@@ -1387,6 +1602,10 @@ class AIAgent:
                     )
                     for tr in tool_results:
                         tool_messages.append(self.executor._build_tool_message(tr["tool_call"], tr["result"]))
+
+                    if background_subagents_spawned:
+                        yield self._build_status_event("waiting_subagents", "子代理已创建，等待运行结果")
+                        return
 
                     context["_tool_messages"] = tool_messages
                     break  # 跳出 async for 循环，重新进入 while 循环进行下一轮 LLM 调用
@@ -1457,11 +1676,13 @@ class AIAgent:
         conversation_history = await self._build_conversation_history(session_id)
         context["conversation_history"] = conversation_history
 
+        effective_user_input = self._build_effective_user_input(user_input, context)
+
         intent_start = time.perf_counter()
-        intent = await self.comprehension.recognize_intent(user_input)
+        intent = await self.comprehension.recognize_intent(effective_user_input)
         logger.debug(f"Recognized intent: {intent}")
 
-        entities = await self.comprehension.extract_entities(user_input)
+        entities = await self.comprehension.extract_entities(effective_user_input)
         logger.debug(f"Extracted entities: {entities}")
         intent_duration_ms = int((time.perf_counter() - intent_start) * 1000)
         self._schedule_record(
@@ -1478,7 +1699,7 @@ class AIAgent:
         experiences = []
         if context.get('retrieve_experiences', True):
             experiences = await self._retrieve_relevant_experiences(
-                user_input=user_input,
+                user_input=effective_user_input,
                 context=context
             )
             if experiences:
@@ -1488,7 +1709,7 @@ class AIAgent:
         relevant_memories = []
         if context.get('retrieve_long_term_memory', True):
             relevant_memories = await self._retrieve_relevant_memories(
-                user_input=user_input,
+                user_input=effective_user_input,
                 context=context,
             )
             if relevant_memories:

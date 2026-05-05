@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请计算 25 × 16 等于多少，并告诉我计算过程。完成后只说结果。", "description": "计算25×16", "run_mode": "background", "_ts": "2026-05-05T09:22:41.420362+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T09:22:41.427196+00:00"}
