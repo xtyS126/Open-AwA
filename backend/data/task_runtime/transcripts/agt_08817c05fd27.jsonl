@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请设计一个简单的\"在线记事本\"功能方案，包含3个核心功能点和优缺点分析，字数控制在100字以内。", "description": "Plan代理：设计在线记事本方案", "run_mode": "background", "_ts": "2026-05-05T04:50:20.043143+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:50:20.051855+00:00"}

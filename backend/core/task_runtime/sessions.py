@@ -16,7 +16,7 @@ from db.models import SessionLocal, TaskAgentSession
 # 合法的状态转换
 VALID_TRANSITIONS: Dict[str, set] = {
     "created": {"queued"},
-    "queued": {"running"},
+    "queued": {"running", "stopped", "cancelled"},
     "running": {"completed", "failed", "stopped", "waiting_user"},
     "waiting_user": {"running", "stopped", "cancelled"},
     "completed": set(),

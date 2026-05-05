@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请制定一个简单的计划：写出制作一杯咖啡的3个步骤。只需要列出步骤即可。", "description": "规划：制作咖啡的步骤", "run_mode": "background", "_ts": "2026-05-05T04:51:41.956160+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:51:41.964639+00:00"}

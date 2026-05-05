@@ -1,0 +1,1331 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请帮我规划一个为期3天的北京周末旅行计划。计划应包含：每天的主要景点、推荐的餐饮类型、交通建议。假设从周五晚到周日晚，预算中等。用中文回答。", "description": "规划北京3日周末旅行计划", "_ts": "2026-05-05T14:19:18.562274+00:00"}
+{"type": "status", "phase": "starting", "message": "正在准备对话上下文", "_ts": "2026-05-05T14:19:18.656870+00:00"}
+{"event": "agent_message", "message": "[状态] 正在准备对话上下文", "_ts": "2026-05-05T14:19:18.657847+00:00"}
+{"type": "status", "phase": "planning", "message": "正在生成执行计划", "_ts": "2026-05-05T14:19:18.659801+00:00"}
+{"event": "agent_message", "message": "[状态] 正在生成执行计划", "_ts": "2026-05-05T14:19:18.659801+00:00"}
+{"type": "plan", "plan": {"intent": "execute", "steps": [{"step": 1, "action": "llm_generate", "prompt": "请帮我规划一个为期3天的北京周末旅行计划。计划应包含：每天的主要景点、推荐的餐饮类型、交通建议。假设从周五晚到周日晚，预算中等。用中文回答。", "purpose": "生成执行计划"}], "requires_confirmation": true}, "_ts": "2026-05-05T14:19:18.661307+00:00"}
+{"event": "agent_message", "message": "[计划] 已生成 1 个步骤", "_ts": "2026-05-05T14:19:18.661307+00:00"}
+{"event": "agent_message", "message": "[思考] 用户", "_ts": "2026-05-05T14:19:19.309810+00:00"}
+{"event": "agent_message", "message": "[思考] 想要", "_ts": "2026-05-05T14:19:19.433707+00:00"}
+{"event": "agent_message", "message": "[思考] 一个", "_ts": "2026-05-05T14:19:19.459880+00:00"}
+{"event": "agent_message", "message": "[思考] 为期", "_ts": "2026-05-05T14:19:19.461385+00:00"}
+{"event": "agent_message", "message": "[思考] 3", "_ts": "2026-05-05T14:19:19.480174+00:00"}
+{"event": "agent_message", "message": "[思考] 天的", "_ts": "2026-05-05T14:19:19.481677+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:19.515792+00:00"}
+{"event": "agent_message", "message": "[思考] 周末", "_ts": "2026-05-05T14:19:19.516771+00:00"}
+{"event": "agent_message", "message": "[思考] 旅行", "_ts": "2026-05-05T14:19:19.537830+00:00"}
+{"event": "agent_message", "message": "[思考] 计划", "_ts": "2026-05-05T14:19:19.537830+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:19.563723+00:00"}
+{"event": "agent_message", "message": "[思考] 从", "_ts": "2026-05-05T14:19:19.564275+00:00"}
+{"event": "agent_message", "message": "[思考] 周五", "_ts": "2026-05-05T14:19:19.592338+00:00"}
+{"event": "agent_message", "message": "[思考] 晚", "_ts": "2026-05-05T14:19:19.593320+00:00"}
+{"event": "agent_message", "message": "[思考] 到", "_ts": "2026-05-05T14:19:19.619142+00:00"}
+{"event": "agent_message", "message": "[思考] 周", "_ts": "2026-05-05T14:19:19.620117+00:00"}
+{"event": "agent_message", "message": "[思考] 日晚", "_ts": "2026-05-05T14:19:19.646414+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:19.647390+00:00"}
+{"event": "agent_message", "message": "[思考] 预算", "_ts": "2026-05-05T14:19:19.987512+00:00"}
+{"event": "agent_message", "message": "[思考] 中等", "_ts": "2026-05-05T14:19:19.988517+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:19.988517+00:00"}
+{"event": "agent_message", "message": "[思考] 我需要", "_ts": "2026-05-05T14:19:19.990099+00:00"}
+{"event": "agent_message", "message": "[思考] 做一个", "_ts": "2026-05-05T14:19:19.990099+00:00"}
+{"event": "agent_message", "message": "[思考] 合理的", "_ts": "2026-05-05T14:19:19.991634+00:00"}
+{"event": "agent_message", "message": "[思考] 规划", "_ts": "2026-05-05T14:19:19.991634+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:19.992703+00:00"}
+{"event": "agent_message", "message": "[思考] 我可以", "_ts": "2026-05-05T14:19:19.992703+00:00"}
+{"event": "agent_message", "message": "[思考] 先", "_ts": "2026-05-05T14:19:19.993685+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:19:19.993685+00:00"}
+{"event": "agent_message", "message": "[思考] 一下", "_ts": "2026-05-05T14:19:19.994662+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:19.995638+00:00"}
+{"event": "agent_message", "message": "[思考] 的热", "_ts": "2026-05-05T14:19:19.995638+00:00"}
+{"event": "agent_message", "message": "[思考] 门", "_ts": "2026-05-05T14:19:19.996613+00:00"}
+{"event": "agent_message", "message": "[思考] 景点", "_ts": "2026-05-05T14:19:19.996613+00:00"}
+{"event": "agent_message", "message": "[思考] 和", "_ts": "2026-05-05T14:19:19.997591+00:00"}
+{"event": "agent_message", "message": "[思考] 推荐", "_ts": "2026-05-05T14:19:19.997591+00:00"}
+{"event": "agent_message", "message": "[思考] 行程", "_ts": "2026-05-05T14:19:19.999095+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:20.003763+00:00"}
+{"event": "agent_message", "message": "[思考] 但我", "_ts": "2026-05-05T14:19:20.004740+00:00"}
+{"event": "agent_message", "message": "[思考] 本身", "_ts": "2026-05-05T14:19:20.031285+00:00"}
+{"event": "agent_message", "message": "[思考] 对", "_ts": "2026-05-05T14:19:20.057824+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:20.059806+00:00"}
+{"event": "agent_message", "message": "[思考] 比较", "_ts": "2026-05-05T14:19:20.085841+00:00"}
+{"event": "agent_message", "message": "[思考] 了解", "_ts": "2026-05-05T14:19:20.086818+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:20.114972+00:00"}
+{"event": "agent_message", "message": "[思考] 可以直接", "_ts": "2026-05-05T14:19:20.115625+00:00"}
+{"event": "agent_message", "message": "[思考] 制定", "_ts": "2026-05-05T14:19:20.139652+00:00"}
+{"event": "agent_message", "message": "[思考] 计划", "_ts": "2026-05-05T14:19:20.140629+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:20.326286+00:00"}
+{"event": "agent_message", "message": "[思考] 不过", "_ts": "2026-05-05T14:19:20.327262+00:00"}
+{"event": "agent_message", "message": "[思考] 为了", "_ts": "2026-05-05T14:19:20.328239+00:00"}
+{"event": "agent_message", "message": "[思考] 更", "_ts": "2026-05-05T14:19:20.329217+00:00"}
+{"event": "agent_message", "message": "[思考] 准确", "_ts": "2026-05-05T14:19:20.372781+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:20.373763+00:00"}
+{"event": "agent_message", "message": "[思考] 我可以", "_ts": "2026-05-05T14:19:20.374769+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:19:20.375313+00:00"}
+{"event": "agent_message", "message": "[思考] 一下", "_ts": "2026-05-05T14:19:20.375313+00:00"}
+{"event": "agent_message", "message": "[思考] 当前", "_ts": "2026-05-05T14:19:20.376830+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:20.377813+00:00"}
+{"event": "agent_message", "message": "[思考] 的热", "_ts": "2026-05-05T14:19:20.377813+00:00"}
+{"event": "agent_message", "message": "[思考] 门", "_ts": "2026-05-05T14:19:20.378789+00:00"}
+{"event": "agent_message", "message": "[思考] 景点", "_ts": "2026-05-05T14:19:20.378789+00:00"}
+{"event": "agent_message", "message": "[思考] 和", "_ts": "2026-05-05T14:19:20.385785+00:00"}
+{"event": "agent_message", "message": "[思考] 推荐", "_ts": "2026-05-05T14:19:20.387292+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:20.417694+00:00"}
+{"event": "agent_message", "message": "[思考] 不过", "_ts": "2026-05-05T14:19:20.418699+00:00"}
+{"event": "agent_message", "message": "[思考] 用户", "_ts": "2026-05-05T14:19:20.440539+00:00"}
+{"event": "agent_message", "message": "[思考] 的需求", "_ts": "2026-05-05T14:19:20.442075+00:00"}
+{"event": "agent_message", "message": "[思考] 是", "_ts": "2026-05-05T14:19:20.471288+00:00"}
+{"event": "agent_message", "message": "[思考] 规划", "_ts": "2026-05-05T14:19:20.471288+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:20.587327+00:00"}
+{"event": "agent_message", "message": "[思考] 我可以", "_ts": "2026-05-05T14:19:20.587327+00:00"}
+{"event": "agent_message", "message": "[思考] 直接", "_ts": "2026-05-05T14:19:20.588302+00:00"}
+{"event": "agent_message", "message": "[思考] 基于", "_ts": "2026-05-05T14:19:20.589278+00:00"}
+{"event": "agent_message", "message": "[思考] 我对", "_ts": "2026-05-05T14:19:20.631210+00:00"}
+{"event": "agent_message", "message": "[思考] 北京的", "_ts": "2026-05-05T14:19:20.631210+00:00"}
+{"event": "agent_message", "message": "[思考] 了解", "_ts": "2026-05-05T14:19:20.631210+00:00"}
+{"event": "agent_message", "message": "[思考] 来", "_ts": "2026-05-05T14:19:20.632762+00:00"}
+{"event": "agent_message", "message": "[思考] 制定", "_ts": "2026-05-05T14:19:20.659656+00:00"}
+{"event": "agent_message", "message": "[思考] 计划", "_ts": "2026-05-05T14:19:20.659656+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:20.667219+00:00"}
+{"event": "agent_message", "message": "[思考] 但", "_ts": "2026-05-05T14:19:20.668223+00:00"}
+{"event": "agent_message", "message": "[思考] 为了", "_ts": "2026-05-05T14:19:20.690006+00:00"}
+{"event": "agent_message", "message": "[思考] 更", "_ts": "2026-05-05T14:19:20.690006+00:00"}
+{"event": "agent_message", "message": "[思考] 全面", "_ts": "2026-05-05T14:19:20.716577+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:20.717552+00:00"}
+{"event": "agent_message", "message": "[思考] 让我", "_ts": "2026-05-05T14:19:20.759053+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:19:20.801257+00:00"}
+{"event": "agent_message", "message": "[思考] 一下", "_ts": "2026-05-05T14:19:20.801803+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:20.802815+00:00"}
+{"event": "agent_message", "message": "[思考] 周末", "_ts": "2026-05-05T14:19:20.923780+00:00"}
+{"event": "agent_message", "message": "[思考] 游", "_ts": "2026-05-05T14:19:20.928663+00:00"}
+{"event": "agent_message", "message": "[思考] 推荐", "_ts": "2026-05-05T14:19:20.929668+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:20.931155+00:00"}
+{"event": "agent_message", "message": "[思考] 实际上", "_ts": "2026-05-05T14:19:20.933231+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:20.933231+00:00"}
+{"event": "agent_message", "message": "[思考] 我", "_ts": "2026-05-05T14:19:20.934211+00:00"}
+{"event": "agent_message", "message": "[思考] 直接", "_ts": "2026-05-05T14:19:20.942863+00:00"}
+{"event": "agent_message", "message": "[思考] 规划", "_ts": "2026-05-05T14:19:20.969781+00:00"}
+{"event": "agent_message", "message": "[思考] 就可以了", "_ts": "2026-05-05T14:19:20.991593+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:21.018404+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:21.018404+00:00"}
+{"event": "agent_message", "message": "[思考] 作为", "_ts": "2026-05-05T14:19:21.046010+00:00"}
+{"event": "agent_message", "message": "[思考] 首都", "_ts": "2026-05-05T14:19:21.046986+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:21.073688+00:00"}
+{"event": "agent_message", "message": "[思考] 经典", "_ts": "2026-05-05T14:19:21.074663+00:00"}
+{"event": "agent_message", "message": "[思考] 景点", "_ts": "2026-05-05T14:19:21.101647+00:00"}
+{"event": "agent_message", "message": "[思考] 我很", "_ts": "2026-05-05T14:19:21.101647+00:00"}
+{"event": "agent_message", "message": "[思考] 熟悉", "_ts": "2026-05-05T14:19:21.128006+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:21.154979+00:00"}
+{"event": "agent_message", "message": "[思考] 让我", "_ts": "2026-05-05T14:19:21.155954+00:00"}
+{"event": "agent_message", "message": "[思考] 做一个", "_ts": "2026-05-05T14:19:21.182354+00:00"}
+{"event": "agent_message", "message": "[思考] 合理的", "_ts": "2026-05-05T14:19:21.183335+00:00"}
+{"event": "agent_message", "message": "[思考] 3", "_ts": "2026-05-05T14:19:21.208672+00:00"}
+{"event": "agent_message", "message": "[思考] 天", "_ts": "2026-05-05T14:19:21.209648+00:00"}
+{"event": "agent_message", "message": "[思考] （", "_ts": "2026-05-05T14:19:21.235612+00:00"}
+{"event": "agent_message", "message": "[思考] 周五", "_ts": "2026-05-05T14:19:21.264360+00:00"}
+{"event": "agent_message", "message": "[思考] 晚", "_ts": "2026-05-05T14:19:21.265456+00:00"}
+{"event": "agent_message", "message": "[思考] 到", "_ts": "2026-05-05T14:19:21.298909+00:00"}
+{"event": "agent_message", "message": "[思考] 周", "_ts": "2026-05-05T14:19:21.299886+00:00"}
+{"event": "agent_message", "message": "[思考] 日晚", "_ts": "2026-05-05T14:19:21.318875+00:00"}
+{"event": "agent_message", "message": "[思考] ）", "_ts": "2026-05-05T14:19:21.319855+00:00"}
+{"event": "agent_message", "message": "[思考] 北京", "_ts": "2026-05-05T14:19:21.345260+00:00"}
+{"event": "agent_message", "message": "[思考] 旅行", "_ts": "2026-05-05T14:19:21.346237+00:00"}
+{"event": "agent_message", "message": "[思考] 计划", "_ts": "2026-05-05T14:19:21.372911+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:21.401312+00:00"}
+{"event": "agent_message", "message": "[思考] 周五", "_ts": "2026-05-05T14:19:21.401849+00:00"}
+{"event": "agent_message", "message": "[思考] 晚", "_ts": "2026-05-05T14:19:21.402468+00:00"}
+{"event": "agent_message", "message": "[思考] ：", "_ts": "2026-05-05T14:19:21.428669+00:00"}
+{"event": "agent_message", "message": "[思考] 到达", "_ts": "2026-05-05T14:19:21.429651+00:00"}
+{"event": "agent_message", "message": "[思考] 、", "_ts": "2026-05-05T14:19:21.459677+00:00"}
+{"event": "agent_message", "message": "[思考] 入住", "_ts": "2026-05-05T14:19:21.483684+00:00"}
+{"event": "agent_message", "message": "[思考] 、", "_ts": "2026-05-05T14:19:21.485189+00:00"}
+{"event": "agent_message", "message": "[思考] 可以", "_ts": "2026-05-05T14:19:21.512622+00:00"}
+{"event": "agent_message", "message": "[思考] 逛逛", "_ts": "2026-05-05T14:19:21.539488+00:00"}
+{"event": "agent_message", "message": "[思考] 夜景", "_ts": "2026-05-05T14:19:21.540461+00:00"}
+{"event": "agent_message", "message": "[思考] 周六", "_ts": "2026-05-05T14:19:21.597259+00:00"}
+{"event": "agent_message", "message": "[思考] ：", "_ts": "2026-05-05T14:19:21.598235+00:00"}
+{"event": "agent_message", "message": "[思考] 经典", "_ts": "2026-05-05T14:19:21.629507+00:00"}
+{"event": "agent_message", "message": "[思考] 景点", "_ts": "2026-05-05T14:19:21.730026+00:00"}
+{"event": "agent_message", "message": "[思考] 周日", "_ts": "2026-05-05T14:19:21.731531+00:00"}
+{"event": "agent_message", "message": "[思考] ：", "_ts": "2026-05-05T14:19:21.731531+00:00"}
+{"event": "agent_message", "message": "[思考] 更多", "_ts": "2026-05-05T14:19:21.754069+00:00"}
+{"event": "agent_message", "message": "[思考] 景点", "_ts": "2026-05-05T14:19:21.757539+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:21.758518+00:00"}
+{"event": "agent_message", "message": "[思考] 然后", "_ts": "2026-05-05T14:19:21.783665+00:00"}
+{"event": "agent_message", "message": "[思考] 返", "_ts": "2026-05-05T14:19:21.809963+00:00"}
+{"event": "agent_message", "message": "[思考] 程", "_ts": "2026-05-05T14:19:21.812057+00:00"}
+{"event": "agent_message", "message": "[思考] 让我", "_ts": "2026-05-05T14:19:21.839425+00:00"}
+{"event": "agent_message", "message": "[思考] 来", "_ts": "2026-05-05T14:19:21.890118+00:00"}
+{"event": "agent_message", "message": "[思考] 规划", "_ts": "2026-05-05T14:19:21.894617+00:00"}
+{"event": "agent_message", "message": "[思考] 一个", "_ts": "2026-05-05T14:19:21.894617+00:00"}
+{"event": "agent_message", "message": "[思考] 详细的", "_ts": "2026-05-05T14:19:21.922382+00:00"}
+{"event": "agent_message", "message": "[思考] 方案", "_ts": "2026-05-05T14:19:21.923362+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:21.949909+00:00"}
+{"event": "agent_message", "message": "#", "_ts": "2026-05-05T14:19:21.982592+00:00"}
+{"event": "agent_message", "message": "🏯", "_ts": "2026-05-05T14:19:22.034327+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:22.062502+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:22.092308+00:00"}
+{"event": "agent_message", "message": "日", "_ts": "2026-05-05T14:19:22.093290+00:00"}
+{"event": "agent_message", "message": "周末", "_ts": "2026-05-05T14:19:22.117958+00:00"}
+{"event": "agent_message", "message": "旅行", "_ts": "2026-05-05T14:19:22.118936+00:00"}
+{"event": "agent_message", "message": "计划", "_ts": "2026-05-05T14:19:22.146368+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:22.147874+00:00"}
+{"event": "agent_message", "message": "周五", "_ts": "2026-05-05T14:19:22.174517+00:00"}
+{"event": "agent_message", "message": "晚", "_ts": "2026-05-05T14:19:22.176024+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:22.215022+00:00"}
+{"event": "agent_message", "message": "周", "_ts": "2026-05-05T14:19:22.229356+00:00"}
+{"event": "agent_message", "message": "日晚", "_ts": "2026-05-05T14:19:22.230333+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:22.258487+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:22.285866+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:22.285866+00:00"}
+{"event": "agent_message", "message": "📅", "_ts": "2026-05-05T14:19:22.313499+00:00"}
+{"event": "agent_message", "message": "Day", "_ts": "2026-05-05T14:19:22.314027+00:00"}
+{"event": "agent_message", "message": "1", "_ts": "2026-05-05T14:19:22.342128+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:22.368998+00:00"}
+{"event": "agent_message", "message": "周五", "_ts": "2026-05-05T14:19:22.407274+00:00"}
+{"event": "agent_message", "message": "晚", "_ts": "2026-05-05T14:19:22.408257+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:22.426420+00:00"}
+{"event": "agent_message", "message": "抵达", "_ts": "2026-05-05T14:19:22.476109+00:00"}
+{"event": "agent_message", "message": "&", "_ts": "2026-05-05T14:19:22.476109+00:00"}
+{"event": "agent_message", "message": "初", "_ts": "2026-05-05T14:19:22.481276+00:00"}
+{"event": "agent_message", "message": "探", "_ts": "2026-05-05T14:19:22.510411+00:00"}
+{"event": "agent_message", "message": "京城", "_ts": "2026-05-05T14:19:22.537981+00:00"}
+{"event": "agent_message", "message": "夜色", "_ts": "2026-05-05T14:19:22.539058+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.564350+00:00"}
+{"event": "agent_message", "message": "项目", "_ts": "2026-05-05T14:19:22.593278+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.619980+00:00"}
+{"event": "agent_message", "message": "内容", "_ts": "2026-05-05T14:19:22.648239+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.676551+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.677533+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:22.678509+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.705235+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:22.705771+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.732175+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.733158+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:22.759743+00:00"}
+{"event": "agent_message", "message": "傍晚", "_ts": "2026-05-05T14:19:22.760823+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:22.788655+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:22.789629+00:00"}
+{"event": "agent_message", "message": "抵达", "_ts": "2026-05-05T14:19:22.815695+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:22.844307+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:22.845812+00:00"}
+{"event": "agent_message", "message": "入住", "_ts": "2026-05-05T14:19:22.872235+00:00"}
+{"event": "agent_message", "message": "酒店", "_ts": "2026-05-05T14:19:22.873218+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:22.898205+00:00"}
+{"event": "agent_message", "message": "推荐", "_ts": "2026-05-05T14:19:22.899182+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:22.926251+00:00"}
+{"event": "agent_message", "message": "东", "_ts": "2026-05-05T14:19:22.926251+00:00"}
+{"event": "agent_message", "message": "城区", "_ts": "2026-05-05T14:19:22.956078+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:22.986065+00:00"}
+{"event": "agent_message", "message": "西", "_ts": "2026-05-05T14:19:22.987046+00:00"}
+{"event": "agent_message", "message": "城区", "_ts": "2026-05-05T14:19:23.021166+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.021712+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:23.038159+00:00"}
+{"event": "agent_message", "message": "靠近", "_ts": "2026-05-05T14:19:23.038159+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:23.073813+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:23.093099+00:00"}
+{"event": "agent_message", "message": "号线", "_ts": "2026-05-05T14:19:23.135631+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:23.136217+00:00"}
+{"event": "agent_message", "message": "4", "_ts": "2026-05-05T14:19:23.150683+00:00"}
+{"event": "agent_message", "message": "号线", "_ts": "2026-05-05T14:19:23.151269+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:23.230436+00:00"}
+{"event": "agent_message", "message": "交通", "_ts": "2026-05-05T14:19:23.231488+00:00"}
+{"event": "agent_message", "message": "便利", "_ts": "2026-05-05T14:19:23.235207+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:23.235771+00:00"}
+{"event": "agent_message", "message": "预算", "_ts": "2026-05-05T14:19:23.291434+00:00"}
+{"event": "agent_message", "message": "中等", "_ts": "2026-05-05T14:19:23.292080+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:23.292615+00:00"}
+{"event": "agent_message", "message": "400", "_ts": "2026-05-05T14:19:23.293796+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:23.421664+00:00"}
+{"event": "agent_message", "message": "600", "_ts": "2026-05-05T14:19:23.424984+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:23.425580+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:23.430277+00:00"}
+{"event": "agent_message", "message": "晚", "_ts": "2026-05-05T14:19:23.430807+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:23.431874+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:23.432412+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:23.433412+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.433950+00:00"}
+{"event": "agent_message", "message": "晚餐", "_ts": "2026-05-05T14:19:23.458922+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.458922+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:23.497278+00:00"}
+{"event": "agent_message", "message": "🥟", "_ts": "2026-05-05T14:19:23.526404+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.546896+00:00"}
+{"event": "agent_message", "message": "老", "_ts": "2026-05-05T14:19:23.548401+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:23.566591+00:00"}
+{"event": "agent_message", "message": "铜", "_ts": "2026-05-05T14:19:23.566591+00:00"}
+{"event": "agent_message", "message": "锅", "_ts": "2026-05-05T14:19:23.594073+00:00"}
+{"event": "agent_message", "message": "涮", "_ts": "2026-05-05T14:19:23.622906+00:00"}
+{"event": "agent_message", "message": "肉", "_ts": "2026-05-05T14:19:23.622906+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.648859+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:23.649844+00:00"}
+{"event": "agent_message", "message": "推荐", "_ts": "2026-05-05T14:19:23.682100+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:23.683211+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.708684+00:00"}
+{"event": "agent_message", "message": "南", "_ts": "2026-05-05T14:19:23.709668+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:23.732767+00:00"}
+{"event": "agent_message", "message": "涮", "_ts": "2026-05-05T14:19:23.764790+00:00"}
+{"event": "agent_message", "message": "肉", "_ts": "2026-05-05T14:19:23.765765+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.786998+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:23.814335+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.815311+00:00"}
+{"event": "agent_message", "message": "东", "_ts": "2026-05-05T14:19:23.842724+00:00"}
+{"event": "agent_message", "message": "来", "_ts": "2026-05-05T14:19:23.843259+00:00"}
+{"event": "agent_message", "message": "顺", "_ts": "2026-05-05T14:19:23.947857+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:23.948834+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:23.948834+00:00"}
+{"event": "agent_message", "message": "人均", "_ts": "2026-05-05T14:19:23.950339+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:23.950905+00:00"}
+{"event": "agent_message", "message": "100", "_ts": "2026-05-05T14:19:23.951422+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:23.957547+00:00"}
+{"event": "agent_message", "message": "150", "_ts": "2026-05-05T14:19:23.958523+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:23.981372+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:23.981911+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:24.011561+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:24.012542+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:24.055477+00:00"}
+{"event": "agent_message", "message": "晚间", "_ts": "2026-05-05T14:19:24.056455+00:00"}
+{"event": "agent_message", "message": "活动", "_ts": "2026-05-05T14:19:24.067076+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:24.067076+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:24.094602+00:00"}
+{"event": "agent_message", "message": "🏮", "_ts": "2026-05-05T14:19:24.120503+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:24.149015+00:00"}
+{"event": "agent_message", "message": "什", "_ts": "2026-05-05T14:19:24.150519+00:00"}
+{"event": "agent_message", "message": "刹", "_ts": "2026-05-05T14:19:24.177177+00:00"}
+{"event": "agent_message", "message": "海", "_ts": "2026-05-05T14:19:24.178156+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:24.219128+00:00"}
+{"event": "agent_message", "message": "后", "_ts": "2026-05-05T14:19:24.219128+00:00"}
+{"event": "agent_message", "message": "海", "_ts": "2026-05-05T14:19:24.233628+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:24.234634+00:00"}
+{"event": "agent_message", "message": "夜", "_ts": "2026-05-05T14:19:24.263179+00:00"}
+{"event": "agent_message", "message": "游", "_ts": "2026-05-05T14:19:24.289045+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:24.289045+00:00"}
+{"event": "agent_message", "message": "沿着", "_ts": "2026-05-05T14:19:24.316093+00:00"}
+{"event": "agent_message", "message": "湖", "_ts": "2026-05-05T14:19:24.352387+00:00"}
+{"event": "agent_message", "message": "边走", "_ts": "2026-05-05T14:19:24.352913+00:00"}
+{"event": "agent_message", "message": "一走", "_ts": "2026-05-05T14:19:24.373622+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:24.402144+00:00"}
+{"event": "agent_message", "message": "感受", "_ts": "2026-05-05T14:19:24.402689+00:00"}
+{"event": "agent_message", "message": "老", "_ts": "2026-05-05T14:19:24.429050+00:00"}
+{"event": "agent_message", "message": "北京的", "_ts": "2026-05-05T14:19:24.459884+00:00"}
+{"event": "agent_message", "message": "胡同", "_ts": "2026-05-05T14:19:24.488818+00:00"}
+{"event": "agent_message", "message": "夜色", "_ts": "2026-05-05T14:19:24.489795+00:00"}
+{"event": "agent_message", "message": "与", "_ts": "2026-05-05T14:19:24.513449+00:00"}
+{"event": "agent_message", "message": "酒吧", "_ts": "2026-05-05T14:19:24.544885+00:00"}
+{"event": "agent_message", "message": "街", "_ts": "2026-05-05T14:19:24.546389+00:00"}
+{"event": "agent_message", "message": "氛围", "_ts": "2026-05-05T14:19:24.568376+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:24.596696+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:24.598207+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:24.598874+00:00"}
+{"event": "agent_message", "message": "交通", "_ts": "2026-05-05T14:19:24.670655+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:24.671232+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:24.671757+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:24.672738+00:00"}
+{"event": "agent_message", "message": "若", "_ts": "2026-05-05T14:19:24.681717+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:24.721283+00:00"}
+{"event": "agent_message", "message": "机场", "_ts": "2026-05-05T14:19:24.738055+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:24.738055+00:00"}
+{"event": "agent_message", "message": "高铁", "_ts": "2026-05-05T14:19:24.766184+00:00"}
+{"event": "agent_message", "message": "站", "_ts": "2026-05-05T14:19:24.767162+00:00"}
+{"event": "agent_message", "message": "出发", "_ts": "2026-05-05T14:19:24.791419+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:24.818878+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:24.819855+00:00"}
+{"event": "agent_message", "message": "是最", "_ts": "2026-05-05T14:19:24.847588+00:00"}
+{"event": "agent_message", "message": "优", "_ts": "2026-05-05T14:19:24.887523+00:00"}
+{"event": "agent_message", "message": "选择", "_ts": "2026-05-05T14:19:24.911394+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:24.911394+00:00"}
+{"event": "agent_message", "message": "大兴", "_ts": "2026-05-05T14:19:24.931491+00:00"}
+{"event": "agent_message", "message": "机场", "_ts": "2026-05-05T14:19:24.931491+00:00"}
+{"event": "agent_message", "message": "线", "_ts": "2026-05-05T14:19:24.974669+00:00"}
+{"event": "agent_message", "message": "→", "_ts": "2026-05-05T14:19:24.975644+00:00"}
+{"event": "agent_message", "message": "10", "_ts": "2026-05-05T14:19:24.987124+00:00"}
+{"event": "agent_message", "message": "号线", "_ts": "2026-05-05T14:19:24.988099+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:25.015683+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:25.046067+00:00"}
+{"event": "agent_message", "message": "首都", "_ts": "2026-05-05T14:19:25.076439+00:00"}
+{"event": "agent_message", "message": "机场", "_ts": "2026-05-05T14:19:25.077423+00:00"}
+{"event": "agent_message", "message": "线", "_ts": "2026-05-05T14:19:25.098655+00:00"}
+{"event": "agent_message", "message": "→", "_ts": "2026-05-05T14:19:25.099633+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:25.130191+00:00"}
+{"event": "agent_message", "message": "号线", "_ts": "2026-05-05T14:19:25.131195+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:25.157255+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.184763+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:25.211279+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:25.211279+00:00"}
+{"event": "agent_message", "message": "📅", "_ts": "2026-05-05T14:19:25.238545+00:00"}
+{"event": "agent_message", "message": "Day", "_ts": "2026-05-05T14:19:25.239522+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:25.282393+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:25.295946+00:00"}
+{"event": "agent_message", "message": "周六", "_ts": "2026-05-05T14:19:25.324512+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:25.325491+00:00"}
+{"event": "agent_message", "message": "经典", "_ts": "2026-05-05T14:19:25.351638+00:00"}
+{"event": "agent_message", "message": "中", "_ts": "2026-05-05T14:19:25.352620+00:00"}
+{"event": "agent_message", "message": "轴线", "_ts": "2026-05-05T14:19:25.379314+00:00"}
+{"event": "agent_message", "message": "&", "_ts": "2026-05-05T14:19:25.380818+00:00"}
+{"event": "agent_message", "message": "皇家", "_ts": "2026-05-05T14:19:25.475207+00:00"}
+{"event": "agent_message", "message": "园林", "_ts": "2026-05-05T14:19:25.475834+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.476818+00:00"}
+{"event": "agent_message", "message": "时段", "_ts": "2026-05-05T14:19:25.493844+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.494827+00:00"}
+{"event": "agent_message", "message": "行程", "_ts": "2026-05-05T14:19:25.519950+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.547875+00:00"}
+{"event": "agent_message", "message": "小", "_ts": "2026-05-05T14:19:25.576597+00:00"}
+{"event": "agent_message", "message": "贴", "_ts": "2026-05-05T14:19:25.610620+00:00"}
+{"event": "agent_message", "message": "士", "_ts": "2026-05-05T14:19:25.611623+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.641595+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.643116+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:25.659639+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.660615+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:25.781091+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.781620+00:00"}
+{"event": "agent_message", "message": "--------", "_ts": "2026-05-05T14:19:25.781620+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.783608+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.783608+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:25.784589+00:00"}
+{"event": "agent_message", "message": "上午", "_ts": "2026-05-05T14:19:25.784589+00:00"}
+{"event": "agent_message", "message": "8", "_ts": "2026-05-05T14:19:25.828241+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:25.829217+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:25.855651+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:25.856628+00:00"}
+{"event": "agent_message", "message": "11", "_ts": "2026-05-05T14:19:25.883428+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:25.883428+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:25.984993+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:25.985969+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:25.986947+00:00"}
+{"event": "agent_message", "message": "🏛", "_ts": "2026-05-05T14:19:25.986947+00:00"}
+{"event": "agent_message", "message": "️", "_ts": "2026-05-05T14:19:25.995445+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:25.996428+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:26.025927+00:00"}
+{"event": "agent_message", "message": "安门", "_ts": "2026-05-05T14:19:26.025927+00:00"}
+{"event": "agent_message", "message": "广场", "_ts": "2026-05-05T14:19:26.052150+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:26.052150+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:26.080633+00:00"}
+{"event": "agent_message", "message": "博物院", "_ts": "2026-05-05T14:19:26.109631+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:26.110608+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:26.136899+00:00"}
+{"event": "agent_message", "message": "需", "_ts": "2026-05-05T14:19:26.137875+00:00"}
+{"event": "agent_message", "message": "提前", "_ts": "2026-05-05T14:19:26.165545+00:00"}
+{"event": "agent_message", "message": "在", "_ts": "2026-05-05T14:19:26.167048+00:00"}
+{"event": "agent_message", "message": "「", "_ts": "2026-05-05T14:19:26.191452+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:26.193001+00:00"}
+{"event": "agent_message", "message": "博物院", "_ts": "2026-05-05T14:19:26.234747+00:00"}
+{"event": "agent_message", "message": "」", "_ts": "2026-05-05T14:19:26.235722+00:00"}
+{"event": "agent_message", "message": "小程序", "_ts": "2026-05-05T14:19:26.255394+00:00"}
+{"event": "agent_message", "message": "预约", "_ts": "2026-05-05T14:19:26.256367+00:00"}
+{"event": "agent_message", "message": "门票", "_ts": "2026-05-05T14:19:26.278007+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:26.303927+00:00"}
+{"event": "agent_message", "message": "旺季", "_ts": "2026-05-05T14:19:26.304986+00:00"}
+{"event": "agent_message", "message": "60", "_ts": "2026-05-05T14:19:26.381261+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:26.382241+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:26.382241+00:00"}
+{"event": "agent_message", "message": "淡", "_ts": "2026-05-05T14:19:26.383745+00:00"}
+{"event": "agent_message", "message": "季", "_ts": "2026-05-05T14:19:26.388247+00:00"}
+{"event": "agent_message", "message": "40", "_ts": "2026-05-05T14:19:26.389217+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:26.416415+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:26.417919+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:26.444152+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:26.472049+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:26.472049+00:00"}
+{"event": "agent_message", "message": "午", "_ts": "2026-05-05T14:19:26.499875+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:26.528460+00:00"}
+{"event": "agent_message", "message": "进", "_ts": "2026-05-05T14:19:26.529437+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:26.605522+00:00"}
+{"event": "agent_message", "message": "神", "_ts": "2026-05-05T14:19:26.606526+00:00"}
+{"event": "agent_message", "message": "武", "_ts": "2026-05-05T14:19:26.607508+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:26.612423+00:00"}
+{"event": "agent_message", "message": "出", "_ts": "2026-05-05T14:19:26.612423+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:26.652527+00:00"}
+{"event": "agent_message", "message": "游览", "_ts": "2026-05-05T14:19:26.653530+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:26.736718+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:26.737694+00:00"}
+{"event": "agent_message", "message": "小时", "_ts": "2026-05-05T14:19:26.738670+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:26.739645+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:26.740623+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:26.741628+00:00"}
+{"event": "agent_message", "message": "中午", "_ts": "2026-05-05T14:19:26.754825+00:00"}
+{"event": "agent_message", "message": "11", "_ts": "2026-05-05T14:19:26.791318+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:26.791845+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:26.809883+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:26.811388+00:00"}
+{"event": "agent_message", "message": "13", "_ts": "2026-05-05T14:19:26.996511+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:26.997484+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:26.998489+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:26.999471+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:26.999471+00:00"}
+{"event": "agent_message", "message": "🍜", "_ts": "2026-05-05T14:19:27.000447+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.000447+00:00"}
+{"event": "agent_message", "message": "午餐", "_ts": "2026-05-05T14:19:27.001451+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:27.001451+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:27.002992+00:00"}
+{"event": "agent_message", "message": "炸", "_ts": "2026-05-05T14:19:27.006510+00:00"}
+{"event": "agent_message", "message": "酱", "_ts": "2026-05-05T14:19:27.007493+00:00"}
+{"event": "agent_message", "message": "面", "_ts": "2026-05-05T14:19:27.031824+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:27.031824+00:00"}
+{"event": "agent_message", "message": "老", "_ts": "2026-05-05T14:19:27.063668+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:27.064650+00:00"}
+{"event": "agent_message", "message": "小吃", "_ts": "2026-05-05T14:19:27.090143+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.091149+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:27.114723+00:00"}
+{"event": "agent_message", "message": "推荐", "_ts": "2026-05-05T14:19:27.115703+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:27.143456+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.144437+00:00"}
+{"event": "agent_message", "message": "方", "_ts": "2026-05-05T14:19:27.172010+00:00"}
+{"event": "agent_message", "message": "砖", "_ts": "2026-05-05T14:19:27.172526+00:00"}
+{"event": "agent_message", "message": "厂", "_ts": "2026-05-05T14:19:27.200300+00:00"}
+{"event": "agent_message", "message": "69", "_ts": "2026-05-05T14:19:27.201304+00:00"}
+{"event": "agent_message", "message": "号", "_ts": "2026-05-05T14:19:27.227599+00:00"}
+{"event": "agent_message", "message": "炸", "_ts": "2026-05-05T14:19:27.228576+00:00"}
+{"event": "agent_message", "message": "酱", "_ts": "2026-05-05T14:19:27.261927+00:00"}
+{"event": "agent_message", "message": "面", "_ts": "2026-05-05T14:19:27.263463+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.295872+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:27.312258+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.314367+00:00"}
+{"event": "agent_message", "message": "护", "_ts": "2026-05-05T14:19:27.345104+00:00"}
+{"event": "agent_message", "message": "国", "_ts": "2026-05-05T14:19:27.346079+00:00"}
+{"event": "agent_message", "message": "寺", "_ts": "2026-05-05T14:19:27.367362+00:00"}
+{"event": "agent_message", "message": "小吃", "_ts": "2026-05-05T14:19:27.368867+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.397041+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:27.398017+00:00"}
+{"event": "agent_message", "message": "人均", "_ts": "2026-05-05T14:19:27.452670+00:00"}
+{"event": "agent_message", "message": "40", "_ts": "2026-05-05T14:19:27.452670+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:27.471604+00:00"}
+{"event": "agent_message", "message": "60", "_ts": "2026-05-05T14:19:27.472640+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:27.504869+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:27.505501+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:27.527537+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:27.556668+00:00"}
+{"event": "agent_message", "message": "神", "_ts": "2026-05-05T14:19:27.557672+00:00"}
+{"event": "agent_message", "message": "武", "_ts": "2026-05-05T14:19:27.586553+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:27.586553+00:00"}
+{"event": "agent_message", "message": "出来后", "_ts": "2026-05-05T14:19:27.612539+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:27.613546+00:00"}
+{"event": "agent_message", "message": "景", "_ts": "2026-05-05T14:19:27.639490+00:00"}
+{"event": "agent_message", "message": "山", "_ts": "2026-05-05T14:19:27.668991+00:00"}
+{"event": "agent_message", "message": "公园", "_ts": "2026-05-05T14:19:27.669966+00:00"}
+{"event": "agent_message", "message": "附近", "_ts": "2026-05-05T14:19:27.695676+00:00"}
+{"event": "agent_message", "message": "就有", "_ts": "2026-05-05T14:19:27.696657+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:27.766469+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:27.767451+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.768428+00:00"}
+{"event": "agent_message", "message": "下午", "_ts": "2026-05-05T14:19:27.781310+00:00"}
+{"event": "agent_message", "message": "13", "_ts": "2026-05-05T14:19:27.818686+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:27.819670+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:27.839460+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:27.840443+00:00"}
+{"event": "agent_message", "message": "15", "_ts": "2026-05-05T14:19:27.877842+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:27.877842+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:27.893624+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.893624+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:27.921175+00:00"}
+{"event": "agent_message", "message": "🌄", "_ts": "2026-05-05T14:19:27.947075+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:27.948052+00:00"}
+{"event": "agent_message", "message": "景", "_ts": "2026-05-05T14:19:27.976369+00:00"}
+{"event": "agent_message", "message": "山", "_ts": "2026-05-05T14:19:27.977347+00:00"}
+{"event": "agent_message", "message": "公园", "_ts": "2026-05-05T14:19:28.005638+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:28.006642+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:28.033540+00:00"}
+{"event": "agent_message", "message": "门票", "_ts": "2026-05-05T14:19:28.034085+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:28.059792+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:28.059792+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:28.085700+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:28.086677+00:00"}
+{"event": "agent_message", "message": "登上", "_ts": "2026-05-05T14:19:28.235948+00:00"}
+{"event": "agent_message", "message": "万", "_ts": "2026-05-05T14:19:28.248342+00:00"}
+{"event": "agent_message", "message": "春", "_ts": "2026-05-05T14:19:28.249318+00:00"}
+{"event": "agent_message", "message": "亭", "_ts": "2026-05-05T14:19:28.251814+00:00"}
+{"event": "agent_message", "message": "俯瞰", "_ts": "2026-05-05T14:19:28.251814+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:28.253347+00:00"}
+{"event": "agent_message", "message": "全景", "_ts": "2026-05-05T14:19:28.253347+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:28.254328+00:00"}
+{"event": "agent_message", "message": "经典", "_ts": "2026-05-05T14:19:28.255305+00:00"}
+{"event": "agent_message", "message": "打卡", "_ts": "2026-05-05T14:19:28.306527+00:00"}
+{"event": "agent_message", "message": "机", "_ts": "2026-05-05T14:19:28.308078+00:00"}
+{"event": "agent_message", "message": "位", "_ts": "2026-05-05T14:19:28.311295+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:28.312315+00:00"}
+{"event": "agent_message", "message": "就在", "_ts": "2026-05-05T14:19:28.336449+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:28.364678+00:00"}
+{"event": "agent_message", "message": "神", "_ts": "2026-05-05T14:19:28.364678+00:00"}
+{"event": "agent_message", "message": "武", "_ts": "2026-05-05T14:19:28.392427+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:28.393965+00:00"}
+{"event": "agent_message", "message": "对面", "_ts": "2026-05-05T14:19:28.421574+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:28.449962+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:28.451467+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:28.452448+00:00"}
+{"event": "agent_message", "message": "下午", "_ts": "2026-05-05T14:19:28.475388+00:00"}
+{"event": "agent_message", "message": "15", "_ts": "2026-05-05T14:19:28.503346+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:28.503882+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:28.533612+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:28.534597+00:00"}
+{"event": "agent_message", "message": "17", "_ts": "2026-05-05T14:19:28.572066+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:28.573581+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:28.587564+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:28.587564+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:28.620505+00:00"}
+{"event": "agent_message", "message": "🛍", "_ts": "2026-05-05T14:19:28.671355+00:00"}
+{"event": "agent_message", "message": "️", "_ts": "2026-05-05T14:19:28.704638+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:28.705613+00:00"}
+{"event": "agent_message", "message": "南", "_ts": "2026-05-05T14:19:28.745427+00:00"}
+{"event": "agent_message", "message": "锣", "_ts": "2026-05-05T14:19:28.745427+00:00"}
+{"event": "agent_message", "message": "鼓", "_ts": "2026-05-05T14:19:28.759801+00:00"}
+{"event": "agent_message", "message": "巷", "_ts": "2026-05-05T14:19:28.761305+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:28.781636+00:00"}
+{"event": "agent_message", "message": "什", "_ts": "2026-05-05T14:19:28.811188+00:00"}
+{"event": "agent_message", "message": "刹", "_ts": "2026-05-05T14:19:28.839390+00:00"}
+{"event": "agent_message", "message": "海", "_ts": "2026-05-05T14:19:28.840362+00:00"}
+{"event": "agent_message", "message": "胡同", "_ts": "2026-05-05T14:19:28.865449+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:28.866426+00:00"}
+{"event": "agent_message", "message": "漫步", "_ts": "2026-05-05T14:19:28.897824+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:28.924144+00:00"}
+{"event": "agent_message", "message": "逛逛", "_ts": "2026-05-05T14:19:28.950025+00:00"}
+{"event": "agent_message", "message": "创意", "_ts": "2026-05-05T14:19:28.950025+00:00"}
+{"event": "agent_message", "message": "小店", "_ts": "2026-05-05T14:19:28.976173+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:28.976173+00:00"}
+{"event": "agent_message", "message": "感受", "_ts": "2026-05-05T14:19:29.004155+00:00"}
+{"event": "agent_message", "message": "老", "_ts": "2026-05-05T14:19:29.005135+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:29.045595+00:00"}
+{"event": "agent_message", "message": "胡同", "_ts": "2026-05-05T14:19:29.046571+00:00"}
+{"event": "agent_message", "message": "文化", "_ts": "2026-05-05T14:19:29.058075+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.059052+00:00"}
+{"event": "agent_message", "message": "可", "_ts": "2026-05-05T14:19:29.086446+00:00"}
+{"event": "agent_message", "message": "租", "_ts": "2026-05-05T14:19:29.123748+00:00"}
+{"event": "agent_message", "message": "共享", "_ts": "2026-05-05T14:19:29.142492+00:00"}
+{"event": "agent_message", "message": "单车", "_ts": "2026-05-05T14:19:29.171630+00:00"}
+{"event": "agent_message", "message": "骑行", "_ts": "2026-05-05T14:19:29.172690+00:00"}
+{"event": "agent_message", "message": "胡同", "_ts": "2026-05-05T14:19:29.199829+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.225972+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.226947+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.227925+00:00"}
+{"event": "agent_message", "message": "晚上", "_ts": "2026-05-05T14:19:29.258145+00:00"}
+{"event": "agent_message", "message": "18", "_ts": "2026-05-05T14:19:29.288951+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:29.289923+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:29.309806+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:29.309806+00:00"}
+{"event": "agent_message", "message": "20", "_ts": "2026-05-05T14:19:29.351814+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:29.352326+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:29.364731+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.364731+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.393696+00:00"}
+{"event": "agent_message", "message": "🦆", "_ts": "2026-05-05T14:19:29.419010+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.446629+00:00"}
+{"event": "agent_message", "message": "晚餐", "_ts": "2026-05-05T14:19:29.447608+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:29.474523+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:29.476029+00:00"}
+{"event": "agent_message", "message": "烤", "_ts": "2026-05-05T14:19:29.503648+00:00"}
+{"event": "agent_message", "message": "鸭", "_ts": "2026-05-05T14:19:29.503648+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.659852+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:29.661465+00:00"}
+{"event": "agent_message", "message": "推荐", "_ts": "2026-05-05T14:19:29.661465+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:29.662557+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.663540+00:00"}
+{"event": "agent_message", "message": "四季", "_ts": "2026-05-05T14:19:29.663540+00:00"}
+{"event": "agent_message", "message": "民", "_ts": "2026-05-05T14:19:29.668421+00:00"}
+{"event": "agent_message", "message": "福", "_ts": "2026-05-05T14:19:29.669397+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.669397+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:29.670401+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.671506+00:00"}
+{"event": "agent_message", "message": "大", "_ts": "2026-05-05T14:19:29.693620+00:00"}
+{"event": "agent_message", "message": "董", "_ts": "2026-05-05T14:19:29.694593+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:29.734143+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:29.735118+00:00"}
+{"event": "agent_message", "message": "人均", "_ts": "2026-05-05T14:19:29.748490+00:00"}
+{"event": "agent_message", "message": "150", "_ts": "2026-05-05T14:19:29.749465+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:29.789384+00:00"}
+{"event": "agent_message", "message": "200", "_ts": "2026-05-05T14:19:29.790360+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:29.804884+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:29.806389+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.833368+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:29.858897+00:00"}
+{"event": "agent_message", "message": "提前", "_ts": "2026-05-05T14:19:29.885398+00:00"}
+{"event": "agent_message", "message": "排", "_ts": "2026-05-05T14:19:29.886372+00:00"}
+{"event": "agent_message", "message": "号", "_ts": "2026-05-05T14:19:29.958262+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:29.959238+00:00"}
+{"event": "agent_message", "message": "旺季", "_ts": "2026-05-05T14:19:29.960213+00:00"}
+{"event": "agent_message", "message": "排队", "_ts": "2026-05-05T14:19:29.961219+00:00"}
+{"event": "agent_message", "message": "较长", "_ts": "2026-05-05T14:19:29.971182+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.994245+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:29.995250+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:30.020103+00:00"}
+{"event": "agent_message", "message": "晚上", "_ts": "2026-05-05T14:19:30.021608+00:00"}
+{"event": "agent_message", "message": "20", "_ts": "2026-05-05T14:19:30.047561+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:30.075975+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:30.076979+00:00"}
+{"event": "agent_message", "message": "后", "_ts": "2026-05-05T14:19:30.116222+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:30.137353+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:30.138329+00:00"}
+{"event": "agent_message", "message": "🎭", "_ts": "2026-05-05T14:19:30.282688+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:30.287818+00:00"}
+{"event": "agent_message", "message": "可选", "_ts": "2026-05-05T14:19:30.288800+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:30.289775+00:00"}
+{"event": "agent_message", "message": "德", "_ts": "2026-05-05T14:19:30.291280+00:00"}
+{"event": "agent_message", "message": "云", "_ts": "2026-05-05T14:19:30.292480+00:00"}
+{"event": "agent_message", "message": "社", "_ts": "2026-05-05T14:19:30.293013+00:00"}
+{"event": "agent_message", "message": "相声", "_ts": "2026-05-05T14:19:30.318730+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:30.319346+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:30.324402+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:30.352105+00:00"}
+{"event": "agent_message", "message": "国家", "_ts": "2026-05-05T14:19:30.377352+00:00"}
+{"event": "agent_message", "message": "大", "_ts": "2026-05-05T14:19:30.411236+00:00"}
+{"event": "agent_message", "message": "剧院", "_ts": "2026-05-05T14:19:30.412851+00:00"}
+{"event": "agent_message", "message": "演出", "_ts": "2026-05-05T14:19:30.436476+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:30.437455+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:30.464409+00:00"}
+{"event": "agent_message", "message": "需", "_ts": "2026-05-05T14:19:30.573334+00:00"}
+{"event": "agent_message", "message": "提前", "_ts": "2026-05-05T14:19:30.574310+00:00"}
+{"event": "agent_message", "message": "购", "_ts": "2026-05-05T14:19:30.574310+00:00"}
+{"event": "agent_message", "message": "票", "_ts": "2026-05-05T14:19:30.575287+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:30.576264+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:30.576264+00:00"}
+{"event": "agent_message", "message": "100", "_ts": "2026-05-05T14:19:30.577271+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:30.587840+00:00"}
+{"event": "agent_message", "message": "300", "_ts": "2026-05-05T14:19:30.588818+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:30.604360+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:30.605335+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:30.629956+00:00"}
+{"event": "agent_message", "message": "放松", "_ts": "2026-05-05T14:19:30.815574+00:00"}
+{"event": "agent_message", "message": "娱乐", "_ts": "2026-05-05T14:19:30.816555+00:00"}
+{"event": "agent_message", "message": "的好", "_ts": "2026-05-05T14:19:30.817528+00:00"}
+{"event": "agent_message", "message": "选择", "_ts": "2026-05-05T14:19:30.818532+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:30.819513+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:30.819513+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:30.820492+00:00"}
+{"event": "agent_message", "message": "📅", "_ts": "2026-05-05T14:19:30.821495+00:00"}
+{"event": "agent_message", "message": "Day", "_ts": "2026-05-05T14:19:30.823664+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:30.860206+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:30.861209+00:00"}
+{"event": "agent_message", "message": "周日", "_ts": "2026-05-05T14:19:30.924078+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:30.925060+00:00"}
+{"event": "agent_message", "message": "皇家", "_ts": "2026-05-05T14:19:30.925060+00:00"}
+{"event": "agent_message", "message": "园林", "_ts": "2026-05-05T14:19:30.932518+00:00"}
+{"event": "agent_message", "message": "&", "_ts": "2026-05-05T14:19:30.933499+00:00"}
+{"event": "agent_message", "message": "胡同", "_ts": "2026-05-05T14:19:30.963334+00:00"}
+{"event": "agent_message", "message": "文化", "_ts": "2026-05-05T14:19:31.014204+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.016158+00:00"}
+{"event": "agent_message", "message": "时段", "_ts": "2026-05-05T14:19:31.043727+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.044695+00:00"}
+{"event": "agent_message", "message": "行程", "_ts": "2026-05-05T14:19:31.072543+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.116031+00:00"}
+{"event": "agent_message", "message": "小", "_ts": "2026-05-05T14:19:31.171737+00:00"}
+{"event": "agent_message", "message": "贴", "_ts": "2026-05-05T14:19:31.172257+00:00"}
+{"event": "agent_message", "message": "士", "_ts": "2026-05-05T14:19:31.174216+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.185879+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.186857+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:31.186857+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.208716+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:31.209698+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.238635+00:00"}
+{"event": "agent_message", "message": "--------", "_ts": "2026-05-05T14:19:31.239642+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.264399+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.264399+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:31.289816+00:00"}
+{"event": "agent_message", "message": "上午", "_ts": "2026-05-05T14:19:31.289816+00:00"}
+{"event": "agent_message", "message": "8", "_ts": "2026-05-05T14:19:31.330215+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:31.345208+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:31.346184+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:31.392802+00:00"}
+{"event": "agent_message", "message": "11", "_ts": "2026-05-05T14:19:31.393787+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:31.431169+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:31.432731+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:31.433760+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.433760+00:00"}
+{"event": "agent_message", "message": "🌿", "_ts": "2026-05-05T14:19:31.455551+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:31.484335+00:00"}
+{"event": "agent_message", "message": "颐", "_ts": "2026-05-05T14:19:31.485315+00:00"}
+{"event": "agent_message", "message": "和", "_ts": "2026-05-05T14:19:31.514320+00:00"}
+{"event": "agent_message", "message": "园", "_ts": "2026-05-05T14:19:31.515297+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:31.553521+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:31.554502+00:00"}
+{"event": "agent_message", "message": "旺季", "_ts": "2026-05-05T14:19:31.567863+00:00"}
+{"event": "agent_message", "message": "门票", "_ts": "2026-05-05T14:19:31.591282+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:31.592355+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:31.621923+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:31.622483+00:00"}
+{"event": "agent_message", "message": "联", "_ts": "2026-05-05T14:19:31.649314+00:00"}
+{"event": "agent_message", "message": "票", "_ts": "2026-05-05T14:19:31.650290+00:00"}
+{"event": "agent_message", "message": "60", "_ts": "2026-05-05T14:19:31.690481+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:31.691498+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:31.706594+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:31.707572+00:00"}
+{"event": "agent_message", "message": "游览", "_ts": "2026-05-05T14:19:31.731541+00:00"}
+{"event": "agent_message", "message": "昆明", "_ts": "2026-05-05T14:19:31.758081+00:00"}
+{"event": "agent_message", "message": "湖", "_ts": "2026-05-05T14:19:31.759059+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:31.786208+00:00"}
+{"event": "agent_message", "message": "长廊", "_ts": "2026-05-05T14:19:31.787184+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:31.817608+00:00"}
+{"event": "agent_message", "message": "佛", "_ts": "2026-05-05T14:19:31.818580+00:00"}
+{"event": "agent_message", "message": "香", "_ts": "2026-05-05T14:19:31.842255+00:00"}
+{"event": "agent_message", "message": "阁", "_ts": "2026-05-05T14:19:31.843237+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:31.884223+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:31.899584+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:31.929644+00:00"}
+{"event": "agent_message", "message": "东", "_ts": "2026-05-05T14:19:31.957358+00:00"}
+{"event": "agent_message", "message": "宫", "_ts": "2026-05-05T14:19:31.958337+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:31.984061+00:00"}
+{"event": "agent_message", "message": "进", "_ts": "2026-05-05T14:19:31.985036+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:32.014429+00:00"}
+{"event": "agent_message", "message": "乘", "_ts": "2026-05-05T14:19:32.014429+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:32.040285+00:00"}
+{"event": "agent_message", "message": "4", "_ts": "2026-05-05T14:19:32.069662+00:00"}
+{"event": "agent_message", "message": "号线", "_ts": "2026-05-05T14:19:32.096434+00:00"}
+{"event": "agent_message", "message": "直达", "_ts": "2026-05-05T14:19:32.096434+00:00"}
+{"event": "agent_message", "message": "「", "_ts": "2026-05-05T14:19:32.125939+00:00"}
+{"event": "agent_message", "message": "北", "_ts": "2026-05-05T14:19:32.152549+00:00"}
+{"event": "agent_message", "message": "宫", "_ts": "2026-05-05T14:19:32.153533+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:32.182016+00:00"}
+{"event": "agent_message", "message": "」", "_ts": "2026-05-05T14:19:32.183522+00:00"}
+{"event": "agent_message", "message": "站", "_ts": "2026-05-05T14:19:32.224038+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:32.236731+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:32.237324+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.238308+00:00"}
+{"event": "agent_message", "message": "中午", "_ts": "2026-05-05T14:19:32.265840+00:00"}
+{"event": "agent_message", "message": "11", "_ts": "2026-05-05T14:19:32.303771+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:32.303771+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:32.321711+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:32.321711+00:00"}
+{"event": "agent_message", "message": "12", "_ts": "2026-05-05T14:19:32.362490+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:32.362490+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:32.378712+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.380752+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:32.405334+00:00"}
+{"event": "agent_message", "message": "🥟", "_ts": "2026-05-05T14:19:32.434207+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.462545+00:00"}
+{"event": "agent_message", "message": "午餐", "_ts": "2026-05-05T14:19:32.463527+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:32.489385+00:00"}
+{"event": "agent_message", "message": "老", "_ts": "2026-05-05T14:19:32.490362+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:32.519596+00:00"}
+{"event": "agent_message", "message": "卤", "_ts": "2026-05-05T14:19:32.519596+00:00"}
+{"event": "agent_message", "message": "煮", "_ts": "2026-05-05T14:19:32.545543+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:32.546520+00:00"}
+{"event": "agent_message", "message": "炒", "_ts": "2026-05-05T14:19:32.573589+00:00"}
+{"event": "agent_message", "message": "肝", "_ts": "2026-05-05T14:19:32.574565+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:32.605174+00:00"}
+{"event": "agent_message", "message": "包子", "_ts": "2026-05-05T14:19:32.629610+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.630588+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:32.658871+00:00"}
+{"event": "agent_message", "message": "推荐", "_ts": "2026-05-05T14:19:32.659847+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:32.692275+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.693258+00:00"}
+{"event": "agent_message", "message": "姚", "_ts": "2026-05-05T14:19:32.926084+00:00"}
+{"event": "agent_message", "message": "记", "_ts": "2026-05-05T14:19:32.927066+00:00"}
+{"event": "agent_message", "message": "炒", "_ts": "2026-05-05T14:19:32.929998+00:00"}
+{"event": "agent_message", "message": "肝", "_ts": "2026-05-05T14:19:32.929998+00:00"}
+{"event": "agent_message", "message": "店", "_ts": "2026-05-05T14:19:32.931503+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.931503+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:32.932559+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.933540+00:00"}
+{"event": "agent_message", "message": "小肠", "_ts": "2026-05-05T14:19:32.933540+00:00"}
+{"event": "agent_message", "message": "陈", "_ts": "2026-05-05T14:19:32.934517+00:00"}
+{"event": "agent_message", "message": "卤", "_ts": "2026-05-05T14:19:32.934517+00:00"}
+{"event": "agent_message", "message": "煮", "_ts": "2026-05-05T14:19:32.935520+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:32.936501+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:32.937477+00:00"}
+{"event": "agent_message", "message": "人均", "_ts": "2026-05-05T14:19:32.937477+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:32.949894+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:32.949894+00:00"}
+{"event": "agent_message", "message": "50", "_ts": "2026-05-05T14:19:32.964460+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:32.965435+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:32.993279+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:32.994256+00:00"}
+{"event": "agent_message", "message": "体验", "_ts": "2026-05-05T14:19:33.034062+00:00"}
+{"event": "agent_message", "message": "地道", "_ts": "2026-05-05T14:19:33.048490+00:00"}
+{"event": "agent_message", "message": "京", "_ts": "2026-05-05T14:19:33.049469+00:00"}
+{"event": "agent_message", "message": "味儿", "_ts": "2026-05-05T14:19:33.080546+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:33.189073+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:33.190047+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:33.190047+00:00"}
+{"event": "agent_message", "message": "下午", "_ts": "2026-05-05T14:19:33.192622+00:00"}
+{"event": "agent_message", "message": "13", "_ts": "2026-05-05T14:19:33.193605+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:33.193605+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:33.194582+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:33.195558+00:00"}
+{"event": "agent_message", "message": "15", "_ts": "2026-05-05T14:19:33.232421+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:33.233405+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:33.241476+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:33.242544+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:33.269151+00:00"}
+{"event": "agent_message", "message": "🏮", "_ts": "2026-05-05T14:19:33.297659+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:33.325745+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:33.325745+00:00"}
+{"event": "agent_message", "message": "坛", "_ts": "2026-05-05T14:19:33.373675+00:00"}
+{"event": "agent_message", "message": "公园", "_ts": "2026-05-05T14:19:33.374682+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:33.381240+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:33.381803+00:00"}
+{"event": "agent_message", "message": "联", "_ts": "2026-05-05T14:19:33.409175+00:00"}
+{"event": "agent_message", "message": "票", "_ts": "2026-05-05T14:19:33.410151+00:00"}
+{"event": "agent_message", "message": "34", "_ts": "2026-05-05T14:19:33.436158+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:33.437135+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:33.469752+00:00"}
+{"event": "agent_message", "message": "—", "_ts": "2026-05-05T14:19:33.471405+00:00"}
+{"event": "agent_message", "message": "祈", "_ts": "2026-05-05T14:19:33.510340+00:00"}
+{"event": "agent_message", "message": "年", "_ts": "2026-05-05T14:19:33.521304+00:00"}
+{"event": "agent_message", "message": "殿", "_ts": "2026-05-05T14:19:33.522330+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:33.593320+00:00"}
+{"event": "agent_message", "message": "回", "_ts": "2026-05-05T14:19:33.594297+00:00"}
+{"event": "agent_message", "message": "音", "_ts": "2026-05-05T14:19:33.635389+00:00"}
+{"event": "agent_message", "message": "壁", "_ts": "2026-05-05T14:19:33.635389+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:33.636362+00:00"}
+{"event": "agent_message", "message": "感受", "_ts": "2026-05-05T14:19:33.637367+00:00"}
+{"event": "agent_message", "message": "古代", "_ts": "2026-05-05T14:19:33.637367+00:00"}
+{"event": "agent_message", "message": "祭", "_ts": "2026-05-05T14:19:33.638349+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:33.663778+00:00"}
+{"event": "agent_message", "message": "文化", "_ts": "2026-05-05T14:19:33.664761+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:33.690496+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:33.716576+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:33.717555+00:00"}
+{"event": "agent_message", "message": "号线", "_ts": "2026-05-05T14:19:33.743194+00:00"}
+{"event": "agent_message", "message": "「", "_ts": "2026-05-05T14:19:33.744177+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:33.771386+00:00"}
+{"event": "agent_message", "message": "坛", "_ts": "2026-05-05T14:19:33.772453+00:00"}
+{"event": "agent_message", "message": "东", "_ts": "2026-05-05T14:19:33.799225+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:33.800201+00:00"}
+{"event": "agent_message", "message": "」", "_ts": "2026-05-05T14:19:33.841218+00:00"}
+{"event": "agent_message", "message": "站", "_ts": "2026-05-05T14:19:33.842248+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:33.852738+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:33.853723+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:33.882515+00:00"}
+{"event": "agent_message", "message": "下午", "_ts": "2026-05-05T14:19:33.883036+00:00"}
+{"event": "agent_message", "message": "15", "_ts": "2026-05-05T14:19:33.909270+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:33.936300+00:00"}
+{"event": "agent_message", "message": "30", "_ts": "2026-05-05T14:19:33.937277+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:33.982474+00:00"}
+{"event": "agent_message", "message": "17", "_ts": "2026-05-05T14:19:33.984082+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:33.991544+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:33.993105+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.019879+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:34.021385+00:00"}
+{"event": "agent_message", "message": "☕", "_ts": "2026-05-05T14:19:34.045430+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.073751+00:00"}
+{"event": "agent_message", "message": "前", "_ts": "2026-05-05T14:19:34.074733+00:00"}
+{"event": "agent_message", "message": "门", "_ts": "2026-05-05T14:19:34.101535+00:00"}
+{"event": "agent_message", "message": "大街", "_ts": "2026-05-05T14:19:34.102559+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:34.128839+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:34.158109+00:00"}
+{"event": "agent_message", "message": "坊", "_ts": "2026-05-05T14:19:34.164269+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.184667+00:00"}
+{"event": "agent_message", "message": "散步", "_ts": "2026-05-05T14:19:34.211437+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:34.211437+00:00"}
+{"event": "agent_message", "message": "逛", "_ts": "2026-05-05T14:19:34.240489+00:00"}
+{"event": "agent_message", "message": "一", "_ts": "2026-05-05T14:19:34.240489+00:00"}
+{"event": "agent_message", "message": "逛", "_ts": "2026-05-05T14:19:34.269862+00:00"}
+{"event": "agent_message", "message": "老", "_ts": "2026-05-05T14:19:34.271368+00:00"}
+{"event": "agent_message", "message": "字号", "_ts": "2026-05-05T14:19:34.312657+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:34.313638+00:00"}
+{"event": "agent_message", "message": "全", "_ts": "2026-05-05T14:19:34.324548+00:00"}
+{"event": "agent_message", "message": "聚", "_ts": "2026-05-05T14:19:34.451717+00:00"}
+{"event": "agent_message", "message": "德", "_ts": "2026-05-05T14:19:34.452810+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:34.453793+00:00"}
+{"event": "agent_message", "message": "同仁", "_ts": "2026-05-05T14:19:34.454768+00:00"}
+{"event": "agent_message", "message": "堂", "_ts": "2026-05-05T14:19:34.455745+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:34.455745+00:00"}
+{"event": "agent_message", "message": "内", "_ts": "2026-05-05T14:19:34.456721+00:00"}
+{"event": "agent_message", "message": "联", "_ts": "2026-05-05T14:19:34.538712+00:00"}
+{"event": "agent_message", "message": "升", "_ts": "2026-05-05T14:19:34.539689+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:34.541194+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:34.541194+00:00"}
+{"event": "agent_message", "message": "去", "_ts": "2026-05-05T14:19:34.544729+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.544729+00:00"}
+{"event": "agent_message", "message": "Page", "_ts": "2026-05-05T14:19:34.563411+00:00"}
+{"event": "agent_message", "message": "one", "_ts": "2026-05-05T14:19:34.564387+00:00"}
+{"event": "agent_message", "message": "书店", "_ts": "2026-05-05T14:19:34.583170+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.583170+00:00"}
+{"event": "agent_message", "message": "喝", "_ts": "2026-05-05T14:19:34.608317+00:00"}
+{"event": "agent_message", "message": "杯", "_ts": "2026-05-05T14:19:34.637839+00:00"}
+{"event": "agent_message", "message": "咖啡", "_ts": "2026-05-05T14:19:34.638815+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:34.666056+00:00"}
+{"event": "agent_message", "message": "离", "_ts": "2026-05-05T14:19:34.701368+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:34.721268+00:00"}
+{"event": "agent_message", "message": "坛", "_ts": "2026-05-05T14:19:34.749858+00:00"}
+{"event": "agent_message", "message": "不远", "_ts": "2026-05-05T14:19:34.751367+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:34.778808+00:00"}
+{"event": "agent_message", "message": "打车", "_ts": "2026-05-05T14:19:34.779812+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:34.806489+00:00"}
+{"event": "agent_message", "message": "15", "_ts": "2026-05-05T14:19:34.839511+00:00"}
+{"event": "agent_message", "message": "分钟", "_ts": "2026-05-05T14:19:34.840515+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:34.866498+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:34.868451+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.894159+00:00"}
+{"event": "agent_message", "message": "傍晚", "_ts": "2026-05-05T14:19:34.895140+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:34.920186+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:34.921719+00:00"}
+{"event": "agent_message", "message": "🚄", "_ts": "2026-05-05T14:19:35.005553+00:00"}
+{"event": "agent_message", "message": "前往", "_ts": "2026-05-05T14:19:35.035648+00:00"}
+{"event": "agent_message", "message": "机场", "_ts": "2026-05-05T14:19:35.036624+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:35.064544+00:00"}
+{"event": "agent_message", "message": "高铁", "_ts": "2026-05-05T14:19:35.065518+00:00"}
+{"event": "agent_message", "message": "站", "_ts": "2026-05-05T14:19:35.093137+00:00"}
+{"event": "agent_message", "message": "返", "_ts": "2026-05-05T14:19:35.094117+00:00"}
+{"event": "agent_message", "message": "程", "_ts": "2026-05-05T14:19:35.131607+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.132653+00:00"}
+{"event": "agent_message", "message": "预留", "_ts": "2026-05-05T14:19:35.225314+00:00"}
+{"event": "agent_message", "message": "1", "_ts": "2026-05-05T14:19:35.227302+00:00"}
+{"event": "agent_message", "message": ".", "_ts": "2026-05-05T14:19:35.227302+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:35.228278+00:00"}
+{"event": "agent_message", "message": "小时", "_ts": "2026-05-05T14:19:35.228278+00:00"}
+{"event": "agent_message", "message": "交通", "_ts": "2026-05-05T14:19:35.246882+00:00"}
+{"event": "agent_message", "message": "时间", "_ts": "2026-05-05T14:19:35.247861+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.262009+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:35.289501+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:35.290475+00:00"}
+{"event": "agent_message", "message": "💰", "_ts": "2026-05-05T14:19:35.318587+00:00"}
+{"event": "agent_message", "message": "预算", "_ts": "2026-05-05T14:19:35.346088+00:00"}
+{"event": "agent_message", "message": "概", "_ts": "2026-05-05T14:19:35.347066+00:00"}
+{"event": "agent_message", "message": "览", "_ts": "2026-05-05T14:19:35.375174+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:35.376279+00:00"}
+{"event": "agent_message", "message": "中等", "_ts": "2026-05-05T14:19:35.403418+00:00"}
+{"event": "agent_message", "message": "档", "_ts": "2026-05-05T14:19:35.404395+00:00"}
+{"event": "agent_message", "message": "位", "_ts": "2026-05-05T14:19:35.431647+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:35.460365+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.461403+00:00"}
+{"event": "agent_message", "message": "项目", "_ts": "2026-05-05T14:19:35.488050+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.516225+00:00"}
+{"event": "agent_message", "message": "预估", "_ts": "2026-05-05T14:19:35.546144+00:00"}
+{"event": "agent_message", "message": "费用", "_ts": "2026-05-05T14:19:35.547121+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:35.578046+00:00"}
+{"event": "agent_message", "message": "单人", "_ts": "2026-05-05T14:19:35.579021+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:35.604268+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.639194+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.640174+00:00"}
+{"event": "agent_message", "message": "------", "_ts": "2026-05-05T14:19:35.640174+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.660294+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:35.661298+00:00"}
+{"event": "agent_message", "message": "----------------", "_ts": "2026-05-05T14:19:35.688922+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:35.691036+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.715102+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.716076+00:00"}
+{"event": "agent_message", "message": "🏨", "_ts": "2026-05-05T14:19:35.771628+00:00"}
+{"event": "agent_message", "message": "住宿", "_ts": "2026-05-05T14:19:35.799717+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:35.801225+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:35.828173+00:00"}
+{"event": "agent_message", "message": "晚", "_ts": "2026-05-05T14:19:35.829150+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:35.856350+00:00"}
+{"event": "agent_message", "message": "经济", "_ts": "2026-05-05T14:19:35.857857+00:00"}
+{"event": "agent_message", "message": "型", "_ts": "2026-05-05T14:19:35.886378+00:00"}
+{"event": "agent_message", "message": "连锁", "_ts": "2026-05-05T14:19:35.887356+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:35.927557+00:00"}
+{"event": "agent_message", "message": "中", "_ts": "2026-05-05T14:19:35.944608+00:00"}
+{"event": "agent_message", "message": "档", "_ts": "2026-05-05T14:19:35.945584+00:00"}
+{"event": "agent_message", "message": "酒店", "_ts": "2026-05-05T14:19:35.972447+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:35.973503+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:35.999381+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:36.047341+00:00"}
+{"event": "agent_message", "message": "800", "_ts": "2026-05-05T14:19:36.055828+00:00"}
+{"event": "agent_message", "message": "~", "_ts": "2026-05-05T14:19:36.055828+00:00"}
+{"event": "agent_message", "message": "1", "_ts": "2026-05-05T14:19:36.096956+00:00"}
+{"event": "agent_message", "message": ",", "_ts": "2026-05-05T14:19:36.098936+00:00"}
+{"event": "agent_message", "message": "200", "_ts": "2026-05-05T14:19:36.115006+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:36.141717+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:36.171230+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:36.172367+00:00"}
+{"event": "agent_message", "message": "🍜", "_ts": "2026-05-05T14:19:36.200032+00:00"}
+{"event": "agent_message", "message": "餐饮", "_ts": "2026-05-05T14:19:36.226326+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:36.255904+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:36.256880+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:36.300088+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:36.300088+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:36.311631+00:00"}
+{"event": "agent_message", "message": "7", "_ts": "2026-05-05T14:19:36.312177+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:36.342104+00:00"}
+{"event": "agent_message", "message": "8", "_ts": "2026-05-05T14:19:36.342614+00:00"}
+{"event": "agent_message", "message": "餐", "_ts": "2026-05-05T14:19:36.369483+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:36.370465+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:36.399073+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:36.427137+00:00"}
+{"event": "agent_message", "message": "600", "_ts": "2026-05-05T14:19:36.455721+00:00"}
+{"event": "agent_message", "message": "~", "_ts": "2026-05-05T14:19:36.455721+00:00"}
+{"event": "agent_message", "message": "900", "_ts": "2026-05-05T14:19:36.495908+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:36.512522+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:36.543260+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:36.544233+00:00"}
+{"event": "agent_message", "message": "🎫", "_ts": "2026-05-05T14:19:36.568384+00:00"}
+{"event": "agent_message", "message": "门票", "_ts": "2026-05-05T14:19:36.598419+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:36.661519+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:36.662583+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:36.675728+00:00"}
+{"event": "agent_message", "message": "景", "_ts": "2026-05-05T14:19:36.675728+00:00"}
+{"event": "agent_message", "message": "山", "_ts": "2026-05-05T14:19:36.708020+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:36.708996+00:00"}
+{"event": "agent_message", "message": "颐", "_ts": "2026-05-05T14:19:36.723627+00:00"}
+{"event": "agent_message", "message": "和", "_ts": "2026-05-05T14:19:36.724604+00:00"}
+{"event": "agent_message", "message": "园", "_ts": "2026-05-05T14:19:36.746274+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:36.748382+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:36.766917+00:00"}
+{"event": "agent_message", "message": "坛", "_ts": "2026-05-05T14:19:36.767895+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:36.799568+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:36.800575+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:36.823758+00:00"}
+{"event": "agent_message", "message": "130", "_ts": "2026-05-05T14:19:36.864207+00:00"}
+{"event": "agent_message", "message": "~", "_ts": "2026-05-05T14:19:36.894277+00:00"}
+{"event": "agent_message", "message": "170", "_ts": "2026-05-05T14:19:36.895285+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:36.913484+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.035437+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.036422+00:00"}
+{"event": "agent_message", "message": "🚇", "_ts": "2026-05-05T14:19:37.037388+00:00"}
+{"event": "agent_message", "message": "交通", "_ts": "2026-05-05T14:19:37.037388+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:37.038366+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:37.057686+00:00"}
+{"event": "agent_message", "message": "+", "_ts": "2026-05-05T14:19:37.058663+00:00"}
+{"event": "agent_message", "message": "少量", "_ts": "2026-05-05T14:19:37.087541+00:00"}
+{"event": "agent_message", "message": "打车", "_ts": "2026-05-05T14:19:37.088517+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:37.105818+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.106800+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:37.137608+00:00"}
+{"event": "agent_message", "message": "100", "_ts": "2026-05-05T14:19:37.164398+00:00"}
+{"event": "agent_message", "message": "~", "_ts": "2026-05-05T14:19:37.205199+00:00"}
+{"event": "agent_message", "message": "150", "_ts": "2026-05-05T14:19:37.206178+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:37.219567+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.292536+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.294670+00:00"}
+{"event": "agent_message", "message": "🎭", "_ts": "2026-05-05T14:19:37.309044+00:00"}
+{"event": "agent_message", "message": "可选", "_ts": "2026-05-05T14:19:37.338388+00:00"}
+{"event": "agent_message", "message": "娱乐", "_ts": "2026-05-05T14:19:37.365377+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:37.366353+00:00"}
+{"event": "agent_message", "message": "相声", "_ts": "2026-05-05T14:19:37.394522+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:37.395493+00:00"}
+{"event": "agent_message", "message": "演出", "_ts": "2026-05-05T14:19:37.422115+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:37.422640+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.482312+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:37.489253+00:00"}
+{"event": "agent_message", "message": "0", "_ts": "2026-05-05T14:19:37.575640+00:00"}
+{"event": "agent_message", "message": "~", "_ts": "2026-05-05T14:19:37.576625+00:00"}
+{"event": "agent_message", "message": "300", "_ts": "2026-05-05T14:19:37.578609+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:37.580563+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.596625+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.597606+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:37.598623+00:00"}
+{"event": "agent_message", "message": "合计", "_ts": "2026-05-05T14:19:37.624595+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:37.625571+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.649062+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:37.650044+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:37.677091+00:00"}
+{"event": "agent_message", "message": "1", "_ts": "2026-05-05T14:19:37.705468+00:00"}
+{"event": "agent_message", "message": ",", "_ts": "2026-05-05T14:19:37.706472+00:00"}
+{"event": "agent_message", "message": "600", "_ts": "2026-05-05T14:19:37.734785+00:00"}
+{"event": "agent_message", "message": "~", "_ts": "2026-05-05T14:19:37.769899+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:37.769899+00:00"}
+{"event": "agent_message", "message": ",", "_ts": "2026-05-05T14:19:37.821334+00:00"}
+{"event": "agent_message", "message": "700", "_ts": "2026-05-05T14:19:37.822372+00:00"}
+{"event": "agent_message", "message": "元", "_ts": "2026-05-05T14:19:37.849860+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:37.891286+00:00"}
+{"event": "agent_message", "message": "|", "_ts": "2026-05-05T14:19:37.906312+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:37.907290+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:37.908267+00:00"}
+{"event": "agent_message", "message": "🚇", "_ts": "2026-05-05T14:19:37.965675+00:00"}
+{"event": "agent_message", "message": "交通", "_ts": "2026-05-05T14:19:37.989346+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:37.990323+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:38.019300+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.047388+00:00"}
+{"event": "agent_message", "message": "首选", "_ts": "2026-05-05T14:19:38.048364+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:38.074562+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.075544+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:38.103514+00:00"}
+{"event": "agent_message", "message": "下载", "_ts": "2026-05-05T14:19:38.104491+00:00"}
+{"event": "agent_message", "message": "「", "_ts": "2026-05-05T14:19:38.132336+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.158441+00:00"}
+{"event": "agent_message", "message": "亿", "_ts": "2026-05-05T14:19:38.223725+00:00"}
+{"event": "agent_message", "message": "通行", "_ts": "2026-05-05T14:19:38.224700+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.226205+00:00"}
+{"event": "agent_message", "message": "」", "_ts": "2026-05-05T14:19:38.226205+00:00"}
+{"event": "agent_message", "message": "App", "_ts": "2026-05-05T14:19:38.245273+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:38.277280+00:00"}
+{"event": "agent_message", "message": "开通", "_ts": "2026-05-05T14:19:38.278284+00:00"}
+{"event": "agent_message", "message": "支付宝", "_ts": "2026-05-05T14:19:38.302836+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:38.302836+00:00"}
+{"event": "agent_message", "message": "微信", "_ts": "2026-05-05T14:19:38.332479+00:00"}
+{"event": "agent_message", "message": "乘车", "_ts": "2026-05-05T14:19:38.333461+00:00"}
+{"event": "agent_message", "message": "码", "_ts": "2026-05-05T14:19:38.360636+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:38.362234+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:38.387860+00:00"}
+{"event": "agent_message", "message": "地铁", "_ts": "2026-05-05T14:19:38.415850+00:00"}
+{"event": "agent_message", "message": "覆盖", "_ts": "2026-05-05T14:19:38.416827+00:00"}
+{"event": "agent_message", "message": "绝大部分", "_ts": "2026-05-05T14:19:38.442328+00:00"}
+{"event": "agent_message", "message": "景点", "_ts": "2026-05-05T14:19:38.476592+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:38.690300+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.691305+00:00"}
+{"event": "agent_message", "message": "次", "_ts": "2026-05-05T14:19:38.692490+00:00"}
+{"event": "agent_message", "message": "选", "_ts": "2026-05-05T14:19:38.693550+00:00"}
+{"event": "agent_message", "message": "打车", "_ts": "2026-05-05T14:19:38.693550+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.694532+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:38.695508+00:00"}
+{"event": "agent_message", "message": "高峰期", "_ts": "2026-05-05T14:19:38.696485+00:00"}
+{"event": "agent_message", "message": "堵", "_ts": "2026-05-05T14:19:38.696485+00:00"}
+{"event": "agent_message", "message": "车", "_ts": "2026-05-05T14:19:38.697462+00:00"}
+{"event": "agent_message", "message": "严重", "_ts": "2026-05-05T14:19:38.698438+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:38.698438+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:38.699442+00:00"}
+{"event": "agent_message", "message": "短", "_ts": "2026-05-05T14:19:38.721600+00:00"}
+{"event": "agent_message", "message": "途", "_ts": "2026-05-05T14:19:38.749725+00:00"}
+{"event": "agent_message", "message": "或", "_ts": "2026-05-05T14:19:38.750702+00:00"}
+{"event": "agent_message", "message": "非", "_ts": "2026-05-05T14:19:38.775775+00:00"}
+{"event": "agent_message", "message": "高峰", "_ts": "2026-05-05T14:19:38.776760+00:00"}
+{"event": "agent_message", "message": "时段", "_ts": "2026-05-05T14:19:38.803346+00:00"}
+{"event": "agent_message", "message": "使用", "_ts": "2026-05-05T14:19:38.804890+00:00"}
+{"event": "agent_message", "message": "滴滴", "_ts": "2026-05-05T14:19:38.829749+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:38.884865+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.885843+00:00"}
+{"event": "agent_message", "message": "共享", "_ts": "2026-05-05T14:19:38.912714+00:00"}
+{"event": "agent_message", "message": "单车", "_ts": "2026-05-05T14:19:38.913700+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:38.939516+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:38.940491+00:00"}
+{"event": "agent_message", "message": "胡同", "_ts": "2026-05-05T14:19:38.978594+00:00"}
+{"event": "agent_message", "message": "区域", "_ts": "2026-05-05T14:19:39.047152+00:00"}
+{"event": "agent_message", "message": "骑行", "_ts": "2026-05-05T14:19:39.048316+00:00"}
+{"event": "agent_message", "message": "非常", "_ts": "2026-05-05T14:19:39.049298+00:00"}
+{"event": "agent_message", "message": "方便", "_ts": "2026-05-05T14:19:39.052344+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:39.079787+00:00"}
+{"event": "agent_message", "message": "美团", "_ts": "2026-05-05T14:19:39.079787+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:39.108571+00:00"}
+{"event": "agent_message", "message": "哈", "_ts": "2026-05-05T14:19:39.109547+00:00"}
+{"event": "agent_message", "message": "啰", "_ts": "2026-05-05T14:19:39.136438+00:00"}
+{"event": "agent_message", "message": "单车", "_ts": "2026-05-05T14:19:39.137416+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:39.167008+00:00"}
+{"event": "agent_message", "message": "扫码", "_ts": "2026-05-05T14:19:39.167985+00:00"}
+{"event": "agent_message", "message": "即", "_ts": "2026-05-05T14:19:39.204692+00:00"}
+{"event": "agent_message", "message": "用", "_ts": "2026-05-05T14:19:39.218115+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:39.247743+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:39.248725+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:39.249701+00:00"}
+{"event": "agent_message", "message": "周五", "_ts": "2026-05-05T14:19:39.274264+00:00"}
+{"event": "agent_message", "message": "晚", "_ts": "2026-05-05T14:19:39.274264+00:00"}
+{"event": "agent_message", "message": "避开", "_ts": "2026-05-05T14:19:39.302943+00:00"}
+{"event": "agent_message", "message": "晚", "_ts": "2026-05-05T14:19:39.302943+00:00"}
+{"event": "agent_message", "message": "高峰", "_ts": "2026-05-05T14:19:39.344159+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:39.345133+00:00"}
+{"event": "agent_message", "message": "17", "_ts": "2026-05-05T14:19:39.360384+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:39.384724+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:39.385700+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:39.413601+00:00"}
+{"event": "agent_message", "message": "19", "_ts": "2026-05-05T14:19:39.414578+00:00"}
+{"event": "agent_message", "message": ":", "_ts": "2026-05-05T14:19:39.452927+00:00"}
+{"event": "agent_message", "message": "00", "_ts": "2026-05-05T14:19:39.454547+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:39.468995+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:39.469971+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:39.497454+00:00"}
+{"event": "agent_message", "message": "周", "_ts": "2026-05-05T14:19:39.498431+00:00"}
+{"event": "agent_message", "message": "日下午", "_ts": "2026-05-05T14:19:39.525720+00:00"}
+{"event": "agent_message", "message": "返", "_ts": "2026-05-05T14:19:39.552641+00:00"}
+{"event": "agent_message", "message": "程", "_ts": "2026-05-05T14:19:39.579712+00:00"}
+{"event": "agent_message", "message": "也", "_ts": "2026-05-05T14:19:39.579712+00:00"}
+{"event": "agent_message", "message": "注意", "_ts": "2026-05-05T14:19:39.718161+00:00"}
+{"event": "agent_message", "message": "避开", "_ts": "2026-05-05T14:19:39.722720+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:39.727744+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:39.728722+00:00"}
+{"event": "agent_message", "message": "⚠", "_ts": "2026-05-05T14:19:39.757771+00:00"}
+{"event": "agent_message", "message": "️", "_ts": "2026-05-05T14:19:39.773352+00:00"}
+{"event": "agent_message", "message": "重要", "_ts": "2026-05-05T14:19:39.801482+00:00"}
+{"event": "agent_message", "message": "提示", "_ts": "2026-05-05T14:19:39.802699+00:00"}
+{"event": "agent_message", "message": "1", "_ts": "2026-05-05T14:19:39.826384+00:00"}
+{"event": "agent_message", "message": ".", "_ts": "2026-05-05T14:19:39.853559+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:39.854546+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:39.884936+00:00"}
+{"event": "agent_message", "message": "一定要", "_ts": "2026-05-05T14:19:39.885913+00:00"}
+{"event": "agent_message", "message": "提前", "_ts": "2026-05-05T14:19:40.016413+00:00"}
+{"event": "agent_message", "message": "预约", "_ts": "2026-05-05T14:19:40.016413+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:40.017918+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:40.019048+00:00"}
+{"event": "agent_message", "message": "通常", "_ts": "2026-05-05T14:19:40.019048+00:00"}
+{"event": "agent_message", "message": "需", "_ts": "2026-05-05T14:19:40.020030+00:00"}
+{"event": "agent_message", "message": "提前", "_ts": "2026-05-05T14:19:40.020030+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:40.020030+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:40.022592+00:00"}
+{"event": "agent_message", "message": "7", "_ts": "2026-05-05T14:19:40.022592+00:00"}
+{"event": "agent_message", "message": "天", "_ts": "2026-05-05T14:19:40.055414+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:40.055414+00:00"}
+{"event": "agent_message", "message": "在小", "_ts": "2026-05-05T14:19:40.075136+00:00"}
+{"event": "agent_message", "message": "程序", "_ts": "2026-05-05T14:19:40.102270+00:00"}
+{"event": "agent_message", "message": "「", "_ts": "2026-05-05T14:19:40.102858+00:00"}
+{"event": "agent_message", "message": "故宫", "_ts": "2026-05-05T14:19:40.131655+00:00"}
+{"event": "agent_message", "message": "博物院", "_ts": "2026-05-05T14:19:40.132672+00:00"}
+{"event": "agent_message", "message": "」", "_ts": "2026-05-05T14:19:40.157803+00:00"}
+{"event": "agent_message", "message": "预约", "_ts": "2026-05-05T14:19:40.158781+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:40.185165+00:00"}
+{"event": "agent_message", "message": "2", "_ts": "2026-05-05T14:19:40.186169+00:00"}
+{"event": "agent_message", "message": ".", "_ts": "2026-05-05T14:19:40.213695+00:00"}
+{"event": "agent_message", "message": "所有", "_ts": "2026-05-05T14:19:40.241428+00:00"}
+{"event": "agent_message", "message": "景区", "_ts": "2026-05-05T14:19:40.241963+00:00"}
+{"event": "agent_message", "message": "均", "_ts": "2026-05-05T14:19:40.270014+00:00"}
+{"event": "agent_message", "message": "需", "_ts": "2026-05-05T14:19:40.297884+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:40.298860+00:00"}
+{"event": "agent_message", "message": "实名", "_ts": "2026-05-05T14:19:40.324373+00:00"}
+{"event": "agent_message", "message": "身份证", "_ts": "2026-05-05T14:19:40.352010+00:00"}
+{"event": "agent_message", "message": "件", "_ts": "2026-05-05T14:19:40.381422+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:40.407482+00:00"}
+{"event": "agent_message", "message": "入园", "_ts": "2026-05-05T14:19:40.436177+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:40.462114+00:00"}
+{"event": "agent_message", "message": ".", "_ts": "2026-05-05T14:19:40.517226+00:00"}
+{"event": "agent_message", "message": "穿", "_ts": "2026-05-05T14:19:40.519179+00:00"}
+{"event": "agent_message", "message": "舒适的", "_ts": "2026-05-05T14:19:40.542477+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:40.543998+00:00"}
+{"event": "agent_message", "message": "步行", "_ts": "2026-05-05T14:19:40.569428+00:00"}
+{"event": "agent_message", "message": "鞋", "_ts": "2026-05-05T14:19:40.570405+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:40.598488+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:40.599465+00:00"}
+{"event": "agent_message", "message": "每天", "_ts": "2026-05-05T14:19:40.624832+00:00"}
+{"event": "agent_message", "message": "步", "_ts": "2026-05-05T14:19:40.625815+00:00"}
+{"event": "agent_message", "message": "数", "_ts": "2026-05-05T14:19:40.654603+00:00"}
+{"event": "agent_message", "message": "约", "_ts": "2026-05-05T14:19:40.654603+00:00"}
+{"event": "agent_message", "message": "15", "_ts": "2026-05-05T14:19:40.679848+00:00"}
+{"event": "agent_message", "message": ",", "_ts": "2026-05-05T14:19:40.679848+00:00"}
+{"event": "agent_message", "message": "000", "_ts": "2026-05-05T14:19:40.705648+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:40.706628+00:00"}
+{"event": "agent_message", "message": "20", "_ts": "2026-05-05T14:19:40.734481+00:00"}
+{"event": "agent_message", "message": ",", "_ts": "2026-05-05T14:19:40.735464+00:00"}
+{"event": "agent_message", "message": "000", "_ts": "2026-05-05T14:19:40.761633+00:00"}
+{"event": "agent_message", "message": "步", "_ts": "2026-05-05T14:19:40.762616+00:00"}
+{"event": "agent_message", "message": "4", "_ts": "2026-05-05T14:19:40.817001+00:00"}
+{"event": "agent_message", "message": ".", "_ts": "2026-05-05T14:19:40.817978+00:00"}
+{"event": "agent_message", "message": "天气", "_ts": "2026-05-05T14:19:40.845803+00:00"}
+{"event": "agent_message", "message": "查询", "_ts": "2026-05-05T14:19:40.847308+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:40.870550+00:00"}
+{"event": "agent_message", "message": "建议", "_ts": "2026-05-05T14:19:40.871554+00:00"}
+{"event": "agent_message", "message": "出发", "_ts": "2026-05-05T14:19:40.897933+00:00"}
+{"event": "agent_message", "message": "前", "_ts": "2026-05-05T14:19:40.925332+00:00"}
+{"event": "agent_message", "message": "查看", "_ts": "2026-05-05T14:19:40.926306+00:00"}
+{"event": "agent_message", "message": "北京", "_ts": "2026-05-05T14:19:40.955544+00:00"}
+{"event": "agent_message", "message": "天气预报", "_ts": "2026-05-05T14:19:40.955544+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:40.980313+00:00"}
+{"event": "agent_message", "message": "春秋", "_ts": "2026-05-05T14:19:40.981321+00:00"}
+{"event": "agent_message", "message": "最佳", "_ts": "2026-05-05T14:19:41.008789+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:41.034055+00:00"}
+{"event": "agent_message", "message": "夏季", "_ts": "2026-05-05T14:19:41.035036+00:00"}
+{"event": "agent_message", "message": "注意", "_ts": "2026-05-05T14:19:41.061506+00:00"}
+{"event": "agent_message", "message": "防", "_ts": "2026-05-05T14:19:41.063061+00:00"}
+{"event": "agent_message", "message": "暑", "_ts": "2026-05-05T14:19:41.103578+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:41.103578+00:00"}
+{"event": "agent_message", "message": "冬季", "_ts": "2026-05-05T14:19:41.119470+00:00"}
+{"event": "agent_message", "message": "注意", "_ts": "2026-05-05T14:19:41.119470+00:00"}
+{"event": "agent_message", "message": "保暖", "_ts": "2026-05-05T14:19:41.143786+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:41.211634+00:00"}
+{"event": "agent_message", "message": "需要", "_ts": "2026-05-05T14:19:41.212617+00:00"}
+{"event": "agent_message", "message": "我", "_ts": "2026-05-05T14:19:41.214602+00:00"}
+{"event": "agent_message", "message": "进一步", "_ts": "2026-05-05T14:19:41.215579+00:00"}
+{"event": "agent_message", "message": "帮", "_ts": "2026-05-05T14:19:41.240529+00:00"}
+{"event": "agent_message", "message": "您", "_ts": "2026-05-05T14:19:41.253280+00:00"}
+{"event": "agent_message", "message": "细化", "_ts": "2026-05-05T14:19:41.253280+00:00"}
+{"event": "agent_message", "message": "某个", "_ts": "2026-05-05T14:19:41.321601+00:00"}
+{"event": "agent_message", "message": "环节", "_ts": "2026-05-05T14:19:41.322583+00:00"}
+{"event": "agent_message", "message": "吗", "_ts": "2026-05-05T14:19:41.323586+00:00"}
+{"event": "agent_message", "message": "？", "_ts": "2026-05-05T14:19:41.333533+00:00"}
+{"event": "agent_message", "message": "比如", "_ts": "2026-05-05T14:19:41.333533+00:00"}
+{"event": "agent_message", "message": "具体", "_ts": "2026-05-05T14:19:41.366674+00:00"}
+{"event": "agent_message", "message": "酒店", "_ts": "2026-05-05T14:19:41.496879+00:00"}
+{"event": "agent_message", "message": "推荐", "_ts": "2026-05-05T14:19:41.497856+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:41.502324+00:00"}
+{"event": "agent_message", "message": "某", "_ts": "2026-05-05T14:19:41.503848+00:00"}
+{"event": "agent_message", "message": "一天的", "_ts": "2026-05-05T14:19:41.503848+00:00"}
+{"event": "agent_message", "message": "更", "_ts": "2026-05-05T14:19:41.505807+00:00"}
+{"event": "agent_message", "message": "详细", "_ts": "2026-05-05T14:19:41.507077+00:00"}
+{"event": "agent_message", "message": "路线", "_ts": "2026-05-05T14:19:41.507619+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:41.527686+00:00"}
+{"event": "agent_message", "message": "或者", "_ts": "2026-05-05T14:19:41.528663+00:00"}
+{"event": "agent_message", "message": "帮", "_ts": "2026-05-05T14:19:41.562481+00:00"}
+{"event": "agent_message", "message": "您", "_ts": "2026-05-05T14:19:41.586897+00:00"}
+{"event": "agent_message", "message": "查", "_ts": "2026-05-05T14:19:41.586897+00:00"}
+{"event": "agent_message", "message": "一下", "_ts": "2026-05-05T14:19:41.628537+00:00"}
+{"event": "agent_message", "message": "当前", "_ts": "2026-05-05T14:19:41.629514+00:00"}
+{"event": "agent_message", "message": "各", "_ts": "2026-05-05T14:19:41.678641+00:00"}
+{"event": "agent_message", "message": "景", "_ts": "2026-05-05T14:19:41.678641+00:00"}
+{"event": "agent_message", "message": "点的", "_ts": "2026-05-05T14:19:41.686534+00:00"}
+{"event": "agent_message", "message": "开放", "_ts": "2026-05-05T14:19:41.718424+00:00"}
+{"event": "agent_message", "message": "时间和", "_ts": "2026-05-05T14:19:41.719400+00:00"}
+{"event": "agent_message", "message": "预约", "_ts": "2026-05-05T14:19:41.723515+00:00"}
+{"event": "agent_message", "message": "情况", "_ts": "2026-05-05T14:19:41.724496+00:00"}
+{"event": "agent_message", "message": "？", "_ts": "2026-05-05T14:19:41.746844+00:00"}
+{"event": "agent_message", "message": "😊", "_ts": "2026-05-05T14:19:41.792506+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "# 🏯 北京3日周末旅行计划（周五晚 — 周日晚）\n\n---\n\n## 📅 Day 1 — 周五晚：抵达 & 初探京城夜色\n\n| 项目 | 内容 |\n|------|------|\n| **傍晚** | 抵达北京，入住酒店（推荐 **东城区/西城区**，靠近地铁2号线或4号线，交通便利，预算中等约400-600元/晚） |\n| **晚餐** | 🥟 **老北京铜锅涮肉**（推荐：**南门涮肉** 或 **东来顺**，人均约100-150元） |\n| **晚间活动** | 🏮 **什刹海/后海** 夜游 — 沿着湖边走一走，感受老北京的胡同夜色与酒吧街氛围 |\n| **交通建议** | 若从机场/高铁站出发，地铁是最优选择（大兴机场线→10号线，或首都机场线→2号线） |\n\n---\n\n## 📅 Day 2 — 周六：经典中轴线 & 皇家园林\n\n| 时段 | 行程 | 小贴士 |\n|------|------|--------|\n| **上午 8:00-11:30** | 🏛️ **天安门广场 + 故宫博物院**（需提前在「故宫博物院」小程序预约门票，旺季60元/淡季40元） | 建议从午门进、神武门出，游览约3小时 |\n| **中午 11:30-13:00** | 🍜 **午餐：北京炸酱面/老北京小吃**（推荐：**方砖厂69号炸酱面** 或 **护国寺小吃**，人均40-60元） | 故宫神武门出来后，景山公园附近就有 |\n| **下午 13:00-15:00** | 🌄 **景山公园**（门票2元）— 登上万春亭俯瞰故宫全景，经典打卡机位 | 就在故宫神武门对面 |\n| **下午 15:30-17:30** | 🛍️ **南锣鼓巷 + 什刹海胡同** 漫步，逛逛创意小店，感受老北京胡同文化 | 可租共享单车骑行胡同 |\n| **晚上 18:00-20:00** | 🦆 **晚餐：北京烤鸭**（推荐：**四季民福** 或 **大董**，人均150-200元） | 建议提前排号，旺季排队较长 |\n| **晚上 20:30后** | 🎭 **可选：德云社相声** 或 **国家大剧院演出**（需提前购票，约100-300元） | 放松娱乐的好选择 |\n\n---\n\n## 📅 Day 3 — 周日：皇家园林 & 胡同文化\n\n| 时段 | 行程 | 小贴士 |\n|------|------|--------|\n| **上午 8:00-11:30** | 🌿 **颐和园**（旺季门票30元，联票60元）— 游览昆明湖、长廊、佛香阁 | 建议从东宫门进，乘地铁4号线直达「北宫门」站 |\n| **中午 11:30-12:30** | 🥟 **午餐：老北京卤煮/炒肝+包子**（推荐：**姚记炒肝店** 或 **小肠陈卤煮**，人均30-50元） | 体验地道京味儿 |\n| **下午 13:00-15:00** | 🏮 **天坛公园**（联票34元）— 祈年殿、回音壁，感受古代祭天文化 | 地铁5号线「天坛东门」站 |\n| **下午 15:30-17:00** | ☕ **前门大街 + 北京坊** 散步，逛一逛老字号（全聚德、同仁堂、内联升）或去 **Pageone书店** 喝杯咖啡 | 离天坛不远，打车约15分钟 |\n| **傍晚** | 🚄 前往机场/高铁站返程 | 预留1.5小时交通时间 |\n\n---\n\n## 💰 预算概览（中等档位）\n\n| 项目 | 预估费用（单人） |\n|------|:----------------:|\n| 🏨 住宿（2晚，经济型连锁/中档酒店） | 约 800~1,200 元 |\n| 🍜 餐饮（3天，约7-8餐） | 约 600~900 元 |\n| 🎫 门票（故宫+景山+颐和园+天坛） | 约 130~170 元 |\n| 🚇 交通（地铁+少量打车） | 约 100~150 元 |\n| 🎭 可选娱乐（相声/演出） | 约 0~300 元 |\n| **合计** | **约 1,600~2,700 元** |\n\n---\n\n## 🚇 交通建议\n\n- **首选地铁**：下载「**亿通行**」App 或开通支付宝/微信乘车码，北京地铁覆盖绝大部分景点\n- **次选打车**：高峰期堵车严重，建议短途或非高峰时段使用滴滴\n- **共享单车**：胡同区域骑行非常方便（美团/哈啰单车，扫码即用）\n- **周五晚避开晚高峰（17:00-19:00）**，周日下午返程也注意避开\n\n---\n\n## ⚠️ 重要提示\n\n1. **故宫一定要提前预约**（通常需提前3-7天，在小程序「故宫博物院」预约）\n2. 所有景区均需 **实名身份证件** 入园\n3. 穿舒适的 **步行鞋**，每天步数约15,000-20,000步\n4. 天气查询：建议出发前查...", "_ts": "2026-05-05T14:19:42.686656+00:00"}

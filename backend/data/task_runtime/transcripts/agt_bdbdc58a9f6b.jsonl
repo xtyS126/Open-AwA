@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "这是一个探索任务。请回答：世界上最长的河流是什么？长度是多少公里？只需要回答河流名称和长度即可。", "description": "探索任务：最长的河流", "run_mode": "background", "_ts": "2026-05-05T04:40:06.226863+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:40:06.236432+00:00"}

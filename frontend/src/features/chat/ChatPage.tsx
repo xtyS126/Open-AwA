@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
-import { chatAPI, conversationAPI } from '@/shared/api/api'
+import { chatAPI, conversationAPI, type ChatContinuationPayload } from '@/shared/api/api'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import {
   flushCachedConversationMessages,
@@ -17,7 +17,15 @@ import type {
   TaskStatus,
 } from '@/features/chat/types'
 import {
+  applySubagentMessage,
+  applySubagentStart,
+  applySubagentStop,
+  syncSubagentSnapshot,
+  applySubagentTimeout,
+  buildSubagentTranscriptText,
   summarizeExecutionResult,
+  setSubagentAggregation,
+  SUBAGENT_INACTIVITY_TIMEOUT_MS,
   applyTaskUpdate,
   applyToolUpdate,
   buildExecutionMetaFromPayload,
@@ -39,17 +47,15 @@ import {
   finalizeAssistantSegments,
   buildSegmentsFromLegacyMessage,
 } from '@/features/chat/utils/assistantSegments'
-import { stopAgent } from '@/shared/api/taskRuntimeApi'
+import { getAgent, getTranscript, stopAgent } from '@/shared/api/taskRuntimeApi'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
+import { useToast } from '@/shared/components/Toast'
 import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
 import type { FileAttachment } from './components/ChatInput'
 import { TaskPanel } from './components/TaskPanel'
-import { useSubagentManager } from './components/useSubagentManager'
-import type { SubagentStepType } from './components/useSubagentManager'
-import { SubagentContainer } from './components/SubagentContainer'
 import styles from './ChatPage.module.css'
 
 function sanitizeDisplayedError(message: string): string {
@@ -61,35 +67,10 @@ function sanitizeDisplayedError(message: string): string {
     .replace(/'/g, '&#39;')
 }
 
-function classifyAgentMessage(message: string): SubagentStepType | null {
-  const trimmed = message.trim()
-  if (!trimmed) return null
-
-  if (trimmed.startsWith('Thought') || trimmed.startsWith('思考')) {
-    return 'thought'
-  }
-
-  if (trimmed.startsWith('Reading file:') || trimmed.startsWith('阅读文件') ||
-      trimmed.includes('\\') && (trimmed.includes('.tsx') || trimmed.includes('.ts') || trimmed.includes('.py') || trimmed.includes('.js'))) {
-    return 'file_read'
-  }
-
-  if (trimmed.startsWith('Searching:') || trimmed.startsWith('搜索') ||
-      trimmed.startsWith('在工作区搜索') || trimmed.includes('|')) {
-    return 'search'
-  }
-
-  if (trimmed.startsWith('Tool:') || trimmed.startsWith('工具') ||
-      trimmed.startsWith('Calling tool') || trimmed.startsWith('调用工具')) {
-    return 'tool_call'
-  }
-
-  return 'generic'
-}
-
 type StreamConnectionState = 'idle' | 'connecting' | 'streaming' | 'retrying' | 'error'
 
 const MAX_STREAM_RETRY_COUNT = 1
+const SUBAGENT_RUNTIME_SYNC_INTERVAL_MS = 1200
 
 function shouldRetryStreamError(error: Error): boolean {
   const message = String(error.message || '').toLowerCase()
@@ -263,13 +244,30 @@ function getConfiguredMaxToolCallRounds(): number {
   return Math.max(1, Math.min(50000, Math.trunc(rawValue)))
 }
 
+function buildSubagentAggregateLine(name: string, text: string, failed: boolean): string {
+  const normalizedText = text.trim()
+  if (!normalizedText) {
+    return failed ? `[ERROR] Subagent ${name}: 未返回可用输出` : `Subagent ${name}: `
+  }
+  return failed ? `[ERROR] Subagent ${name}: ${normalizedText}` : `Subagent ${name}: ${normalizedText}`
+}
+
+function buildSubagentContinuationPrompt(): string {
+  return '请基于刚刚完成的子代理输出继续完成上一轮任务，并直接给出后续分析或最终答复。'
+}
+
+interface SendMessageOptions {
+  assistantMessageId?: string
+  hiddenUserMessage?: boolean
+  continuation?: ChatContinuationPayload
+}
+
 function ChatPage() {
   const navigate = useNavigate()
   const { conversationId } = useParams<{ conversationId?: string }>()
   const {
     messages,
     addMessage,
-    updateLastMessage,
     setLoading,
     isLoading,
     sessionId,
@@ -312,10 +310,15 @@ function ChatPage() {
   const [streamStageMessage, setStreamStageMessage] = useState<string | null>(null)
   const [taskPanelManuallyToggled, setTaskPanelManuallyToggled] = useState(false)
   const [taskPanelExpanded, setTaskPanelExpanded] = useState(false)
-
-  const { tasks: subagentTasks, startTask: startSubagent, appendLog: appendSubagentLog, appendStep: appendSubagentStep, stopTask: stopSubagent } = useSubagentManager((aggregatedText) => {
-    void handleSend(aggregatedText)
-  })
+  const { addToast, ToastContainer } = useToast()
+  const messageMetaRef = useRef<Record<string, AssistantExecutionMeta>>({})
+  const subagentTimeoutRef = useRef<Record<string, number>>({})
+  const subagentSyncTimerRef = useRef<Record<string, number>>({})
+  const subagentSyncInFlightRef = useRef<Record<string, boolean>>({})
+  const subagentAggregationTimerRef = useRef<Record<string, number>>({})
+  const aggregatedSubagentIdsRef = useRef<Record<string, Set<string>>>({})
+  const syncSubagentRuntimeRef = useRef<(assistantMessageId: string, agentId: string, agentType?: string) => void>(() => {})
+  const triggerSubagentContinuationRef = useRef<(assistantMessageId: string, aggregatedText: string) => void>(() => {})
 
   const bufferRef = useRef({
     content: '',
@@ -323,14 +326,38 @@ function ChatPage() {
     lastUpdateTime: Date.now()
   })
 
-  const flushBuffer = useCallback(() => {
+  const appendAssistantMessageText = useCallback((assistantMessageId: string, content: string, reasoningContent?: string) => {
+    if (!content && !reasoningContent) {
+      return
+    }
+
+    updateMessage(assistantMessageId, (message) => {
+      if (message.role !== 'assistant') {
+        return message
+      }
+
+      return {
+        ...message,
+        content: message.content + content,
+        reasoning_content: (thinkingEnabled && reasoningContent)
+          ? (message.reasoning_content || '') + reasoningContent
+          : message.reasoning_content,
+      }
+    })
+  }, [thinkingEnabled, updateMessage])
+
+  const flushBuffer = useCallback((assistantMessageId?: string) => {
+    const targetMessageId = assistantMessageId || streamingAssistantId
+    if (!targetMessageId) {
+      return
+    }
     if (bufferRef.current.content || bufferRef.current.reasoning) {
-      updateLastMessage(bufferRef.current.content, bufferRef.current.reasoning)
+      appendAssistantMessageText(targetMessageId, bufferRef.current.content, bufferRef.current.reasoning)
       bufferRef.current.content = ''
       bufferRef.current.reasoning = ''
       bufferRef.current.lastUpdateTime = Date.now()
     }
-  }, [updateLastMessage])
+  }, [appendAssistantMessageText, streamingAssistantId])
 
   const flushConversationCache = useCallback((targetSessionId?: string) => {
     const resolvedSessionId = targetSessionId || useChatStore.getState().sessionId
@@ -350,10 +377,28 @@ function ChatPage() {
   }, [messages, messageMeta, scrollToBottom])
 
   useEffect(() => {
+    messageMetaRef.current = messageMeta
+  }, [messageMeta])
+
+  useEffect(() => {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
       activeAbortControllerRef.current?.abort()
+      for (const timerId of Object.values(subagentTimeoutRef.current)) {
+        window.clearTimeout(timerId)
+      }
+      subagentTimeoutRef.current = {}
+      for (const timerId of Object.values(subagentSyncTimerRef.current)) {
+        window.clearTimeout(timerId)
+      }
+      subagentSyncTimerRef.current = {}
+      subagentSyncInFlightRef.current = {}
+      for (const timerId of Object.values(subagentAggregationTimerRef.current)) {
+        window.clearTimeout(timerId)
+      }
+      subagentAggregationTimerRef.current = {}
+      aggregatedSubagentIdsRef.current = {}
     }
   }, [])
 
@@ -621,6 +666,204 @@ function ChatPage() {
     updateAssistantSegments(messageId, (segments) => finalizeAssistantSegments(segments))
   }, [updateAssistantSegments])
 
+  const clearSubagentTimeout = useCallback((agentId: string) => {
+    const timerId = subagentTimeoutRef.current[agentId]
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId)
+      delete subagentTimeoutRef.current[agentId]
+    }
+  }, [])
+
+  const clearSubagentSyncTimer = useCallback((agentId: string) => {
+    const timerId = subagentSyncTimerRef.current[agentId]
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId)
+      delete subagentSyncTimerRef.current[agentId]
+    }
+  }, [])
+
+  const scheduleSubagentTimeout = useCallback((assistantMessageId: string, agentId: string, agentType?: string) => {
+    clearSubagentTimeout(agentId)
+    subagentTimeoutRef.current[agentId] = window.setTimeout(() => {
+      const timeoutMessage = `Subagent ${agentType || agentId} 执行失败`
+      const toolMeta = applySubagentTimeout(createEmptyExecutionMeta(), {
+        agentId,
+        agentType,
+        message: timeoutMessage,
+      }).toolEvents[0]
+
+      updateAssistantMeta(assistantMessageId, (current) => applySubagentTimeout(current, {
+        agentId,
+        agentType,
+        message: timeoutMessage,
+      }))
+      if (toolMeta) {
+        updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+      }
+      addToast(timeoutMessage, 'error')
+      clearSubagentTimeout(agentId)
+      scheduleSubagentAggregation(assistantMessageId)
+    }, SUBAGENT_INACTIVITY_TIMEOUT_MS)
+  }, [addToast, clearSubagentTimeout, updateAssistantMeta, updateAssistantSegments])
+
+  const clearSubagentAggregationTimer = useCallback((assistantMessageId: string) => {
+    const timerId = subagentAggregationTimerRef.current[assistantMessageId]
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId)
+      delete subagentAggregationTimerRef.current[assistantMessageId]
+    }
+  }, [])
+
+  const scheduleSubagentAggregation = useCallback((assistantMessageId: string) => {
+    clearSubagentAggregationTimer(assistantMessageId)
+    subagentAggregationTimerRef.current[assistantMessageId] = window.setTimeout(() => {
+      const meta = messageMetaRef.current[assistantMessageId]
+      const subagents = meta?.toolEvents.filter((tool) => tool.kind === 'subagent') || []
+      const aggregatedIds = aggregatedSubagentIdsRef.current[assistantMessageId] || new Set<string>()
+      const pendingSubagents = subagents.filter((tool) => !aggregatedIds.has(tool.id))
+      const allCompleted = pendingSubagents.length > 0 && pendingSubagents.every((tool) => tool.status === 'completed' || tool.status === 'error')
+      if (!allCompleted) {
+        return
+      }
+      void aggregateSubagentOutputs(assistantMessageId, pendingSubagents)
+    }, 80)
+  }, [clearSubagentAggregationTimer])
+
+  const aggregateSubagentOutputs = useCallback(async (
+    assistantMessageId: string,
+    subagents: AssistantExecutionMeta['toolEvents']
+  ) => {
+    const settledResults = await Promise.allSettled(subagents.map(async (tool) => {
+      const fallbackText = tool.subagent?.archivedLogs || tool.subagent?.logs || tool.subagent?.summary || tool.detail || ''
+      if (tool.id.startsWith('sub_') || fallbackText.trim()) {
+        return buildSubagentAggregateLine(tool.name, fallbackText, tool.status === 'error')
+      }
+
+      try {
+        const transcriptResponse = await getTranscript(tool.id)
+        const transcriptText = buildSubagentTranscriptText(
+          Array.isArray(transcriptResponse.transcript) ? transcriptResponse.transcript : []
+        )
+        const mergedText = transcriptText || fallbackText
+        return buildSubagentAggregateLine(tool.name, mergedText, tool.status === 'error')
+      } catch {
+        const fallbackError = tool.subagent?.errorText || tool.detail || '转录读取失败'
+        const fallbackLogs = tool.subagent?.archivedLogs || tool.subagent?.logs || fallbackError
+        return buildSubagentAggregateLine(tool.name, fallbackLogs, true)
+      }
+    }))
+
+    let successCount = 0
+    let errorCount = 0
+    const lines = settledResults.map((result, index) => {
+      const tool = subagents[index]
+      const failed = tool.status === 'error' || result.status === 'rejected'
+      if (failed) {
+        errorCount += 1
+      } else {
+        successCount += 1
+      }
+
+      if (result.status === 'fulfilled') {
+        return result.value
+      }
+
+      return buildSubagentAggregateLine(tool.name, tool.subagent?.errorText || tool.detail || '转录读取失败', true)
+    })
+
+    const mergedText = lines.join('\n\n')
+    const aggregatedIds = aggregatedSubagentIdsRef.current[assistantMessageId] || new Set<string>()
+    for (const tool of subagents) {
+      aggregatedIds.add(tool.id)
+    }
+    aggregatedSubagentIdsRef.current[assistantMessageId] = aggregatedIds
+
+    updateAssistantMeta(assistantMessageId, (current) => setSubagentAggregation(current, {
+      text: current.subagentAggregation?.text
+        ? `${current.subagentAggregation.text}\n\n${mergedText}`
+        : mergedText,
+      total: (current.subagentAggregation?.total || 0) + subagents.length,
+      successCount: (current.subagentAggregation?.successCount || 0) + successCount,
+      errorCount: (current.subagentAggregation?.errorCount || 0) + errorCount,
+      completedAt: Date.now(),
+    }))
+
+    if (mergedText.trim()) {
+      triggerSubagentContinuationRef.current(assistantMessageId, mergedText)
+    }
+  }, [updateAssistantMeta])
+
+  syncSubagentRuntimeRef.current = (assistantMessageId: string, agentId: string, agentType?: string) => {
+    clearSubagentSyncTimer(agentId)
+    if (subagentSyncInFlightRef.current[agentId]) {
+      return
+    }
+
+    subagentSyncInFlightRef.current[agentId] = true
+    void (async () => {
+      try {
+        const [agentResult, transcriptResult] = await Promise.allSettled([
+          getAgent(agentId),
+          getTranscript(agentId),
+        ])
+
+        if (!isMountedRef.current) {
+          return
+        }
+
+        const agentDetail = agentResult.status === 'fulfilled'
+          ? agentResult.value.agent
+          : undefined
+        const currentTool = messageMetaRef.current[assistantMessageId]?.toolEvents.find((tool) => tool.id === agentId)
+        const transcriptText = transcriptResult.status === 'fulfilled'
+          ? buildSubagentTranscriptText(
+              Array.isArray(transcriptResult.value.transcript) ? transcriptResult.value.transcript : []
+            )
+          : ''
+
+        const nextAgentType = agentDetail?.agent_type || agentType || currentTool?.subagent?.agentType
+        const snapshotPayload = {
+          agentId,
+          agentType: nextAgentType,
+          state: agentDetail?.state,
+          logs: transcriptText || currentTool?.subagent?.archivedLogs || currentTool?.subagent?.logs || '',
+          summary: typeof agentDetail?.summary === 'string' ? agentDetail.summary : currentTool?.subagent?.summary,
+          errorText: typeof agentDetail?.last_error === 'string' ? agentDetail.last_error : currentTool?.subagent?.errorText,
+        }
+
+        if (agentDetail || snapshotPayload.logs) {
+          updateAssistantMeta(assistantMessageId, (current) => syncSubagentSnapshot(current, snapshotPayload))
+          const toolMeta = syncSubagentSnapshot(createEmptyExecutionMeta(), snapshotPayload).toolEvents[0]
+          if (toolMeta) {
+            updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+          }
+        }
+
+        const normalizedState = String(agentDetail?.state || '').trim().toLowerCase()
+        const isTerminal = ['completed', 'failed', 'stopped', 'error'].includes(normalizedState)
+        if (isTerminal) {
+          clearSubagentTimeout(agentId)
+          clearSubagentSyncTimer(agentId)
+          scheduleSubagentAggregation(assistantMessageId)
+          return
+        }
+
+        scheduleSubagentTimeout(assistantMessageId, agentId, nextAgentType)
+        subagentSyncTimerRef.current[agentId] = window.setTimeout(() => {
+          syncSubagentRuntimeRef.current(assistantMessageId, agentId, nextAgentType)
+        }, SUBAGENT_RUNTIME_SYNC_INTERVAL_MS)
+      } catch {
+        if (isMountedRef.current) {
+          subagentSyncTimerRef.current[agentId] = window.setTimeout(() => {
+            syncSubagentRuntimeRef.current(assistantMessageId, agentId, agentType)
+          }, SUBAGENT_RUNTIME_SYNC_INTERVAL_MS)
+        }
+      } finally {
+        delete subagentSyncInFlightRef.current[agentId]
+      }
+    })()
+  }
+
   const parseSelectedModel = (value: string): { provider?: string; model?: string } => {
     if (!value) {
       return { provider: undefined, model: undefined }
@@ -637,11 +880,13 @@ function ChatPage() {
     }
   }
 
-  const handleSend = async (userMessage?: string, uploadedAttachments?: FileAttachment[]) => {
+  const handleSend = async (userMessage?: string, uploadedAttachments?: FileAttachment[], options?: SendMessageOptions) => {
     const messageText = (userMessage || '').trim()
     const safeAttachments = uploadedAttachments || []
-    if (!messageText && safeAttachments.length === 0) return
-    if (isLoading) return
+    if (!messageText && safeAttachments.length === 0 && !options?.continuation) return
+    if (isLoading && !options?.continuation) return
+
+    const hiddenUserMessage = Boolean(options?.hiddenUserMessage)
 
     let targetSessionId = sessionId
     if (!targetSessionId || targetSessionId === 'default') {
@@ -654,9 +899,9 @@ function ChatPage() {
     const abortController = new AbortController()
     activeAbortControllerRef.current = abortController
     let streamErrorHandled = false
-    let assistantMessageCreated = false
-    const userMessageId = crypto.randomUUID()
-    const assistantMessageId = crypto.randomUUID()
+    let assistantMessageCreated = Boolean(options?.assistantMessageId)
+    const userMessageId = hiddenUserMessage ? undefined : crypto.randomUUID()
+    const assistantMessageId = options?.assistantMessageId || crypto.randomUUID()
 
     const ensureAssistantMessage = (content = '', reasoning = '') => {
       if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
@@ -704,7 +949,7 @@ function ChatPage() {
 
     const currentConversation = conversations.find((item) => item.session_id === targetSessionId)
     const nowIso = new Date().toISOString()
-    if (currentConversation) {
+    if (currentConversation && !hiddenUserMessage) {
       upsertConversation({
         ...currentConversation,
         title: currentConversation.title || messageText.slice(0, 80) || '新对话',
@@ -725,9 +970,11 @@ function ChatPage() {
       message: 'chat send started',
       extra: { session_id: targetSessionId, input_length: fullMessage.length, mode: outputMode, attachments: safeAttachments.length },
     })
-    addMessage('user', fullMessage, undefined, userMessageId)
+    if (!hiddenUserMessage) {
+      addMessage('user', fullMessage, undefined, userMessageId)
+    }
     setLoading(true)
-    setStreamingAssistantId(null)
+    setStreamingAssistantId(assistantMessageId)
     setStreamErrorMessage(null)
     setStreamRetryCount(0)
     setStreamStageMessage(null)
@@ -738,6 +985,7 @@ function ChatPage() {
       const executionOptions = {
         ...(thinkingEnabled ? { thinking_enabled: true, thinking_depth: thinkingDepth } : {}),
         max_tool_call_rounds: getConfiguredMaxToolCallRounds(),
+        ...(options?.continuation ? { continuation: options.continuation } : {}),
       }
 
       if (outputMode === 'stream') {
@@ -791,11 +1039,12 @@ function ChatPage() {
                     bufferRef.current.reasoning += reasoning
                     const now = Date.now()
                     if (now - bufferRef.current.lastUpdateTime > 1000) {
-                      flushBuffer()
+                      flushBuffer(assistantMessageId)
                     }
                   } else {
                     if (bufferRef.current.content || bufferRef.current.reasoning) {
-                      updateLastMessage(
+                      appendAssistantMessageText(
+                        assistantMessageId,
                         bufferRef.current.content + content,
                         bufferRef.current.reasoning + reasoning
                       )
@@ -803,7 +1052,7 @@ function ChatPage() {
                       bufferRef.current.reasoning = ''
                       bufferRef.current.lastUpdateTime = Date.now()
                     } else {
-                      updateLastMessage(content, reasoning)
+                      appendAssistantMessageText(assistantMessageId, content, reasoning)
                     }
                   }
                   return
@@ -890,69 +1139,75 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'subagent_start' && event.agent_id) {
-                  startSubagent(event.agent_id, `子代理: ${event.agent_type || 'unknown'}`)
-                  const toolPayload = {
-                    id: event.agent_id as string,
-                    kind: 'task',
-                    name: `子代理: ${event.agent_type || 'unknown'}`,
-                    status: 'running',
-                    detail: typeof event.description === 'string' ? event.description : '子代理已启动',
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, toolPayload)
-                  })
-                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  const agentId = event.agent_id as string
+                  const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
+                  const runMode = typeof event.run_mode === 'string' ? event.run_mode : undefined
+                  const toolMeta = applySubagentStart(createEmptyExecutionMeta(), {
+                    agentId,
+                    agentType,
+                    description: typeof event.description === 'string' ? event.description : '子代理已启动',
+                  }).toolEvents[0]
+                  updateAssistantMeta(assistantMessageId, (current) => applySubagentStart(current, {
+                    agentId,
+                    agentType,
+                    description: typeof event.description === 'string' ? event.description : '子代理已启动',
+                  }))
                   if (toolMeta) {
                     updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                  }
+                  clearSubagentAggregationTimer(assistantMessageId)
+                  scheduleSubagentTimeout(assistantMessageId, agentId, agentType)
+                  if (!agentId.startsWith('sub_') && runMode !== 'foreground') {
+                    syncSubagentRuntimeRef.current(assistantMessageId, agentId, agentType)
                   }
                   return
                 }
 
                 if (event?.type === 'subagent_stop' && event.agent_id) {
-                  stopSubagent(event.agent_id, event.state === 'completed' ? 'completed' : 'error')
-                  const toolPayload = {
-                    id: event.agent_id as string,
-                    kind: 'task',
-                    name: `子代理: ${event.agent_type || 'unknown'}`,
-                    status: event.state === 'completed' ? 'completed' : 'error',
-                    detail: typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`,
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, toolPayload)
-                  })
-                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  const agentId = event.agent_id as string
+                  const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
+                  const summary = typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`
+                  const toolMeta = applySubagentStop(createEmptyExecutionMeta(), {
+                    agentId,
+                    agentType,
+                    state: typeof event.state === 'string' ? event.state : undefined,
+                    summary,
+                  }).toolEvents[0]
+                  updateAssistantMeta(assistantMessageId, (current) => applySubagentStop(current, {
+                    agentId,
+                    agentType,
+                    state: typeof event.state === 'string' ? event.state : undefined,
+                    summary,
+                  }))
                   if (toolMeta) {
                     updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+                    if (toolMeta.status === 'error') {
+                      addToast(`Subagent ${agentType || agentId} 执行失败`, 'error')
+                    }
                   }
+                  clearSubagentTimeout(agentId)
+                  clearSubagentSyncTimer(agentId)
+                  scheduleSubagentAggregation(assistantMessageId)
                   return
                 }
 
                 if (event?.type === 'agent_message' && event.agent_id) {
-                  if (typeof event.message === 'string') {
-                    appendSubagentLog(event.agent_id, event.message)
-                    const stepType = classifyAgentMessage(event.message)
-                    if (stepType) {
-                      appendSubagentStep(event.agent_id, {
-                        type: stepType,
-                        label: event.message.slice(0, 200),
-                        timestamp: Date.now(),
-                      })
-                    }
-                  }
-                  const toolPayload = {
-                    id: event.agent_id as string,
-                    kind: 'task',
-                    name: `子代理: ${event.agent_type || 'unknown'}`,
-                    status: 'completed',
-                    detail: typeof event.message === 'string' ? event.message : '子代理消息',
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, toolPayload)
-                  })
-                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+                  const agentId = event.agent_id as string
+                  const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
+                  const toolMeta = applySubagentMessage(createEmptyExecutionMeta(), {
+                    agentId,
+                    agentType,
+                    message: typeof event.message === 'string' ? event.message : '子代理消息',
+                  }).toolEvents[0]
+                  updateAssistantMeta(assistantMessageId, (current) => applySubagentMessage(current, {
+                    agentId,
+                    agentType,
+                    message: typeof event.message === 'string' ? event.message : '子代理消息',
+                  }))
                   if (toolMeta) {
                     updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
                   }
+                  scheduleSubagentTimeout(assistantMessageId, agentId, agentType)
                   return
                 }
 
@@ -1071,7 +1326,7 @@ function ChatPage() {
             }
 
             streamErrorHandled = true
-            flushBuffer()
+            flushBuffer(assistantMessageId)
             setStreamConnectionState('error')
             setStreamErrorMessage(sanitizeDisplayedError(normalizedError.message))
             appLogger.error({
@@ -1089,7 +1344,7 @@ function ChatPage() {
                 content: `请求失败：${sanitizeDisplayedError(normalizedError.message)}`,
               }))
             } else {
-              updateLastMessage(`\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`)
+              appendAssistantMessageText(assistantMessageId, `\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`)
               updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
                 content: `\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`,
               }))
@@ -1098,7 +1353,7 @@ function ChatPage() {
             throw normalizedError
           }
         }
-        flushBuffer()
+        flushBuffer(assistantMessageId)
         finalizeAssistantMessageSegments(assistantMessageId)
         setStreamStageMessage(null)
         setStreamConnectionState('idle')
@@ -1215,7 +1470,12 @@ function ChatPage() {
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
       if (isMountedRef.current && activeRequestIdRef.current === requestId && !streamErrorHandled) {
-        addMessage('assistant', '抱歉，发生了错误。请稍后重试。')
+        if (!assistantMessageCreated) {
+          addMessage('assistant', '抱歉，发生了错误。请稍后重试。', undefined, assistantMessageId)
+          assistantMessageCreated = true
+        } else {
+          appendAssistantMessageText(assistantMessageId, '抱歉，发生了错误。请稍后重试。')
+        }
         updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
           content: '抱歉，发生了错误。请稍后重试。',
         }))
@@ -1234,6 +1494,18 @@ function ChatPage() {
         }
       }
     }
+  }
+
+  triggerSubagentContinuationRef.current = (assistantMessageId: string, aggregatedText: string) => {
+    void handleSend(buildSubagentContinuationPrompt(), undefined, {
+      assistantMessageId,
+      hiddenUserMessage: true,
+      continuation: {
+        source: 'subagent',
+        aggregated_context: aggregatedText,
+        merge_with_last_assistant: true,
+      },
+    })
   }
 
   const handleCreateConversation = useCallback(async () => {
@@ -1348,21 +1620,32 @@ function ChatPage() {
     try {
       const result = await stopAgent(agentId)
       if (result.ok) {
-        updateAssistantMeta(streamingAssistantId || '', (current) =>
-          applyToolUpdate(current, {
+        updateAssistantMeta(streamingAssistantId || '', (current) => {
+          const targetTool = current.toolEvents.find((tool) => tool.id === agentId)
+          if (targetTool?.kind === 'subagent') {
+            return applySubagentStop(current, {
+              agentId,
+              agentType: targetTool.subagent?.agentType,
+              state: 'stopped',
+              summary: '已手动停止',
+            })
+          }
+          return applyToolUpdate(current, {
             id: agentId,
             kind: 'task',
             status: 'completed',
             detail: '已手动停止',
           })
-        )
+        })
         if (streamingAssistantId) {
           updateAssistantSegments(streamingAssistantId, (segments) => applyToolPatchToSegments(segments, agentId, {
             status: 'completed',
             detail: '已手动停止',
             completedAt: Date.now(),
           }))
+          scheduleSubagentAggregation(streamingAssistantId)
         }
+        clearSubagentTimeout(agentId)
       }
     } catch (error) {
       appLogger.warning({
@@ -1372,7 +1655,7 @@ function ChatPage() {
         extra: { agentId },
       })
     }
-  }, [streamingAssistantId, updateAssistantMeta, updateAssistantSegments])
+    }, [clearSubagentTimeout, scheduleSubagentAggregation, streamingAssistantId, updateAssistantMeta, updateAssistantSegments])
 
   const getStatusIcon = (status: TaskStatus) => {
     switch (status) {
@@ -1449,7 +1732,7 @@ function ChatPage() {
                 {getStatusIcon(tool.status)}
                 <span className={styles['floating-tool-kind']}>{tool.kind}</span>
                 <span className={styles['floating-tool-name']}>{tool.name}</span>
-                {tool.kind === 'task' && tool.status === 'running' && (
+                {(tool.kind === 'task' || tool.kind === 'subagent') && tool.status === 'running' && (
                   <button
                     type="button"
                     className={styles['stop-agent-btn']}
@@ -1580,22 +1863,6 @@ function ChatPage() {
             messagesEndRef={messagesEndRef}
           />
 
-          {subagentTasks.length > 0 && (
-            <div className={styles['subagent-container-wrapper']} style={{ padding: '0 24px' }}>
-              {subagentTasks.map(task => (
-                <SubagentContainer
-                  key={task.id}
-                  agentId={task.id}
-                  name={task.name}
-                  status={task.status}
-                  content={task.content}
-                  exitCode={task.exitCode}
-                  steps={task.steps}
-                />
-              ))}
-            </div>
-          )}
-
           {false && renderFloatingExecutionPanel()}
 
           <TaskPanel
@@ -1618,6 +1885,7 @@ function ChatPage() {
           />
         </div>
       </div>
+      <ToastContainer />
     </div>
   )
 }

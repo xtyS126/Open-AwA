@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "请搜索当前工作目录中有哪些文件，然后列出所有可见的文件和目录。", "description": "探索代理：列出当前目录文件", "run_mode": "background", "_ts": "2026-05-05T04:37:50.239010+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:37:50.248565+00:00"}

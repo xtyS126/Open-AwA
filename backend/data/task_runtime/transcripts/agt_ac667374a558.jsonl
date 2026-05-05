@@ -1,0 +1,673 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "请搜索一下2025年人工智能领域最热门的3个技术趋势，列出每个趋势并简要说明其核心内容和影响。用中文回答。", "description": "搜索AI领域最新技术趋势", "_ts": "2026-05-05T14:18:31.832823+00:00"}
+{"type": "status", "phase": "starting", "message": "正在准备对话上下文", "_ts": "2026-05-05T14:18:31.983667+00:00"}
+{"event": "agent_message", "message": "[状态] 正在准备对话上下文", "_ts": "2026-05-05T14:18:31.984647+00:00"}
+{"type": "status", "phase": "planning", "message": "正在生成执行计划", "_ts": "2026-05-05T14:18:31.986634+00:00"}
+{"event": "agent_message", "message": "[状态] 正在生成执行计划", "_ts": "2026-05-05T14:18:31.986634+00:00"}
+{"type": "plan", "plan": {"intent": "explain", "steps": [{"step": 1, "action": "llm_explain", "prompt": "请搜索一下2025年人工智能领域最热门的3个技术趋势，列出每个趋势并简要说明其核心内容和影响。用中文回答。", "purpose": "解释说明"}], "requires_confirmation": false}, "_ts": "2026-05-05T14:18:31.988139+00:00"}
+{"event": "agent_message", "message": "[计划] 已生成 1 个步骤", "_ts": "2026-05-05T14:18:31.988714+00:00"}
+{"event": "agent_message", "message": "[思考] 用户", "_ts": "2026-05-05T14:18:32.542651+00:00"}
+{"event": "agent_message", "message": "[思考] 想", "_ts": "2026-05-05T14:18:32.741589+00:00"}
+{"event": "agent_message", "message": "[思考] 了解", "_ts": "2026-05-05T14:18:32.746472+00:00"}
+{"event": "agent_message", "message": "[思考] 202", "_ts": "2026-05-05T14:18:32.748979+00:00"}
+{"event": "agent_message", "message": "[思考] 5", "_ts": "2026-05-05T14:18:32.749961+00:00"}
+{"event": "agent_message", "message": "[思考] 年", "_ts": "2026-05-05T14:18:32.750964+00:00"}
+{"event": "agent_message", "message": "[思考] 人工智能", "_ts": "2026-05-05T14:18:32.751947+00:00"}
+{"event": "agent_message", "message": "[思考] 领域", "_ts": "2026-05-05T14:18:32.767191+00:00"}
+{"event": "agent_message", "message": "[思考] 最", "_ts": "2026-05-05T14:18:32.768702+00:00"}
+{"event": "agent_message", "message": "[思考] 热", "_ts": "2026-05-05T14:18:32.856661+00:00"}
+{"event": "agent_message", "message": "[思考] 门的", "_ts": "2026-05-05T14:18:32.857640+00:00"}
+{"event": "agent_message", "message": "[思考] 3", "_ts": "2026-05-05T14:18:32.858645+00:00"}
+{"event": "agent_message", "message": "[思考] 个", "_ts": "2026-05-05T14:18:32.859184+00:00"}
+{"event": "agent_message", "message": "[思考] 技术", "_ts": "2026-05-05T14:18:32.860200+00:00"}
+{"event": "agent_message", "message": "[思考] 趋势", "_ts": "2026-05-05T14:18:32.860200+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:18:32.874158+00:00"}
+{"event": "agent_message", "message": "[思考] 我需要", "_ts": "2026-05-05T14:18:32.875142+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:18:32.908149+00:00"}
+{"event": "agent_message", "message": "[思考] 最新的", "_ts": "2026-05-05T14:18:32.909254+00:00"}
+{"event": "agent_message", "message": "[思考] 信息", "_ts": "2026-05-05T14:18:32.940326+00:00"}
+{"event": "agent_message", "message": "[思考] 来", "_ts": "2026-05-05T14:18:32.941310+00:00"}
+{"event": "agent_message", "message": "[思考] 回答", "_ts": "2026-05-05T14:18:32.952788+00:00"}
+{"event": "agent_message", "message": "[思考] 这个问题", "_ts": "2026-05-05T14:18:32.953763+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:18:32.981371+00:00"}
+{"event": "agent_message", "message": "[思考] 让我", "_ts": "2026-05-05T14:18:32.982492+00:00"}
+{"event": "agent_message", "message": "[思考] 用", "_ts": "2026-05-05T14:18:33.007803+00:00"}
+{"event": "agent_message", "message": "[思考] 网络", "_ts": "2026-05-05T14:18:33.008808+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:18:33.041290+00:00"}
+{"event": "agent_message", "message": "[思考] 来", "_ts": "2026-05-05T14:18:33.042271+00:00"}
+{"event": "agent_message", "message": "[思考] 获取", "_ts": "2026-05-05T14:18:33.066218+00:00"}
+{"event": "agent_message", "message": "[思考] 相关信息", "_ts": "2026-05-05T14:18:33.067196+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:18:33.090288+00:00"}
+{"event": "agent_message", "message": "好的", "_ts": "2026-05-05T14:18:33.118735+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:18:33.119253+00:00"}
+{"event": "agent_message", "message": "我来", "_ts": "2026-05-05T14:18:33.146022+00:00"}
+{"event": "agent_message", "message": "搜索", "_ts": "2026-05-05T14:18:33.147005+00:00"}
+{"event": "agent_message", "message": "一下", "_ts": "2026-05-05T14:18:33.184752+00:00"}
+{"event": "agent_message", "message": "202", "_ts": "2026-05-05T14:18:33.184752+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:18:33.202234+00:00"}
+{"event": "agent_message", "message": "年", "_ts": "2026-05-05T14:18:33.203209+00:00"}
+{"event": "agent_message", "message": "人工智能", "_ts": "2026-05-05T14:18:33.228627+00:00"}
+{"event": "agent_message", "message": "领域", "_ts": "2026-05-05T14:18:33.229528+00:00"}
+{"event": "agent_message", "message": "的最新", "_ts": "2026-05-05T14:18:33.257084+00:00"}
+{"event": "agent_message", "message": "趋势", "_ts": "2026-05-05T14:18:33.257084+00:00"}
+{"event": "agent_message", "message": "信息", "_ts": "2026-05-05T14:18:33.283088+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:18:33.340216+00:00"}
+{"type": "task", "chunk_type": "task", "task": {"step_count": 2, "steps": [{"name": "builtin_web_search"}, {"name": "builtin_web_search"}]}, "_ts": "2026-05-05T14:18:35.169047+00:00"}
+{"type": "tool", "chunk_type": "tool", "tool": {"id": "call_00_bQo0Hv5kkpMOOo9IubEQ8447", "kind": "tool", "name": "builtin_web_search", "status": "running"}, "_ts": "2026-05-05T14:18:35.170579+00:00"}
+{"event": "agent_message", "message": "[工具] builtin_web_search: running", "_ts": "2026-05-05T14:18:35.171210+00:00"}
+{"type": "tool", "chunk_type": "tool", "tool": {"id": "call_00_bQo0Hv5kkpMOOo9IubEQ8447", "kind": "tool", "name": "builtin_web_search", "status": "error", "detail": "工具调用失败", "output": null}, "_ts": "2026-05-05T14:18:50.183821+00:00"}
+{"event": "agent_message", "message": "[工具] builtin_web_search: 工具调用失败", "_ts": "2026-05-05T14:18:50.183821+00:00"}
+{"type": "tool", "chunk_type": "tool", "tool": {"id": "call_01_NI9PbVPVuYK4u4aUIgfp0529", "kind": "tool", "name": "builtin_web_search", "status": "running"}, "_ts": "2026-05-05T14:18:50.184795+00:00"}
+{"event": "agent_message", "message": "[工具] builtin_web_search: running", "_ts": "2026-05-05T14:18:50.184795+00:00"}
+{"type": "tool", "chunk_type": "tool", "tool": {"id": "call_01_NI9PbVPVuYK4u4aUIgfp0529", "kind": "tool", "name": "builtin_web_search", "status": "error", "detail": "工具调用失败", "output": null}, "_ts": "2026-05-05T14:19:05.188796+00:00"}
+{"event": "agent_message", "message": "[工具] builtin_web_search: 工具调用失败", "_ts": "2026-05-05T14:19:05.189329+00:00"}
+{"event": "agent_message", "message": "[思考] 网络", "_ts": "2026-05-05T14:19:05.822599+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:19:05.914596+00:00"}
+{"event": "agent_message", "message": "[思考] 超", "_ts": "2026-05-05T14:19:05.941221+00:00"}
+{"event": "agent_message", "message": "[思考] 时", "_ts": "2026-05-05T14:19:05.969461+00:00"}
+{"event": "agent_message", "message": "[思考] 了", "_ts": "2026-05-05T14:19:05.969461+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:05.996127+00:00"}
+{"event": "agent_message", "message": "[思考] 让我", "_ts": "2026-05-05T14:19:05.997103+00:00"}
+{"event": "agent_message", "message": "[思考] 试试", "_ts": "2026-05-05T14:19:06.024992+00:00"}
+{"event": "agent_message", "message": "[思考] 本地", "_ts": "2026-05-05T14:19:06.025974+00:00"}
+{"event": "agent_message", "message": "[思考] 搜索", "_ts": "2026-05-05T14:19:06.054932+00:00"}
+{"event": "agent_message", "message": "[思考] 看看", "_ts": "2026-05-05T14:19:06.054932+00:00"}
+{"event": "agent_message", "message": "[思考] 有没有", "_ts": "2026-05-05T14:19:06.099842+00:00"}
+{"event": "agent_message", "message": "[思考] 相关的", "_ts": "2026-05-05T14:19:06.101394+00:00"}
+{"event": "agent_message", "message": "[思考] 文档", "_ts": "2026-05-05T14:19:06.201554+00:00"}
+{"event": "agent_message", "message": "[思考] 内容", "_ts": "2026-05-05T14:19:06.203074+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:06.204056+00:00"}
+{"event": "agent_message", "message": "网络", "_ts": "2026-05-05T14:19:06.204056+00:00"}
+{"event": "agent_message", "message": "搜索", "_ts": "2026-05-05T14:19:06.205032+00:00"}
+{"event": "agent_message", "message": "暂时", "_ts": "2026-05-05T14:19:06.206008+00:00"}
+{"event": "agent_message", "message": "超", "_ts": "2026-05-05T14:19:06.225967+00:00"}
+{"event": "agent_message", "message": "时", "_ts": "2026-05-05T14:19:06.226940+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:06.247154+00:00"}
+{"event": "agent_message", "message": "让我", "_ts": "2026-05-05T14:19:06.248136+00:00"}
+{"event": "agent_message", "message": "试试", "_ts": "2026-05-05T14:19:06.275896+00:00"}
+{"event": "agent_message", "message": "本地", "_ts": "2026-05-05T14:19:06.276878+00:00"}
+{"event": "agent_message", "message": "索引", "_ts": "2026-05-05T14:19:06.304485+00:00"}
+{"event": "agent_message", "message": "搜索", "_ts": "2026-05-05T14:19:06.334397+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:06.387521+00:00"}
+{"type": "task", "chunk_type": "task", "task": {"step_count": 1, "steps": [{"name": "builtin_local_search"}]}, "_ts": "2026-05-05T14:19:07.285015+00:00"}
+{"type": "tool", "chunk_type": "tool", "tool": {"id": "call_00_yWcnzzzJycMt2nDAVUie4694", "kind": "tool", "name": "builtin_local_search", "status": "running"}, "_ts": "2026-05-05T14:19:07.285998+00:00"}
+{"event": "agent_message", "message": "[工具] builtin_local_search: running", "_ts": "2026-05-05T14:19:07.285998+00:00"}
+{"type": "tool", "chunk_type": "tool", "tool": {"id": "call_00_yWcnzzzJycMt2nDAVUie4694", "kind": "tool", "name": "builtin_local_search", "status": "completed", "detail": "索引为空，请先添加文档", "output": {"success": true, "query": "2025年人工智能技术趋势", "results": [], "count": 0, "message": "索引为空，请先添加文档"}}, "_ts": "2026-05-05T14:19:07.285998+00:00"}
+{"event": "agent_message", "message": "[工具] builtin_local_search: 索引为空，请先添加文档", "_ts": "2026-05-05T14:19:07.286975+00:00"}
+{"event": "agent_message", "message": "[思考] 本地", "_ts": "2026-05-05T14:19:07.999968+00:00"}
+{"event": "agent_message", "message": "[思考] 索引", "_ts": "2026-05-05T14:19:08.168951+00:00"}
+{"event": "agent_message", "message": "[思考] 也是", "_ts": "2026-05-05T14:19:08.169925+00:00"}
+{"event": "agent_message", "message": "[思考] 空的", "_ts": "2026-05-05T14:19:08.171431+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:08.171976+00:00"}
+{"event": "agent_message", "message": "[思考] 那我", "_ts": "2026-05-05T14:19:08.193513+00:00"}
+{"event": "agent_message", "message": "[思考] 直接", "_ts": "2026-05-05T14:19:08.226612+00:00"}
+{"event": "agent_message", "message": "[思考] 使用", "_ts": "2026-05-05T14:19:08.248690+00:00"}
+{"event": "agent_message", "message": "[思考] 我的", "_ts": "2026-05-05T14:19:08.248690+00:00"}
+{"event": "agent_message", "message": "[思考] 知识", "_ts": "2026-05-05T14:19:08.276651+00:00"}
+{"event": "agent_message", "message": "[思考] 来", "_ts": "2026-05-05T14:19:08.277627+00:00"}
+{"event": "agent_message", "message": "[思考] 回答", "_ts": "2026-05-05T14:19:08.310397+00:00"}
+{"event": "agent_message", "message": "[思考] 这个问题", "_ts": "2026-05-05T14:19:08.310397+00:00"}
+{"event": "agent_message", "message": "[思考] 吧", "_ts": "2026-05-05T14:19:08.331557+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:08.332104+00:00"}
+{"event": "agent_message", "message": "[思考] 基于", "_ts": "2026-05-05T14:19:08.359379+00:00"}
+{"event": "agent_message", "message": "[思考] 我对", "_ts": "2026-05-05T14:19:08.387929+00:00"}
+{"event": "agent_message", "message": "[思考] 202", "_ts": "2026-05-05T14:19:08.388914+00:00"}
+{"event": "agent_message", "message": "[思考] 5", "_ts": "2026-05-05T14:19:08.414906+00:00"}
+{"event": "agent_message", "message": "[思考] 年", "_ts": "2026-05-05T14:19:08.414906+00:00"}
+{"event": "agent_message", "message": "[思考] AI", "_ts": "2026-05-05T14:19:08.442272+00:00"}
+{"event": "agent_message", "message": "[思考] 趋势", "_ts": "2026-05-05T14:19:08.442272+00:00"}
+{"event": "agent_message", "message": "[思考] 的了解", "_ts": "2026-05-05T14:19:08.469947+00:00"}
+{"event": "agent_message", "message": "[思考] ，", "_ts": "2026-05-05T14:19:08.469947+00:00"}
+{"event": "agent_message", "message": "[思考] 我可以", "_ts": "2026-05-05T14:19:08.496910+00:00"}
+{"event": "agent_message", "message": "[思考] 列出", "_ts": "2026-05-05T14:19:08.497891+00:00"}
+{"event": "agent_message", "message": "[思考] 三个", "_ts": "2026-05-05T14:19:08.524790+00:00"}
+{"event": "agent_message", "message": "[思考] 最", "_ts": "2026-05-05T14:19:08.524790+00:00"}
+{"event": "agent_message", "message": "[思考] 热", "_ts": "2026-05-05T14:19:08.554048+00:00"}
+{"event": "agent_message", "message": "[思考] 门的", "_ts": "2026-05-05T14:19:08.555024+00:00"}
+{"event": "agent_message", "message": "[思考] 趋势", "_ts": "2026-05-05T14:19:08.593668+00:00"}
+{"event": "agent_message", "message": "[思考] 。", "_ts": "2026-05-05T14:19:08.594651+00:00"}
+{"event": "agent_message", "message": "本地", "_ts": "2026-05-05T14:19:08.627506+00:00"}
+{"event": "agent_message", "message": "索引", "_ts": "2026-05-05T14:19:08.679117+00:00"}
+{"event": "agent_message", "message": "也没有", "_ts": "2026-05-05T14:19:08.680093+00:00"}
+{"event": "agent_message", "message": "相关内容", "_ts": "2026-05-05T14:19:08.680093+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:08.680093+00:00"}
+{"event": "agent_message", "message": "不过", "_ts": "2026-05-05T14:19:08.766420+00:00"}
+{"event": "agent_message", "message": "没关系", "_ts": "2026-05-05T14:19:08.767403+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:08.768379+00:00"}
+{"event": "agent_message", "message": "让我", "_ts": "2026-05-05T14:19:08.769357+00:00"}
+{"event": "agent_message", "message": "基于", "_ts": "2026-05-05T14:19:08.769357+00:00"}
+{"event": "agent_message", "message": "自有", "_ts": "2026-05-05T14:19:08.788225+00:00"}
+{"event": "agent_message", "message": "知识", "_ts": "2026-05-05T14:19:08.789230+00:00"}
+{"event": "agent_message", "message": "为你", "_ts": "2026-05-05T14:19:08.801174+00:00"}
+{"event": "agent_message", "message": "梳理", "_ts": "2026-05-05T14:19:08.828621+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:08.829600+00:00"}
+{"event": "agent_message", "message": "202", "_ts": "2026-05-05T14:19:08.859531+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:08.860497+00:00"}
+{"event": "agent_message", "message": "年", "_ts": "2026-05-05T14:19:08.883110+00:00"}
+{"event": "agent_message", "message": "人工智能", "_ts": "2026-05-05T14:19:08.884082+00:00"}
+{"event": "agent_message", "message": "领域", "_ts": "2026-05-05T14:19:08.913776+00:00"}
+{"event": "agent_message", "message": "最", "_ts": "2026-05-05T14:19:08.914750+00:00"}
+{"event": "agent_message", "message": "热", "_ts": "2026-05-05T14:19:08.942382+00:00"}
+{"event": "agent_message", "message": "门的", "_ts": "2026-05-05T14:19:08.943361+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:08.979261+00:00"}
+{"event": "agent_message", "message": "个", "_ts": "2026-05-05T14:19:08.979261+00:00"}
+{"event": "agent_message", "message": "技术", "_ts": "2026-05-05T14:19:08.993201+00:00"}
+{"event": "agent_message", "message": "趋势", "_ts": "2026-05-05T14:19:08.994181+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:09.027739+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:09.073896+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:09.074902+00:00"}
+{"event": "agent_message", "message": "##", "_ts": "2026-05-05T14:19:09.074902+00:00"}
+{"event": "agent_message", "message": "202", "_ts": "2026-05-05T14:19:09.078456+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:09.116351+00:00"}
+{"event": "agent_message", "message": "年", "_ts": "2026-05-05T14:19:09.116879+00:00"}
+{"event": "agent_message", "message": "人工智能", "_ts": "2026-05-05T14:19:09.146488+00:00"}
+{"event": "agent_message", "message": "领域", "_ts": "2026-05-05T14:19:09.159512+00:00"}
+{"event": "agent_message", "message": "三大", "_ts": "2026-05-05T14:19:09.160488+00:00"}
+{"event": "agent_message", "message": "热门", "_ts": "2026-05-05T14:19:09.220917+00:00"}
+{"event": "agent_message", "message": "技术", "_ts": "2026-05-05T14:19:09.221526+00:00"}
+{"event": "agent_message", "message": "趋势", "_ts": "2026-05-05T14:19:09.222508+00:00"}
+{"event": "agent_message", "message": "###", "_ts": "2026-05-05T14:19:09.241714+00:00"}
+{"event": "agent_message", "message": "趋势", "_ts": "2026-05-05T14:19:09.266570+00:00"}
+{"event": "agent_message", "message": "一", "_ts": "2026-05-05T14:19:09.269078+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:09.296469+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:09.297449+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:09.329441+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:09.330417+00:00"}
+{"event": "agent_message", "message": "智能", "_ts": "2026-05-05T14:19:09.387951+00:00"}
+{"event": "agent_message", "message": "体", "_ts": "2026-05-05T14:19:09.388933+00:00"}
+{"event": "agent_message", "message": "/", "_ts": "2026-05-05T14:19:09.424632+00:00"}
+{"event": "agent_message", "message": "代理", "_ts": "2026-05-05T14:19:09.424632+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:09.437650+00:00"}
+{"event": "agent_message", "message": "——", "_ts": "2026-05-05T14:19:09.438626+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:09.463749+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:09.463749+00:00"}
+{"event": "agent_message", "message": "对话", "_ts": "2026-05-05T14:19:09.491369+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:09.491902+00:00"}
+{"event": "agent_message", "message": "到", "_ts": "2026-05-05T14:19:09.519310+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:09.520299+00:00"}
+{"event": "agent_message", "message": "自主", "_ts": "2026-05-05T14:19:09.545699+00:00"}
+{"event": "agent_message", "message": "行动", "_ts": "2026-05-05T14:19:09.546711+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:09.573318+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:09.573318+00:00"}
+{"event": "agent_message", "message": "核心", "_ts": "2026-05-05T14:19:09.675262+00:00"}
+{"event": "agent_message", "message": "内容", "_ts": "2026-05-05T14:19:09.676266+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:09.677248+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:09.677248+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:09.678225+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:09.678225+00:00"}
+{"event": "agent_message", "message": "不再是", "_ts": "2026-05-05T14:19:09.689308+00:00"}
+{"event": "agent_message", "message": "简单的", "_ts": "2026-05-05T14:19:09.712126+00:00"}
+{"event": "agent_message", "message": "聊天", "_ts": "2026-05-05T14:19:09.787628+00:00"}
+{"event": "agent_message", "message": "机器人", "_ts": "2026-05-05T14:19:09.788605+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:09.789581+00:00"}
+{"event": "agent_message", "message": "而是", "_ts": "2026-05-05T14:19:09.790558+00:00"}
+{"event": "agent_message", "message": "能", "_ts": "2026-05-05T14:19:09.801586+00:00"}
+{"event": "agent_message", "message": "自主", "_ts": "2026-05-05T14:19:09.802568+00:00"}
+{"event": "agent_message", "message": "感知", "_ts": "2026-05-05T14:19:09.844471+00:00"}
+{"event": "agent_message", "message": "环境", "_ts": "2026-05-05T14:19:09.845448+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:09.859469+00:00"}
+{"event": "agent_message", "message": "制定", "_ts": "2026-05-05T14:19:09.860444+00:00"}
+{"event": "agent_message", "message": "计划", "_ts": "2026-05-05T14:19:09.875298+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:09.876818+00:00"}
+{"event": "agent_message", "message": "调用", "_ts": "2026-05-05T14:19:09.917259+00:00"}
+{"event": "agent_message", "message": "工具", "_ts": "2026-05-05T14:19:09.918234+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:09.931941+00:00"}
+{"event": "agent_message", "message": "执行", "_ts": "2026-05-05T14:19:09.933447+00:00"}
+{"event": "agent_message", "message": "任务的", "_ts": "2026-05-05T14:19:09.969360+00:00"}
+{"event": "agent_message", "message": "智能", "_ts": "2026-05-05T14:19:09.970333+00:00"}
+{"event": "agent_message", "message": "实体", "_ts": "2026-05-05T14:19:09.992676+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:09.992676+00:00"}
+{"event": "agent_message", "message": "它", "_ts": "2026-05-05T14:19:10.012644+00:00"}
+{"event": "agent_message", "message": "具备", "_ts": "2026-05-05T14:19:10.013622+00:00"}
+{"event": "agent_message", "message": "记忆", "_ts": "2026-05-05T14:19:10.053803+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:10.066893+00:00"}
+{"event": "agent_message", "message": "推理", "_ts": "2026-05-05T14:19:10.067925+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:10.094761+00:00"}
+{"event": "agent_message", "message": "工具", "_ts": "2026-05-05T14:19:10.125122+00:00"}
+{"event": "agent_message", "message": "调用", "_ts": "2026-05-05T14:19:10.153172+00:00"}
+{"event": "agent_message", "message": "和多", "_ts": "2026-05-05T14:19:10.179398+00:00"}
+{"event": "agent_message", "message": "步", "_ts": "2026-05-05T14:19:10.237340+00:00"}
+{"event": "agent_message", "message": "规划", "_ts": "2026-05-05T14:19:10.238854+00:00"}
+{"event": "agent_message", "message": "能力", "_ts": "2026-05-05T14:19:10.239836+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:10.257991+00:00"}
+{"event": "agent_message", "message": "可以", "_ts": "2026-05-05T14:19:10.258967+00:00"}
+{"event": "agent_message", "message": "像", "_ts": "2026-05-05T14:19:10.286254+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:10.286254+00:00"}
+{"event": "agent_message", "message": "数字", "_ts": "2026-05-05T14:19:10.317474+00:00"}
+{"event": "agent_message", "message": "员工", "_ts": "2026-05-05T14:19:10.318481+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:10.351611+00:00"}
+{"event": "agent_message", "message": "一样", "_ts": "2026-05-05T14:19:10.351611+00:00"}
+{"event": "agent_message", "message": "独立", "_ts": "2026-05-05T14:19:10.369489+00:00"}
+{"event": "agent_message", "message": "完成", "_ts": "2026-05-05T14:19:10.369489+00:00"}
+{"event": "agent_message", "message": "复杂", "_ts": "2026-05-05T14:19:10.399378+00:00"}
+{"event": "agent_message", "message": "工作", "_ts": "2026-05-05T14:19:10.400354+00:00"}
+{"event": "agent_message", "message": "流", "_ts": "2026-05-05T14:19:10.426670+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:10.464394+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:10.466381+00:00"}
+{"event": "agent_message", "message": "影响", "_ts": "2026-05-05T14:19:10.466381+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:10.504425+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:10.536279+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:10.536279+00:00"}
+{"event": "agent_message", "message": "企业", "_ts": "2026-05-05T14:19:10.561371+00:00"}
+{"event": "agent_message", "message": "自动化", "_ts": "2026-05-05T14:19:10.562353+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:10.591351+00:00"}
+{"event": "agent_message", "message": "规则", "_ts": "2026-05-05T14:19:10.592333+00:00"}
+{"event": "agent_message", "message": "驱动", "_ts": "2026-05-05T14:19:10.707144+00:00"}
+{"event": "agent_message", "message": "转向", "_ts": "2026-05-05T14:19:10.708128+00:00"}
+{"event": "agent_message", "message": "意图", "_ts": "2026-05-05T14:19:10.710081+00:00"}
+{"event": "agent_message", "message": "驱动", "_ts": "2026-05-05T14:19:10.710081+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:10.711586+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:10.730616+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:10.731620+00:00"}
+{"event": "agent_message", "message": "可", "_ts": "2026-05-05T14:19:10.754855+00:00"}
+{"event": "agent_message", "message": "自动", "_ts": "2026-05-05T14:19:10.789685+00:00"}
+{"event": "agent_message", "message": "完成", "_ts": "2026-05-05T14:19:10.808484+00:00"}
+{"event": "agent_message", "message": "客服", "_ts": "2026-05-05T14:19:10.809490+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:10.836478+00:00"}
+{"event": "agent_message", "message": "代码", "_ts": "2026-05-05T14:19:10.837462+00:00"}
+{"event": "agent_message", "message": "开发", "_ts": "2026-05-05T14:19:10.861965+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:10.895375+00:00"}
+{"event": "agent_message", "message": "数据分析", "_ts": "2026-05-05T14:19:10.896379+00:00"}
+{"event": "agent_message", "message": "等工作", "_ts": "2026-05-05T14:19:10.924550+00:00"}
+{"event": "agent_message", "message": "流", "_ts": "2026-05-05T14:19:10.945602+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:10.975485+00:00"}
+{"event": "agent_message", "message": "多", "_ts": "2026-05-05T14:19:11.002362+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:11.002362+00:00"}
+{"event": "agent_message", "message": "协作", "_ts": "2026-05-05T14:19:11.028209+00:00"}
+{"event": "agent_message", "message": "系统", "_ts": "2026-05-05T14:19:11.138267+00:00"}
+{"event": "agent_message", "message": "兴起", "_ts": "2026-05-05T14:19:11.138267+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:11.139242+00:00"}
+{"event": "agent_message", "message": "如", "_ts": "2026-05-05T14:19:11.140246+00:00"}
+{"event": "agent_message", "message": "我", "_ts": "2026-05-05T14:19:11.140246+00:00"}
+{"event": "agent_message", "message": "所在的", "_ts": "2026-05-05T14:19:11.141317+00:00"}
+{"event": "agent_message", "message": "Open", "_ts": "2026-05-05T14:19:11.142299+00:00"}
+{"event": "agent_message", "message": "-A", "_ts": "2026-05-05T14:19:11.165501+00:00"}
+{"event": "agent_message", "message": "w", "_ts": "2026-05-05T14:19:11.167183+00:00"}
+{"event": "agent_message", "message": "A", "_ts": "2026-05-05T14:19:11.194074+00:00"}
+{"event": "agent_message", "message": "平台", "_ts": "2026-05-05T14:19:11.221387+00:00"}
+{"event": "agent_message", "message": "就有", "_ts": "2026-05-05T14:19:11.222369+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:11.250155+00:00"}
+{"event": "agent_message", "message": "团队", "_ts": "2026-05-05T14:19:11.276512+00:00"}
+{"event": "agent_message", "message": "协作", "_ts": "2026-05-05T14:19:11.277494+00:00"}
+{"event": "agent_message", "message": "机制", "_ts": "2026-05-05T14:19:11.353597+00:00"}
+{"event": "agent_message", "message": "），", "_ts": "2026-05-05T14:19:11.354580+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:11.355555+00:00"}
+{"event": "agent_message", "message": "之间", "_ts": "2026-05-05T14:19:11.359497+00:00"}
+{"event": "agent_message", "message": "可以", "_ts": "2026-05-05T14:19:11.387555+00:00"}
+{"event": "agent_message", "message": "互相", "_ts": "2026-05-05T14:19:11.388525+00:00"}
+{"event": "agent_message", "message": "通信", "_ts": "2026-05-05T14:19:11.415379+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:11.415379+00:00"}
+{"event": "agent_message", "message": "分配", "_ts": "2026-05-05T14:19:11.441504+00:00"}
+{"event": "agent_message", "message": "任务", "_ts": "2026-05-05T14:19:11.442046+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:11.468929+00:00"}
+{"event": "agent_message", "message": "对", "_ts": "2026-05-05T14:19:11.500281+00:00"}
+{"event": "agent_message", "message": "传统", "_ts": "2026-05-05T14:19:11.524405+00:00"}
+{"event": "agent_message", "message": "SaaS", "_ts": "2026-05-05T14:19:11.525383+00:00"}
+{"event": "agent_message", "message": "模式", "_ts": "2026-05-05T14:19:11.553723+00:00"}
+{"event": "agent_message", "message": "造成", "_ts": "2026-05-05T14:19:11.580383+00:00"}
+{"event": "agent_message", "message": "冲击", "_ts": "2026-05-05T14:19:11.580383+00:00"}
+{"event": "agent_message", "message": "，\"", "_ts": "2026-05-05T14:19:11.608314+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:11.635951+00:00"}
+{"event": "agent_message", "message": "as", "_ts": "2026-05-05T14:19:11.662345+00:00"}
+{"event": "agent_message", "message": "a", "_ts": "2026-05-05T14:19:11.691601+00:00"}
+{"event": "agent_message", "message": "Service", "_ts": "2026-05-05T14:19:11.692585+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:11.720329+00:00"}
+{"event": "agent_message", "message": "成为", "_ts": "2026-05-05T14:19:11.749375+00:00"}
+{"event": "agent_message", "message": "新", "_ts": "2026-05-05T14:19:11.750880+00:00"}
+{"event": "agent_message", "message": "范式", "_ts": "2026-05-05T14:19:11.773785+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:11.801502+00:00"}
+{"event": "agent_message", "message": "###", "_ts": "2026-05-05T14:19:11.803060+00:00"}
+{"event": "agent_message", "message": "趋势", "_ts": "2026-05-05T14:19:11.829374+00:00"}
+{"event": "agent_message", "message": "二", "_ts": "2026-05-05T14:19:11.856576+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:11.857559+00:00"}
+{"event": "agent_message", "message": "多", "_ts": "2026-05-05T14:19:11.883843+00:00"}
+{"event": "agent_message", "message": "模态", "_ts": "2026-05-05T14:19:11.884819+00:00"}
+{"event": "agent_message", "message": "大", "_ts": "2026-05-05T14:19:11.912785+00:00"}
+{"event": "agent_message", "message": "模型", "_ts": "2026-05-05T14:19:11.913762+00:00"}
+{"event": "agent_message", "message": "——", "_ts": "2026-05-05T14:19:11.951647+00:00"}
+{"event": "agent_message", "message": "文本", "_ts": "2026-05-05T14:19:11.966654+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.047557+00:00"}
+{"event": "agent_message", "message": "图像", "_ts": "2026-05-05T14:19:12.048535+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.049510+00:00"}
+{"event": "agent_message", "message": "音频", "_ts": "2026-05-05T14:19:12.049510+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.050486+00:00"}
+{"event": "agent_message", "message": "视频", "_ts": "2026-05-05T14:19:12.051491+00:00"}
+{"event": "agent_message", "message": "全", "_ts": "2026-05-05T14:19:12.076471+00:00"}
+{"event": "agent_message", "message": "打通", "_ts": "2026-05-05T14:19:12.077453+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:12.108366+00:00"}
+{"event": "agent_message", "message": "核心", "_ts": "2026-05-05T14:19:12.131745+00:00"}
+{"event": "agent_message", "message": "内容", "_ts": "2026-05-05T14:19:12.132730+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:12.169177+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:12.189994+00:00"}
+{"event": "agent_message", "message": "大", "_ts": "2026-05-05T14:19:12.189994+00:00"}
+{"event": "agent_message", "message": "模型", "_ts": "2026-05-05T14:19:12.191573+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:12.214504+00:00"}
+{"event": "agent_message", "message": "纯", "_ts": "2026-05-05T14:19:12.215481+00:00"}
+{"event": "agent_message", "message": "文本", "_ts": "2026-05-05T14:19:12.243975+00:00"}
+{"event": "agent_message", "message": "扩展到", "_ts": "2026-05-05T14:19:12.243975+00:00"}
+{"event": "agent_message", "message": "能够", "_ts": "2026-05-05T14:19:12.279247+00:00"}
+{"event": "agent_message", "message": "同时", "_ts": "2026-05-05T14:19:12.302087+00:00"}
+{"event": "agent_message", "message": "理解和", "_ts": "2026-05-05T14:19:12.302087+00:00"}
+{"event": "agent_message", "message": "生成", "_ts": "2026-05-05T14:19:12.324565+00:00"}
+{"event": "agent_message", "message": "文本", "_ts": "2026-05-05T14:19:12.326070+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.352404+00:00"}
+{"event": "agent_message", "message": "图像", "_ts": "2026-05-05T14:19:12.352404+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.381409+00:00"}
+{"event": "agent_message", "message": "音频", "_ts": "2026-05-05T14:19:12.381409+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.420026+00:00"}
+{"event": "agent_message", "message": "视频", "_ts": "2026-05-05T14:19:12.420026+00:00"}
+{"event": "agent_message", "message": "甚至", "_ts": "2026-05-05T14:19:12.435176+00:00"}
+{"event": "agent_message", "message": "3", "_ts": "2026-05-05T14:19:12.435176+00:00"}
+{"event": "agent_message", "message": "D", "_ts": "2026-05-05T14:19:12.461873+00:00"}
+{"event": "agent_message", "message": "内容", "_ts": "2026-05-05T14:19:12.462855+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:12.502575+00:00"}
+{"event": "agent_message", "message": "GPT", "_ts": "2026-05-05T14:19:12.503582+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:12.516498+00:00"}
+{"event": "agent_message", "message": "4", "_ts": "2026-05-05T14:19:12.517479+00:00"}
+{"event": "agent_message", "message": "o", "_ts": "2026-05-05T14:19:12.666195+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.667177+00:00"}
+{"event": "agent_message", "message": "Gem", "_ts": "2026-05-05T14:19:12.668155+00:00"}
+{"event": "agent_message", "message": "ini", "_ts": "2026-05-05T14:19:12.668155+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:12.669130+00:00"}
+{"event": "agent_message", "message": "Cl", "_ts": "2026-05-05T14:19:12.669130+00:00"}
+{"event": "agent_message", "message": "aude", "_ts": "2026-05-05T14:19:12.669130+00:00"}
+{"event": "agent_message", "message": "等", "_ts": "2026-05-05T14:19:12.671737+00:00"}
+{"event": "agent_message", "message": "模型", "_ts": "2026-05-05T14:19:12.671737+00:00"}
+{"event": "agent_message", "message": "都在", "_ts": "2026-05-05T14:19:12.682282+00:00"}
+{"event": "agent_message", "message": "往", "_ts": "2026-05-05T14:19:12.683264+00:00"}
+{"event": "agent_message", "message": "这个", "_ts": "2026-05-05T14:19:12.709917+00:00"}
+{"event": "agent_message", "message": "方向发展", "_ts": "2026-05-05T14:19:12.743866+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:12.744852+00:00"}
+{"event": "agent_message", "message": "202", "_ts": "2026-05-05T14:19:12.838057+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:12.839039+00:00"}
+{"event": "agent_message", "message": "年的", "_ts": "2026-05-05T14:19:12.858876+00:00"}
+{"event": "agent_message", "message": "焦点", "_ts": "2026-05-05T14:19:12.859863+00:00"}
+{"event": "agent_message", "message": "更进一步", "_ts": "2026-05-05T14:19:12.859863+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:12.861366+00:00"}
+{"event": "agent_message", "message": "支持", "_ts": "2026-05-05T14:19:12.861366+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:12.932644+00:00"}
+{"event": "agent_message", "message": "端", "_ts": "2026-05-05T14:19:12.932644+00:00"}
+{"event": "agent_message", "message": "到", "_ts": "2026-05-05T14:19:12.934597+00:00"}
+{"event": "agent_message", "message": "端的", "_ts": "2026-05-05T14:19:12.934597+00:00"}
+{"event": "agent_message", "message": "实时", "_ts": "2026-05-05T14:19:12.935602+00:00"}
+{"event": "agent_message", "message": "多", "_ts": "2026-05-05T14:19:12.936620+00:00"}
+{"event": "agent_message", "message": "模态", "_ts": "2026-05-05T14:19:12.971584+00:00"}
+{"event": "agent_message", "message": "交互", "_ts": "2026-05-05T14:19:12.972568+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:12.987479+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:12.988455+00:00"}
+{"event": "agent_message", "message": "如", "_ts": "2026-05-05T14:19:13.012917+00:00"}
+{"event": "agent_message", "message": "实时", "_ts": "2026-05-05T14:19:13.013895+00:00"}
+{"event": "agent_message", "message": "视频", "_ts": "2026-05-05T14:19:13.044536+00:00"}
+{"event": "agent_message", "message": "理解", "_ts": "2026-05-05T14:19:13.068120+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:13.069100+00:00"}
+{"event": "agent_message", "message": "语音", "_ts": "2026-05-05T14:19:13.094879+00:00"}
+{"event": "agent_message", "message": "对话", "_ts": "2026-05-05T14:19:13.096383+00:00"}
+{"event": "agent_message", "message": "）。", "_ts": "2026-05-05T14:19:13.131092+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:13.131745+00:00"}
+{"event": "agent_message", "message": "影响", "_ts": "2026-05-05T14:19:13.154414+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:13.155396+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:13.179423+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:13.180397+00:00"}
+{"event": "agent_message", "message": "极大", "_ts": "2026-05-05T14:19:13.208280+00:00"}
+{"event": "agent_message", "message": "降低了", "_ts": "2026-05-05T14:19:13.233508+00:00"}
+{"event": "agent_message", "message": "内容", "_ts": "2026-05-05T14:19:13.272875+00:00"}
+{"event": "agent_message", "message": "创作", "_ts": "2026-05-05T14:19:13.288636+00:00"}
+{"event": "agent_message", "message": "门槛", "_ts": "2026-05-05T14:19:13.289614+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:13.316466+00:00"}
+{"event": "agent_message", "message": "一句话", "_ts": "2026-05-05T14:19:13.317994+00:00"}
+{"event": "agent_message", "message": "即可", "_ts": "2026-05-05T14:19:13.388619+00:00"}
+{"event": "agent_message", "message": "生成", "_ts": "2026-05-05T14:19:13.389596+00:00"}
+{"event": "agent_message", "message": "视频", "_ts": "2026-05-05T14:19:13.389596+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:13.404513+00:00"}
+{"event": "agent_message", "message": "海报", "_ts": "2026-05-05T14:19:13.405493+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:13.427337+00:00"}
+{"event": "agent_message", "message": "音乐", "_ts": "2026-05-05T14:19:13.428312+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:13.468683+00:00"}
+{"event": "agent_message", "message": "教育", "_ts": "2026-05-05T14:19:13.482021+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:13.509942+00:00"}
+{"event": "agent_message", "message": "医疗", "_ts": "2026-05-05T14:19:13.511457+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:13.537268+00:00"}
+{"event": "agent_message", "message": "工业", "_ts": "2026-05-05T14:19:13.537867+00:00"}
+{"event": "agent_message", "message": "检测", "_ts": "2026-05-05T14:19:13.565680+00:00"}
+{"event": "agent_message", "message": "等领域", "_ts": "2026-05-05T14:19:13.602974+00:00"}
+{"event": "agent_message", "message": "获得", "_ts": "2026-05-05T14:19:13.603952+00:00"}
+{"event": "agent_message", "message": "突破", "_ts": "2026-05-05T14:19:13.622434+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:13.623411+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:13.648897+00:00"}
+{"event": "agent_message", "message": "能", "_ts": "2026-05-05T14:19:13.679707+00:00"}
+{"event": "agent_message", "message": "同时", "_ts": "2026-05-05T14:19:13.679707+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:13.703570+00:00"}
+{"event": "agent_message", "message": "看", "_ts": "2026-05-05T14:19:13.704575+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:13.731562+00:00"}
+{"event": "agent_message", "message": "和", "_ts": "2026-05-05T14:19:13.733101+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:13.798993+00:00"}
+{"event": "agent_message", "message": "读", "_ts": "2026-05-05T14:19:13.799977+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:13.799977+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:13.801481+00:00"}
+{"event": "agent_message", "message": "催", "_ts": "2026-05-05T14:19:13.818296+00:00"}
+{"event": "agent_message", "message": "生", "_ts": "2026-05-05T14:19:13.841496+00:00"}
+{"event": "agent_message", "message": "多", "_ts": "2026-05-05T14:19:13.843452+00:00"}
+{"event": "agent_message", "message": "模态", "_ts": "2026-05-05T14:19:13.871599+00:00"}
+{"event": "agent_message", "message": "R", "_ts": "2026-05-05T14:19:13.872136+00:00"}
+{"event": "agent_message", "message": "AG", "_ts": "2026-05-05T14:19:13.896552+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:13.897534+00:00"}
+{"event": "agent_message", "message": "检索", "_ts": "2026-05-05T14:19:13.943317+00:00"}
+{"event": "agent_message", "message": "增强", "_ts": "2026-05-05T14:19:13.944294+00:00"}
+{"event": "agent_message", "message": "生成", "_ts": "2026-05-05T14:19:13.951377+00:00"}
+{"event": "agent_message", "message": "），", "_ts": "2026-05-05T14:19:13.952360+00:00"}
+{"event": "agent_message", "message": "搜索", "_ts": "2026-05-05T14:19:13.978735+00:00"}
+{"event": "agent_message", "message": "不再", "_ts": "2026-05-05T14:19:14.009048+00:00"}
+{"event": "agent_message", "message": "限于", "_ts": "2026-05-05T14:19:14.010025+00:00"}
+{"event": "agent_message", "message": "文本", "_ts": "2026-05-05T14:19:14.033885+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:14.034869+00:00"}
+{"event": "agent_message", "message": "可以", "_ts": "2026-05-05T14:19:14.060122+00:00"}
+{"event": "agent_message", "message": "搜", "_ts": "2026-05-05T14:19:14.088809+00:00"}
+{"event": "agent_message", "message": "图", "_ts": "2026-05-05T14:19:14.117049+00:00"}
+{"event": "agent_message", "message": "搜", "_ts": "2026-05-05T14:19:14.117049+00:00"}
+{"event": "agent_message", "message": "视频", "_ts": "2026-05-05T14:19:14.146699+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:14.172082+00:00"}
+{"event": "agent_message", "message": "###", "_ts": "2026-05-05T14:19:14.173064+00:00"}
+{"event": "agent_message", "message": "趋势", "_ts": "2026-05-05T14:19:14.200271+00:00"}
+{"event": "agent_message", "message": "三", "_ts": "2026-05-05T14:19:14.225154+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:14.287664+00:00"}
+{"event": "agent_message", "message": "端", "_ts": "2026-05-05T14:19:14.288640+00:00"}
+{"event": "agent_message", "message": "侧", "_ts": "2026-05-05T14:19:14.288640+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:14.288640+00:00"}
+{"event": "agent_message", "message": "与小", "_ts": "2026-05-05T14:19:14.309202+00:00"}
+{"event": "agent_message", "message": "模型", "_ts": "2026-05-05T14:19:14.336431+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:14.337413+00:00"}
+{"event": "agent_message", "message": "On", "_ts": "2026-05-05T14:19:14.365221+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:14.396338+00:00"}
+{"event": "agent_message", "message": "Device", "_ts": "2026-05-05T14:19:14.396869+00:00"}
+{"event": "agent_message", "message": "&", "_ts": "2026-05-05T14:19:14.418441+00:00"}
+{"event": "agent_message", "message": "Small", "_ts": "2026-05-05T14:19:14.456373+00:00"}
+{"event": "agent_message", "message": "Language", "_ts": "2026-05-05T14:19:14.474522+00:00"}
+{"event": "agent_message", "message": "Models", "_ts": "2026-05-05T14:19:14.475497+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:14.503241+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:14.504218+00:00"}
+{"event": "agent_message", "message": "核心", "_ts": "2026-05-05T14:19:14.529247+00:00"}
+{"event": "agent_message", "message": "内容", "_ts": "2026-05-05T14:19:14.530225+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:14.556513+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:14.583480+00:00"}
+{"event": "agent_message", "message": "大", "_ts": "2026-05-05T14:19:14.584462+00:00"}
+{"event": "agent_message", "message": "模型", "_ts": "2026-05-05T14:19:14.585438+00:00"}
+{"event": "agent_message", "message": "不断", "_ts": "2026-05-05T14:19:14.611191+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:14.612176+00:00"}
+{"event": "agent_message", "message": "瘦", "_ts": "2026-05-05T14:19:14.653579+00:00"}
+{"event": "agent_message", "message": "身", "_ts": "2026-05-05T14:19:14.654565+00:00"}
+{"event": "agent_message", "message": "\"，", "_ts": "2026-05-05T14:19:14.677451+00:00"}
+{"event": "agent_message", "message": "通过", "_ts": "2026-05-05T14:19:14.678433+00:00"}
+{"event": "agent_message", "message": "蒸馏", "_ts": "2026-05-05T14:19:14.693792+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:14.694769+00:00"}
+{"event": "agent_message", "message": "量化", "_ts": "2026-05-05T14:19:14.721534+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:14.722515+00:00"}
+{"event": "agent_message", "message": "剪", "_ts": "2026-05-05T14:19:14.761678+00:00"}
+{"event": "agent_message", "message": "枝", "_ts": "2026-05-05T14:19:14.762664+00:00"}
+{"event": "agent_message", "message": "等技术", "_ts": "2026-05-05T14:19:14.776595+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:14.777577+00:00"}
+{"event": "agent_message", "message": "将", "_ts": "2026-05-05T14:19:14.851314+00:00"}
+{"event": "agent_message", "message": "百", "_ts": "2026-05-05T14:19:14.852295+00:00"}
+{"event": "agent_message", "message": "亿", "_ts": "2026-05-05T14:19:14.853272+00:00"}
+{"event": "agent_message", "message": "级", "_ts": "2026-05-05T14:19:14.859879+00:00"}
+{"event": "agent_message", "message": "参数", "_ts": "2026-05-05T14:19:14.859879+00:00"}
+{"event": "agent_message", "message": "模型的", "_ts": "2026-05-05T14:19:14.886742+00:00"}
+{"event": "agent_message", "message": "推理", "_ts": "2026-05-05T14:19:14.887724+00:00"}
+{"event": "agent_message", "message": "能力", "_ts": "2026-05-05T14:19:14.913561+00:00"}
+{"event": "agent_message", "message": "压缩", "_ts": "2026-05-05T14:19:14.914539+00:00"}
+{"event": "agent_message", "message": "到", "_ts": "2026-05-05T14:19:14.939909+00:00"}
+{"event": "agent_message", "message": "手机", "_ts": "2026-05-05T14:19:14.941415+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:15.019538+00:00"}
+{"event": "agent_message", "message": "PC", "_ts": "2026-05-05T14:19:15.020511+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:15.021514+00:00"}
+{"event": "agent_message", "message": "IoT", "_ts": "2026-05-05T14:19:15.022048+00:00"}
+{"event": "agent_message", "message": "设备", "_ts": "2026-05-05T14:19:15.024006+00:00"}
+{"event": "agent_message", "message": "上", "_ts": "2026-05-05T14:19:15.024992+00:00"}
+{"event": "agent_message", "message": "本地", "_ts": "2026-05-05T14:19:15.052452+00:00"}
+{"event": "agent_message", "message": "运行", "_ts": "2026-05-05T14:19:15.053457+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:15.079215+00:00"}
+{"event": "agent_message", "message": "高通", "_ts": "2026-05-05T14:19:15.079215+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:15.105773+00:00"}
+{"event": "agent_message", "message": "苹果", "_ts": "2026-05-05T14:19:15.106970+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:15.152193+00:00"}
+{"event": "agent_message", "message": "联", "_ts": "2026-05-05T14:19:15.153171+00:00"}
+{"event": "agent_message", "message": "发", "_ts": "2026-05-05T14:19:15.173077+00:00"}
+{"event": "agent_message", "message": "科", "_ts": "2026-05-05T14:19:15.174052+00:00"}
+{"event": "agent_message", "message": "等", "_ts": "2026-05-05T14:19:15.205549+00:00"}
+{"event": "agent_message", "message": "芯片", "_ts": "2026-05-05T14:19:15.205549+00:00"}
+{"event": "agent_message", "message": "厂商", "_ts": "2026-05-05T14:19:15.309307+00:00"}
+{"event": "agent_message", "message": "在", "_ts": "2026-05-05T14:19:15.329620+00:00"}
+{"event": "agent_message", "message": "NP", "_ts": "2026-05-05T14:19:15.330598+00:00"}
+{"event": "agent_message", "message": "U", "_ts": "2026-05-05T14:19:15.331603+00:00"}
+{"event": "agent_message", "message": "上", "_ts": "2026-05-05T14:19:15.332585+00:00"}
+{"event": "agent_message", "message": "大力", "_ts": "2026-05-05T14:19:15.332585+00:00"}
+{"event": "agent_message", "message": "优化", "_ts": "2026-05-05T14:19:15.333561+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:15.355555+00:00"}
+{"event": "agent_message", "message": "202", "_ts": "2026-05-05T14:19:15.356561+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:15.382546+00:00"}
+{"event": "agent_message", "message": "年", "_ts": "2026-05-05T14:19:15.382546+00:00"}
+{"event": "agent_message", "message": "主流", "_ts": "2026-05-05T14:19:15.409733+00:00"}
+{"event": "agent_message", "message": "旗舰", "_ts": "2026-05-05T14:19:15.410710+00:00"}
+{"event": "agent_message", "message": "手机", "_ts": "2026-05-05T14:19:15.436961+00:00"}
+{"event": "agent_message", "message": "均", "_ts": "2026-05-05T14:19:15.438547+00:00"}
+{"event": "agent_message", "message": "内置", "_ts": "2026-05-05T14:19:15.467753+00:00"}
+{"event": "agent_message", "message": "本地", "_ts": "2026-05-05T14:19:15.502417+00:00"}
+{"event": "agent_message", "message": "大", "_ts": "2026-05-05T14:19:15.503920+00:00"}
+{"event": "agent_message", "message": "模型", "_ts": "2026-05-05T14:19:15.520016+00:00"}
+{"event": "agent_message", "message": "推理", "_ts": "2026-05-05T14:19:15.521520+00:00"}
+{"event": "agent_message", "message": "能力", "_ts": "2026-05-05T14:19:15.548962+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:15.575021+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:15.590496+00:00"}
+{"event": "agent_message", "message": "影响", "_ts": "2026-05-05T14:19:15.592047+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:15.623663+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:15.630124+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:15.632201+00:00"}
+{"event": "agent_message", "message": "隐私", "_ts": "2026-05-05T14:19:15.657921+00:00"}
+{"event": "agent_message", "message": "保护", "_ts": "2026-05-05T14:19:15.658904+00:00"}
+{"event": "agent_message", "message": "大幅", "_ts": "2026-05-05T14:19:15.691981+00:00"}
+{"event": "agent_message", "message": "提升", "_ts": "2026-05-05T14:19:15.714035+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:15.715556+00:00"}
+{"event": "agent_message", "message": "敏感", "_ts": "2026-05-05T14:19:15.741637+00:00"}
+{"event": "agent_message", "message": "数据", "_ts": "2026-05-05T14:19:15.741637+00:00"}
+{"event": "agent_message", "message": "无需", "_ts": "2026-05-05T14:19:15.767709+00:00"}
+{"event": "agent_message", "message": "上传", "_ts": "2026-05-05T14:19:15.794952+00:00"}
+{"event": "agent_message", "message": "云端", "_ts": "2026-05-05T14:19:15.795935+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:15.822399+00:00"}
+{"event": "agent_message", "message": "本地", "_ts": "2026-05-05T14:19:15.822399+00:00"}
+{"event": "agent_message", "message": "即可", "_ts": "2026-05-05T14:19:15.850545+00:00"}
+{"event": "agent_message", "message": "处理", "_ts": "2026-05-05T14:19:15.851549+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:15.879613+00:00"}
+{"event": "agent_message", "message": "离线", "_ts": "2026-05-05T14:19:15.904485+00:00"}
+{"event": "agent_message", "message": "场景", "_ts": "2026-05-05T14:19:15.944049+00:00"}
+{"event": "agent_message", "message": "下的", "_ts": "2026-05-05T14:19:15.958984+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:15.959966+00:00"}
+{"event": "agent_message", "message": "体验", "_ts": "2026-05-05T14:19:15.987502+00:00"}
+{"event": "agent_message", "message": "成为", "_ts": "2026-05-05T14:19:16.015147+00:00"}
+{"event": "agent_message", "message": "可能", "_ts": "2026-05-05T14:19:16.016123+00:00"}
+{"event": "agent_message", "message": "（", "_ts": "2026-05-05T14:19:16.041426+00:00"}
+{"event": "agent_message", "message": "翻译", "_ts": "2026-05-05T14:19:16.041426+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:16.069660+00:00"}
+{"event": "agent_message", "message": "摘要", "_ts": "2026-05-05T14:19:16.069660+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:16.110357+00:00"}
+{"event": "agent_message", "message": "拍照", "_ts": "2026-05-05T14:19:16.111360+00:00"}
+{"event": "agent_message", "message": "修", "_ts": "2026-05-05T14:19:16.125857+00:00"}
+{"event": "agent_message", "message": "图", "_ts": "2026-05-05T14:19:16.125857+00:00"}
+{"event": "agent_message", "message": "等", "_ts": "2026-05-05T14:19:16.153806+00:00"}
+{"event": "agent_message", "message": "）", "_ts": "2026-05-05T14:19:16.197616+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:16.199571+00:00"}
+{"event": "agent_message", "message": "推动", "_ts": "2026-05-05T14:19:16.208751+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:16.259225+00:00"}
+{"event": "agent_message", "message": "应用", "_ts": "2026-05-05T14:19:16.265265+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:16.291465+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:16.317846+00:00"}
+{"event": "agent_message", "message": "联网", "_ts": "2026-05-05T14:19:16.319800+00:00"}
+{"event": "agent_message", "message": "才能", "_ts": "2026-05-05T14:19:16.345347+00:00"}
+{"event": "agent_message", "message": "用", "_ts": "2026-05-05T14:19:16.383428+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:16.384410+00:00"}
+{"event": "agent_message", "message": "走向", "_ts": "2026-05-05T14:19:16.401802+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:16.402344+00:00"}
+{"event": "agent_message", "message": "随时随地", "_ts": "2026-05-05T14:19:16.433667+00:00"}
+{"event": "agent_message", "message": "可用", "_ts": "2026-05-05T14:19:16.434644+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:16.455273+00:00"}
+{"event": "agent_message", "message": "-", "_ts": "2026-05-05T14:19:16.456250+00:00"}
+{"event": "agent_message", "message": "降低", "_ts": "2026-05-05T14:19:16.484556+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:16.509965+00:00"}
+{"event": "agent_message", "message": "使用", "_ts": "2026-05-05T14:19:16.537400+00:00"}
+{"event": "agent_message", "message": "成本", "_ts": "2026-05-05T14:19:16.564519+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:16.566023+00:00"}
+{"event": "agent_message", "message": "中小企业", "_ts": "2026-05-05T14:19:16.592409+00:00"}
+{"event": "agent_message", "message": "也能", "_ts": "2026-05-05T14:19:16.621251+00:00"}
+{"event": "agent_message", "message": "负担", "_ts": "2026-05-05T14:19:16.621251+00:00"}
+{"event": "agent_message", "message": "得起", "_ts": "2026-05-05T14:19:16.648681+00:00"}
+{"event": "agent_message", "message": "---", "_ts": "2026-05-05T14:19:16.702622+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:16.703602+00:00"}
+{"event": "agent_message", "message": "总结", "_ts": "2026-05-05T14:19:16.704580+00:00"}
+{"event": "agent_message", "message": "一句话", "_ts": "2026-05-05T14:19:16.731512+00:00"}
+{"event": "agent_message", "message": "：", "_ts": "2026-05-05T14:19:16.807144+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:16.808128+00:00"}
+{"event": "agent_message", "message": "202", "_ts": "2026-05-05T14:19:16.809133+00:00"}
+{"event": "agent_message", "message": "5", "_ts": "2026-05-05T14:19:16.811618+00:00"}
+{"event": "agent_message", "message": "年", "_ts": "2026-05-05T14:19:16.812833+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:16.854704+00:00"}
+{"event": "agent_message", "message": "的", "_ts": "2026-05-05T14:19:16.855682+00:00"}
+{"event": "agent_message", "message": "三大", "_ts": "2026-05-05T14:19:16.930749+00:00"}
+{"event": "agent_message", "message": "关键词", "_ts": "2026-05-05T14:19:16.931688+00:00"}
+{"event": "agent_message", "message": "是", "_ts": "2026-05-05T14:19:16.932753+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:16.934292+00:00"}
+{"event": "agent_message", "message": "Agent", "_ts": "2026-05-05T14:19:16.934292+00:00"}
+{"event": "agent_message", "message": "自主", "_ts": "2026-05-05T14:19:16.990509+00:00"}
+{"event": "agent_message", "message": "化", "_ts": "2026-05-05T14:19:16.990509+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:17.003588+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:17.004566+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:17.032589+00:00"}
+{"event": "agent_message", "message": "多", "_ts": "2026-05-05T14:19:17.032589+00:00"}
+{"event": "agent_message", "message": "模态", "_ts": "2026-05-05T14:19:17.073521+00:00"}
+{"event": "agent_message", "message": "融合", "_ts": "2026-05-05T14:19:17.074499+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:17.086636+00:00"}
+{"event": "agent_message", "message": "和", "_ts": "2026-05-05T14:19:17.118424+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:17.119401+00:00"}
+{"event": "agent_message", "message": "端", "_ts": "2026-05-05T14:19:17.141907+00:00"}
+{"event": "agent_message", "message": "侧", "_ts": "2026-05-05T14:19:17.142494+00:00"}
+{"event": "agent_message", "message": "普及", "_ts": "2026-05-05T14:19:17.183470+00:00"}
+{"event": "agent_message", "message": "**", "_ts": "2026-05-05T14:19:17.184082+00:00"}
+{"event": "agent_message", "message": "，", "_ts": "2026-05-05T14:19:17.196546+00:00"}
+{"event": "agent_message", "message": "三者", "_ts": "2026-05-05T14:19:17.197523+00:00"}
+{"event": "agent_message", "message": "共同", "_ts": "2026-05-05T14:19:17.223606+00:00"}
+{"event": "agent_message", "message": "推动", "_ts": "2026-05-05T14:19:17.224584+00:00"}
+{"event": "agent_message", "message": "AI", "_ts": "2026-05-05T14:19:17.251548+00:00"}
+{"event": "agent_message", "message": "从", "_ts": "2026-05-05T14:19:17.279521+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:17.280497+00:00"}
+{"event": "agent_message", "message": "能", "_ts": "2026-05-05T14:19:17.308385+00:00"}
+{"event": "agent_message", "message": "聊天", "_ts": "2026-05-05T14:19:17.308385+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:17.334528+00:00"}
+{"event": "agent_message", "message": "向", "_ts": "2026-05-05T14:19:17.335503+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:17.360521+00:00"}
+{"event": "agent_message", "message": "能", "_ts": "2026-05-05T14:19:17.361546+00:00"}
+{"event": "agent_message", "message": "干活", "_ts": "2026-05-05T14:19:17.402122+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:17.402663+00:00"}
+{"event": "agent_message", "message": "能", "_ts": "2026-05-05T14:19:17.461188+00:00"}
+{"event": "agent_message", "message": "感知", "_ts": "2026-05-05T14:19:17.462736+00:00"}
+{"event": "agent_message", "message": "、", "_ts": "2026-05-05T14:19:17.463718+00:00"}
+{"event": "agent_message", "message": "无处不在", "_ts": "2026-05-05T14:19:17.464694+00:00"}
+{"event": "agent_message", "message": "\"", "_ts": "2026-05-05T14:19:17.471620+00:00"}
+{"event": "agent_message", "message": "进化", "_ts": "2026-05-05T14:19:17.473223+00:00"}
+{"event": "agent_message", "message": "。", "_ts": "2026-05-05T14:19:17.502585+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "好的，我来搜索一下2025年人工智能领域的最新趋势信息。网络搜索暂时超时，让我试试本地索引搜索。本地索引也没有相关内容，不过没关系，让我基于自有知识为你梳理 **2025年人工智能领域最热门的3个技术趋势**：\n\n---\n\n## 2025年人工智能领域三大热门技术趋势\n\n### 趋势一：AI Agent（智能体/代理）—— 从\"对话\"到\"自主行动\"\n\n**核心内容：**\nAI Agent 不再是简单的聊天机器人，而是能自主感知环境、制定计划、调用工具、执行任务的智能实体。它具备记忆、推理、工具调用和多步规划能力，可以像\"数字员工\"一样独立完成复杂工作流。\n\n**影响：**\n- 企业自动化从规则驱动转向意图驱动，AI Agent 可自动完成客服、代码开发、数据分析等工作流\n- 多 Agent 协作系统兴起（如我所在的 Open-AwA 平台就有 Agent 团队协作机制），Agent 之间可以互相通信、分配任务\n- 对传统 SaaS 模式造成冲击，\"Agent as a Service\" 成为新范式\n\n---\n\n### 趋势二：多模态大模型 —— 文本、图像、音频、视频全打通\n\n**核心内容：**\n大模型从纯文本扩展到能够同时理解和生成文本、图像、音频、视频甚至3D内容。GPT-4o、Gemini、Claude 等模型都在往这个方向发展。2025年的焦点更进一步，支持**端到端的实时多模态交互**（如实时视频理解、语音对话）。\n\n**影响：**\n- 极大降低了内容创作门槛，一句话即可生成视频、海报、音乐\n- 教育、医疗、工业检测等领域获得突破：AI 能同时\"看\"和\"读\"\n- 催生多模态 RAG（检索增强生成），搜索不再限于文本，可以搜图搜视频\n\n---\n\n### 趋势三：端侧AI与小模型（On-Device & Small Language Models）\n\n**核心内容：**\n大模型不断\"瘦身\"，通过蒸馏、量化、剪枝等技术，将百亿级参数模型的推理能力压缩到手机、PC、IoT设备上本地运行。高通、苹果、联发科等芯片厂商在 NPU 上大力优化，2025年主流旗舰手机均内置本地大模型推理能力。\n\n**影响：**\n- 隐私保护大幅提升：敏感数据无需上传云端，本地即可处理\n- 离线场景下的 AI 体验成为可能（翻译、摘要、拍照修图等）\n- 推动 AI 应用从\"联网才能用\"走向\"随时随地可用\"\n- 降低 AI 使用成本，中小企业也能负担得起\n\n---\n\n**总结一句话：** 2025年AI的三大关键词是 **Agent 自主化**、**多模态融合** 和 **端侧普及**，三者共同推动 AI 从\"能聊天\"向\"能干活、能感知、无处不在\"进化。", "_ts": "2026-05-05T14:19:18.273434+00:00"}

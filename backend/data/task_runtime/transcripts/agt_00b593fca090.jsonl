@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "请探索以下问题并给出答案：地球到月球的距离大约是多少公里？只需要给出答案即可。", "description": "探索：地球到月球的距离", "run_mode": "background", "_ts": "2026-05-05T04:51:41.706304+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:51:41.715256+00:00"}

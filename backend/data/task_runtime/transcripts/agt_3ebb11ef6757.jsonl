@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "请只输出一句话：\"我是探索型代理（Explore），我的任务是探索'火星移民'相关的3个有趣事实。\" 然后列出3个有趣事实（每行一个）。只输出结果，不要额外解释。", "description": "探索型代理 - 探索火星移民事实", "run_mode": "background", "_ts": "2026-05-05T04:46:17.799124+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:46:17.810216+00:00"}

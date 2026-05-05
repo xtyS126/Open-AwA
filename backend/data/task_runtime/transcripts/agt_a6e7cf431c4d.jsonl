@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "请告诉我今天的日期（年-月-日）以及今天是星期几。只需要输出日期信息即可，不需要任何额外内容。", "description": "探索任务：告诉我今天的日期", "run_mode": "background", "_ts": "2026-05-05T04:41:33.757362+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:41:33.767032+00:00"}

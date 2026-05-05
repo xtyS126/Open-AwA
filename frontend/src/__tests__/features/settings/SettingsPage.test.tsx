@@ -47,10 +47,6 @@ vi.mock('@/shared/api/api', () => ({
   conversationAPI: {
     getCollectionStatus: vi.fn().mockResolvedValue({ data: { enabled: false, stats: null } }),
     getRecordsPreview: vi.fn().mockResolvedValue({ data: { records: [], count: 0 } }),
-  },
-  userAPI: {
-    getUserInfo: vi.fn().mockResolvedValue({ data: {} }),
-    updatePreferences: vi.fn().mockResolvedValue({ data: {} })
   }
 }))
 

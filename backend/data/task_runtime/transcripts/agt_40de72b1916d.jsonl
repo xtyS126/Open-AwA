@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "这是一个规划任务。请用一句话规划：如果我周末想去海边放松，需要做哪些简单的准备工作？列出3个要点即可。", "description": "规划任务：海边出行准备", "run_mode": "background", "_ts": "2026-05-05T04:40:06.543281+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:40:06.552313+00:00"}

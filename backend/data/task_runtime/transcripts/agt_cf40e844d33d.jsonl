@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Plan", "prompt": "请计算 123 + 456 等于多少？只需要输出计算结果即可。", "description": "计划任务：算一个数学题", "run_mode": "background", "_ts": "2026-05-05T04:41:34.099233+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:41:34.107334+00:00"}

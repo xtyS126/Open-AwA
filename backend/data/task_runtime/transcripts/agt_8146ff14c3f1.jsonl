@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请问法国的首都是哪里？请给出这个城市的名称，并附上2个关于该城市的有趣事实。", "description": "法国的首都及有趣事实", "run_mode": "background", "_ts": "2026-05-05T10:18:05.231812+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T10:18:05.538479+00:00"}

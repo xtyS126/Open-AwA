@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "Explore", "prompt": "搜索并告诉我一个关于\"火星\"的有趣科学事实。只需要一句话的回答。", "description": "搜索火星的有趣事实", "run_mode": "background", "_ts": "2026-05-05T04:49:51.810826+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: 未配置可用的模型提供商", "_ts": "2026-05-05T04:49:51.820260+00:00"}

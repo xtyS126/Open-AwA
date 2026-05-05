@@ -85,6 +85,13 @@
   gap: 8px;
 }
 
+.subagentGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+}
+
 .usageGrid {
   display: flex;
   flex-wrap: wrap;

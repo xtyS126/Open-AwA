@@ -140,8 +140,27 @@ class FeedbackLayer:
             return
 
         user_id = context.get("user_id")
+        continuation = context.get("continuation")
+        is_subagent_continuation = isinstance(continuation, dict) and continuation.get("source") == "subagent"
         
         try:
+            if is_subagent_continuation:
+                merge_with_last_assistant = bool(continuation.get("merge_with_last_assistant", True))
+                if merge_with_last_assistant:
+                    await self.memory_manager.append_to_last_assistant_memory(
+                        session_id=context.get("session_id", "default"),
+                        content=response,
+                        user_id=user_id,
+                    )
+                else:
+                    await self.memory_manager.add_short_term_memory(
+                        session_id=context.get("session_id", "default"),
+                        role="assistant",
+                        content=response,
+                        user_id=user_id,
+                    )
+                return
+
             await self.memory_manager.add_short_term_memory(
                 session_id=context.get("session_id", "default"),
                 role="user",

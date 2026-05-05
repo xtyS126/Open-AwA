@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "ansi-html-community": "^0.0.8",
+    "ansi-to-html": "^0.7.2",
     "axios": "^1.6.7",
     "highlight.js": "^11.11.1",
     "js-cookie": "^3.0.5",

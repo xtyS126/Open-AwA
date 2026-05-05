@@ -18,6 +18,7 @@ function getKindLabel(kind: string): string {
     case 'plugin': return '插件'
     case 'mcp': return 'MCP'
     case 'task': return '代理'
+    case 'subagent': return '子代理'
     default: return kind
   }
 }

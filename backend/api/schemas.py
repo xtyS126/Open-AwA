@@ -68,6 +68,15 @@ class AttachmentItem(BaseModel):
     file_name: Optional[str] = None
 
 
+class ChatContinuation(BaseModel):
+    """
+    continuation 请求载荷，用于携带子代理聚合结果继续同一轮任务。
+    """
+    source: str = Field(..., description="continuation 来源，当前固定为 subagent")
+    aggregated_context: str = Field(..., max_length=200000, description="子代理输出聚合文本")
+    merge_with_last_assistant: Optional[bool] = Field(True, description="是否在持久化时并入上一条 assistant 消息")
+
+
 class ChatMessage(BaseModel):
     """
     聊天消息请求体，支持文本、多模态附件和思考模式参数。
@@ -81,6 +90,7 @@ class ChatMessage(BaseModel):
     thinking_enabled: Optional[bool] = None
     thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度 0-5")
     max_tool_call_rounds: Optional[int] = Field(None, ge=1, le=50000, description="单次对话允许的最大工具回环轮次")
+    continuation: Optional[ChatContinuation] = None
 
 
 class ChatResponse(BaseModel):

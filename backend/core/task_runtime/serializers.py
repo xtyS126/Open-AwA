@@ -77,17 +77,29 @@ def build_summary(result: Dict[str, Any], max_length: int = 2000) -> str:
     return json.dumps(result, ensure_ascii=False, default=str)[:max_length]
 
 
-def emit_subagent_start_event(agent_id: str, agent_type: str, description: str = "") -> Dict[str, Any]:
+def emit_subagent_start_event(
+    agent_id: str,
+    agent_type: str,
+    description: str = "",
+    run_mode: str = "",
+) -> Dict[str, Any]:
     """生成 subagent_start SSE 事件。"""
     return {
         "type": "subagent_start",
         "agent_id": agent_id,
         "agent_type": agent_type,
         "description": description,
+        "run_mode": run_mode,
     }
 
 
-def emit_subagent_stop_event(agent_id: str, state: str, summary: str = "", agent_type: str = "") -> Dict[str, Any]:
+def emit_subagent_stop_event(
+    agent_id: str,
+    state: str,
+    summary: str = "",
+    agent_type: str = "",
+    run_mode: str = "",
+) -> Dict[str, Any]:
     """生成 subagent_stop SSE 事件。"""
     return {
         "type": "subagent_stop",
@@ -95,6 +107,7 @@ def emit_subagent_stop_event(agent_id: str, state: str, summary: str = "", agent
         "agent_type": agent_type,
         "state": state,
         "summary": summary,
+        "run_mode": run_mode,
     }
 
 

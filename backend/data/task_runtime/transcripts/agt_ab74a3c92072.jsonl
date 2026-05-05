@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "请将这句话翻译成英文：\"你好，世界！人工智能正在改变世界。\" 然后输出 \"任务3完成 🌍\"。", "description": "翻译任务", "run_mode": "background", "_ts": "2026-05-05T09:32:57.769390+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T09:32:57.779300+00:00"}

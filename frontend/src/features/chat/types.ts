@@ -10,6 +10,22 @@ export interface ChatMessage {
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'error'
 
+export interface SubagentExecutionState {
+  agentId: string
+  agentType?: string
+  logs: string
+  archivedLogs?: string
+  summary?: string
+  errorText?: string
+  lastOutputAt?: number
+  createdAt?: number
+  completedAt?: number
+  exitCode?: number
+  truncated?: boolean
+  timedOut?: boolean
+  visible?: boolean
+}
+
 export interface TaskStepMeta {
   step: number
   action: string
@@ -29,6 +45,15 @@ export interface ToolEventMeta {
   sequence?: number
   startedAt?: number
   completedAt?: number
+  subagent?: SubagentExecutionState
+}
+
+export interface SubagentAggregationMeta {
+  text: string
+  total: number
+  successCount: number
+  errorCount: number
+  completedAt: number
 }
 
 export interface UsageMeta {
@@ -69,6 +94,7 @@ export interface AssistantExecutionMeta {
   toolEvents: ToolEventMeta[]
   usage?: UsageMeta
   totalDuration?: number
+  subagentAggregation?: SubagentAggregationMeta
 }
 
 export interface ConversationSessionSummary {

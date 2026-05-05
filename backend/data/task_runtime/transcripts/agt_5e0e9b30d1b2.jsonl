@@ -1,0 +1,2 @@
+{"event": "subagent_start", "agent_type": "general-purpose", "prompt": "你是一个知识型 Subagent。请执行以下任务并输出最终结果：列举出 3 种编程语言，每种语言用一句话描述其最核心的特点。格式如：1. Python - ... 2. Java - ... 3. ...。请直接输出，不要多余内容。", "description": "Subagent 3: 列举3种编程语言", "run_mode": "background", "_ts": "2026-05-05T04:37:29.589577+00:00"}
+{"event": "subagent_stop", "state": "completed", "summary": "Error: Unknown error", "_ts": "2026-05-05T04:37:29.599016+00:00"}
