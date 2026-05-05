@@ -148,6 +148,16 @@ class Settings(BaseSettings):
     LOG_FILE_RETENTION: str = "30 days"
     LOG_FILE_COMPRESSION: str = "gz"
     
+    # HTTPS/TLS 配置，当同时设置证书文件和私钥文件时自动启用 HTTPS
+    SSL_CERTFILE: Optional[str] = None
+    SSL_KEYFILE: Optional[str] = None
+    SSL_KEYFILE_PASSWORD: Optional[str] = None
+    SSL_CA_CERTS: Optional[str] = None
+
+    def is_ssl_enabled(self) -> bool:
+        """证书文件和私钥文件同时存在时认为 HTTPS 已启用。"""
+        return bool(self.SSL_CERTFILE and self.SSL_KEYFILE)
+
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
 

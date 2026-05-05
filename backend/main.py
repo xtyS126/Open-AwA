@@ -498,6 +498,7 @@ def _run_uvicorn_server(uvicorn_module, host: str, port: int, debug_mode: bool =
     """
     统一封装 uvicorn.run 调用。
     真实启动时保留默认日志参数，测试中的精简桩函数也能兼容。
+    当 settings 中配置了 SSL 证书和私钥时自动启用 HTTPS。
     """
     run_kwargs = {
         "host": host,
@@ -505,6 +506,15 @@ def _run_uvicorn_server(uvicorn_module, host: str, port: int, debug_mode: bool =
         "access_log": debug_mode,
         "log_level": "debug" if debug_mode else "warning",
     }
+
+    # HTTPS 配置：证书和私钥同时存在时自动启用 TLS
+    if settings.is_ssl_enabled():
+        run_kwargs["ssl_certfile"] = settings.SSL_CERTFILE
+        run_kwargs["ssl_keyfile"] = settings.SSL_KEYFILE
+        if settings.SSL_KEYFILE_PASSWORD:
+            run_kwargs["ssl_keyfile_password"] = settings.SSL_KEYFILE_PASSWORD
+        if settings.SSL_CA_CERTS:
+            run_kwargs["ssl_ca_certs"] = settings.SSL_CA_CERTS
 
     # uvicorn 的热重载依赖导入字符串形式的 app 目标，直接传入 app 对象时无法启用 reload。
     # 这里在调试模式下切换为模块导入路径，便于通过修改 DEBUG_MODE 快速开启本地调试体验。
@@ -547,6 +557,7 @@ def run_server(debug_mode: bool = False) -> None:
         host=host,
         port=port,
         debug_mode=debug_mode,
+        use_tls=settings.is_ssl_enabled(),
     ).info("starting backend server")
     try:
         _run_uvicorn_server(uvicorn, host, port, debug_mode=debug_mode)
