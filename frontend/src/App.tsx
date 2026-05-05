@@ -52,61 +52,6 @@ function App() {
   const { isInitialized, isAuthenticated, setInitialized, setAuth, logout } = useAuthStore()
   const { theme } = useThemeStore()
 
-  useEffect(() => {
-    initializeApp()
-  }, [])
-
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, [theme])
-
-  const initializeApp = async () => {
-    appLogger.info({
-      event: 'app_initialize',
-      module: 'app',
-      action: 'initialize',
-      status: 'start',
-      message: 'app initialization started',
-    })
-
-    try {
-      const meResponse = await authAPI.getMe()
-      appLogger.info({
-        event: 'app_initialize',
-        module: 'app',
-        action: 'session_validate',
-        status: 'success',
-        message: 'existing session validated',
-      })
-      setAuth({ username: meResponse.data?.username || 'user' }, null)
-
-      // 从服务端加载偏好并写入 localStorage，然后刷新 Zustand store
-      await loadServerPreferences()
-      rehydrateStores()
-
-      setInitialized(true)
-      return
-    } catch (error) {
-      const status = (error as { response?: { status?: number } })?.response?.status
-      logout()
-      appLogger.warning({
-        event: 'app_initialize',
-        module: 'app',
-        action: 'session_validate',
-        status: 'failure',
-        message: 'session validation failed, redirecting to login',
-        extra: { error: error instanceof Error ? error.message : String(error), status_code: status },
-      })
-    }
-
-    // 未认证时标记初始化完成，由路由守卫跳转到登录页
-    setInitialized(true)
-  }
-
   function rehydrateStores() {
     const theme = safeGetItem('theme', '')
     if (theme === 'dark' || theme === 'light') {
@@ -136,6 +81,63 @@ function App() {
       }
     }
   }
+
+  const initializeApp = async () => {
+    appLogger.info({
+      event: 'app_initialize',
+      module: 'app',
+      action: 'initialize',
+      status: 'start',
+      message: 'app initialization started',
+    })
+
+    try {
+      const [meResponse] = await Promise.all([
+        authAPI.getMe(),
+        loadServerPreferences(),
+      ])
+      appLogger.info({
+        event: 'app_initialize',
+        module: 'app',
+        action: 'session_validate',
+        status: 'success',
+        message: 'existing session validated',
+      })
+      setAuth({ username: meResponse.data?.username || 'user' }, null)
+
+      rehydrateStores()
+
+      setInitialized(true)
+      return
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      logout()
+      appLogger.warning({
+        event: 'app_initialize',
+        module: 'app',
+        action: 'session_validate',
+        status: 'failure',
+        message: 'session validation failed, redirecting to login',
+        extra: { error: error instanceof Error ? error.message : String(error), status_code: status },
+      })
+    }
+
+    // 未认证时标记初始化完成，由路由守卫跳转到登录页
+    setInitialized(true)
+  }
+
+  useEffect(() => {
+    initializeApp()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [theme])
 
   if (!isInitialized) {
     return (

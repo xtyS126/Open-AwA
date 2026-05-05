@@ -53,11 +53,15 @@ export const getApiErrorDetail = (error: unknown): string => {
 
 const fetchCsrfToken = async (): Promise<string> => {
   try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
     const response = await fetch(CSRF_TOKEN_ENDPOINT, {
       method: 'GET',
       credentials: 'same-origin',
       headers: { 'Accept': 'application/json' },
+      signal: controller.signal,
     })
+    clearTimeout(timeoutId)
     if (!response.ok) {
       throw new Error(`csrf token fetch failed: ${response.status}`)
     }
@@ -97,6 +101,7 @@ const ensureCsrfToken = async (): Promise<string> => {
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -234,10 +239,17 @@ export interface ChatAttachmentPayload {
   file_name?: string
 }
 
+export interface ChatContinuationPayload {
+  source: 'subagent'
+  aggregated_context: string
+  merge_with_last_assistant?: boolean
+}
+
 export interface ChatExecutionOptions {
   thinking_enabled?: boolean
   thinking_depth?: number
   max_tool_call_rounds?: number
+  continuation?: ChatContinuationPayload
 }
 
 export const chatAPI = {
@@ -258,6 +270,9 @@ export const chatAPI = {
     }
     if (typeof executionOptions?.max_tool_call_rounds === 'number') {
       body.max_tool_call_rounds = executionOptions.max_tool_call_rounds
+    }
+    if (executionOptions?.continuation) {
+      body.continuation = executionOptions.continuation
     }
     if (attachments && attachments.length > 0) {
       body.attachments = attachments
@@ -323,6 +338,9 @@ export const chatAPI = {
         }
         if (typeof executionOptions?.max_tool_call_rounds === 'number') {
           streamBody.max_tool_call_rounds = executionOptions.max_tool_call_rounds
+        }
+        if (executionOptions?.continuation) {
+          streamBody.continuation = executionOptions.continuation
         }
         if (attachments && attachments.length > 0) {
           streamBody.attachments = attachments
