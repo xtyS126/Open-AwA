@@ -1,11 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import Convert from 'ansi-to-html'
+import { MessageContent } from './MessageContent'
 import styles from './SubagentExecutionContainer.module.css'
-
-const convert = new Convert({
-  newline: true,
-  escapeXML: true,
-})
 
 export interface SubagentExecutionProps {
   id: string
@@ -39,16 +33,7 @@ export function SubagentExecutionContainer({
   statusLabel,
   truncated = false,
 }: SubagentExecutionProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [logs])
-
   const statusClass = styles[`status-${status}`]
-  const parsedLogs = useMemo(() => convert.toHtml(logs), [logs])
   const resolvedStatusLabel = getStatusLabel(status, statusLabel)
 
   return (
@@ -63,8 +48,8 @@ export function SubagentExecutionContainer({
           <div className={`${styles.statusLight} ${statusClass}`} title={status} />
         </div>
       </div>
-      <div className={styles.content} ref={scrollRef}>
-        <pre dangerouslySetInnerHTML={{ __html: parsedLogs }} />
+      <div className={styles.content}>
+        <MessageContent content={logs} role="assistant" />
       </div>
     </div>
   )
