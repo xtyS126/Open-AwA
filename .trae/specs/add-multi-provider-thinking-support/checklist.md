@@ -1,0 +1,7 @@
+- [x] GPT-5 等 OpenAI 模型是否能按深度正确生成 `reasoning_effort`？
+- [x] Claude 4.6/4.7 等新模型是否生成了 `{"thinking": {"type": "adaptive"}, "output_config": {"effort": "..."}}`？
+- [x] Claude 旧模型是否继续生成 `budget_tokens` 且不低于 1024？
+- [x] Gemini 模型是否根据开启状态和深度正确生成 `reasoning_effort` (none/low/medium/high)？
+- [x] DeepSeek V系列模型在开启思考时，是否补充了 `reasoning_effort` (low/medium/high/max)？
+- [x] 智谱 GLM 和 阿里云 Qwen 模型开关状态是否按文档正确传递？
+- [x] 代码修改后是否通过了后端的 pytest 测试？

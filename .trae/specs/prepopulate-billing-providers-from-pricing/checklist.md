@@ -1,0 +1,9 @@
+- [ ] `GET /billing/providers` 返回中包含 pricing_data.json 的所有厂商（含 `source` 字段）
+- [ ] 数据库中已创建配置的厂商条目以 `source: "database"` 返回且数据完整
+- [ ] 未创建配置的 JSON 厂商条目以 `source: "pricing_json"` 返回且 `selected_models` 取自 JSON
+- [ ] "新增供应商"弹窗中供应商标识为下拉选择，预置 7 个已知厂商 + "自定义"选项
+- [ ] 选择已知厂商后显示名称自动填充
+- [ ] 选择"自定义"后仍可手动输入任意标识
+- [ ] 计费配置 Tab 中模型价格按厂商分组展示，覆盖所有 JSON 厂商
+- [ ] `initialize-pricing` 接口正常导入定价数据
+- [ ] 现有计费相关测试全部通过
