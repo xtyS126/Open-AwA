@@ -154,7 +154,45 @@ async def lifespan(app: FastAPI):
     pm = plugin_instance.get()
     pm.discover_plugins()
     if not os.getenv("SKIP_INIT_DB"):
-        from db.models import Plugin as PluginModel
+        from db.models import Plugin as PluginModel, Skill
+        import uuid
+        db = SessionLocal()
+        try:
+            # 迁移：删除已由 system-tools 插件接管的内置技能记录
+            for skill_name in ["file_manager", "terminal_executor"]:
+                old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
+                if old_skill:
+                    db.delete(old_skill)
+                    logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
+                        f"已迁移内置技能 {skill_name} 至 system-tools 插件"
+                    )
+            db.commit()
+
+            # 注册 system-tools 系统内置插件（如不存在）
+            existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
+            if not existing_plugin:
+                new_plugin = PluginModel(
+                    id=str(uuid.uuid4()),
+                    name="system-tools",
+                    version="1.0.0",
+                    enabled=True,
+                    config={},
+                    category="builtin",
+                    author="Open-AwA Team",
+                    source="builtin",
+                    dependencies=[],
+                )
+                db.add(new_plugin)
+                db.commit()
+                logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
+                    "已注册系统内置插件 system-tools"
+                )
+        except Exception as exc:
+            logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
+            db.rollback()
+        finally:
+            db.close()
+
         db = SessionLocal()
         try:
             enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()

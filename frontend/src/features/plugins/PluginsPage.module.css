@@ -221,6 +221,18 @@
   color: var(--color-warning);
 }
 
+/* 系统内置插件徽章 */
+.builtin-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-bg, #e8f4ff);
+  color: var(--color-primary, #1677ff);
+  border: 1px solid var(--color-primary-border, #91caff);
+  font-weight: 500;
+}
+
 .plugin-actions {
   display: flex;
   gap: 8px;

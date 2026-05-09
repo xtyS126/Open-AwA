@@ -1,0 +1,79 @@
+{
+  "name": "system-tools",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "系统内置工具插件，提供文件管理和终端命令执行能力",
+  "author": "Open-AwA Team",
+  "auto_authorize_permissions": true,
+  "permissions": [
+    "file:read",
+    "file:write",
+    "command:execute"
+  ],
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "read_file",
+      "version": "1.0.0",
+      "config": {
+        "description": "读取文件内容"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "write_file",
+      "version": "1.0.0",
+      "config": {
+        "description": "写入文件内容"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "list_files",
+      "version": "1.0.0",
+      "config": {
+        "description": "列出目录文件"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "delete_file",
+      "version": "1.0.0",
+      "config": {
+        "description": "删除文件或目录"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "file_exists",
+      "version": "1.0.0",
+      "config": {
+        "description": "检查文件是否存在"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "create_directory",
+      "version": "1.0.0",
+      "config": {
+        "description": "创建目录"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "run_command",
+      "version": "1.0.0",
+      "config": {
+        "description": "在受控环境中执行终端命令"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_system_status",
+      "version": "1.0.0",
+      "config": {
+        "description": "获取当前系统状态信息"
+      }
+    }
+  ]
+}

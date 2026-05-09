@@ -31,6 +31,27 @@ from db.models import ConversationRecord, SessionLocal, User, get_db
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 
+def _ws_load_user_by_name(username: str):
+    """
+    WebSocket 鉴权专用：在独立短生命周期会话内查询用户。
+    避免把请求外层 Session 传入 asyncio.to_thread（SQLAlchemy Session 非线程安全）。
+    """
+    with SessionLocal() as db:
+        return db.query(User).filter(User.username == username).first()
+
+
+def _ws_load_session_owner_id(session_id: str) -> str:
+    """
+    WebSocket 鉴权专用：在独立短生命周期会话内查询会话归属 user_id。
+    未找到会话记录时返回空字符串，由调用方决定是否放行。
+    """
+    with SessionLocal() as db:
+        record = db.query(ConversationRecord).filter(
+            ConversationRecord.session_id == session_id
+        ).first()
+        return str(getattr(record, "user_id", "") or "").strip()
+
+
 def _build_upload_metadata_path(filename: str) -> Path:
     """
     为上传文件生成元数据路径。
@@ -226,16 +247,11 @@ async def websocket_endpoint(
         await websocket.close(code=4003, reason="Invalid token payload")
         return
 
-    db = SessionLocal()
-
+    # --- 鉴权查询：使用独立短生命周期会话，不把请求外层 Session 传入线程池 ---
     try:
-        # 使用 asyncio.to_thread 包裹同步 ORM 查询，避免阻塞 asyncio 事件循环
-        user = await asyncio.to_thread(
-            lambda: db.query(User).filter(User.username == username).first()
-        )
+        user = await asyncio.to_thread(_ws_load_user_by_name, username)
         if user is None:
             await websocket.close(code=4004, reason="User not found")
-            db.close()
             return
     except Exception as e:
         logger.bind(
@@ -247,17 +263,12 @@ async def websocket_endpoint(
             error_message=sanitize_for_logging(str(e)),
         ).error("database query failed")
         await websocket.close(code=4004, reason="Database error")
-        db.close()
         return
 
     try:
-        existing_record = await asyncio.to_thread(
-            lambda: db.query(ConversationRecord).filter(ConversationRecord.session_id == session_id).first()
-        )
-        record_owner_id = str(getattr(existing_record, "user_id", "") or "").strip()
+        record_owner_id = await asyncio.to_thread(_ws_load_session_owner_id, session_id)
         if record_owner_id and record_owner_id != str(user.id):
             await websocket.close(code=4003, reason="Unauthorized session")
-            db.close()
             return
     except Exception as e:
         logger.bind(
@@ -269,14 +280,15 @@ async def websocket_endpoint(
             error_message=sanitize_for_logging(str(e)),
         ).error("session ownership check failed")
         await websocket.close(code=4004, reason="Database error")
-        db.close()
         return
-    
+
+    # --- 鉴权通过，为 Agent 创建独立会话，贯穿整个 WebSocket 生命周期 ---
+    db = SessionLocal()
     try:
         await ws_manager.connect(session_id, websocket)
 
         user_id = user.id
-        
+
         logger.bind(
             event="chat_ws_connected",
             module="chat",
@@ -287,7 +299,7 @@ async def websocket_endpoint(
         ).info("websocket connected")
 
         agent = AIAgent(db_session=db)
-        
+
         await handle_websocket_session(
             websocket=websocket,
             session_id=session_id,
@@ -298,7 +310,7 @@ async def websocket_endpoint(
             agent=agent,
         )
     finally:
-        # 统一在此处关闭数据库连接，无论是正常结束还是异常退出
+        # 统一在此处关闭 Agent 使用的数据库连接
         db.close()
 
 

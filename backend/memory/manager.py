@@ -10,7 +10,6 @@ from threading import Lock
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy.orm import Session
 
 from db.models import LongTermMemory, ShortTermMemory
 from core.conversation_sessions import ensure_conversation
@@ -27,8 +26,9 @@ class MemoryManager:
     _shared_vector_store: Optional[VectorStoreManager] = None
     _shared_vector_store_lock = Lock()
 
-    def __init__(self, db: Session):
-        self.db = db
+    def __init__(self, session_factory):
+        # 使用会话工厂而非固定会话，确保每次线程内操作都使用独立短生命周期会话，避免 Session 被跨线程共享
+        self.session_factory = session_factory
         if self.__class__._shared_vector_store is None:
             with self.__class__._shared_vector_store_lock:
                 if self.__class__._shared_vector_store is None:
@@ -133,13 +133,17 @@ class MemoryManager:
             last_access=last_access.isoformat(),
         )
 
-    def _evaluate_memory_sync(self, memory: LongTermMemory) -> Dict[str, Any]:
+    def _evaluate_memory_in_session(self, db, memory: LongTermMemory) -> Dict[str, Any]:
+        """
+        在调用方提供的 db 会话中原位评估记忆质量，不自行创建会话。
+        要求 memory 对象已挂在该 db 会话上，确保 commit 有效。
+        """
         reference_time = datetime.now(timezone.utc)
         memory.confidence = self._calculate_confidence(memory, reference_time=reference_time)
         memory.quality_score = self._calculate_quality_score(memory, reference_time=reference_time)
         if memory.archive_status != "archived" and self._should_archive(memory, reference_time=reference_time):
             memory.archive_status = "archived"
-        self.db.commit()
+        db.commit()
         self._sync_runtime_layers(memory)
         return {
             "memory_id": memory.id,
@@ -157,19 +161,22 @@ class MemoryManager:
         content: str,
         user_id: Optional[str] = None,
     ) -> ShortTermMemory:
-        ensure_conversation(
-            self.db,
-            session_id=session_id,
-            user_id=user_id,
-            content=content,
-            role=role,
-            increment_message_count=True,
-        )
-        memory = ShortTermMemory(session_id=session_id, role=role, content=content)
-        self.db.add(memory)
-        self.db.commit()
-        self.db.refresh(memory)
-        return memory
+        with self.session_factory() as db:
+            ensure_conversation(
+                db,
+                session_id=session_id,
+                user_id=user_id,
+                content=content,
+                role=role,
+                increment_message_count=True,
+            )
+            memory = ShortTermMemory(session_id=session_id, role=role, content=content)
+            db.add(memory)
+            db.commit()
+            db.refresh(memory)
+            # expunge 使对象脱离会话但保留已加载的列属性，供调用方使用
+            db.expunge(memory)
+            return memory
 
     async def add_short_term_memory(
         self,
@@ -192,34 +199,49 @@ class MemoryManager:
         if not normalized_content:
             raise ValueError("content cannot be empty")
 
-        memory = (
-            self.db.query(ShortTermMemory)
-            .filter(
-                ShortTermMemory.session_id == session_id,
-                ShortTermMemory.role == "assistant",
+        with self.session_factory() as db:
+            memory = (
+                db.query(ShortTermMemory)
+                .filter(
+                    ShortTermMemory.session_id == session_id,
+                    ShortTermMemory.role == "assistant",
+                )
+                .order_by(ShortTermMemory.timestamp.desc(), ShortTermMemory.id.desc())
+                .first()
             )
-            .order_by(ShortTermMemory.timestamp.desc(), ShortTermMemory.id.desc())
-            .first()
-        )
 
-        if memory is None:
-            return self._add_short_term_memory_sync(session_id, "assistant", normalized_content, user_id)
+            if memory is None:
+                # 不存在则内联创建，避免嵌套调用引入第二个会话
+                ensure_conversation(
+                    db,
+                    session_id=session_id,
+                    user_id=user_id,
+                    content=normalized_content,
+                    role="assistant",
+                    increment_message_count=True,
+                )
+                memory = ShortTermMemory(session_id=session_id, role="assistant", content=normalized_content)
+                db.add(memory)
+            else:
+                previous_content = str(memory.content or "").strip()
+                memory.content = (
+                    f"{previous_content}\n\n{normalized_content}" if previous_content else normalized_content
+                )
+                memory.timestamp = datetime.now(timezone.utc)
+                ensure_conversation(
+                    db,
+                    session_id=session_id,
+                    user_id=user_id,
+                    content=memory.content,
+                    role="assistant",
+                    occurred_at=memory.timestamp,
+                    increment_message_count=False,
+                )
 
-        previous_content = str(memory.content or "").strip()
-        memory.content = f"{previous_content}\n\n{normalized_content}" if previous_content else normalized_content
-        memory.timestamp = datetime.now(timezone.utc)
-        ensure_conversation(
-            self.db,
-            session_id=session_id,
-            user_id=user_id,
-            content=memory.content,
-            role="assistant",
-            occurred_at=memory.timestamp,
-            increment_message_count=False,
-        )
-        self.db.commit()
-        self.db.refresh(memory)
-        return memory
+            db.commit()
+            db.refresh(memory)
+            db.expunge(memory)
+            return memory
 
     async def append_to_last_assistant_memory(
         self,
@@ -232,21 +254,26 @@ class MemoryManager:
         return memory
 
     def _get_short_term_memories_sync(self, session_id: str, limit: int) -> List[ShortTermMemory]:
-        return (
-            self.db.query(ShortTermMemory)
-            .filter(ShortTermMemory.session_id == session_id)
-            .order_by(ShortTermMemory.timestamp.desc())
-            .limit(limit)
-            .all()
-        )
+        with self.session_factory() as db:
+            memories = (
+                db.query(ShortTermMemory)
+                .filter(ShortTermMemory.session_id == session_id)
+                .order_by(ShortTermMemory.timestamp.desc())
+                .limit(limit)
+                .all()
+            )
+            for m in memories:
+                db.expunge(m)
+            return memories
 
     async def get_short_term_memories(self, session_id: str, limit: int = 50) -> List[ShortTermMemory]:
         return await asyncio.to_thread(self._get_short_term_memories_sync, session_id, limit)
 
     def _clear_short_term_memory_sync(self, session_id: str) -> int:
-        count = self.db.query(ShortTermMemory).filter(ShortTermMemory.session_id == session_id).delete()
-        self.db.commit()
-        return count
+        with self.session_factory() as db:
+            count = db.query(ShortTermMemory).filter(ShortTermMemory.session_id == session_id).delete()
+            db.commit()
+            return count
 
     async def clear_short_term_memory(self, session_id: str) -> int:
         count = await asyncio.to_thread(self._clear_short_term_memory_sync, session_id)
@@ -278,9 +305,11 @@ class MemoryManager:
             memory_metadata=metadata,
         )
         memory.quality_score = self._calculate_quality_score(memory, reference_time=now)
-        self.db.add(memory)
-        self.db.commit()
-        self.db.refresh(memory)
+        with self.session_factory() as db:
+            db.add(memory)
+            db.commit()
+            db.refresh(memory)
+            db.expunge(memory)
         return memory
 
     async def add_long_term_memory(
@@ -326,7 +355,7 @@ class MemoryManager:
         logger.debug(f"Added long-term memory with importance {importance}")
         return memory
 
-    def _get_long_term_memories_sync(
+    def _get_and_evaluate_long_term_memories_sync(
         self,
         min_importance: float,
         limit: int,
@@ -334,17 +363,25 @@ class MemoryManager:
         user_id: Optional[str] = None,
         include_archived: bool = False,
     ) -> List[LongTermMemory]:
-        query = self.db.query(LongTermMemory).filter(LongTermMemory.importance >= min_importance)
-        if user_id is not None:
-            query = query.filter(LongTermMemory.user_id == user_id)
-        if not include_archived:
-            query = query.filter(LongTermMemory.archive_status != "archived")
-        return (
-            query.order_by(LongTermMemory.importance.desc(), LongTermMemory.quality_score.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        """
+        在同一会话内完成记忆加载与质量评估，避免跨会话传递 ORM 对象。
+        """
+        with self.session_factory() as db:
+            query = db.query(LongTermMemory).filter(LongTermMemory.importance >= min_importance)
+            if user_id is not None:
+                query = query.filter(LongTermMemory.user_id == user_id)
+            if not include_archived:
+                query = query.filter(LongTermMemory.archive_status != "archived")
+            memories = (
+                query.order_by(LongTermMemory.importance.desc(), LongTermMemory.quality_score.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+            for memory in memories:
+                self._evaluate_memory_in_session(db, memory)
+                db.expunge(memory)
+            return memories
 
     async def get_long_term_memories(
         self,
@@ -354,27 +391,26 @@ class MemoryManager:
         user_id: Optional[str] = None,
         include_archived: bool = False,
     ) -> List[LongTermMemory]:
-        memories = await asyncio.to_thread(
-            self._get_long_term_memories_sync,
+        # 加载与评估合并在同一个同步函数内，避免跨线程传递 ORM 对象
+        return await asyncio.to_thread(
+            self._get_and_evaluate_long_term_memories_sync,
             min_importance,
             limit,
             offset,
             user_id,
             include_archived,
         )
-        for memory in memories:
-            await asyncio.to_thread(self._evaluate_memory_sync, memory)
-        return memories
 
     def _update_memory_access_sync(self, memory_id: int) -> None:
-        memory = self.db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
-        if memory:
-            memory.access_count += 1
-            memory.last_access = datetime.now(timezone.utc)
-            memory.confidence = self._calculate_confidence(memory)
-            memory.quality_score = self._calculate_quality_score(memory)
-            self.db.commit()
-            self._sync_runtime_layers(memory)
+        with self.session_factory() as db:
+            memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+            if memory:
+                memory.access_count += 1
+                memory.last_access = datetime.now(timezone.utc)
+                memory.confidence = self._calculate_confidence(memory)
+                memory.quality_score = self._calculate_quality_score(memory)
+                db.commit()
+                self._sync_runtime_layers(memory)
 
     async def update_memory_access(self, memory_id: int) -> None:
         await asyncio.to_thread(self._update_memory_access_sync, memory_id)
@@ -386,12 +422,20 @@ class MemoryManager:
         user_id: Optional[str] = None,
         include_archived: bool = False,
     ) -> List[LongTermMemory]:
-        db_query = self.db.query(LongTermMemory).filter(LongTermMemory.content.contains(query))
-        if user_id is not None:
-            db_query = db_query.filter(LongTermMemory.user_id == user_id)
-        if not include_archived:
-            db_query = db_query.filter(LongTermMemory.archive_status != "archived")
-        return db_query.order_by(LongTermMemory.access_count.desc(), LongTermMemory.importance.desc()).limit(limit).all()
+        with self.session_factory() as db:
+            db_query = db.query(LongTermMemory).filter(LongTermMemory.content.contains(query))
+            if user_id is not None:
+                db_query = db_query.filter(LongTermMemory.user_id == user_id)
+            if not include_archived:
+                db_query = db_query.filter(LongTermMemory.archive_status != "archived")
+            results = (
+                db_query.order_by(LongTermMemory.access_count.desc(), LongTermMemory.importance.desc())
+                .limit(limit)
+                .all()
+            )
+            for m in results:
+                db.expunge(m)
+            return results
 
     def _get_memories_by_ids_sync(
         self,
@@ -401,12 +445,16 @@ class MemoryManager:
     ) -> List[LongTermMemory]:
         if not memory_ids:
             return []
-        query = self.db.query(LongTermMemory).filter(LongTermMemory.id.in_(memory_ids))
-        if user_id is not None:
-            query = query.filter(LongTermMemory.user_id == user_id)
-        if not include_archived:
-            query = query.filter(LongTermMemory.archive_status != "archived")
-        return query.all()
+        with self.session_factory() as db:
+            query = db.query(LongTermMemory).filter(LongTermMemory.id.in_(memory_ids))
+            if user_id is not None:
+                query = query.filter(LongTermMemory.user_id == user_id)
+            if not include_archived:
+                query = query.filter(LongTermMemory.archive_status != "archived")
+            results = query.all()
+            for m in results:
+                db.expunge(m)
+            return results
 
     async def search_memories(
         self,
@@ -468,13 +516,15 @@ class MemoryManager:
         return ranked_memories
 
     def _delete_long_term_memory_sync(self, memory_id: int) -> bool:
-        memory = self.db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
-        if memory:
-            self.db.delete(memory)
-            self.db.commit()
-            self.working_memory.pop(str(memory_id), user_id=memory.user_id)
-            self.vector_store.delete_memory(memory_id)
-            return True
+        with self.session_factory() as db:
+            memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+            if memory:
+                user_id = memory.user_id
+                db.delete(memory)
+                db.commit()
+                self.working_memory.pop(str(memory_id), user_id=user_id)
+                self.vector_store.delete_memory(memory_id)
+                return True
         return False
 
     async def delete_long_term_memory(self, memory_id: int) -> bool:
@@ -490,27 +540,28 @@ class MemoryManager:
         importance_threshold: float,
         include_low_quality: bool,
     ) -> int:
-        query = self.db.query(LongTermMemory)
-        if user_id is not None:
-            query = query.filter(LongTermMemory.user_id == user_id)
-        query = query.filter(LongTermMemory.archive_status != "archived")
+        with self.session_factory() as db:
+            query = db.query(LongTermMemory)
+            if user_id is not None:
+                query = query.filter(LongTermMemory.user_id == user_id)
+            query = query.filter(LongTermMemory.archive_status != "archived")
 
-        archived_count = 0
-        for memory in query.all():
-            memory.confidence = self._calculate_confidence(memory)
-            memory.quality_score = self._calculate_quality_score(memory)
-            if self._should_archive(
-                memory,
-                older_than_days=older_than_days,
-                importance_threshold=importance_threshold,
-                include_low_quality=include_low_quality,
-            ):
-                memory.archive_status = "archived"
-                archived_count += 1
-                self.vector_store.update_memory_metadata(memory.id, archive_status="archived")
+            archived_count = 0
+            for memory in query.all():
+                memory.confidence = self._calculate_confidence(memory)
+                memory.quality_score = self._calculate_quality_score(memory)
+                if self._should_archive(
+                    memory,
+                    older_than_days=older_than_days,
+                    importance_threshold=importance_threshold,
+                    include_low_quality=include_low_quality,
+                ):
+                    memory.archive_status = "archived"
+                    archived_count += 1
+                    self.vector_store.update_memory_metadata(memory.id, archive_status="archived")
 
-        self.db.commit()
-        return archived_count
+            db.commit()
+            return archived_count
 
     async def archive_memories(
         self,
@@ -530,12 +581,13 @@ class MemoryManager:
         return archived_count
 
     async def evaluate_memory_quality(self, memory_id: int) -> Optional[Dict[str, Any]]:
-        memory = await asyncio.to_thread(
-            lambda: self.db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
-        )
-        if memory is None:
-            return None
-        return await asyncio.to_thread(self._evaluate_memory_sync, memory)
+        def _do() -> Optional[Dict[str, Any]]:
+            with self.session_factory() as db:
+                memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()
+                if memory is None:
+                    return None
+                return self._evaluate_memory_in_session(db, memory)
+        return await asyncio.to_thread(_do)
 
     async def get_quality_report(
         self,
@@ -543,37 +595,38 @@ class MemoryManager:
         memory_id: Optional[int] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
-        def _load_memories() -> List[LongTermMemory]:
-            query = self.db.query(LongTermMemory)
-            if user_id is not None:
-                query = query.filter(LongTermMemory.user_id == user_id)
-            if memory_id is not None:
-                query = query.filter(LongTermMemory.id == memory_id)
-            return query.order_by(LongTermMemory.last_access.asc()).limit(limit).all()
-
-        memories = await asyncio.to_thread(_load_memories)
-        return [await asyncio.to_thread(self._evaluate_memory_sync, memory) for memory in memories]
+        def _do() -> List[Dict[str, Any]]:
+            with self.session_factory() as db:
+                query = db.query(LongTermMemory)
+                if user_id is not None:
+                    query = query.filter(LongTermMemory.user_id == user_id)
+                if memory_id is not None:
+                    query = query.filter(LongTermMemory.id == memory_id)
+                memories = query.order_by(LongTermMemory.last_access.asc()).limit(limit).all()
+                return [self._evaluate_memory_in_session(db, m) for m in memories]
+        return await asyncio.to_thread(_do)
 
     async def get_memory_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         def _collect_stats() -> Dict[str, Any]:
-            query = self.db.query(LongTermMemory)
-            if user_id is not None:
-                query = query.filter(LongTermMemory.user_id == user_id)
-            memories = query.all()
-            total = len(memories)
-            active = [memory for memory in memories if memory.archive_status != "archived"]
-            archived = [memory for memory in memories if memory.archive_status == "archived"]
-            total_access = sum(memory.access_count for memory in memories)
-            avg_confidence = (sum(memory.confidence for memory in memories) / total) if total else 0.0
-            avg_quality = (sum(memory.quality_score for memory in memories) / total) if total else 0.0
-            return {
-                'total_memories': total,
-                'active_memories': len(active),
-                'archived_memories': len(archived),
-                'average_confidence': round(avg_confidence, 4),
-                'average_quality_score': round(avg_quality, 4),
-                'total_access_count': total_access,
-            }
+            with self.session_factory() as db:
+                query = db.query(LongTermMemory)
+                if user_id is not None:
+                    query = query.filter(LongTermMemory.user_id == user_id)
+                memories = query.all()
+                total = len(memories)
+                active = [memory for memory in memories if memory.archive_status != "archived"]
+                archived = [memory for memory in memories if memory.archive_status == "archived"]
+                total_access = sum(memory.access_count for memory in memories)
+                avg_confidence = (sum(memory.confidence for memory in memories) / total) if total else 0.0
+                avg_quality = (sum(memory.quality_score for memory in memories) / total) if total else 0.0
+                return {
+                    'total_memories': total,
+                    'active_memories': len(active),
+                    'archived_memories': len(archived),
+                    'average_confidence': round(avg_confidence, 4),
+                    'average_quality_score': round(avg_quality, 4),
+                    'total_access_count': total_access,
+                }
 
         stats = await asyncio.to_thread(_collect_stats)
         stats.update(

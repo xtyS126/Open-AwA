@@ -12,13 +12,21 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from config.security import ACCESS_TOKEN_COOKIE_NAME, decode_access_token, is_token_blacklisted
-from db.models import User, get_db
+from db.models import User, get_db, SessionLocal
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 _MAX_REQUEST_TOKEN_LENGTH = 2048
 # token 合法字符集：字母、数字、点、横杠、下划线、等号
 _TOKEN_CHARSET_RE = re.compile(r'^[A-Za-z0-9._\-=]+$')
+
+
+def _load_user_by_username(username: str) -> Optional["User"]:
+    """
+    在独立会话中按用户名加载用户，确保不把请求级 Session 传入线程池。
+    """
+    with SessionLocal() as db:
+        return db.query(User).filter(User.username == username).first()
 
 
 def _normalize_request_token(token: Optional[str]) -> Optional[str]:
@@ -85,10 +93,8 @@ async def get_current_user(
     if not isinstance(username, str):
         raise credentials_exception
     
-    # 使用 asyncio.to_thread 避免同步 ORM 查询阻塞事件循环
-    user = await asyncio.to_thread(
-        lambda: db.query(User).filter(User.username == username).first()
-    )
+    # 在独立会话中查询用户，避免把请求级 Session 传入线程池（SQLAlchemy Session 非线程安全）
+    user = await asyncio.to_thread(_load_user_by_username, username)
     if user is None:
         raise credentials_exception
     # 禁用状态的用户视为无效凭证
@@ -123,10 +129,8 @@ async def get_optional_current_user(
     if not isinstance(username, str):
         return None
 
-    # 使用 asyncio.to_thread 避免同步 ORM 查询阻塞事件循环
-    return await asyncio.to_thread(
-        lambda: db.query(User).filter(User.username == username).first()
-    )
+    # 在独立会话中查询用户，避免把请求级 Session 传入线程池
+    return await asyncio.to_thread(_load_user_by_username, username)
 
 
 async def get_current_admin_user(

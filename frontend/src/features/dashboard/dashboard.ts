@@ -54,6 +54,9 @@ export interface Plugin {
   enabled: boolean
   description?: string
   author?: string
+  // 插件分类，'builtin' 表示系统内置插件
+  category?: string
+  source?: string
   [key: string]: string | number | boolean | undefined
 }
 

@@ -51,9 +51,11 @@ class SemanticTestEmbeddingProvider:
         return [value / norm for value in vector]
 
 
-def build_session():
+def build_session_factory():
     """
-    创建独立的内存数据库会话。
+    创建独立的内存数据库会话工厂（sessionmaker）。
+    返回工厂而非直接返回会话，适配 MemoryManager(session_factory) 新接口。
+    所有会话共享同一内存数据库（StaticPool）。
     """
     engine = create_engine(
         "sqlite:///:memory:",
@@ -61,8 +63,14 @@ def build_session():
         poolclass=StaticPool,
     )
     init_db(bind_engine=engine)
-    session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    return session_local()
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def build_session():
+    """
+    创建独立的内存数据库会话。
+    """
+    return build_session_factory()()
 
 
 @pytest.mark.asyncio
@@ -70,13 +78,13 @@ async def test_memory_manager_hybrid_search_archive_and_stats(tmp_path):
     """
     验证长期记忆支持混合搜索、质量评估、归档与统计。
     """
-    session = build_session()
+    factory = build_session_factory()
     MemoryManager._shared_vector_store = VectorStoreManager(
         persist_directory=str(tmp_path / "memory_vector_db"),
         collection_name=f"memory_{uuid.uuid4().hex}",
         embedding_provider=SemanticTestEmbeddingProvider(),
     )
-    manager = MemoryManager(session)
+    manager = MemoryManager(factory)
 
     ml_memory = await manager.add_long_term_memory(
         content="过拟合问题通常需要配合正则化技术处理",
@@ -99,12 +107,14 @@ async def test_memory_manager_hybrid_search_archive_and_stats(tmp_path):
     assert quality_report
     assert quality_report[0]["quality_score"] >= 0.0
 
-    stale_memory = session.query(LongTermMemory).filter(LongTermMemory.id == ml_memory.id).first()
-    stale_memory.last_access = datetime.now(timezone.utc) - timedelta(days=45)
-    stale_memory.importance = 0.1
-    stale_memory.confidence = 0.1
-    stale_memory.access_count = 30
-    session.commit()
+    # 通过工厂创建直接操作会话（与管理器共享同一 StaticPool 内存库）
+    with factory() as s:
+        stale_memory = s.query(LongTermMemory).filter(LongTermMemory.id == ml_memory.id).first()
+        stale_memory.last_access = datetime.now(timezone.utc) - timedelta(days=45)
+        stale_memory.importance = 0.1
+        stale_memory.confidence = 0.1
+        stale_memory.access_count = 30
+        s.commit()
 
     archived_count = await manager.archive_memories(user_id="user-1")
     stats = await manager.get_memory_stats(user_id="user-1")
@@ -113,8 +123,6 @@ async def test_memory_manager_hybrid_search_archive_and_stats(tmp_path):
     assert stats["archived_memories"] >= 1
     assert stats["vector_store_count"] == 2
     assert stats["embedding_provider"] == "test-semantic"
-
-    session.close()
 
 
 @pytest.mark.asyncio

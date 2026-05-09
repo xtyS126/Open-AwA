@@ -209,6 +209,20 @@ class FakePluginManager:
         return dict(self.execute_result)
 
 
+def build_session_factory():
+    """
+    创建独立的内存数据库会话工厂（sessionmaker）。
+    返回工厂而非直接返回会话，适配 MemoryManager(session_factory) 新接口。
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    init_db(bind_engine=engine)
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
 def build_session():
     engine = create_engine(
         "sqlite:///:memory:",
@@ -424,11 +438,11 @@ async def test_memory_manager_short_term_context_and_edge_paths():
     """
     验证短期记忆、上下文拼装、质量评估空路径和删除空路径。
     """
-    session = build_session()
+    factory = build_session_factory()
     fake_vector_store = FakeVectorStore()
     fake_vector_store.count_value = 0
     MemoryManager._shared_vector_store = fake_vector_store
-    manager = MemoryManager(session)
+    manager = MemoryManager(factory)
 
     assert manager._source_score({"source_type": "unknown"}) == 0.55
     assert manager._ensure_aware_datetime(None).tzinfo is not None
@@ -446,18 +460,16 @@ async def test_memory_manager_short_term_context_and_edge_paths():
     assert await manager.delete_long_term_memory(99999) is False
     await manager.update_memory_access(99999)
 
-    session.close()
-
 
 @pytest.mark.asyncio
 async def test_memory_manager_long_term_listing_supports_offset():
     """
     验证长期记忆列表支持真正的 offset/limit 分页。
     """
-    session = build_session()
+    factory = build_session_factory()
     fake_vector_store = FakeVectorStore()
     MemoryManager._shared_vector_store = fake_vector_store
-    manager = MemoryManager(session)
+    manager = MemoryManager(factory)
 
     await manager.add_long_term_memory(
         content="第一条长期记忆",
@@ -486,7 +498,6 @@ async def test_memory_manager_long_term_listing_supports_offset():
     )
 
     assert [item.id for item in page] == [second_memory.id]
-    session.close()
 
 
 @pytest.mark.asyncio
@@ -494,11 +505,11 @@ async def test_memory_manager_long_term_listing_search_archive_and_delete():
     """
     验证长期记忆的列出、空检索、归档、统计与删除路径。
     """
-    session = build_session()
+    factory = build_session_factory()
     fake_vector_store = FakeVectorStore()
     fake_vector_store.count_value = 1
     MemoryManager._shared_vector_store = fake_vector_store
-    manager = MemoryManager(session)
+    manager = MemoryManager(factory)
 
     memory = await manager.add_long_term_memory(
         content="仅用于边界路径覆盖的长期记忆",
@@ -510,19 +521,24 @@ async def test_memory_manager_long_term_listing_search_archive_and_delete():
     visible_memories = await manager.get_long_term_memories(user_id="user-1", include_archived=False)
     assert [item.id for item in visible_memories] == [memory.id]
 
-    memory.archive_status = "archived"
-    session.commit()
+    # 通过工厂直接修改数据库状态，与管理器共享同一 StaticPool 内存库
+    with factory() as s:
+        db_mem = s.query(LongTermMemory).filter(LongTermMemory.id == memory.id).first()
+        db_mem.archive_status = "archived"
+        s.commit()
     assert await manager.get_long_term_memories(user_id="user-1", include_archived=False) == []
     assert len(await manager.get_long_term_memories(user_id="user-1", include_archived=True)) == 1
 
     fake_vector_store.search_results = []
     assert await manager.search_memories("完全不存在", user_id="user-1", include_archived=False) == []
 
-    memory.archive_status = "active"
-    memory.importance = 0.9
-    memory.confidence = 0.9
-    memory.access_count = 1
-    session.commit()
+    with factory() as s:
+        db_mem = s.query(LongTermMemory).filter(LongTermMemory.id == memory.id).first()
+        db_mem.archive_status = "active"
+        db_mem.importance = 0.9
+        db_mem.confidence = 0.9
+        db_mem.access_count = 1
+        s.commit()
 
     quality_report = await manager.get_quality_report(user_id="user-1", memory_id=memory.id, limit=1)
     stats = await manager.get_memory_stats(user_id="user-1")
@@ -535,8 +551,6 @@ async def test_memory_manager_long_term_listing_search_archive_and_delete():
     assert await manager.delete_long_term_memory(memory.id) is True
     assert fake_vector_store.deleted == [memory.id]
     assert (await manager.get_memory_stats(user_id="user-1"))["total_memories"] == 0
-
-    session.close()
 
 
 @pytest.mark.asyncio

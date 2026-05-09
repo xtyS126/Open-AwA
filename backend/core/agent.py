@@ -76,7 +76,9 @@ class AIAgent:
         self.workflow_engine = None
         if self._db_session:
             from memory.manager import MemoryManager
-            self.memory_manager = MemoryManager(self._db_session)
+            from db.models import SessionLocal
+            # 传入会话工厂而非请求级 Session，确保线程池中的 DB 操作各自持有独立会话
+            self.memory_manager = MemoryManager(SessionLocal)
             self.feedback.set_memory_manager(self.memory_manager)
             self.workflow_engine = WorkflowEngine(db_session=self._db_session, skill_engine=self.skill_engine)
         

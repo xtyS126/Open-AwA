@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user, get_db
+from api.routes.memory import get_memory_manager
 from db.models import LongTermMemory, ScheduledTask, ScheduledTaskExecution, init_db
 from main import app
 from memory.manager import MemoryManager
@@ -94,6 +95,8 @@ def _test_client():
     previous_overrides = dict(app.dependency_overrides)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    # 覆盖记忆管理器依赖，确保使用测试库的会话工厂
+    app.dependency_overrides[get_memory_manager] = lambda: MemoryManager(TestingSessionLocal)
     try:
         with TestClient(app) as client:
             yield client

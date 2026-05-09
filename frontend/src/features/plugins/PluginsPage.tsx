@@ -390,6 +390,9 @@ function PluginsPage() {
                   <span className={`${styles['status-badge']} ${plugin.enabled ? styles['enabled'] : styles['disabled']}`}>
                     {plugin.enabled ? '已启用' : '已禁用'}
                   </span>
+                  {plugin.category === 'builtin' && (
+                    <span className={styles['builtin-badge']}>系统内置</span>
+                  )}
                   {missingCount > 0 && (
                     <span className={styles['permission-badge']}>待授权 {missingCount}</span>
                   )}
@@ -423,6 +426,7 @@ function PluginsPage() {
                   <button
                     className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
                     onClick={() => handleUninstall(plugin.id)}
+                    style={plugin.category === 'builtin' ? { display: 'none' } : undefined}
                   >
                     卸载
                   </button>

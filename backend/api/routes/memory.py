@@ -18,18 +18,19 @@ from api.schemas import (
     ShortTermMemoryCreate,
     ShortTermMemoryResponse,
 )
-from db.models import ConversationRecord, LongTermMemory, ShortTermMemory, get_db
+from db.models import ConversationRecord, LongTermMemory, ShortTermMemory, SessionLocal, get_db
 from memory.manager import MemoryManager
 
 
 router = APIRouter(prefix="/memory", tags=["Memory"])
 
 
-def get_memory_manager(db: Session = Depends(get_db)) -> MemoryManager:
+def get_memory_manager() -> MemoryManager:
     """
     为当前请求构建记忆管理器。
+    使用会话工厂而非请求级 Session，确保线程内部操作各自持有独立会话。
     """
-    return MemoryManager(db)
+    return MemoryManager(SessionLocal)
 
 
 def _verify_session_ownership(db: Session, session_id: str, user_id: str, allow_missing: bool = False) -> bool:

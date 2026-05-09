@@ -32,6 +32,7 @@ class TestMemoryManagerAsyncFix:
 
     @pytest.fixture
     def mock_db(self):
+        # 构造一个返回 mock session 的工厂可调用对象，符合 MemoryManager(session_factory) 新接口
         session = MagicMock(spec=Session)
         # Make query().filter().order_by().limit().all() return empty list
         chain = MagicMock()
@@ -44,7 +45,12 @@ class TestMemoryManagerAsyncFix:
         chain.delete.return_value = 0
         chain.count.return_value = 0
         session.query.return_value = chain
-        return session
+
+        # 创建一个工厂 mock，调用时返回该 session，并支持上下文管理器协议
+        factory = MagicMock(return_value=session)
+        factory.return_value.__enter__ = MagicMock(return_value=session)
+        factory.return_value.__exit__ = MagicMock(return_value=False)
+        return factory
 
     def test_add_short_term_memory_is_async(self):
         from memory.manager import MemoryManager
@@ -89,7 +95,8 @@ class TestMemoryManagerAsyncFix:
         assert hasattr(MemoryManager, '_get_short_term_memories_sync')
         assert hasattr(MemoryManager, '_clear_short_term_memory_sync')
         assert hasattr(MemoryManager, '_add_long_term_memory_sync')
-        assert hasattr(MemoryManager, '_get_long_term_memories_sync')
+        # 加载+评估已合并为单一会话操作，使用新名称
+        assert hasattr(MemoryManager, '_get_and_evaluate_long_term_memories_sync')
         assert hasattr(MemoryManager, '_update_memory_access_sync')
         assert hasattr(MemoryManager, '_search_memories_sync')
         assert hasattr(MemoryManager, '_delete_long_term_memory_sync')

@@ -909,6 +909,12 @@ def test_websocket_sends_chunked_messages_with_seq_and_checksum(monkeypatch):
         def close(self):
             return None
 
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
     async def mock_process(self, user_input, context):
         return {
             "status": "completed",

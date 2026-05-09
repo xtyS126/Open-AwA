@@ -19,9 +19,11 @@ from api.routes import chat as chat_route
 import api.routes.skills as skills_module
 
 from api.dependencies import get_current_user, get_db
+from api.routes.memory import get_memory_manager
 from config.logging import _LOG_BUFFER
 from config.settings import settings
 from db.models import Base, ConversationRecord, LongTermMemory, ShortTermMemory, Skill, WeixinBinding, init_db
+from memory.manager import MemoryManager
 from main import app
 
 
@@ -98,6 +100,8 @@ def _test_client():
     previous_overrides = dict(app.dependency_overrides)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    # 覆盖记忆管理器依赖，确保使用测试库的会话工厂
+    app.dependency_overrides[get_memory_manager] = lambda: MemoryManager(TestingSessionLocal)
     try:
         with TestClient(app) as client:
             yield client

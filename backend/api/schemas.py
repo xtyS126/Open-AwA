@@ -176,7 +176,13 @@ class PluginResponse(PluginBase):
     installed_at: datetime
     runtime_loaded: Optional[bool] = None
     runtime_state: Optional[str] = None
-    
+    # 插件分类，builtin 表示系统内置插件
+    category: Optional[str] = None
+    # 插件作者
+    author: Optional[str] = None
+    # 插件来源
+    source: Optional[str] = None
+
     class Config:
         """
         封装与Config相关的核心逻辑与运行状态。
