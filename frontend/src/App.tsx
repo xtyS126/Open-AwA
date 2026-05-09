@@ -27,6 +27,7 @@ const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
 const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
 const CommunicationPage = React.lazy(() => import('@/features/chat/CommunicationPage'))
+const ThemePage = React.lazy(() => import('@/features/theme/ThemePage'))
 const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
 const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplacePage'))
 const TestPage = React.lazy(() => import('@/features/test/TestPage'))
@@ -190,6 +191,7 @@ function App() {
                 <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
                 <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
                 <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
+                <Route path="/theme" element={<ErrorBoundary name="Theme"><ThemePage /></ErrorBoundary>} />
                 <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
                 <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
               </Routes>

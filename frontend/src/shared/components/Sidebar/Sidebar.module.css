@@ -35,6 +35,13 @@
   color: var(--color-primary);
 }
 
+.custom-logo-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
 .logo-text {
   font-size: 16px;
   font-weight: 600;

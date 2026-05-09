@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { 
   MessageSquare, LayoutDashboard, CreditCard, Zap, 
   Clock, Blocks, Brain, Settings, Award, Radio, 
-  Cat, Sun, Moon, Menu, ChevronDown
+  Cat, Sun, Moon, Menu, ChevronDown, Palette
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { UserFloatingArea } from '../UserFloatingArea'
@@ -12,7 +12,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme'
 }
 
 interface MenuGroup {
@@ -43,6 +43,13 @@ const menuGroups: MenuGroup[] = [
     ]
   },
   {
+    id: 'appearance',
+    title: '外观',
+    items: [
+      { path: '/theme', label: '外观与主题', iconType: 'theme' },
+    ]
+  },
+  {
     id: 'settings',
     title: '设置',
     items: [
@@ -64,19 +71,21 @@ const renderIcon = (type: string, size = 18) => {
     case 'settings': return <Settings size={size} />
     case 'experience': return <Award size={size} />
     case 'communication': return <Radio size={size} />
+    case 'theme': return <Palette size={size} />
     default: return <MessageSquare size={size} />
   }
 }
 
   function Sidebar() {
   const location = useLocation()
-  const { theme, toggleTheme } = useThemeStore()
+  const { theme, toggleTheme, config } = useThemeStore()
   const [collapsed, setCollapsed] = useState(false)
   /* 移动端侧边栏展开状态 */
   const [mobileOpen, setMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     control: true,
     agent: true,
+    appearance: true,
     settings: true,
   })
 
@@ -157,7 +166,11 @@ const renderIcon = (type: string, size = 18) => {
         {!collapsed && (
           <>
             <div className={styles['logo-container']}>
-              <span className={styles['logo-icon']}><Cat size={24} /></span>
+              {config.logoIcon ? (
+                <img src={config.logoIcon} alt="Logo" className={styles['custom-logo-icon']} />
+              ) : (
+                <span className={styles['logo-icon']}><Cat size={24} /></span>
+              )}
               <span className={styles['logo-text']}>Open-AwA</span>
             </div>
           </>
