@@ -80,8 +80,8 @@ function MarketplacePage() {
     try {
       await installPlugin(pluginId)
       setInstalledIds((prev) => new Set(prev).add(pluginId))
-    } catch (error: any) {
-      const detail = error?.response?.data?.detail
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       alert(`安装失败: ${detail || '未知错误'}`)
     } finally {
       setInstallingId(null)

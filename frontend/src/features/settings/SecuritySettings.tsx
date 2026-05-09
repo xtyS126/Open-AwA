@@ -61,7 +61,7 @@ function SecuritySettings() {
       const response = await securityAPI.getAuditLogs(params)
       setLogs(response.data.logs)
       setTotal(response.data.total)
-    } catch (error) {
+    } catch {
       appLogger.error({
         event: 'audit_logs_load_failed',
         message: 'Failed to load audit logs',
@@ -78,7 +78,7 @@ function SecuritySettings() {
     try {
       const response = await securityAPI.getAuditStats()
       setStats(response.data)
-    } catch (error) {
+    } catch {
       appLogger.error({
         event: 'audit_stats_load_failed',
         message: 'Failed to load audit stats',
@@ -95,7 +95,7 @@ function SecuritySettings() {
     try {
       const response = await securityAPI.getRoles()
       setRoles(response.data)
-    } catch (error) {
+    } catch {
       appLogger.error({
         event: 'roles_load_failed',
         message: 'Failed to load roles',
@@ -146,7 +146,7 @@ function SecuritySettings() {
       a.download = 'audit_logs.jsonl'
       a.click()
       window.URL.revokeObjectURL(url)
-    } catch (error) {
+    } catch {
       appLogger.error({
         event: 'audit_export_failed',
         message: 'Failed to export audit logs',
@@ -170,7 +170,7 @@ function SecuritySettings() {
       setAssignMessage('角色分配成功')
       setAssignUserId('')
       setAssignRole('')
-    } catch (error) {
+    } catch {
       setAssignMessage('角色分配失败，请检查权限')
     } finally {
       setAssigning(false)

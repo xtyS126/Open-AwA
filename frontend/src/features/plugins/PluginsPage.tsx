@@ -166,7 +166,7 @@ function PluginsPage() {
 
       await toggle(plugin.id)
       await refreshPlugins()
-    } catch (error) {
+    } catch {
       addToast('插件状态切换失败', 'error')
     }
   }

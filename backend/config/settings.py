@@ -4,14 +4,11 @@
 """
 
 from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from pydantic import SecretStr
 from typing import Optional
 import os
 import secrets
-
-
-_BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 def is_production_environment(environment: Optional[str]) -> bool:
@@ -70,7 +67,8 @@ def build_default_database_url() -> str:
     构造稳定的默认 SQLite 连接地址。
     这里显式锚定到 backend 目录，避免服务从仓库根目录启动时误连到错误的空库。
     """
-    database_path = (_BACKEND_DIR / "openawa.db").resolve()
+    backend_dir = Path(__file__).resolve().parents[1]
+    database_path = (backend_dir / "openawa.db").resolve()
     return f"sqlite:///{database_path.as_posix()}"
 
 
@@ -79,15 +77,6 @@ class Settings(BaseSettings):
     封装与Settings相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
-    model_config = SettingsConfigDict(
-        env_file=(
-            str((_BACKEND_DIR / ".env").resolve()),
-            str((_BACKEND_DIR / ".env.local").resolve()),
-        ),
-        case_sensitive=True,
-        extra="ignore",
-    )
-
     PROJECT_NAME: str = "Open-AwA AI Agent"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
@@ -135,9 +124,6 @@ class Settings(BaseSettings):
     
     SANDBOX_TIMEOUT: int = 30
     SANDBOX_MEMORY_LIMIT: str = "512m"
-    SANDBOX_BACKEND: str = "restricted_python"
-    E2B_API_KEY: Optional[SecretStr] = None
-    E2B_TIMEOUT: int = 60
     
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True
@@ -147,25 +133,36 @@ class Settings(BaseSettings):
     LOG_FILE_ROTATION: str = "10 MB"
     LOG_FILE_RETENTION: str = "30 days"
     LOG_FILE_COMPRESSION: str = "gz"
-    
-    # HTTPS/TLS 配置，当同时设置证书文件和私钥文件时自动启用 HTTPS
+    # 开发环境脱敏开关（True 时禁用脱敏，方便调试）
+    LOG_DISABLE_SANITIZE: bool = False
+
+    # 可选 HTTPS 配置，证书和私钥同时提供时启用 TLS。
     SSL_CERTFILE: Optional[str] = None
     SSL_KEYFILE: Optional[str] = None
     SSL_KEYFILE_PASSWORD: Optional[str] = None
     SSL_CA_CERTS: Optional[str] = None
-
-    def is_ssl_enabled(self) -> bool:
-        """证书文件和私钥文件同时存在时认为 HTTPS 已启用。"""
-        return bool(self.SSL_CERTFILE and self.SSL_KEYFILE)
-
+    
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
 
-    # 本地搜索功能开关
-    # True: 使用本地搜索引擎（离线，无外部API依赖）
-    # False: 使用DuckDuckGo联网搜索
-    LOCAL_SEARCH_ENABLED: bool = True
-    # 本地搜索索引存储目录
-    LOCAL_SEARCH_INDEX_DIR: str = str(Path(__file__).resolve().parents[1] / "data" / "local_search_index")
+    def is_ssl_enabled(self) -> bool:
+        """
+        判断当前配置是否具备启用 HTTPS 的最小条件。
+        只有证书和私钥都已配置时，启动流程才会向 uvicorn 传递 TLS 参数。
+        """
+        certfile = (self.SSL_CERTFILE or "").strip()
+        keyfile = (self.SSL_KEYFILE or "").strip()
+        return bool(certfile and keyfile)
+    
+    class Config:
+        """
+        封装与Config相关的核心逻辑与运行状态。
+        该类通常是当前文件中组织数据与调度行为的主要封装单元。
+        """
+        env_file = ".env"
+        case_sensitive = True
+        # 兼容由其他模块直接通过 os.getenv 读取的环境变量，避免 .env 中存在额外键时启动失败。
+        extra = "ignore"
+
 
 settings = Settings()

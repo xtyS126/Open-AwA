@@ -1,15 +1,57 @@
 import axios from 'axios'
+import Cookies from 'js-cookie'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
+
+type ApiPayload = Record<string, unknown>
+
+type ApiObject = Record<string, unknown>
+
+type ConversationSortKey = 'title' | 'created_at' | 'updated_at' | 'last_message_at' | 'message_count'
+
+type ConversationSortOrder = 'asc' | 'desc'
+
+type WeixinAutoReplyMatchType = 'keyword' | 'regex'
+
+type ChatAttachmentType = 'image' | 'audio' | 'video'
+
+type ScheduledTaskType = 'ai_prompt' | 'plugin_command'
+
+export interface ChatStreamTeamPayload {
+  team_id?: string
+  name?: string
+  ok?: boolean
+  state?: string
+  [key: string]: unknown
+}
+
+export interface ChatStreamEvent {
+  type?: string
+  content?: unknown
+  reasoning_content?: unknown
+  message?: unknown
+  result?: ApiObject | null
+  task?: ApiObject | null
+  tool?: ApiObject | null
+  usage?: ApiObject | null
+  team?: ChatStreamTeamPayload | null
+  task_id?: unknown
+  agent_id?: unknown
+  agent_type?: unknown
+  description?: unknown
+  run_mode?: unknown
+  summary?: unknown
+  state?: unknown
+  [key: string]: unknown
+}
 
 const API_BASE_URL = '/api'
 
 const CSRF_EXEMPT_PATHS = new Set(['/auth/login', '/auth/register'])
-const CSRF_TOKEN_ENDPOINT = `${API_BASE_URL}/auth/csrf-token`
+const CSRF_BOOTSTRAP_PATH = `${API_BASE_URL}/auth/me`
 
-let csrfTokenValue = ''
-let csrfTokenPromise: Promise<void> | null = null
+export const getCsrfToken = (): string => Cookies.get('csrf_token') || ''
 
-const CSRF_RETRY_SYMBOL = Symbol('csrfRetried')
+let csrfBootstrapPromise: Promise<string> | null = null
 
 const shouldAttachCsrfToken = (method?: string, url?: string): boolean => {
   const normalizedMethod = String(method || 'GET').toUpperCase()
@@ -34,74 +76,59 @@ const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
   })
 }
 
-const isExpectedApiError = (error: unknown): boolean => {
-  const normalizedUrl = String((error as { config?: { url?: string } })?.config?.url || '').split('?')[0]
-  const statusCode = (error as { response?: { status?: number } })?.response?.status
-
-  return (
-    (normalizedUrl === '/auth/me' && statusCode === 401) ||
-    (normalizedUrl === '/auth/login' && statusCode === 401) ||
-    (normalizedUrl === '/auth/register' && statusCode === 400) ||
-    (statusCode === 404 && normalizedUrl.startsWith('/chat/history/'))
-  )
-}
-
-export const getApiErrorDetail = (error: unknown): string => {
-  const err = error as any
-  return err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message || '未知错误'
-}
-
-const fetchCsrfToken = async (): Promise<string> => {
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
-    const response = await fetch(CSRF_TOKEN_ENDPOINT, {
-      method: 'GET',
-      credentials: 'same-origin',
-      headers: { 'Accept': 'application/json' },
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
-    if (!response.ok) {
-      throw new Error(`csrf token fetch failed: ${response.status}`)
-    }
-    const data = await response.json()
-    csrfTokenValue = data.csrf_token || ''
-    return csrfTokenValue
-  } catch (error) {
-    appLogger.warning({
-      event: 'csrf_token_fetch_failed',
-      module: 'api',
-      action: 'BOOTSTRAP',
-      status: 'warning',
-      message: 'csrf token fetch failed',
-      extra: {
-        error: error instanceof Error ? error.message : String(error),
-      },
-    })
-    return ''
-  }
-}
-
 const ensureCsrfToken = async (): Promise<string> => {
-  if (csrfTokenValue) {
-    return csrfTokenValue
+  const csrfToken = getCsrfToken()
+  if (csrfToken) {
+    return csrfToken
   }
 
-  if (!csrfTokenPromise) {
-    csrfTokenPromise = fetchCsrfToken().then(() => {}).finally(() => {
-      csrfTokenPromise = null
+  appLogger.warning({
+    event: 'csrf_token_missing',
+    module: 'api',
+    action: 'BOOTSTRAP',
+    status: 'warning',
+    message: 'csrf token missing before mutating request, trying bootstrap request',
+    extra: {
+      bootstrap_path: CSRF_BOOTSTRAP_PATH,
+    },
+  })
+
+  if (!csrfBootstrapPromise) {
+    csrfBootstrapPromise = (async () => {
+      try {
+        await fetch(CSRF_BOOTSTRAP_PATH, {
+          method: 'GET',
+          credentials: 'same-origin',
+        })
+      } catch (error) {
+        appLogger.warning({
+          event: 'csrf_token_bootstrap_failed',
+          module: 'api',
+          action: 'BOOTSTRAP',
+          status: 'warning',
+          message: 'csrf token bootstrap request failed',
+          extra: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+      }
+
+      const refreshedToken = getCsrfToken()
+      if (!refreshedToken) {
+        throw new Error('CSRF token missing after bootstrap request')
+      }
+      return refreshedToken
+    })().finally(() => {
+      csrfBootstrapPromise = null
     })
   }
 
-  await csrfTokenPromise
-  return csrfTokenValue
+  return csrfBootstrapPromise
 }
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -151,44 +178,30 @@ api.interceptors.response.use(
     })
     return response
   },
-  async (error) => {
+  (error) => {
     const responseRequestId = String(error?.response?.headers?.['x-request-id'] || '')
     if (responseRequestId) {
       setCurrentRequestId(responseRequestId)
     }
+    
+    const isExpectedAuthError = (
+      (error?.config?.url === '/auth/me' && error?.response?.status === 401) ||
+      (error?.config?.url === '/auth/register' && error?.response?.status === 400)
+    );
 
-    const errorStatus = error?.response?.status || 0
-    const originalConfig = error?.config
-
-    if (
-      errorStatus === 403 &&
-      originalConfig &&
-      !originalConfig[CSRF_RETRY_SYMBOL] &&
-      shouldAttachCsrfToken(originalConfig.method, originalConfig.url)
-    ) {
-      const errorBody = error?.response?.data
-      const errorCode = errorBody?.error?.code || errorBody?.error || ''
-      const isCsrfError =
-        errorCode === 'invalid_csrf_token' ||
-        String(errorBody?.error?.message || '').includes('CSRF')
-
-      if (isCsrfError) {
-        originalConfig[CSRF_RETRY_SYMBOL] = true
-        csrfTokenValue = ''
-        csrfTokenPromise = null
-
-        const newToken = await ensureCsrfToken()
-        originalConfig.headers['X-CSRF-Token'] = newToken
-
-        return api.request(originalConfig)
-      }
-    }
-
-    if (!isExpectedApiError(error)) {
+    if (!isExpectedAuthError) {
       const errorUrl = error?.config?.url || 'unknown'
+      const errorStatus = error?.response?.status || 0
       const errorMessage = error?.message || ''
-      const backendDetail = getApiErrorDetail(error)
-
+      const backendDetail = error?.response?.data?.detail || ''
+      
+      console.error(
+        `[API ERROR] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
+        (errorMessage ? ` | ${errorMessage}` : '') +
+        (backendDetail ? ` | Detail: ${backendDetail}` : '') +
+        (responseRequestId ? ` | Request-ID: ${responseRequestId}` : '')
+      )
+      
       appLogger.error({
         event: 'api_response',
         module: 'api',
@@ -232,17 +245,60 @@ export const authAPI = {
   logout: () => api.post('/auth/logout'),
 }
 
-export interface ChatAttachmentPayload {
-  type: string
-  data: string
-  mime_type: string
-  file_name?: string
+export interface UserProfileAnalysis {
+  interests?: string[]
+  total_actions?: number
+  active_hours?: string[]
+  [key: string]: unknown
+}
+
+export interface UserProfile {
+  user_id: string
+  username: string
+  nickname?: string | null
+  avatar_url?: string | null
+  email?: string | null
+  phone?: string | null
+  profile: UserProfileAnalysis
+}
+
+export interface UserProfileUpdatePayload {
+  nickname?: string
+  email?: string
+  phone?: string
+}
+
+export interface LoginDeviceItem {
+  id: number
+  device_type: string
+  ip_address?: string | null
+  user_agent?: string | null
+  logged_in_at: string
+  last_active_at: string
+  is_online: boolean
+  is_current: boolean
+}
+
+export interface UserPreferencesResponse {
+  preferences: Record<string, unknown>
+}
+
+export interface AvatarUploadResponse {
+  avatar_url: string
+  message: string
 }
 
 export interface ChatContinuationPayload {
-  source: 'subagent'
+  source: string
   aggregated_context: string
   merge_with_last_assistant?: boolean
+}
+
+export interface ChatAttachmentPayload {
+  type: ChatAttachmentType | string
+  data: string
+  mime_type: string
+  file_name?: string
 }
 
 export interface ChatExecutionOptions {
@@ -250,6 +306,106 @@ export interface ChatExecutionOptions {
   thinking_depth?: number
   max_tool_call_rounds?: number
   continuation?: ChatContinuationPayload
+}
+
+export interface ChatResponsePayload {
+  status: string
+  response: string
+  reasoning_content?: string | null
+  session_id?: string | null
+  error?: { message?: string; [key: string]: unknown } | null
+  request_id?: string | null
+}
+
+export const getApiErrorDetail = (error: unknown): string => {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item
+        }
+        if (item && typeof item === 'object' && 'msg' in item && typeof item.msg === 'string') {
+          return item.msg
+        }
+        return ''
+      })
+      .filter(Boolean)
+    if (messages.length > 0) {
+      return messages.join('；')
+    }
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+  return ''
+}
+
+export const userAPI = {
+  getProfile: () => api.get<UserProfile>('/user/profile'),
+  updateProfile: (payload: UserProfileUpdatePayload) => api.put<{ message: string }>('/user/profile', payload),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<AvatarUploadResponse>('/user/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+  getDevices: () => api.get<LoginDeviceItem[]>('/user/devices'),
+  revokeDevice: (deviceId: number) => api.post<{ message: string }>(`/user/devices/${deviceId}/revoke`),
+  getPreferences: () => api.get<UserPreferencesResponse>('/user/preferences'),
+  updatePreferences: (preferences: Record<string, unknown>) =>
+    api.put<UserPreferencesResponse>('/user/preferences', { preferences }),
+}
+
+export const passwordAPI = {
+  change: (oldPassword: string, newPassword: string, confirmPassword: string) =>
+    api.put<{ message: string }>('/auth/me/password', {
+      old_password: oldPassword,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
+}
+
+const buildChatRequestPayload = (
+  message: string,
+  sessionId: string,
+  provider?: string,
+  model?: string,
+  mode: 'stream' | 'direct' = 'direct',
+  executionOptions?: ChatExecutionOptions,
+  attachments?: ChatAttachmentPayload[]
+) => {
+  const payload: ApiObject = {
+    message,
+    session_id: sessionId,
+    provider,
+    model,
+    mode,
+  }
+
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments
+  }
+  if (executionOptions?.thinking_enabled !== undefined) {
+    payload.thinking_enabled = executionOptions.thinking_enabled
+  }
+  if (executionOptions?.thinking_depth !== undefined) {
+    payload.thinking_depth = executionOptions.thinking_depth
+  }
+  if (executionOptions?.max_tool_call_rounds !== undefined) {
+    payload.max_tool_call_rounds = executionOptions.max_tool_call_rounds
+  }
+  if (executionOptions?.continuation) {
+    payload.continuation = executionOptions.continuation
+  }
+
+  return payload
 }
 
 export const chatAPI = {
@@ -262,258 +418,201 @@ export const chatAPI = {
     requestOptions?: { signal?: AbortSignal },
     executionOptions?: ChatExecutionOptions,
     attachments?: ChatAttachmentPayload[]
-  ) => {
-    const body: Record<string, unknown> = { message, session_id: sessionId, provider, model, mode }
-    if (executionOptions?.thinking_enabled) {
-      body.thinking_enabled = true
-      body.thinking_depth = executionOptions.thinking_depth ?? 0
-    }
-    if (typeof executionOptions?.max_tool_call_rounds === 'number') {
-      body.max_tool_call_rounds = executionOptions.max_tool_call_rounds
-    }
-    if (executionOptions?.continuation) {
-      body.continuation = executionOptions.continuation
-    }
-    if (attachments && attachments.length > 0) {
-      body.attachments = attachments
-    }
-    return api.post('/chat', body, { signal: requestOptions?.signal })
-  },
+  ) =>
+    api.post<ChatResponsePayload>(
+      '/chat',
+      buildChatRequestPayload(message, sessionId, provider, model, mode, executionOptions, attachments),
+      { signal: requestOptions?.signal }
+    ),
   sendMessageStream: async (
     message: string,
     sessionId: string = 'default',
     provider?: string,
     model?: string,
-    onEvent?: (event: Record<string, any>) => void,
-    onError?: (error: any) => void,
+    onEvent?: (event: ChatStreamEvent) => void,
+    onError?: (error: unknown) => void,
     requestOptions?: { signal?: AbortSignal },
     executionOptions?: ChatExecutionOptions,
     attachments?: ChatAttachmentPayload[]
   ) => {
-    const MAX_RETRIES = 3
-    const RETRY_DELAYS = [1000, 2000, 4000]
-    let lastError: Error | null = null
-    let hasReceivedData = false
+    let isErrorLogged = false
+    const url = `${API_BASE_URL}/chat`
+    const requestId = generateRequestId()
+    setCurrentRequestId(requestId)
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      let isErrorLogged = false
-      const url = '/api/chat'
-      const requestId = generateRequestId()
-      setCurrentRequestId(requestId)
-
-      if (attempt > 0) {
-        const delayMs = RETRY_DELAYS[attempt - 1]
-        appLogger.warning({
-          event: 'api_retry',
-          module: 'api',
-          action: 'POST',
-          status: 'retry',
-          request_id: requestId,
-          message: `retrying stream request (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
-          extra: { url, delay_ms: delayMs },
-        })
-        await new Promise(resolve => setTimeout(resolve, delayMs))
-      }
-
-      try {
-        const csrfToken = await ensureCsrfToken()
-        const headers: Record<string, string> = {
-          'Accept': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Content-Type': 'application/json',
-          'X-Request-Id': requestId,
-          'X-CSRF-Token': csrfToken,
-        }
-
-        const streamBody: Record<string, unknown> = {
-          message,
-          session_id: sessionId,
-          provider,
-          model,
-          mode: 'stream',
-        }
-        if (executionOptions?.thinking_enabled) {
-          streamBody.thinking_enabled = true
-          streamBody.thinking_depth = executionOptions.thinking_depth ?? 0
-        }
-        if (typeof executionOptions?.max_tool_call_rounds === 'number') {
-          streamBody.max_tool_call_rounds = executionOptions.max_tool_call_rounds
-        }
-        if (executionOptions?.continuation) {
-          streamBody.continuation = executionOptions.continuation
-        }
-        if (attachments && attachments.length > 0) {
-          streamBody.attachments = attachments
-        }
-
-        const response = await fetch(url, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers,
-          signal: requestOptions?.signal,
-          body: JSON.stringify(streamBody)
-        })
-
-        const responseRequestId = response.headers.get('x-request-id') || requestId
-        if (responseRequestId) {
-          setCurrentRequestId(responseRequestId)
-        }
-
-        if (!response.ok) {
-          isErrorLogged = true
-          const err = await response.json().catch(() => ({}))
-          const errorMessage = err?.detail || err?.error?.message || 'Request failed'
-
-          appLogger.error({
-            event: 'api_response',
-            module: 'api',
-            action: 'POST',
-            status: 'failure',
-            request_id: responseRequestId,
-            message: 'api request failed',
-            extra: {
-              url,
-              status_code: response.status,
-              error: errorMessage,
-            },
-          })
-          throw new Error(errorMessage)
-        }
-
-        if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
-
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder('utf-8')
-        let done = false
-        let buffer = ''
-
-        while (!done) {
-          const { value, done: doneReading } = await reader.read()
-          done = doneReading
-          if (value) {
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || ''
-
-            let currentEventType = ''
-            for (const line of lines) {
-              const normalizedLine = line.replace(/\r$/, '')
-              if (normalizedLine.trim() === '') {
-                currentEventType = ''
-                continue
-              }
-              if (normalizedLine.startsWith('event: ')) {
-                currentEventType = normalizedLine.slice(7).trim()
-                continue
-              }
-              if (normalizedLine.startsWith('data: ')) {
-                const dataStr = normalizedLine.slice(6)
-                if (dataStr === '[DONE]') {
-                  break
-                }
-                try {
-                  const data = JSON.parse(dataStr)
-                  hasReceivedData = true
-                  if (currentEventType === 'reasoning') {
-                    onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
-                  } else if (data.type === 'chunk') {
-                    onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
-                  } else if (data.type === 'error') {
-                    onError?.(new Error(data.error?.message || 'Stream error'))
-                  } else if (data?.type) {
-                    onEvent?.(data)
-                  }
-                } catch {
-                  logStreamParseWarning(dataStr, 'chunk')
-                }
-                currentEventType = ''
-              }
-            }
-          }
-        }
-
-        if (buffer.trim()) {
-          const remainingLines = buffer.trim().split('\n')
-          let remainingEventType = ''
-          for (const line of remainingLines) {
-            const normalizedLine = line.replace(/\r$/, '')
-            if (normalizedLine.startsWith('event: ')) {
-              remainingEventType = normalizedLine.slice(7).trim()
-              continue
-            }
-            if (normalizedLine.startsWith('data: ')) {
-              const dataStr = normalizedLine.slice(6)
-              if (dataStr !== '[DONE]') {
-                try {
-                  const data = JSON.parse(dataStr)
-                  if (remainingEventType === 'reasoning') {
-                    onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
-                  } else if (data.type === 'chunk') {
-                    onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
-                  } else if (data.type === 'error') {
-                    onError?.(new Error(data.error?.message || 'Stream error'))
-                  } else if (data?.type) {
-                    onEvent?.(data)
-                  }
-                } catch {
-                  logStreamParseWarning(dataStr, 'tail')
-                }
-              }
-              remainingEventType = ''
-            }
-          }
-        }
-
-        return
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') {
-          throw e
-        }
-        lastError = e instanceof Error ? e : new Error(String(e))
-        if (hasReceivedData) {
-          if (!isErrorLogged) {
-            appLogger.error({
-              event: 'api_response',
-              module: 'api',
-              action: 'POST',
-              status: 'failure',
-              request_id: requestId,
-              message: 'stream connection lost after partial data received',
-              extra: { url, error: lastError.message },
-            })
-          }
-          onError?.(lastError)
-          throw lastError
-        }
-        if (!isErrorLogged) {
-          appLogger.warning({
-            event: 'api_retry',
-            module: 'api',
-            action: 'POST',
-            status: 'retry',
-            request_id: requestId,
-            message: `stream attempt ${attempt + 1} failed, scheduling retry`,
-            extra: { url, error: lastError.message },
-          })
-        }
-      }
-    }
-
-    appLogger.error({
-      event: 'api_response',
+    appLogger.info({
+      event: 'api_request',
       module: 'api',
       action: 'POST',
-      status: 'failure',
-      request_id: '',
-      message: 'stream request failed after all retries',
-      extra: { error: lastError?.message },
+      status: 'start',
+      request_id: requestId,
+      message: 'api request started',
+      extra: { url },
     })
-    onError?.(lastError)
-    throw lastError || new Error('Stream request failed after max retries')
+
+    try {
+      const csrfToken = await ensureCsrfToken()
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Request-Id': requestId,
+        'X-CSRF-Token': csrfToken,
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        signal: requestOptions?.signal,
+        body: JSON.stringify(
+          buildChatRequestPayload(message, sessionId, provider, model, 'stream', executionOptions, attachments)
+        )
+      })
+
+      const responseRequestId = response.headers.get('x-request-id') || requestId
+      if (responseRequestId) {
+        setCurrentRequestId(responseRequestId)
+      }
+
+      if (!response.ok) {
+        isErrorLogged = true
+        const err = await response.json().catch(() => ({}))
+        const errorMessage = err?.detail || err?.error?.message || 'Request failed'
+        
+        appLogger.error({
+          event: 'api_response',
+          module: 'api',
+          action: 'POST',
+          status: 'failure',
+          request_id: responseRequestId,
+          message: 'api request failed',
+          extra: {
+            url,
+            status_code: response.status,
+            error: errorMessage,
+          },
+        })
+        throw new Error(errorMessage)
+      }
+
+      appLogger.info({
+        event: 'api_response',
+        module: 'api',
+        action: 'POST',
+        status: 'success',
+        request_id: responseRequestId,
+        message: 'api request finished',
+        extra: {
+          url,
+          status_code: response.status,
+        },
+      })
+
+      if (!response.body) throw new Error('ReadableStream not yet supported in this browser.')
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let done = false
+      let buffer = ''
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read()
+        done = doneReading
+        if (value) {
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          // 当前 SSE 事件类型，用于区分 reasoning 和普通 chunk
+          let currentEventType = ''
+          for (const line of lines) {
+            if (line.trim() === '') {
+              currentEventType = ''
+              continue
+            }
+            if (line.startsWith('event: ')) {
+              currentEventType = line.slice(7).trim()
+              continue
+            }
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6)
+              if (dataStr === '[DONE]') {
+                break
+              }
+              try {
+                const data = JSON.parse(dataStr)
+                if (currentEventType === 'reasoning') {
+                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
+                } else if (data.type === 'chunk') {
+                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
+                } else if (data.type === 'error') {
+                  onError?.(new Error(data.error?.message || 'Stream error'))
+                } else if (data?.type) {
+                  onEvent?.(data)
+                }
+              } catch {
+                logStreamParseWarning(dataStr, 'chunk')
+              }
+              currentEventType = ''
+            }
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        const remainingLines = buffer.trim().split('\n')
+        let remainingEventType = ''
+        for (const line of remainingLines) {
+          if (line.startsWith('event: ')) {
+            remainingEventType = line.slice(7).trim()
+            continue
+          }
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6)
+            if (dataStr !== '[DONE]') {
+              try {
+                const data = JSON.parse(dataStr)
+                if (remainingEventType === 'reasoning') {
+                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
+                } else if (data.type === 'chunk') {
+                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
+                } else if (data.type === 'error') {
+                  onError?.(new Error(data.error?.message || 'Stream error'))
+                } else if (data?.type) {
+                  onEvent?.(data)
+                }
+              } catch {
+                logStreamParseWarning(dataStr, 'tail')
+              }
+            }
+            remainingEventType = ''
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        throw e
+      }
+      if (!isErrorLogged) {
+        appLogger.error({
+          event: 'api_response',
+          module: 'api',
+          action: 'POST',
+          status: 'failure',
+          request_id: requestId,
+          message: 'api stream request failed',
+          extra: {
+            url,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        })
+      }
+      onError?.(e)
+      throw e
+    }
   },
   getHistory: (sessionId: string) =>
     api.get(`/chat/history/${sessionId}`),
-  confirmOperation: (confirmed: boolean, step: any) =>
+  confirmOperation: (confirmed: boolean, step: unknown) =>
     api.post('/chat/confirm', { confirmed, step }),
   upload: (file: File) => {
     const formData = new FormData()
@@ -527,7 +626,7 @@ export const chatAPI = {
 export const skillsAPI = {
   getAll: () => api.get('/skills'),
   getOne: (id: string) => api.get(`/skills/${id}`),
-  install: (skill: any) => api.post('/skills', skill),
+  install: (skill: ApiPayload) => api.post('/skills', skill),
   uninstall: (id: string) => api.delete(`/skills/${id}`),
   toggle: (id: string) => api.put(`/skills/${id}/toggle`),
   parseUpload: (file: File) => {
@@ -612,10 +711,10 @@ export const pluginsAPI = {
   getAll: () => api.get('/plugins'),
   getOne: (id: string) => api.get(`/plugins/${id}`),
   discover: () => api.get('/plugins/discover'),
-  install: (plugin: any) => api.post('/plugins', plugin),
+  install: (plugin: ApiPayload) => api.post('/plugins', plugin),
   execute: (id: string, method: string, params: Record<string, unknown> = {}) =>
     api.post(`/plugins/${id}/execute`, { method, params }),
-  update: (id: string, payload: any) => api.put(`/plugins/${id}`, payload),
+  update: (id: string, payload: ApiPayload) => api.put(`/plugins/${id}`, payload),
   uninstall: (id: string) => api.delete(`/plugins/${id}`),
   toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
   upload: (file: File) => {
@@ -665,6 +764,67 @@ export const logsAPI = {
   }) => api.get('/logs/export', { params, responseType: 'blob' }),
 }
 
+export interface SysDiagnosticsCheck {
+  name: string
+  label: string
+  ok: boolean
+  detail: Record<string, unknown> | null
+}
+
+export interface SysDiagnosticsResponse {
+  timestamp: number
+  overall: 'healthy' | 'degraded' | 'error' | string
+  passed: number
+  total: number
+  checks: SysDiagnosticsCheck[]
+}
+
+export interface SystemPingResponse {
+  pong: boolean
+  timestamp: number
+}
+
+export interface ScenarioDef {
+  name: string
+  label: string
+  category: string
+  description: string
+}
+
+export interface ScenarioListResponse {
+  total: number
+  scenarios: ScenarioDef[]
+}
+
+export interface ScenarioResultItem {
+  name: string
+  label: string
+  category: string
+  status: 'idle' | 'running' | 'ok' | 'fail' | string
+  duration_ms: number
+  message: string
+  detail: Record<string, unknown> | null
+}
+
+export interface ScenarioRunResponse {
+  results: ScenarioResultItem[]
+  passed: number
+  failed: number
+  total: number
+  duration_ms: number
+}
+
+export const systemAPI = {
+  ping: () => api.get<SystemPingResponse>('/system/ping'),
+  diagnostics: () => api.get<SysDiagnosticsResponse>('/system/diagnostics'),
+}
+
+export const testRunnerAPI = {
+  listScenarios: () => api.get<ScenarioListResponse>('/test-scenarios'),
+  runScenario: (name: string) => api.post<ScenarioRunResponse>('/test-scenarios/run', { name }),
+  runAllScenarios: () => api.post<ScenarioRunResponse>('/test-scenarios/run-all'),
+}
+
 export const memoryAPI = {
   getShortTerm: (sessionId: string) =>
     api.get(`/memory/short-term/${sessionId}`),
@@ -684,9 +844,48 @@ export const promptsAPI = {
   getAll: () => api.get('/prompts'),
   getActive: () => api.get('/prompts/active'),
   getOne: (id: string) => api.get(`/prompts/${id}`),
-  create: (prompt: any) => api.post('/prompts', prompt),
-  update: (id: string, prompt: any) => api.put(`/prompts/${id}`, prompt),
+  create: (prompt: ApiPayload) => api.post('/prompts', prompt),
+  update: (id: string, prompt: ApiPayload) => api.put(`/prompts/${id}`, prompt),
   delete: (id: string) => api.delete(`/prompts/${id}`),
+}
+
+export interface ConversationSessionSummary {
+  session_id: string
+  user_id: string
+  title: string
+  summary: string
+  last_message_preview: string
+  last_message_role?: string | null
+  message_count: number
+  created_at: string
+  updated_at: string
+  last_message_at?: string | null
+  deleted_at?: string | null
+  restored_at?: string | null
+  purge_after?: string | null
+  conversation_metadata: Record<string, unknown>
+}
+
+export interface ConversationSessionCreatePayload {
+  title?: string
+  session_id?: string
+}
+
+export interface ConversationSessionListParams {
+  search?: string
+  sort_by?: ConversationSortKey
+  sort_order?: ConversationSortOrder
+  page?: number
+  page_size?: number
+  include_deleted?: boolean
+}
+
+export interface ConversationSessionListResponse {
+  items: ConversationSessionSummary[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
 }
 
 export interface ScheduledTask {
@@ -698,21 +897,21 @@ export interface ScheduledTask {
   status: string
   provider: string | null
   model: string | null
-  is_daily: boolean
-  cron_expression: string | null
-  weekdays: string | null
-  daily_time: string | null
-  task_type: string
-  plugin_name: string | null
-  command_name: string | null
-  command_params: Record<string, unknown>
-  next_execution_at: string | null
+  is_daily?: boolean | null
+  cron_expression?: string | null
+  weekdays?: string | null
+  daily_time?: string | null
+  task_type?: ScheduledTaskType | string | null
+  plugin_name?: string | null
+  command_name?: string | null
+  command_params?: Record<string, unknown>
   last_error_message: string | null
   task_metadata: Record<string, unknown>
   created_at: string
   updated_at: string
   completed_at: string | null
   cancelled_at: string | null
+  next_execution_at?: string | null
 }
 
 export interface ScheduledTaskExecution {
@@ -735,15 +934,15 @@ export interface ScheduledTaskExecution {
 
 export interface ScheduledTaskCreatePayload {
   title: string
-  prompt?: string
+  prompt: string
   scheduled_at: string
   provider?: string | null
   model?: string | null
-  is_daily?: boolean
+  is_daily?: boolean | null
   cron_expression?: string | null
   weekdays?: string | null
   daily_time?: string | null
-  task_type?: string
+  task_type?: ScheduledTaskType | string
   plugin_name?: string | null
   command_name?: string | null
   command_params?: Record<string, unknown>
@@ -755,11 +954,11 @@ export interface ScheduledTaskUpdatePayload {
   scheduled_at?: string
   provider?: string | null
   model?: string | null
-  is_daily?: boolean
+  is_daily?: boolean | null
   cron_expression?: string | null
   weekdays?: string | null
   daily_time?: string | null
-  task_type?: string
+  task_type?: ScheduledTaskType | string
   plugin_name?: string | null
   command_name?: string | null
   command_params?: Record<string, unknown>
@@ -792,70 +991,6 @@ export const scheduledTasksAPI = {
     api.get<PluginCommandInfo[]>('/scheduled-tasks/plugin-commands'),
 }
 
-export interface ModelCapabilities {
-  provider: string
-  model: string
-  supports_vision: boolean
-  is_multimodal: boolean
-  supports_temperature: boolean
-  supports_top_k: boolean
-  model_spec: Record<string, unknown>
-}
-
-export const modelAPI = {
-  getCapabilities: (provider: string, model: string) =>
-    api.get<ModelCapabilities>(`/api/models/${provider}/${model}/capabilities`),
-}
-
-export interface UserProfile {
-  user_id: string
-  username: string
-  nickname: string | null
-  avatar_url: string | null
-  email: string | null
-  phone: string | null
-  profile: Record<string, unknown>
-}
-
-export interface LoginDeviceItem {
-  id: number
-  device_type: string
-  ip_address: string | null
-  user_agent: string | null
-  logged_in_at: string
-  last_active_at: string
-  is_online: boolean
-  is_current: boolean
-}
-
-export const userAPI = {
-  getProfile: () => api.get<UserProfile>('/user/profile'),
-  updateProfile: (data: { nickname?: string; email?: string; phone?: string }) =>
-    api.put<{ message: string }>('/user/profile', data),
-  uploadAvatar: (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    return api.post<{ avatar_url: string; message: string }>('/user/avatar', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
-  getDevices: () => api.get<LoginDeviceItem[]>('/user/devices'),
-  revokeDevice: (deviceId: number) =>
-    api.post<{ message: string }>(`/user/devices/${deviceId}/revoke`),
-  getPreferences: () => api.get<{ preferences: Record<string, any> }>('/user/preferences'),
-  updatePreferences: (preferences: Record<string, any>) =>
-    api.put<{ preferences: Record<string, any> }>('/user/preferences', { preferences }),
-}
-
-export const passwordAPI = {
-  change: (oldPassword: string, newPassword: string, confirmPassword: string) =>
-    api.put<{ message: string }>('/auth/me/password', {
-      old_password: oldPassword,
-      new_password: newPassword,
-      confirm_password: confirmPassword,
-    }),
-}
-
 export interface ConversationRecordItem {
   id: number
   session_id: string
@@ -880,31 +1015,6 @@ export interface ConversationRecordsResponse {
   limit: number
 }
 
-export interface ConversationSessionItem {
-  session_id: string
-  user_id: string
-  title: string
-  summary: string
-  last_message_preview: string
-  last_message_role?: string | null
-  message_count: number
-  created_at: string
-  updated_at: string
-  last_message_at?: string | null
-  deleted_at?: string | null
-  restored_at?: string | null
-  purge_after?: string | null
-  conversation_metadata: Record<string, unknown>
-}
-
-export interface ConversationSessionListResponse {
-  items: ConversationSessionItem[]
-  total: number
-  page: number
-  page_size: number
-  has_more: boolean
-}
-
 export interface ConversationCollectionStatusResponse {
   enabled: boolean
   stats: {
@@ -916,22 +1026,18 @@ export interface ConversationCollectionStatusResponse {
 }
 
 export const conversationAPI = {
-  listSessions: (params?: {
-    search?: string
-    sort_by?: 'title' | 'created_at' | 'updated_at' | 'last_message_at' | 'message_count'
-    sort_order?: 'asc' | 'desc'
-    page?: number
-    page_size?: number
-    include_deleted?: boolean
-  }) => api.get<ConversationSessionListResponse>('/conversations', { params }),
-  createSession: (payload?: { title?: string; session_id?: string }) =>
-    api.post<ConversationSessionItem>('/conversations', payload || {}),
+  listSessions: (params?: ConversationSessionListParams) =>
+    api.get<ConversationSessionListResponse>('/conversations', { params }),
+  createSession: (payload: ConversationSessionCreatePayload = {}) =>
+    api.post<ConversationSessionSummary>('/conversations', payload),
   renameSession: (sessionId: string, title: string) =>
-    api.patch<ConversationSessionItem>(`/conversations/${sessionId}`, { title }),
+    api.patch<ConversationSessionSummary>(`/conversations/${sessionId}`, { title }),
   deleteSession: (sessionId: string, retentionDays: number = 30) =>
-    api.delete<ConversationSessionItem>(`/conversations/${sessionId}`, { params: { retention_days: retentionDays } }),
+    api.delete<ConversationSessionSummary>(`/conversations/${sessionId}`, {
+      params: { retention_days: retentionDays },
+    }),
   restoreSession: (sessionId: string) =>
-    api.post<ConversationSessionItem>(`/conversations/${sessionId}/restore`),
+    api.post<ConversationSessionSummary>(`/conversations/${sessionId}/restore`),
   batchDeleteSessions: (sessionIds: string[], retentionDays: number = 30) =>
     api.post<ConversationSessionListResponse>('/conversations/batch-delete', {
       session_ids: sessionIds,
@@ -1002,7 +1108,7 @@ export interface WeixinParamsConfig {
   weixin_default_channel_version: string
   session_timeout_seconds: number
   token_refresh_enabled: boolean
-  auto_start_reply: boolean
+  auto_start_reply?: boolean
 }
 
 export interface WeixinParamsUpdate {
@@ -1114,13 +1220,14 @@ export interface WeixinAutoReplyProcessResult {
   cursor_advanced: boolean
   cursor?: string
   error?: string
+  poison_skipped?: number
 }
 
 export interface WeixinAutoReplyRule {
   id: number
   user_id: string
   rule_name: string
-  match_type: 'keyword' | 'regex'
+  match_type: WeixinAutoReplyMatchType
   match_pattern: string
   reply_content: string
   is_active: boolean
@@ -1131,7 +1238,7 @@ export interface WeixinAutoReplyRule {
 
 export interface WeixinAutoReplyRuleCreate {
   rule_name: string
-  match_type: 'keyword' | 'regex'
+  match_type?: WeixinAutoReplyMatchType
   match_pattern: string
   reply_content: string
   is_active?: boolean
@@ -1140,7 +1247,7 @@ export interface WeixinAutoReplyRuleCreate {
 
 export interface WeixinAutoReplyRuleUpdate {
   rule_name?: string
-  match_type?: 'keyword' | 'regex'
+  match_type?: WeixinAutoReplyMatchType
   match_pattern?: string
   reply_content?: string
   is_active?: boolean
@@ -1165,64 +1272,12 @@ export const weixinAPI = {
   restartAutoReply: () => api.post<WeixinAutoReplyStatus>('/weixin/auto-reply/restart'),
   processAutoReplyOnce: () => api.post<WeixinAutoReplyProcessResult>('/weixin/auto-reply/process-once'),
   getRules: () => api.get<WeixinAutoReplyRule[]>('/weixin/auto-reply/rules'),
-  createRule: (data: WeixinAutoReplyRuleCreate) => api.post<WeixinAutoReplyRule>('/weixin/auto-reply/rules', data),
-  updateRule: (id: number, data: WeixinAutoReplyRuleUpdate) => api.put<WeixinAutoReplyRule>(`/weixin/auto-reply/rules/${id}`, data),
-  deleteRule: (id: number) => api.delete(`/weixin/auto-reply/rules/${id}`),
-}
-
-// ---- 系统诊断API类型 ----
-
-export interface SysDiagnosticsCheck {
-  name: string
-  label: string
-  ok: boolean
-  detail: Record<string, unknown> | null
-}
-
-export interface SysDiagnosticsResponse {
-  timestamp: number
-  overall: string
-  passed: number
-  total: number
-  checks: SysDiagnosticsCheck[]
-}
-
-export const systemAPI = {
-  diagnostics: () => api.get<SysDiagnosticsResponse>("/system/diagnostics"),
-  ping: () => api.get<{ pong: boolean; timestamp: number }>("/system/ping"),
-}
-
-// ---- 测试场景API类型 ----
-
-export interface ScenarioDef {
-  name: string
-  label: string
-  category: string
-  description: string
-}
-
-export interface ScenarioResult {
-  name: string
-  label: string
-  category: string
-  status: 'idle' | 'ok' | 'fail'
-  duration_ms: number
-  message: string
-  detail: Record<string, unknown> | null
-}
-
-export interface ScenarioRunResponse {
-  results: ScenarioResult[]
-  passed: number
-  failed: number
-  total: number
-  duration_ms: number
-}
-
-export const testRunnerAPI = {
-  listScenarios: () => api.get<{ total: number; scenarios: ScenarioDef[] }>('/test-scenarios'),
-  runScenario: (name: string) => api.post<ScenarioRunResponse>('/test-scenarios/run', { name }),
-  runAllScenarios: () => api.post<ScenarioRunResponse>('/test-scenarios/run-all'),
+  createRule: (payload: WeixinAutoReplyRuleCreate) =>
+    api.post<WeixinAutoReplyRule>('/weixin/auto-reply/rules', payload),
+  updateRule: (ruleId: number, payload: WeixinAutoReplyRuleUpdate) =>
+    api.put<WeixinAutoReplyRule>(`/weixin/auto-reply/rules/${ruleId}`, payload),
+  deleteRule: (ruleId: number) =>
+    api.delete<{ message: string }>(`/weixin/auto-reply/rules/${ruleId}`),
 }
 
 export { api as sharedApi }

@@ -49,11 +49,21 @@ vi.mock('@/features/settings/modelsApi', () => ({
   }
 }))
 
+const getConfigMock = weixinAPI.getConfig as ReturnType<typeof vi.fn>
+const saveConfigMock = weixinAPI.saveConfig as ReturnType<typeof vi.fn>
+const healthCheckMock = weixinAPI.healthCheck as ReturnType<typeof vi.fn>
+const getBindingMock = weixinAPI.getBinding as ReturnType<typeof vi.fn>
+const getParamsMock = weixinAPI.getParams as ReturnType<typeof vi.fn>
+const getAutoReplyStatusMock = weixinAPI.getAutoReplyStatus as ReturnType<typeof vi.fn>
+const startQrLoginMock = weixinAPI.startQrLogin as ReturnType<typeof vi.fn>
+const waitQrLoginMock = weixinAPI.waitQrLogin as ReturnType<typeof vi.fn>
+const exitQrLoginMock = weixinAPI.exitQrLogin as ReturnType<typeof vi.fn>
+
 describe('CommunicationPage Weixin Clawbot Configuration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()
-    ;(weixinAPI.getConfig as any).mockResolvedValue({
+    getConfigMock.mockResolvedValue({
       data: {
         account_id: 'test_account',
         token: 'test_token',
@@ -61,7 +71,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         timeout_seconds: 20
       }
     })
-    ;(weixinAPI.getBinding as any).mockResolvedValue({
+    getBindingMock.mockResolvedValue({
       data: {
         user_id: 'user-1',
         weixin_account_id: '',
@@ -72,7 +82,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         weixin_user_id: ''
       }
     })
-    ;(weixinAPI.getParams as any).mockResolvedValue({
+    getParamsMock.mockResolvedValue({
       data: {
         base_url: 'https://test.weixin.qq.com',
         bot_type: '3',
@@ -84,7 +94,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         token_refresh_enabled: true
       }
     })
-    ;(weixinAPI.getAutoReplyStatus as any).mockResolvedValue({
+    getAutoReplyStatusMock.mockResolvedValue({
       data: {
         user_id: 'user-1',
         binding_status: 'unbound',
@@ -105,7 +115,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         processed_message_count: 0
       }
     })
-    ;(weixinAPI.startQrLogin as any).mockResolvedValue({
+    startQrLoginMock.mockResolvedValue({
       data: {
         success: true,
         state: 'pending',
@@ -117,7 +127,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         qrcode_url: 'https://test.weixin.qq.com/qrcode-1.png'
       }
     })
-    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+    waitQrLoginMock.mockResolvedValue({
       data: {
         success: true,
         state: 'pending',
@@ -127,7 +137,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
         message: '等待扫码中'
       }
     })
-    ;(weixinAPI.exitQrLogin as any).mockResolvedValue({
+    exitQrLoginMock.mockResolvedValue({
       data: {
         message: 'success',
         cleared_sessions: 1
@@ -159,7 +169,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('validates required fields before saving', async () => {
-    ;(weixinAPI.getConfig as any).mockResolvedValue({
+    getConfigMock.mockResolvedValue({
       data: { account_id: '', token: '' }
     })
 
@@ -184,7 +194,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('calls saveConfig API on valid save', async () => {
-    ;(weixinAPI.saveConfig as any).mockResolvedValue({ data: { message: 'success' } })
+    saveConfigMock.mockResolvedValue({ data: { message: 'success' } })
 
     render(
       <MemoryRouter initialEntries={['/communication']}>
@@ -213,7 +223,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('displays health check result successfully', async () => {
-    ;(weixinAPI.healthCheck as any).mockResolvedValue({
+    healthCheckMock.mockResolvedValue({
       data: {
         ok: true,
         issues: [],
@@ -266,7 +276,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('normalizes confirmed binding status from persisted config', async () => {
-    ;(weixinAPI.getConfig as any).mockResolvedValue({
+    getConfigMock.mockResolvedValue({
       data: {
         account_id: 'test_account',
         token: 'test_token',
@@ -289,7 +299,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('shows persisted binding result after loading config', async () => {
-    ;(weixinAPI.getConfig as any).mockResolvedValue({
+    getConfigMock.mockResolvedValue({
       data: {
         account_id: 'test_account',
         token: 'test_token',
@@ -312,7 +322,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('starts qr login and auto handles confirmed success state with next-step guidance', async () => {
-    ;(weixinAPI.getConfig as any)
+    getConfigMock
       .mockResolvedValueOnce({
         data: {
           account_id: 'test_account',
@@ -331,7 +341,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
           binding_status: 'bound'
         }
       })
-    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+    waitQrLoginMock.mockResolvedValue({
       data: {
         success: true,
         state: 'success',
@@ -380,7 +390,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('shows half-success state from backend state field and keeps polling', async () => {
-    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+    waitQrLoginMock.mockResolvedValue({
       data: {
         success: true,
         state: 'half_success',
@@ -411,7 +421,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('updates polling base url after redirect status', async () => {
-    ;(weixinAPI.waitQrLogin as any)
+    waitQrLoginMock
       .mockResolvedValueOnce({
         data: {
           success: true,
@@ -453,7 +463,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
     })
 
     await waitFor(() => {
-      expect((weixinAPI.waitQrLogin as any).mock.calls[1][0]).toEqual({
+      expect(waitQrLoginMock.mock.calls[1][0]).toEqual({
         session_key: 'session_1',
         timeout_seconds: 20,
         qrcode: 'qrcode_1',
@@ -491,7 +501,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('handles refreshing status from backend as half_success state', async () => {
-    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+    waitQrLoginMock.mockResolvedValue({
       data: {
         success: true,
         state: 'half_success',
@@ -522,7 +532,7 @@ describe('CommunicationPage Weixin Clawbot Configuration', () => {
   })
 
   it('handles expired status and displays failure message', async () => {
-    ;(weixinAPI.waitQrLogin as any).mockResolvedValue({
+    waitQrLoginMock.mockResolvedValue({
       data: {
         success: true,
         state: 'failed',

@@ -4,10 +4,45 @@
 """
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from billing.models import Base, ModelConfiguration
+from billing.models import Base, ModelConfiguration, ModelPricing
 from billing.pricing_manager import PricingManager
+
+
+def _create_pricing_session_with_schema(include_capability_columns: bool):
+    """
+    创建指定 model_pricing 结构的数据库会话，用于兼容性回归测试。
+    """
+    engine = create_engine('sqlite:///:memory:', echo=False)
+    capability_columns = """
+            supports_vision BOOLEAN NOT NULL,
+            is_multimodal BOOLEAN NOT NULL,
+    """ if include_capability_columns else ""
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            CREATE TABLE model_pricing (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider VARCHAR NOT NULL,
+                model VARCHAR NOT NULL,
+                input_price FLOAT NOT NULL,
+                output_price FLOAT NOT NULL,
+                currency VARCHAR NOT NULL,
+                cache_hit_price FLOAT,
+                token_per_image INTEGER NOT NULL,
+                token_per_second_audio INTEGER NOT NULL,
+                token_per_second_video INTEGER NOT NULL,
+                context_window INTEGER,
+                is_active BOOLEAN NOT NULL,
+                {capability_columns}
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        """))
+
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
 
 
 @pytest.fixture
@@ -167,6 +202,53 @@ class TestInitializeDefaultConfigurations:
             seen.add(key)
 
         assert len(seen) == 17, "Should have 17 unique provider:model combinations"
+
+
+class TestInitializeDefaultPricing:
+    """
+    封装与TestInitializeDefaultPricing相关的核心逻辑与运行状态。
+    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    """
+
+    def test_initialize_handles_non_nullable_capability_columns(self):
+        """
+        验证旧库已包含非空能力列时，默认定价初始化仍可成功写入。
+        """
+        session = _create_pricing_session_with_schema(include_capability_columns=True)
+        try:
+            pricing_manager = PricingManager(session)
+
+            count = pricing_manager.initialize_default_pricing()
+
+            assert count == len(PricingManager.DEFAULT_PRICING_DATA)
+            gemini = session.query(ModelPricing).filter(
+                ModelPricing.provider == "google",
+                ModelPricing.model == "gemini-2.0-flash"
+            ).first()
+            assert gemini is not None
+            assert gemini.supports_vision is True
+            assert gemini.is_multimodal is True
+        finally:
+            session.close()
+
+    def test_initialize_adds_missing_capability_columns(self):
+        """
+        验证旧库缺少能力列时，会在初始化前自动补齐 schema。
+        """
+        session = _create_pricing_session_with_schema(include_capability_columns=False)
+        try:
+            pricing_manager = PricingManager(session)
+
+            pricing_manager.initialize_default_pricing()
+
+            columns = {
+                row[1]
+                for row in session.execute(text("PRAGMA table_info(model_pricing)")).fetchall()
+            }
+            assert "supports_vision" in columns
+            assert "is_multimodal" in columns
+        finally:
+            session.close()
 
 
 class TestGetActiveConfigurations:

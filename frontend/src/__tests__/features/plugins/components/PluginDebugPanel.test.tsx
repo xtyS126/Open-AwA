@@ -13,6 +13,8 @@ vi.mock('@/shared/api/api', () => ({
 
 const PLUGIN_ID = 'test-plugin-id'
 const PLUGIN_NAME = 'TestPlugin'
+const getLogsMock = pluginsAPI.getLogs as ReturnType<typeof vi.fn>
+const setLogLevelMock = pluginsAPI.setLogLevel as ReturnType<typeof vi.fn>
 
 const mockLogsEmpty = {
   data: {
@@ -52,8 +54,8 @@ const mockLogsWithEntries = {
 describe('PluginDebugPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(pluginsAPI.getLogs as any).mockResolvedValue(mockLogsEmpty)
-    ;(pluginsAPI.setLogLevel as any).mockResolvedValue({
+    getLogsMock.mockResolvedValue(mockLogsEmpty)
+    setLogLevelMock.mockResolvedValue({
       data: { plugin_id: PLUGIN_ID, plugin_name: PLUGIN_NAME, level: 'INFO' },
     })
   })
@@ -77,7 +79,7 @@ describe('PluginDebugPanel', () => {
   })
 
   it('有日志时应显示日志条目', async () => {
-    ;(pluginsAPI.getLogs as any).mockResolvedValue(mockLogsWithEntries)
+    getLogsMock.mockResolvedValue(mockLogsWithEntries)
     render(<PluginDebugPanel pluginId={PLUGIN_ID} pluginName={PLUGIN_NAME} />)
     await waitFor(() => {
       expect(screen.getByText('插件已初始化')).toBeInTheDocument()
@@ -86,7 +88,7 @@ describe('PluginDebugPanel', () => {
   })
 
   it('应显示日志级别标签', async () => {
-    ;(pluginsAPI.getLogs as any).mockResolvedValue(mockLogsWithEntries)
+    getLogsMock.mockResolvedValue(mockLogsWithEntries)
     render(<PluginDebugPanel pluginId={PLUGIN_ID} pluginName={PLUGIN_NAME} />)
     await waitFor(() => {
       const infoEls = screen.getAllByText('INFO')
@@ -126,7 +128,7 @@ describe('PluginDebugPanel', () => {
   })
 
   it('extra 字段有内容时应显示 JSON', async () => {
-    ;(pluginsAPI.getLogs as any).mockResolvedValue(mockLogsWithEntries)
+    getLogsMock.mockResolvedValue(mockLogsWithEntries)
     render(<PluginDebugPanel pluginId={PLUGIN_ID} pluginName={PLUGIN_NAME} />)
     await waitFor(() => {
       expect(screen.getByText('{"code":500}')).toBeInTheDocument()

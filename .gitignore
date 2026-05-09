@@ -63,6 +63,9 @@ frontend/blob-report/
 frontend/playwright/.cache/
 frontend/electron-report.json
 frontend/playwright-full-report.json
+frontend/.vite-e2e-cache/
+frontend/playwright-results/
+frontend/test-results-temp/
 
 # =========================
 # TypeScript 构建信息
@@ -120,7 +123,6 @@ desktop.ini
 .trae/
 .github/
 .claude/
-.trae/
 *.suo
 *.ntvs*
 *.njsproj
@@ -135,6 +137,8 @@ desktop.ini
 # =========================
 .openawa/
 .agents/
+.learnings/
+backend/data/task_runtime/transcripts/
 
 # =========================
 # 参考 / 归档文件夹（非项目源码）
@@ -147,6 +151,7 @@ archive/
 # =========================
 backend/scan_report.txt
 backend/COMPLETE_SCAN_REPORT.md
+backend/TEST_REPORT_*.md
 
 # =========================
 # 临时文件 / 杂项

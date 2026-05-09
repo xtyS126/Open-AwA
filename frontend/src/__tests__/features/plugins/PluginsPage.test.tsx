@@ -18,11 +18,19 @@ vi.mock('@/shared/api/api', () => ({
   },
 }))
 
+const getAllMock = pluginsAPI.getAll as ReturnType<typeof vi.fn>
+const uninstallMock = pluginsAPI.uninstall as ReturnType<typeof vi.fn>
+const getPermissionsMock = pluginsAPI.getPermissions as ReturnType<typeof vi.fn>
+const authorizePermissionsMock = pluginsAPI.authorizePermissions as ReturnType<typeof vi.fn>
+const revokePermissionsMock = pluginsAPI.revokePermissions as ReturnType<typeof vi.fn>
+const uploadMock = pluginsAPI.upload as ReturnType<typeof vi.fn>
+const importFromUrlMock = pluginsAPI.importFromUrl as ReturnType<typeof vi.fn>
+
 describe('PluginsPage permissions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('alert', vi.fn())
-    ;(pluginsAPI.getAll as any).mockResolvedValue({
+    getAllMock.mockResolvedValue({
       data: [
         {
           id: 'plugin-1',
@@ -32,8 +40,8 @@ describe('PluginsPage permissions', () => {
         },
       ],
     })
-    ;(pluginsAPI.uninstall as any).mockResolvedValue({ data: { message: 'ok' } })
-    ;(pluginsAPI.getPermissions as any).mockResolvedValue({
+    uninstallMock.mockResolvedValue({ data: { message: 'ok' } })
+    getPermissionsMock.mockResolvedValue({
       data: {
         plugin_id: 'plugin-1',
         plugin_name: 'permission-plugin',
@@ -42,7 +50,7 @@ describe('PluginsPage permissions', () => {
         missing_permissions: ['network:http'],
       },
     })
-    ;(pluginsAPI.authorizePermissions as any).mockResolvedValue({
+    authorizePermissionsMock.mockResolvedValue({
       data: {
         plugin_id: 'plugin-1',
         plugin_name: 'permission-plugin',
@@ -52,7 +60,7 @@ describe('PluginsPage permissions', () => {
         message: '权限授权成功',
       },
     })
-    ;(pluginsAPI.revokePermissions as any).mockResolvedValue({
+    revokePermissionsMock.mockResolvedValue({
       data: {
         plugin_id: 'plugin-1',
         plugin_name: 'permission-plugin',
@@ -93,7 +101,7 @@ describe('PluginsPage permissions', () => {
   })
 
   it('应支持撤销已授权权限', async () => {
-    ;(pluginsAPI.getPermissions as any)
+    getPermissionsMock
       .mockResolvedValueOnce({
         data: {
           plugin_id: 'plugin-1',
@@ -135,7 +143,7 @@ describe('PluginsPage permissions', () => {
 
   it('应支持搜索与批量删除并显示 Toast', async () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
-    ;(pluginsAPI.getAll as any).mockResolvedValue({
+    getAllMock.mockResolvedValue({
       data: [
         { id: 'plugin-1', name: 'alpha-plugin', version: '1.0.0', enabled: true, description: 'first' },
         { id: 'plugin-2', name: 'beta-plugin', version: '1.0.0', enabled: true, description: 'second' },
@@ -191,7 +199,7 @@ describe('PluginsPage permissions', () => {
   })
 
   it('应在远程导入时去除 URL 首尾空白并成功调用接口', async () => {
-    ;(pluginsAPI.importFromUrl as any).mockResolvedValue({ data: { message: 'ok' } })
+    importFromUrlMock.mockResolvedValue({ data: { message: 'ok' } })
 
     render(<BrowserRouter><PluginsPage /></BrowserRouter>)
 
@@ -210,7 +218,7 @@ describe('PluginsPage permissions', () => {
   })
 
   it('应在本地 zip 导入成功后刷新列表并提示成功', async () => {
-    ;(pluginsAPI.upload as any).mockResolvedValue({ data: { message: 'ok' } })
+    uploadMock.mockResolvedValue({ data: { message: 'ok' } })
     const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
 
     await waitFor(() => {
@@ -244,7 +252,7 @@ describe('PluginsPage permissions', () => {
   })
 
   it('应支持从 config 回退解析作者与简介', async () => {
-    ;(pluginsAPI.getAll as any).mockResolvedValue({
+    getAllMock.mockResolvedValue({
       data: [
         {
           id: 'plugin-3',

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   cookieState,
   requestUse,
-  responseUse,
+  responseUse: _responseUse,
   fakeApiInstance,
   loggerMocks,
   generateRequestIdMock,

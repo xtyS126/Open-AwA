@@ -2,7 +2,6 @@ import '@testing-library/jest-dom/vitest'
 import { render } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import App from '@/App'
-import { BrowserRouter } from 'react-router-dom'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },

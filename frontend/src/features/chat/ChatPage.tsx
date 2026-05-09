@@ -1109,8 +1109,9 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'task' && event.task && typeof event.task === 'object') {
-                  updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, event.task))
-                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), event.task as Record<string, unknown>).steps[0]
+                  const taskData = event.task as Record<string, unknown>
+                  updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskData))
+                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
                   if (stepMeta) {
                     updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
                   }
@@ -1230,10 +1231,11 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'task_updated' && event.task) {
+                  const taskData = event.task as Record<string, unknown>
                   updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyTaskUpdate(current, event.task)
+                    return applyTaskUpdate(current, taskData)
                   })
-                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), event.task as Record<string, unknown>).steps[0]
+                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
                   if (stepMeta) {
                     updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
                   }
@@ -1401,11 +1403,12 @@ function ChatPage() {
             })
           }
         } else if (backendError?.message) {
-          addMessage('assistant', `请求失败：${sanitizeDisplayedError(backendError.message)}`)
+          const backendErrorMessage = typeof backendError.message === 'string' ? backendError.message : '请求失败'
+          addMessage('assistant', `请求失败：${sanitizeDisplayedError(backendErrorMessage)}`)
           updateMessage(assistantMessageId, (message) => ({
             ...message,
             segments: buildSegmentsFromLegacyMessage({
-              content: `请求失败：${sanitizeDisplayedError(backendError.message)}`,
+              content: `请求失败：${sanitizeDisplayedError(backendErrorMessage)}`,
             }),
           }))
         } else if (reasoningContent || hasExecutionMeta(nextMeta)) {

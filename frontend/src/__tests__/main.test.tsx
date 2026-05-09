@@ -1,8 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { render } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import main from '@/main'
-import { BrowserRouter } from 'react-router-dom'
+import '@/main'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
@@ -30,7 +28,6 @@ vi.mock('@/features/settings/modelsApi', () => ({
 
 describe('main', () => {
   it('renders without crashing', () => {
-    render(<BrowserRouter><main /></BrowserRouter>)
-    expect(true).toBe(true)
+    expect(document.getElementById('root')).not.toBeNull()
   })
 })
