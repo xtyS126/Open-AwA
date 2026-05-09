@@ -1,5 +1,4 @@
 import axios from 'axios'
-import Cookies from 'js-cookie'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 
 type ApiPayload = Record<string, unknown>
@@ -47,9 +46,11 @@ export interface ChatStreamEvent {
 const API_BASE_URL = '/api'
 
 const CSRF_EXEMPT_PATHS = new Set(['/auth/login', '/auth/register'])
-const CSRF_BOOTSTRAP_PATH = `${API_BASE_URL}/auth/me`
+const CSRF_TOKEN_URL = `${API_BASE_URL}/auth/csrf-token`
 
-export const getCsrfToken = (): string => Cookies.get('csrf_token') || ''
+let _cachedCsrfToken = ''
+
+export const getCsrfToken = (): string => _cachedCsrfToken
 
 let csrfBootstrapPromise: Promise<string> | null = null
 
@@ -77,9 +78,8 @@ const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
 }
 
 const ensureCsrfToken = async (): Promise<string> => {
-  const csrfToken = getCsrfToken()
-  if (csrfToken) {
-    return csrfToken
+  if (_cachedCsrfToken) {
+    return _cachedCsrfToken
   }
 
   appLogger.warning({
@@ -89,17 +89,22 @@ const ensureCsrfToken = async (): Promise<string> => {
     status: 'warning',
     message: 'csrf token missing before mutating request, trying bootstrap request',
     extra: {
-      bootstrap_path: CSRF_BOOTSTRAP_PATH,
+      bootstrap_path: CSRF_TOKEN_URL,
     },
   })
 
   if (!csrfBootstrapPromise) {
     csrfBootstrapPromise = (async () => {
       try {
-        await fetch(CSRF_BOOTSTRAP_PATH, {
+        const response = await fetch(CSRF_TOKEN_URL, {
           method: 'GET',
           credentials: 'same-origin',
         })
+        if (!response.ok) {
+          throw new Error(`CSRF token request failed: ${response.status}`)
+        }
+        const data = await response.json()
+        _cachedCsrfToken = data.csrf_token || ''
       } catch (error) {
         appLogger.warning({
           event: 'csrf_token_bootstrap_failed',
@@ -113,11 +118,10 @@ const ensureCsrfToken = async (): Promise<string> => {
         })
       }
 
-      const refreshedToken = getCsrfToken()
-      if (!refreshedToken) {
+      if (!_cachedCsrfToken) {
         throw new Error('CSRF token missing after bootstrap request')
       }
-      return refreshedToken
+      return _cachedCsrfToken
     })().finally(() => {
       csrfBootstrapPromise = null
     })

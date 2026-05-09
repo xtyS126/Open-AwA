@@ -4,11 +4,56 @@
 """
 
 from pathlib import Path
-from pydantic_settings import BaseSettings
-from pydantic import SecretStr
-from typing import Optional
 import os
 import secrets
+from typing import Iterable, Optional
+
+from dotenv import dotenv_values
+from loguru import logger
+from pydantic import SecretStr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_BACKEND_DIR = Path(__file__).resolve().parents[1]
+_PROJECT_DIR = _BACKEND_DIR.parent
+_DEFAULT_LOCAL_ENV_FILE = _BACKEND_DIR / ".env.local"
+_ENV_FILE_PRIORITY = (
+    _BACKEND_DIR / ".env.local",
+    _PROJECT_DIR / ".env.local",
+    _BACKEND_DIR / ".env",
+    _PROJECT_DIR / ".env",
+)
+
+
+def _resolve_existing_env_files(env_files: Optional[Iterable[Path]] = None) -> tuple[Path, ...]:
+    """
+    按优先级筛选存在的环境文件，并去除重复路径。
+    """
+    resolved_files = []
+    seen_paths = set()
+    for env_file in env_files or _ENV_FILE_PRIORITY:
+        resolved_path = Path(env_file).resolve()
+        if not resolved_path.exists() or resolved_path in seen_paths:
+            continue
+        seen_paths.add(resolved_path)
+        resolved_files.append(resolved_path)
+    return tuple(resolved_files)
+
+
+def preload_environment_variables(env_files: Optional[Iterable[Path]] = None) -> tuple[Path, ...]:
+    """
+    将环境文件预加载到进程环境中，兼容仍直接使用 os.getenv 的旧代码路径。
+    """
+    loaded_files = _resolve_existing_env_files(env_files)
+    for env_file in loaded_files:
+        for key, value in dotenv_values(env_file).items():
+            if key and value is not None:
+                os.environ.setdefault(key, value)
+    return loaded_files
+
+
+_LOADED_ENV_FILES = preload_environment_variables()
+_SETTINGS_ENV_FILES = tuple(str(path) for path in reversed(_LOADED_ENV_FILES))
 
 
 def is_production_environment(environment: Optional[str]) -> bool:
@@ -21,42 +66,22 @@ def is_production_environment(environment: Optional[str]) -> bool:
 
 def generate_secret_key() -> str:
     """
-    生成或加载 SECRET_KEY。
-    生产环境必须通过环境变量显式配置；
-    开发环境自动生成后持久化到 .env.local，跨重启保持一致，避免 JWT token 全部失效。
+    生成并持久化开发环境使用的 SECRET_KEY。
+    仅在配置已确认不是生产环境且未提供现有密钥时调用。
     """
-    from loguru import logger
-    
-    env_key = os.getenv("SECRET_KEY")
-    environment = os.getenv("ENVIRONMENT", "development")
-    
-    if is_production_environment(environment) and not env_key:
-        logger.error("SECRET_KEY environment variable is required in production environment")
-        raise ValueError("SECRET_KEY environment variable is required in production environment")
-    
-    if env_key:
-        return env_key
-    
-    # 开发环境：尝试从 .env.local 加载已生成的 key，保持跨重启一致性
-    env_local_path = Path(__file__).resolve().parents[1] / ".env.local"
-    if env_local_path.exists():
-        with open(env_local_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("SECRET_KEY="):
-                    persisted_key = line[len("SECRET_KEY="):]
-                    if persisted_key:
-                        return persisted_key
-    
-    # 首次启动：生成新 key 并持久化到 .env.local
+    env_local_path = _DEFAULT_LOCAL_ENV_FILE
     new_key = secrets.token_urlsafe(32)
     logger.warning(
         "SECRET_KEY not set, generating new key and persisting to .env.local. "
         "This is not secure for production!"
     )
     try:
+        env_local_path.parent.mkdir(parents=True, exist_ok=True)
+        prefix = ""
+        if env_local_path.exists() and env_local_path.stat().st_size > 0:
+            prefix = "\n"
         with open(env_local_path, "a", encoding="utf-8") as f:
-            f.write(f"\nSECRET_KEY={new_key}\n")
+            f.write(f"{prefix}SECRET_KEY={new_key}\n")
     except OSError as e:
         logger.warning(f"无法持久化 SECRET_KEY 到 .env.local: {e}")
     return new_key
@@ -77,14 +102,21 @@ class Settings(BaseSettings):
     封装与Settings相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
+    model_config = SettingsConfigDict(
+        env_file=_SETTINGS_ENV_FILES or None,
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     PROJECT_NAME: str = "Open-AwA AI Agent"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
+    ENVIRONMENT: str = "development"
     
     # 默认固定到 backend/openawa.db 的绝对路径，避免受进程启动目录影响。
     DATABASE_URL: str = build_default_database_url()
     
-    SECRET_KEY: str = generate_secret_key()
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     
@@ -153,16 +185,29 @@ class Settings(BaseSettings):
         certfile = (self.SSL_CERTFILE or "").strip()
         keyfile = (self.SSL_KEYFILE or "").strip()
         return bool(certfile and keyfile)
-    
-    class Config:
+
+    @model_validator(mode="after")
+    def apply_runtime_defaults(self) -> "Settings":
         """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
+        在完成环境加载后补齐运行期默认值，避免导入阶段绕过环境文件配置。
         """
-        env_file = ".env"
-        case_sensitive = True
-        # 兼容由其他模块直接通过 os.getenv 读取的环境变量，避免 .env 中存在额外键时启动失败。
-        extra = "ignore"
+        environment = str(self.ENVIRONMENT or "development").strip() or "development"
+        secret_key = str(self.SECRET_KEY or "").strip()
+
+        if environment != self.ENVIRONMENT:
+            object.__setattr__(self, "ENVIRONMENT", environment)
+
+        if secret_key:
+            if secret_key != self.SECRET_KEY:
+                object.__setattr__(self, "SECRET_KEY", secret_key)
+            return self
+
+        if is_production_environment(environment):
+            logger.error("SECRET_KEY environment variable is required in production environment")
+            raise ValueError("SECRET_KEY environment variable is required in production environment")
+
+        object.__setattr__(self, "SECRET_KEY", generate_secret_key())
+        return self
 
 
 settings = Settings()
