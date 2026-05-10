@@ -364,6 +364,8 @@ class AIAgent:
 
         try:
             manager = MCPManager()
+            if manager is None:
+                return default_payload
             servers = manager.get_all_servers()
             tools = await manager.get_all_tools()
 

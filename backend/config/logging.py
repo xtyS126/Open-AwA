@@ -263,8 +263,19 @@ def _build_fallback_log_path(path: str) -> str:
 
 def _add_file_sink_with_fallback(path: str, sink_name: str, **kwargs: Any) -> str:
     """
-    添加文件日志 sink；若主文件因占用或权限问题失败，则自动切换到 PID 备用文件。
+    添加文件日志 sink；Windows 下优先使用 PID 文件避免多进程争用，
+    若主文件因占用或权限问题失败，则自动切换到 PID 备用文件。
     """
+    # Windows 下多进程（uvicorn reload）会争用同名日志文件，直接用 PID 后缀避免权限错误
+    if os.name == "nt":
+        pid_path = _build_fallback_log_path(path)
+        try:
+            logger.add(pid_path, **kwargs)
+            return pid_path
+        except Exception as exc:
+            if not _is_retryable_file_sink_error(exc):
+                raise
+
     try:
         logger.add(path, **kwargs)
         return path

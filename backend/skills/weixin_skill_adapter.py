@@ -30,7 +30,7 @@ SESSION_PAUSE_DURATION_SECONDS = 60 * 60
 _SESSION_PAUSE_UNTIL: Dict[str, float] = {}
 _STATE_FILE_LOCKS: Dict[str, threading.RLock] = {}
 _STATE_FILE_LOCKS_GUARD = threading.Lock()
-_STATE_FILE_WRITE_RETRY_DELAYS = (0.05, 0.1, 0.2)
+_STATE_FILE_WRITE_RETRY_DELAYS = (0.1, 0.3, 0.5, 1.0, 2.0)
 
 
 def _get_state_file_lock(file_path: str) -> threading.RLock:
@@ -951,12 +951,20 @@ class WeixinSkillAdapter:
                     last_error = exc
                     try:
                         os.remove(temp_file_path)
-                    except FileNotFoundError:
+                    except (FileNotFoundError, PermissionError):
                         pass
+                    # 最后一次重试失败时，尝试直接写入目标文件（绕过 rename 权限问题）
+                    if delay_seconds == _STATE_FILE_WRITE_RETRY_DELAYS[-1]:
+                        try:
+                            with open(file_path, "w", encoding="utf-8") as fh:
+                                fh.write(payload)
+                            return
+                        except Exception:
+                            pass
                 except Exception:
                     try:
                         os.remove(temp_file_path)
-                    except FileNotFoundError:
+                    except (FileNotFoundError, PermissionError):
                         pass
                     raise
 

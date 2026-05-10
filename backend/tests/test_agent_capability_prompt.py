@@ -446,7 +446,8 @@ async def test_ai_agent_collect_mcp_capabilities_handles_unavailable_manager(mon
     assert result["platform_supported"] is True
     assert result["connected_servers"] == []
     assert result["tools"] == []
-    assert 'NoneType' in str(result.get('error', '')) or 'none' in str(result.get('error', '')).lower()
+    # MCPManager 为 None 时直接返回降级结构，不在 error 字段中记录异常信息
+    assert result.get("error") is None or result.get("error") == ""
 
 
 @pytest.mark.asyncio
