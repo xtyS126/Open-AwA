@@ -37,15 +37,15 @@ export const ThinkingProcess: React.FC<ThinkingProcessProps> = memo(({
         onClick={handleToggle}
       >
         <div className={styles.titleArea}>
+          <div className={styles.actionArea}>
+            {isExpanded ? (
+              <ChevronDown className={styles.chevron} size={16} />
+            ) : (
+              <ChevronRight className={styles.chevron} size={16} />
+            )}
+          </div>
           <BrainCircuit className={`${styles.icon} ${isThinking ? styles.spinning : ''}`} size={16} />
           <span className={styles.title}>{title}</span>
-        </div>
-        <div className={styles.actionArea}>
-          {isExpanded ? (
-            <ChevronDown className={styles.chevron} size={16} />
-          ) : (
-            <ChevronRight className={styles.chevron} size={16} />
-          )}
         </div>
       </div>
       

@@ -463,7 +463,8 @@ describe('ChatPage', () => {
 
     fireEvent.click(await screen.findByText(/思维链/))
     expect(await screen.findByText('子代理执行')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getAllByText('子代理摘要').length).toBeGreaterThan(0))
+    // 修复后，subagent 容器显示累积的完整日志（含实时输出和摘要），用部分匹配确认摘要出现
+    await waitFor(() => expect(screen.getByText(/子代理摘要/)).toBeInTheDocument())
     expect(screen.getByText('主代理完成回复。')).toBeInTheDocument()
   })
 

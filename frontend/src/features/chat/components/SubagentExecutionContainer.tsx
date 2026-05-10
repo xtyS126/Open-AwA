@@ -1,4 +1,4 @@
-import { MessageContent } from './MessageContent'
+import { ParsedSubagentLogs } from './ParsedSubagentLogs'
 import styles from './SubagentExecutionContainer.module.css'
 
 export interface SubagentExecutionProps {
@@ -49,7 +49,7 @@ export function SubagentExecutionContainer({
         </div>
       </div>
       <div className={styles.content}>
-        <MessageContent content={logs} role="assistant" />
+        <ParsedSubagentLogs logs={logs} />
       </div>
     </div>
   )

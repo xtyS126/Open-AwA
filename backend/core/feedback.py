@@ -4,7 +4,7 @@
 """
 
 import time
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from loguru import logger
 
 
@@ -125,10 +125,13 @@ class FeedbackLayer:
         self,
         user_input: str,
         response: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        reasoning_content: Optional[str] = None,
+        tool_events: Optional[list] = None,
     ):
         """
         更新memory相关数据、配置或状态。
+        reasoning_content 为本轮思维链文本，tool_events 为工具调用事件列表，用于历史恢复时展示。
         阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
         """
         if context.get("scheduled_execution_isolated") or context.get("disable_memory_update"):
@@ -173,6 +176,8 @@ class FeedbackLayer:
                 role="assistant",
                 content=response,
                 user_id=user_id,
+                reasoning_content=reasoning_content or None,
+                tool_events=tool_events or None,
             )
             
             if self._should_persist(response):

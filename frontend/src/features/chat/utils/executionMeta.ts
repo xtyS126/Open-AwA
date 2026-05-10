@@ -24,9 +24,7 @@ function normalizeSubagentName(agentType: unknown): string {
 function appendSubagentLogs(existingLogs: string, chunk: string): Pick<SubagentExecutionState, 'logs' | 'truncated'> {
   const normalizedChunk = String(chunk || '')
   const baseLogs = String(existingLogs || '')
-  const nextRawLogs = baseLogs
-    ? `${baseLogs}${baseLogs.endsWith('\n') ? '' : '\n'}${normalizedChunk}`
-    : normalizedChunk
+  const nextRawLogs = baseLogs + normalizedChunk
 
   const withoutNotice = nextRawLogs.startsWith(SUBAGENT_TRUNCATION_NOTICE)
     ? nextRawLogs.slice(SUBAGENT_TRUNCATION_NOTICE.length)
@@ -325,7 +323,10 @@ export function applySubagentMessage(
 ): AssistantExecutionMeta {
   const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
   const nextOutputAt = Date.now()
-  const nextLogs = appendSubagentLogs(existing?.subagent?.logs || '', payload.message)
+  const existingLogs = existing?.subagent?.logs || ''
+  // 追加日志时插入换行分隔符，与 applySubagentStop 保持一致
+  const isNewBlock = payload.message.startsWith('[') && (payload.message.startsWith('[状态]') || payload.message.startsWith('[思考]')); const logSeparator = (isNewBlock && existingLogs && !existingLogs.endsWith('\n')) ? '\n' : ''
+  const nextLogs = appendSubagentLogs(existingLogs, logSeparator + payload.message)
 
   return applyToolUpdate(meta, {
     id: payload.agentId,
@@ -356,7 +357,7 @@ export function applySubagentStop(
   const hasError = isSubagentFailure(payload.state, payload.summary)
   const summaryText = String(payload.summary || '').trim()
   const nextLogs = summaryText
-    ? appendSubagentLogs(existing?.subagent?.logs || '', summaryText)
+    ? appendSubagentLogs(existing?.subagent?.logs || '', (existing?.subagent?.logs && !existing.subagent.logs.endsWith('\n') ? '\n' : '') + summaryText)
     : {
         logs: existing?.subagent?.logs || '',
         truncated: Boolean(existing?.subagent?.truncated),
@@ -395,7 +396,7 @@ export function applySubagentTimeout(
   const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
   const timeoutMessage = payload.message || `Subagent ${payload.agentType || payload.agentId} 执行失败`
   const finishedAt = Date.now()
-  const nextLogs = appendSubagentLogs(existing?.subagent?.logs || '', `[ERROR] ${timeoutMessage}`)
+  const nextLogs = appendSubagentLogs(existing?.subagent?.logs || '', (existing?.subagent?.logs && !existing.subagent.logs.endsWith('\n') ? '\n' : '') + `[ERROR] ${timeoutMessage}`)
 
   return applyToolUpdate(meta, {
     id: payload.agentId,

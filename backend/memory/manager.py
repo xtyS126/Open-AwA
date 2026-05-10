@@ -160,6 +160,8 @@ class MemoryManager:
         role: str,
         content: str,
         user_id: Optional[str] = None,
+        reasoning_content: Optional[str] = None,
+        tool_events: Optional[list] = None,
     ) -> ShortTermMemory:
         with self.session_factory() as db:
             ensure_conversation(
@@ -170,7 +172,13 @@ class MemoryManager:
                 role=role,
                 increment_message_count=True,
             )
-            memory = ShortTermMemory(session_id=session_id, role=role, content=content)
+            memory = ShortTermMemory(
+                session_id=session_id,
+                role=role,
+                content=content,
+                reasoning_content=reasoning_content or None,
+                tool_events=tool_events or None,
+            )
             db.add(memory)
             db.commit()
             db.refresh(memory)
@@ -184,8 +192,13 @@ class MemoryManager:
         role: str,
         content: str,
         user_id: Optional[str] = None,
+        reasoning_content: Optional[str] = None,
+        tool_events: Optional[list] = None,
     ) -> ShortTermMemory:
-        memory = await asyncio.to_thread(self._add_short_term_memory_sync, session_id, role, content, user_id)
+        memory = await asyncio.to_thread(
+            self._add_short_term_memory_sync,
+            session_id, role, content, user_id, reasoning_content, tool_events,
+        )
         logger.debug(f"Added short-term memory for session {session_id}")
         return memory
 

@@ -1532,6 +1532,7 @@ class ExecutionLayer:
                     provider=provider,
                     model=model,
                     background=background,
+                    root_chat_session_id=context.get("session_id"),
                     context=context,
                 )
                 if isinstance(result, dict):

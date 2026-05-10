@@ -455,7 +455,7 @@ async def run_background(
         "run_mode": "background",
     })
 
-    # 创建后台任务
+    # 创建后台任务，传入父会话 ID 以便后续推送事件
     task = asyncio.create_task(
         _background_execute(
             agent_id=agent_id,
@@ -465,6 +465,7 @@ async def run_background(
             provider=provider,
             model=model,
             context=context,
+            root_chat_session_id=root_chat_session_id,
         )
     )
     _running_background_tasks[agent_id] = task
@@ -501,6 +502,28 @@ async def _heartbeat_loop(agent_id: str, lease_owner: str, interval_seconds: int
             db.close()
 
 
+async def _push_event_to_parent_session(
+    root_chat_session_id: Optional[str],
+    event: Dict[str, Any],
+    agent_id: str,
+) -> None:
+    """将事件推送至父会话的 WebSocket 连接（如存在）。推送失败时静默忽略。"""
+    if not root_chat_session_id:
+        return
+    try:
+        from api.services.ws_manager import ws_manager
+        import json
+        ws = ws_manager.get_connection(root_chat_session_id)
+        if ws:
+            await ws.send_text(json.dumps(event, ensure_ascii=False, default=str))
+    except Exception as exc:
+        logger.bind(
+            module="task_runtime",
+            agent_id=agent_id,
+            error=str(exc),
+        ).debug("推送事件到父会话失败（已忽略）")
+
+
 async def _background_execute(
     agent_id: str,
     agent_type: str,
@@ -509,8 +532,9 @@ async def _background_execute(
     provider: Optional[str],
     model: Optional[str],
     context: Optional[Dict[str, Any]],
+    root_chat_session_id: Optional[str] = None,
 ) -> None:
-    """后台执行子代理的实际逻辑。"""
+    """后台执行子代理的实际逻辑，使用 process_stream() 支持多轮工具调用，并通过 WebSocket 推送事件给父会话。"""
     db = SessionLocal()
     try:
         update_session_state(db, agent_id, "running")
@@ -538,9 +562,39 @@ async def _background_execute(
             model=model,
             context=context,
         )
-        result = await sub_agent.process(prompt, sub_context)
 
-        summary = build_summary(result, max_length=2000)
+        full_response = ""
+        tool_results = []
+
+        # 使用 process_stream() 支持多轮 LLM + 工具调用
+        async for chunk in sub_agent.process_stream(prompt, sub_context):
+            # 保存 transcript 条目，供前端轮询获取进度
+            if chunk.get("type") in ("plan", "task", "tool", "usage", "status"):
+                save_transcript_entry(agent_id, chunk)
+
+            # 收集工具执行结果
+            if chunk.get("type") == "tool":
+                tool_data = chunk.get("tool", {})
+                tool_results.append(tool_data)
+
+            # 收集文本响应
+            if chunk.get("type") == "chunk" and chunk.get("content"):
+                full_response += chunk["content"]
+
+            # 将可读消息保存到 transcript 并推送至父会话
+            message = _format_subagent_stream_chunk(chunk)
+            if message:
+                save_transcript_entry(agent_id, {
+                    "event": "agent_message",
+                    "message": message,
+                })
+                push_event = emit_agent_message_event(agent_id, message, agent_type=agent_type)
+                await _push_event_to_parent_session(root_chat_session_id, push_event, agent_id)
+
+        summary = build_summary(
+            {"response": full_response, "tool_results": tool_results},
+            max_length=2000,
+        )
 
         db = SessionLocal()
         try:
@@ -557,6 +611,18 @@ async def _background_execute(
 
         save_transcript_entry(agent_id, {
             "event": "subagent_stop",
+            "state": "completed",
+            "summary": summary,
+        })
+
+        # 推送完成事件至父会话
+        stop_event = emit_subagent_stop_event(agent_id, "completed", summary, agent_type=agent_type, run_mode="background")
+        await _push_event_to_parent_session(root_chat_session_id, stop_event, agent_id)
+
+        # SubagentStop 钩子
+        await hook_dispatcher.dispatch(HOOK_SUBAGENT_STOP, {
+            "agent_id": agent_id,
+            "agent_type": agent_type,
             "state": "completed",
             "summary": summary,
         })
@@ -586,6 +652,10 @@ async def _background_execute(
             "state": "failed",
             "error": error_msg,
         })
+
+        # 推送失败事件至父会话
+        fail_event = emit_subagent_stop_event(agent_id, "failed", error_msg, agent_type=agent_type, run_mode="background")
+        await _push_event_to_parent_session(root_chat_session_id, fail_event, agent_id)
     finally:
         heartbeat_task.cancel()
         try:

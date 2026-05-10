@@ -1,4 +1,4 @@
-import React, { useRef, ChangeEvent } from 'react'
+import { useRef, ChangeEvent } from 'react'
 import { useThemeStore } from '@/shared/store/themeStore'
 import styles from './ThemePage.module.css'
 

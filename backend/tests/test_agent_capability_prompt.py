@@ -291,34 +291,34 @@ async def test_ai_agent_process_injects_runtime_capabilities(monkeypatch):
                     {
                         "name": "help",
                         "description": "查看帮助",
-
-        def fake_collect_configured_model_capabilities(context):
-            return {
-                "count": 2,
-                "provider_count": 2,
-                "entries": [
-                    {
-                        "provider": "openai",
-                        "model": "gpt-4o",
-                        "label": "openai:gpt-4o",
-                    },
-                    {
-                        "provider": "anthropic",
-                        "model": "claude-3-5-sonnet",
-                        "label": "anthropic:claude-3-5-sonnet",
-                    },
-                ],
-                "providers": [
-                    {"provider": "openai", "models": ["gpt-4o"]},
-                    {"provider": "anthropic", "models": ["claude-3-5-sonnet"]},
-                ],
-                "summary": "openai:gpt-4o、anthropic:claude-3-5-sonnet",
-            }
                         "method": "get_help",
                     }
                 ],
             }
         ]
+
+    def fake_collect_configured_model_capabilities(context):
+        return {
+            "count": 2,
+            "provider_count": 2,
+            "entries": [
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "label": "openai:gpt-4o",
+                },
+                {
+                    "provider": "anthropic",
+                    "model": "claude-3-5-sonnet",
+                    "label": "anthropic:claude-3-5-sonnet",
+                },
+            ],
+            "providers": [
+                {"provider": "openai", "models": ["gpt-4o"]},
+                {"provider": "anthropic", "models": ["claude-3-5-sonnet"]},
+            ],
+            "summary": "openai:gpt-4o、anthropic:claude-3-5-sonnet",
+        }
 
     class FakeMCPManager:
         def get_all_servers(self):

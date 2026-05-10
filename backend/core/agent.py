@@ -1448,6 +1448,7 @@ class AIAgent:
 
         full_content = ""
         full_reasoning = ""
+        accumulated_tool_events: list = []  # 收集本轮所有工具调用事件，用于持久化
 
         final_only_mode = self._is_final_only_mode(context)
 
@@ -1550,14 +1551,16 @@ class AIAgent:
                         except ImportError:
                             pass
 
-                        yield emit_tool_event({
+                        tool_event_data = {
                             "id": tool_id,
                             "kind": tool_kind,
                             "name": tool_name,
                             "status": "completed" if result.get("ok") else "error",
                             "detail": self._summarize_stream_tool_result(result),
                             "output": result.get("result") if result.get("ok") else result.get("error"),
-                        })
+                        }
+                        accumulated_tool_events.append(tool_event_data)
+                        yield emit_tool_event(tool_event_data)
 
                         if tool_name == "task_spawn_agent":
                             spawned_subagent = self._extract_spawned_subagent_result(result)
@@ -1653,7 +1656,9 @@ class AIAgent:
             await self.feedback.update_memory(
                 user_input=user_input,
                 response=full_content,
-                context=context
+                context=context,
+                reasoning_content=full_reasoning if full_reasoning else None,
+                tool_events=accumulated_tool_events if accumulated_tool_events else None,
             )
 
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:

@@ -357,7 +357,9 @@ async def get_chat_history(
             "id": msg.id,
             "role": msg.role,
             "content": msg.content,
-            "timestamp": msg.timestamp
+            "timestamp": msg.timestamp,
+            "reasoning_content": msg.reasoning_content if msg.reasoning_content else None,
+            "toolEvents": msg.tool_events if msg.tool_events else None,
         }
         for msg in messages
     ]

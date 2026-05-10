@@ -156,6 +156,7 @@ class Settings(BaseSettings):
     
     SANDBOX_TIMEOUT: int = 30
     SANDBOX_MEMORY_LIMIT: str = "512m"
+    SANDBOX_BACKEND: str = "restricted_python"
     
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True

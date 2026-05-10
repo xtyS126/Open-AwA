@@ -44,9 +44,20 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--color-bg-tertiary);
+  padding: 4px 0 4px 16px;
+  position: relative;
+}
+
+.stepItem::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: var(--color-text-tertiary);
 }
 
 .stepStatus {
@@ -87,7 +98,7 @@
 
 .subagentGrid {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
   align-items: stretch;
 }
@@ -95,13 +106,16 @@
 .usageGrid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
 }
 
 .usageItem {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--color-bg-tertiary);
+  padding: 4px 8px;
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
+  border-right: 1px solid var(--color-border);
+}
+
+.usageItem:last-child {
+  border-right: none;
 }

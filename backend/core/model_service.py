@@ -392,6 +392,9 @@ def build_thinking_params(provider: str, model: str, thinking_depth: int, thinki
     # 处理明确关闭思考的情况
     if thinking_enabled is False:
         if normalized == "deepseek" or "deepseek" in model_lower:
+            # V4 系列不支持 thinking 参数，关闭思考时需用 reasoning_effort
+            if any(v4_prefix in model_lower for v4_prefix in ("deepseek-v4", "deepseek_v4")):
+                return {"extra_body": {"reasoning_effort": "none"}}
             return {"extra_body": {"thinking": {"type": "disabled"}}}
         if normalized == "google" or "gemini" in model_lower:
             return {"reasoning_effort": "none"}
@@ -438,14 +441,22 @@ def build_thinking_params(provider: str, model: str, thinking_depth: int, thinki
             return {"thinking": {"type": "enabled", "budget_tokens": budget_tokens}}
 
     # DeepSeek 推理模型
+    # 注意：LiteLLM 将 deepseek 路由为 openai/ 前缀，top-level reasoning_effort 会被校验拒绝。
+    # 将 reasoning_effort 放入 extra_body 可绕过 LiteLLM 参数白名单，直接透传给自定义 api_base。
     if normalized == "deepseek" or "deepseek" in model_lower:
         if thinking_depth <= 3:
             effort = "high"
         else:
             effort = "max"
+        # V4 系列模型：仅支持 reasoning_effort，不支持 thinking 参数（thinking 为 R1 独有）
+        if any(v4_prefix in model_lower for v4_prefix in ("deepseek-v4", "deepseek_v4")):
+            return {"extra_body": {"reasoning_effort": effort}}
+        # R1/旧版推理模型：同时需要 thinking 和 reasoning_effort
         return {
-            "extra_body": {"thinking": {"type": "enabled"}},
-            "reasoning_effort": effort
+            "extra_body": {
+                "thinking": {"type": "enabled"},
+                "reasoning_effort": effort,
+            }
         }
 
     # Gemini (2.5/3.0)

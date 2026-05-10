@@ -6,6 +6,8 @@
   border: 1px solid var(--borderLighter, #e2e8f0);
   background: var(--bgPrimary, #ffffff);
   overflow: hidden;
+  width: 100%;
+  aspect-ratio: 2 / 1;
 }
 
 .header {
@@ -26,7 +28,7 @@
 }
 
 .title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: bold;
   color: #1f1f1f;
   padding-left: 16px;
@@ -37,7 +39,7 @@
 
 .notice {
   padding-left: 16px;
-  font-size: 11px;
+  font-size: 12px;
   color: #b45309;
 }
 
@@ -55,7 +57,7 @@
 }
 
 .statusText {
-  font-size: 12px;
+  font-size: 13px;
   color: #475569;
   white-space: nowrap;
 }
@@ -81,4 +83,12 @@
 
 .content {
   padding: 12px 16px;
+  flex: 1;
+  overflow-y: auto;
+  font-size: 16px; /* Added to enlarge text */
+}
+
+/* Ensure code blocks scale up properly inside content */
+.content :global(.markdown-body) {
+  font-size: 16px;
 }

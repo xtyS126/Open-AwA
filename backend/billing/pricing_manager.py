@@ -255,12 +255,39 @@ class PricingManager:
     DEFAULT_CONFIGURATIONS = [
         {
             "provider": "openai",
-            "model": "gpt-4",
-            "display_name": "GPT-4",
-            "description": "最强大的通用AI模型",
+            "model": "gpt-4.1",
+            "display_name": "GPT-4.1",
+            "description": "最新旗舰模型，适合复杂推理与长文本处理",
             "is_active": True,
             "is_default": True,
             "sort_order": 0,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "display_name": "GPT-4.1 Mini",
+            "description": "GPT-4.1 轻量版，兼顾速度与成本",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 1,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4.1-nano",
+            "display_name": "GPT-4.1 Nano",
+            "description": "GPT-4.1 极速版，适合高频低成本场景",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 2,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "display_name": "GPT-4o",
+            "description": "多模态旗舰，支持图像与文本",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 3,
         },
         {
             "provider": "openai",
@@ -269,7 +296,25 @@ class PricingManager:
             "description": "兼顾速度与成本的轻量模型",
             "is_active": True,
             "is_default": False,
-            "sort_order": 1,
+            "sort_order": 4,
+        },
+        {
+            "provider": "openai",
+            "model": "o1",
+            "display_name": "o1",
+            "description": "深度推理模型，适合复杂数学与编程任务",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 5,
+        },
+        {
+            "provider": "openai",
+            "model": "o3-mini",
+            "display_name": "o3-mini",
+            "description": "轻量推理模型，速度更快",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 6,
         },
         {
             "provider": "anthropic",
@@ -278,7 +323,25 @@ class PricingManager:
             "description": "适合复杂推理与长文本处理",
             "is_active": True,
             "is_default": False,
-            "sort_order": 2,
+            "sort_order": 7,
+        },
+        {
+            "provider": "anthropic",
+            "model": "claude-3.5-haiku",
+            "display_name": "Claude 3.5 Haiku",
+            "description": "快速轻量，适合日常对话",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 8,
+        },
+        {
+            "provider": "anthropic",
+            "model": "claude-3-opus",
+            "display_name": "Claude 3 Opus",
+            "description": "最高智能水平，适合高要求任务",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 9,
         },
         {
             "provider": "google",
@@ -287,7 +350,16 @@ class PricingManager:
             "description": "响应快速，适合高频交互场景",
             "is_active": True,
             "is_default": False,
-            "sort_order": 3,
+            "sort_order": 10,
+        },
+        {
+            "provider": "google",
+            "model": "gemini-1.5-pro",
+            "display_name": "Gemini 1.5 Pro",
+            "description": "超长上下文，支持 200 万 tokens",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 11,
         },
         {
             "provider": "deepseek",
@@ -296,7 +368,43 @@ class PricingManager:
             "description": "适用于中文对话与通用生成任务",
             "is_active": True,
             "is_default": False,
-            "sort_order": 4,
+            "sort_order": 12,
+        },
+        {
+            "provider": "deepseek",
+            "model": "deepseek-reasoner",
+            "display_name": "DeepSeek Reasoner",
+            "description": "深度推理模型，适合复杂分析",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 13,
+        },
+        {
+            "provider": "alibaba",
+            "model": "qwen-plus",
+            "display_name": "Qwen Plus",
+            "description": "通义千问高性能版",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 14,
+        },
+        {
+            "provider": "moonshot",
+            "model": "moonshot-v1-128k",
+            "display_name": "Moonshot 128K",
+            "description": "Kimi 长文本模型，支持 128K 上下文",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 15,
+        },
+        {
+            "provider": "zhipu",
+            "model": "glm-4",
+            "display_name": "GLM-4",
+            "description": "智谱 AI 旗舰模型，支持多模态",
+            "is_active": True,
+            "is_default": False,
+            "sort_order": 16,
         },
     ]
 
@@ -829,6 +937,7 @@ class PricingManager:
     def initialize_default_configurations(self) -> int:
         """
         初始化默认模型配置数据。
+        优先从 config_loader 加载配置，若不可用则回退到类属性 DEFAULT_CONFIGURATIONS。
         
         Returns:
             新创建的记录数量。
@@ -839,13 +948,23 @@ class PricingManager:
         if existing_count > 0:
             return 0
 
-        is_unique, duplicates = self.validate_default_configurations()
+        # 优先从 config_loader 加载，支持测试 mock
+        try:
+            from config.config_loader import config_loader
+            configurations = config_loader.load_default_configurations()
+        except Exception:
+            configurations = None
+
+        if not configurations:
+            configurations = self.DEFAULT_CONFIGURATIONS
+
+        is_unique, duplicates = self._validate_configurations_uniqueness(configurations)
         if not is_unique:
             duplicate_text = ", ".join(f"{provider}/{model}" for provider, model in duplicates)
             raise ValueError(f"Duplicate default configurations found: {duplicate_text}")
 
         count = 0
-        for data in self.DEFAULT_CONFIGURATIONS:
+        for data in configurations:
             normalized = self._normalize_configuration_payload(data)
             config = ModelConfiguration(**normalized)
             self.db.add(config)
@@ -1039,16 +1158,39 @@ class PricingManager:
 
     def create_configuration(self, config_data: Dict) -> ModelConfiguration:
         """
-        创建新的模型配置。
+        创建新的模型配置。若存在软删除记录则复用，若存在活跃重复记录则抛出 ValueError。
         
         Args:
             config_data: 配置数据字典。
             
         Returns:
-            新创建的模型配置对象。
+            新创建（或复用）的模型配置对象。
         """
         self.ensure_configuration_schema()
         normalized = self._normalize_configuration_payload(config_data)
+
+        provider = normalized.get("provider") or ""
+        model = normalized.get("model", "custom-model")
+
+        existing = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider,
+            ModelConfiguration.model == model,
+        ).first()
+
+        if existing:
+            if existing.is_active:
+                raise ValueError(
+                    f"Configuration for {provider}/{model} already exists and is active"
+                )
+            # 复用软删除记录
+            for key, value in normalized.items():
+                if key != "id":
+                    setattr(existing, key, value)
+            existing.is_active = True
+            existing.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
 
         if normalized.get("is_default", False):
             self.db.query(ModelConfiguration).filter(

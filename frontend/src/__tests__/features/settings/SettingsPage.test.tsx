@@ -47,7 +47,16 @@ vi.mock('@/shared/api/api', () => ({
   conversationAPI: {
     getCollectionStatus: vi.fn().mockResolvedValue({ data: { enabled: false, stats: null } }),
     getRecordsPreview: vi.fn().mockResolvedValue({ data: { records: [], count: 0 } }),
-  }
+  },
+  userAPI: {
+    getProfile: vi.fn().mockResolvedValue({ data: {} }),
+    updateProfile: vi.fn().mockResolvedValue({ data: {} }),
+    uploadAvatar: vi.fn().mockResolvedValue({ data: {} }),
+    getDevices: vi.fn().mockResolvedValue({ data: [] }),
+    revokeDevice: vi.fn().mockResolvedValue({ data: {} }),
+    getPreferences: vi.fn().mockResolvedValue({ data: { preferences: {} } }),
+    updatePreferences: vi.fn().mockResolvedValue({ data: { preferences: {} } }),
+  },
 }))
 
 vi.mock('@/features/billing/billingApi', () => ({

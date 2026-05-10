@@ -158,6 +158,7 @@ async def test_execute_tool_call_spawn_agent_supports_qualified_model(monkeypatc
         "provider": "anthropic",
         "model": "claude-3-5-sonnet",
         "background": True,
+        "root_chat_session_id": "sess_1",
         "context": {"session_id": "sess_1", "agent_id": "agt_1", "provider": "openai"},
     }
     assert result == {
@@ -327,6 +328,7 @@ async def test_execute_tool_call_spawn_agent_inherits_current_model_when_missing
         "provider": "openai",
         "model": "gpt-4o-mini",
         "background": True,
+        "root_chat_session_id": "sess_inherit_1",
         "context": {
             "session_id": "sess_inherit_1",
             "agent_id": "agt_parent_3",

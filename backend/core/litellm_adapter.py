@@ -14,6 +14,8 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from loguru import logger
@@ -29,6 +31,8 @@ try:
     import litellm
     # 关闭 litellm 内置的冗余日志，避免重复输出干扰主应用日志
     litellm.suppress_debug_info = True
+    # 允许透传 LiteLLM 不认识的参数到供应商 API，避免自定义兼容端点因参数校验而被拒绝
+    litellm.drop_params = True
     _LITELLM_AVAILABLE = True
 except ImportError as exc:
     _LITELLM_IMPORT_ERROR = str(exc)
@@ -171,12 +175,63 @@ def _get_circuit_breaker(provider: str) -> CircuitBreaker:
     return _circuit_breakers[provider]
 
 
-async def _exponential_backoff(attempt: int, base_delay: float = 1.0, max_delay: float = 30.0) -> None:
+def _extract_retry_after(exc: Exception) -> Optional[float]:
+    """
+    从异常的响应头中提取 Retry-After 值（秒）。
+    支持 Retry-After: <seconds> 和 Retry-After: <http-date> 两种格式。
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return None
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("Retry-After") or headers.get("retry-after")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        try:
+            dt = parsedate_to_datetime(str(raw))
+            return max(0.0, (dt - datetime.now(dt.tzinfo or timezone.utc)).total_seconds())
+        except Exception:
+            return None
+
+
+async def _rate_limit_backoff(exc: Exception, attempt: int) -> None:
+    """
+    针对速率限制错误的智能退避。
+    优先使用服务端 Retry-After，回退到指数退避（最小 5 秒）。
+    """
+    retry_after = _extract_retry_after(exc)
+    await _exponential_backoff(
+        attempt,
+        base_delay=3.0,
+        max_delay=120.0,
+        min_delay=5.0,
+        retry_after=retry_after,
+    )
+
+
+async def _exponential_backoff(
+    attempt: int,
+    base_delay: float = 2.0,
+    max_delay: float = 60.0,
+    min_delay: float = 0.0,
+    retry_after: Optional[float] = None,
+) -> None:
     """
     指数退避等待。
-    计算公式: delay = min(base_delay * 2^attempt + random_jitter, max_delay)
+    计算公式: delay = clamp(base_delay * 2^attempt + random_jitter, min_delay, max_delay)
+    如果提供了 retry_after，优先使用服务端建议的等待时间。
     """
-    delay = min(base_delay * (2 ** attempt) + random.uniform(0, 0.5), max_delay)
+    if retry_after is not None and retry_after > 0:
+        delay = min(retry_after + random.uniform(0, 0.5), max_delay)
+    else:
+        delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+        delay = max(delay, min_delay)
+        delay = min(delay, max_delay)
     await asyncio.sleep(delay)
 
 
@@ -223,9 +278,17 @@ def build_litellm_model_name(provider: str, model: str) -> str:
 
     prefix = PROVIDER_MODEL_PREFIX_MAP.get(normalized_provider, "openai/")
 
-    # 如果模型名已包含 provider 前缀或 "/" 路径分隔符，则不重复添加
+    # 如果模型名已包含 "/" 路径分隔符，则不重复添加
     if "/" in normalized_model:
         return normalized_model
+
+    # 去除 "provider:model" 格式中的 provider 前缀（如 "deepseek:deepseek-v4-flash" → "deepseek-v4-flash"）
+    if ":" in normalized_model:
+        colon_idx = normalized_model.index(":")
+        prefix_part = normalized_model[:colon_idx].lower()
+        # 仅当 ":" 前的部分与当前 provider 名匹配时才去掉前缀，避免误处理含冒号的模型名
+        if prefix_part == normalized_provider:
+            normalized_model = normalized_model[colon_idx + 1:]
 
     return f"{prefix}{normalized_model}"
 
@@ -255,6 +318,34 @@ def _build_litellm_optional_params(
     return params
 
 
+# 以 openai/ 前缀路由、但实际上是自定义兼容 API 的供应商集合
+# 这些供应商通过自定义 api_base 提供扩展参数（如 reasoning_effort），
+# 但 LiteLLM 的 openai 参数白名单不包含这些参数，需要移入 extra_body 透传
+_OPENAI_COMPAT_CUSTOM_PROVIDERS = {"alibaba", "moonshot", "zhipu"}
+
+
+def _fix_call_kwargs_for_custom_openai_compat(
+    call_kwargs: Dict[str, Any],
+    provider: str,
+) -> Dict[str, Any]:
+    """
+    对使用 openai/ 路由但实际是自定义兼容 API 的供应商，将 top-level 的扩展参数
+    （如 reasoning_effort）迁移到 extra_body，绕过 LiteLLM 的 openai 参数白名单校验。
+    """
+    if provider.lower() not in _OPENAI_COMPAT_CUSTOM_PROVIDERS:
+        return call_kwargs
+
+    # 如果存在 top-level reasoning_effort，迁入 extra_body
+    if "reasoning_effort" in call_kwargs:
+        effort_val = call_kwargs.pop("reasoning_effort")
+        extra_body = call_kwargs.get("extra_body") or {}
+        if "reasoning_effort" not in extra_body:
+            extra_body["reasoning_effort"] = effort_val
+        call_kwargs["extra_body"] = extra_body
+
+    return call_kwargs
+
+
 def _map_litellm_error(
     exc: Exception,
     *,
@@ -269,17 +360,26 @@ def _map_litellm_error(
     if status_code is None:
         response = getattr(exc, "response", None)
         status_code = getattr(response, "status_code", None)
+
+    # 提取 LiteLLM 错误消息
+    error_message = str(exc)
+    if hasattr(exc, "message"):
+        error_message = str(exc.message)
+
+    # 消息级兜底检测：部分异常未携带 status_code，通过消息关键词识别
+    if status_code is None:
+        _msg_lower = error_message.lower()
+        if any(kw in _msg_lower for kw in ("rate limit", "rate_limit", "ratelimit", "too many requests")):
+            status_code = 429
+        elif "connection refused" in _msg_lower:
+            status_code = 503
+
     error_code = STATUS_CODE_ERROR_MAP.get(
         status_code, "model_service_unexpected_error"
     ) if status_code else "model_service_unexpected_error"
 
     # 判断是否可重试
     retryable = status_code in RETRYABLE_STATUS_CODES if status_code else False
-
-    # 提取 LiteLLM 错误消息
-    error_message = str(exc)
-    if hasattr(exc, "message"):
-        error_message = str(exc.message)
 
     # 对常见错误提供中文提示
     if status_code == 401:
@@ -379,6 +479,9 @@ async def litellm_chat_completion(
     if tools:
         call_kwargs["tools"] = tools
 
+    # 将自定义 openai 兼容供应商的扩展参数迁入 extra_body，避免 LiteLLM 参数校验拒绝
+    call_kwargs = _fix_call_kwargs_for_custom_openai_compat(call_kwargs, provider)
+
     started_at = time.perf_counter()
 
     circuit_breaker = _get_circuit_breaker(provider)
@@ -410,6 +513,8 @@ async def litellm_chat_completion(
 
     for attempt in range(max(1, num_retries + 1)):
         response = None
+        is_rate_limit = False
+        _last_exc: Optional[Exception] = None
         try:
             logger.bind(
                 event="litellm_request",
@@ -419,6 +524,21 @@ async def litellm_chat_completion(
                 request_id=resolved_request_id,
                 attempt=attempt + 1,
             ).info(f"发起 LiteLLM 请求: provider={provider}, model={model}, attempt={attempt + 1}")
+
+            # 诊断日志：输出实际发送给 API 的关键参数，便于排查 404 等问题
+            _extra_body = call_kwargs.get("extra_body")
+            _extra_keys = list(_extra_body.keys()) if isinstance(_extra_body, dict) else []
+            logger.bind(
+                event="litellm_diag",
+                module="litellm_adapter",
+                provider=provider,
+                request_id=resolved_request_id,
+                litellm_model=litellm_model,
+                api_base=call_kwargs.get("api_base", "未设置"),
+                has_api_key=bool(call_kwargs.get("api_key")),
+                extra_body_keys=_extra_keys,
+                has_tools=bool(call_kwargs.get("tools")),
+            ).info(f"LiteLLM 调用参数: model={litellm_model}, api_base={call_kwargs.get('api_base', '未设置')}, has_api_key={bool(call_kwargs.get('api_key'))}, extra_body_keys={_extra_keys}")
 
             response = await _call_with_timeout(
                 litellm.acompletion(**call_kwargs),
@@ -518,6 +638,7 @@ async def litellm_chat_completion(
             )
 
         except Exception as exc:
+            _last_exc = exc
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             logger.bind(
                 event="litellm_error",
@@ -538,6 +659,12 @@ async def litellm_chat_completion(
             )
             last_error = mapped.get("error", mapped) if isinstance(mapped, dict) else mapped
 
+            # 检测是否为速率限制错误（429），使用更长的退避时间
+            is_rate_limit = (
+                isinstance(last_error, dict)
+                and last_error.get("details", {}).get("status_code") == 429
+            )
+
             if isinstance(last_error, dict) and not last_error.get("retryable", False):
                 await circuit_breaker.on_failure()
                 break
@@ -550,7 +677,10 @@ async def litellm_chat_completion(
                     pass
 
         if attempt < num_retries:
-            await _exponential_backoff(attempt)
+            if is_rate_limit and _last_exc is not None:
+                await _rate_limit_backoff(_last_exc, attempt)
+            else:
+                await _exponential_backoff(attempt)
 
     await circuit_breaker.on_failure()
     return {
@@ -622,6 +752,9 @@ async def litellm_chat_completion_stream(
     if tools:
         call_kwargs["tools"] = tools
 
+    # 将自定义 openai 兼容供应商的扩展参数迁入 extra_body，避免 LiteLLM 参数校验拒绝
+    call_kwargs = _fix_call_kwargs_for_custom_openai_compat(call_kwargs, provider)
+
     started_at = time.perf_counter()
 
     circuit_breaker = _get_circuit_breaker(provider)
@@ -652,6 +785,8 @@ async def litellm_chat_completion_stream(
 
     response = None
     for attempt in range(max(1, num_retries + 1)):
+        is_rate_limit = False
+        _last_exc: Optional[Exception] = None
         try:
             logger.bind(
                 event="litellm_stream_request",
@@ -661,6 +796,21 @@ async def litellm_chat_completion_stream(
                 request_id=resolved_request_id,
                 attempt=attempt + 1,
             ).info(f"发起 LiteLLM 流式请求: provider={provider}, model={model}, attempt={attempt + 1}")
+
+            # 诊断日志：输出实际发送给 API 的关键参数，便于排查 404 等问题
+            _extra_body = call_kwargs.get("extra_body")
+            _extra_keys = list(_extra_body.keys()) if isinstance(_extra_body, dict) else []
+            logger.bind(
+                event="litellm_stream_diag",
+                module="litellm_adapter",
+                provider=provider,
+                request_id=resolved_request_id,
+                litellm_model=litellm_model,
+                api_base=call_kwargs.get("api_base", "未设置"),
+                has_api_key=bool(call_kwargs.get("api_key")),
+                extra_body_keys=_extra_keys,
+                has_tools=bool(call_kwargs.get("tools")),
+            ).info(f"LiteLLM 流式调用参数: model={litellm_model}, api_base={call_kwargs.get('api_base', '未设置')}, has_api_key={bool(call_kwargs.get('api_key'))}, extra_body_keys={_extra_keys}")
 
             response = await _call_with_timeout(
                 litellm.acompletion(**call_kwargs),
@@ -752,6 +902,7 @@ async def litellm_chat_completion_stream(
 
         except Exception as exc:
 
+            _last_exc = exc
             duration_ms = int((time.perf_counter() - started_at) * 1000)
             logger.bind(
                 event="litellm_stream_error",
@@ -772,6 +923,12 @@ async def litellm_chat_completion_stream(
             )
             mapped_error = mapped.get("error", mapped) if isinstance(mapped, dict) else mapped
 
+            # 检测是否为速率限制错误（429），使用更长的退避时间
+            is_rate_limit = (
+                isinstance(mapped_error, dict)
+                and mapped_error.get("details", {}).get("status_code") == 429
+            )
+
             if isinstance(mapped_error, dict) and not mapped_error.get("retryable", False):
                 await circuit_breaker.on_failure()
                 yield {"error": mapped_error}
@@ -783,7 +940,10 @@ async def litellm_chat_completion_stream(
                 return
 
         if attempt < num_retries:
-            await _exponential_backoff(attempt)
+            if is_rate_limit and _last_exc is not None:
+                await _rate_limit_backoff(_last_exc, attempt)
+            else:
+                await _exponential_backoff(attempt)
 
     if not stream_success:
         await circuit_breaker.on_failure()

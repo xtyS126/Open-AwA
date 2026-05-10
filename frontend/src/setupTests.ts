@@ -29,6 +29,13 @@ if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = function() {};
 }
 
+// Ensure a #root element exists for main.tsx bootstrap
+if (!document.getElementById('root')) {
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
+}
+
 if (typeof ResizeObserver === 'undefined') {
   global.ResizeObserver = class ResizeObserver {
     observe() {}

@@ -580,7 +580,7 @@ function ChatPage() {
         if (cancelled) return
         const history = response.data
         if (Array.isArray(history)) {
-          const restored = history.map((msg: {
+          const restored = history.filter(Boolean).map((msg: {
             id: string
             role: string
             content: string
@@ -686,20 +686,17 @@ function ChatPage() {
     clearSubagentTimeout(agentId)
     subagentTimeoutRef.current[agentId] = window.setTimeout(() => {
       const timeoutMessage = `Subagent ${agentType || agentId} 执行失败`
-      const toolMeta = applySubagentTimeout(createEmptyExecutionMeta(), {
-        agentId,
-        agentType,
-        message: timeoutMessage,
-      }).toolEvents[0]
+      const timeoutPayload = { agentId, agentType, message: timeoutMessage }
 
-      updateAssistantMeta(assistantMessageId, (current) => applySubagentTimeout(current, {
-        agentId,
-        agentType,
-        message: timeoutMessage,
-      }))
-      if (toolMeta) {
-        updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-      }
+      updateAssistantMeta(assistantMessageId, (current) => applySubagentTimeout(current, timeoutPayload))
+      updateAssistantSegments(assistantMessageId, (segments = []) => {
+        // 从当前 segments 读取已积累的日志，避免被超时消息覆盖
+        const currentTool = (segments || []).flatMap(s => (s && 'toolEvents' in s && Array.isArray(s.toolEvents)) ? s.toolEvents : []).find(t => t && t.id === agentId)
+        const tempMeta = { toolEvents: currentTool ? [currentTool] : [], isThinking: false } as any
+        const toolMeta = applySubagentTimeout(tempMeta, timeoutPayload).toolEvents[0]
+        if (!toolMeta) return segments || []
+        return applyToolEventToSegments(segments, toolMeta)
+      })
       addToast(timeoutMessage, 'error')
       clearSubagentTimeout(agentId)
       scheduleSubagentAggregation(assistantMessageId)
@@ -1084,7 +1081,7 @@ function ChatPage() {
                     updateAssistantSegments(assistantMessageId, (segments) => applyIntentToSegments(segments, nextMeta.intent!))
                   }
                   if (nextMeta.steps.length > 0) {
-                    updateAssistantSegments(assistantMessageId, (segments) => {
+                    updateAssistantSegments(assistantMessageId, (segments = []) => {
                       let nextSegments = segments || []
                       for (const step of nextMeta.steps) {
                         nextSegments = applyStepToSegments(nextSegments, step)
@@ -1168,23 +1165,25 @@ function ChatPage() {
                   const agentId = event.agent_id as string
                   const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
                   const summary = typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`
-                  const toolMeta = applySubagentStop(createEmptyExecutionMeta(), {
+                  const stopPayload = {
                     agentId,
                     agentType,
                     state: typeof event.state === 'string' ? event.state : undefined,
                     summary,
-                  }).toolEvents[0]
-                  updateAssistantMeta(assistantMessageId, (current) => applySubagentStop(current, {
-                    agentId,
-                    agentType,
-                    state: typeof event.state === 'string' ? event.state : undefined,
-                    summary,
-                  }))
-                  if (toolMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-                    if (toolMeta.status === 'error') {
-                      addToast(`Subagent ${agentType || agentId} 执行失败`, 'error')
-                    }
+                  }
+                  updateAssistantMeta(assistantMessageId, (current) => applySubagentStop(current, stopPayload))
+                  let stopStatus: string = 'completed'
+                  updateAssistantSegments(assistantMessageId, (segments = []) => {
+                    // 从当前 segments 读取已积累的日志，避免被 summary 覆盖
+                    const currentTool = (segments || []).flatMap(s => (s && 'toolEvents' in s && Array.isArray(s.toolEvents)) ? s.toolEvents : []).find(t => t && t.id === agentId)
+                    const tempMeta = { toolEvents: currentTool ? [currentTool] : [], isThinking: false } as any
+                    const toolMeta = applySubagentStop(tempMeta, stopPayload).toolEvents[0]
+                    if (!toolMeta) return segments || []
+                    stopStatus = toolMeta.status === 'error' ? 'error' : 'completed'
+                    return applyToolEventToSegments(segments, toolMeta)
+                  })
+                  if (stopStatus === 'error') {
+                    addToast(`Subagent ${agentType || agentId} 执行失败`, 'error')
                   }
                   clearSubagentTimeout(agentId)
                   clearSubagentSyncTimer(agentId)
@@ -1195,19 +1194,24 @@ function ChatPage() {
                 if (event?.type === 'agent_message' && event.agent_id) {
                   const agentId = event.agent_id as string
                   const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-                  const toolMeta = applySubagentMessage(createEmptyExecutionMeta(), {
-                    agentId,
-                    agentType,
-                    message: typeof event.message === 'string' ? event.message : '子代理消息',
-                  }).toolEvents[0]
+                  const messageText = typeof event.message === 'string' ? event.message : '子代理消息'
+                  
                   updateAssistantMeta(assistantMessageId, (current) => applySubagentMessage(current, {
                     agentId,
                     agentType,
-                    message: typeof event.message === 'string' ? event.message : '子代理消息',
+                    message: messageText,
                   }))
-                  if (toolMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-                  }
+                  
+                  updateAssistantSegments(assistantMessageId, (segments = []) => {
+                    const currentTool = (segments || []).flatMap(s => (s && 'toolEvents' in s && Array.isArray(s.toolEvents)) ? s.toolEvents : []).find(t => t && t.id === agentId)
+                    const tempMeta = { toolEvents: currentTool ? [currentTool] : [], isThinking: false } as any
+                    const toolMeta = applySubagentMessage(tempMeta, {
+                      agentId,
+                      agentType,
+                      message: messageText,
+                    }).toolEvents[0]
+                    return applyToolEventToSegments(segments, toolMeta)
+                  })
                   scheduleSubagentTimeout(assistantMessageId, agentId, agentType)
                   return
                 }

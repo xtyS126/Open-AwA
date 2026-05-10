@@ -278,6 +278,10 @@ class ShortTermMemory(Base):
     role: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # 思维链内容（推理过程文本），用于历史恢复时展示
+    reasoning_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 工具调用事件列表（JSON），用于历史恢复时重建工具调用展示
+    tool_events: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
 
 class LongTermMemory(Base):
@@ -1075,6 +1079,26 @@ def _migrate_scheduled_task_daily_columns(use_engine=None):
             connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN daily_time VARCHAR(10)"))
 
 
+def _migrate_short_term_memory_rich_fields(use_engine=None):
+    """
+    为 short_term_memory 表补齐富文本字段：思维链内容和工具调用事件列表。
+    用于在历史记录恢复时保留思维链和工具调用展示数据。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "short_term_memory" not in table_names:
+        return
+    columns = {column["name"] for column in inspector.get_columns("short_term_memory")}
+    with target_engine.begin() as connection:
+        if "reasoning_content" not in columns:
+            connection.execute(text("ALTER TABLE short_term_memory ADD COLUMN reasoning_content TEXT"))
+            logger.info("Migrated short_term_memory: added reasoning_content column")
+        if "tool_events" not in columns:
+            connection.execute(text("ALTER TABLE short_term_memory ADD COLUMN tool_events TEXT"))
+            logger.info("Migrated short_term_memory: added tool_events column")
+
+
 def init_db(bind_engine=None):
     """
     初始化数据库表结构并执行必要的迁移操作。
@@ -1092,6 +1116,7 @@ def init_db(bind_engine=None):
     _migrate_user_profile_columns(use_engine=use_engine)
     _migrate_task_runtime_columns(use_engine=use_engine)
     _migrate_scheduled_task_daily_columns(use_engine=use_engine)
+    _migrate_short_term_memory_rich_fields(use_engine=use_engine)
 
 
 def get_db():

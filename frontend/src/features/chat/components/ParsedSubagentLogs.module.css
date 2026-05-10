@@ -1,0 +1,116 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 思考块：复用 ThinkingProcess 组件，无需额外样式 */
+.thinkContent {
+  white-space: pre-wrap;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 工具调用行 */
+.toolRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* 任务步骤行 */
+.taskRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.taskDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.taskDot-completed {
+  background-color: #22c55e;
+}
+
+.taskDot-running {
+  background-color: #3b82f6;
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+.taskDot-error {
+  background-color: #ef4444;
+}
+
+.taskDot-pending {
+  background-color: #94a3b8;
+}
+
+.taskLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskStatus {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+/* 状态 / 计划信息行 */
+.infoRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.infoIcon {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* 错误行 */
+.errorRow {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background-color: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+  font-size: 13px;
+  border-left: 3px solid #ef4444;
+}
+
+/* 终端输出块 */
+.terminalBlock {
+  background-color: var(--color-bg-dark, #1e1e1e);
+  color: #d4d4d4;
+  padding: 10px 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: monospace;
+  font-size: 13px;
+  margin: 0;
+}
+
+.emptyHint {
+  color: var(--color-text-secondary, #94a3b8);
+  font-size: 13px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
