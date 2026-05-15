@@ -1,0 +1,30 @@
+[run]
+source = .
+omit =
+    */tests/*
+    */test_*.py
+    tests/*
+    conftest.py
+    */conftest.py
+    */__init__.py
+    skills/external/*
+    plugins/examples/*
+    migrate_db.py
+    setup.cfg
+    data/*
+    */test_litellm_*.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+
+fail_under = 16
+
+show_missing = True
+skip_covered = False
