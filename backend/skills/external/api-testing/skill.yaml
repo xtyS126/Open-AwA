@@ -1,0 +1,43 @@
+name: api-testing
+version: 1.0.0
+description: "Open-AwA 项目专属 API 自动化测试 Skill，支持批量调用所有测试 API、自动断言校验、生成标准化测试报告"
+category: testing
+author: Open-AwA
+tags:
+  - api-testing
+  - automation
+  - quality-assurance
+  - report
+dependencies: []
+adapter: default
+
+environment: default
+continue_on_error: true
+
+config:
+  test_cases_file: config/test_cases.yaml
+  base_url_env: API_TEST_BASE_URL
+  auth_token_env: API_TEST_AUTH_TOKEN
+  default_timeout_seconds: 30
+  max_concurrency: 5
+  report_formats:
+    - markdown
+    - json
+  report_output_dir: reports
+
+steps:
+  - action: load_test_cases
+    tool: default
+    params:
+      source: config
+      file: config/test_cases.yaml
+  - action: execute_all_tests
+    tool: default
+    params:
+      concurrency: 5
+  - action: generate_report
+    tool: default
+    params:
+      formats:
+        - markdown
+        - json

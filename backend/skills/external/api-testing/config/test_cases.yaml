@@ -1,0 +1,604 @@
+# ============================================================================
+# Open-AwA API 自动化测试用例定义
+# 版本: 1.0.0
+# 描述: 覆盖项目全部 24 个 API 路由模块的核心测试场景
+# ============================================================================
+
+name: "Open-AwA API 自动化测试用例集"
+version: "1.0.0"
+description: "覆盖全部 API 路由模块的核心正常路径和异常路径测试用例"
+base_url: "http://127.0.0.1:8000"
+
+# ============================================================================
+# 按模块分组的测试用例
+# ============================================================================
+
+modules:
+
+  # ==========================================================================
+  # 1. System — 系统健康检查与诊断
+  # ==========================================================================
+  system:
+    - id: "sys-001"
+      name: "服务健康检查"
+      module: "system"
+      description: "验证 GET /health 端点可正常访问"
+      method: "GET"
+      path: "/health"
+      requires_auth: false
+      timeout_seconds: 10
+      priority: "high"
+      tags: ["smoke", "health"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200 状态码"
+        - type: "json_path"
+          field: "status"
+          expected: "ok"
+          operator: "eq"
+          description: "status 字段应为 ok"
+
+    - id: "sys-002"
+      name: "系统全量诊断"
+      module: "system"
+      description: "验证 GET /api/v1/system/diagnostics 端点"
+      method: "GET"
+      path: "/api/v1/system/diagnostics"
+      requires_auth: true
+      timeout_seconds: 30
+      priority: "high"
+      tags: ["smoke", "diagnostics"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+        - type: "json_path"
+          field: "checks"
+          expected: "any"
+          operator: "is_not_none"
+          description: "checks 字段存在"
+
+  # ==========================================================================
+  # 2. Auth — 用户认证
+  # ==========================================================================
+  auth:
+    - id: "auth-001"
+      name: "CSRF Token 获取"
+      module: "auth"
+      description: "验证 GET /api/v1/auth/csrf-token 正常返回"
+      method: "GET"
+      path: "/api/v1/auth/csrf-token"
+      requires_auth: false
+      timeout_seconds: 10
+      priority: "high"
+      tags: ["smoke", "auth"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+        - type: "json_path"
+          field: "token"
+          expected: "any"
+          operator: "is_not_none"
+          description: "token 字段存在"
+
+    - id: "auth-002"
+      name: "获取当前用户信息（无认证应 401）"
+      module: "auth"
+      description: "未认证访问 /api/v1/auth/me 应返回 401"
+      method: "GET"
+      path: "/api/v1/auth/me"
+      requires_auth: false
+      timeout_seconds: 10
+      priority: "high"
+      tags: ["auth", "security"]
+      assertions:
+        - type: "status_code"
+          expected: 401
+          description: "未认证应返回 401"
+
+  # ==========================================================================
+  # 3. Conversation — 会话管理
+  # ==========================================================================
+  conversation:
+    - id: "conv-001"
+      name: "获取会话列表"
+      module: "conversation"
+      description: "验证 GET /api/v1/conversation/ 端点"
+      method: "GET"
+      path: "/api/v1/conversation/"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "high"
+      tags: ["smoke", "conversation"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+        - type: "json_path"
+          field: "conversations"
+          expected: "list"
+          operator: "is_not_none"
+          description: "conversations 字段存在"
+
+    - id: "conv-002"
+      name: "创建新会话"
+      module: "conversation"
+      description: "验证 POST /api/v1/conversation/ 创建会话"
+      method: "POST"
+      path: "/api/v1/conversation/"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["conversation", "create"]
+      body:
+        title: "[自动化测试] 测试会话"
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "创建会话返回 200"
+        - type: "json_path"
+          field: "session_id"
+          expected: "non_empty_str"
+          operator: "is_not_none"
+          description: "应返回 session_id"
+
+  # ==========================================================================
+  # 4. Chat — AI 聊天
+  # ==========================================================================
+  chat:
+    - id: "chat-001"
+      name: "获取聊天消息列表"
+      module: "chat"
+      description: "验证 GET /api/v1/chat/messages 端点"
+      method: "GET"
+      path: "/api/v1/chat/messages"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["chat", "messages"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 5. Skills — 技能系统
+  # ==========================================================================
+  skills:
+    - id: "skill-001"
+      name: "获取技能列表"
+      module: "skills"
+      description: "验证 GET /skills 端点"
+      method: "GET"
+      path: "/skills"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "high"
+      tags: ["smoke", "skills"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+        - type: "json_path"
+          field: "0.id"
+          expected: "any"
+          operator: "is_not_none"
+          description: "应至少返回一条技能记录"
+
+    - id: "skill-002"
+      name: "获取不存在的技能详情"
+      module: "skills"
+      description: "访问不存在的技能 ID 应返回 404"
+      method: "GET"
+      path: "/skills/non-existent-skill-id-99999"
+      requires_auth: true
+      timeout_seconds: 10
+      priority: "normal"
+      tags: ["skills", "error"]
+      assertions:
+        - type: "status_code"
+          expected: 404
+          description: "不存在的技能应返回 404"
+
+  # ==========================================================================
+  # 6. Plugins — 插件系统
+  # ==========================================================================
+  plugins:
+    - id: "plugin-001"
+      name: "获取插件列表"
+      module: "plugins"
+      description: "验证 GET /plugins 端点"
+      method: "GET"
+      path: "/plugins"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "high"
+      tags: ["smoke", "plugins"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+        - type: "json_path"
+          field: "plugins"
+          expected: "list"
+          operator: "is_not_none"
+          description: "plugins 字段应为列表"
+
+    - id: "plugin-002"
+      name: "获取已加载插件"
+      module: "plugins"
+      description: "验证 GET /plugins/loaded 端点"
+      method: "GET"
+      path: "/plugins/loaded"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["plugins", "loaded"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 7. Memory — 记忆系统
+  # ==========================================================================
+  memory:
+    - id: "mem-001"
+      name: "获取会话记忆"
+      module: "memory"
+      description: "验证 GET /api/v1/memory/session 端点（无会话ID时的行为）"
+      method: "GET"
+      path: "/api/v1/memory/session"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["memory"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 8. User — 用户管理
+  # ==========================================================================
+  user:
+    - id: "user-001"
+      name: "获取用户偏好设置"
+      module: "user"
+      description: "验证 GET /api/v1/user/preferences 端点"
+      method: "GET"
+      path: "/api/v1/user/preferences"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["user", "preferences"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 9. Experiences — 经验管理
+  # ==========================================================================
+  experiences:
+    - id: "exp-001"
+      name: "获取经验列表"
+      module: "experiences"
+      description: "验证 GET /experiences 端点"
+      method: "GET"
+      path: "/experiences"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["experiences"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 10. Prompts — 提示词管理
+  # ==========================================================================
+  prompts:
+    - id: "prompt-001"
+      name: "获取提示词列表"
+      module: "prompts"
+      description: "验证 GET /prompts 端点"
+      method: "GET"
+      path: "/prompts"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["prompts"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 11. Tools — 工具调用
+  # ==========================================================================
+  tools:
+    - id: "tool-001"
+      name: "获取可用工具列表"
+      module: "tools"
+      description: "验证 GET /tools 端点"
+      method: "GET"
+      path: "/tools"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["tools"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 12. Workflows — 工作流
+  # ==========================================================================
+  workflows:
+    - id: "wf-001"
+      name: "获取工作流列表"
+      module: "workflows"
+      description: "验证 GET /workflows 端点"
+      method: "GET"
+      path: "/workflows"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["workflows"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 13. Models — 模型管理
+  # ==========================================================================
+  models:
+    - id: "model-001"
+      name: "获取模型配置列表"
+      module: "models"
+      description: "验证 GET /models/configurations 端点"
+      method: "GET"
+      path: "/models/configurations"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["models", "configurations"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+    - id: "model-002"
+      name: "获取供应商列表"
+      module: "models"
+      description: "验证 GET /models/providers 端点"
+      method: "GET"
+      path: "/models/providers"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["models", "providers"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 14. Billing — 计费系统
+  # ==========================================================================
+  billing:
+    - id: "bill-001"
+      name: "获取计费概览"
+      module: "billing"
+      description: "验证 GET /api/billing/overview 端点"
+      method: "GET"
+      path: "/api/billing/overview"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["billing"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 15. Scheduled Tasks — 定时任务
+  # ==========================================================================
+  scheduled_tasks:
+    - id: "stask-001"
+      name: "获取定时任务列表"
+      module: "scheduled_tasks"
+      description: "验证 GET /scheduled_tasks 端点"
+      method: "GET"
+      path: "/scheduled_tasks"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["scheduled_tasks"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 16. Security — 安全与权限
+  # ==========================================================================
+  security:
+    - id: "sec-001"
+      name: "获取当前用户权限"
+      module: "security"
+      description: "验证 GET /security/permissions 端点"
+      method: "GET"
+      path: "/security/permissions"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["security"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 17. MCP — MCP 服务
+  # ==========================================================================
+  mcp:
+    - id: "mcp-001"
+      name: "获取 MCP 服务状态"
+      module: "mcp"
+      description: "验证 GET /mcp/status 端点"
+      method: "GET"
+      path: "/mcp/status"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["mcp"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 18. Weixin — 微信集成
+  # ==========================================================================
+  weixin:
+    - id: "wx-001"
+      name: "获取微信配置"
+      module: "weixin"
+      description: "验证 GET /skills/weixin/config 端点"
+      method: "GET"
+      path: "/skills/weixin/config"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["weixin", "config"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 19. Marketplace — 插件市场
+  # ==========================================================================
+  marketplace:
+    - id: "market-001"
+      name: "获取插件市场列表"
+      module: "marketplace"
+      description: "验证 GET /marketplace/plugins 端点"
+      method: "GET"
+      path: "/marketplace/plugins"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "low"
+      tags: ["marketplace"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 20. SubAgents — 子 Agent 管理
+  # ==========================================================================
+  subagents:
+    - id: "subagent-001"
+      name: "获取子 Agent 列表"
+      module: "subagents"
+      description: "验证 GET /subagents 端点"
+      method: "GET"
+      path: "/subagents"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["subagents"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 21. Task Runtime — 任务运行时
+  # ==========================================================================
+  task_runtime:
+    - id: "taskrt-001"
+      name: "获取任务运行时状态"
+      module: "task_runtime"
+      description: "验证 GET /task_runtime/status 端点"
+      method: "GET"
+      path: "/task_runtime/status"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["task_runtime"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 22. Behavior — 行为日志
+  # ==========================================================================
+  behavior:
+    - id: "behav-001"
+      name: "获取行为日志"
+      module: "behavior"
+      description: "验证 GET /behavior 端点"
+      method: "GET"
+      path: "/behavior"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["behavior"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 23. Logs — 系统日志
+  # ==========================================================================
+  logs:
+    - id: "log-001"
+      name: "获取系统日志"
+      module: "logs"
+      description: "验证 GET /logs 端点"
+      method: "GET"
+      path: "/logs"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "normal"
+      tags: ["logs"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+
+  # ==========================================================================
+  # 24. Test Runner — 现有测试场景执行器
+  # ==========================================================================
+  test_runner:
+    - id: "testrunner-001"
+      name: "获取测试场景列表"
+      module: "test_runner"
+      description: "验证 GET /api/test-scenarios 端点"
+      method: "GET"
+      path: "/api/test-scenarios"
+      requires_auth: true
+      timeout_seconds: 15
+      priority: "high"
+      tags: ["smoke", "test_runner"]
+      assertions:
+        - type: "status_code"
+          expected: 200
+          description: "返回 200"
+        - type: "json_path"
+          field: "total"
+          expected: 0
+          operator: "gt"
+          description: "场景数量应大于 0"

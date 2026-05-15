@@ -83,12 +83,28 @@ class FileManagerSkill:
         """检查技能是否已初始化。"""
         return self._initialized
 
+    def _resolve_relative_path(self, file_path: str) -> str:
+        """
+        处理相对路径解析：对于不存在的相对路径，尝试在允许目录中查找匹配文件。
+        解决子代理使用 'plugin_manager.py' 等相对路径时找不到文件的问题。
+        """
+        # 绝对路径或已存在的路径直接返回
+        if os.path.isabs(file_path) or os.path.exists(file_path):
+            return file_path
+        # 对纯文件名或相对路径，在允许目录中搜索
+        for allowed_dir in self.allowed_directories:
+            candidate = os.path.join(allowed_dir, file_path)
+            if os.path.exists(candidate):
+                return candidate
+        return file_path
+
     def _validate_path(self, file_path: str) -> bool:
         """
         处理validate、path相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        if is_path_safe(file_path, self.allowed_directories):
+        resolved = self._resolve_relative_path(file_path)
+        if is_path_safe(resolved, self.allowed_directories):
             return True
         logger.warning(f"Access denied to path: {file_path}")
         return False
@@ -126,12 +142,17 @@ class FileManagerSkill:
         处理read、file相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        file_path = kwargs.get('path')
+        file_path = self._resolve_relative_path(kwargs.get('path', ''))
         if not file_path:
             return {"success": False, "error": "path parameter is required"}
 
         if not self._validate_path(file_path):
             return {"success": False, "error": "Access denied"}
+
+        # 检查路径是否为目录，避免 PermissionError
+        if os.path.isdir(file_path):
+            logger.warning(f"Cannot read directory as file: {file_path}")
+            return {"success": False, "error": "Is a directory"}
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -145,6 +166,9 @@ class FileManagerSkill:
         except FileNotFoundError:
             logger.error(f"File not found: {file_path}")
             return {"success": False, "error": "File not found"}
+        except PermissionError:
+            logger.error(f"Permission denied: {file_path}")
+            return {"success": False, "error": "Permission denied"}
         except Exception as e:
             logger.error(f"Error reading file {file_path}: {e}")
             return {"success": False, "error": str(e)}
@@ -154,7 +178,7 @@ class FileManagerSkill:
         处理write、file相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        file_path = kwargs.get('path')
+        file_path = self._resolve_relative_path(kwargs.get('path', ''))
         content = kwargs.get('content', '')
 
         if not file_path:
@@ -185,7 +209,7 @@ class FileManagerSkill:
         处理list、files相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        directory = kwargs.get('path', '')
+        directory = self._resolve_relative_path(kwargs.get('path', ''))
         pattern = kwargs.get('pattern', '*')
 
         if not self._validate_path(directory):
@@ -223,7 +247,7 @@ class FileManagerSkill:
         处理delete、file相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        file_path = kwargs.get('path')
+        file_path = self._resolve_relative_path(kwargs.get('path', ''))
 
         if not file_path:
             return {"success": False, "error": "path parameter is required"}
@@ -252,7 +276,7 @@ class FileManagerSkill:
         处理file、exists相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        file_path = kwargs.get('path')
+        file_path = self._resolve_relative_path(kwargs.get('path', ''))
 
         if not file_path:
             return {"success": False, "error": "path parameter is required"}
@@ -273,7 +297,7 @@ class FileManagerSkill:
         处理create、directory相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        directory = kwargs.get('path')
+        directory = self._resolve_relative_path(kwargs.get('path', ''))
 
         if not directory:
             return {"success": False, "error": "path parameter is required"}

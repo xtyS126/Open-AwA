@@ -107,19 +107,22 @@ def test_build_provider_request_generates_provider_specific_headers_and_payload(
 
 def test_build_thinking_params_keeps_deepseek_thinking_and_reasoning_effort():
     """
-    DeepSeek OpenAI 兼容接口允许同时传 thinking 开关与 reasoning_effort。
+    DeepSeek R1 推理模型接口支持同时传 thinking 开关与 reasoning_effort。
+    V4 系列模型仅支持 reasoning_effort（不传 thinking），此处用 reasoner 验证 R1 行为。
     """
 
     params = build_thinking_params(
         provider="deepseek",
-        model="deepseek-v4-pro",
+        model="deepseek-reasoner",
         thinking_depth=4,
         thinking_enabled=True,
     )
 
     assert params == {
-        "extra_body": {"thinking": {"type": "enabled"}},
-        "reasoning_effort": "max",
+        "extra_body": {
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "max",
+        },
     }
 
 

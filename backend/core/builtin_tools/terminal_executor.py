@@ -5,6 +5,7 @@
 
 import asyncio
 import os
+import re
 import shlex
 import time
 from typing import Dict, Any, List, Optional
@@ -42,16 +43,15 @@ BLOCKED_PATHS = [
 ]
 
 # 禁止的命令行中出现的模式（正则）
+# 命令串联/管道/逻辑运算符：仅当串联到危险命令时才拦截，避免误拦 echo "Hi" && pwd 等无害组合
+_CHAIN_RISKY_SUFFIX = r'(?:;|\|\||&&|\|)\s*(' + '|'.join(re.escape(c) for c in BLOCKED_COMMANDS) + r')\b'
 BLOCKED_PATTERNS = [
     r'>\s*/dev/',           # 重定向到设备文件
     r'>>\s*/dev/',
     r'<\s*/dev/zero',      # 从 /dev/zero 读取输入
     r'\$\s*\(',            # $() 命令替换
     r'`[^`]+`',            # 反引号命令替换
-    r';\s*\w',             # 命令串联
-    r'\|\s*\w',            # 管道（可能用于串联恶意命令）
-    r'&&\s*\w',            # 逻辑与串联
-    r'\|\|\s*\w',          # 逻辑或串联
+    _CHAIN_RISKY_SUFFIX,   # 串联到危险命令（如 curl|bash, wget && 执行等）
     r'\\x[0-9a-fA-F]{2}', # 十六进制编码绕过
     r'base64\s.*-d',       # base64 解码绕过
 ]
