@@ -20,6 +20,10 @@ export interface ModelOption {
   display_name: string
 }
 
+interface PreferenceMutationOptions {
+  syncToServer?: boolean
+}
+
 interface ChatState {
   messages: ChatMessage[]
   isLoading: boolean
@@ -47,13 +51,13 @@ interface ChatState {
   setConversations: (items: ConversationSessionSummary[], total?: number, hasMore?: boolean) => void
   upsertConversation: (item: ConversationSessionSummary) => void
   removeConversation: (sessionId: string) => void
-  setOutputMode: (mode: 'stream' | 'direct') => void
-  setSelectedModel: (model: string) => void
+  setOutputMode: (mode: 'stream' | 'direct', options?: PreferenceMutationOptions) => void
+  setSelectedModel: (model: string, options?: PreferenceMutationOptions) => void
   setModelOptions: (options: ModelOption[]) => void
   setModelLoading: (loading: boolean) => void
   setModelError: (error: string | null) => void
-  setThinkingEnabled: (enabled: boolean) => void
-  setThinkingDepth: (depth: number) => void
+  setThinkingEnabled: (enabled: boolean, options?: PreferenceMutationOptions) => void
+  setThinkingDepth: (depth: number, options?: PreferenceMutationOptions) => void
 }
 
 const initialSessionId = getActiveConversationId() || 'default'
@@ -185,16 +189,20 @@ export const useChatStore = create<ChatState>((set) => ({
       }
     }),
 
-  setOutputMode: (mode) => {
+  setOutputMode: (mode, options) => {
     set({ outputMode: mode })
     safeSetItem('chat_output_mode', mode)
-    syncPreferenceToServer('outputMode', mode)
+    if (options?.syncToServer !== false) {
+      syncPreferenceToServer('outputMode', mode)
+    }
   },
 
-  setSelectedModel: (model) => {
+  setSelectedModel: (model, options) => {
     set({ selectedModel: model })
     safeSetItem('chat_selected_model', model)
-    syncPreferenceToServer('selectedModel', model)
+    if (options?.syncToServer !== false) {
+      syncPreferenceToServer('selectedModel', model)
+    }
     // 如果选择了推理模型，自动开启思考模式
     if (model.toLowerCase().includes('reasoner') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('o1') || model.toLowerCase().includes('o3')) {
       set({ thinkingEnabled: true })
@@ -207,15 +215,19 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setModelError: (error) => set({ modelError: error }),
 
-  setThinkingEnabled: (enabled) => {
+  setThinkingEnabled: (enabled, options) => {
     set({ thinkingEnabled: enabled })
     safeSetItem('chat_thinking_enabled', enabled ? 'true' : 'false')
-    syncPreferenceToServer('thinkingEnabled', enabled)
+    if (options?.syncToServer !== false) {
+      syncPreferenceToServer('thinkingEnabled', enabled)
+    }
   },
-  setThinkingDepth: (depth) => {
+  setThinkingDepth: (depth, options) => {
     const validDepth = Math.max(0, Math.min(5, depth))
     set({ thinkingDepth: validDepth })
     safeSetItem('chat_thinking_depth', String(validDepth))
-    syncPreferenceToServer('thinkingDepth', validDepth)
+    if (options?.syncToServer !== false) {
+      syncPreferenceToServer('thinkingDepth', validDepth)
+    }
   },
 }))

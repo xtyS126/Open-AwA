@@ -77,11 +77,12 @@ export const ParsedSubagentLogs: React.FC<ParsedSubagentLogsProps> = ({ logs }) 
 
         // 工具调用：使用与主代理相同的 InlineToolCallCard 组件
         if (seg.type === 'tool') {
+          const status = normalizeSegmentStatus(seg.toolStatus)
           const toolMeta: ToolEventMeta = {
             id: seg.id,
             kind: detectToolKind(seg.toolName || ''),
             name: seg.toolName || seg.content,
-            status: 'completed',
+            status,
             detail: seg.toolDetail || seg.content,
           }
           return (

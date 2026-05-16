@@ -20,4 +20,40 @@ describe('logParser', () => {
     expect(segments[0].content).toBe('先分析')
     expect(segments[2].content).toBe('再继续')
   })
+
+  it('将被切开的短前缀文本并回后续思考片段', () => {
+    const segments = parseSubagentLogs('从 get_system_status\n[思考] 的结果来看，我们已经有了操作系统信息')
+
+    expect(segments).toHaveLength(1)
+    expect(segments[0]).toMatchObject({
+      type: 'think',
+      content: '从 get_system_status 的结果来看，我们已经有了操作系统信息',
+      isClosed: true,
+    })
+  })
+
+  it('兼容行内拼接的思考与工具前缀', () => {
+    const segments = parseSubagentLogs('从 get_system_status[思考] 的结果来看，我们已经有了操作系统信息[工具] builtin_list_files: running[工具] builtin_list_files: 工具调用完成')
+
+    expect(segments.map((segment) => segment.type)).toEqual(['think', 'tool', 'tool'])
+    expect(segments[0].content).toBe('从 get_system_status 的结果来看，我们已经有了操作系统信息')
+    expect(segments[1]).toMatchObject({
+      type: 'tool',
+      toolName: 'builtin_list_files',
+      toolStatus: 'running',
+    })
+    expect(segments[2]).toMatchObject({
+      type: 'tool',
+      toolName: 'builtin_list_files',
+      toolStatus: 'completed',
+    })
+  })
+
+  it('保留已经成句的普通文本与后续思考片段边界', () => {
+    const segments = parseSubagentLogs('先输出结论。\n[思考] 再补充原因')
+
+    expect(segments.map((segment) => segment.type)).toEqual(['text', 'think'])
+    expect(segments[0].content).toBe('先输出结论。')
+    expect(segments[1].content).toBe('再补充原因')
+  })
 })

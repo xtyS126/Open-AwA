@@ -2,51 +2,41 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
 import { chatAPI, conversationAPI, diaryAPI, type ChatContinuationPayload } from '@/shared/api/api'
+import { useConversationHistory } from '@/features/chat/hooks/useConversationHistory'
+import { useStreamExecutionState } from '@/features/chat/hooks/useStreamExecutionState'
+import { useTaskPanelState } from '@/features/chat/hooks/useTaskPanelState'
 import { useChatStore } from '@/features/chat/store/chatStore'
+import { applyDirectAssistantResponse } from '@/features/chat/utils/applyDirectAssistantResponse'
+import { handleStreamChunkEvent } from '@/features/chat/utils/handleStreamChunkEvent'
 import {
   flushCachedConversationMessages,
   getActiveConversationId,
   getCachedConversationMessages,
 } from '@/features/chat/utils/chatCache'
 import { safeGetJsonItem } from '@/shared/utils/safeStorage'
-import type {
-  AssistantExecutionMeta,
-  AssistantMessageSegment,
-  ChatMessage,
-  ConversationSessionSummary,
-  TaskStatus,
-} from '@/features/chat/types'
+import type { AssistantExecutionMeta, AssistantMessageSegment, ChatMessage, ConversationSessionSummary, TaskStatus } from '@/features/chat/types'
 import {
-  applySubagentMessage,
-  applySubagentStart,
   applySubagentStop,
   syncSubagentSnapshot,
   applySubagentTimeout,
   buildSubagentTranscriptText,
-  summarizeExecutionResult,
   setSubagentAggregation,
   SUBAGENT_INACTIVITY_TIMEOUT_MS,
   applyTaskUpdate,
   applyToolUpdate,
-  buildExecutionMetaFromPayload,
   createEmptyExecutionMeta,
   formatUsageCost,
   formatUsageTokens,
   getTaskTitle,
   hasExecutionMeta,
-  mergeExecutionMeta,
-  normalizeUsage,
 } from '@/features/chat/utils/executionMeta'
 import {
   appendAssistantChunk,
-  applyIntentToSegments,
-  applyStepToSegments,
   applyToolEventToSegments,
   applyToolPatchToSegments,
-  applyUsageToSegments,
   finalizeAssistantSegments,
-  buildSegmentsFromLegacyMessage,
 } from '@/features/chat/utils/assistantSegments'
+import { dispatchStructuredStreamEvent } from '@/features/chat/utils/dispatchStructuredStreamEvent'
 import { getAgent, getTranscript, stopAgent } from '@/shared/api/taskRuntimeApi'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
@@ -69,8 +59,6 @@ function sanitizeDisplayedError(message: string): string {
     .replace(/'/g, '&#39;')
 }
 
-type StreamConnectionState = 'idle' | 'connecting' | 'streaming' | 'retrying' | 'error'
-
 const MAX_STREAM_RETRY_COUNT = 1
 const SUBAGENT_RUNTIME_SYNC_INTERVAL_MS = 1200
 
@@ -86,46 +74,8 @@ function shouldRetryStreamError(error: Error): boolean {
   ].some((keyword) => message.includes(keyword))
 }
 
-function getStreamStatusText(
-  state: StreamConnectionState,
-  retryCount: number,
-  errorMessage: string | null,
-  stageMessage: string | null
-): string {
-  switch (state) {
-    case 'error':
-      return errorMessage ? `流式连接失败：${errorMessage}` : '流式连接失败'
-    case 'retrying':
-      return `正在重连流式通道（第 ${retryCount} 次）`
-    case 'connecting':
-      return '正在连接流式通道'
-    case 'streaming':
-      return stageMessage || '正在流式生成'
-    default:
-      return ''
-  }
-}
-
-type ConversationSortKey = 'last_message_at' | 'title'
-
 interface ChatAppSettings {
   maxToolCallRounds?: number
-}
-
-const HISTORY_PAGE_SIZE = 20
-
-function mergeConversationSummaries(
-  currentItems: ConversationSessionSummary[],
-  nextItems: ConversationSessionSummary[]
-): ConversationSessionSummary[] {
-  const nextMap = new Map<string, ConversationSessionSummary>()
-  for (const item of currentItems) {
-    nextMap.set(item.session_id, item)
-  }
-  for (const item of nextItems) {
-    nextMap.set(item.session_id, item)
-  }
-  return Array.from(nextMap.values())
 }
 
 function buildMessageMetaFromSegments(
@@ -281,7 +231,6 @@ function ChatPage() {
     updateMessage,
     loadCachedMessages,
     conversations,
-    setConversations,
     upsertConversation,
     removeConversation,
     conversationsHasMore,
@@ -297,23 +246,44 @@ function ChatPage() {
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
   const [messageMeta, setMessageMeta] = useState<Record<string, AssistantExecutionMeta>>({})
   const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null)
-  const [historySidebarOpen, setHistorySidebarOpen] = useState(() => window.innerWidth > 960)
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyError, setHistoryError] = useState<string | null>(null)
-  const [historySearchInput, setHistorySearchInput] = useState('')
-  const [historySearch, setHistorySearch] = useState('')
-  const [historySort, setHistorySort] = useState<ConversationSortKey>('last_message_at')
-  const [historyPage, setHistoryPage] = useState(1)
-  const [includeDeleted, setIncludeDeleted] = useState(false)
-  const [historyInitialized, setHistoryInitialized] = useState(false)
-  const [streamConnectionState, setStreamConnectionState] = useState<StreamConnectionState>('idle')
-  const [streamRetryCount, setStreamRetryCount] = useState(0)
-  const [streamErrorMessage, setStreamErrorMessage] = useState<string | null>(null)
-  const [streamStageMessage, setStreamStageMessage] = useState<string | null>(null)
-  const [taskPanelManuallyToggled, setTaskPanelManuallyToggled] = useState(false)
-  const [taskPanelExpanded, setTaskPanelExpanded] = useState(false)
+  const {
+    streamConnectionState,
+    streamStatusText,
+    setStreamStageMessage,
+    beginStreamExecution,
+    markStreamRetrying,
+    markStreamStreaming,
+    markStreamFailed,
+    clearStreamStageMessage,
+    setIdleStreamState,
+    resetStreamExecutionState,
+  } = useStreamExecutionState()
   const [todoItems, setTodoItems] = useState<TodoItem[]>([])
   const [todoSummary, setTodoSummary] = useState<string>('')
+  const {
+    isCompactViewport,
+    historySidebarOpen,
+    historyLoading,
+    historyError,
+    historySearchInput,
+    historySort,
+    historyPage,
+    includeDeleted,
+    historyInitialized,
+    setHistorySearchInput,
+    setHistorySort,
+    setIncludeDeleted,
+    toggleHistorySidebar,
+    closeHistorySidebar,
+    clearHistoryError,
+    loadConversationList,
+  } = useConversationHistory()
+  const {
+    activeExecution,
+    taskPanelExpanded,
+    toggleTaskPanel,
+    resetTaskPanelState,
+  } = useTaskPanelState(messages, messageMeta, streamingAssistantId)
   const { addToast, ToastContainer } = useToast()
   const messageMetaRef = useRef<Record<string, AssistantExecutionMeta>>({})
   const subagentTimeoutRef = useRef<Record<string, number>>({})
@@ -427,55 +397,13 @@ function ChatPage() {
     })
   }, [])
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setHistorySearch(historySearchInput)
-    }, 250)
-
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [historySearchInput])
-
-  const loadConversationList = useCallback(async (page: number = 1, append: boolean = false) => {
-    setHistoryLoading(true)
-    setHistoryError(null)
-    try {
-      const response = await conversationAPI.listSessions({
-        search: historySearch.trim(),
-        sort_by: historySort,
-        sort_order: historySort === 'title' ? 'asc' : 'desc',
-        page,
-        page_size: HISTORY_PAGE_SIZE,
-        include_deleted: includeDeleted,
-      })
-      const incomingItems = response.data.items || []
-      const existingItems = append ? useChatStore.getState().conversations : []
-      const nextItems = append ? mergeConversationSummaries(existingItems, incomingItems) : incomingItems
-      setConversations(nextItems, response.data.total, response.data.has_more)
-      setHistoryPage(response.data.page)
-    } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : '加载历史对话失败')
-      appLogger.warning({
-        event: 'conversation_list_load_failed',
-        module: 'chat_page',
-        action: 'load_conversations',
-        status: 'failure',
-        message: 'failed to load conversations',
-      })
-    } finally {
-      setHistoryLoading(false)
-      setHistoryInitialized(true)
-    }
-  }, [historySearch, historySort, includeDeleted, setConversations])
-
   const createConversationAndNavigate = useCallback(async (replace: boolean = false) => {
     if (pendingConversationCreationRef.current) {
       return pendingConversationCreationRef.current
     }
 
     const pendingRequest = (async () => {
-      setHistoryError(null)
+      clearHistoryError()
       const response = await conversationAPI.createSession()
       const nextConversation = response.data as ConversationSessionSummary
       upsertConversation(nextConversation)
@@ -483,10 +411,7 @@ function ChatPage() {
       setMessages([])
       setMessageMeta({})
       setStreamingAssistantId(null)
-      setStreamConnectionState('idle')
-      setStreamRetryCount(0)
-      setStreamErrorMessage(null)
-      setStreamStageMessage(null)
+      resetStreamExecutionState()
       navigate(`/chat/${nextConversation.session_id}`, { replace })
       return nextConversation.session_id
     })()
@@ -498,7 +423,7 @@ function ChatPage() {
     } finally {
       pendingConversationCreationRef.current = null
     }
-  }, [navigate, setMessages, setSessionId, upsertConversation])
+  }, [clearHistoryError, navigate, resetStreamExecutionState, setMessages, setSessionId, upsertConversation])
 
   const ensureConversationSession = useCallback(async () => {
     if (sessionId && sessionId !== 'default') {
@@ -512,10 +437,7 @@ function ChatPage() {
     setMessages([])
     setMessageMeta({})
     setStreamingAssistantId(null)
-    setStreamConnectionState('idle')
-    setStreamRetryCount(0)
-    setStreamErrorMessage(null)
-    setStreamStageMessage(null)
+    resetStreamExecutionState()
 
     const fallbackConversation = useChatStore.getState().conversations.find(
       (item) => item.session_id !== missingSessionId && !item.deleted_at
@@ -527,7 +449,7 @@ function ChatPage() {
     }
 
     await createConversationAndNavigate(true)
-  }, [createConversationAndNavigate, navigate, removeConversation, setMessages])
+  }, [createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessages])
 
   useEffect(() => {
     void loadConversationList(1, false)
@@ -540,12 +462,9 @@ function ChatPage() {
       loadCachedMessages(conversationId)
       setMessageMeta(buildMessageMetaFromMessages(cachedMsgs))
       setStreamingAssistantId(null)
-      setStreamConnectionState('idle')
-      setStreamRetryCount(0)
-      setStreamErrorMessage(null)
-      setStreamStageMessage(null)
+      resetStreamExecutionState()
     }
-  }, [conversationId, loadCachedMessages, sessionId, setSessionId])
+  }, [conversationId, loadCachedMessages, resetStreamExecutionState, sessionId, setSessionId])
 
   useEffect(() => {
     if (!historyInitialized || conversationId || (sessionId && sessionId !== 'default')) {
@@ -571,10 +490,7 @@ function ChatPage() {
     if (!sessionId || sessionId === 'default') {
       setMessages([])
       setMessageMeta({})
-      setStreamConnectionState('idle')
-      setStreamRetryCount(0)
-      setStreamErrorMessage(null)
-      setStreamStageMessage(null)
+      resetStreamExecutionState()
       return
     }
     let cancelled = false
@@ -642,7 +558,7 @@ function ChatPage() {
     }
     loadHistory()
     return () => { cancelled = true }
-  }, [flushConversationCache, historyInitialized, recoverUnavailableConversation, sessionId, setMessages])
+  }, [flushConversationCache, historyInitialized, recoverUnavailableConversation, resetStreamExecutionState, sessionId, setMessages])
 
   const updateAssistantMeta = useCallback((messageId: string, updater: (current: AssistantExecutionMeta) => AssistantExecutionMeta) => {
     setMessageMeta((prev) => ({
@@ -872,12 +788,12 @@ function ChatPage() {
 
     const separatorIndex = value.indexOf(':')
     if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
-      return { provider: undefined, model: undefined }
+      return { provider: undefined, model: value }
     }
 
     return {
       provider: value.slice(0, separatorIndex),
-      model: value.slice(separatorIndex + 1)
+      model: value.slice(separatorIndex + 1),
     }
   }
 
@@ -976,10 +892,7 @@ function ChatPage() {
     }
     setLoading(true)
     setStreamingAssistantId(assistantMessageId)
-    setStreamErrorMessage(null)
-    setStreamRetryCount(0)
-    setStreamStageMessage(null)
-    setStreamConnectionState(outputMode === 'stream' ? 'connecting' : 'idle')
+    beginStreamExecution(outputMode)
 
     try {
       const { provider, model } = parseSelectedModel(selectedModel)
@@ -995,8 +908,7 @@ function ChatPage() {
         for (let attempt = 0; attempt <= MAX_STREAM_RETRY_COUNT; attempt += 1) {
           let runtimeError: Error | null = null
           if (attempt > 0) {
-            setStreamRetryCount(attempt)
-            setStreamConnectionState('retrying')
+            markStreamRetrying(attempt)
           }
 
           try {
@@ -1010,8 +922,7 @@ function ChatPage() {
                   return
                 }
 
-                setStreamConnectionState('streaming')
-                setStreamErrorMessage(null)
+                markStreamStreaming()
 
                 if (event?.type === 'status') {
                   const nextStageMessage = typeof event.message === 'string' ? event.message.trim() : ''
@@ -1020,311 +931,41 @@ function ChatPage() {
                 }
 
                 if (event?.type === 'chunk') {
-                  const content = typeof event.content === 'string' ? event.content : ''
-                  const reasoning = typeof event.reasoning_content === 'string' ? event.reasoning_content : ''
-                  if (!assistantMessageCreated) {
-                    ensureAssistantMessage(content, reasoning)
-                    bufferRef.current.lastUpdateTime = Date.now()
-                    return
-                  }
-
-                  if (content || reasoning) {
-                    updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
-                      content,
-                      reasoningContent: reasoning,
-                    }))
-                  }
-
-                  if (document.hidden) {
-                    bufferRef.current.content += content
-                    bufferRef.current.reasoning += reasoning
-                    const now = Date.now()
-                    if (now - bufferRef.current.lastUpdateTime > 1000) {
-                      flushBuffer(assistantMessageId)
-                    }
-                  } else {
-                    if (bufferRef.current.content || bufferRef.current.reasoning) {
-                      appendAssistantMessageText(
-                        assistantMessageId,
-                        bufferRef.current.content + content,
-                        bufferRef.current.reasoning + reasoning
-                      )
-                      bufferRef.current.content = ''
-                      bufferRef.current.reasoning = ''
-                      bufferRef.current.lastUpdateTime = Date.now()
-                    } else {
-                      appendAssistantMessageText(assistantMessageId, content, reasoning)
-                    }
-                  }
+                  assistantMessageCreated = handleStreamChunkEvent({
+                    assistantMessageId,
+                    event: event as Record<string, unknown>,
+                    assistantMessageCreated,
+                    ensureAssistantMessage,
+                    updateAssistantSegments,
+                    appendAssistantMessageText,
+                    flushBuffer,
+                    buffer: bufferRef.current,
+                    isDocumentHidden: document.hidden,
+                  })
                   return
                 }
 
                 ensureAssistantMessage()
-
-                if (event?.type === 'plan' || event?.type === 'result') {
-                  const nextMeta = buildExecutionMetaFromPayload(event)
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    const merged = mergeExecutionMeta(current, nextMeta)
-                    // 对于 result 事件，尝试提取 output 更新到对应 toolEvent
-                    if (event?.type === 'result' && event.result && typeof event.result === 'object') {
-                      const resultData = event.result as Record<string, unknown>
-                      const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
-                      const output = resultData.output !== undefined ? resultData.output : resultData
-                      if (toolId && output) {
-                        const toolEvents = merged.toolEvents.map((t) =>
-                          t.id === toolId
-                            ? { ...t, output, completedAt: t.completedAt || Date.now(), status: t.status === 'running' ? ('completed' as const) : t.status }
-                            : t
-                        )
-                        return { ...merged, toolEvents }
-                      }
-                    }
-                    return merged
-                  })
-                  if (nextMeta.intent) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyIntentToSegments(segments, nextMeta.intent!))
-                  }
-                  if (nextMeta.steps.length > 0) {
-                    updateAssistantSegments(assistantMessageId, (segments = []) => {
-                      let nextSegments = segments || []
-                      for (const step of nextMeta.steps) {
-                        nextSegments = applyStepToSegments(nextSegments, step)
-                      }
-                      return nextSegments
-                    })
-                  }
-                  if (event?.type === 'result' && event.result && typeof event.result === 'object') {
-                    const resultData = event.result as Record<string, unknown>
-                    const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
-                    const output = resultData.output !== undefined ? resultData.output : resultData
-                    if (toolId && output !== undefined) {
-                      updateAssistantSegments(assistantMessageId, (segments) => applyToolPatchToSegments(segments, toolId, {
-                        output,
-                        detail: summarizeExecutionResult(output),
-                        status: 'completed',
-                        completedAt: Date.now(),
-                      }))
-                    }
-                  }
-                  return
-                }
-
-                if (event?.type === 'task' && event.task && typeof event.task === 'object') {
-                  const taskData = event.task as Record<string, unknown>
-                  updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskData))
-                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
-                  if (stepMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
-                  }
-                  return
-                }
-
-                if (event?.type === 'tool' && event.tool && typeof event.tool === 'object') {
-                  const toolData = event.tool as Record<string, unknown>
-                  const normalizedToolData = {
-                    ...toolData,
-                    sequence: toolData.sequence ?? ((messageMeta[assistantMessageId]?.toolEvents.length || 0) + 1),
-                    input: toolData.input || toolData.arguments || toolData.args,
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    const nextSequence = current.toolEvents.length + 1
-                    return applyToolUpdate(current, {
-                      ...normalizedToolData,
-                      sequence: toolData.sequence ?? nextSequence,
-                    })
-                  })
-                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), normalizedToolData).toolEvents[0]
-                  if (toolMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-                  }
-                  return
-                }
-
-                if (event?.type === 'subagent_start' && event.agent_id) {
-                  const agentId = event.agent_id as string
-                  const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-                  const runMode = typeof event.run_mode === 'string' ? event.run_mode : undefined
-                  const toolMeta = applySubagentStart(createEmptyExecutionMeta(), {
-                    agentId,
-                    agentType,
-                    description: typeof event.description === 'string' ? event.description : '子代理已启动',
-                  }).toolEvents[0]
-                  updateAssistantMeta(assistantMessageId, (current) => applySubagentStart(current, {
-                    agentId,
-                    agentType,
-                    description: typeof event.description === 'string' ? event.description : '子代理已启动',
-                  }))
-                  if (toolMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-                  }
-                  clearSubagentAggregationTimer(assistantMessageId)
-                  scheduleSubagentTimeout(assistantMessageId, agentId, agentType)
-                  if (!agentId.startsWith('sub_') && runMode !== 'foreground') {
-                    syncSubagentRuntimeRef.current(assistantMessageId, agentId, agentType)
-                  }
-                  return
-                }
-
-                if (event?.type === 'subagent_stop' && event.agent_id) {
-                  const agentId = event.agent_id as string
-                  const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-                  const summary = typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`
-                  const stopPayload = {
-                    agentId,
-                    agentType,
-                    state: typeof event.state === 'string' ? event.state : undefined,
-                    summary,
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => applySubagentStop(current, stopPayload))
-                  let stopStatus: string = 'completed'
-                  updateAssistantSegments(assistantMessageId, (segments = []) => {
-                    // 从当前 segments 读取已积累的日志，避免被 summary 覆盖
-                    const currentTool = (segments || []).flatMap(s => (s && 'toolEvents' in s && Array.isArray(s.toolEvents)) ? s.toolEvents : []).find(t => t && t.id === agentId)
-                    const tempMeta = { toolEvents: currentTool ? [currentTool] : [], isThinking: false } as any
-                    const toolMeta = applySubagentStop(tempMeta, stopPayload).toolEvents[0]
-                    if (!toolMeta) return segments || []
-                    stopStatus = toolMeta.status === 'error' ? 'error' : 'completed'
-                    return applyToolEventToSegments(segments, toolMeta)
-                  })
-                  if (stopStatus === 'error') {
-                    addToast(`Subagent ${agentType || agentId} 执行失败`, 'error')
-                  }
-                  clearSubagentTimeout(agentId)
-                  clearSubagentSyncTimer(agentId)
-                  scheduleSubagentAggregation(assistantMessageId)
-                  return
-                }
-
-                if (event?.type === 'agent_message' && event.agent_id) {
-                  const agentId = event.agent_id as string
-                  const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-                  const messageText = typeof event.message === 'string' ? event.message : '子代理消息'
-                  
-                  updateAssistantMeta(assistantMessageId, (current) => applySubagentMessage(current, {
-                    agentId,
-                    agentType,
-                    message: messageText,
-                  }))
-                  
-                  updateAssistantSegments(assistantMessageId, (segments = []) => {
-                    const currentTool = (segments || []).flatMap(s => (s && 'toolEvents' in s && Array.isArray(s.toolEvents)) ? s.toolEvents : []).find(t => t && t.id === agentId)
-                    const tempMeta = { toolEvents: currentTool ? [currentTool] : [], isThinking: false } as any
-                    const toolMeta = applySubagentMessage(tempMeta, {
-                      agentId,
-                      agentType,
-                      message: messageText,
-                    }).toolEvents[0]
-                    return applyToolEventToSegments(segments, toolMeta)
-                  })
-                  scheduleSubagentTimeout(assistantMessageId, agentId, agentType)
-                  return
-                }
-
-                // 任务清单生命周期事件
-                if (event?.type === 'task_created' && event.task) {
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyTaskUpdate(current, {
-                      ...event.task,
-                      status: 'created',
-                    })
-                  })
-                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), {
-                    ...(event.task as Record<string, unknown>),
-                    status: 'created',
-                  }).steps[0]
-                  if (stepMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
-                  }
-                  return
-                }
-
-                if (event?.type === 'task_updated' && event.task) {
-                  const taskData = event.task as Record<string, unknown>
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyTaskUpdate(current, taskData)
-                  })
-                  const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
-                  if (stepMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
-                  }
-                  return
-                }
-
-                if (event?.type === 'task_stopped' && event.task_id) {
-                  const toolPayload = {
-                    id: event.task_id as string,
-                    kind: 'task',
-                    name: '任务已停止',
-                    status: 'completed',
-                    detail: typeof event.summary === 'string' ? event.summary : '任务已停止',
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, toolPayload)
-                  })
-                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
-                  if (toolMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-                  }
-                  return
-                }
-
-                // 团队生命周期事件（Phase 4）
-                if (event?.type === 'team_event' && event.team) {
-                  const toolPayload = {
-                    id: event.team.team_id || `team_${Date.now()}`,
-                    kind: 'task',
-                    name: `团队: ${event.team.name || '未命名'}`,
-                    status: event.team.ok === false ? 'failed' : 'running',
-                    detail:
-                      typeof event.team.state === 'string'
-                        ? `团队状态: ${event.team.state}`
-                        : '团队操作已完成',
-                  }
-                  updateAssistantMeta(assistantMessageId, (current) => {
-                    return applyToolUpdate(current, toolPayload)
-                  })
-                  const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
-                  if (toolMeta) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
-                  }
-                  return
-                }
-
-                if (event?.type === 'usage' && event.usage) {
-                  const usage = normalizeUsage(event.usage)
-                  updateAssistantMeta(assistantMessageId, (current) => ({
-                    ...current,
-                    usage: usage || current.usage,
-                  }))
-                  if (usage) {
-                    dispatchBillingUsageUpdated({
-                      callId: usage.call_id,
-                      provider: usage.provider,
-                      model: usage.model,
-                    })
-                  }
-                  if (usage) {
-                    updateAssistantSegments(assistantMessageId, (segments) => applyUsageToSegments(segments, usage))
-                  }
-                }
-
-                if (event?.type === 'notification') {
-                  const title = typeof event.title === 'string' ? event.title : ''
-                  const body = typeof event.body === 'string' ? event.body : ''
-                  const message = body || title
-                  if (message) {
-                    addToast(message, 'info')
-                  }
-                  return
-                }
-
-                if (event?.type === 'todo_update') {
-                  const todos = Array.isArray(event.todos) ? event.todos as TodoItem[] : []
-                  const summary = typeof event.summary === 'string' ? event.summary : ''
-                  setTodoItems(todos)
-                  setTodoSummary(summary)
-                  return
-                }
+                dispatchStructuredStreamEvent(event as Record<string, unknown>, {
+                  assistantMessageId,
+                  messageMeta,
+                  addToast,
+                  updateAssistantMeta,
+                  updateAssistantSegments,
+                  clearSubagentAggregationTimer,
+                  scheduleSubagentTimeout,
+                  syncSubagentRuntime: (targetAssistantMessageId, agentId, agentType) => {
+                    syncSubagentRuntimeRef.current(targetAssistantMessageId, agentId, agentType)
+                  },
+                  clearSubagentTimeout,
+                  clearSubagentSyncTimer,
+                  scheduleSubagentAggregation,
+                  setTodoItems,
+                  setTodoSummary,
+                  dispatchUsageUpdated: ({ callId, provider, model }) => {
+                    dispatchBillingUsageUpdated({ callId, provider, model })
+                  },
+                })
               },
               (error) => {
                 runtimeError = error instanceof Error ? error : new Error(String(error))
@@ -1348,15 +989,13 @@ function ChatPage() {
             const canRetry = attempt < MAX_STREAM_RETRY_COUNT && !hasPartialAssistantOutput && shouldRetryStreamError(normalizedError)
 
             if (canRetry) {
-              setStreamRetryCount(attempt + 1)
-              setStreamConnectionState('retrying')
+              markStreamRetrying(attempt + 1)
               continue
             }
 
             streamErrorHandled = true
             flushBuffer(assistantMessageId)
-            setStreamConnectionState('error')
-            setStreamErrorMessage(sanitizeDisplayedError(normalizedError.message))
+            markStreamFailed(sanitizeDisplayedError(normalizedError.message))
             appLogger.error({
               event: 'chat_stream_error',
               module: 'chat_page',
@@ -1366,15 +1005,17 @@ function ChatPage() {
               extra: { error: normalizedError.message, retry_count: attempt },
             })
             if (!assistantMessageCreated) {
-              addMessage('assistant', `请求失败：${sanitizeDisplayedError(normalizedError.message)}`, undefined, assistantMessageId)
+              const errorContent = `请求失败：${sanitizeDisplayedError(normalizedError.message)}`
+              addMessage('assistant', errorContent, undefined, assistantMessageId)
               assistantMessageCreated = true
               updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
-                content: `请求失败：${sanitizeDisplayedError(normalizedError.message)}`,
+                content: errorContent,
               }))
             } else {
-              appendAssistantMessageText(assistantMessageId, `\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`)
+              const errorContent = `\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`
+              appendAssistantMessageText(assistantMessageId, errorContent)
               updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
-                content: `\n\n[流中断：${sanitizeDisplayedError(normalizedError.message)}]`,
+                content: errorContent,
               }))
             }
             finalizeAssistantMessageSegments(assistantMessageId)
@@ -1383,8 +1024,8 @@ function ChatPage() {
         }
         flushBuffer(assistantMessageId)
         finalizeAssistantMessageSegments(assistantMessageId)
-        setStreamStageMessage(null)
-        setStreamConnectionState('idle')
+        clearStreamStageMessage()
+        setIdleStreamState()
 
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId || streamErrorHandled) {
           return
@@ -1396,98 +1037,24 @@ function ChatPage() {
         if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
           return
         }
-        const assistantText = response.data.response
-        const backendError = response.data.error
-        const reasoningContent = response.data.reasoning_content
-        const nextMeta = buildExecutionMetaFromPayload(response.data)
-
-        if (assistantText && assistantText.trim()) {
-          addMessage('assistant', assistantText, reasoningContent || undefined, assistantMessageId)
-          updateMessage(assistantMessageId, (message) => ({
-            ...message,
-            segments: buildSegmentsFromLegacyMessage({
-              content: assistantText,
-              reasoningContent: reasoningContent || undefined,
-              meta: nextMeta,
-            }),
-          }))
-          if (hasExecutionMeta(nextMeta)) {
-            setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
-            // 直接模式下同步持久化 toolEvents
-            if (nextMeta.toolEvents.length > 0) {
-              updateMessage(assistantMessageId, (msg) => ({
-                ...msg,
-                toolEvents: nextMeta.toolEvents,
-              }))
-            }
-          }
-          if (nextMeta.usage) {
-            dispatchBillingUsageUpdated({
-              callId: nextMeta.usage.call_id,
-              provider: nextMeta.usage.provider,
-              model: nextMeta.usage.model,
-            })
-          }
-        } else if (backendError?.message) {
-          const backendErrorMessage = typeof backendError.message === 'string' ? backendError.message : '请求失败'
-          addMessage('assistant', `请求失败：${sanitizeDisplayedError(backendErrorMessage)}`)
-          updateMessage(assistantMessageId, (message) => ({
-            ...message,
-            segments: buildSegmentsFromLegacyMessage({
-              content: `请求失败：${sanitizeDisplayedError(backendErrorMessage)}`,
-            }),
-          }))
-        } else if (reasoningContent || hasExecutionMeta(nextMeta)) {
-          addMessage('assistant', '', reasoningContent || undefined, assistantMessageId)
-          updateMessage(assistantMessageId, (message) => ({
-            ...message,
-            segments: buildSegmentsFromLegacyMessage({
-              reasoningContent: reasoningContent || undefined,
-              meta: nextMeta,
-            }),
-          }))
-          if (hasExecutionMeta(nextMeta)) {
-            setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
-            if (nextMeta.toolEvents.length > 0) {
-              updateMessage(assistantMessageId, (msg) => ({
-                ...msg,
-                toolEvents: nextMeta.toolEvents,
-              }))
-            }
-          }
-          if (nextMeta.usage) {
-            dispatchBillingUsageUpdated({
-              callId: nextMeta.usage.call_id,
-              provider: nextMeta.usage.provider,
-              model: nextMeta.usage.model,
-            })
-          }
-        } else {
-          addMessage('assistant', '抱歉，当前未返回有效内容，请稍后重试。', undefined, assistantMessageId)
-          updateMessage(assistantMessageId, (message) => ({
-            ...message,
-            segments: buildSegmentsFromLegacyMessage({
-              content: '抱歉，当前未返回有效内容，请稍后重试。',
-              reasoningContent: reasoningContent || undefined,
-              meta: nextMeta,
-            }),
-          }))
-          if (hasExecutionMeta(nextMeta)) {
-            setMessageMeta((prev) => ({ ...prev, [assistantMessageId]: nextMeta }))
-          }
-          if (nextMeta.usage) {
-            dispatchBillingUsageUpdated({
-              callId: nextMeta.usage.call_id,
-              provider: nextMeta.usage.provider,
-              model: nextMeta.usage.model,
-            })
-          }
-        }
+        assistantMessageCreated = applyDirectAssistantResponse({
+          assistantMessageId,
+          responseData: response.data,
+          addMessage: (role, content, reasoningContent, messageId) => {
+            addMessage(role, content, reasoningContent, messageId)
+          },
+          updateMessage,
+          setMessageMeta,
+          sanitizeDisplayedError,
+          dispatchUsageUpdated: ({ callId, provider, model }) => {
+            dispatchBillingUsageUpdated({ callId, provider, model })
+          },
+        })
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        setStreamStageMessage(null)
-        setStreamConnectionState('idle')
+        clearStreamStageMessage()
+        setIdleStreamState()
         return
       }
       appLogger.error({
@@ -1502,12 +1069,15 @@ function ChatPage() {
         if (!assistantMessageCreated) {
           addMessage('assistant', '抱歉，发生了错误。请稍后重试。', undefined, assistantMessageId)
           assistantMessageCreated = true
+          updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+            content: '抱歉，发生了错误。请稍后重试。',
+          }))
         } else {
           appendAssistantMessageText(assistantMessageId, '抱歉，发生了错误。请稍后重试。')
+          updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
+            content: '抱歉，发生了错误。请稍后重试。',
+          }))
         }
-        updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
-          content: '抱歉，发生了错误。请稍后重试。',
-        }))
       }
     } finally {
       flushConversationCache(targetSessionId)
@@ -1517,9 +1087,9 @@ function ChatPage() {
       if (isMountedRef.current && activeRequestIdRef.current === requestId) {
         setLoading(false)
         setStreamingAssistantId(null)
-        setStreamStageMessage(null)
+        clearStreamStageMessage()
         if (!streamErrorHandled) {
-          setStreamConnectionState('idle')
+          setIdleStreamState()
         }
       }
     }
@@ -1555,35 +1125,27 @@ function ChatPage() {
   const handleCreateConversation = useCallback(async () => {
     setMessageMeta({})
     setStreamingAssistantId(null)
-    setStreamConnectionState('idle')
-    setStreamRetryCount(0)
-    setStreamErrorMessage(null)
-    setStreamStageMessage(null)
-    setTaskPanelManuallyToggled(false)
-    setTaskPanelExpanded(false)
+    resetStreamExecutionState()
+    resetTaskPanelState()
     await createConversationAndNavigate(false)
-  }, [createConversationAndNavigate])
+  }, [createConversationAndNavigate, resetStreamExecutionState, resetTaskPanelState])
 
   const handleSelectConversation = useCallback((nextSessionId: string) => {
     if (!nextSessionId || nextSessionId === sessionId) {
-      if (window.innerWidth <= 960) {
-        setHistorySidebarOpen(false)
+      if (isCompactViewport) {
+        closeHistorySidebar()
       }
       return
     }
     setMessageMeta({})
     setStreamingAssistantId(null)
-    setStreamConnectionState('idle')
-    setStreamRetryCount(0)
-    setStreamErrorMessage(null)
-    setStreamStageMessage(null)
-    setTaskPanelManuallyToggled(false)
-    setTaskPanelExpanded(false)
+    resetStreamExecutionState()
+    resetTaskPanelState()
     navigate(`/chat/${nextSessionId}`)
-    if (window.innerWidth <= 960) {
-      setHistorySidebarOpen(false)
+    if (isCompactViewport) {
+      closeHistorySidebar()
     }
-  }, [navigate, sessionId])
+  }, [closeHistorySidebar, isCompactViewport, navigate, resetStreamExecutionState, resetTaskPanelState, sessionId])
 
   const handleRenameConversation = useCallback(async (targetSessionId: string, title: string) => {
     const response = await conversationAPI.renameSession(targetSessionId, title)
@@ -1710,37 +1272,8 @@ function ChatPage() {
     }
   }
 
-  const getLatestActiveExecution = (): { meta: AssistantExecutionMeta; isStreaming: boolean } | null => {
-    if (streamingAssistantId && messageMeta[streamingAssistantId]) {
-      return { meta: messageMeta[streamingAssistantId], isStreaming: true }
-    }
-    if (streamingAssistantId) {
-      return { meta: createEmptyExecutionMeta(), isStreaming: true }
-    }
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg.role === 'assistant' && messageMeta[msg.id] && hasExecutionMeta(messageMeta[msg.id])) {
-        return { meta: messageMeta[msg.id], isStreaming: false }
-      }
-    }
-    return null
-  }
-
-  // 任务面板自动折叠/展开
-  const activeMetaForPanel = getLatestActiveExecution()
-  const hasActiveTasks = activeMetaForPanel
-    ? activeMetaForPanel.meta.steps.some((s) => s.status === 'running' || s.status === 'pending') ||
-      activeMetaForPanel.meta.toolEvents.some((t) => t.status === 'running' || t.status === 'pending') ||
-      activeMetaForPanel.isStreaming
-    : false
-
-  useEffect(() => {
-    if (taskPanelManuallyToggled) return
-    setTaskPanelExpanded(hasActiveTasks)
-  }, [hasActiveTasks, taskPanelManuallyToggled])
-
   const renderFloatingExecutionPanel = () => {
-    const active = getLatestActiveExecution()
+    const active = activeExecution
     if (!active) return null
     const { meta: currentMeta, isStreaming } = active
 
@@ -1794,14 +1327,6 @@ function ChatPage() {
     )
   }
 
-  const isCompactViewport = window.innerWidth <= 960
-  const streamStatusText = getStreamStatusText(
-    streamConnectionState,
-    streamRetryCount,
-    streamErrorMessage,
-    streamStageMessage
-  )
-
   return (
     <div className={styles['chat-page']}>
       <div className={styles['chat-header']}>
@@ -1809,7 +1334,7 @@ function ChatPage() {
           <button
             type="button"
             className={styles['history-toggle']}
-            onClick={() => setHistorySidebarOpen((prev) => !prev)}
+            onClick={toggleHistorySidebar}
             title={historySidebarOpen ? '收起历史记录' : '展开历史记录'}
           >
             <PanelLeft size={18} />
@@ -1871,7 +1396,7 @@ function ChatPage() {
 
       <div className={styles['chat-body']}>
         {historySidebarOpen && isCompactViewport && (
-          <button className={styles['history-overlay']} onClick={() => setHistorySidebarOpen(false)} aria-label="关闭历史记录遮罩" />
+          <button className={styles['history-overlay']} onClick={closeHistorySidebar} aria-label="关闭历史记录遮罩" />
         )}
         <ConversationSidebar
           open={historySidebarOpen}
@@ -1883,7 +1408,7 @@ function ChatPage() {
           sortBy={historySort}
           includeDeleted={includeDeleted}
           hasMore={conversationsHasMore}
-          onToggle={() => setHistorySidebarOpen((prev) => !prev)}
+          onToggle={toggleHistorySidebar}
           onSearchChange={setHistorySearchInput}
           onSortChange={setHistorySort}
           onIncludeDeletedChange={setIncludeDeleted}
@@ -1915,15 +1440,12 @@ function ChatPage() {
           />
 
           <TaskPanel
-            steps={activeMetaForPanel?.meta.steps || []}
-            toolEvents={activeMetaForPanel?.meta.toolEvents || []}
-            isStreaming={activeMetaForPanel?.isStreaming || false}
+            steps={activeExecution?.meta.steps || []}
+            toolEvents={activeExecution?.meta.toolEvents || []}
+            isStreaming={activeExecution?.isStreaming || false}
             onStopAgent={(agentId) => void handleStopAgent(agentId)}
             expanded={taskPanelExpanded}
-            onToggle={() => {
-              setTaskPanelManuallyToggled(true)
-              setTaskPanelExpanded((prev) => !prev)
-            }}
+            onToggle={toggleTaskPanel}
           />
 
           <ChatInput

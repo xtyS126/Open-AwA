@@ -2,12 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import React, { Suspense, useEffect } from 'react'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
-import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
-import { loadServerPreferences } from '@/shared/utils/preferenceSync'
-import { safeGetItem } from '@/shared/utils/safeStorage'
+import { useAppInitialization } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
-import { useChatStore } from '@/features/chat/store/chatStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 
 const routerFutureConfig = {
@@ -50,87 +47,9 @@ function NavigationLogger() {
 }
 
 function App() {
-  const { isInitialized, isAuthenticated, setInitialized, setAuth, logout } = useAuthStore()
+  const { isInitialized, isAuthenticated } = useAuthStore()
   const { theme } = useThemeStore()
-
-  function rehydrateStores() {
-    const theme = safeGetItem('theme', '')
-    if (theme === 'dark' || theme === 'light') {
-      useThemeStore.getState().setTheme(theme)
-    }
-
-    const selectedModel = safeGetItem('chat_selected_model', '')
-    if (selectedModel) {
-      useChatStore.getState().setSelectedModel(selectedModel)
-    }
-
-    const outputMode = safeGetItem('chat_output_mode', '') as 'stream' | 'direct'
-    if (outputMode === 'stream' || outputMode === 'direct') {
-      useChatStore.getState().setOutputMode(outputMode)
-    }
-
-    const thinkingEnabled = safeGetItem('chat_thinking_enabled', '')
-    if (thinkingEnabled !== '') {
-      useChatStore.getState().setThinkingEnabled(thinkingEnabled === 'true')
-    }
-
-    const thinkingDepth = safeGetItem('chat_thinking_depth', '')
-    if (thinkingDepth !== '') {
-      const parsed = Number(thinkingDepth)
-      if (parsed >= 0 && parsed <= 5) {
-        useChatStore.getState().setThinkingDepth(parsed)
-      }
-    }
-  }
-
-  const initializeApp = async () => {
-    appLogger.info({
-      event: 'app_initialize',
-      module: 'app',
-      action: 'initialize',
-      status: 'start',
-      message: 'app initialization started',
-    })
-
-    try {
-      const [meResponse] = await Promise.all([
-        authAPI.getMe(),
-        loadServerPreferences(),
-      ])
-      appLogger.info({
-        event: 'app_initialize',
-        module: 'app',
-        action: 'session_validate',
-        status: 'success',
-        message: 'existing session validated',
-      })
-      setAuth({ username: meResponse.data?.username || 'user' }, null)
-
-      rehydrateStores()
-
-      setInitialized(true)
-      return
-    } catch (error) {
-      const status = (error as { response?: { status?: number } })?.response?.status
-      logout()
-      appLogger.warning({
-        event: 'app_initialize',
-        module: 'app',
-        action: 'session_validate',
-        status: 'failure',
-        message: 'session validation failed, redirecting to login',
-        extra: { error: error instanceof Error ? error.message : String(error), status_code: status },
-      })
-    }
-
-    // 未认证时标记初始化完成，由路由守卫跳转到登录页
-    setInitialized(true)
-  }
-
-  useEffect(() => {
-    initializeApp()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useAppInitialization()
 
   useEffect(() => {
     if (theme === 'dark') {

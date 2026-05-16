@@ -16,7 +16,7 @@ interface ThemeState {
   theme: Theme
   config: ThemeConfig
   toggleTheme: () => void
-  setTheme: (theme: Theme) => void
+  setTheme: (theme: Theme, options?: { syncToServer?: boolean }) => void
   setConfig: (config: Partial<ThemeConfig>) => void
 }
 
@@ -137,10 +137,12 @@ export const useThemeStore = create<ThemeState>((set) => ({
     return { theme: newTheme }
   }),
 
-  setTheme: (theme: Theme) => set(() => {
+  setTheme: (theme: Theme, options) => set(() => {
     safeSetItem('theme', theme)
     applyTheme(theme)
-    syncPreferenceToServer('theme', theme)
+    if (options?.syncToServer !== false) {
+      syncPreferenceToServer('theme', theme)
+    }
     return { theme }
   }),
 

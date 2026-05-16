@@ -53,6 +53,30 @@ describe('executionMeta', () => {
     expect(meta.toolEvents[0].subagent?.logs.startsWith('[日志过长，已截断]')).toBe(true)
   })
 
+  it('在结构化子代理日志前自动补换行分隔', () => {
+    let meta = applySubagentStart(createEmptyExecutionMeta(), {
+      agentId: 'agt-structured-1',
+      agentType: 'planner',
+      description: '开始规划',
+    })
+
+    meta = applySubagentMessage(meta, {
+      agentId: 'agt-structured-1',
+      agentType: 'planner',
+      message: '[工具] builtin_list_files: running',
+    })
+
+    meta = applySubagentMessage(meta, {
+      agentId: 'agt-structured-1',
+      agentType: 'planner',
+      message: '[工具] builtin_list_files: 工具调用完成',
+    })
+
+    expect(meta.toolEvents[0].subagent?.logs).toBe(
+      '开始规划\n[工具] builtin_list_files: running\n[工具] builtin_list_files: 工具调用完成'
+    )
+  })
+
   it('将 completed 但带 Error 前缀摘要的子代理识别为失败', () => {
     const meta = applySubagentStop(createEmptyExecutionMeta(), {
       agentId: 'agt-2',

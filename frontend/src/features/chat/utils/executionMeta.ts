@@ -15,6 +15,7 @@ export const SUBAGENT_INACTIVITY_TIMEOUT_MS = 30000
 
 const SUBAGENT_TRUNCATION_NOTICE = '[日志过长，已截断]\n'
 const SUBAGENT_ERROR_PREFIX = /^error\s*[:：]/i
+const STRUCTURED_SUBAGENT_PREFIX_RE = /^\[(思考|工具|任务|状态|计划|错误|ERROR)\]/
 
 function normalizeSubagentName(agentType: unknown): string {
   const normalizedType = String(agentType || '').trim() || 'unknown'
@@ -42,6 +43,14 @@ function appendSubagentLogs(existingLogs: string, chunk: string): Pick<SubagentE
     logs: `${SUBAGENT_TRUNCATION_NOTICE}${withoutNotice.slice(truncateOffset)}`,
     truncated: true,
   }
+}
+
+function getStructuredSubagentLogSeparator(existingLogs: string, nextChunk: string): string {
+  if (!existingLogs || existingLogs.endsWith('\n')) {
+    return ''
+  }
+
+  return STRUCTURED_SUBAGENT_PREFIX_RE.test(nextChunk) ? '\n' : ''
 }
 
 function normalizeSubagentState(
@@ -324,8 +333,7 @@ export function applySubagentMessage(
   const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
   const nextOutputAt = Date.now()
   const existingLogs = existing?.subagent?.logs || ''
-  // 追加日志时插入换行分隔符，与 applySubagentStop 保持一致
-  const isNewBlock = payload.message.startsWith('[') && (payload.message.startsWith('[状态]') || payload.message.startsWith('[思考]')); const logSeparator = (isNewBlock && existingLogs && !existingLogs.endsWith('\n')) ? '\n' : ''
+  const logSeparator = getStructuredSubagentLogSeparator(existingLogs, payload.message)
   const nextLogs = appendSubagentLogs(existingLogs, logSeparator + payload.message)
 
   return applyToolUpdate(meta, {
