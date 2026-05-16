@@ -12,6 +12,8 @@ AI推文总结配置模块
     - 任意OpenAI兼容的第三方API（如硅基流动、OneAPI等）
 """
 
+import os
+
 # =============================================================================
 # API配置
 # =============================================================================
@@ -24,7 +26,9 @@ AI推文总结配置模块
 api_base_url = "https://api.deepseek.com/v1"
 
 # API密钥
-api_key = "REMOVED_API_KEY"
+# 从环境变量读取，避免密钥泄露到版本控制
+# 使用方法: 设置环境变量 TWITTER_MONITOR_AI_API_KEY
+api_key = os.getenv("TWITTER_MONITOR_AI_API_KEY", "")
 
 # 模型名称
 # 示例: "gpt-4o", "gpt-4", "gpt-3.5-turbo", "deepseek-chat", "deepseek-reasoner"

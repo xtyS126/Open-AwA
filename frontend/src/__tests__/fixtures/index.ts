@@ -168,7 +168,7 @@ export function createTestBillingModelConfig(
     description: `${provider} 的 ${model} 模型`,
     icon: null,
     api_endpoint: `https://api.${provider}.com/v1`,
-    api_key: 'sk-test-key',
+    api_key: 'test-api-key-placeholder',
     has_api_key: true,
     selected_models: [model],
     is_active: true,
