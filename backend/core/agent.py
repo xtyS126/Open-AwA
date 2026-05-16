@@ -1564,6 +1564,29 @@ class AIAgent:
                         accumulated_tool_events.append(tool_event_data)
                         yield emit_tool_event(tool_event_data)
 
+                        # 通知工具：发射前端通知事件
+                        if tool_name == "builtin_notify" and result.get("ok"):
+                            notify_result = result.get("result", {})
+                            if isinstance(notify_result, dict):
+                                yield {
+                                    "type": "notification",
+                                    "title": notify_result.get("title", ""),
+                                    "body": notify_result.get("body", ""),
+                                    "channels": notify_result.get("channels", []),
+                                    "message": notify_result.get("message", ""),
+                                }
+
+                        # Todo 工具：发射前端 Todo 面板更新事件
+                        if tool_name == "builtin_todo_write" and result.get("ok"):
+                            todo_result = result.get("result", {})
+                            if isinstance(todo_result, dict):
+                                yield {
+                                    "type": "todo_update",
+                                    "todos": todo_result.get("todos", []),
+                                    "counts": todo_result.get("counts", {}),
+                                    "summary": todo_result.get("summary", ""),
+                                }
+
                         if tool_name == "task_spawn_agent":
                             spawned_subagent = self._extract_spawned_subagent_result(result)
                             if spawned_subagent and spawned_subagent.get("run_mode") == "background":
@@ -1580,6 +1603,15 @@ class AIAgent:
                             yield emit_task_created_event(result.get("result", result))
                         if tool_name == "task_update_task" and result.get("ok"):
                             yield emit_task_updated_event(result.get("result", result))
+                        if tool_name == "task_todo_write" and result.get("ok"):
+                            todo_result = result.get("result", result)
+                            if isinstance(todo_result, dict):
+                                yield {
+                                    "type": "todo_update",
+                                    "todos": todo_result.get("todos", []),
+                                    "counts": todo_result.get("counts", {}),
+                                    "summary": todo_result.get("summary", ""),
+                                }
                         # 对团队操作发射生命周期事件
                         if tool_name in ("task_create_team", "task_delete_team",
                                          "task_add_teammate", "task_remove_teammate") and result.get("ok"):

@@ -49,12 +49,12 @@ describe('assistantSegments', () => {
     }
   })
 
-  it('没有正文时，如果在工具调用后收到新思考，会新开思维链段', () => {
+  it('没有正文时，如果所有工具已完成且收到新思考，会新开思维链段', () => {
     let segments = appendAssistantChunk([], { reasoningContent: '思考1' })
     segments = applyStepToSegments(segments, {
       step: 1,
       action: 'llm_chat',
-      status: 'running',
+      status: 'completed',
       purpose: '分析',
     })
     segments = appendAssistantChunk(segments, { reasoningContent: '思考2' })
@@ -74,6 +74,27 @@ describe('assistantSegments', () => {
       expect(segments[1].reasoningContent).toContain('思考2')
       expect(segments[1].steps).toHaveLength(0)
       expect(segments[1].status).toBe('completed')
+    }
+  })
+
+  it('工具仍在运行中时收到新思考不会新开思维链段', () => {
+    let segments = appendAssistantChunk([], { reasoningContent: '思考1' })
+    segments = applyStepToSegments(segments, {
+      step: 1,
+      action: 'llm_chat',
+      status: 'running',
+      purpose: '分析',
+    })
+    segments = appendAssistantChunk(segments, { reasoningContent: '思考2' })
+    segments = finalizeAssistantSegments(segments)
+
+    expect(segments).toHaveLength(1)
+    expect(segments[0]?.kind).toBe('thought')
+
+    if (segments[0]?.kind === 'thought') {
+      expect(segments[0].reasoningContent).toContain('思考1')
+      expect(segments[0].reasoningContent).toContain('思考2')
+      expect(segments[0].steps).toHaveLength(1)
     }
   })
 

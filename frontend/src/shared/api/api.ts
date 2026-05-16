@@ -1284,5 +1284,42 @@ export const weixinAPI = {
     api.delete<{ message: string }>(`/weixin/auto-reply/rules/${ruleId}`),
 }
 
+export interface DiaryGenerateResponse {
+  success: boolean
+  file_path?: string
+  content?: string
+  logical_date?: string
+  error?: string
+}
+
+export interface DiaryListResponse {
+  success: boolean
+  diaries: Array<{ name: string; date: string; size: number }>
+  count: number
+}
+
+export interface DiaryReadResponse {
+  success: boolean
+  date: string
+  content: string
+}
+
+export const diaryAPI = {
+  async generate(): Promise<DiaryGenerateResponse> {
+    const response = await api.post('/diary/generate')
+    return response.data
+  },
+
+  async list(): Promise<DiaryListResponse> {
+    const response = await api.get('/diary/list')
+    return response.data
+  },
+
+  async get(date: string): Promise<DiaryReadResponse> {
+    const response = await api.get(`/diary/${date}`)
+    return response.data
+  },
+}
+
 export { api as sharedApi }
 export default api

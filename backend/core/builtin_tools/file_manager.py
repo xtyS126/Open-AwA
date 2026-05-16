@@ -56,6 +56,17 @@ class FileManagerSkill:
         self.config = config or {}
         self.allowed_directories: List[str] = self.config.get('allowed_directories', [])
         self._initialized = False
+        # 检查点存储器，可选注入；为 None 时跳过检查点保存
+        self.checkpoint_store: Optional[object] = None
+
+    def set_checkpoint_store(self, store: object) -> None:
+        """
+        注入检查点存储器实例，使文件写入/删除操作自动保存快照。
+
+        Args:
+            store: CheckpointStore 实例
+        """
+        self.checkpoint_store = store
 
     async def initialize(self) -> bool:
         """
@@ -187,6 +198,15 @@ class FileManagerSkill:
         if not self._validate_path(file_path):
             return {"success": False, "error": "Access denied"}
 
+        # 写入前保存检查点快照（仅当文件已存在且检查点存储器已注入时）
+        if self.checkpoint_store and os.path.exists(file_path):
+            self.checkpoint_store.save(
+                session_path=kwargs.get('session_path'),
+                tool="write_file",
+                file_path=file_path,
+                reason="write_file即将覆写",
+            )
+
         try:
             directory = Path(file_path).parent
             directory.mkdir(parents=True, exist_ok=True)
@@ -254,6 +274,15 @@ class FileManagerSkill:
 
         if not self._validate_path(file_path):
             return {"success": False, "error": "Access denied"}
+
+        # 删除文件前保存检查点快照（仅当目标为文件且检查点存储器已注入时）
+        if self.checkpoint_store and Path(file_path).is_file():
+            self.checkpoint_store.save(
+                session_path=kwargs.get('session_path'),
+                tool="delete_file",
+                file_path=file_path,
+                reason="delete_file即将删除",
+            )
 
         try:
             path = Path(file_path)

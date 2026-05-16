@@ -7,6 +7,9 @@ from .file_manager import FileManagerSkill
 from .terminal_executor import TerminalExecutorSkill
 from .web_search import WebSearchSkill
 from .local_search import LocalSearchEngine
+from .browser_extended import BrowserExtendedSkill
+from .notify import NotifyTool
+from .todo import TodoManager
 from .manager import BuiltInToolManager, builtin_tool_manager
 
 __all__ = [
@@ -14,6 +17,9 @@ __all__ = [
     'TerminalExecutorSkill',
     'WebSearchSkill',
     'LocalSearchEngine',
+    'BrowserExtendedSkill',
+    'NotifyTool',
+    'TodoManager',
     'BuiltInToolManager',
     'builtin_tool_manager',
 ]

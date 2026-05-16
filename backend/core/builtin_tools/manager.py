@@ -33,6 +33,13 @@ BUILTIN_TOOL_ACTION_MAP: Dict[str, tuple[str, str]] = {
     "memory_forget": ("memory_manager", "forget"),
     "memory_list": ("memory_manager", "list"),
     "memory_stats": ("memory_manager", "stats"),
+    "list_checkpoints": ("checkpoint", "list_checkpoints"),
+    "restore_checkpoint": ("checkpoint", "restore_checkpoint"),
+    "todo_write": ("todo_manager", "todo_write"),
+    "notify": ("notify", "notify"),
+    "browser_screenshot": ("browser_extended", "screenshot"),
+    "browser_snapshot": ("browser_extended", "snapshot"),
+    "browser_navigate": ("browser_extended", "navigate"),
 }
 
 # 旧式 API（通过 tools/registry.py 和 workflow）使用的 action 到内部 tool_name 的反向映射
@@ -309,6 +316,136 @@ BUILTIN_TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_list_checkpoints",
+            "description": "列出当前会话或全部文件修改检查点（不含文件内容，仅摘要信息）。可用于查看哪些文件被工具修改或删除过",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session_path": {
+                        "type": "string",
+                        "description": "按会话路径过滤检查点（可选，不传则返回全部）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_restore_checkpoint",
+            "description": "根据检查点 ID 恢复文件到修改/删除前的状态。仅在确定需要回退时使用",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "checkpoint_id": {
+                        "type": "string",
+                        "description": "要恢复的检查点 ID（从 list_checkpoints 获取）",
+                    },
+                },
+                "required": ["checkpoint_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_notify",
+            "description": "向用户发送通知提醒。仅在用户明确要求提醒/通知时使用，普通任务完成不需要调用。支持 desktop（桌面弹窗）和 bridge_owner（微信消息）两种通道。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "通知标题（简短描述）"},
+                    "body": {"type": "string", "description": "通知正文内容（详细信息）"},
+                    "channels": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["desktop", "bridge_owner", "auto"]},
+                        "description": "通知投递通道列表。desktop=浏览器弹窗, bridge_owner=微信消息, auto=自动选择。默认 desktop。",
+                    },
+                    "audience": {
+                        "type": "string",
+                        "enum": ["owner"],
+                        "description": "通知接收者，必须是 owner",
+                    },
+                },
+                "required": ["title", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_todo_write",
+            "description": "创建和管理任务列表。使用替换式协议，每次调用传入完整的 todos 数组来更新所有任务状态。支持 pending、in_progress、completed 三种状态。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "description": "完整的任务列表，每个任务包含 id（唯一标识）、content（任务描述）、status（状态：pending/in_progress/completed）",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "任务唯一标识（建议使用数字字符串如 '1', '2'）"},
+                                "content": {"type": "string", "description": "任务内容描述"},
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed"],
+                                    "description": "任务状态：pending=待处理, in_progress=进行中, completed=已完成",
+                                },
+                            },
+                            "required": ["id", "content", "status"],
+                        },
+                    },
+                },
+                "required": ["todos"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_browser_screenshot",
+            "description": "截取网页的全页面截图，返回 base64 编码的 PNG 图像。需要 Playwright 支持。用于查看网页的实际渲染效果、UI 检查、异常截图等场景。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "要截图的网页 URL（必须 http/https）"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_browser_snapshot",
+            "description": "获取网页的文本内容快照。使用 Playwright 获取 JS 渲染后的页面文本（比 fetch_url 更适合 JS 密集型页面）。自动过滤 script/style 标签。Playwright 不可用时自动降级为 httpx。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "要分析的网页 URL（必须 http/https）"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "builtin_browser_navigate",
+            "description": "导航到指定 URL 并获取页面渲染后的内容（同 snapshot）。适用于需要浏览特定页面的场景。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "要导航到的网页 URL（必须 http/https）"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
@@ -346,6 +483,32 @@ class BuiltInToolManager:
             from .memory_tools import MemoryTools
 
             instance = MemoryTools()
+        elif tool_name == "checkpoint":
+            from .checkpoint import CheckpointStore
+
+            # 从 config 获取检查点目录，默认使用 desk\checkpoints
+            import os as _os
+            checkpoints_dir = (config or {}).get(
+                "checkpoints_dir",
+                _os.path.join(_os.getcwd(), "desk", "checkpoints"),
+            )
+            instance = CheckpointStore(checkpoints_dir=checkpoints_dir)
+        elif tool_name == "todo_manager":
+            from .todo import TodoManager
+
+            session_dir = (config or {}).get("session_dir")
+            instance = TodoManager(session_dir=session_dir)
+        elif tool_name == "notify":
+            from .notify import NotifyTool
+
+            # 尝试从 config 获取回调函数，支持依赖注入
+            emit_desktop = (config or {}).get("emit_desktop") if config else None
+            send_bridge_owner = (config or {}).get("send_bridge_owner") if config else None
+            instance = NotifyTool(emit_desktop=emit_desktop, send_bridge_owner=send_bridge_owner)
+        elif tool_name == "browser_extended":
+            from .browser_extended import BrowserExtendedSkill
+
+            instance = BrowserExtendedSkill(config=config)
         else:
             raise ValueError(f"未知内置工具: {tool_name}")
 
@@ -390,7 +553,7 @@ class BuiltInToolManager:
     async def list_tools(self) -> Dict[str, Dict[str, Any]]:
         """返回全部内置工具的定义与状态（供 /api/tools/list 使用）。"""
         tools = {}
-        for tool_name in ["file_manager", "terminal_executor", "web_search", "local_search", "memory_manager"]:
+        for tool_name in ["file_manager", "terminal_executor", "web_search", "local_search", "memory_manager", "checkpoint", "notify", "todo_manager", "browser_extended"]:
             instance = await self._initialize_tool(tool_name)
             tools[tool_name] = {
                 "name": tool_name,

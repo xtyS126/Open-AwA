@@ -28,6 +28,7 @@ interface ChatInputProps {
   onAbort: () => void
   selectedProvider?: string
   selectedModel?: string
+  onDiaryCommand?: () => void
 }
 
 function getFileExtension(name: string): string {
@@ -49,7 +50,7 @@ function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
   })
 }
 
-export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, onDiaryCommand }: ChatInputProps) {
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -137,6 +138,13 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: 
   }
 
   const handleSend = async () => {
+    const trimmedInput = input.trim().toLowerCase()
+    if (trimmedInput === '/diary') {
+      setInput('')
+      onDiaryCommand?.()
+      return
+    }
+
     if ((!input.trim() && attachments.length === 0) || isLoading) return
 
     const userMessage = input.trim()
@@ -214,7 +222,7 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort }: 
         </button>
         <textarea
           className={styles['chat-input']}
-          placeholder="type your question..."
+          placeholder="type your question... (try /diary for daily diary)"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}

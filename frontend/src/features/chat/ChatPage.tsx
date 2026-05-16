@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
-import { chatAPI, conversationAPI, type ChatContinuationPayload } from '@/shared/api/api'
+import { chatAPI, conversationAPI, diaryAPI, type ChatContinuationPayload } from '@/shared/api/api'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import {
   flushCachedConversationMessages,
@@ -56,6 +56,8 @@ import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
 import type { FileAttachment } from './components/ChatInput'
 import { TaskPanel } from './components/TaskPanel'
+import { TodoPanel } from './components/TodoPanel'
+import type { TodoItem } from './components/TodoPanel'
 import styles from './ChatPage.module.css'
 
 function sanitizeDisplayedError(message: string): string {
@@ -310,6 +312,8 @@ function ChatPage() {
   const [streamStageMessage, setStreamStageMessage] = useState<string | null>(null)
   const [taskPanelManuallyToggled, setTaskPanelManuallyToggled] = useState(false)
   const [taskPanelExpanded, setTaskPanelExpanded] = useState(false)
+  const [todoItems, setTodoItems] = useState<TodoItem[]>([])
+  const [todoSummary, setTodoSummary] = useState<string>('')
   const { addToast, ToastContainer } = useToast()
   const messageMetaRef = useRef<Record<string, AssistantExecutionMeta>>({})
   const subagentTimeoutRef = useRef<Record<string, number>>({})
@@ -1303,6 +1307,24 @@ function ChatPage() {
                     updateAssistantSegments(assistantMessageId, (segments) => applyUsageToSegments(segments, usage))
                   }
                 }
+
+                if (event?.type === 'notification') {
+                  const title = typeof event.title === 'string' ? event.title : ''
+                  const body = typeof event.body === 'string' ? event.body : ''
+                  const message = body || title
+                  if (message) {
+                    addToast(message, 'info')
+                  }
+                  return
+                }
+
+                if (event?.type === 'todo_update') {
+                  const todos = Array.isArray(event.todos) ? event.todos as TodoItem[] : []
+                  const summary = typeof event.summary === 'string' ? event.summary : ''
+                  setTodoItems(todos)
+                  setTodoSummary(summary)
+                  return
+                }
               },
               (error) => {
                 runtimeError = error instanceof Error ? error : new Error(String(error))
@@ -1514,6 +1536,21 @@ function ChatPage() {
       },
     })
   }
+
+  const handleDiaryCommand = useCallback(async () => {
+    addToast('正在生成日记...', 'info')
+    try {
+      const result = await diaryAPI.generate()
+      if (result.success && result.content) {
+        addToast(`日记已生成 (${result.logical_date})`, 'success')
+      } else {
+        addToast(result.error || '日记生成失败', 'warning')
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '日记生成失败'
+      addToast(message, 'error')
+    }
+  }, [addToast])
 
   const handleCreateConversation = useCallback(async () => {
     setMessageMeta({})
@@ -1872,6 +1909,11 @@ function ChatPage() {
 
           {false && renderFloatingExecutionPanel()}
 
+          <TodoPanel
+            items={todoItems}
+            summary={todoSummary}
+          />
+
           <TaskPanel
             steps={activeMetaForPanel?.meta.steps || []}
             toolEvents={activeMetaForPanel?.meta.toolEvents || []}
@@ -1889,6 +1931,7 @@ function ChatPage() {
             isLoading={isLoading}
             streamingAssistantId={streamingAssistantId}
             onAbort={() => activeAbortControllerRef.current?.abort()}
+            onDiaryCommand={handleDiaryCommand}
           />
         </div>
       </div>

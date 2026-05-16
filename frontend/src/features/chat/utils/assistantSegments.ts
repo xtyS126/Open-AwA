@@ -73,7 +73,11 @@ function ensureCurrentThoughtSegment(
   }
   
   if (lastSegment.kind === 'thought') {
-    if (startNewIfHasTools && (lastSegment.toolEvents.length > 0 || lastSegment.steps.length > 0)) {
+    const hasTools = lastSegment.toolEvents.length > 0 || lastSegment.steps.length > 0
+    const allToolsSettled = hasTools
+      && lastSegment.toolEvents.every(t => t.status === 'completed' || t.status === 'error')
+      && lastSegment.steps.every(s => s.status === 'completed' || s.status === 'error')
+    if (startNewIfHasTools && allToolsSettled) {
       lastSegment.status = 'completed'
       const nextSegment = createThoughtSegment()
       segments.push(nextSegment)
