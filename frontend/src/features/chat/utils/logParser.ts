@@ -35,6 +35,7 @@ function parseTaskStatus(raw: string): string {
 export function parseSubagentLogs(logs: string): LogSegment[] {
   const segments: LogSegment[] = []
   let segCounter = 0
+  let lastPrefixTag: string | null = null
 
   // 按行处理，同时处理块级标记（<think> 和 ```）
   const lines = logs.split('\n')
@@ -81,6 +82,7 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
     lineIdx++
 
     if (blockMode === 'think') {
+      lastPrefixTag = null
       // 等待 </think> 或 </thought>
       if (/^<\/(think|thought)>\s*$/i.test(line)) {
         flushBlock(true)
@@ -91,6 +93,7 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
     }
 
     if (blockMode === 'terminal') {
+      lastPrefixTag = null
       // 等待单独的 ```
       if (/^```\s*$/.test(line)) {
         flushBlock(true)
@@ -102,6 +105,7 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
 
     // 普通模式 - 检测块级开始标记
     if (/^(<think>|<thought>)\s*$/i.test(line)) {
+      lastPrefixTag = null
       flushText()
       blockMode = 'think'
       blockBuffer = []
@@ -111,6 +115,7 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
     // <think>内容</think> 单行形式
     const inlineThinkMatch = line.match(/^(<think>|<thought>)([\s\S]*?)(<\/think>|<\/thought>)\s*$/i)
     if (inlineThinkMatch) {
+      lastPrefixTag = null
       flushText()
       segments.push({
         id: `seg-${segCounter++}`,
@@ -123,6 +128,7 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
 
     const codeStartMatch = line.match(/^```([a-zA-Z0-9_-]*)\s*$/)
     if (codeStartMatch) {
+      lastPrefixTag = null
       flushText()
       blockMode = 'terminal'
       blockLanguage = codeStartMatch[1] || ''
@@ -139,8 +145,11 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
 
       switch (tag) {
         case '思考': {
-          // [思考] content 可能还跟着换行后的纯文本（来自 reasoning+content 合并）
-          // 取当前行内容作为思维内容即可
+          const lastSegment = segments[segments.length - 1]
+          if (lastPrefixTag === '思考' && lastSegment?.type === 'think') {
+            lastSegment.content += rawContent
+            break
+          }
           segments.push({
             id: `seg-${segCounter++}`,
             type: 'think',
@@ -201,10 +210,12 @@ export function parseSubagentLogs(logs: string): LogSegment[] {
           break
         }
       }
+      lastPrefixTag = tag
       continue
     }
 
     // 普通文本行
+    lastPrefixTag = null
     textBuffer.push(line)
   }
 

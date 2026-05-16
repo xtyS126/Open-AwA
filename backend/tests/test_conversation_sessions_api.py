@@ -225,6 +225,51 @@ def test_conversation_session_routes_match_frontend_contract():
         assert batch_payload["items"][0]["deleted_at"] is not None
 
 
+def test_list_sessions_hides_subagent_internal_sessions():
+    """会话列表应隐藏子代理内部会话，但数据库记录仍保留。"""
+    db = TestingSessionLocal()
+    try:
+        db.add_all(
+            [
+                Conversation(
+                    session_id="conv-visible",
+                    user_id="user-1",
+                    title="用户会话",
+                    summary="",
+                    last_message_preview="",
+                    message_count=1,
+                    conversation_metadata={},
+                ),
+                Conversation(
+                    session_id="subagent_agt_hidden",
+                    user_id="user-1",
+                    title="内部子代理会话",
+                    summary="",
+                    last_message_preview="",
+                    message_count=1,
+                    conversation_metadata={},
+                ),
+            ]
+        )
+        db.commit()
+
+        stored_session_ids = {
+            item.session_id
+            for item in db.query(Conversation).filter(Conversation.user_id == "user-1").all()
+        }
+        assert stored_session_ids == {"conv-visible", "subagent_agt_hidden"}
+    finally:
+        db.close()
+
+    with _test_client() as client:
+        response = client.get(f"{settings.API_V1_STR}/conversations")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["session_id"] for item in payload["items"]] == ["conv-visible"]
+
+
 def test_create_session_rejects_other_users_existing_record():
     """当 session_id 已被其他用户占用时，创建接口应返回 403。"""
     db = TestingSessionLocal()

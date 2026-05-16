@@ -289,7 +289,11 @@ async def csrf_protection_middleware(request: Request, call_next):
             from fastapi.responses import JSONResponse
             return JSONResponse(
                 status_code=403,
-                content={"error": "invalid_csrf_token", "message": "CSRF token 验证失败"},
+                content={
+                    "error": "invalid_csrf_token",
+                    "message": "CSRF token 验证失败",
+                    "detail": "CSRF token 验证失败",
+                },
             )
 
     response = await call_next(request)

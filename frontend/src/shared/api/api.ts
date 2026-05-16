@@ -1,9 +1,13 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 
 type ApiPayload = Record<string, unknown>
 
 type ApiObject = Record<string, unknown>
+
+type RetriableApiRequest = InternalAxiosRequestConfig & {
+  _csrfRetried?: boolean
+}
 
 type ConversationSortKey = 'title' | 'created_at' | 'updated_at' | 'last_message_at' | 'message_count'
 
@@ -53,6 +57,11 @@ let _cachedCsrfToken = ''
 export const getCsrfToken = (): string => _cachedCsrfToken
 
 let csrfBootstrapPromise: Promise<string> | null = null
+
+const clearCsrfTokenCache = (): void => {
+  _cachedCsrfToken = ''
+  csrfBootstrapPromise = null
+}
 
 const shouldAttachCsrfToken = (method?: string, url?: string): boolean => {
   const normalizedMethod = String(method || 'GET').toUpperCase()
@@ -182,10 +191,45 @@ api.interceptors.response.use(
     })
     return response
   },
-  (error) => {
+  async (error) => {
     const responseRequestId = String(error?.response?.headers?.['x-request-id'] || '')
     if (responseRequestId) {
       setCurrentRequestId(responseRequestId)
+    }
+
+    const originalRequest = error?.config as RetriableApiRequest | undefined
+    const shouldRetryInvalidCsrf = (
+      error?.response?.status === 403 &&
+      error?.response?.data?.error === 'invalid_csrf_token' &&
+      originalRequest &&
+      !originalRequest._csrfRetried &&
+      shouldAttachCsrfToken(originalRequest.method, originalRequest.url)
+    )
+
+    if (shouldRetryInvalidCsrf && originalRequest) {
+      originalRequest._csrfRetried = true
+      clearCsrfTokenCache()
+
+      try {
+        const csrfToken = await ensureCsrfToken()
+        const retryHeaders = axios.AxiosHeaders.from(originalRequest.headers || {})
+        retryHeaders.set('X-CSRF-Token', csrfToken)
+        originalRequest.headers = retryHeaders
+        return api(originalRequest)
+      } catch (refreshError) {
+        appLogger.warning({
+          event: 'csrf_token_refresh_retry_failed',
+          module: 'api',
+          action: originalRequest.method?.toUpperCase() || 'UNKNOWN',
+          status: 'warning',
+          request_id: responseRequestId,
+          message: 'csrf token refresh retry failed',
+          extra: {
+            url: originalRequest.url,
+            error: refreshError instanceof Error ? refreshError.message : String(refreshError),
+          },
+        })
+      }
     }
     
     const isExpectedAuthError = (

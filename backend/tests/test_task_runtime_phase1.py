@@ -415,6 +415,53 @@ class TestSubagentRunnerContext:
         assert sub_context["provider"] == "deepseek"
         assert sub_context["model"] == "deepseek-chat"
 
+    @pytest.mark.asyncio
+    async def test_run_foreground_aggregates_small_chunk_messages_before_status(self, testing_session_local, monkeypatch):
+        transcript_entries: list[dict[str, object]] = []
+
+        class FakeAgent:
+            def __init__(self, db_session=None):
+                self.db_session = db_session
+
+            async def process_stream(self, prompt, context):
+                yield {"type": "chunk", "reasoning_content": "我", "content": ""}
+                yield {"type": "chunk", "reasoning_content": "正在", "content": ""}
+                yield {"type": "chunk", "reasoning_content": "分析问题", "content": ""}
+                yield {"type": "chunk", "reasoning_content": "", "content": "最终答复"}
+                yield {"type": "status", "message": "准备执行工具"}
+
+        async def fake_dispatch(_hook_name, _payload):
+            return []
+
+        monkeypatch.setattr(runners_module, "SessionLocal", testing_session_local)
+        monkeypatch.setattr(runners_module, "save_transcript_entry", lambda agent_id, entry: transcript_entries.append(entry))
+        monkeypatch.setattr(runners_module.hook_dispatcher, "dispatch", fake_dispatch)
+        monkeypatch.setattr(agent_module, "AIAgent", FakeAgent)
+
+        events = []
+        async for event in runners_module.run_foreground(
+            agent_type="Explore",
+            prompt="请执行聚合测试",
+            description="聚合微粒度 chunk",
+            context={"user_id": "user-1", "username": "tester", "provider": "openai", "model": "gpt-4o-mini"},
+        ):
+            events.append(event)
+
+        assert [event["type"] for event in events] == [
+            "subagent_start",
+            "agent_message",
+            "agent_message",
+            "subagent_stop",
+        ]
+        assert events[1]["message"] == "[思考] 我正在分析问题\n最终答复"
+        assert events[2]["message"] == "[状态] 准备执行工具"
+
+        agent_messages = [entry for entry in transcript_entries if entry.get("event") == "agent_message"]
+        assert [entry["message"] for entry in agent_messages] == [
+            "[思考] 我正在分析问题\n最终答复",
+            "[状态] 准备执行工具",
+        ]
+
 
 # -- 代理定义 ----------------------------------------------------------
 

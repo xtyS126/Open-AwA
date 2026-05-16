@@ -111,7 +111,10 @@ async def list_sessions(
     """
     返回当前用户的会话列表，支持搜索、排序与分页。
     """
-    query = db.query(Conversation).filter(Conversation.user_id == current_user.id)
+    query = db.query(Conversation).filter(
+        Conversation.user_id == current_user.id,
+        ~Conversation.session_id.startswith("subagent_"),
+    )
     if not include_deleted:
         query = query.filter(Conversation.deleted_at.is_(None))
 

@@ -32,6 +32,9 @@ from .worktree_manager import worktree_manager
 # 运行中的后台任务引用，用于 TaskStop
 _running_background_tasks: Dict[str, asyncio.Task] = {}
 
+# 子代理流式消息达到该阈值后再刷出，避免按 token 级别污染思维链。
+SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD = 96
+
 
 def _get_configured_model_catalog(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """从上下文中提取已配置模型目录。"""
@@ -165,18 +168,61 @@ def _create_subagent_execution_bundle(
     return sub_agent, subagent_db, sub_context
 
 
+def _get_subagent_chunk_text(chunk: Optional[Dict[str, Any]], field: str) -> str:
+    """安全读取子代理 chunk 中的文本字段。"""
+    if not chunk:
+        return ""
+    value = chunk.get(field)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _merge_subagent_stream_chunk(
+    buffer_chunk: Optional[Dict[str, Any]],
+    chunk: Dict[str, Any],
+) -> Dict[str, Any]:
+    """合并连续的文本 chunk，降低 agent_message 事件粒度。"""
+    merged_chunk = dict(buffer_chunk or {"type": "chunk", "content": "", "reasoning_content": ""})
+    merged_chunk["type"] = "chunk"
+    merged_chunk["reasoning_content"] = (
+        _get_subagent_chunk_text(merged_chunk, "reasoning_content")
+        + _get_subagent_chunk_text(chunk, "reasoning_content")
+    )
+    merged_chunk["content"] = _get_subagent_chunk_text(merged_chunk, "content") + _get_subagent_chunk_text(chunk, "content")
+    return merged_chunk
+
+
+def _get_subagent_stream_chunk_size(buffer_chunk: Optional[Dict[str, Any]]) -> int:
+    """统计当前缓冲区内的文本长度。"""
+    if not buffer_chunk:
+        return 0
+    return len(_get_subagent_chunk_text(buffer_chunk, "reasoning_content")) + len(_get_subagent_chunk_text(buffer_chunk, "content"))
+
+
+def _flush_subagent_stream_chunk(
+    buffer_chunk: Optional[Dict[str, Any]],
+) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """将缓冲中的文本 chunk 一次性转换为日志消息。"""
+    if not buffer_chunk:
+        return None, None
+    return None, _format_subagent_stream_chunk(buffer_chunk)
+
+
 def _format_subagent_stream_chunk(chunk: Dict[str, Any]) -> Optional[str]:
     """将子代理内部流式 chunk 归一化为日志文本。"""
     chunk_type = str(chunk.get("type") or "").strip()
 
     if chunk_type == "chunk":
-        reasoning = str(chunk.get("reasoning_content") or "").strip()
-        content = str(chunk.get("content") or "").strip()
-        if reasoning and content:
+        reasoning = _get_subagent_chunk_text(chunk, "reasoning_content")
+        content = _get_subagent_chunk_text(chunk, "content")
+        has_reasoning = bool(reasoning.strip())
+        has_content = bool(content.strip())
+        if has_reasoning and has_content:
             return f"[思考] {reasoning}\n{content}"
-        if reasoning:
+        if has_reasoning:
             return f"[思考] {reasoning}"
-        return content or None
+        return content if has_content else None
 
     if chunk_type == "status":
         message = str(chunk.get("message") or "").strip()
@@ -309,20 +355,49 @@ async def run_foreground(
 
         full_response = ""
         tool_results = []
+        buffered_stream_chunk: Optional[Dict[str, Any]] = None
+
+        async def flush_buffered_agent_message() -> None:
+            nonlocal buffered_stream_chunk
+            buffered_stream_chunk, buffered_message = _flush_subagent_stream_chunk(buffered_stream_chunk)
+            if buffered_message:
+                save_transcript_entry(agent_id, {
+                    "event": "agent_message",
+                    "message": buffered_message,
+                })
+                yield_event = emit_agent_message_event(agent_id, buffered_message, agent_type=agent_type)
+                yielded_messages.append(yield_event)
+
+        yielded_messages: list[Dict[str, Any]] = []
 
         async for chunk in sub_agent.process_stream(prompt, sub_context):
+            chunk_type = str(chunk.get("type") or "").strip()
+
+            if chunk_type != "chunk":
+                await flush_buffered_agent_message()
+                while yielded_messages:
+                    yield yielded_messages.pop(0)
+
             # 记录 transcript
-            if chunk.get("type") in ("plan", "task", "tool", "usage", "status"):
+            if chunk_type in ("plan", "task", "tool", "usage", "status"):
                 save_transcript_entry(agent_id, chunk)
 
             # 收集工具执行结果
-            if chunk.get("type") == "tool":
+            if chunk_type == "tool":
                 tool_data = chunk.get("tool", {})
                 tool_results.append(tool_data)
 
             # 收集文本响应
-            if chunk.get("type") == "chunk" and chunk.get("content"):
+            if chunk_type == "chunk" and chunk.get("content"):
                 full_response += chunk["content"]
+
+            if chunk_type == "chunk":
+                buffered_stream_chunk = _merge_subagent_stream_chunk(buffered_stream_chunk, chunk)
+                if _get_subagent_stream_chunk_size(buffered_stream_chunk) >= SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD:
+                    await flush_buffered_agent_message()
+                    while yielded_messages:
+                        yield yielded_messages.pop(0)
+                continue
 
             message = _format_subagent_stream_chunk(chunk)
             if message:
@@ -331,6 +406,10 @@ async def run_foreground(
                     "message": message,
                 })
                 yield emit_agent_message_event(agent_id, message, agent_type=agent_type)
+
+        await flush_buffered_agent_message()
+        while yielded_messages:
+            yield yielded_messages.pop(0)
 
         # 构建摘要
         summary = build_summary(
@@ -565,21 +644,44 @@ async def _background_execute(
 
         full_response = ""
         tool_results = []
+        buffered_stream_chunk: Optional[Dict[str, Any]] = None
+
+        async def flush_buffered_agent_message() -> None:
+            nonlocal buffered_stream_chunk
+            buffered_stream_chunk, buffered_message = _flush_subagent_stream_chunk(buffered_stream_chunk)
+            if buffered_message:
+                save_transcript_entry(agent_id, {
+                    "event": "agent_message",
+                    "message": buffered_message,
+                })
+                push_event = emit_agent_message_event(agent_id, buffered_message, agent_type=agent_type)
+                await _push_event_to_parent_session(root_chat_session_id, push_event, agent_id)
 
         # 使用 process_stream() 支持多轮 LLM + 工具调用
         async for chunk in sub_agent.process_stream(prompt, sub_context):
+            chunk_type = str(chunk.get("type") or "").strip()
+
+            if chunk_type != "chunk":
+                await flush_buffered_agent_message()
+
             # 保存 transcript 条目，供前端轮询获取进度
-            if chunk.get("type") in ("plan", "task", "tool", "usage", "status"):
+            if chunk_type in ("plan", "task", "tool", "usage", "status"):
                 save_transcript_entry(agent_id, chunk)
 
             # 收集工具执行结果
-            if chunk.get("type") == "tool":
+            if chunk_type == "tool":
                 tool_data = chunk.get("tool", {})
                 tool_results.append(tool_data)
 
             # 收集文本响应
-            if chunk.get("type") == "chunk" and chunk.get("content"):
+            if chunk_type == "chunk" and chunk.get("content"):
                 full_response += chunk["content"]
+
+            if chunk_type == "chunk":
+                buffered_stream_chunk = _merge_subagent_stream_chunk(buffered_stream_chunk, chunk)
+                if _get_subagent_stream_chunk_size(buffered_stream_chunk) >= SUBAGENT_STREAM_MESSAGE_FLUSH_THRESHOLD:
+                    await flush_buffered_agent_message()
+                continue
 
             # 将可读消息保存到 transcript 并推送至父会话
             message = _format_subagent_stream_chunk(chunk)
@@ -590,6 +692,8 @@ async def _background_execute(
                 })
                 push_event = emit_agent_message_event(agent_id, message, agent_type=agent_type)
                 await _push_event_to_parent_session(root_chat_session_id, push_event, agent_id)
+
+        await flush_buffered_agent_message()
 
         summary = build_summary(
             {"response": full_response, "tool_results": tool_results},

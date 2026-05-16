@@ -468,6 +468,78 @@ describe('ChatPage', () => {
     expect(screen.getByText('主代理完成回复。')).toBeInTheDocument()
   })
 
+  it('将连续的子代理思考消息渲染为单个思考块', async () => {
+    apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
+      onEvent({
+        type: 'tool',
+        tool: {
+          id: 'call-subagent-think-1',
+          kind: 'task',
+          name: 'task_spawn_agent',
+          status: 'running',
+          detail: '前台子代理执行中',
+        },
+      })
+      onEvent({
+        type: 'subagent_start',
+        agent_id: 'agt-foreground-think-1',
+        agent_type: 'planner',
+        description: '前台规划任务',
+        run_mode: 'foreground',
+      })
+      onEvent({
+        type: 'agent_message',
+        agent_id: 'agt-foreground-think-1',
+        agent_type: 'planner',
+        message: '[思考] 我',
+      })
+      onEvent({
+        type: 'agent_message',
+        agent_id: 'agt-foreground-think-1',
+        agent_type: 'planner',
+        message: '[思考]正在',
+      })
+      onEvent({
+        type: 'agent_message',
+        agent_id: 'agt-foreground-think-1',
+        agent_type: 'planner',
+        message: '[思考]分析问题',
+      })
+      onEvent({
+        type: 'subagent_stop',
+        agent_id: 'agt-foreground-think-1',
+        agent_type: 'planner',
+        state: 'completed',
+        summary: '子代理摘要',
+        run_mode: 'foreground',
+      })
+      onEvent({
+        type: 'chunk',
+        content: '主代理完成回复。',
+        reasoning_content: '',
+      })
+    })
+
+    await renderChatPage()
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
+      target: { value: '执行一个连续思考的前台子任务' },
+    })
+    const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
+    fireEvent.click(sendBtn)
+
+    await waitFor(() => expect(apiMocks.sendMessageStream).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByText(/思维链/))
+    expect(await screen.findByText('子代理执行')).toBeInTheDocument()
+
+    const thinkHeaders = await screen.findAllByText('思考过程')
+    expect(thinkHeaders).toHaveLength(1)
+
+    fireEvent.click(thinkHeaders[0])
+    expect(await screen.findByText('我正在分析问题')).toBeInTheDocument()
+    expect(screen.getByText('主代理完成回复。')).toBeInTheDocument()
+  })
+
   it('按回复边界拆分多轮思维链与回复段', async () => {
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       onEvent({
