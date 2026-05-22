@@ -41,6 +41,7 @@ import { getAgent, getTranscript, stopAgent } from '@/shared/api/taskRuntimeApi'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
 import { useToast } from '@/shared/components/Toast'
+import { ConfirmDialog } from '@/shared/components/ConfirmDialog'
 import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
@@ -238,6 +239,10 @@ function ChatPage() {
     setThinkingEnabled,
     thinkingDepth,
     setThinkingDepth,
+    activeToolCalls,
+    addActiveToolCall,
+    removeActiveToolCall,
+    resetActiveToolCalls,
   } = useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activeRequestIdRef = useRef(0)
@@ -246,6 +251,9 @@ function ChatPage() {
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
   const [messageMeta, setMessageMeta] = useState<Record<string, AssistantExecutionMeta>>({})
   const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState<string>('')
+  const [shouldFocusInput, setShouldFocusInput] = useState<number>(0)
+  const [feedbackState, setFeedbackState] = useState<Record<string, 1 | -1 | undefined>>({})
   const {
     streamConnectionState,
     streamStatusText,
@@ -260,6 +268,8 @@ function ChatPage() {
   } = useStreamExecutionState()
   const [todoItems, setTodoItems] = useState<TodoItem[]>([])
   const [todoSummary, setTodoSummary] = useState<string>('')
+  const [aborting, setAborting] = useState<boolean>(false)
+  const [showAbortConfirm, setShowAbortConfirm] = useState<boolean>(false)
   const {
     isCompactViewport,
     historySidebarOpen,
@@ -293,6 +303,7 @@ function ChatPage() {
   const aggregatedSubagentIdsRef = useRef<Record<string, Set<string>>>({})
   const syncSubagentRuntimeRef = useRef<(assistantMessageId: string, agentId: string, agentType?: string) => void>(() => {})
   const triggerSubagentContinuationRef = useRef<(assistantMessageId: string, aggregatedText: string) => void>(() => {})
+  const handleSendRef = useRef<typeof handleSend>(undefined as unknown as typeof handleSend)
 
   const bufferRef = useRef({
     content: '',
@@ -946,6 +957,17 @@ function ChatPage() {
                 }
 
                 ensureAssistantMessage()
+                // 追踪进行中的工具调用，用于停止按钮的智能判断
+                if ((event as Record<string, unknown>)?.type === 'tool') {
+                  const toolData = (event as Record<string, unknown>).tool as Record<string, unknown> | undefined
+                  const toolId = String(toolData?.id || '')
+                  const toolStatus = String(toolData?.status || '')
+                  if (toolStatus === 'running') {
+                    addActiveToolCall(toolId)
+                  } else if (toolStatus === 'completed' || toolStatus === 'error') {
+                    removeActiveToolCall(toolId)
+                  }
+                }
                 dispatchStructuredStreamEvent(event as Record<string, unknown>, {
                   assistantMessageId,
                   messageMeta,
@@ -1080,6 +1102,7 @@ function ChatPage() {
         }
       }
     } finally {
+      resetActiveToolCalls()
       flushConversationCache(targetSessionId)
       if (targetSessionId && targetSessionId !== 'default') {
         void loadConversationList(1, false)
@@ -1094,6 +1117,8 @@ function ChatPage() {
       }
     }
   }
+
+  handleSendRef.current = handleSend
 
   triggerSubagentContinuationRef.current = (assistantMessageId: string, aggregatedText: string) => {
     void handleSend(buildSubagentContinuationPrompt(), undefined, {
@@ -1121,6 +1146,94 @@ function ChatPage() {
       addToast(message, 'error')
     }
   }, [addToast])
+
+  const doAbort = useCallback(() => {
+    setAborting(true)
+    try {
+      activeAbortControllerRef.current?.abort()
+      if (sessionId && sessionId !== 'default') {
+        chatAPI.cancelSession(sessionId).catch(() => { /* 静默，abort 已处理 */ })
+      }
+      setStreamingAssistantId(null)
+      resetActiveToolCalls()
+    } finally {
+      setAborting(false)
+      setShowAbortConfirm(false)
+    }
+  }, [sessionId, resetActiveToolCalls])
+
+  const handleAbort = useCallback(() => {
+    if (activeToolCalls.length > 0) {
+      setShowAbortConfirm(true)
+      return
+    }
+    doAbort()
+  }, [activeToolCalls, doAbort])
+
+  const handleEditMessage = useCallback((content: string) => {
+    setEditContent(content)
+    setShouldFocusInput((prev) => prev + 1)
+  }, [])
+
+  const handleFeedback = useCallback((messageId: string, rating: 1 | -1) => {
+    setFeedbackState((prev) => ({ ...prev, [messageId]: rating }))
+    chatAPI.sendFeedback({
+      session_id: sessionId,
+      message_id: messageId,
+      rating,
+    }).catch(() => {
+      /* 静默失败，不影响 UI */
+    })
+  }, [sessionId])
+
+  const handleUndoOperation = useCallback(async (operationId: string) => {
+    try {
+      await chatAPI.undoOperation({ operation_id: operationId })
+    } catch (error) {
+      appLogger.error({
+        event: 'undo_operation_failed',
+        module: 'chat_page',
+        message: '撤销操作失败',
+        extra: { operationId, error: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
+    }
+  }, [])
+
+  const handleRegenerate = useCallback(async (messageId: string) => {
+    const currentMessages = useChatStore.getState().messages
+    const msgIndex = currentMessages.findIndex((m) => m.id === messageId)
+    if (msgIndex === -1) return
+
+    const messagesBefore = currentMessages.slice(0, msgIndex)
+    const lastUserMsg = [...messagesBefore].reverse().find((m) => m.role === 'user')
+    if (!lastUserMsg) return
+
+    const lastUserMsgIndex = messagesBefore.findIndex((m) => m.id === lastUserMsg.id)
+    const preservedMessages = messagesBefore.slice(0, lastUserMsgIndex)
+
+    if (sessionId && sessionId !== 'default') {
+      try {
+        await conversationAPI.deleteSession(sessionId, 1)
+      } catch {
+        /* 删除失败不影响后续流程 */
+      }
+      removeConversation(sessionId)
+    }
+
+    const response = await conversationAPI.createSession()
+    const newConv = response.data as ConversationSessionSummary
+    upsertConversation(newConv)
+    setSessionId(newConv.session_id)
+    setMessages(preservedMessages)
+    setMessageMeta({})
+    setStreamingAssistantId(null)
+    resetStreamExecutionState()
+    resetTaskPanelState()
+    navigate(`/chat/${newConv.session_id}`, { replace: true })
+
+    void handleSendRef.current(lastUserMsg.content, [])
+  }, [sessionId, removeConversation, upsertConversation, setSessionId, setMessages, setMessageMeta, setStreamingAssistantId, resetStreamExecutionState, resetTaskPanelState, navigate])
 
   const handleCreateConversation = useCallback(async () => {
     setMessageMeta({})
@@ -1430,6 +1543,11 @@ function ChatPage() {
             outputMode={outputMode}
             streamStatusText={streamStatusText}
             messagesEndRef={messagesEndRef}
+            onEditMessage={handleEditMessage}
+            onRegenerate={handleRegenerate}
+            onFeedback={handleFeedback}
+            feedbackState={feedbackState}
+            onUndo={handleUndoOperation}
           />
 
           {false && renderFloatingExecutionPanel()}
@@ -1452,12 +1570,27 @@ function ChatPage() {
             onSend={(content, atts) => void handleSend(content, atts)}
             isLoading={isLoading}
             streamingAssistantId={streamingAssistantId}
-            onAbort={() => activeAbortControllerRef.current?.abort()}
+            onAbort={handleAbort}
+            aborting={aborting}
             onDiaryCommand={handleDiaryCommand}
+            editContent={editContent}
+            focusTrigger={shouldFocusInput}
           />
         </div>
       </div>
       <ToastContainer />
+      {showAbortConfirm && (
+        <ConfirmDialog
+          isOpen={showAbortConfirm}
+          title="中断执行"
+          message="正在执行工具调用，确定要中断吗？已完成的工具调用结果将保留。"
+          type="warning"
+          confirmText="中断"
+          cancelText="继续"
+          onConfirm={doAbort}
+          onCancel={() => setShowAbortConfirm(false)}
+        />
+      )}
     </div>
   )
 }

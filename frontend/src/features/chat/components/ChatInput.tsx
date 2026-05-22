@@ -26,9 +26,12 @@ interface ChatInputProps {
   isLoading: boolean
   streamingAssistantId: string | null
   onAbort: () => void
+  aborting?: boolean
   selectedProvider?: string
   selectedModel?: string
   onDiaryCommand?: () => void
+  editContent?: string
+  focusTrigger?: number
 }
 
 function getFileExtension(name: string): string {
@@ -50,11 +53,12 @@ function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
   })
 }
 
-export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, onDiaryCommand }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, aborting, onDiaryCommand, editContent, focusTrigger }: ChatInputProps) {
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     return () => {
@@ -62,6 +66,18 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, on
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (editContent) {
+      setInput(editContent)
+    }
+  }, [editContent])
+
+  useEffect(() => {
+    if (focusTrigger !== undefined && focusTrigger > 0) {
+      textareaRef.current?.focus()
+    }
+  }, [focusTrigger])
 
   const addAttachments = useCallback((files: File[]) => {
     const newAttachments: FileAttachment[] = []
@@ -221,6 +237,7 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, on
           <Paperclip size={20} strokeWidth={2} />
         </button>
         <textarea
+          ref={textareaRef}
           className={styles['chat-input']}
           placeholder="type your question... (try /diary for daily diary)"
           value={input}
@@ -233,7 +250,8 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, on
           <button
             className={`btn ${styles['stop-btn']}`}
             onClick={onAbort}
-            title="stop generating"
+            disabled={aborting}
+            title={aborting ? '正在中断...' : '停止生成'}
           >
             <Square size={18} />
           </button>

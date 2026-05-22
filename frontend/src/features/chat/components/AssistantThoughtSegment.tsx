@@ -9,6 +9,7 @@ import styles from './AssistantThoughtSegment.module.css'
 interface AssistantThoughtSegmentProps {
   segments: AssistantThoughtSegmentData[]
   isStreaming: boolean
+  onUndo?: (operationId: string) => Promise<void>
 }
 
 function getStatusText(status: TaskStatus): string {
@@ -24,7 +25,7 @@ function getStatusText(status: TaskStatus): string {
   }
 }
 
-function AssistantThoughtSegmentInner({ segments, isStreaming }: AssistantThoughtSegmentProps) {
+function AssistantThoughtSegmentInner({ segments, isStreaming, onUndo }: AssistantThoughtSegmentProps) {
   const title = isStreaming ? '思维链（生成中）' : '思维链'
 
   const lastUsageSegment = [...segments].reverse().find(s => s.usage)
@@ -99,6 +100,7 @@ function AssistantThoughtSegmentInner({ segments, isStreaming }: AssistantThough
                           <InlineToolCallCard
                             key={tool.id}
                             tool={tool}
+                            onUndo={onUndo}
                           />
                         ))}
                       </div>

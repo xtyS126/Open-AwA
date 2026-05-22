@@ -1114,3 +1114,11 @@ class UserPreferencesUpdate(BaseModel):
 class UserPreferencesResponse(BaseModel):
     """用户偏好响应，包含 preferences 子对象。"""
     preferences: Dict[str, Any]
+
+
+class UserFeedbackRequest(BaseModel):
+    """用户对助手消息的显式反馈请求。"""
+    session_id: str = Field(..., description="会话ID")
+    message_id: str = Field(..., description="消息ID（前端消息的唯一标识）")
+    rating: int = Field(..., ge=-1, le=1, description="评分：1=点赞，-1=点踩，0=取消")
+    comment: Optional[str] = Field(default=None, max_length=1000, description="可选反馈备注")

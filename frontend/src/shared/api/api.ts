@@ -349,6 +349,19 @@ export interface ChatAttachmentPayload {
   file_name?: string
 }
 
+/** 用户消息反馈请求 */
+export interface ChatFeedbackPayload {
+  session_id: string
+  message_id: string
+  rating: 1 | -1
+  comment?: string
+}
+
+/** AI 文件操作撤销请求 */
+export interface UndoOperationPayload {
+  operation_id: string
+}
+
 export interface ChatExecutionOptions {
   thinking_enabled?: boolean
   thinking_depth?: number
@@ -669,6 +682,18 @@ export const chatAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+
+  /** 取消正在执行的 Agent 任务 */
+  cancelSession: (sessionId: string) =>
+    api.post(`/chat/cancel/${sessionId}`),
+
+  /** 提交用户消息反馈（点赞/点踩） */
+  sendFeedback: (payload: ChatFeedbackPayload) =>
+    api.post('/chat/feedback', payload),
+
+  /** 撤销 AI 执行的文件操作 */
+  undoOperation: (payload: UndoOperationPayload) =>
+    api.post('/chat/undo-operation', payload),
 }
 
 export const skillsAPI = {

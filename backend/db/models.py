@@ -492,6 +492,21 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class UserFeedback(Base):
+    """
+    用户对助手消息的显式反馈记录，支持点赞/点踩及可选备注。
+    """
+    __tablename__ = "user_feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="会话 ID")
+    message_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="消息 ID")
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="用户 ID")
+    rating: Mapped[int] = mapped_column(Integer, nullable=False, comment="评分：1=点赞，-1=点踩")
+    comment: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True, comment="反馈备注")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), comment="反馈时间")
+
+
 class ExperienceExtractionLog(Base):
     """
     经验提取日志，记录每次经验自动提取的过程和质量评估。

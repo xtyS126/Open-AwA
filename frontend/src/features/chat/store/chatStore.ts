@@ -40,6 +40,12 @@ interface ChatState {
   // 思考模式状态
   thinkingEnabled: boolean
   thinkingDepth: number
+  /** 当前进行中的工具调用 ID 列表 */
+  activeToolCalls: string[]
+  setActiveToolCalls: (toolIds: string[]) => void
+  addActiveToolCall: (toolId: string) => void
+  removeActiveToolCall: (toolId: string) => void
+  resetActiveToolCalls: () => void
   addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string, id?: string) => string
   updateLastMessage: (content: string, reasoning_content?: string) => void
   setMessages: (messages: ChatMessage[]) => void
@@ -79,6 +85,7 @@ export const useChatStore = create<ChatState>((set) => ({
   modelError: null,
   thinkingEnabled: safeGetItem('chat_thinking_enabled', isInitialReasoner ? 'true' : 'false') === 'true',
   thinkingDepth: Number(safeGetItem('chat_thinking_depth', '0')) || 0,
+  activeToolCalls: [],
 
   addMessage: (role, content, reasoning_content, id) => {
     const messageId = id || crypto.randomUUID()
@@ -230,4 +237,15 @@ export const useChatStore = create<ChatState>((set) => ({
       syncPreferenceToServer('thinkingDepth', validDepth)
     }
   },
+
+  setActiveToolCalls: (toolIds) => set({ activeToolCalls: toolIds }),
+  addActiveToolCall: (toolId) => set((state) => ({
+    activeToolCalls: state.activeToolCalls.includes(toolId)
+      ? state.activeToolCalls
+      : [...state.activeToolCalls, toolId]
+  })),
+  removeActiveToolCall: (toolId) => set((state) => ({
+    activeToolCalls: state.activeToolCalls.filter(id => id !== toolId)
+  })),
+  resetActiveToolCalls: () => set({ activeToolCalls: [] }),
 }))

@@ -467,6 +467,9 @@ class BuiltInToolManager:
             from .file_manager import FileManagerSkill
 
             instance = FileManagerSkill(config or {})
+            # 注入操作检查点存储器，使文件写入操作自动保存快照
+            from core.checkpoint_store import checkpoint_store
+            instance.set_checkpoint_store(checkpoint_store)
         elif tool_name == "terminal_executor":
             from .terminal_executor import TerminalExecutorSkill
 

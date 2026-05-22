@@ -202,7 +202,49 @@ class FeedbackLayer:
         
         content_lower = content.lower()
         return any(keyword in content_lower for keyword in important_keywords)
-    
+
+    def record_explicit_feedback(
+        self,
+        session_id: str,
+        message_id: str,
+        user_id: int,
+        rating: int,
+        comment: Optional[str] = None,
+    ) -> None:
+        """
+        记录用户对助手消息的显式反馈（点赞/点踩）。
+
+        Args:
+            session_id: 会话 ID
+            message_id: 消息 ID
+            user_id: 用户 ID
+            rating: 评分（1=点赞，-1=点踩）
+            comment: 可选备注
+        """
+        if rating not in (-1, 1):
+            raise ValueError(f"无效的评分值: {rating}，应为 1（点赞）或 -1（点踩）")
+
+        from db.models import UserFeedback, SessionLocal
+
+        db = SessionLocal()
+        try:
+            feedback_record = UserFeedback(
+                session_id=session_id,
+                message_id=message_id,
+                user_id=user_id,
+                rating=rating,
+                comment=comment,
+            )
+            db.add(feedback_record)
+            db.commit()
+            logger.info(f"User feedback recorded: session={session_id}, message={message_id}, rating={rating}")
+        except Exception as exc:
+            db.rollback()
+            logger.error(f"Failed to record user feedback: {exc}")
+            raise
+        finally:
+            db.close()
+
     async def diagnose_error(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理diagnose、error相关逻辑，并为调用方返回对应结果。
@@ -237,3 +279,7 @@ class FeedbackLayer:
             }
         
         return diagnosis
+
+
+# 全局 FeedbackLayer 实例注册表，供 API 路由访问
+feedback_layer_registry = FeedbackLayer()

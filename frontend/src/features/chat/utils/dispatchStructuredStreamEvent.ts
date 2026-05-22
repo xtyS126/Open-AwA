@@ -264,11 +264,11 @@ export function dispatchStructuredStreamEvent(
 
   if (event.type === 'task_created' && event.task) {
     updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, {
-      ...event.task,
+      ...(event.task as Record<string, unknown> || {}),
       status: 'created',
     } as Record<string, unknown>))
     const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), {
-      ...(event.task as Record<string, unknown>),
+      ...(event.task as Record<string, unknown> || {}),
       status: 'created',
     }).steps[0]
     if (stepMeta) {

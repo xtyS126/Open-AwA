@@ -39,6 +39,25 @@ from sqlalchemy.orm import Session
 
 MAX_TOOL_CALL_ROUNDS = 12
 
+# 全局活跃 Agent 任务字典：session_id -> asyncio.Task
+# 供取消端点查找并取消正在执行的 Agent 异步任务
+_active_agent_tasks: Dict[str, asyncio.Task] = {}
+
+
+def register_agent_task(session_id: str, task: asyncio.Task) -> None:
+    """注册活跃的 Agent 异步任务，供取消端点查找。"""
+    _active_agent_tasks[session_id] = task
+
+
+def unregister_agent_task(session_id: str) -> None:
+    """移除已完成的 Agent 任务。"""
+    _active_agent_tasks.pop(session_id, None)
+
+
+def get_agent_task(session_id: str) -> Optional[asyncio.Task]:
+    """获取指定会话的活跃 Agent 任务，不存在时返回 None。"""
+    return _active_agent_tasks.get(session_id)
+
 
 def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
     raw_value = context.get("max_tool_call_rounds")
@@ -1428,272 +1447,294 @@ class AIAgent:
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
-        conversation_history = await self._build_conversation_history(session_id)
-        context["conversation_history"] = conversation_history
 
-        effective_user_input = self._build_effective_user_input(user_input, context)
+        # 将当前协程注册为活跃任务，供取消端点查找
+        current_task = asyncio.current_task()
+        if current_task is not None and session_id:
+            register_agent_task(session_id, current_task)
 
-        intent = await self.comprehension.recognize_intent(effective_user_input)
-        entities = await self.comprehension.extract_entities(effective_user_input)
+        try:
+            conversation_history = await self._build_conversation_history(session_id)
+            context["conversation_history"] = conversation_history
 
-        yield self._build_status_event("planning", "正在生成执行计划")
-        plan = await self.planner.create_plan(
-            intent=intent,
-            entities=entities,
-            context=context,
-        )
-        context["plan"] = plan
-        yield {
-            "type": "plan",
-            "plan": plan,
-        }
+            effective_user_input = self._build_effective_user_input(user_input, context)
 
-        full_content = ""
-        full_reasoning = ""
-        accumulated_tool_events: list = []  # 收集本轮所有工具调用事件，用于持久化
+            intent = await self.comprehension.recognize_intent(effective_user_input)
+            entities = await self.comprehension.extract_entities(effective_user_input)
 
-        final_only_mode = self._is_final_only_mode(context)
+            yield self._build_status_event("planning", "正在生成执行计划")
+            plan = await self.planner.create_plan(
+                intent=intent,
+                entities=entities,
+                context=context,
+            )
+            context["plan"] = plan
+            yield {
+                "type": "plan",
+                "plan": plan,
+            }
 
-        round_count = 0
-        max_rounds = resolve_max_tool_call_rounds(context)
+            full_content = ""
+            full_reasoning = ""
+            accumulated_tool_events: list = []  # 收集本轮所有工具调用事件，用于持久化
 
-        while round_count < max_rounds:
-            round_count += 1
-            tool_calls_detected = False
-            round_content = ""
-            round_reasoning = ""
-            background_subagents_spawned = False
+            final_only_mode = self._is_final_only_mode(context)
 
-            async for chunk in self.executor._call_llm_api_stream(effective_user_input, context):
-                if "error" in chunk:
-                    yield {
-                        "type": "error",
-                        "error": chunk["error"]
-                    }
+            round_count = 0
+            max_rounds = resolve_max_tool_call_rounds(context)
+
+            while round_count < max_rounds:
+                # 在每轮循环开始检查取消信号
+                if current_task and current_task.cancelled():
+                    yield {"type": "cancelled", "content": "", "reasoning_content": ""}
                     return
+                round_count += 1
+                tool_calls_detected = False
+                round_content = ""
+                round_reasoning = ""
+                background_subagents_spawned = False
 
-                # 检测工具调用事件
-                if chunk.get("type") == "tool_calls":
-                    tool_calls_detected = True
-                    tool_calls = chunk.get("tool_calls", [])
-
-                    logger.info(f"Detected {len(tool_calls)} tool_calls in stream mode, executing...")
-
-                    # 发射 task 事件
-                    yield emit_task_event({
-                        "step_count": len(tool_calls),
-                        "steps": [{"name": tc.get("function", {}).get("name", "unknown")} for tc in tool_calls],
-                    })
-
-                    # 执行每个工具
-                    tool_results = []
-                    for tc in tool_calls:
-                        tool_name = tc.get("function", {}).get("name", "unknown")
-                        tool_id = tc.get("id", "")
-                        tool_kind = self._get_stream_tool_kind(tool_name)
-                        spawn_agent_type = "Explore"
-                        spawn_description = ""
-
-                        if tool_name == "task_spawn_agent":
-                            func_args_str = tc.get("function", {}).get("arguments", "{}")
-                            try:
-                                func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
-                            except json.JSONDecodeError:
-                                func_args = {}
-                            spawn_agent_type = func_args.get("agent_type", "Explore")
-                            spawn_description = func_args.get("description", "")
-
-                        yield emit_tool_event({
-                            "id": tool_id,
-                            "kind": tool_kind,
-                            "name": tool_name,
-                            "status": "running",
-                        })
-
-                        if tool_name == "task_spawn_agent":
-                            subagent_event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
-
-                            async def on_subagent_event(event: Dict[str, Any]) -> None:
-                                await subagent_event_queue.put(event)
-
-                            exec_task = asyncio.create_task(
-                                self.executor._execute_tool_call(
-                                    tc,
-                                    context,
-                                    on_subagent_event=on_subagent_event,
-                                )
-                            )
-
-                            while True:
-                                if exec_task.done() and subagent_event_queue.empty():
-                                    break
-                                try:
-                                    subagent_event = await asyncio.wait_for(
-                                        subagent_event_queue.get(),
-                                        timeout=0.05,
-                                    )
-                                except asyncio.TimeoutError:
-                                    continue
-                                yield subagent_event
-
-                            result = await exec_task
-                        else:
-                            result = await self.executor._execute_tool_call(tc, context)
-
-                        # PostToolUse 钩子：工具调用后审计与后处理
-                        try:
-                            from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_POST_TOOL_USE
-                            await hook_dispatcher.dispatch(HOOK_POST_TOOL_USE, {
-                                "tool_name": tool_name,
-                                "tool_args": json.loads(tc.get("function", {}).get("arguments", "{}"))
-                                if isinstance(tc.get("function", {}).get("arguments"), str) else {},
-                                "result": result,
-                                "context": context,
-                            })
-                        except ImportError:
-                            pass
-
-                        tool_event_data = {
-                            "id": tool_id,
-                            "kind": tool_kind,
-                            "name": tool_name,
-                            "status": "completed" if result.get("ok") else "error",
-                            "detail": self._summarize_stream_tool_result(result),
-                            "output": result.get("result") if result.get("ok") else result.get("error"),
+                async for chunk in self.executor._call_llm_api_stream(effective_user_input, context):
+                    if "error" in chunk:
+                        yield {
+                            "type": "error",
+                            "error": chunk["error"]
                         }
-                        accumulated_tool_events.append(tool_event_data)
-                        yield emit_tool_event(tool_event_data)
-
-                        # 通知工具：发射前端通知事件
-                        if tool_name == "builtin_notify" and result.get("ok"):
-                            notify_result = result.get("result", {})
-                            if isinstance(notify_result, dict):
-                                yield {
-                                    "type": "notification",
-                                    "title": notify_result.get("title", ""),
-                                    "body": notify_result.get("body", ""),
-                                    "channels": notify_result.get("channels", []),
-                                    "message": notify_result.get("message", ""),
-                                }
-
-                        # Todo 工具：发射前端 Todo 面板更新事件
-                        if tool_name == "builtin_todo_write" and result.get("ok"):
-                            todo_result = result.get("result", {})
-                            if isinstance(todo_result, dict):
-                                yield {
-                                    "type": "todo_update",
-                                    "todos": todo_result.get("todos", []),
-                                    "counts": todo_result.get("counts", {}),
-                                    "summary": todo_result.get("summary", ""),
-                                }
-
-                        if tool_name == "task_spawn_agent":
-                            spawned_subagent = self._extract_spawned_subagent_result(result)
-                            if spawned_subagent and spawned_subagent.get("run_mode") == "background":
-                                background_subagents_spawned = True
-                                yield emit_subagent_start_event(
-                                    spawned_subagent["agent_id"],
-                                    spawn_agent_type,
-                                    spawn_description,
-                                    run_mode="background",
-                                )
-
-                        # 对任务清单操作发射生命周期事件
-                        if tool_name == "task_create_task" and result.get("ok"):
-                            yield emit_task_created_event(result.get("result", result))
-                        if tool_name == "task_update_task" and result.get("ok"):
-                            yield emit_task_updated_event(result.get("result", result))
-                        if tool_name == "task_todo_write" and result.get("ok"):
-                            todo_result = result.get("result", result)
-                            if isinstance(todo_result, dict):
-                                yield {
-                                    "type": "todo_update",
-                                    "todos": todo_result.get("todos", []),
-                                    "counts": todo_result.get("counts", {}),
-                                    "summary": todo_result.get("summary", ""),
-                                }
-                        # 对团队操作发射生命周期事件
-                        if tool_name in ("task_create_team", "task_delete_team",
-                                         "task_add_teammate", "task_remove_teammate") and result.get("ok"):
-                            yield emit_team_event(result.get("result", result))
-
-                        tool_results.append({"tool_call": tc, "result": result})
-
-                    # 构建工具调用消息并注入到上下文中
-                    tool_messages = []
-                    assistant_tool_calls = [
-                        {
-                            "id": tc.get("id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": tc.get("function", {}).get("name", ""),
-                                "arguments": tc.get("function", {}).get("arguments", ""),
-                            }
-                        }
-                        for tc in tool_calls
-                    ]
-                    tool_messages.append(
-                        self.executor.build_assistant_tool_call_message(
-                            content=round_content,
-                            reasoning_content=round_reasoning,
-                            tool_calls=assistant_tool_calls,
-                        )
-                    )
-                    for tr in tool_results:
-                        tool_messages.append(self.executor._build_tool_message(tr["tool_call"], tr["result"]))
-
-                    if background_subagents_spawned:
-                        yield self._build_status_event("waiting_subagents", "子代理已创建，等待运行结果")
                         return
 
-                    context["_tool_messages"] = tool_messages
-                    break  # 跳出 async for 循环，重新进入 while 循环进行下一轮 LLM 调用
+                    # 检测工具调用事件
+                    if chunk.get("type") == "tool_calls":
+                        tool_calls_detected = True
+                        tool_calls = chunk.get("tool_calls", [])
 
-                content = chunk.get("content", "")
-                raw_reasoning = chunk.get("reasoning_content", "")
-                reasoning = raw_reasoning
+                        logger.info(f"Detected {len(tool_calls)} tool_calls in stream mode, executing...")
 
-                if final_only_mode:
-                    reasoning = ""
+                        # 发射 task 事件
+                        yield emit_task_event({
+                            "step_count": len(tool_calls),
+                            "steps": [{"name": tc.get("function", {}).get("name", "unknown")} for tc in tool_calls],
+                        })
 
-                if content:
-                    full_content += content
-                    round_content += content
-                if raw_reasoning:
-                    full_reasoning += raw_reasoning
-                    round_reasoning += raw_reasoning
+                        # 执行每个工具
+                        tool_results = []
+                        for tc in tool_calls:
+                            # 在工具执行循环中检查取消信号
+                            if current_task and current_task.cancelled():
+                                yield {"type": "cancelled", "content": "", "reasoning_content": ""}
+                                return
+                            tool_name = tc.get("function", {}).get("name", "unknown")
+                            tool_id = tc.get("id", "")
+                            tool_kind = self._get_stream_tool_kind(tool_name)
+                            spawn_agent_type = "Explore"
+                            spawn_description = ""
 
-                output_chunk = {
-                    "type": "chunk",
-                    "content": content,
-                }
-                if reasoning:
-                    output_chunk["reasoning_content"] = reasoning
-                yield output_chunk
+                            if tool_name == "task_spawn_agent":
+                                func_args_str = tc.get("function", {}).get("arguments", "{}")
+                                try:
+                                    func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+                                except json.JSONDecodeError:
+                                    func_args = {}
+                                spawn_agent_type = func_args.get("agent_type", "Explore")
+                                spawn_description = func_args.get("description", "")
 
-            if not tool_calls_detected:
-                break  # 没有工具调用，退出 while 循环
+                            yield emit_tool_event({
+                                "id": tool_id,
+                                "kind": tool_kind,
+                                "name": tool_name,
+                                "status": "running",
+                            })
 
-        # TaskCompleted 钩子：流完成后触发质量门控
-        try:
-            from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_TASK_COMPLETED
-            await hook_dispatcher.dispatch(HOOK_TASK_COMPLETED, {
-                "response": full_content,
-                "context": context,
-                "round_count": round_count,
-            })
-        except ImportError:
-            pass
+                            if tool_name == "task_spawn_agent":
+                                subagent_event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
 
-        # Update memory after stream completes
-        if full_content:
-            await self.feedback.update_memory(
-                user_input=user_input,
-                response=full_content,
-                context=context,
-                reasoning_content=full_reasoning if full_reasoning else None,
-                tool_events=accumulated_tool_events if accumulated_tool_events else None,
-            )
+                                async def on_subagent_event(event: Dict[str, Any]) -> None:
+                                    await subagent_event_queue.put(event)
+
+                                exec_task = asyncio.create_task(
+                                    self.executor._execute_tool_call(
+                                        tc,
+                                        context,
+                                        on_subagent_event=on_subagent_event,
+                                    )
+                                )
+
+                                while True:
+                                    if exec_task.done() and subagent_event_queue.empty():
+                                        break
+                                    try:
+                                        subagent_event = await asyncio.wait_for(
+                                            subagent_event_queue.get(),
+                                            timeout=0.05,
+                                        )
+                                    except asyncio.TimeoutError:
+                                        continue
+                                    yield subagent_event
+
+                                result = await exec_task
+                            else:
+                                try:
+                                    result = await self.executor._execute_tool_call(tc, context)
+                                except asyncio.CancelledError:
+                                    logger.info(f"Agent task cancelled for session {session_id}")
+                                    yield {"type": "cancelled", "content": "任务已被用户取消", "reasoning_content": ""}
+                                    raise  # 重新抛出以正确终止协程
+
+                            # PostToolUse 钩子：工具调用后审计与后处理
+                            try:
+                                from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_POST_TOOL_USE
+                                await hook_dispatcher.dispatch(HOOK_POST_TOOL_USE, {
+                                    "tool_name": tool_name,
+                                    "tool_args": json.loads(tc.get("function", {}).get("arguments", "{}"))
+                                    if isinstance(tc.get("function", {}).get("arguments"), str) else {},
+                                    "result": result,
+                                    "context": context,
+                                })
+                            except ImportError:
+                                pass
+
+                            tool_event_data = {
+                                "id": tool_id,
+                                "kind": tool_kind,
+                                "name": tool_name,
+                                "status": "completed" if result.get("ok") else "error",
+                                "detail": self._summarize_stream_tool_result(result),
+                                "output": result.get("result") if result.get("ok") else result.get("error"),
+                            }
+                            accumulated_tool_events.append(tool_event_data)
+                            yield emit_tool_event(tool_event_data)
+
+                            # 通知工具：发射前端通知事件
+                            if tool_name == "builtin_notify" and result.get("ok"):
+                                notify_result = result.get("result", {})
+                                if isinstance(notify_result, dict):
+                                    yield {
+                                        "type": "notification",
+                                        "title": notify_result.get("title", ""),
+                                        "body": notify_result.get("body", ""),
+                                        "channels": notify_result.get("channels", []),
+                                        "message": notify_result.get("message", ""),
+                                    }
+
+                            # Todo 工具：发射前端 Todo 面板更新事件
+                            if tool_name == "builtin_todo_write" and result.get("ok"):
+                                todo_result = result.get("result", {})
+                                if isinstance(todo_result, dict):
+                                    yield {
+                                        "type": "todo_update",
+                                        "todos": todo_result.get("todos", []),
+                                        "counts": todo_result.get("counts", {}),
+                                        "summary": todo_result.get("summary", ""),
+                                    }
+
+                            if tool_name == "task_spawn_agent":
+                                spawned_subagent = self._extract_spawned_subagent_result(result)
+                                if spawned_subagent and spawned_subagent.get("run_mode") == "background":
+                                    background_subagents_spawned = True
+                                    yield emit_subagent_start_event(
+                                        spawned_subagent["agent_id"],
+                                        spawn_agent_type,
+                                        spawn_description,
+                                        run_mode="background",
+                                    )
+
+                            # 对任务清单操作发射生命周期事件
+                            if tool_name == "task_create_task" and result.get("ok"):
+                                yield emit_task_created_event(result.get("result", result))
+                            if tool_name == "task_update_task" and result.get("ok"):
+                                yield emit_task_updated_event(result.get("result", result))
+                            if tool_name == "task_todo_write" and result.get("ok"):
+                                todo_result = result.get("result", result)
+                                if isinstance(todo_result, dict):
+                                    yield {
+                                        "type": "todo_update",
+                                        "todos": todo_result.get("todos", []),
+                                        "counts": todo_result.get("counts", {}),
+                                        "summary": todo_result.get("summary", ""),
+                                    }
+                            # 对团队操作发射生命周期事件
+                            if tool_name in ("task_create_team", "task_delete_team",
+                                             "task_add_teammate", "task_remove_teammate") and result.get("ok"):
+                                yield emit_team_event(result.get("result", result))
+
+                            tool_results.append({"tool_call": tc, "result": result})
+
+                        # 构建工具调用消息并注入到上下文中
+                        tool_messages = []
+                        assistant_tool_calls = [
+                            {
+                                "id": tc.get("id", ""),
+                                "type": "function",
+                                "function": {
+                                    "name": tc.get("function", {}).get("name", ""),
+                                    "arguments": tc.get("function", {}).get("arguments", ""),
+                                }
+                            }
+                            for tc in tool_calls
+                        ]
+                        tool_messages.append(
+                            self.executor.build_assistant_tool_call_message(
+                                content=round_content,
+                                reasoning_content=round_reasoning,
+                                tool_calls=assistant_tool_calls,
+                            )
+                        )
+                        for tr in tool_results:
+                            tool_messages.append(self.executor._build_tool_message(tr["tool_call"], tr["result"]))
+
+                        if background_subagents_spawned:
+                            yield self._build_status_event("waiting_subagents", "子代理已创建，等待运行结果")
+                            return
+
+                        context["_tool_messages"] = tool_messages
+                        break  # 跳出 async for 循环，重新进入 while 循环进行下一轮 LLM 调用
+
+                    content = chunk.get("content", "")
+                    raw_reasoning = chunk.get("reasoning_content", "")
+                    reasoning = raw_reasoning
+
+                    if final_only_mode:
+                        reasoning = ""
+
+                    if content:
+                        full_content += content
+                        round_content += content
+                    if raw_reasoning:
+                        full_reasoning += raw_reasoning
+                        round_reasoning += raw_reasoning
+
+                    output_chunk = {
+                        "type": "chunk",
+                        "content": content,
+                    }
+                    if reasoning:
+                        output_chunk["reasoning_content"] = reasoning
+                    yield output_chunk
+
+                if not tool_calls_detected:
+                    break  # 没有工具调用，退出 while 循环
+
+            # TaskCompleted 钩子：流完成后触发质量门控
+            try:
+                from core.task_runtime.hook_dispatcher import hook_dispatcher, HOOK_TASK_COMPLETED
+                await hook_dispatcher.dispatch(HOOK_TASK_COMPLETED, {
+                    "response": full_content,
+                    "context": context,
+                    "round_count": round_count,
+                })
+            except ImportError:
+                pass
+
+            # Update memory after stream completes
+            if full_content:
+                await self.feedback.update_memory(
+                    user_input=user_input,
+                    response=full_content,
+                    context=context,
+                    reasoning_content=full_reasoning if full_reasoning else None,
+                    tool_events=accumulated_tool_events if accumulated_tool_events else None,
+                )
+        finally:
+            unregister_agent_task(session_id)
 
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1714,261 +1755,268 @@ class AIAgent:
 
         # 构建对话历史并注入到上下文中
         session_id = context.get("session_id", "default")
-        conversation_history = await self._build_conversation_history(session_id)
-        context["conversation_history"] = conversation_history
 
-        effective_user_input = self._build_effective_user_input(user_input, context)
+        # 将当前协程注册为活跃任务，供取消端点查找
+        current_task = asyncio.current_task()
+        if current_task is not None and session_id:
+            register_agent_task(session_id, current_task)
 
-        intent_start = time.perf_counter()
-        intent = await self.comprehension.recognize_intent(effective_user_input)
-        logger.debug(f"Recognized intent: {intent}")
+        try:
+            conversation_history = await self._build_conversation_history(session_id)
+            context["conversation_history"] = conversation_history
 
-        entities = await self.comprehension.extract_entities(effective_user_input)
-        logger.debug(f"Extracted entities: {entities}")
-        intent_duration_ms = int((time.perf_counter() - intent_start) * 1000)
-        self._schedule_record(
-            node_type="intent_recognition",
-            user_message=user_input,
-            context=context,
-            execution_duration_ms=intent_duration_ms,
-            metadata={
-                "intent": intent,
-                "entities": entities
-            }
-        )
-        
-        experiences = []
-        if context.get('retrieve_experiences', True):
-            experiences = await self._retrieve_relevant_experiences(
-                user_input=effective_user_input,
-                context=context
-            )
-            if experiences:
-                context['relevant_experiences'] = experiences
-                logger.info(f"Retrieved {len(experiences)} relevant experiences")
+            effective_user_input = self._build_effective_user_input(user_input, context)
 
-        relevant_memories = []
-        if context.get('retrieve_long_term_memory', True):
-            relevant_memories = await self._retrieve_relevant_memories(
-                user_input=effective_user_input,
+            intent_start = time.perf_counter()
+            intent = await self.comprehension.recognize_intent(effective_user_input)
+            logger.debug(f"Recognized intent: {intent}")
+
+            entities = await self.comprehension.extract_entities(effective_user_input)
+            logger.debug(f"Extracted entities: {entities}")
+            intent_duration_ms = int((time.perf_counter() - intent_start) * 1000)
+            self._schedule_record(
+                node_type="intent_recognition",
+                user_message=user_input,
                 context=context,
+                execution_duration_ms=intent_duration_ms,
+                metadata={
+                    "intent": intent,
+                    "entities": entities
+                }
             )
-            if relevant_memories:
-                context['vector_retrieved_memories'] = relevant_memories
-                logger.info(f"Retrieved {len(relevant_memories)} long-term memories")
+        
+            experiences = []
+            if context.get('retrieve_experiences', True):
+                experiences = await self._retrieve_relevant_experiences(
+                    user_input=effective_user_input,
+                    context=context
+                )
+                if experiences:
+                    context['relevant_experiences'] = experiences
+                    logger.info(f"Retrieved {len(experiences)} relevant experiences")
 
-        workflow_result = None
-        if self.workflow_engine and (context.get('workflow_definition') is not None or context.get('workflow_id') is not None):
-            workflow_result = await self._execute_workflow_from_context(context)
-            if workflow_result:
-                context['workflow_result'] = workflow_result
-                if context.get('workflow_only'):
-                    return self._apply_output_mode(
-                        {
-                            "status": workflow_result.get("status", "completed"),
-                            "response": workflow_result.get("last_result", workflow_result),
-                            "results": [
-                                {
-                                    "type": "workflow",
-                                    "step": {"action": "workflow_execution"},
-                                    "result": workflow_result,
-                                }
-                            ],
-                            "workflows_executed": 1,
-                            "experiences_used": len(experiences),
-                        },
-                        context,
-                    )
+            relevant_memories = []
+            if context.get('retrieve_long_term_memory', True):
+                relevant_memories = await self._retrieve_relevant_memories(
+                    user_input=effective_user_input,
+                    context=context,
+                )
+                if relevant_memories:
+                    context['vector_retrieved_memories'] = relevant_memories
+                    logger.info(f"Retrieved {len(relevant_memories)} long-term memories")
+
+            workflow_result = None
+            if self.workflow_engine and (context.get('workflow_definition') is not None or context.get('workflow_id') is not None):
+                workflow_result = await self._execute_workflow_from_context(context)
+                if workflow_result:
+                    context['workflow_result'] = workflow_result
+                    if context.get('workflow_only'):
+                        return self._apply_output_mode(
+                            {
+                                "status": workflow_result.get("status", "completed"),
+                                "response": workflow_result.get("last_result", workflow_result),
+                                "results": [
+                                    {
+                                        "type": "workflow",
+                                        "step": {"action": "workflow_execution"},
+                                        "result": workflow_result,
+                                    }
+                                ],
+                                "workflows_executed": 1,
+                                "experiences_used": len(experiences),
+                            },
+                            context,
+                        )
         
-        plan = await self.planner.create_plan(
-            intent=intent,
-            entities=entities,
-            context=context
-        )
-        logger.debug(f"Created plan: {plan}")
-        
-        auto_results = {"skills": [], "plugins": []}
-        if context.get('enable_skill_plugin', True):
-            matching_start = time.perf_counter()
-            auto_results = await self._auto_execute_skills_and_plugins(
+            plan = await self.planner.create_plan(
                 intent=intent,
                 entities=entities,
                 context=context
             )
-            matching_duration_ms = int((time.perf_counter() - matching_start) * 1000)
-            if auto_results:
-                context['auto_execution_results'] = auto_results
-                logger.info(f"Auto-executed {len(auto_results.get('skills', []))} skills and {len(auto_results.get('plugins', []))} plugins")
-
-            self._schedule_record(
-                node_type="skill_plugin_matching",
-                user_message=user_input,
-                context=context,
-                execution_duration_ms=matching_duration_ms,
-                metadata={
-                    "skills": [item.get('skill_name') for item in auto_results.get('skills', [])],
-                    "plugins": [item.get('plugin_name') for item in auto_results.get('plugins', [])],
-                    "skills_count": len(auto_results.get('skills', [])),
-                    "plugins_count": len(auto_results.get('plugins', []))
-                }
-            )
+            logger.debug(f"Created plan: {plan}")
         
-        results = []
-        for step in plan.get("steps", []):
-            if context.get('enable_skill_plugin', True) and step.get('use_skill'):
-                skill_name = step.get('skill_name')
-                if skill_name:
-                    skill_result = await self.execute_skill(
-                        skill_name=skill_name,
-                        inputs=step.get('inputs', {}),
-                        context=context
-                    )
-                    results.append({
-                        'type': 'skill',
-                        'step': step,
-                        'result': skill_result
-                    })
-                    self._schedule_record(
-                        node_type="tool_execution",
-                        user_message=user_input,
-                        context=context,
-                        status="success" if skill_result.get('status') in ('completed', 'success') else "error",
-                        error_message=skill_result.get('error'),
-                        llm_input=step,
-                        llm_output=skill_result,
-                        metadata={
-                            "execution_type": "skill",
-                            "skill_name": skill_name
-                        }
-                    )
-                    record_tool_execution_metric("skill", skill_result.get("status", "unknown"))
-                    continue
-            
-            if context.get('enable_skill_plugin', True) and step.get('use_plugin'):
-                plugin_name = step.get('plugin_name')
-                plugin_method = step.get('plugin_method')
-                if plugin_name and plugin_method:
-                    plugin_result = await self.execute_plugin(
-                        plugin_name=plugin_name,
-                        method=plugin_method,
-                        **step.get('kwargs', {})
-                    )
-                    results.append({
-                        'type': 'plugin',
-                        'step': step,
-                        'result': plugin_result
-                    })
-                    self._schedule_record(
-                        node_type="tool_execution",
-                        user_message=user_input,
-                        context=context,
-                        status="success" if plugin_result.get('status') in ('completed', 'success') else "error",
-                        error_message=plugin_result.get('message'),
-                        llm_input=step,
-                        llm_output=plugin_result,
-                        metadata={
-                            "execution_type": "plugin",
-                            "plugin_name": plugin_name,
-                            "plugin_method": plugin_method
-                        }
-                    )
-                    record_tool_execution_metric("plugin", plugin_result.get("status", "unknown"))
-                    continue
-            
-            result = await self.executor.execute_step(step, context)
-            results.append({
-                'type': 'execution',
-                'step': step,
-                'result': result
-            })
-            self._schedule_record(
-                node_type="tool_execution",
-                user_message=user_input,
-                context=context,
-                status="success" if isinstance(result, dict) and result.get('status') in ['completed', 'success'] else "error",
-                error_message=result.get('message') if isinstance(result, dict) else None,
-                llm_input=step,
-                llm_output=result,
-                metadata={
-                    "execution_type": "execution",
-                    "action": step.get('action')
-                }
-            )
-            
-            if isinstance(result, dict):
-                feedback = await self.feedback.evaluate_result(result)
-                if feedback.get("needs_confirmation"):
-                    return self._apply_output_mode({
-                        "status": "awaiting_confirmation",
-                        "message": feedback.get("message"),
-                        "step": step,
-                        "results": results
-                    }, context)
-                
-                if feedback.get("needs_retry"):
-                    retry_result = await self.executor.retry_step(step, context)
-                    results[-1] = {
-                        'type': 'execution',
-                        'step': step,
-                        'result': retry_result
+            auto_results = {"skills": [], "plugins": []}
+            if context.get('enable_skill_plugin', True):
+                matching_start = time.perf_counter()
+                auto_results = await self._auto_execute_skills_and_plugins(
+                    intent=intent,
+                    entities=entities,
+                    context=context
+                )
+                matching_duration_ms = int((time.perf_counter() - matching_start) * 1000)
+                if auto_results:
+                    context['auto_execution_results'] = auto_results
+                    logger.info(f"Auto-executed {len(auto_results.get('skills', []))} skills and {len(auto_results.get('plugins', []))} plugins")
+
+                self._schedule_record(
+                    node_type="skill_plugin_matching",
+                    user_message=user_input,
+                    context=context,
+                    execution_duration_ms=matching_duration_ms,
+                    metadata={
+                        "skills": [item.get('skill_name') for item in auto_results.get('skills', [])],
+                        "plugins": [item.get('plugin_name') for item in auto_results.get('plugins', [])],
+                        "skills_count": len(auto_results.get('skills', [])),
+                        "plugins_count": len(auto_results.get('plugins', []))
                     }
+                )
         
-        final_response = await self.feedback.generate_response(results, context)
+            results = []
+            for step in plan.get("steps", []):
+                if context.get('enable_skill_plugin', True) and step.get('use_skill'):
+                    skill_name = step.get('skill_name')
+                    if skill_name:
+                        skill_result = await self.execute_skill(
+                            skill_name=skill_name,
+                            inputs=step.get('inputs', {}),
+                            context=context
+                        )
+                        results.append({
+                            'type': 'skill',
+                            'step': step,
+                            'result': skill_result
+                        })
+                        self._schedule_record(
+                            node_type="tool_execution",
+                            user_message=user_input,
+                            context=context,
+                            status="success" if skill_result.get('status') in ('completed', 'success') else "error",
+                            error_message=skill_result.get('error'),
+                            llm_input=step,
+                            llm_output=skill_result,
+                            metadata={
+                                "execution_type": "skill",
+                                "skill_name": skill_name
+                            }
+                        )
+                        record_tool_execution_metric("skill", skill_result.get("status", "unknown"))
+                        continue
+            
+                if context.get('enable_skill_plugin', True) and step.get('use_plugin'):
+                    plugin_name = step.get('plugin_name')
+                    plugin_method = step.get('plugin_method')
+                    if plugin_name and plugin_method:
+                        plugin_result = await self.execute_plugin(
+                            plugin_name=plugin_name,
+                            method=plugin_method,
+                            **step.get('kwargs', {})
+                        )
+                        results.append({
+                            'type': 'plugin',
+                            'step': step,
+                            'result': plugin_result
+                        })
+                        self._schedule_record(
+                            node_type="tool_execution",
+                            user_message=user_input,
+                            context=context,
+                            status="success" if plugin_result.get('status') in ('completed', 'success') else "error",
+                            error_message=plugin_result.get('message'),
+                            llm_input=step,
+                            llm_output=plugin_result,
+                            metadata={
+                                "execution_type": "plugin",
+                                "plugin_name": plugin_name,
+                                "plugin_method": plugin_method
+                            }
+                        )
+                        record_tool_execution_metric("plugin", plugin_result.get("status", "unknown"))
+                        continue
+                result = await self.executor.execute_step(step, context)
+                results.append({
+                    'type': 'execution',
+                    'step': step,
+                    'result': result
+                })
+                self._schedule_record(
+                    node_type="tool_execution",
+                    user_message=user_input,
+                    context=context,
+                    status="success" if isinstance(result, dict) and result.get('status') in ['completed', 'success'] else "error",
+                    error_message=result.get('message') if isinstance(result, dict) else None,
+                    llm_input=step,
+                    llm_output=result,
+                    metadata={
+                        "execution_type": "execution",
+                        "action": step.get('action')
+                    }
+                )
+                
+                if isinstance(result, dict):
+                    feedback = await self.feedback.evaluate_result(result)
+                    if feedback.get("needs_confirmation"):
+                        return self._apply_output_mode({
+                            "status": "awaiting_confirmation",
+                            "message": feedback.get("message"),
+                            "step": step,
+                            "results": results
+                        }, context)
+                    
+                    if feedback.get("needs_retry"):
+                        retry_result = await self.executor.retry_step(step, context)
+                        results[-1] = {
+                            'type': 'execution',
+                            'step': step,
+                            'result': retry_result
+                        }
+        
+            final_response = await self.feedback.generate_response(results, context)
 
-        first_error = None
-        for item in results:
-            result = item.get('result', item)
-            if isinstance(result, dict) and result.get('error'):
-                first_error = result.get('error')
-                break
+            first_error = None
+            for item in results:
+                result = item.get('result', item)
+                if isinstance(result, dict) and result.get('error'):
+                    first_error = result.get('error')
+                    break
 
-        if first_error:
-            return self._apply_output_mode({
-                "status": "error",
+            if first_error:
+                return self._apply_output_mode({
+                    "status": "error",
+                    "response": final_response,
+                    "results": results,
+                    "error": first_error
+                }, context)
+            await self.feedback.update_memory(
+                user_input=user_input,
+                response=final_response,
+                context=context
+            )
+        
+            if context.get('extract_experience', False):
+                await self._extract_and_store_experience(
+                    user_input=user_input,
+                    context=context,
+                    results=results,
+                    status='success' if final_response else 'failed'
+                )
+        
+            skill_count = sum(1 for r in results if r.get('type') == 'skill')
+            plugin_count = sum(1 for r in results if r.get('type') == 'plugin')
+        
+            reasoning_parts = []
+            for item in results:
+                result = item.get('result', item)
+                if isinstance(result, dict) and result.get('reasoning_content'):
+                    reasoning_parts.append(result['reasoning_content'])
+        
+            output = {
+                "status": "completed",
                 "response": final_response,
                 "results": results,
-                "error": first_error
-            }, context)
-        await self.feedback.update_memory(
-            user_input=user_input,
-            response=final_response,
-            context=context
-        )
-        
-        if context.get('extract_experience', False):
-            await self._extract_and_store_experience(
-                user_input=user_input,
-                context=context,
-                results=results,
-                status='success' if final_response else 'failed'
-            )
-        
-        skill_count = sum(1 for r in results if r.get('type') == 'skill')
-        plugin_count = sum(1 for r in results if r.get('type') == 'plugin')
-        
-        # 从执行结果中聚合推理内容
-        reasoning_parts = []
-        for item in results:
-            result = item.get('result', item)
-            if isinstance(result, dict) and result.get('reasoning_content'):
-                reasoning_parts.append(result['reasoning_content'])
-        
-        output = {
-            "status": "completed",
-            "response": final_response,
-            "results": results,
-            "experiences_used": len(experiences),
-            "memories_used": len(relevant_memories),
-            "skills_executed": skill_count,
-            "plugins_executed": plugin_count,
-            "skill_results": self.skill_results.copy(),
-            "plugin_results": self.plugin_results.copy()
-        }
-        if workflow_result:
-            output["workflow_result"] = workflow_result
-        if reasoning_parts:
-            output["reasoning_content"] = "\n".join(reasoning_parts)
-        return self._apply_output_mode(output, context)
+                "experiences_used": len(experiences),
+                "memories_used": len(relevant_memories),
+                "skills_executed": skill_count,
+                "plugins_executed": plugin_count,
+                "skill_results": self.skill_results.copy(),
+                "plugin_results": self.plugin_results.copy()
+            }
+            if workflow_result:
+                output["workflow_result"] = workflow_result
+            if reasoning_parts:
+                output["reasoning_content"] = "\n".join(reasoning_parts)
+            return self._apply_output_mode(output, context)
+        finally:
+            unregister_agent_task(session_id)
     
     async def _auto_execute_skills_and_plugins(
         self,

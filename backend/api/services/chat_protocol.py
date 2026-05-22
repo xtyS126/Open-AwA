@@ -71,6 +71,11 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 continue
 
+            # cancelled 事件直接透传，取消后不再继续发送
+            if chunk_type == "cancelled":
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                break
+
             # 非 chunk 事件保持原样透传，供前端消费 status/plan/task/tool/usage 等结构化事件
             if chunk_type and chunk_type != "chunk":
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"

@@ -1,5 +1,6 @@
-import { Component, ErrorInfo, ReactNode } from 'react'
+import React, { Component, type ErrorInfo, type ReactNode } from 'react'
 import { appLogger } from '@/shared/utils/logger'
+import styles from './ErrorBoundary.module.css'
 
 interface Props {
   children: ReactNode
@@ -9,29 +10,35 @@ interface Props {
 interface State {
   hasError: boolean
   error: Error | null
+  errorInfo: ErrorInfo | null
+  retryCount: number
+  retryKey: number
 }
 
-/**
- * 错误边界组件，捕获子组件树中未处理的渲染异常，防止整个应用白屏崩溃。
- * name 属性用于标识出错的模块，可嵌套使用实现分层容错。
- */
+const MAX_RETRY_COUNT = 3
+
 class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props)
-    this.state = { hasError: false, error: null }
+  state: State = {
+    hasError: false,
+    error: null,
+    errorInfo: null,
+    retryCount: 0,
+    retryKey: 0,
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error }
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    this.setState({ errorInfo })
+    const moduleName = this.props.name || '应用'
     appLogger.error({
       event: 'frontend_render_error',
-      module: this.props.name || 'error-boundary',
+      module: moduleName,
       action: 'component_did_catch',
       status: 'failure',
-      message: `frontend render error captured in module: ${this.props.name || 'unknown'}`,
+      message: `前端渲染错误捕获于模块: ${moduleName}`,
       extra: {
         error: error.message,
         stack: error.stack || '',
@@ -40,51 +47,91 @@ class ErrorBoundary extends Component<Props, State> {
     })
   }
 
-  handleReload = () => {
-    this.setState({ hasError: false, error: null })
+  handleRetry = (): void => {
+    const { retryCount } = this.state
+    const nextCount = retryCount + 1
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      retryCount: nextCount,
+      retryKey: nextCount,
+    })
+  }
+
+  handleReloadPage = (): void => {
     window.location.reload()
   }
 
-  render() {
-    if (this.state.hasError) {
-      const moduleName = this.props.name || '应用'
+  handleCopyError = async (): Promise<void> => {
+    const { error, errorInfo } = this.state
+    const details = [
+      `模块: ${this.props.name || '未知'}`,
+      `错误: ${error?.message || '未知'}`,
+      `堆栈: ${error?.stack || '无'}`,
+      `组件堆栈: ${errorInfo?.componentStack || '无'}`,
+    ].join('\n\n')
+    try {
+      await navigator.clipboard.writeText(details)
+    } catch {
+      // fallback: 忽略复制失败
+    }
+  }
+
+  render(): ReactNode {
+    const { hasError, error, retryCount } = this.state
+    const moduleName = this.props.name || '应用'
+
+    if (hasError) {
+      if (retryCount >= MAX_RETRY_COUNT) {
+        return (
+          <div className={styles.shell}>
+            <div className={styles.panel}>
+              <h2 className={styles.title}>{moduleName} 发生了意外错误</h2>
+              <p className={styles.description}>
+                已尝试重试 {MAX_RETRY_COUNT} 次仍无法恢复，建议刷新页面。
+              </p>
+              <p className={styles.errorText}>{error?.message || '未知错误'}</p>
+              <div className={styles.actions}>
+                <button className={styles.btnPrimary} onClick={this.handleReloadPage}>
+                  刷新页面
+                </button>
+                <button className={styles.btnSecondary} onClick={this.handleCopyError}>
+                  复制错误信息
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      }
+
       return (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh',
-          padding: '24px',
-          textAlign: 'center',
-          color: 'var(--color-text-secondary, #666)',
-          fontFamily: 'system-ui, sans-serif',
-        }}>
-          <h2 style={{ color: 'var(--color-text-primary, #333)', marginBottom: '12px' }}>
-            {moduleName} 发生了意外错误
-          </h2>
-          <p style={{ maxWidth: '480px', lineHeight: 1.6, marginBottom: '20px' }}>
-            该模块遇到了未处理异常。详细信息已记录，建议重新加载后重试。
-          </p>
-          <button
-            onClick={this.handleReload}
-            style={{
-              padding: '10px 24px',
-              fontSize: '14px',
-              borderRadius: '6px',
-              border: 'none',
-              backgroundColor: 'var(--color-primary, #4f46e5)',
-              color: '#fff',
-              cursor: 'pointer',
-            }}
-          >
-            重新加载
-          </button>
+        <div className={styles.shell}>
+          <div className={styles.panel}>
+            <h2 className={styles.title}>{moduleName} 发生了意外错误</h2>
+            <p className={styles.description}>
+              详细信息已自动记录，您可以尝试重试恢复。
+            </p>
+            <p className={styles.errorText}>{error?.message || '未知错误'}</p>
+            <div className={styles.actions}>
+              <button className={styles.btnPrimary} onClick={this.handleRetry}>
+                重试（{retryCount}/{MAX_RETRY_COUNT}）
+              </button>
+              <button className={styles.btnSecondary} onClick={this.handleCopyError}>
+                复制错误信息
+              </button>
+            </div>
+          </div>
         </div>
       )
     }
 
-    return this.props.children
+    return (
+      <React.Fragment key={this.state.retryKey}>
+        {this.props.children}
+      </React.Fragment>
+    )
   }
 }
 

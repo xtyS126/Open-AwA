@@ -10,6 +10,11 @@ interface MessageListProps {
   outputMode: 'stream' | 'direct'
   streamStatusText: string
   messagesEndRef: React.RefObject<HTMLDivElement | null>
+  onEditMessage?: (content: string) => void
+  onRegenerate?: (messageId: string) => void
+  onFeedback?: (messageId: string, rating: 1 | -1) => void
+  feedbackState?: Record<string, 1 | -1 | undefined>
+  onUndo?: (operationId: string) => Promise<void>
 }
 
 export function MessageList({
@@ -20,6 +25,11 @@ export function MessageList({
   outputMode,
   streamStatusText,
   messagesEndRef,
+  onEditMessage,
+  onRegenerate,
+  onFeedback,
+  feedbackState,
+  onUndo,
 }: MessageListProps) {
   return (
     <div className={styles['chat-messages']}>
@@ -36,6 +46,11 @@ export function MessageList({
           messageMeta={messageMeta}
           streamingAssistantId={streamingAssistantId}
           isLastMessage={index === messages.length - 1}
+          onEditMessage={onEditMessage}
+          onRegenerate={onRegenerate}
+          onFeedback={onFeedback}
+          feedbackState={feedbackState}
+          onUndo={onUndo}
         />
       ))}
 

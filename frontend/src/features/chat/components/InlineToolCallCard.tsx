@@ -2,9 +2,11 @@ import type { ToolEventMeta } from '@/features/chat/types'
 import { ToolParamViewer } from './ToolParamViewer'
 import styles from './InlineToolCallCard.module.css'
 import { useState } from 'react'
+import { Undo2 } from 'lucide-react'
 
 interface InlineToolCallCardProps {
   tool: ToolEventMeta
+  onUndo?: (operationId: string) => Promise<void>
 }
 
 function getStatusLabel(status: string): string {
@@ -16,9 +18,26 @@ function getStatusLabel(status: string): string {
   }
 }
 
-export function InlineToolCallCard({ tool }: InlineToolCallCardProps) {
+export function InlineToolCallCard({ tool, onUndo }: InlineToolCallCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone'>('idle')
   const isRunning = tool.status === 'running'
+
+  const canUndo = tool.status === 'completed'
+    && ['write_file', 'delete_file', 'terminal_executor'].some(n => tool.name?.includes(n))
+    && typeof (tool.output as Record<string, unknown> | undefined)?.operation_id === 'string'
+
+  const handleUndoClick = async () => {
+    if (!canUndo || !onUndo || undoState !== 'idle') return
+    setUndoState('undoing')
+    try {
+      await onUndo(String((tool.output as Record<string, unknown>).operation_id))
+      setUndoState('undone')
+    } catch {
+      setUndoState('idle')
+    }
+  }
+
   return (
     <div className={styles.inlineContainer}>
       <div 
@@ -40,6 +59,19 @@ export function InlineToolCallCard({ tool }: InlineToolCallCardProps) {
           {tool.output !== undefined && tool.output !== null && (
              <ToolParamViewer data={tool.output} label="执行结果" />
           )}
+          {undoState === 'undone' ? (
+            <span className={styles.undoneLabel}>✓ 已撤销</span>
+          ) : canUndo && onUndo ? (
+            <button
+              className={styles.undoBtn}
+              onClick={handleUndoClick}
+              disabled={undoState === 'undoing'}
+              title="撤销此操作（5分钟内有效）"
+            >
+              <Undo2 size={14} />
+              <span>撤销</span>
+            </button>
+          ) : null}
         </div>
       )}
     </div>

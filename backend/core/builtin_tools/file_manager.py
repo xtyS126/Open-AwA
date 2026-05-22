@@ -198,13 +198,15 @@ class FileManagerSkill:
         if not self._validate_path(file_path):
             return {"success": False, "error": "Access denied"}
 
-        # 写入前保存检查点快照（仅当文件已存在且检查点存储器已注入时）
-        if self.checkpoint_store and os.path.exists(file_path):
-            self.checkpoint_store.save(
-                session_path=kwargs.get('session_path'),
-                tool="write_file",
+        # 写入前保存检查点快照
+        operation_id = None
+        if self.checkpoint_store is not None:
+            op_type = "overwrite" if os.path.exists(file_path) else "create"
+            operation_id = self.checkpoint_store.save(
+                session_id=kwargs.get("session_id", "default"),
+                tool_name="write_file",
                 file_path=file_path,
-                reason="write_file即将覆写",
+                operation_type=op_type,
             )
 
         try:
@@ -218,7 +220,8 @@ class FileManagerSkill:
             return {
                 "success": True,
                 "path": file_path,
-                "bytes_written": len(content.encode('utf-8'))
+                "bytes_written": len(content.encode('utf-8')),
+                "operation_id": operation_id,
             }
         except Exception as e:
             logger.error(f"Error writing file {file_path}: {e}")

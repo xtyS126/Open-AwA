@@ -1,4 +1,5 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState, useCallback } from 'react'
+import { Pencil, Copy, RefreshCw, ThumbsUp, ThumbsDown, Check } from 'lucide-react'
 import type {
   AssistantExecutionMeta,
   AssistantMessageSegment,
@@ -15,6 +16,14 @@ interface ChatMessageProps {
   messageMeta: Record<string, AssistantExecutionMeta>
   streamingAssistantId: string | null
   isLastMessage: boolean
+  onEditMessage?: (content: string) => void
+  /** 重新生成回调（仅助手消息） */
+  onRegenerate?: (messageId: string) => void
+  /** 反馈回调（点赞/点踩） */
+  onFeedback?: (messageId: string, rating: 1 | -1) => void
+  /** 各消息的反馈状态，messageId -> 1(赞) | -1(踩) */
+  feedbackState?: Record<string, 1 | -1 | undefined>
+  onUndo?: (operationId: string) => Promise<void>
 }
 
 type GroupedSegment = 
@@ -61,8 +70,9 @@ function getAssistantSegments(
   })
 }
 
-function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMessage }: ChatMessageProps) {
+function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMessage, onEditMessage, onRegenerate, onFeedback, feedbackState, onUndo }: ChatMessageProps) {
   const isCurrentlyStreaming = streamingAssistantId === message.id && isLastMessage && message.role === 'assistant'
+  const [copied, setCopied] = useState(false)
 
   const assistantSegments = useMemo(() => {
     if (message.role !== 'assistant') return []
@@ -73,11 +83,28 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
     return groupAssistantSegments(assistantSegments)
   }, [assistantSegments])
 
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      /* clipboard API 不可用时的静默处理 */
+    }
+  }, [message.content])
+
   return (
     <div className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}>
       <div className={styles['message-content']}>
         {message.role === 'user' && (
-          <MessageContent content={message.content} role={message.role} isStreaming={isCurrentlyStreaming} />
+          <>
+            <MessageContent content={message.content} role={message.role} isStreaming={isCurrentlyStreaming} />
+            {!isCurrentlyStreaming && onEditMessage && (
+              <button className={styles['editBtn']} onClick={() => onEditMessage(message.content)} title="编辑消息">
+                <Pencil size={14} />
+              </button>
+            )}
+          </>
         )}
         {message.role === 'assistant' && groupedSegments.map((group) => (
           group.kind === 'thought_group' ? (
@@ -85,6 +112,7 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
               key={group.id}
               segments={group.segments}
               isStreaming={isCurrentlyStreaming && group.segments.some(s => s.status === 'running')}
+              onUndo={onUndo}
             />
           ) : (
             <MessageContent
@@ -95,6 +123,38 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
             />
           )
         ))}
+        {message.role === 'assistant' && !isCurrentlyStreaming && (
+          <div className={styles['actionsBar']}>
+            <button className={styles['actionBtn']} onClick={handleCopy} title="复制">
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+            {onRegenerate && (
+              <button className={styles['actionBtn']} onClick={() => onRegenerate(message.id)} title="重新生成">
+                <RefreshCw size={14} />
+              </button>
+            )}
+            {onFeedback && (
+              <>
+                <button
+                  className={`${styles['actionBtn']} ${feedbackState?.[message.id] === 1 ? styles['actionBtnActive'] : ''}`}
+                  onClick={() => onFeedback(message.id, 1)}
+                  disabled={feedbackState?.[message.id] === -1}
+                  title="点赞"
+                >
+                  <ThumbsUp size={14} />
+                </button>
+                <button
+                  className={`${styles['actionBtn']} ${feedbackState?.[message.id] === -1 ? styles['actionBtnActive'] : ''}`}
+                  onClick={() => onFeedback(message.id, -1)}
+                  disabled={feedbackState?.[message.id] === 1}
+                  title="点踩"
+                >
+                  <ThumbsDown size={14} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

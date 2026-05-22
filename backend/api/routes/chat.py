@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from loguru import logger
 
 from api.dependencies import get_current_user
-from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest
+from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest, UserFeedbackRequest
 from api.services.chat_protocol import build_sse_response, handle_websocket_session
 from api.services.ws_manager import ws_manager
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
@@ -216,6 +216,73 @@ async def confirm_operation(
     ).info("confirmation handled")
 
     return result
+
+
+# ---- 取消正在执行的 Agent 任务 ----
+
+@router.post("/cancel/{session_id}", summary="取消正在执行的 Agent 任务")
+async def cancel_agent_task(
+    session_id: str,
+    current_user=Depends(get_current_user)
+):
+    """取消指定会话中正在执行的 Agent 任务。"""
+    from core.agent import get_agent_task, unregister_agent_task
+
+    task = get_agent_task(session_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="没有找到正在执行的任务")
+
+    if task.done():
+        unregister_agent_task(session_id)
+        raise HTTPException(status_code=404, detail="任务已经完成")
+
+    task.cancel()
+    logger.bind(
+        event="chat_cancel",
+        session_id=session_id,
+        user_id=current_user.id
+    ).info("agent task cancelled by user")
+
+    return {"status": "cancelled", "session_id": session_id, "message": "任务取消请求已发送"}
+
+
+# ---- 用户反馈 ----
+
+@router.post(
+    "/feedback",
+    summary="提交用户消息反馈",
+    description="对助手回复进行点赞或点踩反馈。"
+)
+async def submit_feedback(
+    feedback: UserFeedbackRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    """记录用户对助手消息的显式反馈。"""
+    from core.feedback import feedback_layer_registry
+
+    try:
+        feedback_layer_registry.record_explicit_feedback(
+            session_id=feedback.session_id,
+            message_id=feedback.message_id,
+            user_id=current_user.id,
+            rating=feedback.rating,
+            comment=feedback.comment,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    logger.bind(
+        event="chat_feedback",
+        module="chat",
+        action="feedback",
+        status="success",
+        user_id=current_user.id,
+        session_id=feedback.session_id,
+        rating=feedback.rating,
+    ).info("user feedback recorded")
+
+    return {"status": "ok", "message": "反馈已记录"}
 
 
 @router.websocket("/ws/{session_id}")
@@ -494,3 +561,37 @@ async def get_uploaded_file(
         raise HTTPException(status_code=403, detail="无权访问该文件")
 
     return FileResponse(file_path, filename=str(metadata.get("original_name") or filename))
+
+
+# ---- 操作撤销 ----
+
+from core.checkpoint_store import checkpoint_store
+
+
+@router.post(
+    "/undo-operation",
+    summary="撤销 AI 执行的文件操作",
+    description="根据操作 ID 撤销之前 AI 执行的文件写入或创建操作。"
+)
+async def undo_operation(
+    request: Request,
+    data: Dict[str, Any],
+    current_user=Depends(get_current_user)
+):
+    """撤销操作检查点。"""
+    operation_id = data.get("operation_id")
+    if not operation_id:
+        raise HTTPException(status_code=400, detail="缺少 operation_id")
+
+    result = checkpoint_store.undo(operation_id)
+
+    logger.bind(
+        event="chat_undo",
+        module="chat",
+        action="undo",
+        status="success" if result.get("ok") else "failure",
+        user_id=current_user.id,
+        operation_id=operation_id,
+    ).info("undo operation executed")
+
+    return result
