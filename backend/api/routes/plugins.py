@@ -917,16 +917,13 @@ async def upload_plugin(
                     id=str(uuid.uuid4()),
                     name=name,
                     version=version,
-                    config=f'{{"description": "{description}"}}',
+                    config={"description": description},
                     enabled=True
                 )
                 db.add(new_plugin)
                 installed_count += 1
         
-        # 数据库提交成功后，再将文件从临时目录移动到插件目录
-        db.commit()
-        
-        # 原子移动：将临时目录下的内容移动到插件目录
+        # 先将文件从临时目录移动到插件目录，再提交数据库
         for item in os.listdir(temp_dir):
             src_path = os.path.join(temp_dir, item)
             dst_path = os.path.join(plugins_dir, item)
@@ -937,6 +934,9 @@ async def upload_plugin(
                 moved_dirs.append(dst_path)
             else:
                 shutil.move(src_path, dst_path)
+
+        # 文件移动成功后再提交数据库
+        db.commit()
             
         return {"message": f"Plugin uploaded and extracted successfully. Installed {installed_count} new plugins."}
     except zipfile.BadZipFile:

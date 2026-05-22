@@ -61,17 +61,7 @@ function MarketplacePage() {
       loadPlugins()
       return
     }
-    setLoading(true)
-    try {
-      const response = await searchPlugins(searchQuery.trim())
-      setPlugins(response.data.plugins)
-      setTotal(response.data.total)
-      setPage(1)
-    } catch (error) {
-      console.error('搜索插件失败:', error)
-    } finally {
-      setLoading(false)
-    }
+    setPage(1)
   }
 
   /** 安装插件 */
@@ -103,11 +93,20 @@ function MarketplacePage() {
   }
 
   useEffect(() => {
-    // 搜索状态时不自动加载列表
-    if (!searchQuery.trim()) {
+    // 搜索状态时重新搜索（支持分页），非搜索状态加载列表
+    if (searchQuery.trim()) {
+      setLoading(true)
+      searchPlugins(searchQuery.trim(), page, pageSize)
+        .then(response => {
+          setPlugins(response.data.plugins)
+          setTotal(response.data.total)
+        })
+        .catch(error => console.error('搜索插件失败:', error))
+        .finally(() => setLoading(false))
+    } else {
       loadPlugins()
     }
-  }, [loadPlugins, searchQuery])
+  }, [loadPlugins, searchQuery, page])
 
   /** 生成插件图标首字母 */
   const getIconLetter = (name: string) => {

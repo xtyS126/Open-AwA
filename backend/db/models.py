@@ -501,7 +501,7 @@ class UserFeedback(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="会话 ID")
     message_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="消息 ID")
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="用户 ID")
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="用户 ID")
     rating: Mapped[int] = mapped_column(Integer, nullable=False, comment="评分：1=点赞，-1=点踩")
     comment: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True, comment="反馈备注")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), comment="反馈时间")

@@ -183,6 +183,8 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, ab
     }
 
     setInput('')
+    // 清理 Blob URL 避免内存泄漏
+    attachments.forEach(a => { if (a.preview) URL.revokeObjectURL(a.preview) })
     setAttachments([])
     await onSend(userMessage, attachmentsWithBase64)
   }

@@ -1448,6 +1448,9 @@ class ExecutionLayer:
                 ):
                     return {"ok": False, "error": f"Failed to load plugin: {resolved_plugin_name}"}
                 result = await pm.execute_plugin_async(resolved_plugin_name, plugin_method, **func_args)
+                # 检查插件返回结果状态，非成功状态标记为失败
+                if isinstance(result, dict) and result.get("status") == "error":
+                    return {"ok": False, "error": result.get("message", "Plugin returned error"), "result": result, "tool_name": func_name}
                 return {"ok": True, "result": result, "tool_name": func_name}
             except Exception as exc:
                 logger.bind(

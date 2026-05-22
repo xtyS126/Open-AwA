@@ -207,7 +207,7 @@ class FeedbackLayer:
         self,
         session_id: str,
         message_id: str,
-        user_id: int,
+        user_id: str,
         rating: int,
         comment: Optional[str] = None,
     ) -> None:
@@ -217,7 +217,7 @@ class FeedbackLayer:
         Args:
             session_id: 会话 ID
             message_id: 消息 ID
-            user_id: 用户 ID
+            user_id: 用户 ID（字符串类型）
             rating: 评分（1=点赞，-1=点踩）
             comment: 可选备注
         """
