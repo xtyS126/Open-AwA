@@ -79,7 +79,7 @@ function DashboardPage() {
     return billingStats.by_model.slice(0, 6).map(m => ({
       name: m.model.length > 16 ? m.model.slice(0, 14) + '..' : m.model,
       cost: m.cost,
-      requests: m.requests || 0
+      requests: m.call_count || 0
     }))
   }
 

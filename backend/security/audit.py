@@ -199,10 +199,10 @@ class AuditLogger:
         if action_type:
             query = query.filter(AuditLog.action.startswith(action_type))
         if start_date:
-            query = query.filter(AuditLog.timestamp >= start_date)
+            query = query.filter(AuditLog.created_at >= start_date)
         if end_date:
-            query = query.filter(AuditLog.timestamp <= end_date)
-        return query.order_by(AuditLog.timestamp.desc()).limit(limit).all()
+            query = query.filter(AuditLog.created_at <= end_date)
+        return query.order_by(AuditLog.created_at.desc()).limit(limit).all()
 
     async def get_logs(
         self,
@@ -227,11 +227,11 @@ class AuditLogger:
         start_date = datetime.now(timezone.utc) - timedelta(hours=hours)
         query = self.db.query(AuditLog).filter(
             AuditLog.result == "failure",
-            AuditLog.timestamp >= start_date
+            AuditLog.created_at >= start_date
         )
         if user_id:
             query = query.filter(AuditLog.user_id == user_id)
-        return query.order_by(AuditLog.timestamp.desc()).all()
+        return query.order_by(AuditLog.created_at.desc()).all()
 
     async def get_failed_attempts(
         self,
@@ -257,7 +257,7 @@ class AuditLogger:
             func.count(AuditLog.id).label("count")
         ).filter(
             AuditLog.result == "failure",
-            AuditLog.timestamp >= start_date
+            AuditLog.created_at >= start_date
         ).group_by(
             AuditLog.user_id
         ).having(

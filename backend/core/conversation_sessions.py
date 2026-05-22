@@ -240,7 +240,7 @@ def ensure_conversation(
             preview=preview,
             role=role,
             occurred_at=now,
-            increment_message_count=increment_message_count,
+            increment_message_count=False,
         )
 
     conversation = _reconcile_conversation_owner(

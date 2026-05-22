@@ -275,8 +275,14 @@ class MCPManager:
                             f"热更新：添加 Server {config.name} ({server_id})"
                         )
                     else:
-                        # 配置可能有变更，更新内存中的配置（客户端重连需手动触发）
-                        self._configs[server_id] = config
+                        # 配置有变更时，更新内存配置并重建客户端
+                        old_config = self._configs[server_id]
+                        if config != old_config:
+                            self._configs[server_id] = config
+                            self._clients[server_id] = MCPClient(config)
+                            logger.bind(module="mcp.manager", event="hot_reload_update").info(
+                                f"热更新：重建 Server {config.name} ({server_id}) 客户端"
+                            )
                 except Exception as exc:
                     logger.bind(
                         module="mcp.manager", event="hot_reload_error", server_id=server_id

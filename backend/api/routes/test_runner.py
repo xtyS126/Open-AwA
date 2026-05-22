@@ -233,7 +233,7 @@ def _run_skills_list(db: Session, current_user: User) -> tuple:
     """验证技能列表"""
     from skills.skill_loader import SkillLoader
 
-    loader = SkillLoader()
+    loader = SkillLoader(db_session=db)
     skills = loader.list_skills()
     enabled = [s.get("name", s.get("id", "?")) for s in skills if s.get("enabled", True)]
 

@@ -63,15 +63,19 @@ def _check_skills() -> Dict[str, Any]:
     """
     try:
         from skills.skill_loader import SkillLoader
-        loader = SkillLoader()
-        skills = loader.list_skills()
-        enabled_count = sum(1 for s in skills if s.get("enabled", True))
-        return {
-            "ok": True,
-            "total_count": len(skills),
-            "enabled_count": enabled_count,
-            "error": None,
-        }
+        db = SessionLocal()
+        try:
+            loader = SkillLoader(db_session=db)
+            skills = loader.list_skills()
+            enabled_count = sum(1 for s in skills if s.get("enabled", True))
+            return {
+                "ok": True,
+                "total_count": len(skills),
+                "enabled_count": enabled_count,
+                "error": None,
+            }
+        finally:
+            db.close()
     except Exception as e:
         logger.warning(f"技能系统检查失败: {e}")
         return {"ok": False, "total_count": 0, "enabled_count": 0, "error": str(e)}

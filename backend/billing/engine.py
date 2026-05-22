@@ -81,6 +81,8 @@ class BillingEngine:
             "output_price": pricing.output_price,
             "cache_hit_price": pricing.cache_hit_price,
             "start_time": start_time,
+            "user_id": user_id,
+            "session_id": session_id,
             "budget_warning": budget_check.get("warning_threshold_reached", False),
             "budget_status": budget_check
         }

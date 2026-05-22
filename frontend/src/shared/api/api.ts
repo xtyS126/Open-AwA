@@ -910,7 +910,7 @@ export const memoryAPI = {
     api.post('/memory/long-term', { content, importance }),
   deleteLongTerm: (id: number) =>
     api.delete(`/memory/long-term/${id}`),
-  search: (query: string) => api.get(`/memory/search?query=${query}`),
+  search: (query: string) => api.get('/memory/search', { params: { query } }),
 }
 
 export const promptsAPI = {

@@ -35,9 +35,9 @@ export function getPlugins(params: {
 }
 
 /** 搜索插件 */
-export function searchPlugins(query: string) {
+export function searchPlugins(query: string, page?: number, pageSize?: number) {
   return api.get<MarketplaceSearchResponse>('/marketplace/plugins/search', {
-    params: { q: query },
+    params: { q: query, page, page_size: pageSize },
   })
 }
 

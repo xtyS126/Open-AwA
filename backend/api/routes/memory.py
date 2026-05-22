@@ -167,12 +167,16 @@ async def delete_long_term_memory(
     manager: MemoryManager = Depends(get_memory_manager),
     current_user = Depends(get_current_user)
 ):
-    memory = manager.db.query(LongTermMemory).filter(
-        LongTermMemory.id == memory_id,
-        LongTermMemory.user_id == str(current_user.id)
-    ).first()
-    if not memory:
-        raise HTTPException(status_code=404, detail="Memory not found")
+    db = manager.session_factory()
+    try:
+        memory = db.query(LongTermMemory).filter(
+            LongTermMemory.id == memory_id,
+            LongTermMemory.user_id == str(current_user.id)
+        ).first()
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+    finally:
+        db.close()
 
     await manager.delete_long_term_memory(memory_id)
     return {"message": "Memory deleted successfully"}
