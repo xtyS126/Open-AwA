@@ -2,16 +2,17 @@
 Agent工具管理路由 - 提供文件操作、终端执行、网页搜索等工具的统一API入口。
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
 from loguru import logger
 
+from api.dependencies import get_current_user
 from tools.registry import built_in_tool_registry
 
 
-router = APIRouter(prefix="/api/tools", tags=["agent-tools"])
+router = APIRouter(prefix="/api/tools", tags=["agent-tools"], dependencies=[Depends(get_current_user)])
 
 
 async def _safe_execute_tool(tool_name: str, action: str, params: dict) -> dict:

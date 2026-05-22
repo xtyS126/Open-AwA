@@ -99,7 +99,7 @@ function PluginDebugPanel({ pluginId, pluginName }: Props) {
           {LOG_LEVELS.map((l) => (
             <button
               key={l}
-              className={`${styles['debug-btn']}${activeLevel === l ? styles[styles['debug-btn-active']] : ''}`}
+              className={`${styles['debug-btn']}${activeLevel === l ? ` ${styles['debug-btn-active']}` : ''}`}
               onClick={() => handleSetLogLevel(l)}
               disabled={settingLevel}
               title={`设置插件日志输出级别为 ${l}`}
@@ -109,7 +109,7 @@ function PluginDebugPanel({ pluginId, pluginName }: Props) {
           ))}
 
           <button
-            className={`${styles['debug-btn']}${polling ? styles[styles['debug-btn-active']] : ''}`}
+            className={`${styles['debug-btn']}${polling ? ` ${styles['debug-btn-active']}` : ''}`}
             onClick={() => setPolling((p) => !p)}
             title="开关轮询刷新"
           >

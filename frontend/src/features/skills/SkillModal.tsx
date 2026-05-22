@@ -71,7 +71,12 @@ export default function SkillModal({ onClose, onSuccess }: SkillModalProps) {
         message: '开始创建技能',
         extra: { name },
       })
-      const config = `name: ${name}\ndescription: ${description}\ninstructions: |\n  ${instructions.split('\n').join('\n  ')}\ntype: global`
+      const config = JSON.stringify({
+        name,
+        description,
+        instructions,
+        type: 'global'
+      })
       
       await skillsAPI.install({
         name,

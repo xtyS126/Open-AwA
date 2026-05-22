@@ -100,7 +100,7 @@ export const billingAPI = {
 
   getCostStatistics: (params?: {
     user_id?: string
-    period?: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'all'
+    period?: 'daily' | 'weekly' | 'monthly' | 'yearly'
   }) => api.get('/billing/cost', { params }),
 
   getModels: (params?: { provider?: string }) =>

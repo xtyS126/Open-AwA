@@ -43,7 +43,7 @@ function BillingPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
-  const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'all'>('monthly')
+  const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly')
 
   const loadBillingData = useCallback(async (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent)
@@ -186,7 +186,6 @@ function BillingPage() {
             <option value="weekly">本周</option>
             <option value="monthly">本月</option>
             <option value="yearly">本年</option>
-            <option value="all">全部</option>
           </select>
           <button className={styles['export-btn']} onClick={handleExport}>
             <Download size={14} />

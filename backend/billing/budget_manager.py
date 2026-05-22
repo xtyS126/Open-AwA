@@ -9,6 +9,7 @@ from typing import List, Optional, Dict
 from datetime import datetime, date, timedelta, timezone
 
 from billing.models import BudgetConfig
+from loguru import logger
 
 
 class BudgetManager:
