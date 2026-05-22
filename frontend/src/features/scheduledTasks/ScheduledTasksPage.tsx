@@ -119,6 +119,7 @@ export default function ScheduledTasksPage() {
   )
 
   /* --- 插件命令任务状态 --- */
+  const [editingPluginTaskId, setEditingPluginTaskId] = useState<number | null>(null)
   const [selectedCommand, setSelectedCommand] = useState<PluginCommandInfo | null>(null)
   const [commandParams, setCommandParams] = useState<Record<string, unknown>>({})
   const [pluginTaskTitle, setPluginTaskTitle] = useState('')
@@ -176,6 +177,7 @@ export default function ScheduledTasksPage() {
   }, [])
 
   const resetPluginForm = useCallback(() => {
+    setEditingPluginTaskId(null)
     setPluginTaskTitle('')
     setPluginScheduledAt(createDefaultScheduledAt())
     setPluginIsDaily(false)
@@ -263,7 +265,11 @@ export default function ScheduledTasksPage() {
     }
 
     try {
-      await scheduledTasksAPI.create(payload)
+      if (editingPluginTaskId !== null) {
+        await scheduledTasksAPI.update(editingPluginTaskId, payload)
+      } else {
+        await scheduledTasksAPI.create(payload)
+      }
       resetPluginForm()
       await loadData()
     } catch (error) {
@@ -286,6 +292,7 @@ export default function ScheduledTasksPage() {
   const handleEdit = (task: ScheduledTask) => {
     if (task.task_type === 'plugin_command') {
       setActiveTab('plugin')
+      setEditingPluginTaskId(task.id)
       setPluginTaskTitle(task.title)
       setPluginScheduledAt(toLocalDateTimeInput(task.scheduled_at))
       setPluginIsDaily(!!task.is_daily)

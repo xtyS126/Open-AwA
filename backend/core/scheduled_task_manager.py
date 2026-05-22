@@ -384,7 +384,11 @@ class ScheduledTaskManager:
         try:
             target_minute = int(parts[0])
             target_hour = int(parts[1])
-            target_weekdays = set(int(d) for d in parts[4].split(","))
+            # 支持 '*' 表示所有星期几
+            if parts[4].strip() == '*':
+                target_weekdays = set(range(7))
+            else:
+                target_weekdays = set(int(d) for d in parts[4].split(","))
         except (ValueError, IndexError):
             return None
 
