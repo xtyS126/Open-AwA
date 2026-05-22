@@ -472,8 +472,15 @@ function renderFieldControl(props: {
         value={String(value ?? '')}
         onChange={(event) => {
           const raw = event.target.value
-          // 空值时传空字符串，有值时转为数字类型
-          onChange(raw === '' ? '' : Number(raw))
+          // 空值时传空字符串，有值时转为数字类型（无效值忽略）
+          if (raw === '') {
+            onChange('')
+          } else {
+            const num = Number(raw)
+            if (!isNaN(num)) {
+              onChange(num)
+            }
+          }
         }}
       />
     )
