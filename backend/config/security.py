@@ -5,7 +5,10 @@
 
 import base64
 import hashlib
+import hmac
+import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -200,3 +203,115 @@ def decode_access_token(token: str) -> Optional[dict]:
         return payload
     except (JWTError, TypeError, ValueError, OverflowError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Per-session CSRF token — user-bound signed token（参考 Django CSRF 的签名 token 模式）
+# 格式: base64url(payload).base64url(HMAC-SHA256(payload, server_secret))
+# payload JSON: {"sub": <user_id>, "jti": <token_jti>, "iat": <issued_at>}
+# 来源参考: https://github.com/django/django/blob/main/django/middleware/csrf.py
+# ---------------------------------------------------------------------------
+
+# CSRF token 有效期（秒），默认与 access token 相同
+_CSRF_TOKEN_MAX_AGE_SECONDS = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+
+
+def _derive_csrf_signing_key() -> bytes:
+    """
+    从 SECRET_KEY 派生 CSRF 签名密钥，与 JWT 签名密钥独立派生。
+    在密钥派生中加入固定上下文字符串以防止跨用途密钥复用。
+    """
+    context_seed = b"open-awa-csrf-v1"
+    key_material = hashlib.sha256(
+        settings.SECRET_KEY.encode("utf-8") + context_seed
+    ).digest()
+    return key_material
+
+
+def generate_csrf_token(user_id: int, jti: Optional[str] = None) -> str:
+    """
+    为用户生成 per-session 的 CSRF token。
+
+    参数:
+        user_id: 用户数据库 ID
+        jti: 当前会话的 JWT jti（可选，用于绑定到特定登录会话）
+
+    返回:
+        base64url 编码的签名 CSRF token 字符串
+    """
+    import uuid
+
+    payload_data = {
+        "sub": user_id,
+        "jti": jti or str(uuid.uuid4()),
+        "iat": int(time.time()),
+    }
+    payload_bytes = json.dumps(payload_data, separators=(",", ":")).encode("utf-8")
+    payload_b64 = base64.urlsafe_b64encode(payload_bytes).rstrip(b"=").decode("ascii")
+
+    signing_key = _derive_csrf_signing_key()
+    signature = hmac.new(signing_key, payload_b64.encode("ascii"), hashlib.sha256).digest()
+    signature_b64 = base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+
+    return f"{payload_b64}.{signature_b64}"
+
+
+def verify_csrf_token(token: str) -> Optional[dict]:
+    """
+    验证 CSRF token 的签名和有效期，返回解码后的 payload 或 None。
+
+    参数:
+        token: 客户端发送的 CSRF token 字符串
+
+    返回:
+        验证成功返回 payload dict（含 sub/jti/iat），失败返回 None
+    """
+    if not token or not isinstance(token, str):
+        return None
+
+    token = token.strip()
+    if not token:
+        return None
+
+    parts = token.split(".")
+    if len(parts) != 2:
+        return None
+
+    payload_b64, signature_b64 = parts
+
+    # 验证签名
+    signing_key = _derive_csrf_signing_key()
+    expected_signature = hmac.new(
+        signing_key, payload_b64.encode("ascii"), hashlib.sha256
+    ).digest()
+    expected_b64 = base64.urlsafe_b64encode(expected_signature).rstrip(b"=").decode("ascii")
+
+    if not hmac.compare_digest(signature_b64, expected_b64):
+        return None
+
+    # 解码 payload
+    try:
+        # 恢复 base64 padding
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+    # 验证必要字段
+    if not isinstance(payload.get("sub"), int):
+        return None
+    if not isinstance(payload.get("iat"), (int, float)):
+        return None
+
+    # 验证有效期
+    token_age = time.time() - payload["iat"]
+    if token_age < 0 or token_age > _CSRF_TOKEN_MAX_AGE_SECONDS:
+        logger.bind(
+            event="csrf_token_expired", module="security"
+        ).debug(f"CSRF token expired: age={token_age:.0f}s")
+        return None
+
+    return payload

@@ -4,12 +4,15 @@
 来源参考: https://github.com/langchain-ai/langgraph
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from loguru import logger
+from sqlalchemy.orm import Session
 
+from api.dependencies import get_current_user
 from core.subagent import SubAgentManager, AgentState, AgentGraph
+from db.models import User, get_db
 
 
 router = APIRouter(prefix="/api/subagents", tags=["subagents"])
@@ -147,24 +150,34 @@ class RunParallelRequest(BaseModel):
 # --- API端点 ---
 
 @router.get("/agents")
-async def list_agents():
-    """获取所有已注册的子Agent。"""
+async def list_agents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取所有已注册的子Agent（需认证）。"""
     manager = _get_manager()
     agents = manager.get_registered_agents()
     return {"agents": agents, "count": len(agents)}
 
 
 @router.get("/graphs")
-async def list_graphs():
-    """获取所有已创建的执行图。"""
+async def list_graphs(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取所有已创建的执行图（需认证）。"""
     manager = _get_manager()
     graphs = manager.get_graphs_info()
     return {"graphs": graphs, "count": len(graphs)}
 
 
 @router.get("/graphs/{graph_name}")
-async def get_graph(graph_name: str):
-    """获取指定图的详细信息。"""
+async def get_graph(
+    graph_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取指定图的详细信息（需认证）。"""
     manager = _get_manager()
     graph = manager.get_graph(graph_name)
     if not graph:
@@ -173,8 +186,12 @@ async def get_graph(graph_name: str):
 
 
 @router.post("/run/graph")
-async def run_graph(req: RunGraphRequest):
-    """运行指定的Agent执行图。"""
+async def run_graph(
+    req: RunGraphRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """运行指定的Agent执行图（需认证）。"""
     manager = _get_manager()
     graph = manager.get_graph(req.graph_name)
     if not graph:
@@ -201,8 +218,12 @@ async def run_graph(req: RunGraphRequest):
 
 
 @router.post("/run/sequential")
-async def run_sequential(req: RunSequentialRequest):
-    """顺序执行多个子Agent。"""
+async def run_sequential(
+    req: RunSequentialRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """顺序执行多个子Agent（需认证）。"""
     manager = _get_manager()
     state = AgentState(context=req.context)
 
@@ -220,8 +241,12 @@ async def run_sequential(req: RunSequentialRequest):
 
 
 @router.post("/run/parallel")
-async def run_parallel(req: RunParallelRequest):
-    """并行执行多个子Agent。"""
+async def run_parallel(
+    req: RunParallelRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """并行执行多个子Agent（需认证）。"""
     manager = _get_manager()
     state = AgentState(context=req.context)
 

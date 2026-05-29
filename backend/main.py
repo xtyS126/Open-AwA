@@ -246,31 +246,87 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CSRF 保护 cookie 名称和 header 名称
-_CSRF_COOKIE_NAME = "csrf_token"
+# CSRF 保护 — per-session 签名 token 模式
+# 参考: Django CSRF 中间件 https://github.com/django/django/blob/main/django/middleware/csrf.py
 _CSRF_HEADER_NAME = "X-CSRF-Token"
 # 不需要 CSRF 校验的路径前缀（公开只读接口）
 _CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/logs/client-errors", "/api/auth/csrf-token"}
 # 需要 CSRF 校验的请求方法
 _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
-# 服务端 CSRF token 存储（单例模式，定期轮换）
-_csrf_server_secret: str = secrets_module.token_urlsafe(32)
+# 服务端签名密钥（不直接作为 token，而是用于签名 per-user token）
+_csrf_signing_key: str = secrets_module.token_urlsafe(32)
+
+
+def _extract_user_id_from_request(request: Request) -> Optional[int]:
+    """
+    从请求中提取认证用户 ID（用于 CSRF 校验时与 token 中绑定的用户比对）。
+
+    优先从 JWT payload 的 uid 字段直接读取（高效路径），
+    其次回退到通过 username 查 DB 的兼容路径（支持旧版不含 uid 的令牌）。
+
+    不会抛出异常，解析失败返回 None。
+    """
+    from config.security import decode_access_token
+
+    token: Optional[str] = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+
+    # 优先从 JWT payload 直接读取 uid（高效路径，新增令牌均包含此字段）
+    uid = payload.get("uid")
+    if isinstance(uid, int):
+        return uid
+
+    # 兼容旧版令牌：通过 username 查 DB（降级路径）
+    username = payload.get("sub")
+    if not isinstance(username, str):
+        return None
+
+    try:
+        from api.dependencies import _load_user_by_username
+
+        user = _load_user_by_username(username)
+        return user.id if user else None
+    except Exception:
+        return None
 
 
 @app.get("/api/auth/csrf-token")
-async def get_csrf_token():
-    """返回当前有效的 CSRF token，前端在页面加载时调用一次并存于 JS 内存。"""
-    return {"csrf_token": _csrf_server_secret}
+async def get_csrf_token(request: Request):
+    """
+    返回当前用户会话的 CSRF token（需认证）。
+
+    前端在登录后调用此接口获取 per-session CSRF token，
+    存储在 JS 内存中，在状态变更请求时通过 X-CSRF-Token header 发送。
+    """
+    user_id = _extract_user_id_from_request(request)
+    if user_id is None:
+        raise FastAPIHTTPException(status_code=401, detail="Authentication required")
+    csrf_token = generate_csrf_token(user_id)
+    return {"csrf_token": csrf_token}
 
 
 @app.middleware("http")
 async def csrf_protection_middleware(request: Request, call_next):
     """
-    服务端 Token 模式的 CSRF 保护中间件。
-    GET/HEAD 请求在响应中注入 HttpOnly 的 csrf_token cookie（仅作防御纵深标记）；
-    POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header 与服务端存储的 token 是否匹配。
-    WebSocket 和豁免路径跳过校验。
+    Per-session 签名 Token 模式的 CSRF 保护中间件。
+
+    对 POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header：
+    1. 验证 token 签名和有效期
+    2. 提取 token 中绑定的 user_id
+    3. 与请求中认证用户的 user_id 比对，确保一一对应
+
+    WebSocket 连接和豁免路径跳过校验。
     """
     path = request.url.path
     method = request.method
@@ -285,30 +341,41 @@ async def csrf_protection_middleware(request: Request, call_next):
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")
-        if not header_token or not secrets_module.compare_digest(header_token, _csrf_server_secret):
-            from fastapi.responses import JSONResponse
+        if not header_token:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "missing_csrf_token",
+                    "message": "缺少 CSRF token",
+                    "detail": "Missing X-CSRF-Token header",
+                },
+            )
+
+        # 验证 CSRF token 签名和有效期
+        csrf_payload = verify_csrf_token(header_token)
+        if csrf_payload is None:
             return JSONResponse(
                 status_code=403,
                 content={
                     "error": "invalid_csrf_token",
-                    "message": "CSRF token 验证失败",
-                    "detail": "CSRF token 验证失败",
+                    "message": "CSRF token 无效或已过期",
+                    "detail": "CSRF token verification failed",
+                },
+            )
+
+        # 提取请求中的认证用户 ID 并与 CSRF token 中绑定的用户比对
+        request_user_id = _extract_user_id_from_request(request)
+        if request_user_id is None or request_user_id != csrf_payload["sub"]:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "csrf_user_mismatch",
+                    "message": "CSRF token 与当前用户不匹配",
+                    "detail": "CSRF token user mismatch",
                 },
             )
 
     response = await call_next(request)
-
-    # 在响应中设置 HttpOnly CSRF cookie（仅作标记，前端通过 API 获取 token）
-    if _CSRF_COOKIE_NAME not in request.cookies:
-        response.set_cookie(
-            key=_CSRF_COOKIE_NAME,
-            value="1",
-            httponly=True,
-            samesite="lax",
-            secure=os.getenv("ENVIRONMENT", "development") == "production",
-            path="/",
-        )
-
     return response
 
 

@@ -23,6 +23,7 @@ from config.security import (
     clear_access_token_cookie,
     create_access_token,
     decode_access_token,
+    generate_csrf_token,
     get_password_hash,
     set_access_token_cookie,
     verify_password,
@@ -227,7 +228,7 @@ async def login(
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.username, "uid": user.id}, expires_delta=access_token_expires
     )
     set_access_token_cookie(response, access_token)
 
@@ -254,7 +255,14 @@ async def login(
         user_id=user.id,
     ).info("login succeeded")
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    # 为当前用户登录会话生成 per-session CSRF token
+    csrf_token = generate_csrf_token(user_id=user.id, jti=str(jti) if jti else None)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "csrf_token": csrf_token,
+    }
 
 
 @router.post(

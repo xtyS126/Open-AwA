@@ -1,6 +1,8 @@
 """
 MCP 传输层实现模块，提供 Stdio 和 SSE 两种传输方式。
-Stdio 通过子进程 stdin/stdout 通信，SSE 通过 HTTP 长连接与远程 Server 通信。
+Stdio 通过沙箱子进程 stdin/stdout 通信，SSE 通过 HTTP 长连接与远程 Server 通信。
+
+Stdio 传输集成了 mcp.sandbox 模块进行进程级资源隔离。
 """
 
 import asyncio
@@ -9,6 +11,14 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 from loguru import logger
+
+from .sandbox import (
+    SandboxError,
+    SandboxLimits,
+    SandboxTimeoutError,
+    create_sandboxed_subprocess,
+    kill_process_tree,
+)
 
 
 # 默认超时时间（秒）
@@ -61,19 +71,30 @@ class MCPTransport(ABC):
 class StdioTransport(MCPTransport):
     """
     Stdio 传输层实现。
-    通过 subprocess 启动 MCP Server 进程，使用 stdin/stdout 进行 JSON-RPC 通信。
+    通过沙箱子进程启动 MCP Server，使用 stdin/stdout 进行 JSON-RPC 通信。
+
+    子进程在资源受限的沙箱中运行（CPU/内存/文件大小/子进程数限制），
+    超时或资源超限时强制终止整个进程树。
     """
 
-    def __init__(self, command: str, args: Optional[list] = None, env: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        command: str,
+        args: Optional[list] = None,
+        env: Optional[Dict[str, str]] = None,
+        limits: Optional[SandboxLimits] = None,
+    ):
         """
         初始化 Stdio 传输层。
         :param command: 启动命令
         :param args: 命令参数列表
-        :param env: 环境变量
+        :param env: 环境变量（用户显式指定的环境变量优先级最高）
+        :param limits: 沙箱资源限制配置，若为 None 则使用默认限制
         """
         self._command = command
         self._args = args or []
         self._env = env
+        self._limits = limits or SandboxLimits()
         self._process: Optional[asyncio.subprocess.Process] = None
         self._connected = False
         self._stderr_task: Optional[asyncio.Task] = None
@@ -83,7 +104,7 @@ class StdioTransport(MCPTransport):
         return self._connected and self._process is not None and self._process.returncode is None
 
     async def connect(self) -> None:
-        """启动子进程并建立 stdio 通信"""
+        """在沙箱中启动子进程并建立 stdio 通信"""
         if self._connected:
             return
         try:
@@ -104,23 +125,28 @@ class StdioTransport(MCPTransport):
             if self._env:
                 full_env.update(self._env)
 
-            cmd = [self._command] + self._args
-            logger.bind(module="mcp.transport", event="stdio_connect").info(
-                f"启动 MCP Server 进程: {' '.join(cmd)}"
-            )
-            self._process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            # 使用沙箱启动子进程（带资源限制和进程组隔离）
+            logger.bind(
+                module="mcp.transport",
+                event="stdio_connect",
+                command=self._command,
+            ).info(f"在沙箱中启动 MCP Server 进程: {self._command}")
+            self._process = await create_sandboxed_subprocess(
+                command=self._command,
+                args=self._args,
                 env=full_env,
+                limits=self._limits,
             )
             self._connected = True
             # 启动后台任务持续读取 stderr，防止缓冲区满导致子进程阻塞
             self._stderr_task = asyncio.create_task(self._drain_stderr())
-            logger.bind(module="mcp.transport", event="stdio_connected").info(
-                f"MCP Server 进程已启动，PID: {self._process.pid}"
-            )
+            logger.bind(
+                module="mcp.transport",
+                event="stdio_connected",
+                pid=self._process.pid,
+            ).info(f"MCP Server 沙箱进程已启动，PID: {self._process.pid}")
+        except SandboxError as e:
+            raise MCPTransportError(f"MCP Server 沙箱启动失败: {e}")
         except FileNotFoundError:
             raise MCPTransportError(f"启动命令未找到: {self._command}")
         except Exception as e:
@@ -146,17 +172,14 @@ class StdioTransport(MCPTransport):
             )
 
     async def disconnect(self) -> None:
-        """终止子进程并断开连接"""
+        """终止沙箱子进程及其进程树，断开连接"""
         if self._stderr_task is not None:
             self._stderr_task.cancel()
             self._stderr_task = None
         if self._process is not None:
             try:
-                self._process.terminate()
-                await asyncio.wait_for(self._process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                self._process.kill()
-                await self._process.wait()
+                # 使用 kill_process_tree 确保杀死整个进程树
+                await kill_process_tree(self._process)
             except Exception as e:
                 logger.bind(module="mcp.transport", event="stdio_disconnect_error").warning(
                     f"断开 stdio 连接时出错: {e}"
@@ -165,7 +188,7 @@ class StdioTransport(MCPTransport):
                 self._process = None
                 self._connected = False
                 logger.bind(module="mcp.transport", event="stdio_disconnected").info(
-                    "MCP Server 进程已终止"
+                    "MCP Server 沙箱进程树已终止"
                 )
 
     async def send(self, message: Dict[str, Any]) -> None:
