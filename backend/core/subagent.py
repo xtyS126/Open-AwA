@@ -296,7 +296,10 @@ class AgentGraph:
                     state = await self._execute_node(node, state)
                 except Exception as e:
                     logger.error(f"Node '{node_name}' failed: {e}")
-                    # 失败时不继续后续节点
+                    # 在 state.errors 和 metadata 中记录失败，调用方可通过 has_failures 判断图是否整体成功
+                    state.errors[node_name] = str(e)
+                    state.metadata['has_failures'] = True
+                    # 失败时不继续该节点的后继节点
                     continue
 
                 # 确定下一步

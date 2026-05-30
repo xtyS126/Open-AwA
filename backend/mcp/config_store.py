@@ -17,6 +17,37 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+# MCP 配置中需要加密存储的敏感字段名
+_SENSITIVE_FIELDS = {"api_key", "apiKey", "token", "secret", "password", "access_token", "private_key"}
+
+
+def _encrypt_config_sensitive_fields(configs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """对配置字典中的敏感字段进行加密（原地修改副本）。"""
+    from config.security import encrypt_secret_value
+
+    result = {}
+    for server_id, config in configs.items():
+        encrypted_config = dict(config)
+        for key in list(encrypted_config.keys()):
+            if key in _SENSITIVE_FIELDS and encrypted_config[key]:
+                encrypted_config[key] = encrypt_secret_value(str(encrypted_config[key]))
+        result[server_id] = encrypted_config
+    return result
+
+
+def _decrypt_config_sensitive_fields(configs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """对配置字典中的敏感字段进行解密（原地修改副本）。"""
+    from config.security import decrypt_secret_value
+
+    result = {}
+    for server_id, config in configs.items():
+        decrypted_config = dict(config)
+        for key in list(decrypted_config.keys()):
+            if key in _SENSITIVE_FIELDS and decrypted_config[key]:
+                decrypted_config[key] = decrypt_secret_value(str(decrypted_config[key]))
+        result[server_id] = decrypted_config
+    return result
+
 
 # 配置文件默认路径，基于 backend 目录
 _DEFAULT_CONFIG_DIR = os.path.join(
@@ -58,6 +89,8 @@ class MCPConfigStore:
                     data = json.load(f)
                 if not isinstance(data, dict):
                     data = {}
+                # 解密敏感字段
+                data = _decrypt_config_sensitive_fields(data)
                 self._cached_configs = data
                 self._last_mtime = os.path.getmtime(self._config_path)
                 return dict(data)
@@ -73,8 +106,10 @@ class MCPConfigStore:
         with self._lock:
             self._create_snapshot_if_exists()
             try:
+                # 加密敏感字段后再持久化
+                encrypted_configs = _encrypt_config_sensitive_fields(configs)
                 with open(self._config_path, "w", encoding="utf-8") as f:
-                    json.dump(configs, f, ensure_ascii=False, indent=2)
+                    json.dump(encrypted_configs, f, ensure_ascii=False, indent=2)
                 self._cached_configs = dict(configs)
                 self._last_mtime = os.path.getmtime(self._config_path)
             except OSError as exc:

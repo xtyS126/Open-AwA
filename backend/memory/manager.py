@@ -560,7 +560,9 @@ class MemoryManager:
             query = query.filter(LongTermMemory.archive_status != "archived")
 
             archived_count = 0
-            for memory in query.all():
+            # 使用 yield_per 分批加载，避免一次性将所有记忆加载到内存导致 OOM
+            batch_size = 500
+            for memory in query.yield_per(batch_size):
                 memory.confidence = self._calculate_confidence(memory)
                 memory.quality_score = self._calculate_quality_score(memory)
                 if self._should_archive(
@@ -572,6 +574,10 @@ class MemoryManager:
                     memory.archive_status = "archived"
                     archived_count += 1
                     self.vector_store.update_memory_metadata(memory.id, archive_status="archived")
+
+                # 分批提交，避免单次事务过大
+                if archived_count > 0 and archived_count % batch_size == 0:
+                    db.commit()
 
             db.commit()
             return archived_count

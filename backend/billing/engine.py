@@ -59,9 +59,22 @@ class BillingEngine:
             provider=provider,
         )
 
+        # 估算本次调用的预期费用，并在预算检查中纳入考量
+        # 使用输入 token 数 + 估算的输出 token 数（按输入的 50% 预估）作为上限
+        estimated_input_tokens = tokens_result["total_tokens"]
+        estimated_output_tokens = int(estimated_input_tokens * 0.5)
+        estimated_cost = self.calculator.calculate_cost(
+            input_tokens=estimated_input_tokens,
+            output_tokens=estimated_output_tokens,
+            input_price=pricing.input_price,
+            output_price=pricing.output_price,
+            cache_hit=False,
+            cache_hit_price=0.0
+        )["total_cost"]
+
         budget_check = self.budget_manager.check_budget(
             user_id=user_id,
-            proposed_cost=0
+            proposed_cost=estimated_cost
         )
         
         if not budget_check["can_proceed"]:

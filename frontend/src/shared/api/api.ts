@@ -271,21 +271,18 @@ api.interceptors.response.use(
 
 export const authAPI = {
   login: (username: string, password: string) => {
+    // 仅对 form data 构建做异常保护，避免 URLSearchParams 不可用时崩溃
+    let formData: string | URLSearchParams
     try {
-      const formData = new URLSearchParams({ username, password })
-      return api.post('/auth/login', formData, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      })
+      formData = new URLSearchParams({ username, password })
     } catch {
-      const formData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
-      return api.post('/auth/login', formData, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      })
+      formData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
     }
+    return api.post('/auth/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    })
   },
   register: (username: string, password: string) =>
     api.post('/auth/register', { username, password }),

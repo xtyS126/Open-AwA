@@ -15,14 +15,35 @@ import time
 import yaml
 
 
+_sqlite_connect_args = {}
+if "sqlite" in settings.DATABASE_URL:
+    _sqlite_connect_args = {
+        "check_same_thread": False,
+        # WAL 模式提升并发读写性能；busy_timeout 减少 database is locked 错误
+        "timeout": 30,
+    }
+
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    connect_args=_sqlite_connect_args,
     pool_size=5,
     max_overflow=10,
-    pool_recycle=3600
+    pool_recycle=3600,
+    # SQLite 需要 WAL 模式在引擎级别设置（PRAGMA journal_mode=WAL）
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# SQLite 连接配置：使用 'checkout' 事件确保每次从连接池获取时都设置 PRAGMA
+# （'connect' 仅在新连接创建时触发，连接池复用时会被跳过）
+if "sqlite" in settings.DATABASE_URL:
+    @event.listens_for(engine, "checkout")
+    def _setup_sqlite_connection(dbapi_connection, connection_record, connection_proxy):
+        """确保每次 checkout 的连接都启用 WAL、外键约束和繁忙超时。"""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 # SQL 事件监听：记录慢查询和数据库错误
 _SLOW_QUERY_THRESHOLD_MS = 500
@@ -58,20 +79,6 @@ def _handle_db_error(exception_context):
         module="db",
         error_type=type(exception_context.original_exception).__name__,
     ).opt(exception=True).error(f"数据库引擎错误: {exception_context.original_exception}")
-
-
-# SQLite 外键约束默认关闭，需要在每次连接时显式启用
-if "sqlite" in settings.DATABASE_URL:
-    @event.listens_for(engine, "connect")
-    def _enable_foreign_keys(dbapi_conn, connection_record):
-        """为每个 SQLite 连接启用外键约束，防止孤立数据和引用完整性违反。"""
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA foreign_keys")
-        pragma_value = cursor.fetchone()
-        cursor.close()
-        if not pragma_value or int(pragma_value[0]) != 1:
-            raise RuntimeError("SQLite foreign_keys PRAGMA 未生效，无法保证外键约束")
 
 
 class Base(DeclarativeBase):

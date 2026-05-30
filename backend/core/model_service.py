@@ -272,16 +272,7 @@ def build_provider_request(
                     }
                 ],
                 "generationConfig": google_gen_config,
-                "systemInstruction": {
-                    "parts": [
-                        {
-                            "text": (
-                                f"request_id={headers[REQUEST_ID_HEADER]};"
-                                f"client_version={headers[CLIENT_VERSION_HEADER]}"
-                            )
-                        }
-                    ]
-                },
+                # 不在此处注入追踪元数据到 systemInstruction；追踪信息通过 HTTP 请求头传递
             },
         )
 

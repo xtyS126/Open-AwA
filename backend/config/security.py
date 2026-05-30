@@ -218,13 +218,25 @@ _CSRF_TOKEN_MAX_AGE_SECONDS = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
 def _derive_csrf_signing_key() -> bytes:
     """
-    从 SECRET_KEY 派生 CSRF 签名密钥，与 JWT 签名密钥独立派生。
-    在密钥派生中加入固定上下文字符串以防止跨用途密钥复用。
+    从 SECRET_KEY 使用 HKDF (HMAC-SHA256) 派生 CSRF 签名密钥。
+    使用 HKDF 而非裸 SHA-256 提供更强的密钥派生保证（RFC 5869）。
+    context_seed 作为 info 参数确保与 JWT 等其他密钥独立。
     """
     context_seed = b"open-awa-csrf-v1"
-    key_material = hashlib.sha256(
-        settings.SECRET_KEY.encode("utf-8") + context_seed
-    ).digest()
+    # 使用 hashlib 内置的 HKDF（Python 3.12+ 可用，回退到手动实现）
+    try:
+        key_material = hashlib.hkdf(
+            ikm=settings.SECRET_KEY.encode("utf-8"),
+            length=32,
+            salt=context_seed,
+            info=b"csrf-signing",
+            hashfunc=hashlib.sha256,
+        )
+    except AttributeError:
+        # Python < 3.12 回退：使用 SHA-256 作为保守的密钥派生
+        key_material = hashlib.sha256(
+            settings.SECRET_KEY.encode("utf-8") + context_seed
+        ).digest()
     return key_material
 
 

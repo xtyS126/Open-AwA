@@ -224,6 +224,16 @@ export function getCachedConversationMessages(sessionId: string): ChatMessage[] 
 }
 
 let _lastMessageCacheWrite = 0
+let _cacheWritePromise: Promise<void> = Promise.resolve()
+
+function _serializeCacheWrite(sessionId: string, messages: ChatMessage[]): void {
+  const payload = readChatCache()
+  payload.messageBuckets[sessionId] = {
+    updated_at: new Date().toISOString(),
+    messages: serializeMessages(messages),
+  }
+  writeChatCache(payload)
+}
 
 export function setCachedConversationMessages(sessionId: string, messages: ChatMessage[]): void {
   if (!sessionId || sessionId === 'default') {
@@ -234,24 +244,20 @@ export function setCachedConversationMessages(sessionId: string, messages: ChatM
     return
   }
   _lastMessageCacheWrite = now
-  const payload = readChatCache()
-  payload.messageBuckets[sessionId] = {
-    updated_at: new Date().toISOString(),
-    messages: serializeMessages(messages),
-  }
-  writeChatCache(payload)
+  // 串行化缓存写入，避免并发 read-modify-write 导致消息丢失
+  _cacheWritePromise = _cacheWritePromise.then(() => {
+    _serializeCacheWrite(sessionId, messages)
+  }).catch(() => { /* 静默处理缓存写入错误 */ })
 }
 
 export function flushCachedConversationMessages(sessionId: string, messages: ChatMessage[]): void {
   if (!sessionId || sessionId === 'default') {
     return
   }
-  const payload = readChatCache()
-  payload.messageBuckets[sessionId] = {
-    updated_at: new Date().toISOString(),
-    messages: serializeMessages(messages),
-  }
-  writeChatCache(payload)
+  // 刷新操作也需要串行化，确保不与其他写入冲突
+  _cacheWritePromise = _cacheWritePromise.then(() => {
+    _serializeCacheWrite(sessionId, messages)
+  }).catch(() => {})
   _lastMessageCacheWrite = Date.now()
 }
 

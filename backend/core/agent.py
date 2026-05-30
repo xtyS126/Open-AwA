@@ -90,6 +90,9 @@ class AIAgent:
         self.skill_results: List[Dict[str, Any]] = []
         self.plugin_results: List[Dict[str, Any]] = []
 
+        # 限制并发 fire-and-forget 记录任务数，防止高并发下 Task 堆积
+        self._record_semaphore = asyncio.Semaphore(20)
+
         # 初始化记忆管理器，并注入到反馈层
         self.memory_manager = None
         self.workflow_engine = None
@@ -102,7 +105,14 @@ class AIAgent:
             self.workflow_engine = WorkflowEngine(db_session=self._db_session, skill_engine=self.skill_engine)
         
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
-    
+
+    async def _record_with_backpressure(self, coro) -> Any:
+        """
+        通过信号量限制并发 fire-and-forget 记录任务数，防止高并发下 Task 堆积。
+        """
+        async with self._record_semaphore:
+            return await coro
+
     def _handle_record_task_result(self, task: asyncio.Task) -> None:
         """
         处理handle、record、task、result相关逻辑，并为调用方返回对应结果。
@@ -1137,27 +1147,29 @@ class AIAgent:
                 metadata=metadata,
             )
             for entry in behavior_entries:
-                task = asyncio.create_task(behavior_logger.record(entry))
+                task = asyncio.create_task(self._record_with_backpressure(behavior_logger.record(entry)))
                 task.add_done_callback(lambda t: self._handle_record_task_result(t))
 
         if disable_conversation_record:
             return
 
         task = asyncio.create_task(
-            conversation_recorder.record(
-                node_type=node_type,
-                session_id=session_id,
-                user_message=user_message,
-                user_id=user_id,
-                provider=context.get("provider"),
-                model=context.get("model"),
-                llm_input=llm_input,
-                llm_output=llm_output,
-                llm_tokens_used=llm_tokens_used,
-                execution_duration_ms=execution_duration_ms,
-                status=status,
-                error_message=error_message,
-                metadata=metadata,
+            self._record_with_backpressure(
+                conversation_recorder.record(
+                    node_type=node_type,
+                    session_id=session_id,
+                    user_message=user_message,
+                    user_id=user_id,
+                    provider=context.get("provider"),
+                    model=context.get("model"),
+                    llm_input=llm_input,
+                    llm_output=llm_output,
+                    llm_tokens_used=llm_tokens_used,
+                    execution_duration_ms=execution_duration_ms,
+                    status=status,
+                    error_message=error_message,
+                    metadata=metadata,
+                )
             )
         )
         task.add_done_callback(lambda t: self._handle_record_task_result(t))
@@ -1577,7 +1589,7 @@ class AIAgent:
                                 except asyncio.CancelledError:
                                     logger.info(f"Agent task cancelled for session {session_id}")
                                     yield {"type": "cancelled", "content": "任务已被用户取消", "reasoning_content": ""}
-                                    raise  # 重新抛出以正确终止协程
+                                    return  # 在 yield 后使用 return 安全退出 async generator
 
                             # PostToolUse 钩子：工具调用后审计与后处理
                             try:
@@ -1682,6 +1694,9 @@ class AIAgent:
                             tool_messages.append(self.executor._build_tool_message(tr["tool_call"], tr["result"]))
 
                         if background_subagents_spawned:
+                            # 在返回前持久化本轮累积的工具消息到上下文，避免结果丢失
+                            context["_tool_messages"] = tool_messages
+                            context["_pending_background_subagents"] = True
                             yield self._build_status_event("waiting_subagents", "子代理已创建，等待运行结果")
                             return
 

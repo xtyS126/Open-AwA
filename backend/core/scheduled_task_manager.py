@@ -370,10 +370,48 @@ class ScheduledTaskManager:
             db.close()
 
     @staticmethod
+    def _parse_cron_field(field: str, min_val: int, max_val: int) -> set:
+        """
+        解析单个 cron 字段，支持：
+        - 通配符 '*' → 所有值
+        - 单个值 '5' → {5}
+        - 多个值 '1,3,5' → {1,3,5}
+        - 步长 '*/5' → 每 5 个值
+        - 范围 '1-5' → {1,2,3,4,5}
+        """
+        field = field.strip()
+        if field == '*':
+            return set(range(min_val, max_val + 1))
+
+        values = set()
+        for part in field.split(','):
+            part = part.strip()
+            if '/' in part:
+                # 步长语法: */5 或 1-10/2
+                range_part, step_str = part.split('/', 1)
+                step = int(step_str)
+                if step <= 0:
+                    continue
+                if range_part == '*':
+                    values.update(range(min_val, max_val + 1, step))
+                elif '-' in range_part:
+                    r_start, r_end = range_part.split('-', 1)
+                    values.update(range(int(r_start), int(r_end) + 1, step))
+            elif '-' in part:
+                r_start, r_end = part.split('-', 1)
+                values.update(range(int(r_start), int(r_end) + 1))
+            else:
+                values.add(int(part))
+
+        return {v for v in values if min_val <= v <= max_val}
+
+    @staticmethod
     def _calculate_next_cron_execution(cron_expression: str) -> Optional[datetime]:
         """
-        根据 cron 表达式（分 时 * * 星期）计算下一次执行时间。
-        使用简单的日期遍历，最多查找 14 天。
+        根据 cron 表达式计算下一次执行时间。
+        支持完整 5 字段格式：分 时 日 月 星期
+        支持 */N 步长、逗号分隔多值、范围等语法。
+        最多向前查找 31 天。
         """
         if not cron_expression:
             return None
@@ -382,25 +420,33 @@ class ScheduledTaskManager:
         if len(parts) != 5:
             return None
         try:
-            target_minute = int(parts[0])
-            target_hour = int(parts[1])
-            # 支持 '*' 表示所有星期几
-            if parts[4].strip() == '*':
-                target_weekdays = set(range(7))
-            else:
-                target_weekdays = set(int(d) for d in parts[4].split(","))
+            target_minutes = ScheduledTaskManager._parse_cron_field(parts[0], 0, 59)
+            target_hours = ScheduledTaskManager._parse_cron_field(parts[1], 0, 23)
+            target_days = ScheduledTaskManager._parse_cron_field(parts[2], 1, 31)
+            target_months = ScheduledTaskManager._parse_cron_field(parts[3], 1, 12)
+            target_weekdays = ScheduledTaskManager._parse_cron_field(parts[4], 0, 7)
+            # 支持 7 表示周日，统一映射
+            if 7 in target_weekdays:
+                target_weekdays.discard(7)
+                target_weekdays.add(0)
         except (ValueError, IndexError):
             return None
 
         now = datetime.now(timezone.utc)
         check = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-        check = check.replace(hour=target_hour, minute=target_minute)
 
-        for _ in range(14):
-            weekday = (check.weekday() + 1) % 7
-            if weekday in target_weekdays and check > now:
+        max_days = 31
+        for _ in range(max_days * 24 * 60):  # 逐分钟遍历
+            weekday = check.weekday()
+            if (check.minute in target_minutes and
+                check.hour in target_hours and
+                check.day in target_days and
+                check.month in target_months and
+                weekday in target_weekdays and
+                check > now):
                 return check
-            check += timedelta(days=1)
+            check += timedelta(minutes=1)
+
         return None
 
     async def _mark_task_failed(
