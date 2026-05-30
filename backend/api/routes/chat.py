@@ -126,6 +126,21 @@ async def chat(
             return await build_sse_response(agent.process_stream(message.message, context))
 
         result = await agent.process(message.message, context)
+    except asyncio.CancelledError:
+        logger.bind(
+            event="chat_cancelled",
+            module="chat",
+            action="chat",
+            user_id=current_user.id,
+            session_id=message.session_id,
+        ).info("非流式 Agent 任务被用户取消")
+        return ChatResponse(
+            status="cancelled",
+            response="",
+            session_id=message.session_id,
+            error="任务已被用户取消",
+            request_id=context["request_id"],
+        )
     except Exception as exc:
         logger.bind(
             event="chat_error",

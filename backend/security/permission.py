@@ -9,14 +9,14 @@ from loguru import logger
 
 class PermissionChecker:
     """
-    封装与PermissionChecker相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    操作级权限检查器，提供粗粒度的白名单/确认/管理员三级权限模型。
+
+    注意：此类与 RBACManager（security/rbac.py）是互补关系：
+    - PermissionChecker: 面向工具操作的粗粒度权限（如 file:read, command:execute）
+    - RBACManager: 面向用户的角色级权限（admin/user/guest 等角色）
+    两者共同构成完整的权限体系，建议在新增权限检查点时评估应使用哪一层。
     """
     def __init__(self):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
         self.whitelist = {
             "auto_approve": [
                 "file:read",

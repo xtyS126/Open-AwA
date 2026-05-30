@@ -832,7 +832,13 @@ class ExecutionLayer:
         if config:
             provider = provider or config.provider
             model = model or config.model
-            api_key = config.api_key
+            # 从加密存储中解密 API 密钥
+            raw_key = config.api_key or ""
+            if raw_key:
+                from config.security import decrypt_secret_value
+                api_key = decrypt_secret_value(raw_key)
+            else:
+                api_key = None
             api_endpoint = config.api_endpoint
             max_tokens = getattr(config, "max_tokens_limit", None)
             selected_models: list[str] = []
@@ -1814,27 +1820,33 @@ class ExecutionLayer:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         command = step.get("command", "")
-        
+
         # 命令长度限制，防止超长命令被注入
         if len(command) > 512:
             return {
                 "status": "error",
                 "message": f"Command too long: {len(command)} characters (max 512)"
             }
-        
-        # 过滤危险shell字符，防止命令注入
-        dangerous_chars = ["&", "|", ";", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"]
-        for ch in dangerous_chars:
-            if ch in command:
-                return {
-                    "status": "error",
-                    "message": f"Command contains dangerous shell character: {repr(ch)}"
-                }
-        
+
         import shlex
         proc = None
         try:
             args = shlex.split(command)
+            if not args:
+                return {
+                    "status": "error",
+                    "message": "Empty command"
+                }
+
+            # 使用白名单校验可执行文件，防止任意命令执行
+            from security.sandbox import validate_command_safety
+            is_safe, err_msg = validate_command_safety(args[0], args[1:] if len(args) > 1 else [])
+            if not is_safe:
+                return {
+                    "status": "error",
+                    "message": err_msg or "Command rejected by security policy"
+                }
+
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.PIPE,

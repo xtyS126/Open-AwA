@@ -344,7 +344,8 @@ class WorkflowEngine:
             "abs": abs, "min": min, "max": max, "sum": sum,
             "len": len, "str": str, "int": int, "float": float,
             "bool": bool, "list": list, "dict": dict, "tuple": tuple,
-            "round": round, "isinstance": isinstance, "type": type,
+            "round": round, "isinstance": isinstance,
+            # 注意: type 被排除，因为 type(obj).__mro__ 可被用于链式访问危险类
         }
         try:
             compiled = compile(tree, "<workflow-condition>", "eval")

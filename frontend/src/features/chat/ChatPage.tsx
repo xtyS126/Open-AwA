@@ -1212,19 +1212,22 @@ function ChatPage() {
     const lastUserMsgIndex = messagesBefore.findIndex((m) => m.id === lastUserMsg.id)
     const preservedMessages = messagesBefore.slice(0, lastUserMsgIndex)
 
-    if (sessionId && sessionId !== 'default') {
-      try {
-        await conversationAPI.deleteSession(sessionId, 1)
-      } catch {
-        /* 删除失败不影响后续流程 */
-      }
-      removeConversation(sessionId)
-    }
-
+    // 先创建新会话（无论是否有旧会话都需要新会话）
     const response = await conversationAPI.createSession()
     const newConv = response.data as ConversationSessionSummary
     upsertConversation(newConv)
     setSessionId(newConv.session_id)
+
+    // 新会话创建成功后再删除旧会话，避免创建失败导致数据丢失
+    if (sessionId && sessionId !== 'default') {
+      try {
+        await conversationAPI.deleteSession(sessionId, 1)
+        removeConversation(sessionId)
+      } catch {
+        /* 旧会话删除失败不影响后续流程 */
+      }
+    }
+
     setMessages(preservedMessages)
     setMessageMeta({})
     setStreamingAssistantId(null)

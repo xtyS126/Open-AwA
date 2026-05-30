@@ -2015,6 +2015,19 @@ class AIAgent:
             if reasoning_parts:
                 output["reasoning_content"] = "\n".join(reasoning_parts)
             return self._apply_output_mode(output, context)
+        except asyncio.CancelledError:
+            logger.info(f"Agent task cancelled for session {session_id}")
+            return {
+                "status": "cancelled",
+                "response": "",
+                "results": [],
+                "experiences_used": 0,
+                "memories_used": 0,
+                "skills_executed": 0,
+                "plugins_executed": 0,
+                "skill_results": {},
+                "plugin_results": {},
+            }
         finally:
             unregister_agent_task(session_id)
     

@@ -258,18 +258,22 @@ class UsageTracker:
         else:
             period_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
         
-        summary = self.db.query(UserUsageSummary).filter(
+        # 使用数据库级原子 UPDATE 避免并发下的 read-then-write 竞态条件
+        rows_updated = self.db.query(UserUsageSummary).filter(
             and_(
                 UserUsageSummary.user_id == user_id,
                 UserUsageSummary.period_start == period_start
             )
-        ).first()
-        
-        if summary:
-            summary.total_input_tokens += input_tokens
-            summary.total_output_tokens += output_tokens
-            summary.total_cost += cost
-        else:
+        ).update(
+            {
+                UserUsageSummary.total_input_tokens: UserUsageSummary.total_input_tokens + input_tokens,
+                UserUsageSummary.total_output_tokens: UserUsageSummary.total_output_tokens + output_tokens,
+                UserUsageSummary.total_cost: UserUsageSummary.total_cost + cost,
+            },
+            synchronize_session='fetch'
+        )
+
+        if rows_updated == 0:
             summary = UserUsageSummary(
                 user_id=user_id,
                 period_start=period_start,
@@ -280,7 +284,7 @@ class UsageTracker:
                 currency=currency
             )
             self.db.add(summary)
-        
+
         # 注意：不在此处单独 commit，调用方应在所有操作完成后统一提交以保证事务原子性
 
     def get_usage_statistics(self, user_id: Optional[str] = None) -> Dict:

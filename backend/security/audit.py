@@ -4,11 +4,17 @@
 """
 
 import asyncio
+import json
+import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from db.models import AuditLog
 from loguru import logger
+
+# 审计日志降级文件路径（DB 写入失败时使用）
+_AUDIT_FALLBACK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".openawa", "audit_fallback")
+os.makedirs(_AUDIT_FALLBACK_DIR, exist_ok=True)
 
 
 class AuditLogger:
@@ -49,19 +55,34 @@ class AuditLogger:
             return log_entry
         except Exception as e:
             self.db.rollback()
-            fallback_entry = AuditLog(
-                user_id=user_id,
-                action=action,
-                resource=resource,
-                result=f"{result}_audit_fallback",
-                details=details,
-                ip_address=ip_address,
-            )
-            logger.critical(
-                f"审计日志写入失败，已降级到文件日志: action={action}, resource={resource}, "
-                f"user_id={user_id}, error={type(e).__name__}: {e}"
-            )
-            return fallback_entry
+            # 降级到文件系统，确保审计日志不丢失
+            try:
+                fallback_record = {
+                    "user_id": user_id,
+                    "action": action,
+                    "resource": resource,
+                    "result": f"{result}_audit_fallback",
+                    "details": details,
+                    "ip_address": ip_address,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "db_error": f"{type(e).__name__}: {e}",
+                }
+                fallback_file = os.path.join(
+                    _AUDIT_FALLBACK_DIR,
+                    f"audit_fallback_{datetime.now(timezone.utc).strftime('%Y%m%d')}.jsonl"
+                )
+                with open(fallback_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(fallback_record, ensure_ascii=False) + "\n")
+                logger.critical(
+                    f"审计日志已降级写入文件: action={action}, resource={resource}, "
+                    f"user_id={user_id}, file={fallback_file}"
+                )
+            except Exception as fallback_error:
+                logger.critical(
+                    f"审计日志降级写入也失败: action={action}, resource={resource}, "
+                    f"user_id={user_id}, db_error={e}, fallback_error={fallback_error}"
+                )
+            return None
 
     async def log(
         self,

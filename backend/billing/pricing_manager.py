@@ -1147,7 +1147,13 @@ class PricingManager:
                 normalized.get("api_endpoint")
             )
         if "api_key" in normalized and normalized.get("api_key") is not None:
-            normalized["api_key"] = normalized["api_key"].strip() or None
+            raw_key = normalized["api_key"].strip()
+            if raw_key:
+                # 加密存储 API 密钥，防止明文泄露
+                from config.security import encrypt_secret_value
+                normalized["api_key"] = encrypt_secret_value(raw_key)
+            else:
+                normalized["api_key"] = None
         if "selected_models" in normalized:
             normalized["selected_models"] = self.serialize_selected_models(normalized.get("selected_models"))
         if "max_tokens" in normalized:

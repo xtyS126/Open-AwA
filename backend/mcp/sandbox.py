@@ -139,16 +139,19 @@ def _apply_linux_resource_limits(limits: SandboxLimits) -> None:
         pass
 
 
-def _apply_windows_resource_limits(limits: SandboxLimits) -> Optional[int]:
+def _create_windows_job_object(limits: SandboxLimits):
     """
-    在子进程启动前应用 Windows 资源限制。
+    在父进程中创建并配置 Windows Job Object，用于子进程资源限制。
 
     使用 Windows Job Objects API 限制进程资源。
     参考: https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects
 
-    返回 CREATE_NEW_PROCESS_GROUP 标志值（用于 CreateProcess）。
+    返回: (job_handle, creationflags) 元组。若创建失败则 job_handle 为 None。
+    注意: Job Object 在此处仅创建和配置，不绑定任何进程。
+          子进程创建后由 _assign_process_to_job_object 绑定。
     """
     CREATE_NEW_PROCESS_GROUP = 0x00000200
+    job_handle = None
 
     try:
         import ctypes
@@ -162,12 +165,12 @@ def _apply_windows_resource_limits(limits: SandboxLimits) -> Optional[int]:
             logger.bind(module="mcp.sandbox", event="windows_job_creation_failed").debug(
                 "无法创建 Windows Job Object，跳过资源限制"
             )
-            return CREATE_NEW_PROCESS_GROUP
+            return (None, CREATE_NEW_PROCESS_GROUP)
 
         # 配置 Job Object 限制
         class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
             _fields_ = [
-                ("BasicLimitInformation", ctypes.c_uint64 * 8),  # JOBOBJECT_BASIC_LIMIT_INFORMATION
+                ("BasicLimitInformation", ctypes.c_uint64 * 8),
                 ("IoInfo", ctypes.c_void_p * 4),
                 ("ProcessMemoryLimit", ctypes.c_size_t),
                 ("JobMemoryLimit", ctypes.c_size_t),
@@ -176,12 +179,9 @@ def _apply_windows_resource_limits(limits: SandboxLimits) -> Optional[int]:
             ]
 
         info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-        # 设置限制标志
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
         JOB_OBJECT_LIMIT_PROCESS_TIME = 0x00000002
-        JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
         JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
-        JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
         JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
 
         flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -204,7 +204,7 @@ def _apply_windows_resource_limits(limits: SandboxLimits) -> Optional[int]:
         SetInformationJobObject = kernel32.SetInformationJobObject
         SetInformationJobObject.argtypes = [
             wintypes.HANDLE,
-            ctypes.c_int,  # JOBOBJECTINFOCLASS
+            ctypes.c_int,
             ctypes.c_void_p,
             ctypes.c_uint32,
         ]
@@ -220,35 +220,80 @@ def _apply_windows_resource_limits(limits: SandboxLimits) -> Optional[int]:
             logger.bind(module="mcp.sandbox", event="windows_job_config_failed").debug(
                 "无法配置 Windows Job Object 限制"
             )
-
-        # 将当前进程分配给 Job Object（preexec_fn 在子进程中执行）
-        AssignProcessToJobObject = kernel32.AssignProcessToJobObject
-        AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
-        current_process = kernel32.GetCurrentProcess()
-        AssignProcessToJobObject(job_handle, current_process)
-
-        logger.bind(module="mcp.sandbox", event="windows_sandbox_applied").debug(
-            "Windows Job Object 沙箱已应用"
-        )
     except Exception as e:
         logger.bind(module="mcp.sandbox", event="windows_sandbox_error").debug(
             f"Windows 沙箱配置失败（非关键）: {e}"
         )
+        return (None, CREATE_NEW_PROCESS_GROUP)
 
-    return CREATE_NEW_PROCESS_GROUP
+    return (job_handle, CREATE_NEW_PROCESS_GROUP)
+
+
+def _assign_process_to_job_object(job_handle, pid: int) -> bool:
+    """
+    将指定 PID 的子进程绑定到已配置的 Job Object。
+
+    参数:
+        job_handle: CreateJobObjectW 返回的句柄
+        pid: 子进程 PID
+
+    返回: 绑定成功返回 True，失败返回 False
+    """
+    if job_handle is None:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+
+        PROCESS_SET_QUOTA = 0x0100
+        PROCESS_TERMINATE = 0x0001
+        desired_access = PROCESS_SET_QUOTA | PROCESS_TERMINATE
+
+        child_handle = kernel32.OpenProcess(desired_access, False, pid)
+        if not child_handle:
+            logger.bind(module="mcp.sandbox", event="windows_open_process_failed").debug(
+                f"无法打开子进程句柄 (PID={pid})"
+            )
+            return False
+
+        AssignProcessToJobObject = kernel32.AssignProcessToJobObject
+        AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        result = AssignProcessToJobObject(job_handle, child_handle)
+
+        kernel32.CloseHandle(child_handle)
+
+        if result:
+            logger.bind(module="mcp.sandbox", event="windows_sandbox_applied").debug(
+                f"Windows Job Object 沙箱已绑定子进程 (PID={pid})"
+            )
+        else:
+            logger.bind(module="mcp.sandbox", event="windows_job_assign_failed").debug(
+                f"无法将子进程 (PID={pid}) 绑定到 Job Object"
+            )
+
+        return bool(result)
+    except Exception as e:
+        logger.bind(module="mcp.sandbox", event="windows_job_assign_error").debug(
+            f"绑定子进程到 Job Object 失败: {e}"
+        )
+        return False
 
 
 def _get_preexec_fn(limits: SandboxLimits):
     """
-    返回适用于当前平台的 preexec_fn（Linux）或 creationflags（Windows）。
+    返回适用于当前平台的 preexec_fn（Linux）或 (job_handle, creationflags)（Windows）。
 
-    返回: (preexec_fn, creationflags) 元组。
+    返回: (preexec_fn, creationflags, job_handle) 元组。
+          Linux: (callable, 0, None)
+          Windows: (None, creationflags, job_handle_or_None)
     """
     if platform.system() == "Windows":
-        creationflags = _apply_windows_resource_limits(limits)
-        return (None, creationflags if creationflags else 0)
+        job_handle, creationflags = _create_windows_job_object(limits)
+        return (None, creationflags if creationflags else 0, job_handle)
     else:
-        return (_apply_linux_resource_limits, 0)
+        return (_apply_linux_resource_limits, 0, None)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +359,7 @@ async def create_sandboxed_subprocess(
     # 基本路径校验：禁止路径遍历和绝对路径之外的可疑模式
     _validate_command_path(command)
 
-    preexec_fn, creationflags = _get_preexec_fn(limits)
+    preexec_fn, creationflags, job_handle = _get_preexec_fn(limits)
 
     cmd = [command] + list(args)
     logger.bind(
@@ -339,6 +384,9 @@ async def create_sandboxed_subprocess(
                 env=env,
                 creationflags=creationflags,
             )
+            # 子进程创建后，立即将其绑定到 Job Object（而非当前/父进程）
+            if job_handle is not None and process.pid is not None:
+                _assign_process_to_job_object(job_handle, process.pid)
         else:
             process = await asyncio.create_subprocess_exec(
                 *cmd,

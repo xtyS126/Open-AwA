@@ -284,7 +284,6 @@ class TransitionExecutor:
         if "error" in error_holder:
             raise error_holder["error"]
 
-        if not loop.is_closed() and not loop.is_running():
-            return loop.run_until_complete(awaitable)
-
+        # 协程已在新线程的事件循环中执行完毕，直接返回结果
+        # 注意: 不能在原事件循环中再次执行同一个 awaitable（协程只能被 await 一次）
         return result_holder.get("value")

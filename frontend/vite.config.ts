@@ -44,8 +44,10 @@ export default defineConfig(({ mode }) => {
       minify: 'terser',
       terserOptions: {
         compress: {
-          drop_console: true,
           drop_debugger: true,
+          // 保留 console.error 和 console.warn 用于生产环境错误日志
+          // 仅移除 debug/info/log 级别的控制台输出
+          pure_funcs: ['console.log', 'console.debug', 'console.info'],
         },
       },
       rollupOptions: {

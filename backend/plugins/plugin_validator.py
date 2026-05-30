@@ -186,13 +186,9 @@ class PluginValidator:
 
         plugin_instance = None
         try:
-            if "name" in config:
-                plugin_class.name = config["name"]
-            if "version" in config:
-                plugin_class.version = config["version"]
-            if "description" in config:
-                plugin_class.description = config["description"]
-
+            # 注意：不修改插件类的类属性（name/version/description），
+            # 这些值应通过 config 参数传递给插件的 __init__ 方法，
+            # 由插件实例自行设置实例属性。修改类属性会污染该类的所有实例。
             plugin_instance = plugin_class(config=config)
         except TypeError as e:
             warnings.append(f"Plugin instantiation with config may have issues: {str(e)}")

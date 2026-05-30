@@ -55,6 +55,38 @@ class SandboxPathError(Exception):
     pass
 
 
+def validate_command_safety(executable: str, args: list = None) -> tuple:
+    """
+    独立函数：校验命令安全性（白名单 + 危险命令黑名单 + 危险参数模式）。
+
+    可在任何需要命令校验的地方使用，无需实例化 Sandbox。
+
+    Args:
+        executable: 可执行文件名（如 'ls', 'cat' 等）
+        args: 命令参数列表（可选）
+
+    Returns:
+        (is_safe: bool, error_message: str or None) 元组
+    """
+    args = args or []
+
+    # 拒绝危险命令
+    if executable in _DANGEROUS_COMMANDS:
+        return (False, f"命令 '{executable}' 被明确禁止执行")
+
+    # 必须在白名单内
+    if executable not in _ALLOWED_COMMANDS:
+        return (False, f"命令 '{executable}' 不在允许列表中。允许的命令: {', '.join(sorted(_ALLOWED_COMMANDS))}")
+
+    # 校验参数中是否含有危险模式
+    for arg in args:
+        for pattern in _DANGEROUS_ARG_PATTERNS:
+            if pattern.search(arg):
+                return (False, f"命令参数包含不允许的字符或模式: {arg!r}")
+
+    return (True, None)
+
+
 class Sandbox:
     """
     安全沙箱，提供受限的命令执行和文件操作能力。

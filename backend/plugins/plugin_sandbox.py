@@ -217,24 +217,55 @@ class PluginSubprocessSandbox:
         """
         对已启动的子进程施加资源限制。
 
-        Linux: 通过 /proc/<pid>/limits 或 prlimit 系统调用
+        Linux: 通过 prlimit 系统调用对运行中的子进程设置 rlimit
         Windows: 通过 Job Objects（已由 MCP sandbox 模块处理）
         """
         if platform.system() == "Windows":
             return  # Windows 限制由子进程创建时的 creationflags 处理
 
         try:
-            # 使用 prlimit 命令（util-linux 提供）或 resource 模块
             import resource
 
-            # 注意：在父进程中无法直接对子进程 setrlimit
-            # 仅记录期望的限制值，实际限制需通过 preexec_fn 在子进程中设置
+            # 使用 prlimit 对指定 PID 的子进程施加资源限制
+            # prlimit 允许对运行中的进程设置 rlimit（需要 Linux 3.4+）
+            if self.cpu_time_seconds is not None:
+                try:
+                    cpu_seconds = int(self.cpu_time_seconds)
+                    resource.prlimit(
+                        pid, resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds)
+                    )
+                except (OSError, AttributeError) as e:
+                    logger.bind(module="plugin_sandbox", pid=pid).debug(
+                        f"无法设置 CPU 限制: {e}"
+                    )
+
+            if self._memory_bytes is not None:
+                try:
+                    resource.prlimit(
+                        pid, resource.RLIMIT_AS,
+                        (self._memory_bytes, self._memory_bytes)
+                    )
+                except (OSError, AttributeError) as e:
+                    logger.bind(module="plugin_sandbox", pid=pid).debug(
+                        f"无法设置内存限制: {e}"
+                    )
+
+            # 限制子进程数
+            try:
+                resource.prlimit(pid, resource.RLIMIT_NPROC, (0, 0))
+            except (OSError, AttributeError) as e:
+                logger.bind(module="plugin_sandbox", pid=pid).debug(
+                    f"无法设置子进程数限制: {e}"
+                )
+
             logger.bind(module="plugin_sandbox", pid=pid).debug(
-                f"子进程资源限制目标: memory={self._memory_bytes}B, "
+                f"子进程资源限制已应用: memory={self._memory_bytes}B, "
                 f"cpu_time={self.cpu_time_seconds}s"
             )
         except ImportError:
-            pass
+            logger.bind(module="plugin_sandbox", pid=pid).debug(
+                "resource 模块不可用，跳过资源限制"
+            )
 
     @staticmethod
     def _force_kill(process: multiprocessing.Process) -> None:
@@ -394,12 +425,13 @@ class PluginSandbox:
         **kwargs,
     ) -> Dict[str, Any]:
         """
-        同步执行插件方法。
+        同步执行插件方法，带超时控制。
 
-        注意：同步路径**不提供**超时控制。
-        Python 无法从同一线程可靠地中断阻塞的同步调用。
-        对于需要超时保护的场景，请使用 execute_plugin() 异步方法。
+        使用 concurrent.futures.ThreadPoolExecutor 在独立线程中执行，
+        通过 Future.result(timeout) 实现超时控制。
         """
+        import concurrent.futures
+
         self._execution_count += 1
         execution_id = self._execution_count
 
@@ -418,7 +450,12 @@ class PluginSandbox:
 
         try:
             method_callable = getattr(plugin_instance, method)
-            result = method_callable(**kwargs)
+
+            # 使用线程池 + Future 超时来保护同步调用
+            timeout = self.timeout or 60
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(method_callable, **kwargs)
+                result = future.result(timeout=timeout)
 
             logger.bind(module="plugin_sandbox", execution_id=execution_id).info(
                 "同步执行成功"
@@ -429,6 +466,15 @@ class PluginSandbox:
                 "execution_id": execution_id,
             }
 
+        except concurrent.futures.TimeoutError:
+            logger.bind(module="plugin_sandbox", execution_id=execution_id).warning(
+                f"同步执行超时（{self.timeout}s）"
+            )
+            return {
+                "status": "timeout",
+                "message": f"执行超时（超过 {self.timeout} 秒）",
+                "execution_id": execution_id,
+            }
         except Exception as e:
             logger.bind(module="plugin_sandbox", execution_id=execution_id).error(
                 f"同步执行错误: {e}"

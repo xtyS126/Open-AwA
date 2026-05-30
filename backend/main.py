@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 import errno
 import inspect
 import os
-import secrets as secrets_module
 import time
 
 from fastapi import FastAPI, Request
@@ -254,8 +253,8 @@ _CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/logs/client
 # 需要 CSRF 校验的请求方法
 _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
-# 服务端签名密钥（不直接作为 token，而是用于签名 per-user token）
-_csrf_signing_key: str = secrets_module.token_urlsafe(32)
+# CSRF 签名密钥由 security._derive_csrf_signing_key() 从 SECRET_KEY 派生
+# 确保多 Worker 部署时签名一致（不再使用进程级随机密钥）
 
 
 def _extract_user_id_from_request(request: Request) -> Optional[int]:
