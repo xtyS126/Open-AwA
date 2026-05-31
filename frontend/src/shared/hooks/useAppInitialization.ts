@@ -118,11 +118,18 @@ export function resetAppInitializationStateForTests() {
 
 /**
  * 统一处理应用启动时的会话校验、服务端偏好同步和本地 store 回填。
+ *
+ * P0 优化：本地状态回填在 hook 调用时同步执行，
+ * 确保主题、模型偏好等首屏关键状态在 React 首次渲染前已就位。
+ * 网络校验（会话验证 + 服务端偏好）在后台异步完成。
  */
 export function useAppInitialization() {
   const setInitialized = useAuthStore((state) => state.setInitialized)
   const setAuth = useAuthStore((state) => state.setAuth)
   const logout = useAuthStore((state) => state.logout)
+
+  // P0: 同步回填本地状态，不等待网络请求
+  rehydrateStores()
 
   useEffect(() => {
     let isActive = true

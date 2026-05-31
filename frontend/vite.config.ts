@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import viteCompression from 'vite-plugin-compression'
 import legacy from '@vitejs/plugin-legacy'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 export default defineConfig(({ mode }) => {
   const apiProxyTarget = mode === 'e2e'
@@ -13,9 +14,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      legacy({
+      // P0: legacy 仅在明确需要时启用（默认关闭以加速构建）
+      ...(process.env.ENABLE_LEGACY === '1' ? [legacy({
         targets: ['defaults', 'not IE 11', 'last 2 versions']
-      }),
+      })] : []),
       viteCompression({
         verbose: true,
         disable: false,
@@ -29,7 +31,14 @@ export default defineConfig(({ mode }) => {
         threshold: 10240,
         algorithm: 'brotliCompress',
         ext: '.br',
-      })
+      }),
+      // P0: 构建产物分析（仅在需要时生成）
+      ...(process.env.ANALYZE === '1' ? [visualizer({
+        open: false,
+        gzipSize: true,
+        brotliSize: true,
+        filename: 'dist/stats.html',
+      })] : []),
     ],
     resolve: {
       alias: {
@@ -41,6 +50,10 @@ export default defineConfig(({ mode }) => {
       include: [...dedupedReactPackages, 'zustand'],
     },
     build: {
+      // P0: target 升级到 es2020，减少 polyfill 体积
+      target: 'es2020',
+      // P0: chunk 大小警告阈值从 500KB 降到 300KB
+      chunkSizeWarningLimit: 300,
       minify: 'terser',
       terserOptions: {
         compress: {
@@ -56,8 +69,13 @@ export default defineConfig(({ mode }) => {
             react: ['react', 'react-dom', 'react-router-dom'],
             recharts: ['recharts'],
             core: ['zustand', 'axios'],
-            markdown: ['react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex'],
+            virtuoso: ['react-virtuoso'],
+            // P0: markdown 拆分为更细粒度，避免单 chunk 过大
+            markdown: ['react-markdown', 'remark-gfm', 'remark-math'],
+            markdownMath: ['rehype-katex', 'katex'],
             markdownRender: ['rehype-highlight', 'highlight.js'],
+            // P0: lucide 图标单独分包
+            icons: ['lucide-react'],
           }
         }
       }

@@ -7,7 +7,6 @@ import {
   getCachedConversationMessages,
   getCachedConversationSummaries,
   setActiveConversationId,
-  setCachedConversationMessages,
   setCachedConversationSummaries,
 } from '@/features/chat/utils/chatCache'
 import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
@@ -72,7 +71,8 @@ const initialSelectedModel = safeGetItem('chat_selected_model', '')
 const isInitialReasoner = initialSelectedModel.toLowerCase().includes('reasoner') || initialSelectedModel.toLowerCase().includes('r1') || initialSelectedModel.toLowerCase().includes('o1') || initialSelectedModel.toLowerCase().includes('o3')
 
 export const useChatStore = create<ChatState>((set) => ({
-  messages: getCachedConversationMessages(initialSessionId),
+  // P0: 不再在 store 初始化时同步读取大量消息，消息由 ChatPage 在路由进入时异步加载
+  messages: [],
   isLoading: false,
   sessionId: initialSessionId,
   conversations: getCachedConversationSummaries(),
@@ -101,7 +101,6 @@ export const useChatStore = create<ChatState>((set) => ({
             timestamp: new Date(),
           },
         ]
-        setCachedConversationMessages(state.sessionId, nextMessages)
         return nextMessages
       })(),
     }))
@@ -123,24 +122,18 @@ export const useChatStore = create<ChatState>((set) => ({
             : lastMessage.reasoning_content,
         }
         const newMessages = [...state.messages.slice(0, -1), updatedMessage]
-        setCachedConversationMessages(state.sessionId, newMessages)
         return { messages: newMessages }
       }
       return state
     }),
 
-  setMessages: (messages) =>
-    set((state) => {
-      setCachedConversationMessages(state.sessionId, messages)
-      return { messages }
-    }),
+  setMessages: (messages) => set({ messages }),
 
   updateMessage: (messageId: string, updater: (msg: ChatMessage) => ChatMessage) =>
     set((state) => {
       const nextMessages = state.messages.map((msg) =>
         msg.id === messageId ? updater(msg) : msg
       )
-      setCachedConversationMessages(state.sessionId, nextMessages)
       return { messages: nextMessages }
     }),
 
@@ -149,11 +142,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setLoading: (loading) => set({ isLoading: loading }),
 
-  clearMessages: () =>
-    set((state) => {
-      setCachedConversationMessages(state.sessionId, [])
-      return { messages: [] }
-    }),
+  clearMessages: () => set({ messages: [] }),
 
   setSessionId: (id) => {
     setActiveConversationId(id)

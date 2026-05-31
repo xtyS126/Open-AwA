@@ -357,9 +357,10 @@ function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
 
+  // P0: 仅在新消息增加时触发自动滚动，不再因 messageMeta 变化频繁滚动
   useEffect(() => {
     scrollToBottom()
-  }, [messages, messageMeta, scrollToBottom])
+  }, [messages.length, scrollToBottom])
 
   useEffect(() => {
     messageMetaRef.current = messageMeta

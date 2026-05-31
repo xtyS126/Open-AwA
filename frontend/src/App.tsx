@@ -47,10 +47,11 @@ function NavigationLogger() {
 }
 
 function App() {
-  const { isInitialized, isAuthenticated } = useAuthStore()
+  const { isAuthenticated } = useAuthStore()
   const { theme } = useThemeStore()
   useAppInitialization()
 
+  // 主题类名同步设置（壳层立即生效）
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark')
@@ -59,21 +60,8 @@ function App() {
     }
   }, [theme])
 
-  if (!isInitialized) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        color: 'var(--color-text-secondary)',
-        fontSize: '16px'
-      }}>
-        正在初始化应用...
-      </div>
-    )
-  }
-
+  // P0: 始终渲染 App Shell，不再全屏白屏等待初始化完成
+  // 壳层立即可见，认证状态决定路由内容
   return (
     <ErrorBoundary name="Root">
     <BrowserRouter future={routerFutureConfig}>
