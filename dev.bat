@@ -24,6 +24,25 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: ---- Kill leftover Node processes + clear locked cache ----
+echo [0] Cleaning up previous Vite cache...
+taskkill /f /im node.exe >nul 2>&1
+:: wait for file handles to release
+timeout /t 2 /nobreak >nul
+:: remove ALL possible Vite cache locations
+for %%d in (
+    "%~dp0.vite-cache"
+    "%~dp0frontend\node_modules\.vite"
+    "%~dp0frontend\node_modules\.vite-cache"
+) do (
+    if exist %%d (
+        rmdir /s /q %%d 2>nul
+        if exist %%d (
+            echo       WARNING: Could not delete %%d, using --force flag
+        )
+    )
+)
+
 :: ---- Backend ----
 echo [1/2] Starting backend (port 8000) ...
 echo       DEV_FAST_START=1
@@ -36,18 +55,6 @@ popd
 :: ---- Frontend ----
 echo [2/2] Starting frontend (port 5173) ...
 
-:: clean Vite deps cache to avoid Windows file-lock EPERM
-if exist "%~dp0.vite-cache" (
-    echo       Cleaning Vite cache...
-    rmdir /s /q "%~dp0.vite-cache" 2>nul
-)
-if exist "%~dp0frontend\node_modules\.vite" (
-    rmdir /s /q "%~dp0frontend\node_modules\.vite" 2>nul
-)
-if exist "%~dp0frontend\node_modules\.vite-cache" (
-    rmdir /s /q "%~dp0frontend\node_modules\.vite-cache" 2>nul
-)
-
 if not exist "%~dp0frontend\node_modules" (
     echo       Installing frontend dependencies...
     pushd "%~dp0frontend"
@@ -56,7 +63,7 @@ if not exist "%~dp0frontend\node_modules" (
 )
 
 pushd "%~dp0frontend"
-start "Open-AwA-Frontend" npm run dev
+start "Open-AwA-Frontend" cmd /c "npx vite --host 0.0.0.0 --port 5173 --force"
 popd
 
 echo.
