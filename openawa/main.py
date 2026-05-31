@@ -1,0 +1,750 @@
+"""
+后端服务主入口，负责应用初始化、中间件注册、路由挂载与基础健康检查。
+阅读本文件时，建议优先关注启动顺序、生命周期管理、请求链路上下文以及全局异常处理方式。
+"""
+
+from contextlib import asynccontextmanager
+import errno
+import inspect
+import os
+import time
+from typing import Optional
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.staticfiles import StaticFiles
+from loguru import logger
+from slowapi import _rate_limit_exceeded_handler
+from openawa.config.ratelimit import limiter
+
+from openawa.api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from openawa.api.routes.diary import router as diary_router
+from openawa.api.routes.marketplace import router as marketplace_router
+from openawa.api.routes.security import router as security_router
+from openawa.api.routes.weixin import router as weixin_router
+from openawa.api.routes.tools import router as tools_router
+from openawa.api.routes.subagents import router as subagents_router
+from openawa.api.routes.user import router as user_router
+from openawa.api.routes.system import router as system_router
+from openawa.api.routes.task_runtime import router as task_runtime_router
+from openawa.api.routes.test_runner import router as test_runner_router
+from openawa.billing.models import Base as BillingBase
+from openawa.billing.routers import billing
+from openawa.config.logging import (
+    REQUEST_ID_HEADER,
+    clear_request_id,
+    generate_request_id,
+    init_logging,
+    sanitize_for_logging,
+    set_request_id,
+)
+from openawa.core.metrics import prometheus_registry
+from openawa.core.model_service import (
+    CLIENT_VERSION_HEADER,
+    SERVER_VERSION_HEADER,
+    VERSION_STATUS_HEADER,
+    build_standard_error,
+    close_shared_client,
+    negotiate_version_status,
+)
+from openawa.core.litellm_adapter import is_litellm_available
+from openawa.core.scheduled_task_manager import scheduled_task_manager
+from openawa.core.startup.profiler import StartupProfiler
+from openawa.config.settings import is_production_environment, settings
+from openawa.db.models import engine, init_db
+
+
+init_logging(
+    log_level=settings.LOG_LEVEL,
+    service_name=settings.LOG_SERVICE_NAME,
+    log_serialize=settings.LOG_SERIALIZE,
+    log_dir=settings.log_dir_resolved,
+    log_file_rotation=settings.LOG_FILE_ROTATION,
+    log_file_retention=settings.LOG_FILE_RETENTION,
+    log_file_compression=settings.LOG_FILE_COMPRESSION,
+)
+
+def _resolve_allowed_origins() -> list[str]:
+    """
+    统一解析 CORS 白名单。
+    生产环境必须显式配置，避免开发域名误带入生产。
+    """
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+    origins = [item.strip() for item in raw_origins.split(",") if item.strip()]
+    if origins:
+        return origins
+
+    if is_production_environment(settings.ENVIRONMENT):
+        raise ValueError("ALLOWED_ORIGINS environment variable is required in production environment")
+
+    # 非生产环境默认仅允许本地开发域名；部署到 staging/preview 时需显式配置
+    return ["http://localhost:5173", "http://localhost:8000"]
+
+
+ALLOWED_ORIGINS = _resolve_allowed_origins()
+logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for_logging(ALLOWED_ORIGINS)).info("cors configured")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    管理应用启动与关闭阶段的全局生命周期。
+    启动时会初始化主数据库、计费表与默认定价配置；关闭时负责输出应用停止日志，为后续扩展统一资源清理入口。
+    """
+    logger.bind(event="app_startup", module="main").info("starting up openawa")
+
+    # 启动耗时采集
+    profiler = StartupProfiler()
+    profiler.start()
+
+    # LiteLLM 依赖检测：启动时检查是否已安装
+    with profiler.step("litellm_check"):
+        if is_litellm_available():
+            logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
+        else:
+            logger.bind(event="litellm_missing", module="main").warning(
+                "LiteLLM dependency not installed. "
+                "Please run `pip install litellm` to enable unified LLM gateway. "
+                "Model API requests will fail until LiteLLM is installed."
+            )
+    if not os.getenv("SKIP_INIT_DB"):
+        with profiler.step("db_init"):
+            try:
+                init_db()
+                logger.bind(event="db_initialized", module="main").info("database initialized")
+            except Exception as exc:
+                logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
+                raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
+        with profiler.step("billing_tables"):
+            BillingBase.metadata.create_all(bind=engine)
+            logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
+        from openawa.billing.pricing_manager import PricingManager
+        from openawa.db.models import SessionLocal
+
+        with profiler.step("pricing_init"):
+            db = SessionLocal()
+            try:
+                pricing_manager = PricingManager(db)
+                pricing_manager.ensure_configuration_schema()
+                count = pricing_manager.initialize_default_pricing()
+                if count > 0:
+                    logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
+                removed = pricing_manager.remove_legacy_default_configurations()
+                if removed > 0:
+                    logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
+            finally:
+                db.close()
+        # 初始化内置 RBAC 角色
+        from openawa.security.rbac import RBACManager
+
+        with profiler.step("rbac_init"):
+            db = SessionLocal()
+            try:
+                rbac = RBACManager(db)
+                rbac.ensure_built_in_roles()
+            finally:
+                db.close()
+        # 从本地配置文件同步用户到数据库
+        from openawa.config.local_users import sync_local_users_to_db
+
+        with profiler.step("local_users_sync"):
+            db = SessionLocal()
+            try:
+                sync_stats = sync_local_users_to_db(db)
+                logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
+            finally:
+                db.close()
+    # 初始化插件市场内置插件
+    with profiler.step("marketplace_seed"):
+        from openawa.plugins.marketplace.registry import marketplace_registry
+        marketplace_registry.seed_built_in_plugins()
+
+    # 初始化插件管理器：发现插件并加载数据库中已启用的插件
+    with profiler.step("plugin_discover"):
+        from openawa.plugins.plugin_manager import PluginManager
+        from openawa.plugins import plugin_instance
+        from openawa.db.models import SessionLocal
+        plugin_instance.init(PluginManager(db_session_factory=SessionLocal))
+        pm = plugin_instance.get()
+        pm.discover_plugins()
+    if not os.getenv("SKIP_INIT_DB"):
+        with profiler.step("plugin_load_enabled"):
+            from openawa.db.models import Plugin as PluginModel, Skill
+            import uuid
+            db = SessionLocal()
+            try:
+                # 迁移：删除已由 system-tools 插件接管的内置技能记录
+                for skill_name in ["file_manager", "terminal_executor"]:
+                    old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
+                    if old_skill:
+                        db.delete(old_skill)
+                        logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
+                            f"已迁移内置技能 {skill_name} 至 system-tools 插件"
+                        )
+                db.commit()
+
+                # 注册 system-tools 系统内置插件（如不存在）
+                existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
+                if not existing_plugin:
+                    new_plugin = PluginModel(
+                        id=str(uuid.uuid4()),
+                        name="system-tools",
+                        version="1.0.0",
+                        enabled=True,
+                        config={},
+                        category="builtin",
+                        author="Open-AwA Team",
+                        source="builtin",
+                        dependencies=[],
+                    )
+                    db.add(new_plugin)
+                    db.commit()
+                    logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
+                        "已注册系统内置插件 system-tools"
+                    )
+            except Exception as exc:
+                logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
+                db.rollback()
+            finally:
+                db.close()
+
+            db = SessionLocal()
+            try:
+                enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
+                for p in enabled_plugins:
+                    if p.name in pm.plugin_metadata:
+                        try:
+                            pm.load_plugin(p.name)
+                            logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
+                            # 从数据库恢复已授权权限（覆盖 auto_authorize 的默认授权）
+                            granted = p.granted_permissions or []
+                            if granted:
+                                pm.restore_plugin_permissions(p.name, granted)
+                        except Exception as exc:
+                            logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
+                logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
+            finally:
+                db.close()
+
+    with profiler.step("scheduled_task_start"):
+        await scheduled_task_manager.start()
+
+    # 根据配置启动微信自动回复
+    if not os.getenv("SKIP_INIT_DB"):
+        with profiler.step("weixin_auto_reply"):
+            from openawa.db.models import WeixinBinding, SessionLocal
+            from openawa.api.services.weixin_auto_reply import get_auto_reply_manager
+            db = SessionLocal()
+            try:
+                bindings = db.query(WeixinBinding).filter(
+                    WeixinBinding.binding_status == "bound",
+                    WeixinBinding.auto_start_reply == True
+                ).all()
+                if bindings:
+                    manager = get_auto_reply_manager()
+                    for binding in bindings:
+                        try:
+                            await manager.start(binding.user_id)
+                            logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
+                        except ValueError as e:
+                            logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
+                        except Exception as e:
+                            logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
+            finally:
+                db.close()
+
+    profiler.finish()
+
+    yield
+    await scheduled_task_manager.stop()
+    await close_shared_client()
+    logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description="AI Agent Framework - Similar to OpenClaw",
+    lifespan=lifespan,
+)
+
+# CSRF 保护 — per-session 签名 token 模式
+# 参考: Django CSRF 中间件 https://github.com/django/django/blob/main/django/middleware/csrf.py
+_CSRF_HEADER_NAME = "X-CSRF-Token"
+# 不需要 CSRF 校验的路径前缀（仅登录/注册/获取 CSRF Token 等无会话场景）
+_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/auth/csrf-token"}
+# 需要 CSRF 校验的请求方法
+_CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+# CSRF 签名密钥由 security._derive_csrf_signing_key() 从 SECRET_KEY 派生
+# 确保多 Worker 部署时签名一致（不再使用进程级随机密钥）
+
+
+def _extract_user_id_from_request(request: Request) -> Optional[int]:
+    """
+    从请求中提取认证用户 ID（用于 CSRF 校验时与 token 中绑定的用户比对）。
+
+    优先从 JWT payload 的 uid 字段直接读取（高效路径），
+    其次回退到通过 username 查 DB 的兼容路径（支持旧版不含 uid 的令牌）。
+
+    不会抛出异常，解析失败返回 None。
+    """
+    from openawa.config.security import decode_access_token
+
+    token: Optional[str] = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+
+    # 优先从 JWT payload 直接读取 uid（高效路径，新增令牌均包含此字段）
+    uid = payload.get("uid")
+    if isinstance(uid, int):
+        return uid
+
+    # 兼容旧版令牌：通过 username 查 DB（降级路径）
+    username = payload.get("sub")
+    if not isinstance(username, str):
+        return None
+
+    try:
+        from openawa.api.dependencies import _load_user_by_username
+
+        user = _load_user_by_username(username)
+        return user.id if user else None
+    except Exception:
+        return None
+
+
+@app.get("/api/auth/csrf-token")
+async def get_csrf_token(request: Request):
+    """
+    返回当前用户会话的 CSRF token（需认证）。
+
+    前端在登录后调用此接口获取 per-session CSRF token，
+    存储在 JS 内存中，在状态变更请求时通过 X-CSRF-Token header 发送。
+    """
+    user_id = _extract_user_id_from_request(request)
+    if user_id is None:
+        raise FastAPIHTTPException(status_code=401, detail="Authentication required")
+    csrf_token = generate_csrf_token(user_id)
+    return {"csrf_token": csrf_token}
+
+
+@app.middleware("http")
+async def csrf_protection_middleware(request: Request, call_next):
+    """
+    Per-session 签名 Token 模式的 CSRF 保护中间件。
+
+    对 POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header：
+    1. 验证 token 签名和有效期
+    2. 提取 token 中绑定的 user_id
+    3. 与请求中认证用户的 user_id 比对，确保一一对应
+
+    WebSocket 连接和豁免路径跳过校验。
+    """
+    path = request.url.path
+    method = request.method
+
+    # WebSocket 连接跳过 CSRF 校验（通过 token query 参数认证）
+    if "websocket" in path.lower() or request.headers.get("upgrade", "").lower() == "websocket":
+        return await call_next(request)
+
+    # 测试环境跳过 CSRF 校验
+    if os.getenv("TESTING", "").lower() == "true":
+        return await call_next(request)
+
+    if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
+        header_token = request.headers.get(_CSRF_HEADER_NAME, "")
+        if not header_token:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "missing_csrf_token",
+                    "message": "缺少 CSRF token",
+                    "detail": "Missing X-CSRF-Token header",
+                },
+            )
+
+        # 验证 CSRF token 签名和有效期
+        csrf_payload = verify_csrf_token(header_token)
+        if csrf_payload is None:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "invalid_csrf_token",
+                    "message": "CSRF token 无效或已过期",
+                    "detail": "CSRF token verification failed",
+                },
+            )
+
+        # 提取请求中的认证用户 ID 并与 CSRF token 中绑定的用户比对
+        request_user_id = _extract_user_id_from_request(request)
+        if request_user_id is None or request_user_id != csrf_payload["sub"]:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "csrf_user_mismatch",
+                    "message": "CSRF token 与当前用户不匹配",
+                    "detail": "CSRF token user mismatch",
+                },
+            )
+
+    response = await call_next(request)
+    return response
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """
+    为每个 HTTP 请求建立统一的请求上下文与链路追踪信息。
+    中间件会生成或继承请求 ID、写入请求状态与日志上下文、在响应头回传请求 ID，并记录请求开始、结束与异常日志。
+    """
+    incoming_request_id = request.headers.get(REQUEST_ID_HEADER, "")
+    incoming_client_version = request.headers.get(CLIENT_VERSION_HEADER, "")
+    request_id = str(incoming_request_id or generate_request_id()).strip() or generate_request_id()
+    version_status = negotiate_version_status(incoming_client_version, settings.VERSION)
+    set_request_id(request_id)
+    request.state.request_id = request_id
+    request.state.client_version = incoming_client_version
+    request.state.version_status = version_status
+
+    path = request.url.path
+    method = request.method
+
+    logger.bind(
+        event="http_request_started",
+        module="api",
+        request_id=request_id,
+        http_method=method,
+        path=path,
+    ).debug("request started")
+
+    start_time = time.monotonic()
+
+    try:
+        response = await call_next(request)
+        duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        response.headers[SERVER_VERSION_HEADER] = settings.VERSION
+        response.headers[VERSION_STATUS_HEADER] = version_status
+        if incoming_client_version:
+            response.headers[CLIENT_VERSION_HEADER] = incoming_client_version
+        logger.bind(
+            event="http_request_completed",
+            module="api",
+            request_id=request_id,
+            http_method=method,
+            path=path,
+            status=response.status_code,
+            duration_ms=duration_ms,
+        ).info(f"{method} {path} -> {response.status_code} ({duration_ms}ms) rid={request_id}")
+        return response
+    except Exception as exc:
+        duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+        logger.bind(
+            event="http_request_failed",
+            module="api",
+            request_id=request_id,
+            http_method=method,
+            path=path,
+            error_type=type(exc).__name__,
+            error_message=sanitize_for_logging(str(exc)),
+            duration_ms=duration_ms,
+        ).exception("request failed")
+        raise
+    finally:
+        clear_request_id()
+
+
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    """
+    将显式 HTTP 异常统一包装为带错误码与 request_id 的结构。
+    """
+
+    request_id = getattr(request.state, "request_id", "") or generate_request_id()
+    error = build_standard_error(
+        code=f"http_{exc.status_code}",
+        message=str(exc.detail),
+        request_id=request_id,
+        status_code=exc.status_code,
+        retryable=exc.status_code >= 500,
+    )
+    response = JSONResponse(status_code=exc.status_code, content={"error": error})
+    response.headers[REQUEST_ID_HEADER] = request_id
+    response.headers[SERVER_VERSION_HEADER] = settings.VERSION
+    response.headers[VERSION_STATUS_HEADER] = getattr(request.state, "version_status", "server_only")
+    client_version = getattr(request.state, "client_version", "")
+    if client_version:
+        response.headers[CLIENT_VERSION_HEADER] = client_version
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    全局未捕获异常处理器，兜底处理所有未经显式捕获的异常。
+    记录完整的请求上下文（路径、方法、request_id、异常类型及消息）到日志，
+    返回标准化 JSON 错误响应（500 Internal Server Error），
+    并在响应头中注入服务版本号与请求 ID，便于调用方追踪排障。
+    """
+    request_id = getattr(request.state, "request_id", "") or generate_request_id()
+    logger.bind(
+        event="unhandled_exception",
+        module="api",
+        request_id=request_id,
+        http_method=request.method,
+        path=request.url.path,
+        error_type=type(exc).__name__,
+        error_message=sanitize_for_logging(str(exc)),
+    ).exception("unhandled exception")
+
+    error = build_standard_error(
+        code="internal_server_error",
+        message="Internal server error",
+        request_id=request_id,
+        status_code=500,
+        retryable=False,
+    )
+    response = JSONResponse(
+        status_code=500,
+        content={"error": error},
+    )
+    response.headers[REQUEST_ID_HEADER] = request_id
+    response.headers[SERVER_VERSION_HEADER] = settings.VERSION
+    response.headers[VERSION_STATUS_HEADER] = getattr(request.state, "version_status", "server_only")
+    client_version = getattr(request.state, "client_version", "")
+    if client_version:
+        response.headers[CLIENT_VERSION_HEADER] = client_version
+    return response
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, CLIENT_VERSION_HEADER, _CSRF_HEADER_NAME],
+)
+
+# Content-Security-Policy 中间件 — 添加安全头防止 XSS 和数据注入攻击
+@app.middleware("http")
+async def _add_csp_header(request: Request, call_next):
+    """
+    为所有响应添加 Content-Security-Policy 头。
+    CSP 作为 XSS 攻击的第二道防线，在默认 React 转义基础上提供额外保护。
+    允许的源: 自身域名 + Google Fonts CDN。
+    """
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https:; "
+        "connect-src 'self' ws: wss:; "
+        "frame-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
+
+
+# Rate Limiting 配置（limiter 实例来自 config.ratelimit 共享模块）
+app.state.limiter = limiter
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
+
+app.include_router(auth.router, prefix=settings.API_V1_STR)
+app.include_router(chat.router, prefix=settings.API_V1_STR)
+app.include_router(skills.router, prefix=settings.API_V1_STR)
+app.include_router(plugins.router, prefix=settings.API_V1_STR)
+app.include_router(memory.router, prefix=settings.API_V1_STR)
+app.include_router(workflows.router, prefix=settings.API_V1_STR)
+app.include_router(scheduled_tasks.router, prefix=settings.API_V1_STR)
+app.include_router(diary_router, prefix=settings.API_V1_STR)
+app.include_router(prompts.router, prefix=settings.API_V1_STR)
+app.include_router(behavior.router, prefix=settings.API_V1_STR)
+app.include_router(experiences.router, prefix=settings.API_V1_STR)
+app.include_router(experience_files.router, prefix=settings.API_V1_STR)
+app.include_router(conversation.router, prefix=settings.API_V1_STR)
+app.include_router(logs.router, prefix=settings.API_V1_STR)
+app.include_router(mcp.router, prefix=settings.API_V1_STR)
+app.include_router(models.router, prefix=settings.API_V1_STR)
+app.include_router(billing.router, prefix=settings.API_V1_STR)
+app.include_router(marketplace_router, prefix=settings.API_V1_STR)
+app.include_router(security_router, prefix=settings.API_V1_STR)
+app.include_router(weixin_router, prefix=settings.API_V1_STR)
+app.include_router(tools_router, prefix=settings.API_V1_STR)
+app.include_router(subagents_router, prefix=settings.API_V1_STR)
+app.include_router(task_runtime_router, prefix=settings.API_V1_STR)
+app.include_router(user_router, prefix=settings.API_V1_STR)
+app.include_router(system_router, prefix=settings.API_V1_STR)
+app.include_router(test_runner_router, prefix=settings.API_V1_STR)
+
+# 挂载用户头像静态文件目录
+from pathlib import Path as FsPath
+_avatars_dir = FsPath("uploads/avatars")
+_avatars_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/api/user/avatar", StaticFiles(directory=str(_avatars_dir)), name="user_avatar")
+
+
+# 静态资源缓存策略：为带哈希的文件名设置长期缓存
+@app.middleware("http")
+async def add_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    # 带哈希的静态资源（JS/CSS/字体/图片）设置 1 年缓存
+    if any(ext in path for ext in ('.js', '.css', '.woff', '.woff2', '.ttf', '.png', '.jpg', '.svg', '.ico')):
+        # Vite/Rollup 输出的文件名包含哈希（如 index-a1b2c3d4.js），可安全长期缓存
+        if any(c.isdigit() for c in path.split('/')[-1].split('.')[0][-8:]):
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
+
+
+@app.get("/")
+async def root():
+    """
+    根路径（GET /）信息端点，返回服务基本状态。
+    用于快速验证应用是否正常运行，输出项目名称、版本号与运行状态。
+    无需认证，适合负载均衡器或客户端启动时的连通性检测。
+    """
+    return {
+        "name": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "status": "running",
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """
+    健康检查端点（GET /health），轻量级无状态存活探针。
+    不涉及任何数据库查询或外部依赖调用，仅返回固定存活标志。
+    适用于 Kubernetes 等容器编排平台的存活与就绪探测。
+    """
+    return {"status": "healthy"}
+
+
+@app.get("/metrics")
+async def metrics():
+    """
+    导出简易 Prometheus 指标，便于基础观测与排障。
+    """
+
+    return PlainTextResponse(
+        prometheus_registry.render(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
+def get_server_host() -> str:
+    """
+    读取后端服务监听主机配置。
+    优先使用环境变量中的 BACKEND_HOST，其次兼容 HOST，未配置时回退到默认值。
+    """
+    return (os.getenv("BACKEND_HOST") or os.getenv("HOST") or "0.0.0.0").strip() or "0.0.0.0"
+
+
+def get_server_port() -> int:
+    """
+    读取后端服务监听端口配置。
+    优先使用环境变量中的 BACKEND_PORT，其次兼容 PORT，未配置时回退到默认值。
+    如果端口值不是合法整数，则抛出带明确信息的异常，便于快速排查配置问题。
+    """
+    raw_port = (os.getenv("BACKEND_PORT") or os.getenv("PORT") or "8000").strip() or "8000"
+    try:
+        return int(raw_port)
+    except ValueError as exc:
+        raise ValueError(f"无效的端口配置: {raw_port}") from exc
+
+
+def _run_uvicorn_server(uvicorn_module, host: str, port: int, debug_mode: bool = False) -> None:
+    """
+    统一封装 uvicorn.run 调用。
+    真实启动时保留默认日志参数，测试中的精简桩函数也能兼容。
+    当 settings 中配置了 SSL 证书和私钥时自动启用 HTTPS。
+    """
+    run_kwargs = {
+        "host": host,
+        "port": port,
+        "access_log": debug_mode,
+        "log_level": "debug" if debug_mode else "warning",
+    }
+
+    # HTTPS 配置：证书和私钥同时存在时自动启用 TLS
+    if settings.is_ssl_enabled():
+        run_kwargs["ssl_certfile"] = settings.SSL_CERTFILE
+        run_kwargs["ssl_keyfile"] = settings.SSL_KEYFILE
+        if settings.SSL_KEYFILE_PASSWORD:
+            run_kwargs["ssl_keyfile_password"] = settings.SSL_KEYFILE_PASSWORD
+        if settings.SSL_CA_CERTS:
+            run_kwargs["ssl_ca_certs"] = settings.SSL_CA_CERTS
+
+    # uvicorn 的热重载依赖导入字符串形式的 app 目标，直接传入 app 对象时无法启用 reload。
+    # 这里在调试模式下切换为模块导入路径，便于通过修改 DEBUG_MODE 快速开启本地调试体验。
+    app_target = "openawa.main:app" if debug_mode else app
+    if debug_mode:
+        run_kwargs["reload"] = True
+
+    try:
+        signature = inspect.signature(uvicorn_module.run)
+    except (TypeError, ValueError):
+        signature = None
+
+    if signature is not None:
+        has_var_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        if not has_var_kwargs:
+            run_kwargs = {
+                key: value
+                for key, value in run_kwargs.items()
+                if key in signature.parameters
+            }
+
+    uvicorn_module.run(app_target, **run_kwargs)
+
+
+def run_server(debug_mode: bool = False) -> None:
+    """
+    启动后端 HTTP 服务并处理常见启动异常。
+    发生端口占用时输出更友好的提示，帮助调用方快速定位冲突端口或调整配置。
+    """
+    import uvicorn
+
+    host = get_server_host()
+    port = get_server_port()
+    logger.bind(
+        event="server_starting",
+        module="main",
+        host=host,
+        port=port,
+        debug_mode=debug_mode,
+        use_tls=settings.is_ssl_enabled(),
+    ).info("starting backend server")
+    try:
+        _run_uvicorn_server(uvicorn, host, port, debug_mode=debug_mode)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            message = f"后端服务启动失败：端口 {port} 已被占用，请关闭占用进程或通过 BACKEND_PORT/PORT 更换端口后重试。"
+            logger.bind(event="server_bind_conflict", module="main", host=host, port=port).error(message)
+            raise RuntimeError(message) from exc
+        raise
+
+
+if __name__ == "__main__":
+    # 在此处切换本地调试模式：True 启用 debug/reload/access_log，False 使用常规启动参数。
+    DEBUG_MODE = True
+    run_server(debug_mode=DEBUG_MODE)
