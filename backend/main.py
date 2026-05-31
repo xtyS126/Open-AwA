@@ -8,6 +8,7 @@ import errno
 import inspect
 import os
 import time
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

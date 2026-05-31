@@ -31,7 +31,7 @@ echo         模式: 开发快启 (DEV_FAST_START=1)
 echo         跳过: 插件市场 seed / 插件加载 / 微信自动回复
 
 set DEV_FAST_START=1
-start "Open-AwA Backend" cmd /k "cd /d "%~dp0" && python -m openawa.main"
+start "Open-AwA Backend" cmd /k "cd /d "%~dp0backend" && python main.py"
 
 :: ---- 前端 ----
 echo [2/2] 启动前端 (端口 5173) ...
