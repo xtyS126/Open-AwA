@@ -1,55 +1,68 @@
 @echo off
-chcp 65001 >nul
-title Open-AwA 一键调试启动
+title Open-AwA Dev
 
 echo ================================================================
-echo   Open-AwA 开发环境一键启动
-echo   后端: http://localhost:8000
-echo   前端: http://localhost:5173
+echo   Open-AwA Dev Start
+echo   Backend : http://localhost:8000
+echo   Frontend: http://localhost:5173
 echo ================================================================
 echo.
 
-:: ---- 检查 Python ----
+:: ---- Python check ----
 where python >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [错误] 未找到 Python，请先安装 Python 3.11+
+    echo [ERR] Python not found
     pause
     exit /b 1
 )
 
-:: ---- 检查 Node.js ----
+:: ---- Node check ----
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [错误] 未找到 Node.js，请先安装 Node.js 18+
+    echo [ERR] Node.js not found
     pause
     exit /b 1
 )
 
-:: ---- 后端 ----
-echo [1/2] 启动后端 (端口 8000) ...
-echo         模式: 开发快启 (DEV_FAST_START=1)
-echo         跳过: 插件市场 seed / 插件加载 / 微信自动回复
+:: ---- Backend ----
+echo [1/2] Starting backend (port 8000) ...
+echo       DEV_FAST_START=1
 
+pushd "%~dp0backend"
 set DEV_FAST_START=1
-start "Open-AwA Backend" cmd /k "cd /d "%~dp0backend" && python main.py"
+start "Open-AwA-Backend" python main.py
+popd
 
-:: ---- 前端 ----
-echo [2/2] 启动前端 (端口 5173) ...
+:: ---- Frontend ----
+echo [2/2] Starting frontend (port 5173) ...
 
-:: 检查 node_modules 是否存在
-if not exist "%~dp0frontend\node_modules" (
-    echo         首次运行，安装前端依赖...
-    cd /d "%~dp0frontend"
-    call npm install
+:: clean Vite deps cache to avoid Windows file-lock EPERM
+if exist "%~dp0.vite-cache" (
+    echo       Cleaning Vite cache...
+    rmdir /s /q "%~dp0.vite-cache" 2>nul
+)
+if exist "%~dp0frontend\node_modules\.vite" (
+    rmdir /s /q "%~dp0frontend\node_modules\.vite" 2>nul
+)
+if exist "%~dp0frontend\node_modules\.vite-cache" (
+    rmdir /s /q "%~dp0frontend\node_modules\.vite-cache" 2>nul
 )
 
-start "Open-AwA Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+if not exist "%~dp0frontend\node_modules" (
+    echo       Installing frontend dependencies...
+    pushd "%~dp0frontend"
+    call npm install
+    popd
+)
+
+pushd "%~dp0frontend"
+start "Open-AwA-Frontend" npm run dev
+popd
 
 echo.
 echo ================================================================
-echo   启动完成！
-echo   浏览器访问 http://localhost:5173 即可开始调试
-echo   关闭窗口即可停止对应服务
+echo   Done. Open http://localhost:5173
+echo   Close each CMD window to stop the service.
 echo ================================================================
 echo.
 pause

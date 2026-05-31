@@ -49,6 +49,8 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       include: [...dedupedReactPackages, 'zustand'],
     },
+    // 移到 node_modules 外部，避免 Windows 文件锁 EPERM
+    cacheDir: path.resolve(__dirname, '..', '.vite-cache'),
     build: {
       // P0: target 升级到 es2020，减少 polyfill 体积
       target: 'es2020',
