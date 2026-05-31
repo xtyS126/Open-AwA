@@ -50,6 +50,7 @@ from core.model_service import (
 )
 from core.litellm_adapter import is_litellm_available
 from core.scheduled_task_manager import scheduled_task_manager
+from core.startup.profiler import StartupProfiler
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
 
@@ -91,146 +92,168 @@ async def lifespan(app: FastAPI):
     启动时会初始化主数据库、计费表与默认定价配置；关闭时负责输出应用停止日志，为后续扩展统一资源清理入口。
     """
     logger.bind(event="app_startup", module="main").info("starting up openawa")
+
+    # 启动耗时采集
+    profiler = StartupProfiler()
+    profiler.start()
+
     # LiteLLM 依赖检测：启动时检查是否已安装
-    if is_litellm_available():
-        logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
-    else:
-        logger.bind(event="litellm_missing", module="main").warning(
-            "LiteLLM dependency not installed. "
-            "Please run `pip install litellm` to enable unified LLM gateway. "
-            "Model API requests will fail until LiteLLM is installed."
-        )
+    with profiler.step("litellm_check"):
+        if is_litellm_available():
+            logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
+        else:
+            logger.bind(event="litellm_missing", module="main").warning(
+                "LiteLLM dependency not installed. "
+                "Please run `pip install litellm` to enable unified LLM gateway. "
+                "Model API requests will fail until LiteLLM is installed."
+            )
     if not os.getenv("SKIP_INIT_DB"):
-        try:
-            init_db()
-            logger.bind(event="db_initialized", module="main").info("database initialized")
-        except Exception as exc:
-            logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
-            raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
-        BillingBase.metadata.create_all(bind=engine)
-        logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
+        with profiler.step("db_init"):
+            try:
+                init_db()
+                logger.bind(event="db_initialized", module="main").info("database initialized")
+            except Exception as exc:
+                logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
+                raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
+        with profiler.step("billing_tables"):
+            BillingBase.metadata.create_all(bind=engine)
+            logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
         from billing.pricing_manager import PricingManager
         from db.models import SessionLocal
 
-        db = SessionLocal()
-        try:
-            pricing_manager = PricingManager(db)
-            pricing_manager.ensure_configuration_schema()
-            count = pricing_manager.initialize_default_pricing()
-            if count > 0:
-                logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
-            removed = pricing_manager.remove_legacy_default_configurations()
-            if removed > 0:
-                logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
-        finally:
-            db.close()
+        with profiler.step("pricing_init"):
+            db = SessionLocal()
+            try:
+                pricing_manager = PricingManager(db)
+                pricing_manager.ensure_configuration_schema()
+                count = pricing_manager.initialize_default_pricing()
+                if count > 0:
+                    logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
+                removed = pricing_manager.remove_legacy_default_configurations()
+                if removed > 0:
+                    logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
+            finally:
+                db.close()
         # 初始化内置 RBAC 角色
         from security.rbac import RBACManager
 
-        db = SessionLocal()
-        try:
-            rbac = RBACManager(db)
-            rbac.ensure_built_in_roles()
-        finally:
-            db.close()
+        with profiler.step("rbac_init"):
+            db = SessionLocal()
+            try:
+                rbac = RBACManager(db)
+                rbac.ensure_built_in_roles()
+            finally:
+                db.close()
         # 从本地配置文件同步用户到数据库
         from config.local_users import sync_local_users_to_db
 
-        db = SessionLocal()
-        try:
-            sync_stats = sync_local_users_to_db(db)
-            logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
-        finally:
-            db.close()
+        with profiler.step("local_users_sync"):
+            db = SessionLocal()
+            try:
+                sync_stats = sync_local_users_to_db(db)
+                logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
+            finally:
+                db.close()
     # 初始化插件市场内置插件
-    from plugins.marketplace.registry import marketplace_registry
-    marketplace_registry.seed_built_in_plugins()
+    with profiler.step("marketplace_seed"):
+        from plugins.marketplace.registry import marketplace_registry
+        marketplace_registry.seed_built_in_plugins()
 
     # 初始化插件管理器：发现插件并加载数据库中已启用的插件
-    from plugins.plugin_manager import PluginManager
-    from plugins import plugin_instance
-    from db.models import SessionLocal
-    plugin_instance.init(PluginManager(db_session_factory=SessionLocal))
-    pm = plugin_instance.get()
-    pm.discover_plugins()
+    with profiler.step("plugin_discover"):
+        from plugins.plugin_manager import PluginManager
+        from plugins import plugin_instance
+        from db.models import SessionLocal
+        plugin_instance.init(PluginManager(db_session_factory=SessionLocal))
+        pm = plugin_instance.get()
+        pm.discover_plugins()
     if not os.getenv("SKIP_INIT_DB"):
-        from db.models import Plugin as PluginModel, Skill
-        import uuid
-        db = SessionLocal()
-        try:
-            # 迁移：删除已由 system-tools 插件接管的内置技能记录
-            for skill_name in ["file_manager", "terminal_executor"]:
-                old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
-                if old_skill:
-                    db.delete(old_skill)
-                    logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
-                        f"已迁移内置技能 {skill_name} 至 system-tools 插件"
-                    )
-            db.commit()
-
-            # 注册 system-tools 系统内置插件（如不存在）
-            existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
-            if not existing_plugin:
-                new_plugin = PluginModel(
-                    id=str(uuid.uuid4()),
-                    name="system-tools",
-                    version="1.0.0",
-                    enabled=True,
-                    config={},
-                    category="builtin",
-                    author="Open-AwA Team",
-                    source="builtin",
-                    dependencies=[],
-                )
-                db.add(new_plugin)
+        with profiler.step("plugin_load_enabled"):
+            from db.models import Plugin as PluginModel, Skill
+            import uuid
+            db = SessionLocal()
+            try:
+                # 迁移：删除已由 system-tools 插件接管的内置技能记录
+                for skill_name in ["file_manager", "terminal_executor"]:
+                    old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
+                    if old_skill:
+                        db.delete(old_skill)
+                        logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
+                            f"已迁移内置技能 {skill_name} 至 system-tools 插件"
+                        )
                 db.commit()
-                logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
-                    "已注册系统内置插件 system-tools"
-                )
-        except Exception as exc:
-            logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
-            db.rollback()
-        finally:
-            db.close()
 
-        db = SessionLocal()
-        try:
-            enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
-            for p in enabled_plugins:
-                if p.name in pm.plugin_metadata:
-                    try:
-                        pm.load_plugin(p.name)
-                        logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
-                    except Exception as exc:
-                        logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
-            logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
-        finally:
-            db.close()
+                # 注册 system-tools 系统内置插件（如不存在）
+                existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
+                if not existing_plugin:
+                    new_plugin = PluginModel(
+                        id=str(uuid.uuid4()),
+                        name="system-tools",
+                        version="1.0.0",
+                        enabled=True,
+                        config={},
+                        category="builtin",
+                        author="Open-AwA Team",
+                        source="builtin",
+                        dependencies=[],
+                    )
+                    db.add(new_plugin)
+                    db.commit()
+                    logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
+                        "已注册系统内置插件 system-tools"
+                    )
+            except Exception as exc:
+                logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
+                db.rollback()
+            finally:
+                db.close()
 
-    await scheduled_task_manager.start()
+            db = SessionLocal()
+            try:
+                enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
+                for p in enabled_plugins:
+                    if p.name in pm.plugin_metadata:
+                        try:
+                            pm.load_plugin(p.name)
+                            logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
+                            # 从数据库恢复已授权权限（覆盖 auto_authorize 的默认授权）
+                            granted = p.granted_permissions or []
+                            if granted:
+                                pm.restore_plugin_permissions(p.name, granted)
+                        except Exception as exc:
+                            logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
+                logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
+            finally:
+                db.close()
+
+    with profiler.step("scheduled_task_start"):
+        await scheduled_task_manager.start()
 
     # 根据配置启动微信自动回复
     if not os.getenv("SKIP_INIT_DB"):
-        from db.models import WeixinBinding, SessionLocal
-        from api.services.weixin_auto_reply import get_auto_reply_manager
-        db = SessionLocal()
-        try:
-            bindings = db.query(WeixinBinding).filter(
-                WeixinBinding.binding_status == "bound",
-                WeixinBinding.auto_start_reply == True
-            ).all()
-            if bindings:
-                manager = get_auto_reply_manager()
-                for binding in bindings:
-                    try:
-                        await manager.start(binding.user_id)
-                        logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
-                    except ValueError as e:
-                        logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
-                    except Exception as e:
-                        logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
-        finally:
-            db.close()
+        with profiler.step("weixin_auto_reply"):
+            from db.models import WeixinBinding, SessionLocal
+            from api.services.weixin_auto_reply import get_auto_reply_manager
+            db = SessionLocal()
+            try:
+                bindings = db.query(WeixinBinding).filter(
+                    WeixinBinding.binding_status == "bound",
+                    WeixinBinding.auto_start_reply == True
+                ).all()
+                if bindings:
+                    manager = get_auto_reply_manager()
+                    for binding in bindings:
+                        try:
+                            await manager.start(binding.user_id)
+                            logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
+                        except ValueError as e:
+                            logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
+                        except Exception as e:
+                            logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
+            finally:
+                db.close()
+
+    profiler.finish()
 
     yield
     await scheduled_task_manager.stop()
@@ -506,9 +529,32 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, CLIENT_VERSION_HEADER, _CSRF_HEADER_NAME],
 )
+
+# Content-Security-Policy 中间件 — 添加安全头防止 XSS 和数据注入攻击
+@app.middleware("http")
+async def _add_csp_header(request: Request, call_next):
+    """
+    为所有响应添加 Content-Security-Policy 头。
+    CSP 作为 XSS 攻击的第二道防线，在默认 React 转义基础上提供额外保护。
+    允许的源: 自身域名 + Google Fonts CDN。
+    """
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https:; "
+        "connect-src 'self' ws: wss:; "
+        "frame-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
 
 # Rate Limiting 配置
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
@@ -547,6 +593,19 @@ from pathlib import Path as FsPath
 _avatars_dir = FsPath("uploads/avatars")
 _avatars_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/api/user/avatar", StaticFiles(directory=str(_avatars_dir)), name="user_avatar")
+
+
+# 静态资源缓存策略：为带哈希的文件名设置长期缓存
+@app.middleware("http")
+async def add_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    # 带哈希的静态资源（JS/CSS/字体/图片）设置 1 年缓存
+    if any(ext in path for ext in ('.js', '.css', '.woff', '.woff2', '.ttf', '.png', '.jpg', '.svg', '.ico')):
+        # Vite/Rollup 输出的文件名包含哈希（如 index-a1b2c3d4.js），可安全长期缓存
+        if any(c.isdigit() for c in path.split('/')[-1].split('.')[0][-8:]):
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
 
 
 @app.get("/")

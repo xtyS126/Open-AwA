@@ -159,4 +159,14 @@ backend/TEST_REPORT_*.md
 *.orig
 *.bak
 *.tmp
-references/
+# ACL 锁定无法删除的残留目录（运行时缓存）
+参考用文件夹/
+插件/
+openawa/api/
+openawa/skills/
+openawa/reports/
+openawa/uploads/
+# openawa 运行时数据
+openawa/openawa.db*
+openawa/openawa_e2e*.db
+openawa/.mypy_cache/

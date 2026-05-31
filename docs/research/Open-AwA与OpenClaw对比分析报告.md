@@ -1,7 +1,7 @@
 # Open-AwA 与 OpenClaw 对比分析报告
 
 > 创建时间：2026-05-04
-> 基于 OpenClaw 调研报告（docs/研究/OpenClaw调研报告.md）逐层对比
+> 基于 OpenClaw 调研报告（docs/research/OpenClaw调研报告.md）逐层对比
 
 ---
 
@@ -368,7 +368,7 @@ Open-AwA 项目在**后端核心架构**（六层分层、Agent 编排、MCP 协
 
 | 类别 | 文件路径 |
 |------|----------|
-| OpenClaw 调研报告 | `docs/研究/OpenClaw调研报告.md` |
+| OpenClaw 调研报告 | `docs/research/OpenClaw调研报告.md` |
 | 核心引擎编排 | `backend/core/agent.py` |
 | 理解层 | `backend/core/comprehension.py` |
 | 规划层 | `backend/core/planner.py` |
