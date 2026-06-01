@@ -3,6 +3,30 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/global.css'
 import { appLogger } from '@/shared/utils/logger'
+import { mark } from '@/shared/perf/metrics'
+
+// P2: Web Vitals 性能指标采集
+import { onLCP, onCLS, onINP, onTTFB } from 'web-vitals'
+
+function reportWebVital(metric: { name: string; value: number; rating: string }) {
+  const rating = metric.rating
+  appLogger.info({
+    event: 'web_vital',
+    module: 'perf',
+    action: metric.name.toLowerCase(),
+    status: rating === 'good' ? 'success' : 'warning',
+    message: `${metric.name}: ${metric.value.toFixed(1)} (${rating})`,
+    extra: { name: metric.name, value: Math.round(metric.value), rating },
+  })
+}
+
+onLCP(reportWebVital)
+onCLS(reportWebVital)
+onINP(reportWebVital)
+onTTFB((m) => {
+  reportWebVital(m)
+  mark('ttfb') // TTFB 是后端+TLS 耗时，单独记录
+})
 
 window.addEventListener('error', (event) => {
   appLogger.error({

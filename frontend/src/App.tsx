@@ -1,11 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import React, { Suspense, useEffect } from 'react'
-import Sidebar from '@/shared/components/Sidebar/Sidebar'
+import React, { Suspense, useEffect, useRef } from 'react'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { appLogger } from '@/shared/utils/logger'
 import { useAppInitialization } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
+import { mark } from '@/shared/perf/metrics'
+
+// P2: Sidebar 懒加载，减少主包体积
+const Sidebar = React.lazy(() => import('@/shared/components/Sidebar/Sidebar'))
 
 const routerFutureConfig = {
   v7_startTransition: true,
@@ -47,9 +50,23 @@ function NavigationLogger() {
 }
 
 function App() {
-  const { isAuthenticated } = useAuthStore()
+  const { isInitialized, isAuthenticated } = useAuthStore()
   const { theme } = useThemeStore()
+  const shellMarkedRef = useRef(false)
   useAppInitialization()
+
+  // P2: 记录 App Shell 首次可见时间
+  if (!shellMarkedRef.current) {
+    shellMarkedRef.current = true
+    mark('app_shell_visible')
+  }
+
+  // P2: 认证状态解析后记录时间
+  useEffect(() => {
+    if (isInitialized) {
+      mark('auth_resolved')
+    }
+  }, [isInitialized])
 
   // 主题类名同步设置（壳层立即生效）
   useEffect(() => {
@@ -75,7 +92,9 @@ function App() {
         </Suspense>
       ) : (
         <div className="app-container">
-          <Sidebar />
+          <Suspense fallback={<div className="sidebar-skeleton" />}>
+            <Sidebar />
+          </Suspense>
           <main className="main-content">
             <Suspense fallback={<div className="loading-fallback">加载中...</div>}>
               <Routes>
