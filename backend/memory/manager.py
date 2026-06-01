@@ -552,6 +552,58 @@ class MemoryManager:
             await self.update_memory_access(memory.id)
         return ranked_memories
 
+    async def auto_search_memories(
+        self,
+        query: str,
+        workspace_id: str = "default",
+        max_results: int = 5,
+        min_score: float = 0.6,
+        user_id: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        自动搜索与当前对话相关的记忆（每次对话自动调用）。
+        返回经过分数筛选的相关记忆条目。
+
+        Args:
+            query: 搜索查询（通常是用户当前消息）
+            workspace_id: 工作区 ID
+            max_results: 最大返回数量
+            min_score: 最低相关性分数阈值
+            user_id: 用户 ID
+
+        Returns:
+            相关记忆列表，每项包含 content 和相关度分数
+        """
+        try:
+            memories = await self.search_memories(
+                query=query,
+                limit=max_results * 2,  # 多取一些用于筛选
+                user_id=user_id,
+                workspace_id=workspace_id,
+                use_vector=True,
+            )
+
+            # 筛选高相关度记忆
+            results = []
+            for m in memories:
+                if m.importance >= min_score or len(results) < max_results:
+                    results.append({
+                        "id": m.id,
+                        "content": m.content[:500],
+                        "importance": m.importance,
+                        "access_count": m.access_count,
+                        "created_at": str(m.created_at) if m.created_at else "",
+                        "type": m.type or "fact",
+                    })
+
+            # 按重要度排序，取前 max_results
+            results.sort(key=lambda x: x["importance"], reverse=True)
+            return results[:max_results]
+
+        except Exception as e:
+            logger.bind(event="auto_memory_search_error").warning(f"自动记忆搜索失败: {str(e)}")
+            return []
+
     def _delete_long_term_memory_sync(self, memory_id: int) -> bool:
         with self.session_factory() as db:
             memory = db.query(LongTermMemory).filter(LongTermMemory.id == memory_id).first()

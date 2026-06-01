@@ -66,6 +66,10 @@ interface ChatState {
   setModelError: (error: string | null) => void
   setThinkingEnabled: (enabled: boolean, options?: PreferenceMutationOptions) => void
   setThinkingDepth: (depth: number, options?: PreferenceMutationOptions) => void
+  /** 固定的对话历史 ID 列表 */
+  pinnedConversations: string[]
+  pinConversation: (sessionId: string) => void
+  unpinConversation: (sessionId: string) => void
 }
 
 const initialSessionId = getActiveSessionId() || 'default'
@@ -265,4 +269,27 @@ export const useChatStore = create<ChatState>((set) => ({
     activeToolCalls: state.activeToolCalls.filter(id => id !== toolId)
   })),
   resetActiveToolCalls: () => set({ activeToolCalls: [] }),
+
+  pinnedConversations: (() => {
+    try {
+      const stored = safeGetItem('chat_pinned_conversations', '[]');
+      return JSON.parse(stored) as string[];
+    } catch { return []; }
+  })(),
+
+  pinConversation: (sessionId) =>
+    set((state) => {
+      if (state.pinnedConversations.includes(sessionId)) return state;
+      if (state.pinnedConversations.length >= 10) return state;
+      const next = [sessionId, ...state.pinnedConversations];
+      safeSetItem('chat_pinned_conversations', JSON.stringify(next));
+      return { pinnedConversations: next };
+    }),
+
+  unpinConversation: (sessionId) =>
+    set((state) => {
+      const next = state.pinnedConversations.filter((id) => id !== sessionId);
+      safeSetItem('chat_pinned_conversations', JSON.stringify(next));
+      return { pinnedConversations: next };
+    }),
 }))

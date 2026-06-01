@@ -1,0 +1,18 @@
+.container { padding: 16px; }
+.hint { color: #666; margin-bottom: 16px; font-size: 0.9em; }
+.message { background: #e8f5e9; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; cursor: pointer; font-size: 0.9em; }
+.categorySection { margin-bottom: 24px; }
+.categorySection h3 { font-size: 1.1em; margin-bottom: 8px; color: #333; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 0.9em; }
+.table th { color: #666; font-weight: 600; }
+.nameCell { font-family: monospace; font-size: 0.85em; }
+.valueCell { max-width: 250px; overflow: hidden; }
+.value { font-family: monospace; font-size: 0.85em; }
+.editInput { width: 100%; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; }
+.revealBtn { margin-left: 8px; font-size: 0.8em; background: none; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; padding: 1px 6px; }
+.actions { display: flex; gap: 6px; }
+.actions button { font-size: 0.8em; padding: 3px 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5; }
+.actions button:hover { background: #e0e0e0; }
+.actions button:disabled { opacity: 0.5; cursor: default; }
+.empty { color: #999; text-align: center; padding: 32px; }

@@ -11,6 +11,8 @@ from .backends import SandboxBackend
 from .backends import RestrictedPythonBackend
 from .backends import E2BBackend
 from .backends import get_sandbox_backend
+from .pii import scrub_pii, detect_pii, scrub_for_logging, PiiDetectionResult
+from .backup_trust import BackupTrustController
 
 __all__ = [
     "Sandbox",
@@ -21,4 +23,9 @@ __all__ = [
     "RestrictedPythonBackend",
     "E2BBackend",
     "get_sandbox_backend",
+    "scrub_pii",
+    "detect_pii",
+    "scrub_for_logging",
+    "PiiDetectionResult",
+    "BackupTrustController",
 ]
