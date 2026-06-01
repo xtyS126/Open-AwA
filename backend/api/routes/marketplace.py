@@ -104,7 +104,7 @@ async def install_plugin(
         name=plugin_meta["name"],
         version=plugin_meta.get("version", "1.0.0"),
         enabled=False,
-        config="{}",
+        config={},
     )
     db.add(new_plugin)
     db.commit()

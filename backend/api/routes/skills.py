@@ -1634,8 +1634,8 @@ async def install_skill_from_package(
             description=config_dict['description'],
             config=config_content,
             category=config_dict.get('category', 'general'),
-            tags=json.dumps(config_dict.get('tags', [])),
-            dependencies=json.dumps(config_dict.get('dependencies', [])),
+            tags=config_dict.get('tags', []),
+            dependencies=config_dict.get('dependencies', []),
             author=config_dict.get('author', 'unknown'),
             enabled=True
         )
