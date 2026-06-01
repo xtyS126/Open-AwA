@@ -146,10 +146,9 @@ async def generate_diary(
     summary="列出所有日记",
     description="返回所有已生成日记文件的列表。",
 )
-async def list_diary_entries():
+async def list_diary_entries(current_user=Depends(get_current_user)):
     """
-    列出所有已生成的日记文件。
-    无需认证，可公开访问。
+    列出当前用户的所有已生成日记文件。
     """
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
     diaries = list_diaries(workspace_dir)
@@ -166,11 +165,10 @@ async def list_diary_entries():
     summary="获取指定日期日记",
     description="按日期字符串（如 2026-05-16）读取对应的日记内容。",
 )
-async def get_diary(date: str):
+async def get_diary(date: str, current_user=Depends(get_current_user)):
     """
-    获取指定日期的日记内容。
+    获取当前用户指定日期的日记内容。
     日期格式：YYYY-MM-DD。
-    无需认证，可公开访问。
     """
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
     content = read_diary(workspace_dir, date)

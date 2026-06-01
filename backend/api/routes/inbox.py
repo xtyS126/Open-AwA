@@ -6,10 +6,16 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/inbox", tags=["inbox"])
+from api.dependencies import get_current_user
+
+router = APIRouter(
+    prefix="/api/inbox",
+    tags=["inbox"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # 内存中的收件箱存储（后续可迁移到 DB 模型）
 _inbox_store: list[dict] = []
