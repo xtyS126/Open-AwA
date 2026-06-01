@@ -1,7 +1,7 @@
 /**
  * 技能市场页面 — 浏览/搜索/安装来自 skills.sh/clawhub/github 的技能。
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import styles from './SkillMarketPage.module.css';
 
 interface MarketSkill {
@@ -36,7 +36,7 @@ const SkillMarketPage: React.FC = () => {
   const [skills, setSkills] = useState<MarketSkill[]>(MOCK_SKILLS);
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [loading, setLoading] = useState(false);
+  const [loadingSkill, setLoadingSkill] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const filtered = skills.filter((s) => {
@@ -46,20 +46,22 @@ const SkillMarketPage: React.FC = () => {
   });
 
   const handleInstall = async (skill: MarketSkill) => {
-    setLoading(true);
+    setLoadingSkill(skill.name);
     try {
-      // 调用后端技能导入 API
-      // await api.post('/api/skills/pool/import-url', { url: skill.sourceUrl });
+      // 调用后端技能导入 API（后续对接真实后端时启用）
       setSkills((prev) => prev.map((s) => s.name === skill.name ? { ...s, installed: true } : s));
     } catch (e) {
       setError(`安装 ${skill.name} 失败`);
     } finally {
-      setLoading(false);
+      setLoadingSkill(null);
     }
   };
 
   const handleUninstall = async (skill: MarketSkill) => {
+    setLoadingSkill(skill.name);
+    // 调用后端卸载 API（后续对接真实后端时启用）
     setSkills((prev) => prev.map((s) => s.name === skill.name ? { ...s, installed: false } : s));
+    setLoadingSkill(null);
   };
 
   return (
@@ -115,17 +117,17 @@ const SkillMarketPage: React.FC = () => {
                 <button
                   className={styles.uninstallBtn}
                   onClick={() => handleUninstall(skill)}
-                  disabled={loading}
+                  disabled={loadingSkill === skill.name}
                 >
-                  已安装 (卸载)
+                  {loadingSkill === skill.name ? '卸载中...' : '已安装 (卸载)'}
                 </button>
               ) : (
                 <button
                   className={styles.installBtn}
                   onClick={() => handleInstall(skill)}
-                  disabled={loading}
+                  disabled={loadingSkill === skill.name}
                 >
-                  {loading ? '安装中...' : '安装'}
+                  {loadingSkill === skill.name ? '安装中...' : '安装'}
                 </button>
               )}
             </div>

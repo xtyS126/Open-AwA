@@ -19,19 +19,14 @@ const ContextIndicator: React.FC<ContextIndicatorProps> = ({
 }) => {
   const ratio = budget > 0 ? Math.min(used / budget, 1) : 0;
   const percentage = Math.round(ratio * 100);
-
-  const getColor = () => {
-    if (ratio > 0.9) return '#dc2626';
-    if (ratio > 0.7) return '#f59e0b';
-    return '#22c55e';
-  };
+  const barColor = ratio > 0.9 ? '#dc2626' : ratio > 0.7 ? '#f59e0b' : '#22c55e';
 
   return (
     <div className={styles.indicator} title={`Token: ${used}/${budget} (${percentage}%)`}>
       <div className={styles.barBg}>
         <div
           className={`${styles.bar} ${isCompressing ? styles.compress : ''}`}
-          style={{ width: `${Math.max(percentage, 2)}%`, background: getColor() }}
+          style={{ width: `${Math.max(percentage, 2)}%`, background: barColor }}
         />
       </div>
       <span className={styles.text}>

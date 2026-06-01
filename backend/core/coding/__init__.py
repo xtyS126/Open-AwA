@@ -6,5 +6,7 @@ from backend.core.coding.file_tree import FileTreeService
 from backend.core.coding.git_integration import GitIntegration
 from backend.core.coding.ast_search import ASTSearchService
 from backend.core.coding.diff_engine import DiffEngine
+from backend.core.coding.lsp_proxy import LSPProxy
+from backend.core.coding.claude_code import ClaudeCodeAdapter
 
-__all__ = ["FileTreeService", "GitIntegration", "ASTSearchService", "DiffEngine"]
+__all__ = ["FileTreeService", "GitIntegration", "ASTSearchService", "DiffEngine", "LSPProxy", "ClaudeCodeAdapter"]

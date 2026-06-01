@@ -67,3 +67,8 @@ try:
     from backend.api.routes.coding import router as coding_router
 except ImportError:
     from api.routes.coding import router as coding_router
+
+try:
+    from backend.api.routes.inbox import router as inbox_router
+except ImportError:
+    from api.routes.inbox import router as inbox_router

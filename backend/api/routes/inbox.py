@@ -6,11 +6,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
-
-from backend.db.models import get_db
 
 router = APIRouter(prefix="/api/inbox", tags=["inbox"])
 
@@ -37,7 +34,8 @@ def list_messages(
     获取收件箱消息列表。
     支持按类别筛选和仅未读过滤。
     """
-    messages = _inbox_store
+    # 复制列表避免排序副作用影响全局状态
+    messages = list(_inbox_store)
     if category:
         messages = [m for m in messages if m["category"] == category]
     if unread_only:
@@ -47,7 +45,7 @@ def list_messages(
     return {
         "messages": messages[:limit],
         "total": len(messages),
-        "unread": sum(1 for m in messages if not m["read"]),
+        "unread": sum(1 for m in _inbox_store if not m["read"]),
     }
 
 
@@ -124,7 +122,7 @@ def get_unread_count():
 
 # ---- 辅助函数 ----
 
-def add_notification(title: str, content: str, category: str = "notification", action_url: str = None):
+def add_notification(title: str, content: str, category: str = "notification", action_url: Optional[str] = None):
     """内部通知推送函数。"""
     return create_message(InboxMessageCreate(
         title=title,

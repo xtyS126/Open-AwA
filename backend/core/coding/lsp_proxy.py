@@ -317,8 +317,9 @@ class LSPProxy:
         await self.notify(language, "initialized", {})
 
     async def _read_responses(self, language: str, process: asyncio.subprocess.Process):
-        """持续读取 LSP 服务器的响应。"""
+        """持续读取 LSP 服务器的响应（修复: 分片 body 解析 + decode 容错）。"""
         buffer = b""
+        expected_body_len = 0  # 修复: 跟踪期待的 body 长度
         try:
             while process.returncode is None:
                 try:
@@ -329,30 +330,53 @@ class LSPProxy:
                         break
                     buffer += chunk
 
+                    # 如果正在等待 body，先检查是否已收到足够数据
+                    if expected_body_len > 0:
+                        if len(buffer) >= expected_body_len:
+                            payload = buffer[:expected_body_len].decode("utf-8", errors="replace")
+                            buffer = buffer[expected_body_len:]
+                            expected_body_len = 0
+                            try:
+                                msg = json.loads(payload)
+                                msg_id = msg.get("id")
+                                if msg_id is not None and msg_id in self._pending_requests:
+                                    self._pending_requests[msg_id].set_result(msg.get("result", msg))
+                            except json.JSONDecodeError:
+                                pass
+                        # body 未收完，继续读取
+                        continue
+
                     # 解析 LSP 头部格式的消息
                     while b"\r\n\r\n" in buffer:
                         header_end = buffer.index(b"\r\n\r\n")
-                        header = buffer[:header_end].decode()
+                        header = buffer[:header_end].decode("utf-8", errors="replace")
                         buffer = buffer[header_end + 4:]
 
                         # 解析 Content-Length
                         content_length = 0
                         for line in header.split("\r\n"):
                             if line.lower().startswith("content-length:"):
-                                content_length = int(line.split(":")[1].strip())
+                                try:
+                                    content_length = int(line.split(":")[1].strip())
+                                except (ValueError, IndexError):
+                                    pass
                                 break
 
                         if content_length > 0 and len(buffer) >= content_length:
-                            payload = buffer[:content_length].decode()
+                            payload = buffer[:content_length].decode("utf-8", errors="replace")
                             buffer = buffer[content_length:]
 
                             try:
                                 msg = json.loads(payload)
                                 msg_id = msg.get("id")
-                                if msg_id and msg_id in self._pending_requests:
+                                if msg_id is not None and msg_id in self._pending_requests:
                                     self._pending_requests[msg_id].set_result(msg.get("result", msg))
                             except json.JSONDecodeError:
                                 pass
+                        elif content_length > 0:
+                            # body 未收完，记录期待长度并退出内层循环等待更多数据
+                            expected_body_len = content_length
+                            break
                 except asyncio.TimeoutError:
                     continue
                 except asyncio.CancelledError:

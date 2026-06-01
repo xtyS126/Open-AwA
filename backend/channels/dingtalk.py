@@ -82,6 +82,8 @@ class DingTalkAdapter(ChannelAdapter):
 
     async def send_message(self, message: ChannelMessage) -> dict:
         """通过钉钉 Webhook 发送消息。"""
+        if not self._http_client:
+            return {"success": False, "error": "未连接，请先调用 connect()"}
         webhook_url = self.config.credentials.get("webhook_url", "")
         if not webhook_url:
             return {"success": False, "error": "未配置 Webhook URL"}
