@@ -41,15 +41,15 @@ def list_users(role):
 
     try:
         try:
-            from openawa.db.models import User, Session
+            from openawa.db.models import User
         except ImportError:
-            from db.models import User, Session
+            from db.models import User
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
         # 获取数据库路径
-        db_url = os.getenv("DATABASE_URL", f"sqlite:///{project_dir}/openawa/openawa.db")
-        engine = create_engine(db_url.replace("sqlite:///./", f"sqlite:///{project_dir}/"), connect_args={"check_same_thread": False})
+        db_url = os.getenv("DATABASE_URL", f"sqlite:///{project_dir}/backend/openawa.db")
+        engine = create_engine(db_url, connect_args={"check_same_thread": False})
         SessionLocal = sessionmaker(bind=engine)
         db = SessionLocal()
 
@@ -92,16 +92,16 @@ def create_user(username, password, email, role):
 
     try:
         try:
-            from openawa.db.models import User, Session
+            from openawa.db.models import User
         except ImportError:
-            from db.models import User, Session
+            from db.models import User
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
         from passlib.hash import pbkdf2_sha256
         import secrets
 
-        db_url = os.getenv("DATABASE_URL", f"sqlite:///{project_dir}/openawa/openawa.db")
-        engine = create_engine(db_url.replace("sqlite:///./", f"sqlite:///{project_dir}/"), connect_args={"check_same_thread": False})
+        db_url = os.getenv("DATABASE_URL", f"sqlite:///{project_dir}/backend/openawa.db")
+        engine = create_engine(db_url, connect_args={"check_same_thread": False})
         SessionLocal = sessionmaker(bind=engine)
         db = SessionLocal()
 
@@ -116,8 +116,7 @@ def create_user(username, password, email, role):
                 username=username,
                 email=email,
                 role=role,
-                hashed_password=pbkdf2_sha256.hash(password),
-                is_active=True,
+                password_hash=pbkdf2_sha256.hash(password),
             )
             db.add(new_user)
             db.commit()
@@ -149,14 +148,14 @@ def delete_user(username, force):
 
     try:
         try:
-            from openawa.db.models import User, Session
+            from openawa.db.models import User
         except ImportError:
-            from db.models import User, Session
+            from db.models import User
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
-        db_url = os.getenv("DATABASE_URL", f"sqlite:///{project_dir}/openawa/openawa.db")
-        engine = create_engine(db_url.replace("sqlite:///./", f"sqlite:///{project_dir}/"), connect_args={"check_same_thread": False})
+        db_url = os.getenv("DATABASE_URL", f"sqlite:///{project_dir}/backend/openawa.db")
+        engine = create_engine(db_url, connect_args={"check_same_thread": False})
         SessionLocal = sessionmaker(bind=engine)
         db = SessionLocal()
 

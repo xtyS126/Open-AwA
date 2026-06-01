@@ -67,7 +67,7 @@ class BehaviorLogger:
             dropped_payload = None
             try:
                 dropped_payload = self.queue.get_nowait()
-                self.queue.task_done()
+                # 不调用 task_done()，因为该条目未被消费者处理就被丢弃
                 await asyncio.wait_for(self.queue.put(payload), timeout=self.enqueue_timeout)
                 self._log_backpressure_event(
                     event="drop_oldest",

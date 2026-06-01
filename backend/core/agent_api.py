@@ -150,11 +150,9 @@ async def spawn_subagent(
 
         result = await facade.spawn_agent(
             agent_type=agent_type,
-            task_description=task,
+            prompt=task,
+            background=isolation_level == "background",
             parent_session_id=parent_session_id,
-            workspace_id=workspace_id,
-            isolation=isolation_level,
-            subagent_id=subagent_id,
         )
 
         return SubagentResult(

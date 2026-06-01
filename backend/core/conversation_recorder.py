@@ -167,7 +167,7 @@ class ConversationRecorder:
             self._dropped_count += 1
             try:
                 self.queue.get_nowait()
-                self.queue.task_done()
+                # 不调用 task_done()，因为该条目未被消费者处理就被丢弃
                 self.queue.put_nowait(payload)
                 return True
             except asyncio.QueueEmpty:

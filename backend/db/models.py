@@ -1159,6 +1159,12 @@ def init_db(bind_engine=None):
     """
     use_engine = bind_engine or engine
     Base.metadata.create_all(bind=use_engine)
+    # 创建计费模块的表（使用独立的 Base）
+    try:
+        from billing.models import Base as BillingBase
+        BillingBase.metadata.create_all(bind=use_engine)
+    except Exception:
+        pass
     _migrate_conversation_record_metadata_column(use_engine=use_engine)
     _migrate_plugin_columns(use_engine=use_engine)
     _migrate_long_term_memory_user_id(use_engine=use_engine)

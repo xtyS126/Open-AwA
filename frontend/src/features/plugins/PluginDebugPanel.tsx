@@ -137,7 +137,7 @@ function PluginDebugPanel({ pluginId, pluginName }: Props) {
               <span className={styles['debug-log-ts']}>{formatTs(entry.timestamp)}</span>
               <span className={`${styles['debug-log-level']} ${styles[entry.level] || entry.level}`}>{entry.level}</span>
               <span className={styles['debug-log-msg']}>{entry.message}</span>
-              {Object.keys(entry.extra).length > 0 && (
+              {entry.extra && Object.keys(entry.extra).length > 0 && (
                 <span className={styles['debug-log-extra']}>{JSON.stringify(entry.extra)}</span>
               )}
             </div>

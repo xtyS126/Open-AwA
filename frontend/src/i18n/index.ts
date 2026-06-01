@@ -36,9 +36,25 @@ interface I18nStore {
   t: (key: string, params?: Record<string, string>) => string;
 }
 
+function _normalizeLocale(raw: string): string {
+  // 将短代码映射到完整 locale（如 'en' → 'en-US'）
+  const shortMap: Record<string, string> = {
+    en: 'en-US',
+    ja: 'ja-JP',
+    ru: 'ru-RU',
+    zh: 'zh-CN',
+  };
+  if (shortMap[raw]) return shortMap[raw];
+  // 已是完整代码（如 'en-US'），直接返回
+  if (raw.includes('-')) return raw;
+  return raw;
+}
+
 function getInitialLocale(): string {
   if (typeof window === 'undefined') return FALLBACK_LOCALE;
-  return localStorage.getItem('openawa_locale') || navigator.language || FALLBACK_LOCALE;
+  const stored = localStorage.getItem('openawa_locale');
+  if (stored) return stored;
+  return _normalizeLocale(navigator.language) || FALLBACK_LOCALE;
 }
 
 export const useI18nStore = create<I18nStore>((set, get) => ({
