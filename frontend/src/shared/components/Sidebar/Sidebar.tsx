@@ -6,6 +6,7 @@ import {
   Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
+import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import styles from './Sidebar.module.css'
 
