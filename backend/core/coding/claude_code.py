@@ -16,11 +16,132 @@ class ClaudeCodeAdapter:
     """
     Claude Code CLI 适配器。
     将编码子任务委托给 claude CLI 执行，解析输出并捕获文件变更。
+    支持 project_dir 和 workspace_dir 的物理隔离。
     """
 
-    def __init__(self, project_dir: str):
+    def __init__(self, project_dir: str, workspace_dir: Optional[str] = None):
         self.project_dir = Path(project_dir).resolve()
+        self.workspace_dir = Path(workspace_dir).resolve() if workspace_dir else self.project_dir
         self._available: Optional[bool] = None
+        self._use_worktree: bool = False
+        self._worktree_path: Optional[Path] = None
+
+    def ensure_project_dir(self) -> Path:
+        """
+        确保项目目录存在并初始化 git 仓库（如果需要）。
+        项目目录必须是 workspace_dir 的子目录，实现物理隔离。
+
+        Returns:
+            已验证的项目目录路径
+
+        Raises:
+            ValueError: 当项目目录试图突破工作区隔离时
+        """
+        # 验证隔离：project_dir 必须是 workspace_dir 的子目录
+        try:
+            self.project_dir.relative_to(self.workspace_dir)
+        except ValueError:
+            # project_dir 不在 workspace_dir 内，自动创建隔离目录
+            safe_dir = self.workspace_dir / "coding_projects" / self.project_dir.name
+            safe_dir.mkdir(parents=True, exist_ok=True)
+            logger.bind(
+                event="coding_isolation_enforced",
+                original=str(self.project_dir),
+                isolated=str(safe_dir),
+            ).warning("项目目录不在工作区内，已自动创建隔离目录")
+            self.project_dir = safe_dir
+
+        # 确保目录存在
+        self.project_dir.mkdir(parents=True, exist_ok=True)
+
+        # 初始化 git 仓库（如果不存在）
+        if not (self.project_dir / ".git").exists():
+            try:
+                subprocess.run(
+                    ["git", "init"],
+                    cwd=str(self.project_dir),
+                    capture_output=True,
+                    timeout=10,
+                )
+                # 创建初始提交以便 worktree 操作
+                readme = self.project_dir / "README.md"
+                readme.write_text(f"# {self.project_dir.name}\n\n由 Open-AwA Coding 模式创建。\n")
+                subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=str(self.project_dir),
+                    capture_output=True,
+                    timeout=10,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "Initial commit by Open-AwA"],
+                    cwd=str(self.project_dir),
+                    capture_output=True,
+                    timeout=10,
+                )
+            except Exception as e:
+                logger.warning(f"Git 仓库初始化失败: {str(e)}")
+
+        return self.project_dir
+
+    def enable_worktree(self, base_branch: str = "main") -> Path:
+        """
+        启用 worktree 隔离模式。
+        创建独立的 git worktree，任务完成后自动清理。
+
+        Args:
+            base_branch: 基础分支
+
+        Returns:
+            worktree 目录路径
+        """
+        import uuid
+        worktree_name = f"coding_{uuid.uuid4().hex[:8]}"
+        worktree_dir = self.workspace_dir / ".worktrees" / worktree_name
+        worktree_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            subprocess.run(
+                ["git", "worktree", "add", str(worktree_dir), base_branch],
+                cwd=str(self.project_dir),
+                capture_output=True,
+                timeout=30,
+                check=True,
+            )
+            self._use_worktree = True
+            self._worktree_path = worktree_dir
+            logger.bind(event="worktree_created", path=str(worktree_dir)).info("Git worktree 已创建")
+            return worktree_dir
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Worktree 创建失败: {str(e)}，将使用原目录")
+            return self.project_dir
+
+    def cleanup_worktree(self):
+        """
+        清理 worktree（如果启用了 worktree 模式）。
+        """
+        if not self._use_worktree or not self._worktree_path:
+            return
+
+        try:
+            subprocess.run(
+                ["git", "worktree", "remove", str(self._worktree_path), "--force"],
+                cwd=str(self.project_dir),
+                capture_output=True,
+                timeout=15,
+            )
+            # 确保目录已删除
+            import shutil
+            if self._worktree_path.exists():
+                shutil.rmtree(self._worktree_path, ignore_errors=True)
+            logger.bind(event="worktree_cleaned", path=str(self._worktree_path)).info("Worktree 已清理")
+        except Exception as e:
+            logger.warning(f"清理 worktree 失败: {str(e)}")
+            # 如果 git worktree remove 失败，强制删除目录
+            import shutil
+            shutil.rmtree(str(self._worktree_path), ignore_errors=True)
+
+        self._use_worktree = False
+        self._worktree_path = None
 
     def is_available(self) -> bool:
         """

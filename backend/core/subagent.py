@@ -479,3 +479,137 @@ class SubAgentManager:
     def get_graphs_info(self) -> List[Dict[str, Any]]:
         """获取所有图的信息。"""
         return [graph.get_graph_info() for graph in self.graphs.values()]
+
+    async def run_conversation(
+        self,
+        agent_names: list[str],
+        initial_message: str,
+        max_turns: int = 10,
+        timeout: float = 300.0,
+    ) -> AgentState:
+        """
+        多 Agent 多轮对话模式。
+        各 Agent 轮流发言，每个 Agent 可见完整对话历史。
+        由第一个 Agent 开始，后面轮流响应。
+
+        Args:
+            agent_names: 参与对话的 Agent 名称列表
+            initial_message: 初始消息
+            max_turns: 最大对话轮数（防止无限循环）
+            timeout: 超时秒数
+
+        Returns:
+            包含完整对话历史的 AgentState
+        """
+        state = AgentState()
+        state.add_message("user", initial_message)
+        state.context["max_turns"] = max_turns
+        state.context["conversation_mode"] = "multi_turn"
+
+        turn_count = 0
+        for turn in range(max_turns):
+            agent_name = agent_names[turn % len(agent_names)]
+            agent_info = self._registered_agents.get(agent_name)
+            if not agent_info:
+                state.add_message("system", f"[{agent_name} 未注册，跳过]")
+                continue
+
+            # 构建此 Agent 的提示词（包含对话历史摘要）
+            history_text = "\n".join([
+                f"{m['role']}: {str(m['content'])[:500]}"
+                for m in state.messages[-20:]  # 最近 20 条消息
+            ])
+            state.context["conversation_history"] = history_text
+            state.context["current_agent"] = agent_name
+
+            try:
+                async with asyncio.timeout(timeout):
+                    result_state = await agent_info["handler"](state)
+                if isinstance(result_state, AgentState):
+                    state = result_state
+                turn_count += 1
+            except asyncio.TimeoutError:
+                state.add_message("system", f"[{agent_name} 超时，对话终止]")
+                break
+            except Exception as e:
+                state.errors[agent_name] = str(e)
+                logger.bind(event="conversation_error", agent=agent_name).warning(str(e))
+                break
+
+        state.metadata["total_turns"] = turn_count
+        state.metadata["conversation_complete"] = turn_count < max_turns
+        return state
+
+    async def debate(
+        self,
+        agent_names: list[str],
+        topic: str,
+        rounds: int = 3,
+        timeout: float = 600.0,
+    ) -> AgentState:
+        """
+        多 Agent 辩论模式。
+        各 Agent 各自提出论点，最后协商合成共识意见。
+
+        Args:
+            agent_names: 参与辩论的 Agent 名称列表
+            topic: 辩论主题
+            rounds: 辩论轮数
+            timeout: 总超时秒数
+
+        Returns:
+            包含所有论点和共识意见的 AgentState
+        """
+        state = AgentState()
+        state.context["debate_topic"] = topic
+        state.context["rounds"] = rounds
+        state.context["debate_mode"] = True
+
+        # 初始化辩论
+        state.add_message("system", f"辩论主题: {topic}\n参与者: {', '.join(agent_names)}\n共 {rounds} 轮")
+
+        try:
+            async with asyncio.timeout(timeout):
+                for round_num in range(1, rounds + 1):
+                    state.add_message("system", f"--- 第 {round_num}/{rounds} 轮 ---")
+                    round_results = {}
+
+                    for agent_name in agent_names:
+                        agent_info = self._registered_agents.get(agent_name)
+                        if not agent_info:
+                            continue
+                        # 每个 Agent 在辩论轮次中独立发言
+                        debate_prompt = (
+                            f"辩论主题: {topic}\n"
+                            f"当前轮次: 第 {round_num}/{rounds} 轮\n"
+                            f"请提出您的论点或回应之前的观点。"
+                        )
+                        state.add_message("user", debate_prompt)
+                        try:
+                            result_state = await agent_info["handler"](state)
+                            if isinstance(result_state, AgentState):
+                                round_results[agent_name] = result_state.results
+                                state.messages.extend(result_state.messages[-5:])
+                        except Exception as e:
+                            logger.warning(f"辩论中 Agent {agent_name} 错误: {str(e)}")
+
+                    state.results[f"round_{round_num}"] = round_results
+
+                # 最后一轮：合成共识
+                state.add_message("system", "请基于以上辩论内容，总结各方观点并提出共识建议。")
+                if agent_names:
+                    first_agent = self._registered_agents.get(agent_names[0])
+                    if first_agent:
+                        try:
+                            consensus_state = await first_agent["handler"](state)
+                            if isinstance(consensus_state, AgentState):
+                                state.results["consensus"] = consensus_state.results
+                        except Exception as e:
+                            state.results["consensus"] = {"error": str(e)}
+
+        except asyncio.TimeoutError:
+            state.add_message("system", "[辩论超时]")
+            state.errors["_debate"] = "辩论超时"
+
+        state.metadata["debate_complete"] = True
+        return state

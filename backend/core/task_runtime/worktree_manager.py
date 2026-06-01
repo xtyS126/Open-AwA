@@ -129,6 +129,9 @@ class WorktreeManager:
             )
             self._active_worktrees[agent_id] = info
 
+            # 复制 .worktreeinclude 中指定的文件
+            await self._copy_worktree_includes(str(worktree_path))
+
             logger.bind(
                 module="task_runtime",
                 agent_id=agent_id,
@@ -274,6 +277,73 @@ class WorktreeManager:
             await process.communicate()
         except Exception:
             pass
+
+    async def _copy_worktree_includes(self, worktree_path: str):
+        """
+        解析并复制 .worktreeinclude 配置文件中指定的文件和目录。
+        .worktreeinclude 是一个文本文件，每行一个相对路径（支持 glob 模式）。
+        位于项目根目录下，用于指定需要随 worktree 一起复制的配置文件。
+        """
+        import fnmatch
+        import glob as globmod
+
+        include_file = self._base_dir / ".worktreeinclude"
+        if not include_file.exists():
+            return
+
+        try:
+            lines = include_file.read_text(encoding="utf-8").strip().splitlines()
+            target_dir = Path(worktree_path)
+
+            copied_count = 0
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                # 支持简单的 glob 模式
+                if "*" in line or "?" in line:
+                    matches = globmod.glob(str(self._base_dir / line), recursive=True)
+                    for match_path in matches:
+                        src = Path(match_path)
+                        if not src.exists():
+                            continue
+                        rel = src.relative_to(self._base_dir)
+                        dst = target_dir / rel
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        if src.is_file():
+                            shutil.copy2(str(src), str(dst))
+                            copied_count += 1
+                else:
+                    src = self._base_dir / line
+                    if src.exists():
+                        dst = target_dir / line
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        if src.is_file():
+                            shutil.copy2(str(src), str(dst))
+                            copied_count += 1
+                        elif src.is_dir():
+                            if dst.exists():
+                                shutil.rmtree(str(dst), ignore_errors=True)
+                            shutil.copytree(str(src), str(dst))
+                            copied_count += 1
+                    else:
+                        logger.bind(
+                            module="task_runtime",
+                            include_line=line,
+                        ).debug("worktreeinclude 引用文件不存在，已跳过")
+
+            if copied_count > 0:
+                logger.bind(
+                    module="task_runtime",
+                    count=copied_count,
+                ).info(f"已从 .worktreeinclude 复制 {copied_count} 个文件到 worktree")
+
+        except Exception as e:
+            logger.bind(
+                module="task_runtime",
+                error=str(e),
+            ).warning("复制 .worktreeinclude 文件失败")
 
     def _parse_worktree_list(self, output: str) -> List[Dict[str, Any]]:
         """解析 git worktree list --porcelain 输出。"""

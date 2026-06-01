@@ -8,5 +8,10 @@ from backend.core.coding.ast_search import ASTSearchService
 from backend.core.coding.diff_engine import DiffEngine
 from backend.core.coding.lsp_proxy import LSPProxy
 from backend.core.coding.claude_code import ClaudeCodeAdapter
+from backend.core.coding.prompts import build_coding_prompt, CODING_SYSTEM_PROMPT_TEMPLATE
 
-__all__ = ["FileTreeService", "GitIntegration", "ASTSearchService", "DiffEngine", "LSPProxy", "ClaudeCodeAdapter"]
+__all__ = [
+    "FileTreeService", "GitIntegration", "ASTSearchService", "DiffEngine",
+    "LSPProxy", "ClaudeCodeAdapter",
+    "build_coding_prompt", "CODING_SYSTEM_PROMPT_TEMPLATE",
+]
