@@ -33,8 +33,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   },
 }));
 
-// 初始化当前工作区
-const saved = localStorage.getItem('openawa_workspace_id');
-if (saved) {
-  useWorkspaceStore.getState().setCurrentWorkspace(saved);
+// 初始化当前工作区（仅在浏览器环境下）
+if (typeof window !== 'undefined') {
+  const saved = localStorage.getItem('openawa_workspace_id');
+  if (saved) {
+    useWorkspaceStore.getState().setCurrentWorkspace(saved);
+  }
 }

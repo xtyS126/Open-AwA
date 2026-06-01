@@ -60,7 +60,7 @@ const FileTreeItem: React.FC<{
 };
 
 const FileTree: React.FC = () => {
-  const { projectDir, setProjectDir } = useCodingStore();
+  const { projectDir } = useCodingStore();
   const [rootTree, setRootTree] = useState<FileTreeNode | null>(null);
   const [loading, setLoading] = useState(true);
 

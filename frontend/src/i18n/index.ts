@@ -36,8 +36,13 @@ interface I18nStore {
   t: (key: string, params?: Record<string, string>) => string;
 }
 
+function getInitialLocale(): string {
+  if (typeof window === 'undefined') return FALLBACK_LOCALE;
+  return localStorage.getItem('openawa_locale') || navigator.language || FALLBACK_LOCALE;
+}
+
 export const useI18nStore = create<I18nStore>((set, get) => ({
-  locale: localStorage.getItem('openawa_locale') || navigator.language || FALLBACK_LOCALE,
+  locale: getInitialLocale(),
   setLocale: (locale) => {
     localStorage.setItem('openawa_locale', locale);
     set({ locale });

@@ -225,8 +225,8 @@ def ast_get_structure(file_path: str, project_dir: Optional[str] = None):
     """
     获取文件结构概览。
     """
-    root = _get_project_dir(body=None)  # Use default
-    service = ASTSearchService(_get_project_dir(project_dir))
+    root = _get_project_dir(project_dir)
+    service = ASTSearchService(root)
     return service.get_structure(file_path)
 
 

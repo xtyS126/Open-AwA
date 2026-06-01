@@ -54,6 +54,7 @@ from openawa.core.model_service import (
 from openawa.core.litellm_adapter import is_litellm_available
 from openawa.core.scheduled_task_manager import scheduled_task_manager
 from openawa.core.startup.profiler import StartupProfiler
+from openawa.config.security import generate_csrf_token, verify_csrf_token
 from openawa.config.settings import is_production_environment, settings
 from openawa.db.models import engine, init_db
 
@@ -62,7 +63,7 @@ init_logging(
     log_level=settings.LOG_LEVEL,
     service_name=settings.LOG_SERVICE_NAME,
     log_serialize=settings.LOG_SERIALIZE,
-    log_dir=settings.log_dir_resolved,
+    log_dir=settings.LOG_DIR,
     log_file_rotation=settings.LOG_FILE_ROTATION,
     log_file_retention=settings.LOG_FILE_RETENTION,
     log_file_compression=settings.LOG_FILE_COMPRESSION,
@@ -293,7 +294,7 @@ def _extract_user_id_from_request(request: Request) -> Optional[int]:
 
     不会抛出异常，解析失败返回 None。
     """
-    from openawa.config.security import decode_access_token
+    from openawa.config.security import decode_access_token, ACCESS_TOKEN_COOKIE_NAME
 
     token: Optional[str] = None
     auth_header = request.headers.get("Authorization", "")

@@ -22,10 +22,11 @@ const CodingPage: React.FC = () => {
   });
 
   useEffect(() => {
-    // 默认使用当前项目目录
+    // 默认使用当前项目目录（仅在首次挂载时执行）
     if (!projectDir) {
       setProjectDir('/');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSearch = useCallback(async () => {

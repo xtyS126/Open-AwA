@@ -54,6 +54,7 @@ from core.model_service import (
 from core.litellm_adapter import is_litellm_available
 from core.scheduled_task_manager import scheduled_task_manager
 from core.startup.profiler import StartupProfiler
+from config.security import generate_csrf_token, verify_csrf_token
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
 
@@ -292,7 +293,7 @@ def _extract_user_id_from_request(request: Request) -> Optional[int]:
 
     不会抛出异常，解析失败返回 None。
     """
-    from config.security import decode_access_token
+    from config.security import decode_access_token, ACCESS_TOKEN_COOKIE_NAME
 
     token: Optional[str] = None
     auth_header = request.headers.get("Authorization", "")

@@ -69,9 +69,12 @@ const WorkspacePage: React.FC = () => {
 
   const handleSwitch = async (ws: Workspace) => {
     try {
+      // 通知后端切换工作区上下文
+      await workspaceApi.get(ws.id);
       setCurrentWorkspace(ws.id);
-    } catch (e) {
-      setError('切换工作区失败');
+      setError('');
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || '切换工作区失败，请确认工作区存在');
     }
   };
 
