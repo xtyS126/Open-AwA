@@ -2,13 +2,14 @@ import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 import { syncPreferenceToServer } from '@/shared/utils/preferenceSync'
 import {
-  deleteCachedConversationMessages,
-  getActiveConversationId,
-  getCachedConversationMessages,
-  getCachedConversationSummaries,
-  setActiveConversationId,
-  setCachedConversationSummaries,
-} from '@/features/chat/utils/chatCache'
+  getActiveSessionId,
+  setActiveSessionId,
+  getConversationSummaries,
+  setConversationSummaries,
+  loadMessages,
+  saveMessages,
+  removeMessages,
+} from '@/features/chat/storage/chatPersistence'
 import type { ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 
 // 模型配置项，用于全局模型选择
@@ -50,6 +51,8 @@ interface ChatState {
   setMessages: (messages: ChatMessage[]) => void
   updateMessage: (messageId: string, updater: (msg: ChatMessage) => ChatMessage) => void
   loadCachedMessages: (sessionId: string) => void
+  /** P1: 将当前会话消息显式刷入 IndexedDB（消息完成/会话切换时调用） */
+  flushMessages: () => void
   setLoading: (loading: boolean) => void
   clearMessages: () => void
   setSessionId: (id: string) => void
@@ -65,18 +68,18 @@ interface ChatState {
   setThinkingDepth: (depth: number, options?: PreferenceMutationOptions) => void
 }
 
-const initialSessionId = getActiveConversationId() || 'default'
+const initialSessionId = getActiveSessionId() || 'default'
 
 const initialSelectedModel = safeGetItem('chat_selected_model', '')
 const isInitialReasoner = initialSelectedModel.toLowerCase().includes('reasoner') || initialSelectedModel.toLowerCase().includes('r1') || initialSelectedModel.toLowerCase().includes('o1') || initialSelectedModel.toLowerCase().includes('o3')
 
 export const useChatStore = create<ChatState>((set) => ({
-  // P0: 不再在 store 初始化时同步读取大量消息，消息由 ChatPage 在路由进入时异步加载
+  // P1: 消息为空，由 ChatPage 在路由进入时通过 loadMessages() 异步加载
   messages: [],
   isLoading: false,
   sessionId: initialSessionId,
-  conversations: getCachedConversationSummaries(),
-  conversationsTotal: getCachedConversationSummaries().length,
+  conversations: getConversationSummaries(),
+  conversationsTotal: getConversationSummaries().length,
   conversationsHasMore: false,
   outputMode: (safeGetItem('chat_output_mode', 'stream') as 'stream' | 'direct'),
   selectedModel: initialSelectedModel,
@@ -137,20 +140,43 @@ export const useChatStore = create<ChatState>((set) => ({
       return { messages: nextMessages }
     }),
 
-  loadCachedMessages: (sessionId) =>
-    set({ messages: getCachedConversationMessages(sessionId) }),
+  loadCachedMessages: (sessionId) => {
+    // P1: 异步加载由 ChatPage 处理，这里同步设为空然后由调用方异步填充
+    set({ messages: [] })
+    loadMessages(sessionId).then((msgs) => {
+      const currentId = useChatStore.getState().sessionId
+      if (currentId === sessionId && Array.isArray(msgs) && msgs.length > 0) {
+        set({ messages: msgs as ChatMessage[] })
+      }
+    })
+  },
 
   setLoading: (loading) => set({ isLoading: loading }),
 
   clearMessages: () => set({ messages: [] }),
 
+  // P1: 将当前会话消息显式写入 IndexedDB（消息完成/会话切换/页面隐藏时调用）
+  flushMessages: () => {
+    const state = useChatStore.getState()
+    if (state.sessionId && state.sessionId !== 'default' && state.messages.length > 0) {
+      saveMessages(state.sessionId, state.messages)
+    }
+  },
+
   setSessionId: (id) => {
-    setActiveConversationId(id)
-    set({ sessionId: id, messages: getCachedConversationMessages(id) })
+    setActiveSessionId(id)
+    // P1: 先设空，异步加载
+    set({ sessionId: id, messages: [] })
+    loadMessages(id).then((msgs) => {
+      const currentId = useChatStore.getState().sessionId
+      if (currentId === id && Array.isArray(msgs) && msgs.length > 0) {
+        set({ messages: msgs as ChatMessage[] })
+      }
+    })
   },
 
   setConversations: (items, total, hasMore) => {
-    setCachedConversationSummaries(items)
+    setConversationSummaries(items)
     set({
       conversations: items,
       conversationsTotal: total ?? items.length,
@@ -167,7 +193,7 @@ export const useChatStore = create<ChatState>((set) => ({
       } else {
         nextItems.unshift(item)
       }
-      setCachedConversationSummaries(nextItems)
+      setConversationSummaries(nextItems)
       return {
         conversations: nextItems,
         conversationsTotal: Math.max(state.conversationsTotal, nextItems.length),
@@ -177,8 +203,8 @@ export const useChatStore = create<ChatState>((set) => ({
   removeConversation: (sessionId) =>
     set((state) => {
       const nextItems = state.conversations.filter((item) => item.session_id !== sessionId)
-      deleteCachedConversationMessages(sessionId)
-      setCachedConversationSummaries(nextItems)
+      removeMessages(sessionId)
+      setConversationSummaries(nextItems)
       return {
         conversations: nextItems,
         conversationsTotal: Math.max(0, state.conversationsTotal - 1),

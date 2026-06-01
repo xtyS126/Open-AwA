@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PanelLeft } from 'lucide-react'
 import { chatAPI, conversationAPI, diaryAPI, type ChatContinuationPayload } from '@/shared/api/api'
@@ -9,7 +9,6 @@ import { useChatStore } from '@/features/chat/store/chatStore'
 import { applyDirectAssistantResponse } from '@/features/chat/utils/applyDirectAssistantResponse'
 import { handleStreamChunkEvent } from '@/features/chat/utils/handleStreamChunkEvent'
 import {
-  flushCachedConversationMessages,
   getActiveConversationId,
   getCachedConversationMessages,
 } from '@/features/chat/utils/chatCache'
@@ -46,8 +45,9 @@ import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
 import type { FileAttachment } from './components/ChatInput'
-import { TaskPanel } from './components/TaskPanel'
-import { TodoPanel } from './components/TodoPanel'
+// P1: TaskPanel/TodoPanel 按需懒加载，减少聊天页首屏 JS
+const TaskPanel = React.lazy(() => import('./components/TaskPanel').then(m => ({ default: m.TaskPanel })))
+const TodoPanel = React.lazy(() => import('./components/TodoPanel').then(m => ({ default: m.TodoPanel })))
 import type { TodoItem } from './components/TodoPanel'
 import styles from './ChatPage.module.css'
 
@@ -344,12 +344,9 @@ function ChatPage() {
     }
   }, [appendAssistantMessageText, streamingAssistantId])
 
-  const flushConversationCache = useCallback((targetSessionId?: string) => {
-    const resolvedSessionId = targetSessionId || useChatStore.getState().sessionId
-    if (!resolvedSessionId || resolvedSessionId === 'default') {
-      return
-    }
-    flushCachedConversationMessages(resolvedSessionId, useChatStore.getState().messages)
+  const flushConversationCache = useCallback(() => {
+    // P1: 使用 store 内置的 flushMessages（内部调用 IndexedDB saveMessages）
+    useChatStore.getState().flushMessages()
   }, [])
 
   const scrollToBottom = useCallback(() => {
@@ -533,7 +530,7 @@ function ChatPage() {
           const mergedMessages = mergeServerHistoryWithCached(restored, cachedMessages)
           setMessages(mergedMessages)
           setMessageMeta(buildMessageMetaFromMessages(mergedMessages))
-          flushConversationCache(sessionId)
+          flushConversationCache()
           appLogger.info({
             event: 'chat_history_loaded',
             module: 'chat_page',
@@ -1104,7 +1101,7 @@ function ChatPage() {
       }
     } finally {
       resetActiveToolCalls()
-      flushConversationCache(targetSessionId)
+      flushConversationCache()
       if (targetSessionId && targetSessionId !== 'default') {
         void loadConversationList(1, false)
       }
@@ -1556,19 +1553,23 @@ function ChatPage() {
 
           {false && renderFloatingExecutionPanel()}
 
-          <TodoPanel
-            items={todoItems}
-            summary={todoSummary}
-          />
+          <React.Suspense fallback={null}>
+            <TodoPanel
+              items={todoItems}
+              summary={todoSummary}
+            />
+          </React.Suspense>
 
-          <TaskPanel
-            steps={activeExecution?.meta.steps || []}
-            toolEvents={activeExecution?.meta.toolEvents || []}
-            isStreaming={activeExecution?.isStreaming || false}
-            onStopAgent={(agentId) => void handleStopAgent(agentId)}
-            expanded={taskPanelExpanded}
+          <React.Suspense fallback={null}>
+            <TaskPanel
+              steps={activeExecution?.meta.steps || []}
+              toolEvents={activeExecution?.meta.toolEvents || []}
+              isStreaming={activeExecution?.isStreaming || false}
+              onStopAgent={(agentId) => void handleStopAgent(agentId)}
+              expanded={taskPanelExpanded}
             onToggle={toggleTaskPanel}
           />
+          </React.Suspense>
 
           <ChatInput
             onSend={(content, atts) => void handleSend(content, atts)}

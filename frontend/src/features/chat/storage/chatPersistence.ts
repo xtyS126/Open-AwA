@@ -1,53 +1,159 @@
 /**
- * 消息持久化抽象层。
+ * 聊天消息持久化抽象层 (P1 IndexedDB 分层存储)。
  *
- * P0: 提供统一的存取接口，当前以 localStorage 为底层实现。
- * P1 将迁移大消息桶到 IndexedDB，本模块提供稳定的上层 API。
+ * - localStorage: 仅保存活跃会话 ID + 会话摘要列表（轻量索引，< 10KB）
+ * - IndexedDB:   按会话分桶保存完整消息记录（大量数据，异步存取）
+ * - 内存:        流式过程中的临时态，不写盘
+ *
+ * 降级策略：IndexedDB 不可用时自动回退 localStorage。
  */
-import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
+import { openDB, type IDBPDatabase } from 'idb'
+import { safeGetJsonItem, safeSetJsonItem, safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 
-const PERSISTENCE_KEY = 'chat_msg_store_v1'
+// ============================================================
+// 常量
+// ============================================================
+const DB_NAME = 'openawa-chat'
+const DB_VERSION = 1
+const STORE_NAME = 'message-buckets'
+const LS_ACTIVE_SESSION = 'chat_active_session_v1'
+const LS_CONVERSATIONS = 'chat_conversations_v1'
+const MAX_CACHED_MESSAGES = 200
 
-interface MessageBucket {
-  updated_at: string
-  messages: unknown[]
+// ============================================================
+// IndexedDB 连接（懒初始化单例）
+// ============================================================
+let _dbPromise: Promise<IDBPDatabase | null> | null = null
+
+function _getDB(): Promise<IDBPDatabase | null> {
+  if (_dbPromise) return _dbPromise
+  _dbPromise = openDB(DB_NAME, DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME)
+      }
+    },
+  }).catch(() => null) // IndexedDB 不可用时返回 null，降级到 localStorage
+  return _dbPromise
 }
 
-interface PersistenceStore {
-  buckets: Record<string, MessageBucket>
+// ============================================================
+// 活跃会话 ID（localStorage 轻量索引）
+// ============================================================
+export function getActiveSessionId(): string {
+  return safeGetItem(LS_ACTIVE_SESSION, '')
 }
 
-/**
- * 从持久化存储读取指定会话的消息桶。
- */
-export function loadMessages(sessionId: string): unknown[] {
+export function setActiveSessionId(id: string): void {
+  safeSetItem(LS_ACTIVE_SESSION, id)
+}
+
+// ============================================================
+// 会话摘要（localStorage）
+// ============================================================
+export function getConversationSummaries<T = unknown>(): T[] {
+  return safeGetJsonItem<T[]>(LS_CONVERSATIONS, [])
+}
+
+export function setConversationSummaries<T = unknown>(items: T[]): void {
+  safeSetJsonItem(LS_CONVERSATIONS, items.slice(0, 100))
+}
+
+// ============================================================
+// 消息存取（IndexedDB 主存储）
+// ============================================================
+
+/** 异步从 IndexedDB 加载指定会话的消息 */
+export async function loadMessages(sessionId: string): Promise<unknown[]> {
   if (!sessionId) return []
-  const store = safeGetJsonItem<PersistenceStore>(PERSISTENCE_KEY, { buckets: {} })
-  const bucket = store.buckets?.[sessionId]
-  if (!bucket || !Array.isArray(bucket.messages)) return []
-  return bucket.messages
-}
-
-/**
- * 将消息桶写入持久化存储。
- * 写入是同步的，调用方应在非热路径（消息完成后、会话切换时）调用。
- */
-export function saveMessages(sessionId: string, messages: unknown[]): void {
-  if (!sessionId || sessionId === 'default') return
-  const store = safeGetJsonItem<PersistenceStore>(PERSISTENCE_KEY, { buckets: {} })
-  store.buckets[sessionId] = {
-    updated_at: new Date().toISOString(),
-    messages,
+  const db = await _getDB()
+  if (!db) {
+    // 降级：从 localStorage 读取（兼容旧缓存）
+    return _loadMessagesFromLS(sessionId)
   }
-  safeSetJsonItem(PERSISTENCE_KEY, store)
+  try {
+    const raw = await db.get(STORE_NAME, sessionId)
+    if (!raw || !Array.isArray(raw)) return []
+    return raw.slice(-MAX_CACHED_MESSAGES)
+  } catch {
+    return []
+  }
 }
 
-/**
- * 从持久化存储删除指定会话的消息桶。
- */
-export function removeMessages(sessionId: string): void {
+/** 异步将消息写入 IndexedDB */
+export async function saveMessages(sessionId: string, rawMessages: unknown[]): Promise<void> {
+  if (!sessionId || sessionId === 'default') return
+  const messages = Array.isArray(rawMessages) ? rawMessages.slice(-MAX_CACHED_MESSAGES) : []
+  const db = await _getDB()
+  if (!db) {
+    _saveMessagesToLS(sessionId, messages)
+    return
+  }
+  try {
+    await db.put(STORE_NAME, messages, sessionId)
+  } catch {
+    _saveMessagesToLS(sessionId, messages)
+  }
+}
+
+/** 异步从 IndexedDB 删除指定会话的消息 */
+export async function removeMessages(sessionId: string): Promise<void> {
   if (!sessionId) return
-  const store = safeGetJsonItem<PersistenceStore>(PERSISTENCE_KEY, { buckets: {} })
-  delete store.buckets[sessionId]
-  safeSetJsonItem(PERSISTENCE_KEY, store)
+  const db = await _getDB()
+  if (!db) {
+    _removeMessagesFromLS(sessionId)
+    return
+  }
+  try {
+    await db.delete(STORE_NAME, sessionId)
+  } catch {
+    _removeMessagesFromLS(sessionId)
+  }
+}
+
+/** 获取所有缓存的会话 ID 列表（用于缓存管理） */
+export async function getAllCachedSessionIds(): Promise<string[]> {
+  const db = await _getDB()
+  if (!db) return []
+  try {
+    return await db.getAllKeys(STORE_NAME) as string[]
+  } catch {
+    return []
+  }
+}
+
+/** 清理超过 maxSessions 个会话的旧缓存 */
+export async function pruneOldSessions(maxSessions: number = 50): Promise<void> {
+  const keys = await getAllCachedSessionIds()
+  if (keys.length <= maxSessions) return
+  const toRemove = keys.slice(0, keys.length - maxSessions)
+  const db = await _getDB()
+  if (!db) return
+  for (const key of toRemove) {
+    try { await db.delete(STORE_NAME, key) } catch { /* 忽略单条删除失败 */ }
+  }
+}
+
+// ============================================================
+// localStorage 降级实现
+// ============================================================
+const LS_MSGS_PREFIX = 'chat_msgs_v1_'
+
+function _lsMsgKey(sessionId: string): string {
+  return LS_MSGS_PREFIX + sessionId
+}
+
+function _loadMessagesFromLS(sessionId: string): unknown[] {
+  const key = _lsMsgKey(sessionId)
+  const raw = safeGetJsonItem<{ messages: unknown[] }>(key, { messages: [] })
+  if (!raw || !Array.isArray(raw.messages)) return []
+  return raw.messages.slice(-MAX_CACHED_MESSAGES)
+}
+
+function _saveMessagesToLS(sessionId: string, messages: unknown[]): void {
+  safeSetJsonItem(_lsMsgKey(sessionId), { messages, updated_at: new Date().toISOString() })
+}
+
+function _removeMessagesFromLS(sessionId: string): void {
+  try { localStorage.removeItem(_lsMsgKey(sessionId)) } catch { /* 静默处理 */ }
 }
