@@ -110,6 +110,35 @@ class User(Base):
     )
 
 
+class Workspace(Base):
+    """
+    智能体工作区模型，存储独立智能体的配置、人设、频道和技能绑定。
+    每个工作区拥有独立的记忆、对话历史和定时任务，互不干扰。
+    """
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    agent_type: Mapped[str] = mapped_column(String(50), default="default")  # default / coding / qa / writer / custom
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # JSON 配置：包含模型选择、工具开关、运行参数等
+    config_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 已启用的频道列表
+    enabled_channels_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 技能启用状态 {skill_name: enabled}
+    skills_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 人设文件（AGENTS.md / SOUL.md / PROFILE.md / HEARTBEAT.md 等）
+    persona_files_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 心跳配置
+    heartbeat_config_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
 class LoginDevice(Base):
     """
     登录设备记录，追踪用户的登录设备和会话信息。
@@ -281,6 +310,7 @@ class ShortTermMemory(Base):
     __tablename__ = "short_term_memory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[Optional[str]] = mapped_column(String(50), index=True, nullable=True, default="default")
     session_id: Mapped[str] = mapped_column(String, index=True)
     role: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
@@ -299,6 +329,7 @@ class LongTermMemory(Base):
     __tablename__ = "long_term_memory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[Optional[str]] = mapped_column(String(50), index=True, nullable=True, default="default")
     user_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[Optional[List[float]]] = mapped_column(JSON, nullable=True)
@@ -1139,6 +1170,32 @@ def init_db(bind_engine=None):
     _migrate_task_runtime_columns(use_engine=use_engine)
     _migrate_scheduled_task_daily_columns(use_engine=use_engine)
     _migrate_short_term_memory_rich_fields(use_engine=use_engine)
+    _migrate_workspace_columns(use_engine=use_engine)
+
+
+def _migrate_workspace_columns(use_engine=None):
+    """
+    为现有表补齐 workspace_id 列，支持多智能体工作区隔离。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+
+    migrations = [
+        ("short_term_memory", "workspace_id", "VARCHAR(50) DEFAULT 'default'"),
+        ("long_term_memory", "workspace_id", "VARCHAR(50) DEFAULT 'default'"),
+    ]
+
+    for table_name, col_name, col_type in migrations:
+        if table_name not in table_names:
+            continue
+        columns = {c["name"] for c in inspector.get_columns(table_name)}
+        if col_name not in columns:
+            with target_engine.begin() as connection:
+                connection.execute(text(
+                    f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
+                ))
+                logger.info(f"Migrated {table_name}: added {col_name} column")
 
 
 def get_db():

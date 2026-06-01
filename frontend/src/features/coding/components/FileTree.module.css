@@ -1,0 +1,12 @@
+.tree { height: 100%; overflow-y: auto; background: #1e1e2e; color: #cdd6f4; font-size: 13px; }
+.header { padding: 10px 12px; font-weight: 600; font-size: 11px; text-transform: uppercase; color: #6c7086; display: flex; justify-content: space-between; border-bottom: 1px solid #313244; }
+.refreshBtn { background: none; border: none; color: #6c7086; cursor: pointer; font-size: 14px; }
+.refreshBtn:hover { color: #cdd6f4; }
+.item { user-select: none; }
+.row { display: flex; align-items: center; padding: 3px 0; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.row:hover { background: rgba(255,255,255,0.05); }
+.file { color: #cdd6f4; }
+.dir { color: #89b4fa; font-weight: 500; }
+.icon { margin-right: 4px; flex-shrink: 0; }
+.name { overflow: hidden; text-overflow: ellipsis; }
+.loading { padding: 12px; color: #6c7086; font-size: 12px; }

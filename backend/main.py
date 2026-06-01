@@ -30,6 +30,8 @@ from api.routes.user import router as user_router
 from api.routes.system import router as system_router
 from api.routes.task_runtime import router as task_runtime_router
 from api.routes.test_runner import router as test_runner_router
+from api.routes.workspace import router as workspace_router
+from api.routes.coding import router as coding_router
 from billing.models import Base as BillingBase
 from billing.routers import billing
 from config.logging import (
@@ -588,6 +590,8 @@ app.include_router(task_runtime_router)
 app.include_router(user_router, prefix=settings.API_V1_STR)
 app.include_router(system_router)
 app.include_router(test_runner_router)
+app.include_router(workspace_router)
+app.include_router(coding_router)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath

@@ -12,7 +12,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding'
 }
 
 interface MenuGroup {
@@ -27,6 +27,8 @@ const menuGroups: MenuGroup[] = [
     title: '控制',
     items: [
       { path: '/chat', label: '聊天', iconType: 'chat' },
+      { path: '/coding', label: 'Coding', iconType: 'coding' },
+      { path: '/workspace', label: '智能体', iconType: 'workspace' },
       { path: '/dashboard', label: '概览', iconType: 'dashboard' },
       { path: '/billing', label: '使用情况', iconType: 'billing' },
     ]
@@ -62,6 +64,8 @@ const menuGroups: MenuGroup[] = [
 const renderIcon = (type: string, size = 18) => {
   switch (type) {
     case 'chat': return <MessageSquare size={size} />
+    case 'workspace': return <Cat size={size} />
+    case 'coding': return <Blocks size={size} />
     case 'dashboard': return <LayoutDashboard size={size} />
     case 'billing': return <CreditCard size={size} />
     case 'skills': return <Zap size={size} />
