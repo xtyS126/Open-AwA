@@ -9,10 +9,10 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.core.coding.file_tree import FileTreeService
-from backend.core.coding.git_integration import GitIntegration
-from backend.core.coding.ast_search import ASTSearchService
-from backend.core.coding.diff_engine import DiffEngine
+from core.coding.file_tree import FileTreeService
+from core.coding.git_integration import GitIntegration
+from core.coding.ast_search import ASTSearchService
+from core.coding.diff_engine import DiffEngine
 
 router = APIRouter(prefix="/api/coding", tags=["coding"])
 

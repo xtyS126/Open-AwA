@@ -11,7 +11,7 @@ from typing import AsyncIterator, Optional
 import httpx
 from loguru import logger
 
-from backend.channels.base import (
+from channels.base import (
     ChannelAdapter, ChannelConfig, ChannelMessage, ChannelType, MessageType,
 )
 

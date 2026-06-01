@@ -12,7 +12,7 @@ from typing import AsyncIterator, Optional
 
 from loguru import logger
 
-from backend.channels.base import (
+from channels.base import (
     ChannelAdapter, ChannelConfig, ChannelMessage, ChannelType, MessageType,
 )
 

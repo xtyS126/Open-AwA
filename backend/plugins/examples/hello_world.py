@@ -5,7 +5,7 @@
 
 from typing import Dict, Any, List, Optional
 from loguru import logger
-from backend.plugins.base_plugin import BasePlugin
+from plugins.base_plugin import BasePlugin
 
 
 class HelloWorldPlugin(BasePlugin):

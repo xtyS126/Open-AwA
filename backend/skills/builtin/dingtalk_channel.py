@@ -71,8 +71,8 @@ async def execute(
         if not message:
             return {"success": False, "error": "send_message 需要提供 message"}
         try:
-            from backend.channels.dingtalk import DingTalkAdapter
-            from backend.channels.base import ChannelConfig, ChannelType, ChannelMessage, MessageType
+            from channels.dingtalk import DingTalkAdapter
+            from channels.base import ChannelConfig, ChannelType, ChannelMessage, MessageType
 
             config = ChannelConfig(
                 channel_type=ChannelType.DINGTALK,
@@ -106,8 +106,8 @@ async def execute(
         if not message:
             return {"success": False, "error": "send_markdown 需要提供 message"}
         try:
-            from backend.channels.dingtalk import DingTalkAdapter
-            from backend.channels.base import ChannelConfig, ChannelType, ChannelMessage, MessageType
+            from channels.dingtalk import DingTalkAdapter
+            from channels.base import ChannelConfig, ChannelType, ChannelMessage, MessageType
 
             config = ChannelConfig(
                 channel_type=ChannelType.DINGTALK,
@@ -154,8 +154,8 @@ async def execute(
     # ---- 健康检查 ----
     elif action == "health":
         try:
-            from backend.channels.dingtalk import DingTalkAdapter
-            from backend.channels.base import ChannelConfig, ChannelType
+            from channels.dingtalk import DingTalkAdapter
+            from channels.base import ChannelConfig, ChannelType
 
             config = ChannelConfig(
                 channel_type=ChannelType.DINGTALK,

@@ -9,7 +9,7 @@ from typing import Any, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from backend.db.models import Workspace
+from db.models import Workspace
 
 
 # 默认工作区配置模板

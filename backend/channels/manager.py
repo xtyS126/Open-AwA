@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from loguru import logger
 
-from backend.channels.base import (
+from channels.base import (
     ChannelAdapter, ChannelConfig, ChannelType, ChannelMessage,
 )
 

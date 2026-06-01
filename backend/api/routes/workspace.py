@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.core.workspace.manager import WorkspaceManager
-from backend.db.models import get_db
+from core.workspace.manager import WorkspaceManager
+from db.models import get_db
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 

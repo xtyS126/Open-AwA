@@ -5,7 +5,7 @@ from typing import Optional
 
 from loguru import logger
 
-from backend.memory.bm25_retriever import BM25Retriever
+from memory.bm25_retriever import BM25Retriever
 
 
 class HybridSearch:
