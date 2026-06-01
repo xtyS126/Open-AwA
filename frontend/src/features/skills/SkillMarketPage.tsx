@@ -2,6 +2,7 @@
  * 技能市场页面 — 浏览/搜索/安装来自 skills.sh/clawhub/github 的技能。
  */
 import React, { useState } from 'react';
+import { useI18nStore } from '@/i18n';
 import styles from './SkillMarketPage.module.css';
 
 interface MarketSkill {
@@ -33,6 +34,7 @@ const SOURCE_LABELS: Record<string, string> = { clawhub: 'ClawHub', 'skills.sh':
 const SOURCE_COLORS: Record<string, string> = { clawhub: '#8b5cf6', 'skills.sh': '#f59e0b', github: '#333', modelscope: '#06b6d4' };
 
 const SkillMarketPage: React.FC = () => {
+  const { t } = useI18nStore();
   const [skills, setSkills] = useState<MarketSkill[]>(MOCK_SKILLS);
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -51,7 +53,7 @@ const SkillMarketPage: React.FC = () => {
       // 调用后端技能导入 API（后续对接真实后端时启用）
       setSkills((prev) => prev.map((s) => s.name === skill.name ? { ...s, installed: true } : s));
     } catch (e) {
-      setError(`安装 ${skill.name} 失败`);
+      setError(t('skillMarket.installFailed', { name: skill.name }));
     } finally {
       setLoadingSkill(null);
     }
@@ -67,8 +69,8 @@ const SkillMarketPage: React.FC = () => {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h1>技能市场</h1>
-        <p className={styles.subtitle}>浏览和安装来自 ClawHub、Skills.sh、GitHub 的技能</p>
+        <h1>{t('skillMarket.title')}</h1>
+        <p className={styles.subtitle}>{t('skillMarket.subtitle')}</p>
       </div>
 
       {error && <div className={styles.error}>{error}<button onClick={() => setError('')}>x</button></div>}
@@ -77,7 +79,7 @@ const SkillMarketPage: React.FC = () => {
         <input
           type="text"
           className={styles.search}
-          placeholder="搜索技能..."
+          placeholder={t('skillMarket.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -88,7 +90,7 @@ const SkillMarketPage: React.FC = () => {
               className={`${styles.filter} ${sourceFilter === s ? styles.filterActive : ''}`}
               onClick={() => setSourceFilter(s)}
             >
-              {s === 'all' ? '全部' : (SOURCE_LABELS[s] || s)}
+              {s === 'all' ? t('skillMarket.filterAll') : (SOURCE_LABELS[s] || s)}
             </button>
           ))}
         </div>
@@ -110,7 +112,7 @@ const SkillMarketPage: React.FC = () => {
             <div className={styles.meta}>
               <span>v{skill.version}</span>
               <span>by {skill.author}</span>
-              <span>{skill.downloads.toLocaleString()} 次下载</span>
+              <span>{t('skillMarket.downloads', { count: String(skill.downloads) })}</span>
             </div>
             <div className={styles.actions}>
               {skill.installed ? (
@@ -119,7 +121,7 @@ const SkillMarketPage: React.FC = () => {
                   onClick={() => handleUninstall(skill)}
                   disabled={loadingSkill === skill.name}
                 >
-                  {loadingSkill === skill.name ? '卸载中...' : '已安装 (卸载)'}
+                  {loadingSkill === skill.name ? t('skillMarket.uninstalling') : t('skillMarket.installed')}
                 </button>
               ) : (
                 <button
@@ -127,7 +129,7 @@ const SkillMarketPage: React.FC = () => {
                   onClick={() => handleInstall(skill)}
                   disabled={loadingSkill === skill.name}
                 >
-                  {loadingSkill === skill.name ? '安装中...' : '安装'}
+                  {loadingSkill === skill.name ? t('skillMarket.installing') : t('skillMarket.install')}
                 </button>
               )}
             </div>
@@ -136,7 +138,7 @@ const SkillMarketPage: React.FC = () => {
       </div>
 
       {filtered.length === 0 && (
-        <p className={styles.empty}>未找到匹配的技能</p>
+        <p className={styles.empty}>{t('skillMarket.empty')}</p>
       )}
     </div>
   );

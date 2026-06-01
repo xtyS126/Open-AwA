@@ -3,13 +3,14 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { useInboxStore, type InboxMessage } from './store/inboxStore';
+import { useI18nStore } from '@/i18n';
 import { inboxApi } from './inboxApi';
 import styles from './InboxPage.module.css';
 
-const CATEGORY_LABELS: Record<string, string> = {
-  notification: '通知',
-  approval: '审批',
-  task_result: '任务结果',
+const CATEGORY_I18N_KEY: Record<string, string> = {
+  notification: 'inbox.filter.notification',
+  approval: 'inbox.filter.approval',
+  task_result: 'inbox.filter.taskResult',
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -20,6 +21,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 const InboxPage: React.FC = () => {
   const { messages, unreadCount, setMessages, markAsRead, markAllRead, removeMessage } = useInboxStore();
+  const { t } = useI18nStore();
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [error, setError] = useState('');
@@ -36,11 +38,11 @@ const InboxPage: React.FC = () => {
       const data = await inboxApi.list();
       setMessages(data.messages || []);
     } catch (e) {
-      setError('加载收件箱失败');
+      setError(t('inbox.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const handleMarkRead = async (msg: InboxMessage) => {
     try {
@@ -67,20 +69,20 @@ const InboxPage: React.FC = () => {
     ? messages
     : messages.filter((m) => m.category === filter);
 
-  if (loading) return <div className={styles.container}><p>加载中...</p></div>;
+  if (loading) return <div className={styles.container}><p>{t('app.loading')}</p></div>;
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <div>
-          <h1>收件箱</h1>
+          <h1>{t('inbox.title')}</h1>
           {unreadCount > 0 && (
-            <span className={styles.badge}>{unreadCount} 条未读</span>
+            <span className={styles.badge}>{t('inbox.unread', { count: String(unreadCount) })}</span>
           )}
         </div>
         <div className={styles.actions}>
           <button className={styles.actionBtn} onClick={handleMarkAllRead}>
-            全部已读
+            {t('inbox.markAllRead')}
           </button>
         </div>
       </div>
@@ -94,14 +96,14 @@ const InboxPage: React.FC = () => {
             className={`${styles.filterBtn} ${filter === cat ? styles.filterActive : ''}`}
             onClick={() => setFilter(cat)}
           >
-            {cat === 'all' ? '全部' : CATEGORY_LABELS[cat] || cat}
+            {cat === 'all' ? t('inbox.filter.all') : t(CATEGORY_I18N_KEY[cat] || cat)}
           </button>
         ))}
       </div>
 
       <div className={styles.list}>
         {filtered.length === 0 ? (
-          <p className={styles.empty}>暂无消息</p>
+          <p className={styles.empty}>{t('inbox.empty')}</p>
         ) : (
           filtered.map((msg) => (
             <div
@@ -113,7 +115,7 @@ const InboxPage: React.FC = () => {
               <div className={styles.msgContent}>
                 <div className={styles.msgHeader}>
                   <span className={styles.msgCategory}>
-                    {CATEGORY_LABELS[msg.category] || msg.category}
+                    {t(CATEGORY_I18N_KEY[msg.category] || msg.category)}
                   </span>
                   <span className={styles.msgTime}>
                     {new Date(msg.created_at).toLocaleString()}
@@ -130,7 +132,7 @@ const InboxPage: React.FC = () => {
               <button
                 className={styles.deleteBtn}
                 onClick={(e) => { e.stopPropagation(); handleDelete(msg); }}
-                title="删除"
+                title={t('inbox.delete')}
               >
                 ×
               </button>

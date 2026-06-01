@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { X, Paperclip, Send, Square } from 'lucide-react'
 import { appLogger } from '@/shared/utils/logger'
+import { useI18nStore, t as i18nT } from '@/i18n'
 import styles from '../ChatPage.module.css'
 
 export interface FileAttachment {
@@ -48,12 +49,13 @@ function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
       const base64 = result.split(',')[1] || result
       resolve({ data: base64, mimeType: file.type })
     }
-    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.onerror = () => reject(new Error(i18nT('chat.file.readFailed')))
     reader.readAsDataURL(file)
   })
 }
 
 export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, aborting, onDiaryCommand, editContent, focusTrigger }: ChatInputProps) {
+  const { t } = useI18nStore()
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -253,7 +255,7 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, ab
             className={`btn ${styles['stop-btn']}`}
             onClick={onAbort}
             disabled={aborting}
-            title={aborting ? '正在中断...' : '停止生成'}
+            title={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
           >
             <Square size={18} />
           </button>

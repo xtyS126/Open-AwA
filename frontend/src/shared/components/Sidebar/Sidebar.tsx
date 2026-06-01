@@ -6,6 +6,7 @@ import {
   Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
+import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import styles from './Sidebar.module.css'
 
@@ -20,47 +21,6 @@ interface MenuGroup {
   title: string
   items: MenuItem[]
 }
-
-const menuGroups: MenuGroup[] = [
-  {
-    id: 'control',
-    title: '控制',
-    items: [
-      { path: '/chat', label: '聊天', iconType: 'chat' },
-      { path: '/coding', label: 'Coding', iconType: 'coding' },
-      { path: '/workspace', label: '智能体', iconType: 'workspace' },
-      { path: '/dashboard', label: '概览', iconType: 'dashboard' },
-      { path: '/billing', label: '使用情况', iconType: 'billing' },
-      { path: '/inbox', label: '收件箱', iconType: 'inbox' },
-    ]
-  },
-  {
-    id: 'agent',
-    title: '代理',
-    items: [
-      { path: '/skills', label: '技能', iconType: 'skills' },
-      { path: '/scheduled-tasks', label: '定时任务', iconType: 'scheduledTasks' },
-      { path: '/plugins/manage', label: '插件', iconType: 'plugins' },
-      { path: '/memory', label: '记忆', iconType: 'memory' },
-      { path: '/experience', label: '经验', iconType: 'experience' },
-    ]
-  },
-  {
-    id: 'appearance',
-    title: '外观',
-    items: [
-      { path: '/theme', label: '外观与主题', iconType: 'theme' },
-    ]
-  },
-  {
-    id: 'settings',
-    title: '设置',
-    items: [
-      { path: '/settings', label: '设置', iconType: 'settings' },
-      { path: '/communication', label: '通讯配置', iconType: 'communication' },
-    ]
-  }
-]
 
 const renderIcon = (type: string, size = 18) => {
   switch (type) {
@@ -85,7 +45,49 @@ const renderIcon = (type: string, size = 18) => {
   function Sidebar() {
   const location = useLocation()
   const { theme, toggleTheme, config } = useThemeStore()
+  const { t } = useI18nStore()
   const [collapsed, setCollapsed] = useState(false)
+
+  const menuGroups: MenuGroup[] = [
+    {
+      id: 'control',
+      title: t('sidebar.control'),
+      items: [
+        { path: '/chat', label: t('sidebar.chat'), iconType: 'chat' as const },
+        { path: '/coding', label: t('sidebar.coding'), iconType: 'coding' as const },
+        { path: '/workspace', label: t('sidebar.workspace'), iconType: 'workspace' as const },
+        { path: '/dashboard', label: t('sidebar.dashboard'), iconType: 'dashboard' as const },
+        { path: '/billing', label: t('sidebar.billing'), iconType: 'billing' as const },
+        { path: '/inbox', label: t('sidebar.inbox'), iconType: 'inbox' as const },
+      ]
+    },
+    {
+      id: 'agent',
+      title: t('sidebar.agent'),
+      items: [
+        { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
+        { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
+        { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
+        { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
+        { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },
+      ]
+    },
+    {
+      id: 'appearance',
+      title: t('sidebar.theme'),
+      items: [
+        { path: '/theme', label: t('sidebar.theme'), iconType: 'theme' as const },
+      ]
+    },
+    {
+      id: 'settings',
+      title: t('sidebar.settings'),
+      items: [
+        { path: '/settings', label: t('sidebar.settings'), iconType: 'settings' as const },
+        { path: '/communication', label: t('sidebar.communication'), iconType: 'communication' as const },
+      ]
+    }
+  ]
   /* 移动端侧边栏展开状态 */
   const [mobileOpen, setMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -157,7 +159,7 @@ const renderIcon = (type: string, size = 18) => {
       <button
         className={styles['mobile-menu-btn']}
         onClick={toggleMobile}
-        title="菜单"
+        title={t('sidebar.menu')}
       >
         <Menu size={22} />
       </button>
@@ -184,7 +186,7 @@ const renderIcon = (type: string, size = 18) => {
         <button 
           className={styles['collapse-btn']} 
           onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? '展开' : '收起'}
+          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         >
           <Menu size={20} />
         </button>
@@ -239,10 +241,10 @@ const renderIcon = (type: string, size = 18) => {
         <button 
           className={styles['theme-toggle-btn']} 
           onClick={toggleTheme}
-          title={theme === 'light' ? '切换到黑夜模式' : '切换到白天模式'}
+          title={theme === 'light' ? t('sidebar.darkMode') : t('sidebar.lightMode')}
         >
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-          {!collapsed && <span className={styles['theme-label']}>{theme === 'light' ? '黑夜模式' : '白天模式'}</span>}
+          {!collapsed && <span className={styles['theme-label']}>{theme === 'light' ? t('sidebar.nightMode') : t('sidebar.dayMode')}</span>}
         </button>
         {!collapsed && <p className={styles['version-text']}>v1.0.0</p>}
       </div>

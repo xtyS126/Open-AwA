@@ -2,6 +2,7 @@
  * 上下文 Token 指示器 — 显示当前对话的 Token 使用量和压缩状态。
  */
 import React from 'react';
+import { useI18nStore } from '@/i18n';
 import styles from './ContextIndicator.module.css';
 
 interface ContextIndicatorProps {
@@ -17,6 +18,7 @@ const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   isCompressing,
   compressionCount,
 }) => {
+  const { t } = useI18nStore();
   const ratio = budget > 0 ? Math.min(used / budget, 1) : 0;
   const percentage = Math.round(ratio * 100);
   const barColor = ratio > 0.9 ? '#dc2626' : ratio > 0.7 ? '#f59e0b' : '#22c55e';
@@ -30,7 +32,7 @@ const ContextIndicator: React.FC<ContextIndicatorProps> = ({
         />
       </div>
       <span className={styles.text}>
-        {isCompressing ? '压缩中...' : `${percentage}%`}
+        {isCompressing ? t('chat.context.compressing') : `${percentage}%`}
         {compressionCount > 0 && <span className={styles.count}> ({compressionCount})</span>}
       </span>
     </div>

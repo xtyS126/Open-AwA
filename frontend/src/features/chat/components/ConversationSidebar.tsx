@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { PanelLeft, Plus, Search, PencilLine, Trash2, RotateCcw } from 'lucide-react'
 import type { ConversationSessionSummary } from '@/features/chat/types'
+import { useI18nStore, t as i18nT } from '@/i18n'
 import styles from './ConversationSidebar.module.css'
 
 interface ConversationSidebarProps {
@@ -28,11 +29,11 @@ interface ConversationSidebarProps {
 
 function formatTimestamp(value?: string | null): string {
   if (!value) {
-    return '暂无消息'
+    return i18nT('chat.history.noMessages')
   }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
-    return '时间未知'
+    return i18nT('chat.history.unknownTime')
   }
   return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit',
@@ -43,6 +44,7 @@ function formatTimestamp(value?: string | null): string {
 }
 
 function ConversationSidebar(props: ConversationSidebarProps) {
+  const { t } = useI18nStore()
   const {
     open,
     loading,
@@ -112,12 +114,12 @@ function ConversationSidebar(props: ConversationSidebarProps) {
   return (
     <aside className={`${styles['sidebar']} ${open ? '' : styles['closed']}`.trim()} aria-label="聊天历史侧边栏">
       <div className={styles['header']}>
-        <span className={styles['title']}>历史对话</span>
+        <span className={styles['title']}>{t('chat.history.title')}</span>
         <div className={styles['headerActions']}>
-          <button className={styles['iconButton']} type="button" onClick={onCreateConversation} title="新建对话">
+          <button className={styles['iconButton']} type="button" onClick={onCreateConversation} title={t('chat.history.newChat')}>
             <Plus size={16} />
           </button>
-          <button className={styles['iconButton']} type="button" onClick={onToggle} title={open ? '收起历史记录' : '展开历史记录'}>
+          <button className={styles['iconButton']} type="button" onClick={onToggle} title={open ? t('chat.collapseHistory') : t('chat.expandHistory')}>
             <PanelLeft size={16} />
           </button>
         </div>
@@ -128,20 +130,20 @@ function ConversationSidebar(props: ConversationSidebarProps) {
           <Search size={15} />
           <input
             className={styles['searchInput']}
-            placeholder="搜索标题或摘要"
+            placeholder={t('chat.history.searchPlaceholder')}
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
           />
         </div>
         <div className={styles['sortRow']}>
           <select className={styles['sortSelect']} value={sortBy} onChange={(event) => onSortChange(event.target.value as 'last_message_at' | 'title')}>
-            <option value="last_message_at">按时间排序</option>
-            <option value="title">按名称排序</option>
+            <option value="last_message_at">{t('chat.history.sortByTime')}</option>
+            <option value="title">{t('chat.history.sortByName')}</option>
           </select>
         </div>
         <label className={styles['checkboxRow']}>
           <input type="checkbox" checked={includeDeleted} onChange={(event) => onIncludeDeletedChange(event.target.checked)} />
-          <span>显示最近删除</span>
+          <span>{t('chat.history.showDeleted')}</span>
         </label>
         <div className={styles['batchActions']}>
           <label className={styles['checkboxRow']}>
@@ -151,7 +153,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
               disabled={selectableSessionIds.length === 0}
               onChange={() => setSelectedSessionIds(allSelected ? [] : selectableSessionIds)}
             />
-            <span>全选当前列表</span>
+            <span>{t('chat.history.selectAll')}</span>
           </label>
           <div className={styles['batchButtons']}>
             <button
@@ -160,7 +162,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
               onClick={() => setSelectedSessionIds([])}
               disabled={selectedSessionIds.length === 0}
             >
-              清空选择
+              {t('chat.history.clearSelection')}
             </button>
             <button
               className={styles['dangerButton']}
@@ -171,16 +173,16 @@ function ConversationSidebar(props: ConversationSidebarProps) {
               }}
               disabled={selectedSessionIds.length === 0}
             >
-              批量删除 {selectedSessionIds.length > 0 ? `(${selectedSessionIds.length})` : ''}
+              {t('chat.history.batchDelete')} {selectedSessionIds.length > 0 ? `(${selectedSessionIds.length})` : ''}
             </button>
           </div>
         </div>
       </div>
 
       <div className={styles['content']}>
-        {loading && !hasConversations && <div className={styles['loading']}>正在加载历史对话...</div>}
+        {loading && !hasConversations && <div className={styles['loading']}>{t('chat.history.loading')}</div>}
         {error && <div className={styles['error']}>{error}</div>}
-        {!loading && !error && !hasConversations && <div className={styles['empty']}>暂无历史对话</div>}
+        {!loading && !error && !hasConversations && <div className={styles['empty']}>{t('chat.history.empty')}</div>}
 
         {renderedItems.map((item) => {
           const isActive = item.session_id === activeSessionId
@@ -205,7 +207,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                 <>
                   <input
                     className={styles['renameInput']}
-                    aria-label="重命名对话标题"
+                    aria-label={t('chat.history.rename')}
                     value={editingTitle}
                     onChange={(event) => setEditingTitle(event.target.value)}
                     onClick={(event) => event.stopPropagation()}
@@ -221,14 +223,14 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                       event.stopPropagation()
                       void submitRename()
                     }}>
-                      保存
+                      {t('app.save')}
                     </button>
                     <button className={styles['secondaryButton']} type="button" onClick={(event) => {
                       event.stopPropagation()
                       setEditingSessionId(null)
                       setEditingTitle('')
                     }}>
-                      取消
+                      {t('app.cancel')}
                     </button>
                   </div>
                 </>
@@ -245,16 +247,16 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                           onClick={(event) => event.stopPropagation()}
                         />
                       )}
-                      <span className={styles['itemTitle']}>{item.title || '新对话'}</span>
+                      <span className={styles['itemTitle']}>{item.title || t('chat.newChat')}</span>
                     </div>
                     <span className={styles['metaText']}>{formatTimestamp(item.last_message_at || item.updated_at)}</span>
                   </div>
                   <div className={styles['itemSummary']}>
-                    {item.last_message_preview || item.summary || '暂无摘要'}
+                    {item.last_message_preview || item.summary || t('chat.history.noSummary')}
                   </div>
                   <div className={styles['itemMeta']}>
-                    <span className={styles['metaText']}>{item.message_count} 条消息</span>
-                    {isDeleted && <span className={styles['deletedText']}>已删除，可恢复</span>}
+                    <span className={styles['metaText']}>{t('chat.history.messageCount', { count: String(item.message_count) })}</span>
+                    {isDeleted && <span className={styles['deletedText']}>{t('chat.history.deleted')}</span>}
                   </div>
                   <div className={styles['itemActions']} onClick={(event) => event.stopPropagation()}>
                     {!isDeleted && (
@@ -265,7 +267,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                           event.stopPropagation()
                           startRename(item)
                         }}
-                        title="重命名对话"
+                        title={t('chat.history.renameAction')}
                       >
                         <PencilLine size={15} />
                       </button>
@@ -278,7 +280,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                           event.stopPropagation()
                           onRestoreConversation(item.session_id)
                         }}
-                        title="恢复对话"
+                        title={t('chat.history.restore')}
                       >
                         <RotateCcw size={15} />
                       </button>
@@ -290,7 +292,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
                           event.stopPropagation()
                           onDeleteConversation(item.session_id)
                         }}
-                        title="删除对话"
+                        title={t('chat.history.deleteAction')}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -305,7 +307,7 @@ function ConversationSidebar(props: ConversationSidebarProps) {
 
       {hasMore && (
         <button className={styles['loadMore']} type="button" onClick={onLoadMore}>
-          加载更多
+          {t('chat.history.loadMore')}
         </button>
       )}
     </aside>

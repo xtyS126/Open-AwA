@@ -1,5 +1,6 @@
 import type { ToolEventMeta } from '@/features/chat/types'
 import { ToolParamViewer } from './ToolParamViewer'
+import { useI18nStore, t as i18nT } from '@/i18n'
 import styles from './InlineToolCallCard.module.css'
 import { useState } from 'react'
 import { Undo2 } from 'lucide-react'
@@ -11,14 +12,15 @@ interface InlineToolCallCardProps {
 
 function getStatusLabel(status: string): string {
   switch (status) {
-    case 'completed': return '已完成'
-    case 'running': return '执行中'
-    case 'error': return '失败'
-    default: return '等待中'
+    case 'completed': return i18nT('chat.tool.completed')
+    case 'running': return i18nT('chat.tool.running')
+    case 'error': return i18nT('chat.tool.failed')
+    default: return i18nT('chat.tool.waiting')
   }
 }
 
 export function InlineToolCallCard({ tool, onUndo }: InlineToolCallCardProps) {
+  const { t } = useI18nStore()
   const [expanded, setExpanded] = useState(false)
   const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone'>('idle')
   const isRunning = tool.status === 'running'
@@ -54,22 +56,22 @@ export function InlineToolCallCard({ tool, onUndo }: InlineToolCallCardProps) {
             <div className={styles.errorText}>{tool.detail}</div>
           )}
           {tool.input && Object.keys(tool.input).length > 0 && (
-             <ToolParamViewer data={tool.input} label="输入参数" />
+             <ToolParamViewer data={tool.input} label={t('chat.tool.inputParams')} />
           )}
           {tool.output !== undefined && tool.output !== null && (
-             <ToolParamViewer data={tool.output} label="执行结果" />
+             <ToolParamViewer data={tool.output} label={t('chat.tool.result')} />
           )}
           {undoState === 'undone' ? (
-            <span className={styles.undoneLabel}>✓ 已撤销</span>
+            <span className={styles.undoneLabel}>✓ {t('chat.tool.undone')}</span>
           ) : canUndo && onUndo ? (
             <button
               className={styles.undoBtn}
               onClick={handleUndoClick}
               disabled={undoState === 'undoing'}
-              title="撤销此操作（5分钟内有效）"
+              title={t('chat.tool.undoAction')}
             >
               <Undo2 size={14} />
-              <span>撤销</span>
+              <span>{t('chat.tool.undo')}</span>
             </button>
           ) : null}
         </div>

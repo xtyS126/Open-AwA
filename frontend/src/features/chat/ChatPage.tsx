@@ -37,6 +37,7 @@ import {
 } from '@/features/chat/utils/assistantSegments'
 import { dispatchStructuredStreamEvent } from '@/features/chat/utils/dispatchStructuredStreamEvent'
 import { getAgent, getTranscript, stopAgent } from '@/shared/api/taskRuntimeApi'
+import { useI18nStore } from '@/i18n'
 import { appLogger } from '@/shared/utils/logger'
 import { dispatchBillingUsageUpdated } from '@/shared/events/billingEvents'
 import { useToast } from '@/shared/components/Toast'
@@ -217,6 +218,7 @@ interface SendMessageOptions {
 
 function ChatPage() {
   const navigate = useNavigate()
+  const { t } = useI18nStore()
   const { conversationId } = useParams<{ conversationId?: string }>()
   const {
     messages,
@@ -1087,15 +1089,15 @@ function ChatPage() {
       })
       if (isMountedRef.current && activeRequestIdRef.current === requestId && !streamErrorHandled) {
         if (!assistantMessageCreated) {
-          addMessage('assistant', '抱歉，发生了错误。请稍后重试。', undefined, assistantMessageId)
+          addMessage('assistant', t('chat.errorOccurred'), undefined, assistantMessageId)
           assistantMessageCreated = true
           updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
-            content: '抱歉，发生了错误。请稍后重试。',
+            content: t('chat.errorOccurred'),
           }))
         } else {
-          appendAssistantMessageText(assistantMessageId, '抱歉，发生了错误。请稍后重试。')
+          appendAssistantMessageText(assistantMessageId, t('chat.errorOccurred'))
           updateAssistantSegments(assistantMessageId, (segments) => appendAssistantChunk(segments, {
-            content: '抱歉，发生了错误。请稍后重试。',
+            content: t('chat.errorOccurred'),
           }))
         }
       }
@@ -1131,16 +1133,16 @@ function ChatPage() {
   }
 
   const handleDiaryCommand = useCallback(async () => {
-    addToast('正在生成日记...', 'info')
+    addToast(t('chat.generatingDiary'), 'info')
     try {
       const result = await diaryAPI.generate()
       if (result.success && result.content) {
-        addToast(`日记已生成 (${result.logical_date})`, 'success')
+        addToast(t('chat.diaryGenerated', { date: result.logical_date || '' }), 'success')
       } else {
-        addToast(result.error || '日记生成失败', 'warning')
+        addToast(result.error || t('chat.diaryFailed'), 'warning')
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : '日记生成失败'
+      const message = err instanceof Error ? err.message : t('chat.diaryFailed')
       addToast(message, 'error')
     }
   }, [addToast])
@@ -1267,7 +1269,7 @@ function ChatPage() {
   }, [upsertConversation])
 
   const handleDeleteConversation = useCallback(async (targetSessionId: string) => {
-    if (!window.confirm('确认删除这个对话吗？删除后可在 30 天内恢复。')) {
+    if (!window.confirm(t('chat.confirmDeleteConversation'))) {
       return
     }
     const nextCandidate = conversations.find((item) => item.session_id !== targetSessionId && !item.deleted_at)
@@ -1307,7 +1309,7 @@ function ChatPage() {
     if (sessionIds.length === 0) {
       return
     }
-    if (!window.confirm(`确认删除选中的 ${sessionIds.length} 个对话吗？删除后可在 30 天内恢复。`)) {
+    if (!window.confirm(t('chat.confirmDeleteSelected', { count: String(sessionIds.length) }))) {
       return
     }
 
@@ -1347,7 +1349,7 @@ function ChatPage() {
               agentId,
               agentType: targetTool.subagent?.agentType,
               state: 'stopped',
-              summary: '已手动停止',
+              summary: t('chat.manuallyStopped'),
             })
           }
           return applyToolUpdate(current, {
@@ -1379,10 +1381,10 @@ function ChatPage() {
 
   const getStatusIcon = (status: TaskStatus) => {
     switch (status) {
-      case 'completed': return <span className={styles['status-dot-completed']} title="已完成" />
-      case 'running': return <span className={styles['status-dot-running']} title="执行中" />
-      case 'error': return <span className={styles['status-dot-error']} title="失败" />
-      default: return <span className={styles['status-dot-pending']} title="等待" />
+      case 'completed': return <span className={styles['status-dot-completed']} title={t('chat.completed')} />
+      case 'running': return <span className={styles['status-dot-running']} title={t('chat.running')} />
+      case 'error': return <span className={styles['status-dot-error']} title={t('chat.failed')} />
+      default: return <span className={styles['status-dot-pending']} title={t('chat.waiting')} />
     }
   }
 
