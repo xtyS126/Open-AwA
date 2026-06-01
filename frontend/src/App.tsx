@@ -33,6 +33,7 @@ const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplaceP
 const TestPage = React.lazy(() => import('@/features/test/TestPage'))
 const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
 const CodingPage = React.lazy(() => import('@/features/coding/CodingPage'))
+const InboxPage = React.lazy(() => import('@/features/inbox/InboxPage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -124,6 +125,7 @@ function App() {
                 <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
                 <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
                 <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />
+                <Route path="/inbox" element={<ErrorBoundary name="Inbox"><InboxPage /></ErrorBoundary>} />
               </Routes>
             </Suspense>
           </main>

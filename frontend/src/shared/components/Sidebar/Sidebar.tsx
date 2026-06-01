@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { 
   MessageSquare, LayoutDashboard, CreditCard, Zap, 
   Clock, Blocks, Brain, Settings, Award, Radio, 
-  Cat, Sun, Moon, Menu, ChevronDown, Palette
+  Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { UserFloatingArea } from '../UserFloatingArea'
@@ -12,7 +12,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox'
 }
 
 interface MenuGroup {
@@ -31,6 +31,7 @@ const menuGroups: MenuGroup[] = [
       { path: '/workspace', label: '智能体', iconType: 'workspace' },
       { path: '/dashboard', label: '概览', iconType: 'dashboard' },
       { path: '/billing', label: '使用情况', iconType: 'billing' },
+      { path: '/inbox', label: '收件箱', iconType: 'inbox' },
     ]
   },
   {
@@ -76,6 +77,7 @@ const renderIcon = (type: string, size = 18) => {
     case 'experience': return <Award size={size} />
     case 'communication': return <Radio size={size} />
     case 'theme': return <Palette size={size} />
+    case 'inbox': return <Bell size={size} />
     default: return <MessageSquare size={size} />
   }
 }
