@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openawa"
+version = "1.0.0"
+description = "Open-AwA AI Agent 实验平台 — FastAPI 后端 + React 前端，微内核 + 插件架构"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Open-AwA Contributors"}
+]
+keywords = ["ai", "agent", "llm", "fastapi", "mcp", "plugin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "fastapi~=0.109.1",
+    "uvicorn[standard]==0.27.0",
+    "sqlalchemy==2.0.25",
+    "pydantic>=2.6.0,<3.0.0",
+    "pydantic-settings>=2.1.0,<3.0.0",
+    "python-jose[cryptography]~=3.4.0",
+    "passlib[bcrypt]==1.7.4",
+    "python-multipart~=0.0.22",
+    "websockets==12.0",
+    "loguru==0.7.2",
+    "pyyaml==6.0.1",
+    "chromadb==0.4.22",
+    "httpx>=0.26.0,<0.28.0",
+    "litellm>=1.80.0,<2.0.0",
+    "aiofiles==23.2.1",
+    "python-dotenv==1.0.0",
+    "click~=8.1.0",
+    "slowapi~=0.1.9",
+    "RestrictedPython>=5.0,<8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "httpx>=0.26.0",
+]
+full = [
+    "openawa[dev]",
+]
+
+[project.scripts]
+openawa = "openawa.cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/open-awa/open-awa"
+Documentation = "https://github.com/open-awa/open-awa"
+Repository = "https://github.com/open-awa/open-awa.git"
+
+[tool.setuptools]
+packages = ["openawa"]
+
+[tool.setuptools.package-data]
+openawa = ["config/users.yaml", "config/pricing/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["openawa"]
+omit = ["openawa/tests/*", "openawa/cli/*"]

@@ -598,6 +598,36 @@ _avatars_dir = FsPath("uploads/avatars")
 _avatars_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/api/user/avatar", StaticFiles(directory=str(_avatars_dir)), name="user_avatar")
 
+# ---- 前端静态文件服务（生产模式）----
+_FRONTEND_DIST = FsPath(__file__).resolve().parents[1] / "frontend" / "dist"
+if not _FRONTEND_DIST.is_dir():
+    # pip 安装模式下，dist 可能在包目录内
+    _FRONTEND_DIST = FsPath(__file__).resolve().parent / "dist"
+_HAS_FRONTEND = _FRONTEND_DIST.is_dir() and (_FRONTEND_DIST / "index.html").exists()
+
+if _HAS_FRONTEND and is_production_environment(settings.ENVIRONMENT):
+    # 将前端构建产物挂载为静态文件
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend_assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend_spa(full_path: str, request: Request):
+        """
+        SPA 回退路由：非 API 路径返回 index.html。
+        仅在已挂载前端静态文件的生产模式下生效。
+        """
+        # API 路径不拦截
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+        index_path = _FRONTEND_DIST / "index.html"
+        if not index_path.exists():
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Frontend not built"}, status_code=503)
+
+        from fastapi.responses import FileResponse
+        return FileResponse(str(index_path), media_type="text/html")
+
 
 # 静态资源缓存策略：为带哈希的文件名设置长期缓存
 @app.middleware("http")

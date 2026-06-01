@@ -1,0 +1,61 @@
+version: "3.8"
+
+services:
+  # ---- 后端 API 服务 ----
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openawa-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8000
+      - DATABASE_URL=sqlite:///data/openawa.db
+      - VECTOR_DB_PATH=data/vector_db
+      - LOG_DIR=/app/logs
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+    volumes:
+      - openawa-data:/app/data
+      - openawa-logs:/app/logs
+      - openawa-uploads:/app/openawa/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---- 前端 Nginx 服务（可选，与 backend 二选一或并用）----
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: openawa-frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - full
+      - frontend
+
+volumes:
+  openawa-data:
+    driver: local
+  openawa-logs:
+    driver: local
+  openawa-uploads:
+    driver: local

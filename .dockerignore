@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*.so
+*.egg-info
+.eggs
+dist
+build
+*.egg
+.env
+.env.local
+.venv
+venv
+.mypy_cache
+.pytest_cache
+*.db
+*.db-shm
+*.db-wal
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/.vite-cache
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+openawa/config/pricing
