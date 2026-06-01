@@ -13,7 +13,7 @@ import {
   getCachedConversationMessages,
 } from '@/features/chat/utils/chatCache'
 import { safeGetJsonItem } from '@/shared/utils/safeStorage'
-import type { AssistantExecutionMeta, AssistantMessageSegment, ChatMessage, ConversationSessionSummary, TaskStatus } from '@/features/chat/types'
+import type { AssistantExecutionMeta, AssistantMessageSegment, ChatMessage, ConversationSessionSummary } from '@/features/chat/types'
 import {
   applySubagentStop,
   syncSubagentSnapshot,
@@ -24,9 +24,6 @@ import {
   applyTaskUpdate,
   applyToolUpdate,
   createEmptyExecutionMeta,
-  formatUsageCost,
-  formatUsageTokens,
-  getTaskTitle,
   hasExecutionMeta,
 } from '@/features/chat/utils/executionMeta'
 import {
@@ -1378,15 +1375,6 @@ function ChatPage() {
       })
     }
     }, [clearSubagentTimeout, scheduleSubagentAggregation, streamingAssistantId, updateAssistantMeta, updateAssistantSegments])
-
-  const getStatusIcon = (status: TaskStatus) => {
-    switch (status) {
-      case 'completed': return <span className={styles['status-dot-completed']} title={t('chat.completed')} />
-      case 'running': return <span className={styles['status-dot-running']} title={t('chat.running')} />
-      case 'error': return <span className={styles['status-dot-error']} title={t('chat.failed')} />
-      default: return <span className={styles['status-dot-pending']} title={t('chat.waiting')} />
-    }
-  }
 
   return (
     <div className={styles['chat-page']}>

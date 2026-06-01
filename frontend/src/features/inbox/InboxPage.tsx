@@ -26,13 +26,6 @@ const InboxPage: React.FC = () => {
   const [filter, setFilter] = useState<string>('all');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadMessages();
-    // 每 30 秒轮询新消息
-    const interval = setInterval(loadMessages, 30000);
-    return () => clearInterval(interval);
-  }, [loadMessages]);
-
   const loadMessages = useCallback(async () => {
     try {
       const data = await inboxApi.list();
@@ -43,6 +36,13 @@ const InboxPage: React.FC = () => {
       setLoading(false);
     }
   }, [t]);
+
+  useEffect(() => {
+    loadMessages();
+    // 每 30 秒轮询新消息
+    const interval = setInterval(loadMessages, 30000);
+    return () => clearInterval(interval);
+  }, [loadMessages]);
 
   const handleMarkRead = async (msg: InboxMessage) => {
     try {

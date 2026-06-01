@@ -140,12 +140,21 @@ export async function getAllCachedSessionIds(): Promise<string[]> {
 
 /** 清理超过 maxSessions 个会话的旧缓存 */
 export async function pruneOldSessions(maxSessions: number = 50): Promise<void> {
-  const keys = await getAllCachedSessionIds()
-  if (keys.length <= maxSessions) return
-  const toRemove = keys.slice(0, keys.length - maxSessions)
   const db = await _getDB()
   if (!db) return
-  for (const key of toRemove) {
+  // 获取所有缓存的会话及时间戳，按时间排序后删除最旧的
+  const allKeys = await db.getAllKeys(STORE_NAME)
+  if (allKeys.length <= maxSessions) return
+  const entries: { key: string; updatedAt: number }[] = []
+  for (const key of allKeys) {
+    try {
+      const record = await db.get(STORE_NAME, key)
+      entries.push({ key: key as string, updatedAt: (record as any)?.timestamp || 0 })
+    } catch { entries.push({ key: key as string, updatedAt: 0 }) }
+  }
+  entries.sort((a, b) => a.updatedAt - b.updatedAt)
+  const toRemove = entries.slice(0, entries.length - maxSessions)
+  for (const { key } of toRemove) {
     try { await db.delete(STORE_NAME, key) } catch { /* 忽略单条删除失败 */ }
   }
 }

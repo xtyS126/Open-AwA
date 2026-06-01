@@ -155,8 +155,7 @@ export default function TestPage() {
 
   const runDiagnostics = useCallback(async () => {
     setRunning(true)
-    setAllTests((t) => (t.status === 'ok' ? { status: 'idle', message: '检测中...' } : { status: t.status === 'idle' ? 'idle' : t.status }))
-    setAllTests(() => ({ status: 'idle', message: '检测中...' }))
+    setAllTests((t) => ({ ...t, status: 'idle', message: '检测中...' }))
 
     // [NEW] 前端测试：页面渲染
     updateTest('page-render', { status: 'ok', message: '组件正常挂载并渲染', detail: { timestamp: Date.now() } })
