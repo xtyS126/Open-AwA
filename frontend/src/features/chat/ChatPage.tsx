@@ -873,7 +873,7 @@ function ChatPage() {
       }
     }
 
-    if (!fullMessage) return
+    if (!fullMessage && chatAttachments.length === 0) return
 
     const currentConversation = conversations.find((item) => item.session_id === targetSessionId)
     const nowIso = new Date().toISOString()

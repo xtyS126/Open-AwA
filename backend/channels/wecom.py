@@ -148,7 +148,7 @@ class WeComAdapter(ChannelAdapter):
             return
 
         yield ChannelMessage(
-            channel=ChannelType.WECHAT,
+            channel=ChannelType.WECOM,
             content="企业微信消息通过回调 URL 接收，请配置 /api/channels/wecom/callback",
             message_type=MessageType.TEXT,
         )

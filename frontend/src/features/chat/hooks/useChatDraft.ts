@@ -100,20 +100,20 @@ export function useChatDraft({ sessionId, onRestore }: UseChatDraftOptions) {
   }, [sessionId]);
 
   // 页面卸载/切换时自动保存草稿
-  useEffect(() => {
-    let currentText = '';
-    let currentCursor = 0;
+  const draftTextRef = useRef('');
+  const draftCursorRef = useRef(0);
 
+  useEffect(() => {
     const handleBeforeUnload = () => {
-      if (currentText.trim()) {
-        _saveDraft(sessionRef.current, currentText, currentCursor);
+      if (draftTextRef.current.trim()) {
+        _saveDraft(sessionRef.current, draftTextRef.current, draftCursorRef.current);
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
-      if (currentText.trim()) {
-        _saveDraft(sessionRef.current, currentText, currentCursor);
+      if (draftTextRef.current.trim()) {
+        _saveDraft(sessionRef.current, draftTextRef.current, draftCursorRef.current);
       }
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
@@ -121,6 +121,8 @@ export function useChatDraft({ sessionId, onRestore }: UseChatDraftOptions) {
 
   const saveDraft = useCallback(async (text: string, cursorPosition: number = 0) => {
     if (!sessionRef.current) return;
+    draftTextRef.current = text;
+    draftCursorRef.current = cursorPosition;
     await _saveDraft(sessionRef.current, text, cursorPosition);
   }, []);
 
