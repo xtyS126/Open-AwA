@@ -40,11 +40,17 @@ from openawa.cli.serve import serve
 from openawa.cli.migrate import migrate
 from openawa.cli.doctor import doctor
 from openawa.cli.user import user
+from openawa.cli.agents import agents
+from openawa.cli.plugin import plugin
+from openawa.cli.config import config
 
 cli.add_command(serve)
 cli.add_command(migrate)
 cli.add_command(doctor)
 cli.add_command(user)
+cli.add_command(agents)
+cli.add_command(plugin)
+cli.add_command(config)
 
 
 if __name__ == "__main__":

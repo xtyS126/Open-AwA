@@ -366,6 +366,20 @@ class ScheduledTaskManager:
             execution.model = model or scheduled_task.get("model")
 
             db.commit()
+
+            # 推送任务结果到收件箱
+            try:
+                from api.routes.inbox import add_task_result_notification
+                task_title = task.title or scheduled_task.get("title", "未命名任务")
+                summary = response_text[:200] if response_text else ""
+                add_task_result_notification(
+                    task_name=task_title,
+                    success=True,
+                    summary=summary,
+                )
+            except Exception:
+                pass  # 收件箱推送失败不影响主流程
+
         finally:
             db.close()
 

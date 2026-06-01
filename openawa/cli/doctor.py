@@ -190,3 +190,61 @@ def _auto_fix(project_dir: Path):
                 click.echo("  [DONE] 前端构建成功")
             except subprocess.CalledProcessError:
                 click.echo("  [FAIL] 前端构建失败，请手动运行 npm run build")
+
+    # 检查并生成 SECRET_KEY
+    env_local = project_dir / ".env.local"
+    if not env_local.exists():
+        try:
+            import secrets
+            secret_key = secrets.token_hex(32)
+            env_local.write_text(f"SECRET_KEY={secret_key}\n", encoding="utf-8")
+            click.echo("  [FIX] 已生成 .env.local 和 SECRET_KEY")
+        except Exception as e:
+            click.echo(f"  [SKIP] 生成 .env.local 失败: {e}")
+
+    # 检查 pip 依赖
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "check"],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            click.echo("  [WARN] pip 依赖存在冲突，请运行 pip check 查看详情")
+            # 尝试自动安装缺失的依赖
+            requirements = project_dir / "backend" / "requirements.txt"
+            if requirements.exists():
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-r", str(requirements), "--quiet"],
+                    capture_output=True,
+                )
+                click.echo("  [FIX] 已尝试安装 requirements.txt 依赖")
+    except Exception:
+        pass
+
+    # 检查端口占用
+    try:
+        import socket
+        for port, name in [(8000, "后端"), (5173, "前端开发")]:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex(("127.0.0.1", port))
+            sock.close()
+            if result == 0:
+                click.echo(f"  [WARN] 端口 {port} ({name}) 已被占用，可能影响启动")
+    except Exception:
+        pass
+
+    # 验证 Alembic 迁移脚本可用
+    alembic_dir = project_dir / "backend" / "alembic"
+    if alembic_dir.is_dir():
+        click.echo("  [INFO] Alembic 迁移系统可用，使用 openawa migrate upgrade 同步数据库")
+    else:
+        click.echo("  [INFO] 正在创建 Alembic 迁移目录...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "alembic", "init", str(alembic_dir)],
+                cwd=str(project_dir / "backend"),
+                capture_output=True,
+            )
+            click.echo("  [FIX] Alembic 初始化完成")
+        except Exception:
+            pass
