@@ -1434,12 +1434,6 @@ function SettingsPage() {
     return acc
   }, {} as Record<string, ModelPricing[]>)
 
-  const _getProviderName = (providerId: string) => {
-    const provider = providers.find(p => p.id === providerId)
-    return provider ? provider.name : providerId
-  }
-  void _getProviderName
-
   const renderSecondarySidebar = () => {
     const tabs = [
       { id: 'general', label: '通用设置', icon: <SettingsIcon size={18} /> },

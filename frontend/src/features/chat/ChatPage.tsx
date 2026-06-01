@@ -1388,61 +1388,6 @@ function ChatPage() {
     }
   }
 
-  const renderFloatingExecutionPanel = () => {
-    const active = activeExecution
-    if (!active) return null
-    const { meta: currentMeta, isStreaming } = active
-
-    return (
-      <div className={styles['floating-execution']}>
-        <div className={styles['floating-execution-header']}>
-          <span className={styles['floating-execution-label']}>
-            {currentMeta.intent ? `${currentMeta.intent}` : '任务'}
-            {isStreaming && <span className={styles['floating-dot-pulse']} />}
-          </span>
-          {currentMeta.usage && (
-            <span className={styles['floating-execution-usage']}>
-              {formatUsageTokens(currentMeta.usage.input_tokens)}/{formatUsageTokens(currentMeta.usage.output_tokens)} tokens
-              {currentMeta.usage.total_cost ? ` ${formatUsageCost(currentMeta.usage.total_cost, currentMeta.usage.currency)}` : ''}
-              {currentMeta.usage.duration_ms ? ` ${currentMeta.usage.duration_ms}ms` : ''}
-            </span>
-          )}
-        </div>
-        {currentMeta.steps.length > 0 && (
-          <div className={styles['floating-execution-steps']}>
-            {currentMeta.steps.map((step) => (
-              <div key={`${step.step}-${step.action}`} className={styles['floating-step']}>
-                {getStatusIcon(step.status)}
-                <span className={styles['floating-step-title']}>{getTaskTitle(step)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {currentMeta.toolEvents.length > 0 && (
-          <div className={styles['floating-execution-tools']}>
-            {currentMeta.toolEvents.map((tool) => (
-              <div key={tool.id} className={styles['floating-tool']}>
-                {getStatusIcon(tool.status)}
-                <span className={styles['floating-tool-kind']}>{tool.kind}</span>
-                <span className={styles['floating-tool-name']}>{tool.name}</span>
-                {(tool.kind === 'task' || tool.kind === 'subagent') && tool.status === 'running' && (
-                  <button
-                    type="button"
-                    className={styles['stop-agent-btn']}
-                    onClick={() => void handleStopAgent(tool.id)}
-                    title="停止此代理"
-                  >
-                    x
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className={styles['chat-page']}>
       <div className={styles['chat-header']}>
@@ -1552,8 +1497,6 @@ function ChatPage() {
             feedbackState={feedbackState}
             onUndo={handleUndoOperation}
           />
-
-          {false && renderFloatingExecutionPanel()}
 
           <React.Suspense fallback={null}>
             <TodoPanel

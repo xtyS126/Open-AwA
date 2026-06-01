@@ -31,7 +31,7 @@ const InboxPage: React.FC = () => {
     // 每 30 秒轮询新消息
     const interval = setInterval(loadMessages, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadMessages]);
 
   const loadMessages = useCallback(async () => {
     try {
