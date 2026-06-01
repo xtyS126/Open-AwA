@@ -8,6 +8,8 @@ import json
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+
+from db.models import SessionLocal
 from sqlalchemy import and_, or_, desc, func
 from db.models import ExperienceMemory
 from loguru import logger
@@ -27,7 +29,13 @@ class ExperienceManager:
             db: SQLAlchemy 数据库会话实例
         """
         self.db = db
+        self._session_factory = SessionLocal
         logger.info("ExperienceManager initialized")
+
+    @staticmethod
+    def _new_session():
+        """创建独立的数据库会话，供 _sync 方法使用以确保线程安全。"""
+        return SessionLocal()
     
     def _add_experience_sync(
         self,
@@ -41,20 +49,24 @@ class ExperienceManager:
         user_id: Optional[str]
     ) -> ExperienceMemory:
         """同步方法：向数据库插入一条经验记录。"""
-        experience = ExperienceMemory(
-            experience_type=experience_type,
-            title=title,
-            content=content,
-            trigger_conditions=trigger_conditions,
-            confidence=confidence,
-            source_task=source_task,
-            experience_metadata=json.dumps(metadata) if metadata else '{}',
-            user_id=user_id
-        )
-        self.db.add(experience)
-        self.db.commit()
-        self.db.refresh(experience)
-        return experience
+        db = self._new_session()
+        try:
+            experience = ExperienceMemory(
+                experience_type=experience_type,
+                title=title,
+                content=content,
+                trigger_conditions=trigger_conditions,
+                confidence=confidence,
+                source_task=source_task,
+                experience_metadata=json.dumps(metadata) if metadata else '{}',
+                user_id=user_id
+            )
+            db.add(experience)
+            db.commit()
+            db.refresh(experience)
+            return experience
+        finally:
+            db.close()
 
     async def add_experience(
         self,
@@ -99,22 +111,26 @@ class ExperienceManager:
         order: str
     ) -> List[ExperienceMemory]:
         """同步方法：按条件查询经验列表。"""
-        query = self.db.query(ExperienceMemory)
-        
-        if experience_type:
-            query = query.filter(ExperienceMemory.experience_type == experience_type)
-        if min_confidence > 0:
-            query = query.filter(ExperienceMemory.confidence >= min_confidence)
-        if source_task:
-            query = query.filter(ExperienceMemory.source_task == source_task)
-        
-        sort_column = getattr(ExperienceMemory, sort_by, ExperienceMemory.confidence)
-        if order == 'desc':
-            query = query.order_by(desc(sort_column))
-        else:
-            query = query.order_by(sort_column)
-        
-        return query.offset(offset).limit(limit).all()
+        db = self._new_session()
+        try:
+            query = db.query(ExperienceMemory)
+
+            if experience_type:
+                query = query.filter(ExperienceMemory.experience_type == experience_type)
+            if min_confidence > 0:
+                query = query.filter(ExperienceMemory.confidence >= min_confidence)
+            if source_task:
+                query = query.filter(ExperienceMemory.source_task == source_task)
+
+            sort_column = getattr(ExperienceMemory, sort_by, ExperienceMemory.confidence)
+            if order == 'desc':
+                query = query.order_by(desc(sort_column))
+            else:
+                query = query.order_by(sort_column)
+
+            return query.offset(offset).limit(limit).all()
+        finally:
+            db.close()
 
     async def get_experiences(
         self,
@@ -146,9 +162,13 @@ class ExperienceManager:
     
     def _get_experience_by_id_sync(self, experience_id: int) -> Optional[ExperienceMemory]:
         """同步方法：按ID查询单条经验记录。"""
-        return self.db.query(ExperienceMemory).filter(
-            ExperienceMemory.id == experience_id
-        ).first()
+        db = self._new_session()
+        try:
+            return db.query(ExperienceMemory).filter(
+                ExperienceMemory.id == experience_id
+            ).first()
+        finally:
+            db.close()
 
     async def get_experience_by_id(self, experience_id: int) -> Optional[ExperienceMemory]:
         """
@@ -169,31 +189,35 @@ class ExperienceManager:
         limit: int
     ) -> List[ExperienceMemory]:
         """同步方法：按关键字搜索经验记录并更新访问统计。"""
-        query = self.db.query(ExperienceMemory).filter(
-            or_(
-                ExperienceMemory.title.contains(query_text),
-                ExperienceMemory.content.contains(query_text),
-                ExperienceMemory.trigger_conditions.contains(query_text)
+        db = self._new_session()
+        try:
+            query = db.query(ExperienceMemory).filter(
+                or_(
+                    ExperienceMemory.title.contains(query_text),
+                    ExperienceMemory.content.contains(query_text),
+                    ExperienceMemory.trigger_conditions.contains(query_text)
+                )
             )
-        )
-        
-        if experience_type:
-            query = query.filter(ExperienceMemory.experience_type == experience_type)
-        if min_confidence > 0:
-            query = query.filter(ExperienceMemory.confidence >= min_confidence)
-        
-        experiences = query.order_by(
-            desc(ExperienceMemory.confidence),
-            desc(ExperienceMemory.usage_count)
-        ).limit(limit).all()
-        
-        # 批量更新访问计数和最后访问时间
-        for exp in experiences:
-            exp.usage_count += 1
-            exp.last_access = datetime.now(timezone.utc)
-        
-        self.db.commit()
-        return experiences
+
+            if experience_type:
+                query = query.filter(ExperienceMemory.experience_type == experience_type)
+            if min_confidence > 0:
+                query = query.filter(ExperienceMemory.confidence >= min_confidence)
+
+            experiences = query.order_by(
+                desc(ExperienceMemory.confidence),
+                desc(ExperienceMemory.usage_count)
+            ).limit(limit).all()
+
+            # 批量更新访问计数和最后访问时间
+            for exp in experiences:
+                exp.usage_count += 1
+                exp.last_access = datetime.now(timezone.utc)
+
+            db.commit()
+            return experiences
+        finally:
+            db.close()
 
     async def search_experiences(
         self,
@@ -223,40 +247,44 @@ class ExperienceManager:
         limit: int
     ) -> List[ExperienceMemory]:
         """同步方法：基于关键词的语义搜索，并更新访问统计。"""
-        conditions = []
-        for keyword in keywords:
-            conditions.append(ExperienceMemory.content.contains(keyword))
-            conditions.append(ExperienceMemory.title.contains(keyword))
-            conditions.append(ExperienceMemory.trigger_conditions.contains(keyword))
-        
-        query_obj = self.db.query(ExperienceMemory).filter(
-            and_(
-                or_(*conditions),
-                ExperienceMemory.confidence >= 0.3
+        db = self._new_session()
+        try:
+            conditions = []
+            for keyword in keywords:
+                conditions.append(ExperienceMemory.content.contains(keyword))
+                conditions.append(ExperienceMemory.title.contains(keyword))
+                conditions.append(ExperienceMemory.trigger_conditions.contains(keyword))
+
+            query_obj = db.query(ExperienceMemory).filter(
+                and_(
+                    or_(*conditions),
+                    ExperienceMemory.confidence >= 0.3
+                )
             )
-        )
-        
-        # 优先匹配相同任务类型的经验
-        if task_context and 'task_type' in task_context:
-            task_experiences = query_obj.filter(
-                ExperienceMemory.source_task == task_context['task_type']
+
+            # 优先匹配相同任务类型的经验
+            if task_context and 'task_type' in task_context:
+                task_experiences = query_obj.filter(
+                    ExperienceMemory.source_task == task_context['task_type']
+                ).limit(limit).all()
+
+                if task_experiences:
+                    return task_experiences
+
+            experiences = query_obj.order_by(
+                desc(ExperienceMemory.confidence),
+                desc(ExperienceMemory.success_count)
             ).limit(limit).all()
-            
-            if task_experiences:
-                return task_experiences
-        
-        experiences = query_obj.order_by(
-            desc(ExperienceMemory.confidence),
-            desc(ExperienceMemory.success_count)
-        ).limit(limit).all()
-        
-        # 批量更新访问计数
-        for exp in experiences:
-            exp.usage_count += 1
-            exp.last_access = datetime.now(timezone.utc)
-        
-        self.db.commit()
-        return experiences
+
+            # 批量更新访问计数
+            for exp in experiences:
+                exp.usage_count += 1
+                exp.last_access = datetime.now(timezone.utc)
+
+            db.commit()
+            return experiences
+        finally:
+            db.close()
 
     async def semantic_search_experiences(
         self,
@@ -300,49 +328,53 @@ class ExperienceManager:
         limit: int
     ) -> List[ExperienceMemory]:
         """同步方法：基于规则条件搜索经验记录。"""
-        query = self.db.query(ExperienceMemory)
-        
-        if 'task_type' in conditions:
-            query = query.filter(
-                ExperienceMemory.source_task == conditions['task_type']
-            )
-        
-        if 'experience_types' in conditions:
-            exp_types = conditions['experience_types']
-            if exp_types:
+        db = self._new_session()
+        try:
+            query = db.query(ExperienceMemory)
+
+            if 'task_type' in conditions:
                 query = query.filter(
-                    ExperienceMemory.experience_type.in_(exp_types)
+                    ExperienceMemory.source_task == conditions['task_type']
                 )
-        
-        # 成功率过滤：先查出符合条件的候选集，在内存中过滤
-        # 避免 SQL 直接做除法产生除零错误
-        if 'min_success_rate' in conditions:
-            min_rate = conditions['min_success_rate']
-            candidates = query.filter(
-                ExperienceMemory.confidence >= 0.3,
-                ExperienceMemory.usage_count > 0
-            ).order_by(
-                desc(ExperienceMemory.confidence)
-            ).all()
-            
-            experiences = [
-                exp for exp in candidates
-                if exp.usage_count > 0 and (exp.success_count / exp.usage_count) >= min_rate
-            ][:limit]
-        else:
-            experiences = query.filter(
-                ExperienceMemory.confidence >= 0.3
-            ).order_by(
-                desc(ExperienceMemory.confidence)
-            ).limit(limit).all()
-        
-        # 批量更新访问统计
-        for exp in experiences:
-            exp.usage_count += 1
-            exp.last_access = datetime.now(timezone.utc)
-        
-        self.db.commit()
-        return experiences
+
+            if 'experience_types' in conditions:
+                exp_types = conditions['experience_types']
+                if exp_types:
+                    query = query.filter(
+                        ExperienceMemory.experience_type.in_(exp_types)
+                    )
+
+            # 成功率过滤：先查出符合条件的候选集，在内存中过滤
+            # 避免 SQL 直接做除法产生除零错误
+            if 'min_success_rate' in conditions:
+                min_rate = conditions['min_success_rate']
+                candidates = query.filter(
+                    ExperienceMemory.confidence >= 0.3,
+                    ExperienceMemory.usage_count > 0
+                ).order_by(
+                    desc(ExperienceMemory.confidence)
+                ).all()
+
+                experiences = [
+                    exp for exp in candidates
+                    if exp.usage_count > 0 and (exp.success_count / exp.usage_count) >= min_rate
+                ][:limit]
+            else:
+                experiences = query.filter(
+                    ExperienceMemory.confidence >= 0.3
+                ).order_by(
+                    desc(ExperienceMemory.confidence)
+                ).limit(limit).all()
+
+            # 批量更新访问统计
+            for exp in experiences:
+                exp.usage_count += 1
+                exp.last_access = datetime.now(timezone.utc)
+
+            db.commit()
+            return experiences
+        finally:
+            db.close()
 
     async def rule_based_search(
         self,

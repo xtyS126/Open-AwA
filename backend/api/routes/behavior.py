@@ -138,7 +138,8 @@ async def get_behavior_stats(
         "total_interactions": total_interactions,
         "total_tools_used": total_tools_used,
         "total_errors": total_errors,
-        "top_tools": top_models, # Frontend expects "top_tools" for 模型使用分布
+        "top_tools": top_tools,
+        "top_models": top_models,
         "top_intents": top_intents,
         "average_response_time": avg_response_time,
         "chart_data": chart_data

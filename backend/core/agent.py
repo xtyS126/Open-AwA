@@ -1859,7 +1859,7 @@ class AIAgent:
                     context=context
                 )
                 matching_duration_ms = int((time.perf_counter() - matching_start) * 1000)
-                if auto_results:
+                if auto_results.get('skills') or auto_results.get('plugins'):
                     context['auto_execution_results'] = auto_results
                     logger.info(f"Auto-executed {len(auto_results.get('skills', []))} skills and {len(auto_results.get('plugins', []))} plugins")
 
@@ -2040,8 +2040,8 @@ class AIAgent:
                 "memories_used": 0,
                 "skills_executed": 0,
                 "plugins_executed": 0,
-                "skill_results": {},
-                "plugin_results": {},
+                "skill_results": [],
+                "plugin_results": [],
             }
         finally:
             unregister_agent_task(session_id)

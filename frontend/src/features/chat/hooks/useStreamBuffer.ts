@@ -70,6 +70,7 @@ export function useStreamBuffer({ onFlush, flushInterval = 50 }: StreamBufferOpt
 
     const now = performance.now()
     if (now - lastFlushRef.current >= flushInterval) {
+      lastFlushRef.current = now
       scheduleFlush(messageId)
     } else {
       scheduleFlush(messageId)

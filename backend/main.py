@@ -285,7 +285,7 @@ _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 # 确保多 Worker 部署时签名一致（不再使用进程级随机密钥）
 
 
-def _extract_user_id_from_request(request: Request) -> Optional[int]:
+async def _extract_user_id_from_request(request: Request) -> Optional[int]:
     """
     从请求中提取认证用户 ID（用于 CSRF 校验时与 token 中绑定的用户比对）。
 
@@ -320,9 +320,10 @@ def _extract_user_id_from_request(request: Request) -> Optional[int]:
         return None
 
     try:
+        import asyncio
         from api.dependencies import _load_user_by_username
 
-        user = _load_user_by_username(username)
+        user = await asyncio.to_thread(_load_user_by_username, username)
         return user.id if user else None
     except Exception:
         return None
@@ -336,7 +337,7 @@ async def get_csrf_token(request: Request):
     前端在登录后调用此接口获取 per-session CSRF token，
     存储在 JS 内存中，在状态变更请求时通过 X-CSRF-Token header 发送。
     """
-    user_id = _extract_user_id_from_request(request)
+    user_id = await _extract_user_id_from_request(request)
     if user_id is None:
         raise FastAPIHTTPException(status_code=401, detail="Authentication required")
     csrf_token = generate_csrf_token(user_id)
@@ -391,7 +392,7 @@ async def csrf_protection_middleware(request: Request, call_next):
             )
 
         # 提取请求中的认证用户 ID 并与 CSRF token 中绑定的用户比对
-        request_user_id = _extract_user_id_from_request(request)
+        request_user_id = await _extract_user_id_from_request(request)
         if request_user_id is None or request_user_id != csrf_payload["sub"]:
             return JSONResponse(
                 status_code=403,

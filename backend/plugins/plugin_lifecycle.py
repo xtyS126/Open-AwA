@@ -279,7 +279,10 @@ class TransitionExecutor:
 
         thread = threading.Thread(target=_runner)
         thread.start()
-        thread.join()
+        thread.join(timeout=60.0)
+
+        if thread.is_alive():
+            logger.warning("插件初始化超时（60s），将继续执行但可能状态不一致")
 
         if "error" in error_holder:
             raise error_holder["error"]

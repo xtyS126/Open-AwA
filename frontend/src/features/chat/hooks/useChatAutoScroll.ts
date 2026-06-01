@@ -27,6 +27,7 @@ export function useChatAutoScroll({
   behavior = 'auto',
 }: AutoScrollOptions = {}): AutoScrollResult {
   const containerElRef = useRef<HTMLElement | null>(null)
+  const handleScrollRef = useRef<(() => void) | null>(null)
   const isNearBottomRef = useRef<boolean>(true)
   const userScrollingRef = useRef<boolean>(false)
   const scrollTimerRef = useRef<number | null>(null)
@@ -52,7 +53,17 @@ export function useChatAutoScroll({
   }, [behavior])
 
   const containerRef = useCallback((el: HTMLElement | null) => {
-    if (!el) return
+    // 清理旧监听器
+    if (containerElRef.current && handleScrollRef.current) {
+      containerElRef.current.removeEventListener('scroll', handleScrollRef.current)
+    }
+
+    if (!el) {
+      containerElRef.current = null
+      handleScrollRef.current = null
+      return
+    }
+
     containerElRef.current = el
 
     const handleScroll = () => {
@@ -68,6 +79,7 @@ export function useChatAutoScroll({
       }, 150)
     }
 
+    handleScrollRef.current = handleScroll
     el.addEventListener('scroll', handleScroll, { passive: true })
 
     // 初始判定

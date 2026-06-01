@@ -583,10 +583,10 @@ class MemoryManager:
                 use_vector=True,
             )
 
-            # 筛选高相关度记忆
+            # 筛选高相关度记忆（仅按 min_score 过滤，取前 max_results）
             results = []
             for m in memories:
-                if m.importance >= min_score or len(results) < max_results:
+                if m.importance >= min_score:
                     results.append({
                         "id": m.id,
                         "content": m.content[:500],
