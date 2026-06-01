@@ -954,7 +954,7 @@ class ExecutionLayer:
         if skills:
             lines.append("平台已在生成当前回答前自动执行了部分技能：")
             for skill in skills:
-                lines.append(f"- {skill.get('name', 'unknown')}")
+                lines.append(f"- {skill.get('skill_name', 'unknown')}")
             lines.append("")
 
         # 处理插件结果

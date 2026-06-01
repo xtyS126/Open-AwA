@@ -267,8 +267,11 @@ class ScheduledTaskManager:
             raise RuntimeError("定时任务执行返回了无效结果")
 
         if result.get("status") == "error":
-            error = result.get("error") or {}
-            error_message = error.get("message") or result.get("response") or "定时任务执行失败"
+            error_raw = result.get("error")
+            if isinstance(error_raw, dict):
+                error_message = error_raw.get("message") or result.get("response") or "定时任务执行失败"
+            else:
+                error_message = str(error_raw) if error_raw else (result.get("response") or "定时任务执行失败")
             raise RuntimeError(str(error_message))
 
         return result
