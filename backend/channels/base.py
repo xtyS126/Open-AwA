@@ -11,10 +11,13 @@ class ChannelType(Enum):
     DINGTALK = "dingtalk"
     FEISHU = "feishu"
     WECHAT = "weixin"
+    WECOM = "wecom"
     DISCORD = "discord"
     TELEGRAM = "telegram"
     QQ = "qq"
     SLACK = "slack"
+    MATRIX = "matrix"
+    IMESSAGE = "imessage"
     CONSOLE = "console"
 
 
