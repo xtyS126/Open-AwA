@@ -15,20 +15,32 @@ function MessageContentInner({ content, role, isStreaming }: MessageContentProps
     return <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
   }
 
+  // P1: 流式期间纯文本展示，避免 Markdown/KaTeX/highlight 重复解析
+  // 消息 finalize 后（isStreaming=false）才切换到富文本渲染
+  if (isStreaming) {
+    return (
+      <div className={styles.messageContainer}>
+        {content ? (
+          <div className={styles['markdown-body']}>
+            <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
+          </div>
+        ) : (
+          <div className={styles.streamingIndicator}>
+            <span className={styles.dot}></span>
+            <span className={styles.dot}></span>
+            <span className={styles.dot}></span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className={styles.messageContainer}>
       {content && (
         <Suspense fallback={<div className={styles['markdown-body']}><span style={{ whiteSpace: 'pre-wrap' }}>{content}</span></div>}>
           <AssistantMarkdownContent content={content} />
         </Suspense>
-      )}
-
-      {isStreaming && !content && (
-        <div className={styles.streamingIndicator}>
-          <span className={styles.dot}></span>
-          <span className={styles.dot}></span>
-          <span className={styles.dot}></span>
-        </div>
       )}
     </div>
   )

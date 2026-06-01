@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import { loadServerPreferences } from '@/shared/utils/preferenceSync'
@@ -144,9 +144,13 @@ export function useAppInitialization() {
   const setInitialized = useAuthStore((state) => state.setInitialized)
   const setAuth = useAuthStore((state) => state.setAuth)
   const logout = useAuthStore((state) => state.logout)
+  const rehydratedRef = useRef(false)
 
-  // P0: 同步回填本地状态，不等待网络请求
-  rehydrateStores()
+  // P0: 同步回填本地状态（仅首次渲染执行，避免重复读取 localStorage）
+  if (!rehydratedRef.current) {
+    rehydratedRef.current = true
+    rehydrateStores()
+  }
 
   useEffect(() => {
     let isActive = true
