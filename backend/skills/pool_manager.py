@@ -218,3 +218,47 @@ class SkillPoolManager:
                 return {"success": True, "name": skill_name, "source": "marketplace"}
         except Exception as e:
             return {"success": False, "error": f"市场导入失败: {str(e)}"}
+
+    def fetch_market_listing(self) -> list[dict]:
+        """
+        从已配置的技能市场获取可用技能列表。
+        返回合并后的技能列表，包含名称/描述/版本/来源/作者等信息。
+        """
+        import urllib.request
+        import json as json_mod
+
+        all_skills: list[dict] = []
+        sources = [
+            {"name": "clawhub", "url": "https://clawhub.ai/api/skills"},
+            {"name": "skills.sh", "url": "https://skills.sh/api/skills"},
+        ]
+
+        for src in sources:
+            try:
+                req = urllib.request.Request(
+                    src["url"],
+                    headers={"User-Agent": "Open-AwA/1.0", "Accept": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json_mod.loads(resp.read())
+                    skills_list = data if isinstance(data, list) else data.get("skills", data.get("data", []))
+                    for s in skills_list:
+                        all_skills.append({
+                            "name": s.get("name", s.get("id", "")),
+                            "description": s.get("description", s.get("summary", "")),
+                            "version": s.get("version", "1.0.0"),
+                            "source": src["name"],
+                            "source_url": s.get("url", s.get("source_url", f"https://{src['name']}.ai/skills/{s.get('name', '')}")),
+                            "author": s.get("author", s.get("owner", "community")),
+                            "downloads": s.get("downloads", s.get("install_count", 0)),
+                        })
+            except Exception as e:
+                logger.bind(event="market_listing_error", source=src["name"]).warning(f"获取市场列表失败: {str(e)}")
+
+        # 合并已安装信息
+        manifest = self.get_manifest()
+        installed = set(manifest.get("skills", {}).keys())
+        for skill in all_skills:
+            skill["installed"] = skill["name"] in installed
+
+        return all_skills

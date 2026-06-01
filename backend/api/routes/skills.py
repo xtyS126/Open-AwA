@@ -1682,3 +1682,70 @@ async def install_skill_from_package(
             error_message=sanitize_for_logging(str(e)),
         ).exception("skill install from package failed")
         raise HTTPException(status_code=500, detail=f"安装技能失败: {str(e)}")
+
+
+# ---- 技能市场端点 ----
+
+class MarketSkillInstallRequest(BaseModel):
+    """技能市场安装请求。"""
+    name: str
+    source: Optional[str] = "clawhub"
+    source_url: Optional[str] = None
+
+
+@router.get("/market")
+def get_market_skills(
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    获取技能市场中的可用技能列表。
+    支持按关键词搜索和按来源筛选。
+    """
+    from skills.pool_manager import SkillPoolManager
+
+    pool = SkillPoolManager()
+    skills = pool.fetch_market_listing()
+
+    # 筛选
+    if source:
+        skills = [s for s in skills if s["source"] == source]
+    if search:
+        keyword = search.lower()
+        skills = [
+            s for s in skills
+            if keyword in s["name"].lower() or keyword in s["description"].lower()
+        ]
+
+    return {"skills": skills, "total": len(skills)}
+
+
+@router.post("/market/install")
+def install_market_skill(
+    body: MarketSkillInstallRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    """
+    从技能市场安装技能到技能池。
+    """
+    from skills.pool_manager import SkillPoolManager
+
+    pool = SkillPoolManager()
+    url = body.source_url
+    if not url:
+        # 从市场 URL 构造导入地址
+        if body.source == "clawhub":
+            url = f"https://clawhub.ai/api/skills/{body.name}/download"
+        elif body.source == "skills.sh":
+            url = f"https://skills.sh/api/skills/{body.name}/download"
+        else:
+            url = f"https://github.com/anthropics/skills/tree/main/skills/{body.name}"
+
+    result = pool.import_from_url(url)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "安装失败"))
+
+    return {"message": f"技能 {body.name} 安装成功", "result": result}
