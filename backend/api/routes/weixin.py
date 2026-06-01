@@ -589,7 +589,10 @@ async def list_weixin_conversations(
         # 查询所有微信渠道的短时记忆记录
         all_sessions = (
             db.query(ShortTermMemory)
-            .filter(ShortTermMemory.session_id.like("weixin:auto:%"))
+            .filter(
+                ShortTermMemory.session_id.like("weixin:auto:%"),
+                ShortTermMemory.workspace_id == "default",
+            )
             .order_by(ShortTermMemory.timestamp.desc())
             .limit(limit * 50)
             .all()
@@ -639,7 +642,10 @@ async def get_weixin_conversation(
     try:
         messages = (
             db.query(ShortTermMemory)
-            .filter(ShortTermMemory.session_id == session_id)
+            .filter(
+                ShortTermMemory.session_id == session_id,
+                ShortTermMemory.workspace_id == "default",
+            )
             .order_by(ShortTermMemory.timestamp.asc())
             .limit(limit)
             .all()
@@ -678,7 +684,10 @@ async def get_cross_channel_context(
     try:
         weixin_memories = (
             db.query(ShortTermMemory)
-            .filter(ShortTermMemory.session_id.like("weixin:auto:%"))
+            .filter(
+                ShortTermMemory.session_id.like("weixin:auto:%"),
+                ShortTermMemory.workspace_id == "default",
+            )
             .order_by(ShortTermMemory.timestamp.desc())
             .limit(limit * 20)
             .all()

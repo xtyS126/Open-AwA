@@ -262,7 +262,8 @@ def ensure_conversation(
 
 def sync_conversation_message_count(db: Session, conversation: Conversation) -> Conversation:
     count = db.query(func.count(ShortTermMemory.id)).filter(
-        ShortTermMemory.session_id == conversation.session_id
+        ShortTermMemory.session_id == conversation.session_id,
+        ShortTermMemory.workspace_id == "default",
     ).scalar() or 0
     conversation.message_count = int(count)
     db.flush()

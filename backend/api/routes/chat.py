@@ -404,16 +404,15 @@ async def websocket_endpoint(
 async def get_chat_history(
     session_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(get_current_user),
+    workspace_id: str = "default",
 ):
     """
     获取指定会话的聊天历史。
-    验证会话属于当前用户，防止越权访问。
-    如果会话没有 ConversationRecord 但有 ShortTermMemory，仍允许访问。
+    验证会话属于当前用户，防止越权访问，限制工作区范围。
     """
     from db.models import ShortTermMemory, ConversationRecord
 
-    # 验证会话属于当前用户（如果存在 ConversationRecord）
     record = db.query(ConversationRecord).filter(
         ConversationRecord.session_id == session_id,
     ).first()
@@ -421,7 +420,8 @@ async def get_chat_history(
         raise HTTPException(status_code=403, detail="Access denied: session does not belong to current user")
 
     messages = db.query(ShortTermMemory).filter(
-        ShortTermMemory.session_id == session_id
+        ShortTermMemory.session_id == session_id,
+        ShortTermMemory.workspace_id == workspace_id,
     ).order_by(ShortTermMemory.timestamp).all()
 
     logger.bind(

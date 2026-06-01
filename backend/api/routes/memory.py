@@ -56,19 +56,20 @@ def _verify_session_ownership(db: Session, session_id: str, user_id: str, allow_
 async def get_short_term_memory(
     session_id: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    workspace_id: str = "default",
 ):
     """
-    获取短期记忆，先验证会话所有权。
-    只有会话属于当前用户时才允许访问。
+    获取短期记忆，先验证会话所有权并限制工作区范围。
     """
     has_session_record = _verify_session_ownership(db, session_id, current_user.id, allow_missing=True)
     if not has_session_record:
         return []
     memories = db.query(ShortTermMemory).filter(
-        ShortTermMemory.session_id == session_id
+        ShortTermMemory.session_id == session_id,
+        ShortTermMemory.workspace_id == workspace_id,
     ).order_by(ShortTermMemory.timestamp.desc()).limit(50).all()
-    
+
     return memories
 
 
@@ -81,17 +82,18 @@ async def get_short_term_memory(
 async def add_short_term_memory(
     memory: ShortTermMemoryCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    workspace_id: str = "default",
 ):
     """
-    新增短期记忆，先验证会话所有权。
-    只有会话属于当前用户时才允许写入。
+    新增短期记忆，先验证会话所有权并绑定工作区。
     """
     _verify_session_ownership(db, memory.session_id, current_user.id, allow_missing=True)
     new_memory = ShortTermMemory(
         session_id=memory.session_id,
         role=memory.role,
-        content=memory.content
+        content=memory.content,
+        workspace_id=workspace_id,
     )
     
     db.add(new_memory)

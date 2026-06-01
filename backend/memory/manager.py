@@ -162,6 +162,7 @@ class MemoryManager:
         user_id: Optional[str] = None,
         reasoning_content: Optional[str] = None,
         tool_events: Optional[list] = None,
+        workspace_id: str = "default",
     ) -> ShortTermMemory:
         with self.session_factory() as db:
             ensure_conversation(
@@ -178,6 +179,7 @@ class MemoryManager:
                 content=content,
                 reasoning_content=reasoning_content or None,
                 tool_events=tool_events or None,
+                workspace_id=workspace_id,
             )
             db.add(memory)
             db.commit()
@@ -194,10 +196,11 @@ class MemoryManager:
         user_id: Optional[str] = None,
         reasoning_content: Optional[str] = None,
         tool_events: Optional[list] = None,
+        workspace_id: str = "default",
     ) -> ShortTermMemory:
         memory = await asyncio.to_thread(
             self._add_short_term_memory_sync,
-            session_id, role, content, user_id, reasoning_content, tool_events,
+            session_id, role, content, user_id, reasoning_content, tool_events, workspace_id,
         )
         logger.debug(f"Added short-term memory for session {session_id}")
         return memory
@@ -207,6 +210,7 @@ class MemoryManager:
         session_id: str,
         content: str,
         user_id: Optional[str] = None,
+        workspace_id: str = "default",
     ) -> ShortTermMemory:
         normalized_content = str(content or "").strip()
         if not normalized_content:
@@ -218,6 +222,7 @@ class MemoryManager:
                 .filter(
                     ShortTermMemory.session_id == session_id,
                     ShortTermMemory.role == "assistant",
+                    ShortTermMemory.workspace_id == workspace_id,
                 )
                 .order_by(ShortTermMemory.timestamp.desc(), ShortTermMemory.id.desc())
                 .first()
@@ -233,7 +238,7 @@ class MemoryManager:
                     role="assistant",
                     increment_message_count=True,
                 )
-                memory = ShortTermMemory(session_id=session_id, role="assistant", content=normalized_content)
+                memory = ShortTermMemory(session_id=session_id, role="assistant", content=normalized_content, workspace_id=workspace_id)
                 db.add(memory)
             else:
                 previous_content = str(memory.content or "").strip()
@@ -266,11 +271,12 @@ class MemoryManager:
         logger.debug(f"Appended assistant short-term memory for session {session_id}")
         return memory
 
-    def _get_short_term_memories_sync(self, session_id: str, limit: int) -> List[ShortTermMemory]:
+    def _get_short_term_memories_sync(self, session_id: str, limit: int, workspace_id: str = "default") -> List[ShortTermMemory]:
         with self.session_factory() as db:
             memories = (
                 db.query(ShortTermMemory)
                 .filter(ShortTermMemory.session_id == session_id)
+                .filter(ShortTermMemory.workspace_id == workspace_id)
                 .order_by(ShortTermMemory.timestamp.desc())
                 .limit(limit)
                 .all()
@@ -279,17 +285,20 @@ class MemoryManager:
                 db.expunge(m)
             return memories
 
-    async def get_short_term_memories(self, session_id: str, limit: int = 50) -> List[ShortTermMemory]:
-        return await asyncio.to_thread(self._get_short_term_memories_sync, session_id, limit)
+    async def get_short_term_memories(self, session_id: str, limit: int = 50, workspace_id: str = "default") -> List[ShortTermMemory]:
+        return await asyncio.to_thread(self._get_short_term_memories_sync, session_id, limit, workspace_id)
 
-    def _clear_short_term_memory_sync(self, session_id: str) -> int:
+    def _clear_short_term_memory_sync(self, session_id: str, workspace_id: str = "default") -> int:
         with self.session_factory() as db:
-            count = db.query(ShortTermMemory).filter(ShortTermMemory.session_id == session_id).delete()
+            count = db.query(ShortTermMemory).filter(
+                ShortTermMemory.session_id == session_id,
+                ShortTermMemory.workspace_id == workspace_id,
+            ).delete()
             db.commit()
             return count
 
-    async def clear_short_term_memory(self, session_id: str) -> int:
-        count = await asyncio.to_thread(self._clear_short_term_memory_sync, session_id)
+    async def clear_short_term_memory(self, session_id: str, workspace_id: str = "default") -> int:
+        count = await asyncio.to_thread(self._clear_short_term_memory_sync, session_id, workspace_id)
         logger.info(f"Cleared {count} short-term memories for session {session_id}")
         return count
 
@@ -301,6 +310,7 @@ class MemoryManager:
         user_id: Optional[str] = None,
         memory_metadata: Optional[Dict[str, Any]] = None,
         source_type: Optional[str] = None,
+        workspace_id: str = "default",
     ) -> LongTermMemory:
         metadata = dict(memory_metadata or {})
         if source_type and "source_type" not in metadata:
@@ -311,6 +321,7 @@ class MemoryManager:
             importance=importance,
             embedding=embedding,
             user_id=user_id,
+            workspace_id=workspace_id,
             created_at=now,
             last_access=now,
             confidence=max(0.35, min(1.0, 0.45 + (importance * 0.4))),
@@ -333,6 +344,7 @@ class MemoryManager:
         user_id: Optional[str] = None,
         memory_metadata: Optional[Dict[str, Any]] = None,
         source_type: Optional[str] = None,
+        workspace_id: str = "default",
     ) -> LongTermMemory:
         vector = embedding
         if vector is None:
@@ -347,6 +359,7 @@ class MemoryManager:
             user_id,
             memory_metadata,
             source_type,
+            workspace_id,
         )
         await asyncio.to_thread(
             self.vector_store.upsert_memory,
@@ -375,6 +388,7 @@ class MemoryManager:
         offset: int = 0,
         user_id: Optional[str] = None,
         include_archived: bool = False,
+        workspace_id: str = "default",
     ) -> List[LongTermMemory]:
         """
         在同一会话内完成记忆加载与质量评估，避免跨会话传递 ORM 对象。
@@ -383,6 +397,7 @@ class MemoryManager:
             query = db.query(LongTermMemory).filter(LongTermMemory.importance >= min_importance)
             if user_id is not None:
                 query = query.filter(LongTermMemory.user_id == user_id)
+            query = query.filter(LongTermMemory.workspace_id == workspace_id)
             if not include_archived:
                 query = query.filter(LongTermMemory.archive_status != "archived")
             memories = (
@@ -403,6 +418,7 @@ class MemoryManager:
         offset: int = 0,
         user_id: Optional[str] = None,
         include_archived: bool = False,
+        workspace_id: str = "default",
     ) -> List[LongTermMemory]:
         # 加载与评估合并在同一个同步函数内，避免跨线程传递 ORM 对象
         return await asyncio.to_thread(
@@ -412,6 +428,7 @@ class MemoryManager:
             offset,
             user_id,
             include_archived,
+            workspace_id,
         )
 
     def _update_memory_access_sync(self, memory_id: int) -> None:
@@ -434,11 +451,13 @@ class MemoryManager:
         limit: int,
         user_id: Optional[str] = None,
         include_archived: bool = False,
+        workspace_id: str = "default",
     ) -> List[LongTermMemory]:
         with self.session_factory() as db:
             db_query = db.query(LongTermMemory).filter(LongTermMemory.content.contains(query))
             if user_id is not None:
                 db_query = db_query.filter(LongTermMemory.user_id == user_id)
+            db_query = db_query.filter(LongTermMemory.workspace_id == workspace_id)
             if not include_archived:
                 db_query = db_query.filter(LongTermMemory.archive_status != "archived")
             results = (
@@ -455,6 +474,7 @@ class MemoryManager:
         memory_ids: List[int],
         user_id: Optional[str] = None,
         include_archived: bool = False,
+        workspace_id: str = "default",
     ) -> List[LongTermMemory]:
         if not memory_ids:
             return []
@@ -462,6 +482,7 @@ class MemoryManager:
             query = db.query(LongTermMemory).filter(LongTermMemory.id.in_(memory_ids))
             if user_id is not None:
                 query = query.filter(LongTermMemory.user_id == user_id)
+            query = query.filter(LongTermMemory.workspace_id == workspace_id)
             if not include_archived:
                 query = query.filter(LongTermMemory.archive_status != "archived")
             results = query.all()
@@ -478,6 +499,7 @@ class MemoryManager:
         use_vector: bool = True,
         keyword_weight: float = 0.35,
         vector_weight: float = 0.65,
+        workspace_id: str = "default",
     ) -> List[LongTermMemory]:
         keyword_matches = await asyncio.to_thread(
             self._search_memories_sync,
@@ -485,6 +507,7 @@ class MemoryManager:
             limit,
             user_id,
             include_archived,
+            workspace_id,
         )
         keyword_scores = {
             memory.id: min(1.0, 0.45 + (memory.importance * 0.3) + min(memory.access_count / 20, 0.25))
@@ -511,6 +534,7 @@ class MemoryManager:
             candidate_ids,
             user_id,
             include_archived,
+            workspace_id,
         )
         combined = []
         for memory in memories:
@@ -552,11 +576,13 @@ class MemoryManager:
         older_than_days: int,
         importance_threshold: float,
         include_low_quality: bool,
+        workspace_id: str = "default",
     ) -> int:
         with self.session_factory() as db:
             query = db.query(LongTermMemory)
             if user_id is not None:
                 query = query.filter(LongTermMemory.user_id == user_id)
+            query = query.filter(LongTermMemory.workspace_id == workspace_id)
             query = query.filter(LongTermMemory.archive_status != "archived")
 
             archived_count = 0
@@ -588,6 +614,7 @@ class MemoryManager:
         older_than_days: int = 30,
         importance_threshold: float = 0.3,
         include_low_quality: bool = True,
+        workspace_id: str = "default",
     ) -> int:
         archived_count = await asyncio.to_thread(
             self._archive_memories_sync,
@@ -595,6 +622,7 @@ class MemoryManager:
             older_than_days,
             importance_threshold,
             include_low_quality,
+            workspace_id,
         )
         logger.info(f"Archived {archived_count} long-term memories")
         return archived_count
@@ -613,24 +641,27 @@ class MemoryManager:
         user_id: Optional[str] = None,
         memory_id: Optional[int] = None,
         limit: int = 20,
+        workspace_id: str = "default",
     ) -> List[Dict[str, Any]]:
         def _do() -> List[Dict[str, Any]]:
             with self.session_factory() as db:
                 query = db.query(LongTermMemory)
                 if user_id is not None:
                     query = query.filter(LongTermMemory.user_id == user_id)
+                query = query.filter(LongTermMemory.workspace_id == workspace_id)
                 if memory_id is not None:
                     query = query.filter(LongTermMemory.id == memory_id)
                 memories = query.order_by(LongTermMemory.last_access.asc()).limit(limit).all()
                 return [self._evaluate_memory_in_session(db, m) for m in memories]
         return await asyncio.to_thread(_do)
 
-    async def get_memory_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_memory_stats(self, user_id: Optional[str] = None, workspace_id: str = "default") -> Dict[str, Any]:
         def _collect_stats() -> Dict[str, Any]:
             with self.session_factory() as db:
                 query = db.query(LongTermMemory)
                 if user_id is not None:
                     query = query.filter(LongTermMemory.user_id == user_id)
+                query = query.filter(LongTermMemory.workspace_id == workspace_id)
                 memories = query.all()
                 total = len(memories)
                 active = [memory for memory in memories if memory.archive_status != "archived"]

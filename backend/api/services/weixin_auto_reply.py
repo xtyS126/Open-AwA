@@ -701,6 +701,7 @@ class WeixinAutoReplyService:
                 db.query(ShortTermMemory)
                 .filter(
                     ShortTermMemory.role.in_(["user", "assistant"]),
+                    ShortTermMemory.workspace_id == "default",
                 )
                 .order_by(ShortTermMemory.timestamp.desc())
                 .limit(max_turns * 8)
@@ -745,6 +746,7 @@ class WeixinAutoReplyService:
                 .filter(
                     ShortTermMemory.session_id == session_id,
                     ShortTermMemory.role.in_(["user", "assistant"]),
+                    ShortTermMemory.workspace_id == "default",
                 )
                 .order_by(ShortTermMemory.timestamp.desc())
                 .limit(max_turns)
