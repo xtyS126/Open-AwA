@@ -24,16 +24,31 @@ const MAX_CACHED_MESSAGES = 200
 // IndexedDB 连接（懒初始化单例）
 // ============================================================
 let _dbPromise: Promise<IDBPDatabase | null> | null = null
+let _dbFailTime = 0
 
 function _getDB(): Promise<IDBPDatabase | null> {
-  if (_dbPromise) return _dbPromise
+  // P1 fix: 失败超过 30s 后允许重试，避免永久卡在降级模式
+  if (_dbPromise) {
+    if (_dbFailTime > 0 && Date.now() - _dbFailTime > 30_000) {
+      _dbPromise = null  // 过期重试
+    } else {
+      return _dbPromise
+    }
+  }
   _dbPromise = openDB(DB_NAME, DB_VERSION, {
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME)
       }
     },
-  }).catch(() => null) // IndexedDB 不可用时返回 null，降级到 localStorage
+  }).then(db => {
+    _dbFailTime = 0
+    return db
+  }).catch((e) => {
+    _dbFailTime = Date.now()
+    console.warn('[chatPersistence] IndexedDB 不可用，降级到 localStorage:', e)
+    return null
+  })
   return _dbPromise
 }
 
@@ -56,7 +71,8 @@ export function getConversationSummaries<T = unknown>(): T[] {
 }
 
 export function setConversationSummaries<T = unknown>(items: T[]): void {
-  safeSetJsonItem(LS_CONVERSATIONS, items.slice(0, 100))
+  // 最多保留 200 个会话摘要（与 MAX_CACHED_MESSAGES 对齐）
+  safeSetJsonItem(LS_CONVERSATIONS, items.slice(0, 200))
 }
 
 // ============================================================

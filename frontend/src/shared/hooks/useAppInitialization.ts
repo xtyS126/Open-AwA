@@ -64,10 +64,27 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
       })
 
       try {
-        const [meResponse] = await Promise.all([
-          authAPI.getMe(),
-          loadServerPreferences(),
-        ])
+        // P1 fix: auth 校验与偏好同步分离，偏好失败不影响登录态
+        let meResponse
+        try {
+          meResponse = await authAPI.getMe()
+        } catch (authError) {
+          throw authError  // auth 失败直接抛到外层 catch 处理
+        }
+
+        // 偏好同步独立执行，失败不阻断登录
+        try {
+          await loadServerPreferences()
+        } catch (prefError) {
+          appLogger.warning({
+            event: 'app_initialize',
+            module: 'app',
+            action: 'preference_sync',
+            status: 'failure',
+            message: 'server preference sync failed, using local defaults',
+            extra: { error: prefError instanceof Error ? prefError.message : String(prefError) },
+          })
+        }
 
         rehydrateStores()
 

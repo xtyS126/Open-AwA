@@ -78,7 +78,7 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   isLoading: false,
   sessionId: initialSessionId,
-  conversations: getConversationSummaries(),
+  conversations: getConversationSummaries() as ConversationSessionSummary[],
   conversationsTotal: getConversationSummaries().length,
   conversationsHasMore: false,
   outputMode: (safeGetItem('chat_output_mode', 'stream') as 'stream' | 'direct'),
@@ -225,9 +225,11 @@ export const useChatStore = create<ChatState>((set) => ({
     if (options?.syncToServer !== false) {
       syncPreferenceToServer('selectedModel', model)
     }
-    // 如果选择了推理模型，自动开启思考模式
-    if (model.toLowerCase().includes('reasoner') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('o1') || model.toLowerCase().includes('o3')) {
+    // 如果选择了推理模型，自动开启思考模式（仅当用户未显式关闭时）
+    const isReasoner = model.toLowerCase().includes('reasoner') || model.toLowerCase().includes('r1') || model.toLowerCase().includes('o1') || model.toLowerCase().includes('o3')
+    if (isReasoner && safeGetItem('chat_thinking_enabled', '') !== 'false') {
       set({ thinkingEnabled: true })
+      safeSetItem('chat_thinking_enabled', 'true')
     }
   },
 

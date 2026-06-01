@@ -69,9 +69,12 @@ async def run_startup(tasks: list[StartupTask], profiler: StartupProfiler) -> No
             # 存在未满足依赖或循环依赖
             unresolved = [t.name for t in remaining]
             raise RuntimeError(f"无法解析的启动任务依赖: {unresolved}")
-        # BLOCKING 任务串行执行以保证确定性
+        # BLOCKING 任务串行执行以保证确定性，单个任务最长 60s
         for task in ready:
-            await execute_blocking(task)
+            try:
+                await asyncio.wait_for(execute_blocking(task), timeout=60.0)
+            except asyncio.TimeoutError:
+                raise RuntimeError(f"启动任务 {task.name} 超时（60s），服务无法启动") from None
         remaining = [t for t in remaining if t.name not in completed]
 
     logger.bind(event="startup_ready", module="startup").info("核心启动完成，服务已就绪")
