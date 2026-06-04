@@ -29,6 +29,7 @@ const ExperiencePage = React.lazy(() => import('@/features/experiences/Experienc
 const CommunicationPage = React.lazy(() => import('@/features/chat/CommunicationPage'))
 const ThemePage = React.lazy(() => import('@/features/theme/ThemePage'))
 const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
+const ProfileEditorPage = React.lazy(() => import('@/features/user/ProfileEditorPage'))
 const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplacePage'))
 const TestPage = React.lazy(() => import('@/features/test/TestPage'))
 const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
@@ -124,6 +125,7 @@ function App() {
                 <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
                 <Route path="/theme" element={<ErrorBoundary name="Theme"><ThemePage /></ErrorBoundary>} />
                 <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
+                <Route path="/profile/edit" element={<ErrorBoundary name="ProfileEditor"><ProfileEditorPage /></ErrorBoundary>} />
                 <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
                 <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
                 <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />

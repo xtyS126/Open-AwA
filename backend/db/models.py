@@ -3,7 +3,7 @@
 这里的结构定义直接决定了持久化层能够保存哪些业务数据。
 """
 
-from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, inspect, text, event
+from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, Index, inspect, text, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
@@ -761,6 +761,125 @@ class TaskMailboxMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
+class ProfileFact(Base):
+    """
+    用户画像事实模型，存储从对话和行为中提取的结构化用户特征信息。
+    每条事实是原子的、可独立验证的、带置信度和生命周期元数据的。
+    """
+    __tablename__ = "profile_facts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+
+    # 画像维度分类
+    category: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # 可选值: identity, preference, expertise, behavior, goal,
+    #         communication_style, emotional_state, context, custom
+
+    # 事实的键值对
+    fact_key: Mapped[str] = mapped_column(String, nullable=False)
+    # 示例: "programming_language", "preferred_response_style", "active_timezone"
+    fact_value: Mapped[str] = mapped_column(Text, nullable=False)
+    # 示例: "Python", "简洁技术向", "UTC+8"
+
+    # 置信度与生命周期
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    # 0.0-1.0，1.0 表示用户明确确认的事实
+    source_type: Mapped[str] = mapped_column(String, default="inferred")
+    # explicit(用户明确声明), inferred(LLM推断), behavioral(行为分析),
+    # feedback(从反馈学习), manual(手动添加)
+
+    # 时间戳
+    first_observed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                         default=lambda: datetime.now(timezone.utc))
+    last_updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                       default=lambda: datetime.now(timezone.utc))
+    last_accessed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # 访问与验证
+    access_count: Mapped[int] = mapped_column(Integer, default=0)
+    verification_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 用户确认/否定次数
+
+    # 来源引用
+    source_session_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    source_message_ids: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    # 可追溯到具体的对话轮次
+
+    # 元数据
+    fact_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # 扩展字段: { "decay_rate": 0.01, "tags": [...], "language": "zh" }
+
+    # 状态
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # False 表示已衰减至无效或被用户删除
+
+    __table_args__ = (
+        Index("ix_profile_facts_user_category", "user_id", "category"),
+        Index("ix_profile_facts_user_active", "user_id", "is_active"),
+        Index("ix_profile_facts_user_confidence", "user_id", "confidence"),
+    )
+
+
+class ProfileExtractionLog(Base):
+    """
+    用户画像提取日志，记录每次画像提取的过程、结果和质量指标。
+    用于审计追踪和质量监控。
+    """
+    __tablename__ = "profile_extraction_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+
+    # 提取参数
+    trigger_type: Mapped[str] = mapped_column(String, default="auto")
+    # auto(自动触发), manual(用户手动), scheduled(定时任务)
+
+    # 提取统计
+    source_session_ids: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    conversation_turns_analyzed: Mapped[int] = mapped_column(Integer, default=0)
+    behavior_logs_analyzed: Mapped[int] = mapped_column(Integer, default=0)
+
+    # 提取结果
+    facts_added: Mapped[int] = mapped_column(Integer, default=0)
+    facts_updated: Mapped[int] = mapped_column(Integer, default=0)
+    facts_deleted: Mapped[int] = mapped_column(Integer, default=0)
+    facts_unchanged: Mapped[int] = mapped_column(Integer, default=0)
+
+    # 质量指标
+    llm_model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    llm_tokens_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    extraction_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # 状态与错误
+    status: Mapped[str] = mapped_column(String, default="success")
+    # success, partial, failed, skipped
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # 时间戳
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # 扩展元数据
+    log_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
+
+def _migrate_profile_facts_table(use_engine=None):
+    """
+    迁移：创建 profile_facts 和 profile_extraction_logs 表（如不存在）。
+    支持传入自定义 engine，确保迁移操作落到正确数据库。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    with target_engine.begin() as connection:
+        if "profile_facts" not in table_names:
+            ProfileFact.__table__.create(target_engine)
+            logger.info("已创建 profile_facts 表")
+        if "profile_extraction_logs" not in table_names:
+            ProfileExtractionLog.__table__.create(target_engine)
+            logger.info("已创建 profile_extraction_logs 表")
+
+
 def _migrate_conversation_record_metadata_column(use_engine=None):
     """
     迁移 conversation_records 表的 metadata 列到 record_metadata 列。
@@ -1180,6 +1299,7 @@ def init_db(bind_engine=None):
     _migrate_scheduled_task_daily_columns(use_engine=use_engine)
     _migrate_short_term_memory_rich_fields(use_engine=use_engine)
     _migrate_workspace_columns(use_engine=use_engine)
+    _migrate_profile_facts_table(use_engine=use_engine)
 
 
 def _migrate_workspace_columns(use_engine=None):

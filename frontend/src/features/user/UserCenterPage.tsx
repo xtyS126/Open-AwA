@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  User, Shield, Monitor, Camera, Loader2, AlertCircle,
+  Shield, Monitor, Camera, Loader2, AlertCircle, BarChart3,
 } from 'lucide-react'
 import { useAuthStore } from '@/shared/store/authStore'
 import { userAPI, passwordAPI } from '@/shared/api/api'
-import type { UserProfile, LoginDeviceItem } from '@/shared/api/api'
+import type { LoginDeviceItem } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
+import ProfileDashboard from './ProfileDashboard'
 import styles from './UserCenterPage.module.css'
 
 type TabKey = 'profile' | 'security' | 'devices'
@@ -16,7 +17,6 @@ function UserCenterPage() {
   const { user, logout } = useAuthStore()
 
   const [activeTab, setActiveTab] = useState<TabKey>('profile')
-  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,7 +47,6 @@ function UserCenterPage() {
     setError(null)
     try {
       const res = await userAPI.getProfile()
-      setProfile(res.data)
       setNickname(res.data.nickname || '')
       setEmail(res.data.email || '')
       setPhone(res.data.phone || '')
@@ -190,7 +189,7 @@ function UserCenterPage() {
   }
 
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-    { key: 'profile', label: 'AI 画像', icon: <User size={16} /> },
+    { key: 'profile', label: 'AI 画像', icon: <BarChart3 size={16} /> },
     { key: 'security', label: '安全设置', icon: <Shield size={16} /> },
     { key: 'devices', label: '设备管理', icon: <Monitor size={16} /> },
   ]
@@ -218,12 +217,12 @@ function UserCenterPage() {
 
         {/* 右侧内容 */}
         <div className={styles['tab-content']}>
-          {/* AI 画像 */}
+          {/* AI 画像仪表盘 */}
           {activeTab === 'profile' && (
             <section className={styles['section']}>
-              <h2>个人画像</h2>
+              {/* 基本信息编辑 */}
+              <h2>个人信息</h2>
               <div className={styles['profile-section']}>
-                {/* 头像上传 */}
                 <div className={styles['avatar-section']}>
                   <div className={styles['avatar-preview']}>
                     {avatarPreview ? (
@@ -248,7 +247,6 @@ function UserCenterPage() {
                   {avatarMsg && <p className={styles['avatar-msg']}>{avatarMsg}</p>}
                 </div>
 
-                {/* 基本信息 */}
                 <div className={styles['info-form']}>
                   <label className={styles['form-field']}>
                     <span>用户名</span>
@@ -277,33 +275,10 @@ function UserCenterPage() {
                 </div>
               </div>
 
-              {/* AI 画像 */}
-              {profile?.profile && (
-                <div className={styles['ai-profile']}>
-                  <h3>AI 画像分析</h3>
-                  <div className={styles['interest-tags']}>
-                    {(profile.profile.interests as string[] | undefined)?.map((tag: string) => (
-                      <span key={tag} className={styles['tag']}>{tag}</span>
-                    )) || <span className={styles['tag']}>暂无标签</span>}
-                  </div>
-                  <div className={styles['stats-row']}>
-                    <div className={styles['stat-item']}>
-                      <span className={styles['stat-num']}>{String(profile.profile.total_actions || 0)}</span>
-                      <span className={styles['stat-label']}>近30天操作数</span>
-                    </div>
-                  </div>
-                  {(profile.profile.active_hours as string[]) && (
-                    <div className={styles['active-hours']}>
-                      <span className={styles['section-title']}>活跃时段</span>
-                      <div className={styles['hours-list']}>
-                        {(profile.profile.active_hours as string[]).map((h: string) => (
-                          <span key={h} className={styles['hour-tag']}>{h}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* 画像仪表盘 */}
+              <div className={styles['dashboard-wrapper']}>
+                <ProfileDashboard />
+              </div>
             </section>
           )}
 

@@ -507,6 +507,13 @@
   }
 }
 
+/* 画像仪表盘容器 */
+.dashboard-wrapper {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
 @media (max-width: 480px) {
   .tabs-nav {
     gap: 2px;
