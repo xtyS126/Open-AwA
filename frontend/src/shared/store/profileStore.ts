@@ -82,6 +82,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         category: params?.category ?? get().selectedCategory ?? undefined,
         min_confidence: params?.min_confidence ?? get().minConfidenceFilter,
         active_only: true,
+        limit: 200,
       })
       set({
         facts: res.facts,

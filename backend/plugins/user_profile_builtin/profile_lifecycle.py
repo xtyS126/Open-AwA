@@ -116,10 +116,8 @@ class ProfileLifecycle:
         永久删除已归档且超过保留期的画像事实。
         默认保留期为 90 天。
         """
-        cutoff = datetime.now(timezone.utc)
-        # 使用 Python 计算截止日期
         from datetime import timedelta
-        cutoff = cutoff - timedelta(days=self.ARCHIVED_RETENTION_DAYS)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.ARCHIVED_RETENTION_DAYS)
 
         # 查找过期的非活跃事实
         expired = self.db.query(ProfileFact).filter(

@@ -156,7 +156,8 @@ class ProfileExtractor:
             (格式化的对话文本, 对话轮次数)
         """
         query = self.db.query(ShortTermMemory).filter(
-            ShortTermMemory.session_id.isnot(None)
+            ShortTermMemory.user_id == self.user_id,
+            ShortTermMemory.session_id.isnot(None),
         )
 
         if session_ids:
@@ -365,10 +366,16 @@ class ProfileExtractor:
         except (json.JSONDecodeError, AttributeError):
             pass
 
-        # 尝试查找 { ... } 对象
+        # 尝试查找第一个完整的 JSON 对象
         try:
             import re
-            brace_match = re.search(r'\{[\s\S]*\}', raw_response)
+            # 使用非贪婪匹配查找第一个完整的 JSON 对象
+            brace_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', raw_response)
+            if brace_match:
+                data = json.loads(brace_match.group(0))
+                return data.get("extracted_facts", [])
+            # 回退：尝试匹配更宽泛的 JSON
+            brace_match = re.search(r'\{[\s\S]*?"extracted_facts"[\s\S]*?\}', raw_response)
             if brace_match:
                 data = json.loads(brace_match.group(0))
                 return data.get("extracted_facts", [])
@@ -475,7 +482,13 @@ class ProfileExtractor:
 
             if d["action"] == "add":
                 if existing:
-                    # 冲突：转换为 update
+                    # 冲突：数据库已存在同 key 记录（可能由并发提取导致），转换为 update
+                    logger.bind(
+                        user_id=self.user_id,
+                        compound_key=compound_key,
+                        old_value=existing.fact_value,
+                        new_value=d["fact_value"],
+                    ).warning("画像事实 add 动作因已存在记录而转换为 update")
                     existing.fact_value = d["fact_value"]
                     existing.confidence = d["confidence"]
                     existing.last_updated_at = now

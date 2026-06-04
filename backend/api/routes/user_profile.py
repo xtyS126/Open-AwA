@@ -2,6 +2,7 @@
 用户画像 API 路由，提供画像提取、事实管理、统计查询和导出功能。
 """
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -220,36 +221,44 @@ async def list_profile_facts(
     category: Optional[str] = Query(None, description="按类别筛选"),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="最低置信度"),
     active_only: bool = Query(True, description="仅显示活跃事实"),
+    limit: int = Query(100, ge=1, le=500, description="返回条数"),
+    offset: int = Query(0, ge=0, description="偏移量"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
     获取当前用户的所有画像事实。
-    支持按类别、置信度和活跃状态筛选。
+    支持按类别、置信度和活跃状态筛选，支持分页。
     """
-    query = db.query(ProfileFact).filter(
+    base_query = db.query(ProfileFact).filter(
         ProfileFact.user_id == current_user.id,
     )
 
     if active_only:
-        query = query.filter(ProfileFact.is_active == True)
+        base_query = base_query.filter(ProfileFact.is_active == True)
     if category:
-        query = query.filter(ProfileFact.category == category)
+        base_query = base_query.filter(ProfileFact.category == category)
     if min_confidence > 0:
-        query = query.filter(ProfileFact.confidence >= min_confidence)
+        base_query = base_query.filter(ProfileFact.confidence >= min_confidence)
 
-    facts = query.order_by(
+    total = base_query.count()
+
+    facts = base_query.order_by(
         ProfileFact.confidence.desc()
-    ).all()
+    ).offset(offset).limit(limit).all()
 
-    # 类别分布
+    # 类别分布（基于全部匹配结果）
     category_counts: Dict[str, int] = {}
-    for f in facts:
+    all_active = db.query(ProfileFact).filter(
+        ProfileFact.user_id == current_user.id,
+        ProfileFact.is_active == True,
+    ).all()
+    for f in all_active:
         category_counts[f.category] = category_counts.get(f.category, 0) + 1
 
     return FactsListResponse(
         facts=[_fact_to_response(f) for f in facts],
-        total=len(facts),
+        total=total,
         categories=category_counts,
     )
 
@@ -292,7 +301,6 @@ async def update_profile_fact(
     if not fact:
         raise HTTPException(status_code=404, detail="画像事实不存在")
 
-    from datetime import datetime, timezone
     fact.fact_value = payload.fact_value
     fact.source_type = "manual"
     fact.confidence = 0.90
@@ -321,7 +329,6 @@ async def create_profile_fact(
     手动添加画像事实。
     """
     from plugins.user_profile_builtin.profile_confidence import generate_fact_id
-    from datetime import datetime, timezone
 
     fact = ProfileFact(
         id=generate_fact_id(),
@@ -362,7 +369,6 @@ async def delete_profile_fact(
         raise HTTPException(status_code=404, detail="画像事实不存在")
 
     fact.is_active = False
-    from datetime import datetime, timezone
     fact.last_updated_at = datetime.now(timezone.utc)
     db.commit()
 
@@ -461,9 +467,7 @@ async def export_profile(
     ).all()
 
     return {
-        "exported_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
         "user_id": current_user.id,
         "total_facts": len(facts),
         "facts": [

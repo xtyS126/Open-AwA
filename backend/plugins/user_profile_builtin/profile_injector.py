@@ -165,6 +165,8 @@ class ProfileInjector:
         self, blocks: Dict[str, List[ProfileFact]]
     ) -> str:
         """编译为 XML 格式的 Agent 上下文"""
+        from xml.sax.saxutils import escape as xml_escape
+
         context_parts = ["<user_profile>"]
 
         # 按类别优先级排序
@@ -177,16 +179,16 @@ class ProfileInjector:
             if not facts:
                 continue
             cat_config = PROFILE_CATEGORIES.get(category, {})
-            cat_label = cat_config.get("label", category)
-            cat_desc = cat_config.get("description", "")
+            cat_label = xml_escape(cat_config.get("label", category))
+            cat_desc = xml_escape(cat_config.get("description", ""))
 
             context_parts.append(
                 f'  <{category} label="{cat_label}" description="{cat_desc}">'
             )
             for fact in facts:
-                value = fact.fact_value.replace("&", "&amp;").replace("<", "&lt;")
+                value = xml_escape(fact.fact_value)
                 context_parts.append(
-                    f'    <fact key="{fact.fact_key}" '
+                    f'    <fact key="{xml_escape(fact.fact_key)}" '
                     f'confidence="{fact.confidence:.2f}">'
                     f'{value}</fact>'
                 )
