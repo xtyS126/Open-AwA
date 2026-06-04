@@ -593,6 +593,56 @@ async def export_plugin_config(
     }
 
 
+def _persist_and_sync_permissions(
+    db: Session,
+    plugin: Plugin,
+    permissions: List[str],
+    action: str,
+) -> Dict[str, Any]:
+    """
+    将权限变更持久化到数据库并同步运行时缓存，确保接口返回 200 时状态已落库。
+
+    Args:
+        db: 数据库会话。
+        plugin: 插件模型实例。
+        permissions: 要操作的权限列表。
+        action: "authorize" 或 "revoke"。
+
+    Returns:
+        操作后的权限状态字典，与 PluginManager.get_plugin_permission_status 结构一致。
+    """
+    # 规范化权限名：去重、去空白、过滤空字符串
+    normalized = sorted({
+        p.strip() for p in permissions
+        if isinstance(p, str) and p.strip()
+    })
+
+    current = list(plugin.granted_permissions) if isinstance(plugin.granted_permissions, list) else []
+
+    if action == "authorize":
+        next_permissions = sorted(set(current + normalized))
+    elif action == "revoke":
+        revoke_set = set(normalized)
+        next_permissions = sorted([p for p in current if p not in revoke_set])
+    else:
+        raise ValueError(f"Unknown permission action: {action}")
+
+    # 先落库，确保持久化成功后再同步运行时
+    plugin.granted_permissions = next_permissions
+    db.commit()
+
+    # 用数据库中的完整权限集合回放运行时缓存，保证数据库是唯一真相源
+    pm = _get_plugin_manager()
+    pm.restore_plugin_permissions(plugin.name, next_permissions)
+    status = pm.get_plugin_permission_status(plugin.name)
+
+    logger.bind(
+        plugin=plugin.name, action=action, added=normalized, result=next_permissions
+    ).info(f"插件权限已持久化: {plugin.name} action={action}")
+
+    return status
+
+
 @router.post("/{plugin_id}/permissions/authorize", response_model=PluginPermissionUpdateResponse)
 async def authorize_plugin_permissions(
     plugin_id: str,
@@ -602,7 +652,7 @@ async def authorize_plugin_permissions(
 ):
     """
     为plugin、permissions相关操作授予所需权限。
-    授权结果不仅影响当前操作，也会改变后续可用能力的边界。
+    授权结果会持久化到数据库，重启或重新部署后仍保持有效。
     """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
@@ -610,7 +660,7 @@ async def authorize_plugin_permissions(
 
     _ensure_plugin_discovered(plugin.name)
     try:
-        status = _get_plugin_manager().authorize_plugin_permissions(plugin.name, payload.permissions)
+        status = _persist_and_sync_permissions(db, plugin, payload.permissions, "authorize")
         return PluginPermissionUpdateResponse(
             plugin_id=plugin_id,
             plugin_name=status["plugin_name"],
@@ -627,7 +677,7 @@ async def authorize_plugin_permissions(
     "/{plugin_id}/permissions/revoke",
     response_model=PluginPermissionUpdateResponse,
     summary="撤销插件权限",
-    description="撤销指定插件的部分或全部已授予权限。"
+    description="撤销指定插件的部分或全部已授予权限，变更会持久化到数据库。"
 )
 async def revoke_plugin_permissions(
     plugin_id: str,
@@ -637,7 +687,7 @@ async def revoke_plugin_permissions(
 ):
     """
     撤销plugin、permissions相关操作已授予的权限或访问能力。
-    此类逻辑主要用于收缩权限面，以确保运行时行为符合安全约束。
+    持久化到数据库后，重启或重新部署时不会恢复已撤销的权限。
     """
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
@@ -645,7 +695,7 @@ async def revoke_plugin_permissions(
 
     _ensure_plugin_discovered(plugin.name)
     try:
-        status = _get_plugin_manager().revoke_plugin_permissions(plugin.name, payload.permissions)
+        status = _persist_and_sync_permissions(db, plugin, payload.permissions, "revoke")
         return PluginPermissionUpdateResponse(
             plugin_id=plugin_id,
             plugin_name=status["plugin_name"],

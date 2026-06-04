@@ -192,6 +192,7 @@ class Plugin(Base):
     author: Mapped[str] = mapped_column(String)
     source: Mapped[str] = mapped_column(String)
     dependencies: Mapped[List[str]] = mapped_column(JSON)
+    granted_permissions: Mapped[List[str]] = mapped_column(JSON, default=list)
     installed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -811,6 +812,8 @@ def _migrate_plugin_columns(use_engine=None):
             now = datetime.now(timezone.utc).isoformat()
             connection.execute(text("ALTER TABLE plugins ADD COLUMN installed_at DATETIME"))
             connection.execute(text("UPDATE plugins SET installed_at = :installed_at WHERE installed_at IS NULL"), {"installed_at": now})
+        if "granted_permissions" not in columns:
+            connection.execute(text("ALTER TABLE plugins ADD COLUMN granted_permissions TEXT DEFAULT '[]'"))
 
 
 def _migrate_long_term_memory_user_id(use_engine=None):

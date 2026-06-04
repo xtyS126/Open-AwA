@@ -443,6 +443,51 @@ class PluginManager:
                 f"Plugin '{plugin_name}' 缺少运行权限: {status['missing_permissions']}"
             )
 
+    def restore_plugin_permissions(self, plugin_name: str, granted: List[str]) -> Dict[str, Any]:
+        """
+        从持久化存储恢复插件的已授权权限到运行时缓存。
+        用于启动恢复或热重载后回放授权状态。
+
+        Args:
+            plugin_name: 插件名称。
+            granted: 已授权权限列表，通常来自数据库 Plugin.granted_permissions。
+
+        Returns:
+            恢复后的权限状态信息。
+        """
+        if plugin_name not in self.plugin_metadata:
+            raise ValueError(f"Plugin '{plugin_name}' not found")
+
+        # 对恢复的权限做去重和规范化，避免脏数据污染运行时状态
+        normalized = sorted({
+            p.strip() for p in granted
+            if isinstance(p, str) and p.strip()
+        })
+
+        requested = set(self.plugin_metadata.get(plugin_name, {}).get("requested_permissions", []))
+        # 只恢复插件清单中实际声明的权限，避免回放无关或已弃用的权限项
+        valid = [p for p in normalized if p in requested]
+        skipped = [p for p in normalized if p not in requested]
+
+        self._runtime_permission_store[plugin_name] = set(valid)
+
+        if skipped:
+            logger.bind(plugin=plugin_name, skipped=skipped).warning(
+                f"Plugin '{plugin_name}' 恢复权限时跳过未声明的权限项"
+            )
+
+        missing = sorted(p for p in requested if p not in set(valid))
+        logger.bind(plugin=plugin_name, granted=valid, missing=missing).info(
+            f"Plugin '{plugin_name}' 权限已从数据库恢复"
+        )
+
+        return {
+            "plugin_name": plugin_name,
+            "requested_permissions": sorted(requested),
+            "granted_permissions": valid,
+            "missing_permissions": missing,
+        }
+
     def _should_bypass_runtime_permissions(self, method: str) -> bool:
         """
         只读型元信息接口允许在未授权前访问，便于模型先理解插件用途与参数要求。
