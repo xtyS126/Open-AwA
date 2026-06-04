@@ -75,22 +75,25 @@ class ScheduledTaskManager:
             return 0
 
         async with self._processing_lock:
-            db = SessionLocal()
-            try:
-                due_task_ids = [
-                    task_id
-                    for (task_id,) in (
-                        db.query(ScheduledTask.id)
-                        .filter(
-                            ScheduledTask.status == "pending",
-                            ScheduledTask.scheduled_at <= self._utcnow(),
+            def _sync_get_due_task_ids():
+                db = SessionLocal()
+                try:
+                    return [
+                        task_id
+                        for (task_id,) in (
+                            db.query(ScheduledTask.id)
+                            .filter(
+                                ScheduledTask.status == "pending",
+                                ScheduledTask.scheduled_at <= self._utcnow(),
+                            )
+                            .order_by(ScheduledTask.scheduled_at.asc(), ScheduledTask.id.asc())
+                            .all()
                         )
-                        .order_by(ScheduledTask.scheduled_at.asc(), ScheduledTask.id.asc())
-                        .all()
-                    )
-                ]
-            finally:
-                db.close()
+                    ]
+                finally:
+                    db.close()
+
+            due_task_ids = await asyncio.to_thread(_sync_get_due_task_ids)
 
             for task_id in due_task_ids:
                 await self._execute_task(task_id)
@@ -122,36 +125,40 @@ class ScheduledTaskManager:
     async def _reset_running_tasks(self) -> None:
         """
         启动时回收中断前遗留的运行中任务，确保重启后可以重新调度。
+        DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
         """
-        db = SessionLocal()
-        try:
-            now = self._utcnow()
-            running_tasks = db.query(ScheduledTask).filter(ScheduledTask.status == "running").all()
-            for task in running_tasks:
-                task.status = "pending"
-                task.last_error_message = "服务重启后任务重新进入待执行状态"
-                task.completed_at = None
+        def _sync_reset():
+            db = SessionLocal()
+            try:
+                now = self._utcnow()
+                running_tasks = db.query(ScheduledTask).filter(ScheduledTask.status == "running").all()
+                for task in running_tasks:
+                    task.status = "pending"
+                    task.last_error_message = "服务重启后任务重新进入待执行状态"
+                    task.completed_at = None
 
-            running_executions = (
-                db.query(ScheduledTaskExecution)
-                .filter(ScheduledTaskExecution.status == "running")
-                .all()
-            )
-            for execution in running_executions:
-                execution.status = "failed"
-                execution.error_message = "服务在任务执行过程中重启，请重新查看后续执行记录"
-                execution.completed_at = now
+                running_executions = (
+                    db.query(ScheduledTaskExecution)
+                    .filter(ScheduledTaskExecution.status == "running")
+                    .all()
+                )
+                for execution in running_executions:
+                    execution.status = "failed"
+                    execution.error_message = "服务在任务执行过程中重启，请重新查看后续执行记录"
+                    execution.completed_at = now
 
-            db.commit()
-        finally:
-            db.close()
+                db.commit()
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_sync_reset)
 
     async def _execute_task(self, task_id: int) -> None:
         """
         执行单个定时任务，根据任务类型分流到AI Agent或插件命令执行。
         """
         try:
-            claimed_task, execution_id = self._claim_task_for_execution(task_id)
+            claimed_task, execution_id = await asyncio.to_thread(self._claim_task_for_execution, task_id)
         except Exception as exc:
             logger.bind(
                 event="scheduled_task_claim_error",
@@ -299,10 +306,16 @@ class ScheduledTaskManager:
             else:
                 raise RuntimeError(f"插件未找到: {plugin_name}")
 
+        # 移除可能与显式参数冲突的键，避免 TypeError: got multiple values
+        safe_params = {
+            k: v for k, v in command_params.items()
+            if k not in ("plugin_name", "method")
+        }
+
         result = await pm.execute_plugin_async(
             plugin_name=plugin_name,
             method=command_name,
-            **command_params,
+            **safe_params,
         )
 
         if not isinstance(result, dict):
@@ -325,66 +338,71 @@ class ScheduledTaskManager:
         """
         将任务和执行记录更新为成功完成状态。
         如果是每日任务，则重新排程到下一次执行时间。
+        DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
         """
         now = self._utcnow()
         provider, model = self._extract_provider_and_model(result)
         response_text = self._extract_response_text(result)
         execution_metadata = self._build_execution_metadata(result)
 
-        db = SessionLocal()
-        try:
-            task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
-            execution = db.query(ScheduledTaskExecution).filter(ScheduledTaskExecution.id == execution_id).first()
-            if task is None or execution is None:
-                return
+        def _sync_mark():
+            db = SessionLocal()
+            try:
+                task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+                execution = db.query(ScheduledTaskExecution).filter(ScheduledTaskExecution.id == execution_id).first()
+                if task is None or execution is None:
+                    return None, None
 
-            # 每日任务：执行后重新排程而非标记为完成
-            if task.is_daily and task.cron_expression:
-                next_exec = self._calculate_next_cron_execution(task.cron_expression)
-                if next_exec:
-                    task.status = "pending"
-                    task.scheduled_at = next_exec
-                    task.last_error_message = None
-                    task.completed_at = None
+                # 每日任务：执行后重新排程而非标记为完成
+                if task.is_daily and task.cron_expression:
+                    next_exec = self._calculate_next_cron_execution(task.cron_expression)
+                    if next_exec:
+                        task.status = "pending"
+                        task.scheduled_at = next_exec
+                        task.last_error_message = None
+                        task.completed_at = None
+                    else:
+                        task.status = "completed"
+                        task.completed_at = now
+                        task.last_error_message = "无法计算下一次执行时间，任务已标记为完成"
                 else:
                     task.status = "completed"
                     task.completed_at = now
-                    task.last_error_message = "无法计算下一次执行时间，任务已标记为完成"
-            else:
-                task.status = "completed"
-                task.completed_at = now
-                task.last_error_message = None
+                    task.last_error_message = None
 
-            if provider:
-                task.provider = provider
-            if model:
-                task.model = model
+                if provider:
+                    task.provider = provider
+                if model:
+                    task.model = model
 
-            execution.status = "completed"
-            execution.response = response_text
-            execution.error_message = None
-            execution.completed_at = now
-            execution.execution_metadata = execution_metadata
-            execution.provider = provider or scheduled_task.get("provider")
-            execution.model = model or scheduled_task.get("model")
+                execution.status = "completed"
+                execution.response = response_text
+                execution.error_message = None
+                execution.completed_at = now
+                execution.execution_metadata = execution_metadata
+                execution.provider = provider or scheduled_task.get("provider")
+                execution.model = model or scheduled_task.get("model")
 
-            db.commit()
+                db.commit()
+                return task.title, response_text
+            finally:
+                db.close()
 
-            # 推送任务结果到收件箱
+        task_title, resp_text = await asyncio.to_thread(_sync_mark) or (None, None)
+
+        # 推送任务结果到收件箱（DB 操作已完成，仅做通知）
+        if task_title is not None:
             try:
                 from api.routes.inbox import add_task_result_notification
-                task_title = task.title or scheduled_task.get("title", "未命名任务")
-                summary = response_text[:200] if response_text else ""
+                title = task_title or scheduled_task.get("title", "未命名任务")
+                summary = (resp_text or "")[:200]
                 add_task_result_notification(
-                    task_name=task_title,
+                    task_name=title,
                     success=True,
                     summary=summary,
                 )
             except Exception:
                 pass  # 收件箱推送失败不影响主流程
-
-        finally:
-            db.close()
 
     @staticmethod
     def _parse_cron_field(field: str, min_val: int, max_val: int) -> set:
@@ -454,7 +472,8 @@ class ScheduledTaskManager:
 
         max_days = 31
         for _ in range(max_days * 24 * 60):  # 逐分钟遍历
-            weekday = check.weekday()
+            # Python weekday(): 0=周一 → cron: 0=周日，需要 +1 取模转换
+            weekday = (check.weekday() + 1) % 7
             if (check.minute in target_minutes and
                 check.hour in target_hours and
                 check.day in target_days and
@@ -476,30 +495,35 @@ class ScheduledTaskManager:
     ) -> None:
         """
         将任务和执行记录更新为失败状态。
+        DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
         """
         now = self._utcnow()
-        db = SessionLocal()
-        try:
-            task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
-            execution = db.query(ScheduledTaskExecution).filter(ScheduledTaskExecution.id == execution_id).first()
-            if task is None or execution is None:
-                return
 
-            task.status = "failed"
-            task.completed_at = now
-            task.last_error_message = error_message
+        def _sync_mark():
+            db = SessionLocal()
+            try:
+                task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+                execution = db.query(ScheduledTaskExecution).filter(ScheduledTaskExecution.id == execution_id).first()
+                if task is None or execution is None:
+                    return
 
-            execution.status = "failed"
-            execution.error_message = error_message
-            execution.completed_at = now
-            execution.execution_metadata = {
-                **(execution.execution_metadata or {}),
-                "error_type": error_type,
-            }
+                task.status = "failed"
+                task.completed_at = now
+                task.last_error_message = error_message
 
-            db.commit()
-        finally:
-            db.close()
+                execution.status = "failed"
+                execution.error_message = error_message
+                execution.completed_at = now
+                execution.execution_metadata = {
+                    **(execution.execution_metadata or {}),
+                    "error_type": error_type,
+                }
+
+                db.commit()
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_sync_mark)
 
         logger.bind(
             event="scheduled_task_failed",

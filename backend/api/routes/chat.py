@@ -277,7 +277,7 @@ async def submit_feedback(
     from core.feedback import feedback_layer_registry
 
     try:
-        feedback_layer_registry.record_explicit_feedback(
+        await feedback_layer_registry.record_explicit_feedback(
             session_id=feedback.session_id,
             message_id=feedback.message_id,
             user_id=current_user.id,

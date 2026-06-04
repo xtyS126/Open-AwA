@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -93,32 +93,10 @@ def _build_cron_expression(weekdays: str, daily_time: str) -> str:
 def _calculate_next_execution(cron_expression: str, from_time: Optional[datetime] = None) -> Optional[datetime]:
     """
     根据 cron 表达式计算下一次执行时间。
-    使用简单的日期遍历实现，最多向前查找 14 天。
+    委托给 ScheduledTaskManager 的统一 cron 计算逻辑，确保路由显示与调度器执行一致。
     """
-    if not cron_expression or not cron_expression.strip():
-        return None
-    parts = cron_expression.strip().split()
-    if len(parts) != 5:
-        return None
-    try:
-        target_minute = int(parts[0])
-        target_hour = int(parts[1])
-        target_weekdays = set(int(d) for d in parts[4].split(","))
-    except (ValueError, IndexError):
-        return None
-
-    now = from_time or datetime.now(timezone.utc)
-    # 从当前时间后一分钟开始查找
-    check = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    check = check.replace(hour=target_hour, minute=target_minute)
-
-    for _ in range(14):  # 最多查找 14 天
-        weekday = (check.weekday() + 1) % 7  # Python weekday(): 0=周一, 转为 cron: 0=周日
-        if weekday in target_weekdays and check > now:
-            return check
-        check += timedelta(days=1)
-
-    return None
+    from core.scheduled_task_manager import ScheduledTaskManager
+    return ScheduledTaskManager._calculate_next_cron_execution(cron_expression)
 
 
 def _set_task_daily_fields(task: ScheduledTask, request) -> None:
@@ -242,7 +220,7 @@ async def list_plugin_commands(
 
     for plugin_name in pm.list_loaded_plugins():
         plugin_info = pm.get_plugin_info(plugin_name) or {}
-        tools = pm.get_plugin_tools(plugin_name)
+        tools = pm.get_plugin_tools(plugin_name) or []
 
         for tool in tools:
             tool_name = tool.get("name", "")

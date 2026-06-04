@@ -203,7 +203,7 @@ class FeedbackLayer:
         content_lower = content.lower()
         return any(keyword in content_lower for keyword in important_keywords)
 
-    def record_explicit_feedback(
+    async def record_explicit_feedback(
         self,
         session_id: str,
         message_id: str,
@@ -224,26 +224,30 @@ class FeedbackLayer:
         if rating not in (-1, 1):
             raise ValueError(f"无效的评分值: {rating}，应为 1（点赞）或 -1（点踩）")
 
+        import asyncio
         from db.models import UserFeedback, SessionLocal
 
-        db = SessionLocal()
-        try:
-            feedback_record = UserFeedback(
-                session_id=session_id,
-                message_id=message_id,
-                user_id=user_id,
-                rating=rating,
-                comment=comment,
-            )
-            db.add(feedback_record)
-            db.commit()
-            logger.info(f"User feedback recorded: session={session_id}, message={message_id}, rating={rating}")
-        except Exception as exc:
-            db.rollback()
-            logger.error(f"Failed to record user feedback: {exc}")
-            raise
-        finally:
-            db.close()
+        def _sync_record():
+            db = SessionLocal()
+            try:
+                feedback_record = UserFeedback(
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    rating=rating,
+                    comment=comment,
+                )
+                db.add(feedback_record)
+                db.commit()
+                logger.info(f"User feedback recorded: session={session_id}, message={message_id}, rating={rating}")
+            except Exception as exc:
+                db.rollback()
+                logger.error(f"Failed to record user feedback: {exc}")
+                raise
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_sync_record)
 
     async def diagnose_error(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """

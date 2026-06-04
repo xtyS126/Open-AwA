@@ -2328,7 +2328,10 @@ class AIAgent:
         if workflow_definition is None and workflow_id is not None and self._db_session is not None:
             from db.models import Workflow
 
-            workflow_record = self._db_session.query(Workflow).filter(Workflow.id == workflow_id).first()
+            def _sync_lookup_workflow():
+                return self._db_session.query(Workflow).filter(Workflow.id == workflow_id).first()
+
+            workflow_record = await asyncio.to_thread(_sync_lookup_workflow)
             if workflow_record is None:
                 return {
                     'status': 'failed',
