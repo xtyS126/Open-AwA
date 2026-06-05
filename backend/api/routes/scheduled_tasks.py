@@ -203,7 +203,7 @@ async def create_scheduled_task(
 
     # 计算并附加 next_execution_at
     next_exec = _calculate_next_execution(task.cron_expression) if task.cron_expression else None
-    task_dict = ScheduledTaskResponse.from_orm(task).dict()
+    task_dict = ScheduledTaskResponse.model_validate(task).model_dump()
     task_dict["next_execution_at"] = next_exec.isoformat() if next_exec else task.scheduled_at.isoformat()
     return task_dict
 
@@ -241,6 +241,10 @@ async def list_plugin_commands(
                     if isinstance(detailed_schema, dict):
                         params_schema = detailed_schema
                 except Exception:
+                    logger.bind(
+                        module="scheduled_tasks", event="plugin_tool_schema_error",
+                        plugin_name=plugin_name, tool_name=tool_name
+                    ).warning("获取插件工具详细参数定义失败，使用默认参数")
                     pass
 
             commands.append(PluginCommandInfo(
@@ -305,7 +309,7 @@ async def update_scheduled_task(
     db.refresh(task)
 
     next_exec = _calculate_next_execution(task.cron_expression) if task.cron_expression else None
-    task_dict = ScheduledTaskResponse.from_orm(task).dict()
+    task_dict = ScheduledTaskResponse.model_validate(task).model_dump()
     task_dict["next_execution_at"] = next_exec.isoformat() if next_exec else task.scheduled_at.isoformat()
     return task_dict
 

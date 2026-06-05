@@ -480,7 +480,9 @@ async def kill_process_tree(process: asyncio.subprocess.Process, timeout: float 
         try:
             process.kill()
         except Exception:
-            pass
+            logger.bind(module="mcp.sandbox", event="final_kill_error", pid=pid).warning(
+                "最终强制终止进程失败"
+            )
 
 
 async def wait_with_timeout(

@@ -265,7 +265,7 @@ class SSETransport(MCPTransport):
         except ImportError:
             raise MCPTransportError("SSE 传输需要 httpx 库，请执行: pip install httpx")
         except Exception as e:
-            raise MCPTransportError(f"建立 SSE 连接失败: {e}")
+            raise MCPTransportError(f"建立 SSE 连接失败: {e}") from e
 
     async def disconnect(self) -> None:
         """关闭 HTTP 客户端连接"""
@@ -298,7 +298,7 @@ class SSETransport(MCPTransport):
             )
             response.raise_for_status()
         except Exception as e:
-            raise MCPTransportError(f"SSE 发送消息失败: {e}")
+            raise MCPTransportError(f"SSE 发送消息失败: {e}") from e
 
     async def receive(self, timeout: float = DEFAULT_TIMEOUT) -> Dict[str, Any]:
         """

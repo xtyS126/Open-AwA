@@ -284,12 +284,16 @@ class PluginSubprocessSandbox:
                     except (ProcessLookupError, OSError):
                         os.kill(process.pid, signal.SIGKILL)
         except Exception:
-            pass
+            logger.bind(module="plugin_sandbox", event="force_kill_signal_error", pid=process.pid).warning(
+                "发送强制终止信号失败"
+            )
         finally:
             try:
                 process.terminate()
             except Exception:
-                pass
+                logger.bind(module="plugin_sandbox", event="force_kill_terminate_error", pid=process.pid).warning(
+                    "终止进程失败"
+                )
 
 
 # ---------------------------------------------------------------------------

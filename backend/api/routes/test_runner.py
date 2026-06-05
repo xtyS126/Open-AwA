@@ -188,6 +188,7 @@ def _run_conversation_lifecycle(db: Session, current_user: User) -> tuple:
 def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
     """通过AIAgent发送非流式聊天消息并验证响应"""
     import asyncio
+    import threading
     from core.agent import AIAgent
 
     context = {
@@ -199,10 +200,36 @@ def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
     }
 
     agent = AIAgent()
-    result = asyncio.run(agent.process(
+    coro = agent.process(
         "你好，请回复'功能测试通过'这一句话，不要多说任何其他内容。",
         context
-    ))
+    )
+
+    # 安全运行异步协程：如果当前处于异步上下文（FastAPI），在新线程中执行
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        result = asyncio.run(coro)
+    else:
+        result_holder = {}
+        error_holder = {}
+
+        def _runner():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                result_holder["value"] = new_loop.run_until_complete(coro)
+            except BaseException as thread_error:
+                error_holder["error"] = thread_error
+            finally:
+                new_loop.close()
+
+        thread = threading.Thread(target=_runner, daemon=True)
+        thread.start()
+        thread.join(timeout=120.0)
+        if "error" in error_holder:
+            raise error_holder["error"]
+        result = result_holder.get("value")
 
     response_text = result.get("response", "")
     has_content = bool(response_text and len(response_text.strip()) > 0)

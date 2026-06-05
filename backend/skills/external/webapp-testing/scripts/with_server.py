@@ -85,7 +85,10 @@ def main():
 
         # Run the command
         print(f"Running: {' '.join(args.command)}\n")
-        result = subprocess.run(args.command)
+        result = subprocess.run(
+            args.command,
+            timeout=300,  # 5 分钟超时，防止命令挂起导致进程永久阻塞
+        )
         sys.exit(result.returncode)
 
     finally:

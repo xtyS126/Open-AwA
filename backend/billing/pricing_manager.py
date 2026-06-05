@@ -118,7 +118,9 @@ class PricingManager:
             if not parsed.scheme or not parsed.netloc:
                 pass  # We don't raise error to keep compatibility, but frontend validates it
         except Exception:
-            pass
+            logger.bind(module="pricing_manager", event="url_parse_error").debug(
+                f"自定义端点 URL 解析失败: {raw}"
+            )
 
         trimmed = raw.rstrip("/")
         known_suffixes = sorted(list(dict.fromkeys([
@@ -953,6 +955,9 @@ class PricingManager:
             from config.config_loader import config_loader
             configurations = config_loader.load_default_configurations()
         except Exception:
+            logger.bind(module="pricing_manager", event="config_loader_fallback").warning(
+                "从 config_loader 加载默认配置失败，使用内置默认配置"
+            )
             configurations = None
 
         if not configurations:

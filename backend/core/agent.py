@@ -665,6 +665,9 @@ class AIAgent:
                     seen_names.add(func_name)
                     tools.append(bt)
         except Exception:
+            logger.bind(module="agent", event="builtin_tools_load_error").warning(
+                "加载内置工具定义失败，跳过内置工具"
+            )
             pass
 
         if tools:
@@ -1101,6 +1104,9 @@ class AIAgent:
                     seen_names.add(func_name)
                     tools.append(bt)
         except Exception:
+            logger.bind(module="agent", event="task_tools_load_error").warning(
+                "加载任务运行时工具定义失败，跳过任务工具"
+            )
             pass
 
         return tools

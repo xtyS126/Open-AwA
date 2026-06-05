@@ -114,8 +114,10 @@ async def get_behavior_stats(
             model_counts[display_name] = model_counts.get(display_name, 0) + 1
             
         except Exception:
-            pass
-        
+            logger.bind(module="behavior", event="stats_parse_error").warning(
+                "行为统计数据解析失败，跳过该条记录"
+            )
+
         # Populate chart data
         if log.timestamp:
             day_str = log.timestamp.strftime("%m-%d")

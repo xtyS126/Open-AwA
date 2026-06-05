@@ -1870,7 +1870,9 @@ class ExecutionLayer:
                     proc.kill()
                     await proc.wait()
                 except Exception:
-                    pass
+                    logger.bind(module="executor", event="process_kill_timeout_error", pid=proc.pid).warning(
+                        "超时进程清理失败"
+                    )
             return {
                 "status": "error",
                 "message": "Command execution timeout"
@@ -1881,7 +1883,9 @@ class ExecutionLayer:
                     proc.kill()
                     await proc.wait()
                 except Exception:
-                    pass
+                    logger.bind(module="executor", event="process_kill_error", pid=proc.pid).warning(
+                        "异常进程清理失败"
+                    )
             return {
                 "status": "error",
                 "message": str(e)

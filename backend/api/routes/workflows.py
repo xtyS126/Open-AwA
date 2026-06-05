@@ -57,9 +57,14 @@ async def create_workflow(
         enabled=request.enabled,
     )
     engine.db_session.add(workflow)
-    engine.db_session.commit()
-    engine.db_session.refresh(workflow)
-    engine.sync_workflow_steps(workflow.id, parsed.get("steps", []))
+    engine.db_session.flush()  # 先获取 workflow.id 但不提交事务
+    try:
+        engine.sync_workflow_steps(workflow.id, parsed.get("steps", []))
+        engine.db_session.commit()
+        engine.db_session.refresh(workflow)
+    except Exception:
+        engine.db_session.rollback()
+        raise
     return workflow
 
 

@@ -220,18 +220,19 @@ class MCPManager:
                 return
             restored = 0
             for server_id, config_dict in saved_configs.items():
-                if server_id in self._configs:
-                    continue
-                try:
-                    config = MCPServerConfig(**config_dict)
-                    with self._lock:
+                with self._lock:
+                    if server_id in self._configs:
+                        continue
+                    try:
+                        config = MCPServerConfig(**config_dict)
                         self._configs[server_id] = config
                         self._clients[server_id] = MCPClient(config)
-                    restored += 1
-                except Exception as exc:
-                    logger.bind(
-                        module="mcp.manager", event="restore_error", server_id=server_id
-                    ).warning(f"恢复 MCP Server 配置失败: {exc}")
+                    except Exception as exc:
+                        logger.bind(
+                            module="mcp.manager", event="restore_error", server_id=server_id
+                        ).warning(f"恢复 MCP Server 配置失败: {exc}")
+                        continue
+                restored += 1
             if restored > 0:
                 logger.bind(module="mcp.manager", event="restored").info(
                     f"从持久化配置恢复了 {restored} 个 MCP Server"

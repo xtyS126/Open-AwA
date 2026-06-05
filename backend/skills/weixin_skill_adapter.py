@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import os
 import threading
@@ -28,22 +29,17 @@ SESSION_EXPIRED_ERRCODE = -14
 SESSION_PAUSE_DURATION_SECONDS = 60 * 60
 
 _SESSION_PAUSE_UNTIL: Dict[str, float] = {}
-_STATE_FILE_LOCKS: Dict[str, threading.RLock] = {}
-_STATE_FILE_LOCKS_GUARD = threading.Lock()
 _STATE_FILE_WRITE_RETRY_DELAYS = (0.1, 0.3, 0.5, 1.0, 2.0)
 
 
+@functools.lru_cache(maxsize=128)
 def _get_state_file_lock(file_path: str) -> threading.RLock:
     """
     为每个状态文件提供进程内共享锁，避免 Windows 下同一路径并发读写触发权限错误。
+    使用 lru_cache 限制缓存上限为 128，防止字典无限增长导致内存泄漏。
     """
     normalized_path = os.path.abspath(file_path)
-    with _STATE_FILE_LOCKS_GUARD:
-        lock = _STATE_FILE_LOCKS.get(normalized_path)
-        if lock is None:
-            lock = threading.RLock()
-            _STATE_FILE_LOCKS[normalized_path] = lock
-        return lock
+    return threading.RLock()
 
 
 def save_binding(db, user_id: str, config: "WeixinRuntimeConfig") -> None:

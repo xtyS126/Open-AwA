@@ -674,7 +674,9 @@ async def litellm_chat_completion(
                 try:
                     response.close()
                 except Exception:
-                    pass
+                    logger.bind(module="litellm_adapter", event="response_close_error").warning(
+                        "关闭 HTTP 响应失败"
+                    )
 
         if attempt < num_retries:
             if is_rate_limit and _last_exc is not None:

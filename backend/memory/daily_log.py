@@ -141,6 +141,9 @@ class DailyLogManager:
                         "has_more": len(content) > 2000,
                     })
                 except Exception:
+                    logger.bind(module="daily_log", event="log_read_error", path=str(log_path)).warning(
+                        "读取日志文件失败，跳过该文件"
+                    )
                     pass
             current = date.fromordinal(current.toordinal() + 1)
         return logs

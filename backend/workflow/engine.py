@@ -320,6 +320,10 @@ class WorkflowEngine:
             else:
                 current = getattr(current, part, None)
             if current is None:
+                logger.bind(
+                    module="workflow.engine", event="placeholder_resolve_failed",
+                    expression=" ".join(parts), broken_at=part
+                ).warning(f"占位符解析失败，路径在 '{part}' 处断裂，返回 None")
                 break
         return current
 

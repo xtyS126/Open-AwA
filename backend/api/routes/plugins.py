@@ -3,6 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Body
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
@@ -1027,7 +1028,8 @@ async def import_plugin_from_url(
 
     try:
         plugin_manager_instance = PluginManager()
-        discovered = plugin_manager_instance.register_plugin_from_url(
+        discovered = await asyncio.to_thread(
+            plugin_manager_instance.register_plugin_from_url,
             source_url=source_url,
             timeout=max(1, int(payload.timeout_seconds or 30)),
         )
