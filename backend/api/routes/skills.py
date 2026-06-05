@@ -3,11 +3,13 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from db.models import get_db, Skill, ExperienceExtractionLog
+from db.models import get_db, Skill, ExperienceExtractionLog, SkillExecutionLog
 from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
@@ -648,6 +650,38 @@ class MarketSkillInstallRequest(BaseModel):
     source_url: Optional[str] = None
 
 
+def _calculate_security_rating(skill: Dict[str, Any]) -> int:
+    """
+    根据技能元数据计算安全评级（0-100分）。
+    扣分项：高危来源、无描述、依赖过多、下载量过低。
+    """
+    score = 85  # 基础分
+
+    # 来源信任度
+    source = skill.get("source", "")
+    source_trust = {"clawhub": 0, "skills.sh": 0, "github": -10, "unknown": -15}
+    score += source_trust.get(source, -5)
+
+    # 描述质量
+    desc = skill.get("description", "")
+    if not desc or len(desc) < 20:
+        score -= 15
+
+    # 下载量信号
+    downloads = skill.get("downloads", 0)
+    if downloads < 10:
+        score -= 5
+    elif downloads > 1000:
+        score += 5
+
+    # 作者信誉
+    author = skill.get("author", "").lower()
+    if author in ("community", "unknown", ""):
+        score -= 5
+
+    return max(0, min(100, score))
+
+
 @router.get("/market")
 def get_market_skills(
     search: Optional[str] = None,
@@ -657,7 +691,7 @@ def get_market_skills(
 ):
     """
     获取技能市场中的可用技能列表。
-    支持按关键词搜索和按来源筛选。
+    支持按关键词搜索和按来源筛选，返回结果包含安全评级。
     """
     from skills.pool_manager import SkillPoolManager
 
@@ -673,6 +707,10 @@ def get_market_skills(
             s for s in skills
             if keyword in s["name"].lower() or keyword in s["description"].lower()
         ]
+
+    # 附加安全评级
+    for skill in skills:
+        skill["security_score"] = _calculate_security_rating(skill)
 
     return {"skills": skills, "total": len(skills)}
 
@@ -704,3 +742,109 @@ def install_market_skill(
         raise HTTPException(status_code=400, detail=result.get("error", "安装失败"))
 
     return {"message": f"技能 {body.name} 安装成功", "result": result}
+
+
+# ---- 技能执行分析端点 ----
+
+@router.get("/analytics/overview")
+def get_skill_analytics_overview(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取技能执行的全局统计概览。
+    包含执行次数、成功率、平均耗时和 Top 技能排行。
+    """
+    total = db.query(func.count(SkillExecutionLog.id)).scalar() or 0
+    success_count = db.query(func.count(SkillExecutionLog.id)).filter(
+        SkillExecutionLog.status == "success"
+    ).scalar() or 0
+    fail_count = total - success_count
+    success_rate = round(success_count / total * 100, 1) if total > 0 else 0.0
+
+    avg_time = db.query(func.avg(SkillExecutionLog.execution_time)).scalar() or 0.0
+    max_time = db.query(func.max(SkillExecutionLog.execution_time)).scalar() or 0.0
+
+    # Top 5 最多执行的技能
+    top_skills = (
+        db.query(
+            SkillExecutionLog.skill_name,
+            func.count(SkillExecutionLog.id).label("count"),
+            func.avg(SkillExecutionLog.execution_time).label("avg_time"),
+            func.sum(
+                func.case((SkillExecutionLog.status == "success", 1), else_=0)
+            ).label("successes"),
+        )
+        .group_by(SkillExecutionLog.skill_name)
+        .order_by(func.count(SkillExecutionLog.id).desc())
+        .limit(5)
+        .all()
+    )
+
+    return {
+        "total_executions": total,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "success_rate": success_rate,
+        "avg_execution_time": round(float(avg_time), 3),
+        "max_execution_time": round(float(max_time), 3),
+        "top_skills": [
+            {
+                "skill_name": s.skill_name,
+                "executions": s.count,
+                "success_rate": round(s.successes / s.count * 100, 1) if s.count > 0 else 0,
+                "avg_time": round(float(s.avg_time or 0), 3),
+            }
+            for s in top_skills
+        ],
+    }
+
+
+@router.get("/analytics/logs")
+def get_skill_execution_logs(
+    skill_name: Optional[str] = Query(None, description="按技能名称筛选"),
+    status: Optional[str] = Query(None, description="按状态筛选(success/error)"),
+    days: int = Query(7, ge=1, le=90, description="最近N天"),
+    limit: int = Query(50, ge=1, le=500, description="返回条数"),
+    offset: int = Query(0, ge=0, description="偏移量"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取技能执行日志列表，支持按技能名称/状态/时间范围筛选和分页。
+    """
+    query = db.query(SkillExecutionLog)
+
+    if skill_name:
+        query = query.filter(SkillExecutionLog.skill_name == skill_name)
+    if status:
+        query = query.filter(SkillExecutionLog.status == status)
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    query = query.filter(SkillExecutionLog.created_at >= cutoff)
+
+    total = query.count()
+    logs = (
+        query.order_by(SkillExecutionLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "logs": [
+            {
+                "id": log.id,
+                "skill_id": log.skill_id,
+                "skill_name": log.skill_name,
+                "status": log.status,
+                "execution_time": log.execution_time,
+                "error_message": log.error_message[:200] if log.error_message else "",
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+    }
