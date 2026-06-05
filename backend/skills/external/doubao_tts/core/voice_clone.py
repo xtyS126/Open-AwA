@@ -59,6 +59,7 @@ class VoiceCloneManager:
         audio_bytes: bytes,
         voice_name: str,
         context_texts: Optional[str] = None,
+        user_id: str = "",
     ) -> str:
         """
         上传音频样本并创建声音复刻训练任务。
@@ -118,20 +119,25 @@ class VoiceCloneManager:
             "audio_duration": audio_duration,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "language": payload.get("language", "zh"),
+            "user_id": user_id,
         }
 
         logger.bind(event="doubao_clone_created", speaker_id=speaker_id,
                      voice_name=voice_name).info("声音复刻训练任务已创建")
         return speaker_id
 
-    async def get_status(self, speaker_id: str) -> Dict[str, Any]:
+    async def get_status(self, speaker_id: str, user_id: str = "") -> Dict[str, Any]:
         """
-        查询声音复刻训练状态。
+        查询声音复刻训练状态。若提供 user_id，校验所有权。
         """
         # 先从内存缓存查
         cached = self._speakers.get(speaker_id)
-        if cached and cached.get("status") == "ready":
-            return dict(cached)
+        if cached:
+            owner = cached.get("user_id", "")
+            if user_id and owner and owner != user_id:
+                raise PermissionError("无权访问此音色")
+            if cached.get("status") == "ready":
+                return dict(cached)
 
         if not self.is_configured:
             if cached:
@@ -208,10 +214,17 @@ class VoiceCloneManager:
 
         return speakers
 
-    async def delete_speaker(self, speaker_id: str) -> bool:
+    async def delete_speaker(self, speaker_id: str, user_id: str = "") -> bool:
         """
-        删除复刻音色。
+        删除复刻音色。若提供 user_id，校验所有权。
         """
+        # 校验所有权
+        cached = self._speakers.get(speaker_id)
+        if cached and user_id:
+            owner = cached.get("user_id", "")
+            if owner and owner != user_id:
+                raise PermissionError("无权删除此音色")
+
         # 不允许删除预置音色
         from .tts_client import PRESET_SPEAKERS
         if speaker_id in PRESET_SPEAKERS:
