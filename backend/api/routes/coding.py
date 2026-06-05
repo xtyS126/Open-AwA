@@ -239,3 +239,129 @@ def compute_diff(body: DiffRequest):
     """
     engine = DiffEngine()
     return engine.compute_inline_diff(body.original, body.modified)
+
+
+# ---- LSP 接口 ----
+
+class LSPCompletionRequest(BaseModel):
+    file_path: str
+    line: int
+    column: int
+    project_dir: Optional[str] = None
+
+
+class LSPHoverRequest(BaseModel):
+    file_path: str
+    line: int
+    column: int
+    project_dir: Optional[str] = None
+
+
+@router.get("/lsp/diagnostics")
+def get_lsp_diagnostics(file_path: str, project_dir: Optional[str] = None):
+    """
+    获取文件的 LSP 诊断信息（错误/警告）。
+    返回语言服务器的可用性和状态信息。
+    """
+    root = _get_project_dir(project_dir)
+    try:
+        ext = Path(file_path).suffix.lstrip(".").lower()
+        lang_map = {"py": "python", "ts": "typescript", "tsx": "typescript", "js": "javascript", "jsx": "javascript"}
+        language = lang_map.get(ext, ext)
+        from core.coding.lsp_proxy import LSPProxy
+        lsp = LSPProxy(root)
+        available = lsp.is_available(language)
+        return {
+            "success": True,
+            "language": language,
+            "lsp_available": available,
+            "diagnostics": [],
+            "message": f"LSP 服务器{'可用' if available else '不可用'}: {language}",
+        }
+    except Exception as exc:
+        return {"success": False, "diagnostics": [], "error": str(exc)}
+
+
+@router.post("/lsp/completions")
+def get_lsp_completions(body: LSPCompletionRequest):
+    """
+    获取代码补全建议（基于 AST 静态分析）。
+    注：完整 LSP 补全需通过前端 Monaco Editor 内置能力实现。
+    """
+    root = _get_project_dir(body.project_dir)
+    try:
+        from core.coding.ast_search import ASTSearchService
+        service = ASTSearchService(root)
+        # 基于当前文件提供符号补全
+        structure = service.get_structure(body.file_path)
+        return {
+            "success": True,
+            "completions": structure.get("symbols", [])[:20],
+            "file_path": body.file_path,
+        }
+    except Exception as exc:
+        return {"success": False, "completions": [], "error": str(exc)}
+
+
+@router.post("/lsp/hover")
+def get_lsp_hover(body: LSPHoverRequest):
+    """
+    获取悬停信息（基于 AST 静态分析）。
+    注：完整 LSP 悬停需通过前端 Monaco Editor 内置能力实现。
+    """
+    root = _get_project_dir(body.project_dir)
+    try:
+        from core.coding.ast_search import ASTSearchService
+        service = ASTSearchService(root)
+        structure = service.get_structure(body.file_path)
+        return {
+            "success": True,
+            "hover": f"文件: {body.file_path}\n行: {body.line}, 列: {body.column}\n符号数: {len(structure.get('symbols', []))}",
+            "file_path": body.file_path,
+        }
+    except Exception as exc:
+        return {"success": False, "hover": "", "error": str(exc)}
+
+
+@router.get("/lsp/symbols")
+def get_lsp_symbols(file_path: str, project_dir: Optional[str] = None):
+    """
+    获取文件的符号列表（基于 AST 静态分析）。
+    """
+    root = _get_project_dir(project_dir)
+    try:
+        from core.coding.ast_search import ASTSearchService
+        service = ASTSearchService(root)
+        structure = service.get_structure(file_path)
+        return {"success": True, "symbols": structure.get("symbols", [])}
+    except Exception as exc:
+        return {"success": False, "symbols": [], "error": str(exc)}
+
+
+# ---- Claude Code 模式 ----
+
+class CCModeRequest(BaseModel):
+    enabled: bool
+
+
+# 全局 CC 模式状态（重启后重置）
+_cc_mode_enabled = False
+
+
+@router.post("/cc-mode")
+def toggle_cc_mode(body: CCModeRequest):
+    """
+    启用或禁用 Claude Code 兼容模式。
+    CC 模式下会注入 Coding 专用系统提示和工具定义。
+    """
+    global _cc_mode_enabled
+    _cc_mode_enabled = body.enabled
+    return {"success": True, "cc_mode_enabled": _cc_mode_enabled}
+
+
+@router.get("/cc-mode")
+def get_cc_mode():
+    """
+    获取当前 CC 模式状态。
+    """
+    return {"cc_mode_enabled": _cc_mode_enabled}

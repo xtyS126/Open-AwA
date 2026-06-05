@@ -1,7 +1,10 @@
 .indicator { display: flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 10px; background: #f3f4f6; min-width: 100px; }
+.clickable { cursor: pointer; }
+.clickable:hover { background: #e5e7eb; }
 .barBg { flex: 1; height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
 .bar { height: 100%; border-radius: 2px; transition: width 0.3s, background 0.3s; }
 .compress { animation: pulse 1s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .text { font-size: 10px; color: #6b7280; white-space: nowrap; font-family: monospace; }
 .count { color: #9ca3af; }
+.message { font-size: 10px; color: #059669; margin-left: 4px; white-space: nowrap; }

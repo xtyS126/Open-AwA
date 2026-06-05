@@ -1749,3 +1749,140 @@ def install_market_skill(
         raise HTTPException(status_code=400, detail=result.get("error", "安装失败"))
 
     return {"message": f"技能 {body.name} 安装成功", "result": result}
+
+
+# ---- 技能广播端点 ----
+
+@router.post("/{skill_id}/broadcast", summary="将技能广播到多个工作空间")
+async def broadcast_skill_to_workspaces(
+    skill_id: str,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    将指定技能复制/链接到多个工作空间。
+    请求体: {"workspace_ids": ["ws1", "ws2", ...]}
+    """
+    from skills.pool_manager import SkillPoolManager
+
+    workspace_ids = body.get("workspace_ids", [])
+    if not workspace_ids:
+        raise HTTPException(status_code=400, detail="缺少 workspace_ids 参数")
+
+    pool = SkillPoolManager()
+    try:
+        pool.broadcast_to_workspace(skill_id, workspace_ids)
+        return {
+            "success": True,
+            "message": f"技能 '{skill_id}' 已广播到 {len(workspace_ids)} 个工作空间",
+            "workspace_ids": workspace_ids,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"广播失败: {str(exc)}")
+
+
+# ---- 技能执行分析端点 ----
+
+@router.get("/analytics/overview")
+def get_skill_analytics_overview(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取技能执行的全局统计概览。
+    包含执行次数、成功率、平均耗时和 Top 技能排行。
+    """
+    total = db.query(func.count(SkillExecutionLog.id)).scalar() or 0
+    success_count = db.query(func.count(SkillExecutionLog.id)).filter(
+        SkillExecutionLog.status == "success"
+    ).scalar() or 0
+    fail_count = total - success_count
+    success_rate = round(success_count / total * 100, 1) if total > 0 else 0.0
+
+    avg_time = db.query(func.avg(SkillExecutionLog.execution_time)).scalar() or 0.0
+    max_time = db.query(func.max(SkillExecutionLog.execution_time)).scalar() or 0.0
+
+    # Top 5 最多执行的技能
+    top_skills = (
+        db.query(
+            SkillExecutionLog.skill_name,
+            func.count(SkillExecutionLog.id).label("count"),
+            func.avg(SkillExecutionLog.execution_time).label("avg_time"),
+            func.sum(
+                func.case((SkillExecutionLog.status == "success", 1), else_=0)
+            ).label("successes"),
+        )
+        .group_by(SkillExecutionLog.skill_name)
+        .order_by(func.count(SkillExecutionLog.id).desc())
+        .limit(5)
+        .all()
+    )
+
+    return {
+        "total_executions": total,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "success_rate": success_rate,
+        "avg_execution_time": round(float(avg_time), 3),
+        "max_execution_time": round(float(max_time), 3),
+        "top_skills": [
+            {
+                "skill_name": s.skill_name,
+                "executions": s.count,
+                "success_rate": round(s.successes / s.count * 100, 1) if s.count > 0 else 0,
+                "avg_time": round(float(s.avg_time or 0), 3),
+            }
+            for s in top_skills
+        ],
+    }
+
+
+@router.get("/analytics/logs")
+def get_skill_execution_logs(
+    skill_name: Optional[str] = Query(None, description="按技能名称筛选"),
+    status: Optional[str] = Query(None, description="按状态筛选(success/error)"),
+    days: int = Query(7, ge=1, le=90, description="最近N天"),
+    limit: int = Query(50, ge=1, le=500, description="返回条数"),
+    offset: int = Query(0, ge=0, description="偏移量"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取技能执行日志列表，支持按技能名称/状态/时间范围筛选和分页。
+    """
+    query = db.query(SkillExecutionLog)
+
+    if skill_name:
+        query = query.filter(SkillExecutionLog.skill_name == skill_name)
+    if status:
+        query = query.filter(SkillExecutionLog.status == status)
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    query = query.filter(SkillExecutionLog.created_at >= cutoff)
+
+    total = query.count()
+    logs = (
+        query.order_by(SkillExecutionLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "logs": [
+            {
+                "id": log.id,
+                "skill_id": log.skill_id,
+                "skill_name": log.skill_name,
+                "status": log.status,
+                "execution_time": log.execution_time,
+                "error_message": log.error_message[:200] if log.error_message else "",
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+    }

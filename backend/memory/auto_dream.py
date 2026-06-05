@@ -204,6 +204,31 @@ class AutoDream:
             sections.append("\n".join(current))
         return sections if len(sections) > 1 else [content]
 
+    async def schedule(self, interval_hours: float = 24) -> None:
+        """
+        启动定时 Auto-Dream 优化任务。
+        每隔 interval_hours 小时执行一次记忆整理。
+        """
+        import asyncio
+
+        logger.bind(event="auto_dream_scheduled", interval_hours=interval_hours).info(
+            "Auto-Dream 定时任务已启动"
+        )
+        while True:
+            try:
+                await asyncio.sleep(interval_hours * 3600)
+                logger.bind(event="auto_dream_run").info("Auto-Dream 开始执行定时优化")
+                stats = self.run_optimization()
+                logger.bind(event="auto_dream_run_complete", **stats).info(
+                    f"Auto-Dream 优化完成: 去重{stats['dedup_count']}条, 合并{stats['merge_count']}条"
+                )
+            except asyncio.CancelledError:
+                logger.info("Auto-Dream 定时任务已取消")
+                break
+            except Exception as exc:
+                logger.bind(event="auto_dream_schedule_error").error(f"Auto-Dream 定时执行异常: {exc}")
+                await asyncio.sleep(60)  # 出错后等 1 分钟再重试
+
     @staticmethod
     def _jaccard_similarity(a: str, b: str) -> float:
         """计算两段文本的 Jaccard 相似度。"""

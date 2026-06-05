@@ -35,6 +35,8 @@ from api.routes.test_runner import router as test_runner_router
 from api.routes.workspace import router as workspace_router
 from api.routes.coding import router as coding_router
 from api.routes.inbox import router as inbox_router
+from api.routes.magic_commands import router as magic_commands_router
+from api.routes.heartbeat import router as heartbeat_router
 
 from billing.routers import billing
 from config.logging import (
@@ -643,8 +645,10 @@ app.include_router(user_profile_router, prefix=settings.API_V1_STR)
 app.include_router(system_router)
 app.include_router(test_runner_router)
 app.include_router(workspace_router)
+app.include_router(heartbeat_router)
 app.include_router(coding_router)
 app.include_router(inbox_router)
+app.include_router(magic_commands_router, prefix=settings.API_V1_STR)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath

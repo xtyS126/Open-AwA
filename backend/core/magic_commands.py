@@ -124,12 +124,77 @@ class MagicCommandRegistry:
     # ---- 内置命令处理器 ----
 
     async def _handle_compact(self, context: dict) -> dict:
-        """处理 /compact 命令。"""
-        return {
-            "action": "compact",
-            "message": "压缩当前对话上下文，生成摘要并保存记忆",
-            "requires_confirmation": True,
-        }
+        """处理 /compact 命令 — 实际执行上下文压缩并保存到长期记忆。"""
+        from core.context.compressor import ContextCompressor
+        from core.context.token_budget import TokenBudget
+        from memory.manager import MemoryManager
+
+        session_id = context.get("session_id", "default")
+        workspace_id = context.get("workspace_id", "default")
+        model_name = context.get("model_name", "default")
+
+        try:
+            memory_manager = MemoryManager()
+            memories = await memory_manager.get_short_term_memories(
+                session_id=session_id, limit=100
+            )
+            history = [
+                {"role": m.role, "content": m.content}
+                for m in reversed(memories)
+                if m.role in ("user", "assistant")
+            ]
+
+            compressor = ContextCompressor()
+            budget = TokenBudget(model_name=model_name)
+            current_tokens = budget.count_messages(history)
+
+            if compressor.should_compress(current_tokens, budget.max_tokens):
+                result = compressor.compress(history)
+                # 将压缩摘要保存到长期记忆
+                if result.get("summary"):
+                    try:
+                        await memory_manager.add_long_term_memory(
+                            user_id=context.get("user_id", ""),
+                            content=f"[对话压缩摘要] {result['summary'][:2000]}",
+                            importance=0.5,
+                            memory_metadata={
+                                "source": "compact_command",
+                                "session_id": session_id,
+                                "compressed_turns": result["removed_count"],
+                            },
+                        )
+                    except Exception:
+                        pass  # 记忆保存失败不影响压缩结果
+
+                return {
+                    "action": "compact",
+                    "success": True,
+                    "message": f"上下文已压缩，移除了 {result['removed_count']} 条历史消息",
+                    "removed_count": result["removed_count"],
+                    "summary": result["summary"][:500] if result["summary"] else "",
+                    "stats": {
+                        "original_tokens": current_tokens,
+                        "max_tokens": budget.max_tokens,
+                        "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
+                    },
+                }
+            else:
+                return {
+                    "action": "compact",
+                    "success": True,
+                    "message": "当前上下文未达到压缩阈值，无需压缩",
+                    "stats": {
+                        "current_tokens": current_tokens,
+                        "max_tokens": budget.max_tokens,
+                        "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
+                    },
+                }
+        except Exception as exc:
+            return {
+                "action": "compact",
+                "success": False,
+                "message": f"上下文压缩失败: {str(exc)}",
+            }
 
     async def _handle_new(self, context: dict) -> dict:
         """处理 /new 命令。"""

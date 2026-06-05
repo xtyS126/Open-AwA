@@ -1,55 +1,63 @@
 /**
  * Coding 模式主页面 — 三面板 IDE 布局。
- * 左侧：文件树 | 中间：编辑器 | 右侧：聊天面板
+ * 左侧：文件树 | 中间：编辑器/Diff 视图 | 右侧：Coding 聊天助手
  * 底部：Git 面板
  */
-import React, { useEffect, useState, useCallback } from 'react';
-import FileTree from './components/FileTree';
-import EditorPane from './components/EditorPane';
-import GitPanel from './components/GitPanel';
-import { useCodingStore } from './store/codingStore';
-import { codingApi } from './codingApi';
-import styles from './CodingPage.module.css';
+import React, { useEffect, useState, useCallback } from 'react'
+import FileTree from './components/FileTree'
+import EditorPane from './components/EditorPane'
+import DiffView from './components/DiffView'
+import GitPanel from './components/GitPanel'
+import CodingChatPanel from './components/CodingChatPanel'
+import { useCodingStore } from './store/codingStore'
+import { codingApi } from './codingApi'
+import styles from './CodingPage.module.css'
 
 const CodingPage: React.FC = () => {
-  const { setProjectDir, projectDir, ccModeEnabled, toggleCCMode } = useCodingStore();
-  const [showGit, setShowGit] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [layouts, setLayouts] = useState({
+  const {
+    setProjectDir, projectDir, ccModeEnabled, toggleCCMode,
+    diffMode, setDiffMode, openFiles, activeFilePath,
+  } = useCodingStore()
+  const [showGit, setShowGit] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [diffData, setDiffData] = useState<{ original: string; modified: string; filePath: string } | null>(null)
+  const [layouts] = useState({
     fileTreeWidth: 240,
     gitPanelHeight: 180,
-  });
+  })
 
   useEffect(() => {
-    // 默认使用当前项目目录（仅在首次挂载时执行）
     if (!projectDir) {
-      setProjectDir('/');
+      setProjectDir('/')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [])
+
+  // 同步 CC 模式到后端
+  useEffect(() => {
+    codingApi.toggleCCMode(ccModeEnabled).catch(() => {})
+  }, [ccModeEnabled])
 
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim()) return
     try {
-      // 尝试定义搜索
-      const defs = await codingApi.searchDefinitions(searchQuery, projectDir || undefined);
+      const defs = await codingApi.searchDefinitions(searchQuery, projectDir || undefined)
       if (defs.results?.length > 0) {
-        setSearchResults(defs.results);
-        return;
+        setSearchResults(defs.results)
+        return
       }
-      // 回退到文本搜索
-      const pattern = await codingApi.searchPattern(searchQuery, projectDir || undefined);
-      setSearchResults(pattern.results || []);
+      const pattern = await codingApi.searchPattern(searchQuery, projectDir || undefined)
+      setSearchResults(pattern.results || [])
     } catch (e) {
-      console.error('Search failed:', e);
+      console.error('搜索失败:', e)
     }
-  }, [searchQuery, projectDir]);
+  }, [searchQuery, projectDir])
 
   const handleResultClick = async (result: any) => {
     if (result.file) {
       try {
-        const data = await codingApi.readFile(result.file, projectDir || undefined);
+        const data = await codingApi.readFile(result.file, projectDir || undefined)
         if (data.content !== undefined) {
           useCodingStore.getState().openFile({
             path: result.file,
@@ -57,13 +65,44 @@ const CodingPage: React.FC = () => {
             content: data.content,
             isDirty: false,
             language: '',
-          });
+          })
         }
       } catch (e) {
         /* ignore */
       }
     }
-  };
+  }
+
+  // Git 文件点击查看 diff
+  const handleGitFileClick = useCallback(async (filePath: string) => {
+    try {
+      const diffResult = await codingApi.gitDiff(filePath, false, projectDir || undefined)
+      const activeFile = openFiles.find((f) => f.path === filePath)
+      const currentContent = activeFile?.content || ''
+      const originalContent = currentContent // 简化：将修改后的内容与当前内容对比
+
+      setDiffData({
+        original: originalContent,
+        modified: currentContent,
+        filePath,
+      })
+      setDiffMode(true)
+    } catch (e) {
+      console.error('获取 diff 失败:', e)
+    }
+  }, [projectDir, openFiles, setDiffMode])
+
+  const handleAcceptDiff = useCallback(async () => {
+    setDiffMode(false)
+    setDiffData(null)
+  }, [setDiffMode])
+
+  const handleRejectDiff = useCallback(() => {
+    setDiffMode(false)
+    setDiffData(null)
+  }, [setDiffMode])
+
+  const activeFile = openFiles.find((f) => f.path === activeFilePath)
 
   return (
     <div className={styles.container}>
@@ -109,9 +148,20 @@ const CodingPage: React.FC = () => {
           <FileTree />
         </div>
 
-        {/* 中间：编辑器 */}
+        {/* 中间：编辑器或 Diff 视图 */}
         <div className={styles.centerPanel}>
-          <EditorPane />
+          {diffMode && diffData ? (
+            <DiffView
+              original={diffData.original}
+              modified={diffData.modified}
+              filePath={diffData.filePath}
+              language={activeFile?.language}
+              onAccept={handleAcceptDiff}
+              onReject={handleRejectDiff}
+            />
+          ) : (
+            <EditorPane />
+          )}
           {/* 搜索结果覆盖层 */}
           {searchResults.length > 0 && (
             <div className={styles.searchResults}>
@@ -139,32 +189,20 @@ const CodingPage: React.FC = () => {
           )}
         </div>
 
-        {/* 右侧：聊天面板（使用 iframe 嵌入聊天页面）*/}
+        {/* 右侧：Coding 聊天助手面板 */}
         <div className={styles.rightPanel}>
-          <div className={styles.chatHeader}>
-            聊天
-          </div>
-          <div className={styles.chatContent}>
-            <p className={styles.chatPlaceholder}>
-              Coding 模式聊天面板
-            </p>
-            <textarea
-              className={styles.chatInput}
-              placeholder="向 Agent 提问（例如：'分析 src/core 的架构'）..."
-              rows={3}
-            />
-          </div>
+          <CodingChatPanel />
         </div>
       </div>
 
       {/* 底部：Git 面板 */}
       {showGit && (
         <div className={styles.bottomPanel} style={{ height: layouts.gitPanelHeight }}>
-          <GitPanel />
+          <GitPanel onFileClick={handleGitFileClick} />
         </div>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default React.memo(CodingPage);
+export default React.memo(CodingPage)

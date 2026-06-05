@@ -71,4 +71,28 @@ export const codingApi = {
     const { data } = await api.post('/coding/diff', { original, modified });
     return data;
   },
+
+  // LSP
+  getLSPDiagnostics: async (filePath: string, projectDir?: string) => {
+    const { data } = await api.get('/coding/lsp/diagnostics', { params: { file_path: filePath, project_dir: projectDir } });
+    return data;
+  },
+  getLSPCompletions: async (filePath: string, line: number, column: number, projectDir?: string) => {
+    const { data } = await api.post('/coding/lsp/completions', { file_path: filePath, line, column, project_dir: projectDir });
+    return data;
+  },
+  getLSPHover: async (filePath: string, line: number, column: number, projectDir?: string) => {
+    const { data } = await api.post('/coding/lsp/hover', { file_path: filePath, line, column, project_dir: projectDir });
+    return data;
+  },
+  getLSPSymbols: async (filePath: string, projectDir?: string) => {
+    const { data } = await api.get('/coding/lsp/symbols', { params: { file_path: filePath, project_dir: projectDir } });
+    return data;
+  },
+
+  // Claude Code 模式
+  toggleCCMode: async (enabled: boolean) => {
+    const { data } = await api.post('/coding/cc-mode', { enabled });
+    return data;
+  },
 };

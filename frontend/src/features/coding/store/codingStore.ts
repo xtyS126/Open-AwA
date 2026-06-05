@@ -50,6 +50,12 @@ interface CodingStore {
   // Diff
   diffMode: boolean;
   setDiffMode: (mode: boolean) => void;
+  // Monaco 编辑器配置
+  editorFontSize: number;
+  editorTabSize: number;
+  editorWordWrap: boolean;
+  editorMinimap: boolean;
+  setEditorFontSize: (size: number) => void;
 }
 
 const getLanguage = (filename: string): string => {
@@ -126,4 +132,11 @@ export const useCodingStore = create<CodingStore>((set, get) => ({
 
   diffMode: false,
   setDiffMode: (mode) => set({ diffMode: mode }),
+
+  // Monaco 编辑器配置
+  editorFontSize: 14,
+  editorTabSize: 2,
+  editorWordWrap: false,
+  editorMinimap: true,
+  setEditorFontSize: (size) => set({ editorFontSize: size }),
 }));

@@ -6,7 +6,11 @@ import { useCodingStore } from '../store/codingStore';
 import { codingApi } from '../codingApi';
 import styles from './GitPanel.module.css';
 
-const GitPanel: React.FC = () => {
+interface GitPanelProps {
+  onFileClick?: (filePath: string) => void
+}
+
+const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
   const { gitBranch, gitChanges, setGitStatus, projectDir } = useCodingStore();
   const [loading, setLoading] = useState(true);
   const [commitMsg, setCommitMsg] = useState('');
@@ -74,7 +78,12 @@ const GitPanel: React.FC = () => {
             <p className={styles.clean}>工作区干净</p>
           ) : (
             gitChanges.map((c, i) => (
-              <div key={i} className={styles.change}>
+              <div
+                key={i}
+                className={styles.change}
+                onClick={() => onFileClick?.(c.file)}
+                style={{ cursor: onFileClick ? 'pointer' : undefined }}
+              >
                 <span className={c.status.includes('M') ? styles.modified : styles.added}>
                   {c.status}
                 </span>
