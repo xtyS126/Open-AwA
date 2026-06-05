@@ -129,44 +129,40 @@ class VoiceCloneManager:
     async def get_status(self, speaker_id: str, user_id: str = "") -> Dict[str, Any]:
         """
         查询声音复刻训练状态。若提供 user_id，校验所有权。
+        仅支持查询本地缓存的复刻音色，不允许绕过缓存直接查询远程 API。
         """
-        # 先从内存缓存查
+        # 仅从内存缓存查询，防止绕过所有权校验直接访问远程 API
         cached = self._speakers.get(speaker_id)
-        if cached:
-            owner = cached.get("user_id", "")
-            if user_id and owner and owner != user_id:
+        if cached is None:
+            # 音色不在本地缓存中（可能不存在或为预置音色）
+            if user_id:
                 raise PermissionError("无权访问此音色")
-            if cached.get("status") == "ready":
-                return dict(cached)
+            return {"speaker_id": speaker_id, "status": "unknown", "message": "音色不存在"}
 
-        if not self.is_configured:
-            if cached:
-                return dict(cached)
-            raise RuntimeError("Doubao 声音复刻 API 未配置")
+        owner = cached.get("user_id", "")
+        if user_id and owner and owner != user_id:
+            raise PermissionError("无权访问此音色")
 
-        url = f"{self.base_url}/api/v3/icl/status"
-        headers = self._build_headers()
-        payload = {"speaker_id": speaker_id}
+        # 如果状态为 ready，直接返回缓存
+        if cached.get("status") == "ready":
+            return dict(cached)
 
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        # 如果仍处于 training 状态且 API 已配置，查询最新状态
+        if self.is_configured:
+            url = f"{self.base_url}/api/v3/icl/status"
+            headers = self._build_headers()
+            payload = {"speaker_id": speaker_id}
 
-        status = data.get("status") or data.get("data", {}).get("status", "unknown")
+            async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
 
-        if cached:
+            status = data.get("status") or data.get("data", {}).get("status", "unknown")
             cached["status"] = status
             cached["updated_at"] = datetime.now(timezone.utc).isoformat()
-        else:
-            self._speakers[speaker_id] = {
-                "speaker_id": speaker_id,
-                "voice_name": speaker_id,
-                "status": status,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
 
-        return dict(self._speakers.get(speaker_id, {"speaker_id": speaker_id, "status": status}))
+        return dict(cached)
 
     async def wait_for_ready(self, speaker_id: str) -> Dict[str, Any]:
         """
@@ -220,30 +216,30 @@ class VoiceCloneManager:
         """
         删除复刻音色。若提供 user_id，校验所有权。
         """
-        # 校验所有权
-        cached = self._speakers.get(speaker_id)
-        if cached and user_id:
-            owner = cached.get("user_id", "")
-            if owner and owner != user_id:
-                raise PermissionError("无权删除此音色")
-
         # 不允许删除预置音色
         from .tts_client import PRESET_SPEAKERS
         if speaker_id in PRESET_SPEAKERS:
             raise ValueError(f"不允许删除预置音色: {speaker_id}")
 
-        if not self.is_configured:
-            self._speakers.pop(speaker_id, None)
-            logger.bind(event="doubao_clone_deleted_local", speaker_id=speaker_id).info("本地复刻音色已删除")
-            return True
+        # 校验所有权：仅允许删除本地缓存的、属于当前用户的复刻音色
+        cached = self._speakers.get(speaker_id)
+        if cached is None:
+            if user_id:
+                raise PermissionError("无权删除此音色")
+            return False  # 音色不存在
+        if user_id:
+            owner = cached.get("user_id", "")
+            if owner and owner != user_id:
+                raise PermissionError("无权删除此音色")
 
-        url = f"{self.base_url}/api/v3/icl/delete"
-        headers = self._build_headers()
-        payload = {"speaker_id": speaker_id}
-
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
+        # 从本地缓存和远程 API 删除
+        if self.is_configured:
+            url = f"{self.base_url}/api/v3/icl/delete"
+            headers = self._build_headers()
+            payload = {"speaker_id": speaker_id}
+            async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
 
         self._speakers.pop(speaker_id, None)
         logger.bind(event="doubao_clone_deleted", speaker_id=speaker_id).info("复刻音色已删除")
