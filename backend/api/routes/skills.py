@@ -12,6 +12,7 @@ from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
 from skills.skill_validator import SkillValidator
+from skills.skill_security import SkillSecurityScanner
 from config.logging import sanitize_for_logging
 from loguru import logger
 import yaml
@@ -552,7 +553,31 @@ async def install_skill_from_package(
         for field in required_fields:
             if field not in config_dict:
                 raise HTTPException(status_code=400, detail=f"技能配置缺少必需字段: {field}")
-        
+
+        # 安装前安全扫描
+        scanner = SkillSecurityScanner()
+        scan_result = scanner.scan_skill_config(config_dict)
+        if not scan_result.is_safe:
+            threat_descriptions = [t.description for t in scan_result.threats]
+            logger.bind(
+                event="skill_security_blocked",
+                module="skills",
+                skill_name=config_dict.get('name'),
+                threats=threat_descriptions,
+                user_id=current_user.id,
+            ).warning("技能安装被安全扫描拦截")
+            raise HTTPException(
+                status_code=400,
+                detail=f"技能安全扫描未通过: {'; '.join(threat_descriptions)}",
+            )
+        if scan_result.threats:
+            logger.bind(
+                event="skill_security_warning",
+                module="skills",
+                skill_name=config_dict.get('name'),
+                threat_count=len(scan_result.threats),
+            ).info(f"技能通过安全扫描，但存在 {len(scan_result.threats)} 个低级别警告")
+
         existing_skill = db.query(Skill).filter(Skill.name == config_dict['name']).first()
         if existing_skill:
             raise HTTPException(status_code=400, detail=f"技能 '{config_dict['name']}' 已存在")

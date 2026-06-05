@@ -421,9 +421,46 @@ class SkillExecutor:
             logger.error(f"Failed to initialize environment: {e}")
             return False
 
+    # 工具类型 → 所需权限映射
+    _TOOL_PERMISSION_MAP: Dict[str, str] = {
+        'code_executor': 'process:write',
+        'file_operation': 'file:read',
+        'shell': 'command:execute',
+        'api_call': 'network:http',
+        'llm': 'memory:read',
+    }
+
+    def _check_permission(self, tool: str, action: str) -> None:
+        """
+        检查技能是否声明了执行该工具类型所需的权限。
+
+        若技能未声明所需权限，抛出 SecurityValidationError。
+        """
+        required_permission = self._TOOL_PERMISSION_MAP.get(tool)
+        if required_permission is None:
+            return  # 未知工具类型不拦截（如 default action）
+
+        declared_permissions: List[str] = self.execution_context.get(
+            'skill_config', {}
+        ).get('permissions', [])
+
+        if not declared_permissions:
+            # 未声明任何权限：仅允许无权限要求的工具
+            raise SecurityValidationError(
+                f"技能未声明任何权限，无法执行需要 '{required_permission}' 的工具 '{tool}'"
+            )
+
+        if required_permission not in declared_permissions:
+            raise SecurityValidationError(
+                f"技能未声明所需权限 '{required_permission}'，"
+                f"无法执行工具 '{tool}' (action={action})"
+            )
+
     async def execute_step(self, step: Dict, context: Dict) -> StepResult:
         """
         执行单个技能步骤。
+
+        在执行前校验权限声明，防止技能越权操作。
 
         Args:
             step: 步骤配置字典，包含 action、tool、params 等字段。
@@ -442,6 +479,9 @@ class SkillExecutor:
             if not self.environment_initialized:
                 raise RuntimeError("执行环境尚未初始化，请先调用 initialize_environment()")
 
+            # 权限强制执行：在执行前检查技能是否声明了所需权限
+            self._check_permission(tool, action)
+
             merged_context = {**self.execution_context, **context}
             params_with_context = {**params, 'context': merged_context}
 
@@ -450,6 +490,9 @@ class SkillExecutor:
             logger.info(f"Step completed: action={action!r}")
             return StepResult(action=action, tool=tool, result=result, success=True)
 
+        except SecurityValidationError as e:
+            logger.warning(f"Step blocked by permission check: action={action!r}, error={e}")
+            return StepResult(action=action, tool=tool, result=None, success=False, error=str(e))
         except Exception as e:
             logger.error(f"Step failed: action={action!r}, error={e}")
             return StepResult(action=action, tool=tool, result=None, success=False, error=str(e))
