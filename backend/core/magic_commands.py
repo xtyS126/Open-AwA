@@ -139,7 +139,8 @@ class MagicCommandRegistry:
         model_name = context.get("model_name", "default")
 
         try:
-            memory_manager = MemoryManager()
+            from db.models import SessionLocal
+            memory_manager = MemoryManager(SessionLocal)
             memories = await memory_manager.get_short_term_memories(
                 session_id=session_id, limit=100
             )
@@ -207,10 +208,11 @@ class MagicCommandRegistry:
 
         session_id = context.get("session_id", "default")
         try:
-            memory_manager = MemoryManager()
+            from db.models import SessionLocal
+            memory_manager = MemoryManager(SessionLocal)
             await memory_manager.clear_short_term_memory(session_id=session_id)
-        except Exception:
-            pass  # 清空失败不阻塞
+        except Exception as exc:
+            logger.warning(f"/new 清空上下文失败: {exc}")
 
         return {
             "action": "new_session",
@@ -224,10 +226,11 @@ class MagicCommandRegistry:
 
         session_id = context.get("session_id", "default")
         try:
-            memory_manager = MemoryManager()
+            from db.models import SessionLocal
+            memory_manager = MemoryManager(SessionLocal)
             await memory_manager.clear_short_term_memory(session_id=session_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"/clear 清空上下文失败: {exc}")
 
         return {
             "action": "clear_context",
@@ -388,10 +391,11 @@ class MagicCommandRegistry:
     async def _handle_make_plan(self, context: dict) -> dict:
         """处理 /make-plan 命令 — 基于当前对话生成结构化执行计划。"""
         from memory.manager import MemoryManager
+        from db.models import SessionLocal
 
         session_id = context.get("session_id", "")
         workspace_id = context.get("workspace_id", "default")
-        memory_manager = MemoryManager()
+        memory_manager = MemoryManager(SessionLocal)
         memories = memory_manager._get_short_term_memories_sync(
             session_id=session_id,
             workspace_id=workspace_id,

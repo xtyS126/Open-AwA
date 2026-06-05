@@ -609,8 +609,12 @@ class AIAgent:
             "mcp": await self._collect_mcp_capabilities(context),
         }
 
-        # 根据 Agent 类型注入差异化系统提示
+        # 根据 Agent 类型注入差异化系统提示（白名单校验，防止注入非预期角色）
+        ALLOWED_AGENT_TYPES = {"Explore", "Plan", "general-purpose"}
         agent_type = context.get("agent_type", "general-purpose")
+        if agent_type not in ALLOWED_AGENT_TYPES:
+            logger.warning(f"非法的 agent_type '{agent_type}'，已回退为 general-purpose")
+            agent_type = "general-purpose"
         context["agent_type"] = agent_type
         if agent_type == "Explore":
             context.setdefault("agent_type_hint", "你是一个只读的代码探索Agent，专注于搜索、阅读和分析代码。不要修改任何文件。")

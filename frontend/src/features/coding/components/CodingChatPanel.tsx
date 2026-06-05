@@ -49,11 +49,17 @@ const CodingChatPanel: React.FC = () => {
       await chatAPI.sendMessageStream(
         fullMessage,
         sessionId,
-        (chunk: string) => {
-          responseText += chunk
+        undefined,  // provider
+        undefined,  // model
+        (event) => {
+          // onEvent: 累积流式 chunk
+          if (event.type === 'chunk' && event.content) {
+            responseText += event.content
+          }
         },
-        () => {},
-        () => {},
+        (error) => {
+          console.error('Coding 聊天流错误:', error)
+        },
       )
       setMessages((prev) => [...prev, { role: 'assistant', content: responseText }])
     } catch {

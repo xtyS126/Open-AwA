@@ -3,10 +3,13 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request, Query
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from db.models import get_db, Skill, ExperienceExtractionLog, WeixinBinding
+from db.models import get_db, Skill, SkillExecutionLog, ExperienceExtractionLog, WeixinBinding
 from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
@@ -1817,7 +1820,7 @@ def get_skill_analytics_overview(
             func.count(SkillExecutionLog.id).label("count"),
             func.avg(SkillExecutionLog.execution_time).label("avg_time"),
             func.sum(
-                func.case((SkillExecutionLog.status == "success", 1), else_=0)
+                case((SkillExecutionLog.status == "success", 1), else_=0)
             ).label("successes"),
         )
         .group_by(SkillExecutionLog.skill_name)

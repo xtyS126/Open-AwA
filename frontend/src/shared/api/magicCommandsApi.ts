@@ -1,4 +1,4 @@
-import axios from 'axios'
+import api from '@/shared/api/api'
 
 const API_BASE = '/api'
 
@@ -32,12 +32,12 @@ export interface CompactResult {
 
 export const magicCommandsApi = {
   async listCommands(): Promise<{ commands: MagicCommand[]; total: number }> {
-    const res = await axios.get(`${API_BASE}/magic-commands`)
+    const res = await api.get(`${API_BASE}/magic-commands`)
     return res.data
   },
 
   async executeCommand(commandName: string, context?: Record<string, unknown>): Promise<ExecuteCommandResult> {
-    const res = await axios.post(`${API_BASE}/magic-commands/execute`, {
+    const res = await api.post(`${API_BASE}/magic-commands/execute`, {
       command_name: commandName,
       context: context || {},
     })
@@ -45,7 +45,7 @@ export const magicCommandsApi = {
   },
 
   async compact(sessionId: string, workspaceId?: string, modelName?: string): Promise<CompactResult> {
-    const res = await axios.post(`${API_BASE}/magic-commands/compact`, {
+    const res = await api.post(`${API_BASE}/magic-commands/compact`, {
       session_id: sessionId,
       workspace_id: workspaceId || 'default',
       model_name: modelName || 'default',

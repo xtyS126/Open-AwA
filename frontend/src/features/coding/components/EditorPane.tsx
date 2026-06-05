@@ -16,11 +16,10 @@ const EditorPane: React.FC = () => {
     updateFileContent, markFileClean, projectDir,
     editorFontSize, editorTabSize, editorWordWrap, editorMinimap,
   } = useCodingStore()
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-  const activeFileRef = useRef(activeFile)
   const { theme } = useThemeStore()
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
+  const activeFileRef = useRef(activeFile)
   // 保持 ref 始终指向最新的 activeFile，避免 Monaco 快捷键闭包过期
   useEffect(() => {
     activeFileRef.current = activeFile

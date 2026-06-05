@@ -79,7 +79,8 @@ const CodingPage: React.FC = () => {
       const diffResult = await codingApi.gitDiff(filePath, false, projectDir || undefined)
       const activeFile = openFiles.find((f) => f.path === filePath)
       const currentContent = activeFile?.content || ''
-      const originalContent = currentContent // 简化：将修改后的内容与当前内容对比
+      // 使用 Git diff API 返回的原始内容，若不可用则回退到当前内容
+      const originalContent = (diffResult && diffResult.original) || currentContent
 
       setDiffData({
         original: originalContent,
