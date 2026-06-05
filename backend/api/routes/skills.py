@@ -283,7 +283,7 @@ def _migrate_weixin_config_from_skill(db: Session) -> None:
     binding = WeixinBinding(
         user_id=migrated_user_id,
         weixin_account_id=account_id,
-        token=token if not token else token,
+        token=encrypt_secret_value(token) if token else "",
         base_url=str(wx_config.get("base_url") or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL,
         bot_type=DEFAULT_BOT_TYPE,
         channel_version="1.0.2",
@@ -928,7 +928,7 @@ async def weixin_qr_image(
     try:
         timeout_seconds = _normalize_timeout_seconds((session or {}).get("timeout_seconds"), fallback=15)
         import httpx
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False) as client:
             upstream = await client.get(resolved_qrcode_url)
         if upstream.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"二维码图片请求失败: HTTP {upstream.status_code}")
