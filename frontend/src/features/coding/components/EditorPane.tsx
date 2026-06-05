@@ -2,7 +2,7 @@
  * 编辑器面板 — 基于 Monaco Editor 的多标签代码编辑器。
  * 支持语法高亮、自动补全、多标签管理、Ctrl+S 保存。
  */
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback, useRef, useEffect } from 'react'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useCodingStore } from '../store/codingStore'
@@ -17,34 +17,40 @@ const EditorPane: React.FC = () => {
     editorFontSize, editorTabSize, editorWordWrap, editorMinimap,
   } = useCodingStore()
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const activeFileRef = useRef(activeFile)
   const { theme } = useThemeStore()
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
+  // 保持 ref 始终指向最新的 activeFile，避免 Monaco 快捷键闭包过期
+  useEffect(() => {
+    activeFileRef.current = activeFile
+  })
+
+  const handleSave = useCallback(async () => {
+    const file = activeFileRef.current
+    if (!file || !file.isDirty) return
+    try {
+      await codingApi.writeFile(file.path, file.content, projectDir || undefined)
+      markFileClean(file.path)
+    } catch (e) {
+      console.error('保存失败:', e)
+    }
+  }, [projectDir, markFileClean])
 
   const handleEditorMount: OnMount = useCallback((editor) => {
     editorRef.current = editor
-    // Ctrl+S 保存
+    // Ctrl+S 保存 — 通过 ref 读取最新 activeFile，避免闭包过期
     editor.addAction({
       id: 'save-file',
       label: '保存文件',
       keybindings: [2048 | 49], // CtrlCmd + KeyS
       run: () => {
-        if (activeFile?.isDirty) {
+        if (activeFileRef.current?.isDirty) {
           handleSave()
         }
       },
     })
-  }, [activeFile])
-
-  const handleSave = useCallback(async () => {
-    if (!activeFile || !activeFile.isDirty) return
-    try {
-      await codingApi.writeFile(activeFile.path, activeFile.content, projectDir || undefined)
-      markFileClean(activeFile.path)
-    } catch (e) {
-      console.error('保存失败:', e)
-    }
-  }, [activeFile, projectDir, markFileClean])
+  }, [handleSave])
 
   const handleContentChange = useCallback((value: string | undefined) => {
     if (activeFile && value !== undefined) {

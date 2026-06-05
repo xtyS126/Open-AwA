@@ -2,7 +2,7 @@
  * Agent 创建/编辑模态框。
  * 支持配置 Agent 名称、类型、系统提示、工具开关、模型等。
  */
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import styles from './AgentCreateModal.module.css'
 
@@ -51,10 +51,19 @@ const AgentCreateModal: React.FC<AgentCreateModalProps> = ({ agent, onClose }) =
   const handleSave = async () => {
     if (!name.trim()) return
     setSaving(true)
-    // 通过 API 创建 Agent（当前后端支持注册内置类型，自定义类型通过配置实现）
     try {
-      // 注：完整创建功能需后端扩展 subagents 路由支持自定义 Agent 注册
-      // 当前版本将配置保存到 workspace 的人设文件中
+      // 将 Agent 配置持久化到 localStorage（后续可通过后端 API 扩展）
+      const customAgents = JSON.parse(localStorage.getItem('openawa_custom_agents') || '{}')
+      customAgents[name.trim()] = {
+        name: name.trim(),
+        type,
+        description,
+        system_prompt: systemPrompt,
+        tools: selectedTools,
+        model: model || undefined,
+        updated_at: new Date().toISOString(),
+      }
+      localStorage.setItem('openawa_custom_agents', JSON.stringify(customAgents))
       onClose()
     } catch {
       // ignore

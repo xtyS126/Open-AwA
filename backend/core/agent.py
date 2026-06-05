@@ -1551,6 +1551,8 @@ class AIAgent:
         model_name = context.get("model", "default")
         budget = TokenBudget(model_name=model_name)
         current_tokens = budget.count_messages(messages)
+        # 更新计数器后检查压缩阈值
+        budget.track(current_tokens)
 
         if not budget.should_compress() and len(messages) <= 40:
             return messages
@@ -1562,6 +1564,7 @@ class AIAgent:
             original_count=len(messages),
             compressed_count=len(result["compressed_messages"]),
             tokens_before=current_tokens,
+            tokens_after=budget.count_messages(result["compressed_messages"]),
         ).info("对话上下文已自动压缩")
         return result["compressed_messages"]
 

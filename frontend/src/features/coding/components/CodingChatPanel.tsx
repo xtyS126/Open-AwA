@@ -5,8 +5,7 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { Send, Code, GitBranch, Bug, ScrollText } from 'lucide-react'
 import { useCodingStore } from '../store/codingStore'
-import { useChatStore } from '@/features/chat/store/chatStore'
-import { chatAPI } from '@/features/chat/chatApi'
+import { chatAPI } from '@/shared/api/api'
 import styles from './CodingChatPanel.module.css'
 
 interface ChatMessage {
