@@ -228,7 +228,7 @@ def _run_chat_nonstream(db: Session, current_user: User) -> tuple:
         thread.start()
         thread.join(timeout=120.0)
         if "error" in error_holder:
-            raise error_holder["error"]
+            raise RuntimeError("测试线程执行失败") from error_holder["error"]
         result = result_holder.get("value")
 
     response_text = result.get("response", "")

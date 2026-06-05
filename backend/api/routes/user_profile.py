@@ -247,13 +247,10 @@ async def list_profile_facts(
         ProfileFact.confidence.desc()
     ).offset(offset).limit(limit).all()
 
-    # 类别分布（基于全部匹配结果）
+    # 类别分布（基于与筛选条件一致的匹配结果，不含分页限制）
     category_counts: Dict[str, int] = {}
-    all_active = db.query(ProfileFact).filter(
-        ProfileFact.user_id == current_user.id,
-        ProfileFact.is_active == True,
-    ).all()
-    for f in all_active:
+    all_matching = base_query.all()
+    for f in all_matching:
         category_counts[f.category] = category_counts.get(f.category, 0) + 1
 
     return FactsListResponse(
