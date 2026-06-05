@@ -39,13 +39,26 @@ from sqlalchemy.orm import Session
 
 MAX_TOOL_CALL_ROUNDS = 12
 
+# 活跃 Agent 任务容量上限：防止异常断流或取消链路不完整时字典无限增长
+_MAX_ACTIVE_AGENT_TASKS = 1000
 # 全局活跃 Agent 任务字典：session_id -> asyncio.Task
 # 供取消端点查找并取消正在执行的 Agent 异步任务
 _active_agent_tasks: Dict[str, asyncio.Task] = {}
 
 
 def register_agent_task(session_id: str, task: asyncio.Task) -> None:
-    """注册活跃的 Agent 异步任务，供取消端点查找。"""
+    """注册活跃的 Agent 异步任务，供取消端点查找。
+    容量满时自动清理已完成的任务，仍满则拒绝注册并告警。
+    """
+    global _active_agent_tasks
+    if len(_active_agent_tasks) >= _MAX_ACTIVE_AGENT_TASKS:
+        _cleanup_completed_tasks()
+        if len(_active_agent_tasks) >= _MAX_ACTIVE_AGENT_TASKS:
+            logger.bind(event="agent_task_capacity_reached", module="agent",
+                        active_count=len(_active_agent_tasks),
+                        max_capacity=_MAX_ACTIVE_AGENT_TASKS
+                        ).warning("活跃 Agent 任务字典达到容量上限，拒绝注册新任务")
+            return
     _active_agent_tasks[session_id] = task
 
 
@@ -59,13 +72,33 @@ def get_agent_task(session_id: str) -> Optional[asyncio.Task]:
     return _active_agent_tasks.get(session_id)
 
 
+def _cleanup_completed_tasks() -> None:
+    """清理已完成或已取消的 Agent 任务条目，防止内存泄漏。"""
+    completed_sessions = [
+        sid for sid, task in _active_agent_tasks.items()
+        if task.done()
+    ]
+    for sid in completed_sessions:
+        _active_agent_tasks.pop(sid, None)
+    if completed_sessions:
+        logger.bind(event="agent_tasks_cleanup", module="agent",
+                    removed=len(completed_sessions),
+                    remaining=len(_active_agent_tasks)
+                    ).debug("清理已完成的 Agent 任务条目")
+
+
 def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
+    """
+    解析工具调用回环上限，默认 12 轮，上限 100 轮。
+    防止请求方传入超大值导致 Agent 长时间停留在工具调用回环中，
+    放大成本、延迟和资源占用风险。
+    """
     raw_value = context.get("max_tool_call_rounds")
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
         return MAX_TOOL_CALL_ROUNDS
-    return max(1, min(50000, value))
+    return max(1, min(100, value))
 
 class AIAgent:
     """

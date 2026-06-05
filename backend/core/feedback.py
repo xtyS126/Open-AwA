@@ -1,6 +1,6 @@
 """
-核心执行编排模块，负责 Agent 主流程中的理解、规划、执行、反馈或记录能力。
-这些文件决定了用户请求在内部被如何拆解、编排以及最终落地执行。
+核心执行编排模块,负责 Agent 主流程中的理解,规划,执行,反馈或记录能力.
+这些文件决定了用户请求在内部被如何拆解,编排以及最终落地执行.
 """
 
 import time
@@ -10,29 +10,20 @@ from loguru import logger
 
 class FeedbackLayer:
     """
-    封装与FeedbackLayer相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    Agent 反馈层:负责在工具调用完成后提取经验,记录对话并持久化记忆.
+    依赖外部注入的 MemoryManager 执行实际的记忆写入操作.
     """
     def __init__(self):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化反馈层,memory_manager 需通过 set_memory_manager 注入."""
         self.memory_manager = None
         logger.info("FeedbackLayer initialized")
-    
+
     def set_memory_manager(self, memory_manager):
-        """
-        设置memory、manager相关配置或运行状态。
-        此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
-        """
+        """注入 MemoryManager 实例,供后续反馈收集时写入记忆和对话记录."""
         self.memory_manager = memory_manager
     
     async def evaluate_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理evaluate、result相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """评估工具执行结果,判断是否需要重试,提供建议或标记为失败."""
         status = result.get("status")
         
         if status == "error":
@@ -56,10 +47,7 @@ class FeedbackLayer:
         }
     
     async def generate_response(self, results: List[Dict[str, Any]], context: Dict[str, Any] | None = None) -> str:
-        """
-        处理generate、response相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """根据工具执行结果列表生成面向用户的自然语言反馈文本, 支持通过 context._record_hook 注入行为记录回调."""
         started_at = time.perf_counter()
         if not results:
             response_text = "No results to report."
@@ -130,9 +118,9 @@ class FeedbackLayer:
         tool_events: Optional[list] = None,
     ):
         """
-        更新memory相关数据、配置或状态。
-        reasoning_content 为本轮思维链文本，tool_events 为工具调用事件列表，用于历史恢复时展示。
-        阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+        更新memory相关数据,配置或状态.
+        reasoning_content 为本轮思维链文本,tool_events 为工具调用事件列表,用于历史恢复时展示.
+        阅读时需要重点关注覆盖规则,副作用以及更新后的数据一致性.
         """
         if context.get("scheduled_execution_isolated") or context.get("disable_memory_update"):
             logger.info("Memory update disabled for current execution context")
@@ -191,10 +179,7 @@ class FeedbackLayer:
             logger.error(f"Error updating memory: {str(e)}")
     
     def _should_persist(self, content: str) -> bool:
-        """
-        处理should、persist相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """判断对话内容是否包含需持久化到长期记忆的关键词(如 remember/记住/preference 等)."""
         important_keywords = [
             "remember", "记住", "important", "重要",
             "preference", "偏好", "习惯", "always"
@@ -212,17 +197,17 @@ class FeedbackLayer:
         comment: Optional[str] = None,
     ) -> None:
         """
-        记录用户对助手消息的显式反馈（点赞/点踩）。
+        记录用户对助手消息的显式反馈(点赞/点踩).
 
         Args:
             session_id: 会话 ID
             message_id: 消息 ID
-            user_id: 用户 ID（字符串类型）
-            rating: 评分（1=点赞，-1=点踩）
+            user_id: 用户 ID(字符串类型)
+            rating: 评分(1=点赞,-1=点踩)
             comment: 可选备注
         """
         if rating not in (-1, 1):
-            raise ValueError(f"无效的评分值: {rating}，应为 1（点赞）或 -1（点踩）")
+            raise ValueError(f"无效的评分值: {rating},应为 1(点赞)或 -1(点踩)")
 
         import asyncio
         from db.models import UserFeedback, SessionLocal
@@ -250,10 +235,7 @@ class FeedbackLayer:
         await asyncio.to_thread(_sync_record)
 
     async def diagnose_error(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        处理diagnose、error相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """诊断工具执行错误,根据错误消息分类为 timeout/network/auth 等类型并给出修复建议."""
         error_message = result.get("message", "")
         
         diagnosis = {
@@ -285,5 +267,5 @@ class FeedbackLayer:
         return diagnosis
 
 
-# 全局 FeedbackLayer 实例注册表，供 API 路由访问
+# 全局 FeedbackLayer 实例注册表,供 API 路由访问
 feedback_layer_registry = FeedbackLayer()

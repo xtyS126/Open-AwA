@@ -11,7 +11,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from billing.models import Base, ModelConfiguration, ModelPricing
+from db.models import Base
+from billing.models import ModelConfiguration, ModelPricing
 from billing.pricing_manager import PricingManager
 from core.executor import ExecutionLayer
 from core.model_service import build_provider_request

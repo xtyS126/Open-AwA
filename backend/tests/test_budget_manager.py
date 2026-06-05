@@ -11,7 +11,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from billing.models import Base, BudgetConfig
+from db.models import Base
+from billing.models import BudgetConfig
 from billing.budget_manager import BudgetManager
 
 
