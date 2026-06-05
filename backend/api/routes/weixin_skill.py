@@ -451,26 +451,33 @@ def _build_qr_logger(session_key: str, event: str, **fields: Any):
 
 
 def _build_qrcode_upstream_error_detail(result: Dict[str, Any]) -> str:
-    """构建上游错误详情字符串。"""
-    payload_source = result.get("data") if isinstance(result, dict) and result.get("data") is not None else result
-    payload = _coerce_weixin_response_payload(payload_source)
-    code = payload.get("errcode") or payload.get("code") or payload.get("ret")
-    message = (
-        payload.get("errmsg")
-        or payload.get("message")
-        or payload.get("error")
-        or payload.get("retmsg")
-        or payload.get("detail")
-        or payload.get("raw_text")
-    )
-    detail = "上游返回错误"
-    if isinstance(code, (int, str)) and str(code).strip() not in {"", "0"}:
-        detail += f" (code={code})"
-    if isinstance(message, str) and message.strip():
-        detail += f": {message.strip()}"
-    else:
-        detail += f": {json.dumps(result, ensure_ascii=False)[:200]}"
-    return detail
+    """构建上游错误详情字符串（仅返回通用错误，详细内容记入日志）。"""
+    return "无法获取二维码，请检查微信配置是否正确。"
+
+
+def _verify_qr_session_ownership(session: Optional[Dict[str, Any]], current_user, session_key: str) -> None:
+    """
+    校验二维码会话属于当前认证用户，防止 IDOR。
+    会话不存在时不报错（调用方自行处理），会话属于其他用户时返回 404。
+    """
+    if session is None:
+        return
+    session_owner = str(session.get("user_id") or "")
+    request_user = str(current_user.id) if hasattr(current_user, "id") else ""
+    if session_owner and request_user and session_owner != request_user:
+        _build_qr_logger(session_key, "qr_session_ownership_mismatch",
+                         session_owner=session_owner, request_user=request_user).warning("qr session ownership mismatch")
+        raise HTTPException(status_code=404, detail="会话不存在。")
+
+
+def _redact_sensitive_log_fields(data: str) -> str:
+    """移除日志中的敏感字段（token、auth_id、qrcode 内容）。"""
+    import re as _re
+    redacted = _re.sub(r'"token"\s*:\s*"[^"]*"', '"token":"***"', data)
+    redacted = _re.sub(r'"auth_id"\s*:\s*"[^"]*"', '"auth_id":"***"', redacted)
+    redacted = _re.sub(r'"qrcode"\s*:\s*"[^"]*"', '"qrcode":"***"', redacted)
+    redacted = _re.sub(r'"qrcode_url"\s*:\s*"[^"]*"', '"qrcode_url":"***"', redacted)
+    return redacted
 
 
 def _normalize_qr_wait_status(status_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -638,14 +645,20 @@ class WeixinQrExitReq(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/health-check")
-async def weixin_health_check(request: Request):
+async def weixin_health_check(request: Request, current_user=Depends(get_current_user)):
     """测试微信 API 连接健康状态。"""
     config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
+    base_url = str(config.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
+    # 校验 base_url 域名在白名单内，防止 SSRF
+    parsed = urlparse(base_url)
+    hostname = str(parsed.hostname or "").lower()
+    if hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"不支持的微信服务域名: {hostname}")
     adapter = WeixinSkillAdapter()
     runtime_config = WeixinRuntimeConfig(
         account_id=config.account_id,
         token=config.token,
-        base_url=config.base_url or DEFAULT_BASE_URL,
+        base_url=base_url,
         bot_type=config.bot_type if hasattr(config, "bot_type") and config.bot_type else DEFAULT_BOT_TYPE,
         channel_version=config.channel_version if hasattr(config, "channel_version") and config.channel_version else "1.0.2",
         timeout_seconds=config.timeout_seconds or 15,
@@ -752,13 +765,13 @@ async def weixin_qr_start(
     except WeixinAdapterError as exc:
         raise HTTPException(status_code=502, detail=exc.message)
 
-    _build_qr_logger(session_key, "qr_start_upstream_result", poll_base_url=poll_base_url, bot_type=bot_type, timeout_seconds=timeout_seconds, upstream_preview=json.dumps(qr_result, ensure_ascii=False)[:600]).debug("received weixin qr upstream result")
+    _build_qr_logger(session_key, "qr_start_upstream_result", poll_base_url=poll_base_url, bot_type=bot_type, timeout_seconds=timeout_seconds, upstream_preview=_redact_sensitive_log_fields(json.dumps(qr_result, ensure_ascii=False)[:600])).debug("received weixin qr upstream result")
     extracted = _extract_qrcode_fields(qr_result)
     qrcode = extracted["qrcode"]
     qrcode_url = extracted["qrcode_url"]
     qrcode_content = extracted["qrcode_content"]
     if not qrcode:
-        _build_qr_logger(session_key, "qr_start_missing_qrcode", upstream_preview=json.dumps(qr_result, ensure_ascii=False)[:600]).warning("missing qrcode in upstream response")
+        _build_qr_logger(session_key, "qr_start_missing_qrcode", upstream_preview=_redact_sensitive_log_fields(json.dumps(qr_result, ensure_ascii=False)[:600])).warning("missing qrcode in upstream response")
         raise HTTPException(status_code=502, detail=_build_qrcode_upstream_error_detail(qr_result))
 
     with WEIXIN_QR_SESSIONS_LOCK:
@@ -799,6 +812,7 @@ async def weixin_qr_image(
             found = WEIXIN_QR_SESSIONS.get(session_key)
             if found:
                 session = dict(found)
+        _verify_qr_session_ownership(session, current_user, session_key or "")
 
     resolved_qrcode_url = str((session or {}).get("qrcode_url") or qrcode_url or "").strip()
     if not resolved_qrcode_url:
@@ -840,6 +854,8 @@ async def weixin_qr_wait(
         if found:
             session = dict(found)
 
+    _verify_qr_session_ownership(session, current_user, payload.session_key)
+
     if not session:
         fallback_qrcode = str(payload.qrcode or "").strip()
         if not fallback_qrcode:
@@ -861,6 +877,13 @@ async def weixin_qr_wait(
     adapter = WeixinSkillAdapter()
     timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
     poll_base_url = str(session.get("poll_base_url") or payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
+    # 校验用户提供的 base_url 域名在白名单内，防止 SSRF
+    user_base_url = str(payload.base_url or "").strip()
+    if user_base_url:
+        parsed = urlparse(user_base_url)
+        hostname = str(parsed.hostname or "").lower()
+        if hostname and hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
+            raise HTTPException(status_code=400, detail=f"不支持的 base_url 域名: {hostname}")
 
     confirmed_payload: Optional[Dict[str, Any]] = None
     with WEIXIN_QR_SESSIONS_LOCK:
@@ -1016,6 +1039,9 @@ async def weixin_qr_exit(
     cleared_sessions = 0
     if payload.session_key:
         with WEIXIN_QR_SESSIONS_LOCK:
+            session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+            if session is not None:
+                _verify_qr_session_ownership(dict(session), current_user, payload.session_key)
             if WEIXIN_QR_SESSIONS.pop(payload.session_key, None) is not None:
                 cleared_sessions = 1
     else:
