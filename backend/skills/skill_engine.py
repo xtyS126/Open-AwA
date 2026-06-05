@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
+from db.models import SkillExecutionLog
 from .skill_registry import SkillRegistry
 from .skill_validator import SkillValidator, ValidationResult
 from .skill_loader import SkillLoader
@@ -193,11 +194,15 @@ class SkillEngine:
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
         """
-        处理execute、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        执行技能完整流程：查找 → 加载 → 校验 → 执行 → 记录日志 → 清理。
+
+        返回统一的执行结果字典，所有路径通过单一出口返回，
+        确保执行日志在 finally 块中持久化到 skill_execution_logs 表。
         """
         execution_id = self._generate_log_id()
         metrics = self._start_performance_tracking(skill_name)
+        result: Dict[str, Any] = {}
+        skill_id: str = ""
 
         self._add_execution_log(
             skill_name=skill_name,
@@ -208,6 +213,9 @@ class SkillEngine:
 
         try:
             skill_record = self.registry.get(skill_name)
+            if skill_record:
+                skill_id = getattr(skill_record, 'id', '')
+
             if not skill_record:
                 self._add_execution_log(
                     skill_name=skill_name,
@@ -216,7 +224,7 @@ class SkillEngine:
                     level='ERROR',
                     details={'execution_id': execution_id}
                 )
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -225,6 +233,7 @@ class SkillEngine:
                     'steps': [],
                     'metrics': metrics.to_dict()
                 }
+                return result
 
             if not skill_record.enabled:
                 self._add_execution_log(
@@ -234,7 +243,7 @@ class SkillEngine:
                     level='WARNING',
                     details={'execution_id': execution_id}
                 )
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -243,6 +252,7 @@ class SkillEngine:
                     'steps': [],
                     'metrics': metrics.to_dict()
                 }
+                return result
 
             skill_config = self.loader.load_from_db(skill_name)
             if not skill_config:
@@ -253,7 +263,7 @@ class SkillEngine:
                     level='ERROR',
                     details={'execution_id': execution_id}
                 )
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -262,6 +272,7 @@ class SkillEngine:
                     'steps': [],
                     'metrics': metrics.to_dict()
                 }
+                return result
 
             self._add_execution_log(
                 skill_name=skill_name,
@@ -280,7 +291,7 @@ class SkillEngine:
                     level='ERROR',
                     details={'execution_id': execution_id, 'errors': errors}
                 )
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -290,6 +301,7 @@ class SkillEngine:
                     'metrics': metrics.to_dict(),
                     'validation': validation_result
                 }
+                return result
 
             self._add_execution_log(
                 skill_name=skill_name,
@@ -332,7 +344,7 @@ class SkillEngine:
                         }
                     )
                     self.registry.increment_usage(skill_name)
-                    return {
+                    result = {
                         'success': True,
                         'skill_name': skill_name,
                         'execution_id': execution_id,
@@ -349,6 +361,7 @@ class SkillEngine:
                         'metrics': metrics.to_dict(),
                         'execution_time': metrics.duration
                     }
+                    return result
 
                 self._add_execution_log(
                     skill_name=skill_name,
@@ -362,7 +375,7 @@ class SkillEngine:
                         'error': adapter_error
                     }
                 )
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -380,6 +393,7 @@ class SkillEngine:
                     'metrics': metrics.to_dict(),
                     'execution_time': metrics.duration
                 }
+                return result
 
             env_init_success = await self.executor.initialize_environment(skill_config, context)
             if not env_init_success:
@@ -390,7 +404,7 @@ class SkillEngine:
                     level='ERROR',
                     details={'execution_id': execution_id}
                 )
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -399,6 +413,7 @@ class SkillEngine:
                     'steps': [],
                     'metrics': metrics.to_dict()
                 }
+                return result
 
             self._add_execution_log(
                 skill_name=skill_name,
@@ -430,7 +445,7 @@ class SkillEngine:
 
                 self.registry.increment_usage(skill_name)
 
-                return {
+                result = {
                     'success': True,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -461,7 +476,7 @@ class SkillEngine:
                     }
                 )
 
-                return {
+                result = {
                     'success': False,
                     'skill_name': skill_name,
                     'execution_id': execution_id,
@@ -480,6 +495,7 @@ class SkillEngine:
                     'metrics': metrics.to_dict(),
                     'execution_time': execution_result.execution_time
                 }
+            return result
 
         except Exception as e:
             metrics.finalize()
@@ -493,7 +509,7 @@ class SkillEngine:
                 details={'execution_id': execution_id, 'exception': type(e).__name__}
             )
 
-            return {
+            result = {
                 'success': False,
                 'skill_name': skill_name,
                 'execution_id': execution_id,
@@ -502,9 +518,49 @@ class SkillEngine:
                 'steps': [],
                 'metrics': metrics.to_dict()
             }
+            return result
 
         finally:
+            # 持久化执行日志到数据库（无论成功/失败）
+            if result:
+                self._persist_execution_log(
+                    skill_id=skill_id,
+                    skill_name=skill_name,
+                    inputs=inputs,
+                    result=result,
+                    execution_time=metrics.duration or 0,
+                )
             await self.executor.cleanup()
+
+    def _persist_execution_log(
+        self,
+        skill_id: str,
+        skill_name: str,
+        inputs: Dict,
+        result: Dict,
+        execution_time: float,
+    ) -> None:
+        """
+        将技能执行结果持久化到 skill_execution_logs 表。
+        持久化失败不影响主流程，仅记录告警日志。
+        """
+        try:
+            log_entry = SkillExecutionLog(
+                skill_id=skill_id,
+                skill_name=skill_name,
+                inputs=inputs,
+                outputs=result,
+                status="success" if result.get("success") else "error",
+                execution_time=execution_time,
+                error_message=result.get("error", ""),
+            )
+            self.db_session.add(log_entry)
+            self.db_session.commit()
+        except Exception:
+            logger.bind(
+                module="skill_engine", event="execution_log_persist_error",
+                skill_name=skill_name,
+            ).warning("持久化技能执行日志失败，跳过")
 
     async def validate_skill(self, config: Dict) -> Dict[str, Any]:
         """

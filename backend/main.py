@@ -19,7 +19,7 @@ from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from api.routes import auth, chat, skills, weixin_skill, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
 from api.routes.diary import router as diary_router
 from api.routes.marketplace import router as marketplace_router
 from api.routes.security import router as security_router
@@ -571,6 +571,7 @@ app.add_exception_handler(429, _rate_limit_exceeded_handler)
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
 app.include_router(skills.router, prefix=settings.API_V1_STR)
+app.include_router(weixin_skill.router, prefix=settings.API_V1_STR)
 app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
 app.include_router(workflows.router, prefix=settings.API_V1_STR)
