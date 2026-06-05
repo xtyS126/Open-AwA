@@ -177,7 +177,7 @@ async def synthesize_tts_stream(
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.bind(event="tts_stream_error", error=str(e)).error("TTS 流式合成失败")
-            yield f"data: [ERROR] {str(e)}\n\n"
+            yield "data: [ERROR] 流式合成服务暂不可用，请稍后重试\n\n"
 
     return StreamingResponse(
         audio_generator(),
@@ -223,6 +223,7 @@ async def clone_voice(
             audio_bytes=audio_bytes,
             voice_name=voice_name,
             context_texts=context_texts,
+            user_id=str(getattr(current_user, "id", "")),
         )
 
         return {
@@ -248,10 +249,15 @@ async def get_clone_status(
     """
     manager = _get_clone_manager()
     try:
-        status_info = await manager.get_status(speaker_id)
+        status_info = await manager.get_status(
+            speaker_id,
+            user_id=str(getattr(current_user, "id", "")),
+        )
         return {"success": True, **status_info}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="查询失败")
 
 
 @router.delete("/clone/{speaker_id}")
@@ -264,12 +270,17 @@ async def delete_cloned_speaker(
     """
     manager = _get_clone_manager()
     try:
-        await manager.delete_speaker(speaker_id)
+        await manager.delete_speaker(
+            speaker_id,
+            user_id=str(getattr(current_user, "id", "")),
+        )
         return {"success": True, "message": f"音色 {speaker_id} 已删除"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="删除失败")
 
 
 # ---- 音色库端点 ----
