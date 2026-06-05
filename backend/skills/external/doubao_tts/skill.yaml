@@ -1,0 +1,42 @@
+name: doubao-tts
+version: 1.0.0
+description: "豆包语音合成与声音复刻 Skill，集成火山引擎 Doubao-Seed-TTS 2.0 和 ICL 2.0"
+category: speech
+author: Open-AwA
+tags:
+  - tts
+  - voice-clone
+  - doubao
+  - speech-synthesis
+  - audio
+dependencies: [httpx]
+adapter: default
+
+environment: default
+continue_on_error: false
+
+config:
+  app_id_env: DOUBAO_APP_ID
+  access_key_env: DOUBAO_ACCESS_KEY
+  default_resource_id: seed-tts-2.0
+  expressive_resource_id: seed-tts-2.0-expressive
+  clone_resource_id: seed-icl-2.0
+  default_speaker: zh_female_qingxin
+  api_base_url: https://openspeech.bytedance.com
+  default_audio_format: mp3
+  default_sample_rate: 24000
+  max_text_length: 100000
+
+steps:
+  - action: synthesize
+    tool: default
+    params:
+      streaming: true
+  - action: clone_voice
+    tool: default
+    params:
+      audio_required: true
+  - action: list_speakers
+    tool: default
+  - action: health_check
+    tool: default

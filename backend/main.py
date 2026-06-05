@@ -37,6 +37,7 @@ from api.routes.coding import router as coding_router
 from api.routes.inbox import router as inbox_router
 from api.routes.magic_commands import router as magic_commands_router
 from api.routes.heartbeat import router as heartbeat_router
+from api.routes.tts import router as tts_router
 
 from billing.routers import billing
 from config.logging import (
@@ -647,6 +648,7 @@ app.include_router(heartbeat_router)
 app.include_router(coding_router)
 app.include_router(inbox_router)
 app.include_router(magic_commands_router, prefix=settings.API_V1_STR)
+app.include_router(tts_router)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath
