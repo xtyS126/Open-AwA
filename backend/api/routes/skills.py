@@ -3,7 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Request, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from db.models import get_db, Skill, ExperienceExtractionLog, WeixinBinding
@@ -1770,6 +1770,13 @@ async def broadcast_skill_to_workspaces(
     if not workspace_ids:
         raise HTTPException(status_code=400, detail="缺少 workspace_ids 参数")
 
+    # 验证工作空间 ID 格式，防止路径遍历
+    import re as _re
+    _ws_id_re = _re.compile(r'^[a-zA-Z0-9_-]{1,100}$')
+    for ws_id in workspace_ids:
+        if not _ws_id_re.match(str(ws_id)):
+            raise HTTPException(status_code=400, detail=f"无效的工作空间 ID: {ws_id}")
+
     pool = SkillPoolManager()
     try:
         pool.broadcast_to_workspace(skill_id, workspace_ids)
@@ -1850,7 +1857,11 @@ def get_skill_execution_logs(
 ):
     """
     获取技能执行日志列表，支持按技能名称/状态/时间范围筛选和分页。
+    仅限管理员访问，防止跨用户信息泄露。
     """
+    if getattr(current_user, "role", "") != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可查看执行日志")
+
     query = db.query(SkillExecutionLog)
 
     if skill_name:

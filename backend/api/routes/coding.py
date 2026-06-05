@@ -22,7 +22,26 @@ DEFAULT_PROJECT_DIR = os.getenv("CODING_PROJECT_DIR", os.getcwd())
 
 def _get_project_dir(project_dir: Optional[str] = None) -> str:
     """获取项目根目录。"""
-    return project_dir or DEFAULT_PROJECT_DIR
+    raw = project_dir or DEFAULT_PROJECT_DIR
+    # 防止通过 project_dir 参数遍历到系统根目录
+    resolved = os.path.realpath(os.path.abspath(raw))
+    default_resolved = os.path.realpath(os.path.abspath(DEFAULT_PROJECT_DIR))
+    # 仅当请求目录在默认项目目录子树内或等于默认目录时放行
+    if not (resolved == default_resolved or resolved.startswith(default_resolved + os.sep)):
+        raise HTTPException(status_code=403, detail="禁止访问指定项目目录")
+    return resolved
+
+
+def _validate_file_path(file_path: str, project_dir: str) -> str:
+    """
+    校验文件路径在项目目录内，防止路径遍历攻击。
+    返回解析后的绝对路径。
+    """
+    root_real = os.path.realpath(project_dir)
+    resolved = os.path.realpath(os.path.join(root_real, file_path.lstrip("/\\")))
+    if not resolved.startswith(root_real + os.sep) and resolved != root_real:
+        raise HTTPException(status_code=403, detail="禁止访问项目目录外的文件")
+    return resolved
 
 
 # ---- Request Schemas ----
@@ -264,6 +283,7 @@ def get_lsp_diagnostics(file_path: str, project_dir: Optional[str] = None):
     返回语言服务器的可用性和状态信息。
     """
     root = _get_project_dir(project_dir)
+    _validate_file_path(file_path, root)
     try:
         ext = Path(file_path).suffix.lstrip(".").lower()
         lang_map = {"py": "python", "ts": "typescript", "tsx": "typescript", "js": "javascript", "jsx": "javascript"}
@@ -289,6 +309,7 @@ def get_lsp_completions(body: LSPCompletionRequest):
     注：完整 LSP 补全需通过前端 Monaco Editor 内置能力实现。
     """
     root = _get_project_dir(body.project_dir)
+    _validate_file_path(body.file_path, root)
     try:
         from core.coding.ast_search import ASTSearchService
         service = ASTSearchService(root)
@@ -310,6 +331,7 @@ def get_lsp_hover(body: LSPHoverRequest):
     注：完整 LSP 悬停需通过前端 Monaco Editor 内置能力实现。
     """
     root = _get_project_dir(body.project_dir)
+    _validate_file_path(body.file_path, root)
     try:
         from core.coding.ast_search import ASTSearchService
         service = ASTSearchService(root)
@@ -329,6 +351,7 @@ def get_lsp_symbols(file_path: str, project_dir: Optional[str] = None):
     获取文件的符号列表（基于 AST 静态分析）。
     """
     root = _get_project_dir(project_dir)
+    _validate_file_path(file_path, root)
     try:
         from core.coding.ast_search import ASTSearchService
         service = ASTSearchService(root)

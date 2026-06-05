@@ -1,6 +1,7 @@
 """
 心跳 API 路由 — 提供工作空间心跳配置管理和手动触发接口。
 """
+import re
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,9 +13,19 @@ from db.models import get_db
 
 router = APIRouter(prefix="/api/workspaces", tags=["Heartbeat"])
 
+# 工作空间 ID 仅允许字母、数字、连字符和下划线，防止路径遍历
+_WORKSPACE_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{1,100}$')
+
+
+def _validate_workspace_id(workspace_id: str) -> None:
+    """校验工作空间 ID 格式，防止路径遍历和注入攻击。"""
+    if not _WORKSPACE_ID_RE.match(workspace_id):
+        raise HTTPException(status_code=400, detail="工作空间 ID 包含非法字符")
+
 
 def _ensure_engine(workspace_id: str) -> HeartbeatEngine:
     """获取或创建工作空间的心跳引擎。"""
+    _validate_workspace_id(workspace_id)
     registry = get_heartbeat_registry()
     return registry.get(workspace_id)
 
@@ -60,7 +71,7 @@ async def update_heartbeat_file(
     current_user=Depends(get_current_user),
 ):
     """更新工作空间的 HEARTBEAT.md 内容。"""
-    content = body.get("content", "")
     engine = _ensure_engine(workspace_id)
+    content = body.get("content", "")
     engine.update_heartbeat_file(content)
     return {"success": True, "message": "HEARTBEAT.md 已更新"}

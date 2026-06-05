@@ -68,6 +68,16 @@ async def trigger_compact(
     workspace_id = body.get("workspace_id", "default")
     model_name = body.get("model_name", "default")
 
+    # 验证会话归属：确保用户只能压缩自己的会话
+    if session_id and session_id != "default":
+        from db.models import ConversationRecord, SessionLocal
+        with SessionLocal() as verify_db:
+            owner = verify_db.query(ConversationRecord.user_id).filter(
+                ConversationRecord.session_id == session_id
+            ).first()
+            if owner and str(owner[0]) != str(current_user.id):
+                raise HTTPException(status_code=403, detail="无权访问此会话")
+
     try:
         memory_manager = MemoryManager()
         messages = await memory_manager.get_short_term_memories(
