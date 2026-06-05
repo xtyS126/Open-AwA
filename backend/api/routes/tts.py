@@ -294,14 +294,16 @@ async def list_speakers(
     """
     manager = _get_clone_manager()
     try:
-        speakers = await manager.list_speakers()
+        speakers = await manager.list_speakers(
+            user_id=str(getattr(current_user, "id", "")),
+        )
         return {
             "success": True,
             "speakers": speakers,
             "total": len(speakers),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取音色列表失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取音色列表失败")
 
 
 @router.get("/speakers/{speaker_id}")
@@ -313,7 +315,9 @@ async def get_speaker_info(
     获取音色详细信息。
     """
     manager = _get_clone_manager()
-    speakers = await manager.list_speakers()
+    speakers = await manager.list_speakers(
+        user_id=str(getattr(current_user, "id", "")),
+    )
     for spk in speakers:
         if spk["speaker_id"] == speaker_id:
             return {"success": True, "speaker": spk}
