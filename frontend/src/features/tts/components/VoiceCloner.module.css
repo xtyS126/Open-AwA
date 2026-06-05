@@ -1,0 +1,186 @@
+.container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #333);
+}
+
+.input:focus {
+  border-color: var(--accent-color, #4f46e5);
+}
+
+.dropZone {
+  border: 2px dashed var(--border-color, #ccc);
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dropZone:hover {
+  border-color: var(--accent-color, #4f46e5);
+  background: rgba(79, 70, 229, 0.04);
+}
+
+.hasFile {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.04);
+}
+
+.fileInput {
+  display: none;
+}
+
+.dropPrompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary, #888);
+  font-size: 14px;
+}
+
+.subHint {
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+}
+
+.fileInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #22c55e;
+  font-size: 14px;
+}
+
+.fileSize {
+  color: var(--text-secondary, #888);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.submitBtn, .resetBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.submitBtn {
+  background: var(--accent-color, #4f46e5);
+  color: #fff;
+}
+
+.resetBtn {
+  background: var(--bg-secondary, #e5e7eb);
+  color: var(--text-primary, #333);
+}
+
+.submitBtn:hover, .resetBtn:hover {
+  opacity: 0.85;
+}
+
+.submitBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.progressWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progressBar {
+  height: 6px;
+  background: var(--bg-secondary, #e5e7eb);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent-color, #4f46e5);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progressText {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  text-align: center;
+}
+
+.successMsg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #22c55e;
+  font-size: 14px;
+  padding: 8px 0;
+}
+
+.errorMsg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 14px;
+  padding: 8px 0;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
