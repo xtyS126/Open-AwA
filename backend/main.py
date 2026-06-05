@@ -19,7 +19,7 @@ from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
-from api.routes import auth, chat, skills, weixin_skill, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
 from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
 from api.routes.marketplace import router as marketplace_router
@@ -35,6 +35,8 @@ from api.routes.test_runner import router as test_runner_router
 from api.routes.workspace import router as workspace_router
 from api.routes.coding import router as coding_router
 from api.routes.inbox import router as inbox_router
+from api.routes.magic_commands import router as magic_commands_router
+from api.routes.heartbeat import router as heartbeat_router
 
 from billing.routers import billing
 from config.logging import (
@@ -92,7 +94,8 @@ ALLOWED_ORIGINS = _resolve_allowed_origins()
 logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for_logging(ALLOWED_ORIGINS)).info("cors configured")
 
 
-# ==================== 启动步骤拆分 =============# 将原 lifespan 中的初始化逻辑按职责拆分为独立函数：
+# ==================== 启动步骤拆分 ====================
+# 将原 lifespan 中的初始化逻辑按职责拆分为独立函数：
 #   1. 基础设施（LiteLLM 依赖检测）
 #   2. 数据初始化（DB 建表、计费、RBAC、用户同步）
 #   3. 插件系统（市场种子、插件发现与加载）
@@ -613,11 +616,8 @@ app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
-# weixin_skill 路由必须在 skills 路由之前注册，否则 GET /skills/{skill_id}/config
-# 会捕获 /skills/weixin/config（将 "weixin" 识别为 skill_id 参数）
-app.include_router(weixin_skill.router, prefix=settings.API_V1_STR)
+# 微信相关路由已合并至 skills 路由模块中（/skills/weixin/*）
 app.include_router(skills.router, prefix=settings.API_V1_STR)
-app.include_router(weixin_skill.router, prefix=settings.API_V1_STR)
 app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
 app.include_router(workflows.router, prefix=settings.API_V1_STR)
@@ -643,8 +643,10 @@ app.include_router(user_profile_router, prefix=settings.API_V1_STR)
 app.include_router(system_router)
 app.include_router(test_runner_router)
 app.include_router(workspace_router)
+app.include_router(heartbeat_router)
 app.include_router(coding_router)
 app.include_router(inbox_router)
+app.include_router(magic_commands_router, prefix=settings.API_V1_STR)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath

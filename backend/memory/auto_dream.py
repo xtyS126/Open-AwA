@@ -2,8 +2,11 @@
 Auto-Dream 记忆自动优化模块。
 定时运行，自动去冗存精、合并去重、备份记忆库。
 """
+import asyncio
 import json
+import os
 import shutil
+import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -15,6 +18,7 @@ class AutoDream:
     """
     Auto-Dream 记忆优化器。
     定时执行记忆整理：去重、清理过期、合并相似、备份。
+    使用文件锁和原子写入保证并发安全。
     """
 
     def __init__(
@@ -27,6 +31,8 @@ class AutoDream:
         self._memory_dir = self.working_dir / "memory"
         self._backup_dir = self.working_dir / "backup"
         self._memory_file = self.working_dir / "MEMORY.md"
+        self._file_lock = threading.Lock()  # 文件操作锁，防止并发写入破坏数据
+        self._shutdown_event: Optional[asyncio.Event] = None  # 优雅关闭信号
 
     def run_optimization(self) -> dict:
         """
@@ -88,6 +94,12 @@ class AutoDream:
 
         logger.bind(event="memory_backup_created", path=str(backup_path)).info("记忆备份已创建")
 
+    def _atomic_write(self, content: str):
+        """原子写入：先写临时文件，再替换，防止写入过程中崩溃导致文件损坏。"""
+        tmp_path = self._memory_file.with_suffix(".tmp")
+        tmp_path.write_text(content, encoding="utf-8")
+        os.replace(tmp_path, self._memory_file)
+
     def _dedup_memories(self) -> int:
         """
         去重：检测高度相似的记忆条目并合并。
@@ -116,7 +128,8 @@ class AutoDream:
                 removed += 1
 
         if removed > 0:
-            self._memory_file.write_text("\n\n".join(deduped))
+            with self._file_lock:
+                self._atomic_write("\n\n".join(deduped))
 
         return removed
 
@@ -153,7 +166,8 @@ class AutoDream:
             merged += 1
 
         if merged > 0:
-            self._memory_file.write_text("\n\n".join(new_sections))
+            with self._file_lock:
+                self._atomic_write("\n\n".join(new_sections))
 
         return merged
 
@@ -177,7 +191,8 @@ class AutoDream:
                 f'<!-- 最后优化: {timestamp} -->',
                 content,
             )
-        self._memory_file.write_text(content)
+        with self._file_lock:
+            self._atomic_write(content)
         return 0
 
     def _rewrite_memory_file(self):
@@ -203,6 +218,48 @@ class AutoDream:
         if current:
             sections.append("\n".join(current))
         return sections if len(sections) > 1 else [content]
+
+    async def schedule(self, interval_hours: float = 24) -> None:
+        """
+        启动定时 Auto-Dream 优化任务。
+        每隔 interval_hours 小时执行一次记忆整理。
+        可通过 stop() 方法优雅关闭。
+        """
+        if self._shutdown_event is None:
+            self._shutdown_event = asyncio.Event()
+
+        logger.bind(event="auto_dream_scheduled", interval_hours=interval_hours).info(
+            "Auto-Dream 定时任务已启动"
+        )
+        while not self._shutdown_event.is_set():
+            try:
+                # 使用带超时的 wait 替代 sleep，支持优雅关闭
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=interval_hours * 3600,
+                )
+                break  # shutdown 信号已触发
+            except asyncio.TimeoutError:
+                pass  # 正常超时，执行优化
+            except asyncio.CancelledError:
+                logger.info("Auto-Dream 定时任务已取消")
+                break
+
+            try:
+                logger.bind(event="auto_dream_run").info("Auto-Dream 开始执行定时优化")
+                # 在独立线程中执行同步文件 I/O，避免阻塞事件循环
+                stats = await asyncio.to_thread(self.run_optimization)
+                logger.bind(event="auto_dream_run_complete", **stats).info(
+                    f"Auto-Dream 优化完成: 去重{stats['dedup_count']}条, 合并{stats['merge_count']}条"
+                )
+            except Exception as exc:
+                logger.bind(event="auto_dream_schedule_error").error(f"Auto-Dream 定时执行异常: {exc}")
+                await asyncio.sleep(60)  # 出错后等 1 分钟再重试
+
+    def stop(self):
+        """发送关闭信号，优雅停止定时任务。"""
+        if self._shutdown_event:
+            self._shutdown_event.set()
 
     @staticmethod
     def _jaccard_similarity(a: str, b: str) -> float:

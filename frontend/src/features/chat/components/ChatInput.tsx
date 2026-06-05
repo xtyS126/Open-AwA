@@ -156,14 +156,24 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, ab
   }
 
   const handleSend = async () => {
-    const trimmedInput = input.trim().toLowerCase()
-    if (trimmedInput === '/diary') {
-      setInput('')
-      onDiaryCommand?.()
-      return
+    const trimmed = input.trim()
+    if ((!trimmed && attachments.length === 0) || isLoading) return
+
+    // 魔法命令检测：以 / 开头且不包含空格的消息视为魔法命令
+    if (trimmed.startsWith('/')) {
+      const parts = trimmed.split(/\s+/)
+      const cmdName = parts[0].slice(1).toLowerCase()
+      // /diary 保持原有处理逻辑
+      if (cmdName === 'diary') {
+        setInput('')
+        onDiaryCommand?.()
+        return
+      }
+      // 其他魔法命令直接发送给后端处理（agent 管道已支持魔法命令检测）
+      // 注：/compact、/new、/clear、/stop、/make-skill、/make-plan 等由后端 agent 处理
     }
 
-    if ((!input.trim() && attachments.length === 0) || isLoading) return
+    if (!trimmed) return
 
     const userMessage = input.trim()
     const currentAttachments = attachments

@@ -1,56 +1,76 @@
 /**
- * 编辑器面板 — 多标签代码编辑器和内联 Diff 视图。
+ * 编辑器面板 — 基于 Monaco Editor 的多标签代码编辑器。
+ * 支持语法高亮、自动补全、多标签管理、Ctrl+S 保存。
  */
-import React, { useCallback, useEffect, useRef } from 'react';
-import { useCodingStore } from '../store/codingStore';
-import { codingApi } from '../codingApi';
-import styles from './EditorPane.module.css';
+import React, { useCallback, useRef, useEffect } from 'react'
+import Editor, { OnMount } from '@monaco-editor/react'
+import type { editor } from 'monaco-editor'
+import { useCodingStore } from '../store/codingStore'
+import { codingApi } from '../codingApi'
+import { useThemeStore } from '@/shared/store/useThemeStore'
+import styles from './EditorPane.module.css'
 
 const EditorPane: React.FC = () => {
   const {
     openFiles, activeFilePath, closeFile, setActiveFile,
     updateFileContent, markFileClean, projectDir,
-  } = useCodingStore();
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+    editorFontSize, editorTabSize, editorWordWrap, editorMinimap,
+  } = useCodingStore()
+  const { theme } = useThemeStore()
 
-  const activeFile = openFiles.find((f) => f.path === activeFilePath);
+  const activeFile = openFiles.find((f) => f.path === activeFilePath)
+  const activeFileRef = useRef(activeFile)
+  // 保持 ref 始终指向最新的 activeFile，避免 Monaco 快捷键闭包过期
+  useEffect(() => {
+    activeFileRef.current = activeFile
+  })
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Ctrl+S 保存
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      if (activeFile?.isDirty) {
-        handleSave();
-      }
-    }
-  }, [activeFile]);
-
-  const handleSave = async () => {
-    if (!activeFile) return;
+  const handleSave = useCallback(async () => {
+    const file = activeFileRef.current
+    if (!file || !file.isDirty) return
     try {
-      await codingApi.writeFile(activeFile.path, activeFile.content, projectDir || undefined);
-      markFileClean(activeFile.path);
+      await codingApi.writeFile(file.path, file.content, projectDir || undefined)
+      markFileClean(file.path)
     } catch (e) {
-      console.error('Save failed:', e);
+      console.error('保存失败:', e)
     }
-  };
+  }, [projectDir, markFileClean])
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (activeFile) {
-      updateFileContent(activeFile.path, e.target.value);
+  const handleEditorMount: OnMount = useCallback((editor) => {
+    editorRef.current = editor
+    // Ctrl+S 保存 — 通过 ref 读取最新 activeFile，避免闭包过期
+    editor.addAction({
+      id: 'save-file',
+      label: '保存文件',
+      keybindings: [2048 | 49], // CtrlCmd + KeyS
+      run: () => {
+        if (activeFileRef.current?.isDirty) {
+          handleSave()
+        }
+      },
+    })
+  }, [handleSave])
+
+  const handleContentChange = useCallback((value: string | undefined) => {
+    if (activeFile && value !== undefined) {
+      updateFileContent(activeFile.path, value)
     }
-  };
+  }, [activeFile, updateFileContent])
 
   if (!activeFile) {
     return (
       <div className={styles.empty}>
         <p>选择一个文件开始编辑</p>
       </div>
-    );
+    )
   }
 
+  const monacoLanguage = activeFile.language && activeFile.language !== 'plaintext'
+    ? activeFile.language
+    : undefined
+
   return (
-    <div className={styles.editor} onKeyDown={handleKeyDown}>
+    <div className={styles.editor}>
       <div className={styles.tabs}>
         {openFiles.map((file) => (
           <div
@@ -72,17 +92,25 @@ const EditorPane: React.FC = () => {
         ))}
       </div>
       <div className={styles.editorBody}>
-        <div className={styles.lineNumbers}>
-          {activeFile.content.split('\n').map((_, i) => (
-            <div key={i} className={styles.lineNum}>{i + 1}</div>
-          ))}
-        </div>
-        <textarea
-          ref={editorRef}
-          className={styles.textArea}
+        <Editor
+          height="100%"
+          language={monacoLanguage}
+          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
           value={activeFile.content}
           onChange={handleContentChange}
-          spellCheck={false}
+          onMount={handleEditorMount}
+          options={{
+            fontSize: editorFontSize || 14,
+            tabSize: editorTabSize || 2,
+            wordWrap: editorWordWrap ? 'on' : 'off',
+            minimap: { enabled: editorMinimap !== false },
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            lineNumbers: 'on',
+            renderWhitespace: 'selection',
+            bracketPairColorization: { enabled: true },
+            padding: { top: 8 },
+          }}
         />
       </div>
       <div className={styles.statusBar}>
@@ -91,7 +119,7 @@ const EditorPane: React.FC = () => {
         {activeFile.isDirty && <span className={styles.unsaved}>未保存</span>}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default React.memo(EditorPane);
+export default React.memo(EditorPane)

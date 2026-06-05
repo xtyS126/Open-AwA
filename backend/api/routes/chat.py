@@ -105,6 +105,7 @@ async def chat(
         "thinking_depth": message.thinking_depth,
         "max_tool_call_rounds": message.max_tool_call_rounds,
         "continuation": message.continuation.dict() if message.continuation else None,
+        "agent_type": getattr(message, "agent_type", None) or "general-purpose",
     }
 
     logger.bind(

@@ -23,6 +23,9 @@ from mcp.manager import MCPManager
 from workflow.engine import WorkflowEngine
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
+from .magic_commands import get_magic_command_registry
+from .context.compressor import ContextCompressor
+from .context.token_budget import TokenBudget
 from api.services.chat_protocol import (
     emit_task_event,
     emit_tool_event,
@@ -605,6 +608,20 @@ class AIAgent:
             "configured_models": configured_models,
             "mcp": await self._collect_mcp_capabilities(context),
         }
+
+        # 根据 Agent 类型注入差异化系统提示（白名单校验，防止注入非预期角色）
+        ALLOWED_AGENT_TYPES = {"Explore", "Plan", "general-purpose"}
+        agent_type = context.get("agent_type", "general-purpose")
+        if agent_type not in ALLOWED_AGENT_TYPES:
+            logger.warning(f"非法的 agent_type '{agent_type}'，已回退为 general-purpose")
+            agent_type = "general-purpose"
+        context["agent_type"] = agent_type
+        if agent_type == "Explore":
+            context.setdefault("agent_type_hint", "你是一个只读的代码探索Agent，专注于搜索、阅读和分析代码。不要修改任何文件。")
+        elif agent_type == "Plan":
+            context.setdefault("agent_type_hint", "你是一个规划Agent，专注于分析需求并制定执行计划。不要直接执行代码或修改文件。")
+        elif agent_type == "general-purpose":
+            context.setdefault("agent_type_hint", "你是一个通用Agent，具备完整的读写和执行能力。")
 
         # 从运行态能力摘要构建原生 tool_calls 定义，使 LLM 能通过 function calling 协议触发工具
         if not context.get("_tools"):
@@ -1477,13 +1494,105 @@ class AIAgent:
             logger.warning(f"构建对话历史失败: {e}")
             return []
 
+    async def _check_and_handle_magic_command(
+        self, user_input: str, context: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        检测用户输入是否包含魔法命令，如果匹配则执行对应处理程序。
+        返回命令执行结果字典，如果不是命令则返回 None。
+        """
+        registry = get_magic_command_registry()
+        cmd_name, cmd_args, remaining = registry.parse_message(user_input)
+        if cmd_name is None:
+            return None
+
+        command = registry.get_command(cmd_name)
+        if command is None:
+            return {
+                "is_command": True,
+                "command_name": cmd_name,
+                "success": False,
+                "message": f"未知命令: /{cmd_name}，输入 /help 查看可用命令",
+            }
+
+        logger.bind(
+            event="magic_command_detected",
+            command=cmd_name,
+            session_id=context.get("session_id", ""),
+        ).info(f"检测到魔法命令: /{cmd_name}")
+
+        try:
+            ctx = {
+                "session_id": context.get("session_id", "default"),
+                "workspace_id": context.get("workspace_id", "default"),
+                "user_id": context.get("user_id", ""),
+                "model_name": context.get("model", "default"),
+                "db": context.get("db"),
+            }
+            result = await command.handler(ctx)
+            result["is_command"] = True
+            result["command_name"] = cmd_name
+            return result
+        except Exception as exc:
+            logger.bind(
+                event="magic_command_error",
+                command=cmd_name,
+            ).error(f"魔法命令执行失败: {exc}")
+            return {
+                "is_command": True,
+                "command_name": cmd_name,
+                "success": False,
+                "message": f"命令执行失败: {str(exc)}",
+            }
+
+    async def _auto_compress_context(
+        self, context: Dict[str, Any], messages: list
+    ) -> list:
+        """
+        自动检测并压缩对话上下文。
+        当 token 使用量超过阈值时触发压缩，返回压缩后的消息列表。
+        """
+        model_name = context.get("model", "default")
+        budget = TokenBudget(model_name=model_name)
+        current_tokens = budget.count_messages(messages)
+        # 更新计数器后检查压缩阈值
+        budget.track(current_tokens)
+
+        if not budget.should_compress() and len(messages) <= 40:
+            return messages
+
+        compressor = ContextCompressor()
+        result = compressor.compress(messages)
+        logger.bind(
+            event="auto_context_compressed",
+            original_count=len(messages),
+            compressed_count=len(result["compressed_messages"]),
+            tokens_before=current_tokens,
+            tokens_after=budget.count_messages(result["compressed_messages"]),
+        ).info("对话上下文已自动压缩")
+        return result["compressed_messages"]
+
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
         """
         流式处理用户输入，注入对话历史后调用大模型并实时 yield 数据块。
         支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM。
         支持多模态附件和思考模式参数。
+        优先检测魔法命令，匹配时跳过 LLM 处理。
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
+
+        # 检测魔法命令
+        cmd_result = await self._check_and_handle_magic_command(user_input, context)
+        if cmd_result is not None:
+            import json as _json
+            yield {
+                "type": "magic_command",
+                "command_name": cmd_result.get("command_name", ""),
+                "content": _json.dumps(cmd_result, ensure_ascii=False, default=str),
+            }
+            if cmd_result.get("clears_context"):
+                yield {"type": "context_cleared", "content": ""}
+            return
 
         yield self._build_status_event("starting", "正在准备对话上下文")
 
@@ -1506,9 +1615,25 @@ class AIAgent:
 
         try:
             conversation_history = await self._build_conversation_history(session_id)
-            context["conversation_history"] = conversation_history
+            # 自动检测并压缩上下文
+            context["conversation_history"] = await self._auto_compress_context(
+                context, conversation_history
+            )
 
             effective_user_input = self._build_effective_user_input(user_input, context)
+
+            # 自动检索相关长期记忆（stream 路径）
+            if context.get("retrieve_long_term_memory", True) and self.memory_manager:
+                try:
+                    relevant_memories = await self._retrieve_relevant_memories(
+                        user_input=effective_user_input,
+                        context=context,
+                    )
+                    if relevant_memories:
+                        context["vector_retrieved_memories"] = relevant_memories
+                        logger.info(f"Stream: 检索到 {len(relevant_memories)} 条相关长期记忆")
+                except Exception as mem_err:
+                    logger.warning(f"Stream 自动记忆检索失败: {mem_err}")
 
             intent = await self.comprehension.recognize_intent(effective_user_input)
             entities = await self.comprehension.extract_entities(effective_user_input)
@@ -1795,8 +1920,30 @@ class AIAgent:
         处理用户输入的完整流程：意图识别、规划、执行、反馈。
         自动注入对话历史以支持多轮对话上下文。
         支持多模态附件和思考模式参数。
+        优先检测魔法命令，匹配时跳过 LLM 处理。
         """
         logger.info(f"Processing user input, length={len(user_input)}")
+
+        # 检测魔法命令
+        cmd_result = await self._check_and_handle_magic_command(user_input, context)
+        if cmd_result is not None:
+            response_text = cmd_result.get("message", "")
+            if cmd_result.get("success"):
+                return {
+                    "status": "success",
+                    "response": response_text,
+                    "is_magic_command": True,
+                    "command_name": cmd_result.get("command_name", ""),
+                    "command_result": cmd_result,
+                }
+            else:
+                return {
+                    "status": "error",
+                    "response": response_text,
+                    "error": cmd_result.get("message", "命令执行失败"),
+                    "is_magic_command": True,
+                    "command_name": cmd_result.get("command_name", ""),
+                }
 
         self._prepare_context(user_input, context)
         await self._inject_runtime_capabilities(context)
@@ -1817,7 +1964,10 @@ class AIAgent:
 
         try:
             conversation_history = await self._build_conversation_history(session_id)
-            context["conversation_history"] = conversation_history
+            # 自动检测并压缩上下文
+            context["conversation_history"] = await self._auto_compress_context(
+                context, conversation_history
+            )
 
             effective_user_input = self._build_effective_user_input(user_input, context)
 

@@ -74,6 +74,11 @@ class MagicCommandRegistry:
             description="重启当前服务",
             handler=self._handle_restart,
         ))
+        self.register(MagicCommand(
+            name="help",
+            description="显示所有可用魔法命令及说明",
+            handler=self._handle_help,
+        ))
 
     def register(self, command: MagicCommand):
         """注册魔法命令。"""
@@ -124,15 +129,91 @@ class MagicCommandRegistry:
     # ---- 内置命令处理器 ----
 
     async def _handle_compact(self, context: dict) -> dict:
-        """处理 /compact 命令。"""
-        return {
-            "action": "compact",
-            "message": "压缩当前对话上下文，生成摘要并保存记忆",
-            "requires_confirmation": True,
-        }
+        """处理 /compact 命令 — 实际执行上下文压缩并保存到长期记忆。"""
+        from core.context.compressor import ContextCompressor
+        from core.context.token_budget import TokenBudget
+        from memory.manager import MemoryManager
+
+        session_id = context.get("session_id", "default")
+        workspace_id = context.get("workspace_id", "default")
+        model_name = context.get("model_name", "default")
+
+        try:
+            from db.models import SessionLocal
+            memory_manager = MemoryManager(SessionLocal)
+            memories = await memory_manager.get_short_term_memories(
+                session_id=session_id, limit=100
+            )
+            history = [
+                {"role": m.role, "content": m.content}
+                for m in reversed(memories)
+                if m.role in ("user", "assistant")
+            ]
+
+            compressor = ContextCompressor()
+            budget = TokenBudget(model_name=model_name)
+            current_tokens = budget.count_messages(history)
+
+            if compressor.should_compress(current_tokens, budget.max_tokens):
+                result = compressor.compress(history)
+                # 将压缩摘要保存到长期记忆
+                if result.get("summary"):
+                    try:
+                        await memory_manager.add_long_term_memory(
+                            user_id=context.get("user_id", ""),
+                            content=f"[对话压缩摘要] {result['summary'][:2000]}",
+                            importance=0.5,
+                            memory_metadata={
+                                "source": "compact_command",
+                                "session_id": session_id,
+                                "compressed_turns": result["removed_count"],
+                            },
+                        )
+                    except Exception:
+                        pass  # 记忆保存失败不影响压缩结果
+
+                return {
+                    "action": "compact",
+                    "success": True,
+                    "message": f"上下文已压缩，移除了 {result['removed_count']} 条历史消息",
+                    "removed_count": result["removed_count"],
+                    "summary": result["summary"][:500] if result["summary"] else "",
+                    "stats": {
+                        "original_tokens": current_tokens,
+                        "max_tokens": budget.max_tokens,
+                        "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
+                    },
+                }
+            else:
+                return {
+                    "action": "compact",
+                    "success": True,
+                    "message": "当前上下文未达到压缩阈值，无需压缩",
+                    "stats": {
+                        "current_tokens": current_tokens,
+                        "max_tokens": budget.max_tokens,
+                        "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
+                    },
+                }
+        except Exception as exc:
+            return {
+                "action": "compact",
+                "success": False,
+                "message": f"上下文压缩失败: {str(exc)}",
+            }
 
     async def _handle_new(self, context: dict) -> dict:
-        """处理 /new 命令。"""
+        """处理 /new 命令 — 保存长期记忆后清空上下文。"""
+        from memory.manager import MemoryManager
+
+        session_id = context.get("session_id", "default")
+        try:
+            from db.models import SessionLocal
+            memory_manager = MemoryManager(SessionLocal)
+            await memory_manager.clear_short_term_memory(session_id=session_id)
+        except Exception as exc:
+            logger.warning(f"/new 清空上下文失败: {exc}")
+
         return {
             "action": "new_session",
             "message": "开始新对话，历史已保存",
@@ -140,7 +221,17 @@ class MagicCommandRegistry:
         }
 
     async def _handle_clear(self, context: dict) -> dict:
-        """处理 /clear 命令。"""
+        """处理 /clear 命令 — 仅清空上下文，不保存。"""
+        from memory.manager import MemoryManager
+
+        session_id = context.get("session_id", "default")
+        try:
+            from db.models import SessionLocal
+            memory_manager = MemoryManager(SessionLocal)
+            await memory_manager.clear_short_term_memory(session_id=session_id)
+        except Exception as exc:
+            logger.warning(f"/clear 清空上下文失败: {exc}")
+
         return {
             "action": "clear_context",
             "message": "上下文已清空（未保存到记忆）",
@@ -161,12 +252,13 @@ class MagicCommandRegistry:
         import re
         from pathlib import Path
         from memory.manager import MemoryManager
+        from db.models import SessionLocal
 
         session_id = context.get("session_id", "")
         workspace_id = context.get("workspace_id", "default")
 
-        # 从短期记忆中提取对话历史
-        memory_manager = MemoryManager()
+        # 从短期记忆中提取对话历史（使用 SessionLocal 确保线程安全）
+        memory_manager = MemoryManager(SessionLocal)
         memories = memory_manager._get_short_term_memories_sync(
             session_id=session_id,
             workspace_id=workspace_id,
@@ -299,10 +391,11 @@ class MagicCommandRegistry:
     async def _handle_make_plan(self, context: dict) -> dict:
         """处理 /make-plan 命令 — 基于当前对话生成结构化执行计划。"""
         from memory.manager import MemoryManager
+        from db.models import SessionLocal
 
         session_id = context.get("session_id", "")
         workspace_id = context.get("workspace_id", "default")
-        memory_manager = MemoryManager()
+        memory_manager = MemoryManager(SessionLocal)
         memories = memory_manager._get_short_term_memories_sync(
             session_id=session_id,
             workspace_id=workspace_id,
@@ -377,6 +470,27 @@ class MagicCommandRegistry:
             "action": "restart",
             "message": "服务即将重启",
             "requires_confirmation": True,
+        }
+
+    async def _handle_help(self, context: dict) -> dict:
+        """处理 /help 命令 — 显示所有可用魔法命令。"""
+        commands = self.list_commands()
+        lines = ["可用魔法命令：", ""]
+        for cmd in commands:
+            attrs = []
+            if cmd.get("requires_wait"):
+                attrs.append("[需等待]")
+            if cmd.get("saves_memory"):
+                attrs.append("[保存记忆]")
+            if cmd.get("clears_context"):
+                attrs.append("[清空上下文]")
+            attr_str = " " + " ".join(attrs) if attrs else ""
+            lines.append(f"  /{cmd['name']} — {cmd['description']}{attr_str}")
+        return {
+            "action": "help",
+            "success": True,
+            "message": "\n".join(lines),
+            "commands": commands,
         }
 
 

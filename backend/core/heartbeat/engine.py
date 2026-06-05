@@ -136,3 +136,73 @@ class HeartbeatEngine:
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self._heartbeat_file.write_text(content)
         logger.bind(event="heartbeat_file_updated").info("HEARTBEAT.md 已更新")
+
+    async def run(self, context: Optional[dict] = None) -> dict:
+        """
+        执行一次心跳检查：读取 HEARTBEAT.md → 调用 Agent → 返回结果。
+        """
+        if not self._enabled:
+            return {"success": False, "message": "心跳未启用"}
+
+        try:
+            content = self.get_heartbeat_content()
+            if self._agent_call_fn:
+                result = await self._agent_call_fn(content, context or {})
+                return {
+                    "success": True,
+                    "message": "心跳执行完成",
+                    "content": content[:500],
+                    "result": result,
+                    "target": self.get_target(),
+                }
+            else:
+                return {
+                    "success": True,
+                    "message": "心跳检查完成（无 Agent 回调）",
+                    "content": content[:500],
+                    "target": self.get_target(),
+                }
+        except Exception as exc:
+            logger.bind(event="heartbeat_error").error(f"心跳执行失败: {exc}")
+            return {"success": False, "message": f"心跳执行失败: {str(exc)}"}
+
+
+class HeartbeatEngineRegistry:
+    """
+    心跳引擎注册表 — 按工作空间 ID 管理多个 HeartbeatEngine 实例。
+    每个工作空间可以有独立的心跳配置和调度。
+    """
+
+    def __init__(self):
+        self._engines: dict[str, HeartbeatEngine] = {}
+
+    def get(self, workspace_id: str) -> HeartbeatEngine:
+        """获取或创建指定工作空间的心跳引擎。"""
+        if workspace_id not in self._engines:
+            workspace_dir = Path.home() / ".openawa" / "workspaces" / workspace_id
+            self._engines[workspace_id] = HeartbeatEngine(workspace_dir=workspace_dir)
+        return self._engines[workspace_id]
+
+    def remove(self, workspace_id: str):
+        """移除工作空间的心跳引擎。"""
+        self._engines.pop(workspace_id, None)
+
+    def list_workspaces(self) -> list[str]:
+        """列出所有已注册的工作空间。"""
+        return list(self._engines.keys())
+
+    def get_all_engines(self) -> dict[str, HeartbeatEngine]:
+        """获取所有心跳引擎。"""
+        return dict(self._engines)
+
+
+# 全局心跳注册表单例
+_heartbeat_registry: Optional[HeartbeatEngineRegistry] = None
+
+
+def get_heartbeat_registry() -> HeartbeatEngineRegistry:
+    """获取心跳引擎注册表单例。"""
+    global _heartbeat_registry
+    if _heartbeat_registry is None:
+        _heartbeat_registry = HeartbeatEngineRegistry()
+    return _heartbeat_registry
