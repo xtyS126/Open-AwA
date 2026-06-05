@@ -15,14 +15,11 @@ from billing.models import UsageRecord, UserUsageSummary
 
 class UsageTracker:
     """
-    封装与UsageTracker相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
+    用量追踪器：负责创建、查询、汇总 LLM 调用用量记录（UsageRecord）和用户用量汇总（UserUsageSummary）。
+    所有写操作在调用方统一 commit，保证明细与汇总的事务原子性。
     """
     def __init__(self, db: Session):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化追踪器，绑定数据库会话。"""
         self.db = db
 
     def create_usage_record(
@@ -41,10 +38,7 @@ class UsageTracker:
         duration_ms: int = 0,
         metadata: Optional[dict] = None
     ) -> UsageRecord:
-        """
-        创建usage、record相关对象、记录或执行结果。
-        实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
-        """
+        """创建一条 LLM 调用用量记录，同步更新用户月度汇总（同一事务内提交）。"""
         call_id = f"call_{uuid.uuid4().hex[:16]}"
         
         record = UsageRecord(
@@ -78,10 +72,7 @@ class UsageTracker:
         return record
 
     def get_usage_record(self, call_id: str) -> Optional[UsageRecord]:
-        """
-        获取usage、record相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """按 call_id 查询单条用量记录，未找到返回 None。"""
         return self.db.query(UsageRecord).filter(UsageRecord.call_id == call_id).first()
 
     def get_usage_records(
@@ -95,10 +86,7 @@ class UsageTracker:
         limit: int = 100,
         offset: int = 0
     ) -> List[UsageRecord]:
-        """
-        获取usage、records相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """按用户/会话/模型/时间范围多条件查询用量记录列表，支持分页。"""
         query = self.db.query(UsageRecord)
         
         if user_id:
@@ -117,10 +105,7 @@ class UsageTracker:
         return query.order_by(UsageRecord.created_at.desc()).offset(offset).limit(limit).all()
 
     def get_session_usage(self, session_id: str) -> Dict:
-        """
-        获取session、usage相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """汇总指定会话的 token 用量和费用，按模型分组返回。"""
         records = self.db.query(UsageRecord).filter(
             UsageRecord.session_id == session_id
         ).all()
@@ -153,10 +138,7 @@ class UsageTracker:
         period_start: Optional[date] = None,
         period_end: Optional[date] = None
     ) -> Dict:
-        """
-        获取user、usage相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """汇总指定用户在给定时间段内的用量（token/费用），按模型和内容类型分组。默认统计当月。"""
         if not period_start:
             period_start = date.today().replace(day=1)
         if not period_end:
@@ -207,10 +189,7 @@ class UsageTracker:
         user_id: Optional[str] = None,
         days: int = 30
     ) -> List[Dict]:
-        """
-        获取daily、usage、trend相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """获取近 N 天的每日用量趋势（费用/token），支持按用户过滤。默认30天。"""
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
@@ -246,10 +225,7 @@ class UsageTracker:
         cost: float,
         currency: str
     ):
-        """
-        处理update、user、summary相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """使用数据库级原子 UPDATE 更新用户月度用量汇总，避免并发下的 read-then-write 竞态。不存在时自动创建。"""
         today = date.today()
         period_start = today.replace(day=1)
         
@@ -288,10 +264,7 @@ class UsageTracker:
         # 注意：不在此处单独 commit，调用方应在所有操作完成后统一提交以保证事务原子性
 
     def get_usage_statistics(self, user_id: Optional[str] = None) -> Dict:
-        """
-        获取usage、statistics相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """获取全局或按用户的用量统计：总调用次数、总 token、总费用、按 Provider 分组。"""
         query = self.db.query(UsageRecord)
         if user_id:
             query = query.filter(UsageRecord.user_id == user_id)
@@ -326,10 +299,7 @@ class UsageTracker:
         }
 
     def cleanup_old_records(self, retention_days: int = 365) -> int:
-        """
-        处理cleanup、old、records相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """删除超过保留天数的用量记录，返回删除条数。默认保留365天。"""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
         
         deleted_count = self.db.query(UsageRecord).filter(
@@ -340,24 +310,15 @@ class UsageTracker:
         return deleted_count
 
     def get_record_count(self) -> int:
-        """
-        获取record、count相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """返回用量记录总数。"""
         return self.db.query(UsageRecord).count()
 
     def get_oldest_record_date(self) -> Optional[datetime]:
-        """
-        获取oldest、record、date相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """返回最早一条用量记录的创建时间，无记录时返回 None。"""
         record = self.db.query(UsageRecord).order_by(UsageRecord.created_at.asc()).first()
         return record.created_at if record else None
 
     def get_newest_record_date(self) -> Optional[datetime]:
-        """
-        获取newest、record、date相关数据或当前状态。
-        调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
-        """
+        """返回最新一条用量记录的创建时间，无记录时返回 None。"""
         record = self.db.query(UsageRecord).order_by(UsageRecord.created_at.desc()).first()
         return record.created_at if record else None

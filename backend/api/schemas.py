@@ -9,18 +9,12 @@ from datetime import datetime
 
 
 class UserBase(BaseModel):
-    """
-    封装与UserBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """用户基础字段：用户名。"""
     username: str
 
 
 class UserCreate(UserBase):
-    """
-    封装与UserCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """用户注册请求体：用户名 + 密码（8-128 字符）。"""
     password: str = Field(..., min_length=8, max_length=128)
 
 
@@ -42,19 +36,13 @@ class UserResponse(UserBase):
 
 
 class Token(BaseModel):
-    """
-    封装与Token相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """JWT 认证令牌响应：包含 access_token 和 token_type。"""
     access_token: str
     token_type: str
 
 
 class TokenData(BaseModel):
-    """
-    封装与TokenData相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """从 JWT payload 中提取的令牌数据，供 Depends 依赖注入使用。"""
     username: Optional[str] = None
 
 
@@ -106,55 +94,37 @@ class ChatResponse(BaseModel):
 
 
 class SkillBase(BaseModel):
-    """
-    封装与SkillBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """技能基础字段模型。"""
     name: str
     version: Optional[str] = None
     description: Optional[str] = None
 
 
 class SkillCreate(SkillBase):
-    """
-    封装与SkillCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建技能请求体。"""
     config: str
 
 
 class SkillResponse(SkillBase):
-    """
-    封装与SkillResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """技能查询响应模型，包含完整技能信息。"""
     id: str
     config: Optional[Dict[str, Any]] = None
     enabled: bool
     installed_at: datetime
     
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
 class PluginBase(BaseModel):
-    """
-    封装与PluginBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件基础字段模型。"""
     name: str
     version: Optional[str] = None
 
 
 class PluginCreate(PluginBase):
-    """
-    封装与PluginCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建插件请求体。"""
     config: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -184,63 +154,42 @@ class PluginResponse(PluginBase):
     source: Optional[str] = None
 
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
 class MemoryBase(BaseModel):
-    """
-    封装与MemoryBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """记忆基础字段模型。"""
     content: str
 
 
 class ShortTermMemoryCreate(MemoryBase):
-    """
-    封装与ShortTermMemoryCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建短期记忆请求体。"""
     session_id: str
     role: str
 
 
 class LongTermMemoryCreate(MemoryBase):
-    """
-    封装与LongTermMemoryCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建长期记忆请求体。"""
     importance: Optional[float] = 0.5
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     source_type: Optional[str] = Field(default="user_input", description="记忆来源类型")
 
 
 class ShortTermMemoryResponse(MemoryBase):
-    """
-    封装与ShortTermMemoryResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """短期记忆查询响应模型。"""
     id: int
     session_id: str
     role: str
     timestamp: datetime
     
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
 class LongTermMemoryResponse(MemoryBase):
-    """
-    封装与LongTermMemoryResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """长期记忆查询响应模型。"""
     id: int
     importance: float
     created_at: datetime
@@ -252,10 +201,7 @@ class LongTermMemoryResponse(MemoryBase):
     memory_metadata: Dict[str, Any]
     
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
@@ -538,28 +484,19 @@ class ScheduledTaskExecutionResponse(BaseModel):
 
 
 class PromptConfigBase(BaseModel):
-    """
-    封装与PromptConfigBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """提示词配置基础字段模型。"""
     name: str
     content: str
     variables: Optional[str] = None
 
 
 class PromptConfigCreate(PromptConfigBase):
-    """
-    封装与PromptConfigCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建提示词配置请求体。"""
     pass
 
 
 class PromptConfigUpdate(BaseModel):
-    """
-    封装与PromptConfigUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """更新提示词配置请求体。"""
     name: Optional[str] = None
     content: Optional[str] = None
     variables: Optional[str] = None
@@ -567,28 +504,19 @@ class PromptConfigUpdate(BaseModel):
 
 
 class PromptConfigResponse(PromptConfigBase):
-    """
-    封装与PromptConfigResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """提示词配置查询响应模型。"""
     id: str
     is_active: bool
     created_at: datetime
     updated_at: datetime
     
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
 class BehaviorStats(BaseModel):
-    """
-    封装与BehaviorStats相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """行为统计数据模型。"""
     total_interactions: int
     total_tools_used: int
     total_errors: int
@@ -599,19 +527,13 @@ class BehaviorStats(BaseModel):
 
 
 class ConfirmationRequest(BaseModel):
-    """
-    封装与ConfirmationRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """确认请求体。"""
     confirmed: bool
     step: Optional[Dict[str, Any]] = None
 
 
 class ExperienceBase(BaseModel):
-    """
-    封装与ExperienceBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """经验基础字段模型。"""
     experience_type: str = Field(..., description="经验类型")
     title: str = Field(..., max_length=200, description="经验标题")
     content: str = Field(..., description="经验内容")
@@ -622,18 +544,12 @@ class ExperienceBase(BaseModel):
 
 
 class ExperienceCreate(ExperienceBase):
-    """
-    封装与ExperienceCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建经验请求体。"""
     pass
 
 
 class ExperienceUpdate(BaseModel):
-    """
-    封装与ExperienceUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """更新经验请求体。"""
     title: Optional[str] = Field(None, max_length=200)
     content: Optional[str] = None
     trigger_conditions: Optional[str] = None
@@ -642,10 +558,7 @@ class ExperienceUpdate(BaseModel):
 
 
 class ExperienceResponse(ExperienceBase):
-    """
-    封装与ExperienceResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """经验查询响应模型。"""
     id: int
     usage_count: int = 0
     success_count: int = 0
@@ -653,18 +566,12 @@ class ExperienceResponse(ExperienceBase):
     last_access: datetime
     
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
 class ExperienceSearchParams(BaseModel):
-    """
-    封装与ExperienceSearchParams相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """经验搜索参数模型。"""
     query: Optional[str] = None
     experience_type: Optional[str] = None
     min_confidence: Optional[float] = Field(default=0.0, ge=0.0, le=1.0)
@@ -674,10 +581,7 @@ class ExperienceSearchParams(BaseModel):
 
 
 class ExperienceExtractionRequest(BaseModel):
-    """
-    封装与ExperienceExtractionRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """经验提取请求体。"""
     session_id: str
     user_goal: str
     execution_steps: List[Dict[str, Any]]
@@ -686,10 +590,7 @@ class ExperienceExtractionRequest(BaseModel):
 
 
 class ExperienceStatsResponse(BaseModel):
-    """
-    封装与ExperienceStatsResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """经验统计响应模型。"""
     total_experiences: int
     type_distribution: Dict[str, int]
     avg_confidence: float
@@ -700,10 +601,7 @@ class ExperienceStatsResponse(BaseModel):
 
 
 class SkillUpdate(BaseModel):
-    """
-    封装与SkillUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """更新技能请求体。"""
     name: Optional[str] = None
     version: Optional[str] = None
     description: Optional[str] = None
@@ -712,19 +610,13 @@ class SkillUpdate(BaseModel):
 
 
 class SkillExecute(BaseModel):
-    """
-    封装与SkillExecute相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """技能执行请求体，指定执行参数。"""
     inputs: Dict[str, Any] = Field(default_factory=dict, description="技能输入参数")
     context: Dict[str, Any] = Field(default_factory=dict, description="执行上下文")
 
 
 class SkillConfigResponse(BaseModel):
-    """
-    封装与SkillConfigResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """技能配置响应模型。"""
     skill_id: str
     name: str
     version: Optional[str] = None
@@ -734,18 +626,12 @@ class SkillConfigResponse(BaseModel):
     installed_at: datetime
 
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 
 class SkillValidationResult(BaseModel):
-    """
-    封装与SkillValidationResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """技能校验结果模型。"""
     valid: bool
     errors: List[str]
     warnings: List[str]
@@ -754,18 +640,12 @@ class SkillValidationResult(BaseModel):
 
 
 class SkillValidationRequest(BaseModel):
-    """
-    封装与SkillValidationRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """技能校验请求体。"""
     yaml_content: str = Field(..., description="YAML 格式的技能配置")
 
 
 class PluginUpdate(BaseModel):
-    """
-    封装与PluginUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """更新插件请求体。"""
     name: Optional[str] = None
     version: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
@@ -773,27 +653,18 @@ class PluginUpdate(BaseModel):
 
 
 class PluginExecute(BaseModel):
-    """
-    封装与PluginExecute相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件执行请求体。"""
     method: str = Field(..., description="要执行的插件方法")
     params: Dict[str, Any] = Field(default_factory=dict, description="方法参数")
 
 
 class PluginPermissionUpdateRequest(BaseModel):
-    """
-    封装与PluginPermissionUpdateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件权限更新请求体。"""
     permissions: List[str] = Field(default_factory=list, description="要授权或撤销的权限列表")
 
 
 class PluginPermissionStatus(BaseModel):
-    """
-    封装与PluginPermissionStatus相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件权限状态模型。"""
     plugin_id: str
     plugin_name: str
     requested_permissions: List[str]
@@ -802,55 +673,37 @@ class PluginPermissionStatus(BaseModel):
 
 
 class PluginPermissionUpdateResponse(PluginPermissionStatus):
-    """
-    封装与PluginPermissionUpdateResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件权限更新响应模型。"""
     message: str
 
 
 class PluginToolsResponse(BaseModel):
-    """
-    封装与PluginToolsResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件工具列表响应模型。"""
     plugin_id: str
     plugin_name: str
     tools: List[Dict[str, Any]]
 
 
 class PluginValidationResult(BaseModel):
-    """
-    封装与PluginValidationResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件校验结果模型。"""
     valid: bool
     errors: List[str]
     warnings: List[str]
 
 
 class PluginValidationRequest(BaseModel):
-    """
-    封装与PluginValidationRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件校验请求体。"""
     yaml_content: str = Field(..., description="YAML 格式的插件配置")
 
 
 class PluginDiscoveryResult(BaseModel):
-    """
-    封装与PluginDiscoveryResult相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件发现结果模型。"""
     discovered: List[Dict[str, Any]]
     total_count: int
 
 
 class RolloutConfigSchema(BaseModel):
-    """
-    封装与RolloutConfigSchema相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """灰度发布配置模型。"""
     enabled: bool = False
     strategy: str = Field(default="percentage", description="percentage / user_list / region")
     percentage: Optional[float] = Field(default=0.0, ge=0.0, le=100.0)
@@ -859,19 +712,13 @@ class RolloutConfigSchema(BaseModel):
 
 
 class HotUpdateRequest(BaseModel):
-    """
-    封装与HotUpdateRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """热更新请求体。"""
     rollout_config: Optional[RolloutConfigSchema] = None
     strategy: str = Field(default="gray", description="gray / immediate / force")
 
 
 class HotUpdateResponse(BaseModel):
-    """
-    封装与HotUpdateResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """热更新响应模型。"""
     success: bool
     plugin_name: str
     strategy: str
@@ -886,18 +733,12 @@ class HotUpdateResponse(BaseModel):
 
 
 class RollbackRequest(BaseModel):
-    """
-    封装与RollbackRequest相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """回滚请求体。"""
     snapshot_id: Optional[str] = Field(default=None, description="要恢复的快照ID，不填则使用最新快照")
 
 
 class RollbackResponse(BaseModel):
-    """
-    封装与RollbackResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """回滚响应模型。"""
     success: bool
     plugin_name: str
     rolled_back_to: Optional[str] = None
@@ -906,10 +747,7 @@ class RollbackResponse(BaseModel):
 
 
 class PluginLogEntry(BaseModel):
-    """
-    封装与PluginLogEntry相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件日志条目模型。"""
     timestamp: str
     level: str
     message: str
@@ -918,10 +756,7 @@ class PluginLogEntry(BaseModel):
 
 
 class PluginLogsResponse(BaseModel):
-    """
-    封装与PluginLogsResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件日志查询响应模型。"""
     plugin_id: str
     plugin_name: str
     level_filter: Optional[str]
@@ -930,61 +765,40 @@ class PluginLogsResponse(BaseModel):
 
 
 class PluginLogLevelUpdate(BaseModel):
-    """
-    封装与PluginLogLevelUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件日志级别更新请求体。"""
     level: str = Field(..., description="日志级别: DEBUG / INFO / WARNING / ERROR / CRITICAL")
 
 
 class PluginLogLevelResponse(BaseModel):
-    """
-    封装与PluginLogLevelResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """插件日志级别响应模型。"""
     plugin_id: str
     plugin_name: str
     level: str
 
 
 class ProviderConfigurationBase(BaseModel):
-    """
-    封装与ProviderConfigurationBase相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """模型供应商配置基础字段模型。"""
     provider: str
     model: str
     max_tokens: Optional[int] = None
 
 
 class ProviderConfigurationCreate(ProviderConfigurationBase):
-    """
-    封装与ProviderConfigurationCreate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """创建供应商配置请求体。"""
     pass
 
 
 class ProviderConfigurationUpdate(BaseModel):
-    """
-    封装与ProviderConfigurationUpdate相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """更新供应商配置请求体。"""
     max_tokens: Optional[int] = None
 
 
 class ProviderConfigurationResponse(ProviderConfigurationBase):
-    """
-    封装与ProviderConfigurationResponse相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """供应商配置查询响应模型。"""
     id: int
 
     class Config:
-        """
-        封装与Config相关的核心逻辑与运行状态。
-        该类通常是当前文件中组织数据与调度行为的主要封装单元。
-        """
+        """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""
         from_attributes = True
 
 

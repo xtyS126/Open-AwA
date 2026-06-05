@@ -1,26 +1,18 @@
 """
 计费与用量管理模块，负责价格配置、预算控制、用量追踪与报表能力。
-这一部分直接关联成本核算、调用统计以及运维观测。
+计费模型统一使用 db.models.Base 作为声明式基类，与主业务模型共享同一套 Metadata，
+确保迁移治理在单条链路上执行，避免表结构漂移。
 """
 
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 
-
-class Base(DeclarativeBase):
-    """
-    封装与Base相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
-    pass
+from db.models import Base
 
 
 class UsageRecord(Base):
-    """
-    封装与UsageRecord相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """LLM 调用用量明细记录：单次 API 调用的 token 量、费用、耗时等信息。"""
     __tablename__ = "usage_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -43,10 +35,7 @@ class UsageRecord(Base):
 
 
 class ModelPricing(Base):
-    """
-    封装与ModelPricing相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """模型定价配置：按 provider/model 维护的输入/输出/缓存价格及多模态 token 折算规则。"""
     __tablename__ = "model_pricing"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -75,10 +64,7 @@ class ModelPricing(Base):
 
 
 class BudgetConfig(Base):
-    """
-    封装与BudgetConfig相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """预算配置：按用户/工作区维度设置的用量预算上限、周期和告警阈值。"""
     __tablename__ = "budget_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -97,10 +83,7 @@ class BudgetConfig(Base):
 
 
 class UserUsageSummary(Base):
-    """
-    封装与UserUsageSummary相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """用户用量月度汇总：按月聚合的 token 量和费用统计，通过原子 UPDATE 避免并发写冲突。"""
     __tablename__ = "user_usage_summary"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -118,10 +101,7 @@ class UserUsageSummary(Base):
 
 
 class ModelConfiguration(Base):
-    """
-    封装与ModelConfiguration相关的核心逻辑与运行状态。
-    该类通常是当前文件中组织数据与调度行为的主要封装单元。
-    """
+    """模型端点配置：各 provider/model 的 base_url、API key、功能开关等运行参数。"""
     __tablename__ = "model_configurations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

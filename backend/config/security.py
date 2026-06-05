@@ -240,12 +240,12 @@ def _derive_csrf_signing_key() -> bytes:
     return key_material
 
 
-def generate_csrf_token(user_id: int, jti: Optional[str] = None) -> str:
+def generate_csrf_token(user_id, jti: Optional[str] = None) -> str:
     """
     为用户生成 per-session 的 CSRF token。
 
     参数:
-        user_id: 用户数据库 ID
+        user_id: 用户数据库 ID（支持 str 或 int，与 User.id 类型一致）
         jti: 当前会话的 JWT jti（可选，用于绑定到特定登录会话）
 
     返回:

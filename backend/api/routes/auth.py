@@ -39,6 +39,9 @@ _LOGIN_ATTEMPT_WINDOW_SECONDS = 5 * 60
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_BLOCK_SECONDS = 15 * 60
 _LOGIN_CLEANUP_INTERVAL_SECONDS = 60
+# 限流字典容量上限：防止恶意扫描导致内存无限增长
+# 多进程/多实例部署时各 worker 限流状态不共享，生产环境建议迁移到 Redis 或数据库
+_LOGIN_STATE_MAX_CAPACITY = 10000
 _LOGIN_ATTEMPTS: dict[str, deque[float]] = {}
 _LOGIN_BLOCKED_UNTIL: dict[str, float] = {}
 _LOGIN_RATE_LIMIT_LOCK = threading.Lock()
@@ -55,6 +58,7 @@ def _build_login_rate_limit_key(username: str, client_ip: str) -> str:
 def _get_retry_after_seconds(rate_limit_key: str) -> int:
     """
     检查当前登录键是否仍处于限流窗口。
+    返回需等待的秒数，0 表示允许尝试。
     """
     now = time.monotonic()
     with _LOGIN_RATE_LIMIT_LOCK:
@@ -81,10 +85,21 @@ def _get_retry_after_seconds(rate_limit_key: str) -> int:
 def _record_failed_login(rate_limit_key: str) -> None:
     """
     记录一次失败登录尝试。
+    当限流字典超过容量上限时，优先清理过期条目；
+    若仍超限则拒绝记录并记录告警日志。
     """
     now = time.monotonic()
     with _LOGIN_RATE_LIMIT_LOCK:
         _cleanup_expired_login_rate_limit_state(now)
+        total_entries = len(_LOGIN_ATTEMPTS) + len(_LOGIN_BLOCKED_UNTIL)
+        if total_entries >= _LOGIN_STATE_MAX_CAPACITY:
+            # 超过容量上限后主动执行一次全量清理，释放过期条目
+            _force_full_cleanup(now)
+            if len(_LOGIN_ATTEMPTS) + len(_LOGIN_BLOCKED_UNTIL) >= _LOGIN_STATE_MAX_CAPACITY:
+                logger.bind(event="login_rate_limit_capacity_reached", module="auth",
+                            total=total_entries, max_capacity=_LOGIN_STATE_MAX_CAPACITY
+                            ).warning("登录限流字典达到容量上限，拒绝记录新的失败尝试")
+                return
         attempts = _LOGIN_ATTEMPTS.setdefault(rate_limit_key, deque())
         _prune_login_attempts(attempts, now)
         attempts.append(now)
@@ -140,6 +155,30 @@ def _cleanup_expired_login_rate_limit_state(now: float) -> None:
         _LOGIN_ATTEMPTS.pop(key, None)
 
     _LOGIN_LAST_CLEANUP_AT = now
+
+
+def _force_full_cleanup(now: float) -> None:
+    """
+    强制执行一次全量过期条目清理，无视清理间隔限制。
+    用于容量保护场景，确保在字典接近上限时尽可能回收空间。
+    """
+    # 清理过期的封禁记录
+    expired_blocked_keys = [
+        key for key, blocked_until in _LOGIN_BLOCKED_UNTIL.items()
+        if blocked_until <= now
+    ]
+    for key in expired_blocked_keys:
+        _LOGIN_BLOCKED_UNTIL.pop(key, None)
+
+    # 清理空的或已过期的尝试记录
+    stale_keys: list[str] = []
+    for key, attempts in list(_LOGIN_ATTEMPTS.items()):
+        _prune_login_attempts(attempts, now)
+        if not attempts and key not in _LOGIN_BLOCKED_UNTIL:
+            stale_keys.append(key)
+
+    for key in stale_keys:
+        _LOGIN_ATTEMPTS.pop(key, None)
 
 
 @router.post("/register", response_model=UserResponse)

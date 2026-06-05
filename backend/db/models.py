@@ -284,7 +284,7 @@ class Conversation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    user_id: Mapped[str] = mapped_column(String(100), index=True)
+    user_id: Mapped[str] = mapped_column(String(100), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     summary: Mapped[str] = mapped_column(Text, default="")
     last_message_preview: Mapped[str] = mapped_column(Text, default="")
@@ -1280,13 +1280,8 @@ def init_db(bind_engine=None):
     支持自定义 engine，便于测试环境使用独立数据库。
     """
     use_engine = bind_engine or engine
+    # 计费模型已统一使用 db.models.Base，与主业务模型共享同一 Metadata
     Base.metadata.create_all(bind=use_engine)
-    # 创建计费模块的表（使用独立的 Base）
-    try:
-        from billing.models import Base as BillingBase
-        BillingBase.metadata.create_all(bind=use_engine)
-    except Exception:
-        pass
     _migrate_conversation_record_metadata_column(use_engine=use_engine)
     _migrate_plugin_columns(use_engine=use_engine)
     _migrate_long_term_memory_user_id(use_engine=use_engine)

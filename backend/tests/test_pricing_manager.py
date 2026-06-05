@@ -6,7 +6,8 @@
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from billing.models import Base, ModelConfiguration, ModelPricing
+from db.models import Base
+from billing.models import ModelConfiguration, ModelPricing
 from billing.pricing_manager import PricingManager
 
 

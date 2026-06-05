@@ -10,7 +10,7 @@ import os
 import time
 from typing import Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
@@ -19,7 +19,8 @@ from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from api.routes import auth, chat, skills, weixin_skill, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
 from api.routes.marketplace import router as marketplace_router
 from api.routes.security import router as security_router
@@ -34,7 +35,7 @@ from api.routes.test_runner import router as test_runner_router
 from api.routes.workspace import router as workspace_router
 from api.routes.coding import router as coding_router
 from api.routes.inbox import router as inbox_router
-from billing.models import Base as BillingBase
+
 from billing.routers import billing
 from config.logging import (
     REQUEST_ID_HEADER,
@@ -91,19 +92,18 @@ ALLOWED_ORIGINS = _resolve_allowed_origins()
 logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for_logging(ALLOWED_ORIGINS)).info("cors configured")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    管理应用启动与关闭阶段的全局生命周期。
-    启动时会初始化主数据库、计费表与默认定价配置；关闭时负责输出应用停止日志，为后续扩展统一资源清理入口。
-    """
-    logger.bind(event="app_startup", module="main").info("starting up openawa")
+# ==================== 启动步骤拆分 ====================
+# 将原 lifespan 中的初始化逻辑按职责拆分为独立函数：
+#   1. 基础设施（LiteLLM 依赖检测）
+#   2. 数据初始化（DB 建表、计费、RBAC、用户同步）
+#   3. 插件系统（市场种子、插件发现与加载）
+#   4. 后台任务（定时任务、微信自动回复）
+#
+# 每步失败有独立日志和错误上下文，便于排障和单元测试。
 
-    # 启动耗时采集
-    profiler = StartupProfiler()
-    profiler.start()
 
-    # LiteLLM 依赖检测：启动时检查是否已安装
+async def _startup_infrastructure(profiler: StartupProfiler) -> None:
+    """基础设施层初始化：依赖检测。"""
     with profiler.step("litellm_check"):
         if is_litellm_available():
             logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
@@ -113,151 +113,190 @@ async def lifespan(app: FastAPI):
                 "Please run `pip install litellm` to enable unified LLM gateway. "
                 "Model API requests will fail until LiteLLM is installed."
             )
-    if not os.getenv("SKIP_INIT_DB"):
-        with profiler.step("db_init"):
-            try:
-                init_db()
-                logger.bind(event="db_initialized", module="main").info("database initialized")
-            except Exception as exc:
-                logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
-                raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
-        with profiler.step("billing_tables"):
-            BillingBase.metadata.create_all(bind=engine)
-            logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
-        from billing.pricing_manager import PricingManager
-        from db.models import SessionLocal
 
-        with profiler.step("pricing_init"):
-            db = SessionLocal()
-            try:
-                pricing_manager = PricingManager(db)
-                pricing_manager.ensure_configuration_schema()
-                count = pricing_manager.initialize_default_pricing()
-                if count > 0:
-                    logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
-                removed = pricing_manager.remove_legacy_default_configurations()
-                if removed > 0:
-                    logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
-            finally:
-                db.close()
-        # 初始化内置 RBAC 角色
-        from security.rbac import RBACManager
 
-        with profiler.step("rbac_init"):
-            db = SessionLocal()
-            try:
-                rbac = RBACManager(db)
-                rbac.ensure_built_in_roles()
-            finally:
-                db.close()
-        # 从本地配置文件同步用户到数据库
-        from config.local_users import sync_local_users_to_db
+async def _startup_data_init(profiler: StartupProfiler) -> None:
+    """数据层初始化：DB 建表、计费配置、RBAC 角色、本地用户同步。"""
+    if os.getenv("SKIP_INIT_DB"):
+        return
 
-        with profiler.step("local_users_sync"):
-            db = SessionLocal()
-            try:
-                sync_stats = sync_local_users_to_db(db)
-                logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
-            finally:
-                db.close()
-    # 初始化插件市场内置插件
+    from db.models import SessionLocal
+
+    with profiler.step("db_init"):
+        try:
+            init_db()
+            logger.bind(event="db_initialized", module="main").info("database initialized")
+        except Exception as exc:
+            logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
+            raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
+
+    with profiler.step("billing_tables"):
+        logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
+
+    from billing.pricing_manager import PricingManager
+    with profiler.step("pricing_init"):
+        db = SessionLocal()
+        try:
+            pricing_manager = PricingManager(db)
+            pricing_manager.ensure_configuration_schema()
+            count = pricing_manager.initialize_default_pricing()
+            if count > 0:
+                logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
+            removed = pricing_manager.remove_legacy_default_configurations()
+            if removed > 0:
+                logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
+        finally:
+            db.close()
+
+    from security.rbac import RBACManager
+    with profiler.step("rbac_init"):
+        db = SessionLocal()
+        try:
+            rbac = RBACManager(db)
+            rbac.ensure_built_in_roles()
+        finally:
+            db.close()
+
+    from config.local_users import sync_local_users_to_db
+    with profiler.step("local_users_sync"):
+        db = SessionLocal()
+        try:
+            sync_stats = sync_local_users_to_db(db)
+            logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
+        finally:
+            db.close()
+
+
+async def _startup_plugin_system(profiler: StartupProfiler) -> None:
+    """插件系统初始化：市场种子、插件发现、已启用插件加载。"""
+    from db.models import SessionLocal
+
     with profiler.step("marketplace_seed"):
         from plugins.marketplace.registry import marketplace_registry
         marketplace_registry.seed_built_in_plugins()
 
-    # 初始化插件管理器：发现插件并加载数据库中已启用的插件
     with profiler.step("plugin_discover"):
         from plugins.plugin_manager import PluginManager
         from plugins import plugin_instance
-        from db.models import SessionLocal
         plugin_instance.init(PluginManager(db_session_factory=SessionLocal))
         pm = plugin_instance.get()
         pm.discover_plugins()
-    if not os.getenv("SKIP_INIT_DB"):
-        with profiler.step("plugin_load_enabled"):
-            from db.models import Plugin as PluginModel, Skill
-            import uuid
-            db = SessionLocal()
-            try:
-                # 迁移：删除已由 system-tools 插件接管的内置技能记录
-                for skill_name in ["file_manager", "terminal_executor"]:
-                    old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
-                    if old_skill:
-                        db.delete(old_skill)
-                        logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
-                            f"已迁移内置技能 {skill_name} 至 system-tools 插件"
-                        )
+
+    if os.getenv("SKIP_INIT_DB"):
+        return
+
+    with profiler.step("plugin_load_enabled"):
+        from db.models import Plugin as PluginModel, Skill
+        import uuid
+        db = SessionLocal()
+        try:
+            # 迁移：删除已由 system-tools 插件接管的内置技能记录
+            for skill_name in ["file_manager", "terminal_executor"]:
+                old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
+                if old_skill:
+                    db.delete(old_skill)
+                    logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
+                        f"已迁移内置技能 {skill_name} 至 system-tools 插件"
+                    )
+            db.commit()
+
+            # 注册 system-tools 系统内置插件（如不存在）
+            existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
+            if not existing_plugin:
+                new_plugin = PluginModel(
+                    id=str(uuid.uuid4()),
+                    name="system-tools",
+                    version="1.0.0",
+                    enabled=True,
+                    config={},
+                    category="builtin",
+                    author="Open-AwA Team",
+                    source="builtin",
+                    dependencies=[],
+                )
+                db.add(new_plugin)
                 db.commit()
+                logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
+                    "已注册系统内置插件 system-tools"
+                )
+        except Exception as exc:
+            logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
+            db.rollback()
+        finally:
+            db.close()
 
-                # 注册 system-tools 系统内置插件（如不存在）
-                existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
-                if not existing_plugin:
-                    new_plugin = PluginModel(
-                        id=str(uuid.uuid4()),
-                        name="system-tools",
-                        version="1.0.0",
-                        enabled=True,
-                        config={},
-                        category="builtin",
-                        author="Open-AwA Team",
-                        source="builtin",
-                        dependencies=[],
-                    )
-                    db.add(new_plugin)
-                    db.commit()
-                    logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
-                        "已注册系统内置插件 system-tools"
-                    )
-            except Exception as exc:
-                logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
-                db.rollback()
-            finally:
-                db.close()
+        pm = plugin_instance.get()
+        db = SessionLocal()
+        try:
+            enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
+            for p in enabled_plugins:
+                if p.name in pm.plugin_metadata:
+                    try:
+                        pm.load_plugin(p.name)
+                        logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
+                        granted = p.granted_permissions or []
+                        if granted:
+                            pm.restore_plugin_permissions(p.name, granted)
+                    except Exception as exc:
+                        logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
+            logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
+        finally:
+            db.close()
 
-            db = SessionLocal()
-            try:
-                enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
-                for p in enabled_plugins:
-                    if p.name in pm.plugin_metadata:
-                        try:
-                            pm.load_plugin(p.name)
-                            logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
-                            # 从数据库恢复已授权权限（覆盖 auto_authorize 的默认授权）
-                            granted = p.granted_permissions or []
-                            if granted:
-                                pm.restore_plugin_permissions(p.name, granted)
-                        except Exception as exc:
-                            logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
-                logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
-            finally:
-                db.close()
+
+async def _startup_background_tasks(profiler: StartupProfiler) -> None:
+    """后台任务初始化：定时任务管理器、微信自动回复。"""
+    from db.models import SessionLocal
 
     with profiler.step("scheduled_task_start"):
         await scheduled_task_manager.start()
 
-    # 根据配置启动微信自动回复
-    if not os.getenv("SKIP_INIT_DB"):
-        with profiler.step("weixin_auto_reply"):
-            from db.models import WeixinBinding, SessionLocal
-            from api.services.weixin_auto_reply import get_auto_reply_manager
-            db = SessionLocal()
-            try:
-                bindings = db.query(WeixinBinding).filter(
-                    WeixinBinding.binding_status == "bound",
-                    WeixinBinding.auto_start_reply == True
-                ).all()
-                if bindings:
-                    manager = get_auto_reply_manager()
-                    for binding in bindings:
-                        try:
-                            await manager.start(binding.user_id)
-                            logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
-                        except ValueError as e:
-                            logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
-                        except Exception as e:
-                            logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
-            finally:
-                db.close()
+    if os.getenv("SKIP_INIT_DB"):
+        return
+
+    with profiler.step("weixin_auto_reply"):
+        from db.models import WeixinBinding
+        from api.services.weixin_auto_reply import get_auto_reply_manager
+        db = SessionLocal()
+        try:
+            bindings = db.query(WeixinBinding).filter(
+                WeixinBinding.binding_status == "bound",
+                WeixinBinding.auto_start_reply == True
+            ).all()
+            if bindings:
+                manager = get_auto_reply_manager()
+                for binding in bindings:
+                    try:
+                        await manager.start(binding.user_id)
+                        logger.bind(event="weixin_auto_reply_autostart", module="main", user_id=binding.user_id).info("自动启动微信自动回复")
+                    except ValueError as e:
+                        logger.bind(event="weixin_auto_reply_autostart_failed", module="main", user_id=binding.user_id).warning(f"自动启动微信自动回复失败（配置错误）: {e}")
+                    except Exception as e:
+                        logger.bind(event="weixin_auto_reply_autostart_error", module="main", user_id=binding.user_id).error(f"自动启动微信自动回复异常: {e}")
+        finally:
+            db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    管理应用启动与关闭阶段的全局生命周期。
+    启动步骤已拆分为四个独立函数：基础设施 → 数据初始化 → 插件系统 → 后台任务。
+    每步失败有独立日志和错误上下文，便于排障。
+    """
+    logger.bind(event="app_startup", module="main").info("starting up openawa")
+
+    profiler = StartupProfiler()
+    profiler.start()
+
+    try:
+        await _startup_infrastructure(profiler)
+        await _startup_data_init(profiler)
+        await _startup_plugin_system(profiler)
+        await _startup_background_tasks(profiler)
+    except Exception:
+        logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
+        raise
 
     profiler.finish()
 
@@ -286,13 +325,14 @@ _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 # 确保多 Worker 部署时签名一致（不再使用进程级随机密钥）
 
 
-async def _extract_user_id_from_request(request: Request) -> Optional[int]:
+async def _extract_user_id_from_request(request: Request) -> Optional[str]:
     """
     从请求中提取认证用户 ID（用于 CSRF 校验时与 token 中绑定的用户比对）。
 
     优先从 JWT payload 的 uid 字段直接读取（高效路径），
     其次回退到通过 username 查 DB 的兼容路径（支持旧版不含 uid 的令牌）。
 
+    User.id 为字符串类型，所有路径统一返回 str 或 None。
     不会抛出异常，解析失败返回 None。
     """
     from config.security import decode_access_token, ACCESS_TOKEN_COOKIE_NAME
@@ -310,9 +350,9 @@ async def _extract_user_id_from_request(request: Request) -> Optional[int]:
     if payload is None:
         return None
 
-    # 优先从 JWT payload 直接读取 uid（高效路径，新增令牌均包含此字段）
+    # 优先从 JWT payload 直接读取 uid（高效路径，User.id 为字符串类型）
     uid = payload.get("uid")
-    if isinstance(uid, int):
+    if isinstance(uid, str) and uid:
         return uid
 
     # 兼容旧版令牌：通过 username 查 DB（降级路径）
@@ -364,8 +404,8 @@ async def csrf_protection_middleware(request: Request, call_next):
     if "websocket" in path.lower() or request.headers.get("upgrade", "").lower() == "websocket":
         return await call_next(request)
 
-    # 测试环境跳过 CSRF 校验
-    if os.getenv("TESTING", "").lower() == "true":
+    # 测试环境跳过 CSRF 校验（仅通过 pytest conftest 设置的专用环境变量开启）
+    if os.getenv("SKIP_CSRF_FOR_TEST", "").lower() == "true":
         return await call_next(request)
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
@@ -546,13 +586,17 @@ async def _add_csp_header(request: Request, call_next):
     """
     为所有响应添加 Content-Security-Policy 头。
     CSP 作为 XSS 攻击的第二道防线，在默认 React 转义基础上提供额外保护。
-    允许的源: 自身域名 + Google Fonts CDN。
+    script-src 禁止 unsafe-inline，通过 Trusted Types + nonce 方案防御 XSS。
+    style-src 在调试模式下保留 unsafe-inline 以兼容 React 热更新样式注入。
     """
     response = await call_next(request)
+    # 调试模式下 React 开发服务器需要内联样式注入；脚本内联始终禁止
+    _debug = os.getenv("DEBUG_MODE", "").lower() == "true"
+    style_src = "'self' 'unsafe-inline' https://fonts.googleapis.com" if _debug else "'self' https://fonts.googleapis.com"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        f"script-src 'self'; "
+        f"style-src {style_src}; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob: https:; "
         "connect-src 'self' ws: wss:; "
@@ -570,6 +614,9 @@ app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(chat.router, prefix=settings.API_V1_STR)
+# weixin_skill 路由必须在 skills 路由之前注册，否则 GET /skills/{skill_id}/config
+# 会捕获 /skills/weixin/config（将 "weixin" 识别为 skill_id 参数）
+app.include_router(weixin_skill.router, prefix=settings.API_V1_STR)
 app.include_router(skills.router, prefix=settings.API_V1_STR)
 app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
@@ -665,9 +712,10 @@ async def health_check():
 
 
 @app.get("/metrics")
-async def metrics():
+async def metrics(current_user = Depends(get_current_user)):
     """
     导出简易 Prometheus 指标，便于基础观测与排障。
+    需要认证访问，防止运行指标、请求量和错误统计被未授权获取。
     """
 
     return PlainTextResponse(
@@ -773,6 +821,9 @@ def run_server(debug_mode: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    # 在此处切换本地调试模式：True 启用 debug/reload/access_log，False 使用常规启动参数。
-    DEBUG_MODE = True
+    # 调试模式仅通过环境变量显式开启，生产环境默认关闭。
+    # 设置 DEBUG_MODE=true 可启用 uvicorn reload/access_log 与调试级日志。
+    DEBUG_MODE = os.getenv("DEBUG_MODE", "").lower() == "true"
+    if DEBUG_MODE:
+        logger.bind(event="debug_mode_enabled", module="main").warning("调试模式已开启，生产环境请确保 DEBUG_MODE 未设置")
     run_server(debug_mode=DEBUG_MODE)
