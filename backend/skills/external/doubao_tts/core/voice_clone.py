@@ -190,17 +190,19 @@ class VoiceCloneManager:
 
         raise TimeoutError(f"声音复刻训练超时（{POLL_MAX_ATTEMPTS * POLL_INTERVAL_SECONDS}秒），speaker_id={speaker_id}")
 
-    async def list_speakers(self) -> List[Dict[str, Any]]:
+    async def list_speakers(self, user_id: str = "") -> List[Dict[str, Any]]:
         """
-        列出所有复刻音色（含预置音色）。
+        列出所有音色（含预置音色 + 当前用户的复刻音色）。
         """
         from .tts_client import DoubaoTTSService
 
         # 预置音色
         speakers = DoubaoTTSService.list_preset_speakers()
 
-        # 复刻音色
+        # 仅列出当前用户的复刻音色
         for sid, info in self._speakers.items():
+            if user_id and info.get("user_id", "") != user_id:
+                continue
             speakers.append({
                 "speaker_id": sid,
                 "name": info.get("voice_name", sid),
