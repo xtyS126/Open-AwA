@@ -93,7 +93,7 @@
   border-radius: 4px;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .toast-close:hover {

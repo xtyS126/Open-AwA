@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { X, Paperclip, Send, Square } from 'lucide-react'
 import { appLogger } from '@/shared/utils/logger'
 import { useI18nStore, t as i18nT } from '@/i18n'
-import styles from '../ChatPage.module.css'
+import styles from './ChatInput.module.css'
 
 export interface FileAttachment {
   id: string

@@ -12,6 +12,7 @@ import {
   installPlugin,
   MarketplacePlugin,
 } from './marketplaceApi'
+import { EmptyState } from '@/shared/components/ui'
 import styles from './MarketplacePage.module.css'
 
 /** 分类选项配置 */
@@ -162,9 +163,7 @@ function MarketplacePage() {
       {!loading && (
         <div className={styles['plugins-grid']}>
           {plugins.length === 0 ? (
-            <div className={styles['empty-state']}>
-              <p>未找到匹配的插件</p>
-            </div>
+            <EmptyState title="未找到匹配的插件" description="尝试更换搜索关键词或筛选条件" />
           ) : (
             plugins.map((plugin) => (
               <div key={plugin.id} className={styles['plugin-card']}>

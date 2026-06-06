@@ -6,6 +6,7 @@ import { useAppInitialization } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { mark } from '@/shared/perf/metrics'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
 
 // P2: Sidebar 懒加载，减少主包体积
 const Sidebar = React.lazy(() => import('@/shared/components/Sidebar/Sidebar'))
@@ -91,7 +92,7 @@ function App() {
     <BrowserRouter future={routerFutureConfig}>
       <NavigationLogger />
       {!isAuthenticated ? (
-        <Suspense fallback={<div className="loading-fallback">加载中...</div>}>
+        <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
           <Routes>
             <Route path="/login" element={<ErrorBoundary name="Login"><LoginPage /></ErrorBoundary>} />
             <Route path="*" element={<Navigate to="/login" replace />} />
@@ -103,7 +104,7 @@ function App() {
             <Sidebar />
           </Suspense>
           <main className="main-content">
-            <Suspense fallback={<div className="loading-fallback">加载中...</div>}>
+            <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
               <Routes>
                 <Route path="/" element={<Navigate to="/chat" replace />} />
                 <Route path="/login" element={<Navigate to="/chat" replace />} />

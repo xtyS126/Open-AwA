@@ -18,7 +18,7 @@
   border-radius: var(--radius-sm);
   font-size: 14px;
   text-align: left;
-  transition: all 0.15s;
+  transition: all var(--transition-fast);
   position: relative;
   border: none;
   cursor: pointer;
@@ -142,7 +142,7 @@
   font-size: 14px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .setting-item select:focus,
@@ -184,7 +184,7 @@
   margin-bottom: 16px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .prompt-editor:focus {
@@ -254,7 +254,7 @@
   font-size: 13px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .price-input:focus {
@@ -309,7 +309,7 @@
   font-size: 14px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .form-group select:focus,
@@ -341,7 +341,7 @@
   border: none;
   border-radius: var(--radius-lg);
   padding: 20px;
-  transition: all 0.2s ease;
+  transition: all var(--transition-base);
 }
 
 .config-card:hover {
@@ -485,7 +485,7 @@
   border-radius: var(--radius-md);
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color var(--transition-base);
 }
 
 .provider-item:hover {
@@ -596,7 +596,7 @@
   font-size: 14px;
   background: var(--color-bg-tertiary);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .provider-modal-body select:focus,
@@ -632,7 +632,7 @@
   font-size: 14px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .provider-detail-panel input[type='text']:focus,
@@ -668,7 +668,7 @@
   border: none;
   border-radius: 100px;
   background: var(--color-bg);
-  transition: background-color 0.2s;
+  transition: background-color var(--transition-base);
   cursor: pointer;
 }
 
@@ -688,7 +688,7 @@
   word-break: break-all;
 }
 
-@media (max-width: 992px) {
+@media (max-width: 1024px) {
   .api-config-layout {
     grid-template-columns: 1fr;
   }
@@ -1157,7 +1157,7 @@
   font-size: 14px;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .modal-body select:focus,
@@ -1190,7 +1190,7 @@
   border: 1px solid var(--color-border-subtle, var(--color-border));
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   font-weight: 400;
   margin-bottom: 0;
   user-select: none;

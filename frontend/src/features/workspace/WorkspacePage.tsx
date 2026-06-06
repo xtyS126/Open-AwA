@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspaceStore, type Workspace } from './store/workspaceStore';
 import { workspaceApi } from './workspaceApi';
+import { EmptyState } from '@/shared/components/ui';
 import styles from './WorkspacePage.module.css';
 
 const AGENT_TYPES: Record<string, string> = {
@@ -161,7 +162,12 @@ const WorkspacePage: React.FC = () => {
 
       <div className={styles.list}>
         {workspaces.length === 0 ? (
-          <p className={styles.empty}>暂无工作区，请创建一个</p>
+          <EmptyState
+            title="暂无工作区"
+            description="创建一个工作区来组织你的多智能体协作"
+            actionLabel="创建工作区"
+            onAction={() => setShowCreate(true)}
+          />
         ) : (
           workspaces.map((ws) => (
             <div

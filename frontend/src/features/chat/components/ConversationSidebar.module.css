@@ -279,7 +279,7 @@
   background: var(--color-bg-tertiary);
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .sidebar {
     position: absolute;
     inset: 0 auto 0 0;

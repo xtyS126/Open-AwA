@@ -5,6 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useInboxStore, type InboxMessage } from './store/inboxStore';
 import { useI18nStore } from '@/i18n';
 import { inboxApi } from './inboxApi';
+import { EmptyState } from '@/shared/components/ui';
 import styles from './InboxPage.module.css';
 
 const CATEGORY_I18N_KEY: Record<string, string> = {
@@ -103,7 +104,7 @@ const InboxPage: React.FC = () => {
 
       <div className={styles.list}>
         {filtered.length === 0 ? (
-          <p className={styles.empty}>{t('inbox.empty')}</p>
+          <EmptyState title={t('inbox.empty')} />
         ) : (
           filtered.map((msg) => (
             <div

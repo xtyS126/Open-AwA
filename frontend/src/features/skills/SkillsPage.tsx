@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { skillsAPI } from '@/shared/api/api'
 import { Skill } from '@/features/dashboard/dashboard'
 import SkillModal from '@/features/skills/SkillModal'
+import { EmptyState } from '@/shared/components/ui'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './SkillsPage.module.css'
 
@@ -117,17 +118,12 @@ function SkillsPage() {
 
       <div className={styles['skills-grid']}>
         {skills.length === 0 ? (
-          <div className={styles['empty-state']}>
-            <p>{loadError ? '技能列表暂时不可用' : '还没有安装任何技能'}</p>
-            {loadError && (
-              <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => void loadSkills()}>
-                重试加载
-              </button>
-            )}
-            {!loadError && (
-              <button className={`btn btn-primary`} onClick={() => setIsModalOpen(true)}>创建技能</button>
-            )}
-          </div>
+          <EmptyState
+            title={loadError ? '技能列表暂时不可用' : '还没有安装任何技能'}
+            description={loadError ? '请检查网络连接后重试' : '点击下方按钮创建第一个技能'}
+            actionLabel={loadError ? '重试加载' : '创建技能'}
+            onAction={loadError ? () => { void loadSkills(); } : () => setIsModalOpen(true)}
+          />
         ) : (
           skills.map((skill) => (
             <div key={skill.id} className={styles['skill-card']}>

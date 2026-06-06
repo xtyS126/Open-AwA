@@ -723,7 +723,7 @@
 
 /* === 响应式 === */
 
-@media (max-width: 1400px) {
+@media (max-width: 1440px) {
   .stats-grid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -740,7 +740,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }

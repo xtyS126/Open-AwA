@@ -66,6 +66,10 @@ export const useI18nStore = create<I18nStore>((set, get) => ({
   t: (key, params) => {
     const { locale } = get();
     const dict = LOCALES[locale] || LOCALES[FALLBACK_LOCALE] || {};
+    // 开发模式下检测缺失的翻译 key
+    if (import.meta.env.DEV && !dict[key]) {
+      console.warn(`[i18n] Missing translation: "${key}" (locale: ${locale})`);
+    }
     let text = dict[key] || key;
     if (params) {
       Object.entries(params).forEach(([k, v]) => {

@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useI18nStore } from '@/i18n';
 import { listMarketSkills, installMarketSkill, type MarketSkill } from './skillsApi';
+import { EmptyState } from '@/shared/components/ui';
 import styles from './SkillMarketPage.module.css';
 
 const SOURCE_LABELS: Record<string, string> = { clawhub: 'ClawHub', 'skills.sh': 'Skills.sh', github: 'GitHub', modelscope: 'ModelScope' };
@@ -137,7 +138,7 @@ const SkillMarketPage: React.FC = () => {
         <p className={styles.empty}>{t('app.loading')}</p>
       )}
       {!loading && filtered.length === 0 && (
-        <p className={styles.empty}>{t('skillMarket.empty')}</p>
+        <EmptyState title={t('skillMarket.empty')} />
       )}
     </div>
   );

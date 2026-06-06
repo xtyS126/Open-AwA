@@ -32,6 +32,7 @@ import TaskParameterPanel from './components/TaskParameterPanel'
 import TaskLogViewer from './components/TaskLogViewer'
 import TaskTemplateManager from './components/TaskTemplateManager'
 
+import { EmptyState } from '@/shared/components/ui'
 import styles from './ScheduledTasksPage.module.css'
 
 /* ---- 工具函数 ---- */
@@ -669,7 +670,11 @@ export default function ScheduledTasksPage() {
                 <h2>任务队列 ({filteredTasks.length})</h2>
               </div>
               {filteredTasks.length === 0 ? (
-                <div className={styles['empty']}>暂无AI智能任务</div>
+                <EmptyState
+                  icon={<Brain size={48} strokeWidth={1.5} />}
+                  title="暂无AI智能任务"
+                  description="点击上方按钮创建第一个定时任务"
+                />
               ) : (
                 <div className={viewMode === 'grid' ? styles['task-grid'] : styles['task-list']}>
                   {filteredTasks.map((task) => (
@@ -895,7 +900,11 @@ export default function ScheduledTasksPage() {
                   <h2>插件任务队列 ({filteredTasks.length})</h2>
                 </div>
                 {filteredTasks.length === 0 ? (
-                  <div className={styles['empty']}>暂无插件命令任务</div>
+                  <EmptyState
+                    icon={<Puzzle size={48} strokeWidth={1.5} />}
+                    title="暂无插件命令任务"
+                    description="选择一个插件并配置命令来创建定时任务"
+                  />
                 ) : (
                   <div className={styles['task-list']}>
                     {filteredTasks.map((task) => (
