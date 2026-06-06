@@ -11,7 +11,12 @@ export type RetriableApiRequest = InternalAxiosRequestConfig & {
 
 const API_BASE_URL = '/api'
 
-const CSRF_EXEMPT_PATHS = new Set(['/auth/login', '/auth/register'])
+const CSRF_EXEMPT_PATHS = new Set(
+  (import.meta.env.VITE_CSRF_EXEMPT_PATHS || '/auth/login,/auth/register')
+    .split(',')
+    .map((p: string) => p.trim())
+    .filter(Boolean)
+)
 const CSRF_TOKEN_URL = `${API_BASE_URL}/auth/csrf-token`
 
 let _cachedCsrfToken = ''
@@ -209,20 +214,16 @@ api.interceptors.response.use(
       const errorMessage = error?.message || ''
       const backendDetail = error?.response?.data?.detail || ''
 
-      console.error(
-        `[API ERROR] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
-        (errorMessage ? ` | ${errorMessage}` : '') +
-        (backendDetail ? ` | Detail: ${backendDetail}` : '') +
-        (responseRequestId ? ` | Request-ID: ${responseRequestId}` : '')
-      )
-
       appLogger.error({
         event: 'api_response',
         module: 'api',
         action: error?.config?.method?.toUpperCase() || 'GET',
         status: 'failure',
         request_id: responseRequestId,
-        message: 'api request failed',
+        message: `[API ERROR] ${error?.config?.method?.toUpperCase() || 'GET'} ${errorUrl} -> ${errorStatus}` +
+          (errorMessage ? ` | ${errorMessage}` : '') +
+          (backendDetail ? ` | Detail: ${backendDetail}` : '') +
+          (responseRequestId ? ` | Request-ID: ${responseRequestId}` : ''),
         extra: {
           url: errorUrl,
           status_code: errorStatus,

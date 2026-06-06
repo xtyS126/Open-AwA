@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from .comprehension import ComprehensionLayer
 from .planner import PlanningLayer
-from .executor import ExecutionLayer
+from .executor import ExecutionLayer, resolve_max_tool_call_rounds
 from .feedback import FeedbackLayer
 from .metrics import record_tool_execution_metric
 from memory.experience_manager import ExperienceManager
@@ -88,20 +88,6 @@ def _cleanup_completed_tasks() -> None:
                     remaining=len(_active_agent_tasks)
                     ).debug("清理已完成的 Agent 任务条目")
 
-
-def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
-    """
-    解析工具调用回环上限，默认从 settings 配置读取，上限 100 轮。
-    防止请求方传入超大值导致 Agent 长时间停留在工具调用回环中，
-    放大成本、延迟和资源占用风险。
-    """
-    from config.settings import settings
-    raw_value = context.get("max_tool_call_rounds")
-    try:
-        value = int(raw_value)
-    except (TypeError, ValueError):
-        return settings.MAX_TOOL_CALL_ROUNDS
-    return max(1, min(100, value))
 
 class AIAgent:
     """
@@ -618,8 +604,23 @@ class AIAgent:
             context.setdefault("agent_type_hint", "你是一个通用Agent，具备完整的读写和执行能力。")
 
         # 从运行态能力摘要构建原生 tool_calls 定义，使 LLM 能通过 function calling 协议触发工具
+        # 会话级缓存：同一会话内工具定义只在首次构建，后续调用复用
         if not context.get("_tools"):
-            context["_tools"] = self._build_native_tools(context["agent_capabilities"])
+            tools = self._build_native_tools(context["agent_capabilities"])
+            context["_tools"] = tools
+            logger.bind(
+                event="tool_definition_built",
+                module="agent",
+                tool_count=len(tools),
+                session_id=context.get("session_id", ""),
+            ).debug("会话级工具定义已构建并缓存")
+        else:
+            logger.bind(
+                event="tool_definition_cached",
+                module="agent",
+                tool_count=len(context["_tools"]),
+                session_id=context.get("session_id", ""),
+            ).debug("复用缓存的工具定义")
 
     @staticmethod
     def _build_native_tools(capabilities: Dict[str, Any]) -> List[Dict[str, Any]]:

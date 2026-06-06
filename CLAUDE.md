@@ -224,13 +224,17 @@ git commit -m "[Type] 变更描述"
 - **Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop
 - **SQLite FK not enforced by default**: Foreign key constraints need explicit connection parameter
 - **Vector DB path is relative**: `VECTOR_DB_PATH` resolves relative to `backend/`, can break if working directory changes
-- **Plugin Manager is a singleton**: Use `plugins.plugin_instance.get()`, never create `PluginManager()` directly
+- **Plugin Manager is a singleton**: Use `plugins.plugin_instance.get()`, never create `PluginManager()` directly. Use `pm.has_plugin(name)` / `pm.is_plugin_loaded(name)` instead of `getattr(pm, "plugin_metadata", {})`.
 - **SECRET_KEY auto-generated in dev**: Must be explicitly set as env var in production; auto-generation persists to `.env.local`
 - **Billing tables require init**: `PricingManager.ensure_configuration_schema()` must run in lifespan startup
 - **Chat supports both SSE and WebSocket**: Changes to chat must test both paths
 - **Conversation history auto-injected**: Agent pulls from ShortTermMemory by `session_id`, don't manually pass
 - **Plugin hot update state is ephemeral**: Snapshots and active/standby slots are in-memory only, lost on restart
 - **Windows ACL restrictions**: Some directories have restrictive permissions; use elevated PowerShell to replace existing files when tools fail with EPERM
+- **resolve_max_tool_call_rounds**: 定义在 `executor.py`，`agent.py` 通过 import 引用同一函数，不可重复定义
+- **RBAC 通配符**: `check_permission` 支持 `skill:*` 匹配 `skill:read`，`*` 仅在同段数下生效
+- **登录限流**: 通过 `RateLimitStore` 抽象层管理，`DatabaseRateLimitStore` 使用 `time.time()`（跨 worker 一致），`MemoryRateLimitStore` 使用 `time.monotonic()`（单进程不受时钟跳变影响）
+- **模型参数 or 陷阱**: `getattr(config, "retry_count", 3) or 3` 会将 `0` 误判为未设置，必须使用 `is not None` 检查
 
 ## API Path Prefix
 

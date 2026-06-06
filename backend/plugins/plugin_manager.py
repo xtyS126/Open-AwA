@@ -2371,6 +2371,30 @@ class PluginManager:
         """
         return list(self.plugin_metadata.keys())
 
+    def has_plugin(self, name: str) -> bool:
+        """
+        检查指定名称的插件元数据是否存在（已注册但可能未加载）。
+
+        Args:
+            name: 插件名称。
+
+        Returns:
+            True 表示插件已注册。
+        """
+        return name in self.plugin_metadata
+
+    def is_plugin_loaded(self, name: str) -> bool:
+        """
+        检查指定名称的插件是否已加载到内存。
+
+        Args:
+            name: 插件名称。
+
+        Returns:
+            True 表示插件已加载并可执行。
+        """
+        return name in self.loaded_plugins
+
     def get_plugin_info(self, plugin_name: str) -> Optional[Dict[str, Any]]:
         """
         获取plugin、info相关数据或当前状态。

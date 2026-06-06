@@ -21,6 +21,7 @@ _ALLOWED_COMMANDS = frozenset([
     'head', 'tail', 'sort', 'uniq', 'wc', 'cut',
     'mkdir', 'cp', 'mv',
     'tar', 'gzip', 'gunzip', 'zip', 'unzip',
+    'diff', 'du', 'df', 'file', 'stat',  # 只读诊断命令
 ])
 
 # 危险命令黑名单（即使在白名单中也拒绝）
@@ -39,10 +40,15 @@ _DANGEROUS_ARG_PATTERNS = [
     re.compile(r'^[\\/]root'),         # /root 目录
     re.compile(r'^[\\/]proc'),         # /proc 目录
     re.compile(r'^[\\/]sys'),          # /sys 目录
-    re.compile(r'[;&|`$]'),            # Shell 特殊字符
+    re.compile(r'[;|`$]'),             # Shell 命令分隔符和变量引用
     re.compile(r'\$\('),               # 命令替换
     re.compile(r'`'),                  # 反引号命令替换
 ]
+# & 不作为危险参数全局拦截，仅与特定命令组合时检查（避免 "url?a=1&b=2" 误判）
+_DANGEROUS_CMD_ARG_PATTERNS = {
+    # 对非 echo/sort 等数据传递命令，& 视为危险（命令后台运行）
+    '&': re.compile(r'^[&]$|^--.*|^-'),
+}
 
 
 class SandboxPermissionError(Exception):

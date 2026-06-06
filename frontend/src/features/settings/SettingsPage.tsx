@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { 
-  Settings as SettingsIcon, 
-  ShieldAlert, 
-  Cpu, 
-  Briefcase, 
-  Plug, 
+import {
+  Settings as SettingsIcon,
+  ShieldAlert,
+  Cpu,
+  Briefcase,
+  Plug,
   HardDrive
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
@@ -19,10 +19,17 @@ import type { ModelOption } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
-import MCPSettings from './MCPSettings'
-import SecuritySettings from './SecuritySettings'
 import styles from './SettingsPage.module.css'
 import { getProviderIcon, PROVIDER_NAMES } from '@/assets/providers'
+
+// 非核心 Tab 组件使用 React.lazy 按需加载，减少首屏 JS 体积
+const MCPSettings = lazy(() => import('./MCPSettings'))
+const SecuritySettings = lazy(() => import('./SecuritySettings'))
+
+/** 懒加载组件的加载占位符 */
+function TabLoadingFallback() {
+  return <div style={{ padding: '2rem', textAlign: 'center', color: '#9ca3af' }}>加载中...</div>
+}
 
 // 已知供应商显示名称由 @/assets/providers 统一提供，参见 PROVIDER_NAMES 与 getProviderDisplayName()
 
@@ -2962,13 +2969,17 @@ function SettingsPage() {
         {activeTab === 'security' && (
           <div className={styles['settings-section']}>
             <h2>安全审计</h2>
-            <SecuritySettings />
+            <Suspense fallback={<TabLoadingFallback />}>
+              <SecuritySettings />
+            </Suspense>
           </div>
         )}
 
         {activeTab === 'mcp' && (
           <div className={styles['settings-section']}>
-            <MCPSettings />
+            <Suspense fallback={<TabLoadingFallback />}>
+              <MCPSettings />
+            </Suspense>
           </div>
         )}
 

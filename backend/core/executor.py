@@ -1427,7 +1427,7 @@ class ExecutionLayer:
                     if candidate and candidate not in candidate_names:
                         candidate_names.append(candidate)
 
-                if not any(candidate in getattr(pm, "plugin_metadata", {}) for candidate in candidate_names):
+                if not any(pm.has_plugin(candidate) for candidate in candidate_names):
                     discovered = pm.discover_plugins()
                     logger.bind(
                         module="executor",
@@ -1440,7 +1440,7 @@ class ExecutionLayer:
                     (
                         candidate
                         for candidate in candidate_names
-                        if candidate in getattr(pm, "plugin_metadata", {}) or candidate in getattr(pm, "loaded_plugins", {})
+                        if pm.has_plugin(candidate) or pm.is_plugin_loaded(candidate)
                     ),
                     plugin_name,
                 )
