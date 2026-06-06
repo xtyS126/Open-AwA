@@ -12,6 +12,8 @@ import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail, userAPI } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
+import { ModelConfigCard } from '@/features/settings/components/ModelConfigCard'
+import { MODEL_PARAM_DEFAULTS, type ModelEditParams } from '@/features/settings/components/ModelParameterEditor'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import type { ModelOption } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
@@ -231,6 +233,32 @@ function SettingsPage() {
   const [hasAttemptedGlobalModelLoad, setHasAttemptedGlobalModelLoad] = useState(false)
   const [globalModelLoadSummary, setGlobalModelLoadSummary] = useState<string | null>(null)
   const remoteModelCacheRef = useRef<Map<string, RemoteModelCacheEntry>>(new Map())
+
+  // ── 模型独立配置卡片状态 ────────────────────────────────────────
+  // 记录当前展开的模型配置卡片集合（按 "provider:model" 键）
+  const [expandedModelConfigs, setExpandedModelConfigs] = useState<Set<string>>(new Set())
+  // 每个模型当前的编辑参数（按 "modelName" 键）
+  const [modelEditParams, setModelEditParams] = useState<Record<string, ModelEditParams>>({})
+  // 每个模型的保存状态
+  const [savingModelConfig, setSavingModelConfig] = useState<Record<string, boolean>>({})
+  // 正在加载 capabilities 的模型集合，防止快速双击触发重复请求
+  const loadingCapsRef = useRef<Set<string>>(new Set())
+
+  /**
+   * 从配置和可选的 capabilities 数据构建模型编辑参数，
+   * 消除 toggleModelConfig 中 try/catch 两处重复的默认值赋值代码。
+   */
+  const buildModelEditParams = (config: ModelConfiguration, caps?: ModelCapabilitiesResponse): ModelEditParams => {
+    return {
+      temperature: config.temperature ?? caps?.defaults?.temperature ?? MODEL_PARAM_DEFAULTS.temperature,
+      top_p: config.top_p ?? MODEL_PARAM_DEFAULTS.top_p,
+      max_tokens: config.max_tokens_limit ?? caps?.defaults?.max_tokens ?? MODEL_PARAM_DEFAULTS.max_tokens,
+      frequency_penalty: config.frequency_penalty ?? caps?.defaults?.frequency_penalty ?? MODEL_PARAM_DEFAULTS.frequency_penalty,
+      presence_penalty: config.presence_penalty ?? caps?.defaults?.presence_penalty ?? MODEL_PARAM_DEFAULTS.presence_penalty,
+      timeout: config.timeout ?? caps?.defaults?.timeout ?? MODEL_PARAM_DEFAULTS.timeout,
+      retry_count: config.retry_count ?? caps?.defaults?.retry_count ?? MODEL_PARAM_DEFAULTS.retry_count,
+    }
+  }
 
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [loadingApiProviders, setLoadingApiProviders] = useState(false)
@@ -789,11 +817,138 @@ function SettingsPage() {
     }
   }
 
+  // ── 模型独立配置卡片辅助函数 ────────────────────────────────────
+
+  /**
+   * 切换模型配置卡片的展开/折叠状态，展开时自动获取模型能力和默认参数。
+   * 手风琴模式：展开一个时自动折叠其他已展开的。
+   */
+  const toggleModelConfig = async (modelName: string) => {
+    const configKey = `${providerForm.provider}:${modelName}`
+
+    setExpandedModelConfigs(prev => {
+      const next = new Set<string>()
+      if (!prev.has(configKey)) {
+        // 展开当前，折叠其他（手风琴模式）
+        next.add(configKey)
+      }
+      return next
+    })
+
+    // 如果正在展开且尚未加载该模型参数，则从 API 获取
+    // 使用 ref 防止快速双击触发重复请求
+    if (!modelEditParams[modelName] && !loadingCapsRef.current.has(modelName)) {
+      loadingCapsRef.current.add(modelName)
+      const config = configurations.find(
+        c => c.provider === providerForm.provider && c.model === modelName
+      )
+      if (!config) {
+        loadingCapsRef.current.delete(modelName)
+        return
+      }
+
+      let caps: ModelCapabilitiesResponse | undefined
+      try {
+        const capRes = await modelsAPI.getCapabilities(config.id)
+        caps = capRes.data
+      } catch {
+        // 降级：直接使用配置中的值（caps 为 undefined）
+      } finally {
+        loadingCapsRef.current.delete(modelName)
+      }
+
+      setModelEditParams(prev => ({
+        ...prev,
+        [modelName]: buildModelEditParams(config, caps),
+      }))
+    }
+  }
+
+  /** 更新某个模型的编辑参数 */
+  const updateModelEditParam = (modelName: string, field: keyof ModelEditParams, value: number) => {
+    setModelEditParams(prev => ({
+      ...prev,
+      [modelName]: { ...prev[modelName], [field]: value },
+    }))
+  }
+
+  /** 保存单个模型配置 */
+  const handleSaveModelConfig = async (modelName: string) => {
+    const params = modelEditParams[modelName]
+    if (!params) return
+
+    const config = configurations.find(
+      c => c.provider === providerForm.provider && c.model === modelName
+    )
+    if (!config) return
+
+    setSavingModelConfig(prev => ({ ...prev, [modelName]: true }))
+    try {
+      await modelsAPI.updateParameters(config.id, {
+        temperature: params.temperature,
+        top_p: params.top_p,
+        // max_tokens 为 0 表示"使用模型默认上限"，传 null 让后端使用默认值
+        max_tokens_limit: params.max_tokens > 0 ? params.max_tokens : null,
+        frequency_penalty: params.frequency_penalty,
+        presence_penalty: params.presence_penalty,
+        timeout: params.timeout > 0 ? params.timeout : null,
+        retry_count: params.retry_count,
+      })
+      showNotification({ type: 'success', text: `模型「${modelName}」参数保存成功` })
+      // 刷新配置列表以获取最新值
+      await loadModelsData()
+    } catch {
+      showNotification({ type: 'error', text: `模型「${modelName}」参数保存失败` })
+    } finally {
+      setSavingModelConfig(prev => ({ ...prev, [modelName]: false }))
+    }
+  }
+
+  /** 重置单个模型配置为默认值 */
+  const handleResetModelConfig = async (modelName: string) => {
+    const config = configurations.find(
+      c => c.provider === providerForm.provider && c.model === modelName
+    )
+    if (!config) return
+
+    setSavingModelConfig(prev => ({ ...prev, [modelName]: true }))
+    try {
+      const res = await modelsAPI.resetParameters(config.id)
+      const updatedConfig = res.data.configuration
+      // 回填默认值（reset 后 capabilities 返回的已是默认值，无需再次请求）
+      setModelEditParams(prev => ({
+        ...prev,
+        [modelName]: buildModelEditParams(updatedConfig),
+      }))
+      showNotification({ type: 'success', text: `模型「${modelName}」已重置为默认参数` })
+      await loadModelsData()
+    } catch {
+      showNotification({ type: 'error', text: `模型「${modelName}」重置失败` })
+    } finally {
+      setSavingModelConfig(prev => ({ ...prev, [modelName]: false }))
+    }
+  }
+
   const formatTokenCount = (tokens: number | null | undefined): string => {
     if (tokens == null) return '-'
     if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`
     if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`
     return String(tokens)
+  }
+
+  /**
+   * 获取模型配置的参数摘要（用于折叠态展示）
+   */
+  const getModelParamSummary = (modelName: string): string => {
+    const config = configurations.find(
+      c => c.provider === providerForm.provider && c.model === modelName
+    )
+    if (!config) return '未配置'
+    const temp = config.temperature ?? 0.7
+    const maxT = config.max_tokens_limit
+    const parts: string[] = [`温度: ${temp.toFixed(1)}`]
+    if (maxT) parts.push(`最大 Tokens: ${formatTokenCount(maxT)}`)
+    return parts.join(' · ')
   }
 
   const normalizeProviderBaseUrl = (provider: string, apiEndpoint: string) => {
@@ -2086,8 +2241,8 @@ function SettingsPage() {
                     )}
 
                     <div className={styles['provider-models-section']}>
-                      <div className={styles['provider-models-header']} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h3 style={{ margin: 0 }}>已导入模型</h3>
+                      <div className={styles['model-config-section-header']}>
+                        <h3>已导入模型配置</h3>
                         {selectedForDeletion.length > 0 && (
                           <button
                             className={`btn ${styles['btn-danger']}`}
@@ -2103,24 +2258,31 @@ function SettingsPage() {
                           <p>暂无已导入模型，请点击上方“获取模型列表”进行选择和导入</p>
                         </div>
                       ) : (
-                        <div className={styles['provider-model-list']}>
+                        <div className={styles['model-config-cards']}>
                           {providerForm.selected_models.map(modelName => {
-                            const checked = selectedForDeletion.includes(modelName)
+                            const configKey = `${providerForm.provider}:${modelName}`
                             return (
-                              <label key={modelName} className={styles['provider-model-item']}>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedForDeletion(prev => [...prev, modelName])
-                                    } else {
-                                      setSelectedForDeletion(prev => prev.filter(m => m !== modelName))
-                                    }
-                                  }}
-                                />
-                                <span className={styles['provider-model-name']}>{modelName}</span>
-                              </label>
+                              <ModelConfigCard
+                                key={modelName}
+                                modelName={modelName}
+                                params={modelEditParams[modelName]}
+                                isExpanded={expandedModelConfigs.has(configKey)}
+                                isSaving={savingModelConfig[modelName] ?? false}
+                                checked={selectedForDeletion.includes(modelName)}
+                                summary={getModelParamSummary(modelName)}
+                                apiEndpoint={providerForm.api_endpoint || '未配置'}
+                                onToggle={toggleModelConfig}
+                                onSave={handleSaveModelConfig}
+                                onReset={handleResetModelConfig}
+                                onParamChange={updateModelEditParam}
+                                onCheckChange={(modelName, checked) => {
+                                  if (checked) {
+                                    setSelectedForDeletion(prev => [...prev, modelName])
+                                  } else {
+                                    setSelectedForDeletion(prev => prev.filter(m => m !== modelName))
+                                  }
+                                }}
+                              />
                             )
                           })}
                         </div>

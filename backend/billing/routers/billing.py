@@ -163,6 +163,10 @@ class ModelParameterUpdateRequest(BaseModel):
     top_k: Optional[float] = None
     top_p: Optional[float] = None
     max_tokens_limit: Optional[int] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    timeout: Optional[int] = None
+    retry_count: Optional[int] = None
 
 
 class BatchStatusUpdateRequest(BaseModel):
@@ -234,6 +238,10 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "top_k": getattr(config, "top_k", 0.9),
         "top_p": getattr(config, "top_p", None),
         "max_tokens_limit": getattr(config, "max_tokens_limit", None),
+        "frequency_penalty": getattr(config, "frequency_penalty", None),
+        "presence_penalty": getattr(config, "presence_penalty", None),
+        "timeout": getattr(config, "timeout", None),
+        "retry_count": getattr(config, "retry_count", None),
         "supports_temperature": getattr(config, "supports_temperature", True),
         "supports_top_k": getattr(config, "supports_top_k", True),
         "supports_vision": getattr(config, "supports_vision", False),
@@ -795,6 +803,31 @@ async def set_default_configuration(
 
 
 @router.put("/configurations/{config_id}/parameters")
+def _validate_parameter_range(
+    value: float,
+    min_val: float,
+    max_val: float,
+    param_name: str,
+) -> None:
+    """
+    校验参数值是否在指定范围内，超出范围时抛出 HTTPException(422)。
+
+    Args:
+        value: 待校验的参数值
+        min_val: 允许的最小值（含）
+        max_val: 允许的最大值（含）
+        param_name: 参数中文名称（用于错误消息）
+
+    Raises:
+        HTTPException: 参数超出范围时抛出 422 错误
+    """
+    if not (min_val <= value <= max_val):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{param_name} 必须在 {min_val} 到 {max_val} 之间",
+        )
+
+
 async def update_configuration_parameters(
     config_id: int,
     params: ModelParameterUpdateRequest,
@@ -802,7 +835,8 @@ async def update_configuration_parameters(
     current_user = Depends(get_current_user)
 ):
     """
-    更新指定模型配置的运行参数（temperature、top_k、top_p、max_tokens_limit）。
+    更新指定模型配置的运行参数（temperature、top_k、top_p、max_tokens_limit、
+    frequency_penalty、presence_penalty、timeout、retry_count）。
     """
     pricing_manager = PricingManager(db)
     config = pricing_manager.get_configuration(config_id)
@@ -840,6 +874,22 @@ async def update_configuration_parameters(
                     detail=f"max_tokens_limit cannot exceed model context window ({spec['context_window']})"
                 )
         update_dict["max_tokens_limit"] = params.max_tokens_limit
+
+    if params.frequency_penalty is not None:
+        _validate_parameter_range(params.frequency_penalty, -2.0, 2.0, "frequency_penalty")
+        update_dict["frequency_penalty"] = params.frequency_penalty
+
+    if params.presence_penalty is not None:
+        _validate_parameter_range(params.presence_penalty, -2.0, 2.0, "presence_penalty")
+        update_dict["presence_penalty"] = params.presence_penalty
+
+    if params.timeout is not None:
+        _validate_parameter_range(params.timeout, 1, 600, "timeout")
+        update_dict["timeout"] = params.timeout
+
+    if params.retry_count is not None:
+        _validate_parameter_range(params.retry_count, 0, 10, "retry_count")
+        update_dict["retry_count"] = params.retry_count
 
     if not update_dict:
         return {
@@ -887,9 +937,13 @@ async def get_configuration_capabilities(
             "output_modality": _parse_modality(getattr(config, "output_modality", None)),
         },
         "defaults": {
-            "temperature": getattr(config, "temperature", 0.7) or 0.7,
-            "top_k": getattr(config, "top_k", 0.9) or 0.9,
+            "temperature": getattr(config, "temperature", 0.7) if getattr(config, "temperature", None) is not None else 0.7,
+            "top_k": getattr(config, "top_k", 0.9) if getattr(config, "top_k", None) is not None else 0.9,
             "max_tokens": context_window,
+            "frequency_penalty": getattr(config, "frequency_penalty", 0.0) if getattr(config, "frequency_penalty", None) is not None else 0.0,
+            "presence_penalty": getattr(config, "presence_penalty", 0.0) if getattr(config, "presence_penalty", None) is not None else 0.0,
+            "timeout": getattr(config, "timeout", 120) if getattr(config, "timeout", None) is not None else 120,
+            "retry_count": getattr(config, "retry_count", 3) if getattr(config, "retry_count", None) is not None else 3,
         },
         "limits": {
             "temperature_min": 0.0,
@@ -898,6 +952,14 @@ async def get_configuration_capabilities(
             "top_k_max": 1.0,
             "max_tokens_min": 1,
             "max_tokens_max": context_window,
+            "frequency_penalty_min": -2.0,
+            "frequency_penalty_max": 2.0,
+            "presence_penalty_min": -2.0,
+            "presence_penalty_max": 2.0,
+            "timeout_min": 1,
+            "timeout_max": 600,
+            "retry_count_min": 0,
+            "retry_count_max": 10,
         }
     }
 
@@ -909,7 +971,7 @@ async def reset_configuration_parameters(
     current_user = Depends(get_current_user)
 ):
     """
-    将指定模型配置的 temperature、top_k、max_tokens_limit 重置为系统默认值。
+    将指定模型配置的所有运行参数重置为系统默认值。
     """
     pricing_manager = PricingManager(db)
     config = pricing_manager.get_configuration(config_id)
@@ -923,6 +985,10 @@ async def reset_configuration_parameters(
         "temperature": defaults.get("temperature", 0.7),
         "top_k": defaults.get("top_k", 0.9),
         "max_tokens_limit": defaults.get("max_tokens_limit"),
+        "frequency_penalty": defaults.get("frequency_penalty"),
+        "presence_penalty": defaults.get("presence_penalty"),
+        "timeout": defaults.get("timeout"),
+        "retry_count": defaults.get("retry_count"),
     }
 
     updated = pricing_manager.update_configuration(config_id, update_dict)

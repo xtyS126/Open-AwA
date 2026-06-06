@@ -1298,6 +1298,7 @@ def init_db(bind_engine=None):
     _migrate_workspace_columns(use_engine=use_engine)
     _migrate_profile_facts_table(use_engine=use_engine)
     _migrate_user_role_fk(use_engine=use_engine)
+    _migrate_model_configuration_new_params(use_engine=use_engine)
 
 
 def _migrate_user_role_fk(use_engine=None):
@@ -1350,6 +1351,34 @@ def _migrate_workspace_columns(use_engine=None):
                     f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
                 ))
                 logger.info(f"Migrated {table_name}: added {col_name} column")
+
+
+def _migrate_model_configuration_new_params(use_engine=None):
+    """
+    为 model_configurations 表补齐 frequency_penalty、presence_penalty、timeout、retry_count 字段，
+    支持每个模型的独立参数配置。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "model_configurations" not in table_names:
+        return
+
+    columns = {c["name"] for c in inspector.get_columns("model_configurations")}
+    # 需要新增的字段及类型
+    new_columns = [
+        ("frequency_penalty", "FLOAT"),
+        ("presence_penalty", "FLOAT"),
+        ("timeout", "INTEGER"),
+        ("retry_count", "INTEGER"),
+    ]
+    with target_engine.begin() as connection:
+        for col_name, col_type in new_columns:
+            if col_name not in columns:
+                connection.execute(text(
+                    f"ALTER TABLE model_configurations ADD COLUMN {col_name} {col_type}"
+                ))
+                logger.info(f"Migrated model_configurations: added {col_name} column")
 
 
 def get_db():

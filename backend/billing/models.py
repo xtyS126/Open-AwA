@@ -155,6 +155,10 @@ class ModelConfiguration(Base):
     top_k: Mapped[float] = mapped_column(Float, nullable=True, default=0.9)
     top_p: Mapped[float] = mapped_column(Float, nullable=True)
     max_tokens_limit: Mapped[int] = mapped_column(Integer, nullable=True)
+    frequency_penalty: Mapped[float] = mapped_column(Float, nullable=True, default=None)
+    presence_penalty: Mapped[float] = mapped_column(Float, nullable=True, default=None)
+    timeout: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
 
     # Model capability flags
     supports_temperature: Mapped[bool] = mapped_column(Boolean, default=True)

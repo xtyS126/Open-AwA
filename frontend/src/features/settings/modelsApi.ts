@@ -20,6 +20,10 @@ export interface ModelConfiguration {
   top_k?: number | null
   top_p?: number | null
   max_tokens_limit?: number | null
+  frequency_penalty?: number | null
+  presence_penalty?: number | null
+  timeout?: number | null
+  retry_count?: number | null
   // Model capability flags
   supports_temperature?: boolean
   supports_top_k?: boolean
@@ -66,6 +70,10 @@ export interface ModelCapabilitiesResponse {
     temperature: number
     top_k: number
     max_tokens: number
+    frequency_penalty: number
+    presence_penalty: number
+    timeout: number
+    retry_count: number
   }
   limits: {
     temperature_min: number
@@ -74,6 +82,14 @@ export interface ModelCapabilitiesResponse {
     top_k_max: number
     max_tokens_min: number
     max_tokens_max: number
+    frequency_penalty_min: number
+    frequency_penalty_max: number
+    presence_penalty_min: number
+    presence_penalty_max: number
+    timeout_min: number
+    timeout_max: number
+    retry_count_min: number
+    retry_count_max: number
   }
 }
 
@@ -82,6 +98,10 @@ export interface ModelParameterUpdate {
   top_k?: number | null
   top_p?: number | null
   max_tokens_limit?: number | null
+  frequency_penalty?: number | null
+  presence_penalty?: number | null
+  timeout?: number | null
+  retry_count?: number | null
 }
 
 export interface ModelProvider {

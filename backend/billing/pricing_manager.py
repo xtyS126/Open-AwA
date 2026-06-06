@@ -1492,6 +1492,10 @@ class PricingManager:
         return {
             "temperature": defaults.get("temperature", 0.7),
             "top_k": defaults.get("top_k", 0.9),
+            "frequency_penalty": defaults.get("frequency_penalty", 0.0),
+            "presence_penalty": defaults.get("presence_penalty", 0.0),
+            "timeout": defaults.get("timeout", 120),
+            "retry_count": defaults.get("retry_count", 3),
         }
 
     def batch_update_status(self, config_ids: List[int], status: str) -> int:
