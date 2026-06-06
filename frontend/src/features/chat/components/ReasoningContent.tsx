@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { appLogger } from '@/shared/utils/logger'
+import { useI18nStore } from '@/i18n'
 import styles from './ReasoningContent.module.css'
 
 const reasoningExpansionMemory = new Map<string, boolean>()
@@ -23,6 +24,7 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
   content,
   isStreaming,
 }) => {
+  const { t } = useI18nStore()
   // 仅在当前会话内保留展开状态，避免落盘到浏览器存储中。
   const getInitialState = () => {
     const saved = reasoningExpansionMemory.get(messageId)
@@ -128,18 +130,18 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
           ▶
         </span>
         <span className={styles.headerText}>
-          思考过程 {isStreaming ? '(思考中...)' : ''}
+          {t('reasoning.title')} {isStreaming ? t('reasoning.generating') : ''}
         </span>
         <span className={styles.metaInfo}>
-          {tokenCount > 0 && <span className={styles.tokenCount}>~{tokenCount} tokens</span>}
-          {elapsedTime > 0 && <span className={styles.elapsed}>{elapsedTime}s</span>}
+          {tokenCount > 0 && <span className={styles.tokenCount}>{t('reasoning.tokens', { count: String(tokenCount) })}</span>}
+          {elapsedTime > 0 && <span className={styles.elapsed}>{t('reasoning.seconds', { count: String(elapsedTime) })}</span>}
         </span>
         <button
           className={`${styles.copyBtn} ${copySuccess ? styles.copySuccess : ''}`}
           onClick={handleCopy}
-          title="复制推理内容"
+          title={t('reasoning.copyTooltip')}
         >
-          {copySuccess ? '已复制' : '复制'}
+          {copySuccess ? t('reasoning.copied') : t('reasoning.copy')}
         </button>
       </div>
       <div

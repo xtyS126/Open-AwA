@@ -1385,6 +1385,26 @@ const enUS: Record<string, string> = {
 
   // ===== Page Layout =====
   "pageLayout.app": "Application",
+
+  // ===== Reasoning/Thinking =====
+  "reasoning.title": "Thinking Process",
+  "reasoning.generating": "(thinking...)",
+  "reasoning.copy": "Copy",
+  "reasoning.copied": "Copied",
+  "reasoning.copyTooltip": "Copy reasoning content",
+  "reasoning.tokens": "~{count} tokens",
+  "reasoning.seconds": "{count}s",
+
+  // ===== Sidebar Extras =====
+  "sidebar.tts": "TTS Voice",
+  "sidebar.agents": "Agents",
+
+  // ===== Chat Extras =====
+  "chat.empty": "Hello! How can I help you?",
+  "chat.loading.thinking": "Thinking...",
+  "chat.loading.streaming": "{status}...",
+  "chat.provider": "Provider",
+  "chat.model": "Model",
 };
 
 export default enUS;

@@ -65,8 +65,8 @@ const renderIcon = (type: string, size = 18) => {
       id: 'agent',
       title: t('sidebar.agent'),
       items: [
-        { path: '/tts', label: 'TTS 语音', iconType: 'skills' as const },
-        { path: '/agents', label: t('sidebar.agents') || 'Agent', iconType: 'skills' as const },
+        { path: '/tts', label: t('sidebar.tts') || 'TTS', iconType: 'skills' as const },
+        { path: '/agents', label: t('sidebar.agents') || 'Agents', iconType: 'skills' as const },
         { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },

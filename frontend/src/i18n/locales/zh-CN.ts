@@ -1386,6 +1386,26 @@ const zhCN: Record<string, string> = {
 
   // ===== 页面布局 =====
   "pageLayout.app": "应用",
+
+  // ===== 推理/思考 =====
+  "reasoning.title": "思考过程",
+  "reasoning.generating": "(思考中...)",
+  "reasoning.copy": "复制",
+  "reasoning.copied": "已复制",
+  "reasoning.copyTooltip": "复制推理内容",
+  "reasoning.tokens": "~{count} tokens",
+  "reasoning.seconds": "{count}s",
+
+  // ===== 侧边栏补充 =====
+  "sidebar.tts": "TTS 语音",
+  "sidebar.agents": "Agent",
+
+  // ===== 聊天补充 =====
+  "chat.empty": "Hello! How can I help you?",
+  "chat.loading.thinking": "Thinking...",
+  "chat.loading.streaming": "{status}...",
+  "chat.provider": "供应商",
+  "chat.model": "模型",
 };
 
 export default zhCN;
