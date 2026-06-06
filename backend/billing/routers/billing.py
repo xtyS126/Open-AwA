@@ -205,6 +205,17 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
     """
     selected_models = pricing_manager.parse_selected_models(config.selected_models)
     spec = _parse_model_spec(config)
+
+    # 从 ProviderCredential 表解析 API 凭据
+    api_endpoint = config.api_endpoint
+    has_api_key = bool(config.api_key)
+    credential_id = getattr(config, "credential_id", None)
+    if credential_id:
+        cred = pricing_manager.get_provider_credential(config.provider)
+        if cred:
+            api_endpoint = cred.api_endpoint or api_endpoint
+            has_api_key = bool(cred.api_key) or has_api_key
+
     payload = {
         "id": config.id,
         "provider": config.provider,
@@ -212,9 +223,9 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "display_name": config.display_name or config.model,
         "description": config.description,
         "icon": getattr(config, "icon", None),
-        "api_endpoint": config.api_endpoint,
-        "base_url": config.api_endpoint,
-        "has_api_key": bool(config.api_key),
+        "api_endpoint": api_endpoint,
+        "base_url": api_endpoint,
+        "has_api_key": has_api_key,
         "selected_models": selected_models,
         "is_active": config.is_active,
         "is_default": config.is_default,
@@ -971,22 +982,23 @@ async def get_provider_detail(
     """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
+    cred = pricing_manager.get_provider_credential(provider_id)
     config = pricing_manager.get_default_provider_configuration(provider_id)
 
-    if not config:
-        raise HTTPException(status_code=404, detail="Provider configuration not found")
+    if not config and not cred:
+        raise HTTPException(status_code=404, detail="Provider not found")
 
     return {
         "provider": {
             "id": provider_id,
-            "name": config.display_name or provider_id.upper(),
-            "icon": getattr(config, "icon", None),
-            "api_endpoint": config.api_endpoint,
-            "base_url": config.api_endpoint,
-            "has_api_key": bool(config.api_key),
-            "selected_models": pricing_manager.parse_selected_models(config.selected_models)
+            "name": (cred.display_name if cred else None) or (config.display_name if config else None) or provider_id.upper(),
+            "icon": (cred.icon if cred else None) or (getattr(config, "icon", None) if config else None),
+            "api_endpoint": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
+            "base_url": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
+            "has_api_key": bool(cred and cred.api_key) or bool(config and config.api_key),
+            "selected_models": pricing_manager.parse_selected_models(config.selected_models) if config else []
         },
-        "configuration": serialize_configuration(config, pricing_manager)
+        "configuration": serialize_configuration(config, pricing_manager) if config else None
     }
 
 
@@ -1011,6 +1023,61 @@ async def delete_provider(
         "success": True,
         "provider": provider_id,
         "deleted_count": deleted_count
+    }
+
+
+# ── Provider 凭据 API ──────────────────────────────────────────────
+
+class ProviderCredentialRequest(BaseModel):
+    """Provider 凭据请求体。"""
+    api_key: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    display_name: Optional[str] = None
+    icon: Optional[str] = None
+
+
+@router.put("/credentials/{provider}")
+async def save_provider_credential(
+    provider: str,
+    data: ProviderCredentialRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """保存/更新 Provider 的 API 凭据。"""
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    if not provider_id:
+        raise HTTPException(status_code=400, detail="Invalid provider identifier")
+    cred = pricing_manager.upsert_provider_credential(provider_id, data.dict(exclude_none=True))
+    return {
+        "success": True,
+        "provider": cred.provider,
+        "has_api_key": bool(cred.api_key),
+        "api_endpoint": cred.api_endpoint,
+    }
+
+
+@router.get("/credentials/{provider}")
+async def get_provider_credential(
+    provider: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取指定 Provider 的凭据信息（不含明文 API Key）。"""
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    cred = pricing_manager.get_provider_credential(provider_id)
+    if not cred:
+        raise HTTPException(status_code=404, detail="Provider credential not found")
+    return {
+        "provider": cred.provider,
+        "display_name": cred.display_name,
+        "icon": cred.icon,
+        "api_endpoint": cred.api_endpoint,
+        "has_api_key": bool(cred.api_key),
+        "is_active": cred.is_active,
+        "created_at": cred.created_at.isoformat() if cred.created_at else None,
+        "updated_at": cred.updated_at.isoformat() if cred.updated_at else None,
     }
 
 

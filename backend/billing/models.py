@@ -4,7 +4,7 @@
 确保迁移治理在单条链路上执行，避免表结构漂移。
 """
 
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date, UniqueConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 
@@ -103,8 +103,34 @@ class UserUsageSummary(Base):
     )
 
 
+class ProviderCredential(Base):
+    """Provider 凭据表：独立存储各 AI 供应商的 API Key、Endpoint 等认证信息。
+    与 ModelConfiguration 分离，消除 custom-model 占位 hack。
+    """
+    __tablename__ = "provider_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=True)
+    api_key: Mapped[str] = mapped_column(Text, nullable=True)     # Fernet 加密存储
+    api_endpoint: Mapped[str] = mapped_column(String(500), nullable=True)
+    icon: Mapped[str] = mapped_column(String(500), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
+
 class ModelConfiguration(Base):
-    """模型端点配置：各 provider/model 的 base_url、API key、功能开关等运行参数。"""
+    """模型端点配置：各 provider/model 的运行参数（温度、top_k 等）。
+    API 凭据通过 credential_id 外键关联到 ProviderCredential 表。
+    """
     __tablename__ = "model_configurations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -113,8 +139,11 @@ class ModelConfiguration(Base):
     display_name: Mapped[str] = mapped_column(String, nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     icon: Mapped[str] = mapped_column(String, nullable=True)
+    # [Legacy] 以下两个字段保留用于向后兼容，新代码应通过 credential_id → ProviderCredential 获取
     api_key: Mapped[str] = mapped_column(Text, nullable=True)
     api_endpoint: Mapped[str] = mapped_column(String, nullable=True)
+    # Provider 凭据外键
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey("provider_credentials.id"), nullable=True)
     selected_models: Mapped[str] = mapped_column(Text, nullable=True)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

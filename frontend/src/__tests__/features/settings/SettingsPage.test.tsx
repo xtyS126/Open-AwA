@@ -19,6 +19,8 @@ const modelApiMocks = vi.hoisted(() => ({
   setDefaultConfiguration: vi.fn(),
   createConfiguration: vi.fn(),
   updateConfiguration: vi.fn(),
+  saveProviderCredential: vi.fn(),
+  getProviderCredential: vi.fn(),
 }))
 
 const billingApiMocks = vi.hoisted(() => ({
@@ -215,6 +217,7 @@ describe('SettingsPage', () => {
       }
     })
     modelApiMocks.createConfiguration.mockResolvedValue({ data: { success: true } })
+    modelApiMocks.saveProviderCredential.mockResolvedValue({ data: { success: true } })
     modelApiMocks.updateConfiguration.mockResolvedValue({ data: {} })
     modelApiMocks.updateParameters.mockResolvedValue({ data: { success: true } })
     modelApiMocks.resetParameters.mockResolvedValue({
@@ -291,16 +294,13 @@ describe('SettingsPage', () => {
     fireEvent.click(screen.getByText('确认创建'))
 
     await waitFor(() => {
-      expect(modelApiMocks.createConfiguration).toHaveBeenCalledWith({
-        provider: 'openai',
-        model: 'custom-model',
+      expect(modelApiMocks.saveProviderCredential).toHaveBeenCalledWith('openai', {
         display_name: 'OpenAI 国际站',
         api_endpoint: 'https://api.openai.com/v1',
-        is_default: false,
       })
     })
 
-    const payload = modelApiMocks.createConfiguration.mock.calls[0]?.[0]
+    const payload = modelApiMocks.saveProviderCredential.mock.calls[0]?.[1]
     expect(payload).not.toHaveProperty('api_key')
     expect(payload).not.toHaveProperty('icon')
     expect(payload).not.toHaveProperty('max_tokens')
