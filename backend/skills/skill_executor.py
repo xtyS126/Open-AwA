@@ -4,11 +4,14 @@
 当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
 每种工具类型（code_executor、file_operation、shell、api_call、llm）
 都有独立的执行路径和安全校验。
+
+代码安全校验已迁移至 security.backends.RestrictedPythonBackend（基于 RestrictedPython 的
+compile_restricted 进行 AST 级安全编译）。本模块的 execute_with_timeout 仅在 RestrictedPython
+已验证并编译字节码后执行，不直接接受用户提供的代码字符串。
 """
 
 import os
 import re
-import ast
 import shlex
 import subprocess
 import threading
@@ -70,11 +73,15 @@ def execute_with_timeout(
     """
     在独立线程中执行代码，并通过 join 实现超时控制。
 
+    重要：此函数仅在 RestrictedPythonBackend（security/backends.py）通过
+    compile_restricted() 成功验证并编译代码为字节码后调用。
+    调用方负责确保传入的 code 已经过安全校验——此函数不执行额外验证。
+
     注意：线程级超时无法强制中止正在运行的 C 扩展，
     对于更严格的隔离需求应使用进程级沙箱。
 
     Args:
-        code: 已通过安全校验的 Python 代码字符串或预编译的 code object。
+        code: 已通过 RestrictedPython compile_restricted() 安全校验的 Python 代码字符串或预编译的 code object。
         exec_globals: exec 使用的全局命名空间（已限制 __builtins__）。
         local_vars: exec 使用的局部命名空间，执行结果写入此处。
         timeout: 超时秒数。
@@ -114,178 +121,6 @@ def execute_with_timeout(
         except queue.Empty:
             # 极端竞态条件下队列可能为空，视为正常完成
             pass
-
-
-# ---------------------------------------------------------------------------
-# 代码安全校验器
-# ---------------------------------------------------------------------------
-
-class CodeValidator(ast.NodeVisitor):
-    """
-    基于 AST 的 Python 代码安全校验器。
-
-    通过白名单方式限制允许的 AST 节点类型，
-    并拦截危险函数调用和属性访问，防止代码执行逃逸。
-    """
-
-    # 允许的 AST 节点类型白名单
-    _ALLOWED_NODE_TYPES = frozenset({
-        'Module', 'Expr', 'Assign', 'AugAssign', 'AnnAssign',
-        'Name', 'Constant', 'Num', 'Str', 'Bytes',
-        'List', 'Tuple', 'Dict', 'Set',
-        'BinOp', 'UnaryOp', 'Compare', 'BoolOp', 'IfExp',
-        'Call', 'Subscript', 'Index',
-        'ListComp', 'DictComp', 'SetComp', 'GeneratorExp',
-        'For', 'While', 'If',
-        'Break', 'Continue', 'Pass', 'Return',
-        # 注意：移除 FunctionDef/AsyncFunctionDef 以防止嵌套函数调用危险操作
-        # 如业务确实需要，可谨慎地加回并增加嵌套深度限制
-        'arguments', 'arg', 'Delete',
-        'Slice',
-        'Load', 'Store', 'Del',
-        'Add', 'Sub', 'Mult', 'Div', 'FloorDiv', 'Mod', 'Pow',
-        'LShift', 'RShift', 'BitOr', 'BitXor', 'BitAnd',
-        'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'Is', 'IsNot', 'In', 'NotIn',
-        'And', 'Or', 'Not', 'UAdd', 'USub', 'Invert',
-        'comprehension', 'keyword',
-    })
-
-    # 明确禁止调用的内置函数
-    _FORBIDDEN_BUILTINS = frozenset({
-        '__import__', 'eval', 'exec', 'compile',
-        'open', 'input', 'breakpoint', 'exit', 'quit',
-        'reload', 'memoryview',
-        'globals', 'locals', 'vars', 'dir',
-        # 移除 getattr/setattr/delattr，防止通过属性访问绕过限制
-        'getattr', 'setattr', 'delattr',
-    })
-
-    # 安全内置函数白名单
-    _SAFE_BUILTINS = frozenset({
-        'abs', 'min', 'max', 'sum', 'len', 'range', 'print',
-        'str', 'int', 'float', 'bool',
-        'list', 'dict', 'set', 'tuple',
-        'type', 'isinstance', 'issubclass', 'hasattr',
-        'sorted', 'reversed', 'enumerate',
-        'zip', 'map', 'filter', 'any', 'all',
-        'round', 'pow', 'divmod', 'format',
-        'hex', 'oct', 'bin', 'chr', 'ord', 'slice',
-    })
-
-    # 危险属性/名称模式（字符串子串匹配）
-    _DANGEROUS_PATTERNS = frozenset({
-        '__import__', '__builtins__', '__class__', '__subclasses__',
-        '__globals__', '__code__', '__closure__', '__func__',
-        'subprocess', 'os.', 'sys.', 'socket', 'urllib', 'requests',
-        'pickle', 'marshal', 'shelve', 'ctypes',
-        'threading', 'multiprocessing', 'concurrent',
-        'asyncio', 'getattr', 'setattr', 'delattr',
-    })
-
-    def __init__(self) -> None:
-        import warnings
-        warnings.warn(
-            "CodeValidator 已弃用，请使用 security.backends.RestrictedPythonBackend",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.errors: List[str] = []
-        self.depth = 0
-        self.max_depth = 10  # 降低最大嵌套深度
-
-    def visit(self, node: ast.AST) -> None:
-        """访问 AST 节点，检查节点类型是否在白名单内。"""
-        if self.depth > self.max_depth:
-            self.errors.append(f"代码嵌套深度超过限制 ({self.max_depth})")
-            return
-
-        node_type = type(node).__name__
-        if node_type not in self._ALLOWED_NODE_TYPES:
-            self.errors.append(
-                f"不支持的代码结构: {node_type} (第 {getattr(node, 'lineno', '?')} 行)"
-            )
-            return
-
-        self.depth += 1
-        super().visit(node)
-        self.depth -= 1
-
-    def visit_Call(self, node: ast.Call) -> None:
-        """拦截危险函数调用。"""
-        if isinstance(node.func, ast.Name):
-            func_name = node.func.id
-            if func_name in self._FORBIDDEN_BUILTINS:
-                self.errors.append(
-                    f"禁止调用函数: {func_name!r} (第 {getattr(node, 'lineno', '?')} 行)"
-                )
-                return
-            if func_name not in self._SAFE_BUILTINS:
-                self.errors.append(
-                    f"不在安全函数列表中: {func_name!r} (第 {getattr(node, 'lineno', '?')} 行)"
-                )
-                return
-        self.generic_visit(node)
-
-    def visit_Attribute(self, node: ast.Attribute) -> None:
-        """拦截危险属性访问。"""
-        attr_name = getattr(node, 'attr', '')
-        if isinstance(attr_name, str):
-            for pattern in self._DANGEROUS_PATTERNS:
-                if pattern in attr_name:
-                    self.errors.append(
-                        f"危险属性访问: {attr_name!r} (第 {getattr(node, 'lineno', '?')} 行)"
-                    )
-                    return
-        self.generic_visit(node)
-
-    def visit_Name(self, node: ast.Name) -> None:
-        """拦截危险名称引用。"""
-        name = getattr(node, 'id', '')
-        if isinstance(name, str):
-            for pattern in self._DANGEROUS_PATTERNS:
-                if pattern in name:
-                    self.errors.append(
-                        f"危险名称引用: {name!r} (第 {getattr(node, 'lineno', '?')} 行)"
-                    )
-                    return
-        self.generic_visit(node)
-
-    def visit_Subscript(self, node: ast.Subscript) -> None:
-        """拦截对 __builtins__ 等敏感对象的下标访问。"""
-        if isinstance(node.value, ast.Name):
-            name = getattr(node.value, 'id', '')
-            if name in ('__builtins__', '__imports__', '__globals__'):
-                self.errors.append(
-                    f"禁止访问: {name!r} (第 {getattr(node, 'lineno', '?')} 行)"
-                )
-                return
-        self.generic_visit(node)
-
-    def validate_code(self, code: str) -> tuple[bool, str]:
-        """
-        对代码字符串进行完整的安全校验。
-
-        Args:
-            code: 待校验的 Python 代码字符串。
-
-        Returns:
-            (is_safe, error_message) 元组。
-            is_safe 为 True 表示代码通过校验；
-            error_message 在校验失败时包含具体原因。
-        """
-        try:
-            tree = ast.parse(code, mode='exec')
-        except SyntaxError as e:
-            return False, f"语法错误: {e}"
-
-        self.errors = []
-        self.depth = 0
-        self.visit(tree)
-
-        if self.errors:
-            return False, "; ".join(self.errors)
-
-        return True, ""
 
 
 # ---------------------------------------------------------------------------

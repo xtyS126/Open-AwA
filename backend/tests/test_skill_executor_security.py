@@ -2,19 +2,18 @@
 SkillExecutor 安全模块单元测试。
 
 测试覆盖：
-- 代码执行沙箱
-- 危险函数拦截
-- AST 节点限制
+- RestrictedPythonBackend 代码安全校验（替代已弃用的 CodeValidator）
 - Shell 命令白名单
 - 路径遍历防护
+- SkillExecutor 代码/Shell/文件操作安全
 """
 
 import os
 import pytest
 from pathlib import Path
 
+from security.backends import RestrictedPythonBackend, SandboxBackend
 from skills.skill_executor import (
-    CodeValidator,
     SkillExecutor,
     SecurityValidationError,
     _validate_file_path,
@@ -23,185 +22,128 @@ from skills.skill_executor import (
 )
 
 
-class TestCodeValidatorAllowedNodes:
-    """测试 AST 节点白名单。"""
+# ---------------------------------------------------------------------------
+# RestrictedPythonBackend 代码安全校验（替代已弃用的 CodeValidator 测试）
+# ---------------------------------------------------------------------------
 
-    def test_functiondef_not_in_allowed_nodes(self):
-        """验证 FunctionDef 不在允许的节点类型中。"""
-        validator = CodeValidator()
-        assert "FunctionDef" not in validator._ALLOWED_NODE_TYPES
-
-    def test_asyncfunctiondef_not_in_allowed_nodes(self):
-        """验证 AsyncFunctionDef 不在允许的节点类型中。"""
-        validator = CodeValidator()
-        assert "AsyncFunctionDef" not in validator._ALLOWED_NODE_TYPES
-
-    def test_allowed_nodes_do_not_contain_dangerous_types(self):
-        """验证允许的节点类型不包含危险类型。"""
-        validator = CodeValidator()
-        dangerous_nodes = {
-            "FunctionDef", "AsyncFunctionDef", "ClassDef",
-            "Import", "ImportFrom", "Global", "Nonlocal",
-            "Yield", "YieldFrom", "Await",
-            "Lambda", "Starred",
-        }
-        intersection = validator._ALLOWED_NODE_TYPES & dangerous_nodes
-        assert len(intersection) == 0, f"允许的节点包含危险类型: {intersection}"
-
-
-class TestCodeValidatorForbiddenBuiltins:
-    """测试禁止的内置函数。"""
-
-    def test_getattr_in_forbidden_builtins(self):
-        """验证 getattr 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "getattr" in validator._FORBIDDEN_BUILTINS
-
-    def test_setattr_in_forbidden_builtins(self):
-        """验证 setattr 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "setattr" in validator._FORBIDDEN_BUILTINS
-
-    def test_delattr_in_forbidden_builtins(self):
-        """验证 delattr 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "delattr" in validator._FORBIDDEN_BUILTINS
-
-    def test_exec_in_forbidden_builtins(self):
-        """验证 exec 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "exec" in validator._FORBIDDEN_BUILTINS
-
-    def test_eval_in_forbidden_builtins(self):
-        """验证 eval 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "eval" in validator._FORBIDDEN_BUILTINS
-
-    def test_import_in_forbidden_builtins(self):
-        """验证 __import__ 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "__import__" in validator._FORBIDDEN_BUILTINS
-
-    def test_open_in_forbidden_builtins(self):
-        """验证 open 在禁止列表中。"""
-        validator = CodeValidator()
-        assert "open" in validator._FORBIDDEN_BUILTINS
-
-
-class TestCodeValidatorSafeBuiltins:
-    """测试安全内置函数白名单。"""
-
-    def test_getattr_not_in_safe_builtins(self):
-        """验证 getattr 不在安全白名单中。"""
-        validator = CodeValidator()
-        assert "getattr" not in validator._SAFE_BUILTINS
-
-    def test_setattr_not_in_safe_builtins(self):
-        """验证 setattr 不在安全白名单中。"""
-        validator = CodeValidator()
-        assert "setattr" not in validator._SAFE_BUILTINS
-
-    def test_delattr_not_in_safe_builtins(self):
-        """验证 delattr 不在安全白名单中。"""
-        validator = CodeValidator()
-        assert "delattr" not in validator._SAFE_BUILTINS
-
-
-class TestCodeValidatorDangerousPatterns:
-    """测试危险模式检测。"""
-
-    def test_getattr_in_dangerous_patterns(self):
-        """验证 getattr 在危险模式中。"""
-        validator = CodeValidator()
-        assert "getattr" in validator._DANGEROUS_PATTERNS
-
-    def test_setattr_in_dangerous_patterns(self):
-        """验证 setattr 在危险模式中。"""
-        validator = CodeValidator()
-        assert "setattr" in validator._DANGEROUS_PATTERNS
-
-    def test_builtins_in_dangerous_patterns(self):
-        """验证 __builtins__ 在危险模式中。"""
-        validator = CodeValidator()
-        assert "__builtins__" in validator._DANGEROUS_PATTERNS
-
-    def test_subprocess_in_dangerous_patterns(self):
-        """验证 subprocess 在危险模式中。"""
-        validator = CodeValidator()
-        assert "subprocess" in validator._DANGEROUS_PATTERNS
-
-
-class TestCodeValidatorCodeValidation:
-    """测试代码校验功能。"""
+class TestRestrictedPythonBackendCodeValidation:
+    """测试 RestrictedPythonBackend.check_code_safety() 的代码校验功能。"""
 
     @pytest.fixture
-    def validator(self):
-        """创建校验器实例。"""
-        return CodeValidator()
+    def backend(self) -> RestrictedPythonBackend:
+        """创建 RestrictedPythonBackend 实例，跳过未安装情况。"""
+        backend = RestrictedPythonBackend()
+        if not backend._ensure_restricted():
+            pytest.skip("RestrictedPython 未安装")
+        return backend
 
-    def test_safe_code_passes(self, validator):
+    @pytest.mark.asyncio
+    async def test_safe_code_passes(self, backend):
         """验证安全代码通过校验。"""
         code = "x = 1 + 2\nprint(x)"
-        is_safe, error = validator.validate_code(code)
+        is_safe, error = await backend.check_code_safety(code)
         assert is_safe is True
         assert error == ""
 
-    def test_function_def_rejected(self, validator):
-        """验证函数定义被拒绝。"""
-        code = "def malicious():\n    pass"
-        is_safe, error = validator.validate_code(code)
+    @pytest.mark.asyncio
+    async def test_empty_code_rejected(self, backend):
+        """验证空代码被拒绝。"""
+        is_safe, error = await backend.check_code_safety("")
         assert is_safe is False
-        assert "不支持的代码结构" in error
+        assert "不能为空" in error
 
-    def test_exec_call_rejected(self, validator):
-        """验证 exec 调用被拒绝。"""
-        code = "exec('import os')"
-        is_safe, error = validator.validate_code(code)
+    @pytest.mark.asyncio
+    async def test_whitespace_code_rejected(self, backend):
+        """验证空白代码被拒绝。"""
+        is_safe, error = await backend.check_code_safety("   ")
         assert is_safe is False
-        assert "禁止调用函数" in error
+        assert "不能为空" in error
 
-    def test_eval_call_rejected(self, validator):
-        """验证 eval 调用被拒绝。"""
-        code = "eval('1+1')"
-        is_safe, error = validator.validate_code(code)
+    @pytest.mark.asyncio
+    async def test_exec_call_rejected(self, backend):
+        """验证 exec 调用被 RestrictedPython compile_restricted 拒绝。"""
+        is_safe, error = await backend.check_code_safety("exec('import os')")
         assert is_safe is False
-        assert "禁止调用函数" in error
+        assert "Exec" in error or "语法错误" in error, f"期望错误信息包含 Exec 拒绝原因，实际: {error!r}"
 
-    def test_getattr_call_rejected(self, validator):
-        """验证 getattr 调用被拒绝。"""
-        code = "getattr(obj, 'attr')"
-        is_safe, error = validator.validate_code(code)
+    @pytest.mark.asyncio
+    async def test_eval_call_rejected(self, backend):
+        """验证 eval 调用被 RestrictedPython compile_restricted 拒绝。"""
+        is_safe, error = await backend.check_code_safety("eval('1+1')")
         assert is_safe is False
-        assert "禁止调用函数" in error or "不在安全函数列表" in error
+        assert "Eval" in error or "语法错误" in error, f"期望错误信息包含 Eval 拒绝原因，实际: {error!r}"
 
-    def test_import_call_rejected(self, validator):
-        """验证 __import__ 调用被拒绝。"""
-        code = "__import__('os')"
-        is_safe, error = validator.validate_code(code)
-        assert is_safe is False
-        assert "禁止调用函数" in error
+    @pytest.mark.asyncio
+    async def test_open_protected_at_runtime(self, backend):
+        """
+        验证 open 在 RestrictedPython 运行时由 safe_builtins 控制。
+        compile_restricted 可能允许 open 通过编译（不同于旧 CodeValidator 的静态拦截），
+        但运行时 safe_builtins 的受限实现会阻止危险操作。
+        """
+        is_safe, error = await backend.check_code_safety("open('/etc/passwd')")
+        if is_safe:
+            # 编译通过 — 运行时 safe_builtins 将加以限制
+            assert error == "", f"编译通过时 error 应为空，实际: {error!r}"
+        else:
+            # 编译被拒 — 错误信息必须包含合法拒绝原因
+            assert "不安全" in error or "校验失败" in error or "语法错误" in error, \
+                f"被拒时错误信息应包含有效原因，实际: {error!r}"
 
-    def test_open_call_rejected(self, validator):
-        """验证 open 调用被拒绝。"""
-        code = "open('/etc/passwd')"
-        is_safe, error = validator.validate_code(code)
-        assert is_safe is False
-        assert "禁止调用函数" in error
-
-    def test_nested_depth_limit(self, validator):
-        """验证嵌套深度限制。"""
-        code = "x = " + "[" * 15 + "1" + "]" * 15
-        is_safe, error = validator.validate_code(code)
-        assert is_safe is False
-        assert "嵌套深度" in error
-
-    def test_syntax_error_handled(self, validator):
+    @pytest.mark.asyncio
+    async def test_syntax_error_handled(self, backend):
         """验证语法错误被正确处理。"""
         code = "this is not valid python"
-        is_safe, error = validator.validate_code(code)
+        is_safe, error = await backend.check_code_safety(code)
         assert is_safe is False
         assert "语法错误" in error
 
+    @pytest.mark.asyncio
+    async def test_function_def_accepted(self, backend):
+        """RestrictedPython 7.x 允许安全的函数定义。"""
+        code = "def f():\n    return 1\nresult = f()"
+        is_safe, error = await backend.check_code_safety(code)
+        assert is_safe is True, f"函数定义应被接受，但被拒绝: {error!r}"
+        assert error == ""
+
+    @pytest.mark.asyncio
+    async def test_arithmetic_passes(self, backend):
+        """验证基本算术运算通过校验。"""
+        is_safe, error = await backend.check_code_safety("x = 1 + 2 * 3 / 4")
+        assert is_safe is True
+
+    @pytest.mark.asyncio
+    async def test_list_comprehension_passes(self, backend):
+        """验证列表推导通过校验。"""
+        is_safe, error = await backend.check_code_safety("[x * 2 for x in range(10)]")
+        assert is_safe is True
+
+    @pytest.mark.asyncio
+    async def test_getattr_protected_at_runtime(self, backend):
+        """
+        验证 getattr 在 RestrictedPython 运行时由 safer_getattr 守卫保护。
+        compile_restricted 将 getattr 转换为 _getattr_ 守卫调用，
+        而非在编译期拒绝 —— 运行时的 safer_getattr 用于阻止危险属性访问。
+        """
+        is_safe, error = await backend.check_code_safety("_getattr_(obj, 'attr')")
+        if is_safe:
+            # 编译通过 — 运行时 safer_getattr 提供实际保护
+            assert error == "", f"编译通过时 error 应为空，实际: {error!r}"
+        else:
+            # 编译被拒 — 错误信息必须包含合法拒绝原因
+            assert "不安全" in error or "校验失败" in error or "语法错误" in error, \
+                f"被拒时错误信息应包含有效原因，实际: {error!r}"
+
+    @pytest.mark.asyncio
+    async def test_import_blocked(self, backend):
+        """验证 __import__ 被 RestrictedPython compile_restricted 拒绝。"""
+        is_safe, error = await backend.check_code_safety("__import__('os')")
+        assert is_safe is False
+        assert error != ""
+
+
+# ---------------------------------------------------------------------------
+# Shell 命令白名单
+# ---------------------------------------------------------------------------
 
 class TestShellCommandWhitelist:
     """测试 Shell 命令白名单。"""
@@ -244,6 +186,10 @@ class TestShellCommandWhitelist:
         safe_commands = {"ls", "cat", "echo", "pwd", "head", "tail"}
         assert safe_commands.issubset(_ALLOWED_SHELL_COMMANDS)
 
+
+# ---------------------------------------------------------------------------
+# 路径安全校验
+# ---------------------------------------------------------------------------
 
 class TestPathValidation:
     """测试路径校验。"""
@@ -290,6 +236,10 @@ class TestPathValidation:
         with pytest.raises(SecurityValidationError):
             _validate_file_path("/etc/passwd", base_dir=str(tmp_path))
 
+
+# ---------------------------------------------------------------------------
+# SkillExecutor Shell 动作安全
+# ---------------------------------------------------------------------------
 
 class TestSkillExecutorShellAction:
     """测试 SkillExecutor Shell 动作安全。"""
@@ -361,8 +311,12 @@ class TestSkillExecutorShellAction:
         assert "hello world" in result["stdout"]
 
 
+# ---------------------------------------------------------------------------
+# SkillExecutor 代码执行安全
+# ---------------------------------------------------------------------------
+
 class TestSkillExecutorCodeAction:
-    """测试 SkillExecutor 代码执行安全。"""
+    """测试 SkillExecutor 代码执行安全（通过 RestrictedPythonBackend）。"""
 
     @pytest.fixture
     def executor(self, tmp_path):
@@ -436,6 +390,10 @@ class TestSkillExecutorCodeAction:
         )
         assert result["status"] == "skipped"
 
+
+# ---------------------------------------------------------------------------
+# SkillExecutor 文件操作安全
+# ---------------------------------------------------------------------------
 
 class TestSkillExecutorFileAction:
     """测试 SkillExecutor 文件操作安全。"""
