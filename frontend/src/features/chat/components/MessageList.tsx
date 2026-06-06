@@ -2,7 +2,7 @@
  * 消息列表组件 — 使用 react-virtuoso 虚拟滚动优化长对话渲染性能。
  * 超过 100 条消息时自动启用虚拟化，保证滚动流畅。
  */
-import { useRef, useCallback } from 'react'
+import { useRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { ChatMessage as ChatMessageType, AssistantExecutionMeta } from '@/features/chat/types'
 import { useI18nStore } from '@/i18n'
@@ -50,15 +50,17 @@ export function MessageList({
     return false
   }, [streamingAssistantId])
 
-  /** 渲染单条消息（供 Virtuoso itemContent 和普通渲染共用） */
-  const renderMessage = useCallback((_index: number, message: ChatMessageType) => {
+  /** 渲染单条消息（供 Virtuoso itemContent 和普通渲染共用）。
+   *  注：每次 messages.length 变化时函数引用自然更新，Virtuoso 会重新调用 itemContent，
+   *  这是符合预期的行为，无需通过 useCallback 缓存。 */
+  const renderMessage = (index: number, message: ChatMessageType) => {
     return (
       <ChatMessage
         key={message.id}
         message={message}
         messageMeta={messageMeta}
         streamingAssistantId={streamingAssistantId}
-        isLastMessage={_index === messages.length - 1}
+        isLastMessage={index === messages.length - 1}
         onEditMessage={onEditMessage}
         onRegenerate={onRegenerate}
         onFeedback={onFeedback}
@@ -66,7 +68,7 @@ export function MessageList({
         onUndo={onUndo}
       />
     )
-  }, [messageMeta, streamingAssistantId, messages.length, onEditMessage, onRegenerate, onFeedback, feedbackState, onUndo])
+  }
 
   /* 空状态 */
   if (messages.length === 0 && !isLoading) {

@@ -1401,8 +1401,8 @@ const zhCN: Record<string, string> = {
   "sidebar.agents": "Agent",
 
   // ===== 聊天补充 =====
-  "chat.empty": "Hello! How can I help you?",
-  "chat.loading.thinking": "Thinking...",
+  "chat.empty": "你好！有什么可以帮助你的吗？",
+  "chat.loading.thinking": "思考中...",
   "chat.loading.streaming": "{status}...",
   "chat.provider": "供应商",
   "chat.model": "模型",
