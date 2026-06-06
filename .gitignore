@@ -141,6 +141,11 @@ desktop.ini
 .learnings/
 backend/data/task_runtime/transcripts/
 
+# 审计工具二进制 & 报告
+scripts/opencodereview.exe
+reports/audit-result.txt
+reports/ocr-review.txt
+
 # =========================
 # 参考 / 归档文件夹（非项目源码）
 # =========================

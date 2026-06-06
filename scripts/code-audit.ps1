@@ -90,24 +90,35 @@ if ($SkipOcr) {
     Write-Host "  Skipped (--skip-ocr)" -ForegroundColor Gray
 }
 else {
-    $ocrCmd = Get-Command ocr -ErrorAction SilentlyContinue
+    $ocrCmd = $null
+    $localExe = Join-Path $ScriptDir "opencodereview.exe"
+
+    if (Test-Path $localExe) {
+        $ocrCmd = $localExe
+    }
+    else {
+        $globalOcr = Get-Command ocr -ErrorAction SilentlyContinue
+        if ($globalOcr) { $ocrCmd = "ocr" }
+    }
+
     if (-not $ocrCmd) {
-        Add-Warn "ocr command not found. Install: npm install -g @alibaba-group/open-code-review"
+        Add-Warn "ocr not found. Install: npm install -g @alibaba-group/open-code-review"
     }
     else {
         $diffContent = git diff HEAD 2>$null
         if (-not $diffContent) { $diffContent = git diff --cached 2>$null }
 
         if ($diffContent) {
-            $tempDiff = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "openawa-review-$(Get-Random).diff")
-            $diffContent | Out-File -FilePath $tempDiff -Encoding UTF8
-
             Write-Host "  Running ocr AI review..." -ForegroundColor Gray
-
             $ocrExitCode = 0
             $ocrOutput = ""
             try {
-                $ocrOutput = ocr 2>&1
+                if ($ocrCmd -eq "ocr") {
+                    $ocrOutput = ocr review --audience agent 2>&1
+                }
+                else {
+                    $ocrOutput = & $ocrCmd review --audience agent 2>&1
+                }
             }
             catch {
                 $ocrOutput = $_.Exception.Message
@@ -138,7 +149,6 @@ else {
                 Add-Pass "ocr AI review passed"
             }
 
-            Remove-Item $tempDiff -ErrorAction SilentlyContinue
         }
         else {
             Add-Pass "ocr AI review: no text changes to review"
