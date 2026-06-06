@@ -7,7 +7,7 @@ import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useCodingStore } from '../store/codingStore'
 import { codingApi } from '../codingApi'
-import { useThemeStore } from '@/shared/store/useThemeStore'
+import { useThemeStore } from '@/shared/store/themeStore'
 import styles from './EditorPane.module.css'
 
 const EditorPane: React.FC = () => {

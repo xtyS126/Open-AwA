@@ -312,8 +312,9 @@ def verify_csrf_token(token: str) -> Optional[dict]:
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         return None
 
-    # 验证必要字段
-    if not isinstance(payload.get("sub"), int):
+    # 验证必要字段（sub 可以是 int 或 str，与 User.id 类型兼容）
+    sub = payload.get("sub")
+    if not isinstance(sub, (int, str)) or (isinstance(sub, str) and not sub.strip()):
         return None
     if not isinstance(payload.get("iat"), (int, float)):
         return None

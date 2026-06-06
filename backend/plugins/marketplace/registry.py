@@ -145,6 +145,18 @@ class MarketplaceRegistry:
                 "icon": "",
                 "install_count": 64,
             },
+            {
+                "id": "user-profile-extractor",
+                "name": "User Profile Extractor",
+                "description": "基于LLM的智能用户画像提取插件，从对话历史中自动识别身份特征、偏好、知识水平、沟通风格等多维画像信息，支持置信度模型和生命周期管理",
+                "author": "Open-AwA Team",
+                "version": "1.0.0",
+                "category": "tool",
+                "tags": ["用户画像", "LLM", "智能提取", "置信度"],
+                "download_url": "",
+                "icon": "",
+                "install_count": 0,
+            },
         ]
 
         for plugin_meta in built_in:

@@ -4,7 +4,7 @@
  */
 import React, { useCallback, useState } from 'react'
 import { DiffEditor } from '@monaco-editor/react'
-import { useThemeStore } from '@/shared/store/useThemeStore'
+import { useThemeStore } from '@/shared/store/themeStore'
 import styles from './DiffView.module.css'
 
 interface DiffViewProps {

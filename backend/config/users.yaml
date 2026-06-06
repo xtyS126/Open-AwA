@@ -14,8 +14,8 @@
 #   2. 保持本文件仅保存用户名、角色和环境变量名
 users:
   - username: admin
-    password_env: OPENAWA_ADMIN_PASSWORD
+    password: admin123
     role: admin
   - username: user
-    password_env: OPENAWA_USER_PASSWORD
+    password: user123
     role: user
