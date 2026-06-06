@@ -1918,10 +1918,26 @@ function SettingsPage() {
                       <button
                         type="button"
                         className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models, true, {
-                          api_endpoint: providerForm.api_endpoint,
-                          api_key: providerApiKeyInputRef.current?.value.trim() || providerForm.api_key
-                        })}
+                        onClick={async () => {
+                          const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
+                          // 在拉取模型列表前，先将 API Key 保存到数据库，避免每次都需要重新输入
+                          if (nextApiKey && providerForm.config_id) {
+                            try {
+                              await modelsAPI.updateConfiguration(providerForm.config_id, { api_key: nextApiKey })
+                              setProviderForm(prev => ({ ...prev, has_api_key: true }))
+                              // 保存后清空输入框，避免明文长期留存
+                              if (providerApiKeyInputRef.current) {
+                                providerApiKeyInputRef.current.value = ''
+                              }
+                            } catch {
+                              // 保存失败不阻塞模型列表拉取
+                            }
+                          }
+                          fetchProviderModels(providerForm.provider, providerForm.selected_models, true, {
+                            api_endpoint: providerForm.api_endpoint,
+                            api_key: nextApiKey || providerForm.api_key
+                          })
+                        }}
                         disabled={loadingProviderModels || deletingProvider}
                       >
                         {loadingProviderModels ? '获取中...' : '获取模型列表'}
