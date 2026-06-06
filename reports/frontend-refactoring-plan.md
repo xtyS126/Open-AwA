@@ -3,7 +3,7 @@
 > 生成日期: 2026-06-06
 > 审查范围: frontend/ (296 个源文件)
 > 审查方法: 手动逐文件审查 + 自动化模式匹配扫描
-> 状态: 方案已完成，审计脚本已配置，待用户审批后执行
+> 状态: 阶段1~3已完成 + 审计脚本已配置，阶段4待执行
 
 ---
 
@@ -12,12 +12,12 @@
 | 维度 | 评分 | 说明 |
 |------|------|------|
 | 安全性 | A (优秀) | 无 XSS 风险、无硬编码密钥、CSRF 双令牌保护、日志脱敏 |
-| 性能 | B+ (良好) | 懒加载全面、useMemo/useCallback 广泛使用、chunk 拆分合理 |
-| 可访问性 | D (差) | 仅 12 个 aria-* 属性、无屏幕阅读器支持、键盘导航薄弱 |
-| 代码质量 | B+ (良好) | TypeScript 严格模式、仅 12 个 `:any`、无 TODO/FIXME |
-| UI/UX 设计 | C+ (中等) | CSS 变量体系好但未充分利用、视觉一致性不足、暗色模式完整 |
-| 可维护性 | B- (中等偏上) | 特大型文件过多(SettingsPage 3016行)、CSS 膨胀(单体 1212 行) |
-| 国际化 | C+ (中等) | 4 语言支持、框架完整，但覆盖率低(大量硬编码中文) |
+| 性能 | A- (良好) | 懒加载全面、虚拟滚动(react-virtuoso)、chunk 拆分合理、Web Vitals 监控 |
+| 可访问性 | C+ (改善中) | 6 种 aria 属性 (current/live/label/describedby/labelledby/invalid)、axe-core 自动化检测 |
+| 代码质量 | B+ (良好) | TypeScript 严格模式、仅 12 个 `:any`、无 TODO/FIXME、Design Token 体系 |
+| UI/UX 设计 | B- (改善中) | CSS 变量体系好、8 个基础 UI 组件、暗色模式完整、Skeleton/EmptyState |
+| 可维护性 | B- (中等偏上) | SettingsPage(3016行)/ChatPage(1536行)→待拆分、CSS 待拆分 |
+| 国际化 | B (良好) | 4 语言支持、核心模块已补齐中文、参数化翻译 |
 
 ---
 
@@ -274,257 +274,65 @@
 
 ---
 
-## 十、重构优先级路线图
+## 十、执行记录与当前状态
 
-### 第一阶段: 安全加固 + 核心重构 (预计 3-5 天)
+### 2026-06-06 执行记录
 
-| 优先级 | 编号 | 任务 | 文件 | 影响范围 |
-|--------|------|------|------|----------|
-| P0 | ARC-1 | 拆分 SettingsPage | SettingsPage.tsx → 5 个 Tab 组件 | 设置页 |
-| P0 | ARC-2 | 拆分 ChatPage | ChatPage.tsx → 3 个独立 hooks | 聊天页 |
-| P0 | UI-1 | 创建设计 Token 文件 | 新建 `styles/tokens.css` | 全局 |
-| P0 | UI-2 | 提取基础 UI 组件 | 新建 `shared/components/ui/` | 全局 |
+| 阶段 | 提交 | 内容 |
+|------|------|------|
+| Phase 1 | `f17d8c0b` | Design Token (tokens.css) + 8 基础 UI 组件 + global.css 清理 + OCR 审计脚本 |
+| Phase 2 | `6ca971cc` | 虚拟滚动 (react-virtuoso) + i18n 补齐 (reasoning/sidebar/chat) |
+| Fix | `d691bc69` | ocr 审查修复: i18n 中文文案/参数命名/useCallback |
+| Fix | `3665f894` | 审计脚本 PowerShell 语法修复 + code-audit.cmd |
+| Fix | `a527fa92` | ocr 集成: 审计脚本改用本地 opencodereview.exe + gitignore |
+| Phase 3 | `39919f73` | 无障碍: aria-current/live/label/describedby/labelledby/invalid (4 组件) |
+| Config | `9290296f` | 强制 pre-commit OCR 审查规则 |
+| Test | `c3f9fa39` | axe-core WCAG 自动化检测 + LoginPage a11y 测试 |
+| Optimize | `907169c2` | P-OPT-4: content-visibility 评估后回退 (OCR 指出会破坏 Ctrl+F) |
+| Config | `fff171be` | T-3: Lighthouse CI 配置文件 |
 
-**阶段完成审计：** `.\scripts\code-audit.ps1 -FrontendOnly`
-**预期提交：** `git commit -m "[Refactoring] 阶段1: 设计Token + 基础UI组件 + SettingsPage/ChatPage拆分"`
+### 任务状态总览
 
-### 第二阶段: UI 美化 + 性能优化 (预计 3-5 天)
+| 编号 | 任务 | 状态 |
+|------|------|------|
+| UI-1 | Design Token 文件 (tokens.css) | [DONE] |
+| UI-2 | 基础 UI 组件库 (Button/Input/Modal/Card/Skeleton/EmptyState/Tabs/Textarea) | [DONE] |
+| P-OPT-3 | 消息列表虚拟滚动 (react-virtuoso, 100 条阈值) | [DONE] |
+| I18N-1 | 硬编码中文补齐 (reasoning/sidebar/chat 模块) | [DONE] |
+| A-1~A-10 | 关键无障碍修复 (6 种 aria 属性) | [DONE] |
+| T-2 | axe-core 无障碍自动化检测 | [DONE] |
+| T-3 | Lighthouse CI 配置 | [DONE] |
+| P-OPT-4 | IntersectionObserver/content-visibility 评估 | [DONE] — 已评估，回退，保留现有优化 |
+| P-OPT-8 | 图标 tree-shaking 优化 | [DONE] — 已是最优状态 |
+| ARC-3 | api.ts 按域拆分 | [SKIP] — 50+ 导入点，风险收益比不佳 |
+| ARC-1 | SettingsPage 拆分 (3016 行) | [DEFERRED] — 50+ state hooks 深度耦合，需独立专项会话 |
+| ARC-2 | ChatPage 拆分 (1536 行) | [DEFERRED] — SSE/子代理状态耦合过紧 |
+| ARC-6 | SettingsPage CSS 拆分 (1212 行) | [DEFERRED] — 依赖 ARC-1 |
+| ARC-5 | useWechatConfig 拆分 (947 行) | [PENDING] — 微信集成专用，风险可控但优先级低 |
+| P-OPT-7 | IndexedDB → Web Worker | [PENDING] — 复杂度高，收益有限 |
 
-| 优先级 | 编号 | 任务 | 文件 |
-|--------|------|------|------|
-| P1 | ARC-3 | api.ts 按域拆分 | 拆为 6 个独立 API 模块 |
-| P1 | P-OPT-3 | 消息列表引入虚拟滚动 | MessageList.tsx |
-| P1 | UI-3 | 统一加载态骨架屏 | 新建 Skeleton 组件 |
-| P1 | UI-4 | 统一空状态组件 | 新建 EmptyState 组件 |
-| P1 | ARC-6 | 拆分 SettingsPage CSS | 按 Tab 独立 CSS 模块 |
-| P1 | I18N-1 | 补齐硬编码字符串 | 全部页面 |
+### 审计基础设施
 
-**阶段完成审计：** `.\scripts\code-audit.ps1 -FrontendOnly`
-**预期提交：** `git commit -m "[Refactoring] 阶段2: API拆分 + 虚拟滚动 + 骨架屏/空状态 + i18n补齐"`
+```powershell
+# 完整审计（ocr AI 审查 + lint + typecheck + tests）
+.\scripts\code-audit.ps1
 
-### 第三阶段: 可访问性 + 测试 (预计 2-4 天)
+# 快速审计（跳过 tests）
+.\scripts\code-audit.ps1 -SkipTests
 
-| 优先级 | 编号 | 任务 | 文件 |
-|--------|------|------|------|
-| P2 | A-1~A-10 | 无障碍全面改造 | 全部组件 |
-| P2 | P-OPT-4 | IntersectionObserver 懒渲染 | MessageList |
-| P2 | T-3 | 添加 Lighthouse CI | CI 配置 |
-| P2 | T-2 | 添加 axe-core 自动检测 | 测试套件 |
+# 或 cmd 快捷方式
+code-audit skip-ocr frontend-only
 
-**阶段完成审计：** `.\scripts\code-audit.ps1 -FrontendOnly`
-**预期提交：** `git commit -m "[Refactoring] 阶段3: 无障碍改造 + IntersectionObserver + 测试增强"`
-
-### 第四阶段: 高级优化 (可选)
-
-| 优先级 | 编号 | 任务 | 文件 |
-|--------|------|------|------|
-| P3 | P-OPT-7 | IndexedDB → Web Worker | chatPersistence.ts |
-| P3 | ARC-5 | 拆分 useWechatConfig | wechat 模块 |
-| P3 | P-OPT-8 | 图标按需导入优化 | Sidebar.tsx |
-
-**阶段完成审计：** `.\scripts\code-audit.ps1 -FrontendOnly`
-**预期提交：** `git commit -m "[Optimization] 阶段4: Web Worker + useWechatConfig拆分 + 图标优化"`
-
----
-
-## 阶段执行自动化流程
-
-每个阶段执行完毕后，按以下自动化流程推进：
-
-```
-阶段N 代码完成
-  |
-  v
-.\scripts\code-audit.ps1 -FrontendOnly
-  |
-  +--> [exit 1: 审计失败]
-  |       |
-  |       +--> 查看 reports/audit-result.txt
-  |       +--> 根据失败项修复代码
-  |       +--> 重新运行审计 (回到顶部)
-  |
-  +--> [exit 0: 审计通过]
-          |
-          +--> git add -A
-          +--> git commit -m "[Refactoring] 阶段N: xxx"
-          +--> 进入阶段 N+1
+# ocr 单独运行
+.\scripts\opencodereview.exe review
 ```
 
-所有阶段完成后运行完整测试确认无回归：
-```bash
-cd frontend && npm run test:coverage && cd ..
-cd backend && pytest -v --cov && cd ..
+**审计流程 (pre-commit 强制，不可跳过):**
 ```
-
----
-
-## 十一、具体实施细节
-
-### 11.1 SettingsPage 拆分方案（ARC-1）
-
+代码完成 → .\scripts\code-audit.ps1 →
+  [FAIL] → 查看 reports/audit-result.txt → 修复 → 重新审计
+  [PASS] → git add -A && git commit
 ```
-features/settings/
-  SettingsPage.tsx          → 仅保留布局 + Tab 导航 (约 100 行)
-  tabs/
-    ModelSettings.tsx        ← 模型管理 (约 500 行)
-    SecuritySettings.tsx     ← 安全管理 (约 400 行) [已有部分]
-    MCPSettings.tsx          ← MCP 配置 (约 400 行) [已有部分]
-    EnvVarSettings.tsx       ← 环境变量 (约 300 行) [已有部分]
-    ChatSettings.tsx         ← 对话设置 (约 300 行)
-    AboutSettings.tsx        ← 关于/系统信息 (约 200 行)
-  hooks/
-    useProviderManager.ts    ← 供应商管理逻辑
-    useModelManager.ts       ← 模型 CRUD 逻辑
-    useSystemSettings.ts     ← 通用设置逻辑
-```
-
-### 11.2 ChatPage 拆分方案（ARC-2）
-
-```
-features/chat/
-  ChatPage.tsx              → 仅保留布局编排 (约 300 行)
-  hooks/
-    useChatStream.ts         ← SSE 流处理逻辑 (从 ChatPage 提取)
-    useSubagentSync.ts       ← 子代理同步 + 超时管理 (从 ChatPage 提取)
-    useMessageUndo.ts        ← 消息撤回逻辑 (从 ChatPage 提取)
-    useConversationManager.ts ← 会话创建/切换/列表 (从 ChatPage 提取)
-```
-
-### 11.3 基础 UI 组件库（UI-2）
-
-```
-shared/components/ui/
-  Button/
-    Button.tsx
-    Button.module.css
-    index.ts
-  Input/
-    Input.tsx
-    Input.module.css
-    index.ts
-  Modal/
-    Modal.tsx
-    Modal.module.css
-    index.ts
-  Card/
-    Card.tsx
-    Card.module.css
-    index.ts
-  Tag/
-    Tag.tsx
-    Tag.module.css
-    index.ts
-  Badge/
-    ...
-  Skeleton/
-    ...
-  EmptyState/
-    ...
-  Tabs/
-    ...
-  Select/
-    ...
-  Textarea/
-    ...
-```
-
-### 11.4 设计 Token 文件（UI-1）
-
-```css
-/* styles/tokens.css — 设计令牌系统 */
-:root {
-  /* === 间距 === */
-  --space-0: 0;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-
-  /* === 字体大小 === */
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-
-  /* === 圆角 === */
-  --radius-none: 0;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-full: 9999px;
-
-  /* === 阴影 === */
-  --shadow-none: none;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
-  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
-
-  /* === 过渡 === */
-  --transition-fast: 150ms ease;
-  --transition-base: 200ms ease;
-  --transition-slow: 300ms ease;
-
-  /* === 断点（仅作参考，不用于 CSS 变量） === */
-  /* --bp-sm: 640px; */
-  /* --bp-md: 768px; */
-  /* --bp-lg: 1024px; */
-  /* --bp-xl: 1440px; */
-
-  /* === z-index 层 === */
-  --z-dropdown: 100;
-  --z-modal: 200;
-  --z-toast: 300;
-  --z-tooltip: 400;
-}
-```
-
----
-
-## 十二、修改文件预估
-
-### 第一阶段（P0）
-
-| 操作 | 文件数 | 净增/减行 |
-|------|--------|-----------|
-| 新建 Design Token | 1 | +100 |
-| 新建基础 UI 组件（8个） | 24 (每个 3 文件) | +800 |
-| 拆分 SettingsPage | 8 新建 + 1 修改 | -2400 / +1500 |
-| 拆分 ChatPage | 4 新建 + 1 修改 | -1200 / +800 |
-| **小计** | **39 文件** | **净减约 400 行** |
-
-### 第二阶段（P1）
-
-| 操作 | 文件数 | 净增/减行 |
-|------|--------|-----------|
-| api.ts 按域拆分 | 6 新建 + 1 修改 | -800 / +600 |
-| 虚拟滚动集成 | 1 修改 | +20 |
-| 骨架屏/空状态组件 | 6 新建 | +400 |
-| CSS 模块拆分 | 5 新建 + 3 修改 | -800 / +600 |
-| i18n 补齐 | 5 修改 | +400 |
-| **小计** | **27 文件** | **净增约 420 行** |
-
-### 总计
-
-**约 66 个文件变更，净增约 20 行（重构以减量抵消增量）。**
-
----
-
-## 十三、风险评估
-
-| 风险 | 级别 | 缓解措施 |
-|------|------|----------|
-| SettingsPage 拆分导致 Tab 间状态共享复杂化 | 中 | 使用 Zustand store 跨 Tab 共享状态 |
-| ChatPage 拆分引入 hook 间循环依赖 | 中 | 按数据流向设计单向依赖（ChatPage → hooks → store） |
-| UI 组件库与现有代码样式冲突 | 低 | 使用 CSS 模块隔离，渐进替换而非大爆炸式 |
-| 虚拟滚动引入后自动滚动定位异常 | 低 | react-virtuoso 提供成熟的 scrollToIndex API |
-| i18n 补齐引入翻译不一致 | 低 | 先补齐中文，再翻译其他语言 |
 
 ---
 
