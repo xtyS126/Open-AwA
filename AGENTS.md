@@ -104,10 +104,13 @@ frontend/src/
 
 ## Git Commit Rules
 
-### Pre-commit Checklist
+### Pre-commit Checklist（强制执行，不可跳过）
 
 Before `git add` and `git commit`, complete in order:
-1. **Code review** -- 逐文件检查：无语法错误、无调试代码残留、无硬编码敏感信息
+
+1. **OCR AI 审查（必须第 1 步）** -- 运行 `.\scripts\code-audit.ps1 -SkipTests` 对未提交变更进行 AI 审查
+   - 如果审查发现问题，修复后重新运行审计，直到通过
+   - 如果审查通过，继续下一步
 2. **Style check** -- 命名规范、注释完整（中文）、无 Emoji
 3. **Run tests** -- 全部测试通过，新功能有对应测试，覆盖率不降低
 4. **Dependency check** -- 新增依赖版本兼容，`requirements.txt` / `package.json` 已同步更新

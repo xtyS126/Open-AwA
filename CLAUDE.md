@@ -194,24 +194,30 @@ git commit -m "[Type] 变更描述"
 ```
 不使用 `debug` 分支，不创建中间分支。如果需要回滚，使用 `git revert`。
 
-### OCR Viewer 自动化审计（阶段化重构专用）
+### OCR Viewer 自动化审计（每次提交前强制执行）
 
-对于多阶段重构任务，每完成一个阶段后运行 OCR Viewer 审计脚本：
+**每完成一个阶段或准备 git commit 前，必须先运行 OCR 审计，审查通过后才能提交。不可跳过此步骤。**
 
 ```powershell
-# 完整审计
+# 完整审计（含 ocr AI 审查 + 测试）
 .\scripts\code-audit.ps1
+
+# 快速审计（仅 ocr + lint + typecheck，跳过测试）
+.\scripts\code-audit.ps1 -SkipTests
 
 # 仅前端/后端
 .\scripts\code-audit.ps1 -FrontendOnly
 .\scripts\code-audit.ps1 -BackendOnly
-
-# 跳过测试快速检查
-.\scripts\code-audit.ps1 -SkipTests
 ```
 
-工作流：`阶段完成 → 运行审计 → 修复问题（如有）→ 提交 → 下一阶段`
-审计报告输出到 `reports/audit-result.txt`。详细说明见 AGENTS.md。
+工作流：
+```
+代码完成 → .\scripts\code-audit.ps1 → 
+  [FAIL] → 根据 reports/audit-result.txt 修复 → 重新审计
+  [PASS] → git add -A && git commit -m "[Type] 描述"
+```
+
+审计报告输出到 `reports/audit-result.txt`，ocr 输出到 `reports/ocr-review.txt`。详细说明见 AGENTS.md。
 
 ## Known Pitfalls
 
