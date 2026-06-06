@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendAssistantChunk,
+  applyIntentToSegments,
   applyStepToSegments,
   applyToolEventToSegments,
+  applyToolPatchToSegments,
+  applyUsageToSegments,
   buildSegmentsFromLegacyMessage,
   finalizeAssistantSegments,
 } from '@/features/chat/utils/assistantSegments'
@@ -133,5 +136,66 @@ describe('assistantSegments', () => {
       expect(segments[0].intent).toBe('analyse')
       expect(segments[0].toolEvents).toHaveLength(1)
     }
+  })
+
+  it('applyToolPatchToSegments 可修补已有工具事件的输出和状态', () => {
+    let segments = appendAssistantChunk([], { reasoningContent: '思考中' })
+    segments = applyToolEventToSegments(segments, {
+      id: 'tool-patch',
+      kind: 'mcp',
+      name: 'search',
+      status: 'running',
+    })
+    segments = applyToolPatchToSegments(segments, 'tool-patch', {
+      output: '搜索结果',
+      status: 'completed',
+    })
+
+    if (segments[0]?.kind === 'thought') {
+      const tool = segments[0].toolEvents.find((t) => t.id === 'tool-patch')
+      expect(tool?.output).toBe('搜索结果')
+      expect(tool?.status).toBe('completed')
+    }
+  })
+
+  it('applyToolPatchToSegments 在空 segments 上不崩溃', () => {
+    const result = applyToolPatchToSegments([], 'nonexistent', { output: 'x' })
+    expect(result).toEqual([])
+  })
+
+  it('applyUsageToSegments 将 usage 信息附加到思维链段', () => {
+    let segments = appendAssistantChunk([], { reasoningContent: '思考' })
+    segments = applyUsageToSegments(segments, {
+      model: 'gpt-4o-mini',
+      input_tokens: 100,
+      output_tokens: 50,
+    })
+
+    expect(segments[0]?.kind).toBe('thought')
+    if (segments[0]?.kind === 'thought') {
+      expect(segments[0].usage?.model).toBe('gpt-4o-mini')
+      expect(segments[0].usage?.input_tokens).toBe(100)
+    }
+  })
+
+  it('applyIntentToSegments 设置思维链的意图文本', () => {
+    let segments = appendAssistantChunk([], { reasoningContent: '分析中' })
+    segments = applyIntentToSegments(segments, 'summarize')
+
+    expect(segments[0]?.kind).toBe('thought')
+    if (segments[0]?.kind === 'thought') {
+      expect(segments[0].intent).toBe('summarize')
+    }
+  })
+
+  it('processes empty/undefined segments gracefully for core functions', () => {
+    expect(() => appendAssistantChunk(undefined, { content: 'test' })).not.toThrow()
+    expect(() => finalizeAssistantSegments(undefined)).not.toThrow()
+    expect(() => applyUsageToSegments(undefined, { model: 'gpt', input_tokens: 1, output_tokens: 1 })).not.toThrow()
+    expect(() => applyIntentToSegments(undefined, 'test')).not.toThrow()
+
+    const chunks = appendAssistantChunk(undefined, { content: 'test' })
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]?.kind).toBe('reply')
   })
 })

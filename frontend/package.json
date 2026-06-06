@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
     "e2e:electron": "playwright test --project=electron",
-    "e2e:install": "playwright install chromium firefox",
+    "e2e:install": "playwright install chromium firefox"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",

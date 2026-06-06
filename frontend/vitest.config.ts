@@ -16,6 +16,10 @@ const resolvedViteConfig = typeof viteConfig === 'function'
 export default mergeConfig(
   resolvedViteConfig as any,
   defineConfig({
+    ssr: {
+      // rollup-plugin-visualizer 是 ESM-only，在 vitest 加载 config 时需排除
+      external: ['rollup-plugin-visualizer'],
+    },
     test: {
       globals: true,
       environment: 'jsdom',
