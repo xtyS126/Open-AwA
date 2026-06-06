@@ -843,7 +843,7 @@ function SettingsPage() {
     try {
       const providersRes = await modelsAPI.getProviders()
       const providerList: ModelProvider[] = providersRes.data.providers || []
-      const validProviders = providerList.filter(item => (item.configuration_count || 0) > 0)
+      const validProviders = providerList.filter(item => (item.configuration_count || 0) > 0 || item.has_api_key)
       setProviders(validProviders)
 
       if (validProviders.length === 0) {
@@ -976,31 +976,31 @@ function SettingsPage() {
       const newSelected = [...modalSelectedModels]
       const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
       const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
-      const updatePayload: {
-        display_name?: string
-        icon?: string
-        api_endpoint?: string
-        api_key?: string
-        selected_models?: string[]
-      } = {
+
+      // 1. 保存 Provider 凭据到独立表
+      const credPayload: { display_name?: string; icon?: string; api_endpoint?: string; api_key?: string } = {
         display_name: providerForm.display_name.trim() || undefined,
         icon: providerForm.icon.trim() || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        selected_models: newSelected
       }
-
       if (nextApiKey) {
-        updatePayload.api_key = nextApiKey
+        credPayload.api_key = nextApiKey
+      }
+      await modelsAPI.saveProviderCredential(providerForm.provider, credPayload)
+
+      // 2. 更新 selected_models（如果有已有配置则更新）
+      if (providerForm.config_id) {
+        await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
+          selected_models: newSelected
+        })
       }
 
-      await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
-      
-      setProviderForm(prev => ({ 
-        ...prev, 
+      setProviderForm(prev => ({
+        ...prev,
         selected_models: newSelected,
         api_endpoint: normalizedBaseUrl
       }))
-      
+
       if (providerApiKeyInputRef.current) {
         providerApiKeyInputRef.current.value = ''
       }
@@ -1009,7 +1009,7 @@ function SettingsPage() {
       showNotification({ type: 'success', text: '模型导入及配置保存成功' })
       setShowImportModal(false)
 
-      // 为每个新导入的模型创建独立的配置记录，使用户可以在模型列表中分别配置
+      // 3. 为每个新导入的模型创建独立的配置记录（后端自动关联 credential_id）
       const existingModelNames = new Set(
         configurations
           .filter(c => c.provider === providerForm.provider)
@@ -1017,7 +1017,6 @@ function SettingsPage() {
       )
       const modelsToCreate = newSelected.filter(m => !existingModelNames.has(m))
       if (modelsToCreate.length > 0) {
-        const normalizedBaseUrlForCreate = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
         // 依次创建，避免并发时的唯一约束冲突
         for (const modelName of modelsToCreate) {
           try {
@@ -1025,7 +1024,6 @@ function SettingsPage() {
               provider: providerForm.provider,
               model: modelName,
               display_name: modelName,
-              api_endpoint: normalizedBaseUrlForCreate || undefined,
               is_default: false
             })
           } catch (e) {
@@ -1214,12 +1212,9 @@ function SettingsPage() {
 
     try {
       const normalizedBaseUrl = normalizeProviderBaseUrl(providerId, addProviderForm.api_endpoint)
-      await modelsAPI.createConfiguration({
-        provider: providerId,
-        model: 'custom-model',
+      await modelsAPI.saveProviderCredential(providerId, {
         display_name: nextDisplayName || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        is_default: false
       })
 
       setAddProviderForm(createInitialAddProviderForm())
@@ -1254,28 +1249,28 @@ function SettingsPage() {
     try {
       const normalizedBaseUrl = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
       const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
-      const updatePayload: {
+
+      const credPayload: {
         display_name?: string
         icon?: string
         api_endpoint?: string
         api_key?: string
-        selected_models?: string[]
       } = {
         display_name: providerForm.display_name.trim() || undefined,
         icon: providerForm.icon.trim() || undefined,
         api_endpoint: normalizedBaseUrl || undefined,
-        selected_models: providerForm.selected_models
       }
-
       if (nextApiKey) {
-        updatePayload.api_key = nextApiKey
+        credPayload.api_key = nextApiKey
       }
 
       setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))
-      await modelsAPI.updateConfiguration(providerForm.config_id, updatePayload)
-      await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
-        selected_models: providerForm.selected_models
-      })
+      await modelsAPI.saveProviderCredential(providerForm.provider, credPayload)
+      if (providerForm.config_id) {
+        await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
+          selected_models: providerForm.selected_models
+        })
+      }
 
       // 保存成功后清空 API 密钥输入框，避免明文长期留存在前端状态中
       if (providerApiKeyInputRef.current) {
@@ -2437,7 +2432,7 @@ function SettingsPage() {
             {loadingConfigs ? (
               <div className={styles['loading']}>加载中...</div>
             ) : (() => {
-              const displayConfigs = configurations.filter(c => c.model !== 'custom-model')
+              const displayConfigs = configurations
               if (displayConfigs.length === 0) {
                 return (
                   <div className={styles['empty-state']}>

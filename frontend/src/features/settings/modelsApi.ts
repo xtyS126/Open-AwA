@@ -237,4 +237,16 @@ export const modelsAPI = {
   // 获取所有提供商连接状态
   getProvidersStatus: () =>
     api.get<ProvidersStatusResponse>('/models/providers'),
+
+  // ── Provider 凭据 API ──────────────────────────────────────────
+
+  saveProviderCredential: (provider: string, data: {
+    api_key?: string
+    api_endpoint?: string
+    display_name?: string
+    icon?: string
+  }) => api.put(`/billing/credentials/${provider}`, data),
+
+  getProviderCredential: (provider: string) =>
+    api.get(`/billing/credentials/${provider}`),
 }

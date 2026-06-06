@@ -6,7 +6,7 @@
 from sqlalchemy import text, or_
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
-from billing.models import ModelPricing, ModelConfiguration
+from billing.models import ModelPricing, ModelConfiguration, ProviderCredential
 from datetime import datetime, timezone
 import json
 
@@ -719,10 +719,37 @@ class PricingManager:
 
         self.db.commit()
 
+    def ensure_credential_schema(self) -> None:
+        """
+        确保 provider_credentials 表存在，若不存在则创建。
+        """
+        tables = {
+            row[0]
+            for row in self.db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+        }
+        if "provider_credentials" not in tables:
+            self.db.execute(text("""
+                CREATE TABLE provider_credentials (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider VARCHAR(50) UNIQUE NOT NULL,
+                    display_name VARCHAR(200),
+                    api_key TEXT,
+                    api_endpoint VARCHAR(500),
+                    icon VARCHAR(500),
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        self.db.commit()
+
     def ensure_configuration_schema(self) -> None:
         """
         确保模型配置表包含必要的字段，若缺失则动态添加。
         """
+        # 确保 Provider 凭据表先于配置表存在
+        self.ensure_credential_schema()
+
         columns = {
             row[1]
             for row in self.db.execute(text("PRAGMA table_info(model_configurations)")).fetchall()
@@ -738,6 +765,8 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN input_modality TEXT"))
         if "output_modality" not in columns:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN output_modality TEXT"))
+        if "credential_id" not in columns:
+            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN credential_id INTEGER REFERENCES provider_credentials(id)"))
 
         self.db.commit()
 
@@ -839,17 +868,20 @@ class PricingManager:
     def get_provider_catalog(self) -> List[Dict]:
         """
         获取供应商目录，包含每个供应商的配置信息和已选模型列表。
-        
-        Returns:
-            供应商信息字典列表。
+        同时涵盖 ModelConfiguration 和 ProviderCredential 中的 provider。
         """
+        # 1. 从 ModelConfiguration 获取 provider 列表
         config_rows = self.db.query(ModelConfiguration.provider).filter(
             ModelConfiguration.is_active == True
+        ).distinct().all()
+        # 2. 从 ProviderCredential 获取 provider 列表
+        cred_rows = self.db.query(ProviderCredential.provider).filter(
+            ProviderCredential.is_active == True
         ).distinct().all()
 
         provider_ids = sorted({
             self.normalize_provider(row[0])
-            for row in config_rows
+            for row in (config_rows + cred_rows)
             if self.normalize_provider(row[0])
         })
 
@@ -865,23 +897,34 @@ class PricingManager:
 
         result = []
         for provider_id in provider_ids:
+            cred = self.get_provider_credential(provider_id)
             config = self.get_default_provider_configuration(provider_id)
-            if not config:
-                continue
 
-            selected_models = self.parse_selected_models(config.selected_models)
+            # selected_models 从 ModelConfiguration 聚合
+            all_models = []
+            configs = self.db.query(ModelConfiguration).filter(
+                ModelConfiguration.provider == provider_id,
+                ModelConfiguration.is_active == True
+            ).all()
+            for c in configs:
+                all_models.extend(self.parse_selected_models(c.selected_models))
+            # 去重
+            seen = set()
+            selected_models = []
+            for m in all_models:
+                if m not in seen:
+                    seen.add(m)
+                    selected_models.append(m)
+
             result.append({
                 "id": provider_id,
                 "name": provider_names.get(provider_id, provider_id.upper()),
-                "display_name": config.display_name or provider_names.get(provider_id, provider_id.upper()),
-                "icon": config.icon,
-                "api_endpoint": config.api_endpoint,
-                "has_api_key": bool(config.api_key),
+                "display_name": cred.display_name if cred else (config.display_name if config else provider_names.get(provider_id, provider_id.upper())),
+                "icon": cred.icon if cred else (config.icon if config else None),
+                "api_endpoint": cred.api_endpoint if cred else (config.api_endpoint if config else None),
+                "has_api_key": bool(cred and cred.api_key) or bool(config and config.api_key),
                 "selected_models": selected_models,
-                "configuration_count": self.db.query(ModelConfiguration).filter(
-                    ModelConfiguration.provider == provider_id,
-                    ModelConfiguration.is_active == True
-                ).count()
+                "configuration_count": len(configs)
             })
         return result
 
@@ -1145,18 +1188,59 @@ class PricingManager:
             ModelConfiguration.model == model
         ).first()
 
-    def _get_gateway_config(self, provider: str) -> Optional[ModelConfiguration]:
+    # ── Provider 凭据管理 ──────────────────────────────────────────
+
+    def get_provider_credential(self, provider: str) -> Optional[ProviderCredential]:
         """
-        获取指定 Provider 的网关配置（model='custom-model' 的记录），
-        该配置持有 API Key 和 Endpoint 等 Provider 级凭据。
+        获取指定 Provider 的凭据（API Key、Endpoint 等）。
         """
         self.ensure_configuration_schema()
         provider = self.normalize_provider(provider)
-        return self.db.query(ModelConfiguration).filter(
-            ModelConfiguration.provider == provider,
-            ModelConfiguration.model == "custom-model",
-            ModelConfiguration.is_active == True
+        return self.db.query(ProviderCredential).filter(
+            ProviderCredential.provider == provider,
+            ProviderCredential.is_active == True
         ).first()
+
+    def upsert_provider_credential(self, provider: str, data: Dict) -> ProviderCredential:
+        """
+        创建或更新 Provider 凭据。
+        """
+        from config.security import encrypt_secret_value
+        self.ensure_configuration_schema()
+        provider = self.normalize_provider(provider)
+
+        cred = self.get_provider_credential(provider)
+        if cred:
+            for key in ("display_name", "icon", "api_endpoint"):
+                if key in data and data[key] is not None:
+                    setattr(cred, key, data[key])
+            if "api_key" in data and data["api_key"] is not None:
+                raw = data["api_key"].strip()
+                cred.api_key = encrypt_secret_value(raw) if raw else None
+            cred.updated_at = datetime.now(timezone.utc)
+        else:
+            raw_key = (data.get("api_key") or "").strip()
+            cred = ProviderCredential(
+                provider=provider,
+                display_name=data.get("display_name"),
+                api_key=encrypt_secret_value(raw_key) if raw_key else None,
+                api_endpoint=data.get("api_endpoint"),
+                icon=data.get("icon"),
+            )
+            self.db.add(cred)
+
+        self.db.commit()
+        self.db.refresh(cred)
+        return cred
+
+    def get_all_provider_credentials(self) -> List[ProviderCredential]:
+        """获取所有激活的 Provider 凭据。"""
+        self.ensure_configuration_schema()
+        return self.db.query(ProviderCredential).filter(
+            ProviderCredential.is_active == True
+        ).order_by(ProviderCredential.provider).all()
+
+    # ── Provider 配置查询 ──────────────────────────────────────────
 
     def get_default_provider_configuration(self, provider: str) -> Optional[ModelConfiguration]:
         """
@@ -1222,20 +1306,13 @@ class PricingManager:
             val = normalized.get("max_tokens")
             normalized["max_tokens"] = int(val) if val is not None else None
 
-        # 若未提供 API Key/Endpoint 且不是网关配置（model != 'custom-model'），
-        # 则从同 Provider 的网关配置继承凭据，使每个模型配置自给自足
-        model = normalized.get("model", "")
-        if model and model != "custom-model":
+        # 自动关联 ProviderCredential：若该 provider 已有凭据记录，设置 credential_id
+        if "credential_id" not in normalized or normalized.get("credential_id") is None:
             provider = normalized.get("provider", "")
-            has_api_key = "api_key" in normalized and normalized["api_key"]
-            has_endpoint = "api_endpoint" in normalized and normalized["api_endpoint"]
-            if provider and (not has_api_key or not has_endpoint):
-                gateway = self._get_gateway_config(provider)
-                if gateway:
-                    if not has_api_key and gateway.api_key:
-                        normalized["api_key"] = gateway.api_key
-                    if not has_endpoint and gateway.api_endpoint:
-                        normalized["api_endpoint"] = gateway.api_endpoint
+            if provider:
+                cred = self.get_provider_credential(provider)
+                if cred:
+                    normalized["credential_id"] = cred.id
 
         return normalized
 
@@ -1253,7 +1330,7 @@ class PricingManager:
         normalized = self._normalize_configuration_payload(config_data)
 
         provider = normalized.get("provider") or ""
-        model = normalized.get("model", "custom-model")
+        model = normalized.get("model") or ""
 
         existing = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.provider == provider,

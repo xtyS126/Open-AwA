@@ -490,13 +490,6 @@ class AIAgent:
 
             pricing_manager = PricingManager(db_session)
             configurations = pricing_manager.get_active_configurations()
-            placeholder_models = {
-                "custom-model",
-                "custom_model",
-                "custom",
-                "default-model",
-                "default",
-            }
 
             provider_models: Dict[str, List[str]] = {}
             for config in configurations:
@@ -506,7 +499,7 @@ class AIAgent:
 
                 candidates: List[str] = []
                 base_model = pricing_manager.normalize_model(getattr(config, "model", None))
-                if base_model and base_model.lower() not in placeholder_models:
+                if base_model:
                     candidates.append(base_model)
 
                 selected_models = pricing_manager.parse_selected_models(

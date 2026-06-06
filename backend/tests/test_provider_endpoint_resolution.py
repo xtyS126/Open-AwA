@@ -388,9 +388,9 @@ async def test_execution_layer_resolves_chat_endpoint_from_base_url():
 
 
 @pytest.mark.asyncio
-async def test_execution_layer_resolves_custom_model_to_selected_deepseek_model():
+async def test_execution_layer_resolves_real_model_directly():
     """
-    provider 级配置使用 custom-model 时，应从 selected_models 选择有效模型（DeepSeek 优先 deepseek-chat）。
+    传入真实模型名时，应从精确匹配的配置中解析凭据。
     """
     execution_layer = ExecutionLayer()
     execution_layer.provider_api_key_fields["deepseek"] = "DEEPSEEK_API_KEY"
@@ -398,7 +398,7 @@ async def test_execution_layer_resolves_custom_model_to_selected_deepseek_model(
     db = SimpleNamespace()
     config = SimpleNamespace(
         provider="deepseek",
-        model="custom-model",
+        model="deepseek-chat",
         selected_models='["deepseek-reasoner","deepseek-chat"]',
         api_key="secret",
         api_endpoint="https://api.deepseek.com/v1",
@@ -447,7 +447,7 @@ async def test_execution_layer_resolves_custom_model_to_selected_deepseek_model(
     try:
         resolved = execution_layer._resolve_llm_configuration({
             "provider": "deepseek",
-            "model": "custom-model",
+            "model": "deepseek-chat",
             "db": db,
         })
     finally:
@@ -461,7 +461,7 @@ async def test_execution_layer_resolves_custom_model_to_selected_deepseek_model(
 @pytest.mark.asyncio
 async def test_execution_layer_uses_provider_level_credentials_for_selected_model():
     """
-    聊天页传入 selected_models 中的真实模型名时，应回退到 provider 级配置读取凭证。
+    聊天页传入 selected_models 中的真实模型名时，若精确匹配失败则回退到 provider 级默认配置。
     """
     execution_layer = ExecutionLayer()
     execution_layer.provider_api_key_fields["deepseek"] = "DEEPSEEK_API_KEY"
@@ -469,7 +469,7 @@ async def test_execution_layer_uses_provider_level_credentials_for_selected_mode
     db = SimpleNamespace()
     config = SimpleNamespace(
         provider="deepseek",
-        model="custom-model",
+        model="deepseek-v4-flash",
         selected_models='["deepseek-v4-flash","deepseek-v4-pro"]',
         api_key="secret",
         api_endpoint="https://api.deepseek.com/v1",

@@ -543,8 +543,8 @@ class TestCreateConfiguration:
         db_session.add(
             ModelConfiguration(
                 provider="deepseek",
-                model="custom-model",
-                display_name="DeepSeek",
+                model="deepseek-chat",
+                display_name="DeepSeek Chat",
                 is_active=True,
                 is_default=False,
             )
@@ -554,8 +554,8 @@ class TestCreateConfiguration:
         with pytest.raises(ValueError) as excinfo:
             pricing_manager.create_configuration({
                 "provider": "deepseek",
-                "model": "custom-model",
-                "display_name": "DeepSeek Duplicate",
+                "model": "deepseek-chat",
+                "display_name": "DeepSeek Chat Duplicate",
                 "api_endpoint": "https://api.deepseek.com/v1",
                 "is_default": False,
             })
@@ -568,7 +568,7 @@ class TestCreateConfiguration:
         """
         deleted_config = ModelConfiguration(
             provider="deepseek",
-            model="custom-model",
+            model="deepseek-chat",
             display_name="旧配置",
             api_endpoint="https://old.example.com/v1",
             is_active=False,
@@ -580,19 +580,19 @@ class TestCreateConfiguration:
 
         recreated = pricing_manager.create_configuration({
             "provider": "deepseek",
-            "model": "custom-model",
-            "display_name": "DeepSeek",
+            "model": "deepseek-chat",
+            "display_name": "DeepSeek Chat",
             "api_endpoint": "https://api.deepseek.com/v1",
             "is_default": False,
         })
 
         assert recreated.id == deleted_id
         assert recreated.is_active is True
-        assert recreated.display_name == "DeepSeek"
+        assert recreated.display_name == "DeepSeek Chat"
         assert recreated.api_endpoint == "https://api.deepseek.com/v1"
 
         rows = db_session.query(ModelConfiguration).filter(
             ModelConfiguration.provider == "deepseek",
-            ModelConfiguration.model == "custom-model",
+            ModelConfiguration.model == "deepseek-chat",
         ).all()
         assert len(rows) == 1

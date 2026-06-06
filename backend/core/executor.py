@@ -780,15 +780,13 @@ class ExecutionLayer:
         selected_models: Optional[list[str]] = None,
     ) -> str:
         """
-        为“provider 级配置”挑选可用模型。
-        当配置里保存的是占位值 custom-model 时，优先从 selected_models 中选可用模型。
+        为 provider 挑选可用模型：若传入模型名为空，从 selected_models 中选。
         """
         normalized_provider = str(provider or "").strip().lower()
         normalized_model = str(model or "").strip()
         candidates = [str(item or "").strip() for item in (selected_models or []) if str(item or "").strip()]
 
-        # provider 级配置常见占位值，不能直接用于真实调用
-        if normalized_model.lower() in {"custom-model", "custom_model", "custom", "default-model", "default"} or not normalized_model:
+        if not normalized_model:
             if normalized_provider == "deepseek":
                 if "deepseek-chat" in candidates:
                     return "deepseek-chat"
@@ -819,8 +817,7 @@ class ExecutionLayer:
                 if provider and model:
                     config = pricing_manager.get_configuration_by_provider_model(provider, model)
                 if not config and provider:
-                    # 当聊天页传入的是 selected_models 中的真实模型名时，
-                    # 数据库里通常只保存 provider 级的 custom-model 配置。
+                    # 未找到精确的 provider+model 配置，回退到该 provider 的默认配置
                     config = pricing_manager.get_default_provider_configuration(provider)
                 if not config:
                     config = pricing_manager.get_default_configuration()
