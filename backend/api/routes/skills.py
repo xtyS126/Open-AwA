@@ -646,6 +646,23 @@ def _purge_expired_qr_sessions() -> None:
         for key in expired_keys:
             WEIXIN_QR_SESSIONS.pop(key, None)
 
+
+def _get_qr_session_for_user(session_key: str, app_user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    按 session_key 读取二维码会话，并校验归属用户。
+
+    仅当会话存在且 user_id 匹配当前登录用户时才返回会话快照；
+    不匹配时返回 None（与"会话不存在"行为一致，避免通过 API 探测他人会话）。
+    """
+    with WEIXIN_QR_SESSIONS_LOCK:
+        found = WEIXIN_QR_SESSIONS.get(session_key)
+        if not found:
+            return None
+        # 只允许读取自己的二维码会话
+        if str(found.get("user_id") or "") != str(app_user_id):
+            return None
+        return dict(found)
+
 class WeixinConfigReq(BaseModel):
     """
     微信配置请求模型，包含连接参数和绑定信息。
@@ -841,6 +858,9 @@ async def weixin_qr_start(
     with WEIXIN_QR_SESSIONS_LOCK:
         existing = WEIXIN_QR_SESSIONS.get(session_key)
     if existing and not payload.force:
+        # 校验会话归属：仅允许复用当前用户自己的二维码会话
+        if str(existing.get("user_id") or "") != str(current_user.id):
+            raise HTTPException(status_code=404, detail="未找到指定的二维码会话")
         _build_qr_logger(session_key, "qr_reuse", poll_base_url=existing.get("poll_base_url", "")).info("reusing active weixin qr session")
         return _build_qr_response(
             session_key=session_key,
@@ -910,10 +930,7 @@ async def weixin_qr_image(
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
     if session_key:
-        with WEIXIN_QR_SESSIONS_LOCK:
-            found = WEIXIN_QR_SESSIONS.get(session_key)
-            if found:
-                session = dict(found)
+        session = _get_qr_session_for_user(session_key, str(current_user.id))
 
     resolved_qrcode_url = str((session or {}).get("qrcode_url") or qrcode_url or "").strip()
     if not resolved_qrcode_url:
@@ -953,10 +970,7 @@ async def weixin_qr_wait(
     payload = WeixinQrWaitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
-    with WEIXIN_QR_SESSIONS_LOCK:
-        found = WEIXIN_QR_SESSIONS.get(payload.session_key)
-        if found:
-            session = dict(found)
+    session = _get_qr_session_for_user(payload.session_key, str(current_user.id))
 
     if not session:
         fallback_qrcode = str(payload.qrcode or "").strip()
@@ -981,10 +995,9 @@ async def weixin_qr_wait(
     poll_base_url = str(session.get("poll_base_url") or payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
 
     confirmed_payload: Optional[Dict[str, Any]] = None
-    with WEIXIN_QR_SESSIONS_LOCK:
-        active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
-        if active_session and isinstance(active_session.get("confirmed_payload"), dict):
-            confirmed_payload = dict(active_session["confirmed_payload"])
+    active_session = _get_qr_session_for_user(payload.session_key, str(current_user.id))
+    if active_session and isinstance(active_session.get("confirmed_payload"), dict):
+        confirmed_payload = dict(active_session["confirmed_payload"])
 
     if confirmed_payload:
         _build_qr_logger(payload.session_key, "confirmed_replay").info("replaying confirmed weixin qr result")
@@ -1045,7 +1058,8 @@ async def weixin_qr_wait(
             poll_base_url = f"https://{redirect_host}"
             with WEIXIN_QR_SESSIONS_LOCK:
                 active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
-                if active_session:
+                # 仅更新当前用户自己的会话
+                if active_session and str(active_session.get("user_id") or "") == str(current_user.id):
                     active_session["poll_base_url"] = poll_base_url
                     active_session["created_at"] = time.time()
             response["base_url"] = poll_base_url
@@ -1105,7 +1119,8 @@ async def weixin_qr_wait(
         response["base_url"] = base_url
         with WEIXIN_QR_SESSIONS_LOCK:
             active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)
-            if active_session is not None:
+            # 仅当会话属于当前用户时才写入 confirmed 状态
+            if active_session is not None and str(active_session.get("user_id") or "") == str(current_user.id):
                 active_session["confirmed_payload"] = dict(response)
                 active_session["confirmed_snapshot"] = _build_weixin_bound_snapshot(
                     account_id=account_id,
@@ -1120,7 +1135,9 @@ async def weixin_qr_wait(
 
     if status == "expired":
         with WEIXIN_QR_SESSIONS_LOCK:
-            WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
+            existing = WEIXIN_QR_SESSIONS.get(payload.session_key)
+            if existing and str(existing.get("user_id") or "") == str(current_user.id):
+                WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
         _build_qr_logger(payload.session_key, "expired").warning("weixin qr session expired")
         return dict(base_response)
 
@@ -1145,12 +1162,21 @@ async def weixin_qr_exit(
     cleared_sessions = 0
     if payload.session_key:
         with WEIXIN_QR_SESSIONS_LOCK:
-            if WEIXIN_QR_SESSIONS.pop(payload.session_key, None) is not None:
+            session = WEIXIN_QR_SESSIONS.get(payload.session_key)
+            # 仅允许退出自己的会话
+            if session and str(session.get("user_id") or "") == str(current_user.id):
+                WEIXIN_QR_SESSIONS.pop(payload.session_key, None)
                 cleared_sessions = 1
     else:
+        # 未传 session_key 时，仅清理当前用户名下的二维码会话，不影响其他用户
         with WEIXIN_QR_SESSIONS_LOCK:
-            cleared_sessions = len(WEIXIN_QR_SESSIONS)
-            WEIXIN_QR_SESSIONS.clear()
+            own_keys = [
+                key for key, value in WEIXIN_QR_SESSIONS.items()
+                if str(value.get("user_id") or "") == str(current_user.id)
+            ]
+            for key in own_keys:
+                WEIXIN_QR_SESSIONS.pop(key, None)
+            cleared_sessions = len(own_keys)
 
     if payload.clear_config:
         runtime = load_weixin_binding_config(db, str(current_user.id))

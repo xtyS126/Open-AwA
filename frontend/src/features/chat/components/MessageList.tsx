@@ -2,7 +2,7 @@
  * 消息列表组件 — 使用 react-virtuoso 虚拟滚动优化长对话渲染性能。
  * 超过 100 条消息时自动启用虚拟化，保证滚动流畅。
  */
-import { useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { ChatMessage as ChatMessageType, AssistantExecutionMeta } from '@/features/chat/types'
 import { useI18nStore } from '@/i18n'
