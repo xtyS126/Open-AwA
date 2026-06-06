@@ -1077,7 +1077,9 @@ async def get_models_by_provider(
     try:
         remote_models: List[dict] = []
         source = "local"
-        if base_url:
+        # 仅在 API key 非空且 base_url 有效时才尝试远程拉取，避免空密钥导致非法请求头错误
+        actual_api_key_stripped = (actual_api_key or "").strip()
+        if base_url and actual_api_key_stripped:
             try:
                 started_at = datetime.now().timestamp()
                 result = await litellm_list_models(
