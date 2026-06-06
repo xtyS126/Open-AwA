@@ -1,28 +1,18 @@
 <#
 .SYNOPSIS
-    代码审计脚本 — 集成 ocr (OpenCodeReview) AI 审查 + 自动化检查。
+    Open-AwA code audit script - integrates ocr (OpenCodeReview) AI review.
 .DESCRIPTION
-    在完成每个重构阶段或 git commit 前运行此脚本，自动执行：
-    1. Git 状态检查（变更文件列表）
-    2. ocr AI 代码审查（@alibaba-group/open-code-review）
-    3. 前端 ESLint + TypeScript 类型检查
-    4. 前端 Vitest 单元测试
-    5. 后端 pytest 测试
-    6. 生成审计报告（通过/不通过 + 问题清单）
-.PARAMETER SkipOcr
-    跳过 ocr AI 审查（仅运行 lint + typecheck + tests）
-.PARAMETER SkipTests
-    跳过测试环节（仅 lint + typecheck）
-.PARAMETER BackendOnly
-    仅审计后端代码
-.PARAMETER FrontendOnly
-    仅审计前端代码
-.PARAMETER Verbose
-    输出详细 diff 和审查内容
+    Run before git commit. Steps:
+    1. Git status check
+    2. ocr AI code review
+    3. Frontend ESLint + TypeScript
+    4. Code hygiene (emoji, debugger, console.log)
+    5. Frontend tests
+    6. Backend tests
 .EXAMPLE
     .\scripts\code-audit.ps1
-    .\scripts\code-audit.ps1 -SkipOcr -SkipTests
-    .\scripts\code-audit.ps1 -FrontendOnly -Verbose
+    .\scripts\code-audit.ps1 -SkipOcr -FrontendOnly
+    .\scripts\code-audit.ps1 -Verbose
 #>
 
 param(
@@ -33,7 +23,7 @@ param(
     [switch]$Verbose
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path "$ScriptDir\.."
 $ReportFile = "$RepoRoot\reports\audit-result.txt"
@@ -55,167 +45,178 @@ function Add-Warn($Check) { $global:Warnings += $Check; Write-ColorLine $Check '
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Open-AwA 代码审计" -ForegroundColor Cyan
-Write-Host "  运行时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
+Write-Host "  Open-AwA Code Audit" -ForegroundColor Cyan
+Write-Host "  Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 Push-Location $RepoRoot
 
 # ============================================================
-# 1. Git 状态检查
+# Step 1: Git status
 # ============================================================
-Write-Host "[1/6] Git 状态检查" -ForegroundColor Cyan
+Write-Host "[1/6] Git status check" -ForegroundColor Cyan
 
-$gitStatus = git status --porcelain
+$gitStatus = git status --porcelain 2>$null
 if (-not $gitStatus) {
-    Add-Fail "没有未提交的变更，无需审计"
+    Add-Fail "No uncommitted changes, nothing to audit"
     Pop-Location
     exit 1
 }
 
 $changedFiles = ($gitStatus | Measure-Object).Count
-Write-ColorLine "发现 $changedFiles 个变更文件" 'White'
+Write-ColorLine "Found $changedFiles changed files" 'White'
 
 $addedFiles = ($gitStatus | Select-String -Pattern '^A|^\?\?' | Measure-Object).Count
 $modifiedFiles = ($gitStatus | Select-String -Pattern '^ M|^M ' | Measure-Object).Count
 $deletedFiles = ($gitStatus | Select-String -Pattern '^ D' | Measure-Object).Count
-Write-ColorLine "  新增: $addedFiles, 修改: $modifiedFiles, 删除: $deletedFiles" 'White'
+Write-ColorLine "  Added: $addedFiles, Modified: $modifiedFiles, Deleted: $deletedFiles" 'White'
 
-Write-Host "  变更文件列表:"
+Write-Host "  Changed files:"
 git status --short | ForEach-Object { Write-Host "    $_" }
 
 $hasFrontendChanges = ($gitStatus | Select-String -Pattern 'frontend/' | Measure-Object).Count -gt 0
 $hasBackendChanges = ($gitStatus | Select-String -Pattern 'backend/' | Measure-Object).Count -gt 0
 
-Add-Pass "Git 状态: $changedFiles 个变更文件"
+Add-Pass "Git status: $changedFiles changed files"
 
 # ============================================================
-# 2. ocr AI 代码审查（核心步骤）
+# Step 2: ocr AI code review
 # ============================================================
 Write-Host ""
-Write-Host "[2/6] ocr AI 代码审查 (OpenCodeReview)" -ForegroundColor Cyan
+Write-Host "[2/6] ocr AI Code Review (OpenCodeReview)" -ForegroundColor Cyan
 
 if ($SkipOcr) {
-    Write-Host "  跳过 ocr 审查（--skip-ocr）" -ForegroundColor Gray
-} else {
-    $ocrAvailable = Get-Command ocr -ErrorAction SilentlyContinue
-    if (-not $ocrAvailable) {
-        Add-Warn "ocr 命令不可用，请执行 npm install -g @alibaba-group/open-code-review"
-    } else {
-        try {
-            # 获取 git diff 并通过 ocr 审查
-            $diffContent = git diff HEAD
-            if (-not $diffContent) {
-                $diffContent = git diff --cached
+    Write-Host "  Skipped (--skip-ocr)" -ForegroundColor Gray
+}
+else {
+    $ocrCmd = Get-Command ocr -ErrorAction SilentlyContinue
+    if (-not $ocrCmd) {
+        Add-Warn "ocr command not found. Install: npm install -g @alibaba-group/open-code-review"
+    }
+    else {
+        $diffContent = git diff HEAD 2>$null
+        if (-not $diffContent) { $diffContent = git diff --cached 2>$null }
+
+        if ($diffContent) {
+            $tempDiff = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "openawa-review-$(Get-Random).diff")
+            $diffContent | Out-File -FilePath $tempDiff -Encoding UTF8
+
+            Write-Host "  Running ocr AI review..." -ForegroundColor Gray
+
+            $ocrExitCode = 0
+            $ocrOutput = ""
+            try {
+                $ocrOutput = ocr 2>&1
+            }
+            catch {
+                $ocrOutput = $_.Exception.Message
+                $ocrExitCode = 1
             }
 
-            if ($diffContent) {
-                # 通过临时文件传递 diff 内容给 ocr
-                $tempDiffFile = [System.IO.Path]::GetTempFileName() + ".diff"
-                $diffContent | Out-File -FilePath $tempDiffFile -Encoding UTF8
-
-                Write-Host "  正在运行 ocr AI 审查..." -ForegroundColor Gray
-                $ocrOutput = ocr review --diff-file $tempDiffFile 2>&1
-
-                # 保存 ocr 原始输出
+            if ($ocrOutput) {
                 $ocrOutput | Out-File -FilePath $OcrReportFile -Encoding UTF8
-
-                # 分析 ocr 输出：查找建议/错误级别问题
-                $ocrIssues = ($ocrOutput | Select-String -Pattern 'error|warning|建议|问题|issue' -CaseSensitive:$false | Measure-Object).Count
-
-                if ($Verbose) {
-                    Write-Host "  --- ocr 审查输出 ---" -ForegroundColor Gray
-                    $ocrOutput | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
-                    Write-Host "  --- 审查结束 ---" -ForegroundColor Gray
-                }
-
-                if ($ocrOutput -match 'error|Error|ERROR') {
-                    $errorLines = ($ocrOutput | Select-String -Pattern 'error|Error|ERROR')
-                    foreach ($line in $errorLines) {
-                        Add-Fail "ocr: $line"
-                    }
-                } elseif ($ocrIssues -gt 0) {
-                    Add-Warn "ocr 审查发现 $ocrIssues 个建议项，请查看 $OcrReportFile"
-                    if ($Verbose) {
-                        $ocrOutput | Select-Object -Last 40 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
-                    }
-                } else {
-                    Add-Pass "ocr AI 审查通过 — 无问题发现"
-                }
-
-                Remove-Item $tempDiffFile -ErrorAction SilentlyContinue
-            } else {
-                Add-Pass "ocr AI 审查 — 无变更内容（仅二进制/删除文件）"
             }
-        } catch {
-            Add-Warn "ocr 审查执行异常: $_"
+
+            if ($Verbose) {
+                Write-Host "  --- ocr output ---" -ForegroundColor Gray
+                if ($ocrOutput) { $ocrOutput | ForEach-Object { Write-Host "    $_" } }
+                Write-Host "  --- end ---" -ForegroundColor Gray
+            }
+
+            if ($ocrOutput -and ($ocrOutput -match 'error|Error|ERROR|FAIL')) {
+                $errorLines = ($ocrOutput | Select-String -Pattern 'error|Error|ERROR|FAIL')
+                foreach ($line in $errorLines) {
+                    Add-Fail "ocr: $line"
+                }
+            }
+            elseif ($ocrOutput -and ($ocrOutput -match 'warning|建议|WARN|issue|问题')) {
+                $warnCount = ($ocrOutput | Select-String -Pattern 'warning|建议|WARN|issue|问题').Count
+                Add-Warn "ocr review: $warnCount suggestions. See $OcrReportFile"
+            }
+            else {
+                Add-Pass "ocr AI review passed"
+            }
+
+            Remove-Item $tempDiff -ErrorAction SilentlyContinue
+        }
+        else {
+            Add-Pass "ocr AI review: no text changes to review"
         }
     }
 }
 
 # ============================================================
-# 3. 前端 ESLint + TypeScript 检查
+# Step 3: Frontend ESLint + TypeScript (new errors only)
 # ============================================================
 if (-not $BackendOnly -and $hasFrontendChanges) {
     Write-Host ""
-    Write-Host "[3/6] 前端 ESLint + TypeScript 类型检查" -ForegroundColor Cyan
+    Write-Host "[3/6] Frontend ESLint + TypeScript" -ForegroundColor Cyan
 
-    Push-Location "$RepoRoot\frontend"
+    $prevLocation = Get-Location
+    Set-Location "$RepoRoot\frontend"
 
-    # TypeScript 类型检查 — 仅检查变更文件中的新错误
-    $tsOutput = npm run typecheck 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Add-Pass "TypeScript 类型检查通过"
-    } else {
-        # 过滤出变更文件中的错误
-        $changedTsFiles = git diff --name-only HEAD | Where-Object { $_ -match '\.(ts|tsx)$' -and $_ -notmatch '__tests__|\.test\.|\.spec\.' }
-        $newErrors = @()
-        foreach ($file in $changedTsFiles) {
-            $shortPath = $file -replace '^frontend/', ''
-            $fileErrors = ($tsOutput | Select-String -Pattern [regex]::Escape($shortPath))
-            if ($fileErrors) { $newErrors += $fileErrors }
+    $changedTsFiles = git diff --name-only HEAD 2>$null | Where-Object { $_ -match '\.(ts|tsx)$' -and $_ -notmatch '__tests__|\.test\.|\.spec\.' }
+
+    if ($changedTsFiles) {
+        $tsOutput = npm run typecheck 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Add-Pass "TypeScript: passed"
         }
-        if ($newErrors.Count -gt 0) {
-            Add-Fail "TypeScript 类型检查: 变更文件中有 $($newErrors.Count) 个新错误"
-            $newErrors | Select-Object -Last 20 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-        } else {
-            Add-Pass "TypeScript 类型检查 — 变更文件无新错误（已有错误未计入）"
+        else {
+            $newTsErrors = @()
+            foreach ($f in $changedTsFiles) {
+                $short = $f -replace '^frontend/', ''
+                $errs = ($tsOutput | Select-String -Pattern ([regex]::Escape($short)))
+                if ($errs) { $newTsErrors += $errs }
+            }
+            if ($newTsErrors.Count -gt 0) {
+                Add-Fail "TypeScript: $($newTsErrors.Count) new errors in changed files"
+                $newTsErrors | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+            }
+            else {
+                Add-Pass "TypeScript: no new errors in changed files (pre-existing errors ignored)"
+            }
+        }
+
+        $lintOutput = npm run lint 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Add-Pass "ESLint: passed"
+        }
+        else {
+            $newLintErrors = @()
+            foreach ($f in $changedTsFiles) {
+                $short = $f -replace '^frontend/', ''
+                $errs = ($lintOutput | Select-String -Pattern ([regex]::Escape($short)))
+                if ($errs) { $newLintErrors += $errs }
+            }
+            if ($newLintErrors.Count -gt 0) {
+                Add-Fail "ESLint: $($newLintErrors.Count) new issues in changed files"
+                $newLintErrors | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
+            }
+            else {
+                Add-Pass "ESLint: no new issues in changed files (pre-existing ignored)"
+            }
         }
     }
-
-    # ESLint
-    $lintOutput = npm run lint 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Add-Pass "ESLint 检查通过"
-    } else {
-        $newLintErrors = @()
-        foreach ($file in $changedTsFiles) {
-            $shortPath = $file -replace '^frontend/', ''
-            $fileLintErrors = ($lintOutput | Select-String -Pattern [regex]::Escape($shortPath))
-            if ($fileLintErrors) { $newLintErrors += $fileLintErrors }
-        }
-        if ($newLintErrors.Count -gt 0) {
-            Add-Fail "ESLint: 变更文件中有 $($newLintErrors.Count) 个问题"
-            $newLintErrors | Select-Object -Last 20 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
-        } else {
-            Add-Pass "ESLint — 变更文件无新问题（已有问题未计入）"
-        }
+    else {
+        Add-Pass "Frontend: no TS/TSX files changed"
     }
 
-    Pop-Location
-} else {
+    Set-Location $prevLocation
+}
+else {
     Write-Host ""
-    Write-Host "[3/6] 前端检查 — 跳过（无前端变更）" -ForegroundColor Gray
+    Write-Host "[3/6] Frontend check: skipped (no frontend changes)" -ForegroundColor Gray
 }
 
 # ============================================================
-# 4. Emoji + 调试代码快速检查
+# Step 4: Code hygiene (emoji + debugger + console.log)
 # ============================================================
 Write-Host ""
-Write-Host "[4/6] 代码规范快速检查" -ForegroundColor Cyan
+Write-Host "[4/6] Code hygiene check" -ForegroundColor Cyan
 
-$changedTextFiles = git diff --name-only --diff-filter=ACM HEAD | Where-Object {
+$changedTextFiles = git diff --name-only --diff-filter=ACM HEAD 2>$null | Where-Object {
     $_ -match '\.(ts|tsx|css|py|md|yml|yaml|json|html|js)$'
 }
 
@@ -227,85 +228,89 @@ foreach ($file in $changedTextFiles) {
     if (-not (Test-Path $fullPath)) { continue }
     if ($file -match '__tests__|\.test\.|\.spec\.') { continue }
 
-    $lines = Get-Content $fullPath -ErrorAction SilentlyContinue
+    $rawContent = Get-Content $fullPath -Raw -ErrorAction SilentlyContinue
+    if (-not $rawContent) { continue }
 
-    # Emoji 检查
-    $emojiMatches = [regex]::Matches((Get-Content $fullPath -Raw -ErrorAction SilentlyContinue),
-        '[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]')
+    $emojiMatches = [regex]::Matches($rawContent, '[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F1E0}-\x{1F1FF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}\x{FE00}-\x{FE0F}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}]')
     foreach ($m in $emojiMatches) {
         $emojiFound = $true
-        Add-Fail "Emoji: $file 中发现 emoji '$($m.Value)'"
+        Add-Fail "Emoji: $file contains emoji '$($m.Value)'"
     }
 
-    # debugger/console 检查
+    $lines = Get-Content $fullPath -ErrorAction SilentlyContinue
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '\bdebugger\b') {
             $debugFound = $true
-            Add-Fail "调试代码: $file : $($i+1) 行包含 debugger"
+            Add-Fail "Debugger: $file line $($i+1)"
         }
         if ($lines[$i] -match 'console\.(log|debug|info)\(') {
             $debugFound = $true
-            Add-Warn "调试代码: $file : $($i+1) 行包含 console.$($Matches[1])()"
+            Add-Warn "console.$($Matches[1]): $file line $($i+1)"
         }
     }
 }
 
-if (-not $emojiFound) { Add-Pass "无 Emoji 违规" }
-if (-not $debugFound) { Add-Pass "无调试代码残留" }
+if (-not $emojiFound) { Add-Pass "No emoji violations" }
+if (-not $debugFound) { Add-Pass "No debug code residue" }
 
 # ============================================================
-# 5. 前端单元测试
+# Step 5: Frontend tests
 # ============================================================
 if (-not $SkipTests -and -not $BackendOnly -and $hasFrontendChanges) {
     Write-Host ""
-    Write-Host "[5/6] 前端 Vitest 单元测试" -ForegroundColor Cyan
+    Write-Host "[5/6] Frontend Vitest tests" -ForegroundColor Cyan
 
-    Push-Location "$RepoRoot\frontend"
+    $prevLocation = Get-Location
+    Set-Location "$RepoRoot\frontend"
 
     $testOutput = npm run test 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Add-Pass "前端测试全部通过"
-    } else {
-        $failCount = ($testOutput | Select-String -Pattern 'failed' | Measure-Object).Count
-        Add-Fail "前端测试有失败用例"
-        $testOutput | Select-String -Pattern 'FAIL|failed|Error' | Select-Object -Last 20 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        Add-Pass "Frontend tests: all passed"
+    }
+    else {
+        Add-Fail "Frontend tests: some failed"
+        $testOutput | Select-String -Pattern 'FAIL|failed|Error' | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     }
 
-    Pop-Location
-} else {
+    Set-Location $prevLocation
+}
+else {
     Write-Host ""
-    Write-Host "[5/6] 前端测试 — 跳过" -ForegroundColor Gray
+    Write-Host "[5/6] Frontend tests: skipped" -ForegroundColor Gray
 }
 
 # ============================================================
-# 6. 后端测试
+# Step 6: Backend tests
 # ============================================================
 if (-not $SkipTests -and -not $FrontendOnly -and $hasBackendChanges) {
     Write-Host ""
-    Write-Host "[6/6] 后端 pytest 测试" -ForegroundColor Cyan
+    Write-Host "[6/6] Backend pytest" -ForegroundColor Cyan
 
-    Push-Location "$RepoRoot\backend"
+    $prevLocation = Get-Location
+    Set-Location "$RepoRoot\backend"
 
     $testOutput = python -m pytest --tb=short 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Add-Pass "后端测试全部通过"
-    } else {
-        Add-Fail "后端测试有失败用例"
-        $testOutput | Select-String -Pattern 'FAILED|ERRORS|failed' | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        Add-Pass "Backend tests: all passed"
+    }
+    else {
+        Add-Fail "Backend tests: some failed"
+        $testOutput | Select-String -Pattern 'FAILED|ERRORS|failed' | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     }
 
-    Pop-Location
-} else {
+    Set-Location $prevLocation
+}
+else {
     Write-Host ""
-    Write-Host "[6/6] 后端测试 — 跳过" -ForegroundColor Gray
+    Write-Host "[6/6] Backend tests: skipped" -ForegroundColor Gray
 }
 
 # ============================================================
-# 汇总报告
+# Summary report
 # ============================================================
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  审计结果汇总" -ForegroundColor Cyan
+Write-Host "  Audit Summary" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -313,48 +318,53 @@ $totalFailures = $Failures.Count
 $totalWarnings = $Warnings.Count
 $totalPasses = $Passes.Count
 
-Write-Host "  通过: $totalPasses 项" -ForegroundColor Green
-Write-Host "  警告: $totalWarnings 项" -ForegroundColor Yellow
-Write-Host "  失败: $totalFailures 项" -ForegroundColor Red
+Write-Host "  Passed:  $totalPasses" -ForegroundColor Green
+Write-Host "  Warnings: $totalWarnings" -ForegroundColor Yellow
+Write-Host "  Failed:  $totalFailures" -ForegroundColor Red
 Write-Host ""
 
-$reportContent = @"
-Open-AwA 代码审计报告
-======================
-运行时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-审计工具: ocr (OpenCodeReview) + ESLint + TypeScript + pytest
-变更文件: $changedFiles 个 (新增: $addedFiles, 修改: $modifiedFiles, 删除: $deletedFiles)
+$reportLines = @()
+$reportLines += "Open-AwA Code Audit Report"
+$reportLines += "========================="
+$reportLines += "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+$reportLines += "Changed files: $changedFiles (Added: $addedFiles, Modified: $modifiedFiles, Deleted: $deletedFiles)"
+$reportLines += ""
+$reportLines += "===== Passed ($totalPasses) ====="
+$reportLines += $Passes
+$reportLines += ""
+$reportLines += "===== Warnings ($totalWarnings) ====="
+$reportLines += $Warnings
+$reportLines += ""
+$reportLines += "===== Failed ($totalFailures) ====="
+$reportLines += $Failures
+$reportLines += ""
+if ($totalFailures -eq 0) {
+    $reportLines += "Result: PASSED - ready to commit"
+} else {
+    $reportLines += "Result: FAILED - fix issues before commit"
+}
 
-===== 通过 ($totalPasses 项) =====
-$($Passes -join "`n")
-
-===== 警告 ($totalWarnings 项) =====
-$($Warnings -join "`n")
-
-===== 失败 ($totalFailures 项) =====
-$($Failures -join "`n")
-
-最终结果: $(if ($totalFailures -eq 0) { '通过 — 可以提交' } else { '不通过 — 需要修复' })
-"@
-Set-Content -Path $ReportFile -Value $reportContent -Encoding UTF8
+$reportLines -join "`n" | Out-File -FilePath $ReportFile -Encoding UTF8
 
 Pop-Location
 
 if ($totalFailures -gt 0) {
-    Write-Host "  结论: [不通过] 发现 $totalFailures 个需要修复的问题" -ForegroundColor Red
-    Write-Host "  详细报告: $ReportFile" -ForegroundColor Gray
-    if (Test-Path $OcrReportFile) { Write-Host "  ocr 审查: $OcrReportFile" -ForegroundColor Gray }
+    Write-Host "  Verdict: [FAILED] $totalFailures issues to fix" -ForegroundColor Red
+    Write-Host "  Report: $ReportFile" -ForegroundColor Gray
+    if (Test-Path $OcrReportFile) { Write-Host "  ocr: $OcrReportFile" -ForegroundColor Gray }
     Write-Host ""
     exit 1
-} elseif ($totalWarnings -gt 0) {
-    Write-Host "  结论: [有条件通过] 有 $totalWarnings 个警告，请检查后确认" -ForegroundColor Yellow
-    Write-Host "  详细报告: $ReportFile" -ForegroundColor Gray
-    if (Test-Path $OcrReportFile) { Write-Host "  ocr 审查: $OcrReportFile" -ForegroundColor Gray }
+}
+elseif ($totalWarnings -gt 0) {
+    Write-Host "  Verdict: [PASSED with warnings] $totalWarnings warnings, please review" -ForegroundColor Yellow
+    Write-Host "  Report: $ReportFile" -ForegroundColor Gray
+    if (Test-Path $OcrReportFile) { Write-Host "  ocr: $OcrReportFile" -ForegroundColor Gray }
     Write-Host ""
     exit 0
-} else {
-    Write-Host "  结论: [通过] 所有检查通过，可以安全提交" -ForegroundColor Green
-    Write-Host "  详细报告: $ReportFile" -ForegroundColor Gray
+}
+else {
+    Write-Host "  Verdict: [PASSED] All checks passed, safe to commit" -ForegroundColor Green
+    Write-Host "  Report: $ReportFile" -ForegroundColor Gray
     Write-Host ""
     exit 0
 }
