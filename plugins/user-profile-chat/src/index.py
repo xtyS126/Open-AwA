@@ -205,9 +205,13 @@ class UserProfileChatPlugin(BasePlugin):
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self._max_messages: int = int(self.config.get("max_messages_per_analysis", 100))
-        self._min_messages: int = int(self.config.get("min_messages_for_profile", 5))
-        self._update_interval: int = int(self.config.get("profile_update_interval", 10))
+        # 防御性取值：对无效配置值回退到合理默认值
+        raw_max = int(self.config.get("max_messages_per_analysis", 100))
+        self._max_messages: int = raw_max if raw_max > 0 else 100
+        raw_min = int(self.config.get("min_messages_for_profile", 5))
+        self._min_messages: int = raw_min if raw_min > 0 else 5
+        raw_interval = int(self.config.get("profile_update_interval", 10))
+        self._update_interval: int = raw_interval if raw_interval > 0 else 10
         # 内存缓存：username -> 画像数据
         self._profiles: Dict[str, Dict[str, Any]] = {}
         # 消息计数器：username -> 自上次更新以来的新消息数
@@ -252,7 +256,7 @@ class UserProfileChatPlugin(BasePlugin):
                 messages=kwargs.get("messages"),
             )
 
-        logger.warning(f"[{self.name}] 未知动作: {action}")
+        logger.warning(f"[{self.name}] 未知动作: {action}，传入参数: {list(kwargs.keys())}")
         return {"status": "error", "message": f"未知动作: {action}"}
 
     def _analyze_profile(self, username: str, messages: List[str]) -> Dict[str, Any]:

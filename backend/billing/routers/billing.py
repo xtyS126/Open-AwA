@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -121,6 +122,9 @@ class ModelConfigCreateRequest(BaseModel):
     is_active: bool = True
     is_default: bool = False
     sort_order: int = 0
+    # 模态标签（JSON 数组字符串，如 '["text","image"]'）
+    input_modality: Optional[str] = None
+    output_modality: Optional[str] = None
 
 
 class ModelConfigUpdateRequest(BaseModel):
@@ -139,6 +143,9 @@ class ModelConfigUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
+    # 模态标签（JSON 数组字符串，如 '["text","image"]'）
+    input_modality: Optional[str] = None
+    output_modality: Optional[str] = None
 
 
 class RetentionUpdateRequest(BaseModel):
@@ -178,6 +185,19 @@ def _parse_model_spec(config) -> Optional[dict]:
         return None
 
 
+def _parse_modality(raw) -> list:
+    """安全解析模态标签 JSON 字段，返回列表。"""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
 def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False):
     """
     将configuration相关对象序列化为接口或存储所需格式。
@@ -207,6 +227,8 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "supports_top_k": getattr(config, "supports_top_k", True),
         "supports_vision": getattr(config, "supports_vision", False),
         "is_multimodal": getattr(config, "is_multimodal", False),
+        "input_modality": _parse_modality(getattr(config, "input_modality", None)),
+        "output_modality": _parse_modality(getattr(config, "output_modality", None)),
         "model_spec": spec,
         "status": getattr(config, "status", "active"),
         "created_at": config.created_at.isoformat() if config.created_at else None,
@@ -214,7 +236,9 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
     }
 
     if include_secret:
-        payload["api_key"] = config.api_key
+        # 返回前需要解密，因为数据库中存储的是加密值
+        from config.security import decrypt_secret_value
+        payload["api_key"] = decrypt_secret_value(config.api_key or "")
 
     return payload
 
@@ -848,6 +872,8 @@ async def get_configuration_capabilities(
             "is_multimodal": getattr(config, "is_multimodal", False),
             "supports_function_calling": (spec or {}).get("supports_function_calling", False),
             "supports_streaming": (spec or {}).get("supports_streaming", True),
+            "input_modality": _parse_modality(getattr(config, "input_modality", None)),
+            "output_modality": _parse_modality(getattr(config, "output_modality", None)),
         },
         "defaults": {
             "temperature": getattr(config, "temperature", 0.7) or 0.7,
@@ -1035,11 +1061,15 @@ async def get_models_by_provider(
     selected_models = pricing_manager.parse_selected_models(config.selected_models if config else None)
     
     # 优先使用本次请求临时传入的凭证，否则回退到已保存配置
+    # 注意：数据库中存储的 api_key 经过 Fernet 加密，读取时必须解密
+    from config.security import decrypt_secret_value
     request_api_endpoint = payload.api_endpoint if payload else None
     request_api_key = payload.api_key if payload else None
     base_url = request_api_endpoint if request_api_endpoint is not None else (config.api_endpoint if config else None)
     base_url = PricingManager._normalize_provider_api_endpoint(provider_id, base_url)
-    actual_api_key = request_api_key if request_api_key else (config.api_key if config else "")
+    db_api_key = config.api_key if config else ""
+    # 请求中传入的 api_key 为明文（来自前端输入框），直接使用；否则从数据库读取并解密
+    actual_api_key = request_api_key if request_api_key else decrypt_secret_value(db_api_key)
 
     request_id = getattr(request.state, "request_id", "") or request.headers.get(REQUEST_ID_HEADER, "")
     client_version = request.headers.get("X-Client-Ver", "")
@@ -1047,7 +1077,9 @@ async def get_models_by_provider(
     try:
         remote_models: List[dict] = []
         source = "local"
-        if base_url:
+        # 仅在 API key 非空且 base_url 有效时才尝试远程拉取，避免空密钥导致非法请求头错误
+        actual_api_key_stripped = (actual_api_key or "").strip()
+        if base_url and actual_api_key_stripped:
             try:
                 started_at = datetime.now().timestamp()
                 result = await litellm_list_models(

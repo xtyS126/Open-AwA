@@ -30,6 +30,8 @@ export interface ModelPricing {
   is_active: boolean
   supports_vision: boolean
   is_multimodal: boolean
+  input_modality?: string[]
+  output_modality?: string[]
   updated_at: string | null
 }
 

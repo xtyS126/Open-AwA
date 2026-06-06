@@ -25,6 +25,9 @@ export interface ModelConfiguration {
   supports_top_k?: boolean
   supports_vision?: boolean
   is_multimodal?: boolean
+  // 模态标签：输入/输出方向各自支持的模态列表
+  input_modality?: string[]
+  output_modality?: string[]
   // Model metadata
   model_spec?: ModelSpec | null
   status?: string
@@ -39,6 +42,8 @@ export interface ModelSpec {
   supports_streaming?: boolean
   supports_vision?: boolean
   supports_audio?: boolean
+  input_modality?: string[]
+  output_modality?: string[]
 }
 
 export interface ModelCapabilities {
@@ -48,6 +53,8 @@ export interface ModelCapabilities {
   is_multimodal: boolean
   supports_function_calling: boolean
   supports_streaming: boolean
+  input_modality?: string[]
+  output_modality?: string[]
 }
 
 export interface ModelCapabilitiesResponse {
@@ -167,6 +174,8 @@ export const modelsAPI = {
     is_active?: boolean
     is_default?: boolean
     sort_order?: number
+    input_modality?: string
+    output_modality?: string
   }) => api.post('/billing/configurations', data),
 
   updateConfiguration: (configId: number, data: {
@@ -181,6 +190,8 @@ export const modelsAPI = {
     is_active?: boolean
     is_default?: boolean
     sort_order?: number
+    input_modality?: string
+    output_modality?: string
   }) => api.put(`/billing/configurations/${configId}`, data),
 
   deleteConfiguration: (configId: number) =>

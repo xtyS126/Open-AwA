@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { authAPI, getApiErrorDetail } from '@/shared/api/api'
+import { authAPI, getApiErrorDetail, setCachedCsrfToken } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './LoginPage.module.css'
@@ -32,6 +32,10 @@ function LoginPage() {
         { username: username.trim() },
         response.data.access_token || null
       )
+      // 缓存登录响应中的 csrf_token，避免后续额外的 CSRF 引导请求
+      if (response.data.csrf_token) {
+        setCachedCsrfToken(response.data.csrf_token)
+      }
       setInitialized(true)
       appLogger.info({
         event: 'auth_login',

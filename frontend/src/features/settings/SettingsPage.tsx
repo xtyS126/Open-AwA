@@ -211,6 +211,16 @@ function SettingsPage() {
     is_default: false,
   })
 
+  // 模型编辑模态框状态
+  const [editingConfigId, setEditingConfigId] = useState<number | null>(null)
+  const [editConfigForm, setEditConfigForm] = useState({
+    display_name: '',
+    description: '',
+    input_modality: ['text'] as string[],
+    output_modality: ['text'] as string[],
+  })
+  const [savingConfigEdit, setSavingConfigEdit] = useState(false)
+
   // Model parameter panel state
   const [selectedConfigModelOptionKey, setSelectedConfigModelOptionKey] = useState('')
   const [modelCapabilities, setModelCapabilities] = useState<ModelCapabilitiesResponse | null>(null)
@@ -1334,17 +1344,104 @@ function SettingsPage() {
     try {
       await modelsAPI.setDefaultConfiguration(configId)
       showNotification({ type: 'success', text: '设置成功' })
-      
+
       const config = configurations.find(c => c.id === configId)
       if (config) {
         const defaultModelName = config.selected_models?.[0] || config.model
         setGlobalSelectedModel(`${config.provider}:${defaultModelName}`)
       }
-      
+
       loadModelsData()
     } catch (error) {
       showNotification({ type: 'error', text: '设置失败' })
     }
+  }
+
+  // 模态标签常量
+  const MODALITY_TYPES = ['text', 'image', 'audio', 'video'] as const
+  const MODALITY_LABELS: Record<string, string> = {
+    text: '文本',
+    image: '图片',
+    audio: '音频',
+    video: '视频',
+  }
+
+  const handleEditConfig = (config: ModelConfiguration) => {
+    setEditingConfigId(config.id)
+    setEditConfigForm({
+      display_name: config.display_name || '',
+      description: config.description || '',
+      input_modality: config.input_modality?.length ? [...config.input_modality] : ['text'],
+      output_modality: config.output_modality?.length ? [...config.output_modality] : ['text'],
+    })
+  }
+
+  const toggleModality = (direction: 'input' | 'output', modalityType: string) => {
+    setEditConfigForm(prev => {
+      const key = direction === 'input' ? 'input_modality' : 'output_modality'
+      const current = prev[key]
+      if (current.includes(modalityType)) {
+        // 至少保留一个模态
+        if (current.length <= 1) {
+          showNotification({ type: 'info', text: '至少需要保留一个模态类型' })
+          return prev
+        }
+        return { ...prev, [key]: current.filter(m => m !== modalityType) }
+      }
+      return { ...prev, [key]: [...current, modalityType] }
+    })
+  }
+
+  const handleSaveConfigEdit = async () => {
+    if (!editingConfigId) return
+    setSavingConfigEdit(true)
+    try {
+      await modelsAPI.updateConfiguration(editingConfigId, {
+        display_name: editConfigForm.display_name || undefined,
+        description: editConfigForm.description || undefined,
+        input_modality: JSON.stringify(editConfigForm.input_modality),
+        output_modality: JSON.stringify(editConfigForm.output_modality),
+      })
+      showNotification({ type: 'success', text: '模型信息保存成功' })
+      setEditingConfigId(null)
+      loadModelsData()
+    } catch {
+      showNotification({ type: 'error', text: '保存失败' })
+    } finally {
+      setSavingConfigEdit(false)
+    }
+  }
+
+  const renderModalityTags = (inputModality: string[] | undefined, outputModality: string[] | undefined) => {
+    const inputTags = (inputModality?.length ? inputModality : ['text'])
+      .map(m => MODALITY_LABELS[m] || m)
+    const outputTags = (outputModality?.length ? outputModality : ['text'])
+      .map(m => MODALITY_LABELS[m] || m)
+
+    const inputStr = inputTags.join('+')
+    const outputStr = outputTags.join('+')
+
+    // 判断模态类型以使用不同样式
+    const hasImageInput = inputModality?.includes('image')
+    const hasAudioInput = inputModality?.includes('audio')
+    const hasVideoInput = inputModality?.includes('video')
+    const hasImageOutput = outputModality?.includes('image')
+    const hasAudioOutput = outputModality?.includes('audio')
+
+    let badgeClass = styles['modality-text']
+    if (hasVideoInput || outputModality?.includes('video')) {
+      badgeClass = styles['modality-multimodal']
+    } else if (hasAudioInput || hasAudioOutput) {
+      badgeClass = styles['modality-multimodal']
+    } else if (hasImageInput || hasImageOutput) {
+      badgeClass = styles['modality-vision']
+    }
+
+    return (
+      <span className={`${styles['modality-badge']} ${badgeClass}`}>
+        {inputStr} → {outputStr}
+      </span>
+    )
   }
 
   const saveSettings = async () => {
@@ -1546,7 +1643,7 @@ function SettingsPage() {
               {!hasAttemptedGlobalModelLoad ? (
                 <div className={styles['remote-model-hint']}>
                   <span>默认不在进入页面时自动拉取远端模型列表，点击下方按钮后再读取。</span>
-                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadGlobalModelOptions}>
+                  <button className={`btn ${styles['btn-secondary']}`} onClick={loadGlobalModelOptions}>
                     加载远端模型
                   </button>
                 </div>
@@ -1562,7 +1659,7 @@ function SettingsPage() {
                   <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>
                     {globalModelLoadSummary || '暂无可用远端模型，请先在 API 配置中检查供应商状态。'}
                   </span>
-                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadGlobalModelOptions}>
+                  <button className={`btn ${styles['btn-secondary']}`} onClick={loadGlobalModelOptions}>
                     重新读取
                   </button>
                 </div>
@@ -1580,7 +1677,7 @@ function SettingsPage() {
                       <option key={opt.id} value={opt.id}>{opt.display_name}</option>
                     ))}
                   </select>
-                  <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadGlobalModelOptions}>
+                  <button className={`btn ${styles['btn-secondary']}`} onClick={loadGlobalModelOptions}>
                     重新读取
                   </button>
                 </div>
@@ -1777,7 +1874,7 @@ function SettingsPage() {
                     {savingModelParams ? '保存中...' : '保存参数'}
                   </button>
                   <button
-                    className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                    className={`btn ${styles['btn-secondary']}`}
                     onClick={handleResetModelParams}
                     disabled={!selectedConfigModelOption || savingModelParams}
                   >
@@ -1917,11 +2014,27 @@ function SettingsPage() {
                     <div className={styles['provider-detail-actions']}>
                       <button
                         type="button"
-                        className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                        onClick={() => fetchProviderModels(providerForm.provider, providerForm.selected_models, true, {
-                          api_endpoint: providerForm.api_endpoint,
-                          api_key: providerApiKeyInputRef.current?.value.trim() || providerForm.api_key
-                        })}
+                        className={`btn ${styles['btn-secondary']}`}
+                        onClick={async () => {
+                          const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
+                          // 在拉取模型列表前，先将 API Key 保存到数据库，避免每次都需要重新输入
+                          if (nextApiKey && providerForm.config_id) {
+                            try {
+                              await modelsAPI.updateConfiguration(providerForm.config_id, { api_key: nextApiKey })
+                              setProviderForm(prev => ({ ...prev, has_api_key: true }))
+                              // 保存后清空输入框，避免明文长期留存
+                              if (providerApiKeyInputRef.current) {
+                                providerApiKeyInputRef.current.value = ''
+                              }
+                            } catch {
+                              // 保存失败不阻塞模型列表拉取
+                            }
+                          }
+                          fetchProviderModels(providerForm.provider, providerForm.selected_models, true, {
+                            api_endpoint: providerForm.api_endpoint,
+                            api_key: nextApiKey || providerForm.api_key
+                          })
+                        }}
                         disabled={loadingProviderModels || deletingProvider}
                       >
                         {loadingProviderModels ? '获取中...' : '获取模型列表'}
@@ -1934,7 +2047,7 @@ function SettingsPage() {
                         {saving ? '保存中...' : '保存供应商配置'}
                       </button>
                       <button
-                        className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
+                        className={`btn ${styles['btn-danger']}`}
                         onClick={handleOpenDeleteConfirmModal}
                         disabled={deletingProvider}
                       >
@@ -1950,7 +2063,7 @@ function SettingsPage() {
                         <h3 style={{ margin: 0 }}>已导入模型</h3>
                         {selectedForDeletion.length > 0 && (
                           <button
-                            className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
+                            className={`btn ${styles['btn-danger']}`}
                             onClick={() => setShowDeleteModelsModal(true)}
                           >
                             批量删除 ({selectedForDeletion.length})
@@ -1996,7 +2109,7 @@ function SettingsPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <h3 style={{ margin: 0 }}>提供商连接状态</h3>
                 <button
-                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
+                  className={`btn ${styles['btn-secondary']}`}
                   onClick={handleCheckProviderStatuses}
                   disabled={loadingProviderStatuses}
                 >
@@ -2171,13 +2284,13 @@ function SettingsPage() {
                               {editingModel === model.id ? (
                                 <div className={styles['action-buttons']}>
                                   <button 
-                                    className={`btn ${styles['btn-small'] || 'btn-small'} btn-primary`}
+                                    className={`btn ${styles['btn-small']} btn-primary`}
                                     onClick={() => handleSaveModelPrice(model.id)}
                                   >
                                     保存
                                   </button>
                                   <button 
-                                    className={`btn ${styles['btn-small'] || 'btn-small'}`}
+                                    className={`btn ${styles['btn-small']}`}
                                     onClick={() => setEditingModel(null)}
                                   >
                                     取消
@@ -2185,7 +2298,7 @@ function SettingsPage() {
                                 </div>
                               ) : (
                                 <button 
-                                  className={`btn ${styles['btn-small'] || 'btn-small'}`}
+                                  className={`btn ${styles['btn-small']}`}
                                   onClick={() => handleEditModel(model)}
                                 >
                                   编辑
@@ -2306,8 +2419,7 @@ function SettingsPage() {
                       <th>模型名</th>
                       <th>提供者</th>
                       <th>规格</th>
-                      <th>图片</th>
-                      <th>多模</th>
+                      <th>模态</th>
                       <th>状态</th>
                       <th>操作</th>
                     </tr>
@@ -2339,8 +2451,9 @@ function SettingsPage() {
                           </td>
                           <td>{config.provider}</td>
                           <td>{contextWindow ? formatTokenCount(contextWindow) : '-'}</td>
-                          <td>{config.supports_vision ? '✅' : '❌'}</td>
-                          <td>{config.is_multimodal ? '✅' : '❌'}</td>
+                          <td>
+                            {renderModalityTags(config.input_modality, config.output_modality)}
+                          </td>
                           <td>
                             <span className={`${styles['status-badge']} ${styles[`status-${config.status || 'active'}`]}`}>
                               {config.status || 'active'}
@@ -2350,14 +2463,20 @@ function SettingsPage() {
                             <div className={styles['table-actions']}>
                               {!config.is_default && (
                                 <button
-                                  className={`btn ${styles['btn-small'] || 'btn-small'}`}
+                                  className={`btn ${styles['btn-small']}`}
                                   onClick={() => handleSetDefault(config.id)}
                                 >
                                   设为默认
                                 </button>
                               )}
                               <button
-                                className={`btn ${styles['btn-small'] || 'btn-small'} ${styles['btn-danger'] || 'btn-danger'}`}
+                                className={`btn ${styles['btn-small']}`}
+                                onClick={() => handleEditConfig(config)}
+                              >
+                                编辑
+                              </button>
+                              <button
+                                className={`btn ${styles['btn-small']} ${styles['btn-danger']}`}
                                 onClick={() => handleDeleteConfiguration(config.id)}
                               >
                                 删除
@@ -2371,6 +2490,91 @@ function SettingsPage() {
                 </table>
               </div>
             )}
+
+            {/* 模型编辑模态框 */}
+            {editingConfigId !== null && (() => {
+              const editingConfig = configurations.find(c => c.id === editingConfigId)
+              if (!editingConfig) return null
+              return (
+                <div className={styles['modal-overlay']} onClick={() => setEditingConfigId(null)}>
+                  <div className={styles['modal-content']} style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+                    <div className={styles['modal-header']}>
+                      <h3>编辑模型信息</h3>
+                      <button className={styles['modal-close']} onClick={() => setEditingConfigId(null)}>×</button>
+                    </div>
+                    <div className={styles['modal-body']}>
+                      <div className={styles['form-group']}>
+                        <label>模型</label>
+                        <input type="text" value={`${editingConfig.provider} / ${editingConfig.model}`} disabled
+                          style={{ background: '#f3f4f6', color: '#6b7280' }} />
+                      </div>
+                      <div className={styles['form-group']}>
+                        <label>显示名称</label>
+                        <input
+                          type="text"
+                          value={editConfigForm.display_name}
+                          onChange={(e) => setEditConfigForm(prev => ({ ...prev, display_name: e.target.value }))}
+                          placeholder="例如：GPT-4o"
+                        />
+                      </div>
+                      <div className={styles['form-group']}>
+                        <label>描述</label>
+                        <input
+                          type="text"
+                          value={editConfigForm.description}
+                          onChange={(e) => setEditConfigForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="模型描述"
+                        />
+                      </div>
+                      <div className={styles['form-group']}>
+                        <label>输入模态（模型能接收的内容类型）</label>
+                        <div className={styles['modality-checkbox-group']}>
+                          {MODALITY_TYPES.map(mt => {
+                            const isLastChecked = editConfigForm.input_modality.includes(mt) && editConfigForm.input_modality.length <= 1
+                            return (
+                              <label key={`in-${mt}`} className={styles['modality-checkbox-label']}>
+                                <input
+                                  type="checkbox"
+                                  checked={editConfigForm.input_modality.includes(mt)}
+                                  disabled={isLastChecked}
+                                  onChange={() => toggleModality('input', mt)}
+                                />
+                                <span>{MODALITY_LABELS[mt]}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div className={styles['form-group']}>
+                        <label>输出模态（模型能生成的内容类型）</label>
+                        <div className={styles['modality-checkbox-group']}>
+                          {MODALITY_TYPES.map(mt => {
+                            const isLastChecked = editConfigForm.output_modality.includes(mt) && editConfigForm.output_modality.length <= 1
+                            return (
+                              <label key={`out-${mt}`} className={styles['modality-checkbox-label']}>
+                                <input
+                                  type="checkbox"
+                                  checked={editConfigForm.output_modality.includes(mt)}
+                                  disabled={isLastChecked}
+                                  onChange={() => toggleModality('output', mt)}
+                                />
+                                <span>{MODALITY_LABELS[mt]}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                    <div className={styles['modal-footer']}>
+                      <button className="btn" onClick={() => setEditingConfigId(null)}>取消</button>
+                      <button className="btn btn-primary" onClick={handleSaveConfigEdit} disabled={savingConfigEdit}>
+                        {savingConfigEdit ? '保存中...' : '保存'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
         {activeTab === 'data-collection' && (
@@ -2411,7 +2615,7 @@ function SettingsPage() {
             )}
 
             <div className={styles['collection-actions-row']}>
-              <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={loadRecordsPreview} disabled={loadingRecordsPreview}>
+              <button className={`btn ${styles['btn-secondary']}`} onClick={loadRecordsPreview} disabled={loadingRecordsPreview}>
                 {loadingRecordsPreview ? '刷新中...' : '预览最近 20 条'}
               </button>
             </div>
@@ -2455,7 +2659,7 @@ function SettingsPage() {
                   />
                 </div>
               </div>
-              <button className={`btn ${styles['btn-danger'] || 'btn-danger'}`} onClick={handleCleanupRecords} disabled={cleaningRecords}>
+              <button className={`btn ${styles['btn-danger']}`} onClick={handleCleanupRecords} disabled={cleaningRecords}>
                 {cleaningRecords ? '清理中...' : '执行清理'}
               </button>
             </div>
@@ -2649,7 +2853,7 @@ function SettingsPage() {
                 </div>
               </div>
               <div className={styles['provider-modal-actions']}>
-                <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
+                <button className={`btn ${styles['btn-secondary']}`} onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
                 <button className={`btn btn-primary`} onClick={handleCreateProvider} disabled={creatingProvider}>
                   {creatingProvider ? '创建中...' : '确认创建'}
                 </button>
@@ -2672,14 +2876,14 @@ function SettingsPage() {
               </div>
               <div className={styles['provider-modal-footer']}>
                 <button 
-                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} 
+                  className={`btn ${styles['btn-secondary']}`} 
                   onClick={handleCloseDeleteConfirmModal} 
                   disabled={deletingProvider}
                 >
                   取消
                 </button>
                 <button 
-                  className={`btn ${styles['btn-danger'] || 'btn-danger'}`} 
+                  className={`btn ${styles['btn-danger']}`} 
                   onClick={confirmDeleteProvider} 
                   disabled={deletingProvider}
                 >
@@ -2722,7 +2926,7 @@ function SettingsPage() {
               </div>
               <div className={styles['provider-modal-footer']} style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px', borderTop: '1px solid var(--border-color)' }}>
                 <button 
-                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} 
+                  className={`btn ${styles['btn-secondary']}`} 
                   onClick={() => setShowImportModal(false)} 
                   disabled={importing}
                 >
@@ -2754,14 +2958,14 @@ function SettingsPage() {
               </div>
               <div className={styles['provider-modal-footer']}>
                 <button 
-                  className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} 
+                  className={`btn ${styles['btn-secondary']}`} 
                   onClick={() => setShowDeleteModelsModal(false)} 
                   disabled={deletingModels}
                 >
                   取消
                 </button>
                 <button 
-                  className={`btn ${styles['btn-danger'] || 'btn-danger'}`} 
+                  className={`btn ${styles['btn-danger']}`} 
                   onClick={handleBatchDeleteModels} 
                   disabled={deletingModels}
                 >

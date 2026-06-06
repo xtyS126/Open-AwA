@@ -56,6 +56,11 @@ let _cachedCsrfToken = ''
 
 export const getCsrfToken = (): string => _cachedCsrfToken
 
+/** 设置缓存的 CSRF token（登录成功后调用，避免额外的引导请求） */
+export const setCachedCsrfToken = (token: string): void => {
+  _cachedCsrfToken = token
+}
+
 let csrfBootstrapPromise: Promise<string> | null = null
 
 const clearCsrfTokenCache = (): void => {

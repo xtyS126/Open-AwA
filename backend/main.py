@@ -145,6 +145,9 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
             count = pricing_manager.initialize_default_pricing()
             if count > 0:
                 logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
+            config_count = pricing_manager.initialize_default_configurations()
+            if config_count > 0:
+                logger.bind(event="configurations_initialized", module="main", count=config_count).info("initialized default model configurations")
             removed = pricing_manager.remove_legacy_default_configurations()
             if removed > 0:
                 logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")

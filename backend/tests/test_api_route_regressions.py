@@ -23,6 +23,7 @@ from api.routes.memory import get_memory_manager
 from config.logging import _LOG_BUFFER
 from config.settings import settings
 from db.models import Base, ConversationRecord, LongTermMemory, ShortTermMemory, Skill, WeixinBinding, init_db
+import billing.models  # 确保计费模型（含模态标签字段）在 create_all 前已注册到 Base.metadata
 from memory.manager import MemoryManager
 from main import app
 

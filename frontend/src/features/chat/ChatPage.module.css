@@ -277,6 +277,16 @@
   background: rgba(37, 99, 235, 0.06);
 }
 
+.durationBadge {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #94a3b8);
+  margin-left: auto;
+  padding: 2px 8px;
+  background: var(--color-bg-secondary, #f1f5f9);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .floating-execution {
   margin: 0 16px;
   padding: 8px 14px;

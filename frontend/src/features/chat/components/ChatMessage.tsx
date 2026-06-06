@@ -153,6 +153,14 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
                 </button>
               </>
             )}
+            {/* 生成耗时显示 */}
+            {messageMeta[message.id]?.usage?.duration_ms != null && (
+              <span className={styles['durationBadge']}>
+                {messageMeta[message.id].usage!.duration_ms! >= 1000
+                  ? `${(messageMeta[message.id].usage!.duration_ms! / 1000).toFixed(1)}s`
+                  : `${messageMeta[message.id].usage!.duration_ms!}ms`}
+              </span>
+            )}
           </div>
         )}
       </div>
