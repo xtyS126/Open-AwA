@@ -2,17 +2,11 @@
  * E2E 聊天页面测试 — 核心交互路径。
  */
 import { test, expect } from '@playwright/test'
-
-const ADMIN_PASSWORD = process.env.OPENAWA_ADMIN_PASSWORD || 'openawa-e2e-admin'
+import { loginAsAdmin } from './utils/auth'
 
 test.describe('Chat Page', () => {
   test.beforeEach(async ({ page }) => {
-    // 登录
-    await page.goto('/login')
-    await page.fill('input[name="username"]', 'admin')
-    await page.fill('input[type="password"]', ADMIN_PASSWORD)
-    await page.click('button[type="submit"]')
-    await expect(page).toHaveURL(/\/chat/, { timeout: 15000 })
+    await loginAsAdmin(page)
   })
 
   test('displays chat interface after login', async ({ page }) => {
@@ -39,11 +33,7 @@ test.describe('Chat Page', () => {
 
 test.describe('Chat History', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/login')
-    await page.fill('input[name="username"]', 'admin')
-    await page.fill('input[type="password"]', ADMIN_PASSWORD)
-    await page.click('button[type="submit"]')
-    await expect(page).toHaveURL(/\/chat/, { timeout: 15000 })
+    await loginAsAdmin(page)
   })
 
   test('can open conversation sidebar', async ({ page }) => {

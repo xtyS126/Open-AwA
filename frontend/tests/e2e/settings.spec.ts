@@ -2,17 +2,11 @@
  * E2E 设置页面测试 — 导航和 Tab 切换。
  */
 import { test, expect } from '@playwright/test'
-
-const ADMIN_PASSWORD = process.env.OPENAWA_ADMIN_PASSWORD || 'openawa-e2e-admin'
+import { loginAsAdmin } from './utils/auth'
 
 test.describe('Settings Page', () => {
   test.beforeEach(async ({ page }) => {
-    // 登录
-    await page.goto('/login')
-    await page.fill('input[name="username"]', 'admin')
-    await page.fill('input[type="password"]', ADMIN_PASSWORD)
-    await page.click('button[type="submit"]')
-    await expect(page).toHaveURL(/\/chat/, { timeout: 15000 })
+    await loginAsAdmin(page)
   })
 
   test('navigates to settings page', async ({ page }) => {
@@ -37,9 +31,7 @@ test.describe('Settings Page', () => {
     const count = await navItems.count()
     if (count > 1) {
       await navItems.nth(1).click()
-      // 等待内容区域更新
-      await page.waitForTimeout(500)
-      // 第二个标签应是激活状态
+      // Playwright 的 expect 自带自动重试，无需手动 waitForTimeout
       await expect(navItems.nth(1)).toHaveClass(/active|selected|current/)
     }
   })
