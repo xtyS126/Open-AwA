@@ -15,7 +15,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-4o",
@@ -34,7 +40,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-4o-mini",
@@ -53,7 +66,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-4.1",
@@ -71,7 +91,14 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-4.1-mini",
@@ -89,7 +116,14 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-4.1-nano",
@@ -107,7 +141,14 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/o1",
@@ -125,7 +166,14 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/o3",
@@ -143,7 +191,14 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/o4-mini",
@@ -161,7 +216,14 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.2",
@@ -180,7 +242,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.5",
@@ -199,7 +268,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.4",
@@ -218,7 +294,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.4-mini",
@@ -237,7 +320,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.4-nano",
@@ -256,7 +346,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.3",
@@ -275,7 +372,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5.1",
@@ -294,7 +398,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5",
@@ -313,7 +424,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5-mini",
@@ -332,7 +450,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5-nano",
@@ -351,7 +476,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/gpt-5-pro",
@@ -370,7 +502,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/o3-pro",
@@ -389,7 +528,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/o3-mini",
@@ -408,7 +554,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "openai/o1-pro",
@@ -427,7 +580,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-3.5-sonnet",
@@ -446,7 +606,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-3.5-haiku",
@@ -465,7 +632,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-3-haiku",
@@ -484,7 +658,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-haiku-4-5",
@@ -503,7 +684,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-sonnet-4-6",
@@ -522,7 +710,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-opus-4-7",
@@ -541,7 +736,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-opus-4-6",
@@ -560,7 +762,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-opus-4-5",
@@ -579,7 +788,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-opus-4-1",
@@ -598,7 +814,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-opus-4",
@@ -617,7 +840,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-sonnet-4-5",
@@ -636,7 +866,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "anthropic/claude-sonnet-4",
@@ -655,7 +892,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-chat",
@@ -673,7 +917,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-reasoner",
@@ -690,7 +940,13 @@
       "max_output_tokens": 4096,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-v3",
@@ -708,7 +964,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-r1",
@@ -725,7 +987,13 @@
       "max_output_tokens": 8192,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-v4-flash",
@@ -743,7 +1011,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-v4-pro",
@@ -761,7 +1035,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-v3-official",
@@ -779,7 +1059,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-r1-official",
@@ -796,7 +1082,13 @@
       "max_output_tokens": 8192,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-v3.1",
@@ -814,7 +1106,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "deepseek/deepseek-v3.2",
@@ -832,7 +1130,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "google/gemini-2.5-flash-lite",
@@ -851,7 +1155,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "google/gemini-2.5-flash",
@@ -870,7 +1181,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "google/gemini-2.5-pro",
@@ -889,7 +1207,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "google/gemini-3.1-pro",
@@ -908,7 +1233,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "google/gemini-3-flash",
@@ -927,7 +1259,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "google/gemini-3.1-flash-lite",
@@ -946,7 +1285,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-long",
@@ -964,7 +1310,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-plus",
@@ -982,7 +1334,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen3",
@@ -1000,7 +1358,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen3.5-flash",
@@ -1018,7 +1382,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen3.5-plus",
@@ -1037,7 +1407,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen3-max",
@@ -1055,7 +1432,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-max",
@@ -1073,7 +1456,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-max-2025-01-25",
@@ -1091,7 +1480,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-turbo",
@@ -1109,7 +1504,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-flash",
@@ -1127,7 +1528,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen3-235b-a40b",
@@ -1145,7 +1552,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen3-flash-lite",
@@ -1163,7 +1576,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-vl-max",
@@ -1182,7 +1601,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen-vl-plus",
@@ -1201,7 +1627,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen2.5-72b-instruct",
@@ -1219,7 +1652,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "alibaba/qwen2.5-14b-instruct",
@@ -1237,7 +1676,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "moonshot/moonshot-v1-128k",
@@ -1254,7 +1699,13 @@
       "max_output_tokens": 4096,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "moonshot/kimi-k2.6",
@@ -1272,7 +1723,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "moonshot/kimi-k2",
@@ -1290,7 +1747,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "zhipu/glm-4",
@@ -1308,7 +1771,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "zhipu/glm-5",
@@ -1327,7 +1796,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "zhipu/glm-4-air",
@@ -1345,7 +1821,13 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "zhipu/glm-4v-plus",
@@ -1364,7 +1846,14 @@
       "supports_streaming": true,
       "supports_vision": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text",
+      "image"
+    ],
+    "output_modality": [
+      "text"
+    ]
   },
   {
     "provider_model": "zhipu/glm-4-plus",
@@ -1382,6 +1871,12 @@
       "supports_function_calling": true,
       "supports_streaming": true
     },
-    "status": "active"
+    "status": "active",
+    "input_modality": [
+      "text"
+    ],
+    "output_modality": [
+      "text"
+    ]
   }
 ]

@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -121,6 +122,9 @@ class ModelConfigCreateRequest(BaseModel):
     is_active: bool = True
     is_default: bool = False
     sort_order: int = 0
+    # 模态标签（JSON 数组字符串，如 '["text","image"]'）
+    input_modality: Optional[str] = None
+    output_modality: Optional[str] = None
 
 
 class ModelConfigUpdateRequest(BaseModel):
@@ -139,6 +143,9 @@ class ModelConfigUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
+    # 模态标签（JSON 数组字符串，如 '["text","image"]'）
+    input_modality: Optional[str] = None
+    output_modality: Optional[str] = None
 
 
 class RetentionUpdateRequest(BaseModel):
@@ -178,6 +185,19 @@ def _parse_model_spec(config) -> Optional[dict]:
         return None
 
 
+def _parse_modality(raw) -> list:
+    """安全解析模态标签 JSON 字段，返回列表。"""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
 def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False):
     """
     将configuration相关对象序列化为接口或存储所需格式。
@@ -207,6 +227,8 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "supports_top_k": getattr(config, "supports_top_k", True),
         "supports_vision": getattr(config, "supports_vision", False),
         "is_multimodal": getattr(config, "is_multimodal", False),
+        "input_modality": _parse_modality(getattr(config, "input_modality", None)),
+        "output_modality": _parse_modality(getattr(config, "output_modality", None)),
         "model_spec": spec,
         "status": getattr(config, "status", "active"),
         "created_at": config.created_at.isoformat() if config.created_at else None,
@@ -850,6 +872,8 @@ async def get_configuration_capabilities(
             "is_multimodal": getattr(config, "is_multimodal", False),
             "supports_function_calling": (spec or {}).get("supports_function_calling", False),
             "supports_streaming": (spec or {}).get("supports_streaming", True),
+            "input_modality": _parse_modality(getattr(config, "input_modality", None)),
+            "output_modality": _parse_modality(getattr(config, "output_modality", None)),
         },
         "defaults": {
             "temperature": getattr(config, "temperature", 0.7) or 0.7,

@@ -712,6 +712,10 @@ class PricingManager:
             self.db.execute(text(
                 "ALTER TABLE model_pricing ADD COLUMN is_multimodal BOOLEAN NOT NULL DEFAULT 0"
             ))
+        if "input_modality" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN input_modality TEXT"))
+        if "output_modality" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN output_modality TEXT"))
 
         self.db.commit()
 
@@ -730,12 +734,16 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN selected_models TEXT"))
         if "max_tokens" not in columns:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN max_tokens INTEGER"))
+        if "input_modality" not in columns:
+            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN input_modality TEXT"))
+        if "output_modality" not in columns:
+            self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN output_modality TEXT"))
 
         self.db.commit()
 
     def _normalize_pricing_payload(self, pricing_data: Dict) -> Dict:
         """
-        规范化定价数据，并补齐能力标记的默认值。
+        规范化定价数据，并补齐能力标记与模态标签的默认值。
         """
         normalized = dict(pricing_data)
         normalized["provider"] = self.normalize_provider(normalized.get("provider"))
@@ -753,6 +761,42 @@ class PricingManager:
             "is_multimodal",
             capability_defaults.get("is_multimodal", False)
         )
+        # 补齐模态标签默认值
+        supports_vision = normalized.get("supports_vision", False)
+        is_multimodal = normalized.get("is_multimodal", False)
+
+        def _ensure_modality_json(val, default_modalities):
+            """确保模态值为 JSON 字符串；若传入 Python list 则自动序列化。"""
+            if not val:
+                return json.dumps(default_modalities)
+            if isinstance(val, list):
+                return json.dumps(val)
+            # 已是字符串，尝试解析验证
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    return val
+            except (TypeError, ValueError):
+                pass
+            return json.dumps(default_modalities)
+
+        if "input_modality" not in normalized or not normalized["input_modality"]:
+            if is_multimodal or supports_vision:
+                normalized["input_modality"] = json.dumps(["text", "image"])
+            else:
+                normalized["input_modality"] = json.dumps(["text"])
+        else:
+            normalized["input_modality"] = _ensure_modality_json(
+                normalized["input_modality"],
+                ["text", "image"] if (is_multimodal or supports_vision) else ["text"]
+            )
+
+        if "output_modality" not in normalized or not normalized["output_modality"]:
+            normalized["output_modality"] = json.dumps(["text"])
+        else:
+            normalized["output_modality"] = _ensure_modality_json(
+                normalized["output_modality"], ["text"]
+            )
         return normalized
 
     def get_pricing(self, provider: str, model: str) -> Optional[ModelPricing]:

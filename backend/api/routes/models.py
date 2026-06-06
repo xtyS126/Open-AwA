@@ -117,6 +117,8 @@ async def get_model_capabilities(
                 "is_multimodal": entry.get("is_multimodal", False),
                 "supports_temperature": entry.get("supports_temperature", True),
                 "supports_top_k": entry.get("supports_top_k", True),
+                "input_modality": entry.get("input_modality", []),
+                "output_modality": entry.get("output_modality", []),
                 "model_spec": entry.get("model_spec", {}),
             }
 

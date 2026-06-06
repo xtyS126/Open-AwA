@@ -52,6 +52,9 @@ class ModelPricing(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=False)
     is_multimodal: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 模态标签：输入/输出方向各自支持的模态列表（JSON 数组，如 ["text","image"]）
+    input_modality: Mapped[str] = mapped_column(Text, nullable=True)
+    output_modality: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc),
@@ -129,6 +132,10 @@ class ModelConfiguration(Base):
     supports_top_k: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=False)
     is_multimodal: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # 模态标签：输入/输出方向各自支持的模态列表（JSON 数组，如 ["text","image"]）
+    input_modality: Mapped[str] = mapped_column(Text, nullable=True)
+    output_modality: Mapped[str] = mapped_column(Text, nullable=True)
 
     # Model metadata
     model_spec: Mapped[str] = mapped_column(Text, nullable=True)

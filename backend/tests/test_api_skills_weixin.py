@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from main import app
 from db.models import Base, Skill, WeixinBinding
+import billing.models  # 确保计费模型（含模态标签字段）在 create_all 前已注册到 Base.metadata
 from api.dependencies import get_db, get_current_user
 from config.settings import settings
 from skills.weixin_skill_adapter import DEFAULT_QR_BASE_URL
