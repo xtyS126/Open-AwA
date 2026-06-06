@@ -1,0 +1,17 @@
+/* Skeleton 骨架屏组件样式 */
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-bg-tertiary) 25%, var(--color-border-subtle) 50%, var(--color-bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+.text { height: 16px; border-radius: var(--radius-sm); }
+.circular { border-radius: 50%; }
+.rectangular { border-radius: var(--radius-md); }
+
+.paragraph { display: flex; flex-direction: column; gap: var(--space-2); }
+.card { border-radius: var(--radius-md); overflow: hidden; background: var(--color-bg-secondary); border: 1px solid var(--color-border-subtle); }
+.cardBody { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }

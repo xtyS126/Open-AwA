@@ -194,6 +194,25 @@ git commit -m "[Type] 变更描述"
 ```
 不使用 `debug` 分支，不创建中间分支。如果需要回滚，使用 `git revert`。
 
+### OCR Viewer 自动化审计（阶段化重构专用）
+
+对于多阶段重构任务，每完成一个阶段后运行 OCR Viewer 审计脚本：
+
+```powershell
+# 完整审计
+.\scripts\code-audit.ps1
+
+# 仅前端/后端
+.\scripts\code-audit.ps1 -FrontendOnly
+.\scripts\code-audit.ps1 -BackendOnly
+
+# 跳过测试快速检查
+.\scripts\code-audit.ps1 -SkipTests
+```
+
+工作流：`阶段完成 → 运行审计 → 修复问题（如有）→ 提交 → 下一阶段`
+审计报告输出到 `reports/audit-result.txt`。详细说明见 AGENTS.md。
+
 ## Known Pitfalls
 
 - **Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop

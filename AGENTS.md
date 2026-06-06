@@ -114,6 +114,57 @@ Before `git add` and `git commit`, complete in order:
 5. **Document update** -- 功能变更更新 README.md，接口变更更新 API 文档
 6. **git commit** -- 在完成一个模块的迭代并检查后提交到 main 分支
 
+### OCR Viewer 自动化代码审计
+
+在完成每个重构阶段后，运行 OCR Viewer 代码审计脚本对未提交变更进行自动审查：
+
+```powershell
+# 完整审计（前端 + 后端）
+.\scripts\code-audit.ps1
+
+# 仅前端审计
+.\scripts\code-audit.ps1 -FrontendOnly
+
+# 仅后端审计
+.\scripts\code-audit.ps1 -BackendOnly
+
+# 跳过测试（快速检查）
+.\scripts\code-audit.ps1 -SkipTests
+
+# 详细模式（显示完整 diff）
+.\scripts\code-audit.ps1 -Verbose
+```
+
+审计脚本自动执行以下检查：
+1. Git 状态 — 变更文件列表与分类统计
+2. Emoji 违规 — Unicode 表情符号检测
+3. 调试代码残留 — `console.log/debug/info`、`debugger` 语句
+4. 前端检查 — TypeScript 类型检查 + ESLint
+5. 前端测试 — Vitest 单元测试
+6. 后端测试 — pytest
+7. 注释规范 — 新增注释使用中文
+
+审计通过（exit 0）→ 执行 `git commit`；审计失败（exit 1）→ 根据报告修复问题后重新审计。
+
+### 阶段化重构工作流
+
+对于多阶段任务（如前端重构方案），每完成一个阶段按以下流程推进：
+
+```
+阶段N 代码完成
+  → 运行 .\scripts\code-audit.ps1
+  → 审计通过? 
+      [否] → 根据 reports/audit-result.txt 修复问题 → 重新审计
+      [是] → git add -A && git commit -m "[Refactoring] 阶段N: xxx"
+          → 进入阶段 N+1
+```
+
+所有阶段完成后运行一次完整测试：
+```bash
+cd frontend && npm run test:coverage && cd ..
+cd backend && pytest -v --cov && cd ..
+```
+
 ### Commit Message Format
 
 ```

@@ -1,137 +1,8 @@
-:root {
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-dark: #1d4ed8;
-  --color-primary-ring: rgba(59, 130, 246, 0.2);
-  --color-primary-soft-bg: rgba(59, 130, 246, 0.1);
-  --color-primary-softer-bg: rgba(59, 130, 246, 0.08);
-  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
-
-  --color-bg: #ffffff;
-  --color-bg-secondary: #f8fafc;
-  --color-bg-tertiary: #f1f5f9;
-
-  --color-text: #0f172a;
-  --color-text-secondary: #475569;
-  --color-text-tertiary: #94a3b8;
-  --color-border: #e2e8f0;
-  --color-border-subtle: #f1f5f9;
-
-  --sidebar-width: 260px;
-  --sidebar-collapsed-width: 68px;
-  --secondary-sidebar-width: 240px;
-  --color-primary-subtle: rgba(59, 130, 246, 0.08);
-
-  --color-success: #10b981;
-  --color-success-bg: rgba(16, 185, 129, 0.12);
-  --color-success-soft-bg: #d1fae5;
-  --color-success-strong: #047857;
-  --color-success-accent: #059669;
-
-  --color-error: #ef4444;
-  --color-error-bg: rgba(239, 68, 68, 0.12);
-  --color-error-soft-bg: #fee2e2;
-  --color-error-soft-border: transparent;
-  --color-error-strong: #b91c1c;
-
-  --color-warning: #f59e0b;
-  --color-warning-bg: rgba(245, 158, 11, 0.16);
-  --color-warning-soft-bg: #fef3c7;
-  --color-warning-strong: #b45309;
-
-  --color-info: #3b82f6;
-  --color-info-bg: #dbeafe;
-
-  --color-danger: #ef4444;
-  --color-danger-hover: #dc2626;
-
-  --color-overlay: rgba(15, 23, 42, 0.5);
-  --color-overlay-soft: rgba(15, 23, 42, 0.3);
-
-  --color-required: #ef4444;
-
-  --color-chart-grid: transparent;
-  --color-chart-axis: #94a3b8;
-  --color-chart-primary: #3b82f6;
-  --color-chart-secondary: #10b981;
-  --color-chart-3: #ef4444;
-  --color-chart-4: #f59e0b;
-  --color-chart-5: #8b5cf6;
-  --color-chart-6: #ec4899;
-
-  --color-tag-purple-bg: rgba(139, 92, 246, 0.12);
-  --color-tag-purple-text: #6d28d9;
-
-  --color-log-debug: #64748b;
-  --color-log-error: #ef4444;
-  --color-log-critical: #b91c1c;
-
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
-.dark {
-  --color-primary: #3b82f6;
-  --color-primary-hover: #60a5fa;
-  --color-primary-dark: #2563eb;
-  --color-primary-ring: rgba(59, 130, 246, 0.3);
-  --color-primary-soft-bg: rgba(59, 130, 246, 0.15);
-  --color-primary-softer-bg: rgba(59, 130, 246, 0.1);
-  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
-
-  --color-bg: #0f172a;
-  --color-bg-secondary: #1e293b;
-  --color-bg-tertiary: #334155;
-
-  --color-text: #f8fafc;
-  --color-text-secondary: #cbd5e1;
-  --color-text-tertiary: #94a3b8;
-  --color-border: #334155;
-  --color-border-subtle: #1e293b;
-  --color-primary-subtle: rgba(59, 130, 246, 0.12);
-
-  --color-success: #34d399;
-  --color-success-bg: rgba(52, 211, 153, 0.2);
-  --color-success-soft-bg: rgba(52, 211, 153, 0.1);
-  --color-success-strong: #10b981;
-  --color-success-accent: #059669;
-
-  --color-error: #f87171;
-  --color-error-bg: rgba(248, 113, 113, 0.2);
-  --color-error-soft-bg: rgba(248, 113, 113, 0.1);
-  --color-error-soft-border: transparent;
-  --color-error-strong: #ef4444;
-
-  --color-warning: #fbbf24;
-  --color-warning-bg: rgba(251, 191, 36, 0.2);
-  --color-warning-soft-bg: rgba(251, 191, 36, 0.1);
-  --color-warning-strong: #f59e0b;
-
-  --color-info: #60a5fa;
-  --color-info-bg: rgba(96, 165, 250, 0.2);
-
-  --color-danger: #ef4444;
-  --color-danger-hover: #f87171;
-
-  --color-overlay: rgba(0, 0, 0, 0.7);
-  --color-overlay-soft: rgba(0, 0, 0, 0.5);
-
-  --color-required: #ef4444;
-
-  --color-chart-grid: transparent;
-  --color-chart-axis: #64748b;
-  
-  --color-tag-purple-bg: rgba(167, 139, 250, 0.2);
-  --color-tag-purple-text: #c4b5fd;
-
-  --color-log-debug: #94a3b8;
-  --color-log-error: #f87171;
-  --color-log-critical: #ef4444;
-}
+/*
+ * 全局样式 — 浏览器重置、布局壳层和工具类。
+ * 设计令牌变量集中在 tokens.css 中定义，本文件通过 var() 引用。
+ * 导入顺序：tokens.css → global.css → 各组件 CSS 模块
+ */
 
 * {
   margin: 0;
@@ -140,13 +11,13 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: var(--font-sans), sans-serif;
   background-color: var(--color-bg);
   color: var(--color-text);
-  line-height: 1.6;
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color var(--transition-slow), color var(--transition-slow);
 }
 
 button {
@@ -163,8 +34,8 @@ input, textarea {
   background-color: var(--color-bg-secondary);
   color: var(--color-text);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  transition: background-color 0.2s;
+  padding: var(--space-2) var(--space-3);
+  transition: background-color var(--transition-fast);
 }
 
 input:focus, textarea:focus {
@@ -195,12 +66,12 @@ input:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-sm);
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  transition: all var(--transition-ease-in-out);
   cursor: pointer;
 }
 
@@ -236,9 +107,9 @@ input:focus, textarea:focus {
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
-  padding: 16px;
+  padding: var(--space-4);
   box-shadow: var(--shadow-sm);
-  transition: all 0.3s ease;
+  transition: all var(--transition-slow);
 }
 
 .card:hover {
@@ -250,11 +121,11 @@ input:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: var(--space-5);
   color: var(--color-text-secondary);
 }
 
-/* --- 统一按钮样式 --- */
+/* 统一按钮样式变体 */
 
 .btn-danger {
   background: var(--color-danger);
@@ -275,7 +146,7 @@ input:focus, textarea:focus {
   color: var(--color-text);
 }
 
-/* --- 响应式断点 --- */
+/* 响应式断点 */
 
 /* 平板端：小于等于 1024px */
 @media (max-width: 1024px) {

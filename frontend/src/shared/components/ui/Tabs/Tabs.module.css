@@ -1,0 +1,25 @@
+/* Tabs 标签页组件样式 */
+
+.tabs { display: flex; flex-direction: column; }
+.tabList {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+.tab:hover { color: var(--color-text); }
+.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+
+.tabPanel { padding: var(--space-6) 0; }
