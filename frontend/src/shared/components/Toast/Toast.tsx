@@ -75,7 +75,7 @@ function ToastContainer({ toasts, removeToast }: {
   if (toasts.length === 0) return null
 
   return (
-    <div className={styles['toast-container']}>
+    <div className={styles['toast-container']} aria-live="polite">
       {toasts.map((toast) => (
         <Toast
           key={toast.id}

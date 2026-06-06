@@ -48,9 +48,9 @@ function ConfirmDialog({
   if (!isOpen) return null
 
   return (
-    <div className={styles['overlay']} role="dialog" aria-modal="true">
+    <div className={styles['overlay']} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
       <div className={styles['dialog']}>
-        <h3 className={styles['dialog-title']}>{title}</h3>
+        <h3 id="confirm-dialog-title" className={styles['dialog-title']}>{title}</h3>
         <p className={styles['dialog-message']}>{message}</p>
         <div className={styles['dialog-actions']}>
           <button

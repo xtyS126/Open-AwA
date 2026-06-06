@@ -185,10 +185,11 @@ const renderIcon = (type: string, size = 18) => {
             </div>
           </>
         )}
-        <button 
-          className={styles['collapse-btn']} 
+        <button
+          className={styles['collapse-btn']}
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+          aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         >
           <Menu size={20} />
         </button>
@@ -223,6 +224,7 @@ const renderIcon = (type: string, size = 18) => {
                     to={item.path}
                     className={`${styles['sidebar-item']} ${isActive(item.path) ? styles['active'] : ''}`}
                     title={collapsed ? item.label : undefined}
+                    aria-current={isActive(item.path) ? 'page' : undefined}
                   >
                     <span className={styles['sidebar-icon']}>{renderIcon(item.iconType, 18)}</span>
                     {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
@@ -240,10 +242,11 @@ const renderIcon = (type: string, size = 18) => {
       </nav>
       
       <div className={styles['sidebar-footer']}>
-        <button 
-          className={styles['theme-toggle-btn']} 
+        <button
+          className={styles['theme-toggle-btn']}
           onClick={toggleTheme}
           title={theme === 'light' ? t('sidebar.darkMode') : t('sidebar.lightMode')}
+          aria-label={`${t('sidebar.theme')}: ${theme === 'light' ? t('sidebar.darkMode') : t('sidebar.lightMode')}`}
         >
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           {!collapsed && <span className={styles['theme-label']}>{theme === 'light' ? t('sidebar.nightMode') : t('sidebar.dayMode')}</span>}

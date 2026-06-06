@@ -87,6 +87,8 @@ function LoginPage() {
               placeholder="请输入用户名"
               autoComplete="username"
               autoFocus
+              aria-describedby={error ? 'login-error' : undefined}
+              aria-invalid={!!error}
             />
           </div>
           <div className={styles['form-group']}>
@@ -98,9 +100,11 @@ function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
               autoComplete="current-password"
+              aria-describedby={error ? 'login-error' : undefined}
+              aria-invalid={!!error}
             />
           </div>
-          {error && <div className={styles['login-error']}>{error}</div>}
+          {error && <div id="login-error" className={styles['login-error']} role="alert">{error}</div>}
           <button
             type="submit"
             className={styles['login-btn']}
