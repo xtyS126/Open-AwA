@@ -1,6 +1,6 @@
-import '@testing-library/jest-dom';
-import { createElement } from 'react';
-import { vi } from 'vitest';
+import '@testing-library/jest-dom'
+import { createElement } from 'react'
+import { vi } from 'vitest'
 
 const routerFutureConfig = {
   v7_startTransition: true,
