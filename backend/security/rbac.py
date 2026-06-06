@@ -122,7 +122,13 @@ class RBACManager:
 
     async def check_permission(self, user_id: str, permission: str) -> bool:
         """
-        检查用户是否拥有指定权限。
+        检查用户是否拥有指定权限。支持层级通配符匹配。
+
+        匹配规则：
+        - "*" 匹配所有权限
+        - "skill:*" 匹配 "skill:read"、"skill:execute"、"skill:create" 等
+        - "skill:read" 精确匹配 "skill:read"
+        - 不支持 "skill:re*" 等部分通配符（仅支持完整段通配符 "*"）
 
         Args:
             user_id: 用户唯一标识。
@@ -138,7 +144,46 @@ class RBACManager:
         if "*" in permissions:
             return True
 
-        return permission in permissions
+        # 精确匹配
+        if permission in permissions:
+            return True
+
+        # 层级通配符匹配：将权限按 ":" 分段，逐段对比
+        # 例如 "skill:*" 匹配 "skill:read"、"skill:execute"
+        permission_parts = permission.split(":")
+        for role_perm in permissions:
+            role_parts = role_perm.split(":")
+            if self._wildcard_match(permission_parts, role_parts):
+                return True
+
+        return False
+
+    @staticmethod
+    def _wildcard_match(requested_parts: list[str], granted_parts: list[str]) -> bool:
+        """
+        逐段对比权限段，支持 granted 侧的 "*" 通配符。
+
+        Args:
+            requested_parts: 请求的权限段列表，如 ["skill", "read"]。
+            granted_parts: 授予的权限段列表，如 ["skill", "*"]。
+
+        Returns:
+            True 表示匹配成功。
+        """
+        # 段数不同时无法通配匹配（"*" 通配仅在同段数下生效）
+        # 例: "skill" (1段) vs "skill:*" (2段) → 不匹配
+        #     "skill:read" (2段) vs "skill:*" (2段) → 匹配
+        #     "skill:read:advanced" (3段) vs "skill:*" (2段) → 不匹配
+        if len(requested_parts) != len(granted_parts):
+            return False
+
+        for req_part, granted_part in zip(requested_parts, granted_parts):
+            if granted_part == "*":
+                continue
+            if req_part != granted_part:
+                return False
+
+        return True
 
     async def get_role_permissions(self, role: str) -> list[str]:
         """

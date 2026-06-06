@@ -533,6 +533,25 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class LoginRateLimit(Base):
+    """
+    登录限流记录模型，持久化存储登录失败计数和封禁状态。
+    支持多 worker 部署时限流状态共享，替代进程内存字典方案。
+    每条记录以 rate_limit_key（IP + 用户名哈希）唯一标识。
+    """
+    __tablename__ = "login_rate_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rate_limit_key: Mapped[str] = mapped_column(String(300), unique=True, nullable=False, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    first_attempt_at: Mapped[float] = mapped_column(Float, default=0.0)
+    blocked_until: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
 class UserFeedback(Base):
     """
     用户对助手消息的显式反馈记录，支持点赞/点踩及可选备注。

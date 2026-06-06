@@ -179,6 +179,9 @@ class Settings(BaseSettings):
     # 开发环境脱敏开关（True 时禁用脱敏，方便调试）
     LOG_DISABLE_SANITIZE: bool = False
 
+    # 登录限流后端配置：memory（单进程） | database（多 worker 分布式）
+    RATE_LIMIT_BACKEND: str = "memory"
+
     # 数据库监控配置
     SLOW_QUERY_THRESHOLD_MS: int = 500    # 慢查询检测阈值（毫秒）
 

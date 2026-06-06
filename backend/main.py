@@ -120,10 +120,18 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
 
 async def _startup_data_init(profiler: StartupProfiler) -> None:
     """数据层初始化：DB 建表、计费配置、RBAC 角色、本地用户同步。"""
+    from db.models import SessionLocal
+
+    # rate_limit_store 不依赖 DB（memory 后端），即使跳过 DB 初始化也能正常工作
+    from security.rate_limit_store import init_rate_limit_store
+    with profiler.step("rate_limit_store_init"):
+        init_rate_limit_store(
+            backend=settings.RATE_LIMIT_BACKEND,
+            db_session_factory=SessionLocal,
+        )
+
     if os.getenv("SKIP_INIT_DB"):
         return
-
-    from db.models import SessionLocal
 
     with profiler.step("db_init"):
         try:

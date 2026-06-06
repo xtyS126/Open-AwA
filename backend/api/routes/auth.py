@@ -3,11 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from collections import deque
 from datetime import timedelta
-import math
-import threading
-import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -31,21 +27,10 @@ from config.security import (
 from config.settings import settings
 from db.models import LoginDevice, User as UserModel, get_db
 from pydantic import BaseModel, Field
+from security.rate_limit_store import get_rate_limit_store
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-_LOGIN_ATTEMPT_WINDOW_SECONDS = 5 * 60
-_LOGIN_MAX_ATTEMPTS = 5
-_LOGIN_BLOCK_SECONDS = 15 * 60
-_LOGIN_CLEANUP_INTERVAL_SECONDS = 60
-# 限流字典容量上限：防止恶意扫描导致内存无限增长
-# 多进程/多实例部署时各 worker 限流状态不共享，生产环境建议迁移到 Redis 或数据库
-_LOGIN_STATE_MAX_CAPACITY = 10000
-_LOGIN_ATTEMPTS: dict[str, deque[float]] = {}
-_LOGIN_BLOCKED_UNTIL: dict[str, float] = {}
-_LOGIN_RATE_LIMIT_LOCK = threading.Lock()
-_LOGIN_LAST_CLEANUP_AT = 0.0
 
 
 def _build_login_rate_limit_key(username: str, client_ip: str) -> str:
@@ -53,132 +38,6 @@ def _build_login_rate_limit_key(username: str, client_ip: str) -> str:
     为登录限流生成稳定键，避免单用户或单来源地址被暴力尝试。
     """
     return f"{client_ip}|{str(username or '').strip().lower()}"
-
-
-def _get_retry_after_seconds(rate_limit_key: str) -> int:
-    """
-    检查当前登录键是否仍处于限流窗口。
-    返回需等待的秒数，0 表示允许尝试。
-    """
-    now = time.monotonic()
-    with _LOGIN_RATE_LIMIT_LOCK:
-        _cleanup_expired_login_rate_limit_state(now)
-        blocked_until = _LOGIN_BLOCKED_UNTIL.get(rate_limit_key, 0.0)
-        if blocked_until > now:
-            return _calculate_retry_after_seconds(blocked_until, now)
-
-        attempts = _LOGIN_ATTEMPTS.setdefault(rate_limit_key, deque())
-        _prune_login_attempts(attempts, now)
-
-        if len(attempts) < _LOGIN_MAX_ATTEMPTS:
-            if not attempts:
-                _LOGIN_ATTEMPTS.pop(rate_limit_key, None)
-            return 0
-
-        attempts.clear()
-        _LOGIN_ATTEMPTS.pop(rate_limit_key, None)
-        blocked_until = now + _LOGIN_BLOCK_SECONDS
-        _LOGIN_BLOCKED_UNTIL[rate_limit_key] = blocked_until
-        return _calculate_retry_after_seconds(blocked_until, now)
-
-
-def _record_failed_login(rate_limit_key: str) -> None:
-    """
-    记录一次失败登录尝试。
-    当限流字典超过容量上限时，优先清理过期条目；
-    若仍超限则拒绝记录并记录告警日志。
-    """
-    now = time.monotonic()
-    with _LOGIN_RATE_LIMIT_LOCK:
-        _cleanup_expired_login_rate_limit_state(now)
-        total_entries = len(_LOGIN_ATTEMPTS) + len(_LOGIN_BLOCKED_UNTIL)
-        if total_entries >= _LOGIN_STATE_MAX_CAPACITY:
-            # 超过容量上限后主动执行一次全量清理，释放过期条目
-            _force_full_cleanup(now)
-            if len(_LOGIN_ATTEMPTS) + len(_LOGIN_BLOCKED_UNTIL) >= _LOGIN_STATE_MAX_CAPACITY:
-                logger.bind(event="login_rate_limit_capacity_reached", module="auth",
-                            total=total_entries, max_capacity=_LOGIN_STATE_MAX_CAPACITY
-                            ).warning("登录限流字典达到容量上限，拒绝记录新的失败尝试")
-                return
-        attempts = _LOGIN_ATTEMPTS.setdefault(rate_limit_key, deque())
-        _prune_login_attempts(attempts, now)
-        attempts.append(now)
-
-
-def _clear_failed_login(rate_limit_key: str) -> None:
-    """
-    登录成功后清理该来源的失败计数。
-    """
-    with _LOGIN_RATE_LIMIT_LOCK:
-        _LOGIN_ATTEMPTS.pop(rate_limit_key, None)
-        _LOGIN_BLOCKED_UNTIL.pop(rate_limit_key, None)
-
-
-def _calculate_retry_after_seconds(blocked_until: float, now: float) -> int:
-    """
-    将单调时钟差值转换为 Retry-After 秒数，避免向下取整导致少报 1 秒。
-    """
-    return max(1, math.ceil(blocked_until - now))
-
-
-def _prune_login_attempts(attempts: deque[float], now: float) -> None:
-    """
-    删除窗口外的失败记录，保证 deque 只保留有效时间范围内的数据。
-    """
-    while attempts and now - attempts[0] > _LOGIN_ATTEMPT_WINDOW_SECONDS:
-        attempts.popleft()
-
-
-def _cleanup_expired_login_rate_limit_state(now: float) -> None:
-    """
-    定期清理过期限流数据，避免全局字典在长期运行时无限增长。
-    """
-    global _LOGIN_LAST_CLEANUP_AT
-
-    if now - _LOGIN_LAST_CLEANUP_AT < _LOGIN_CLEANUP_INTERVAL_SECONDS:
-        return
-
-    expired_blocked_keys = [
-        key for key, blocked_until in _LOGIN_BLOCKED_UNTIL.items()
-        if blocked_until <= now
-    ]
-    for key in expired_blocked_keys:
-        _LOGIN_BLOCKED_UNTIL.pop(key, None)
-
-    stale_attempt_keys: list[str] = []
-    for key, attempts in list(_LOGIN_ATTEMPTS.items()):
-        _prune_login_attempts(attempts, now)
-        if not attempts and key not in _LOGIN_BLOCKED_UNTIL:
-            stale_attempt_keys.append(key)
-
-    for key in stale_attempt_keys:
-        _LOGIN_ATTEMPTS.pop(key, None)
-
-    _LOGIN_LAST_CLEANUP_AT = now
-
-
-def _force_full_cleanup(now: float) -> None:
-    """
-    强制执行一次全量过期条目清理，无视清理间隔限制。
-    用于容量保护场景，确保在字典接近上限时尽可能回收空间。
-    """
-    # 清理过期的封禁记录
-    expired_blocked_keys = [
-        key for key, blocked_until in _LOGIN_BLOCKED_UNTIL.items()
-        if blocked_until <= now
-    ]
-    for key in expired_blocked_keys:
-        _LOGIN_BLOCKED_UNTIL.pop(key, None)
-
-    # 清理空的或已过期的尝试记录
-    stale_keys: list[str] = []
-    for key, attempts in list(_LOGIN_ATTEMPTS.items()):
-        _prune_login_attempts(attempts, now)
-        if not attempts and key not in _LOGIN_BLOCKED_UNTIL:
-            stale_keys.append(key)
-
-    for key in stale_keys:
-        _LOGIN_ATTEMPTS.pop(key, None)
 
 
 @router.post("/register", response_model=UserResponse)
@@ -217,7 +76,8 @@ async def login(
     """
     client_ip = request.client.host if request.client else "unknown"
     rate_limit_key = _build_login_rate_limit_key(form_data.username, client_ip)
-    retry_after = _get_retry_after_seconds(rate_limit_key)
+    rate_limit_store = get_rate_limit_store()
+    retry_after = rate_limit_store.get_retry_after_seconds(rate_limit_key)
     if retry_after > 0:
         logger.bind(
             event="auth_login_rate_limited",
@@ -234,7 +94,7 @@ async def login(
 
     user = db.query(UserModel).filter(UserModel.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
-        _record_failed_login(rate_limit_key)
+        rate_limit_store.record_failed_attempt(rate_limit_key)
         logger.bind(
             event="auth_login_failed",
             module="auth",
@@ -250,7 +110,7 @@ async def login(
 
     # 禁用状态的用户不允许登录
     if user.role == "disabled":
-        _record_failed_login(rate_limit_key)
+        rate_limit_store.record_failed_attempt(rate_limit_key)
         logger.bind(
             event="auth_login_disabled",
             module="auth",
@@ -263,7 +123,7 @@ async def login(
             detail="Account is disabled. Please contact administrator.",
         )
 
-    _clear_failed_login(rate_limit_key)
+    rate_limit_store.clear_attempts(rate_limit_key)
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
