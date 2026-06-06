@@ -7,6 +7,7 @@ import errno
 import os
 import re
 import sys
+import time
 import traceback
 import uuid
 from collections import deque
@@ -261,39 +262,60 @@ def _build_fallback_log_path(path: str) -> str:
     return os.path.join(directory, f"{stem}.pid-{os.getpid()}{ext}")
 
 
+def _cleanup_stale_pid_logs(log_dir: str, retention_days: int = 7) -> int:
+    """
+    清理过期的 PID 后缀日志文件。
+    返回清理的文件数量。
+    """
+    if not os.path.isdir(log_dir):
+        return 0
+    cutoff = time.time() - (retention_days * 86400)
+    cleaned = 0
+    try:
+        for fname in os.listdir(log_dir):
+            if ".pid-" not in fname:
+                continue
+            fpath = os.path.join(log_dir, fname)
+            if not os.path.isfile(fpath):
+                continue
+            if os.path.getmtime(fpath) < cutoff:
+                try:
+                    os.remove(fpath)
+                    cleaned += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return cleaned
+
+
 def _add_file_sink_with_fallback(path: str, sink_name: str, **kwargs: Any) -> str:
     """
-    添加文件日志 sink；Windows 下优先使用 PID 文件避免多进程争用，
-    若主文件因占用或权限问题失败，则自动切换到 PID 备用文件。
+    添加文件日志 sink；优先使用正常文件名，仅在文件被占用或权限不足时
+    回退到带 PID 后缀的备用文件，避免 Windows 下同名文件冲突。
     """
-    # Windows 下多进程（uvicorn reload）会争用同名日志文件，直接用 PID 后缀避免权限错误
-    if os.name == "nt":
-        pid_path = _build_fallback_log_path(path)
-        try:
-            logger.add(pid_path, **kwargs)
-            return pid_path
-        except Exception as exc:
-            if not _is_retryable_file_sink_error(exc):
-                raise
-
+    # 优先尝试正常日志文件名（enqueue=True 保证线程安全，uvicorn reload 先杀旧进程再启新进程）
+    sink_error: Optional[Exception] = None
     try:
         logger.add(path, **kwargs)
         return path
     except Exception as exc:
         if not _is_retryable_file_sink_error(exc):
             raise
+        sink_error = exc
 
-        fallback_path = _build_fallback_log_path(path)
-        logger.add(fallback_path, **kwargs)
-        logger.bind(
-            event="logging_file_fallback",
-            module="config",
-            sink_name=sink_name,
-            original_path=path,
-            fallback_path=fallback_path,
-            error_type=type(exc).__name__,
-        ).warning(f"日志文件不可写，已切换到备用文件: {fallback_path}")
-        return fallback_path
+    # 正常文件无法写入时回退到 PID 后缀文件（Windows 多进程争用场景）
+    fallback_path = _build_fallback_log_path(path)
+    logger.add(fallback_path, **kwargs)
+    logger.bind(
+        event="logging_file_fallback",
+        module="config",
+        sink_name=sink_name,
+        original_path=path,
+        fallback_path=fallback_path,
+        error_type=type(sink_error).__name__ if sink_error else "unknown",
+    ).warning(f"日志文件不可写，已切换到备用文件: {fallback_path}")
+    return fallback_path
 
 
 def init_logging(
@@ -362,6 +384,9 @@ def init_logging(
         diagnose=True,
     )
 
+    # 清理过期的 PID 后缀日志文件（默认保留 7 天）
+    cleaned = _cleanup_stale_pid_logs(log_dir, retention_days=7)
+
     logger.bind(
         event="logging_initialized",
         module="config",
@@ -371,9 +396,11 @@ def init_logging(
         error_log_file=error_log_file,
         file_rotation=log_file_rotation,
         file_retention=log_file_retention,
+        cleaned_pid_files=cleaned,
     ).info(
         f"日志系统初始化完成: level={level_str}, dir={log_dir}, "
         f"rotation={log_file_rotation}, retention={log_file_retention}"
+        + (f", 已清理 {cleaned} 个过期 PID 日志" if cleaned > 0 else "")
     )
 
 

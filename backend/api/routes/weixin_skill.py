@@ -877,13 +877,11 @@ async def weixin_qr_wait(
     adapter = WeixinSkillAdapter()
     timeout_seconds = _normalize_timeout_seconds(payload.timeout_seconds, fallback=35)
     poll_base_url = str(session.get("poll_base_url") or payload.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
-    # 校验用户提供的 base_url 域名在白名单内，防止 SSRF
-    user_base_url = str(payload.base_url or "").strip()
-    if user_base_url:
-        parsed = urlparse(user_base_url)
-        hostname = str(parsed.hostname or "").lower()
-        if hostname and hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
-            raise HTTPException(status_code=400, detail=f"不支持的 base_url 域名: {hostname}")
+    # 校验最终使用的 poll_base_url 域名在白名单内，防止 SSRF
+    parsed = urlparse(poll_base_url)
+    hostname = str(parsed.hostname or "").lower()
+    if hostname and hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"不支持的 base_url 域名: {hostname}")
 
     confirmed_payload: Optional[Dict[str, Any]] = None
     with WEIXIN_QR_SESSIONS_LOCK:

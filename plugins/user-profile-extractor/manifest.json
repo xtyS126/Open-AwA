@@ -1,0 +1,51 @@
+{
+  "name": "user-profile-extractor",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "基于LLM的智能用户画像提取插件，从对话历史中自动识别身份特征、偏好、知识水平、沟通风格、行为模式、目标意图、情感状态等多维画像信息，支持置信度模型和生命周期管理",
+  "author": "Open-AwA Team",
+  "auto_authorize_permissions": true,
+  "permissions": ["memory:read", "behavior:read", "database:write"],
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "extract_user_profile",
+      "version": "1.0.0",
+      "config": {
+        "description": "从用户对话历史中提取多维画像信息（身份、偏好、知识水平、沟通风格等），使用LLM分析并生成结构化画像事实"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_profile_facts",
+      "version": "1.0.0",
+      "config": {
+        "description": "获取指定用户的画像事实列表，支持按类别和置信度筛选"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "get_profile_summary",
+      "version": "1.0.0",
+      "config": {
+        "description": "获取用户画像摘要，按维度聚合展示用户的综合特征画像"
+      }
+    },
+    {
+      "point": "tool",
+      "name": "refresh_profile",
+      "version": "1.0.0",
+      "config": {
+        "description": "刷新用户画像的置信度评分，归档低质量事实，保持画像时效性"
+      }
+    },
+    {
+      "point": "event_handler",
+      "name": "on_conversation_updated",
+      "version": "1.0.0",
+      "config": {
+        "description": "监听对话更新事件，自动触发增量画像提取"
+      }
+    }
+  ]
+}
