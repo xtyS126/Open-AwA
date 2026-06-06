@@ -1008,7 +1008,39 @@ function SettingsPage() {
       invalidateRemoteModelCache(providerForm.provider)
       showNotification({ type: 'success', text: '模型导入及配置保存成功' })
       setShowImportModal(false)
-      
+
+      // 为每个新导入的模型创建独立的配置记录，使用户可以在模型列表中分别配置
+      const existingModelNames = new Set(
+        configurations
+          .filter(c => c.provider === providerForm.provider)
+          .map(c => c.model)
+      )
+      const modelsToCreate = newSelected.filter(m => !existingModelNames.has(m))
+      if (modelsToCreate.length > 0) {
+        const normalizedBaseUrlForCreate = normalizeProviderBaseUrl(providerForm.provider, providerForm.api_endpoint)
+        // 依次创建，避免并发时的唯一约束冲突
+        for (const modelName of modelsToCreate) {
+          try {
+            await modelsAPI.createConfiguration({
+              provider: providerForm.provider,
+              model: modelName,
+              display_name: modelName,
+              api_endpoint: normalizedBaseUrlForCreate || undefined,
+              is_default: false
+            })
+          } catch (e) {
+            // 409 冲突表示已存在，静默跳过
+            const status = (e as any)?.response?.status
+            if (status !== 409) {
+              appLogger.error({ event: 'imported_model_config_create_failed', module: 'settings', message: `Failed to create config for model: ${modelName}`, extra: { model: modelName } })
+            }
+          }
+        }
+        if (modelsToCreate.length > 0) {
+          showNotification({ type: 'success', text: `已为 ${modelsToCreate.length} 个模型创建独立配置` })
+        }
+      }
+
       await Promise.all([
         loadModelsData(), // Refresh AI parameters options
         loadApiProvidersData(providerForm.provider) // Refresh provider details to ensure UI sync
@@ -1383,7 +1415,7 @@ function SettingsPage() {
       if (current.includes(modalityType)) {
         // 至少保留一个模态
         if (current.length <= 1) {
-          showNotification({ type: 'info', text: '至少需要保留一个模态类型' })
+          showNotification({ type: 'error', text: '至少需要保留一个模态类型' })
           return prev
         }
         return { ...prev, [key]: current.filter(m => m !== modalityType) }
@@ -2404,12 +2436,17 @@ function SettingsPage() {
             {/* Model Management Table */}
             {loadingConfigs ? (
               <div className={styles['loading']}>加载中...</div>
-            ) : configurations.length === 0 ? (
-              <div className={styles['empty-state']}>
-                <p>暂无配置的模型</p>
-                <p className={styles['hint']}>点击上方"添加模型"按钮来配置第一个模型</p>
-              </div>
-            ) : (
+            ) : (() => {
+              const displayConfigs = configurations.filter(c => c.model !== 'custom-model')
+              if (displayConfigs.length === 0) {
+                return (
+                  <div className={styles['empty-state']}>
+                    <p>暂无配置的模型</p>
+                    <p className={styles['hint']}>点击上方"添加模型"按钮来配置第一个模型</p>
+                  </div>
+                )
+              }
+              return (
               <div className={styles['model-mgmt-table-wrapper']}>
                 <h3>模型列表</h3>
                 <table className={styles['model-mgmt-table']}>
@@ -2425,7 +2462,7 @@ function SettingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {configurations.map(config => {
+                    {displayConfigs.map(config => {
                       const contextWindow = config.model_spec?.context_window
                       return (
                         <tr key={config.id} className={selectedConfigModelOption?.configId === config.id ? styles['selected-row'] : ''}>
@@ -2489,7 +2526,8 @@ function SettingsPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )
+            })()}
 
             {/* 模型编辑模态框 */}
             {editingConfigId !== null && (() => {

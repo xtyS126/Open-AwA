@@ -1145,13 +1145,26 @@ class PricingManager:
             ModelConfiguration.model == model
         ).first()
 
+    def _get_gateway_config(self, provider: str) -> Optional[ModelConfiguration]:
+        """
+        获取指定 Provider 的网关配置（model='custom-model' 的记录），
+        该配置持有 API Key 和 Endpoint 等 Provider 级凭据。
+        """
+        self.ensure_configuration_schema()
+        provider = self.normalize_provider(provider)
+        return self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider,
+            ModelConfiguration.model == "custom-model",
+            ModelConfiguration.is_active == True
+        ).first()
+
     def get_default_provider_configuration(self, provider: str) -> Optional[ModelConfiguration]:
         """
         获取指定供应商的默认配置，若无默认配置则返回第一个激活配置。
-        
+
         Args:
             provider: 供应商名称。
-            
+
         Returns:
             模型配置对象，若不存在则返回 None。
         """
@@ -1208,6 +1221,21 @@ class PricingManager:
         if "max_tokens" in normalized:
             val = normalized.get("max_tokens")
             normalized["max_tokens"] = int(val) if val is not None else None
+
+        # 若未提供 API Key/Endpoint 且不是网关配置（model != 'custom-model'），
+        # 则从同 Provider 的网关配置继承凭据，使每个模型配置自给自足
+        model = normalized.get("model", "")
+        if model and model != "custom-model":
+            provider = normalized.get("provider", "")
+            has_api_key = "api_key" in normalized and normalized["api_key"]
+            has_endpoint = "api_endpoint" in normalized and normalized["api_endpoint"]
+            if provider and (not has_api_key or not has_endpoint):
+                gateway = self._get_gateway_config(provider)
+                if gateway:
+                    if not has_api_key and gateway.api_key:
+                        normalized["api_key"] = gateway.api_key
+                    if not has_endpoint and gateway.api_endpoint:
+                        normalized["api_endpoint"] = gateway.api_endpoint
 
         return normalized
 
