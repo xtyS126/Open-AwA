@@ -145,34 +145,34 @@
 
 | 编号 | 描述 | 状态 |
 |------|------|------|
-| P0-1 | executor.py max_tool_call_rounds 50000→100 | ✅ 已修复 |
-| P0-2 | UserRole.role_name 添加 FK + 迁移函数 | ✅ 已修复 |
-| P1-2 | 速率限制 X-Forwarded-For 代理感知 | ✅ 已修复 |
-| P1-3 | MCPManager 单例验证 | ✅ 已验证 |
-| P2-4 | Session 生命周期验证 | ✅ 已验证 |
-| P3-1 | 移除冗余 pass 语句 | ✅ 已修复 |
-| P3-3 | 魔法数字外部化到 settings | ✅ 已修复 |
-| P3-4 | mcP_params → mcp_params 命名修复 | ✅ 已修复 |
+| P0-1 | executor.py max_tool_call_rounds 50000→100 | [DONE] 已修复 |
+| P0-2 | UserRole.role_name 添加 FK + 迁移函数 | [DONE] 已修复 |
+| P1-2 | 速率限制 X-Forwarded-For 代理感知 | [DONE] 已修复 |
+| P1-3 | MCPManager 单例验证 | [DONE] 已验证 |
+| P2-4 | Session 生命周期验证 | [DONE] 已验证 |
+| P3-1 | 移除冗余 pass 语句 | [DONE] 已修复 |
+| P3-3 | 魔法数字外部化到 settings | [DONE] 已修复 |
+| P3-4 | mcP_params → mcp_params 命名修复 | [DONE] 已修复 |
 
 ### 第2轮 (2026-06-06): 安全加固 + 代码质量
 
 | 编号 | 描述 | 状态 |
 |------|------|------|
-| 安全审查 | _get_client_ip 添加受信代理白名单验证 | ✅ 已修复 |
-| P3-2 | 替换 agent.py 13处通用注释 | ✅ 已修复 |
-| P3-2 | 替换 executor.py 9处通用注释 | ✅ 已修复 |
-| P3-2 | 替换 comprehension.py/planner.py/file_manager.py 通用注释 | ✅ 已修复 |
-| P3-5 | authStore 扩展完整用户信息 + updateUser | ✅ 已修复 |
+| 安全审查 | _get_client_ip 添加受信代理白名单验证 | [DONE] 已修复 |
+| P3-2 | 替换 agent.py 13处通用注释 | [DONE] 已修复 |
+| P3-2 | 替换 executor.py 9处通用注释 | [DONE] 已修复 |
+| P3-2 | 替换 comprehension.py/planner.py/file_manager.py 通用注释 | [DONE] 已修复 |
+| P3-5 | authStore 扩展完整用户信息 + updateUser | [DONE] 已修复 |
 
 ### 第3轮 (2026-06-06): 文件拆分 + 注释清理
 
 | 编号 | 描述 | 状态 |
 |------|------|------|
-| P3-2 | 替换 agent.py 13处 + executor.py 9处 + comprehension/planner/file_manager 通用注释 | ✅ 已修复 |
-| P3-2 | 替换 plugin_logger.py 14处 + base_plugin.py 14处 + skill_registry.py 7处通用注释 | ✅ 已修复 |
-| P3-2 | 替换 skill_engine/skill_validator 等技能系统通用注释 | ✅ 已修复 |
-| P2-3 | api.ts 拆分为 client.ts + types.ts + api.ts（端点函数） | ✅ 已修复 |
-| P3-5 | authStore 扩展完整用户字段 + updateUser 方法 | ✅ 已修复 |
+| P3-2 | 替换 agent.py 13处 + executor.py 9处 + comprehension/planner/file_manager 通用注释 | [DONE] 已修复 |
+| P3-2 | 替换 plugin_logger.py 14处 + base_plugin.py 14处 + skill_registry.py 7处通用注释 | [DONE] 已修复 |
+| P3-2 | 替换 skill_engine/skill_validator 等技能系统通用注释 | [DONE] 已修复 |
+| P2-3 | api.ts 拆分为 client.ts + types.ts + api.ts（端点函数） | [DONE] 已修复 |
+| P3-5 | authStore 扩展完整用户字段 + updateUser 方法 | [DONE] 已修复 |
 
 ### 延期（需要更充分的测试）
 
