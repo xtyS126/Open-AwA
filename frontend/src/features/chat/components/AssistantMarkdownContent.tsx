@@ -114,7 +114,7 @@ function AssistantMarkdownContent({ content }: AssistantMarkdownContentProps) {
   const processedContent = useMemo(() => preprocessImageContent(content), [content])
 
   const imageComponents = useMemo(() => ({
-    img: ({ src, alt, ...props }: any) => {
+    img: ({ src, alt }: any) => {
       return <ImageWithLightbox src={src} alt={alt} />
     },
   }), [])
