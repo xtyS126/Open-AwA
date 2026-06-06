@@ -30,10 +30,7 @@ class LogEntry:
         plugin_id: str,
         extra: Optional[Dict[str, Any]] = None,
     ):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化一条插件日志条目：记录时间戳、级别、消息、插件 ID 和扩展元数据。"""
         self.timestamp = datetime.now(timezone.utc).isoformat()
         self.level = level.upper()
         self.message = message
@@ -41,10 +38,7 @@ class LogEntry:
         self.extra = extra or {}
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        处理to、dict相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """将日志条目序列化为字典，便于 API 响应和 JSON 导出。"""
         return {
             "timestamp": self.timestamp,
             "level": self.level,
@@ -60,10 +54,7 @@ class PluginLogger:
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     def __init__(self, plugin_id: str, max_entries: int = 500):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化插件日志记录器：绑定插件 ID，设置默认级别 DEBUG，分配固定容量环形缓冲区。"""
         self.plugin_id = plugin_id
         self._level = "DEBUG"
         self._entries: deque = deque(maxlen=max_entries)
@@ -71,35 +62,23 @@ class PluginLogger:
 
     @property
     def level(self) -> str:
-        """
-        处理level相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """获取当前日志级别阈值。"""
         return self._level
 
     @level.setter
     def level(self, value: str) -> None:
-        """
-        处理level相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """设置日志级别阈值。传入值将转为大写并与 LOG_LEVELS 比对，无效值抛出 ValueError。"""
         value = value.upper()
         if value not in LOG_LEVELS:
             raise ValueError(f"Invalid log level: {value}")
         self._level = value
 
     def _should_log(self, level: str) -> bool:
-        """
-        处理should、log相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """判断指定级别的日志是否达到当前阈值，低于阈值的日志将被过滤。"""
         return LOG_LEVELS.get(level.upper(), 0) >= LOG_LEVELS.get(self._level, 0)
 
     def _log(self, level: str, message: str, **extra: Any) -> None:
-        """
-        处理log相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """内部日志写入方法：通过阈值过滤后创建 LogEntry 并追加到环形缓冲区。"""
         if not self._should_log(level):
             return
         entry = LogEntry(level=level, message=message, plugin_id=self.plugin_id, extra=extra)
@@ -107,38 +86,23 @@ class PluginLogger:
             self._entries.append(entry)
 
     def debug(self, message: str, **extra: Any) -> None:
-        """
-        处理debug相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """写入 DEBUG 级别日志。"""
         self._log("DEBUG", message, **extra)
 
     def info(self, message: str, **extra: Any) -> None:
-        """
-        处理info相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """写入 INFO 级别日志。"""
         self._log("INFO", message, **extra)
 
     def warning(self, message: str, **extra: Any) -> None:
-        """
-        处理warning相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """写入 WARNING 级别日志。"""
         self._log("WARNING", message, **extra)
 
     def error(self, message: str, **extra: Any) -> None:
-        """
-        处理error相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """写入 ERROR 级别日志。"""
         self._log("ERROR", message, **extra)
 
     def critical(self, message: str, **extra: Any) -> None:
-        """
-        处理critical相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """写入 CRITICAL 级别日志。"""
         self._log("CRITICAL", message, **extra)
 
     def get_entries(
@@ -160,10 +124,7 @@ class PluginLogger:
         return [e.to_dict() for e in entries]
 
     def clear(self) -> None:
-        """
-        处理clear相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """清空当前插件的所有日志条目。"""
         with self._lock:
             self._entries.clear()
 
@@ -178,10 +139,7 @@ class LogManager:
     _loggers: Dict[str, PluginLogger] = {}
 
     def __new__(cls) -> "LogManager":
-        """
-        处理new相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """单例模式：确保全局只有一个 LogManager 实例，通过类级锁保证线程安全。"""
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)

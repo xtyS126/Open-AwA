@@ -20,25 +20,16 @@ class ValidationResult(NamedTuple):
 
     @classmethod
     def success(cls, warnings: Optional[List[str]] = None) -> 'ValidationResult':
-        """
-        处理success相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """创建表示校验通过的 ValidationResult。"""
         return cls(valid=True, errors=[], warnings=warnings or [])
 
     @classmethod
     def failure(cls, errors: List[str], warnings: Optional[List[str]] = None) -> 'ValidationResult':
-        """
-        处理failure相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """创建表示校验失败的 ValidationResult。"""
         return cls(valid=False, errors=errors, warnings=warnings or [])
 
     def merge(self, other: 'ValidationResult') -> 'ValidationResult':
-        """
-        处理merge相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """合并两个校验结果：valid 取逻辑与，errors/warnings 拼接。"""
         combined_errors = self.errors + other.errors
         combined_warnings = self.warnings + other.warnings
         return ValidationResult(
@@ -68,10 +59,7 @@ class SkillValidator:
     ]
 
     def __init__(self):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化技能校验器：加载必填字段和合法权限列表。"""
         logger.info("SkillValidator initialized")
 
     def validate_yaml_format(self, yaml_content: str) -> bool:

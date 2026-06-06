@@ -28,10 +28,7 @@ class BasePlugin(ABC):
     )
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化插件实例：加载配置字典，设置默认状态为 'registered'。"""
         self.config = config or {}
         self.context: Optional[PluginContext] = None
         self._initialized = False
@@ -43,95 +40,56 @@ class BasePlugin(ABC):
 
     @abstractmethod
     def initialize(self) -> bool:
-        """
-        处理initialize相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """抽象方法：插件初始化逻辑，子类必须实现。返回 True 表示初始化成功。"""
         raise NotImplementedError
 
     @abstractmethod
     def execute(self, *args, **kwargs) -> Any:
-        """
-        处理execute相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """抽象方法：执行插件核心功能，子类必须实现。"""
         raise NotImplementedError
 
     def cleanup(self) -> None:
-        """
-        处理cleanup相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """清理插件资源：重置 _initialized 标志。"""
         self._initialized = False
 
     def validate(self) -> bool:
-        """
-        处理validate相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """验证插件配置有效性，基类默认返回 True，子类可按需覆写。"""
         return True
 
     def on_registered(self) -> None:
-        """
-        处理on、registered相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件已注册到系统。"""
         self._state = "registered"
 
     def on_loaded(self) -> None:
-        """
-        处理on、loaded相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件代码已加载到内存。"""
         self._state = "loaded"
 
     def on_enabled(self) -> None:
-        """
-        处理on、enabled相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件已启用，可以对外提供服务。"""
         self._state = "enabled"
 
     def on_disabled(self) -> None:
-        """
-        处理on、disabled相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件已被禁用。"""
         self._state = "disabled"
 
     def on_unloaded(self) -> None:
-        """
-        处理on、unloaded相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件已从内存中卸载。"""
         self._state = "unloaded"
 
     def on_updating(self) -> None:
-        """
-        处理on、updating相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件正在进行蓝绿热更新。"""
         self._state = "updating"
 
     def on_error_state(self) -> None:
-        """
-        处理on、error、state相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：插件进入错误状态。"""
         self._state = "error"
 
     def on_error(self, error: Exception, from_state: str, to_state: str) -> None:
-        """
-        处理on、error相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """生命周期钩子：状态迁移发生异常时回调，可记录错误上下文。"""
         self._state = "error"
 
     def rollback(self, previous_state: str, context: Optional[Dict[str, Any]] = None) -> bool:
-        """
-        处理rollback相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """回滚插件状态到之前的状态，基类默认恢复 _state 并返回 True。"""
         self._state = previous_state
         return True
 

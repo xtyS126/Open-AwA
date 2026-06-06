@@ -157,6 +157,16 @@ class Settings(BaseSettings):
     SANDBOX_TIMEOUT: int = 30
     SANDBOX_MEMORY_LIMIT: str = "512m"
     SANDBOX_BACKEND: str = "restricted_python"
+
+    # Agent 运行时配置
+    MAX_TOOL_CALL_ROUNDS: int = 12        # 工具调用回环最大轮数
+    MAX_ACTIVE_AGENT_TASKS: int = 1000    # 活跃 Agent 任务容量上限
+    TOOL_EXECUTION_CACHE_SIZE: int = 256  # 工具执行幂等缓存上限
+    RECORD_SEMAPHORE_SIZE: int = 20       # 并发记录任务信号量上限
+
+    # 受信代理 IP/CIDR 列表，用逗号分隔。仅来自这些代理的 X-Forwarded-For / X-Real-IP 头会被信任。
+    # 默认信任本地回环和私有地址段（适用于单机部署和 Docker 网络）。
+    TRUSTED_PROXIES: str = "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True
@@ -168,6 +178,9 @@ class Settings(BaseSettings):
     LOG_FILE_COMPRESSION: str = "gz"
     # 开发环境脱敏开关（True 时禁用脱敏，方便调试）
     LOG_DISABLE_SANITIZE: bool = False
+
+    # 数据库监控配置
+    SLOW_QUERY_THRESHOLD_MS: int = 500    # 慢查询检测阈值（毫秒）
 
     # 可选 HTTPS 配置，证书和私钥同时提供时启用 TLS。
     SSL_CERTFILE: Optional[str] = None

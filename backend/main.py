@@ -614,7 +614,56 @@ async def _add_csp_header(request: Request, call_next):
     return response
 
 # Rate Limiting 配置
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+# 使用代理感知的 key_func，仅当请求来自受信代理时才信任 X-Forwarded-For / X-Real-IP 头，
+# 防止客户端伪造代理头绕过速率限制。
+_TRUSTED_PROXY_NETWORKS: list = []
+try:
+    import ipaddress as _ipaddress_mod
+    _raw_proxies = str(settings.TRUSTED_PROXIES or "").strip()
+    if _raw_proxies:
+        for _entry in _raw_proxies.split(","):
+            _entry = _entry.strip()
+            if _entry:
+                try:
+                    _TRUSTED_PROXY_NETWORKS.append(_ipaddress_mod.ip_network(_entry, strict=False))
+                except ValueError:
+                    logger.bind(event="invalid_trusted_proxy", module="main", entry=_entry).warning(
+                        f"无效的受信代理条目，已跳过: {_entry}"
+                    )
+except ImportError:
+    pass
+
+
+def _get_client_ip(request: Request) -> str:
+    """从请求中提取真实客户端 IP。
+    仅当直连 IP 属于受信代理时，才读取 X-Forwarded-For / X-Real-IP 头；
+    否则直接返回直连 IP，防止客户端伪造代理头绕过速率限制。
+    """
+    # 获取直连 IP（反向代理场景下为代理 IP）
+    direct_ip = get_remote_address(request)
+    if not _TRUSTED_PROXY_NETWORKS:
+        return direct_ip
+
+    try:
+        _addr = _ipaddress_mod.ip_address(direct_ip)
+        _trusted = any(_addr in _net for _net in _TRUSTED_PROXY_NETWORKS)
+    except (ValueError, TypeError):
+        _trusted = False
+
+    if not _trusted:
+        return direct_ip
+
+    # 受信代理：从 X-Forwarded-For 获取客户端真实 IP
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    # 其次使用 X-Real-IP
+    real_ip = request.headers.get("X-Real-IP", "")
+    if real_ip:
+        return real_ip.strip()
+    return direct_ip
+
+limiter = Limiter(key_func=_get_client_ip, default_limits=["60/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
@@ -699,8 +748,7 @@ async def add_cache_headers(request: Request, call_next):
 @app.get("/")
 async def root():
     """
-    处理root相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    根路径健康探活端点，返回项目名称、版本和运行状态。
     """
     return {
         "name": settings.PROJECT_NAME,
@@ -712,8 +760,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """
-    处理health、check相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    轻量级健康检查端点，无需认证。用于负载均衡器和监控系统的存活探测。
     """
     return {"status": "healthy"}
 

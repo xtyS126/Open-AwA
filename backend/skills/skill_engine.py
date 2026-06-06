@@ -33,10 +33,7 @@ class PerformanceMetrics:
     peak_memory: Optional[int] = None
 
     def finalize(self):
-        """
-        处理finalize相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """结束性能计时：记录结束时间和总耗时。"""
         self.end_time = time.time()
         self.duration = self.end_time - self.start_time
 
@@ -93,10 +90,7 @@ class SkillEngine:
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     def __init__(self, db_session):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化技能引擎：创建 SkillRegistry、SkillValidator 和 SkillExecutor 子组件。"""
         self.db_session = db_session
         self.registry = SkillRegistry(db_session)
         self.validator = SkillValidator()

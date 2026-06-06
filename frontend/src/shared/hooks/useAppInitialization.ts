@@ -7,9 +7,18 @@ import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { useChatStore } from '@/features/chat/store/chatStore'
 
+interface UserProfile {
+  username: string
+  nickname?: string | null
+  avatar_url?: string | null
+  email?: string | null
+  phone?: string | null
+  role?: string
+}
+
 interface AppInitializationResult {
   isAuthenticated: boolean
-  username?: string
+  user?: UserProfile
 }
 
 let initializationPromise: Promise<AppInitializationResult> | null = null
@@ -96,9 +105,17 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
           message: 'existing session validated',
         })
 
+        const data = meResponse.data || {}
         cachedInitializationResult = {
           isAuthenticated: true,
-          username: meResponse.data?.username || 'user',
+          user: {
+            username: data.username || 'user',
+            nickname: data.nickname,
+            avatar_url: data.avatar_url,
+            email: data.email,
+            phone: data.phone,
+            role: data.role,
+          },
         }
         return cachedInitializationResult
       } catch (error) {
@@ -162,8 +179,10 @@ export function useAppInitialization() {
         return
       }
 
-      if (result.isAuthenticated) {
-        setAuth({ username: result.username || 'user' }, null)
+      if (result.isAuthenticated && result.user) {
+        setAuth(result.user, null)
+      } else if (result.isAuthenticated) {
+        setAuth({ username: 'user' }, null)
       } else {
         logout()
       }

@@ -14,8 +14,7 @@ class PlanningLayer:
     """
     def __init__(self):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化规划层：维护可用工具注册表和默认规划策略参数。
         """
         self.available_tools = []
         logger.info("PlanningLayer initialized")

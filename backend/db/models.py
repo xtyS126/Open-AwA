@@ -46,7 +46,9 @@ if "sqlite" in settings.DATABASE_URL:
         cursor.close()
 
 # SQL 事件监听：记录慢查询和数据库错误
-_SLOW_QUERY_THRESHOLD_MS = 500
+# 慢查询阈值从 settings 读取，支持不同部署环境调优
+from config.settings import settings as _db_settings
+_SLOW_QUERY_THRESHOLD_MS = _db_settings.SLOW_QUERY_THRESHOLD_MS
 
 
 @event.listens_for(engine, "before_cursor_execute")
@@ -511,7 +513,7 @@ class UserRole(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    role_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    role_name: Mapped[str] = mapped_column(String(50), ForeignKey("roles.name"), nullable=False, index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -1295,6 +1297,34 @@ def init_db(bind_engine=None):
     _migrate_short_term_memory_rich_fields(use_engine=use_engine)
     _migrate_workspace_columns(use_engine=use_engine)
     _migrate_profile_facts_table(use_engine=use_engine)
+    _migrate_user_role_fk(use_engine=use_engine)
+
+
+def _migrate_user_role_fk(use_engine=None):
+    """
+    清理 user_roles 中引用不存在角色的孤立记录，并确保新数据库包含外键约束。
+    SQLite 不支持 ALTER TABLE ADD CONSTRAINT，因此仅在数据层面做完整性清理。
+    外键约束在 Base.metadata.create_all() 创建新表时生效。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+
+    if "user_roles" not in table_names or "roles" not in table_names:
+        return
+
+    with target_engine.begin() as connection:
+        # 清理引用不存在角色的孤立记录
+        result = connection.execute(
+            text(
+                "DELETE FROM user_roles WHERE role_name NOT IN "
+                "(SELECT name FROM roles)"
+            )
+        )
+        if result.rowcount > 0:
+            logger.info(
+                f"已清理 {result.rowcount} 条引用不存在角色的孤立 user_roles 记录"
+            )
 
 
 def _migrate_workspace_columns(use_engine=None):

@@ -17,18 +17,12 @@ class SkillRegistry:
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
     """
     def __init__(self, db_session):
-        """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """初始化技能注册表：绑定数据库会话，初始化内存缓存字典。"""
         self.db = db_session
         self._cache: Dict[str, Skill] = {}
 
     def register(self, skill_config: Dict) -> Skill:
-        """
-        处理register相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """注册新技能：若同名技能已存在则更新，否则创建新记录并加入缓存。"""
         skill_name = skill_config.get('name') or ""
         existing_skill = self.get(skill_name or "")
         if existing_skill:
@@ -56,10 +50,7 @@ class SkillRegistry:
         return skill
 
     def _update_skill(self, skill: Skill, skill_config: Dict) -> Skill:
-        """
-        处理update、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """更新已有技能：合并配置字段并刷新数据库和缓存。"""
         if 'version' in skill_config:
             skill.version = skill_config['version']
         if 'description' in skill_config:
@@ -78,10 +69,7 @@ class SkillRegistry:
         return skill
 
     def unregister(self, skill_name: str) -> bool:
-        """
-        处理unregister相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """注销指定技能：从数据库和缓存中移除。"""
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for unregistration")
@@ -97,10 +85,7 @@ class SkillRegistry:
         return True
 
     def get(self, skill_name: str) -> Optional[Skill]:
-        """
-        处理get相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """按名称获取技能：优先从缓存读取，缓存未命中时查数据库。"""
         if skill_name in self._cache:
             logger.debug(f"Skill '{skill_name}' retrieved from cache")
             return self._cache[skill_name]
@@ -134,10 +119,7 @@ class SkillRegistry:
         return skills
 
     def enable(self, skill_name: str) -> bool:
-        """
-        处理enable相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """启用指定技能：设置 enabled=True 并持久化。"""
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for enabling")
@@ -154,10 +136,7 @@ class SkillRegistry:
         return True
 
     def disable(self, skill_name: str) -> bool:
-        """
-        处理disable相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-        """
+        """禁用指定技能：设置 enabled=False 并持久化。"""
         skill = self.get(skill_name)
         if not skill:
             logger.warning(f"Skill '{skill_name}' not found for disabling")

@@ -184,6 +184,16 @@ Scheduled tasks run in an isolated agent context (`scheduled_execution_isolated:
 ```
 Types: `[New]`, `[Fix]`, `[Optimization]`, `[Refactoring]`, `[Documentation]`, `[Test]`, `[Configuration]`, `[Remove]`, `[Dependency]`
 
+### Git Workflow
+
+**所有提交直接推到 main 分支，不使用 debug 分支作为中间步骤。**
+完成修改后直接 `git add` + `git commit` 到 main：
+```bash
+git add -A
+git commit -m "[Type] 变更描述"
+```
+不使用 `debug` 分支，不创建中间分支。如果需要回滚，使用 `git revert`。
+
 ## Known Pitfalls
 
 - **Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop

@@ -50,8 +50,7 @@ class FileManagerSkill:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化文件管理工具：从配置中读取允许操作的目录白名单，设置检查点存储引用。
         """
         self.config = config or {}
         self.allowed_directories: List[str] = self.config.get('allowed_directories', [])
@@ -70,8 +69,8 @@ class FileManagerSkill:
 
     async def initialize(self) -> bool:
         """
-        处理initialize相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        验证文件管理工具的运行环境：检查配置目录是否存在且可访问。
+        初始化成功后设置 _initialized 标志，后续 execute 调用依赖此标志。
         """
         logger.info(f"Initializing {self.name} skill v{self.version}")
         self._setup_allowed_directories()
@@ -122,8 +121,8 @@ class FileManagerSkill:
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         """
-        处理execute相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        执行文件操作（读取/写入/删除/列表/搜索/差异对比/批量编辑/撤销）。
+        所有路径操作限制在 allowed_directories 白名单内，编辑前自动保存检查点。
         """
         if not self._initialized:
             logger.error("Skill not initialized")
@@ -406,8 +405,7 @@ class FileManagerSkill:
 
     def cleanup(self):
         """
-        处理cleanup相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        清理文件管理工具的内部状态：重置 _initialized 标志，释放检查点引用。
         """
         self._initialized = False
         logger.info(f"{self.name} skill cleaned up")

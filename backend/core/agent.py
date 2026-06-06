@@ -40,10 +40,9 @@ from api.services.chat_protocol import (
 
 from sqlalchemy.orm import Session
 
-MAX_TOOL_CALL_ROUNDS = 12
-
 # 活跃 Agent 任务容量上限：防止异常断流或取消链路不完整时字典无限增长
-_MAX_ACTIVE_AGENT_TASKS = 1000
+# 工具调用回环上限和任务容量均通过 settings 配置，支持不同部署环境调优。
+_MAX_ACTIVE_AGENT_TASKS = 1000  # 从 settings 读取的默认值，实际由注册逻辑使用
 # 全局活跃 Agent 任务字典：session_id -> asyncio.Task
 # 供取消端点查找并取消正在执行的 Agent 异步任务
 _active_agent_tasks: Dict[str, asyncio.Task] = {}
@@ -92,15 +91,16 @@ def _cleanup_completed_tasks() -> None:
 
 def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
     """
-    解析工具调用回环上限，默认 12 轮，上限 100 轮。
+    解析工具调用回环上限，默认从 settings 配置读取，上限 100 轮。
     防止请求方传入超大值导致 Agent 长时间停留在工具调用回环中，
     放大成本、延迟和资源占用风险。
     """
+    from config.settings import settings
     raw_value = context.get("max_tool_call_rounds")
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
-        return MAX_TOOL_CALL_ROUNDS
+        return settings.MAX_TOOL_CALL_ROUNDS
     return max(1, min(100, value))
 
 class AIAgent:
@@ -127,7 +127,8 @@ class AIAgent:
         self.plugin_results: List[Dict[str, Any]] = []
 
         # 限制并发 fire-and-forget 记录任务数，防止高并发下 Task 堆积
-        self._record_semaphore = asyncio.Semaphore(20)
+        from config.settings import settings as _agent_settings
+        self._record_semaphore = asyncio.Semaphore(_agent_settings.RECORD_SEMAPHORE_SIZE)
 
         # 初始化记忆管理器，并注入到反馈层
         self.memory_manager = None
@@ -151,8 +152,8 @@ class AIAgent:
 
     def _handle_record_task_result(self, task: asyncio.Task) -> None:
         """
-        处理handle、record、task、result相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        检查后台记录任务（行为日志/对话记录）的执行结果，
+        对取消和异常情况记录告警日志，避免 fire-and-forget 任务静默失败。
         """
         try:
             if task.cancelled():
@@ -684,16 +685,16 @@ class AIAgent:
                     continue
                 seen_names.add(func_name)
 
-                mcP_params = mcp_tool.get("parameters")
-                if not isinstance(mcP_params, dict) or not mcP_params:
-                    mcP_params = {"type": "object", "properties": {}}
+                mcp_params = mcp_tool.get("parameters")
+                if not isinstance(mcp_params, dict) or not mcp_params:
+                    mcp_params = {"type": "object", "properties": {}}
 
                 tool_entry = {
                     "type": "function",
                     "function": {
                         "name": func_name,
                         "description": str(mcp_tool.get("description", "")),
-                        "parameters": mcP_params,
+                        "parameters": mcp_params,
                     },
                 }
                 tools.append(tool_entry)
@@ -711,7 +712,6 @@ class AIAgent:
             logger.bind(module="agent", event="builtin_tools_load_error").warning(
                 "加载内置工具定义失败，跳过内置工具"
             )
-            pass
 
         if tools:
             logger.bind(
@@ -1150,7 +1150,6 @@ class AIAgent:
             logger.bind(module="agent", event="task_tools_load_error").warning(
                 "加载任务运行时工具定义失败，跳过任务工具"
             )
-            pass
 
         return tools
 
@@ -1169,8 +1168,8 @@ class AIAgent:
         metadata: Any = None,
     ) -> None:
         """
-        处理schedule、record相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        将对话节点（LLM调用/工具执行/意图识别）通过后台任务异步记录到行为日志和对话记录表。
+        受 scheduled_execution_isolated 开关控制，定时任务执行时不写入记录以避免污染。
         """
         user_id = context.get("user_id")
         session_id = context.get("session_id", "default")
@@ -1290,8 +1289,8 @@ class AIAgent:
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
         """
-        处理execute、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        通过 SkillEngine 执行指定技能，收集执行结果并记录到 skill_results 列表。
+        成功时返回包含 outputs 和 steps 的结构化结果，失败时返回错误信息。
         """
         logger.info(f"Executing skill: {skill_name}")
         try:
@@ -1337,8 +1336,8 @@ class AIAgent:
     
     async def execute_plugin(self, plugin_name: str, method: str, **kwargs) -> Any:
         """
-        处理execute、plugin相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        加载并异步执行指定插件的目标方法。若插件未加载则自动加载。
+        将执行结果（成功/失败）记录到 plugin_results 列表，用于后续汇总统计。
         """
         logger.info(f"Executing plugin '{plugin_name}' method '{method}'")
         try:
@@ -2235,8 +2234,9 @@ class AIAgent:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        处理auto、execute、skills、and、plugins相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        基于意图识别结果和实体信息，自动匹配并执行相关技能和插件。
+        匹配策略：将意图关键词和实体类型与技能描述/工具描述进行文本匹配。
+        仅处理已启用且 auto_executable 不为 False 的技能。
         """
         logger.info("Auto-executing skills and plugins based on intent and entities")
         auto_results: dict[str, list[Any]] = {
@@ -2358,8 +2358,8 @@ class AIAgent:
         entities: List[Dict]
     ) -> bool:
         """
-        处理is、skill、relevant相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        判断技能是否与当前意图相关：检查技能名称和描述是否包含意图关键词或实体类型。
+        仅匹配长度超过 3 字符的关键词，避免短词误匹配。
         """
         skill_name_lower = skill_name.lower()
         
@@ -2382,8 +2382,8 @@ class AIAgent:
         entities: List[Dict]
     ) -> bool:
         """
-        处理is、plugin、relevant相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        判断插件工具是否与当前意图相关：检查工具名称和描述是否包含意图关键词或实体类型。
+        匹配逻辑与 _is_skill_relevant 一致，仅匹配长度超过 3 字符的关键词。
         """
         tool_name_lower = tool_name.lower()
         
@@ -2400,8 +2400,8 @@ class AIAgent:
     
     async def handle_confirmation(self, confirmed: bool, step: Dict, context: Dict) -> Dict[str, Any]:
         """
-        处理handle、confirmation相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        处理用户对操作步骤的确认或取消：确认时执行步骤，取消时返回 cancelled 状态。
+        用于需要用户二次确认的危险操作流程（如文件删除、命令执行等）。
         """
         self._prepare_context(context.get("message", ""), context)
 
@@ -2417,8 +2417,9 @@ class AIAgent:
         context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
-        处理retrieve、relevant、experiences相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从经验记忆中检索与当前用户输入相关的历史经验。
+        通过 ExperienceManager 进行语义匹配，最多返回 3 条相关经验，
+        每条包含类型、标题、内容、置信度和触发条件。
         """
         try:
             db = context.get('db')
@@ -2542,8 +2543,9 @@ class AIAgent:
         status: str
     ) -> None:
         """
-        处理extract、and、store、experience相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从会话执行结果中提取可复用的经验并持久化存储。
+        通过 ExperienceExtractor 分析用户目标、执行步骤和最终结果，
+        提取有价值的经验模式保存到经验文件。
         """
         try:
             db = context.get('db')
@@ -2585,8 +2587,8 @@ class AIAgent:
     
     def _collect_skill_plugin_results(self) -> Dict[str, Any]:
         """
-        处理collect、skill、plugin、results相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        汇总当前会话中所有技能和插件的执行统计。
+        返回包含技能/插件各自的总数、成功数、失败数和详细结果的字典。
         """
         logger.info("Collecting skill and plugin execution results")
         
@@ -2614,8 +2616,8 @@ class AIAgent:
     
     def _generate_skill_plugin_feedback(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理generate、skill、plugin、feedback相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        根据技能和插件执行统计生成反馈摘要。
+        计算各自的成功率，成功率低于 50% 时标记 needs_attention 告警。
         """
         logger.info("Generating feedback for skill and plugin executions")
         
@@ -2656,8 +2658,8 @@ class AIAgent:
     
     def clear_results(self) -> None:
         """
-        处理clear、results相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        清空当前会话中累积的技能和插件执行结果列表。
+        通常在新一轮对话开始时调用，避免历史执行结果干扰后续判断。
         """
         logger.info("Clearing skill and plugin results")
         self.skill_results.clear()

@@ -28,16 +28,15 @@ from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
 from sqlalchemy.orm import Session
 
-MAX_TOOL_CALL_ROUNDS = 12
-
-
 def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
+    """解析工具调用回环上限，默认从 settings 读取，上限 100 轮。"""
+    from config.settings import settings
     raw_value = context.get("max_tool_call_rounds")
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
-        return MAX_TOOL_CALL_ROUNDS
-    return max(1, min(50000, value))
+        return settings.MAX_TOOL_CALL_ROUNDS
+    return max(1, min(100, value))
 
 
 def validate_parameters_against_schema(
@@ -94,8 +93,8 @@ class ExecutionLayer:
     """
     def __init__(self):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化执行层：注册默认供应商端点映射、API Key 字段映射、
+        工具执行幂等缓存（LRU，上限由 settings.TOOL_EXECUTION_CACHE_SIZE 控制）。
         """
         self.tools = {}
         self.llm_api_url = None
@@ -116,13 +115,14 @@ class ExecutionLayer:
         }
         self._tool_execution_cache: Dict[str, Dict[str, Any]] = {}
         self._tool_execution_cache_order: list[str] = []
-        self._max_tool_execution_cache = 256
+        from config.settings import settings as _exec_settings
+        self._max_tool_execution_cache = _exec_settings.TOOL_EXECUTION_CACHE_SIZE
         logger.info("ExecutionLayer initialized")
 
     def configure_llm(self, api_url: str, api_key: Optional[str] = None):
         """
-        处理configure、llm相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        配置执行层的 LLM API 连接参数（端点 URL 和 API Key）。
+        可用于在运行时动态切换后端模型服务。
         """
         self.llm_api_url = api_url
         self.llm_api_key = api_key
@@ -130,16 +130,14 @@ class ExecutionLayer:
 
     def register_tool(self, name: str, tool_func: Callable[..., Any]):
         """
-        处理register、tool相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        注册一个命名工具到执行层的工具注册表，供 execute_step 按 action 名称分发调用。
         """
         self.tools[name] = tool_func
         logger.debug(f"Registered execution tool: {name}")
 
     def _build_error(self, code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        处理build、error相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        构建统一的错误响应字典，自动注入当前请求的 request_id。
         """
         return build_standard_error(
             code=code,
@@ -336,8 +334,9 @@ class ExecutionLayer:
 
     def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
         """
-        处理extract、response、text相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从不同供应商的非流式响应中统一提取文本内容。
+        支持 OpenAI choices[0].message.content、Anthropic content blocks、
+        Google Gemini candidates[0].content.parts 三种格式。
         """
         if "response" in response_data and response_data["response"] is not None:
             return str(response_data["response"])
@@ -800,8 +799,9 @@ class ExecutionLayer:
 
     def _resolve_llm_configuration(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理resolve、llm、configuration相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        从上下文中解析完整的 LLM 配置（provider/model/api_key/api_endpoint）。
+        优先级：DB 精确匹配 → DB 默认配置 → 全局 settings → 内置供应商端点，
+        任一环节缺失则返回包含标准错误对象的失败结果。
         """
         from config.settings import settings
 
@@ -1680,8 +1680,8 @@ class ExecutionLayer:
 
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、step相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        执行单个规划步骤：根据 action 类型分发给对应处理函数（read_files/execute_command/llm_* 等）。
+        执行前校验参数 Schema，执行后通过幂等键缓存结果防止重复执行。
         """
         action = step.get("action")
         if action is None:
@@ -1773,8 +1773,8 @@ class ExecutionLayer:
     
     async def _execute_read_files(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、read、files相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        读取指定文件列表的内容。包含路径穿越防护：所有文件路径限制在工作区目录内。
+        支持 workspace 环境变量 OPENAWA_WORKSPACE 自定义工作区根路径。
         """
         files = step.get("targets", [])
         results = {}
@@ -1813,8 +1813,8 @@ class ExecutionLayer:
     
     async def _execute_command(self, step: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、command相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        在沙箱中异步执行 Shell 命令。包含三层安全防护：
+        命令长度限制（512 字符）、security.sandbox 白名单校验、30 秒超时自动终止。
         """
         command = step.get("command", "")
 
@@ -1890,8 +1890,8 @@ class ExecutionLayer:
     
     async def _execute_llm(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、llm相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        通过 LLM 生成内容（llm_generate 动作的处理函数）。
+        调用 _call_llm_api 发起非流式请求，返回结果标记 requires_confirmation 用于人工审核。
         """
         prompt = self._resolve_step_param(step, "prompt", "task") or ""
         result = await self._call_llm_api(prompt, context)
@@ -1912,8 +1912,8 @@ class ExecutionLayer:
 
     async def _execute_llm_query(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、llm、query相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        通过 LLM 执行查询（llm_query 动作的处理函数）。
+        与 _execute_llm 的区别：不标记 requires_confirmation，适用于只读查询场景。
         """
         prompt = self._resolve_step_param(step, "prompt", "query") or ""
         result = await self._call_llm_api(prompt, context)
@@ -1933,8 +1933,8 @@ class ExecutionLayer:
 
     async def _execute_llm_explain(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、llm、explain相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        通过 LLM 解释内容（llm_explain 动作的处理函数）。
+        支持 target 参数作为备选输入源，自动构造 "Explain: {target}" 提示词。
         """
         prompt = self._resolve_step_param(step, "prompt")
         if prompt is None or prompt == "":
@@ -1957,8 +1957,8 @@ class ExecutionLayer:
 
     async def _execute_llm_chat(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理execute、llm、chat相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        通过 LLM 进行自由对话（llm_chat 动作的处理函数）。
+        与 _execute_llm 的区别：不需要人工确认，适用于对话式交互场景。
         """
         message = step.get("message", "")
         result = await self._call_llm_api(message, context)
@@ -1982,8 +1982,7 @@ class ExecutionLayer:
     
     async def retry_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理retry、step相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        重试失败的执行步骤。直接委派给 execute_step，不增加额外幂等键——允许绕过缓存重新执行。
         """
         logger.info(f"Retrying step: {step.get('action')}")
         return await self.execute_step(step, context)
@@ -1995,8 +1994,7 @@ class ExecutionLayer:
         db: Session
     ) -> None:
         """
-        处理record、experience、feedback相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        更新经验条目的质量评分：根据执行成功/失败反馈调整经验的 success_metrics 置信度。
         """
         try:
             manager = ExperienceManager(db)

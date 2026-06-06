@@ -15,8 +15,7 @@ class ComprehensionLayer:
     """
     def __init__(self):
         """
-        处理init相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        初始化理解层：加载中文意图分类的关键词模式（execute/query/explain/chat 四类）。
         """
         self.intent_patterns = {
             "execute": ["帮我", "执行", "完成", "做", "创建", "修改", "删除"],
