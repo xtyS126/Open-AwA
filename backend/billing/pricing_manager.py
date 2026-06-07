@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Set, Tuple
 from billing.models import ModelPricing, ModelConfiguration, ProviderCredential
 from datetime import datetime, timezone
+from loguru import logger
 import json
 
 
@@ -1211,7 +1212,9 @@ class PricingManager:
         self.ensure_configuration_schema()
         provider = self.normalize_provider(provider)
 
-        cred = self.get_provider_credential(provider)
+        cred = self.get_provider_credential(provider) or self.db.query(ProviderCredential).filter(
+            ProviderCredential.provider == provider
+        ).first()
         if cred:
             for key in ("display_name", "icon", "api_endpoint"):
                 if key in data and data[key] is not None:
