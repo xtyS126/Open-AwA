@@ -291,7 +291,6 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
             db.close()
 
 
-@asynccontextmanager
 async def _startup_autonomous_mode(profiler: StartupProfiler) -> None:
     """初始化自主运行模式（仅通过 .env 配置）。"""
     try:
