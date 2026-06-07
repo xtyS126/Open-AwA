@@ -12,6 +12,19 @@ interface LoggerPayload {
   extra?: Record<string, unknown>
 }
 
+interface LogRecord {
+  timestamp: string
+  level: LogLevel
+  service: string
+  module: string
+  event: string
+  message: string
+  request_id: string
+  action?: string
+  status?: string
+  extra: Record<string, unknown>
+}
+
 const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
   DEBUG: 10,
   INFO: 20,
@@ -23,6 +36,10 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 const DEFAULT_LEVEL: LogLevel = 'INFO'
 const SERVICE = 'openawa-frontend'
 const REQUEST_ID_KEY = 'current_request_id'
+
+// localStorage 日志缓冲区
+const LOG_BUFFER_KEY = 'openawa_log_buffer'
+const LOG_BUFFER_MAX = 200
 
 function getConfiguredLevel(): LogLevel {
   try {
@@ -64,7 +81,6 @@ export function getCurrentRequestId(): string {
   try {
     return sessionStorage.getItem(REQUEST_ID_KEY) || ''
   } catch {
-    // 存储不可用时返回空字符串
     return ''
   }
 }
@@ -95,37 +111,87 @@ function sanitizeExtra(data: Record<string, unknown>): Record<string, unknown> {
   return sanitized
 }
 
-// 后端错误上报队列，避免频繁请求
+// ============ localStorage 日志环形缓冲区 ============
+
+/** 读取本地日志缓冲区（最新在前） */
+export function getLocalLogs(limit: number = 200): LogRecord[] {
+  try {
+    const raw = localStorage.getItem(LOG_BUFFER_KEY)
+    if (!raw) return []
+    const logs: LogRecord[] = JSON.parse(raw)
+    return logs.slice(-limit).reverse()
+  } catch {
+    return []
+  }
+}
+
+/** 清除本地日志缓冲区 */
+export function clearLocalLogs(): void {
+  try {
+    localStorage.removeItem(LOG_BUFFER_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+/** 获取本地日志缓冲区大小 */
+export function getLocalLogCount(): number {
+  try {
+    const raw = localStorage.getItem(LOG_BUFFER_KEY)
+    if (!raw) return 0
+    const logs: unknown = JSON.parse(raw)
+    return Array.isArray(logs) ? logs.length : 0
+  } catch {
+    return 0
+  }
+}
+
+function _appendToLocalLogs(record: LogRecord): void {
+  try {
+    const raw = localStorage.getItem(LOG_BUFFER_KEY)
+    let logs: LogRecord[] = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(logs)) logs = []
+    logs.push(record)
+    // 环形缓冲区：保留最近 N 条
+    if (logs.length > LOG_BUFFER_MAX) {
+      logs = logs.slice(logs.length - LOG_BUFFER_MAX)
+    }
+    localStorage.setItem(LOG_BUFFER_KEY, JSON.stringify(logs))
+  } catch {
+    // 存储配额满或隐私模式时静默忽略
+  }
+}
+
+// ============ 后端上报队列 ============
+
+// 所有需上报的日志级别（INFO/WARNING/ERROR/CRITICAL）
+const _REPORTABLE_LEVELS: Set<LogLevel> = new Set(['INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+
 let _reportQueue: Array<Record<string, unknown>> = []
 let _reportTimer: ReturnType<typeof setTimeout> | null = null
-const REPORT_FLUSH_INTERVAL = 3000
-const REPORT_MAX_BATCH = 10
-const REPORT_MAX_QUEUE = 100
+const REPORT_FLUSH_INTERVAL = 5000
+const REPORT_MAX_BATCH = 20
+const REPORT_MAX_QUEUE = 200
 let _reportingDisabledByAuth = false
 
 async function _flushErrorReports(): Promise<void> {
   if (_reportQueue.length === 0 || _reportingDisabledByAuth) return
   const batch = _reportQueue.splice(0, REPORT_MAX_BATCH)
-  const csrfToken = Cookies.get('csrf_token') || ''
   for (const report of batch) {
     try {
       const response = await fetch('/api/logs/client-errors', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(report),
       })
       if (response.status === 401 || response.status === 403) {
-        // 当前会话无上报权限时停止继续上报，避免持续触发 401 噪音日志
         _reportingDisabledByAuth = true
         _reportQueue = []
         break
       }
     } catch {
-      // 上报失败时静默忽略，避免无限循环
+      // 上报失败静默忽略
     }
   }
 }
@@ -138,10 +204,8 @@ function _scheduleFlush(): void {
   }, REPORT_FLUSH_INTERVAL)
 }
 
-function _enqueueErrorReport(record: Record<string, unknown>): void {
-  if (_reportingDisabledByAuth) {
-    return
-  }
+function _enqueueReport(record: LogRecord): void {
+  if (_reportingDisabledByAuth) return
   if (_reportQueue.length >= REPORT_MAX_QUEUE) {
     _reportQueue.shift()
   }
@@ -149,7 +213,7 @@ function _enqueueErrorReport(record: Record<string, unknown>): void {
     level: record.level,
     message: String(record.message || ''),
     source: String(record.module || 'frontend'),
-    stack: String(record.extra && (record.extra as Record<string, unknown>).stack || ''),
+    stack: String((record.extra && record.extra.stack) || ''),
     url: typeof window !== 'undefined' ? window.location.href : '',
     user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
     timestamp: String(record.timestamp || new Date().toISOString()),
@@ -158,12 +222,14 @@ function _enqueueErrorReport(record: Record<string, unknown>): void {
   _scheduleFlush()
 }
 
+// ============ 日志发射 ============
+
 function emit(level: LogLevel, payload: LoggerPayload): void {
   if (!shouldLog(level)) {
     return
   }
 
-  const record = {
+  const record: LogRecord = {
     timestamp: new Date().toISOString(),
     level,
     service: SERVICE,
@@ -176,18 +242,23 @@ function emit(level: LogLevel, payload: LoggerPayload): void {
     extra: sanitizeExtra(payload.extra || {}),
   }
 
+  // 1. localStorage 持久化（所有级别）
+  _appendToLocalLogs(record)
+
+  // 2. 控制台输出
   const text = safeStringify(record)
   if (level === 'ERROR' || level === 'CRITICAL') {
     console.error(text)
-    // 将错误上报到后端日志系统
-    _enqueueErrorReport(record)
-    return
-  }
-  if (level === 'WARNING') {
+  } else if (level === 'WARNING') {
     console.warn(text)
-    return
+  } else {
+    console.log(text)
   }
-  console.log(text)
+
+  // 3. 上报到后端（INFO 及以上，批量异步）
+  if (_REPORTABLE_LEVELS.has(level)) {
+    _enqueueReport(record)
+  }
 }
 
 export const appLogger = {
