@@ -541,7 +541,7 @@ async def csrf_protection_middleware(request: Request, call_next):
     2. 提取 token 中绑定的 user_id
     3. 与请求中认证用户的 user_id 比对，确保一一对应
 
-    API Key 认证的请求自动跳过 CSRF 校验（无 Cookie 环境，CSRF 不适用）。
+    Bearer token 认证的请求自动跳过 CSRF 校验（CSRF 仅对 Cookie 认证有意义）。
     WebSocket 连接和豁免路径跳过校验。
     """
     path = request.url.path
@@ -555,14 +555,12 @@ async def csrf_protection_middleware(request: Request, call_next):
     if os.getenv("SKIP_CSRF_FOR_TEST", "").lower() == "true":
         return await call_next(request)
 
-    # API Key 认证的请求跳过 CSRF 校验
-    # （Bearer token 不依赖 Cookie，不存在 CSRF 攻击面）
-    api_key = settings.OPENAWA_API_KEY
+    # 任何 Bearer token 认证的请求跳过 CSRF 校验
+    # （Bearer token 不依赖 Cookie，不存在 CSRF 攻击面。
+    #   token 有效性由 get_current_user 认证层负责，无需 CSRF 层重复验证）
     auth_header = request.headers.get("Authorization", "")
-    if api_key and auth_header.startswith("Bearer "):
-        import secrets as _csrf_sec
-        if _csrf_sec.compare_digest(auth_header[7:].strip(), api_key):
-            return await call_next(request)
+    if auth_header.startswith("Bearer "):
+        return await call_next(request)
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")
