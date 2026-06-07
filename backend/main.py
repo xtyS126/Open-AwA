@@ -105,8 +105,36 @@ logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for
 # 每步失败有独立日志和错误上下文，便于排障和单元测试。
 
 
+def _check_model_provider_availability() -> None:
+    """检查是否至少有一个模型供应商配置了有效的 API Key。
+
+    未配置任何 Key 时发出警告（不阻塞启动），方便开发者第一时间发现配置缺失。
+    """
+    provider_keys = {
+        "openai": settings.OPENAI_API_KEY,
+        "anthropic": settings.ANTHROPIC_API_KEY,
+        "deepseek": settings.DEEPSEEK_API_KEY,
+    }
+    configured = []
+    for name, key in provider_keys.items():
+        if key is not None:
+            raw = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
+            if raw.strip():
+                configured.append(name)
+
+    if not configured:
+        logger.bind(event="no_model_provider_configured", module="main").warning(
+            "未检测到任何已配置 API Key 的模型供应商 (OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY)。"
+            "所有 LLM 调用将失败，请在 .env 中至少配置一个供应商的 API Key。"
+        )
+    else:
+        logger.bind(event="provider_check", module="main").info(
+            f"已检测到 {len(configured)} 个已配置的模型供应商: {', '.join(configured)}"
+        )
+
+
 async def _startup_infrastructure(profiler: StartupProfiler) -> None:
-    """基础设施层初始化：依赖检测。"""
+    """基础设施层初始化：依赖检测、模型供应商可用性检查。"""
     with profiler.step("litellm_check"):
         if is_litellm_available():
             logger.bind(event="litellm_available", module="main").info("LiteLLM dependency detected, unified LLM gateway enabled")
@@ -116,6 +144,10 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
                 "Please run `pip install litellm` to enable unified LLM gateway. "
                 "Model API requests will fail until LiteLLM is installed."
             )
+
+    # 检查至少有一个模型供应商配置了有效凭据
+    with profiler.step("provider_credential_check"):
+        _check_model_provider_availability()
 
 
 async def _startup_data_init(profiler: StartupProfiler) -> None:

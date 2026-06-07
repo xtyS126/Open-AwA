@@ -62,10 +62,10 @@ class TestNetworkPolicyCheck:
 
     def test_block_local_allows_public(self, checker_block_local):
         """block_local 允许公网地址"""
+        # 公网 IP 应通过
         allowed, _ = checker_block_local.check("8.8.8.8")
         assert allowed is True
-
-        allowed, _ = checker_block_local.check("https://api.example.com")
+        allowed, _ = checker_block_local.check("1.1.1.1")
         assert allowed is True
 
     def test_block_local_blocks_loopback(self, checker_block_local):

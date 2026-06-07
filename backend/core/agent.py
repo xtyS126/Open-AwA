@@ -2425,7 +2425,7 @@ class AIAgent:
         try:
             db = context.get('db')
             if not db:
-                logger.warning("No database session available for experience retrieval")
+                logger.debug("无可用数据库会话，跳过经验检索")
                 return []
             
             manager = ExperienceManager(db)
@@ -2551,7 +2551,7 @@ class AIAgent:
         try:
             db = context.get('db')
             if not db:
-                logger.warning("No database session available for experience extraction")
+                logger.debug("无可用数据库会话，跳过经验提取")
                 return
             
             execution_steps = []

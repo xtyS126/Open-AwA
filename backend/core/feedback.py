@@ -127,7 +127,7 @@ class FeedbackLayer:
             return
 
         if not self.memory_manager:
-            logger.warning("Memory manager not set, skipping memory update")
+            logger.debug("MemoryManager 未注入，跳过记忆更新")
             return
 
         user_id = context.get("user_id")
