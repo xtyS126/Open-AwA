@@ -177,8 +177,8 @@ class PermissionManager:
         self._db_session = db_session
         # 待处理的权限请求 keyed by request_id
         self._pending: Dict[str, PendingPermission] = {}
-        # 持久化的权限决策缓存
-        self._saved_cache: Optional[List[PermissionRule]] = None
+        # 持久化的权限决策缓存（按 cache_key 区分用户作用域）
+        self._saved_cache: Optional[Dict[str, List[PermissionRule]]] = None
         # 事件回调：当有新权限请求时通知前端
         self._on_permission_asked: Optional[callable] = None
         # 全局默认规则
@@ -238,10 +238,10 @@ class PermissionManager:
         防止用户 A 保存的 always allow 规则影响用户 B 的权限决策。
         user_id 为 None 时加载所有规则（向后兼容）。
         """
-        # 缓存按 user_id 区分（避免不同用户的规则互相污染）
+        # 缓存按 user_id 区分（防止用户 A 的规则被缓存到用户 B 的查询中）
         cache_key = user_id or "__global__"
-        if self._saved_cache is not None:
-            return self._saved_cache
+        if self._saved_cache is not None and cache_key in self._saved_cache:
+            return self._saved_cache[cache_key]
 
         if not self._db_session:
             return []
@@ -263,8 +263,10 @@ class PermissionManager:
                     for record in records
                 ]
 
-            self._saved_cache = await asyncio.to_thread(_sync_load)
-            return self._saved_cache
+            if self._saved_cache is None:
+                self._saved_cache = {}
+            self._saved_cache[cache_key] = await asyncio.to_thread(_sync_load)
+            return self._saved_cache[cache_key]
         except Exception as e:
             logger.warning(f"加载已保存权限失败: {e}")
             return []
