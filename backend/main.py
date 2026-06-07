@@ -374,10 +374,24 @@ async def lifespan(app: FastAPI):
     profiler.finish()
 
     yield
-    # 关闭自主模式管理器（刷新审计日志、清理检查点）
-    await _shutdown_autonomous_mode()
-    await scheduled_task_manager.stop()
-    await close_shared_client()
+    # 关闭流程：每个步骤独立 try/except，确保一个失败不影响其他步骤
+    shutdown_errors: list[str] = []
+    for step_name, step_fn in (
+        ("autonomous_mode", _shutdown_autonomous_mode),
+        ("scheduled_task_manager", scheduled_task_manager.stop),
+        ("shared_http_client", close_shared_client),
+    ):
+        try:
+            await step_fn()
+        except Exception as exc:
+            shutdown_errors.append(f"{step_name}: {exc}")
+            logger.bind(event="shutdown_error", module="main", step=step_name).error(
+                f"关闭步骤 {step_name} 失败: {exc}"
+            )
+    if shutdown_errors:
+        logger.bind(event="shutdown_errors", module="main", errors=shutdown_errors).warning(
+            f"关闭过程中 {len(shutdown_errors)} 个步骤失败"
+        )
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
 
 

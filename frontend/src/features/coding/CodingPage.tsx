@@ -11,6 +11,7 @@ import GitPanel from './components/GitPanel'
 import CodingChatPanel from './components/CodingChatPanel'
 import { useCodingStore } from './store/codingStore'
 import { codingApi } from './codingApi'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './CodingPage.module.css'
 
 const CodingPage: React.FC = () => {
@@ -50,7 +51,7 @@ const CodingPage: React.FC = () => {
       const pattern = await codingApi.searchPattern(searchQuery, projectDir || undefined)
       setSearchResults(pattern.results || [])
     } catch (e) {
-      console.error('搜索失败:', e)
+      appLogger.error({ event: 'search_failed', module: 'coding', message: String(e), extra: e instanceof Error ? { stack: e.stack } : undefined })
     }
   }, [searchQuery, projectDir])
 
@@ -89,7 +90,7 @@ const CodingPage: React.FC = () => {
       })
       setDiffMode(true)
     } catch (e) {
-      console.error('获取 diff 失败:', e)
+      appLogger.error({ event: 'diff_fetch_failed', module: 'coding', message: String(e), extra: e instanceof Error ? { stack: e.stack } : undefined })
     }
   }, [projectDir, openFiles, setDiffMode])
 

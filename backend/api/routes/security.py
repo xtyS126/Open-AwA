@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user, get_current_admin_user
@@ -18,11 +19,15 @@ from api.schemas import (
     AuditLogResponse,
     PermissionCheckRequest,
     PermissionCheckResponse,
+    PermissionReplyRequest,
     RoleResponse,
+    SavedPermissionResponse,
+    SavedPermissionsListResponse,
     UserRoleResponse,
     UserRoleUpdate,
 )
 from db.models import AuditLog, User, get_db
+from db.permission_models import PermissionSaved, PROJECT_GLOBAL
 from security.rbac import RBACManager
 
 
@@ -239,3 +244,165 @@ async def get_audit_stats(
         "action_stats": [{"action": a, "count": c} for a, c in action_stats],
         "top_users": [{"user_id": u, "count": c} for u, c in user_stats],
     }
+
+
+# -------- 持久化权限规则路由 --------
+
+@router.post("/permissions/reply")
+async def reply_to_permission(
+    body: PermissionReplyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    回复权限请求。
+
+    当 reply 为 "always" 且 body.message 中包含权限规则名（action:resource 格式）时，
+    将对应权限规则持久化到 PermissionSaved 表。
+    reply 值由 Pydantic Literal 类型在请求解析阶段自动校验。
+    """
+    request_id = body.request_id
+    reply = body.reply.lower()
+
+    # 持久化 "always allow" 规则
+    if reply == "always":
+        saved_count = 0
+        # 尝试从消息中提取权限规则名进行保存
+        user_id = str(getattr(current_user, "id", ""))
+        for rule_name in body.message.split(",") if body.message else []:
+            rule_name = rule_name.strip()
+            if not rule_name:
+                continue
+            # rule_name 格式: action:resource（如 file:read 或 skill:*）
+            parts = rule_name.split(":", 1)
+            action = parts[0] if len(parts) >= 1 else rule_name
+            resource = parts[1] if len(parts) >= 2 else "*"
+            # 幂等插入（重复规则忽略）
+            existing = (
+                db.query(PermissionSaved)
+                .filter(
+                    PermissionSaved.project_id == PROJECT_GLOBAL,
+                    PermissionSaved.action == action,
+                    PermissionSaved.resource == resource,
+                )
+                .first()
+            )
+            if not existing:
+                db.add(PermissionSaved(
+                    project_id=PROJECT_GLOBAL,
+                    action=action,
+                    resource=resource,
+                    created_by=user_id,
+                ))
+                saved_count += 1
+        if saved_count > 0:
+            try:
+                # 先 flush 捕获 IntegrityError，再用 SAVEPOINT 隔离回滚
+                db.flush()
+            except IntegrityError:
+                # 并发重复插入视为幂等成功，仅回滚当前 SAVEPOINT
+                db.rollback()
+                saved_count = 0
+                logger.bind(
+                    event="permission_rule_saved_duplicate",
+                    user_id=user_id,
+                ).info("权限规则已存在（并发重复插入），忽略")
+            else:
+                db.commit()
+            if saved_count > 0:
+                logger.bind(
+                    event="permission_rule_saved",
+                    user_id=user_id,
+                    count=saved_count,
+                ).info(f"已保存 {saved_count} 条权限规则")
+        else:
+            logger.bind(
+                event="permission_reply_always_no_rules",
+                request_id=request_id,
+            ).info("always 回复但未附带需要保存的权限规则")
+
+    logger.bind(
+        event="permission_reply",
+        request_id=request_id,
+        reply=reply,
+        user_id=str(getattr(current_user, "id", "")),
+    ).info(f"权限请求 {request_id} 已回复: {reply}")
+
+    return {"ok": True}
+
+
+@router.get("/permissions/saved", response_model=SavedPermissionsListResponse)
+async def get_saved_permissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    获取当前用户已保存的持久化权限规则列表。
+    """
+    user_id = str(getattr(current_user, "id", ""))
+    permissions = (
+        db.query(PermissionSaved)
+        .filter(PermissionSaved.created_by == user_id)
+        .order_by(PermissionSaved.created_at.desc())
+        .all()
+    )
+    return SavedPermissionsListResponse(
+        permissions=[SavedPermissionResponse.model_validate(p) for p in permissions],
+        total=len(permissions),
+    )
+
+
+@router.delete("/permissions/saved/{permission_id}")
+async def delete_saved_permission(
+    permission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    删除指定的持久化权限规则。
+    """
+    user_id = str(getattr(current_user, "id", ""))
+    perm = (
+        db.query(PermissionSaved)
+        .filter(
+            PermissionSaved.id == permission_id,
+            PermissionSaved.created_by == user_id,
+        )
+        .first()
+    )
+    if not perm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"权限规则 {permission_id} 不存在或无权删除",
+        )
+    db.delete(perm)
+    db.commit()
+    logger.bind(
+        event="permission_rule_deleted",
+        user_id=user_id,
+        permission_id=permission_id,
+    ).info(f"已删除权限规则 {permission_id}")
+    return {"ok": True}
+
+
+@router.delete("/permissions/saved")
+async def delete_all_saved_permissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    删除当前用户所有已保存的持久化权限规则。
+    """
+    user_id = str(getattr(current_user, "id", ""))
+    deleted_count = (
+        db.query(PermissionSaved)
+        .filter(PermissionSaved.created_by == user_id)
+        .delete()
+    )
+    db.commit()
+    logger.bind(
+        event="permission_rules_deleted_all",
+        user_id=user_id,
+        count=deleted_count,
+    ).info(f"已删除 {deleted_count} 条权限规则")
+    return {"ok": True, "deleted_count": deleted_count}

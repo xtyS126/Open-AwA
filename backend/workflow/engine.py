@@ -22,9 +22,22 @@ from workflow.parser import WorkflowParser
 _PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 
 
+# 禁止在条件表达式中访问的 dunder 属性（防止对象模型链式逃逸）
+_DENIED_ATTRS = frozenset({
+    "__class__", "__bases__", "__mro__", "__subclasses__",
+    "__globals__", "__builtins__", "__code__", "__func__",
+    "__self__", "__dict__", "__import__", "__reduce__",
+    "__reduce_ex__", "__getstate__", "__setstate__",
+})
+
+
 class _ConditionValidator(ast.NodeVisitor):
     """
     条件表达式 AST 校验器，限制只允许简单布尔表达式。
+    增强安全策略：
+    - 只允许白名单节点类型
+    - 禁止函数调用
+    - 禁止访问 dunder 属性（防止对象模型链式逃逸，如 __class__.__bases__[0].__subclasses__()）
     """
 
     _ALLOWED_NODES = {
@@ -47,6 +60,13 @@ class _ConditionValidator(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         self.errors.append("条件表达式不允许函数调用")
         return None
+
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        """拦截 dunder 属性访问，防止通过对象模型链式逃逸沙箱。"""
+        if isinstance(node.attr, str) and node.attr in _DENIED_ATTRS:
+            self.errors.append(f"禁止访问属性: {node.attr}")
+            return None
+        return self.generic_visit(node)
 
 
 class WorkflowEngine:
@@ -342,14 +362,14 @@ class WorkflowEngine:
             "steps": self._to_namespace(runtime["steps"]),
             "last_result": self._to_namespace(runtime["last_result"]),
         }
-        # 使用受限的 __builtins__ 仅允许安全的内置函数
+        # 使用受限的 __builtins__ 仅允许安全的纯函数
+        # 注意: isinstance/type 被排除，防止通过类型链访问危险类的 __subclasses__()
         safe_builtins = {
             "True": True, "False": False, "None": None,
             "abs": abs, "min": min, "max": max, "sum": sum,
             "len": len, "str": str, "int": int, "float": float,
             "bool": bool, "list": list, "dict": dict, "tuple": tuple,
-            "round": round, "isinstance": isinstance,
-            # 注意: type 被排除，因为 type(obj).__mro__ 可被用于链式访问危险类
+            "round": round,
         }
         try:
             compiled = compile(tree, "<workflow-condition>", "eval")

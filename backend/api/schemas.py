@@ -4,7 +4,7 @@
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Any, Dict
+from typing import Literal, Optional, List, Any, Dict
 from datetime import datetime
 
 
@@ -936,3 +936,30 @@ class UserFeedbackRequest(BaseModel):
     message_id: str = Field(..., description="消息ID（前端消息的唯一标识）")
     rating: int = Field(..., ge=-1, le=1, description="评分：1=点赞，-1=点踩，0=取消")
     comment: Optional[str] = Field(default=None, max_length=1000, description="可选反馈备注")
+
+
+# -------- 持久化权限 --------
+
+class PermissionReplyRequest(BaseModel):
+    """权限请求回复模型"""
+    request_id: str = Field(..., description="权限请求 ID")
+    reply: Literal["once", "always", "reject"] = Field(..., description="回复类型")
+    message: Optional[str] = Field(default=None, description="可选备注")
+
+
+class SavedPermissionResponse(BaseModel):
+    """已保存的持久化权限响应模型"""
+    id: str = Field(..., description="权限规则 ID")
+    action: str = Field(..., description="操作名称")
+    resource: str = Field(..., description="资源标识")
+    project_id: str = Field(..., description="项目标识")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+
+    class Config:
+        from_attributes = True
+
+
+class SavedPermissionsListResponse(BaseModel):
+    """已保存权限列表响应模型"""
+    permissions: list[SavedPermissionResponse] = Field(default_factory=list, description="权限列表")
+    total: int = Field(default=0, description="总数")

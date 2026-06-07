@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { codingApi } from '../codingApi';
 import { useCodingStore, type FileTreeNode } from '../store/codingStore';
+import { appLogger } from '@/shared/utils/logger';
 import styles from './FileTree.module.css';
 
 const FileTreeItem: React.FC<{
@@ -82,7 +83,7 @@ const FileTree: React.FC = () => {
         });
       }
     } catch (e) {
-      console.error('Failed to load file tree:', e);
+      appLogger.error({ event: 'file_tree_load_failed', module: 'coding', message: String(e), extra: { stack: e instanceof Error ? e.stack : undefined } });
     } finally {
       setLoading(false);
     }
@@ -102,7 +103,7 @@ const FileTree: React.FC = () => {
         });
       }
     } catch (e) {
-      console.error('Failed to open file:', e);
+      appLogger.error({ event: 'file_open_failed', module: 'coding', message: String(e), extra: { stack: e instanceof Error ? e.stack : undefined } });
     }
   };
 

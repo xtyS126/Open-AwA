@@ -88,8 +88,22 @@ def execute_with_timeout(
 
     Raises:
         ExecutionTimeoutException: 执行超时。
+        ValueError: __builtins__ 未正确限制（防御性检查）。
         Exception: 代码执行过程中抛出的异常。
     """
+    # 防御性检查：确保 __builtins__ 已正确限制
+    _builtins = exec_globals.get("__builtins__", {})
+    if isinstance(_builtins, dict):
+        _dangerous = {"__import__", "open", "eval", "exec", "compile", "input"}
+        _present_dangerous = _dangerous & set(_builtins.keys())
+        if _present_dangerous:
+            raise ValueError(
+                f"沙箱配置错误: exec_globals 包含禁止的内置函数 {_present_dangerous}"
+            )
+    elif not isinstance(_builtins, dict):
+        # 如果 __builtins__ 不是字典（例如是模块对象），说明未正确限制
+        raise ValueError("沙箱配置错误: exec_globals 使用了未限制的 __builtins__")
+
     result_queue: queue.Queue = queue.Queue()
     timeout_event = threading.Event()
     result_lock = threading.Lock()

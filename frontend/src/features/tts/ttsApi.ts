@@ -50,7 +50,7 @@ export interface HealthStatus {
   message: string
 }
 
-const API_BASE = '/api/tts'
+const API_BASE = '/tts'
 
 export const ttsApi = {
   /** 非流式语音合成，返回 Blob */
@@ -69,7 +69,7 @@ export const ttsApi = {
     onError: (error: string) => void,
   ): Promise<void> {
     const token = document.cookie.match(/access_token=([^;]+)/)?.[1] || ''
-    const response = await fetch(`${API_BASE}/synthesize/stream`, {
+    const response = await fetch(`/api${API_BASE}/synthesize/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

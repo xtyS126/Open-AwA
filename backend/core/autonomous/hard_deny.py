@@ -116,7 +116,7 @@ class HardDenyChecker:
         工作区边界检查由 WorkspaceBoundary 负责。
 
         同时检查原始路径和解析后路径，防止 Windows 平台下
-        /etc/shadow 解析为 C:\etc\shadow 绕过检查。
+        /etc/shadow 解析为 C:/etc/shadow 绕过检查。
 
         Returns:
             (is_safe, error_message)

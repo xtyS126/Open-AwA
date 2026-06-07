@@ -1431,7 +1431,7 @@ def get_db():
     try:
         yield db
     except HTTPException as e:
-        # 鉴权失败等 HTTP 异常属于请求级拒绝，不应误记为数据库会话故障。
+        # 鉴权拒绝（401/403）：正常的请求级拒绝，不应误记为错误
         if e.status_code in {401, 403}:
             logger.bind(
                 event="db_session_http_exception",
@@ -1439,6 +1439,14 @@ def get_db():
                 status_code=e.status_code,
                 error_type=type(e).__name__,
             ).info(f"数据库会话提前结束（鉴权拒绝）: {e.detail}")
+        elif e.status_code >= 500:
+            # 服务端错误：应引起关注
+            logger.bind(
+                event="db_session_http_exception",
+                module="db",
+                status_code=e.status_code,
+                error_type=type(e).__name__,
+            ).error(f"数据库会话提前结束（服务端错误）: {e.detail}")
         else:
             logger.bind(
                 event="db_session_http_exception",
@@ -1447,6 +1455,10 @@ def get_db():
                 error_type=type(e).__name__,
             ).warning(f"数据库会话提前结束（HTTP 异常）: {e.detail}")
         db.rollback()
+        raise
+    except (KeyboardInterrupt, SystemExit):
+        # 系统信号：不回滚，让进程正常退出
+        db.close()
         raise
     except Exception as e:
         logger.bind(
@@ -1457,4 +1469,5 @@ def get_db():
         db.rollback()
         raise
     finally:
-        db.close()
+        if db.is_active:
+            db.close()

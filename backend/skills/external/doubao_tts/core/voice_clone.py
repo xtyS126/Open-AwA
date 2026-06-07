@@ -2,8 +2,8 @@
 豆包声音复刻管理器 — 封装声音复刻 API（创建/查询/删除音色）。
 使用火山引擎 Doubao-Seed-ICL 2.0 接口。
 """
+import asyncio
 import os
-import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
@@ -182,7 +182,7 @@ class VoiceCloneManager:
 
             logger.bind(event="doubao_clone_polling", speaker_id=speaker_id, status=status,
                          attempt=attempt + 1).debug("等待复刻训练完成...")
-            time.sleep(POLL_INTERVAL_SECONDS)
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
         raise TimeoutError(f"声音复刻训练超时（{POLL_MAX_ATTEMPTS * POLL_INTERVAL_SECONDS}秒），speaker_id={speaker_id}")
 

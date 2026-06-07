@@ -5,6 +5,7 @@
  */
 import { useState } from 'react'
 import type { PermissionRequest } from '@/shared/api/securityApi'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './PermissionDialog.module.css'
 
 interface PermissionDialogProps {
@@ -52,7 +53,7 @@ export function PermissionDialog({ request, onReply, onClose }: PermissionDialog
     try {
       await onReply(request.id, 'once')
     } catch (err) {
-      console.error('PermissionDialog: onReply failed for allow:', err)
+      appLogger.error({ event: 'permission_dialog_reply_failed', message: `onReply allow 失败: ${err instanceof Error ? err.message : String(err)}`, extra: err instanceof Error ? { stack: err.stack } : undefined })
     } finally {
       setProcessing(false)
     }
@@ -63,7 +64,7 @@ export function PermissionDialog({ request, onReply, onClose }: PermissionDialog
     try {
       await onReply(request.id, 'always')
     } catch (err) {
-      console.error('PermissionDialog: onReply failed for always allow:', err)
+      appLogger.error({ event: 'permission_dialog_reply_failed', message: `onReply always allow 失败: ${err instanceof Error ? err.message : String(err)}`, extra: err instanceof Error ? { stack: err.stack } : undefined })
     } finally {
       setProcessing(false)
     }
@@ -74,7 +75,7 @@ export function PermissionDialog({ request, onReply, onClose }: PermissionDialog
     try {
       await onReply(request.id, 'reject', rejectMessage || undefined)
     } catch (err) {
-      console.error('PermissionDialog: onReply failed for reject:', err)
+      appLogger.error({ event: 'permission_dialog_reply_failed', message: `onReply reject 失败: ${err instanceof Error ? err.message : String(err)}`, extra: err instanceof Error ? { stack: err.stack } : undefined })
     } finally {
       setProcessing(false)
     }
