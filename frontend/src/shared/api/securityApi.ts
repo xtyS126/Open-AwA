@@ -59,6 +59,39 @@ export interface AuditStats {
   top_users: { user_id: string; count: number }[]
 }
 
+/** 权限请求 */
+export interface PermissionRequest {
+  id: string
+  session_id: string
+  action: string
+  resources: string[]
+  save?: string[]
+  metadata?: Record<string, unknown>
+  agent?: string
+}
+
+/** 权限回复 */
+export interface PermissionReply {
+  request_id: string
+  reply: 'once' | 'always' | 'reject'
+  message?: string
+}
+
+/** 已保存的持久化权限 */
+export interface SavedPermission {
+  id: string
+  action: string
+  resource: string
+  project_id: string
+  created_at: string | null
+}
+
+/** 已保存权限列表 */
+export interface SavedPermissionsList {
+  permissions: SavedPermission[]
+  total: number
+}
+
 // -------- 接口方法 --------
 
 export const securityAPI = {
@@ -103,5 +136,25 @@ export const securityAPI = {
   /** 获取审计统计信息 */
   getAuditStats() {
     return api.get<AuditStats>('/security/audit-logs/stats')
+  },
+
+  /** 回复权限请求 */
+  replyToPermission(reply: PermissionReply) {
+    return api.post<{ ok: boolean }>('/security/permissions/reply', reply)
+  },
+
+  /** 获取已保存的权限列表 */
+  getSavedPermissions() {
+    return api.get<SavedPermissionsList>('/security/permissions/saved')
+  },
+
+  /** 删除单条已保存权限 */
+  deleteSavedPermission(id: string) {
+    return api.delete(`/security/permissions/saved/${id}`)
+  },
+
+  /** 删除所有已保存权限 */
+  deleteAllSavedPermissions() {
+    return api.delete('/security/permissions/saved')
   },
 }

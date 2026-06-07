@@ -1,0 +1,155 @@
+/* 已保存权限管理组件样式 */
+.container {
+  padding: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1f2937);
+}
+
+.desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-tertiary, #6b7280);
+  max-width: 480px;
+  line-height: 1.5;
+}
+
+.dangerBtn {
+  background: var(--color-error-soft-bg, #fee2e2);
+  color: var(--color-error-strong, #dc2626);
+  border: 1px solid var(--color-error-soft-bg, #fee2e2);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dangerBtn:hover:not(:disabled) {
+  background: var(--color-error-bg, #fecaca);
+}
+
+.dangerBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.message {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #4b5563);
+  background: var(--color-bg-tertiary, #f3f4f6);
+  border-radius: 6px;
+}
+
+.loading {
+  text-align: center;
+  padding: 32px;
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: 14px;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.empty p {
+  margin: 0 0 8px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--color-text-quaternary, #d1d5db);
+}
+
+.tableContainer {
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 500;
+  color: var(--color-text-tertiary, #6b7280);
+  background: var(--color-bg-tertiary, #f9fafb);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border, #f3f4f6);
+  color: var(--color-text-primary, #1f2937);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.actionBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #dbeafe;
+  color: #1e40af;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.actionName {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.resourceCell {
+  font-family: monospace;
+  font-size: 12px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteBtn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary, #6b7280);
+  cursor: pointer;
+}
+
+.deleteBtn:hover:not(:disabled) {
+  background: var(--color-error-soft-bg, #fef2f2);
+  color: var(--color-error-strong, #dc2626);
+  border-color: var(--color-error-soft-bg, #fecaca);
+}
+
+.deleteBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

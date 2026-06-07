@@ -1,0 +1,188 @@
+/* 权限请求弹窗样式 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.dialog {
+  background: var(--color-bg-primary, #fff);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  width: 420px;
+  max-width: 90vw;
+  overflow: hidden;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1f2937);
+}
+
+.agentBadge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-tertiary, #6b7280);
+}
+
+.body {
+  padding: 16px 24px;
+}
+
+.field {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.label {
+  min-width: 48px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-tertiary, #6b7280);
+}
+
+.value {
+  font-size: 14px;
+  color: var(--color-text-primary, #1f2937);
+  word-break: break-all;
+}
+
+.metadata {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--color-bg-tertiary, #f9fafb);
+  border-radius: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.metadataItem {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.metadataKey {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary, #9ca3af);
+  min-width: 64px;
+}
+
+.metadataValue {
+  font-size: 12px;
+  color: var(--color-text-secondary, #4b5563);
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 24px 16px;
+}
+
+.btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnAllow {
+  background: #10b981;
+  color: #fff;
+}
+
+.btnAllow:hover:not(:disabled) {
+  background: #059669;
+}
+
+.btnAlways {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.btnAlways:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btnDeny {
+  background: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-secondary, #4b5563);
+}
+
+.btnDeny:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.rejectSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 24px 16px;
+}
+
+.rejectInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 6px;
+  font-size: 13px;
+  resize: vertical;
+  background: var(--color-bg-primary, #fff);
+  color: var(--color-text-primary, #1f2937);
+}
+
+.rejectInput:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.btnRejectConfirm {
+  background: #ef4444;
+  color: #fff;
+}
+
+.btnRejectConfirm:hover:not(:disabled) {
+  background: #dc2626;
+}

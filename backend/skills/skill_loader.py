@@ -101,6 +101,57 @@ class SkillLoader:
             logger.error(f"Failed to load skill config from file {file_path}: {e}")
             raise
 
+    async def load_from_url(self, url: str, skill_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        从远程 Git URL 拉取技能配置（预留接口）。
+
+        当前实现返回占位结果，标记来源为 remote，
+        实际拉取逻辑将在后续版本中通过 git clone 或 HTTP 下载实现。
+
+        Args:
+            url: 远程 Git 仓库 URL 或技能文件 URL
+            skill_name: 可选技能名称，不传则从 URL 路径推断
+
+        Returns:
+            包含 source、url、skill_name 和 status 的占位字典
+        """
+        cache_key = self._get_cache_key(url, "url")
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            logger.info(f"远程技能已缓存: {url}")
+            return cached
+
+        logger.info(f"远程技能源加载预留接口: url={url}, skill_name={skill_name}")
+        # 预留：实际拉取逻辑将在后续版本中实现
+        # 当前返回占位结果，确保接口契约不变
+        result = {
+            "source": "remote",
+            "url": url,
+            "skill_name": skill_name or "",
+            "status": "placeholder",
+            "message": "远程技能源加载接口已预留，实际拉取逻辑将在后续版本实现",
+        }
+        # 缓存较短时间，避免频繁重复日志
+        self._set_cache(cache_key, result)
+        return result
+
+    async def discover_remote_skills(self, repo_url: str) -> List[Dict[str, Any]]:
+        """
+        从远程仓库发现技能列表（预留接口）。
+
+        扫描远程 Git 仓库中的 SKILL.md 或 skills/ 目录，
+        返回可安装的技能摘要列表。
+
+        Args:
+            repo_url: 远程 Git 仓库 URL
+
+        Returns:
+            技能摘要列表，每个包含 name、path 和 description
+        """
+        logger.info(f"远程技能发现预留接口: repo_url={repo_url}")
+        # 预留：实际发现逻辑将在后续版本中实现
+        return []
+
     def load_from_db(self, skill_name: str) -> Optional[Dict]:
         """
         加载from、db相关资源或运行时对象。

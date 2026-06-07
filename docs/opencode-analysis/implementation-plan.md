@@ -34,16 +34,16 @@
 
 ### 1.4 前端：权限请求 UI
 
-- [ ] 1.4.1 在聊天组件中增加权限请求弹窗（显示 action、resource、三个按钮：Allow/Deny/Always Allow）
-- [ ] 1.4.2 实现权限请求事件的 SSE/WebSocket 监听
-- [ ] 1.4.3 在设置页增加"已保存权限"管理界面
+- [x] 1.4.1 在聊天组件中增加权限请求弹窗（显示 action、resource、三个按钮：Allow/Deny/Always Allow）
+- [x] 1.4.2 实现权限请求事件的 SSE/WebSocket 监听
+- [x] 1.4.3 在设置页增加"已保存权限"管理界面
 
 ### 1.5 测试
 
 - [x] 1.5.1 编写 `test_permission_manager.py` — 测试通配符匹配和优先级（18 测试）
 - [x] 1.5.2 编写 `test_permission_manager.py` — 测试 ask/assert/reply 流程（9 测试）
 - [x] 1.5.3 编写 `test_permission_manager.py` — 测试决策持久化（级联拒绝/批准）
-- [ ] 1.5.4 前端：编写 PermissionDialog 组件测试
+- [x] 1.5.4 前端：编写 PermissionDialog 组件测试
 
 ---
 
@@ -104,10 +104,10 @@
 
 ### 3.3 后端：现有工具迁移
 
-- [ ] 3.3.1 将 `executor.py` 中的工具执行逻辑迁移为独立的 ToolEntry
-- [ ] 3.3.2 为每个内建工具定义 permission（action + resource）
-- [ ] 3.3.3 在 `AIAgent.process()` 中集成 ToolRegistry
-- [ ] 3.3.4 更新 executor 使用 ToolRegistry.settle() 执行工具
+- [x] 3.3.1 将 `executor.py` 中的工具执行逻辑迁移为独立的 ToolEntry
+- [x] 3.3.2 为每个内建工具定义 permission（action + resource）
+- [x] 3.3.3 在 `AIAgent.process()` 中集成 ToolRegistry
+- [x] 3.3.4 更新 executor 使用 ToolRegistry.settle() 执行工具
 
 ### 3.4 测试
 
@@ -124,7 +124,7 @@
 ### 4.1 后端：多源技能发现
 
 - [x] 4.1.1 扩展 `SkillSource` 类型（directory/url/embedded）
-- [ ] 4.1.2 实现远程技能源加载（从 Git URL 拉取技能）→ 预留接口
+- [x] 4.1.2 实现远程技能源加载（从 Git URL 拉取技能）→ 预留接口
 - [x] 4.1.3 实现内嵌技能支持（SkillMarkdownInfo 解析）
 
 ### 4.2 后端：技能权限过滤
@@ -145,9 +145,9 @@
 
 ### 4.5 测试
 
-- [ ] 4.5.1 编写 `test_skill_sources.py` — 测试多源加载
-- [ ] 4.5.2 编写 `test_skill_permission_filter.py` — 测试权限过滤
-- [ ] 4.5.3 编写 `test_skill_guidance.py` — 测试指导生成
+- [x] 4.5.1 编写 `test_skill_sources.py` — 测试多源加载
+- [x] 4.5.2 编写 `test_skill_permission_filter.py` — 测试权限过滤
+- [x] 4.5.3 编写 `test_skill_guidance.py` — 测试指导生成
 
 ---
 
@@ -263,10 +263,10 @@
 
 ### 全局检查
 
-- [ ] 所有新增代码包含中文注释
-- [ ] 无 emoji 使用
-- [ ] 后端测试通过（pytest）
-- [ ] 前端测试通过（vitest）
-- [ ] 前端类型检查通过（tsc --noEmit）
-- [ ] OCR 审计通过（`.\scripts\code-audit.ps1`）
-- [ ] Git commit 格式正确（`[Type] 描述`）
+- [x] 所有新增代码包含中文注释
+- [x] 无 emoji 使用
+- [x] 后端测试通过（pytest）
+- [x] 前端测试通过（vitest）
+- [x] 前端类型检查通过（tsc --noEmit）
+- [x] OCR 审计通过（`.\scripts\code-audit.ps1`）
+- [x] Git commit 格式正确（`[Type] 描述`）

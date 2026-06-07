@@ -6,7 +6,8 @@ import {
   Cpu,
   Briefcase,
   Plug,
-  HardDrive
+  HardDrive,
+  Key,
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail, userAPI } from '@/shared/api/api'
@@ -25,6 +26,7 @@ import { getProviderIcon, PROVIDER_NAMES } from '@/assets/providers'
 // 非核心 Tab 组件使用 React.lazy 按需加载，减少首屏 JS 体积
 const MCPSettings = lazy(() => import('./MCPSettings'))
 const SecuritySettings = lazy(() => import('./SecuritySettings'))
+const PermissionSettings = lazy(() => import('./PermissionSettings'))
 
 /** 懒加载组件的加载占位符 */
 function TabLoadingFallback() {
@@ -1731,6 +1733,7 @@ function SettingsPage() {
       { id: 'data-collection', label: '数据采集', icon: <HardDrive size={18} /> },
       { id: 'security', label: '安全审计', icon: <ShieldAlert size={18} /> },
       { id: 'mcp', label: 'MCP配置', icon: <SettingsIcon size={18} /> },
+      { id: 'permissions', label: '权限管理', icon: <Key size={18} /> },
     ]
 
     return (
@@ -2979,6 +2982,14 @@ function SettingsPage() {
           <div className={styles['settings-section']}>
             <Suspense fallback={<TabLoadingFallback />}>
               <MCPSettings />
+            </Suspense>
+          </div>
+        )}
+
+        {activeTab === 'permissions' && (
+          <div className={styles['settings-section']}>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <PermissionSettings />
             </Suspense>
           </div>
         )}
