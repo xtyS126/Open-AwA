@@ -265,6 +265,7 @@ def _fire_webhook(
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=30,
+                follow_redirects=False,  # 防止 SSRF 重定向绕过（URL 已预校验，不允许跟随）
             )
         except Exception as exc:
             logger.bind(
