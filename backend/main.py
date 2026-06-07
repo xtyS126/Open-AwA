@@ -170,13 +170,11 @@ def _ensure_api_key() -> None:
         with open(env_local_path, "a", encoding="utf-8") as f:
             f.write(f"{prefix}OPENAWA_API_KEY={new_key}\n")
         logger.bind(event="api_key_generated", module="main").warning(
-            f"[SECURITY] OPENAWA_API_KEY 未设置，已自动生成并写入 .env.local。"
-            f"请妥善保存: {new_key[:8]}...{new_key[-8:]}"
+            "访问密钥已自动生成并持久化。"
         )
     except OSError as exc:
         logger.bind(event="api_key_persist_failed", module="main").warning(
-            f"无法持久化 API Key 到 .env.local: {exc}。"
-            f"Key 仅在当前进程生效，重启后将重新生成。"
+            f"无法持久化访问密钥: {exc}。密钥仅在当前进程生效。"
         )
 
 

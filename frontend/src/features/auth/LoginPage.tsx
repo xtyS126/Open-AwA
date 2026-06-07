@@ -18,11 +18,11 @@ function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!apiKey.trim()) {
-      setError('请输入 API Key')
+      setError('请输入访问密钥')
       return
     }
     if (apiKey.trim().length < 20) {
-      setError('API Key 长度不足，请检查是否完整复制')
+      setError('认证失败')
       return
     }
 
@@ -30,7 +30,7 @@ function LoginPage() {
     setError(null)
 
     try {
-      // 临时写入内存以便 getMe() 请求携带 API Key
+      // 临时写入内存以便 getMe() 请求携带访问密钥
       setTempApiKey(apiKey.trim())
       const response = await authAPI.getMe()
       const data = response.data || {}
@@ -49,29 +49,28 @@ function LoginPage() {
       )
       setInitialized(true)
       appLogger.info({
-        event: 'auth_api_key_validated',
+        event: 'auth_verified',
         module: 'auth',
         action: 'login',
         status: 'success',
-        message: 'API Key validated successfully',
+        message: 'authentication verified',
       })
     } catch (err) {
-      clearCachedApiKey()  // 清除无效 Key（内存 + localStorage）
+      clearCachedApiKey()
       const status = (err as { response?: { status?: number } })?.response?.status
-      const detail = getApiErrorDetail(err)
       if (status === 401) {
-        setError('API Key 无效，请检查后重试')
+        setError('认证失败')
       } else if (status === 429) {
         setError('请求过于频繁，请稍后再试')
       } else {
-        setError(detail || '验证失败，请检查后端地址和 API Key 是否正确')
+        setError('认证失败，请重试')
       }
       appLogger.warning({
-        event: 'auth_api_key_validate_failed',
+        event: 'auth_verify_failed',
         module: 'auth',
         action: 'login',
         status: 'failure',
-        message: 'API Key validation failed',
+        message: 'authentication verification failed',
         extra: { status_code: status },
       })
     } finally {
@@ -88,13 +87,13 @@ function LoginPage() {
         </div>
         <form className={styles['login-form']} onSubmit={handleSubmit}>
           <div className={styles['form-group']}>
-            <label htmlFor="apiKey">API Key</label>
+            <label htmlFor="apiKey">访问密钥</label>
             <input
               id="apiKey"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="请输入 API Key (sk-...)"
+              placeholder="请输入访问密钥"
               autoComplete="off"
               autoFocus
               aria-describedby={error ? 'login-error' : undefined}
@@ -109,9 +108,6 @@ function LoginPage() {
           >
             {loading ? '验证中...' : '连接'}
           </button>
-          <p className={styles['login-hint']}>
-            API Key 由后端启动时生成，请查看服务端日志或 .env.local 文件
-          </p>
         </form>
       </div>
     </div>

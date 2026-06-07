@@ -326,10 +326,6 @@ async def rotate_api_key(
     # 更新 .env.local
     env_local_path = _FsPath(__file__).resolve().parents[2] / ".env.local"
     try:
-        # 记录旧 Key 的模糊值用于日志
-        old_key_hint = old_key[:8] + "..." + old_key[-8:] if len(old_key) >= 20 else ""
-        new_key_hint = new_key[:8] + "..." + new_key[-8:]
-
         if env_local_path.exists():
             content = env_local_path.read_text(encoding="utf-8")
             # 替换现有的 OPENAWA_API_KEY 行
@@ -360,9 +356,7 @@ async def rotate_api_key(
         action="rotate_api_key",
         status="success",
         user_id=current_user.id,
-        old_key_hint=old_key_hint,
-        new_key_hint=new_key_hint,
-    ).warning(f"[SECURITY] API Key 已轮转 (旧: {old_key_hint} → 新: {new_key_hint})")
+    ).warning("访问密钥已轮转")
 
     # 清除 owner 缓存，下次查询时会重新加载
     try:
