@@ -1275,6 +1275,27 @@ def _migrate_scheduled_task_daily_columns(use_engine=None):
             connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN daily_time VARCHAR(10)"))
 
 
+# 注册额外模型到 Base.metadata（create_all 时自动创建表）
+# 注意：以下导入与 db/permission_models.py / core/event_log.py 存在循环依赖
+# 依赖 Python 模块缓存机制（import 位于 Base 定义之后）。请勿移至文件顶部。
+from db.permission_models import PermissionSaved  # noqa: E402
+import core.event_log  # noqa: E402, F401  # 仅用于注册 EventLog 模型到 Base.metadata
+
+
+def _migrate_permission_saved(use_engine=None):
+    """
+    确保 permission_saved 表存在。
+    通常由 init_db 开头的 create_all 统一创建，此处作为防御性兜底。
+    仅创建 permission_saved 表，避免 create_all 引入不合预期的副作用。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "permission_saved" not in table_names:
+        PermissionSaved.__table__.create(bind=target_engine, checkfirst=True)
+        logger.info("已创建 permission_saved 表用于持久化权限决策")
+
+
 def _migrate_short_term_memory_rich_fields(use_engine=None):
     """
     为 short_term_memory 表补齐富文本字段：思维链内容和工具调用事件列表。
@@ -1318,6 +1339,7 @@ def init_db(bind_engine=None):
     _migrate_profile_facts_table(use_engine=use_engine)
     _migrate_user_role_fk(use_engine=use_engine)
     _migrate_model_configuration_new_params(use_engine=use_engine)
+    _migrate_permission_saved(use_engine=use_engine)
 
 
 def _migrate_user_role_fk(use_engine=None):

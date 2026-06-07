@@ -1,0 +1,125 @@
+/**
+ * 工具调用卡片样式
+ */
+.card {
+  border-left: 3px solid #4a9eff;
+  border-radius: 6px;
+  margin: 6px 0;
+  background: var(--card-bg, #f8f9fa);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.summary:hover {
+  background: var(--card-hover-bg, #f0f1f3);
+}
+
+.icon {
+  font-size: 12px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.kindBadge {
+  font-size: 10px;
+  color: white;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.name {
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--text-primary, #1a1a2e);
+  flex-shrink: 0;
+}
+
+.detail {
+  color: var(--text-secondary, #666);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.time {
+  color: var(--text-tertiary, #999);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.expandIcon {
+  font-size: 10px;
+  color: var(--text-tertiary, #999);
+  flex-shrink: 0;
+}
+
+.details {
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  padding: 10px 12px;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #666);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.errorSection {
+  margin-bottom: 10px;
+}
+
+.outputSection {
+  margin-bottom: 10px;
+}
+
+.errorContent {
+  background: var(--error-bg, #fef2f2);
+  border: 1px solid var(--error-border, #fecaca);
+  color: var(--error-text, #dc2626);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.outputContent {
+  background: var(--output-bg, #f0fdf4);
+  border: 1px solid var(--output-border, #bbf7d0);
+  color: var(--output-text, #166534);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* 状态指示 */
+.pending {
+  opacity: 0.7;
+}
