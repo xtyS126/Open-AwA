@@ -230,8 +230,16 @@ class PermissionManager:
             # 未知代理类型，回退到空规则（全部 ASK）
             return []
 
-    async def _get_saved_rules(self) -> List[PermissionRule]:
-        """从数据库加载持久化的权限规则"""
+    async def _get_saved_rules(self, user_id: Optional[str] = None) -> List[PermissionRule]:
+        """
+        从数据库加载持久化的权限规则。
+
+        当提供 user_id 时，仅加载该用户保存的规则（按 created_by 过滤），
+        防止用户 A 保存的 always allow 规则影响用户 B 的权限决策。
+        user_id 为 None 时加载所有规则（向后兼容）。
+        """
+        # 缓存按 user_id 区分（避免不同用户的规则互相污染）
+        cache_key = user_id or "__global__"
         if self._saved_cache is not None:
             return self._saved_cache
 
@@ -242,7 +250,10 @@ class PermissionManager:
             from db.permission_models import PermissionSaved
 
             def _sync_load():
-                records = self._db_session.query(PermissionSaved).all()
+                query = self._db_session.query(PermissionSaved)
+                if user_id is not None:
+                    query = query.filter(PermissionSaved.created_by == user_id)
+                records = query.all()
                 return [
                     PermissionRule(
                         action=record.action,
@@ -258,14 +269,14 @@ class PermissionManager:
             logger.warning(f"加载已保存权限失败: {e}")
             return []
 
-    async def evaluate(self, action: str, resource: str, agent_id: Optional[str] = None) -> PermissionEffect:
+    async def evaluate(self, action: str, resource: str, agent_id: Optional[str] = None, user_id: Optional[str] = None) -> PermissionEffect:
         """
         评估权限，返回决策效果。
 
-        评估链：代理规则 → 全局规则 → 已保存规则
+        评估链：代理规则 → 全局规则 → 已保存规则（按 user_id 过滤）
         """
         agent_rules = self._get_agent_rules(agent_id)
-        saved_rules = await self._get_saved_rules()
+        saved_rules = await self._get_saved_rules(user_id)
         return evaluate_effect(action, resource, agent_rules, self._global_rules, saved_rules)
 
     async def ask(
@@ -276,6 +287,7 @@ class PermissionManager:
         save: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         agent_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         发起权限请求。
@@ -285,6 +297,7 @@ class PermissionManager:
         - deny → 抛出 PermissionDeniedError
         - ask → 创建待处理请求，返回 {id, effect: "ask"}
 
+        user_id 用于过滤已保存的权限规则（仅加载当前用户的规则）。
         待处理请求需要通过 reply() 完成。
         """
         import uuid
@@ -298,7 +311,7 @@ class PermissionManager:
         # 先评估每条资源的权限
         effects: Set[PermissionEffect] = set()
         for resource in resources:
-            effect = await self.evaluate(action, resource, agent_id)
+            effect = await self.evaluate(action, resource, agent_id, user_id)
             effects.add(effect)
 
         # 决定最终效果（deny 优先，ask 其次）
