@@ -46,6 +46,20 @@ export const clearCachedApiKey = (): void => {
   safeSetItem(API_KEY_STORAGE_KEY, '')
 }
 
+export const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
+  appLogger.warning({
+    event: 'chat_stream_parse_warning',
+    module: 'api',
+    action: 'POST',
+    status: 'warning',
+    message: 'failed to parse stream payload',
+    extra: {
+      source,
+      payload_preview: payload.slice(0, 100),
+    },
+  })
+}
+
 /** Axios 实例，所有 API 调用通过此实例发起 */
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -163,5 +177,5 @@ export const getApiErrorDetail = (error: unknown): string => {
   return ''
 }
 
-export { API_BASE_URL, persistApiKey, setTempApiKey }
+export { API_BASE_URL }
 export default api

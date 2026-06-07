@@ -23,6 +23,7 @@ export {
   persistApiKey,
   clearCachedApiKey,
   getApiErrorDetail,
+  logStreamParseWarning,
 }
 
 // 端点函数内部使用的本地类型别名
@@ -263,11 +264,13 @@ export const chatAPI = {
     })
 
     try {
-      const csrfToken = await ensureCsrfToken()
+      const apiKey = getCachedApiKey()
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Request-Id': requestId,
-        'X-CSRF-Token': csrfToken,
+      }
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
       }
 
       const response = await fetch(url, {
