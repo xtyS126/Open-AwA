@@ -1264,7 +1264,6 @@ class PricingManager:
             "openai": [
                 {"model": "gpt-4o", "display_name": "GPT-4o", "is_default": True},
                 {"model": "gpt-4o-mini", "display_name": "GPT-4o Mini"},
-                {"model": "gpt-4-turbo", "display_name": "GPT-4 Turbo"},
             ],
             "deepseek": [
                 {"model": "deepseek-chat", "display_name": "DeepSeek Chat", "is_default": True},
@@ -1274,8 +1273,24 @@ class PricingManager:
                 {"model": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6", "is_default": True},
                 {"model": "claude-haiku-4-5-20251001", "display_name": "Claude Haiku 4.5"},
             ],
+            "moonshot": [
+                {"model": "moonshot-v1-8k", "display_name": "Moonshot v1 8K", "is_default": True},
+            ],
+            "zhipu": [
+                {"model": "glm-4-plus", "display_name": "GLM-4 Plus", "is_default": True},
+            ],
+            "alibaba": [
+                {"model": "qwen-turbo", "display_name": "通义千问 Turbo", "is_default": True},
+            ],
+            "google": [
+                {"model": "gemini-2.0-flash", "display_name": "Gemini 2.0 Flash", "is_default": True},
+            ],
         }
-        return provider_defaults.get(provider, [{"model": f"{provider}-default", "display_name": provider, "is_default": True}])
+        display_name = provider_defaults.get(provider, [{}])[0].get("display_name", provider) if provider_defaults.get(provider) else provider
+        return provider_defaults.get(
+            provider,
+            [{"model": f"{provider}-default", "display_name": display_name, "is_default": True}],
+        )
 
     def get_all_provider_credentials(self) -> List[ProviderCredential]:
         """获取所有激活的 Provider 凭据。"""
@@ -1464,11 +1479,14 @@ class PricingManager:
 
     def delete_provider_configurations(self, provider: str) -> int:
         """
-        删除指定供应商的所有配置。
-        
+        删除指定供应商的所有配置和凭据。
+
+        同时软删除 ModelConfiguration 和 ProviderCredential，
+        防止凭据残留导致 get_provider_catalog 返回空壳供应商。
+
         Args:
             provider: 供应商名称。
-            
+
         Returns:
             删除的配置数量。
         """
@@ -1482,13 +1500,16 @@ class PricingManager:
             ModelConfiguration.is_active == True
         ).all()
 
-        if len(configs) == 0:
-            return 0
-
         now = datetime.now(timezone.utc)
         for config in configs:
             config.is_active = False
             config.updated_at = now
+
+        # 同步删除凭据，避免 credential 残留
+        cred = self.get_provider_credential(provider_id)
+        if cred:
+            cred.is_active = False
+            cred.updated_at = now
 
         self.db.commit()
         return len(configs)

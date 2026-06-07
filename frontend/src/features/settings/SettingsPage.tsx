@@ -1007,7 +1007,9 @@ function SettingsPage() {
     try {
       const providersRes = await modelsAPI.getProviders()
       const providerList: ModelProvider[] = providersRes.data.providers || []
-      const validProviders = providerList.filter(item => (item.configuration_count || 0) > 0 || item.has_api_key)
+      const validProviders = providerList.filter(item =>
+        (item.configuration_count || 0) > 0 || item.has_api_key || item.api_endpoint
+      )
       setProviders(validProviders)
 
       if (validProviders.length === 0) {
@@ -1473,6 +1475,8 @@ function SettingsPage() {
       invalidateRemoteModelCache(providerForm.provider)
       showNotification({ type: 'success', text: '供应商删除成功' })
       setShowDeleteConfirmModal(false)
+      // 清除已删除厂商的配置引用，防止后续操作指向无效配置
+      setProviderForm(prev => ({ ...prev, config_id: null }))
       await loadApiProvidersData()
     } catch (error) {
       showNotification({ type: 'error', text: '供应商删除失败' })
