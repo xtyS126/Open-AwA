@@ -135,9 +135,16 @@ class SentenceTransformerEmbeddingProvider:
             raise RuntimeError("未安装 sentence-transformers，无法启用本地向量模式") from exc
 
         self.model_name = model_name
-        self._model = SentenceTransformer(model_name)
+        self._model = None  # 延迟加载，避免启动时网络不可用导致阻塞
+        self._SentenceTransformer = SentenceTransformer
+
+    def _ensure_model(self):
+        """延迟初始化模型（首次调用 embed_texts 时才从 HuggingFace 下载）。"""
+        if self._model is None:
+            self._model = self._SentenceTransformer(self.model_name)
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        self._ensure_model()
         vectors = self._model.encode(texts, normalize_embeddings=True)
         return [list(map(float, vector)) for vector in vectors.tolist()]
 
