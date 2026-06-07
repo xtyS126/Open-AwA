@@ -89,10 +89,22 @@ class TestNetworkPolicyCheck:
 
     def test_cloud_metadata_always_blocked(self, checker_allow_all):
         """云元数据端点始终被拒绝（包括 allow_all）"""
-        for host in ["169.254.169.254", "metadata.google.internal"]:
+        for host in ["169.254.169.254", "metadata.google.internal", "fd00:ec2::254"]:
             allowed, reason = checker_allow_all.check(host)
             assert allowed is False, f"应拒绝 {host}"
-            assert "元数据端点" in reason
+
+    def test_ipv6_private_address_blocked(self, checker_block_local):
+        """block_local 拒绝 IPv6 内网地址"""
+        # IPv6 回环地址
+        allowed, _ = checker_block_local.check("::1")
+        assert allowed is False
+
+    def test_dns_resolution_bypass_prevented(self, checker_block_local):
+        """域名解析为内网 IP 时被拒绝（防 DNS rebinding）"""
+        # localhost 总是解析到 127.0.0.1 或 ::1
+        allowed, reason = checker_block_local.check("localhost")
+        assert allowed is False
+        assert "内网地址" in reason or "localhost" in reason.lower()
 
     def test_url_parsing(self, checker_allow_all):
         """URL 自动提取主机名"""

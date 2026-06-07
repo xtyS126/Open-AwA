@@ -1414,9 +1414,10 @@ class ExecutionLayer:
                     ))
         except ImportError:
             pass  # 模块不可用时静默跳过
-        except Exception as exc:
-            # 安全模块异常不应中断工具执行（fail-open 策略）
-            logger.warning(f"[自主模式] 安全检查异常，已跳过: {exc}")
+        except (TypeError, ValueError, KeyError) as exc:
+            # 参数解析异常：安全模块内部数据异常应阻止操作（fail-closed）
+            logger.error(f"[自主模式] 安全检查参数异常，拒绝执行: {exc}")
+            return {"ok": False, "error": f"安全检查失败: {exc}", "denied_by": "security"}
 
         # 部分模型会把工具前缀首字母错误大写成 Task_/Plugin_/Builtin_/Mcp_，
         # 这里仅归一化已知前缀，避免破坏后续名称解析。

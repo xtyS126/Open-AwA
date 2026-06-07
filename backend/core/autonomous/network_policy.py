@@ -3,14 +3,20 @@
 
 根据配置过滤网络出站请求：
 - allow_all: 无限制
-- block_local: 拒绝内网地址
-- allowlist: 仅允许白名单内的 CIDR
+- block_local: 拒绝内网地址（IPv4 + IPv6）
+- allowlist: 仅允许白名单内的地址
+
+安全措施：
+- 实际 DNS 解析，检查所有解析后的 IP（防 DNS rebinding）
+- 同时处理 IPv4 和 IPv6
+- 云元数据端点始终拒绝
 """
 
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Dict, Optional, Tuple
+import socket
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from loguru import logger
@@ -19,32 +25,82 @@ from core.autonomous.config import AutonomousConfig, NetworkPolicy
 
 
 # 云元数据端点（始终拒绝，即使 allow_all）
+# 包含 IPv4 / IPv6 / AWS IMDSv2 / GCP / Azure 端点
 _ALWAYS_BLOCKED_HOSTS: frozenset = frozenset({
-    "169.254.169.254",
-    "metadata.google.internal",
+    "169.254.169.254",           # AWS / 通用云元数据 (IPv4)
+    "::ffff:169.254.169.254",    # AWS 元数据 (IPv4-mapped IPv6)
+    "fd00:ec2::254",             # AWS EC2 元数据 (IPv6)
+    "metadata.google.internal",  # GCP 元数据
+    "169.254.169.253",          # Azure 元数据
 })
 
 
-def _parse_host_to_ip(host: str) -> Optional[ipaddress.IPv4Address]:
-    """尝试将主机名解析为 IP 地址，失败返回 None。"""
+def _parse_host_to_ip(host: str) -> Optional[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """尝试将字符串解析为 IP 地址（IPv4 或 IPv6）。
+
+    返回 ipaddress 对象，非有效 IP 地址返回 None。
+    """
     try:
-        # 如果是 IP 地址
-        return ipaddress.IPv4Address(host)
+        return ipaddress.ip_address(host)
     except ValueError:
-        # 如果不是 IP，跳过（DNS 解析由操作系统处理，此处不发起网络请求）
         return None
 
 
+def _resolve_host_to_ips(host: str) -> List[str]:
+    """通过 DNS 解析主机名到 IP 地址列表。
+
+    返回所有解析到的 IP 地址字符串，解析失败返回空列表。
+    使用 socket.getaddrinfo 获取所有地址（IPv4 + IPv6）。
+    """
+    try:
+        addrs = socket.getaddrinfo(host, None, 0, socket.SOCK_STREAM)
+        # 去重，保留解析顺序
+        seen: set[str] = set()
+        result: list[str] = []
+        for addr in addrs:
+            ip_str = addr[4][0]
+            if ip_str not in seen:
+                seen.add(ip_str)
+                result.append(ip_str)
+        return result
+    except (socket.gaierror, socket.herror, UnicodeError):
+        return []
+
+
+def _is_private_or_special(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """检查 IP 地址是否为内网/回环/链路本地/唯一本地地址。"""
+    if isinstance(ip_obj, ipaddress.IPv4Address):
+        return ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local
+    # IPv6
+    return (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or getattr(ip_obj, "is_site_local", False)  # fec0:: (deprecated but still used)
+    )
+
+
 class NetworkPolicyChecker:
-    """网络出站策略检查器。"""
+    """网络出站策略检查器。
+
+    安全措施：
+    - 对域名进行实际 DNS 解析，检查所有解析到的 IP
+    - 同时支持 IPv4 和 IPv6
+    - 云元数据端点始终拒绝
+    """
 
     def __init__(self, config: AutonomousConfig):
         self._policy = config.network_policy
-        self._allowlist = [
-            ipaddress.IPv4Network(cidr.strip())
-            for cidr in config.network_allowlist
-            if cidr.strip()
-        ]
+        # allowlist 使用 ip_network 支持 IPv4 + IPv6 CIDR
+        self._allowlist: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for cidr in config.network_allowlist:
+            cidr = cidr.strip()
+            if not cidr:
+                continue
+            try:
+                self._allowlist.append(ipaddress.ip_network(cidr))
+            except ValueError as e:
+                logger.warning(f"网络白名单 CIDR 无效，已忽略: {cidr} ({e})")
         logger.info(
             f"网络策略已设置: policy={self._policy.value}, "
             f"allowlist={len(self._allowlist)} entries"
@@ -72,7 +128,7 @@ class NetworkPolicyChecker:
             pass  # 不是 URL，直接当主机名处理
 
         # 云元数据端点始终拒绝
-        if host in _ALWAYS_BLOCKED_HOSTS or host == "169.254.169.254":
+        if host in _ALWAYS_BLOCKED_HOSTS:
             logger.warning(f"[网络策略] 拒绝访问云元数据端点: {host}")
             return False, (
                 f"网络策略拒绝: 目标地址 '{host}' 是云元数据端点，"
@@ -83,37 +139,77 @@ class NetworkPolicyChecker:
         if self._policy == NetworkPolicy.ALLOW_ALL:
             return True, ""
 
-        # 尝试解析 IP
-        ip = _parse_host_to_ip(host)
-        if ip is None:
-            # 非 IP 地址（纯域名），策略为 block_local 时放行，allowlist 时需谨慎
-            if self._policy == NetworkPolicy.BLOCK_LOCAL:
-                return True, ""
-            # allowlist 模式下，域名无法精确匹配，建议使用 IP
-            logger.warning(f"[网络策略] allowlist 模式下无法验证域名: {host}，已放行")
-            return True, ""
+        # 收集所有需要检查的 IP 地址
+        ips_to_check: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
 
-        # block_local: 拒绝内网地址
-        if self._policy == NetworkPolicy.BLOCK_LOCAL:
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                logger.warning(f"[网络策略] 拒绝内网地址: {host}")
-                return False, (
-                    f"网络策略拒绝: 目标地址 '{host}' 位于禁止的内网段。"
-                    f"当前策略: block_local。请使用允许的外部地址。"
-                )
-            return True, ""
+        # 先尝试直接解析为 IP
+        direct_ip = _parse_host_to_ip(host)
+        if direct_ip is not None:
+            ips_to_check.append(direct_ip)
 
-        # allowlist: 仅允许白名单内的地址
-        if self._policy == NetworkPolicy.ALLOWLIST:
-            for network in self._allowlist:
-                if ip in network:
+        # 对非 IP 地址进行 DNS 解析，防止 DNS rebinding 绕过
+        if direct_ip is None:
+            resolved_ips = _resolve_host_to_ips(host)
+            if resolved_ips:
+                for ip_str in resolved_ips:
+                    ip_obj = _parse_host_to_ip(ip_str)
+                    if ip_obj is not None:
+                        ips_to_check.append(ip_obj)
+            else:
+                # DNS 解析失败，block_local 模式下对未知域名采取保守策略
+                if self._policy == NetworkPolicy.BLOCK_LOCAL:
+                    logger.warning(
+                        f"[网络策略] 无法解析域名 '{host}'，block_local 模式下已放行"
+                    )
                     return True, ""
+                # allowlist 模式下无法验证域名对应的 IP
+                logger.warning(
+                    f"[网络策略] 无法解析域名 '{host}'，allowlist 模式下已拒绝"
+                )
+                return False, (
+                    f"网络策略拒绝: 无法解析域名 '{host}' 到 IP 地址。"
+                    f"当前策略: allowlist。请使用 IP 地址或确保域名可解析。"
+                )
 
-            logger.warning(f"[网络策略] 拒绝非白名单地址: {host}")
-            return False, (
-                f"网络策略拒绝: 目标地址 '{host}' 不在允许的白名单内。"
-                f"当前白名单: {[str(n) for n in self._allowlist]}。"
-            )
+        # 对每个解析到的 IP 应用策略
+        for ip_obj in ips_to_check:
+            # 检查是否是云元数据端点（通过 IP 匹配）
+            ip_str = str(ip_obj)
+            if ip_str in _ALWAYS_BLOCKED_HOSTS:
+                logger.warning(f"[网络策略] 拒绝解析到云元数据端点的地址: {host} -> {ip_str}")
+                return False, (
+                    f"网络策略拒绝: 域名 '{host}' 解析到云元数据端点 '{ip_str}'。"
+                )
+
+            # block_local: 拒绝内网/回环/链路本地地址
+            if self._policy == NetworkPolicy.BLOCK_LOCAL:
+                if _is_private_or_special(ip_obj):
+                    logger.warning(f"[网络策略] 拒绝内网地址: {host} -> {ip_str}")
+                    return False, (
+                        f"网络策略拒绝: 域名 '{host}' 解析到内网地址 '{ip_str}'。"
+                        f"当前策略: block_local。请使用允许的外部地址。"
+                    )
+
+            # allowlist: 仅允许白名单内的地址
+            if self._policy == NetworkPolicy.ALLOWLIST:
+                allowed = False
+                for network in self._allowlist:
+                    # 网络对象类型必须匹配 (IPv4 in IPv4Network, IPv6 in IPv6Network)
+                    try:
+                        if ip_obj in network:
+                            allowed = True
+                            break
+                    except TypeError:
+                        continue
+                if not allowed:
+                    logger.warning(
+                        f"[网络策略] 拒绝非白名单地址: {host} -> {ip_str}"
+                    )
+                    return False, (
+                        f"网络策略拒绝: 域名 '{host}' 解析到 IP '{ip_str}'，"
+                        f"该地址不在允许的白名单内。"
+                        f"当前白名单: {[str(n) for n in self._allowlist]}。"
+                    )
 
         return True, ""
 
