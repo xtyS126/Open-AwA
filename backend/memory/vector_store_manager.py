@@ -124,9 +124,19 @@ class OpenAIEmbeddingProvider:
 class SentenceTransformerEmbeddingProvider:
     """
     基于 sentence-transformers 的本地嵌入提供方。
+
+    模型下载策略：优先从 HuggingFace 下载，网络不可达时自动降级到
+    魔搭社区（ModelScope）下载，适配国内网络环境。
     """
 
     provider_name = "sentence-transformers"
+
+    # HuggingFace → ModelScope 模型名称映射
+    _MODELSCOPE_MODEL_MAP: Dict[str, str] = {
+        "all-MiniLM-L6-v2": "sentence-transformers/all-MiniLM-L6-v2",
+        "all-mpnet-base-v2": "sentence-transformers/all-mpnet-base-v2",
+        "paraphrase-multilingual-MiniLM-L12-v2": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    }
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         try:
@@ -135,13 +145,60 @@ class SentenceTransformerEmbeddingProvider:
             raise RuntimeError("未安装 sentence-transformers，无法启用本地向量模式") from exc
 
         self.model_name = model_name
-        self._model = None  # 延迟加载，避免启动时网络不可用导致阻塞
+        self._model = None  # 延迟加载
         self._SentenceTransformer = SentenceTransformer
 
+    def _try_download_from_modelscope(self) -> Optional[str]:
+        """
+        尝试从魔搭社区下载模型，返回本地路径。
+        下载失败时返回 None。
+        """
+        try:
+            from modelscope import snapshot_download
+        except ImportError:
+            logger.debug("modelscope 未安装，跳过魔搭社区下载")
+            return None
+
+        ms_model_name = self._MODELSCOPE_MODEL_MAP.get(
+            self.model_name,
+            f"sentence-transformers/{self.model_name}",
+        )
+        try:
+            local_path = snapshot_download(ms_model_name)
+            logger.info(f"从魔搭社区下载模型成功: {ms_model_name} -> {local_path}")
+            return local_path
+        except Exception as exc:
+            logger.warning(f"从魔搭社区下载模型失败 ({ms_model_name}): {exc}")
+            return None
+
     def _ensure_model(self):
-        """延迟初始化模型（首次调用 embed_texts 时才从 HuggingFace 下载）。"""
-        if self._model is None:
+        """
+        延迟初始化模型，按优先级尝试下载：
+        1. HuggingFace（默认源）
+        2. 魔搭社区 ModelScope（国内网络降级）
+        """
+        if self._model is not None:
+            return
+
+        # 优先尝试 HuggingFace
+        try:
             self._model = self._SentenceTransformer(self.model_name)
+            logger.info(f"从 HuggingFace 加载模型成功: {self.model_name}")
+            return
+        except Exception as hf_exc:
+            logger.warning(f"从 HuggingFace 下载模型失败 ({self.model_name}): {hf_exc}")
+
+        # 降级：尝试从魔搭社区下载
+        local_path = self._try_download_from_modelscope()
+        if local_path:
+            self._model = self._SentenceTransformer(local_path)
+            return
+
+        # 两处都失败
+        raise RuntimeError(
+            f"无法加载模型 {self.model_name}，HuggingFace 和 ModelScope 均下载失败。"
+            f"请检查网络连接，或安装 modelscope: pip install modelscope"
+        )
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         self._ensure_model()
