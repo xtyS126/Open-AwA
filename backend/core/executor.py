@@ -1505,9 +1505,24 @@ class ExecutionLayer:
                             "output_path": exec_result.output_path,
                             "execution_time_ms": exec_result.execution_time_ms,
                         }
+                except ImportError:
+                    pass  # ToolRegistry 模块不可用时回退到直接执行
+                except PermissionError:
+                    raise  # 权限拒绝异常不得回退，必须向上传播阻止执行
                 except Exception:
-                    pass  # ToolRegistry 执行失败时回退到直接执行
-            # 回退：直接通过 builtin_tool_manager 执行
+                    # ToolRegistry 执行意外失败时记录日志并拒绝执行，
+                    # 不得回退到未经过权限检查的 builtin_tool_manager 路径
+                    logger.bind(
+                        module="executor",
+                        event="tool_registry_execution_failed",
+                        tool_name=func_name,
+                    ).exception(f"ToolRegistry 执行异常，已拒绝回退到直接执行: {func_name}")
+                    return {
+                        "ok": False,
+                        "error": f"Tool registry execution failed for {func_name}",
+                        "tool_name": func_name,
+                    }
+            # 回退：直接通过 builtin_tool_manager 执行（仅当 ToolRegistry 完全不可用时）
             from core.builtin_tools.manager import builtin_tool_manager
             try:
                 result = await builtin_tool_manager.execute_tool(builtin_name, func_args)
