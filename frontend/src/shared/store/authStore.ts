@@ -12,10 +12,10 @@ interface User {
 
 interface AuthState {
   user: User | null
-  token: string | null
+  apiKey: string | null
   isAuthenticated: boolean
   isInitialized: boolean
-  setAuth: (user: User | null, token: string | null) => void
+  setAuth: (user: User | null, apiKey: string | null) => void
   setInitialized: (initialized: boolean) => void
   logout: () => void
   /** 更新当前用户的部分字段（用于头像上传、昵称修改后即时反映） */
@@ -24,18 +24,18 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: null,
+  apiKey: null,
   isAuthenticated: false,
   isInitialized: false,
 
-  setAuth: (user, token) => {
-    set({ user, token, isAuthenticated: !!user })
+  setAuth: (user, apiKey) => {
+    set({ user, apiKey, isAuthenticated: !!user })
   },
 
   setInitialized: (initialized) => set({ isInitialized: initialized }),
 
   logout: () => {
-    set({ user: null, token: null, isAuthenticated: false })
+    set({ user: null, apiKey: null, isAuthenticated: false })
   },
 
   updateUser: (partial) => {

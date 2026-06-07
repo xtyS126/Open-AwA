@@ -1,119 +1,38 @@
 /**
- * Axios 客户端实例、CSRF 令牌管理和请求/响应拦截器。
+ * Axios 客户端实例、API Key 管理和请求/响应拦截器。
  * 所有 API 模块通过此 client 发起请求。
+ * 单用户模式下使用 API Key (Bearer) 认证，不再需要 CSRF 保护。
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
+import { useAuthStore } from '@/shared/store/authStore'
+import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
-  _csrfRetried?: boolean
+  _apiKeyRetried?: boolean
 }
 
 const API_BASE_URL = '/api'
+const API_KEY_STORAGE_KEY = 'openawa_api_key'
 
-const CSRF_EXEMPT_PATHS = new Set(
-  (import.meta.env.VITE_CSRF_EXEMPT_PATHS || '/auth/login,/auth/register')
-    .split(',')
-    .map((p: string) => p.trim())
-    .filter(Boolean)
-)
-const CSRF_TOKEN_URL = `${API_BASE_URL}/auth/csrf-token`
-
-let _cachedCsrfToken = ''
-let csrfBootstrapPromise: Promise<string> | null = null
-
-export const getCsrfToken = (): string => _cachedCsrfToken
-
-/** 设置缓存的 CSRF token（登录成功后调用，避免额外的引导请求） */
-export const setCachedCsrfToken = (token: string): void => {
-  _cachedCsrfToken = token
+/** 从 localStorage 获取缓存的 API Key */
+export const getCachedApiKey = (): string => {
+  return safeGetItem(API_KEY_STORAGE_KEY, '')
 }
 
-export const clearCsrfTokenCache = (): void => {
-  _cachedCsrfToken = ''
-  csrfBootstrapPromise = null
+/** 设置缓存的 API Key */
+export const setCachedApiKey = (key: string): void => {
+  safeSetItem(API_KEY_STORAGE_KEY, key)
 }
 
-const shouldAttachCsrfToken = (method?: string, url?: string): boolean => {
-  const normalizedMethod = String(method || 'GET').toUpperCase()
-  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(normalizedMethod)) {
-    return false
-  }
-  const normalizedUrl = String(url || '').split('?')[0]
-  return !CSRF_EXEMPT_PATHS.has(normalizedUrl)
-}
-
-export const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
-  appLogger.warning({
-    event: 'chat_stream_parse_warning',
-    module: 'api',
-    action: 'POST',
-    status: 'warning',
-    message: 'failed to parse stream payload',
-    extra: {
-      source,
-      payload_preview: payload.slice(0, 100),
-    },
-  })
-}
-
-const ensureCsrfToken = async (): Promise<string> => {
-  if (_cachedCsrfToken) {
-    return _cachedCsrfToken
-  }
-
-  appLogger.warning({
-    event: 'csrf_token_missing',
-    module: 'api',
-    action: 'BOOTSTRAP',
-    status: 'warning',
-    message: 'csrf token missing before mutating request, trying bootstrap request',
-    extra: {
-      bootstrap_path: CSRF_TOKEN_URL,
-    },
-  })
-
-  if (!csrfBootstrapPromise) {
-    csrfBootstrapPromise = (async () => {
-      try {
-        const response = await fetch(CSRF_TOKEN_URL, {
-          method: 'GET',
-          credentials: 'same-origin',
-        })
-        if (!response.ok) {
-          throw new Error(`CSRF token request failed: ${response.status}`)
-        }
-        const data = await response.json()
-        _cachedCsrfToken = data.csrf_token || ''
-      } catch (error) {
-        appLogger.warning({
-          event: 'csrf_token_bootstrap_failed',
-          module: 'api',
-          action: 'BOOTSTRAP',
-          status: 'warning',
-          message: 'csrf token bootstrap request failed',
-          extra: {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        })
-      }
-
-      if (!_cachedCsrfToken) {
-        throw new Error('CSRF token missing after bootstrap request')
-      }
-      return _cachedCsrfToken
-    })().finally(() => {
-      csrfBootstrapPromise = null
-    })
-  }
-
-  return csrfBootstrapPromise
+/** 清除缓存的 API Key */
+export const clearCachedApiKey = (): void => {
+  safeSetItem(API_KEY_STORAGE_KEY, '')
 }
 
 /** Axios 实例，所有 API 调用通过此实例发起 */
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -124,10 +43,12 @@ api.interceptors.request.use(async (config) => {
   config.headers['X-Request-Id'] = requestId
   setCurrentRequestId(requestId)
 
-  if (shouldAttachCsrfToken(config.method, config.url)) {
-    const csrfToken = await ensureCsrfToken()
-    config.headers['X-CSRF-Token'] = csrfToken
+  // 附加 API Key 到 Authorization header
+  const apiKey = getCachedApiKey()
+  if (apiKey && !config.headers['Authorization']) {
+    config.headers['Authorization'] = `Bearer ${apiKey}`
   }
+
   appLogger.info({
     event: 'api_request',
     module: 'api',
@@ -168,44 +89,8 @@ api.interceptors.response.use(
       setCurrentRequestId(responseRequestId)
     }
 
-    const originalRequest = error?.config as RetriableApiRequest | undefined
-    const shouldRetryInvalidCsrf = (
-      error?.response?.status === 403 &&
-      error?.response?.data?.error === 'invalid_csrf_token' &&
-      originalRequest &&
-      !originalRequest._csrfRetried &&
-      shouldAttachCsrfToken(originalRequest.method, originalRequest.url)
-    )
-
-    if (shouldRetryInvalidCsrf && originalRequest) {
-      originalRequest._csrfRetried = true
-      clearCsrfTokenCache()
-
-      try {
-        const csrfToken = await ensureCsrfToken()
-        const retryHeaders = axios.AxiosHeaders.from(originalRequest.headers || {})
-        retryHeaders.set('X-CSRF-Token', csrfToken)
-        originalRequest.headers = retryHeaders
-        return api(originalRequest)
-      } catch (refreshError) {
-        appLogger.warning({
-          event: 'csrf_token_refresh_retry_failed',
-          module: 'api',
-          action: originalRequest.method?.toUpperCase() || 'UNKNOWN',
-          status: 'warning',
-          request_id: responseRequestId,
-          message: 'csrf token refresh retry failed',
-          extra: {
-            url: originalRequest.url,
-            error: refreshError instanceof Error ? refreshError.message : String(refreshError),
-          },
-        })
-      }
-    }
-
     const isExpectedAuthError = (
-      (error?.config?.url === '/auth/me' && error?.response?.status === 401) ||
-      (error?.config?.url === '/auth/register' && error?.response?.status === 400)
+      (error?.config?.url === '/auth/me' && error?.response?.status === 401)
     )
 
     if (!isExpectedAuthError) {
@@ -263,5 +148,5 @@ export const getApiErrorDetail = (error: unknown): string => {
   return ''
 }
 
-export { API_BASE_URL, ensureCsrfToken, CSRF_TOKEN_URL }
+export { API_BASE_URL }
 export default api

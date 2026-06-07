@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { authAPI } from '@/shared/api/api'
+import { getCachedApiKey } from '@/shared/api/client'
 import { appLogger } from '@/shared/utils/logger'
 import { loadServerPreferences } from '@/shared/utils/preferenceSync'
 import { safeGetItem } from '@/shared/utils/safeStorage'
@@ -72,13 +73,27 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
         message: 'app initialization started',
       })
 
+      // 检查是否有缓存的 API Key
+      const cachedKey = getCachedApiKey()
+      if (!cachedKey) {
+        appLogger.info({
+          event: 'app_initialize',
+          module: 'app',
+          action: 'session_validate',
+          status: 'failure',
+          message: 'no cached API Key, showing config page',
+        })
+        cachedInitializationResult = { isAuthenticated: false }
+        return cachedInitializationResult
+      }
+
       try {
-        // P1 fix: auth 校验与偏好同步分离，偏好失败不影响登录态
+        // API Key 验证
         let meResponse
         try {
           meResponse = await authAPI.getMe()
         } catch (authError) {
-          throw authError  // auth 失败直接抛到外层 catch 处理
+          throw authError
         }
 
         // 偏好同步独立执行，失败不阻断登录
@@ -102,14 +117,14 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
           module: 'app',
           action: 'session_validate',
           status: 'success',
-          message: 'existing session validated',
+          message: 'API Key validated',
         })
 
         const data = meResponse.data || {}
         cachedInitializationResult = {
           isAuthenticated: true,
           user: {
-            username: data.username || 'user',
+            username: data.username || 'admin',
             nickname: data.nickname,
             avatar_url: data.avatar_url,
             email: data.email,
@@ -125,13 +140,11 @@ async function initializeApplicationState(): Promise<AppInitializationResult> {
           module: 'app',
           action: 'session_validate',
           status: 'failure',
-          message: 'session validation failed, redirecting to login',
+          message: 'API Key validation failed, showing config page',
           extra: { error: error instanceof Error ? error.message : String(error), status_code: status },
         })
 
-        cachedInitializationResult = {
-          isAuthenticated: false,
-        }
+        cachedInitializationResult = { isAuthenticated: false }
         return cachedInitializationResult
       } finally {
         initializationPromise = null
@@ -151,11 +164,11 @@ export function resetAppInitializationStateForTests() {
 }
 
 /**
- * 统一处理应用启动时的会话校验、服务端偏好同步和本地 store 回填。
+ * 统一处理应用启动时的 API Key 校验、服务端偏好同步和本地 store 回填。
  *
  * P0 优化：本地状态回填在 hook 调用时同步执行，
  * 确保主题、模型偏好等首屏关键状态在 React 首次渲染前已就位。
- * 网络校验（会话验证 + 服务端偏好）在后台异步完成。
+ * 网络校验（API Key 验证 + 服务端偏好）在后台异步完成。
  */
 export function useAppInitialization() {
   const setInitialized = useAuthStore((state) => state.setInitialized)
@@ -180,9 +193,7 @@ export function useAppInitialization() {
       }
 
       if (result.isAuthenticated && result.user) {
-        setAuth(result.user, null)
-      } else if (result.isAuthenticated) {
-        setAuth({ username: 'user' }, null)
+        setAuth(result.user, getCachedApiKey())
       } else {
         logout()
       }

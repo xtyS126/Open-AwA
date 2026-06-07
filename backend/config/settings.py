@@ -142,6 +142,18 @@ class Settings(BaseSettings):
     # 矢量数据库路径，基于 backend 目录碟定绝对路径，避免工作目录不同导致路径错误
     VECTOR_DB_PATH: str = str(Path(__file__).resolve().parents[1] / "data" / "vector_db")
 
+    # API Key 认证配置（单用户模式）
+    # 全局 API Key，未设置时启动时自动生成并写入 .env.local
+    OPENAWA_API_KEY: str = ""
+    # Owner 用户名（默认 admin）
+    OPENAWA_OWNER_USERNAME: str = "admin"
+    # Owner 密码（未设置时自动生成，仅用于 JWT 兼容路径）
+    OPENAWA_OWNER_PASSWORD: str = ""
+    # Owner 昵称（可选，用于用户画像初始化）
+    OPENAWA_OWNER_NICKNAME: str = ""
+    # Owner 邮箱（可选，用于用户画像初始化）
+    OPENAWA_OWNER_EMAIL: str = ""
+
     # 微信集成配置
     WEIXIN_DEFAULT_BASE_URL: str = "https://ilinkai.weixin.qq.com"
     WEIXIN_DEFAULT_BOT_TYPE: str = "3"

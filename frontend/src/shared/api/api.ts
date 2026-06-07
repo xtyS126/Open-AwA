@@ -1,23 +1,25 @@
 /**
  * API 模块统一入口。
- * 客户端实例和 CSRF 逻辑已提取至 client.ts，类型定义已提取至 types.ts。
+ * 客户端实例和认证逻辑已提取至 client.ts，类型定义已提取至 types.ts。
  * 本文件保留所有 API 端点函数，供全应用导入使用。
+ * 单用户模式下使用 API Key (Bearer) 认证。
  */
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 import {
   api,
-  getCsrfToken,
-  setCachedCsrfToken,
+  getCachedApiKey,
+  setCachedApiKey,
+  clearCachedApiKey,
   getApiErrorDetail,
   logStreamParseWarning,
   API_BASE_URL,
-  ensureCsrfToken,
 } from './client'
 
 // 向后兼容：保持原有命名导出
 export {
-  getCsrfToken,
-  setCachedCsrfToken,
+  getCachedApiKey,
+  setCachedApiKey,
+  clearCachedApiKey,
   getApiErrorDetail,
 }
 
@@ -44,8 +46,8 @@ interface ChatStreamEvent {
 }
 
 export const authAPI = {
+  /** 使用用户名密码登录（兼容旧 JWT 路径，前端通常直接使用 API Key） */
   login: (username: string, password: string) => {
-    // 仅对 form data 构建做异常保护，避免 URLSearchParams 不可用时崩溃
     let formData: string | URLSearchParams
     try {
       formData = new URLSearchParams({ username, password })
@@ -58,10 +60,13 @@ export const authAPI = {
       },
     })
   },
-  register: (username: string, password: string) =>
-    api.post('/auth/register', { username, password }),
+  /** 获取当前用户信息（API Key 认证） */
   getMe: () => api.get('/auth/me'),
+  /** 登出（清除 JWT Cookie，API Key 模式下通常不需要） */
   logout: () => api.post('/auth/logout'),
+  /** 轮转 API Key */
+  rotateApiKey: (confirm: boolean = true) =>
+    api.post('/auth/rotate-api-key', { confirm }),
 }
 
 export interface UserProfileAnalysis {

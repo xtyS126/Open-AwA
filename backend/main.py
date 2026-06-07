@@ -38,6 +38,7 @@ from api.routes.inbox import router as inbox_router
 from api.routes.magic_commands import router as magic_commands_router
 from api.routes.heartbeat import router as heartbeat_router
 from api.routes.tts import router as tts_router
+from api.routes.tasks import router as tasks_router
 
 from billing.routers import billing
 from config.logging import (
@@ -133,6 +134,52 @@ def _check_model_provider_availability() -> None:
         )
 
 
+def _ensure_api_key() -> None:
+    """确保 OPENAWA_API_KEY 已配置，未设置时自动生成并持久化到 .env.local。
+
+    1. 环境变量 OPENAWA_API_KEY 已设置 → 直接使用
+    2. 未设置 → 自动生成 sk- 前缀的 43 字符 token → 写入 .env.local → 设置到 settings
+    """
+    import secrets as _secmod
+
+    api_key = os.getenv("OPENAWA_API_KEY", "").strip()
+    if api_key and len(api_key) >= 32:
+        logger.bind(event="api_key_configured", module="main").info(
+            "OPENAWA_API_KEY 已从环境变量加载"
+        )
+        return
+
+    if api_key and len(api_key) < 32:
+        logger.bind(event="api_key_too_short", module="main").warning(
+            f"OPENAWA_API_KEY 长度不足 ({len(api_key)} 字符)，"
+            f"建议至少 32 字符。将自动生成新 Key 替换。"
+        )
+
+    # 自动生成
+    new_key = "sk-" + _secmod.token_urlsafe(32)  # ~43 字符
+    object.__setattr__(settings, "OPENAWA_API_KEY", new_key)
+
+    # 持久化到 .env.local
+    from pathlib import Path as _FsPath
+    env_local_path = _FsPath(__file__).resolve().parent / ".env.local"
+    try:
+        env_local_path.parent.mkdir(parents=True, exist_ok=True)
+        prefix = ""
+        if env_local_path.exists() and env_local_path.stat().st_size > 0:
+            prefix = "\n"
+        with open(env_local_path, "a", encoding="utf-8") as f:
+            f.write(f"{prefix}OPENAWA_API_KEY={new_key}\n")
+        logger.bind(event="api_key_generated", module="main").warning(
+            f"[SECURITY] OPENAWA_API_KEY 未设置，已自动生成并写入 .env.local。"
+            f"请妥善保存: {new_key[:8]}...{new_key[-8:]}"
+        )
+    except OSError as exc:
+        logger.bind(event="api_key_persist_failed", module="main").warning(
+            f"无法持久化 API Key 到 .env.local: {exc}。"
+            f"Key 仅在当前进程生效，重启后将重新生成。"
+        )
+
+
 async def _startup_infrastructure(profiler: StartupProfiler) -> None:
     """基础设施层初始化：依赖检测、模型供应商可用性检查。"""
     with profiler.step("litellm_check"):
@@ -149,9 +196,13 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
     with profiler.step("provider_credential_check"):
         _check_model_provider_availability()
 
+    # API Key 初始化（未设置时自动生成并持久化到 .env.local）
+    with profiler.step("api_key_init"):
+        _ensure_api_key()
+
 
 async def _startup_data_init(profiler: StartupProfiler) -> None:
-    """数据层初始化：DB 建表、计费配置、RBAC 角色、本地用户同步。"""
+    """数据层初始化：DB 建表、计费配置、RBAC 角色、Owner 用户创建。"""
     from db.models import SessionLocal
 
     # rate_limit_store 不依赖 DB（memory 后端），即使跳过 DB 初始化也能正常工作
@@ -203,12 +254,20 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         finally:
             db.close()
 
-    from config.local_users import sync_local_users_to_db
-    with profiler.step("local_users_sync"):
+    from core.owner import ensure_owner_user
+    with profiler.step("owner_user_init"):
         db = SessionLocal()
         try:
-            sync_stats = sync_local_users_to_db(db)
-            logger.bind(event="local_users_synced", module="main", **sync_stats).info("local users synced from config")
+            owner = ensure_owner_user(db)
+            # 确保 owner 拥有 admin 角色
+            rbac = RBACManager(db)
+            await rbac.set_user_role(owner.id, "admin")
+            logger.bind(
+                event="owner_user_initialized",
+                module="main",
+                username=owner.username,
+                user_id=owner.id,
+            ).info("owner user initialized with admin role")
         finally:
             db.close()
 
@@ -406,7 +465,7 @@ app = FastAPI(
 # 参考: Django CSRF 中间件 https://github.com/django/django/blob/main/django/middleware/csrf.py
 _CSRF_HEADER_NAME = "X-CSRF-Token"
 # 不需要 CSRF 校验的路径前缀（公开只读接口）
-_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/logs/client-errors", "/api/auth/csrf-token"}
+_CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/logs/client-errors", "/api/auth/csrf-token"}
 # 需要 CSRF 校验的请求方法
 _CSRF_CHECKED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
@@ -484,6 +543,7 @@ async def csrf_protection_middleware(request: Request, call_next):
     2. 提取 token 中绑定的 user_id
     3. 与请求中认证用户的 user_id 比对，确保一一对应
 
+    API Key 认证的请求自动跳过 CSRF 校验（无 Cookie 环境，CSRF 不适用）。
     WebSocket 连接和豁免路径跳过校验。
     """
     path = request.url.path
@@ -496,6 +556,15 @@ async def csrf_protection_middleware(request: Request, call_next):
     # 测试环境跳过 CSRF 校验（仅通过 pytest conftest 设置的专用环境变量开启）
     if os.getenv("SKIP_CSRF_FOR_TEST", "").lower() == "true":
         return await call_next(request)
+
+    # API Key 认证的请求跳过 CSRF 校验
+    # （Bearer token 不依赖 Cookie，不存在 CSRF 攻击面）
+    api_key = settings.OPENAWA_API_KEY
+    auth_header = request.headers.get("Authorization", "")
+    if api_key and auth_header.startswith("Bearer "):
+        import secrets as _csrf_sec
+        if _csrf_sec.compare_digest(auth_header[7:].strip(), api_key):
+            return await call_next(request)
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")
@@ -784,6 +853,7 @@ app.include_router(coding_router)
 app.include_router(inbox_router)
 app.include_router(magic_commands_router, prefix=settings.API_V1_STR)
 app.include_router(tts_router)
+app.include_router(tasks_router)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath

@@ -331,3 +331,52 @@ async def cancel_scheduled_task(
     db.commit()
 
     return {"message": "Scheduled task cancelled successfully"}
+
+
+@router.post("/{task_id}/trigger")
+async def trigger_scheduled_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    手动触发一次定时任务立即执行（不等 cron 时间）。
+    任务必须是 pending 状态且未被取消。
+    执行完成后返回结果，不改变任务的 cron 周期。
+    """
+    task = _get_task_or_404(db, task_id, str(current_user.id))
+
+    if task.status not in ("pending", "completed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"任务状态为 {task.status}，只有 pending/completed 状态的任务可以手动触发",
+        )
+
+    logger.bind(
+        event="scheduled_task_manual_trigger",
+        module="scheduled_tasks",
+        task_id=task_id,
+        user_id=current_user.id,
+    ).info("手动触发定时任务")
+
+    try:
+        from core.scheduled_task_manager import scheduled_task_manager
+        result = await scheduled_task_manager.execute_task_now(task, db)
+        return {
+            "message": "任务已执行",
+            "task_id": task_id,
+            "status": result.get("status", "unknown"),
+            "response": result.get("response", ""),
+            "error": result.get("error"),
+        }
+    except Exception as exc:
+        logger.bind(
+            event="scheduled_task_trigger_error",
+            module="scheduled_tasks",
+            task_id=task_id,
+            error=str(exc),
+        ).error("手动触发定时任务失败")
+        raise HTTPException(
+            status_code=500,
+            detail=f"任务执行失败: {str(exc)}",
+        )

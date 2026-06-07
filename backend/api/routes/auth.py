@@ -12,7 +12,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
-from api.schemas import Token, UserCreate, UserResponse
+from api.schemas import Token, UserResponse
 from config.security import (
     ACCESS_TOKEN_COOKIE_NAME,
     add_to_blacklist,
@@ -38,24 +38,6 @@ def _build_login_rate_limit_key(username: str, client_ip: str) -> str:
     为登录限流生成稳定键，避免单用户或单来源地址被暴力尝试。
     """
     return f"{client_ip}|{str(username or '').strip().lower()}"
-
-
-@router.post("/register", response_model=UserResponse)
-async def register(user: UserCreate, db: Session = Depends(get_db)):
-    """
-    注册接口已禁用。用户信息的增删仅允许通过本地配置文件 config/users.yaml 进行修改。
-    保留此端点以保持 API 兼容性，但始终返回 403。
-    """
-    logger.bind(
-        event="auth_register_rejected",
-        module="auth",
-        action="register",
-        status="failure",
-    ).warning("registration via API is disabled, use config/users.yaml instead")
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Registration via API is disabled. Please modify config/users.yaml to add users."
-    )
 
 
 @router.post(
@@ -299,3 +281,97 @@ async def change_password(
     ).info("password changed successfully")
 
     return {"message": "密码修改成功"}
+
+
+class ApiKeyRotateRequest(BaseModel):
+    """API Key 轮转请求体。"""
+    confirm: bool = Field(default=False, description="确认轮转，设为 true 才执行")
+
+
+class ApiKeyRotateResponse(BaseModel):
+    """API Key 轮转响应。"""
+    message: str
+    new_api_key: str = Field(default="", description="新生成的 API Key（仅当 confirm=true 时返回）")
+
+
+@router.post(
+    "/rotate-api-key",
+    response_model=ApiKeyRotateResponse,
+    summary="轮转 API Key",
+    description="生成新的 API Key 使旧 Key 立即失效。需要当前有效的 API Key 验证。"
+)
+async def rotate_api_key(
+    request: Request,
+    request_body: ApiKeyRotateRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
+    """
+    轮转全局 API Key：生成新 Key → 写入 .env.local → 更新 settings → 返回新 Key。
+    旧 Key 立即失效，调用方需保存新 Key 并更新所有客户端配置。
+    此操作需当前有效的 API Key 认证。
+    """
+    import secrets as _secmod
+    from pathlib import Path as _FsPath
+
+    if not request_body.confirm:
+        return {"message": "请设置 confirm=true 以确认轮转 API Key", "new_api_key": ""}
+
+    # 生成新 Key
+    new_key = "sk-" + _secmod.token_urlsafe(32)
+    old_key = settings.OPENAWA_API_KEY
+
+    # 更新 runtime settings
+    object.__setattr__(settings, "OPENAWA_API_KEY", new_key)
+
+    # 更新 .env.local
+    env_local_path = _FsPath(__file__).resolve().parents[2] / ".env.local"
+    try:
+        # 记录旧 Key 的模糊值用于日志
+        old_key_hint = old_key[:8] + "..." + old_key[-8:] if len(old_key) >= 20 else ""
+        new_key_hint = new_key[:8] + "..." + new_key[-8:]
+
+        if env_local_path.exists():
+            content = env_local_path.read_text(encoding="utf-8")
+            # 替换现有的 OPENAWA_API_KEY 行
+            import re as _re
+            if _re.search(r'^OPENAWA_API_KEY=', content, _re.MULTILINE):
+                content = _re.sub(
+                    r'^OPENAWA_API_KEY=.*$',
+                    f'OPENAWA_API_KEY={new_key}',
+                    content,
+                    flags=_re.MULTILINE,
+                )
+                env_local_path.write_text(content, encoding="utf-8")
+            else:
+                # 追加
+                with open(env_local_path, "a", encoding="utf-8") as f:
+                    f.write(f"\nOPENAWA_API_KEY={new_key}\n")
+        else:
+            env_local_path.write_text(f"OPENAWA_API_KEY={new_key}\n", encoding="utf-8")
+    except OSError as exc:
+        logger.bind(
+            event="api_key_rotate_persist_failed",
+            module="auth",
+        ).warning(f"无法持久化新 API Key 到 .env.local: {exc}")
+
+    logger.bind(
+        event="api_key_rotated",
+        module="auth",
+        action="rotate_api_key",
+        status="success",
+        user_id=current_user.id,
+        old_key_hint=old_key_hint,
+        new_key_hint=new_key_hint,
+    ).warning(f"[SECURITY] API Key 已轮转 (旧: {old_key_hint} → 新: {new_key_hint})")
+
+    # 清除 owner 缓存，下次查询时会重新加载
+    try:
+        from core.owner import invalidate_owner_cache
+        invalidate_owner_cache()
+    except Exception:
+        pass
+
+    return {
+        "message": "API Key 已轮转。请将新 Key 分发到所有客户端。旧 Key 立即失效。",
+        "new_api_key": new_key,
+    }

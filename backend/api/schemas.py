@@ -79,6 +79,7 @@ class ChatMessage(BaseModel):
     thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度 0-5")
     max_tool_call_rounds: Optional[int] = Field(None, ge=1, le=50000, description="单次对话允许的最大工具回环轮次")
     continuation: Optional[ChatContinuation] = None
+    autonomous: Optional[bool] = Field(None, description="自主执行模式：true 时 AI 不等待权限确认，直接执行工具调用")
 
 
 class ChatResponse(BaseModel):
@@ -936,6 +937,33 @@ class UserFeedbackRequest(BaseModel):
     message_id: str = Field(..., description="消息ID（前端消息的唯一标识）")
     rating: int = Field(..., ge=-1, le=1, description="评分：1=点赞，-1=点踩，0=取消")
     comment: Optional[str] = Field(default=None, max_length=1000, description="可选反馈备注")
+
+
+# -------- 任务执行（非交互式）--------
+
+class TaskExecuteRequest(BaseModel):
+    """非交互式任务执行请求，用于 API 驱动的自主任务。"""
+    prompt: str = Field(..., min_length=1, max_length=32000, description="任务提示词")
+    provider: Optional[str] = Field(None, description="模型供应商")
+    model: Optional[str] = Field(None, description="模型名称")
+    session_id: Optional[str] = Field(default=None, description="会话 ID（可选，复用已有会话以保持上下文）")
+    timeout_seconds: Optional[int] = Field(default=300, ge=10, le=3600, description="任务超时（秒）")
+    webhook_url: Optional[str] = Field(None, description="完成后回调 Webhook URL")
+    max_tool_call_rounds: Optional[int] = Field(None, ge=1, le=100, description="最大工具调用轮数")
+    thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度")
+
+
+class TaskExecuteResponse(BaseModel):
+    """非交互式任务执行响应。"""
+    status: str = Field(..., description="执行状态：success / failed / timeout")
+    request_id: Optional[str] = None
+    session_id: Optional[str] = None
+    response: Optional[str] = None
+    reasoning_content: Optional[str] = None
+    tool_calls_count: int = 0
+    execution_time_ms: Optional[int] = None
+    tokens_used: Optional[int] = None
+    error: Optional[str] = None
 
 
 # -------- 持久化权限 --------

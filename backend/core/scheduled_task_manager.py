@@ -153,6 +153,42 @@ class ScheduledTaskManager:
 
         await asyncio.to_thread(_sync_reset)
 
+    async def execute_task_now(self, task, db=None) -> Dict[str, Any]:
+        """
+        手动触发执行一个定时任务，不依赖 claim 机制，直接执行并返回结果。
+        用于 API 手动触发场景。
+
+        Args:
+            task: ScheduledTask ORM 对象（含 task_type/prompt/provider/model 等字段）
+            db: 可选，已有的数据库会话
+
+        Returns:
+            dict: {"status": "success"|"failed", "response": "...", "error": "..."}
+        """
+        scheduled_task = {
+            "id": task.id,
+            "title": task.title,
+            "prompt": task.prompt,
+            "provider": getattr(task, "provider", None),
+            "model": getattr(task, "model", None),
+            "task_type": getattr(task, "task_type", "ai_prompt"),
+            "plugin_name": getattr(task, "plugin_name", None),
+            "command_name": getattr(task, "command_name", None),
+            "command_params": getattr(task, "command_params", None) or {},
+        }
+        try:
+            if scheduled_task.get("task_type") == "plugin_command":
+                result = await self._run_plugin_command(scheduled_task)
+            else:
+                result = await self._run_agent(scheduled_task)
+            return result
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "response": "",
+                "error": f"{type(exc).__name__}: {str(exc)}",
+            }
+
     async def _execute_task(self, task_id: int) -> None:
         """
         执行单个定时任务，根据任务类型分流到AI Agent或插件命令执行。
