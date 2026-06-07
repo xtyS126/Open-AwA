@@ -1245,6 +1245,7 @@ class PricingManager:
         ).first()
         if not active_config:
             default_models = self._get_default_models_for_provider(provider)
+            all_model_names = [m["model"] for m in default_models]
             for model_entry in default_models:
                 mc = ModelConfiguration(
                     provider=provider,
@@ -1252,6 +1253,8 @@ class PricingManager:
                     display_name=model_entry.get("display_name", model_entry["model"]),
                     is_active=True,
                     is_default=model_entry.get("is_default", False),
+                    selected_models=json.dumps(all_model_names),
+                    credential_id=cred.id if cred else None,
                 )
                 self.db.add(mc)
             if default_models:

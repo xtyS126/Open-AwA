@@ -1191,16 +1191,21 @@ async def get_models_by_provider(
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
+    cred = pricing_manager.get_provider_credential(provider_id)
     selected_models = pricing_manager.parse_selected_models(config.selected_models if config else None)
-    
+
     # 优先使用本次请求临时传入的凭证，否则回退到已保存配置
-    # 注意：数据库中存储的 api_key 经过 Fernet 加密，读取时必须解密
+    # 注意：api_key 优先从 ProviderCredential 读取，ModelConfiguration 仅作降级
     from config.security import decrypt_secret_value
     request_api_endpoint = payload.api_endpoint if payload else None
     request_api_key = payload.api_key if payload else None
-    base_url = request_api_endpoint if request_api_endpoint is not None else (config.api_endpoint if config else None)
+    base_url = (
+        request_api_endpoint
+        or (cred.api_endpoint if cred else None)
+        or (config.api_endpoint if config else None)
+    )
     base_url = PricingManager._normalize_provider_api_endpoint(provider_id, base_url)
-    db_api_key = config.api_key if config else ""
+    db_api_key = (cred.api_key if cred else "") or (config.api_key if config else "")
     # 请求中传入的 api_key 为明文（来自前端输入框），直接使用；否则从数据库读取并解密
     actual_api_key = request_api_key if request_api_key else decrypt_secret_value(db_api_key)
 
