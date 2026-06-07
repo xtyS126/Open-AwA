@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { authAPI, getApiErrorDetail, setCachedApiKey } from '@/shared/api/api'
+import { authAPI, getApiErrorDetail, setTempApiKey, persistApiKey, clearCachedApiKey } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './LoginPage.module.css'
@@ -30,10 +30,12 @@ function LoginPage() {
     setError(null)
 
     try {
-      // 先缓存 Key 再验证
-      setCachedApiKey(apiKey.trim())
+      // 临时写入内存以便 getMe() 请求携带 API Key
+      setTempApiKey(apiKey.trim())
       const response = await authAPI.getMe()
       const data = response.data || {}
+      // 验证成功后才持久化到 localStorage
+      persistApiKey(apiKey.trim())
       setAuth(
         {
           username: data.username || 'admin',
@@ -54,7 +56,7 @@ function LoginPage() {
         message: 'API Key validated successfully',
       })
     } catch (err) {
-      setCachedApiKey('')  // 清除无效 Key
+      clearCachedApiKey()  // 清除无效 Key（内存 + localStorage）
       const status = (err as { response?: { status?: number } })?.response?.status
       const detail = getApiErrorDetail(err)
       if (status === 401) {

@@ -168,6 +168,62 @@ async def execute_task(
         )
 
 
+def _validate_webhook_url(url: str) -> str:
+    """
+    校验 Webhook URL 安全性。
+    仅允许 HTTPS，拒绝内网地址和云元数据端点，防止 SSRF。
+    """
+    from urllib.parse import urlparse
+    import ipaddress
+
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("Webhook URL 不能为空")
+
+    url = url.strip()
+    parsed = urlparse(url)
+
+    # 仅允许 https
+    if parsed.scheme != "https":
+        raise ValueError(f"Webhook 仅支持 https 协议，当前为: {parsed.scheme}")
+
+    host = (parsed.hostname or "").rstrip(".").lower()
+    if not host:
+        raise ValueError("Webhook URL 缺少主机名")
+
+    # 拒绝云元数据端点
+    _BLOCKED_HOSTNAMES = {
+        "metadata.google.internal",
+        "169.254.169.254",
+        "instance-data",
+    }
+    if host in _BLOCKED_HOSTNAMES:
+        raise ValueError(f"Webhook 目标主机被禁止: {host}")
+
+    # 解析 IP 并拒绝内网/链路本地地址
+    import socket as _socket_mod
+    try:
+        addrs = _socket_mod.getaddrinfo(host, 443, proto=_socket_mod.IPPROTO_TCP)
+    except _socket_mod.gaierror:
+        raise ValueError(f"Webhook 目标主机无法解析: {host}")
+
+    _BLOCKED_NETS = [
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("169.254.0.0/16"),
+        ipaddress.ip_network("::1/128"),
+        ipaddress.ip_network("fc00::/7"),
+    ]
+    for _family, _type, _proto, _name, sockaddr in addrs:
+        ip = ipaddress.ip_address(sockaddr[0])
+        for net in _BLOCKED_NETS:
+            if ip in net:
+                raise ValueError(f"Webhook 目标 IP 被禁止 ({host} → {ip})")
+
+    return url
+
+
 def _fire_webhook(
     webhook_url: str,
     request_id: str,
@@ -176,9 +232,21 @@ def _fire_webhook(
     response: str,
     elapsed_ms: int,
 ) -> None:
-    """异步触发 Webhook 回调（fire-and-forget）。"""
+    """异步触发 Webhook 回调（fire-and-forget），URL 经过安全校验。"""
     import json
     import asyncio as _asyncio
+
+    # 安全校验 URL（同步执行，失败不阻塞主流程）
+    try:
+        webhook_url = _validate_webhook_url(webhook_url)
+    except ValueError as exc:
+        logger.bind(
+            event="task_webhook_url_rejected",
+            module="tasks",
+            webhook_url=webhook_url,
+            reason=str(exc),
+        ).warning(f"Webhook URL 被安全校验拒绝: {exc}")
+        return
 
     async def _post():
         try:
@@ -202,7 +270,7 @@ def _fire_webhook(
             logger.bind(
                 event="task_webhook_failed",
                 module="tasks",
-                webhook_url=webhook_url,
+                webhook_url=f"{webhook_url[:30]}...",
                 error=str(exc),
             ).warning("Webhook 回调失败")
 

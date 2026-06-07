@@ -79,7 +79,6 @@ class ChatMessage(BaseModel):
     thinking_depth: Optional[int] = Field(None, ge=0, le=5, description="思考深度 0-5")
     max_tool_call_rounds: Optional[int] = Field(None, ge=1, le=50000, description="单次对话允许的最大工具回环轮次")
     continuation: Optional[ChatContinuation] = None
-    autonomous: Optional[bool] = Field(None, description="自主执行模式：true 时 AI 不等待权限确认，直接执行工具调用")
 
 
 class ChatResponse(BaseModel):

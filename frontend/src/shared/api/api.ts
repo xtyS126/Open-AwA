@@ -8,7 +8,8 @@ import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/util
 import {
   api,
   getCachedApiKey,
-  setCachedApiKey,
+  setTempApiKey,
+  persistApiKey,
   clearCachedApiKey,
   getApiErrorDetail,
   logStreamParseWarning,
@@ -18,7 +19,8 @@ import {
 // 向后兼容：保持原有命名导出
 export {
   getCachedApiKey,
-  setCachedApiKey,
+  setTempApiKey,
+  persistApiKey,
   clearCachedApiKey,
   getApiErrorDetail,
 }
