@@ -313,7 +313,7 @@ async def get_usage(
 
 @router.get("/cost")
 async def get_cost_statistics(
-    period: str = Query("monthly", regex="^(daily|weekly|monthly|yearly)$"),
+    period: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -503,8 +503,8 @@ async def delete_budget(
 
 @router.get("/report")
 async def get_report(
-    period: str = Query("monthly", regex="^(daily|weekly|monthly|yearly)$"),
-    format: str = Query("json", regex="^(json|csv)$"),
+    period: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
+    format: str = Query("json", pattern="^(json|csv)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
