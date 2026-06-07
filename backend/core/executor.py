@@ -1375,6 +1375,49 @@ class ExecutionLayer:
         if not func_name:
             return {"ok": False, "error": "tool_call missing function name"}
 
+        # 自主模式：四层安全洋葱检查（非阻塞，拒绝即返回）
+        try:
+            from core.autonomous import get_autonomous_manager
+            am = get_autonomous_manager()
+            if am and am.is_autonomous:
+                # 推断当前 scope
+                scope = str(context.get("scope") or context.get("execution_mode") or "chat")
+                if am.is_active_for(scope):
+                    denial = am.check_all(func_name, func_args)
+                    if denial:
+                        # 记录审计日志（fire-and-forget，不阻塞工具拒绝返回）
+                        session_id = str(context.get("session_id", "") or "")
+                        asyncio.create_task(am.record_audit(
+                            session_id=session_id,
+                            action=func_name,
+                            params=func_args,
+                            decision="denied",
+                            denied_by=denial.get("denied_by", "unknown"),
+                            error=denial.get("error"),
+                        ))
+                        return denial
+                    # 文件写入/删除操作：自动创建检查点
+                    if func_name in ("builtin_write_file", "builtin_delete_file", "write_file", "delete_file"):
+                        file_path = str(func_args.get("path") or func_args.get("file") or "")
+                        if file_path:
+                            cp_id = await am.create_checkpoint(file_path,
+                                "delete" if "delete" in func_name else "write")
+                            if cp_id:
+                                logger.debug(f"[自主模式] 文件操作前检查点已创建: {cp_id}")
+                    # 记录允许执行的审计日志（fire-and-forget，不阻塞工具执行）
+                    session_id = str(context.get("session_id", "") or "")
+                    asyncio.create_task(am.record_audit(
+                        session_id=session_id,
+                        action=func_name,
+                        params=func_args,
+                        decision="allowed",
+                    ))
+        except ImportError:
+            pass  # 模块不可用时静默跳过
+        except Exception as exc:
+            # 安全模块异常不应中断工具执行（fail-open 策略）
+            logger.warning(f"[自主模式] 安全检查异常，已跳过: {exc}")
+
         # 部分模型会把工具前缀首字母错误大写成 Task_/Plugin_/Builtin_/Mcp_，
         # 这里仅归一化已知前缀，避免破坏后续名称解析。
         if "_" in func_name:

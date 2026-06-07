@@ -292,6 +292,32 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
 
 
 @asynccontextmanager
+async def _startup_autonomous_mode(profiler: StartupProfiler) -> None:
+    """初始化自主运行模式（仅通过 .env 配置）。"""
+    try:
+        from core.autonomous import init_autonomous_mode, get_autonomous_manager
+        manager = init_autonomous_mode()
+        if manager:
+            profiler.record("autonomous_mode")
+            logger.warning("自主运行模式已激活 - 安全注意事项见 docs/superpowers/specs/")
+    except Exception:
+        logger.bind(event="autonomous_init_failed", module="main").error(
+            "自主运行模式初始化失败，请检查 .env 配置"
+        )
+        raise
+
+
+async def _shutdown_autonomous_mode() -> None:
+    """关闭自主模式管理器。"""
+    try:
+        from core.autonomous import get_autonomous_manager
+        manager = get_autonomous_manager()
+        if manager:
+            await manager.shutdown()
+    except Exception as e:
+        logger.warning(f"自主模式关闭异常: {e}")
+
+
 async def lifespan(app: FastAPI):
     """
     管理应用启动与关闭阶段的全局生命周期。
@@ -308,6 +334,8 @@ async def lifespan(app: FastAPI):
         await _startup_data_init(profiler)
         await _startup_plugin_system(profiler)
         await _startup_background_tasks(profiler)
+        # 17. 自主运行模式初始化（在所有其他初始化之后）
+        await _startup_autonomous_mode(profiler)
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
         raise
@@ -315,6 +343,8 @@ async def lifespan(app: FastAPI):
     profiler.finish()
 
     yield
+    # 关闭自主模式管理器（刷新审计日志、清理检查点）
+    await _shutdown_autonomous_mode()
     await scheduled_task_manager.stop()
     await close_shared_client()
     logger.bind(event="app_shutdown", module="main").info("shutting down openawa")
