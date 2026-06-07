@@ -23,6 +23,17 @@ from loguru import logger
 
 from config.settings import settings
 
+# 模型下载统一存储到项目 data/models/ 目录，不散落到系统各处
+def _get_models_dir() -> str:
+    _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _dir = os.path.join(_backend_dir, "data", "models")
+    os.makedirs(_dir, exist_ok=True)
+    return _dir
+
+_MODELS_DIR = _get_models_dir()
+os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(_MODELS_DIR, "modelscope"))
+os.environ.setdefault("HF_HOME", os.path.join(_MODELS_DIR, "huggingface"))
+
 
 DEFAULT_COLLECTION_NAME = "long_term_memory"
 DEFAULT_HASH_DIMENSION = 32
