@@ -1204,6 +1204,8 @@ class PricingManager:
     def upsert_provider_credential(self, provider: str, data: Dict) -> ProviderCredential:
         """
         创建或更新 Provider 凭据。
+        同时确保该 provider 有活跃的默认 ModelConfiguration，
+        防止用户删除 provider 后重新添加凭据时没有可用模型。
         """
         from config.security import encrypt_secret_value
         self.ensure_configuration_schema()
@@ -1217,6 +1219,7 @@ class PricingManager:
             if "api_key" in data and data["api_key"] is not None:
                 raw = data["api_key"].strip()
                 cred.api_key = encrypt_secret_value(raw) if raw else None
+            cred.is_active = True
             cred.updated_at = datetime.now(timezone.utc)
         else:
             raw_key = (data.get("api_key") or "").strip()
@@ -1231,7 +1234,48 @@ class PricingManager:
 
         self.db.commit()
         self.db.refresh(cred)
+
+        # 确保存在活跃的 ModelConfiguration（被 delete 后自动恢复）
+        active_config = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider,
+            ModelConfiguration.is_active == True,
+        ).first()
+        if not active_config:
+            default_models = self._get_default_models_for_provider(provider)
+            for model_entry in default_models:
+                mc = ModelConfiguration(
+                    provider=provider,
+                    model=model_entry["model"],
+                    display_name=model_entry.get("display_name", model_entry["model"]),
+                    is_active=True,
+                    is_default=model_entry.get("is_default", False),
+                )
+                self.db.add(mc)
+            if default_models:
+                self.db.commit()
+                logger.info(f"已为 {provider} 恢复默认模型配置 ({len(default_models)} 个模型)")
+
         return cred
+
+    @staticmethod
+    def _get_default_models_for_provider(provider: str) -> list:
+        """获取 provider 的默认模型列表（用于恢复被删除的配置）。"""
+        provider_defaults = {
+            "openai": [
+                {"model": "gpt-4o", "display_name": "GPT-4o", "is_default": True},
+                {"model": "gpt-4o-mini", "display_name": "GPT-4o Mini"},
+                {"model": "gpt-4-turbo", "display_name": "GPT-4 Turbo"},
+            ],
+            "deepseek": [
+                {"model": "deepseek-chat", "display_name": "DeepSeek Chat", "is_default": True},
+                {"model": "deepseek-reasoner", "display_name": "DeepSeek Reasoner"},
+            ],
+            "anthropic": [
+                {"model": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6", "is_default": True},
+                {"model": "claude-haiku-4-5-20251001", "display_name": "Claude Haiku 4.5"},
+            ],
+        }
+        return provider_defaults.get(provider, [{"model": f"{provider}-default", "display_name": provider, "is_default": True}])
 
     def get_all_provider_credentials(self) -> List[ProviderCredential]:
         """获取所有激活的 Provider 凭据。"""
