@@ -1486,22 +1486,27 @@ class ExecutionLayer:
         if func_name.startswith("builtin_"):
             builtin_name = func_name[len("builtin_"):]
             # 优先通过 ToolRegistry 执行（支持权限检查、截断、统计等）
+            _tool_reg = None
             try:
                 from core.tool_registry import tool_registry as _tool_reg
-                registered_tool = _tool_reg.get(func_name)
-                if registered_tool and registered_tool.execute:
-                    exec_result = await _tool_reg.execute(func_name, func_args, context)
-                    return {
-                        "ok": exec_result.status.value in ("completed", "running"),
-                        "result": exec_result.result,
-                        "error": exec_result.error,
-                        "tool_name": func_name,
-                        "truncated": exec_result.truncated,
-                        "output_path": exec_result.output_path,
-                        "execution_time_ms": exec_result.execution_time_ms,
-                    }
             except ImportError:
                 pass  # ToolRegistry 不可用时回退到直接执行
+            if _tool_reg is not None:
+                try:
+                    registered_tool = _tool_reg.get(func_name)
+                    if registered_tool and registered_tool.execute:
+                        exec_result = await _tool_reg.execute(func_name, func_args, context)
+                        return {
+                            "ok": exec_result.status.value == "completed",
+                            "result": exec_result.result,
+                            "error": exec_result.error,
+                            "tool_name": func_name,
+                            "truncated": exec_result.truncated,
+                            "output_path": exec_result.output_path,
+                            "execution_time_ms": exec_result.execution_time_ms,
+                        }
+                except Exception:
+                    pass  # ToolRegistry 执行失败时回退到直接执行
             # 回退：直接通过 builtin_tool_manager 执行
             from core.builtin_tools.manager import builtin_tool_manager
             try:

@@ -41,6 +41,11 @@
   background: var(--color-error-bg, #fecaca);
 }
 
+.dangerBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 2px;
+}
+
 .dangerBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -111,8 +116,8 @@
 .actionBadge {
   display: inline-block;
   padding: 2px 8px;
-  background: #dbeafe;
-  color: #1e40af;
+  background: var(--color-info-bg, #dbeafe);
+  color: var(--color-primary-dark, #1e40af);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
@@ -147,6 +152,11 @@
   background: var(--color-error-soft-bg, #fef2f2);
   color: var(--color-error-strong, #dc2626);
   border-color: var(--color-error-soft-bg, #fecaca);
+}
+
+.deleteBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 2px;
 }
 
 .deleteBtn:disabled {

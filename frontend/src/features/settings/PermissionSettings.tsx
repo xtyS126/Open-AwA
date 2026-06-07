@@ -38,7 +38,7 @@ function PermissionSettings() {
     setLoadError('')
     try {
       const response = await securityAPI.getSavedPermissions()
-      setPermissions(response.data.permissions || [])
+      setPermissions(response?.data?.permissions || [])
     } catch {
       setLoadError('加载已保存权限失败，请检查网络连接后重试')
       appLogger.error({
@@ -141,21 +141,21 @@ function PermissionSettings() {
           </button>
         </div>
       )}
-      {loading ? (
-        <div className={styles.loading}>加载中...</div>
-      ) : !loadError && permissions.length === 0 ? (
+      {loading && <div className={styles.loading}>加载中...</div>}
+      {!loading && !loadError && permissions.length === 0 && (
         <div className={styles.empty}>
           <p>暂无已保存的权限规则</p>
           <p className={styles.hint}>
             当你在权限请求弹窗中选择"始终允许"后，该权限规则会出现在这里。
           </p>
         </div>
-      ) : (
+      )}
+      {!loading && (!loadError || permissions.length > 0) && (
         <div className={styles.tableContainer}>
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>操作</th>
+                <th>权限操作</th>
                 <th>资源</th>
                 <th>创建时间</th>
                 <th>操作</th>

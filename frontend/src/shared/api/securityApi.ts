@@ -65,6 +65,7 @@ export interface PermissionRequest {
   session_id: string
   action: string
   resources: string[]
+  /** 需要持久化保存的权限规则名称列表（对应后端 saved_rules 字段） */
   save?: string[]
   metadata?: Record<string, unknown>
   agent?: string
@@ -138,7 +139,7 @@ export const securityAPI = {
     return api.get<AuditStats>('/security/audit-logs/stats')
   },
 
-  /** 回复权限请求 */
+  /** 回复权限请求（TODO: 待权限请求轮询/WebSocket 集成后启用） */
   replyToPermission(reply: PermissionReply) {
     return api.post<{ ok: boolean }>('/security/permissions/reply', reply)
   },
@@ -150,7 +151,7 @@ export const securityAPI = {
 
   /** 删除单条已保存权限 */
   deleteSavedPermission(id: string) {
-    return api.delete(`/security/permissions/saved/${id}`)
+    return api.delete(`/security/permissions/saved/${encodeURIComponent(id)}`)
   },
 
   /** 删除所有已保存权限 */

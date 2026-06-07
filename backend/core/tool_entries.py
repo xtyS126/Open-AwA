@@ -8,6 +8,8 @@
 
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
+
 from core.tool_registry import (
     ToolDefinition,
     ToolPriority,
@@ -92,15 +94,16 @@ def register_builtin_tools(registry: Optional[ToolRegistry] = None) -> ToolRegis
 
         # 获取权限映射
         permission_action, permission_resource = _BUILTIN_PERMISSION_MAP.get(
-            internal_name, (internal_name, "*")
+            internal_name, (internal_name, f"builtin:{internal_name}")
         )
+        if internal_name not in _BUILTIN_PERMISSION_MAP:
+            logger.warning(f"内置工具 '{internal_name}' 缺少权限映射，使用默认值")
 
-        # 构造执行封装函数
-        async def make_execute(tool_name: str = internal_name):
-            async def _exec(params: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-                ctx_with_name = {**(ctx or {}), "tool_name": tool_name}
-                return await _execute_tool_async(params, ctx_with_name)
-            return _exec
+        # 构造执行封装函数（通过闭包捕获循环变量 current_name）
+        _current_name = internal_name
+        async def _execute_wrapper(params: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
+            ctx_with_name = {**(ctx or {}), "tool_name": _current_name}
+            return await _execute_tool_async(params, ctx_with_name)
 
         tool_def = ToolDefinition(
             name=func_name_full,
@@ -109,7 +112,7 @@ def register_builtin_tools(registry: Optional[ToolRegistry] = None) -> ToolRegis
             permission_action=permission_action,
             permission_resource=permission_resource,
             priority=ToolPriority.LOCATION,
-            execute=None,  # 由 executor 通过 builtin_ 前缀分发执行
+            execute=_execute_wrapper,
             metadata={
                 "internal_name": internal_name,
                 "category": "builtin",
@@ -117,7 +120,6 @@ def register_builtin_tools(registry: Optional[ToolRegistry] = None) -> ToolRegis
         )
         reg.register(tool_def)
 
-    from loguru import logger
     logger.info(f"已注册 {len(BUILTIN_TOOL_DEFINITIONS)} 个内置工具到 ToolRegistry")
     return reg
 

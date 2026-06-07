@@ -18,6 +18,7 @@ interface PermissionDialogProps {
 
 /** 获取操作的友好显示名称 */
 function getActionLabel(action: string): string {
+  if (!action) return '未知操作'
   const actionMap: Record<string, string> = {
     'read': '读取文件',
     'write': '写入文件',
@@ -50,8 +51,8 @@ export function PermissionDialog({ request, onReply, onClose }: PermissionDialog
     setProcessing(true)
     try {
       await onReply(request.id, 'once')
-    } catch {
-      // onReply 内部已通过 toast/logger 处理错误，此处静默捕获
+    } catch (err) {
+      console.error('PermissionDialog: onReply failed for allow:', err)
     } finally {
       setProcessing(false)
     }
@@ -61,8 +62,8 @@ export function PermissionDialog({ request, onReply, onClose }: PermissionDialog
     setProcessing(true)
     try {
       await onReply(request.id, 'always')
-    } catch {
-      // onReply 内部已通过 toast/logger 处理错误，此处静默捕获
+    } catch (err) {
+      console.error('PermissionDialog: onReply failed for always allow:', err)
     } finally {
       setProcessing(false)
     }
@@ -72,8 +73,8 @@ export function PermissionDialog({ request, onReply, onClose }: PermissionDialog
     setProcessing(true)
     try {
       await onReply(request.id, 'reject', rejectMessage || undefined)
-    } catch {
-      // onReply 内部已通过 toast/logger 处理错误，此处静默捕获
+    } catch (err) {
+      console.error('PermissionDialog: onReply failed for reject:', err)
     } finally {
       setProcessing(false)
     }
