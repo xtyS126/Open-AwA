@@ -140,25 +140,36 @@ def _ensure_api_key() -> None:
     密钥必须通过以下方式之一提供：
     1. 环境变量 OPENAWA_API_KEY
     2. backend/.env.local 文件中的 OPENAWA_API_KEY=...
-    3. 运行 python generate_api_key.py 手动生成
+    3. 兼容旧版：若 SECRET_KEY 有效（≥32字符）且 OPENAWA_API_KEY 为空，自动迁移
+    4. 运行 python generate_api_key.py 手动生成
     """
     # 优先从 settings 读取（已由 pydantic-settings 从 .env.local 加载），降级到 os.getenv
     api_key = (getattr(settings, "OPENAWA_API_KEY", "") or "").strip()
     if not api_key:
         api_key = os.getenv("OPENAWA_API_KEY", "").strip()
+
+    # 兼容旧版：OPENAWA_API_KEY 为空时，尝试从 SECRET_KEY 迁移
+    if not api_key or len(api_key) < 32:
+        secret_key = (getattr(settings, "SECRET_KEY", "") or "").strip()
+        if not secret_key:
+            secret_key = os.getenv("SECRET_KEY", "").strip()
+        if secret_key and len(secret_key) >= 32:
+            logger.bind(event="api_key_migrated", module="main").warning(
+                "OPENAWA_API_KEY 未配置，但从 SECRET_KEY 发现有效密钥，已自动迁移。"
+                "请将 .env.local 中的 SECRET_KEY= 改为 OPENAWA_API_KEY=。"
+            )
+            object.__setattr__(settings, "OPENAWA_API_KEY", secret_key)
+            api_key = secret_key
+
     if api_key and len(api_key) >= 32:
-        # 确保 settings 对象与 os.environ 一致
         if not (getattr(settings, "OPENAWA_API_KEY", "") or "").strip():
             object.__setattr__(settings, "OPENAWA_API_KEY", api_key)
         logger.bind(event="api_key_configured", module="main").info(
-            "OPENAWA_API_KEY 已从环境变量加载"
+            "OPENAWA_API_KEY 已加载"
         )
         return
 
     if api_key and len(api_key) < 32:
-        logger.bind(event="api_key_too_short", module="main").error(
-            f"OPENAWA_API_KEY 长度不足 ({len(api_key)} 字符)，至少需要 32 字符。"
-        )
         raise SystemExit(
             "\n[错误] OPENAWA_API_KEY 长度不足，至少需要 32 字符。\n"
             "请运行 python generate_api_key.py 生成新的访问密钥，\n"
