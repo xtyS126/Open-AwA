@@ -567,7 +567,7 @@ class ExperienceManager:
         调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
         """
         total = self.db.query(ExperienceMemory).count()
-        
+
         experience_types = ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
         type_counts = {t: 0 for t in experience_types}
         type_count_results = self.db.query(
@@ -577,18 +577,24 @@ class ExperienceManager:
             ExperienceMemory.experience_type.in_(experience_types)
         ).group_by(ExperienceMemory.experience_type).all()
         type_counts.update(dict(type_count_results))
-        
-        all_experiences = self.db.query(ExperienceMemory).all()
-        avg_confidence = sum(e.confidence for e in all_experiences) / total if total > 0 else 0
-        
-        total_usage = sum(e.usage_count for e in all_experiences)
-        total_success = sum(e.success_count for e in all_experiences)
+
+        # 使用 SQL 聚合查询替代全量加载 + Python sum，避免大量经验数据导致 OOM。
+        agg = (
+            self.db.query(
+                func.coalesce(func.avg(ExperienceMemory.confidence), 0.0).label("avg_confidence"),
+                func.coalesce(func.sum(ExperienceMemory.usage_count), 0).label("total_usage"),
+                func.coalesce(func.sum(ExperienceMemory.success_count), 0).label("total_success"),
+            ).first()
+        )
+        avg_confidence = agg.avg_confidence or 0.0
+        total_usage = agg.total_usage or 0
+        total_success = agg.total_success or 0
         avg_success_rate = total_success / total_usage if total_usage > 0 else 0
-        
+
         top_experiences = self.db.query(ExperienceMemory).order_by(
             desc(ExperienceMemory.usage_count)
         ).limit(5).all()
-        
+
         return {
             'total_experiences': total,
             'type_distribution': type_counts,

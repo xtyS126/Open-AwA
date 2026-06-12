@@ -29,18 +29,21 @@ const SecuritySettings = lazy(() => import('./SecuritySettings'))
 const PermissionSettings = lazy(() => import('./PermissionSettings'))
 const EnvVarSettings = lazy(() => import('./EnvVarSettings'))
 
-// 物理抽离的子组件（静态导入）
-import { DataRetentionTab } from './components/DataRetentionTab'
-import { PromptsTab } from './components/PromptsTab'
-import { BillingTab } from './components/BillingTab'
-import { DataCollectionTab } from './components/DataCollectionTab'
-import { GeneralSettings } from './components/GeneralSettings'
-import { ModelsTab } from './components/ModelsTab'
-import { ApiSettings } from './components/ApiSettings'
-import { CreateProviderModal } from './modals/CreateProviderModal'
-import { DeleteConfirmModal } from './modals/DeleteConfirmModal'
-import { ImportModelsModal } from './modals/ImportModelsModal'
-import { DeleteModelsModal } from './modals/DeleteModelsModal'
+// 懒加载 Tab 组件，减少首屏 bundle 体积
+// 通过 .then() 将 barrel 的命名导出映射为 React.lazy 需要的 default 导出
+const GeneralSettings = lazy(() => import('./components/GeneralSettings').then(m => ({ default: m.GeneralSettings })))
+const ApiSettings = lazy(() => import('./components/ApiSettings').then(m => ({ default: m.ApiSettings })))
+const PromptsTab = lazy(() => import('./components/PromptsTab').then(m => ({ default: m.PromptsTab })))
+const BillingTab = lazy(() => import('./components/BillingTab').then(m => ({ default: m.BillingTab })))
+const ModelsTab = lazy(() => import('./components/ModelsTab').then(m => ({ default: m.ModelsTab })))
+const DataRetentionTab = lazy(() => import('./components/DataRetentionTab').then(m => ({ default: m.DataRetentionTab })))
+const DataCollectionTab = lazy(() => import('./components/DataCollectionTab').then(m => ({ default: m.DataCollectionTab })))
+
+// 懒加载 Modal 组件
+const CreateProviderModal = lazy(() => import('./modals/CreateProviderModal').then(m => ({ default: m.CreateProviderModal })))
+const DeleteConfirmModal = lazy(() => import('./modals/DeleteConfirmModal').then(m => ({ default: m.DeleteConfirmModal })))
+const ImportModelsModal = lazy(() => import('./modals/ImportModelsModal').then(m => ({ default: m.ImportModelsModal })))
+const DeleteModelsModal = lazy(() => import('./modals/DeleteModelsModal').then(m => ({ default: m.DeleteModelsModal })))
 import {
   REMOTE_MODEL_CACHE_TTL_MS,
   normalizeProviderId,
@@ -1548,7 +1551,8 @@ function SettingsPage() {
         )}
 
         {activeTab === 'general' && (
-          <GeneralSettings
+          <Suspense fallback={<TabLoadingFallback />}>
+            <GeneralSettings
             settings={settings}
             outputMode={outputMode}
             globalSelectedModel={globalSelectedModel}
@@ -1574,10 +1578,12 @@ function SettingsPage() {
             onResetModelParams={handleResetModelParams}
             onSave={saveSettings}
           />
+          </Suspense>
         )}
 
         {activeTab === 'api' && (
-          <ApiSettings
+          <Suspense fallback={<TabLoadingFallback />}>
+            <ApiSettings
             loadingApiProviders={loadingApiProviders}
             loadingProviderDetail={loadingProviderDetail}
             loadingProviderModels={loadingProviderModels}
@@ -1619,19 +1625,23 @@ function SettingsPage() {
             }}
             onOpenDeleteModelsModal={() => setShowDeleteModelsModal(true)}
           />
+          </Suspense>
         )}
 
         {activeTab === 'prompts' && (
-          <PromptsTab
+          <Suspense fallback={<TabLoadingFallback />}>
+            <PromptsTab
             promptContent={settings.promptContent}
             saving={saving}
             onPromptChange={(value) => handleChange('promptContent', value)}
             onSave={saveSettings}
           />
+          </Suspense>
         )}
 
         {activeTab === 'billing' && (
-          <BillingTab
+          <Suspense fallback={<TabLoadingFallback />}>
+            <BillingTab
             loadingModels={loadingModels}
             models={models}
             editingModel={editingModel}
@@ -1643,10 +1653,12 @@ function SettingsPage() {
             onSaveModelPrice={handleSaveModelPrice}
             onCancelEdit={() => setEditingModel(null)}
           />
+          </Suspense>
         )}
 
         {activeTab === 'models' && (
-          <ModelsTab
+          <Suspense fallback={<TabLoadingFallback />}>
+            <ModelsTab
             showAddForm={showAddForm}
             configurations={configurations}
             loading={loadingConfigs}
@@ -1671,9 +1683,11 @@ function SettingsPage() {
             onDeleteConfiguration={handleDeleteConfiguration}
             onSetDefault={handleSetDefault}
           />
+          </Suspense>
         )}
         {activeTab === 'data-collection' && (
-          <DataCollectionTab
+          <Suspense fallback={<TabLoadingFallback />}>
+            <DataCollectionTab
             collectionEnabled={collectionEnabled}
             collectionStats={collectionStats}
             updatingCollection={updatingCollection}
@@ -1692,10 +1706,12 @@ function SettingsPage() {
             onExportEndTimeChange={setExportEndTime}
             onCleanupDaysChange={setCleanupDays}
           />
+          </Suspense>
         )}
 
         {activeTab === 'data-retention' && (
-          <DataRetentionTab
+          <Suspense fallback={<TabLoadingFallback />}>
+            <DataRetentionTab
             loadingRetention={loadingRetention}
             retentionConfig={retentionConfig}
             retentionDays={retentionDays}
@@ -1706,6 +1722,7 @@ function SettingsPage() {
             onRetentionDaysChange={setRetentionDays}
             onCleanupOldChange={setCleanupOld}
           />
+          </Suspense>
         )}
 
         {activeTab === 'security' && (
@@ -1741,46 +1758,54 @@ function SettingsPage() {
           </div>
         )}
 
-        <CreateProviderModal
-          isOpen={showCreateProviderModal}
-          addProviderForm={addProviderForm}
-          creatingProvider={creatingProvider}
-          onClose={handleCloseCreateProviderModal}
-          onChangeForm={setAddProviderForm}
-          onCreate={handleCreateProvider}
-        />
+        <Suspense fallback={null}>
+          <CreateProviderModal
+            isOpen={showCreateProviderModal}
+            addProviderForm={addProviderForm}
+            creatingProvider={creatingProvider}
+            onClose={handleCloseCreateProviderModal}
+            onChangeForm={setAddProviderForm}
+            onCreate={handleCreateProvider}
+          />
+        </Suspense>
 
-        <DeleteConfirmModal
-          isOpen={showDeleteConfirmModal}
-          providerName={providerForm.display_name.trim() || providerForm.provider}
-          deletingProvider={deletingProvider}
-          onClose={handleCloseDeleteConfirmModal}
-          onConfirm={confirmDeleteProvider}
-        />
+        <Suspense fallback={null}>
+          <DeleteConfirmModal
+            isOpen={showDeleteConfirmModal}
+            providerName={providerForm.display_name.trim() || providerForm.provider}
+            deletingProvider={deletingProvider}
+            onClose={handleCloseDeleteConfirmModal}
+            onConfirm={confirmDeleteProvider}
+          />
+        </Suspense>
 
-        <ImportModelsModal
-          isOpen={showImportModal}
-          fetchedRemoteModels={fetchedRemoteModels}
-          modalSelectedModels={modalSelectedModels}
-          importing={importing}
-          onClose={() => setShowImportModal(false)}
-          onToggleModel={(modelName, checked) => {
-            if (checked) {
-              setModalSelectedModels(prev => [...prev, modelName])
-            } else {
-              setModalSelectedModels(prev => prev.filter(m => m !== modelName))
-            }
-          }}
-          onImport={handleImportModels}
-        />
+        <Suspense fallback={null}>
+          <ImportModelsModal
+            isOpen={showImportModal}
+            fetchedRemoteModels={fetchedRemoteModels}
+            modalSelectedModels={modalSelectedModels}
+            importing={importing}
+            onClose={() => setShowImportModal(false)}
+            onToggleModel={(modelName, checked) => {
+              if (checked) {
+                setModalSelectedModels(prev => [...prev, modelName])
+              } else {
+                setModalSelectedModels(prev => prev.filter(m => m !== modelName))
+              }
+            }}
+            onImport={handleImportModels}
+          />
+        </Suspense>
 
-        <DeleteModelsModal
-          isOpen={showDeleteModelsModal}
-          selectedCount={selectedForDeletion.length}
-          deletingModels={deletingModels}
-          onClose={() => setShowDeleteModelsModal(false)}
-          onConfirm={handleBatchDeleteModels}
-        />
+        <Suspense fallback={null}>
+          <DeleteModelsModal
+            isOpen={showDeleteModelsModal}
+            selectedCount={selectedForDeletion.length}
+            deletingModels={deletingModels}
+            onClose={() => setShowDeleteModelsModal(false)}
+            onConfirm={handleBatchDeleteModels}
+          />
+        </Suspense>
       </div>
     </PageLayout>
   )

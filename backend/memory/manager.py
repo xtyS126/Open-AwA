@@ -10,6 +10,7 @@ from threading import Lock
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
+from sqlalchemy import func, case
 
 from db.models import LongTermMemory, ShortTermMemory
 from core.conversation_sessions import ensure_conversation
@@ -714,20 +715,33 @@ class MemoryManager:
                 if user_id is not None:
                     query = query.filter(LongTermMemory.user_id == user_id)
                 query = query.filter(LongTermMemory.workspace_id == workspace_id)
-                memories = query.all()
-                total = len(memories)
-                active = [memory for memory in memories if memory.archive_status != "archived"]
-                archived = [memory for memory in memories if memory.archive_status == "archived"]
-                total_access = sum(memory.access_count for memory in memories)
-                avg_confidence = (sum(memory.confidence for memory in memories) / total) if total else 0.0
-                avg_quality = (sum(memory.quality_score for memory in memories) / total) if total else 0.0
+                # 使用 SQL 聚合查询替代全量加载 + Python 循环，避免大量数据导致 OOM。
+                # COUNT + CASE WHEN 计算 active/archived 数量，SUM/AVG 计算聚合值。
+                stats_row = (
+                    db.query(
+                        func.count(LongTermMemory.id).label("total"),
+                        func.sum(
+                            case((LongTermMemory.archive_status != "archived", 1), else_=0)
+                        ).label("active"),
+                        func.sum(
+                            case((LongTermMemory.archive_status == "archived", 1), else_=0)
+                        ).label("archived"),
+                        func.coalesce(func.sum(LongTermMemory.access_count), 0).label("total_access"),
+                        func.coalesce(func.avg(LongTermMemory.confidence), 0.0).label("avg_confidence"),
+                        func.coalesce(func.avg(LongTermMemory.quality_score), 0.0).label("avg_quality"),
+                    )
+                    .filter(LongTermMemory.workspace_id == workspace_id)
+                )
+                if user_id is not None:
+                    stats_row = stats_row.filter(LongTermMemory.user_id == user_id)
+                row = stats_row.first()
                 return {
-                    'total_memories': total,
-                    'active_memories': len(active),
-                    'archived_memories': len(archived),
-                    'average_confidence': round(avg_confidence, 4),
-                    'average_quality_score': round(avg_quality, 4),
-                    'total_access_count': total_access,
+                    'total_memories': row.total,
+                    'active_memories': row.active or 0,
+                    'archived_memories': row.archived or 0,
+                    'average_confidence': round(row.avg_confidence or 0.0, 4),
+                    'average_quality_score': round(row.avg_quality or 0.0, 4),
+                    'total_access_count': row.total_access or 0,
                 }
 
         stats = await asyncio.to_thread(_collect_stats)
