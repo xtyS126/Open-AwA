@@ -2,7 +2,7 @@
  * 提示词配置组件
  * 自定义AI助手的行为和角色提示词
  */
-import styles from '../SettingsPage.module.css'
+import styles from '@/features/settings/SettingsPage.module.css'
 
 interface PromptsTabProps {
   /** 提示词内容 */

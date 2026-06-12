@@ -3,7 +3,7 @@
  * 每个卡片对应一个已导入的模型，可独立编辑参数并保存/重置。
  */
 import { ModelParameterEditor, type ModelEditParams } from './ModelParameterEditor'
-import styles from '../SettingsPage.module.css'
+import styles from '@/features/settings/SettingsPage.module.css'
 
 interface ModelConfigCardProps {
   /** 模型名称 */

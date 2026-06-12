@@ -2,7 +2,7 @@
  * 模型参数编辑器组件，提供 7 个可调参数的滑块/数字输入。
  * 纯展示组件，所有状态由父组件通过 props 传入。
  */
-import styles from '../SettingsPage.module.css'
+import styles from '@/features/settings/SettingsPage.module.css'
 
 /** 模型可编辑参数的接口定义 */
 export interface ModelEditParams {

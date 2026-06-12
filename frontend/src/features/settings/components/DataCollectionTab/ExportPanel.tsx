@@ -1,7 +1,7 @@
 /**
  * 数据导出面板组件
  */
-import styles from '../SettingsPage.module.css'
+import styles from '@/features/settings/SettingsPage.module.css'
 
 interface ExportPanelProps {
   /** 开始时间 */

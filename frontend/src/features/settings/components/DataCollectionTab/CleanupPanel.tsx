@@ -1,7 +1,7 @@
 /**
  * 清理历史数据面板组件
  */
-import styles from '../SettingsPage.module.css'
+import styles from '@/features/settings/SettingsPage.module.css'
 
 interface CleanupPanelProps {
   /** 清理天数 */
