@@ -4,7 +4,7 @@
 确保迁移治理在单条链路上执行，避免表结构漂移。
 """
 
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date, UniqueConstraint, ForeignKey
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Date, UniqueConstraint, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 
@@ -32,6 +32,10 @@ class UsageRecord(Base):
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     extra_data: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_usage_records_user_created", "user_id", "created_at"),
+    )
 
 
 class ModelPricing(Base):

@@ -518,17 +518,18 @@ class ExperienceManager:
         logger.info(f"Updated experience quality: {experience_id}, new confidence: {experience.confidence}")
         return True
     
-    async def archive_low_quality_experiences(self) -> int:
+    async def archive_low_quality_experiences(self, batch_limit: int = 500) -> int:
         """
-        处理archive、low、quality、experiences相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        批量归档低质量经验记录（置信度 < 0.2 且已被充分使用）。
+        每次调用最多处理 batch_limit 条，避免全量加载导致 OOM。
+        调用方可多次调用直至返回 0，表示已无更多待归档记录。
         """
         low_quality = self.db.query(ExperienceMemory).filter(
             and_(
                 ExperienceMemory.confidence < 0.2,
                 ExperienceMemory.usage_count > 20
             )
-        ).all()
+        ).limit(batch_limit).all()
         
         archived_count = 0
         for exp in low_quality:

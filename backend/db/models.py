@@ -323,6 +323,10 @@ class ShortTermMemory(Base):
     # 工具调用事件列表（JSON），用于历史恢复时重建工具调用展示
     tool_events: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
+    __table_args__ = (
+        Index("ix_stm_session_workspace_ts", "session_id", "workspace_id", "timestamp"),
+    )
+
 
 class LongTermMemory(Base):
     """
@@ -344,6 +348,10 @@ class LongTermMemory(Base):
     quality_score: Mapped[float] = mapped_column(Float, default=0.0)
     archive_status: Mapped[str] = mapped_column(String(50), default="active", index=True)
     memory_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (
+        Index("ix_ltm_ws_archive", "workspace_id", "archive_status"),
+    )
 
 
 class Workflow(Base):
@@ -468,6 +476,10 @@ class BehaviorLog(Base):
     action_type: Mapped[str] = mapped_column(String)
     details: Mapped[Dict[str, Any]] = mapped_column(JSON)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_behavior_user_action_ts", "user_id", "action_type", "timestamp"),
+    )
 
 
 class ExperienceMemory(Base):
@@ -622,6 +634,10 @@ class ConversationRecord(Base):
     status: Mapped[str] = mapped_column(String, default="success")
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     record_metadata: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_conversations_user_ts", "user_id", "timestamp"),
+    )
 
 
 class TokenBlacklist(Base):

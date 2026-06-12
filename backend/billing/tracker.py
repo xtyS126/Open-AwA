@@ -105,31 +105,49 @@ class UsageTracker:
         return query.order_by(UsageRecord.created_at.desc()).offset(offset).limit(limit).all()
 
     def get_session_usage(self, session_id: str) -> Dict:
-        """汇总指定会话的 token 用量和费用，按模型分组返回。"""
-        records = self.db.query(UsageRecord).filter(
-            UsageRecord.session_id == session_id
-        ).all()
-        
-        total_input_tokens = sum(r.input_tokens for r in records)
-        total_output_tokens = sum(r.output_tokens for r in records)
-        total_cost = sum(r.total_cost for r in records)
-        
+        """汇总指定会话的 token 用量和费用，按模型分组返回。使用 SQL 聚合查询避免全量加载。"""
+        # 总体聚合：一次查询获取汇总值
+        agg = (
+            self.db.query(
+                func.coalesce(func.sum(UsageRecord.input_tokens), 0).label("total_input"),
+                func.coalesce(func.sum(UsageRecord.output_tokens), 0).label("total_output"),
+                func.coalesce(func.sum(UsageRecord.total_cost), 0.0).label("total_cost"),
+                func.count(UsageRecord.id).label("call_count"),
+            )
+            .filter(UsageRecord.session_id == session_id)
+            .first()
+        )
+
+        # 按模型分组聚合
+        by_model_rows = (
+            self.db.query(
+                UsageRecord.provider,
+                UsageRecord.model,
+                func.coalesce(func.sum(UsageRecord.input_tokens), 0).label("input_tokens"),
+                func.coalesce(func.sum(UsageRecord.output_tokens), 0).label("output_tokens"),
+                func.coalesce(func.sum(UsageRecord.total_cost), 0.0).label("cost"),
+            )
+            .filter(UsageRecord.session_id == session_id)
+            .group_by(UsageRecord.provider, UsageRecord.model)
+            .all()
+        )
+
         by_model = {}
-        for r in records:
-            key = f"{r.provider}:{r.model}"
-            if key not in by_model:
-                by_model[key] = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
-            by_model[key]["input_tokens"] += r.input_tokens
-            by_model[key]["output_tokens"] += r.output_tokens
-            by_model[key]["cost"] += r.total_cost
-        
+        for row in by_model_rows:
+            key = f"{row.provider}:{row.model}"
+            by_model[key] = {
+                "input_tokens": int(row.input_tokens),
+                "output_tokens": int(row.output_tokens),
+                "cost": round(float(row.cost), 6),
+            }
+
         return {
             "session_id": session_id,
-            "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens,
-            "total_cost": round(total_cost, 6),
+            "total_input_tokens": int(agg.total_input),
+            "total_output_tokens": int(agg.total_output),
+            "total_cost": round(float(agg.total_cost), 6),
             "by_model": by_model,
-            "call_count": len(records)
+            "call_count": int(agg.call_count),
         }
 
     def get_user_usage(
@@ -138,50 +156,82 @@ class UsageTracker:
         period_start: Optional[date] = None,
         period_end: Optional[date] = None
     ) -> Dict:
-        """汇总指定用户在给定时间段内的用量（token/费用），按模型和内容类型分组。默认统计当月。"""
+        """汇总指定用户在给定时间段内的用量（token/费用），按模型和内容类型分组。默认统计当月。使用 SQL 聚合查询避免全量加载。"""
         if not period_start:
             period_start = date.today().replace(day=1)
         if not period_end:
             period_end = date.today()
-        
-        records = self.db.query(UsageRecord).filter(
-            and_(
-                UsageRecord.user_id == user_id,
-                func.date(UsageRecord.created_at) >= period_start,
-                func.date(UsageRecord.created_at) <= period_end
+
+        base_filter = and_(
+            UsageRecord.user_id == user_id,
+            func.date(UsageRecord.created_at) >= period_start,
+            func.date(UsageRecord.created_at) <= period_end,
+        )
+
+        # 总体聚合
+        agg = (
+            self.db.query(
+                func.coalesce(func.sum(UsageRecord.input_tokens), 0).label("total_input"),
+                func.coalesce(func.sum(UsageRecord.output_tokens), 0).label("total_output"),
+                func.coalesce(func.sum(UsageRecord.total_cost), 0.0).label("total_cost"),
+                func.count(UsageRecord.id).label("call_count"),
             )
-        ).all()
-        
-        total_input_tokens = sum(r.input_tokens for r in records)
-        total_output_tokens = sum(r.output_tokens for r in records)
-        total_cost = sum(r.total_cost for r in records)
-        
+            .filter(base_filter)
+            .first()
+        )
+
+        # 按模型分组聚合
+        by_model_rows = (
+            self.db.query(
+                UsageRecord.provider,
+                UsageRecord.model,
+                func.coalesce(func.sum(UsageRecord.input_tokens), 0).label("input_tokens"),
+                func.coalesce(func.sum(UsageRecord.output_tokens), 0).label("output_tokens"),
+                func.coalesce(func.sum(UsageRecord.total_cost), 0.0).label("cost"),
+            )
+            .filter(base_filter)
+            .group_by(UsageRecord.provider, UsageRecord.model)
+            .all()
+        )
+
         by_model = {}
+        for row in by_model_rows:
+            key = f"{row.provider}:{row.model}"
+            by_model[key] = {
+                "input_tokens": int(row.input_tokens),
+                "output_tokens": int(row.output_tokens),
+                "cost": round(float(row.cost), 6),
+            }
+
+        # 按内容类型分组聚合
+        by_content_type_rows = (
+            self.db.query(
+                UsageRecord.content_type,
+                func.coalesce(func.sum(UsageRecord.input_tokens + UsageRecord.output_tokens), 0).label("tokens"),
+                func.coalesce(func.sum(UsageRecord.total_cost), 0.0).label("cost"),
+            )
+            .filter(base_filter)
+            .group_by(UsageRecord.content_type)
+            .all()
+        )
+
         by_content_type = {}
-        
-        for r in records:
-            model_key = f"{r.provider}:{r.model}"
-            if model_key not in by_model:
-                by_model[model_key] = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
-            by_model[model_key]["input_tokens"] += r.input_tokens
-            by_model[model_key]["output_tokens"] += r.output_tokens
-            by_model[model_key]["cost"] += r.total_cost
-            
-            if r.content_type not in by_content_type:
-                by_content_type[r.content_type] = {"tokens": 0, "cost": 0.0}
-            by_content_type[r.content_type]["tokens"] += r.input_tokens + r.output_tokens
-            by_content_type[r.content_type]["cost"] += r.total_cost
-        
+        for row in by_content_type_rows:
+            by_content_type[row.content_type] = {
+                "tokens": int(row.tokens),
+                "cost": round(float(row.cost), 6),
+            }
+
         return {
             "user_id": user_id,
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens,
-            "total_cost": round(total_cost, 6),
+            "total_input_tokens": int(agg.total_input),
+            "total_output_tokens": int(agg.total_output),
+            "total_cost": round(float(agg.total_cost), 6),
             "by_model": by_model,
             "by_content_type": by_content_type,
-            "call_count": len(records)
+            "call_count": int(agg.call_count),
         }
 
     def get_daily_usage_trend(

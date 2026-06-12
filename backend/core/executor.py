@@ -28,6 +28,14 @@ from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
 from sqlalchemy.orm import Session
 
+# tool_result 在序列化后允许的最大字符数，超出部分将被截断。
+# 防止 plugin_/mcp_/task_ 等无内置截断的工具返回超大结果，导致 messages 列表无限膨胀。
+MAX_TOOL_RESULT_CHARS = 8_000
+
+# tool_events 中每个事件 result 字段的最大字符数（前端展示用）。
+MAX_TOOL_EVENT_RESULT_CHARS = 2_000
+
+
 def resolve_max_tool_call_rounds(context: Dict[str, Any]) -> int:
     """解析工具调用回环上限，默认从 settings 读取，上限 100 轮。"""
     from config.settings import settings
@@ -1136,10 +1144,15 @@ class ExecutionLayer:
                         ).warning(f"工具调用连续失败 {consecutive_errors} 次，终止 tool_calls 循环")
                         _abort = True
                         break
+                # 前端展示用结果摘要，截断防止 tool_events 过大
+                _raw_result = exec_result.get("result", exec_result.get("error"))
+                _result_str = json.dumps(_raw_result, ensure_ascii=False, default=str)
+                if len(_result_str) > MAX_TOOL_EVENT_RESULT_CHARS:
+                    _result_str = _result_str[:MAX_TOOL_EVENT_RESULT_CHARS] + "..."
                 tool_events.append({
                     "name": tc.get("function", {}).get("name", "unknown"),
                     "status": "completed" if exec_result.get("ok") else "error",
-                    "result": exec_result.get("result", exec_result.get("error")),
+                    "result": _result_str,
                 })
                 tool_message = self._build_tool_message(tc, exec_result)
                 messages.append(tool_message)
@@ -1753,11 +1766,18 @@ class ExecutionLayer:
     def _build_tool_message(tool_call: Dict[str, Any], exec_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         根据工具调用及其执行结果构建 tool role 消息，用于后续 LLM 轮次。
+        对过大的工具结果进行截断，防止消息列表无限膨胀导致 OOM 或 token 超限。
         """
+        result_str = json.dumps(exec_result, ensure_ascii=False, default=str)
+        if len(result_str) > MAX_TOOL_RESULT_CHARS:
+            result_str = (
+                result_str[:MAX_TOOL_RESULT_CHARS]
+                + f"\n[工具输出已截断，原始长度: {len(result_str)} 字符，超出部分已丢弃]"
+            )
         return {
             "role": "tool",
             "tool_call_id": tool_call.get("id", ""),
-            "content": json.dumps(exec_result, ensure_ascii=False, default=str),
+            "content": result_str,
         }
 
     async def execute_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:

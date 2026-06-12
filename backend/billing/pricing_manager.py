@@ -870,6 +870,9 @@ class PricingManager:
         """
         获取供应商目录，包含每个供应商的配置信息和已选模型列表。
         同时涵盖 ModelConfiguration 和 ProviderCredential 中的 provider。
+
+        优化：批量加载 credential 和 configuration，避免循环内对每个 provider
+        逐一查询数据库（N+1 → 3 次查询）。
         """
         # 1. 从 ModelConfiguration 获取 provider 列表
         config_rows = self.db.query(ModelConfiguration.provider).filter(
@@ -886,6 +889,9 @@ class PricingManager:
             if self.normalize_provider(row[0])
         })
 
+        if not provider_ids:
+            return []
+
         provider_names = {
             "openai": "OpenAI",
             "anthropic": "Anthropic",
@@ -896,17 +902,40 @@ class PricingManager:
             "zhipu": "智谱AI"
         }
 
+        # 3. 批量加载所有 provider 的 credential 和 configuration，消除循环内 N+1 查询
+        all_creds = self.db.query(ProviderCredential).filter(
+            ProviderCredential.provider.in_(provider_ids),
+            ProviderCredential.is_active == True
+        ).all()
+        cred_map: Dict[str, ProviderCredential] = {
+            self.normalize_provider(c.provider): c for c in all_creds
+        }
+
+        all_configs = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider.in_(provider_ids),
+            ModelConfiguration.is_active == True
+        ).all()
+        configs_by_provider: Dict[str, List[ModelConfiguration]] = {}
+        default_config_map: Dict[str, ModelConfiguration] = {}
+        for c in all_configs:
+            pid = self.normalize_provider(c.provider)
+            configs_by_provider.setdefault(pid, []).append(c)
+        for pid, configs in configs_by_provider.items():
+            # 优先取 is_default=True，否则取 sort_order 最小的第一个
+            default = next((c for c in configs if c.is_default), None)
+            if default is None and configs:
+                configs.sort(key=lambda c: (c.sort_order or 0, c.id or 0))
+                default = configs[0]
+            default_config_map[pid] = default
+
         result = []
         for provider_id in provider_ids:
-            cred = self.get_provider_credential(provider_id)
-            config = self.get_default_provider_configuration(provider_id)
+            cred = cred_map.get(provider_id)
+            config = default_config_map.get(provider_id)
+            configs = configs_by_provider.get(provider_id, [])
 
             # selected_models 从 ModelConfiguration 聚合
             all_models = []
-            configs = self.db.query(ModelConfiguration).filter(
-                ModelConfiguration.provider == provider_id,
-                ModelConfiguration.is_active == True
-            ).all()
             for c in configs:
                 all_models.extend(self.parse_selected_models(c.selected_models))
             # 去重
