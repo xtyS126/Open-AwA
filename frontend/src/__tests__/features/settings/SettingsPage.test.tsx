@@ -387,12 +387,16 @@ describe('SettingsPage', () => {
     fireEvent.click(confirmBtn)
     
     await waitFor(() => {
-      expect(modelApiMocks.updateConfiguration).toHaveBeenCalledWith(11, expect.objectContaining({
+      // handleImportModels 先保存供应商凭据（包含 api_endpoint）
+      expect(modelApiMocks.saveProviderCredential).toHaveBeenCalledWith('openai', expect.objectContaining({
         api_endpoint: 'https://api.openai.com/v1',
+      }))
+      // 再更新已选模型列表
+      expect(modelApiMocks.updateProviderSelectedModels).toHaveBeenCalledWith('openai', expect.objectContaining({
         selected_models: ['legacy-local-model', 'gpt-4.1']
       }))
     })
-    
+
     expect(modelApiMocks.getConfigurations).toHaveBeenCalled()
   })
 

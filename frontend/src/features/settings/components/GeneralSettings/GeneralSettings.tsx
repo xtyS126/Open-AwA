@@ -58,6 +58,8 @@ interface GeneralSettingsProps {
   onSelectModelConfig: (key: string) => void
   onSaveModelParams: () => void
   onResetModelParams: () => void
+  /** 保存通用设置回调（设置页面"保存设置"按钮） */
+  onSave: () => void
 }
 
 export function GeneralSettings({
@@ -84,6 +86,7 @@ export function GeneralSettings({
   onSelectModelConfig,
   onSaveModelParams,
   onResetModelParams,
+  onSave,
 }: GeneralSettingsProps) {
   // 计算配置模型选项
   const configModelOptions = useMemo<ConfigModelOption[]>(() => {
@@ -192,8 +195,7 @@ export function GeneralSettings({
       </div>
       <button
         className={`btn btn-primary`}
-        onClick={() => {}} // 保存由父组件处理
-        disabled={false} // 由父组件处理
+        onClick={onSave}
       >
         保存设置
       </button>

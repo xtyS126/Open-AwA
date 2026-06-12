@@ -78,6 +78,7 @@ export function ModelConfigCard({
             type="checkbox"
             checked={checked}
             onChange={(e) => onCheckChange(modelName, e.target.checked)}
+            aria-label={modelName}
           />
         </label>
       </div>

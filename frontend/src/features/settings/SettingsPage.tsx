@@ -1572,6 +1572,7 @@ function SettingsPage() {
             onSelectModelConfig={handleSelectModelConfig}
             onSaveModelParams={handleSaveModelParams}
             onResetModelParams={handleResetModelParams}
+            onSave={saveSettings}
           />
         )}
 
