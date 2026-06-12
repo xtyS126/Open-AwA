@@ -60,15 +60,15 @@ def persist_key(new_key: str) -> None:
                 flags=re.MULTILINE,
             )
             ENV_LOCAL.write_text(content, encoding="utf-8")
+            _restrict_permissions(ENV_LOCAL)
         else:
             with open(ENV_LOCAL, "a", encoding="utf-8") as f:
                 f.write(f"\n{KEY_NAME}={new_key}\n")
+            _restrict_permissions(ENV_LOCAL)
     else:
         ENV_LOCAL.parent.mkdir(parents=True, exist_ok=True)
         ENV_LOCAL.write_text(f"{KEY_NAME}={new_key}\n", encoding="utf-8")
-
-    # 限制文件权限为仅 owner 可读写（600），防止密钥泄露
-    _restrict_permissions(ENV_LOCAL)
+        _restrict_permissions(ENV_LOCAL)
 
 
 def _restrict_permissions(path: Path) -> None:
