@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import functools
 import json
@@ -428,7 +429,7 @@ class WeixinSkillAdapter:
 
         next_buf = str(response.get("get_updates_buf") or "").strip()
         if next_buf and persist_cursor:
-            self._save_get_updates_buf(config.account_id, next_buf)
+            await self._save_get_updates_buf(config.account_id, next_buf)
 
         stored_context_tokens = 0
         for item in response.get("msgs") or []:
@@ -437,7 +438,7 @@ class WeixinSkillAdapter:
             from_user_id = str(item.get("from_user_id") or "").strip()
             context_token = str(item.get("context_token") or "").strip()
             if from_user_id and context_token:
-                self._set_context_token(config.account_id, from_user_id, context_token)
+                await self._set_context_token(config.account_id, from_user_id, context_token)
                 stored_context_tokens += 1
 
         return {
@@ -752,11 +753,11 @@ class WeixinSkillAdapter:
         """
         return self._load_get_updates_buf(account_id)
 
-    def save_cursor(self, account_id: str, cursor: str) -> None:
+    async def save_cursor(self, account_id: str, cursor: str) -> None:
         """
         保存轮询游标。
         """
-        self._save_get_updates_buf(account_id, cursor)
+        await self._save_get_updates_buf(account_id, cursor)
 
     def clear_cursor(self, account_id: str) -> None:
         """
@@ -770,11 +771,11 @@ class WeixinSkillAdapter:
         """
         return self._read_json_file(self._auto_reply_state_file_path(account_id))
 
-    def save_auto_reply_state(self, account_id: str, state: Dict[str, Any]) -> None:
+    async def save_auto_reply_state(self, account_id: str, state: Dict[str, Any]) -> None:
         """
         保存自动回复运行时状态。
         """
-        self._write_json_file(self._auto_reply_state_file_path(account_id), state)
+        await self._write_json_file(self._auto_reply_state_file_path(account_id), state)
 
     def clear_auto_reply_state(self, account_id: str) -> None:
         """
@@ -800,12 +801,12 @@ class WeixinSkillAdapter:
         value = data.get("get_updates_buf")
         return str(value).strip() if isinstance(value, str) else ""
 
-    def _save_get_updates_buf(self, account_id: str, get_updates_buf: str) -> None:
+    async def _save_get_updates_buf(self, account_id: str, get_updates_buf: str) -> None:
         """
         处理save、get、updates、buf相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
-        self._write_json_file(self._sync_buf_file_path(account_id), {"get_updates_buf": get_updates_buf})
+        await self._write_json_file(self._sync_buf_file_path(account_id), {"get_updates_buf": get_updates_buf})
 
     def _get_context_token(self, account_id: str, user_id: str) -> str:
         """
@@ -816,7 +817,7 @@ class WeixinSkillAdapter:
         value = data.get(user_id)
         return str(value).strip() if isinstance(value, str) else ""
 
-    def _set_context_token(self, account_id: str, user_id: str, token: str) -> None:
+    async def _set_context_token(self, account_id: str, user_id: str, token: str) -> None:
         """
         处理set、context、token相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -824,7 +825,7 @@ class WeixinSkillAdapter:
         file_path = self._context_tokens_file_path(account_id)
         data = self._read_json_file(file_path)
         data[user_id] = token
-        self._write_json_file(file_path, data)
+        await self._write_json_file(file_path, data)
 
     def _pause_session(self, account_id: str) -> None:
         """
@@ -923,20 +924,22 @@ class WeixinSkillAdapter:
         return {}
 
     @staticmethod
-    def _write_json_file(file_path: str, data: Dict[str, Any]) -> None:
+    async def _write_json_file(file_path: str, data: Dict[str, Any]) -> None:
         """
         处理write、json、file相关逻辑，并为调用方返回对应结果。
+        使用 asyncio.sleep 替代 time.sleep，避免在异步调用链中阻塞事件循环。
+        每次写尝试前获取锁，完成后释放，避免在 sleep 期间持有 threading 锁阻塞事件循环。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         payload = json.dumps(data, ensure_ascii=False)
         file_lock = _get_state_file_lock(file_path)
-        with file_lock:
-            last_error: Optional[PermissionError] = None
-            for delay_seconds in (0.0, *_STATE_FILE_WRITE_RETRY_DELAYS):
-                if delay_seconds > 0:
-                    time.sleep(delay_seconds)
+        last_error: Optional[PermissionError] = None
+        for delay_seconds in (0.0, *_STATE_FILE_WRITE_RETRY_DELAYS):
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
 
+            with file_lock:
                 temp_file_path = f"{file_path}.{uuid.uuid4().hex}.tmp"
                 try:
                     with open(temp_file_path, "w", encoding="utf-8") as fh:
@@ -964,8 +967,8 @@ class WeixinSkillAdapter:
                         pass
                     raise
 
-            if last_error is not None:
-                raise last_error
+        if last_error is not None:
+            raise last_error
 
     @staticmethod
     def _delete_file_if_exists(file_path: str) -> None:

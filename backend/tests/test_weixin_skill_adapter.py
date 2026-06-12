@@ -352,7 +352,7 @@ async def test_weixin_adapter_send_message_uses_cached_context_token(monkeypatch
     通过断言结果可以帮助定位实现与预期行为之间的偏差。
     """
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
-    adapter._set_context_token("test-account", "user-a", "ctx-cached")
+    await adapter._set_context_token("test-account", "user-a", "ctx-cached")
     captured = {}
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
@@ -437,7 +437,7 @@ async def test_weixin_adapter_send_message_generates_ilink_client_id_format(monk
     通过断言结果可以帮助定位实现与预期行为之间的偏差。
     """
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
-    adapter._set_context_token("test-account", "user-a", "ctx-test")
+    await adapter._set_context_token("test-account", "user-a", "ctx-test")
     captured = {}
 
     async def fake_api_post(self, config, endpoint, body, timeout_seconds=None):
@@ -478,9 +478,14 @@ def test_weixin_adapter_save_auto_reply_state_retries_when_target_file_is_tempor
         real_replace(src, dst)
 
     monkeypatch.setattr("skills.weixin_skill_adapter.os.replace", flaky_replace)
-    monkeypatch.setattr("skills.weixin_skill_adapter.time.sleep", lambda _: None)
 
-    adapter.save_auto_reply_state("test-account", {"enabled": True, "processed_messages": {}})
+    async def fake_sleep(_):
+        pass
+
+    monkeypatch.setattr("skills.weixin_skill_adapter.asyncio.sleep", fake_sleep)
+
+    import asyncio
+    asyncio.run(adapter.save_auto_reply_state("test-account", {"enabled": True, "processed_messages": {}}))
 
     assert call_count["value"] == 2
     assert adapter.load_auto_reply_state("test-account")["enabled"] is True

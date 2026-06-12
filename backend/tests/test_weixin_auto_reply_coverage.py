@@ -219,10 +219,11 @@ def test_load_runtime_exceptions(tmp_path):
     with pytest.raises(ValueError, match="尚未处于已绑定状态"):
         service._load_runtime_or_raise("u_unbound")
 
-def test_state_edge_cases(tmp_path):
+@pytest.mark.asyncio
+async def test_state_edge_cases(tmp_path):
     adapter = WeixinSkillAdapter(project_root=str(tmp_path))
     service = WeixinAutoReplyService(adapter=adapter, session_factory=TestingSessionLocal, max_processed_messages=1)
-    
+
     # _load_state not dict
     adapter.load_auto_reply_state = lambda x: None
     state = service._load_state("acc")
@@ -232,8 +233,10 @@ def test_state_edge_cases(tmp_path):
     assert service._get_processed_messages({"processed_messages": []}) == {}
 
     # _save_state truncation
-    adapter.save_auto_reply_state = lambda x, y: None
-    service._save_state("acc", {"processed_messages": {
+    async def fake_save_auto_reply_state(_account_id, _state):
+        pass
+    adapter.save_auto_reply_state = fake_save_auto_reply_state
+    await service._save_state("acc", {"processed_messages": {
         "1": {"updated_at_ts": 1},
         "2": {"updated_at_ts": 2}
     }})

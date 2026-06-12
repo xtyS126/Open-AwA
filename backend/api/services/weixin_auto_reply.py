@@ -334,7 +334,7 @@ class WeixinAutoReplyService:
         state = self._load_state(runtime.account_id)
         state["enabled"] = True
         state["last_state_change_at"] = _utcnow_iso()
-        self._save_state(runtime.account_id, state)
+        await self._save_state(runtime.account_id, state)
 
         task = self._tasks.get(user_key)
         if task and not task.done():
@@ -358,7 +358,7 @@ class WeixinAutoReplyService:
             state = self._load_state(runtime.account_id)
             state["enabled"] = False
             state["last_state_change_at"] = _utcnow_iso()
-            self._save_state(runtime.account_id, state)
+            await self._save_state(runtime.account_id, state)
 
         task = self._tasks.pop(user_key, None)
         if task and not task.done():
@@ -499,7 +499,7 @@ class WeixinAutoReplyService:
             state["last_poll_status"] = "timeout" if exc.code == "WEIXIN_TIMEOUT" else "error"
             state["last_error"] = exc.message
             state["last_error_at"] = now_iso
-            self._save_state(runtime.account_id, state)
+            await self._save_state(runtime.account_id, state)
             if exc.code == "WEIXIN_TOKEN_EXPIRED":
                 self._persist_binding_status(user_id, "expired", runtime.account_id)
             return {
@@ -659,7 +659,7 @@ class WeixinAutoReplyService:
 
         cursor_advanced = error_count == 0
         if cursor_advanced and next_cursor:
-            self.adapter.save_cursor(runtime.account_id, next_cursor)
+            await self.adapter.save_cursor(runtime.account_id, next_cursor)
 
         state["last_poll_at"] = now_iso
         state["last_poll_status"] = "ok" if error_count == 0 else "partial_error"
@@ -668,7 +668,7 @@ class WeixinAutoReplyService:
         if poison_skipped_count > 0:
             state["poison_skipped"] = state.get("poison_skipped", 0) + poison_skipped_count
         state["last_saved_cursor"] = self.adapter.load_cursor(runtime.account_id)
-        self._save_state(runtime.account_id, state)
+        await self._save_state(runtime.account_id, state)
 
         return {
             "ok": error_count == 0,
@@ -942,7 +942,7 @@ class WeixinAutoReplyService:
         state.setdefault("last_poll_status", "idle")
         return state
 
-    def _save_state(self, account_id: str, state: Dict[str, Any]) -> None:
+    async def _save_state(self, account_id: str, state: Dict[str, Any]) -> None:
         """保存状态前统一裁剪处理记录，防止状态文件无限膨胀。"""
         processed_messages = self._get_processed_messages(state)
         if len(processed_messages) > self.max_processed_messages:
@@ -952,7 +952,7 @@ class WeixinAutoReplyService:
             )
             processed_messages = dict(ordered_items[-self.max_processed_messages :])
         state["processed_messages"] = processed_messages
-        self.adapter.save_auto_reply_state(account_id, state)
+        await self.adapter.save_auto_reply_state(account_id, state)
 
     @staticmethod
     def _get_processed_messages(state: Dict[str, Any]) -> Dict[str, Any]:
