@@ -160,6 +160,9 @@ class FakeTool:
     async def execute(self, **kwargs):
         return {"success": True, "config": self.config, **kwargs}
 
+    def set_checkpoint_store(self, store):
+        pass
+
     def get_tools(self):
         return {"demo": {"name": "demo"}}
 

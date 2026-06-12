@@ -2,6 +2,10 @@ import '@testing-library/jest-dom'
 import { createElement } from 'react'
 import { vi } from 'vitest'
 
+// 确保 i18n store 在测试环境中正确初始化（zh-CN）
+import { useI18nStore } from '@/i18n'
+useI18nStore.setState({ locale: 'zh-CN' })
+
 // 模拟 indexedDB——jsdom 环境不提供 indexedDB，
 // 测试中让其 open 失败以触发 chatPersistence 的 localStorage 降级路径
 if (typeof indexedDB === 'undefined') {

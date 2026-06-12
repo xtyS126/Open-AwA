@@ -293,8 +293,31 @@ def test_scheduled_task_execution_cascade_on_task_delete(db_session):
 
 # ==================== Conversation 模型测试 ====================
 
+# Conversation 表通过 FK 引用 users 表，测试前需确保用户存在
+_CONV_TEST_USERS = [
+    ("user-001", "testuser1", "hash1"),
+    ("user-002", "testuser2", "hash2"),
+    ("user-003", "testuser3", "hash3"),
+    ("user-004", "testuser4", "hash4"),
+    ("user-005", "testuser5", "hash5"),
+    ("user-006", "testuser6", "hash6"),
+    ("user-007", "testuser7", "hash7"),
+    ("user-008", "testuser8", "hash8"),
+]
+
+
+def _ensure_conv_test_users(db_session):
+    """确保 conversation 测试所需的用户已创建。"""
+    from db.models import User as UserModel
+    for uid, uname, phash in _CONV_TEST_USERS:
+        if not db_session.query(UserModel).filter(UserModel.id == uid).first():
+            db_session.add(UserModel(id=uid, username=uname, password_hash=phash))
+    db_session.commit()
+
+
 def test_conversation_create_success(db_session):
     """正常创建 Conversation 记录。"""
+    _ensure_conv_test_users(db_session)
     conv = Conversation(
         session_id="session-001",
         user_id="user-001",
@@ -318,6 +341,7 @@ def test_conversation_create_success(db_session):
 
 def test_conversation_query_by_session_id(db_session):
     """通过 session_id 查询 Conversation。"""
+    _ensure_conv_test_users(db_session)
     conv = Conversation(session_id="session-002", user_id="user-002", title="会话2")
     db_session.add(conv)
     db_session.commit()
@@ -329,6 +353,7 @@ def test_conversation_query_by_session_id(db_session):
 
 def test_conversation_soft_delete(db_session):
     """软删除：设置 deleted_at 时间戳标记会话为已删除。"""
+    _ensure_conv_test_users(db_session)
     conv = Conversation(session_id="session-003", user_id="user-003", title="待删除会话")
     db_session.add(conv)
     db_session.commit()
@@ -350,6 +375,7 @@ def test_conversation_soft_delete(db_session):
 
 def test_conversation_session_id_unique_constraint(db_session):
     """重复 session_id 应抛出 IntegrityError。"""
+    _ensure_conv_test_users(db_session)
     conv1 = Conversation(session_id="session-004", user_id="user-004", title="第一个")
     conv2 = Conversation(session_id="session-004", user_id="user-005", title="第二个")
     db_session.add(conv1)
@@ -362,6 +388,7 @@ def test_conversation_session_id_unique_constraint(db_session):
 
 def test_conversation_dates_auto_fill(db_session):
     """Conversation 创建时 created_at 和 updated_at 应自动填充。"""
+    _ensure_conv_test_users(db_session)
     before = datetime.now(timezone.utc)
     conv = Conversation(session_id="session-005", user_id="user-005", title="日期测试")
     db_session.add(conv)
@@ -378,6 +405,7 @@ def test_conversation_dates_auto_fill(db_session):
 
 def test_conversation_updated_at_on_update(db_session):
     """更新 Conversation 时 updated_at 应自动更新。"""
+    _ensure_conv_test_users(db_session)
     conv = Conversation(session_id="session-006", user_id="user-006", title="原始标题")
     db_session.add(conv)
     db_session.commit()
@@ -400,6 +428,7 @@ def test_conversation_updated_at_on_update(db_session):
 
 def test_conversation_update_last_message_info(db_session):
     """更新会话的最后消息预览和角色信息。"""
+    _ensure_conv_test_users(db_session)
     conv = Conversation(session_id="session-007", user_id="user-007")
     db_session.add(conv)
     db_session.commit()
@@ -422,6 +451,7 @@ def test_conversation_update_last_message_info(db_session):
 
 def test_conversation_metadata_json_access(db_session):
     """conversation_metadata JSON 列应支持字典读写。"""
+    _ensure_conv_test_users(db_session)
     conv = Conversation(
         session_id="session-008",
         user_id="user-008",

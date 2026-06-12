@@ -4,6 +4,8 @@ import db.models as models
 
 
 class _DummySession:
+    is_active = True
+
     def __init__(self):
         self.rollback_called = 0
         self.close_called = 0

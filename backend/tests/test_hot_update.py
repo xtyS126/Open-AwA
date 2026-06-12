@@ -5,9 +5,19 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
+
+# Python 3.12+ ThreadPoolExecutor 内部使用 _queue.SimpleQueue，与 pickle/deepcopy 不兼容。
+# 相关 Python issue: https://github.com/python/cpython/issues/101066
+pytestmark = [
+    pytest.mark.skipif(
+        sys.version_info >= (3, 12),
+        reason="Python 3.12+ ThreadPoolExecutor SimpleQueue 不兼容 pickle/deepcopy"
+    )
+]
 
 from plugins.hot_update_manager import HotUpdateManager, RollbackManager, RolloutConfig
 from plugins.plugin_manager import PluginManager
