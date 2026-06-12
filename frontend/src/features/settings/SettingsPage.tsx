@@ -14,7 +14,7 @@ import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail, userAPI } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
-import { MODEL_PARAM_DEFAULTS, type ModelEditParams } from '@/features/settings/components/ModelParameterEditor'
+import type { ModelEditParams } from '@/features/settings/components/ModelParameterEditor'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import type { ModelOption } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
@@ -41,6 +41,14 @@ import { CreateProviderModal } from './modals/CreateProviderModal'
 import { DeleteConfirmModal } from './modals/DeleteConfirmModal'
 import { ImportModelsModal } from './modals/ImportModelsModal'
 import { DeleteModelsModal } from './modals/DeleteModelsModal'
+import {
+  REMOTE_MODEL_CACHE_TTL_MS,
+  normalizeProviderId,
+  normalizeProviderBaseUrl,
+  buildModelEditParams,
+  buildPersistedSettings,
+  isPersistedSettings,
+} from './SettingsPage.utils'
 
 /** 懒加载组件的加载占位符 */
 function TabLoadingFallback() {
@@ -60,34 +68,7 @@ interface Settings {
   maxToolCallRounds: number
 }
 
-type PersistedSettings = Pick<Settings, 'theme' | 'language' | 'apiProvider' | 'requireConfirm' | 'enableAudit' | 'maxToolCallRounds'>
-
-function isPersistedSettings(value: unknown): value is Partial<PersistedSettings> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false
-  }
-
-  const candidate = value as Record<string, unknown>
-  return (
-    (candidate.theme === undefined || typeof candidate.theme === 'string') &&
-    (candidate.language === undefined || typeof candidate.language === 'string') &&
-    (candidate.apiProvider === undefined || typeof candidate.apiProvider === 'string') &&
-    (candidate.requireConfirm === undefined || typeof candidate.requireConfirm === 'boolean') &&
-    (candidate.enableAudit === undefined || typeof candidate.enableAudit === 'boolean') &&
-    (candidate.maxToolCallRounds === undefined || typeof candidate.maxToolCallRounds === 'number')
-  )
-}
-
-function buildPersistedSettings(settings: Settings): PersistedSettings {
-  return {
-    theme: settings.theme,
-    language: settings.language,
-    apiProvider: settings.apiProvider,
-    requireConfirm: settings.requireConfirm,
-    enableAudit: settings.enableAudit,
-    maxToolCallRounds: settings.maxToolCallRounds,
-  }
-}
+// isPersistedSettings、buildPersistedSettings、PersistedSettings 类型已从 SettingsPage.utils 导入
 
 interface ApiProviderFormState {
   config_id: number | null
@@ -120,28 +101,6 @@ interface RemoteModelCacheEntry {
   signature: string
   fetchedAt: number
   options: ModelOption[]
-}
-
-const REMOTE_MODEL_CACHE_TTL_MS = 5 * 60 * 1000
-
-const PROVIDER_BASE_SUFFIXES: Record<string, string> = {
-  openai: '/v1',
-  anthropic: '/v1',
-  deepseek: '/v1',
-  google: '/v1beta',
-  alibaba: '/compatible-mode/v1',
-  qwen: '/compatible-mode/v1',
-  moonshot: '/v1',
-  zhipu: '/api/paas/v4',
-  ollama: '/v1',
-}
-
-function normalizeProviderId(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, '-')
-}
-
-function getProviderBaseSuffix(provider: string) {
-  return PROVIDER_BASE_SUFFIXES[normalizeProviderId(provider)] || '/v1'
 }
 
 function SettingsPage() {
@@ -252,21 +211,7 @@ function SettingsPage() {
   // 正在加载 capabilities 的模型集合，防止快速双击触发重复请求
   const loadingCapsRef = useRef<Set<string>>(new Set())
 
-  /**
-   * 从配置和可选的 capabilities 数据构建模型编辑参数，
-   * 消除 toggleModelConfig 中 try/catch 两处重复的默认值赋值代码。
-   */
-  const buildModelEditParams = (config: ModelConfiguration, caps?: ModelCapabilitiesResponse): ModelEditParams => {
-    return {
-      temperature: config.temperature ?? caps?.defaults?.temperature ?? MODEL_PARAM_DEFAULTS.temperature,
-      top_p: config.top_p ?? MODEL_PARAM_DEFAULTS.top_p,
-      max_tokens: config.max_tokens_limit ?? caps?.defaults?.max_tokens ?? MODEL_PARAM_DEFAULTS.max_tokens,
-      frequency_penalty: config.frequency_penalty ?? caps?.defaults?.frequency_penalty ?? MODEL_PARAM_DEFAULTS.frequency_penalty,
-      presence_penalty: config.presence_penalty ?? caps?.defaults?.presence_penalty ?? MODEL_PARAM_DEFAULTS.presence_penalty,
-      timeout: config.timeout ?? caps?.defaults?.timeout ?? MODEL_PARAM_DEFAULTS.timeout,
-      retry_count: config.retry_count ?? caps?.defaults?.retry_count ?? MODEL_PARAM_DEFAULTS.retry_count,
-    }
-  }
+  // buildModelEditParams 已从 SettingsPage.utils 导入
 
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [loadingApiProviders, setLoadingApiProviders] = useState(false)
@@ -899,46 +844,7 @@ function SettingsPage() {
     }
   }
 
-  const normalizeProviderBaseUrl = (provider: string, apiEndpoint: string) => {
-    let raw = apiEndpoint.trim()
-    if (!raw) {
-      return ''
-    }
-
-    try {
-      new URL(raw)
-    } catch (e) {
-      // Return raw if invalid URL, let backend or other logic handle, or maybe we can just proceed
-    }
-
-    const knownSuffixes = [
-      '/v1/chat/completions',
-      '/compatible-mode/v1/chat/completions',
-      '/api/paas/v4/chat/completions',
-      '/v1/messages',
-      '/v1beta/models',
-      '/v1/models',
-      '/chat/completions',
-      '/models'
-    ]
-
-    let trimmed = raw.replace(/\/+$/, '')
-    const lowerTrimmed = trimmed.toLowerCase()
-    
-    for (const suffix of knownSuffixes) {
-      if (lowerTrimmed.endsWith(suffix.toLowerCase())) {
-        trimmed = trimmed.slice(0, trimmed.length - suffix.length).replace(/\/+$/, '')
-        break
-      }
-    }
-
-    const baseSuffix = getProviderBaseSuffix(provider)
-    if (!trimmed.toLowerCase().endsWith(baseSuffix.toLowerCase())) {
-      trimmed = `${trimmed}${baseSuffix}`
-    }
-
-    return trimmed
-  }
+  // normalizeProviderBaseUrl 已从 SettingsPage.utils 导入
 
   const loadApiProvidersData = async (preferredProviderId?: string) => {
     setLoadingApiProviders(true)
