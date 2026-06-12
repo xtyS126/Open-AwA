@@ -2,7 +2,7 @@
  * 消息列表组件 — 使用 react-virtuoso 虚拟滚动优化长对话渲染性能。
  * 超过 100 条消息时自动启用虚拟化，保证滚动流畅。
  */
-import { useCallback, useRef } from 'react'
+import { memo, useCallback, useRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { ChatMessage as ChatMessageType, AssistantExecutionMeta } from '@/features/chat/types'
 import { useI18nStore } from '@/i18n'
@@ -27,7 +27,7 @@ interface MessageListProps {
 /** 虚拟滚动阈值：消息数超过此值时启用 Virtuoso */
 const VIRTUAL_THRESHOLD = 100
 
-export function MessageList({
+export const MessageList = memo(function MessageList({
   messages,
   messageMeta,
   streamingAssistantId,
@@ -135,4 +135,4 @@ export function MessageList({
       <div ref={messagesEndRef as React.RefObject<HTMLDivElement>} />
     </div>
   )
-}
+})

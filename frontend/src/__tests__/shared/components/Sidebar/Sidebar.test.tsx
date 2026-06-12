@@ -1,8 +1,9 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { MemoryRouter } from 'react-router-dom'
+import { useI18nStore } from '@/i18n'
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
@@ -29,6 +30,10 @@ vi.mock('@/features/settings/modelsApi', () => ({
 }))
 
 describe('Sidebar', () => {
+  beforeEach(() => {
+    useI18nStore.getState().setLocale('zh-CN')
+  })
+
   it('展示导航链接：定时任务、插件等模块入口', () => {
     render(
       <MemoryRouter initialEntries={['/plugins/manage']}>

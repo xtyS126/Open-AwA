@@ -6,6 +6,7 @@ import { useConversationHistory } from '@/features/chat/hooks/useConversationHis
 import { useStreamExecutionState } from '@/features/chat/hooks/useStreamExecutionState'
 import { useTaskPanelState } from '@/features/chat/hooks/useTaskPanelState'
 import { useChatStore } from '@/features/chat/store/chatStore'
+import { shallow } from 'zustand/shallow'
 import { applyDirectAssistantResponse } from '@/features/chat/utils/applyDirectAssistantResponse'
 import { handleStreamChunkEvent } from '@/features/chat/utils/handleStreamChunkEvent'
 import {
@@ -217,32 +218,33 @@ function ChatPage() {
   const navigate = useNavigate()
   const { t } = useI18nStore()
   const { conversationId } = useParams<{ conversationId?: string }>()
-  const {
-    messages,
-    addMessage,
-    setLoading,
-    isLoading,
-    sessionId,
-    setSessionId,
-    outputMode,
-    setOutputMode,
-    selectedModel,
-    setMessages,
-    updateMessage,
-    loadCachedMessages,
-    conversations,
-    upsertConversation,
-    removeConversation,
-    conversationsHasMore,
-    thinkingEnabled,
-    setThinkingEnabled,
-    thinkingDepth,
-    setThinkingDepth,
-    activeToolCalls,
-    addActiveToolCall,
-    removeActiveToolCall,
-    resetActiveToolCalls,
-  } = useChatStore()
+  // 原子化 store selector：避免流式输出期间 messages 等高频字段变化导致整个聊天页重渲染
+  // 数组/对象字段使用 shallow 做浅比较，避免内容相同时的假阳性重渲染
+  const messages = useChatStore(s => s.messages, shallow)
+  const conversations = useChatStore(s => s.conversations, shallow)
+  // 标量字段使用简单 selector（默认 === 比较）
+  const isLoading = useChatStore(s => s.isLoading)
+  const sessionId = useChatStore(s => s.sessionId)
+  const outputMode = useChatStore(s => s.outputMode)
+  const selectedModel = useChatStore(s => s.selectedModel)
+  const conversationsHasMore = useChatStore(s => s.conversationsHasMore)
+  const thinkingEnabled = useChatStore(s => s.thinkingEnabled)
+  const thinkingDepth = useChatStore(s => s.thinkingDepth)
+  // Actions — 在 create() 中定义后引用永不变，单独提取避免触发数据订阅
+  const addMessage = useChatStore(s => s.addMessage)
+  const setLoading = useChatStore(s => s.setLoading)
+  const setSessionId = useChatStore(s => s.setSessionId)
+  const setOutputMode = useChatStore(s => s.setOutputMode)
+  const setMessages = useChatStore(s => s.setMessages)
+  const updateMessage = useChatStore(s => s.updateMessage)
+  const loadCachedMessages = useChatStore(s => s.loadCachedMessages)
+  const upsertConversation = useChatStore(s => s.upsertConversation)
+  const removeConversation = useChatStore(s => s.removeConversation)
+  const setThinkingEnabled = useChatStore(s => s.setThinkingEnabled)
+  const setThinkingDepth = useChatStore(s => s.setThinkingDepth)
+  const addActiveToolCall = useChatStore(s => s.addActiveToolCall)
+  const removeActiveToolCall = useChatStore(s => s.removeActiveToolCall)
+  const resetActiveToolCalls = useChatStore(s => s.resetActiveToolCalls)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
@@ -1117,6 +1119,11 @@ function ChatPage() {
 
   handleSendRef.current = handleSend
 
+  // 稳定化传递给子组件的回调：通过 ref 读取最新 handleSend，避免内联箭头函数导致子组件无效重渲染
+  const handleChatInputSend = useCallback((content: string, atts?: FileAttachment[]) => {
+    void handleSendRef.current?.(content, atts)
+  }, [])
+
   triggerSubagentContinuationRef.current = (assistantMessageId: string, aggregatedText: string) => {
     void handleSend(buildSubagentContinuationPrompt(), undefined, {
       assistantMessageId,
@@ -1160,12 +1167,13 @@ function ChatPage() {
   }, [sessionId, resetActiveToolCalls])
 
   const handleAbort = useCallback(() => {
-    if (activeToolCalls.length > 0) {
+    // 通过 getState() 读取最新 activeToolCalls，避免 useCallback 依赖 activeToolCalls 导致引用频繁变化
+    if (useChatStore.getState().activeToolCalls.length > 0) {
       setShowAbortConfirm(true)
       return
     }
     doAbort()
-  }, [activeToolCalls, doAbort])
+  }, [doAbort])
 
   const handleEditMessage = useCallback((content: string) => {
     setEditContent(content)
@@ -1242,6 +1250,10 @@ function ChatPage() {
     resetTaskPanelState()
     await createConversationAndNavigate(false)
   }, [createConversationAndNavigate, resetStreamExecutionState, resetTaskPanelState])
+
+  const handleSidebarCreateConversation = useCallback(() => {
+    void handleCreateConversation()
+  }, [handleCreateConversation])
 
   const handleSelectConversation = useCallback((nextSessionId: string) => {
     if (!nextSessionId || nextSessionId === sessionId) {
@@ -1461,7 +1473,7 @@ function ChatPage() {
           onSearchChange={setHistorySearchInput}
           onSortChange={setHistorySort}
           onIncludeDeletedChange={setIncludeDeleted}
-          onCreateConversation={() => void handleCreateConversation()}
+          onCreateConversation={handleSidebarCreateConversation}
           onSelectConversation={handleSelectConversation}
           onRenameConversation={handleRenameConversation}
           onDeleteConversation={handleDeleteConversation}
@@ -1505,7 +1517,7 @@ function ChatPage() {
           </React.Suspense>
 
           <ChatInput
-            onSend={(content, atts) => void handleSend(content, atts)}
+            onSend={handleChatInputSend}
             isLoading={isLoading}
             streamingAssistantId={streamingAssistantId}
             onAbort={handleAbort}

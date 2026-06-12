@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { PanelLeft, Plus, Search, PencilLine, Trash2, RotateCcw } from 'lucide-react'
 import type { ConversationSessionSummary } from '@/features/chat/types'
 import { useI18nStore, t as i18nT } from '@/i18n'
@@ -314,4 +314,4 @@ function ConversationSidebar(props: ConversationSidebarProps) {
   )
 }
 
-export default ConversationSidebar
+export default memo(ConversationSidebar)

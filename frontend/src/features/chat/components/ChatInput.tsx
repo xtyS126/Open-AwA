@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { X, Paperclip, Send, Square } from 'lucide-react'
 import { appLogger } from '@/shared/utils/logger'
 import { useI18nStore, t as i18nT } from '@/i18n'
@@ -54,7 +54,7 @@ function fileToBase64(file: File): Promise<{ data: string; mimeType: string }> {
   })
 }
 
-export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, aborting, onDiaryCommand, editContent, focusTrigger }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, aborting, onDiaryCommand, editContent, focusTrigger }: ChatInputProps) {
   const { t } = useI18nStore()
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
@@ -281,4 +281,4 @@ export function ChatInput({ onSend, isLoading, streamingAssistantId, onAbort, ab
       </div>
     </div>
   )
-}
+})
