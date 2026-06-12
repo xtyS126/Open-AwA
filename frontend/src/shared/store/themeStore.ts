@@ -58,63 +58,69 @@ const applyTheme = (theme: Theme) => {
 }
 
 const applyConfig = (config: ThemeConfig) => {
-  if (typeof document !== 'undefined') {
-    const root = document.documentElement
-    if (config.fontFamily) {
-      root.style.setProperty('--custom-font-family', config.fontFamily)
-      root.style.fontFamily = `var(--custom-font-family), "Inter", sans-serif`
-    } else {
-      root.style.removeProperty('--custom-font-family')
-      root.style.fontFamily = ''
-    }
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
 
-    if (config.fontSize) {
-      root.style.setProperty('--custom-font-size', config.fontSize)
-      root.style.fontSize = `var(--custom-font-size)`
-    } else {
-      root.style.removeProperty('--custom-font-size')
-      root.style.fontSize = ''
-    }
+  // 逐条设置/移除 CSS 属性，使用 removeProperty 而非 initial 确保样式表回退正常
+  if (config.fontFamily) {
+    root.style.setProperty('--custom-font-family', config.fontFamily)
+    root.style.fontFamily = `var(--custom-font-family), "Inter", sans-serif`
+  } else {
+    root.style.removeProperty('--custom-font-family')
+    root.style.fontFamily = ''
+  }
 
-    if (config.themeColor) {
-      root.style.setProperty('--custom-theme-color', config.themeColor)
-      // Attempting to overwrite primary color variables if possible, simplistic approach
-      root.style.setProperty('--color-primary', config.themeColor)
-      root.style.setProperty('--button-bg', config.themeColor)
-    } else {
-      root.style.removeProperty('--custom-theme-color')
-      root.style.removeProperty('--color-primary')
-      root.style.removeProperty('--button-bg')
-    }
+  if (config.fontSize) {
+    root.style.setProperty('--custom-font-size', config.fontSize)
+    root.style.fontSize = 'var(--custom-font-size)'
+  } else {
+    root.style.removeProperty('--custom-font-size')
+    root.style.fontSize = ''
+  }
 
-    if (config.backgroundImage) {
-      root.style.setProperty('--custom-bg-image', `url(${config.backgroundImage})`)
-      document.body.style.backgroundImage = `var(--custom-bg-image)`
-      document.body.style.backgroundSize = 'cover'
-      document.body.style.backgroundAttachment = 'fixed'
-      document.body.style.backgroundPosition = 'center'
-    } else {
-      root.style.removeProperty('--custom-bg-image')
-      document.body.style.backgroundImage = ''
-      document.body.style.backgroundSize = ''
-      document.body.style.backgroundAttachment = ''
-      document.body.style.backgroundPosition = ''
-    }
+  if (config.themeColor) {
+    root.style.setProperty('--custom-theme-color', config.themeColor)
+    root.style.setProperty('--color-primary', config.themeColor)
+    root.style.setProperty('--button-bg', config.themeColor)
+  } else {
+    root.style.removeProperty('--custom-theme-color')
+    root.style.removeProperty('--color-primary')
+    root.style.removeProperty('--button-bg')
+  }
 
-    // Refresh Favicon
-    if (config.logoIcon) {
-      let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']")
-      if (!link) {
-        link = document.createElement('link')
-        link.rel = 'icon'
-        document.getElementsByTagName('head')[0].appendChild(link)
-      }
-      link.href = config.logoIcon
-    } else {
-      const link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']")
-      if (link) {
-        link.href = '/vite.svg'
-      }
+  if (config.backgroundImage) {
+    // 对 URL 中的特殊字符做 CSS 转义（括号、引号）
+    const escapedUrl = config.backgroundImage.replace(/[()'"]/g, '\\$&')
+    root.style.setProperty('--custom-bg-image', `url(${escapedUrl})`)
+    Object.assign(document.body.style, {
+      backgroundImage: 'var(--custom-bg-image)',
+      backgroundSize: 'cover',
+      backgroundAttachment: 'fixed',
+      backgroundPosition: 'center',
+    })
+  } else {
+    root.style.removeProperty('--custom-bg-image')
+    Object.assign(document.body.style, {
+      backgroundImage: '',
+      backgroundSize: '',
+      backgroundAttachment: '',
+      backgroundPosition: '',
+    })
+  }
+
+  // Refresh Favicon
+  if (config.logoIcon) {
+    let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']")
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.getElementsByTagName('head')[0].appendChild(link)
+    }
+    link.href = config.logoIcon
+  } else {
+    const link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']")
+    if (link) {
+      link.href = '/vite.svg'
     }
   }
 }

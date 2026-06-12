@@ -26,8 +26,8 @@ if "sqlite" in settings.DATABASE_URL:
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=_sqlite_connect_args,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
     pool_recycle=3600,
     # SQLite 需要 WAL 模式在引擎级别设置（PRAGMA journal_mode=WAL）
 )

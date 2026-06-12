@@ -148,14 +148,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [addAttachments])
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void handleSend()
-    }
-  }
-
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     const trimmed = input.trim()
     if ((!trimmed && attachments.length === 0) || isLoading) return
 
@@ -199,7 +192,14 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
     attachments.forEach(a => { if (a.preview) URL.revokeObjectURL(a.preview) })
     setAttachments([])
     await onSend(userMessage, attachmentsWithBase64)
-  }
+  }, [input, attachments, isLoading, onSend, onDiaryCommand])
+
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void handleSend()
+    }
+  }, [handleSend])
 
   return (
     <div

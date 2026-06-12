@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     
     # 默认固定到 backend/openawa.db 的绝对路径，避免受进程启动目录影响。
     DATABASE_URL: str = build_default_database_url()
+
+    # 数据库连接池配置，可通过环境变量覆盖（DB_POOL_SIZE / DB_MAX_OVERFLOW）
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
     
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"

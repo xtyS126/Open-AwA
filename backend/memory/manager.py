@@ -639,7 +639,7 @@ class MemoryManager:
             query = query.filter(LongTermMemory.archive_status != "archived")
 
             archived_count = 0
-            # 使用 yield_per 分批加载，避免一次性将所有记忆加载到内存导致 OOM
+            archive_ids: list[int] = []
             batch_size = 500
             for memory in query.yield_per(batch_size):
                 memory.confidence = self._calculate_confidence(memory)
@@ -652,12 +652,19 @@ class MemoryManager:
                 ):
                     memory.archive_status = "archived"
                     archived_count += 1
-                    self.vector_store.update_memory_metadata(memory.id, archive_status="archived")
+                    archive_ids.append(memory.id)
 
-                # 分批提交，避免单次事务过大
-                if archived_count > 0 and archived_count % batch_size == 0:
+                # 分批更新：先更新 ChromaDB，再提交 DB。
+                # 若 ChromaDB 失败则异常传播，DB 事务自动回滚，保证数据一致性。
+                if len(archive_ids) >= batch_size:
+                    for mid in archive_ids:
+                        self.vector_store.update_memory_metadata(mid, archive_status="archived")
                     db.commit()
+                    archive_ids.clear()
 
+            # 处理剩余批次：同样先 ChromaDB 后 DB
+            for mid in archive_ids:
+                self.vector_store.update_memory_metadata(mid, archive_status="archived")
             db.commit()
             return archived_count
 

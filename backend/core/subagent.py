@@ -432,12 +432,12 @@ class SubAgentManager:
             if not agent_info:
                 state.errors[agent_name] = "Agent未注册"
                 continue
-            # 每个Agent获取独立的状态副本
+            # 每个Agent获取独立的状态副本（浅拷贝，仅复制容器引用）
             agent_state = AgentState(
-                messages=list(state.messages),
-                context=dict(state.context),
-                results=dict(state.results),
-                metadata=dict(state.metadata)
+                messages=state.messages.copy(),
+                context=state.context.copy(),
+                results=state.results.copy(),
+                metadata=state.metadata.copy()
             )
             tasks.append((agent_name, agent_info['handler'](agent_state)))
 

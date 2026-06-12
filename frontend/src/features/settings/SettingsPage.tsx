@@ -444,9 +444,14 @@ function SettingsPage() {
     }
   }
 
+  // 首次挂载时加载一次全局数据，后续 Tab 切换不再重复请求
   useEffect(() => {
     loadSettings()
     loadPrompts()
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tab 切换时按需加载当前 Tab 的专属数据
+  useEffect(() => {
     if (activeTab === 'general') {
       loadModelsData()
       loadBillingData()

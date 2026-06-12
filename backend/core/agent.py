@@ -1472,18 +1472,25 @@ class AIAgent:
         """
         从记忆管理器中构建对话历史消息列表，用于注入到 LLM 调用中。
         返回 [{"role": "user"|"assistant", "content": "..."}] 格式。
+        对单条消息内容做字符截断，防止超大消息撑爆上下文窗口。
         """
+        MAX_MSG_CHARS = 5_000
         if not self.memory_manager:
             return []
         try:
             memories = await self.memory_manager.get_short_term_memories(
                 session_id=session_id, limit=max_turns
             )
-            # 按时间正序排列（get_short_term_memories 返回倒序）
             history = []
             for mem in reversed(memories):
                 if mem.role in ("user", "assistant"):
-                    history.append({"role": mem.role, "content": mem.content})
+                    content = mem.content or ""
+                    original_len = len(content)
+                    if original_len > MAX_MSG_CHARS:
+                        content = content[:MAX_MSG_CHARS] + (
+                            f"\n[消息已截断，原始长度: {original_len} 字符]"
+                        )
+                    history.append({"role": mem.role, "content": content})
             return history
         except Exception as e:
             logger.warning(f"构建对话历史失败: {e}")

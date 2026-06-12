@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Virtuoso } from 'react-virtuoso'
 import { PanelLeft, Plus, Search, PencilLine, Trash2, RotateCcw } from 'lucide-react'
 import type { ConversationSessionSummary } from '@/features/chat/types'
 import { useI18nStore, t as i18nT } from '@/i18n'
@@ -91,25 +92,146 @@ function ConversationSidebar(props: ConversationSidebarProps) {
   )
   const allSelected = selectableSessionIds.length > 0 && selectableSessionIds.every((sessionId) => selectedSessionIds.includes(sessionId))
 
-  const startRename = (item: ConversationSessionSummary) => {
+  const startRename = useCallback((item: ConversationSessionSummary) => {
     setEditingSessionId(item.session_id)
     setEditingTitle(item.title)
-  }
+  }, [])
 
-  const toggleSelected = (sessionId: string) => {
+  const toggleSelected = useCallback((sessionId: string) => {
     setSelectedSessionIds((current) => current.includes(sessionId)
       ? current.filter((item) => item !== sessionId)
       : [...current, sessionId])
-  }
+  }, [])
 
-  const submitRename = async () => {
+  const submitRename = useCallback(async () => {
     if (!editingSessionId || !editingTitle.trim()) {
       return
     }
     await onRenameConversation(editingSessionId, editingTitle.trim())
     setEditingSessionId(null)
     setEditingTitle('')
-  }
+  }, [editingSessionId, editingTitle, onRenameConversation])
+
+  // Virtuoso 虚拟滚动渲染回调 — 仅渲染可视区域内的会话项
+  const renderConversationItem = useCallback((_index: number, item: ConversationSessionSummary) => {
+    const isActive = item.session_id === activeSessionId
+    const isDeleted = Boolean(item.deleted_at)
+
+    return (
+      <div
+        className={`${styles['item']} ${isActive ? styles['active'] : ''} ${isDeleted ? styles['deleted'] : ''}`.trim()}
+        onClick={() => onSelectConversation(item.session_id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onSelectConversation(item.session_id)
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-current={isActive ? 'page' : undefined}
+      >
+        {editingSessionId === item.session_id ? (
+          <>
+            <input
+              className={styles['renameInput']}
+              aria-label={t('chat.history.rename')}
+              value={editingTitle}
+              onChange={(event) => setEditingTitle(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={async (event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  await submitRename()
+                }
+              }}
+            />
+            <div className={styles['renameActions']}>
+              <button className={styles['primaryButton']} type="button" onClick={(event) => {
+                event.stopPropagation()
+                void submitRename()
+              }}>
+                {t('app.save')}
+              </button>
+              <button className={styles['secondaryButton']} type="button" onClick={(event) => {
+                event.stopPropagation()
+                setEditingSessionId(null)
+                setEditingTitle('')
+              }}>
+                {t('app.cancel')}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={styles['itemHeader']}>
+              <div className={styles['itemHeading']}>
+                {!isDeleted && (
+                  <input
+                    className={styles['itemCheckbox']}
+                    type="checkbox"
+                    checked={selectedSessionIds.includes(item.session_id)}
+                    onChange={() => toggleSelected(item.session_id)}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                )}
+                <span className={styles['itemTitle']}>{item.title || t('chat.newChat')}</span>
+              </div>
+              <span className={styles['metaText']}>{formatTimestamp(item.last_message_at || item.updated_at)}</span>
+            </div>
+            <div className={styles['itemSummary']}>
+              {item.last_message_preview || item.summary || t('chat.history.noSummary')}
+            </div>
+            <div className={styles['itemMeta']}>
+              <span className={styles['metaText']}>{t('chat.history.messageCount', { count: String(item.message_count) })}</span>
+              {isDeleted && <span className={styles['deletedText']}>{t('chat.history.deleted')}</span>}
+            </div>
+            <div className={styles['itemActions']} onClick={(event) => event.stopPropagation()}>
+              {!isDeleted && (
+                <button
+                  className={styles['actionButton']}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    startRename(item)
+                  }}
+                  title={t('chat.history.renameAction')}
+                >
+                  <PencilLine size={15} />
+                </button>
+              )}
+              {isDeleted ? (
+                <button
+                  className={styles['actionButton']}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRestoreConversation(item.session_id)
+                  }}
+                  title={t('chat.history.restore')}
+                >
+                  <RotateCcw size={15} />
+                </button>
+              ) : (
+                <button
+                  className={styles['actionButton']}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onDeleteConversation(item.session_id)
+                  }}
+                  title={t('chat.history.deleteAction')}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  // startRename/toggleSelected/t 为稳定引用（useCallback/Zustand），无需额外重建
+  }, [activeSessionId, editingSessionId, editingTitle, selectedSessionIds, submitRename, startRename, toggleSelected, t, onSelectConversation, onRestoreConversation, onDeleteConversation])
 
   return (
     <aside className={`${styles['sidebar']} ${open ? '' : styles['closed']}`.trim()} aria-label="聊天历史侧边栏">
@@ -184,132 +306,15 @@ function ConversationSidebar(props: ConversationSidebarProps) {
         {error && <div className={styles['error']}>{error}</div>}
         {!loading && !error && !hasConversations && <div className={styles['empty']}>{t('chat.history.empty')}</div>}
 
-        {renderedItems.map((item) => {
-          const isActive = item.session_id === activeSessionId
-          const isDeleted = Boolean(item.deleted_at)
-
-          return (
-            <div
-              key={item.session_id}
-              className={`${styles['item']} ${isActive ? styles['active'] : ''} ${isDeleted ? styles['deleted'] : ''}`.trim()}
-              onClick={() => onSelectConversation(item.session_id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onSelectConversation(item.session_id)
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              aria-current={isActive ? 'page' : undefined}
-            >
-              {editingSessionId === item.session_id ? (
-                <>
-                  <input
-                    className={styles['renameInput']}
-                    aria-label={t('chat.history.rename')}
-                    value={editingTitle}
-                    onChange={(event) => setEditingTitle(event.target.value)}
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={async (event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault()
-                        await submitRename()
-                      }
-                    }}
-                  />
-                  <div className={styles['renameActions']}>
-                    <button className={styles['primaryButton']} type="button" onClick={(event) => {
-                      event.stopPropagation()
-                      void submitRename()
-                    }}>
-                      {t('app.save')}
-                    </button>
-                    <button className={styles['secondaryButton']} type="button" onClick={(event) => {
-                      event.stopPropagation()
-                      setEditingSessionId(null)
-                      setEditingTitle('')
-                    }}>
-                      {t('app.cancel')}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={styles['itemHeader']}>
-                    <div className={styles['itemHeading']}>
-                      {!isDeleted && (
-                        <input
-                          className={styles['itemCheckbox']}
-                          type="checkbox"
-                          checked={selectedSessionIds.includes(item.session_id)}
-                          onChange={() => toggleSelected(item.session_id)}
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      )}
-                      <span className={styles['itemTitle']}>{item.title || t('chat.newChat')}</span>
-                    </div>
-                    <span className={styles['metaText']}>{formatTimestamp(item.last_message_at || item.updated_at)}</span>
-                  </div>
-                  <div className={styles['itemSummary']}>
-                    {item.last_message_preview || item.summary || t('chat.history.noSummary')}
-                  </div>
-                  <div className={styles['itemMeta']}>
-                    <span className={styles['metaText']}>{t('chat.history.messageCount', { count: String(item.message_count) })}</span>
-                    {isDeleted && <span className={styles['deletedText']}>{t('chat.history.deleted')}</span>}
-                  </div>
-                  <div className={styles['itemActions']} onClick={(event) => event.stopPropagation()}>
-                    {!isDeleted && (
-                      <button
-                        className={styles['actionButton']}
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          startRename(item)
-                        }}
-                        title={t('chat.history.renameAction')}
-                      >
-                        <PencilLine size={15} />
-                      </button>
-                    )}
-                    {isDeleted ? (
-                      <button
-                        className={styles['actionButton']}
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onRestoreConversation(item.session_id)
-                        }}
-                        title={t('chat.history.restore')}
-                      >
-                        <RotateCcw size={15} />
-                      </button>
-                    ) : (
-                      <button
-                        className={styles['actionButton']}
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onDeleteConversation(item.session_id)
-                        }}
-                        title={t('chat.history.deleteAction')}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )
-        })}
+        {hasConversations && (
+          <Virtuoso
+            data={renderedItems}
+            itemContent={renderConversationItem}
+            endReached={hasMore ? onLoadMore : undefined}
+            style={{ height: '100%' }}
+          />
+        )}
       </div>
-
-      {hasMore && (
-        <button className={styles['loadMore']} type="button" onClick={onLoadMore}>
-          {t('chat.history.loadMore')}
-        </button>
-      )}
     </aside>
   )
 }
