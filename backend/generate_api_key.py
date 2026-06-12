@@ -8,8 +8,10 @@
 """
 
 import argparse
+import os
 import re
 import secrets
+import stat
 import sys
 from pathlib import Path
 
@@ -47,7 +49,7 @@ def generate_key() -> str:
 
 
 def persist_key(new_key: str) -> None:
-    """将密钥写入 .env.local（替换已有行或追加）。"""
+    """将密钥写入 .env.local（替换已有行或追加），并设置仅 owner 可读写权限。"""
     if ENV_LOCAL.exists() and ENV_LOCAL.stat().st_size > 0:
         content = ENV_LOCAL.read_text(encoding="utf-8")
         if re.search(rf"^{KEY_NAME}=", content, re.MULTILINE):
@@ -64,6 +66,19 @@ def persist_key(new_key: str) -> None:
     else:
         ENV_LOCAL.parent.mkdir(parents=True, exist_ok=True)
         ENV_LOCAL.write_text(f"{KEY_NAME}={new_key}\n", encoding="utf-8")
+
+    # 限制文件权限为仅 owner 可读写（600），防止密钥泄露
+    _restrict_permissions(ENV_LOCAL)
+
+
+def _restrict_permissions(path: Path) -> None:
+    """将文件权限设为仅 owner 可读写（Unix: 0o600, Windows: 隐藏文件）。"""
+    try:
+        # Unix: 仅 owner 可读写
+        import stat
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except Exception:
+        pass
 
 
 def main() -> None:
