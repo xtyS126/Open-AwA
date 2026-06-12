@@ -400,13 +400,15 @@ async def websocket_endpoint(
 @router.get(
     "/history/{session_id}",
     summary="获取会话历史",
-    description="返回指定会话在短期记忆中保存的历史消息列表。"
+    description="返回指定会话在短期记忆中保存的历史消息列表。支持 limit 分页参数，默认返回最近 200 条。"
 )
 async def get_chat_history(
     session_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     workspace_id: str = "default",
+    limit: int = Query(200, ge=1, le=1000, description="返回消息数量上限，默认 200，最大 1000"),
+    offset: int = Query(0, ge=0, description="分页偏移量，用于翻页加载更早的消息"),
 ):
     """
     获取指定会话的聊天历史。
@@ -420,10 +422,20 @@ async def get_chat_history(
     if record and record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied: session does not belong to current user")
 
-    messages = db.query(ShortTermMemory).filter(
-        ShortTermMemory.session_id == session_id,
-        ShortTermMemory.workspace_id == workspace_id,
-    ).order_by(ShortTermMemory.timestamp).all()
+    # 使用 limit + offset 分页，避免一次性加载大量消息导致 OOM。
+    # 先按时间倒序取最近 N 条，再反转回正序以保持返回格式兼容。
+    messages = (
+        db.query(ShortTermMemory)
+        .filter(
+            ShortTermMemory.session_id == session_id,
+            ShortTermMemory.workspace_id == workspace_id,
+        )
+        .order_by(ShortTermMemory.timestamp.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    messages.reverse()  # 恢复正序 (timestamp ASC) 以保证前端兼容
 
     logger.bind(
         event="chat_history_loaded",
@@ -432,6 +444,8 @@ async def get_chat_history(
         status="success",
         user_id=current_user.id,
         session_id=session_id,
+        limit=limit,
+        offset=offset,
         count=len(messages),
     ).info("chat history loaded")
 

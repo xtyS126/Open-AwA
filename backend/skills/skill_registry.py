@@ -115,6 +115,10 @@ class SkillRegistry:
                 query = query.filter(Skill.name.contains(filters['name_contains']))
 
         skills = query.all()
+        # 预热缓存：将本次查询的所有技能填入内存缓存，
+        # 避免后续 get(skill_name) 调用对每个技能都触发数据库查询。
+        for skill in skills:
+            self._cache[skill.name] = skill
         logger.debug(f"Listed {len(skills)} skills with filters: {filters}")
         return skills
 

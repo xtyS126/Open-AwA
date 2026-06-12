@@ -1409,7 +1409,9 @@ class AIAgent:
             skill_list = []
             for skill in skills:
                 stats = self.skill_engine.get_skill_statistics(skill.name)
-                skill_config = self.skill_engine.loader.load_from_db(skill.name) or {}
+                # 直接从 list_all 返回的 ORM 对象读取 config，
+                # 避免 load_from_db 的额外数据库查询。config 字段是 JSON 类型，SQLAlchemy 已自动反序列化为 dict。
+                skill_config = skill.config if isinstance(skill.config, dict) else {}
                 skill_list.append({
                     'name': skill.name,
                     'version': skill.version,
