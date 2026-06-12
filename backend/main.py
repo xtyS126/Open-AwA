@@ -135,47 +135,45 @@ def _check_model_provider_availability() -> None:
 
 
 def _ensure_api_key() -> None:
-    """确保 OPENAWA_API_KEY 已配置，未设置时自动生成并持久化到 .env.local。
+    """校验 OPENAWA_API_KEY 已配置，未配置时拒绝启动。
 
-    1. 环境变量 OPENAWA_API_KEY 已设置 → 直接使用
-    2. 未设置 → 自动生成 sk- 前缀的 43 字符 token → 写入 .env.local → 设置到 settings
+    密钥必须通过以下方式之一提供：
+    1. 环境变量 OPENAWA_API_KEY
+    2. backend/.env.local 文件中的 OPENAWA_API_KEY=...
+    3. 运行 python generate_api_key.py 手动生成
     """
-    import secrets as _secmod
-
-    api_key = os.getenv("OPENAWA_API_KEY", "").strip()
+    # 优先从 settings 读取（已由 pydantic-settings 从 .env.local 加载），降级到 os.getenv
+    api_key = (getattr(settings, "OPENAWA_API_KEY", "") or "").strip()
+    if not api_key:
+        api_key = os.getenv("OPENAWA_API_KEY", "").strip()
     if api_key and len(api_key) >= 32:
+        # 确保 settings 对象与 os.environ 一致
+        if not (getattr(settings, "OPENAWA_API_KEY", "") or "").strip():
+            object.__setattr__(settings, "OPENAWA_API_KEY", api_key)
         logger.bind(event="api_key_configured", module="main").info(
             "OPENAWA_API_KEY 已从环境变量加载"
         )
         return
 
     if api_key and len(api_key) < 32:
-        logger.bind(event="api_key_too_short", module="main").warning(
-            f"OPENAWA_API_KEY 长度不足 ({len(api_key)} 字符)，"
-            f"建议至少 32 字符。将自动生成新 Key 替换。"
+        logger.bind(event="api_key_too_short", module="main").error(
+            f"OPENAWA_API_KEY 长度不足 ({len(api_key)} 字符)，至少需要 32 字符。"
+        )
+        raise SystemExit(
+            "\n[错误] OPENAWA_API_KEY 长度不足，至少需要 32 字符。\n"
+            "请运行 python generate_api_key.py 生成新的访问密钥，\n"
+            "或设置环境变量 OPENAWA_API_KEY 为至少 32 字符的随机字符串。\n"
         )
 
-    # 自动生成
-    new_key = "sk-" + _secmod.token_urlsafe(32)  # ~43 字符
-    object.__setattr__(settings, "OPENAWA_API_KEY", new_key)
-
-    # 持久化到 .env.local
-    from pathlib import Path as _FsPath
-    env_local_path = _FsPath(__file__).resolve().parent / ".env.local"
-    try:
-        env_local_path.parent.mkdir(parents=True, exist_ok=True)
-        prefix = ""
-        if env_local_path.exists() and env_local_path.stat().st_size > 0:
-            prefix = "\n"
-        with open(env_local_path, "a", encoding="utf-8") as f:
-            f.write(f"{prefix}OPENAWA_API_KEY={new_key}\n")
-        logger.bind(event="api_key_generated", module="main").warning(
-            "访问密钥已自动生成并持久化。"
-        )
-    except OSError as exc:
-        logger.bind(event="api_key_persist_failed", module="main").warning(
-            f"无法持久化访问密钥: {exc}。密钥仅在当前进程生效。"
-        )
+    # 未配置密钥 → 拒绝启动
+    raise SystemExit(
+        "\n[错误] 未配置访问密钥 (OPENAWA_API_KEY)，服务拒绝启动。\n\n"
+        "请运行以下命令生成访问密钥：\n"
+        "  cd backend && python generate_api_key.py\n\n"
+        "或手动设置环境变量：\n"
+        "  $env:OPENAWA_API_KEY=\"your-secret-key-here\"  (PowerShell)\n"
+        "  export OPENAWA_API_KEY=\"your-secret-key-here\"   (Bash)\n"
+    )
 
 
 async def _startup_infrastructure(profiler: StartupProfiler) -> None:
