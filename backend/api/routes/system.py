@@ -2,11 +2,13 @@
 系统诊断路由 - 提供各子系统健康检查与状态查询，供测试任务使用。
 """
 
+import ipaddress
 import os
 import sys
 import platform
 import time
 from typing import Dict, Any, List
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -256,13 +258,21 @@ async def update_env_variable(
             raise HTTPException(status_code=422, detail="LOG_LEVEL 须为 DEBUG/INFO/WARNING/ERROR/CRITICAL")
         value = normalized
     elif name.endswith("_BASE_URL"):
-        from urllib.parse import urlparse
-        parsed = urlparse(value.strip())
+        value = value.strip()
+        parsed = urlparse(value)
         if parsed.scheme not in ("http", "https"):
             raise HTTPException(status_code=422, detail="BASE_URL 须使用 http 或 https 协议")
         if not parsed.netloc:
             raise HTTPException(status_code=422, detail="BASE_URL 格式无效，缺少主机部分")
-        value = value.strip()
+        # 阻止内网/本地/链路本地/云元数据 IP，防止 SSRF 攻击
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if hostname:
+            try:
+                addr = ipaddress.ip_address(hostname)
+                if addr.is_private or addr.is_loopback or addr.is_link_local:
+                    raise HTTPException(status_code=422, detail="不允许设置内网或本地地址")
+            except ValueError:
+                pass  # 主机名非 IP 地址，放行
     elif name == "VECTOR_DB_PATH":
         normalized = os.path.realpath(value.strip())
         if ".." in value or not os.path.isabs(normalized):
