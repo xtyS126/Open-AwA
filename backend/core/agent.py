@@ -2276,6 +2276,9 @@ class AIAgent:
             available_skills = await self.get_available_skills()
             available_plugins = await self.get_available_plugins()
 
+            # 收集所有匹配的技能任务，使用 asyncio.gather 并行执行
+            skill_tasks: list = []
+            skill_metas: list[dict] = []
             for skill in available_skills:
                 if not skill.get('enabled'):
                     continue
@@ -2294,19 +2297,33 @@ class AIAgent:
                         'context': context
                     }
 
-                    skill_result = await self.execute_skill(
+                    skill_tasks.append(self.execute_skill(
                         skill_name=skill_name,
                         inputs=skill_inputs,
                         context=context
-                    )
+                    ))
+                    skill_metas.append({'skill_name': skill_name})
 
-                    if skill_result.get('status') in ('completed', 'success'):
+            if skill_tasks:
+                skill_results = await asyncio.gather(*skill_tasks, return_exceptions=True)
+                for meta, result in zip(skill_metas, skill_results):
+                    if isinstance(result, Exception):
+                        logger.bind(
+                            event="auto_skill_error",
+                            skill_name=meta['skill_name'],
+                            error_type=type(result).__name__,
+                        ).warning(f"并行执行技能失败: {result}")
+                        continue
+                    if isinstance(result, dict) and result.get('status') in ('completed', 'success'):
                         auto_results['skills'].append({
-                            'skill_name': skill_name,
-                            'result': skill_result,
+                            'skill_name': meta['skill_name'],
+                            'result': result,
                             'reason': 'auto_selected'
                         })
 
+            # 收集所有匹配的插件任务，使用 asyncio.gather 并行执行
+            plugin_tasks: list = []
+            plugin_metas: list[dict] = []
             for plugin in available_plugins:
                 plugin_name = plugin.get('name', '')
                 plugin_tools = plugin.get('tools', [])
@@ -2328,19 +2345,34 @@ class AIAgent:
                             'context': context,
                         })
 
-                        plugin_result = await self.execute_plugin(
+                        plugin_tasks.append(self.execute_plugin(
                             plugin_name=plugin_name,
                             method=tool.get('method'),
                             **plugin_kwargs
-                        )
+                        ))
+                        plugin_metas.append({
+                            'plugin_name': plugin_name,
+                            'tool': tool.get('name'),
+                        })
 
-                        if plugin_result.get('status') in ('completed', 'success'):
-                            auto_results['plugins'].append({
-                                'plugin_name': plugin_name,
-                                'tool': tool.get('name'),
-                                'result': plugin_result,
-                                'reason': 'auto_selected'
-                            })
+            if plugin_tasks:
+                plugin_results = await asyncio.gather(*plugin_tasks, return_exceptions=True)
+                for meta, result in zip(plugin_metas, plugin_results):
+                    if isinstance(result, Exception):
+                        logger.bind(
+                            event="auto_plugin_error",
+                            plugin_name=meta['plugin_name'],
+                            tool=meta['tool'],
+                            error_type=type(result).__name__,
+                        ).warning(f"并行执行插件失败: {result}")
+                        continue
+                    if isinstance(result, dict) and result.get('status') in ('completed', 'success'):
+                        auto_results['plugins'].append({
+                            'plugin_name': meta['plugin_name'],
+                            'tool': meta['tool'],
+                            'result': result,
+                            'reason': 'auto_selected'
+                        })
 
             logger.info(f"Auto-execution completed: {len(auto_results['skills'])} skills, {len(auto_results['plugins'])} plugins")
             return auto_results

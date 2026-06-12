@@ -1197,18 +1197,20 @@ async def weixin_qr_exit(
     "",
     response_model=List[SkillResponse],
     summary="获取技能列表",
-    description="返回系统中已安装的技能列表。"
+    description="返回系统中已安装的技能列表。支持 limit/offset 分页。"
 )
 async def get_skills(
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=500, description="返回数量上限"),
+    offset: int = Query(0, ge=0, description="分页偏移量"),
 ):
     """
     获取skills相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     try:
-        skills = db.query(Skill).all()
+        skills = db.query(Skill).offset(offset).limit(limit).all()
         return [_build_skill_response(skill) for skill in skills]
     except Exception as e:
         logger.bind(

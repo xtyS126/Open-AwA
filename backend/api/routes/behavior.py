@@ -50,91 +50,105 @@ async def get_behavior_stats(
         BehaviorLog.action_type == "error"
     ).scalar() or 0
     
-    # 工具使用分布统计 - 仅加载details字段进行聚合，限制最大50000条
-    tool_counts: dict[str, int] = {}
-    tool_details = db.query(BehaviorLog.details).filter(
+    # 工具使用分布统计 — 使用 SQL GROUP BY 替代 Python 循环分组
+    tool_rows = db.query(
+        BehaviorLog.details,
+        func.count(BehaviorLog.id).label('cnt')
+    ).filter(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "tool_usage"
-    ).limit(50000).all()
-    for (details,) in tool_details:
-        details = details or ""
-        tool_name = details.split(":")[0] if ":" in details else "unknown"
-        tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+    ).group_by(BehaviorLog.details).order_by(func.count(BehaviorLog.id).desc()).limit(50).all()
+    tool_counts: dict[str, int] = {}
+    for details, cnt in tool_rows:
+        tool_name = (details or "").split(":")[0] if ":" in (details or "") else "unknown"
+        tool_counts[tool_name] = tool_counts.get(tool_name, 0) + cnt
     
     top_tools = [
         {"tool": tool, "count": count}
         for tool, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
     
-    # 意图分布统计 - 仅加载details字段进行聚合，限制最大50000条
-    intent_counts: dict[str, int] = {}
-    intent_details = db.query(BehaviorLog.details).filter(
+    # 意图分布统计 — 使用 SQL GROUP BY 替代 Python 循环分组
+    intent_rows = db.query(
+        BehaviorLog.details,
+        func.count(BehaviorLog.id).label('cnt')
+    ).filter(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "intent"
-    ).limit(50000).all()
-    
-    for (details,) in intent_details:
-        details = details or "unknown"
-        intent_counts[details] = intent_counts.get(details, 0) + 1
+    ).group_by(BehaviorLog.details).order_by(func.count(BehaviorLog.id).desc()).limit(50).all()
+    intent_counts: dict[str, int] = {}
+    for details, cnt in intent_rows:
+        intent_counts[details or "unknown"] = intent_counts.get(details or "unknown", 0) + cnt
     
     top_intents = [
         {"intent": intent, "count": count}
         for intent, count in sorted(intent_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
     
-    llm_logs = db.query(BehaviorLog).filter(
+    # LLM 调用统计 — 使用 SQL 聚合替代全量加载 + Python JSON 解析循环
+    # 1. 按天聚合交互次数（chart_data）
+    chart_rows = db.query(
+        func.date(BehaviorLog.timestamp).label('day'),
+        func.count(BehaviorLog.id).label('cnt')
+    ).filter(
         BehaviorLog.user_id == current_user.id,
         BehaviorLog.timestamp >= start_date,
         BehaviorLog.action_type == "llm_call"
-    ).limit(50000).all()
-
-    total_duration = 0
-    valid_duration_count = 0
-    chart_data_map = {}
-    
-    # Initialize chart data map with empty days
+    ).group_by(func.date(BehaviorLog.timestamp)).all()
+    chart_data_map: dict[str, int] = {}
     for i in range(days):
-        day_str = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%m-%d")
+        day_str = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d")
         chart_data_map[day_str] = 0
-
-    model_counts: dict[str, int] = {}
-    for log in llm_logs:
-        try:
-            details = json.loads(log.details)
-            duration = details.get("duration_ms")
-            if duration is not None:
-                total_duration += duration
-                valid_duration_count += 1
-                
-            model_name = details.get("model") or "unknown"
-            provider = details.get("provider") or "unknown"
-            display_name = f"{provider}/{model_name}"
-            model_counts[display_name] = model_counts.get(display_name, 0) + 1
-            
-        except Exception:
-            logger.bind(module="behavior", event="stats_parse_error").warning(
-                "行为统计数据解析失败，跳过该条记录"
-            )
-
-        # Populate chart data
-        if log.timestamp:
-            day_str = log.timestamp.strftime("%m-%d")
-            if day_str in chart_data_map:
-                chart_data_map[day_str] += 1
-
-    avg_response_time = round((total_duration / valid_duration_count) / 1000.0, 2) if valid_duration_count > 0 else 0.0
-    
+    for row in chart_rows:
+        chart_data_map[str(row.day)] = row.cnt
     chart_data = [
         {"day": day, "interactions": count}
         for day, count in sorted(chart_data_map.items())
     ]
-    
+
+    # 2. 使用 SQLite json_extract 从 details JSON 中提取 model/provider 并分组
+    model_rows = db.query(
+        func.json_extract(BehaviorLog.details, '$.provider').label('provider'),
+        func.json_extract(BehaviorLog.details, '$.model').label('model'),
+        func.count(BehaviorLog.id).label('cnt')
+    ).filter(
+        BehaviorLog.user_id == current_user.id,
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type == "llm_call",
+        BehaviorLog.details.isnot(None)
+    ).group_by(
+        func.json_extract(BehaviorLog.details, '$.provider'),
+        func.json_extract(BehaviorLog.details, '$.model')
+    ).order_by(func.count(BehaviorLog.id).desc()).limit(20).all()
+    model_counts: dict[str, int] = {}
+    for row in model_rows:
+        provider = row.provider or "unknown"
+        model_name = row.model or "unknown"
+        display_name = f"{provider}/{model_name}"
+        model_counts[display_name] = model_counts.get(display_name, 0) + row.cnt
     top_models = [
         {"tool": model, "count": count}
         for model, count in sorted(model_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     ]
+
+    # 3. SQL 聚合计算平均响应时间
+    duration_agg = db.query(
+        func.avg(
+            func.cast(func.json_extract(BehaviorLog.details, '$.duration_ms'), Integer)
+        ).label('avg_duration_ms'),
+        func.count(
+            func.json_extract(BehaviorLog.details, '$.duration_ms')
+        ).label('valid_count')
+    ).filter(
+        BehaviorLog.user_id == current_user.id,
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type == "llm_call",
+        BehaviorLog.details.isnot(None)
+    ).first()
+    avg_duration_ms = float(duration_agg.avg_duration_ms or 0)
+    avg_response_time = round(avg_duration_ms / 1000.0, 2)
     
     return {
         "total_interactions": total_interactions,

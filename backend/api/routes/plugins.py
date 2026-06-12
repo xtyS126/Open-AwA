@@ -263,16 +263,18 @@ def _ensure_plugin_discovered(plugin_name: str) -> None:
     "",
     response_model=List[PluginResponse],
     summary="获取插件列表",
-    description="返回数据库中已登记的插件记录列表，并附带运行时状态信息。"
+    description="返回数据库中已登记的插件记录列表，并附带运行时状态信息。支持 limit/offset 分页。"
 )
 async def get_plugins(
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=500, description="返回数量上限"),
+    offset: int = Query(0, ge=0, description="分页偏移量"),
 ):
     """
     获取所有已注册的插件列表，合并数据库记录与运行时状态。
     """
-    plugins = db.query(Plugin).all()
+    plugins = db.query(Plugin).offset(offset).limit(limit).all()
     pm = _get_plugin_manager()
     for p in plugins:
         # 将运行时加载状态注入到插件记录中（不持久化，仅作为响应补充）

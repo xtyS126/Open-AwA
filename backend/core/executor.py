@@ -1892,11 +1892,16 @@ class ExecutionLayer:
                 }
                 continue
             try:
-                with open(resolved, 'r', encoding='utf-8') as f:
-                    results[file_path] = {
-                        "status": "success",
-                        "content": f.read()
-                    }
+                # 将同步文件读取包装到 asyncio.to_thread，
+                # 避免在异步协程中阻塞事件循环。
+                def _read_file(path: str) -> str:
+                    with open(path, 'r', encoding='utf-8') as _f:
+                        return _f.read()
+                content = await asyncio.to_thread(_read_file, resolved)
+                results[file_path] = {
+                    "status": "success",
+                    "content": content
+                }
             except FileNotFoundError:
                 results[file_path] = {
                     "status": "error",

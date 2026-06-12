@@ -269,7 +269,8 @@ class BillingReporter:
         if user_id:
             query = query.filter(UsageRecord.user_id == user_id)
         
-        records = query.order_by(UsageRecord.created_at.desc()).all()
+        # 使用 yield_per 分批流式读取，避免 .all() 全量加载导致 OOM
+        records = query.order_by(UsageRecord.created_at.desc()).yield_per(500)
         
         output = io.StringIO()
         writer = csv.writer(output)

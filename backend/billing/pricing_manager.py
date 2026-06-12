@@ -690,16 +690,22 @@ class PricingManager:
     def __init__(self, db: Session):
         """
         初始化计费管理器。
-        
+
         Args:
             db: 数据库会话对象。
         """
         self.db = db
+        self._pricing_schema_ensured = False
+        self._config_schema_ensured = False
+        self._credential_schema_ensured = False
 
     def ensure_pricing_schema(self) -> None:
         """
         确保模型定价表包含能力标记字段，兼容旧库与新库结构差异。
+        首次调用后设置标志，后续调用直接返回，避免重复 PRAGMA 查询。
         """
+        if self._pricing_schema_ensured:
+            return
         columns = {
             row[1]
             for row in self.db.execute(text("PRAGMA table_info(model_pricing)")).fetchall()
@@ -719,11 +725,15 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN output_modality TEXT"))
 
         self.db.commit()
+        self._pricing_schema_ensured = True
 
     def ensure_credential_schema(self) -> None:
         """
         确保 provider_credentials 表存在，若不存在则创建。
+        首次调用后设置标志，后续调用直接返回。
         """
+        if self._credential_schema_ensured:
+            return
         tables = {
             row[0]
             for row in self.db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
@@ -743,11 +753,15 @@ class PricingManager:
                 )
             """))
         self.db.commit()
+        self._credential_schema_ensured = True
 
     def ensure_configuration_schema(self) -> None:
         """
         确保模型配置表包含必要的字段，若缺失则动态添加。
+        首次调用后设置标志，后续调用直接返回，避免重复 PRAGMA 查询。
         """
+        if self._config_schema_ensured:
+            return
         # 确保 Provider 凭据表先于配置表存在
         self.ensure_credential_schema()
 
@@ -770,6 +784,7 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_configurations ADD COLUMN credential_id INTEGER REFERENCES provider_credentials(id)"))
 
         self.db.commit()
+        self._config_schema_ensured = True
 
     def _normalize_pricing_payload(self, pricing_data: Dict) -> Dict:
         """
