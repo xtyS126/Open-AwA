@@ -1,0 +1,1 @@
+export { DataRetentionTab } from './DataRetentionTab'

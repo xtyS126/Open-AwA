@@ -8,6 +8,7 @@ import {
   Plug,
   HardDrive,
   Key,
+  Sliders,
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail, userAPI } from '@/shared/api/api'
@@ -21,12 +22,25 @@ import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import styles from './SettingsPage.module.css'
-import { getProviderIcon, PROVIDER_NAMES } from '@/assets/providers'
+import { getProviderIcon } from '@/assets/providers'
 
-// 非核心 Tab 组件使用 React.lazy 按需加载，减少首屏 JS 体积
+// 懒加载非核心 Tab 组件（MCP）
 const MCPSettings = lazy(() => import('./MCPSettings'))
 const SecuritySettings = lazy(() => import('./SecuritySettings'))
 const PermissionSettings = lazy(() => import('./PermissionSettings'))
+const EnvVarSettings = lazy(() => import('./EnvVarSettings'))
+
+// 物理抽离的子组件（静态导入）
+import { DataRetentionTab } from './components/DataRetentionTab'
+import { PromptsTab } from './components/PromptsTab'
+import { BillingTab } from './components/BillingTab'
+import { DataCollectionTab } from './components/DataCollectionTab'
+import { GeneralSettings } from './components/GeneralSettings'
+import { ModelsTab } from './components/ModelsTab'
+import { CreateProviderModal } from './modals/CreateProviderModal'
+import { DeleteConfirmModal } from './modals/DeleteConfirmModal'
+import { ImportModelsModal } from './modals/ImportModelsModal'
+import { DeleteModelsModal } from './modals/DeleteModelsModal'
 
 /** 懒加载组件的加载占位符 */
 function TabLoadingFallback() {
@@ -122,27 +136,12 @@ const PROVIDER_BASE_SUFFIXES: Record<string, string> = {
   ollama: '/v1',
 }
 
-const PRESET_PROVIDER_BASE_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  google: 'https://generativelanguage.googleapis.com/v1beta',
-  deepseek: 'https://api.deepseek.com/v1',
-  alibaba: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  moonshot: 'https://api.moonshot.cn/v1',
-  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  ollama: 'http://127.0.0.1:11434/v1',
-}
-
 function normalizeProviderId(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-')
 }
 
 function getProviderBaseSuffix(provider: string) {
   return PROVIDER_BASE_SUFFIXES[normalizeProviderId(provider)] || '/v1'
-}
-
-function getPresetProviderBaseUrl(provider: string) {
-  return PRESET_PROVIDER_BASE_URLS[normalizeProviderId(provider)] || ''
 }
 
 function SettingsPage() {
@@ -347,44 +346,6 @@ function SettingsPage() {
     () => configModelOptions.find((option) => option.key === selectedConfigModelOptionKey) ?? null,
     [configModelOptions, selectedConfigModelOptionKey]
   )
-
-  const selectedBillingModel = useMemo(() => {
-    if (!selectedConfigModelOption) {
-      return null
-    }
-
-    return models.find((model) => (
-      model.provider === selectedConfigModelOption.provider &&
-      model.model === selectedConfigModelOption.modelName
-    )) ?? null
-  }, [models, selectedConfigModelOption])
-
-  const linkedModelMaxTokens = useMemo(() => {
-    if (!selectedConfigModelOption) {
-      return null
-    }
-
-    return (
-      selectedConfigModelOption.configuration.max_tokens_limit ??
-      selectedConfigModelOption.configuration.model_spec?.max_output_tokens ??
-      modelCapabilities?.limits.max_tokens_max ??
-      selectedBillingModel?.context_window ??
-      null
-    )
-  }, [modelCapabilities, selectedBillingModel, selectedConfigModelOption])
-
-  const linkedModelContextWindow = useMemo(() => {
-    if (!selectedConfigModelOption) {
-      return null
-    }
-
-    return (
-      selectedBillingModel?.context_window ??
-      selectedConfigModelOption.configuration.model_spec?.context_window ??
-      modelCapabilities?.limits.max_tokens_max ??
-      null
-    )
-  }, [modelCapabilities, selectedBillingModel, selectedConfigModelOption])
 
   const resetGlobalModelOptionsState = () => {
     setHasAttemptedGlobalModelLoad(false)
@@ -1552,15 +1513,6 @@ function SettingsPage() {
     }
   }
 
-  // 模态标签常量
-  const MODALITY_TYPES = ['text', 'image', 'audio', 'video'] as const
-  const MODALITY_LABELS: Record<string, string> = {
-    text: '文本',
-    image: '图片',
-    audio: '音频',
-    video: '视频',
-  }
-
   const handleEditConfig = (config: ModelConfiguration) => {
     setEditingConfigId(config.id)
     setEditConfigForm({
@@ -1605,38 +1557,6 @@ function SettingsPage() {
     } finally {
       setSavingConfigEdit(false)
     }
-  }
-
-  const renderModalityTags = (inputModality: string[] | undefined, outputModality: string[] | undefined) => {
-    const inputTags = (inputModality?.length ? inputModality : ['text'])
-      .map(m => MODALITY_LABELS[m] || m)
-    const outputTags = (outputModality?.length ? outputModality : ['text'])
-      .map(m => MODALITY_LABELS[m] || m)
-
-    const inputStr = inputTags.join('+')
-    const outputStr = outputTags.join('+')
-
-    // 判断模态类型以使用不同样式
-    const hasImageInput = inputModality?.includes('image')
-    const hasAudioInput = inputModality?.includes('audio')
-    const hasVideoInput = inputModality?.includes('video')
-    const hasImageOutput = outputModality?.includes('image')
-    const hasAudioOutput = outputModality?.includes('audio')
-
-    let badgeClass = styles['modality-text']
-    if (hasVideoInput || outputModality?.includes('video')) {
-      badgeClass = styles['modality-multimodal']
-    } else if (hasAudioInput || hasAudioOutput) {
-      badgeClass = styles['modality-multimodal']
-    } else if (hasImageInput || hasImageOutput) {
-      badgeClass = styles['modality-vision']
-    }
-
-    return (
-      <span className={`${styles['modality-badge']} ${badgeClass}`}>
-        {inputStr} → {outputStr}
-      </span>
-    )
   }
 
   const saveSettings = async () => {
@@ -1709,14 +1629,7 @@ function SettingsPage() {
     }
   }
 
-  const formatPrice = (price: number, currency: string) => {
-    const symbol = currency === 'CNY' ? '¥' : '$'
-    return `${symbol}${price.toFixed(4)}`
-  }
-
-  const formatBooleanLabel = (value: boolean | null | undefined): string => {
-    return value ? '支持' : '不支持'
-  }
+  // groupedModels and remaining functions
 
   const groupedModels = models.reduce((acc, model) => {
     if (!acc[model.provider]) {
@@ -1738,6 +1651,7 @@ function SettingsPage() {
       { id: 'security', label: '安全审计', icon: <ShieldAlert size={18} /> },
       { id: 'mcp', label: 'MCP配置', icon: <SettingsIcon size={18} /> },
       { id: 'permissions', label: '权限管理', icon: <Key size={18} /> },
+      { id: 'env-vars', label: '环境变量', icon: <Sliders size={18} /> },
     ]
 
     return (
@@ -1770,316 +1684,31 @@ function SettingsPage() {
         )}
 
         {activeTab === 'general' && (
-          <div className={styles['settings-section']}>
-            <h2>通用设置</h2>
-            <div className={styles['setting-item']}>
-              <label>主题</label>
-              <select
-                value={settings.theme}
-                onChange={(e) => handleChange('theme', e.target.value)}
-              >
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
-              </select>
-            </div>
-            <div className={styles['setting-item']}>
-              <label>语言</label>
-              <select
-                value={settings.language}
-                onChange={(e) => handleChange('language', e.target.value)}
-              >
-                <option value="zh">中文</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-            <div className={styles['setting-item']}>
-              <label htmlFor="max-tool-call-rounds">工具回环次数上限</label>
-              <input
-                id="max-tool-call-rounds"
-                type="number"
-                min={1}
-                max={50000}
-                step={1}
-                value={settings.maxToolCallRounds}
-                onChange={(e) => {
-                  const nextValue = Number.parseInt(e.target.value, 10)
-                  if (Number.isNaN(nextValue)) {
-                    return
-                  }
-                  handleChange('maxToolCallRounds', Math.max(1, Math.min(50000, nextValue)))
-                }}
-              />
-              <span className={styles['param-hint']}>控制单次对话中 AI 连续工具调用的最大轮次，默认 12。</span>
-            </div>
-            <button
-              className={`btn btn-primary`}
-              onClick={saveSettings}
-              disabled={saving}
-            >
-              {saving ? '保存中...' : '保存设置'}
-            </button>
-
-            <h2 style={{ marginTop: '32px' }}>主模型选择</h2>
-            <p className={styles['section-desc']}>选择聊天页面使用的默认AI模型和输出模式，对全局生效。</p>
-            <div className={styles['setting-item']}>
-              <label>输出模式</label>
-              <select
-                value={outputMode}
-                onChange={(e) => {
-                  setOutputMode(e.target.value as 'stream' | 'direct')
-                  appLogger.info({ event: 'global_output_mode_change', module: 'settings', action: 'change_output_mode', status: 'success', message: 'output mode changed', extra: { mode: e.target.value } })
-                }}
-              >
-                <option value="stream">流式传输</option>
-                <option value="direct">直接输出</option>
-              </select>
-            </div>
-            <div className={styles['setting-item']}>
-              <label>默认模型</label>
-              {!hasAttemptedGlobalModelLoad ? (
-                <div className={styles['remote-model-hint']}>
-                  <span>默认不在进入页面时自动拉取远端模型列表，点击下方按钮后再读取。</span>
-                  <button className={`btn ${styles['btn-secondary']}`} onClick={loadGlobalModelOptions}>
-                    加载远端模型
-                  </button>
-                </div>
-              ) : modelLoading ? (
-                <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>加载远端模型中...</span>
-              ) : modelError ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: 'var(--color-danger)', fontSize: '13px' }}>{modelError}</span>
-                  <button className="btn btn-sm" onClick={loadGlobalModelOptions}>重试</button>
-                </div>
-              ) : modelOptions.length === 0 ? (
-                <div className={styles['remote-model-hint']}>
-                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: '13px' }}>
-                    {globalModelLoadSummary || '暂无可用远端模型，请先在 API 配置中检查供应商状态。'}
-                  </span>
-                  <button className={`btn ${styles['btn-secondary']}`} onClick={loadGlobalModelOptions}>
-                    重新读取
-                  </button>
-                </div>
-              ) : (
-                <div className={styles['remote-model-picker']}>
-                  <select
-                    value={globalSelectedModel}
-                    onChange={(e) => {
-                      setGlobalSelectedModel(e.target.value)
-                      appLogger.info({ event: 'global_model_change', module: 'settings', action: 'change_default_model', status: 'success', message: 'default model changed', extra: { model: e.target.value } })
-                      showNotification({ type: 'success', text: '默认模型已更新' })
-                    }}
-                  >
-                    {modelOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.display_name}</option>
-                    ))}
-                  </select>
-                  <button className={`btn ${styles['btn-secondary']}`} onClick={loadGlobalModelOptions}>
-                    重新读取
-                  </button>
-                </div>
-              )}
-              {hasAttemptedGlobalModelLoad && globalModelLoadSummary && (
-                <span className={styles['param-hint']}>{globalModelLoadSummary}</span>
-              )}
-            </div>
-
-            {/* AI参数配置 - 从模型管理移入通用设置 */}
-            {configurations.length > 0 && (
-              <div className={styles['model-param-panel']} style={{ marginTop: '24px' }}>
-                <h3>AI参数配置</h3>
-                <p className={styles['section-desc']}>为选定模型调整生成参数，影响输出风格和长度。</p>
-                <div className={styles['model-param-grid']}>
-                  <div className={styles['form-group']}>
-                    <label>配置模型</label>
-                    <select
-                      value={selectedConfigModelOptionKey}
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          void handleSelectModelConfig(e.target.value)
-                        }
-                      }}
-                    >
-                      <option value="">选择模型</option>
-                      {configModelOptions.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.providerDisplayName} / {option.modelName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className={styles['form-group']}>
-                    <label>
-                      温度 (Temperature): {editingTemperature.toFixed(1)}
-                    </label>
-                    <div className={styles['slider-row']}>
-                      <input
-                        type="range"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={editingTemperature}
-                        onChange={(e) => setEditingTemperature(parseFloat(e.target.value))}
-                        disabled={!selectedConfigModelOption || modelCapabilities?.capabilities.supports_temperature === false}
-                        className={styles['param-slider']}
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={editingTemperature}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value)
-                          if (!isNaN(val) && val >= 0 && val <= 2) setEditingTemperature(val)
-                        }}
-                        disabled={!selectedConfigModelOption || modelCapabilities?.capabilities.supports_temperature === false}
-                        className={styles['param-number-input']}
-                      />
-                    </div>
-                    {modelCapabilities?.capabilities.supports_temperature === false && (
-                      <span className={styles['param-hint']}>该模型不支持温度调节</span>
-                    )}
-                  </div>
-
-                  <div className={styles['form-group']}>
-                    <label>Top K / Top P</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.1}
-                      value={editingTopK}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value)
-                        if (!isNaN(val) && val >= 0 && val <= 1) setEditingTopK(val)
-                      }}
-                      disabled={!selectedConfigModelOption || modelCapabilities?.capabilities.supports_top_k === false}
-                      className={styles['param-number-input']}
-                    />
-                    {modelCapabilities?.capabilities.supports_top_k === false && (
-                      <span className={styles['param-hint']}>该模型不支持 Top K / Top P 调节</span>
-                    )}
-                  </div>
-
-                  <div className={styles['form-group']}>
-                    <label>最大 Tokens (可选)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={editingMaxTokensLimit === '' ? '' : editingMaxTokensLimit}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        if (val === '') {
-                          setEditingMaxTokensLimit('')
-                        } else {
-                          const parsed = parseInt(val, 10)
-                          if (!isNaN(parsed) && parsed > 0) setEditingMaxTokensLimit(parsed)
-                        }
-                      }}
-                      placeholder="默认使用模型上限"
-                      disabled={!selectedConfigModelOption}
-                      className={styles['param-number-input']}
-                    />
-                    <span className={styles['param-hint']}>留空表示使用当前模型的默认限制</span>
-                  </div>
-                </div>
-
-                <div className={styles['model-detail-card']}>
-                  <h4>当前模型详情</h4>
-                  {!selectedConfigModelOption ? (
-                    <div className={styles['model-detail-empty']}>
-                      请选择模型后查看计费配置详情。
-                    </div>
-                  ) : (
-                    <>
-                      <div className={styles['model-detail-grid']}>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>供应商</span>
-                          <span>{selectedConfigModelOption.providerDisplayName}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>模型名称</span>
-                          <span>{selectedConfigModelOption.modelName}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>当前最大 Tokens</span>
-                          <span>{formatTokenCount(linkedModelMaxTokens)}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>上下文窗口</span>
-                          <span>{formatTokenCount(linkedModelContextWindow)}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>输入价格</span>
-                          <span>{selectedBillingModel ? formatPrice(selectedBillingModel.input_price, selectedBillingModel.currency) : '-'}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>输出价格</span>
-                          <span>{selectedBillingModel ? formatPrice(selectedBillingModel.output_price, selectedBillingModel.currency) : '-'}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>缓存价格</span>
-                          <span>{selectedBillingModel?.cache_hit_price != null ? formatPrice(selectedBillingModel.cache_hit_price, selectedBillingModel.currency) : '-'}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>计费币种</span>
-                          <span>{selectedBillingModel?.currency || '-'}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>视觉能力</span>
-                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.supports_vision ?? selectedBillingModel?.supports_vision ?? null)}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>多模态</span>
-                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.is_multimodal ?? selectedBillingModel?.is_multimodal ?? null)}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>函数调用</span>
-                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.model_spec?.supports_function_calling ?? modelCapabilities?.capabilities.supports_function_calling ?? null)}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>流式输出</span>
-                          <span>{formatBooleanLabel(selectedConfigModelOption.configuration.model_spec?.supports_streaming ?? modelCapabilities?.capabilities.supports_streaming ?? null)}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>状态</span>
-                          <span>{selectedConfigModelOption.configuration.status || 'active'}</span>
-                        </div>
-                        <div className={styles['model-detail-item']}>
-                          <span className={styles['model-detail-label']}>更新时间</span>
-                          <span>{selectedConfigModelOption.configuration.updated_at ? new Date(selectedConfigModelOption.configuration.updated_at).toLocaleString('zh-CN') : '-'}</span>
-                        </div>
-                      </div>
-                      {!selectedBillingModel && (
-                        <div className={`${styles['message']} ${styles['error']}`} style={{ marginTop: '16px', marginBottom: 0 }}>
-                          当前模型未在计费模型表中找到对应详情，已仅展示模型配置与能力信息。
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div className={styles['model-param-actions']}>
-                  <button
-                    className={`btn btn-primary`}
-                    onClick={handleSaveModelParams}
-                    disabled={!selectedConfigModelOption || savingModelParams}
-                  >
-                    {savingModelParams ? '保存中...' : '保存参数'}
-                  </button>
-                  <button
-                    className={`btn ${styles['btn-secondary']}`}
-                    onClick={handleResetModelParams}
-                    disabled={!selectedConfigModelOption || savingModelParams}
-                  >
-                    重置为默认
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <GeneralSettings
+            settings={settings}
+            outputMode={outputMode}
+            globalSelectedModel={globalSelectedModel}
+            modelOptions={modelOptions}
+            hasAttemptedGlobalModelLoad={hasAttemptedGlobalModelLoad}
+            globalModelLoadSummary={globalModelLoadSummary}
+            modelLoading={modelLoading}
+            modelError={modelError}
+            configurations={configurations}
+            selectedConfigModelOptionKey={selectedConfigModelOptionKey}
+            editingTemperature={editingTemperature}
+            editingTopK={editingTopK}
+            editingMaxTokensLimit={editingMaxTokensLimit}
+            modelCapabilities={modelCapabilities}
+            models={models}
+            savingModelParams={savingModelParams}
+            onSettingChange={handleChange}
+            onOutputModeChange={setOutputMode}
+            onGlobalModelChange={setGlobalSelectedModel}
+            onLoadGlobalModelOptions={loadGlobalModelOptions}
+            onSelectModelConfig={handleSelectModelConfig}
+            onSaveModelParams={handleSaveModelParams}
+            onResetModelParams={handleResetModelParams}
+          />
         )}
 
         {activeTab === 'api' && (
@@ -2378,599 +2007,90 @@ function SettingsPage() {
         )}
 
         {activeTab === 'prompts' && (
-          <div className={styles['settings-section']}>
-            <h2>提示词配置</h2>
-            <p className={styles['section-desc']}>
-              自定义AI助手的行为和角色提示词
-            </p>
-            <textarea
-              className={styles['prompt-editor']}
-              value={settings.promptContent}
-              onChange={(e) => handleChange('promptContent', e.target.value)}
-              placeholder="输入系统提示词..."
-              rows={12}
-            />
-            <div className={styles['prompt-helper']}>
-              <p>支持的变量：{'{user_name}'} - 用户名，{'{current_time}'} - 当前时间</p>
-            </div>
-            <button
-              className={`btn btn-primary`}
-              onClick={saveSettings}
-              disabled={saving}
-            >
-              {saving ? '保存中...' : '保存提示词'}
-            </button>
-          </div>
+          <PromptsTab
+            promptContent={settings.promptContent}
+            saving={saving}
+            onPromptChange={(value) => handleChange('promptContent', value)}
+            onSave={saveSettings}
+          />
         )}
 
         {activeTab === 'billing' && (
-          <div className={styles['settings-section']}>
-            <h2>模型价格配置</h2>
-            <p className={styles['section-desc']}>
-              配置各AI厂商的模型API价格（单位：百万tokens）
-            </p>
-            
-            {loadingModels ? (
-              <div className={styles['loading']}>加载中...</div>
-            ) : (
-              <div className={styles['pricing-table-container']}>
-                {Object.entries(groupedModels).map(([provider, providerModels]) => (
-                  <div key={provider} className={styles['pricing-provider-group']}>
-                    <h3 className={styles['provider-title']}>{provider.toUpperCase()}</h3>
-                    <table className={styles['pricing-table']}>
-                      <thead>
-                        <tr>
-                          <th>模型</th>
-                          <th>模态</th>
-                          <th>输入价格</th>
-                          <th>输出价格</th>
-                          <th>缓存价格</th>
-                          <th>上下文窗口</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {providerModels.map((model) => (
-                          <tr key={model.id}>
-                            <td className={styles['model-name']}>{model.model}</td>
-                            <td>
-                              <span className={[
-                                styles['modality-badge'],
-                                model.is_multimodal ? styles['modality-multimodal'] : 
-                                model.supports_vision ? styles['modality-vision'] : 
-                                styles['modality-text']
-                              ].join(' ')}>
-                                {model.is_multimodal ? '文本+图像+音视频' : 
-                                 model.supports_vision ? '文本+图像' : 
-                                 '文本'}
-                              </span>
-                            </td>
-                            <td>
-                              {editingModel === model.id ? (
-                                <input
-                                  type="number"
-                                  value={editPrices.input_price}
-                                  onChange={(e) => setEditPrices(prev => ({ ...prev, input_price: e.target.value }))}
-                                  className={styles['price-input']}
-                                  step="0.0001"
-                                />
-                              ) : (
-                                formatPrice(model.input_price, model.currency)
-                              )}
-                            </td>
-                            <td>
-                              {editingModel === model.id ? (
-                                <input
-                                  type="number"
-                                  value={editPrices.output_price}
-                                  onChange={(e) => setEditPrices(prev => ({ ...prev, output_price: e.target.value }))}
-                                  className={styles['price-input']}
-                                  step="0.0001"
-                                />
-                              ) : (
-                                formatPrice(model.output_price, model.currency)
-                              )}
-                            </td>
-                            <td>
-                              {model.cache_hit_price 
-                                ? formatPrice(model.cache_hit_price, model.currency)
-                                : '-'
-                              }
-                            </td>
-                            <td>
-                              {model.context_window 
-                                ? `${(model.context_window / 1000).toFixed(0)}K`
-                                : '-'
-                              }
-                            </td>
-                            <td>
-                              {editingModel === model.id ? (
-                                <div className={styles['action-buttons']}>
-                                  <button 
-                                    className={`btn ${styles['btn-small']} btn-primary`}
-                                    onClick={() => handleSaveModelPrice(model.id)}
-                                  >
-                                    保存
-                                  </button>
-                                  <button 
-                                    className={`btn ${styles['btn-small']}`}
-                                    onClick={() => setEditingModel(null)}
-                                  >
-                                    取消
-                                  </button>
-                                </div>
-                              ) : (
-                                <button 
-                                  className={`btn ${styles['btn-small']}`}
-                                  onClick={() => handleEditModel(model)}
-                                >
-                                  编辑
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <BillingTab
+            loadingModels={loadingModels}
+            models={models}
+            editingModel={editingModel}
+            editPrices={editPrices}
+            groupedModels={groupedModels}
+            onEditModel={handleEditModel}
+            onInputPriceChange={(value) => setEditPrices(prev => ({ ...prev, input_price: value }))}
+            onOutputPriceChange={(value) => setEditPrices(prev => ({ ...prev, output_price: value }))}
+            onSaveModelPrice={handleSaveModelPrice}
+            onCancelEdit={() => setEditingModel(null)}
+          />
         )}
 
         {activeTab === 'models' && (
-          <div className={styles['settings-section']}>
-            <div className={styles['section-header']}>
-              <h2>模型管理</h2>
-              <button 
-                className={`btn btn-primary`}
-                onClick={() => setShowAddForm(!showAddForm)}
-              >
-                {showAddForm ? '取消' : '+ 添加模型'}
-              </button>
-            </div>
-            <p className={styles['section-desc']}>
-              配置可用的AI模型参数，设置的默认模型将自动在聊天页面选中
-            </p>
-
-            {showAddForm && (
-              <div className={styles['add-config-form']}>
-                <div className={styles['form-row']}>
-                  <div className={styles['form-group']}>
-                    <label>提供商</label>
-                    <select
-                      value={newConfig.provider}
-                      onChange={(e) => handleProviderChange(e.target.value)}
-                    >
-                      <option value="">选择提供商</option>
-                      {providers.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className={styles['form-group']}>
-                    <label>模型</label>
-                    <select
-                      value={newConfig.model}
-                      onChange={(e) => setNewConfig(prev => ({ ...prev, model: e.target.value }))}
-                      disabled={!newConfig.provider}
-                    >
-                      <option value="">选择模型</option>
-                      {providerModels.map(m => (
-                        <option key={m.id} value={m.model}>{m.model}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className={styles['form-row']}>
-                  <div className={styles['form-group']}>
-                    <label>显示名称（可选）</label>
-                    <input
-                      type="text"
-                      value={newConfig.display_name}
-                      onChange={(e) => setNewConfig(prev => ({ ...prev, display_name: e.target.value }))}
-                      placeholder="例如：GPT-4.1"
-                    />
-                  </div>
-                </div>
-                <div className={styles['form-row']}>
-                  <div className={styles['form-group']}>
-                    <label>描述（可选）</label>
-                    <input
-                      type="text"
-                      value={newConfig.description}
-                      onChange={(e) => setNewConfig(prev => ({ ...prev, description: e.target.value }))}
-                      placeholder="模型描述"
-                    />
-                  </div>
-                </div>
-                <div className={styles['form-row']}>
-                  <div className={`${styles['form-group']} ${styles['checkbox-group']}`}>
-                    <input
-                      type="checkbox"
-                      id="is-default-new"
-                      checked={newConfig.is_default}
-                      onChange={(e) => setNewConfig(prev => ({ ...prev, is_default: e.target.checked }))}
-                    />
-                    <label htmlFor="is-default-new">设为默认模型</label>
-                  </div>
-                </div>
-                <button className={`btn btn-primary`} onClick={handleAddConfiguration}>
-                  添加
-                </button>
-              </div>
-            )}
-
-            {/* 模型参数配置已移至通用设置 -> 主模型选择 */}
-
-            {/* Model Management Table */}
-            {loadingConfigs ? (
-              <div className={styles['loading']}>加载中...</div>
-            ) : (() => {
-              const displayConfigs = configurations
-              if (displayConfigs.length === 0) {
-                return (
-                  <div className={styles['empty-state']}>
-                    <p>暂无配置的模型</p>
-                    <p className={styles['hint']}>点击上方"添加模型"按钮来配置第一个模型</p>
-                  </div>
-                )
-              }
-              return (
-              <div className={styles['model-mgmt-table-wrapper']}>
-                <h3>模型列表</h3>
-                <table className={styles['model-mgmt-table']}>
-                  <thead>
-                    <tr>
-                      <th>图标</th>
-                      <th>模型名</th>
-                      <th>提供者</th>
-                      <th>规格</th>
-                      <th>模态</th>
-                      <th>状态</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayConfigs.map(config => {
-                      const contextWindow = config.model_spec?.context_window
-                      return (
-                        <tr key={config.id} className={selectedConfigModelOption?.configId === config.id ? styles['selected-row'] : ''}>
-                          <td>
-                            <span className={styles['model-icon-badge']}>
-                              {(() => {
-                                const icon = getProviderIcon(config.provider)
-                                if (icon) {
-                                  return <img src={icon} alt={config.provider} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                }
-                                if (config.icon) {
-                                  return <img src={config.icon} alt={config.provider} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                }
-                                return config.provider.charAt(0).toUpperCase()
-                              })()}
-                            </span>
-                          </td>
-                          <td>
-                            <div className={styles['model-name-cell']}>
-                              {config.display_name || config.model}
-                              {config.is_default && <span className={styles['default-badge']}>默认</span>}
-                            </div>
-                          </td>
-                          <td>{config.provider}</td>
-                          <td>{contextWindow ? formatTokenCount(contextWindow) : '-'}</td>
-                          <td>
-                            {renderModalityTags(config.input_modality, config.output_modality)}
-                          </td>
-                          <td>
-                            <span className={`${styles['status-badge']} ${styles[`status-${config.status || 'active'}`]}`}>
-                              {config.status || 'active'}
-                            </span>
-                          </td>
-                          <td>
-                            <div className={styles['table-actions']}>
-                              {!config.is_default && (
-                                <button
-                                  className={`btn ${styles['btn-small']}`}
-                                  onClick={() => handleSetDefault(config.id)}
-                                >
-                                  设为默认
-                                </button>
-                              )}
-                              <button
-                                className={`btn ${styles['btn-small']}`}
-                                onClick={() => handleEditConfig(config)}
-                              >
-                                编辑
-                              </button>
-                              <button
-                                className={`btn ${styles['btn-small']} ${styles['btn-danger']}`}
-                                onClick={() => handleDeleteConfiguration(config.id)}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              )
-            })()}
-
-            {/* 模型编辑模态框 */}
-            {editingConfigId !== null && (() => {
-              const editingConfig = configurations.find(c => c.id === editingConfigId)
-              if (!editingConfig) return null
-              return (
-                <div className={styles['modal-overlay']} onClick={() => setEditingConfigId(null)}>
-                  <div className={styles['modal-content']} style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
-                    <div className={styles['modal-header']}>
-                      <h3>编辑模型信息</h3>
-                      <button className={styles['modal-close']} onClick={() => setEditingConfigId(null)}>×</button>
-                    </div>
-                    <div className={styles['modal-body']}>
-                      <div className={styles['form-group']}>
-                        <label>模型</label>
-                        <input type="text" value={`${editingConfig.provider} / ${editingConfig.model}`} disabled
-                          style={{ background: '#f3f4f6', color: '#6b7280' }} />
-                      </div>
-                      <div className={styles['form-group']}>
-                        <label>显示名称</label>
-                        <input
-                          type="text"
-                          value={editConfigForm.display_name}
-                          onChange={(e) => setEditConfigForm(prev => ({ ...prev, display_name: e.target.value }))}
-                          placeholder="例如：GPT-4o"
-                        />
-                      </div>
-                      <div className={styles['form-group']}>
-                        <label>描述</label>
-                        <input
-                          type="text"
-                          value={editConfigForm.description}
-                          onChange={(e) => setEditConfigForm(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="模型描述"
-                        />
-                      </div>
-                      <div className={styles['form-group']}>
-                        <label>输入模态（模型能接收的内容类型）</label>
-                        <div className={styles['modality-checkbox-group']}>
-                          {MODALITY_TYPES.map(mt => {
-                            const isLastChecked = editConfigForm.input_modality.includes(mt) && editConfigForm.input_modality.length <= 1
-                            return (
-                              <label key={`in-${mt}`} className={styles['modality-checkbox-label']}>
-                                <input
-                                  type="checkbox"
-                                  checked={editConfigForm.input_modality.includes(mt)}
-                                  disabled={isLastChecked}
-                                  onChange={() => toggleModality('input', mt)}
-                                />
-                                <span>{MODALITY_LABELS[mt]}</span>
-                              </label>
-                            )
-                          })}
-                        </div>
-                      </div>
-                      <div className={styles['form-group']}>
-                        <label>输出模态（模型能生成的内容类型）</label>
-                        <div className={styles['modality-checkbox-group']}>
-                          {MODALITY_TYPES.map(mt => {
-                            const isLastChecked = editConfigForm.output_modality.includes(mt) && editConfigForm.output_modality.length <= 1
-                            return (
-                              <label key={`out-${mt}`} className={styles['modality-checkbox-label']}>
-                                <input
-                                  type="checkbox"
-                                  checked={editConfigForm.output_modality.includes(mt)}
-                                  disabled={isLastChecked}
-                                  onChange={() => toggleModality('output', mt)}
-                                />
-                                <span>{MODALITY_LABELS[mt]}</span>
-                              </label>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                    <div className={styles['modal-footer']}>
-                      <button className="btn" onClick={() => setEditingConfigId(null)}>取消</button>
-                      <button className="btn btn-primary" onClick={handleSaveConfigEdit} disabled={savingConfigEdit}>
-                        {savingConfigEdit ? '保存中...' : '保存'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
+          <ModelsTab
+            showAddForm={showAddForm}
+            configurations={configurations}
+            loading={loadingConfigs}
+            providers={providers}
+            providerModels={providerModels}
+            selectedOption={selectedConfigModelOption}
+            editingConfigId={editingConfigId}
+            editConfigForm={editConfigForm}
+            savingEdit={savingConfigEdit}
+            providerNameMap={providerNameMap}
+            newConfig={newConfig}
+            onToggleAddForm={() => setShowAddForm(!showAddForm)}
+            onProviderChange={handleProviderChange}
+            onModelChange={(model) => setNewConfig(prev => ({ ...prev, model }))}
+            onFieldChange={(field, value) => setNewConfig(prev => ({ ...prev, [field]: value }))}
+            onAddConfiguration={handleAddConfiguration}
+            onEditConfig={handleEditConfig}
+            onSaveConfigEdit={handleSaveConfigEdit}
+            onCancelEdit={() => setEditingConfigId(null)}
+            onEditFormChange={(field, value) => setEditConfigForm(prev => ({ ...prev, [field]: value }))}
+            onToggleModality={toggleModality}
+            onDeleteConfiguration={handleDeleteConfiguration}
+            onSetDefault={handleSetDefault}
+          />
         )}
         {activeTab === 'data-collection' && (
-          <div className={styles['settings-section']}>
-            <h2>对话数据采集</h2>
-            <p className={styles['section-desc']}>
-              采集调用链数据，预览最近记录，导出 JSONL，并清理历史数据。
-            </p>
-
-            <div className={`${styles['setting-item']} ${styles['checkbox']}`}>
-              <input
-                type="checkbox"
-                id="conversation-collection"
-                checked={collectionEnabled}
-                onChange={(e) => handleToggleCollection(e.target.checked)}
-                disabled={updatingCollection}
-              />
-              <label htmlFor="conversation-collection">
-                {updatingCollection ? '更新中...' : '启用对话数据采集'}
-              </label>
-            </div>
-
-            {collectionStats && (
-              <div className={styles['collection-stats-grid']}>
-                <div className={styles['collection-stat-card']}>
-                  <span className={styles['collection-stat-label']}>队列占用</span>
-                  <span className={styles['collection-stat-value']}>{collectionStats.queue_size} / {collectionStats.queue_maxsize}</span>
-                </div>
-                <div className={styles['collection-stat-card']}>
-                  <span className={styles['collection-stat-label']}>丢弃数量</span>
-                  <span className={styles['collection-stat-value']}>{collectionStats.dropped_count}</span>
-                </div>
-                <div className={styles['collection-stat-card']}>
-                  <span className={styles['collection-stat-label']}>跟踪用户数</span>
-                  <span className={styles['collection-stat-value']}>{collectionStats.tracked_user_count}</span>
-                </div>
-              </div>
-            )}
-
-            <div className={styles['collection-actions-row']}>
-              <button className={`btn ${styles['btn-secondary']}`} onClick={loadRecordsPreview} disabled={loadingRecordsPreview}>
-                {loadingRecordsPreview ? '刷新中...' : '预览最近 20 条'}
-              </button>
-            </div>
-
-            <div className={styles['collection-export-panel']}>
-              <h3>导出 JSONL</h3>
-              <div className={styles['form-row']}>
-                <div className={styles['form-group']}>
-                  <label>开始时间（可选）</label>
-                  <input
-                    type="datetime-local"
-                    value={exportStartTime}
-                    onChange={(e) => setExportStartTime(e.target.value)}
-                  />
-                </div>
-                <div className={styles['form-group']}>
-                  <label>结束时间（可选）</label>
-                  <input
-                    type="datetime-local"
-                    value={exportEndTime}
-                    onChange={(e) => setExportEndTime(e.target.value)}
-                  />
-                </div>
-              </div>
-              <button className={`btn btn-primary`} onClick={handleExportRecords} disabled={exportingRecords}>
-                {exportingRecords ? '导出中...' : '导出数据集'}
-              </button>
-            </div>
-
-            <div className={styles['collection-cleanup-panel']}>
-              <h3>清理历史数据</h3>
-              <div className={styles['form-row']}>
-                <div className={styles['form-group']}>
-                  <label>删除早于以下天数的记录</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={3650}
-                    value={cleanupDays}
-                    onChange={(e) => setCleanupDays(parseInt(e.target.value) || 30)}
-                  />
-                </div>
-              </div>
-              <button className={`btn ${styles['btn-danger']}`} onClick={handleCleanupRecords} disabled={cleaningRecords}>
-                {cleaningRecords ? '清理中...' : '执行清理'}
-              </button>
-            </div>
-
-            <div className={styles['collection-preview-panel']}>
-              <h3>最近记录</h3>
-              {loadingRecordsPreview ? (
-                <div className={styles['loading']}>加载中...</div>
-              ) : recordsPreview.length === 0 ? (
-                <div className={styles['empty-state']}>
-                  <p>暂无记录</p>
-                </div>
-              ) : (
-                <div className={styles['collection-record-list']}>
-                  {recordsPreview.map((record) => (
-                    <div key={record.id} className={styles['collection-record-item']}>
-                      <div className={styles['collection-record-row']}>
-                        <span className={styles['collection-record-node']}>{record.node_type}</span>
-                        <span className={`${styles['collection-record-status']} ${styles[record.status] || record.status}`}>{record.status}</span>
-                      </div>
-                      <div className={`${styles['collection-record-row']} ${styles['muted']}`}>
-                        <span>会话: {record.session_id}</span>
-                        <span>{record.timestamp ? new Date(record.timestamp).toLocaleString('zh-CN') : '-'}</span>
-                      </div>
-                      <div className={`${styles['collection-record-row']} ${styles['muted']}`}>
-                        <span>模型: {record.provider || '-'} / {record.model || '-'}</span>
-                        <span>耗时: {record.execution_duration_ms ?? '-'} ms</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <DataCollectionTab
+            collectionEnabled={collectionEnabled}
+            collectionStats={collectionStats}
+            updatingCollection={updatingCollection}
+            recordsPreview={recordsPreview}
+            loadingRecordsPreview={loadingRecordsPreview}
+            exportStartTime={exportStartTime}
+            exportEndTime={exportEndTime}
+            exportingRecords={exportingRecords}
+            cleanupDays={cleanupDays}
+            cleaningRecords={cleaningRecords}
+            onToggleCollection={handleToggleCollection}
+            onLoadRecordsPreview={loadRecordsPreview}
+            onExportRecords={handleExportRecords}
+            onCleanupRecords={handleCleanupRecords}
+            onExportStartTimeChange={setExportStartTime}
+            onExportEndTimeChange={setExportEndTime}
+            onCleanupDaysChange={setCleanupDays}
+          />
         )}
 
         {activeTab === 'data-retention' && (
-          <div className={styles['settings-section']}>
-            <h2>数据保留设置</h2>
-            <p className={styles['section-desc']}>
-              配置计费数据的保留天数，超出保留期限的数据将被自动清理
-            </p>
-
-            {loadingRetention ? (
-              <div className={styles['loading']}>加载中...</div>
-            ) : (
-              <>
-                <div className={styles['setting-item']}>
-                  <label>最大保存天数</label>
-                  <input
-                    type="number"
-                    value={retentionDays}
-                    onChange={(e) => setRetentionDays(parseInt(e.target.value) || 365)}
-                    min={1}
-                    max={3650}
-                    style={{ width: '150px' }}
-                  />
-                  <span style={{ marginLeft: '8px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
-                    天（范围：1-3650）
-                  </span>
-                </div>
-
-                {retentionConfig && (
-                  <div className={styles['setting-item']}>
-                    <label>当前数据状态</label>
-                    <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
-                      <p>总记录数：{retentionConfig.total_records}</p>
-                      <p>
-                        数据范围：{retentionConfig.oldest_record
-                          ? new Date(retentionConfig.oldest_record).toLocaleDateString('zh-CN')
-                          : '无'}
-                        {' - '}
-                        {retentionConfig.newest_record
-                          ? new Date(retentionConfig.newest_record).toLocaleDateString('zh-CN')
-                          : '无'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className={`${styles['setting-item']} ${styles['checkbox']}`}>
-                  <input
-                    type="checkbox"
-                    id="cleanup-old"
-                    checked={cleanupOld}
-                    onChange={(e) => setCleanupOld(e.target.checked)}
-                  />
-                  <label htmlFor="cleanup-old">
-                    保存后清理超出保留期限的旧数据
-                  </label>
-                </div>
-
-                <button
-                  className={`btn btn-primary`}
-                  onClick={handleSaveRetention}
-                  disabled={saving}
-                >
-                  {saving ? '保存中...' : '保存设置'}
-                </button>
-              </>
-            )}
-          </div>
+          <DataRetentionTab
+            loadingRetention={loadingRetention}
+            retentionConfig={retentionConfig}
+            retentionDays={retentionDays}
+            cleanupOld={cleanupOld}
+            saving={saving}
+            onLoadRetentionConfig={loadRetentionConfig}
+            onSaveRetention={handleSaveRetention}
+            onRetentionDaysChange={setRetentionDays}
+            onCleanupOldChange={setCleanupOld}
+          />
         )}
 
         {activeTab === 'security' && (
@@ -2998,204 +2118,54 @@ function SettingsPage() {
           </div>
         )}
 
-        {showCreateProviderModal && (
-          <div className={styles['provider-modal-overlay']} onClick={handleCloseCreateProviderModal}>
-            <div
-              className={styles['provider-modal']}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="create-provider-modal-title"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className={styles['provider-modal-header']}>
-                <h3 id="create-provider-modal-title">新增供应商</h3>
-              </div>
-              <div className={styles['provider-modal-body']}>
-                <div className={styles['form-group']}>
-                  <label htmlFor="add-provider-select">供应商标识</label>
-                  <select
-                    id="add-provider-select"
-                    value={addProviderForm.is_custom ? '__custom__' : addProviderForm.provider}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      if (val === '__custom__') {
-                        setAddProviderForm({
-                          provider: '',
-                          display_name: '',
-                          api_endpoint: '',
-                          is_custom: true
-                        })
-                      } else {
-                        setAddProviderForm({
-                          provider: val,
-                          display_name: PROVIDER_NAMES[val] || val,
-                          api_endpoint: getPresetProviderBaseUrl(val),
-                          is_custom: false
-                        })
-                      }
-                    }}
-                  >
-                    <option value="">请选择供应商</option>
-                    {Object.entries(PROVIDER_NAMES).map(([id, name]) => (
-                      <option key={id} value={id}>{id} — {name}</option>
-                    ))}
-                    <option value="__custom__">自定义...</option>
-                  </select>
-                  {addProviderForm.is_custom && (
-                    <input
-                      id="add-provider-custom-id"
-                      type="text"
-                      value={addProviderForm.provider}
-                      onChange={(e) => setAddProviderForm(prev => ({ ...prev, provider: e.target.value }))}
-                      placeholder="输入自定义供应商标识"
-                      style={{ marginTop: 8 }}
-                    />
-                  )}
-                </div>
-                <div className={styles['form-group']}>
-                  <label htmlFor="add-provider-display-name">显示名称（可选）</label>
-                  <input
-                    id="add-provider-display-name"
-                    type="text"
-                    value={addProviderForm.display_name}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
-                    placeholder="例如：OpenAI"
-                  />
-                </div>
-                <div className={styles['form-group']}>
-                  <label htmlFor="add-provider-base-url">基础 URL（可选）</label>
-                  <input
-                    id="add-provider-base-url"
-                    type="text"
-                    value={addProviderForm.api_endpoint}
-                    onChange={(e) => setAddProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
-                    placeholder="https://api.example.com/v1"
-                  />
-                </div>
-              </div>
-              <div className={styles['provider-modal-actions']}>
-                <button className={`btn ${styles['btn-secondary']}`} onClick={handleCloseCreateProviderModal} disabled={creatingProvider}>取消</button>
-                <button className={`btn btn-primary`} onClick={handleCreateProvider} disabled={creatingProvider}>
-                  {creatingProvider ? '创建中...' : '确认创建'}
-                </button>
-              </div>
-            </div>
+        {activeTab === 'env-vars' && (
+          <div className={styles['settings-section']}>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <EnvVarSettings />
+            </Suspense>
           </div>
         )}
 
-        {showDeleteConfirmModal && (
-          <div className={styles['provider-modal-overlay']} onClick={handleCloseDeleteConfirmModal}>
-            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()}>
-              <div className={styles['provider-modal-header']}>
-                <h3>确认删除</h3>
-              </div>
-              <div className={styles['provider-modal-body']}>
-                <p style={{ margin: '16px 0', lineHeight: 1.5 }}>
-                  确定要删除供应商“<strong>{providerForm.display_name.trim() || providerForm.provider}</strong>”吗？<br />
-                  该供应商下的配置将被永久删除，此操作不可恢复。
-                </p>
-              </div>
-              <div className={styles['provider-modal-footer']}>
-                <button 
-                  className={`btn ${styles['btn-secondary']}`} 
-                  onClick={handleCloseDeleteConfirmModal} 
-                  disabled={deletingProvider}
-                >
-                  取消
-                </button>
-                <button 
-                  className={`btn ${styles['btn-danger']}`} 
-                  onClick={confirmDeleteProvider} 
-                  disabled={deletingProvider}
-                >
-                  {deletingProvider ? '删除中...' : '确认删除'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <CreateProviderModal
+          isOpen={showCreateProviderModal}
+          addProviderForm={addProviderForm}
+          creatingProvider={creatingProvider}
+          onClose={handleCloseCreateProviderModal}
+          onChangeForm={setAddProviderForm}
+          onCreate={handleCreateProvider}
+        />
 
-        {showImportModal && (
-          <div className={styles['provider-modal-overlay']} onClick={() => setShowImportModal(false)}>
-            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-              <div className={styles['provider-modal-header']}>
-                <h3>导入模型</h3>
-              </div>
-              <div className={styles['provider-modal-body']} style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-                <p style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>请勾选需要导入的模型，未勾选的模型不会出现在聊天界面中。</p>
-                <div className={styles['provider-model-list']} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-                  {fetchedRemoteModels.map(model => {
-                    const checked = modalSelectedModels.includes(model.model)
-                    return (
-                      <label key={model.id || model.model} className={styles['provider-model-item']}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setModalSelectedModels(prev => [...prev, model.model])
-                            } else {
-                              setModalSelectedModels(prev => prev.filter(m => m !== model.model))
-                            }
-                          }}
-                        />
-                        <span className={styles['provider-model-name']}>{model.model}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
-              <div className={styles['provider-modal-footer']} style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px', borderTop: '1px solid var(--border-color)' }}>
-                <button 
-                  className={`btn ${styles['btn-secondary']}`} 
-                  onClick={() => setShowImportModal(false)} 
-                  disabled={importing}
-                >
-                  取消
-                </button>
-                <button 
-                  className={`btn btn-primary`} 
-                  onClick={handleImportModels} 
-                  disabled={importing}
-                >
-                  {importing ? '导入中...' : '确认导入'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <DeleteConfirmModal
+          isOpen={showDeleteConfirmModal}
+          providerName={providerForm.display_name.trim() || providerForm.provider}
+          deletingProvider={deletingProvider}
+          onClose={handleCloseDeleteConfirmModal}
+          onConfirm={confirmDeleteProvider}
+        />
 
-        {showDeleteModelsModal && (
-          <div className={styles['provider-modal-overlay']} onClick={() => setShowDeleteModelsModal(false)}>
-            <div className={styles['provider-modal']} onClick={(e) => e.stopPropagation()}>
-              <div className={styles['provider-modal-header']}>
-                <h3>确认批量删除</h3>
-              </div>
-              <div className={styles['provider-modal-body']}>
-                <p style={{ margin: '16px 0', lineHeight: 1.5 }}>
-                  确定要删除选中的 <strong>{selectedForDeletion.length}</strong> 个模型吗？<br />
-                  这些模型将从当前配置中移除。
-                </p>
-              </div>
-              <div className={styles['provider-modal-footer']}>
-                <button 
-                  className={`btn ${styles['btn-secondary']}`} 
-                  onClick={() => setShowDeleteModelsModal(false)} 
-                  disabled={deletingModels}
-                >
-                  取消
-                </button>
-                <button 
-                  className={`btn ${styles['btn-danger']}`} 
-                  onClick={handleBatchDeleteModels} 
-                  disabled={deletingModels}
-                >
-                  {deletingModels ? '删除中...' : '确认删除'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ImportModelsModal
+          isOpen={showImportModal}
+          fetchedRemoteModels={fetchedRemoteModels}
+          modalSelectedModels={modalSelectedModels}
+          importing={importing}
+          onClose={() => setShowImportModal(false)}
+          onToggleModel={(modelName, checked) => {
+            if (checked) {
+              setModalSelectedModels(prev => [...prev, modelName])
+            } else {
+              setModalSelectedModels(prev => prev.filter(m => m !== modelName))
+            }
+          }}
+          onImport={handleImportModels}
+        />
+
+        <DeleteModelsModal
+          isOpen={showDeleteModelsModal}
+          selectedCount={selectedForDeletion.length}
+          deletingModels={deletingModels}
+          onClose={() => setShowDeleteModelsModal(false)}
+          onConfirm={handleBatchDeleteModels}
+        />
       </div>
     </PageLayout>
   )
