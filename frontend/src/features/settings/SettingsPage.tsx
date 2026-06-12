@@ -14,7 +14,6 @@ import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollectionStatusResponse, getApiErrorDetail, userAPI } from '@/shared/api/api'
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
-import { ModelConfigCard } from '@/features/settings/components/ModelConfigCard'
 import { MODEL_PARAM_DEFAULTS, type ModelEditParams } from '@/features/settings/components/ModelParameterEditor'
 import { useChatStore } from '@/features/chat/store/chatStore'
 import type { ModelOption } from '@/features/chat/store/chatStore'
@@ -22,7 +21,7 @@ import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
 import styles from './SettingsPage.module.css'
-import { getProviderIcon } from '@/assets/providers'
+
 
 // 懒加载非核心 Tab 组件（MCP）
 const MCPSettings = lazy(() => import('./MCPSettings'))
@@ -37,6 +36,7 @@ import { BillingTab } from './components/BillingTab'
 import { DataCollectionTab } from './components/DataCollectionTab'
 import { GeneralSettings } from './components/GeneralSettings'
 import { ModelsTab } from './components/ModelsTab'
+import { ApiSettings } from './components/ApiSettings'
 import { CreateProviderModal } from './modals/CreateProviderModal'
 import { DeleteConfirmModal } from './modals/DeleteConfirmModal'
 import { ImportModelsModal } from './modals/ImportModelsModal'
@@ -899,28 +899,6 @@ function SettingsPage() {
     }
   }
 
-  const formatTokenCount = (tokens: number | null | undefined): string => {
-    if (tokens == null) return '-'
-    if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`
-    if (tokens >= 1000) return `${(tokens / 1000).toFixed(0)}K`
-    return String(tokens)
-  }
-
-  /**
-   * 获取模型配置的参数摘要（用于折叠态展示）
-   */
-  const getModelParamSummary = (modelName: string): string => {
-    const config = configurations.find(
-      c => c.provider === providerForm.provider && c.model === modelName
-    )
-    if (!config) return '未配置'
-    const temp = config.temperature ?? 0.7
-    const maxT = config.max_tokens_limit
-    const parts: string[] = [`温度: ${temp.toFixed(1)}`]
-    if (maxT) parts.push(`最大 Tokens: ${formatTokenCount(maxT)}`)
-    return parts.join(' · ')
-  }
-
   const normalizeProviderBaseUrl = (provider: string, apiEndpoint: string) => {
     let raw = apiEndpoint.trim()
     if (!raw) {
@@ -1263,26 +1241,6 @@ function SettingsPage() {
       showNotification({ type: 'error', text: '获取提供商状态失败' })
     } finally {
       setLoadingProviderStatuses(false)
-    }
-  }
-
-  // 格式化文件大小
-  const formatModelSize = (bytes: number): string => {
-    if (!bytes) return '-'
-    if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`
-    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(0)} MB`
-    return `${(bytes / 1024).toFixed(0)} KB`
-  }
-
-  // 获取连接状态的显示样式
-  const getStatusIndicator = (status: string): { label: string; color: string } => {
-    switch (status) {
-      case 'connected': return { label: '已连接', color: '#22c55e' }
-      case 'auth_error': return { label: '认证失败', color: '#ef4444' }
-      case 'timeout': return { label: '超时', color: '#f59e0b' }
-      case 'unreachable': return { label: '不可达', color: '#ef4444' }
-      case 'unconfigured': return { label: '未配置', color: '#9ca3af' }
-      default: return { label: '异常', color: '#ef4444' }
     }
   }
 
@@ -1712,298 +1670,48 @@ function SettingsPage() {
         )}
 
         {activeTab === 'api' && (
-          <div className={styles['settings-section']}>
-            <div className={styles['section-header']}>
-              <h2>API配置</h2>
-              <button
-                className={`btn btn-primary`}
-                onClick={handleOpenCreateProviderModal}
-              >
-                新增供应商
-              </button>
-            </div>
-            <p className={styles['section-desc']}>左侧管理供应商，右侧配置基础 URL、API Key，并从远端获取模型后用复选框选择。</p>
-
-            <div className={styles['api-config-layout']}>
-              <aside className={styles['provider-sidebar']}>
-                {loadingApiProviders ? (
-                  <div className={styles['loading']}>加载供应商中...</div>
-                ) : providers.length === 0 ? (
-                  <div className={styles['empty-state']}>
-                    <p>暂无供应商配置</p>
-                    <p className={styles['hint']}>请先添加供应商</p>
-                  </div>
-                ) : (
-                  <div className={styles['provider-list']}>
-                    {providers.map(provider => {
-                      const isActive = provider.id === selectedProviderId
-                      const displayName = provider.display_name || provider.name || provider.id
-                      return (
-                        <button
-                          key={provider.id}
-                          className={`${styles['provider-item']} ${isActive ? styles['active'] : ''}`}
-                          onClick={() => {
-                            if ((provider.configuration_count || 0) === 0) {
-                              showNotification({ type: 'error', text: '该供应商暂无可用配置，请先新增供应商配置' })
-                              return
-                            }
-                            loadProviderDetail(provider.id)
-                          }}
-                        >
-                          <span className={styles['provider-avatar']}>
-                            {(() => {
-                              const localIcon = getProviderIcon(provider.id)
-                              if (localIcon) {
-                                return <img src={localIcon} alt={displayName} />
-                              }
-                              if (provider.icon) {
-                                return <img src={provider.icon} alt={displayName} />
-                              }
-                              return <span>{displayName.slice(0, 1).toUpperCase()}</span>
-                            })()}
-                          </span>
-                          <span className={styles['provider-item-content']}>
-                            <span className={styles['provider-item-title']}>{displayName}</span>
-                            <span className={styles['provider-item-sub']}>{provider.id}</span>
-                            {(provider.configuration_count || 0) === 0 && (
-                              <span className={styles['provider-item-empty']}>未配置</span>
-                            )}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </aside>
-
-              <section className={styles['provider-detail-panel']}>
-                {loadingProviderDetail ? (
-                  <div className={styles['loading']}>加载供应商详情中...</div>
-                ) : !selectedProviderId ? (
-                  <div className={styles['empty-state']}>
-                    <p>请选择左侧供应商</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className={styles['form-row']}>
-                      <div className={styles['form-group']}>
-                        <label>供应商标识</label>
-                        <input type="text" value={providerForm.provider} disabled />
-                      </div>
-                      <div className={styles['form-group']}>
-                        <label>显示名称</label>
-                        <input
-                          type="text"
-                          value={providerForm.display_name}
-                          onChange={(e) => setProviderForm(prev => ({ ...prev, display_name: e.target.value }))}
-                          placeholder="供应商显示名称"
-                        />
-                      </div>
-                    </div>
-
-                    <div className={styles['form-row']}>
-                      <div className={styles['form-group']}>
-                        <label>图标地址（可选）</label>
-                        <input
-                          type="text"
-                          value={providerForm.icon}
-                          onChange={(e) => setProviderForm(prev => ({ ...prev, icon: e.target.value }))}
-                          placeholder="https://example.com/icon.png"
-                        />
-                      </div>
-                      <div className={styles['form-group']}>
-                        <label>基础 URL</label>
-                        <input
-                          type="text"
-                          value={providerForm.api_endpoint}
-                          onChange={(e) => setProviderForm(prev => ({ ...prev, api_endpoint: e.target.value }))}
-                          placeholder="https://api.example.com"
-                        />
-                      </div>
-                    </div>
-
-                    <div className={styles['form-row']}>
-                      <div className={styles['form-group']}>
-                        <label>API Key</label>
-                        <input
-                          key={`provider-api-key-${providerForm.config_id ?? providerForm.provider}`}
-                          type="password"
-                          ref={providerApiKeyInputRef}
-                          defaultValue=""
-                          autoComplete="new-password"
-                          placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
-                        />
-                      </div>
-                    </div>
-
-                    <div className={styles['provider-detail-actions']}>
-                      <button
-                        type="button"
-                        className={`btn ${styles['btn-secondary']}`}
-                        onClick={async () => {
-                          const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
-                          // 在拉取模型列表前，先将 API Key 保存到数据库，避免每次都需要重新输入
-                          if (nextApiKey && providerForm.config_id) {
-                            try {
-                              await modelsAPI.updateConfiguration(providerForm.config_id, { api_key: nextApiKey })
-                              setProviderForm(prev => ({ ...prev, has_api_key: true }))
-                              // 保存后清空输入框，避免明文长期留存
-                              if (providerApiKeyInputRef.current) {
-                                providerApiKeyInputRef.current.value = ''
-                              }
-                            } catch {
-                              // 保存失败不阻塞模型列表拉取
-                            }
-                          }
-                          fetchProviderModels(providerForm.provider, providerForm.selected_models, true, {
-                            api_endpoint: providerForm.api_endpoint,
-                            api_key: nextApiKey || providerForm.api_key
-                          })
-                        }}
-                        disabled={loadingProviderModels || deletingProvider}
-                      >
-                        {loadingProviderModels ? '获取中...' : '获取模型列表'}
-                      </button>
-                      <button
-                        className={`btn btn-primary`}
-                        onClick={handleSaveProviderConfig}
-                        disabled={saving || deletingProvider}
-                      >
-                        {saving ? '保存中...' : '保存供应商配置'}
-                      </button>
-                      <button
-                        className={`btn ${styles['btn-danger']}`}
-                        onClick={handleOpenDeleteConfirmModal}
-                        disabled={deletingProvider}
-                      >
-                        {deletingProvider ? '删除中...' : '删除供应商'}
-                      </button>
-                    </div>
-                    {providerModelsError && (
-                      <div className={`${styles['message']} ${styles['error']}`} style={{ marginTop: '12px' }}>{providerModelsError}</div>
-                    )}
-
-                    <div className={styles['provider-models-section']}>
-                      <div className={styles['model-config-section-header']}>
-                        <h3>已导入模型配置</h3>
-                        {selectedForDeletion.length > 0 && (
-                          <button
-                            className={`btn ${styles['btn-danger']}`}
-                            onClick={() => setShowDeleteModelsModal(true)}
-                          >
-                            批量删除 ({selectedForDeletion.length})
-                          </button>
-                        )}
-                      </div>
-                      
-                      {providerForm.selected_models.length === 0 ? (
-                        <div className={styles['empty-state']}>
-                          <p>暂无已导入模型，请点击上方“获取模型列表”进行选择和导入</p>
-                        </div>
-                      ) : (
-                        <div className={styles['model-config-cards']}>
-                          {providerForm.selected_models.map(modelName => {
-                            const configKey = `${providerForm.provider}:${modelName}`
-                            return (
-                              <ModelConfigCard
-                                key={modelName}
-                                modelName={modelName}
-                                params={modelEditParams[modelName]}
-                                isExpanded={expandedModelConfigs.has(configKey)}
-                                isSaving={savingModelConfig[modelName] ?? false}
-                                checked={selectedForDeletion.includes(modelName)}
-                                summary={getModelParamSummary(modelName)}
-                                apiEndpoint={providerForm.api_endpoint || '未配置'}
-                                onToggle={toggleModelConfig}
-                                onSave={handleSaveModelConfig}
-                                onReset={handleResetModelConfig}
-                                onParamChange={updateModelEditParam}
-                                onCheckChange={(modelName, checked) => {
-                                  if (checked) {
-                                    setSelectedForDeletion(prev => [...prev, modelName])
-                                  } else {
-                                    setSelectedForDeletion(prev => prev.filter(m => m !== modelName))
-                                  }
-                                }}
-                              />
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </section>
-            </div>
-
-            {/* 提供商连接状态 */}
-            <div style={{ marginTop: '24px', padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0 }}>提供商连接状态</h3>
-                <button
-                  className={`btn ${styles['btn-secondary']}`}
-                  onClick={handleCheckProviderStatuses}
-                  disabled={loadingProviderStatuses}
-                >
-                  {loadingProviderStatuses ? '检测中...' : '检测连接状态'}
-                </button>
-              </div>
-              {providerStatuses.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
-                  {providerStatuses.map(ps => {
-                    const indicator = getStatusIndicator(ps.status)
-                    return (
-                      <div key={ps.provider} style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: indicator.color, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 500 }}>{ps.display_name || ps.provider}</span>
-                        <span style={{ color: '#6b7280', fontSize: '12px', marginLeft: 'auto' }}>{indicator.label}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Ollama 本地模型发现 */}
-            <div style={{ marginTop: '24px', padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0 }}>Ollama 本地模型</h3>
-                <button
-                  className={`btn btn-primary`}
-                  onClick={handleDiscoverOllamaModels}
-                  disabled={loadingOllama}
-                >
-                  {loadingOllama ? '发现中...' : '发现本地模型'}
-                </button>
-              </div>
-              <p style={{ color: '#6b7280', fontSize: '13px', marginBottom: '12px' }}>
-                自动发现本地 Ollama 服务中已拉取的模型，需先启动 Ollama 服务
-              </p>
-              {ollamaError && (
-                <div className={`${styles['message']} ${styles['error']}`} style={{ marginBottom: '12px' }}>{ollamaError}</div>
-              )}
-              {ollamaModels.length > 0 && (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: 500 }}>模型名称</th>
-                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: 500 }}>大小</th>
-                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: 500 }}>更新时间</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ollamaModels.map(model => (
-                      <tr key={model.name} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                        <td style={{ padding: '8px', fontFamily: 'monospace' }}>{model.name}</td>
-                        <td style={{ padding: '8px', color: '#6b7280' }}>{formatModelSize(model.size)}</td>
-                        <td style={{ padding: '8px', color: '#6b7280' }}>{model.modified_at ? new Date(model.modified_at).toLocaleString('zh-CN') : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
+          <ApiSettings
+            loadingApiProviders={loadingApiProviders}
+            loadingProviderDetail={loadingProviderDetail}
+            loadingProviderModels={loadingProviderModels}
+            providerModelsError={providerModelsError}
+            providers={providers}
+            selectedProviderId={selectedProviderId}
+            providerForm={providerForm}
+            providerApiKeyInputRef={providerApiKeyInputRef}
+            providerStatuses={providerStatuses}
+            loadingProviderStatuses={loadingProviderStatuses}
+            ollamaModels={ollamaModels}
+            loadingOllama={loadingOllama}
+            ollamaError={ollamaError}
+            saving={saving}
+            deletingProvider={deletingProvider}
+            configurations={configurations}
+            expandedModelConfigs={expandedModelConfigs}
+            modelEditParams={modelEditParams}
+            savingModelConfig={savingModelConfig}
+            selectedForDeletion={selectedForDeletion}
+            onOpenCreateProviderModal={handleOpenCreateProviderModal}
+            onProviderFormChange={setProviderForm}
+            onLoadProviderDetail={loadProviderDetail}
+            onSaveProviderConfig={handleSaveProviderConfig}
+            onOpenDeleteConfirmModal={handleOpenDeleteConfirmModal}
+            onFetchModels={fetchProviderModels}
+            onDiscoverOllama={handleDiscoverOllamaModels}
+            onCheckProviderStatuses={handleCheckProviderStatuses}
+            onToggleModelConfig={toggleModelConfig}
+            onSaveModelConfig={handleSaveModelConfig}
+            onResetModelConfig={handleResetModelConfig}
+            onUpdateModelEditParam={updateModelEditParam}
+            onSelectionChange={(modelName, checked) => {
+              if (checked) {
+                setSelectedForDeletion(prev => [...prev, modelName])
+              } else {
+                setSelectedForDeletion(prev => prev.filter(m => m !== modelName))
+              }
+            }}
+            onOpenDeleteModelsModal={() => setShowDeleteModelsModal(true)}
+          />
         )}
 
         {activeTab === 'prompts' && (
