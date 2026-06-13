@@ -2,6 +2,7 @@
  * 模型配置卡片组件，支持手风琴式展开/折叠，内嵌模型参数编辑器。
  * 每个卡片对应一个已导入的模型，可独立编辑参数并保存/重置。
  */
+import { memo } from 'react'
 import { ModelParameterEditor, type ModelEditParams } from './ModelParameterEditor'
 import styles from '@/features/settings/SettingsPage.module.css'
 
@@ -32,7 +33,7 @@ interface ModelConfigCardProps {
   summary: string
 }
 
-export function ModelConfigCard({
+function ModelConfigCard({
   modelName,
   params,
   isExpanded,
@@ -140,4 +141,6 @@ export function ModelConfigCard({
   )
 }
 
-export default ModelConfigCard
+const MemoModelConfigCard = memo(ModelConfigCard)
+export { MemoModelConfigCard as ModelConfigCard }
+export default MemoModelConfigCard

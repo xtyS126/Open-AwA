@@ -3,6 +3,7 @@
  * 管理供应商侧边栏、详情表单、模型导入、连接状态检测和 Ollama 发现
  */
 import type { ModelConfiguration, ModelProvider, ProviderConnectionStatus, OllamaModel } from '@/features/settings/modelsApi'
+import { memo } from 'react'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import { getProviderIcon } from '@/assets/providers'
 import { ModelConfigCard } from '@/features/settings/components/ModelConfigCard'
@@ -93,7 +94,7 @@ interface ApiSettingsProps {
   onOpenDeleteModelsModal: () => void
 }
 
-export function ApiSettings({
+function ApiSettings({
   loadingApiProviders,
   loadingProviderDetail,
   loadingProviderModels,
@@ -416,4 +417,6 @@ export function ApiSettings({
   )
 }
 
-export default ApiSettings
+const MemoApiSettings = memo(ApiSettings)
+export { MemoApiSettings as ApiSettings }
+export default MemoApiSettings

@@ -2,6 +2,7 @@
  * 模型参数编辑器组件，提供 7 个可调参数的滑块/数字输入。
  * 纯展示组件，所有状态由父组件通过 props 传入。
  */
+import { memo } from 'react'
 import styles from '@/features/settings/SettingsPage.module.css'
 
 /** 模型可编辑参数的接口定义 */
@@ -35,7 +36,7 @@ interface ModelParameterEditorProps {
   disabled?: boolean
 }
 
-export function ModelParameterEditor({ params, onChange, disabled = false }: ModelParameterEditorProps) {
+function ModelParameterEditor({ params, onChange, disabled = false }: ModelParameterEditorProps) {
   /**
    * 处理数字输入清空：恢复默认值。
    * 确保清空输入框时不会将非法值（如 0）发送给后端。
@@ -245,4 +246,6 @@ export function ModelParameterEditor({ params, onChange, disabled = false }: Mod
   )
 }
 
-export default ModelParameterEditor
+const MemoModelParameterEditor = memo(ModelParameterEditor)
+export { MemoModelParameterEditor as ModelParameterEditor }
+export default MemoModelParameterEditor
