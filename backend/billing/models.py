@@ -53,7 +53,7 @@ class ModelPricing(Base):
     token_per_second_audio: Mapped[int] = mapped_column(Integer, default=150)
     token_per_second_video: Mapped[int] = mapped_column(Integer, default=2880)
     context_window: Mapped[int] = mapped_column(Integer, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=False)
     is_multimodal: Mapped[bool] = mapped_column(Boolean, default=False)
     # 模态标签：输入/输出方向各自支持的模态列表（JSON 数组，如 ["text","image"]）
@@ -119,7 +119,7 @@ class ProviderCredential(Base):
     api_key: Mapped[str] = mapped_column(Text, nullable=True)     # Fernet 加密存储
     api_endpoint: Mapped[str] = mapped_column(String(500), nullable=True)
     icon: Mapped[str] = mapped_column(String(500), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc),
@@ -150,9 +150,9 @@ class ModelConfiguration(Base):
     credential_id: Mapped[int] = mapped_column(Integer, ForeignKey("provider_credentials.id"), nullable=True)
     selected_models: Mapped[str] = mapped_column(Text, nullable=True)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
 
     # Model parameter fields
     temperature: Mapped[float] = mapped_column(Float, nullable=True, default=0.7)

@@ -951,6 +951,25 @@ async def litellm_chat_completion_stream(
         await circuit_breaker.on_failure()
 
 
+# 模块级共享 httpx 客户端（懒初始化），避免每次调用 litellm_list_models 都新建连接
+_models_httpx_client: Optional["httpx.AsyncClient"] = None
+_models_httpx_client_lock = asyncio.Lock()
+
+
+async def _get_models_httpx_client() -> "httpx.AsyncClient":
+    """获取或懒初始化共享的 httpx 客户端，复用连接池以减少 TCP 握手开销。"""
+    global _models_httpx_client
+    if _models_httpx_client is not None and not _models_httpx_client.is_closed:
+        return _models_httpx_client
+    async with _models_httpx_client_lock:
+        if _models_httpx_client is None or _models_httpx_client.is_closed:
+            import httpx
+            _models_httpx_client = httpx.AsyncClient(
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
+            )
+        return _models_httpx_client
+
+
 async def litellm_list_models(
     *,
     provider: str,
@@ -1003,10 +1022,10 @@ async def litellm_list_models(
             # 使用 PricingManager 统一构建模型列表端点
             endpoint = PricingManager.build_provider_api_endpoint(normalized_provider, endpoint, "models")
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(endpoint, headers=headers)
-            resp.raise_for_status()
-            payload = resp.json()
+        client = await _get_models_httpx_client()
+        resp = await client.get(endpoint, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
 
         # 从响应中提取模型列表
         models: list = []

@@ -8,7 +8,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import Body
 from datetime import datetime
 from loguru import logger
@@ -17,6 +17,7 @@ from db.models import get_db
 from api.dependencies import get_current_user
 from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
+from billing.models import ProviderCredential
 from billing.budget_manager import BudgetManager
 from billing.reporter import BillingReporter
 from config.config_loader import config_loader
@@ -27,6 +28,17 @@ from core.litellm_adapter import litellm_list_models
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
+
+# 提供商远端模型缓存（TTL 5 分钟），避免每次设置页加载都逐个调用提供商 API
+_provider_models_cache: Dict[str, tuple[float, dict]] = {}
+PROVIDER_MODELS_CACHE_TTL_SECONDS = 300  # 5 分钟
+
+def _invalidate_provider_models_cache(provider_id: Optional[str] = None):
+    """失效提供商远端模型缓存，provider_id 为 None 时清空全部缓存。"""
+    if provider_id:
+        _provider_models_cache.pop(provider_id, None)
+    else:
+        _provider_models_cache.clear()
 
 
 class UsageRecordResponse(BaseModel):
@@ -202,10 +214,14 @@ def _parse_modality(raw) -> list:
         return []
 
 
-def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False):
+def serialize_configuration(config, pricing_manager: PricingManager, include_secret: bool = False, cred_map: Optional[Dict[str, ProviderCredential]] = None):
     """
     将configuration相关对象序列化为接口或存储所需格式。
     通常用于在内部对象与外部输出结构之间建立稳定映射。
+
+    Args:
+        cred_map: 批量预加载的凭据映射表（key 为标准化后的 provider 名），
+                  传入后可避免逐个查询 ProviderCredential（消除 N+1 问题）。
     """
     selected_models = pricing_manager.parse_selected_models(config.selected_models)
     spec = _parse_model_spec(config)
@@ -215,7 +231,11 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
     has_api_key = bool(config.api_key)
     credential_id = getattr(config, "credential_id", None)
     if credential_id:
-        cred = pricing_manager.get_provider_credential(config.provider)
+        cred = None
+        if cred_map is not None:
+            cred = cred_map.get(pricing_manager.normalize_provider(config.provider))
+        else:
+            cred = pricing_manager.get_provider_credential(config.provider)
         if cred:
             api_endpoint = cred.api_endpoint or api_endpoint
             has_api_key = bool(cred.api_key) or has_api_key
@@ -680,10 +700,20 @@ async def get_configurations(
     """
     pricing_manager = PricingManager(db)
     configs = pricing_manager.get_active_configurations()
-    
+
+    # 批量预加载所有 provider 的凭据，消除 serialize_configuration 中的 N+1 查询
+    provider_ids = list({pricing_manager.normalize_provider(c.provider) for c in configs if getattr(c, "credential_id", None)})
+    cred_map: Dict[str, ProviderCredential] = {}
+    if provider_ids:
+        all_creds = db.query(ProviderCredential).filter(
+            ProviderCredential.provider.in_(provider_ids),
+            ProviderCredential.is_active == True
+        ).all()
+        cred_map = {pricing_manager.normalize_provider(cred.provider): cred for cred in all_creds}
+
     return {
         "configurations": [
-            serialize_configuration(c, pricing_manager)
+            serialize_configuration(c, pricing_manager, cred_map=cred_map)
             for c in configs
         ]
     }
@@ -723,7 +753,10 @@ async def create_configuration(
         config = pricing_manager.create_configuration(config_data.dict())
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    
+
+    # 新增配置后失效远端模型缓存
+    _invalidate_provider_models_cache()
+
     return {
         "success": True,
         "configuration": serialize_configuration(config, pricing_manager)
@@ -754,7 +787,10 @@ async def update_configuration(
     
     if not updated:
         raise HTTPException(status_code=404, detail="Configuration not found")
-    
+
+    # 配置变更后失效远端模型缓存
+    _invalidate_provider_models_cache()
+
     return {
         "success": True,
         "configuration": serialize_configuration(updated, pricing_manager)
@@ -773,10 +809,13 @@ async def delete_configuration(
     """
     pricing_manager = PricingManager(db)
     success = pricing_manager.delete_configuration(config_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Configuration not found")
-    
+
+    # 删除配置后失效远端模型缓存
+    _invalidate_provider_models_cache()
+
     return {"success": True}
 
 
@@ -1085,6 +1124,9 @@ async def delete_provider(
     if deleted_count == 0:
         raise HTTPException(status_code=404, detail="Provider configuration not found")
 
+    # 提供商被删除后失效对应的远端模型缓存
+    _invalidate_provider_models_cache()
+
     return {
         "success": True,
         "provider": provider_id,
@@ -1115,6 +1157,8 @@ async def save_provider_credential(
     if not provider_id:
         raise HTTPException(status_code=400, detail="Invalid provider identifier")
     cred = pricing_manager.upsert_provider_credential(provider_id, data.dict(exclude_none=True))
+    # 凭据变更后失效对应的远端模型缓存
+    _invalidate_provider_models_cache()
     return {
         "success": True,
         "provider": cred.provider,
@@ -1169,6 +1213,9 @@ async def update_provider_selected_models(
         {"selected_models": payload.selected_models}
     )
 
+    # 模型选择变更后失效对应的远端模型缓存
+    _invalidate_provider_models_cache()
+
     return {
         "success": True,
         "provider": provider_id,
@@ -1218,14 +1265,24 @@ async def get_models_by_provider(
         # 仅在 API key 非空且 base_url 有效时才尝试远程拉取，避免空密钥导致非法请求头错误
         actual_api_key_stripped = (actual_api_key or "").strip()
         if base_url and actual_api_key_stripped:
+            # 检查服务端缓存（key = provider:base_url:api_key_prefix）
+            cache_key = f"{provider_id}:{base_url}:{actual_api_key_stripped[:8]}"
+            cached = _provider_models_cache.get(cache_key)
+            if cached:
+                cache_time, cached_data = cached
+                if datetime.now().timestamp() - cache_time < PROVIDER_MODELS_CACHE_TTL_SECONDS:
+                    return cached_data
+
             try:
                 started_at = datetime.now().timestamp()
-                result = await litellm_list_models(
+                # 使用 asyncio.wait_for 限制远程调用超时时间为 10 秒，避免长时间阻塞
+                result_task = litellm_list_models(
                     provider=provider_id,
                     api_key=actual_api_key,
                     api_base=base_url,
                     request_id=request_id,
                 )
+                result = await asyncio.wait_for(result_task, timeout=10.0)
                 duration_ms = int((datetime.now().timestamp() - started_at) * 1000)
                 if result.get("ok"):
                     record_model_service_metric(provider_id, "models", "success", duration_ms)
@@ -1248,6 +1305,15 @@ async def get_models_by_provider(
                                         "selected": model_name in selected_models
                                     })
                     source = "remote"
+                    # 缓存成功的远程模型列表，下次请求直接命中（TTL 5 分钟）
+                    _provider_models_cache[cache_key] = (datetime.now().timestamp(), {
+                        "success": True,
+                        "provider": provider_id,
+                        "models": remote_models,
+                        "selected_models": selected_models,
+                        "source": source,
+                        "error": None
+                    })
                 else:
                     record_model_service_metric(provider_id, "models", "error", duration_ms)
                     error_detail = result.get("error", {})
@@ -1257,6 +1323,13 @@ async def get_models_by_provider(
                     )
             except RuntimeError:
                 raise
+            except asyncio.TimeoutError:
+                # 远程调用超时，记录日志后回退到本地模型列表
+                logger.bind(
+                    event="provider_models_fetch_timeout",
+                    module="billing",
+                    provider=provider_id,
+                ).warning(f"提供商 {provider_id} 模型列表拉取超时（10s），回退到本地数据")
             except Exception as fetch_exc:
                 duration_ms = 0
                 record_model_service_metric(provider_id, "models", "error", duration_ms)
@@ -1266,7 +1339,8 @@ async def get_models_by_provider(
                     error_type=type(fetch_exc).__name__,
                     provider=provider_id,
                 ).opt(exception=True).error(f"远程模型列表拉取失败: {fetch_exc}")
-                raise fetch_exc
+                # 不重新抛出异常，改为回退到本地模型列表，避免设置页加载阻塞
+                logger.warning(f"提供商 {provider_id} 远程模型拉取失败，回退到本地数据")
 
         if remote_models:
             return {
