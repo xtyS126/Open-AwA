@@ -15,7 +15,7 @@ import { promptsAPI, conversationAPI, ConversationRecordItem, ConversationCollec
 import { billingAPI, ModelPricing, RetentionConfig } from '@/features/billing/billingApi'
 import { modelsAPI, ModelConfiguration, ModelProvider, ProviderDetailResponse, ProviderModel, ProviderModelsResponse, ModelCapabilitiesResponse, OllamaModel, ProviderConnectionStatus } from '@/features/settings/modelsApi'
 import type { ModelEditParams } from '@/features/settings/components/ModelParameterEditor'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useGlobalModelSelection } from './hooks/useGlobalModelSelection'
 import type { ModelOption } from '@/features/chat/store/chatStore'
 import { useNotification } from '@/shared/hooks/useNotification'
 import { appLogger } from '@/shared/utils/logger'
@@ -269,8 +269,8 @@ function SettingsPage() {
   const [cleanupDays, setCleanupDays] = useState(30)
   const [cleaningRecords, setCleaningRecords] = useState(false)
 
-  // 全局模型选择状态（来自 chatStore）
-  const { selectedModel: globalSelectedModel, setSelectedModel: setGlobalSelectedModel, modelOptions, setModelOptions, modelLoading, setModelLoading, modelError, setModelError, outputMode, setOutputMode } = useChatStore()
+  // 全局模型选择状态（通过轻量 hook 从 chatStore 精确提取，避免打包整个 chatStore）
+  const { selectedModel: globalSelectedModel, setSelectedModel: setGlobalSelectedModel, modelOptions, setModelOptions, modelLoading, setModelLoading, modelError, setModelError, outputMode, setOutputMode } = useGlobalModelSelection()
 
   const configModelOptions = useMemo<ConfigModelOption[]>(() => {
     return configurations.flatMap((configuration) => {
