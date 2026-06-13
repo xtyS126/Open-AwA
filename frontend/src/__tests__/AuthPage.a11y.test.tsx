@@ -33,12 +33,11 @@ describe('LoginPage 无障碍 (axe-core)', () => {
 
   it('表单输入区域有正确的 label 关联', () => {
     const { getByLabelText } = renderLogin()
-    expect(getByLabelText('用户名')).toBeInTheDocument()
-    expect(getByLabelText('密码')).toBeInTheDocument()
+    expect(getByLabelText('访问密钥')).toBeInTheDocument()
   })
 
   it('提交按钮可被辅助技术识别', () => {
     const { getByRole } = renderLogin()
-    expect(getByRole('button', { name: /登录/ })).toBeInTheDocument()
+    expect(getByRole('button', { name: /连接/ })).toBeInTheDocument()
   })
 })
