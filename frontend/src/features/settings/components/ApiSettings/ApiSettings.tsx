@@ -20,6 +20,7 @@ interface ApiProviderFormState {
   api_key: string
   has_api_key: boolean
   selected_models: string[]
+  masked_api_key: string | null
 }
 
 interface ApiSettingsProps {
@@ -53,6 +54,10 @@ interface ApiSettingsProps {
   saving: boolean
   /** 是否正在删除供应商 */
   deletingProvider: boolean
+  /** 是否显示 API Key */
+  showApiKey: boolean
+  /** 切换 API Key 显示/隐藏 */
+  onToggleShowApiKey: () => void
   /** 所有模型配置 */
   configurations: ModelConfiguration[]
   /** 展开的模型配置卡片集合 */

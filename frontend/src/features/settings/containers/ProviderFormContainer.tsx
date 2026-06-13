@@ -35,6 +35,7 @@ export interface ApiProviderFormState {
   api_key: string
   has_api_key: boolean
   selected_models: string[]
+  masked_api_key: string | null
 }
 
 /** 添加供应商表单状态接口 */
@@ -79,6 +80,10 @@ export interface UseProviderFormReturn {
   ollamaError: string | null
   saving: boolean
   deletingProvider: boolean
+
+  // API Key 显示/隐藏状态
+  showApiKey: boolean
+  setShowApiKey: React.Dispatch<React.SetStateAction<boolean>>
 
   // 模型导入/删除状态
   selectedForDeletion: string[]
@@ -157,8 +162,10 @@ export function useProviderForm({
     api_endpoint: '',
     api_key: '',
     has_api_key: false,
-    selected_models: []
+    selected_models: [],
+    masked_api_key: null
   })
+  const [showApiKey, setShowApiKey] = useState(false)
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [loadingApiProviders, setLoadingApiProviders] = useState(false)
   const [loadingProviderDetail, setLoadingProviderDetail] = useState(false)
@@ -295,6 +302,17 @@ export function useProviderForm({
 
       const api_endpoint = (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string
 
+      // 获取脱敏 API Key
+      let maskedApiKey: string | null = null
+      if (providerData.has_api_key) {
+        try {
+          const maskedRes = await modelsAPI.getMaskedApiKey(providerId)
+          maskedApiKey = maskedRes.data.masked_api_key
+        } catch {
+          // 获取失败不影响主流程
+        }
+      }
+
       setProviderForm({
         config_id: config.id,
         provider: config.provider || providerId,
@@ -303,9 +321,11 @@ export function useProviderForm({
         api_endpoint,
         api_key: '',
         has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
-        selected_models: selectedModels
+        selected_models: selectedModels,
+        masked_api_key: maskedApiKey
       })
       setSelectedProviderId(providerId)
+      setShowApiKey(false)
 
       await fetchProviderModels(providerId, selectedModels, false, { api_endpoint })
     } catch {
@@ -337,7 +357,8 @@ export function useProviderForm({
           api_endpoint: '',
           api_key: '',
           has_api_key: false,
-          selected_models: []
+          selected_models: [],
+          masked_api_key: null
         })
         return
       }
@@ -658,6 +679,25 @@ export function useProviderForm({
       }
       invalidateRemoteModelCache(providerForm.provider)
       showNotification({ type: 'success', text: '供应商配置保存成功' })
+      
+      // 如果更新了 API Key，刷新脱敏显示
+      if (nextApiKey) {
+        try {
+          const maskedRes = await modelsAPI.getMaskedApiKey(providerForm.provider)
+          setProviderForm(prev => ({
+            ...prev,
+            api_endpoint: normalizedBaseUrl,
+            has_api_key: true,
+            masked_api_key: maskedRes.data.masked_api_key
+          }))
+        } catch {
+          setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl, has_api_key: true }))
+        }
+      } else {
+        setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))
+      }
+      
+      setShowApiKey(false)
       await loadApiProvidersData(providerForm.provider)
     } catch (error: unknown) {
       // 处理 409 冲突：配置已存在时尝试更新
@@ -793,6 +833,10 @@ export function useProviderForm({
     ollamaError,
     saving,
     deletingProvider,
+
+    // API Key 显示/隐藏状态
+    showApiKey,
+    setShowApiKey,
 
     // 模型导入/删除状态
     selectedForDeletion,

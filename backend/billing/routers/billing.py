@@ -1191,6 +1191,47 @@ async def get_provider_credential(
     }
 
 
+@router.get("/credentials/{provider}/masked-key")
+async def get_provider_masked_api_key(
+    provider: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """获取指定 Provider 的脱敏 API Key，用于前端安全展示。"""
+    from config.security import decrypt_secret_value
+
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    cred = pricing_manager.get_provider_credential(provider_id)
+
+    # 未配置凭据或无 API Key 时返回空值
+    if not cred or not cred.api_key:
+        return {
+            "masked_api_key": None,
+            "has_api_key": False,
+        }
+
+    # 解密 API Key
+    decrypted_key = decrypt_secret_value(cred.api_key)
+    if not decrypted_key:
+        return {
+            "masked_api_key": None,
+            "has_api_key": False,
+        }
+
+    # 脱敏处理：长度小于 8 位全部用 * 替代，否则显示前4位和后4位
+    key_length = len(decrypted_key)
+    if key_length < 8:
+        masked_key = "*" * key_length
+    else:
+        masked_key = f"{decrypted_key[:4]}...{decrypted_key[-4:]}"
+
+    return {
+        "masked_api_key": masked_key,
+        "has_api_key": True,
+    }
+
+
 @router.put("/providers/{provider}/selected-models")
 async def update_provider_selected_models(
     provider: str,

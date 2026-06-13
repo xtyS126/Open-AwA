@@ -269,4 +269,8 @@ export const modelsAPI = {
 
   getProviderCredential: (provider: string) =>
     api.get(`/billing/credentials/${provider}`),
+
+  /** 获取脱敏的 API Key */
+  getMaskedApiKey: (provider: string) =>
+    api.get<{ masked_api_key: string | null; has_api_key: boolean }>(`/billing/credentials/${provider}/masked-key`),
 }
