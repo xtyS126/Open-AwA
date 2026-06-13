@@ -1282,6 +1282,15 @@ class PricingManager:
         self.db.commit()
         self.db.refresh(cred)
 
+        # 更新所有该 provider 的 ModelConfiguration 的 credential_id 关联
+        # 确保序列化时能正确读取 has_api_key 状态
+        self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider,
+        ).update({
+            ModelConfiguration.credential_id: cred.id
+        }, synchronize_session='fetch')
+        self.db.commit()
+
         # 确保存在活跃的 ModelConfiguration（被 delete 后自动恢复）
         active_config = self.db.query(ModelConfiguration).filter(
             ModelConfiguration.provider == provider,
@@ -1291,16 +1300,26 @@ class PricingManager:
             default_models = self._get_default_models_for_provider(provider)
             all_model_names = [m["model"] for m in default_models]
             for model_entry in default_models:
-                mc = ModelConfiguration(
-                    provider=provider,
-                    model=model_entry["model"],
-                    display_name=model_entry.get("display_name", model_entry["model"]),
-                    is_active=True,
-                    is_default=model_entry.get("is_default", False),
-                    selected_models=json.dumps(all_model_names),
-                    credential_id=cred.id if cred else None,
-                )
-                self.db.add(mc)
+                # 检查该模型是否已存在（无论 is_active 状态）
+                existing_mc = self.db.query(ModelConfiguration).filter(
+                    ModelConfiguration.provider == provider,
+                    ModelConfiguration.model == model_entry["model"],
+                ).first()
+                if existing_mc:
+                    # 已存在则重新激活
+                    existing_mc.is_active = True
+                    existing_mc.credential_id = cred.id if cred else None
+                else:
+                    mc = ModelConfiguration(
+                        provider=provider,
+                        model=model_entry["model"],
+                        display_name=model_entry.get("display_name", model_entry["model"]),
+                        is_active=True,
+                        is_default=model_entry.get("is_default", False),
+                        selected_models=json.dumps(all_model_names),
+                        credential_id=cred.id if cred else None,
+                    )
+                    self.db.add(mc)
             if default_models:
                 self.db.commit()
                 logger.info(f"已为 {provider} 恢复默认模型配置 ({len(default_models)} 个模型)")

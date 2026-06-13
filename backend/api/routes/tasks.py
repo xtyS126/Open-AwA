@@ -129,7 +129,7 @@ async def execute_task(
 
         # Webhook 回调（如果配置了）
         if body.webhook_url:
-            _fire_webhook(
+            await _fire_webhook(
                 webhook_url=body.webhook_url,
                 request_id=request_id,
                 session_id=session_id,
@@ -168,13 +168,14 @@ async def execute_task(
         )
 
 
-def _validate_webhook_url(url: str) -> str:
+async def _validate_webhook_url(url: str) -> str:
     """
     校验 Webhook URL 安全性。
     仅允许 HTTPS，拒绝内网地址和云元数据端点，防止 SSRF。
     """
     from urllib.parse import urlparse
     import ipaddress
+    import socket as _socket_mod
 
     if not isinstance(url, str) or not url.strip():
         raise ValueError("Webhook URL 不能为空")
@@ -199,10 +200,11 @@ def _validate_webhook_url(url: str) -> str:
     if host in _BLOCKED_HOSTNAMES:
         raise ValueError(f"Webhook 目标主机被禁止: {host}")
 
-    # 解析 IP 并拒绝内网/链路本地地址
-    import socket as _socket_mod
+    # 解析 IP 并拒绝内网/链路本地地址（在线程池中执行，避免阻塞事件循环）
     try:
-        addrs = _socket_mod.getaddrinfo(host, 443, proto=_socket_mod.IPPROTO_TCP)
+        addrs = await asyncio.to_thread(
+            _socket_mod.getaddrinfo, host, 443, proto=_socket_mod.IPPROTO_TCP
+        )
     except _socket_mod.gaierror:
         raise ValueError(f"Webhook 目标主机无法解析: {host}")
 
@@ -224,7 +226,7 @@ def _validate_webhook_url(url: str) -> str:
     return url
 
 
-def _fire_webhook(
+async def _fire_webhook(
     webhook_url: str,
     request_id: str,
     session_id: str,
@@ -234,11 +236,10 @@ def _fire_webhook(
 ) -> None:
     """异步触发 Webhook 回调（fire-and-forget），URL 经过安全校验。"""
     import json
-    import asyncio as _asyncio
 
-    # 安全校验 URL（同步执行，失败不阻塞主流程）
+    # 安全校验 URL（异步执行，失败不阻塞主流程）
     try:
-        webhook_url = _validate_webhook_url(webhook_url)
+        webhook_url = await _validate_webhook_url(webhook_url)
     except ValueError as exc:
         logger.bind(
             event="task_webhook_url_rejected",
@@ -276,6 +277,6 @@ def _fire_webhook(
             ).warning("Webhook 回调失败")
 
     try:
-        _asyncio.ensure_future(_post())
+        await _post()
     except Exception:
         pass

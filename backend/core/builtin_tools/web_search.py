@@ -95,9 +95,9 @@ class WebSearchSkill:
 
         results = []
         try:
-            loop = asyncio.get_event_loop()
+            # _http_get 现在是异步函数，直接 await 调用
             raw_html = await asyncio.wait_for(
-                loop.run_in_executor(None, self._http_get, "html.duckduckgo.com", url_path),
+                self._http_get("html.duckduckgo.com", url_path),
                 timeout=REQUEST_TIMEOUT
             )
 
@@ -112,8 +112,8 @@ class WebSearchSkill:
 
         return results
 
-    def _http_get(self, host: str, path: str) -> str:
-        """同步HTTP GET请求，包含SSRF防护。"""
+    async def _http_get(self, host: str, path: str) -> str:
+        """异步HTTP GET请求，包含SSRF防护。"""
         import http.client
         import ssl
         import socket
@@ -128,7 +128,8 @@ class WebSearchSkill:
             raise ValueError("不允许访问本地地址")
 
         try:
-            resolved_ips = socket.getaddrinfo(host, None)
+            # 在线程池中执行 DNS 解析，避免阻塞事件循环
+            resolved_ips = await asyncio.to_thread(socket.getaddrinfo, host, None)
             for family, socktype, proto, canonname, sockaddr in resolved_ips:
                 ip_str = sockaddr[0]
                 ip_obj = ipaddress.ip_address(ip_str)

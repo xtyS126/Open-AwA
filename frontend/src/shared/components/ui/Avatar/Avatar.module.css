@@ -1,0 +1,29 @@
+/* Avatar 头像组件样式 */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  object-fit: cover;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+/* 尺寸 */
+.sm { width: 24px; height: 24px; font-size: var(--text-xs); }
+.md { width: 32px; height: 32px; font-size: var(--text-sm); }
+.lg { width: 40px; height: 40px; font-size: var(--text-base); }
+
+/* 形状 */
+.circle { border-radius: 50%; }
+.rounded { border-radius: var(--radius-md); }
+
+/* 文字回退样式 */
+.fallback {
+  background-color: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  font-weight: var(--font-semibold);
+  line-height: 1;
+  user-select: none;
+}

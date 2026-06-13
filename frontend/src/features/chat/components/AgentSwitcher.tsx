@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Eye, Zap, Wrench } from 'lucide-react'
 import { subagentsApi, AgentType } from '@/shared/api/subagentsApi'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './AgentSwitcher.module.css'
 
 interface AgentSwitcherProps {
@@ -40,7 +41,9 @@ const AgentSwitcher: React.FC<AgentSwitcherProps> = ({ currentAgent, onAgentChan
       if (!cancelled && data.agents?.length > 0) {
         setAgents(data.agents)
       }
-    }).catch(() => {})
+    }).catch((error) => {
+      appLogger.error({ event: 'agent_list_failed', module: 'chat', message: '加载Agent列表失败', extra: { error: error instanceof Error ? error.message : String(error) } })
+    })
     return () => { cancelled = true }
   }, [])
 

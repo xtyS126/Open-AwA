@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { pluginsAPI, PluginLogEntry } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './PluginDebugPanel.module.css'
 
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -33,8 +34,9 @@ function PluginDebugPanel({ pluginId, pluginName }: Props) {
     try {
       const res = await pluginsAPI.getLogs(pluginId, filterLevel || undefined, 200, 0)
       setEntries(res.data.entries)
-    } catch {
+    } catch (error) {
       // 静默失败，不中断轮询
+      appLogger.warning({ event: 'plugin_logs_fetch_failed', module: 'plugins', message: '获取插件日志失败', extra: { pluginId, error: error instanceof Error ? error.message : String(error) } })
     }
   }, [pluginId, filterLevel])
 
@@ -71,8 +73,8 @@ function PluginDebugPanel({ pluginId, pluginName }: Props) {
     try {
       await pluginsAPI.setLogLevel(pluginId, level)
       setActiveLevel(level)
-    } catch {
-      // 静默失败
+    } catch (error) {
+      appLogger.error({ event: 'plugin_log_level_set_failed', module: 'plugins', message: '设置插件日志级别失败', extra: { pluginId, level, error: error instanceof Error ? error.message : String(error) } })
     } finally {
       setSettingLevel(false)
     }

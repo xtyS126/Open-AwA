@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import socket
 from typing import Any, Dict, List, Optional, Tuple
@@ -46,14 +47,16 @@ def _parse_host_to_ip(host: str) -> Optional[ipaddress.IPv4Address | ipaddress.I
         return None
 
 
-def _resolve_host_to_ips(host: str) -> List[str]:
+async def _resolve_host_to_ips(host: str) -> List[str]:
     """通过 DNS 解析主机名到 IP 地址列表。
 
     返回所有解析到的 IP 地址字符串，解析失败返回空列表。
-    使用 socket.getaddrinfo 获取所有地址（IPv4 + IPv6）。
+    使用 asyncio.to_thread 包装 socket.getaddrinfo，避免阻塞事件循环。
     """
     try:
-        addrs = socket.getaddrinfo(host, None, 0, socket.SOCK_STREAM)
+        addrs = await asyncio.to_thread(
+            socket.getaddrinfo, host, None, 0, socket.SOCK_STREAM
+        )
         # 去重，保留解析顺序
         seen: set[str] = set()
         result: list[str] = []
@@ -106,7 +109,7 @@ class NetworkPolicyChecker:
             f"allowlist={len(self._allowlist)} entries"
         )
 
-    def check(self, url_or_host: str) -> Tuple[bool, str]:
+    async def check(self, url_or_host: str) -> Tuple[bool, str]:
         """检查网络目标是否允许。
 
         Args:
@@ -149,7 +152,7 @@ class NetworkPolicyChecker:
 
         # 对非 IP 地址进行 DNS 解析，防止 DNS rebinding 绕过
         if direct_ip is None:
-            resolved_ips = _resolve_host_to_ips(host)
+            resolved_ips = await _resolve_host_to_ips(host)
             if resolved_ips:
                 for ip_str in resolved_ips:
                     ip_obj = _parse_host_to_ip(ip_str)
@@ -213,7 +216,7 @@ class NetworkPolicyChecker:
 
         return True, ""
 
-    def check_all(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def check_all(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """一站式网络策略检查。
 
         从参数中提取 url / host / endpoint 字段进行检查。
@@ -233,7 +236,7 @@ class NetworkPolicyChecker:
         if not url:
             return None
 
-        allowed, reason = self.check(url)
+        allowed, reason = await self.check(url)
         if not allowed:
             return {
                 "ok": False,

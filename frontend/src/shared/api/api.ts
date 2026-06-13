@@ -48,6 +48,74 @@ interface ChatStreamEvent {
   [key: string]: unknown
 }
 
+/**
+ * 解析 SSE 事件行并触发相应的回调。
+ * 用于处理流式响应中的 chunk 和 tail 数据。
+ *
+ * @param lines SSE 事件行数组
+ * @param onEvent 事件回调函数
+ * @param onError 错误回调函数
+ * @param context 日志上下文标识（'chunk' 或 'tail'）
+ */
+export function parseSSELines(
+  lines: string[],
+  onEvent?: (event: ChatStreamEvent) => void,
+  onError?: (error: Error) => void,
+  context: 'chunk' | 'tail' = 'chunk'
+): void {
+  let currentEventType = ''
+
+  for (const line of lines) {
+    // 空行重置事件类型
+    if (line.trim() === '') {
+      currentEventType = ''
+      continue
+    }
+
+    // 解析事件类型
+    if (line.startsWith('event: ')) {
+      currentEventType = line.slice(7).trim()
+      continue
+    }
+
+    // 解析数据行
+    if (line.startsWith('data: ')) {
+      const dataStr = line.slice(6)
+
+      // 完成标记，停止解析
+      if (dataStr === '[DONE]') {
+        break
+      }
+
+      try {
+        const data = JSON.parse(dataStr)
+
+        // reasoning 事件：提取推理内容
+        if (currentEventType === 'reasoning') {
+          onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
+        }
+        // chunk 类型：提取内容和推理内容
+        else if (data.type === 'chunk') {
+          onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
+        }
+        // error 类型：触发错误回调
+        else if (data.type === 'error') {
+          onError?.(new Error(data.error?.message || 'Stream error'))
+        }
+        // 其他有类型的事件：直接传递
+        else if (data?.type) {
+          onEvent?.(data)
+        }
+      } catch {
+        logStreamParseWarning(dataStr, context)
+      }
+
+      // 重置事件类型
+      currentEventType = ''
+    }
+  }
+}
+
 export const authAPI = {
   /** 使用用户名密码登录（兼容旧 JWT 路径，前端通常直接使用 API Key） */
   login: (username: string, password: string) => {
@@ -337,71 +405,15 @@ export const chatAPI = {
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
 
-          // 当前 SSE 事件类型，用于区分 reasoning 和普通 chunk
-          let currentEventType = ''
-          for (const line of lines) {
-            if (line.trim() === '') {
-              currentEventType = ''
-              continue
-            }
-            if (line.startsWith('event: ')) {
-              currentEventType = line.slice(7).trim()
-              continue
-            }
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6)
-              if (dataStr === '[DONE]') {
-                break
-              }
-              try {
-                const data = JSON.parse(dataStr)
-                if (currentEventType === 'reasoning') {
-                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
-                } else if (data.type === 'chunk') {
-                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
-                } else if (data.type === 'error') {
-                  onError?.(new Error(data.error?.message || 'Stream error'))
-                } else if (data?.type) {
-                  onEvent?.(data)
-                }
-              } catch {
-                logStreamParseWarning(dataStr, 'chunk')
-              }
-              currentEventType = ''
-            }
-          }
+          // 解析当前批次的 SSE 事件行
+          parseSSELines(lines, onEvent, onError, 'chunk')
         }
       }
 
+      // 处理缓冲区中剩余的 SSE 事件
       if (buffer.trim()) {
         const remainingLines = buffer.trim().split('\n')
-        let remainingEventType = ''
-        for (const line of remainingLines) {
-          if (line.startsWith('event: ')) {
-            remainingEventType = line.slice(7).trim()
-            continue
-          }
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6)
-            if (dataStr !== '[DONE]') {
-              try {
-                const data = JSON.parse(dataStr)
-                if (remainingEventType === 'reasoning') {
-                  onEvent?.({ type: 'chunk', content: '', reasoning_content: data.content || '' })
-                } else if (data.type === 'chunk') {
-                  onEvent?.({ type: 'chunk', content: data.content || '', reasoning_content: data.reasoning_content || '' })
-                } else if (data.type === 'error') {
-                  onError?.(new Error(data.error?.message || 'Stream error'))
-                } else if (data?.type) {
-                  onEvent?.(data)
-                }
-              } catch {
-                logStreamParseWarning(dataStr, 'tail')
-              }
-            }
-            remainingEventType = ''
-          }
-        }
+        parseSSELines(remainingLines, onEvent, onError, 'tail')
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {

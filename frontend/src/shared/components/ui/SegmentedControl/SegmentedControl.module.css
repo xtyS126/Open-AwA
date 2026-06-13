@@ -1,0 +1,59 @@
+/* SegmentedControl 分段控制器样式 */
+
+.container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background-color: var(--color-bg-tertiary);
+  border-radius: 10px;
+  padding: 3px;
+  width: 100%;
+}
+
+/* 滑动指示器 */
+.indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-ease-in-out);
+  pointer-events: none;
+}
+
+/* 暗色主题下指示器背景 */
+.dark .indicator {
+  background-color: var(--color-bg-secondary);
+}
+
+/* 选项按钮 */
+.option {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: 8px;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.option:hover:not(.active) {
+  color: var(--color-text);
+}
+
+/* 选中态 */
+.active {
+  color: var(--color-text);
+}

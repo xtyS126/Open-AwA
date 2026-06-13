@@ -73,7 +73,7 @@ export const MessageList = memo(function MessageList({
   /* 空状态 */
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className={styles['chat-messages']}>
+      <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表">
         <div className={styles['chat-empty']}>
           <p>{t('chat.empty')}</p>
         </div>
@@ -95,7 +95,7 @@ export const MessageList = memo(function MessageList({
   /* 消息超过阈值使用虚拟滚动，否则普通渲染 */
   if (messages.length >= VIRTUAL_THRESHOLD) {
     return (
-      <div className={styles['chat-messages']}>
+      <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表">
         <Virtuoso
           ref={virtuosoRef}
           data={messages}
@@ -114,7 +114,7 @@ export const MessageList = memo(function MessageList({
 
   /* 普通渲染（消息较少时避免 Virtuoso 的开销） */
   return (
-    <div className={styles['chat-messages']}>
+    <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表">
       {messages.map((message, index) => (
         <ChatMessage
           key={message.id}

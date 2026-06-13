@@ -31,8 +31,8 @@ class AutonomousModeManager:
         if manager.is_autonomous:
             manager.initialize()
 
-        # 在 executor 中拦截检查
-        denial = manager.check_all("execute_command", {"command": "ls"})
+        # 在 executor 中拦截检查（异步调用）
+        denial = await manager.check_all("execute_command", {"command": "ls"})
         if denial:
             return denial  # 非阻塞，立即返回
     """
@@ -157,7 +157,7 @@ class AutonomousModeManager:
             return
         await self._auditor.record(session_id, action, params, decision, **kwargs)
 
-    def check_all(self, action: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def check_all(self, action: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """一站式安全检查（四层洋葱模型）。
 
         按顺序检查：硬底线 → 工作区边界 → 网络策略 → 资源限制
@@ -186,9 +186,9 @@ class AutonomousModeManager:
             if denial:
                 return denial
 
-        # 第 3 层：网络策略
+        # 第 3 层：网络策略（现在是异步调用）
         if self._network:
-            denial = self._network.check_all(params)
+            denial = await self._network.check_all(params)
             if denial:
                 return denial
 

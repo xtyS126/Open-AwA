@@ -14,6 +14,7 @@ from core.coding.file_tree import FileTreeService
 from core.coding.git_integration import GitIntegration
 from core.coding.ast_search import ASTSearchService
 from core.coding.diff_engine import DiffEngine
+from db.models import User
 
 router = APIRouter(prefix="/api/coding", tags=["coding"])
 
@@ -373,20 +374,20 @@ _cc_mode_sessions: dict[str, bool] = {}
 
 
 @router.post("/cc-mode")
-def toggle_cc_mode(body: CCModeRequest, current_user=Depends(get_current_user)):
+def toggle_cc_mode(body: CCModeRequest, current_user: User = Depends(get_current_user)):
     """
     启用或禁用 Claude Code 兼容模式。
     CC 模式下会注入 Coding 专用系统提示和工具定义。
     """
-    user_id = str(getattr(current_user, "id", "default"))
+    user_id = str(current_user.id)
     _cc_mode_sessions[user_id] = body.enabled
     return {"success": True, "cc_mode_enabled": body.enabled}
 
 
 @router.get("/cc-mode")
-def get_cc_mode(current_user=Depends(get_current_user)):
+def get_cc_mode(current_user: User = Depends(get_current_user)):
     """
     获取当前用户的 CC 模式状态。
     """
-    user_id = str(getattr(current_user, "id", "default"))
+    user_id = str(current_user.id)
     return {"cc_mode_enabled": _cc_mode_sessions.get(user_id, False)}

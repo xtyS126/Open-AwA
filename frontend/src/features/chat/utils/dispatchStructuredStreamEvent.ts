@@ -1,5 +1,5 @@
 import type { TodoItem } from '@/features/chat/components/TodoPanel'
-import type { AssistantExecutionMeta, AssistantMessageSegment } from '@/features/chat/types'
+import type { AssistantExecutionMeta, AssistantMessageSegment, ToolEventMeta } from '@/features/chat/types'
 import {
   applySubagentMessage,
   applySubagentStart,
@@ -19,6 +19,30 @@ import {
   applyToolPatchToSegments,
   applyUsageToSegments,
 } from '@/features/chat/utils/assistantSegments'
+
+/** 工具函数：安全地将未知值转为 Record 类型 */
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return undefined
+}
+
+/** 类型守卫：判断事件是否为指定 type */
+function isEventType(event: StructuredStreamEvent, type: string): boolean {
+  return event.type === type
+}
+
+/** 安全获取事件字符串字段 */
+function getEventString(event: StructuredStreamEvent, key: string): string | undefined {
+  const value = (event as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+/** 安全获取事件未知字段 */
+function getEventValue(event: StructuredStreamEvent, key: string): unknown {
+  return (event as Record<string, unknown>)[key]
+}
 
 type StructuredStreamEvent = Record<string, unknown> & { type?: string }
 
@@ -49,7 +73,7 @@ interface DispatchStructuredStreamEventOptions {
 function findToolEventInSegments(
   segments: AssistantMessageSegment[] | undefined,
   toolId: string,
-) {
+): ToolEventMeta | undefined {
   return (segments || [])
     .flatMap((segment) => ('toolEvents' in segment && Array.isArray(segment.toolEvents) ? segment.toolEvents : []))
     .find((tool) => tool.id === toolId)
@@ -80,26 +104,28 @@ export function dispatchStructuredStreamEvent(
     getNow = Date.now,
   } = options
 
-  if (event.type === 'plan' || event.type === 'result') {
-    const nextMeta = buildExecutionMetaFromPayload(event)
+  if (isEventType(event, 'plan') || isEventType(event, 'result')) {
+    const nextMeta = buildExecutionMetaFromPayload(event as Record<string, unknown>)
     updateAssistantMeta(assistantMessageId, (current) => {
       const merged = mergeExecutionMeta(current, nextMeta)
-      if (event.type === 'result' && event.result && typeof event.result === 'object') {
-        const resultData = event.result as Record<string, unknown>
-        const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
-        const output = resultData.output !== undefined ? resultData.output : resultData
-        if (toolId && output) {
-          const toolEvents = merged.toolEvents.map((tool) =>
-            tool.id === toolId
-              ? {
-                  ...tool,
-                  output,
-                  completedAt: tool.completedAt || getNow(),
-                  status: tool.status === 'running' ? 'completed' : tool.status,
-                }
-              : tool,
-          )
-          return { ...merged, toolEvents }
+      if (isEventType(event, 'result')) {
+        const resultData = toRecord(getEventValue(event, 'result'))
+        if (resultData) {
+          const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
+          const output = resultData.output !== undefined ? resultData.output : resultData
+          if (toolId && output) {
+            const toolEvents = merged.toolEvents.map((tool) =>
+              tool.id === toolId
+                ? {
+                    ...tool,
+                    output,
+                    completedAt: tool.completedAt || getNow(),
+                    status: tool.status === 'running' ? 'completed' : tool.status,
+                  }
+                : tool,
+            )
+            return { ...merged, toolEvents }
+          }
         }
       }
       return merged
@@ -119,58 +145,64 @@ export function dispatchStructuredStreamEvent(
       })
     }
 
-    if (event.type === 'result' && event.result && typeof event.result === 'object') {
-      const resultData = event.result as Record<string, unknown>
-      const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
-      const output = resultData.output !== undefined ? resultData.output : resultData
-      if (toolId && output !== undefined) {
-        updateAssistantSegments(assistantMessageId, (segments) => applyToolPatchToSegments(segments, toolId, {
-          output,
-          detail: summarizeExecutionResult(output),
-          status: 'completed',
-          completedAt: getNow(),
-        }))
+    if (isEventType(event, 'result')) {
+      const resultData = toRecord(getEventValue(event, 'result'))
+      if (resultData) {
+        const toolId = typeof resultData.tool_id === 'string' ? resultData.tool_id : undefined
+        const output = resultData.output !== undefined ? resultData.output : resultData
+        if (toolId && output !== undefined) {
+          updateAssistantSegments(assistantMessageId, (segments) => applyToolPatchToSegments(segments, toolId, {
+            output,
+            detail: summarizeExecutionResult(output),
+            status: 'completed',
+            completedAt: getNow(),
+          }))
+        }
       }
     }
     return
   }
 
-  if (event.type === 'task' && event.task && typeof event.task === 'object') {
-    const taskData = event.task as Record<string, unknown>
-    updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskData))
-    const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
-    if (stepMeta) {
-      updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+  if (isEventType(event, 'task')) {
+    const taskData = toRecord(getEventValue(event, 'task'))
+    if (taskData) {
+      updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskData))
+      const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
+      if (stepMeta) {
+        updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+      }
     }
     return
   }
 
-  if (event.type === 'tool' && event.tool && typeof event.tool === 'object') {
-    const toolData = event.tool as Record<string, unknown>
-    const normalizedToolData = {
-      ...toolData,
-      sequence: toolData.sequence ?? ((messageMeta[assistantMessageId]?.toolEvents.length || 0) + 1),
-      input: toolData.input || toolData.arguments || toolData.args,
-    }
-    updateAssistantMeta(assistantMessageId, (current) => {
-      const nextSequence = current.toolEvents.length + 1
-      return applyToolUpdate(current, {
-        ...normalizedToolData,
-        sequence: toolData.sequence ?? nextSequence,
+  if (isEventType(event, 'tool')) {
+    const toolData = toRecord(getEventValue(event, 'tool'))
+    if (toolData) {
+      const normalizedToolData = {
+        ...toolData,
+        sequence: toolData.sequence ?? ((messageMeta[assistantMessageId]?.toolEvents.length || 0) + 1),
+        input: toolData.input || toolData.arguments || toolData.args,
+      }
+      updateAssistantMeta(assistantMessageId, (current) => {
+        const nextSequence = current.toolEvents.length + 1
+        return applyToolUpdate(current, {
+          ...normalizedToolData,
+          sequence: toolData.sequence ?? nextSequence,
+        })
       })
-    })
-    const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), normalizedToolData).toolEvents[0]
-    if (toolMeta) {
-      updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+      const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), normalizedToolData).toolEvents[0]
+      if (toolMeta) {
+        updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+      }
     }
     return
   }
 
-  if (event.type === 'subagent_start' && event.agent_id) {
-    const agentId = event.agent_id as string
-    const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-    const runMode = typeof event.run_mode === 'string' ? event.run_mode : undefined
-    const description = typeof event.description === 'string' ? event.description : '子代理已启动'
+  if (isEventType(event, 'subagent_start') && typeof getEventValue(event, 'agent_id') === 'string') {
+    const agentId = getEventString(event, 'agent_id')!
+    const agentType = getEventString(event, 'agent_type')
+    const runMode = getEventString(event, 'run_mode')
+    const description = getEventString(event, 'description') || '子代理已启动'
     const toolMeta = applySubagentStart(createEmptyExecutionMeta(), {
       agentId,
       agentType,
@@ -195,14 +227,14 @@ export function dispatchStructuredStreamEvent(
     return
   }
 
-  if (event.type === 'subagent_stop' && event.agent_id) {
-    const agentId = event.agent_id as string
-    const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-    const summary = typeof event.summary === 'string' ? event.summary : `状态: ${event.state}`
+  if (isEventType(event, 'subagent_stop') && typeof getEventValue(event, 'agent_id') === 'string') {
+    const agentId = getEventString(event, 'agent_id')!
+    const agentType = getEventString(event, 'agent_type')
+    const summary = getEventString(event, 'summary') || `状态: ${getEventValue(event, 'state')}`
     const stopPayload = {
       agentId,
       agentType,
-      state: typeof event.state === 'string' ? event.state : undefined,
+      state: getEventString(event, 'state'),
       summary,
     }
 
@@ -233,10 +265,10 @@ export function dispatchStructuredStreamEvent(
     return
   }
 
-  if (event.type === 'agent_message' && event.agent_id) {
-    const agentId = event.agent_id as string
-    const agentType = typeof event.agent_type === 'string' ? event.agent_type : undefined
-    const messageText = typeof event.message === 'string' ? event.message : '子代理消息'
+  if (isEventType(event, 'agent_message') && typeof getEventValue(event, 'agent_id') === 'string') {
+    const agentId = getEventString(event, 'agent_id')!
+    const agentType = getEventString(event, 'agent_type')
+    const messageText = getEventString(event, 'message') || '子代理消息'
 
     updateAssistantMeta(assistantMessageId, (current) => applySubagentMessage(current, {
       agentId,
@@ -262,38 +294,36 @@ export function dispatchStructuredStreamEvent(
     return
   }
 
-  if (event.type === 'task_created' && event.task) {
-    updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, {
-      ...(event.task as Record<string, unknown> || {}),
-      status: 'created',
-    } as Record<string, unknown>))
-    const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), {
-      ...(event.task as Record<string, unknown> || {}),
-      status: 'created',
-    }).steps[0]
+  if (isEventType(event, 'task_created') && getEventValue(event, 'task')) {
+    const taskRecord = toRecord(getEventValue(event, 'task'))
+    const taskPayload = taskRecord ? { ...taskRecord, status: 'created' } : { status: 'created' }
+    updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskPayload))
+    const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskPayload).steps[0]
     if (stepMeta) {
       updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
     }
     return
   }
 
-  if (event.type === 'task_updated' && event.task) {
-    const taskData = event.task as Record<string, unknown>
-    updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskData))
-    const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
-    if (stepMeta) {
-      updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+  if (isEventType(event, 'task_updated') && getEventValue(event, 'task')) {
+    const taskData = toRecord(getEventValue(event, 'task'))
+    if (taskData) {
+      updateAssistantMeta(assistantMessageId, (current) => applyTaskUpdate(current, taskData))
+      const stepMeta = applyTaskUpdate(createEmptyExecutionMeta(), taskData).steps[0]
+      if (stepMeta) {
+        updateAssistantSegments(assistantMessageId, (segments) => applyStepToSegments(segments, stepMeta))
+      }
     }
     return
   }
 
-  if (event.type === 'task_stopped' && event.task_id) {
+  if (isEventType(event, 'task_stopped') && typeof getEventValue(event, 'task_id') === 'string') {
     const toolPayload = {
-      id: event.task_id as string,
+      id: getEventString(event, 'task_id')!,
       kind: 'task',
       name: '任务已停止',
       status: 'completed',
-      detail: typeof event.summary === 'string' ? event.summary : '任务已停止',
+      detail: getEventString(event, 'summary') || '任务已停止',
     }
     updateAssistantMeta(assistantMessageId, (current) => applyToolUpdate(current, toolPayload))
     const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
@@ -303,25 +333,27 @@ export function dispatchStructuredStreamEvent(
     return
   }
 
-  if (event.type === 'team_event' && event.team && typeof event.team === 'object') {
-    const team = event.team as Record<string, unknown>
-    const toolPayload = {
-      id: team.team_id || `team_${getNow()}`,
-      kind: 'task',
-      name: `团队: ${team.name || '未命名'}`,
-      status: team.ok === false ? 'failed' : 'running',
-      detail: typeof team.state === 'string' ? `团队状态: ${team.state}` : '团队操作已完成',
-    }
-    updateAssistantMeta(assistantMessageId, (current) => applyToolUpdate(current, toolPayload))
-    const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
-    if (toolMeta) {
-      updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+  if (isEventType(event, 'team_event')) {
+    const team = toRecord(getEventValue(event, 'team'))
+    if (team) {
+      const toolPayload = {
+        id: typeof team.team_id === 'string' ? team.team_id : `team_${getNow()}`,
+        kind: 'task',
+        name: `团队: ${typeof team.name === 'string' ? team.name : '未命名'}`,
+        status: team.ok === false ? 'failed' : 'running',
+        detail: typeof team.state === 'string' ? `团队状态: ${team.state}` : '团队操作已完成',
+      }
+      updateAssistantMeta(assistantMessageId, (current) => applyToolUpdate(current, toolPayload))
+      const toolMeta = applyToolUpdate(createEmptyExecutionMeta(), toolPayload).toolEvents[0]
+      if (toolMeta) {
+        updateAssistantSegments(assistantMessageId, (segments) => applyToolEventToSegments(segments, toolMeta))
+      }
     }
     return
   }
 
-  if (event.type === 'usage' && event.usage) {
-    const usage = normalizeUsage(event.usage)
+  if (isEventType(event, 'usage') && getEventValue(event, 'usage')) {
+    const usage = normalizeUsage(getEventValue(event, 'usage'))
     updateAssistantMeta(assistantMessageId, (current) => ({
       ...current,
       usage: usage || current.usage,
@@ -337,9 +369,9 @@ export function dispatchStructuredStreamEvent(
     return
   }
 
-  if (event.type === 'notification') {
-    const title = typeof event.title === 'string' ? event.title : ''
-    const body = typeof event.body === 'string' ? event.body : ''
+  if (isEventType(event, 'notification')) {
+    const title = getEventString(event, 'title') || ''
+    const body = getEventString(event, 'body') || ''
     const message = body || title
     if (message) {
       addToast(message, 'info')
@@ -347,9 +379,10 @@ export function dispatchStructuredStreamEvent(
     return
   }
 
-  if (event.type === 'todo_update') {
-    const todos = Array.isArray(event.todos) ? (event.todos as TodoItem[]) : []
-    const summary = typeof event.summary === 'string' ? event.summary : ''
+  if (isEventType(event, 'todo_update')) {
+    const todosValue = getEventValue(event, 'todos')
+    const todos = Array.isArray(todosValue) ? (todosValue as TodoItem[]) : []
+    const summary = getEventString(event, 'summary') || ''
     setTodoItems(todos)
     setTodoSummary(summary)
   }

@@ -35,6 +35,13 @@
   border: none;
   border-radius: var(--radius-lg);
   padding: 24px;
+  /* hover 动效过渡 */
+  transition: transform var(--transition-slow), box-shadow var(--transition-slow);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .stat-card h3 {
@@ -45,8 +52,8 @@
 }
 
 .stat-value {
-  font-size: 32px;
-  font-weight: 600;
+  font-size: 2rem;
+  font-weight: var(--font-bold);
   color: var(--color-text);
   margin: 0;
 }
@@ -82,7 +89,7 @@
 .resource-icon {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-primary-soft-bg);
   color: var(--color-primary);
   display: flex;
@@ -123,17 +130,29 @@
   margin-bottom: 24px;
 }
 
+/* 图表容器统一圆角、边框与背景 */
 .chart-card {
   background: var(--color-bg-secondary);
-  border: none;
+  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 20px;
 }
 
 .chart-card h3 {
   font-size: 16px;
   font-weight: 600;
   margin: 0 0 20px 0;
+}
+
+/* 图表 tooltip 毛玻璃效果 */
+.chart-tooltip {
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 8px 12px;
+  font-size: 12px;
 }
 
 /* 底部两列布局 */
@@ -146,9 +165,9 @@
 
 .top-intents-card {
   background: var(--color-bg-secondary);
-  border: none;
+  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 20px;
 }
 
 .top-intents-card h3 {

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from core.heartbeat.engine import get_heartbeat_registry, HeartbeatEngine
-from db.models import get_db
+from db.models import get_db, User
 
 router = APIRouter(prefix="/api/workspaces", tags=["Heartbeat"])
 
@@ -33,7 +33,7 @@ def _ensure_engine(workspace_id: str) -> HeartbeatEngine:
 @router.get("/{workspace_id}/heartbeat", summary="获取工作空间的心跳配置")
 async def get_heartbeat_config(
     workspace_id: str,
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取指定工作空间的心跳配置。"""
     engine = _ensure_engine(workspace_id)
@@ -44,7 +44,7 @@ async def get_heartbeat_config(
 async def update_heartbeat_config(
     workspace_id: str,
     body: Dict[str, Any],
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """更新指定工作空间的心跳配置。"""
     engine = _ensure_engine(workspace_id)
@@ -55,7 +55,7 @@ async def update_heartbeat_config(
 @router.post("/{workspace_id}/heartbeat/test", summary="手动触发一次心跳")
 async def test_heartbeat(
     workspace_id: str,
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """手动触发一次心跳检查（测试用）。"""
     engine = _ensure_engine(workspace_id)
@@ -68,7 +68,7 @@ async def test_heartbeat(
 async def update_heartbeat_file(
     workspace_id: str,
     body: Dict[str, Any],
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """更新工作空间的 HEARTBEAT.md 内容。"""
     engine = _ensure_engine(workspace_id)

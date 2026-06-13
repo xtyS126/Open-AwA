@@ -31,11 +31,12 @@
   - [4.3 共享模块 (shared/)](#43-共享模块-shared)
   - [4.4 状态管理](#44-状态管理)
   - [4.5 国际化 (i18n/)](#45-国际化-i18n)
-- [五、API 接口参考](#五api-接口参考)
-- [六、关键类与函数速查](#六关键类与函数速查)
-- [七、依赖关系](#七依赖关系)
-- [八、项目运行方式](#八项目运行方式)
-- [九、测试体系](#九测试体系)
+- [五、性能优化](#五性能优化-v151)
+- [六、API 接口参考](#六api-接口参考)
+- [七、关键类与函数速查](#七关键类与函数速查)
+- [八、依赖关系](#八依赖关系)
+- [九、项目运行方式](#九项目运行方式)
+- [十、测试体系](#十测试体系)
 
 ---
 
@@ -441,8 +442,8 @@ Open-AwA/
 | `behavior_logger.py` | `behavior_logger` | 行为埋点日志 |
 | `conversation_recorder.py` | `conversation_recorder` | 会话记录 |
 | `scheduled_task_manager.py` | `scheduled_task_manager` | 定时任务调度 |
-| `subagent.py` | | 子代理派生与服务 |
-| `context/compressor.py` | `ContextCompressor` | 对话上下文压缩 |
+| `subagent.py` | `SubAgentOrchestrator`, `AgentState`, `AgentGraph` | 子代理编排（LangGraph风格），支持节点/边/状态传递 |
+| `context/compressor.py` | `ContextCompressor` | 对话上下文压缩（v1.5.1: 按轮次截断而非逐条删除） |
 | `context/token_budget.py` | `TokenBudget` | Token 预算控制 |
 | `autonomous/manager.py` | `get_autonomous_manager()` | 自主运行模式管理 |
 | `builtin_tools/manager.py` | `builtin_tool_manager` | 内置工具管理 |
@@ -596,10 +597,10 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 | 文件 | 类/函数 | 说明 |
 |------|---------|------|
-| `tracker.py` | `UsageTracker` | 用量追踪 |
+| `tracker.py` | `UsageTracker` | 用量追踪（v1.5.1: SQL聚合替代循环查询） |
 | `calculator.py` | `CostCalculator` | 成本计算 |
 | `engine.py` | `BillingEngine` | 计费引擎 |
-| `pricing_manager.py` | `PricingManager` | 价格配置管理（DB读写、模型配置解析） |
+| `pricing_manager.py` | `PricingManager` | 价格配置管理（DB读写、模型配置解析）、v1.5.1: provider_catalog N+1 → 3 次批量查询 |
 | `budget_manager.py` | `BudgetManager` | 预算管理 |
 | `reporter.py` | `UsageReporter` | 报表生成 |
 | `models.py` | | 计费数据模型 |
@@ -622,8 +623,8 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 | 文件 | 说明 |
 |------|------|
-| `manager.py` | `MemoryManager`: 统一记忆管理入口 |
-| `experience_manager.py` | `ExperienceManager`: 经验记忆管理 |
+| `manager.py` | `MemoryManager`: 统一记忆管理入口（v1.5.1: 统计改用SQL聚合+GROUP BY） |
+| `experience_manager.py` | `ExperienceManager`: 经验记忆管理（v1.5.1: 归档limit防护） |
 | `working_memory.py` | 工作内存管理 |
 | `vector_store_manager.py` | ChromaDB 向量存储管理 |
 | `hybrid_search.py` | BM25 + 向量混合检索 |
@@ -820,6 +821,8 @@ Base
 | `MAX_ACTIVE_AGENT_TASKS` | 1000 | 活跃Agent任务容量上限 |
 | `RECORD_SEMAPHORE_SIZE` | 20 | 并发记录信号量 |
 | `SLOW_QUERY_THRESHOLD_MS` | 500 | 慢查询阈值（毫秒） |
+| `DB_POOL_SIZE` | 5 | DB 连接池大小（v1.5.1 可配） |
+| `DB_MAX_OVERFLOW` | 10 | DB 连接池溢出上限（v1.5.1 可配） |
 | `OPENAWA_API_KEY` | auto | 全局API Key（v1.5新增，启动时自动生成并持久化） |
 | `OPENAWA_OWNER_USERNAME` | admin | Owner用户名（v1.5新增） |
 | `RATE_LIMIT_BACKEND` | memory | 限流后端（memory/db） |
@@ -1108,7 +1111,54 @@ Base
 
 ---
 
-## 五、API 接口参考
+## 五、性能优化 (v1.5.1)
+
+v1.5.1 对系统进行了全链路性能优化，按 P0/P1/P2 分级：
+
+### 5.1 P0 关键性能修复（7项）
+
+| 优化项 | 涉及文件 | 说明 |
+|--------|----------|------|
+| 异步文件 I/O | executor.py, plugins/ | `_execute_read_files` 等改用 `aiofiles` 异步读取 |
+| 技能/插件并行执行 | agent.py | `_auto_execute_skills_and_plugins` 中技能与插件改用 `asyncio.gather` 并行 |
+| PRAGMA 缓存 | db/models.py | SQLite `cache_size` 和 `page_size` 预置优化 |
+| 列表分页 | skills/, plugins/, experiences/ | 列表查询接口添加 `LIMIT`/`OFFSET` 分页 |
+| 行为日志 SQL 聚合 | behavior_logger.py | 批量写入 + SQL `GROUP BY` 聚合替代逐条插入 |
+| CSV 流式导出 | billing/reporter.py | 报表 CSV 导出改为迭代器流式写入，避免全量内存加载 |
+| tool_calls 结果截断 | core/executor.py | 工具调用结果长度超限时自动截断，避免上下文爆炸 |
+
+### 5.2 P1+P2 性能修复（8项）
+
+| 优化项 | 涉及文件 | 说明 |
+|--------|----------|------|
+| 虚拟滚动 | features/chat/components/MessageList.tsx | 使用 `react-virtuoso` 替代原生滚动，长对话仅渲染可视区域 |
+| Zustand 原子化选择器 | features/chat/ChatPage.tsx | `useChatStore` 拆分为原子化 selector + `shallow` 比较，流式输出期间减少 60-80% 无效重渲染 |
+| React.memo | ChatInput.tsx, MessageList.tsx | 子组件包裹 `React.memo`，避免父组件状态变更导致的级联渲染 |
+| Settings Tab/Modal 懒加载 | features/settings/SettingsPage.tsx | 7 个 Tab + 4 个 Modal 全部使用 `React.lazy` + `Suspense` |
+| Tab API 去重 | SettingsPage | Tab 切换时取消未完成的请求，复用缓存结果 |
+| ChromaDB 批量操作 | memory/vector_store_manager.py | VectorDB 操作合并为批量提交 |
+| 对话截断保护 | core/context/compressor.py | Token 超限时按轮次截断而非逐条删除 |
+| DB 连接池可配 | config/settings.py, db/models.py | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` 环境变量可配 |
+
+### 5.3 N+1 查询消除
+
+| 优化项 | 文件 | 优化前 | 优化后 |
+|--------|------|--------|--------|
+| provider_catalog | billing/pricing_manager.py | 循环内逐个查询 credential 和 configuration | 3 次批量查询（join/eager_load） |
+| 技能列表 | skills/skill_registry.py | 逐技能查询 statistics + config | 批量 `selectinload` |
+| 记忆统计 | memory/manager.py | 逐条聚合统计 | SQL `func.sum/count` + `GROUP BY` |
+| 用量统计 | billing/tracker.py | 循环内多次查询 | SQL 聚合函数（sum/count/coalesce） |
+| 行为日志 | core/behavior_logger.py | 逐条 insert | 批量 50 条 flush |
+
+### 5.4 事件循环优化
+
+| 优化项 | 文件 | 说明 |
+|--------|------|------|
+| weixin_skill_adapter | skills/weixin_skill_adapter.py | `time.sleep()` → `asyncio.sleep()`，消除事件循环阻塞 |
+
+---
+
+## 六、API 接口参考
 
 ### 认证接口
 
@@ -1232,7 +1282,7 @@ Base
 
 ---
 
-## 六、关键类与函数速查
+## 七、关键类与函数速查
 
 ### 后端核心类
 
@@ -1248,6 +1298,7 @@ Base
 | `PricingManager` | [billing/pricing_manager.py](file:///d:/代码/Open-AwA/backend/billing/pricing_manager.py) | 价格管理：模型配置CRUD、API端点解析 |
 | `MemoryManager` | [memory/manager.py](file:///d:/代码/Open-AwA/backend/memory/manager.py) | 记忆管理：三层记忆统一入口 |
 | `MCPManager` | [mcp/manager.py](file:///d:/代码/Open-AwA/backend/mcp/manager.py) | MCP管理器：线程安全单例、多Server连接 |
+| `SubAgentOrchestrator` | [core/subagent.py](file:///d:/代码/Open-AwA/backend/core/subagent.py) | 子Agent编排系统：状态图（StateGraph）风格编排，支持节点/边/状态传递 |
 | `AutonomousModeManager` | [core/autonomous/manager.py](file:///d:/代码/Open-AwA/backend/core/autonomous/manager.py) | 自主模式管理器（v1.5增强）：四层安全洋葱（硬底线/工作区边界/网络策略/资源限制） |
 | `HardDenyChecker` | [core/autonomous/hard_deny.py](file:///d:/代码/Open-AwA/backend/core/autonomous/hard_deny.py) | 硬底线检查器（v1.5新增）：禁止系统破坏命令和敏感路径访问 |
 | `ResourceLimiter` | [core/autonomous/resource_limits.py](file:///d:/代码/Open-AwA/backend/core/autonomous/resource_limits.py) | 资源限制器（v1.5新增）：CPU/内存/时间硬限制 |
@@ -1270,7 +1321,7 @@ Base
 
 ---
 
-## 七、依赖关系
+## 八、依赖关系
 
 ### 后端依赖
 
@@ -1368,9 +1419,9 @@ main.py ──┬── api/routes/*      (路由层)
 
 ---
 
-## 八、项目运行方式
+## 九、项目运行方式
 
-### 8.1 环境要求
+### 9.1 环境要求
 
 | 组件 | 版本要求 |
 |------|----------|
@@ -1378,7 +1429,7 @@ main.py ──┬── api/routes/*      (路由层)
 | Node.js | >= 18 |
 | npm | >= 9+ |
 
-### 8.2 后端启动
+### 9.2 后端启动
 
 ```powershell
 # Windows PowerShell
@@ -1395,7 +1446,7 @@ python main.py
 - 健康检查: `http://127.0.0.1:8000/health`
 - Prometheus指标: `http://127.0.0.1:8000/metrics` (需认证)
 
-### 8.3 前端启动
+### 9.3 前端启动
 
 ```powershell
 cd d:\代码\Open-AwA\frontend
@@ -1405,7 +1456,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 前端地址: `http://127.0.0.1:5173`
 
-### 8.4 Docker 部署
+### 9.4 Docker 部署
 
 项目根目录提供 `docker-compose.yml` 和 `Dockerfile`：
 
@@ -1413,7 +1464,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 docker-compose up -d
 ```
 
-### 8.5 生产环境配置
+### 9.5 生产环境配置
 
 生产环境必须显式设置以下环境变量 (.env 或 .env.local)：
 
@@ -1428,7 +1479,7 @@ docker-compose up -d
 | `ENVIRONMENT` | 部署环境（development / production） |
 | `DEBUG_MODE` | 调试模式开关（true/false，开发环境可开启） |
 
-### 8.6 前端环境变量
+### 9.6 前端环境变量
 
 | 变量 | 说明 |
 |------|------|
@@ -1438,9 +1489,9 @@ docker-compose up -d
 
 ---
 
-## 九、测试体系
+## 十、测试体系
 
-### 9.1 后端测试
+### 10.1 后端测试
 
 ```powershell
 cd backend
@@ -1477,7 +1528,7 @@ pytest tests/test_agent_core.py -v
 | `test_task_runtime_*.py` | 任务运行时（Phase1-4） |
 | `test_weixin_auto_reply.py` | 微信自动回复 |
 
-### 9.2 前端测试
+### 10.2 前端测试
 
 ```powershell
 cd frontend
@@ -1505,7 +1556,7 @@ npm run e2e
 
 **E2E测试目录**: [frontend/tests/e2e/](file:///d:/代码/Open-AwA/frontend/tests/e2e/)
 
-### 9.3 代码质量检查清单
+### 10.3 代码质量检查清单
 
 | 检查项 | 命令 | 说明 |
 |--------|------|------|
@@ -1516,7 +1567,7 @@ npm run e2e
 | 构建验证 | `npm run build` | 生产构建验证 |
 | 测试通过率 | `pytest -x --tb=short` / `vitest run` | 全部测试通过 |
 
-### 9.4 预制CI检查项
+### 10.4 预制CI检查项
 
 项目配置了预制CI流水线（`.github/workflows/ci.yml`），包含：
 1. 后端测试（pytest）
@@ -1539,6 +1590,7 @@ npm run e2e
 | 1.3 | 2026-04 | 安全加固：HttpOnly Cookie、Fernet加密、MCP协议、CSRF防护、RBAC |
 | 1.4 | 2026-04 | 插件全局单例、多轮对话上下文、插件运行时状态 |
 | 1.5 | 2026-06 | 单用户API Key认证、Owner自动化、自主模式四层安全洋葱、任务执行API、SettingsPage重构、SSRF全面加固、前端日志持久化 |
+| 1.5.1 | 2026-06 | 全链路性能优化：P0(异步I/O/并行/分页/截断)+P1+P2(虚拟滚动/原子化selector/懒加载/N+1消除/SQL聚合/连接池可配) |
 
 ### B. 文档索引
 
@@ -1584,4 +1636,4 @@ npm run e2e
 
 ---
 
-> 本文档基于 Open-AwA v1.5 代码库生成，最后更新：2026-06-12
+> 本文档基于 Open-AwA v1.5.1 代码库生成，最后更新：2026-06-13

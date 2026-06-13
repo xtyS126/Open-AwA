@@ -1,0 +1,143 @@
+/* Tooltip 文字提示组件样式 — 纯 CSS 实现 */
+
+.wrapper {
+  position: relative;
+  display: inline-flex;
+  cursor: help;
+}
+
+/* 提示内容主体 */
+.wrapper::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: var(--z-tooltip);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-normal);
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 150ms ease, transform 150ms ease;
+
+  /* 暗色背景 + 白色文字（亮色主题） */
+  background-color: #1e293b;
+  color: #ffffff;
+}
+
+/* 箭头 */
+.wrapper::before {
+  content: '';
+  position: absolute;
+  z-index: var(--z-tooltip);
+  width: 6px;
+  height: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 150ms ease, transform 150ms ease;
+
+  background-color: #1e293b;
+}
+
+/* hover 时显示 */
+.wrapper:hover::after,
+.wrapper:hover::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ========== 方向定位 ========== */
+
+/* top */
+.top::after {
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+}
+
+.top:hover::after {
+  transform: translateX(-50%) scale(1);
+}
+
+.top::before {
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg) scale(0.95);
+}
+
+.top:hover::before {
+  transform: translateX(-50%) rotate(45deg) scale(1);
+}
+
+/* bottom */
+.bottom::after {
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+}
+
+.bottom:hover::after {
+  transform: translateX(-50%) scale(1);
+}
+
+.bottom::before {
+  top: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg) scale(0.95);
+}
+
+.bottom:hover::before {
+  transform: translateX(-50%) rotate(45deg) scale(1);
+}
+
+/* left */
+.left::after {
+  right: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+}
+
+.left:hover::after {
+  transform: translateY(-50%) scale(1);
+}
+
+.left::before {
+  right: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg) scale(0.95);
+}
+
+.left:hover::before {
+  transform: translateY(-50%) rotate(45deg) scale(1);
+}
+
+/* right */
+.right::after {
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+}
+
+.right:hover::after {
+  transform: translateY(-50%) scale(1);
+}
+
+.right::before {
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg) scale(0.95);
+}
+
+.right:hover::before {
+  transform: translateY(-50%) rotate(45deg) scale(1);
+}
+
+/* 暗色主题下使用浅灰背景 */
+.dark .wrapper::after,
+.dark .wrapper::before {
+  background-color: #cbd5e1;
+  color: #0f172a;
+}

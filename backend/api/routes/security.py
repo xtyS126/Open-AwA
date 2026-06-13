@@ -268,7 +268,7 @@ async def reply_to_permission(
     if reply == "always":
         saved_count = 0
         # 尝试从消息中提取权限规则名进行保存
-        user_id = str(getattr(current_user, "id", ""))
+        user_id = str(current_user.id)
         for rule_name in body.message.split(",") if body.message else []:
             rule_name = rule_name.strip()
             if not rule_name:
@@ -325,7 +325,7 @@ async def reply_to_permission(
         event="permission_reply",
         request_id=request_id,
         reply=reply,
-        user_id=str(getattr(current_user, "id", "")),
+        user_id=str(current_user.id),
     ).info(f"权限请求 {request_id} 已回复: {reply}")
 
     return {"ok": True}
@@ -339,7 +339,7 @@ async def get_saved_permissions(
     """
     获取当前用户已保存的持久化权限规则列表。
     """
-    user_id = str(getattr(current_user, "id", ""))
+    user_id = str(current_user.id)
     permissions = (
         db.query(PermissionSaved)
         .filter(PermissionSaved.created_by == user_id)
@@ -361,7 +361,7 @@ async def delete_saved_permission(
     """
     删除指定的持久化权限规则。
     """
-    user_id = str(getattr(current_user, "id", ""))
+    user_id = str(current_user.id)
     perm = (
         db.query(PermissionSaved)
         .filter(
@@ -393,7 +393,7 @@ async def delete_all_saved_permissions(
     """
     删除当前用户所有已保存的持久化权限规则。
     """
-    user_id = str(getattr(current_user, "id", ""))
+    user_id = str(current_user.id)
     deleted_count = (
         db.query(PermissionSaved)
         .filter(PermissionSaved.created_by == user_id)

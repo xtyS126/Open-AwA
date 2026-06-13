@@ -277,7 +277,8 @@ class ConversationRecorder:
             return user_id
         if current_user is None:
             return None
-        candidate = getattr(current_user, "id", None)
+        # 直接访问 id 属性，调用方应确保传入有效的用户对象
+        candidate = current_user.id
         if isinstance(candidate, str) and candidate:
             return candidate
         return None

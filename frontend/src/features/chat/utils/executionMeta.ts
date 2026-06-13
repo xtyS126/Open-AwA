@@ -57,7 +57,7 @@ function normalizeSubagentState(
   incoming: Partial<SubagentExecutionState> | undefined,
   fallbackId: string,
   fallbackStartedAt?: number,
-  fallbackCompletedAt?: number
+  fallbackCompletedAt?: number,
 ): SubagentExecutionState | undefined {
   if (!incoming) {
     return undefined
@@ -85,7 +85,7 @@ function mergeSubagentState(
   next: SubagentExecutionState | undefined,
   fallbackId: string,
   fallbackStartedAt?: number,
-  fallbackCompletedAt?: number
+  fallbackCompletedAt?: number,
 ): SubagentExecutionState | undefined {
   if (!current && !next) {
     return undefined
@@ -101,7 +101,7 @@ function mergeSubagentState(
     },
     fallbackId,
     fallbackStartedAt,
-    fallbackCompletedAt
+    fallbackCompletedAt,
   )
 }
 

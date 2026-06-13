@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Respons
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from db.models import get_db, Skill, SkillExecutionLog, ExperienceExtractionLog, WeixinBinding
+from db.models import get_db, Skill, SkillExecutionLog, ExperienceExtractionLog, WeixinBinding, User
 from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
@@ -25,6 +25,14 @@ import time
 import threading
 import re
 from urllib.parse import parse_qs, urlparse
+
+# 从共享模块导入微信工具函数
+from core.weixin_utils import (
+    normalize_binding_status as _normalize_binding_status,
+    deserialize_skill_config as _deserialize_skill_config,
+    validate_qrcode_url as _validate_qrcode_url,
+    WEIXIN_QR_ALLOWED_DOMAINS,
+)
 
 
 router = APIRouter(prefix="/skills", tags=["Skills"])
@@ -44,43 +52,6 @@ WEIXIN_SKILL_NAME = "weixin_dispatch"
 WEIXIN_QR_SESSION_TTL_SECONDS = 300
 WEIXIN_QR_SESSIONS: Dict[str, Dict[str, Any]] = {}
 WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
-# 微信二维码图片代理允许的域名白名单，防止 SSRF 攻击
-WEIXIN_QR_ALLOWED_DOMAINS = frozenset({
-    "wx.qq.com",
-    "weixin.qq.com",
-    "open.weixin.qq.com",
-    "ilinkai.weixin.qq.com",
-    "mmbiz.qpic.cn",
-    "mmbiz.qlogo.cn",
-    "res.wx.qq.com",
-})
-
-
-def _validate_qrcode_url(url: str) -> str:
-    """
-    校验二维码图片 URL 的安全性，防止 SSRF（服务器端请求伪造）。
-    只允许访问微信官方域名下的图片资源，拒绝私有网络 IP。
-    """
-    normalized_url = str(url).strip()
-    if not normalized_url:
-        raise ValueError("二维码 URL 为空")
-
-    parsed = urlparse(normalized_url)
-    hostname = str(parsed.hostname or "").lower()
-
-    # 拒绝无域名或协议不完整的 URL
-    if not hostname:
-        raise ValueError(f"二维码 URL 缺少合法域名: {normalized_url[:120]}")
-
-    # 仅允许 https 协议避免中间人
-    if parsed.scheme != "https":
-        raise ValueError(f"二维码 URL 仅允许 https 协议: {normalized_url[:120]}")
-
-    # 校验域名白名单
-    if hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
-        raise ValueError(f"二维码 URL 域名 '{hostname}' 不在允许的白名单中")
-
-    return normalized_url
 
 
 def _build_default_weixin_config() -> Dict[str, Any]:
@@ -127,52 +98,6 @@ def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 1
         return max(1, int(timeout_seconds))
     except (TypeError, ValueError):
         return fallback
-
-
-def _normalize_binding_status(binding_status: Optional[str], user_id: str = "", fallback: str = "unbound") -> str:
-    """
-    处理normalize、binding、status相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
-    """
-    normalized = str(binding_status or "").strip().lower()
-    if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
-        return "bound"
-    if normalized in {"pending", "confirming", "waiting"}:
-        return "pending"
-    if normalized in {"unbound", "failed", "none", ""}:
-        return "bound" if user_id else fallback
-    if user_id:
-        return "bound"
-    return fallback
-
-
-def _deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
-    """
-    统一解析 Skill.config，兼容 JSON 列中的字典对象以及历史遗留的 YAML/JSON 字符串。
-    """
-    if isinstance(config_value, dict):
-        return dict(config_value)
-    if config_value is None:
-        return {}
-
-    text = str(config_value or "").strip()
-    if not text:
-        return {}
-
-    try:
-        loaded = json.loads(text)
-    except Exception:
-        loaded = None
-    if isinstance(loaded, dict):
-        return loaded
-
-    try:
-        loaded = yaml.safe_load(text)
-    except Exception:
-        return {}
-    if isinstance(loaded, dict):
-        return loaded
-    return {}
 
 
 def _build_skill_response(skill: Skill) -> SkillResponse:
@@ -754,7 +679,10 @@ async def _parse_weixin_request_payload(request: Request) -> Dict[str, Any]:
     return _coerce_weixin_payload_dict(raw_body)
 
 @router.post("/weixin/health-check")
-async def weixin_health_check(request: Request):
+async def weixin_health_check(
+    request: Request,
+    current_user=Depends(get_current_user)
+):
     """
     处理weixin、health、check相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1884,13 +1812,13 @@ def get_skill_execution_logs(
     limit: int = Query(50, ge=1, le=500, description="返回条数"),
     offset: int = Query(0, ge=0, description="偏移量"),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取技能执行日志列表，支持按技能名称/状态/时间范围筛选和分页。
     仅限管理员访问，防止跨用户信息泄露。
     """
-    if getattr(current_user, "role", "") != "admin":
+    if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="仅管理员可查看执行日志")
 
     query = db.query(SkillExecutionLog)

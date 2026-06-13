@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { behaviorAPI, skillsAPI, pluginsAPI, memoryAPI } from '@/shared/api/api'
 import { billingAPI } from '@/features/billing/billingApi'
@@ -21,6 +21,87 @@ interface SystemOverview {
   pluginsEnabled: number
   longTermMemories: number
 }
+
+/* tooltip 样式常量 */
+const TOOLTIP_STYLE = {
+  background: 'rgba(15, 23, 42, 0.85)',
+  backdropFilter: 'blur(8px)',
+  borderRadius: 'var(--radius-md)',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  color: 'white',
+  padding: '8px 12px',
+  fontSize: '12px'
+}
+
+/* 交互趋势图表子组件 */
+const InteractionsChart = memo(function InteractionsChart({ data }: { data: Array<{ day: string; interactions: number }> }) {
+  return (
+    <div className={styles['chart-card']}>
+      <h3>近7天交互趋势</h3>
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+          <XAxis dataKey="day" stroke={CHART_COLORS.axis} />
+          <YAxis stroke={CHART_COLORS.axis} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} />
+          <Line type="monotone" dataKey="interactions" stroke={CHART_COLORS.interactions} strokeWidth={2} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+})
+
+/* 成本趋势图表子组件 */
+const CostChart = memo(function CostChart({
+  data,
+  currency,
+  formatCurrency
+}: {
+  data: Array<{ date: string; cost: number }>
+  currency: string
+  formatCurrency: (amount: number, currency?: string) => string
+}) {
+  return (
+    <div className={styles['chart-card']}>
+      <h3>成本趋势</h3>
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+          <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={10} />
+          <YAxis stroke={CHART_COLORS.axis} />
+          <Tooltip formatter={(value: number) => formatCurrency(value, currency)} contentStyle={TOOLTIP_STYLE} />
+          <Line type="monotone" dataKey="cost" stroke={CHART_COLORS.cost} strokeWidth={2} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+})
+
+/* 模型调用成本分布柱状图子组件 */
+const ModelBarChart = memo(function ModelBarChart({
+  data,
+  currency,
+  formatCurrency
+}: {
+  data: Array<{ name: string; cost: number; requests: number }>
+  currency: string
+  formatCurrency: (amount: number, currency?: string) => string
+}) {
+  return (
+    <div className={styles['chart-card']} style={{ marginBottom: '24px' }}>
+      <h3>模型调用成本分布</h3>
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+          <XAxis dataKey="name" stroke={CHART_COLORS.axis} fontSize={11} />
+          <YAxis stroke={CHART_COLORS.axis} />
+          <Tooltip formatter={(value: number) => formatCurrency(value, currency)} contentStyle={TOOLTIP_STYLE} />
+          <Bar dataKey="cost" fill={CHART_COLORS.interactions} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+})
 
 function DashboardPage() {
   const [stats, setStats] = useState<BehaviorStats | null>(null)
@@ -79,7 +160,7 @@ function DashboardPage() {
     return billingStats.by_model.slice(0, 6).map(m => ({
       name: m.model.length > 16 ? m.model.slice(0, 14) + '..' : m.model,
       cost: m.cost,
-      requests: m.call_count || 0
+      requests: Number(m.call_count) || 0
     }))
   }
 
@@ -148,47 +229,21 @@ function DashboardPage() {
 
       {/* 图表区域 */}
       <div className={styles['charts-grid']}>
-        <div className={styles['chart-card']}>
-          <h3>近7天交互趋势</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={stats?.chart_data || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="day" stroke={CHART_COLORS.axis} />
-              <YAxis stroke={CHART_COLORS.axis} />
-              <Tooltip />
-              <Line type="monotone" dataKey="interactions" stroke={CHART_COLORS.interactions} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className={styles['chart-card']}>
-          <h3>成本趋势</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={billingStats?.trend || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={10} />
-              <YAxis stroke={CHART_COLORS.axis} />
-              <Tooltip formatter={(value: number) => formatCurrency(value, billingStats?.currency)} />
-              <Line type="monotone" dataKey="cost" stroke={CHART_COLORS.cost} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <InteractionsChart data={stats?.chart_data || []} />
+        <CostChart
+          data={billingStats?.trend || []}
+          currency={billingStats?.currency || 'USD'}
+          formatCurrency={formatCurrency}
+        />
       </div>
 
       {/* 模型使用柱状图 */}
       {getModelBarData().length > 0 && (
-        <div className={styles['chart-card']} style={{ marginBottom: '24px' }}>
-          <h3>模型调用成本分布</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={getModelBarData()}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="name" stroke={CHART_COLORS.axis} fontSize={11} />
-              <YAxis stroke={CHART_COLORS.axis} />
-              <Tooltip formatter={(value: number) => formatCurrency(value, billingStats?.currency)} />
-              <Bar dataKey="cost" fill={CHART_COLORS.interactions} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ModelBarChart
+          data={getModelBarData()}
+          currency={billingStats?.currency || 'USD'}
+          formatCurrency={formatCurrency}
+        />
       )}
 
       {/* 意图排行 */}

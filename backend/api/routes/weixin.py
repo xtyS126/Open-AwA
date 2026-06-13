@@ -24,39 +24,15 @@ from api.services.weixin_auto_reply import (
 from config.security import decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
 from db.models import ShortTermMemory, Skill, WeixinBinding, WeixinAutoReplyRule, get_db
+from core.weixin_utils import (
+    normalize_binding_status as _normalize_binding_status,
+    deserialize_skill_config as _deserialize_skill_config,
+)
 from skills.weixin_skill_adapter import WeixinSkillAdapter
 
 
 router = APIRouter(prefix="/api/weixin", tags=["Weixin"])
 _WEIXIN_SKILL_NAME = "weixin_dispatch"
-
-
-def _normalize_binding_status(binding_status: Optional[str], weixin_user_id: str = "") -> str:
-    normalized = str(binding_status or "").strip().lower()
-    if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
-        return "bound"
-    if normalized in {"pending", "confirming", "waiting"}:
-        return "pending"
-    if weixin_user_id:
-        return "bound"
-    return "unbound"
-
-
-def _deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
-    if isinstance(config_value, dict):
-        return dict(config_value)
-    if config_value is None:
-        return {}
-    text = str(config_value or "").strip()
-    if not text:
-        return {}
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return parsed
-    except Exception:
-        pass
-    return {}
 
 
 def _recover_binding_from_skill_config(db: Session, app_user_id: str) -> Optional[WeixinBinding]:

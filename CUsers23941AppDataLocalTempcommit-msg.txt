@@ -1,3 +1,3 @@
-[Optimization] P1+P2性能修复(8项): 虚拟滚动 + Tab API去重 + useCallback + 批量CSS + ChromaDB批量 + 对话截断 + 浅拷贝 + DB连接池可配
+[Fix] 修复前端剩余31个预存测试失败: AuthPage/UserPage重写 + SubagentContainer/App/api/Settings/Marketplace/ChatPage/MessageList修复
 
 

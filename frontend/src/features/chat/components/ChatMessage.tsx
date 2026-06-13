@@ -94,7 +94,7 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
   }, [message.content])
 
   return (
-    <div className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']}`}>
+    <div className={`${styles['message']} ${message.role === 'user' ? styles['user'] : styles['assistant']} ${message.isError ? styles['messageError'] : ''}`}>
       <div className={styles['message-content']}>
         {message.role === 'user' && (
           <>
@@ -123,7 +123,7 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
             />
           )
         ))}
-        {message.role === 'assistant' && !isCurrentlyStreaming && (
+        {message.role === 'assistant' && !isCurrentlyStreaming && !message.isError && (
           <div className={styles['actionsBar']}>
             <button className={styles['actionBtn']} onClick={handleCopy} title="复制">
               {copied ? <Check size={14} /> : <Copy size={14} />}

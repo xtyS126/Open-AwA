@@ -13,10 +13,10 @@
     # 在 main.py lifespan 启动时
     manager = init_autonomous_mode()
 
-    # 在 executor 中拦截检查
+    # 在 executor 中拦截检查（异步调用）
     am = get_autonomous_manager()
     if am and am.is_autonomous:
-        denial = am.check_all(action, params)
+        denial = await am.check_all(action, params)
         if denial:
             return denial
 """

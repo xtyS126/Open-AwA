@@ -1195,7 +1195,8 @@ async def get_provider_credential(
 async def update_provider_selected_models(
     provider: str,
     payload: ProviderModelSelectionRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新provider、selected、models相关数据、配置或状态。
@@ -1428,7 +1429,8 @@ async def get_models_by_provider(
 async def update_retention(
     retention_days: int = Body(..., ge=1, le=3650),
     cleanup: bool = Body(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     """
     更新retention相关数据、配置或状态。

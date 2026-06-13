@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from core.magic_commands import get_magic_command_registry
-from db.models import get_db
+from db.models import get_db, User
 
 router = APIRouter(prefix="/magic-commands", tags=["Magic Commands"])
 
 
 @router.get("", summary="列出所有可用的魔法命令")
-async def list_commands(current_user=Depends(get_current_user)):
+async def list_commands(current_user: User = Depends(get_current_user)):
     """返回所有已注册的魔法命令列表，包含名称、描述和属性。"""
     registry = get_magic_command_registry()
     return {"commands": registry.list_commands(), "total": len(registry.list_commands())}
@@ -25,7 +25,7 @@ async def list_commands(current_user=Depends(get_current_user)):
 async def execute_command(
     body: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     执行指定的魔法命令。
@@ -41,7 +41,7 @@ async def execute_command(
         raise HTTPException(status_code=404, detail=f"未找到命令: /{command_name}")
 
     ctx = body.get("context", {})
-    ctx.setdefault("user_id", getattr(current_user, "id", ""))
+    ctx.setdefault("user_id", current_user.id)
     ctx.setdefault("db", db)
 
     try:
@@ -54,7 +54,7 @@ async def execute_command(
 @router.post("/compact", summary="手动触发上下文压缩")
 async def trigger_compact(
     body: Dict[str, Any],
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     手动触发当前会话的上下文压缩。

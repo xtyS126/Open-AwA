@@ -6,8 +6,13 @@
   gap: 8px;
   padding: 16px;
   margin: 0 16px 16px;
+  min-height: 80px; /* 输入框容器最小高度 */
   background: var(--color-bg-secondary);
   border-radius: var(--radius-lg);
+  /* 毛玻璃效果 */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 /* 输入行 */
@@ -21,8 +26,8 @@
 .chat-input {
   flex: 1;
   resize: none;
-  min-height: 44px;
-  max-height: 120px;
+  min-height: 48px; /* 增加输入框最小高度 */
+  max-height: 150px; /* 增加输入框最大高度 */
   font-size: 14px;
   border: none;
   background: var(--color-bg-tertiary);
@@ -35,7 +40,8 @@
 .chat-input:focus {
   outline: none;
   background: var(--color-bg);
-  box-shadow: 0 0 0 2px var(--color-primary-ring);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
 }
 
 /* 发送按钮 */
@@ -44,13 +50,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
   font-weight: 500;
   padding: 0;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.send-btn:hover {
+  transform: scale(1.05);
 }
 
 /* 停止按钮 */

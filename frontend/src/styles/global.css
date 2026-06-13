@@ -48,7 +48,7 @@ input:focus, textarea:focus {
 }
 
 .sidebar {
-  width: 240px;
+  width: var(--sidebar-width, 260px);
   background: var(--color-bg-secondary);
   border-right: none;
   display: flex;
@@ -60,6 +60,7 @@ input:focus, textarea:focus {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100%; /* 确保主内容区纵向撑满 */
 }
 
 .btn {
@@ -71,7 +72,7 @@ input:focus, textarea:focus {
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  transition: all var(--transition-ease-in-out);
+  transition: all var(--transition-base);
   cursor: pointer;
 }
 
@@ -87,6 +88,7 @@ input:focus, textarea:focus {
 .btn-primary:hover {
   background: var(--color-primary-hover);
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  transform: translateY(-1px);
 }
 
 .btn-secondary {
@@ -97,6 +99,7 @@ input:focus, textarea:focus {
 .btn-secondary:hover {
   background: var(--color-border);
   color: var(--color-text);
+  transform: translateY(-1px);
 }
 
 .dark .btn-secondary:hover {
@@ -113,8 +116,9 @@ input:focus, textarea:focus {
 }
 
 .card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-card-hover);
   border-color: var(--color-border);
+  transform: translateY(-2px);
 }
 
 .loading {
@@ -134,6 +138,7 @@ input:focus, textarea:focus {
 
 .btn-danger:hover {
   background: var(--color-danger-hover);
+  transform: translateY(-1px);
 }
 
 .btn-ghost {
@@ -144,6 +149,87 @@ input:focus, textarea:focus {
 .btn-ghost:hover {
   background: var(--color-bg-tertiary);
   color: var(--color-text);
+  transform: translateY(-1px);
+}
+
+/* Skip Navigation Link - 可访问性 */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: white;
+  padding: 8px 16px;
+  z-index: var(--z-toast);
+  border-radius: 0 0 var(--radius-sm) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: none;
+}
+
+/* 页面切换淡入动画 */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms ease-out, transform 300ms ease-out;
+}
+
+.page-transition-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-transition-exit-active {
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 200ms ease-in, transform 200ms ease-in;
+}
+
+/* focus-visible 统一样式 */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 按钮 focus 时使用光晕替代 outline */
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+/* 输入框 focus 时使用光晕 */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.page-transition-wrapper {
+  animation: pageFadeIn 300ms ease-out;
+}
+
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 响应式断点 */

@@ -6,6 +6,8 @@ export interface ChatMessage {
   timestamp: Date
   toolEvents?: ToolEventMeta[]
   segments?: AssistantMessageSegment[]
+  /** 标记该消息为错误消息，用于视觉区分 */
+  isError?: boolean
 }
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'error'

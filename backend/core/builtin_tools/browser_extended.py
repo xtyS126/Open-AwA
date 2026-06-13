@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import re
 import socket
@@ -49,20 +50,21 @@ BLOCKED_PREFIXES = [
 ]
 
 
-def _is_private_host(host: str) -> bool:
+async def _is_private_host(host: str) -> bool:
     """
     SSRF 安全检查：判断主机名是否指向内网/私有地址。
 
     先尝试直接解析为 IP，失败则通过 DNS 解析后检查。
     返回 True 表示需要拦截该主机。
+    使用 asyncio.to_thread 包装 socket.getaddrinfo，避免阻塞事件循环。
     """
     # 第一步：尝试直接将 host 解析为 IP 地址
     try:
         addr = ipaddress.ip_address(host)
     except ValueError:
-        # host 是域名，需要 DNS 解析
+        # host 是域名，需要 DNS 解析（在线程池中执行，避免阻塞事件循环）
         try:
-            resolved = socket.getaddrinfo(host, None)
+            resolved = await asyncio.to_thread(socket.getaddrinfo, host, None)
             if not resolved:
                 return True
             addr = ipaddress.ip_address(resolved[0][4][0])
@@ -77,7 +79,7 @@ def _is_private_host(host: str) -> bool:
     return False
 
 
-def _validate_url(url: str) -> Optional[str]:
+async def _validate_url(url: str) -> Optional[str]:
     """
     验证 URL 安全性的工具函数。
 
@@ -105,7 +107,7 @@ def _validate_url(url: str) -> Optional[str]:
         return "URL 缺少主机名"
 
     # SSRF 防护检查
-    if _is_private_host(host):
+    if await _is_private_host(host):
         return f"禁止访问内网地址: {host}"
 
     return None
@@ -353,8 +355,8 @@ class BrowserExtendedSkill:
         if not url:
             return {"success": False, "error": "URL 参数不能为空"}
 
-        # URL 安全校验（协议白名单 + SSRF 防护）
-        error = _validate_url(url)
+        # URL 安全校验（协议白名单 + SSRF 防护，异步调用）
+        error = await _validate_url(url)
         if error:
             return {"success": False, "error": error}
 

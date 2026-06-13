@@ -63,7 +63,7 @@ function getLastThoughtIndex(segments: AssistantMessageSegment[]): number {
 
 function ensureCurrentThoughtSegment(
   segments: AssistantMessageSegment[],
-  startNewIfHasTools: boolean = false
+  startNewIfHasTools: boolean = false,
 ): AssistantThoughtSegment {
   const lastSegment = segments[segments.length - 1]
   if (!lastSegment || lastSegment.kind === 'reply') {
@@ -71,12 +71,12 @@ function ensureCurrentThoughtSegment(
     segments.push(nextSegment)
     return nextSegment
   }
-  
+
   if (lastSegment.kind === 'thought') {
     const hasTools = lastSegment.toolEvents.length > 0 || lastSegment.steps.length > 0
     const allToolsSettled = hasTools
-      && lastSegment.toolEvents.every(t => t.status === 'completed' || t.status === 'error')
-      && lastSegment.steps.every(s => s.status === 'completed' || s.status === 'error')
+      && lastSegment.toolEvents.every((t) => t.status === 'completed' || t.status === 'error')
+      && lastSegment.steps.every((s) => s.status === 'completed' || s.status === 'error')
     if (startNewIfHasTools && allToolsSettled) {
       lastSegment.status = 'completed'
       const nextSegment = createThoughtSegment()
@@ -84,7 +84,7 @@ function ensureCurrentThoughtSegment(
       return nextSegment
     }
   }
-  
+
   return lastSegment as AssistantThoughtSegment
 }
 
@@ -104,7 +104,7 @@ function upsertToolEvent(toolEvents: ToolEventMeta[], tool: ToolEventMeta): Tool
 function patchToolEvent(
   toolEvents: ToolEventMeta[],
   toolId: string,
-  patch: Partial<ToolEventMeta>
+  patch: Partial<ToolEventMeta>,
 ): ToolEventMeta[] {
   const existingIndex = toolEvents.findIndex((item) => item.id === toolId)
   if (existingIndex < 0) {

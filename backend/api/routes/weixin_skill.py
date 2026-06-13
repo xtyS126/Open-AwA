@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from db.models import get_db, Skill, WeixinBinding
 from api.dependencies import get_current_user
-from api.routes.skills import _deserialize_skill_config
 from config.security import decrypt_secret_value, encrypt_secret_value
 from skills.weixin_skill_adapter import (
     WeixinSkillAdapter,
@@ -19,6 +18,12 @@ from skills.weixin_skill_adapter import (
     DEFAULT_BASE_URL,
     DEFAULT_BOT_TYPE,
     DEFAULT_QR_BASE_URL,
+)
+from core.weixin_utils import (
+    normalize_binding_status as _normalize_binding_status,
+    deserialize_skill_config as _deserialize_skill_config,
+    validate_qrcode_url as _validate_qrcode_url,
+    WEIXIN_QR_ALLOWED_DOMAINS,
 )
 from loguru import logger
 
@@ -40,17 +45,6 @@ WEIXIN_SKILL_NAME = "weixin_dispatch"
 WEIXIN_QR_SESSION_TTL_SECONDS = 300
 WEIXIN_QR_SESSIONS: Dict[str, Dict[str, Any]] = {}
 WEIXIN_QR_SESSIONS_LOCK = threading.Lock()
-
-# 微信二维码图片代理允许的域名白名单，防止 SSRF 攻击
-WEIXIN_QR_ALLOWED_DOMAINS = frozenset({
-    "wx.qq.com",
-    "weixin.qq.com",
-    "open.weixin.qq.com",
-    "ilinkai.weixin.qq.com",
-    "mmbiz.qpic.cn",
-    "mmbiz.qlogo.cn",
-    "res.wx.qq.com",
-})
 
 WEIXIN_QR_STATE_MAP = {
     "waiting": "pending",
@@ -77,27 +71,6 @@ _weixin_config_migrated = False
 # 微信辅助函数
 # ---------------------------------------------------------------------------
 
-def _validate_qrcode_url(url: str) -> str:
-    """校验二维码图片 URL 的安全性，防止 SSRF 攻击。"""
-    normalized_url = str(url).strip()
-    if not normalized_url:
-        raise ValueError("二维码 URL 为空")
-
-    parsed = urlparse(normalized_url)
-    hostname = str(parsed.hostname or "").lower()
-
-    if not hostname:
-        raise ValueError(f"二维码 URL 缺少合法域名: {normalized_url[:120]}")
-
-    if parsed.scheme != "https":
-        raise ValueError(f"二维码 URL 仅允许 https 协议: {normalized_url[:120]}")
-
-    if hostname not in WEIXIN_QR_ALLOWED_DOMAINS:
-        raise ValueError(f"二维码 URL 域名 '{hostname}' 不在允许的白名单中")
-
-    return normalized_url
-
-
 def _build_default_weixin_config() -> Dict[str, Any]:
     """构建默认微信配置。"""
     return {
@@ -118,20 +91,6 @@ def _normalize_timeout_seconds(timeout_seconds: Optional[int], fallback: int = 1
         return max(1, int(timeout_seconds))
     except (TypeError, ValueError):
         return fallback
-
-
-def _normalize_binding_status(binding_status: Optional[str], user_id: str = "", fallback: str = "unbound") -> str:
-    """规范化微信绑定状态。"""
-    normalized = str(binding_status or "").strip().lower()
-    if normalized in {"bound", "confirmed", "linked", "success", "succeeded"}:
-        return "bound"
-    if normalized in {"pending", "confirming", "waiting"}:
-        return "pending"
-    if normalized in {"unbound", "failed", "none", ""}:
-        return "bound" if user_id else fallback
-    if user_id:
-        return "bound"
-    return fallback
 
 
 def _build_weixin_bound_snapshot(

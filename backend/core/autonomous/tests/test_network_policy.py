@@ -42,89 +42,102 @@ class TestNetworkPolicyCheck:
         )
         return NetworkPolicyChecker(config)
 
-    def test_allow_all_allows_anything(self, checker_allow_all):
+    @pytest.mark.asyncio
+    async def test_allow_all_allows_anything(self, checker_allow_all):
         """allow_all 允许任何目标"""
-        allowed, _ = checker_allow_all.check("https://google.com")
+        allowed, _ = await checker_allow_all.check("https://google.com")
         assert allowed is True
 
-        allowed, _ = checker_allow_all.check("10.0.0.1:8080")
+        allowed, _ = await checker_allow_all.check("10.0.0.1:8080")
         assert allowed is True
 
-    def test_block_local_blocks_private(self, checker_block_local):
+    @pytest.mark.asyncio
+    async def test_block_local_blocks_private(self, checker_block_local):
         """block_local 拒绝内网地址"""
         # RFC 1918 地址
-        allowed, reason = checker_block_local.check("10.0.0.1")
+        allowed, reason = await checker_block_local.check("10.0.0.1")
         assert allowed is False
         assert "内网" in reason
 
-        allowed, reason = checker_block_local.check("192.168.1.1")
+        allowed, reason = await checker_block_local.check("192.168.1.1")
         assert allowed is False
 
-    def test_block_local_allows_public(self, checker_block_local):
+    @pytest.mark.asyncio
+    async def test_block_local_allows_public(self, checker_block_local):
         """block_local 允许公网地址"""
         # 公网 IP 应通过
-        allowed, _ = checker_block_local.check("8.8.8.8")
+        allowed, _ = await checker_block_local.check("8.8.8.8")
         assert allowed is True
-        allowed, _ = checker_block_local.check("1.1.1.1")
+        allowed, _ = await checker_block_local.check("1.1.1.1")
         assert allowed is True
 
-    def test_block_local_blocks_loopback(self, checker_block_local):
+    @pytest.mark.asyncio
+    async def test_block_local_blocks_loopback(self, checker_block_local):
         """block_local 拒绝回环地址"""
-        allowed, _ = checker_block_local.check("127.0.0.1")
+        allowed, _ = await checker_block_local.check("127.0.0.1")
         assert allowed is False
 
-    def test_allowlist_allows_listed(self, checker_allowlist):
+    @pytest.mark.asyncio
+    async def test_allowlist_allows_listed(self, checker_allowlist):
         """allowlist 允许白名单内的地址"""
-        allowed, _ = checker_allowlist.check("8.8.8.8")
+        allowed, _ = await checker_allowlist.check("8.8.8.8")
         assert allowed is True
 
-        allowed, _ = checker_allowlist.check("1.1.1.1")
+        allowed, _ = await checker_allowlist.check("1.1.1.1")
         assert allowed is True
 
-    def test_allowlist_blocks_unlisted(self, checker_allowlist):
+    @pytest.mark.asyncio
+    async def test_allowlist_blocks_unlisted(self, checker_allowlist):
         """allowlist 拒绝白名单外的地址"""
-        allowed, reason = checker_allowlist.check("8.8.4.4")
+        allowed, reason = await checker_allowlist.check("8.8.4.4")
         assert allowed is False
         assert "白名单" in reason
 
-    def test_cloud_metadata_always_blocked(self, checker_allow_all):
+    @pytest.mark.asyncio
+    async def test_cloud_metadata_always_blocked(self, checker_allow_all):
         """云元数据端点始终被拒绝（包括 allow_all）"""
         for host in ["169.254.169.254", "metadata.google.internal", "fd00:ec2::254"]:
-            allowed, reason = checker_allow_all.check(host)
+            allowed, reason = await checker_allow_all.check(host)
             assert allowed is False, f"应拒绝 {host}"
 
-    def test_ipv6_private_address_blocked(self, checker_block_local):
+    @pytest.mark.asyncio
+    async def test_ipv6_private_address_blocked(self, checker_block_local):
         """block_local 拒绝 IPv6 内网地址"""
         # IPv6 回环地址
-        allowed, _ = checker_block_local.check("::1")
+        allowed, _ = await checker_block_local.check("::1")
         assert allowed is False
 
-    def test_dns_resolution_bypass_prevented(self, checker_block_local):
+    @pytest.mark.asyncio
+    async def test_dns_resolution_bypass_prevented(self, checker_block_local):
         """域名解析为内网 IP 时被拒绝（防 DNS rebinding）"""
         # localhost 总是解析到 127.0.0.1 或 ::1
-        allowed, reason = checker_block_local.check("localhost")
+        allowed, reason = await checker_block_local.check("localhost")
         assert allowed is False
         assert "内网地址" in reason or "localhost" in reason.lower()
 
-    def test_url_parsing(self, checker_allow_all):
+    @pytest.mark.asyncio
+    async def test_url_parsing(self, checker_allow_all):
         """URL 自动提取主机名"""
-        allowed, _ = checker_allow_all.check("https://api.example.com/v1/chat")
+        allowed, _ = await checker_allow_all.check("https://api.example.com/v1/chat")
         assert allowed is True
 
-    def test_empty_target_passes(self, checker_allow_all):
+    @pytest.mark.asyncio
+    async def test_empty_target_passes(self, checker_allow_all):
         """空目标通过检查"""
-        allowed, _ = checker_allow_all.check("")
+        allowed, _ = await checker_allow_all.check("")
         assert allowed is True
 
-    def test_check_all_returns_denial(self, checker_block_local):
+    @pytest.mark.asyncio
+    async def test_check_all_returns_denial(self, checker_block_local):
         """check_all 返回拒绝结构"""
-        result = checker_block_local.check_all({"url": "http://10.0.0.1/api"})
+        result = await checker_block_local.check_all({"url": "http://10.0.0.1/api"})
         assert result is not None
         assert result["ok"] is False
         assert result["denied_by"] == "network"
         assert result["recoverable"] is True
 
-    def test_check_all_passes(self, checker_allow_all):
+    @pytest.mark.asyncio
+    async def test_check_all_passes(self, checker_allow_all):
         """check_all 通过允许的目标"""
-        result = checker_allow_all.check_all({"url": "https://api.openai.com"})
+        result = await checker_allow_all.check_all({"url": "https://api.openai.com"})
         assert result is None

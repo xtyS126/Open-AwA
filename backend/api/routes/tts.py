@@ -21,6 +21,7 @@ from skills.external.doubao_tts.core.models import (
 )
 from skills.external.doubao_tts.core.tts_client import DoubaoTTSService
 from skills.external.doubao_tts.core.voice_clone import VoiceCloneManager
+from db.models import User
 
 router = APIRouter(prefix="/api/tts", tags=["TTS"])
 
@@ -197,7 +198,7 @@ async def clone_voice(
     voice_name: str = Form(..., description="音色名称"),
     audio_file: UploadFile = File(..., description="音频文件（WAV，14~30秒）"),
     context_texts: Optional[str] = Form(default=None, description="音频对应文本"),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     上传音频样本，创建声音复刻训练任务。
@@ -223,7 +224,7 @@ async def clone_voice(
             audio_bytes=audio_bytes,
             voice_name=voice_name,
             context_texts=context_texts,
-            user_id=str(getattr(current_user, "id", "")),
+            user_id=str(current_user.id),
         )
 
         return {
@@ -242,7 +243,7 @@ async def clone_voice(
 @router.get("/clone/{speaker_id}")
 async def get_clone_status(
     speaker_id: str,
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     查询声音复刻训练状态。
@@ -251,7 +252,7 @@ async def get_clone_status(
     try:
         status_info = await manager.get_status(
             speaker_id,
-            user_id=str(getattr(current_user, "id", "")),
+            user_id=str(current_user.id),
         )
         return {"success": True, **status_info}
     except PermissionError as e:
@@ -263,7 +264,7 @@ async def get_clone_status(
 @router.delete("/clone/{speaker_id}")
 async def delete_cloned_speaker(
     speaker_id: str,
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     删除复刻音色。
@@ -272,7 +273,7 @@ async def delete_cloned_speaker(
     try:
         await manager.delete_speaker(
             speaker_id,
-            user_id=str(getattr(current_user, "id", "")),
+            user_id=str(current_user.id),
         )
         return {"success": True, "message": f"音色 {speaker_id} 已删除"}
     except PermissionError as e:
@@ -287,7 +288,7 @@ async def delete_cloned_speaker(
 
 @router.get("/speakers")
 async def list_speakers(
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     列出所有可用音色（预置 + 复刻）。
@@ -295,7 +296,7 @@ async def list_speakers(
     manager = _get_clone_manager()
     try:
         speakers = await manager.list_speakers(
-            user_id=str(getattr(current_user, "id", "")),
+            user_id=str(current_user.id),
         )
         return {
             "success": True,
@@ -309,14 +310,14 @@ async def list_speakers(
 @router.get("/speakers/{speaker_id}")
 async def get_speaker_info(
     speaker_id: str,
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     获取音色详细信息。
     """
     manager = _get_clone_manager()
     speakers = await manager.list_speakers(
-        user_id=str(getattr(current_user, "id", "")),
+        user_id=str(current_user.id),
     )
     for spk in speakers:
         if spk["speaker_id"] == speaker_id:

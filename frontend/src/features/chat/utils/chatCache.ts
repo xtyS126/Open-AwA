@@ -1,4 +1,5 @@
 import { safeGetJsonItem, safeSetJsonItem } from '@/shared/utils/safeStorage'
+import { appLogger } from '@/shared/utils/logger'
 import type {
   AssistantMessageSegment,
   ChatMessage,
@@ -247,7 +248,9 @@ export function setCachedConversationMessages(sessionId: string, messages: ChatM
   // 串行化缓存写入，避免并发 read-modify-write 导致消息丢失
   _cacheWritePromise = _cacheWritePromise.then(() => {
     _serializeCacheWrite(sessionId, messages)
-  }).catch(() => { /* 静默处理缓存写入错误 */ })
+  }).catch((error) => {
+    appLogger.error({ event: 'chat_cache_write_failed', module: 'chat', message: '聊天缓存写入失败', extra: { sessionId, error: error instanceof Error ? error.message : String(error) } })
+  })
 }
 
 export function flushCachedConversationMessages(sessionId: string, messages: ChatMessage[]): void {
@@ -257,7 +260,9 @@ export function flushCachedConversationMessages(sessionId: string, messages: Cha
   // 刷新操作也需要串行化，确保不与其他写入冲突
   _cacheWritePromise = _cacheWritePromise.then(() => {
     _serializeCacheWrite(sessionId, messages)
-  }).catch(() => {})
+  }).catch((error) => {
+    appLogger.error({ event: 'chat_cache_flush_failed', module: 'chat', message: '聊天缓存刷新失败', extra: { sessionId, error: error instanceof Error ? error.message : String(error) } })
+  })
   _lastMessageCacheWrite = Date.now()
 }
 

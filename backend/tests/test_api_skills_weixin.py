@@ -783,6 +783,29 @@ def test_weixin_binding_route_recovers_from_skills_config_when_binding_row_missi
 
 
 
+def test_weixin_health_check_returns_401_without_authentication():
+    """
+    验证未认证访问 health-check 端点时返回 401 状态码。
+    通过移除 get_current_user 依赖覆盖来模拟未认证场景。
+    """
+    with TestClient(app) as client:
+        # 临时移除 get_current_user 的依赖覆盖，模拟未认证场景
+        original_overrides = dict(app.dependency_overrides)
+        if get_current_user in app.dependency_overrides:
+            del app.dependency_overrides[get_current_user]
+
+        try:
+            payload = {
+                "account_id": "test_acc",
+                "token": "test_tok"
+            }
+            response = client.post(f"{settings.API_V1_STR}/skills/weixin/health-check", json=payload)
+            assert response.status_code == 401
+        finally:
+            # 恢复依赖覆盖
+            app.dependency_overrides = original_overrides
+
+
 def test_weixin_health_check_accepts_form_string_payload(monkeypatch):
     """
     验证weixin、health、check、accepts、form、string、payload相关场景的行为是否符合预期。

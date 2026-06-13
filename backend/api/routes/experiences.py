@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any
 from datetime import datetime, timezone
-from db.models import get_db, ExperienceMemory, ExperienceExtractionLog
+from db.models import get_db, ExperienceMemory, ExperienceExtractionLog, User
 from api.dependencies import get_current_user
 from api.schemas import (
     ExperienceCreate, ExperienceUpdate, ExperienceResponse,
@@ -37,7 +37,7 @@ async def get_experiences(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取experiences相关数据或当前状态。
@@ -75,7 +75,7 @@ async def get_experiences(
 async def get_experience(
     experience_id: int,
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取experience相关数据或当前状态。
@@ -105,7 +105,7 @@ async def get_experience(
 async def create_experience(
     experience_data: ExperienceCreate,
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     创建experience相关对象、记录或执行结果。
@@ -139,7 +139,7 @@ async def update_experience(
     experience_id: int,
     experience_data: ExperienceUpdate,
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     更新experience相关数据、配置或状态。
@@ -178,7 +178,7 @@ async def update_experience(
 async def delete_experience(
     experience_id: int,
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     删除experience相关对象或持久化记录。
@@ -202,7 +202,7 @@ async def delete_experience(
 async def extract_experience(
     request: ExperienceExtractionRequest,
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     处理extract、experience相关逻辑，并为调用方返回对应结果。
@@ -273,7 +273,7 @@ async def search_experiences(
     min_confidence: float = Query(0.3, ge=0.0, le=1.0, description="最低置信度"),
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     处理search、experiences相关逻辑，并为调用方返回对应结果。
@@ -310,7 +310,7 @@ async def search_experiences(
 )
 async def get_experience_stats(
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取experience、stats相关数据或当前状态。
@@ -343,7 +343,7 @@ async def get_experience_stats(
 async def get_extraction_logs(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -379,7 +379,7 @@ async def review_experience(
     experience_id: int,
     approved: bool = Query(..., description="是否批准"),
     manager: ExperienceManager = Depends(get_experience_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     处理review、experience相关逻辑，并为调用方返回对应结果。

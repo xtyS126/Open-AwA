@@ -34,7 +34,7 @@ function LoginPage() {
       setTempApiKey(apiKey.trim())
       const response = await authAPI.getMe()
       const data = response.data || {}
-      // 验证成功后才持久化到 localStorage
+      // 验证成功后才持久化到 sessionStorage
       persistApiKey(apiKey.trim())
       setAuth(
         {

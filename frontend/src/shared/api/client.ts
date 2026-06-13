@@ -6,7 +6,7 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 import { useAuthStore } from '@/shared/store/authStore'
-import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
+import { safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
   _apiKeyRetried?: boolean
@@ -16,23 +16,23 @@ const API_BASE_URL = '/api'
 const API_KEY_STORAGE_KEY = 'openawa_api_key'
 
 // 模块级内存变量，作为 API Key 的主要运行时存储
-// （AVOID localStorage 到内存的读取路径，仅在验证成功后持久化）
-let _inMemoryApiKey = safeGetItem(API_KEY_STORAGE_KEY, '')
+// （AVOID sessionStorage 到内存的读取路径，仅在验证成功后持久化）
+let _inMemoryApiKey = safeSessionGetItem(API_KEY_STORAGE_KEY, '')
 
-/** 获取当前有效的 API Key（优先内存，降级 localStorage） */
+/** 获取当前有效的 API Key（优先内存，降级 sessionStorage） */
 export const getCachedApiKey = (): string => {
   if (_inMemoryApiKey) {
     return _inMemoryApiKey
   }
-  // 降级：从 localStorage 恢复（仅页面首次加载时触发）
-  _inMemoryApiKey = safeGetItem(API_KEY_STORAGE_KEY, '')
+  // 降级：从 sessionStorage 恢复（仅页面首次加载时触发）
+  _inMemoryApiKey = safeSessionGetItem(API_KEY_STORAGE_KEY, '')
   return _inMemoryApiKey
 }
 
-/** 将 API Key 持久化到 localStorage 并更新内存缓存（仅在验证成功后调用） */
+/** 将 API Key 持久化到 sessionStorage 并更新内存缓存（仅在验证成功后调用） */
 export const persistApiKey = (key: string): void => {
   _inMemoryApiKey = key
-  safeSetItem(API_KEY_STORAGE_KEY, key)
+  safeSessionSetItem(API_KEY_STORAGE_KEY, key)
 }
 
 /** 临时设置 API Key 到内存（用于验证，验证成功后再调用 persistApiKey 持久化） */
@@ -43,7 +43,7 @@ export const setTempApiKey = (key: string): void => {
 /** 清除所有存储中的 API Key */
 export const clearCachedApiKey = (): void => {
   _inMemoryApiKey = ''
-  safeSetItem(API_KEY_STORAGE_KEY, '')
+  safeSessionSetItem(API_KEY_STORAGE_KEY, '')
 }
 
 export const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {

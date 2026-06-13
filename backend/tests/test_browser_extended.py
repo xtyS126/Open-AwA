@@ -18,79 +18,91 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 class TestURLValidation:
     """测试 URL 安全校验函数 _validate_url"""
 
-    def test_valid_https_url(self):
+    @pytest.mark.asyncio
+    async def test_valid_https_url(self):
         """有效 HTTPS URL 应通过校验"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("https://example.com/page")
+        result = await _validate_url("https://example.com/page")
         assert result is None
 
-    def test_valid_http_url(self):
+    @pytest.mark.asyncio
+    async def test_valid_http_url(self):
         """有效 HTTP URL 应通过校验"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://example.com")
+        result = await _validate_url("http://example.com")
         assert result is None
 
-    def test_block_ftp_protocol(self):
+    @pytest.mark.asyncio
+    async def test_block_ftp_protocol(self):
         """FTP 协议应被拦截"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("ftp://example.com/file")
+        result = await _validate_url("ftp://example.com/file")
         assert result is not None
         assert "协议" in result
 
-    def test_block_file_protocol(self):
+    @pytest.mark.asyncio
+    async def test_block_file_protocol(self):
         """file:// 协议应被拦截（防止本地文件读取攻击）"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("file:///etc/passwd")
+        result = await _validate_url("file:///etc/passwd")
         assert result is not None
 
-    def test_block_localhost(self):
+    @pytest.mark.asyncio
+    async def test_block_localhost(self):
         """127.0.0.1 应被拦截（SSRF 防护）"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://127.0.0.1:8000/admin")
+        result = await _validate_url("http://127.0.0.1:8000/admin")
         assert result is not None
         assert "内网" in result
 
-    def test_block_private_ip(self):
+    @pytest.mark.asyncio
+    async def test_block_private_ip(self):
         """192.168.x.x 内网 IP 应被拦截"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://192.168.1.1/config")
+        result = await _validate_url("http://192.168.1.1/config")
         assert result is not None
         assert "内网" in result
 
-    def test_block_10_network(self):
+    @pytest.mark.asyncio
+    async def test_block_10_network(self):
         """10.0.0.0/8 网段应被拦截"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://10.0.0.1/api")
+        result = await _validate_url("http://10.0.0.1/api")
         assert result is not None
 
-    def test_block_169_254_link_local(self):
+    @pytest.mark.asyncio
+    async def test_block_169_254_link_local(self):
         """169.254.x.x 链路本地地址应被拦截"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://169.254.169.254/latest/meta-data")
+        result = await _validate_url("http://169.254.169.254/latest/meta-data")
         assert result is not None
 
-    def test_block_0_network(self):
+    @pytest.mark.asyncio
+    async def test_block_0_network(self):
         """0.0.0.0 应被拦截"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://0.0.0.0:8080")
+        result = await _validate_url("http://0.0.0.0:8080")
         assert result is not None
 
-    def test_block_172_16_network(self):
+    @pytest.mark.asyncio
+    async def test_block_172_16_network(self):
         """172.16.0.0/12 内网段应被拦截"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http://172.16.0.1/")
+        result = await _validate_url("http://172.16.0.1/")
         assert result is not None
 
-    def test_invalid_url_format(self):
+    @pytest.mark.asyncio
+    async def test_invalid_url_format(self):
         """无效 URL 格式应返回错误"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("not-a-valid-url")
+        result = await _validate_url("not-a-valid-url")
         assert result is not None
 
-    def test_url_without_hostname(self):
+    @pytest.mark.asyncio
+    async def test_url_without_hostname(self):
         """缺少主机名的 URL 应返回错误"""
         from core.builtin_tools.browser_extended import _validate_url
-        result = _validate_url("http:///path")
+        result = await _validate_url("http:///path")
         assert result is not None
         assert "主机名" in result
 
@@ -98,26 +110,30 @@ class TestURLValidation:
 class TestIsPrivateHost:
     """测试 _is_private_host SSRF 检测函数"""
 
-    def test_localhost_ip_is_private(self):
+    @pytest.mark.asyncio
+    async def test_localhost_ip_is_private(self):
         """127.0.0.1 应被识别为私有地址"""
         from core.builtin_tools.browser_extended import _is_private_host
-        assert _is_private_host("127.0.0.1") is True
+        assert await _is_private_host("127.0.0.1") is True
 
-    def test_private_ip_is_private(self):
+    @pytest.mark.asyncio
+    async def test_private_ip_is_private(self):
         """192.168.1.1 应被识别为私有地址"""
         from core.builtin_tools.browser_extended import _is_private_host
-        assert _is_private_host("192.168.1.1") is True
+        assert await _is_private_host("192.168.1.1") is True
 
-    def test_ipv6_loopback_is_private(self):
+    @pytest.mark.asyncio
+    async def test_ipv6_loopback_is_private(self):
         """::1 IPv6 回环应被识别为私有地址"""
         from core.builtin_tools.browser_extended import _is_private_host
-        assert _is_private_host("::1") is True
+        assert await _is_private_host("::1") is True
 
-    def test_public_ip_is_not_private(self):
+    @pytest.mark.asyncio
+    async def test_public_ip_is_not_private(self):
         """公网 IP 不应被识别为私有（仅当能解析为合法 IP 时）"""
         from core.builtin_tools.browser_extended import _is_private_host
         # 8.8.8.8 是 Google DNS，公网 IP
-        assert _is_private_host("8.8.8.8") is False
+        assert await _is_private_host("8.8.8.8") is False
 
 
 class TestBuildSnapshotText:

@@ -564,12 +564,22 @@ async def csrf_protection_middleware(request: Request, call_next):
     if os.getenv("SKIP_CSRF_FOR_TEST", "").lower() == "true":
         return await call_next(request)
 
-    # 任何 Bearer token 认证的请求跳过 CSRF 校验
-    # （Bearer token 不依赖 Cookie，不存在 CSRF 攻击面。
-    #   token 有效性由 get_current_user 认证层负责，无需 CSRF 层重复验证）
+    # 对 Bearer token 认证的请求进行 CSRF 豁免判断：
+    # 仅对 API Key Bearer token 豁免 CSRF 验证（API Key 不依赖 Cookie，无 CSRF 攻击面）。
+    # JWT Bearer token 请求必须携带 X-CSRF-Token，因为 JWT 可能通过 Cookie 传递，存在 CSRF 风险。
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        return await call_next(request)
+        bearer_token = auth_header[7:].strip()
+        # JWT 格式：三段 base64 用 "." 连接（header.payload.signature）
+        # API Key 格式：任意字符串，不符合 JWT 格式
+        is_jwt = bearer_token.count(".") == 2 and all(
+            part.replace("-", "").replace("_", "").isalnum()
+            for part in bearer_token.split(".")
+        )
+        if not is_jwt:
+            # 非 JWT 格式的 Bearer token 视为 API Key，豁免 CSRF 验证
+            return await call_next(request)
+        # JWT Bearer token 不豁免，继续执行 CSRF 校验
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")

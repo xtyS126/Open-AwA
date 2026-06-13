@@ -46,7 +46,7 @@ interface ChatState {
   addActiveToolCall: (toolId: string) => void
   removeActiveToolCall: (toolId: string) => void
   resetActiveToolCalls: () => void
-  addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string, id?: string) => string
+  addMessage: (role: 'user' | 'assistant', content: string, reasoning_content?: string, id?: string, isError?: boolean) => string
   updateLastMessage: (content: string, reasoning_content?: string) => void
   setMessages: (messages: ChatMessage[]) => void
   updateMessage: (messageId: string, updater: (msg: ChatMessage) => ChatMessage) => void
@@ -94,7 +94,7 @@ export const useChatStore = create<ChatState>((set) => ({
   thinkingDepth: Number(safeGetItem('chat_thinking_depth', '0')) || 0,
   activeToolCalls: [],
 
-  addMessage: (role, content, reasoning_content, id) => {
+  addMessage: (role, content, reasoning_content, id, isError) => {
     const messageId = id || crypto.randomUUID()
     set((state) => ({
       messages: (() => {
@@ -106,6 +106,7 @@ export const useChatStore = create<ChatState>((set) => ({
             content,
             reasoning_content,
             timestamp: new Date(),
+            ...(isError ? { isError: true } : {}),
           },
         ]
         return nextMessages

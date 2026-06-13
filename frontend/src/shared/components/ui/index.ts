@@ -28,3 +28,15 @@ export type { TabsProps, TabItem } from './Tabs'
 
 export { Textarea } from './Textarea'
 export type { TextareaProps } from './Textarea'
+
+export { Badge } from './Badge'
+export type { BadgeProps, BadgeVariant, BadgeMode } from './Badge'
+
+export { Tooltip } from './Tooltip'
+export type { TooltipProps, TooltipPosition } from './Tooltip'
+
+export { SegmentedControl } from './SegmentedControl'
+export type { SegmentedControlProps, SegmentedOption } from './SegmentedControl'
+
+export { Avatar } from './Avatar'
+export type { AvatarProps, AvatarSize, AvatarShape } from './Avatar'

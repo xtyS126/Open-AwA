@@ -65,19 +65,44 @@ comprehension.py → planner.py → executor.py → feedback.py
 | Billing | `backend/billing/` | `tracker.py`, `pricing_manager.py`, `engine.py`, `calculator.py` |
 | MCP Protocol | `backend/mcp/` | `client.py`, `manager.py` (thread-safe singleton), `transport.py`, `protocol.py` |
 | Security | `backend/security/` | `rbac.py`, `audit.py`, `permission.py`, `sandbox.py` |
+| Channels | `backend/channels/` | `manager.py` (connection pool), `base.py` (abstract adapter), 11 adapters: weixin, dingtalk, feishu, discord, telegram, slack, qq, matrix, imessage, wecom |
+| Coding | `backend/core/coding/` | AST search, LSP integration, Git panel, Diff viewer |
 | Scheduled Tasks | `backend/core/` | `scheduled_task_manager.py` (polling loop + transactional claims) |
 | Model Service | `backend/core/` | `model_service.py` (litellm adapter + shared httpx client) |
-| Subagents | `backend/core/` | `subagent.py` (StateGraph executor) |
+| Subagents | `backend/core/` | `subagent.py` (StateGraph executor), task_runtime (multi-agent teams) |
 | Workflow | `backend/workflow/` | `engine.py`, `parser.py` |
+| Tools | `backend/tools/` | Tool registry, built-in tools (file, terminal, search, todo) |
 | System Diagnostics | `backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
 
 ### Frontend Structure
 
-- `src/features/` — Feature modules (chat, dashboard, skills, plugins, memory, billing, experiences, settings, scheduledTasks, auth, user, test)
+- `src/features/` — Feature modules (chat, dashboard, skills, plugins, memory, billing, experiences, settings, scheduledTasks, auth, user, agents, coding, workspace, inbox, tts, search, test)
 - `src/shared/` — Shared: `api/`, `components/`, `store/`, `hooks/`, `types/`, `utils/`
 - `src/__tests__/` — Unit tests mirroring the feature structure
+- `src/i18n/` — Internationalization (dynamic locale loading per language)
 - State: Zustand stores (`useAuthStore`, `useChatStore`, `useThemeStore`)
 - API: Axios with `withCredentials` for Cookie-based auth; path alias `@/` → `src/`
+
+### Frontend Component Architecture Pattern
+
+Feature modules follow a layered pattern to avoid circular dependencies and enable lazy loading:
+
+```
+features/settings/
+  SettingsPage.tsx          # Route page (lazy-loaded by App.tsx)
+  containers/               # Tab/modal containers (lazy-loaded, one per tab)
+    ModelsTabContainer.tsx
+    ApiTabContainer.tsx
+    ...
+  hooks/                    # Shared data hooks (cross-tab cache)
+    useSharedSettingsData.ts
+  modelsApi.ts              # API calls for this feature
+```
+
+- **Containers** wrap tab/modal content, loaded via `React.lazy()` + `Suspense` to avoid blocking the route page
+- **Hooks** manage cross-tab shared state (e.g., `useSharedSettingsData` caches provider/config data once across all Settings tabs)
+- **Zustand selectors** are atomized to single-field granularity (e.g., `useChatStore(s => s.streamingContent)` not object selectors) to minimize re-renders during streaming
+- Components that receive stable props should be wrapped in `React.memo`
 
 ## Adding a New API Route (Backend)
 
@@ -116,6 +141,17 @@ Always use `plugins.plugin_instance.get()` to access the PluginManager. Never cr
 ### Sandbox
 
 `plugin_sandbox.py` wraps plugin execution with `asyncio.wait_for` timeout control. Resource limits (memory/CPU) are applied via `resource.setrlimit` on Unix or `psutil` on Windows. The default timeout is 60 seconds.
+
+## Channels System (Multi-IM Integration)
+
+The channels system (`backend/channels/`) provides a unified abstraction for 11 IM platforms. Each platform implements the `ChannelAdapter` abstract base class:
+
+- **Adapter pattern** — `base.py` defines `ChannelAdapter` (ABC), `ChannelMessage`, `ChannelConfig`. Each platform (weixin, dingtalk, feishu, discord, telegram, slack, qq, matrix, imessage, wecom) extends it.
+- **Connection pool** — `ChannelManager` in `manager.py` manages lifecycle (connect/disconnect/health check) and message queuing for all registered adapters.
+- **ChannelType enum** — Standardized platform identifiers used for routing and message dispatch.
+- Route: `backend/api/routes/weixin.py` handles WeChat-specific webhooks; other channels route through their respective adapters.
+
+Channels are distinct from MCP and Plugins — they are inbound message sources, not tool providers.
 
 ## MCP vs Plugin Manager
 
@@ -235,6 +271,9 @@ git commit -m "[Type] 变更描述"
 - **RBAC 通配符**: `check_permission` 支持 `skill:*` 匹配 `skill:read`，`*` 仅在同段数下生效
 - **登录限流**: 通过 `RateLimitStore` 抽象层管理，`DatabaseRateLimitStore` 使用 `time.time()`（跨 worker 一致），`MemoryRateLimitStore` 使用 `time.monotonic()`（单进程不受时钟跳变影响）
 - **模型参数 or 陷阱**: `getattr(config, "retry_count", 3) or 3` 会将 `0` 误判为未设置，必须使用 `is not None` 检查
+- **SSRF 防护**: `BASE_URL` 校验拒绝内网/本地/链路本地 IP 地址，修改模型服务 URL 验证逻辑时需保持此检查
+- **API Key 迁移**: `OPENAWA_API_KEY` 为空时自动从 `SECRET_KEY` 迁移，删除旧逻辑需兼容此路径
+- **Tool calls 结果截断**: 过长的工具调用结果会被截断后再传给 LLM，修改截断阈值时注意上下文窗口限制
 
 ## API Path Prefix
 
@@ -244,6 +283,7 @@ All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, ma
 
 - [AGENTS.md](AGENTS.md) — Extended guidelines, pre-commit checklist, git rules
 - [README.md](README.md) — Project overview, capabilities, quick start
+- [CODE_WIKI.md](CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives, class/function quick reference, dependency graph
 - [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) — Detailed technical documentation
 - [docs/架构/后端架构说明.md](docs/架构/后端架构说明.md) — Backend architecture details
 - [docs/架构/前端架构说明.md](docs/架构/前端架构说明.md) — Frontend architecture details

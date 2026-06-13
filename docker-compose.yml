@@ -21,7 +21,7 @@ services:
       - DATABASE_URL=sqlite:///data/openawa.db
       - VECTOR_DB_PATH=data/vector_db
       - LOG_DIR=/app/logs
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
     volumes:
       - openawa-data:/app/data
       - openawa-logs:/app/logs

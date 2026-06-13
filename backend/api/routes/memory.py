@@ -18,7 +18,7 @@ from api.schemas import (
     ShortTermMemoryCreate,
     ShortTermMemoryResponse,
 )
-from db.models import ConversationRecord, LongTermMemory, ShortTermMemory, SessionLocal, get_db
+from db.models import ConversationRecord, LongTermMemory, ShortTermMemory, SessionLocal, User, get_db
 from memory.manager import MemoryManager
 
 
@@ -56,7 +56,7 @@ def _verify_session_ownership(db: Session, session_id: str, user_id: str, allow_
 async def get_short_term_memory(
     session_id: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     workspace_id: str = "default",
 ):
     """
@@ -82,7 +82,7 @@ async def get_short_term_memory(
 async def add_short_term_memory(
     memory: ShortTermMemoryCreate,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     workspace_id: str = "default",
 ):
     """
@@ -107,7 +107,7 @@ async def add_short_term_memory(
 async def delete_short_term_memory(
     memory_id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     删除短期记忆，先验证该记忆所属会话是否属于当前用户。
@@ -137,7 +137,7 @@ async def get_long_term_memories(
     limit: int = 50,
     include_archived: bool = Query(False, description="是否包含已归档记忆"),
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     memories = await manager.get_long_term_memories(
         limit=limit,
@@ -152,7 +152,7 @@ async def get_long_term_memories(
 async def add_long_term_memory(
     memory: LongTermMemoryCreate,
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     return await manager.add_long_term_memory(
         user_id=str(current_user.id),
@@ -167,7 +167,7 @@ async def add_long_term_memory(
 async def delete_long_term_memory(
     memory_id: int,
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     db = manager.session_factory()
     try:
@@ -193,7 +193,7 @@ async def search_memories(
     query: str,
     include_archived: bool = Query(False, description="是否包含已归档记忆"),
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     return await manager.search_memories(
         query=query,
@@ -212,7 +212,7 @@ async def search_memories(
 async def vector_search_memories(
     request: MemoryVectorSearchRequest,
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return await manager.search_memories(
         query=request.query,
@@ -233,7 +233,7 @@ async def vector_search_memories(
 async def archive_memories(
     request: MemoryArchiveRequest,
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     archived_count = await manager.archive_memories(
         user_id=str(current_user.id),
@@ -254,7 +254,7 @@ async def get_memory_quality(
     memory_id: Optional[int] = Query(None, description="指定记忆 ID，留空时返回批量报告"),
     limit: int = Query(20, ge=1, le=100, description="批量报告数量"),
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return await manager.get_quality_report(
         user_id=str(current_user.id),
@@ -271,6 +271,6 @@ async def get_memory_quality(
 )
 async def get_memory_stats(
     manager: MemoryManager = Depends(get_memory_manager),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return await manager.get_memory_stats(user_id=str(current_user.id))

@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { 
-  MessageSquare, LayoutDashboard, CreditCard, Zap, 
-  Clock, Blocks, Brain, Settings, Award, Radio, 
+import {
+  MessageSquare, LayoutDashboard, CreditCard, Zap,
+  Clock, Blocks, Brain, Settings, Award, Radio,
   Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
+import { Tooltip } from '@/shared/components/ui'
 import styles from './Sidebar.module.css'
 
 interface MenuItem {
@@ -162,6 +163,7 @@ const renderIcon = (type: string, size = 18) => {
         className={styles['mobile-menu-btn']}
         onClick={toggleMobile}
         title={t('sidebar.menu')}
+        aria-label={t('sidebar.menu')}
       >
         <Menu size={22} />
       </button>
@@ -195,14 +197,24 @@ const renderIcon = (type: string, size = 18) => {
         </button>
       </div>
       
-      <nav className={styles['sidebar-nav']}>
+      <nav className={styles['sidebar-nav']} role="navigation" aria-label="主导航">
         {menuGroups.map((group, groupIndex) => (
           <div key={group.id} className={styles['menu-group']}>
             {/* 分组之间的分隔线（第一个分组前不显示） */}
             {groupIndex > 0 && !collapsed && <div className={styles['group-divider']} />}
-            <div 
+            <div
               className={styles['group-header']}
               onClick={() => toggleGroup(group.id)}
+              role="button"
+              tabIndex={0}
+              aria-expanded={expandedGroups[group.id]}
+              aria-label={group.title}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  toggleGroup(group.id)
+                }
+              }}
             >
               {!collapsed && (
                 <>
@@ -215,22 +227,30 @@ const renderIcon = (type: string, size = 18) => {
               {/* 折叠模式下分组之间用分隔线替代 */}
               {collapsed && groupIndex > 0 && <div className={styles['group-divider']} />}
             </div>
-            
+
             {expandedGroups[group.id] && (
               <div className={styles['group-items']}>
-                {group.items.map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`${styles['sidebar-item']} ${isActive(item.path) ? styles['active'] : ''}`}
-                    title={collapsed ? item.label : undefined}
-                    aria-current={isActive(item.path) ? 'page' : undefined}
-                  >
-                    <span className={styles['sidebar-icon']}>{renderIcon(item.iconType, 18)}</span>
-                    {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
-                    {collapsed && <span className={styles['tooltip']}>{item.label}</span>}
-                  </Link>
-                ))}
+                {group.items.map((item) => {
+                  const active = isActive(item.path)
+                  const linkContent = (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`${styles['sidebar-item']} ${active ? styles['active'] : ''}`}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <span className={styles['sidebar-icon']}>{renderIcon(item.iconType, 18)}</span>
+                      {!collapsed && <span className={styles['sidebar-label']}>{item.label}</span>}
+                    </Link>
+                  )
+                  return collapsed ? (
+                    <Tooltip key={item.path} content={item.label} position="right">
+                      {linkContent}
+                    </Tooltip>
+                  ) : (
+                    linkContent
+                  )
+                })}
               </div>
             )}
           </div>

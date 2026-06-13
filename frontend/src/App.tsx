@@ -7,6 +7,7 @@ import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { mark } from '@/shared/perf/metrics'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
+import { SkipLink } from '@/shared/components/SkipLink/SkipLink'
 
 // P2: Sidebar 懒加载，减少主包体积
 const Sidebar = React.lazy(() => import('@/shared/components/Sidebar/Sidebar'))
@@ -57,17 +58,74 @@ function NavigationLogger() {
   return null
 }
 
-function App() {
-  const { isInitialized, isAuthenticated } = useAuthStore()
-  const { theme } = useThemeStore()
-  const shellMarkedRef = useRef(false)
-  useAppInitialization()
+function AppRoutes() {
+  const location = useLocation()
+  const { isAuthenticated } = useAuthStore()
 
-  // P2: 记录 App Shell 首次可见时间
-  if (!shellMarkedRef.current) {
-    shellMarkedRef.current = true
-    mark('app_shell_visible')
+  if (!isAuthenticated) {
+    return (
+      <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
+        <Routes>
+          <Route path="/login" element={<ErrorBoundary name="Login"><LoginPage /></ErrorBoundary>} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
+    )
   }
+
+  return (
+    <div className="app-container">
+      <Suspense fallback={<div className="sidebar-skeleton" />}>
+        <Sidebar />
+      </Suspense>
+      {/* 主内容区，skip-link 目标锚点 */}
+      <main id="main-content" className="main-content">
+        <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
+          {/* 使用 location.pathname 作为 key，触发 CSS 动画实现页面切换淡入 */}
+          <div className="page-transition-wrapper" key={location.pathname}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/login" element={<Navigate to="/chat" replace />} />
+              <Route path="/chat" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
+              <Route path="/chat/:conversationId" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
+              <Route path="/dashboard" element={<ErrorBoundary name="Dashboard"><DashboardPage /></ErrorBoundary>} />
+              <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
+              <Route path="/skills" element={<ErrorBoundary name="Skills"><SkillsPage /></ErrorBoundary>} />
+              <Route path="/skills/market" element={<ErrorBoundary name="SkillMarket"><SkillMarketPage /></ErrorBoundary>} />
+              <Route path="/scheduled-tasks" element={<ErrorBoundary name="ScheduledTasks"><ScheduledTasksPage /></ErrorBoundary>} />
+              <Route path="/plugins">
+                <Route index element={<Navigate to="manage" replace />} />
+                <Route path="manage" element={<ErrorBoundary name="Plugins"><PluginsPage /></ErrorBoundary>} />
+                <Route path="config/:pluginId" element={<ErrorBoundary name="PluginConfig"><PluginConfigPage /></ErrorBoundary>} />
+                <Route path="marketplace" element={<ErrorBoundary name="Marketplace"><MarketplacePage /></ErrorBoundary>} />
+              </Route>
+              <Route path="/marketplace" element={<Navigate to="/plugins/marketplace" replace />} />
+              <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
+              <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
+              <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
+              <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
+              <Route path="/theme" element={<ErrorBoundary name="Theme"><ThemePage /></ErrorBoundary>} />
+              <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
+              <Route path="/profile/edit" element={<ErrorBoundary name="ProfileEditor"><ProfileEditorPage /></ErrorBoundary>} />
+              <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
+              <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
+              <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />
+              <Route path="/inbox" element={<ErrorBoundary name="Inbox"><InboxPage /></ErrorBoundary>} />
+              <Route path="/agents" element={<ErrorBoundary name="Agents"><AgentListPage /></ErrorBoundary>} />
+              <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
+            </Routes>
+          </div>
+        </Suspense>
+      </main>
+    </div>
+  )
+}
+
+function App() {
+  const { isInitialized } = useAuthStore()
+  const { theme } = useThemeStore()
+  const shellMarkedRef = useRef<boolean | null>(null)
+  useAppInitialization()
 
   // P2: 认证状态解析后记录时间
   useEffect(() => {
@@ -75,6 +133,14 @@ function App() {
       mark('auth_resolved')
     }
   }, [isInitialized])
+
+  // P2: 记录 App Shell 首次可见时间
+  useEffect(() => {
+    if (shellMarkedRef.current === null) {
+      shellMarkedRef.current = true
+      mark('app_shell_visible')
+    }
+  }, [])
 
   // 主题类名同步设置（壳层立即生效）
   useEffect(() => {
@@ -89,58 +155,12 @@ function App() {
   // 壳层立即可见，认证状态决定路由内容
   return (
     <ErrorBoundary name="Root">
-    <BrowserRouter future={routerFutureConfig}>
-      <NavigationLogger />
-      {!isAuthenticated ? (
-        <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
-          <Routes>
-            <Route path="/login" element={<ErrorBoundary name="Login"><LoginPage /></ErrorBoundary>} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </Suspense>
-      ) : (
-        <div className="app-container">
-          <Suspense fallback={<div className="sidebar-skeleton" />}>
-            <Sidebar />
-          </Suspense>
-          <main className="main-content">
-            <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
-              <Routes>
-                <Route path="/" element={<Navigate to="/chat" replace />} />
-                <Route path="/login" element={<Navigate to="/chat" replace />} />
-                <Route path="/chat" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
-                <Route path="/chat/:conversationId" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
-                <Route path="/dashboard" element={<ErrorBoundary name="Dashboard"><DashboardPage /></ErrorBoundary>} />
-                <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
-                <Route path="/skills" element={<ErrorBoundary name="Skills"><SkillsPage /></ErrorBoundary>} />
-                <Route path="/skills/market" element={<ErrorBoundary name="SkillMarket"><SkillMarketPage /></ErrorBoundary>} />
-                <Route path="/scheduled-tasks" element={<ErrorBoundary name="ScheduledTasks"><ScheduledTasksPage /></ErrorBoundary>} />
-                <Route path="/plugins">
-                  <Route index element={<Navigate to="manage" replace />} />
-                  <Route path="manage" element={<ErrorBoundary name="Plugins"><PluginsPage /></ErrorBoundary>} />
-                  <Route path="config/:pluginId" element={<ErrorBoundary name="PluginConfig"><PluginConfigPage /></ErrorBoundary>} />
-                  <Route path="marketplace" element={<ErrorBoundary name="Marketplace"><MarketplacePage /></ErrorBoundary>} />
-                </Route>
-                <Route path="/marketplace" element={<Navigate to="/plugins/marketplace" replace />} />
-                <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
-                <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
-                <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
-                <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
-                <Route path="/theme" element={<ErrorBoundary name="Theme"><ThemePage /></ErrorBoundary>} />
-                <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
-                <Route path="/profile/edit" element={<ErrorBoundary name="ProfileEditor"><ProfileEditorPage /></ErrorBoundary>} />
-                <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
-                <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
-                <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />
-                <Route path="/inbox" element={<ErrorBoundary name="Inbox"><InboxPage /></ErrorBoundary>} />
-                <Route path="/agents" element={<ErrorBoundary name="Agents"><AgentListPage /></ErrorBoundary>} />
-                <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
-              </Routes>
-            </Suspense>
-          </main>
-        </div>
-      )}
-    </BrowserRouter>
+      <BrowserRouter future={routerFutureConfig}>
+        {/* 可访问性：跳转到主内容链接 */}
+        <SkipLink />
+        <NavigationLogger />
+        <AppRoutes />
+      </BrowserRouter>
     </ErrorBoundary>
   )
 }

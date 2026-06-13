@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { Plugin } from '@/features/dashboard/dashboard'
@@ -95,7 +95,7 @@ function PluginsPage() {
   }, [discovered, plugins])
 
   /** 安装本地发现的插件到数据库 */
-  const handleInstallLocal = async (pluginName: string, pluginVersion: string) => {
+  const handleInstallLocal = useCallback(async (pluginName: string, pluginVersion: string) => {
     setInstallingPlugins((prev) => new Set(prev).add(pluginName))
     try {
       await pluginsAPI.install({ name: pluginName, version: pluginVersion, config: {} })
@@ -111,20 +111,20 @@ function PluginsPage() {
         return next
       })
     }
-  }
+  }, [refreshPlugins, refreshDiscovered, addToast])
 
-  const refreshPluginPermissions = async (plugin: Plugin) => {
+  const refreshPluginPermissions = useCallback(async (plugin: Plugin) => {
     return refreshPermissions(plugin)
-  }
+  }, [refreshPermissions])
 
-  const openPermissionModal = async (plugin: Plugin) => {
+  const openPermissionModal = useCallback(async (plugin: Plugin) => {
     setSelectedPlugin(plugin)
     setPermissionModalOpen(true)
     setPermissionMessage('')
     await refreshPluginPermissions(plugin)
-  }
+  }, [refreshPluginPermissions])
 
-  const handleAuthorizeMissingPermissions = async () => {
+  const handleAuthorizeMissingPermissions = useCallback(async () => {
     if (!selectedPlugin) return
     const status = permissionStatusMap[selectedPlugin.id]
     const missing = status?.missing_permissions || []
@@ -140,9 +140,9 @@ function PluginsPage() {
     } catch {
       setPermissionMessage('权限授权失败')
     }
-  }
+  }, [selectedPlugin, permissionStatusMap, authorizePermissions, refreshPluginPermissions])
 
-  const handleRevokePermission = async (permission: string) => {
+  const handleRevokePermission = useCallback(async (permission: string) => {
     if (!selectedPlugin) return
 
     try {
@@ -152,9 +152,9 @@ function PluginsPage() {
     } catch {
       setPermissionMessage('权限撤销失败')
     }
-  }
+  }, [selectedPlugin, revokePermissions, refreshPluginPermissions])
 
-  const handleToggle = async (plugin: Plugin) => {
+  const handleToggle = useCallback(async (plugin: Plugin) => {
     try {
       if (!plugin.enabled) {
         const status = await refreshPluginPermissions(plugin)
@@ -169,9 +169,9 @@ function PluginsPage() {
     } catch {
       addToast('插件状态切换失败', 'error')
     }
-  }
+  }, [refreshPluginPermissions, openPermissionModal, toggle, refreshPlugins, addToast])
 
-  const handleUninstall = async (id: string) => {
+  const handleUninstall = useCallback(async (id: string) => {
     if (!confirm('确定要卸载这个插件吗？')) return
     try {
       await deleteOne(id)
@@ -181,9 +181,9 @@ function PluginsPage() {
     } catch {
       addToast('插件删除失败', 'error')
     }
-  }
+  }, [deleteOne, refreshPlugins, addToast])
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0]
       const isZipExtension = file.name.toLowerCase().endsWith('.zip')
@@ -208,9 +208,9 @@ function PluginsPage() {
         if (fileInputRef.current) fileInputRef.current.value = ''
       }
     }
-  }
+  }, [importFromFile, refreshPlugins, addToast])
 
-  const handleImportByUrl = async () => {
+  const handleImportByUrl = useCallback(async () => {
     const trimmedUrl = remoteUrl.trim()
     if (!trimmedUrl) {
       addToast('请输入远程 URL', 'warning')
@@ -224,25 +224,25 @@ function PluginsPage() {
     } catch {
       addToast('远程 URL 导入失败', 'error')
     }
-  }
+  }, [remoteUrl, importFromUrl, refreshPlugins, addToast])
 
-  const handleToggleSelectAll = (checked: boolean) => {
+  const handleToggleSelectAll = useCallback((checked: boolean) => {
     if (checked) {
       setSelectedIds(filteredPlugins.map((plugin) => plugin.id))
       return
     }
     setSelectedIds([])
-  }
+  }, [filteredPlugins])
 
-  const handleToggleSelectOne = (pluginId: string, checked: boolean) => {
+  const handleToggleSelectOne = useCallback((pluginId: string, checked: boolean) => {
     if (checked) {
       setSelectedIds((prev) => (prev.includes(pluginId) ? prev : [...prev, pluginId]))
       return
     }
     setSelectedIds((prev) => prev.filter((id) => id !== pluginId))
-  }
+  }, [])
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = useCallback(async () => {
     if (selectedIds.length === 0) return
     if (!confirm(`确定要批量删除 ${selectedIds.length} 个插件吗？`)) return
     try {
@@ -257,7 +257,61 @@ function PluginsPage() {
     } catch {
       addToast('批量删除失败', 'error')
     }
-  }
+  }, [selectedIds, deleteBatch, refreshPlugins, addToast])
+
+  const handleClickImport = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleRemoteUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setRemoteUrl(e.target.value)
+  }, [])
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchKeyword(e.target.value)
+  }, [])
+
+  const handleRetryErrors = useCallback(() => {
+    if (listError) retryLoadPlugins()
+    if (importError) retryImport()
+    if (deleteError) retryDelete()
+    if (permissionError) retryPermission()
+    if (toggleError) retryToggle()
+  }, [listError, importError, deleteError, permissionError, toggleError, retryLoadPlugins, retryImport, retryDelete, retryPermission, retryToggle])
+
+  const handleToggleDescription = useCallback((pluginId: string) => {
+    setExpandedDescriptions((prev) => ({ ...prev, [pluginId]: !prev[pluginId] }))
+  }, [])
+
+  const handleTogglePlugin = useCallback((plugin: Plugin) => {
+    handleToggle(plugin)
+  }, [handleToggle])
+
+  const handleOpenPermission = useCallback((plugin: Plugin) => {
+    openPermissionModal(plugin)
+  }, [openPermissionModal])
+
+  const handleToggleDebug = useCallback((pluginId: string) => {
+    setDebugPluginId((prev) => (prev === pluginId ? null : pluginId))
+  }, [])
+
+  const handleNavigateConfig = useCallback((pluginId: string) => {
+    navigate(`/plugins/config/${pluginId}`)
+  }, [navigate])
+
+  const handleUninstallPlugin = useCallback((pluginId: string) => {
+    handleUninstall(pluginId)
+  }, [handleUninstall])
+
+  const handleInstallLocalPlugin = useCallback((pluginName: string, pluginVersion: string) => {
+    handleInstallLocal(pluginName, pluginVersion)
+  }, [handleInstallLocal])
+
+  const handleClosePermissionModal = useCallback(() => {
+    setPermissionModalOpen(false)
+    setSelectedPlugin(null)
+    setPermissionMessage('')
+  }, [])
 
   const allFilteredSelected = filteredPlugins.length > 0 && filteredPlugins.every((item) => selectedIds.includes(item.id))
 
@@ -283,7 +337,7 @@ function PluginsPage() {
           />
           <button
             className={`btn btn-primary`}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={handleClickImport}
             disabled={importing}
           >
             {importing ? '导入中...' : '导入插件'}
@@ -292,7 +346,7 @@ function PluginsPage() {
             className={styles['url-input']}
             placeholder="输入远程 ZIP URL（支持白名单域名）"
             value={remoteUrl}
-            onChange={(e) => setRemoteUrl(e.target.value)}
+            onChange={handleRemoteUrlChange}
           />
           <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleImportByUrl} disabled={importing}>
             URL 导入
@@ -305,7 +359,7 @@ function PluginsPage() {
           className={styles['search-input']}
           placeholder="搜索插件名称 / 版本 / 作者 / 简介"
           value={searchKeyword}
-          onChange={(e) => setSearchKeyword(e.target.value)}
+          onChange={handleSearchChange}
         />
         <label className={styles['select-all']}>
           <input
@@ -327,13 +381,7 @@ function PluginsPage() {
       {(listError || importError || deleteError || permissionError || toggleError) && (
         <div className={styles['inline-error']}>
           <span>{listError || importError || deleteError || permissionError || toggleError}</span>
-          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => {
-            if (listError) retryLoadPlugins()
-            if (importError) retryImport()
-            if (deleteError) retryDelete()
-            if (permissionError) retryPermission()
-            if (toggleError) retryToggle()
-          }}>
+          <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleRetryErrors}>
             重试
           </button>
         </div>
@@ -345,7 +393,7 @@ function PluginsPage() {
             <p>{plugins.length === 0 ? '还没有安装任何插件' : '没有匹配的插件'}</p>
             <button
               className={`btn btn-primary`}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleClickImport}
               disabled={importing}
             >
               {importing ? '导入中...' : '导入插件'}
@@ -378,9 +426,7 @@ function PluginsPage() {
                   {description.length > 80 && (
                     <button
                       className={styles['description-toggle']}
-                      onClick={() => {
-                        setExpandedDescriptions((prev) => ({ ...prev, [plugin.id]: !expanded }))
-                      }}
+                      onClick={() => handleToggleDescription(plugin.id)}
                     >
                       {expanded ? '收起简介' : '查看简介'}
                     </button>
@@ -400,32 +446,32 @@ function PluginsPage() {
                 <div className={styles['plugin-actions']}>
                   <button
                     className={`btn ${plugin.enabled ? styles['btn-secondary'] : styles['btn-primary']}`}
-                    onClick={() => handleToggle(plugin)}
+                    onClick={() => handleTogglePlugin(plugin)}
                     disabled={toggling}
                   >
                     {plugin.enabled ? '禁用' : '启用'}
                   </button>
                   <button
                     className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                    onClick={() => openPermissionModal(plugin)}
+                    onClick={() => handleOpenPermission(plugin)}
                   >
                     权限
                   </button>
                   <button
                     className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                    onClick={() => setDebugPluginId(debugPluginId === plugin.id ? null : plugin.id)}
+                    onClick={() => handleToggleDebug(plugin.id)}
                   >
                     {debugPluginId === plugin.id ? '关闭调试' : '调试'}
                   </button>
                   <button
                     className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                    onClick={() => navigate(`/plugins/config/${plugin.id}`)}
+                    onClick={() => handleNavigateConfig(plugin.id)}
                   >
                     配置
                   </button>
                   <button
                     className={`btn ${styles['btn-danger'] || 'btn-danger'}`}
-                    onClick={() => handleUninstall(plugin.id)}
+                    onClick={() => handleUninstallPlugin(plugin.id)}
                     style={plugin.category === 'builtin' ? { display: 'none' } : undefined}
                   >
                     卸载
@@ -474,7 +520,7 @@ function PluginsPage() {
                 <div className={styles['plugin-actions']}>
                   <button
                     className="btn btn-primary"
-                    onClick={() => handleInstallLocal(dp.name, dp.version)}
+                    onClick={() => handleInstallLocalPlugin(dp.name, dp.version)}
                     disabled={installingPlugins.has(dp.name)}
                   >
                     {installingPlugins.has(dp.name) ? '安装中...' : '安装'}
@@ -550,11 +596,7 @@ function PluginsPage() {
               </button>
               <button
                 className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-                onClick={() => {
-                  setPermissionModalOpen(false)
-                  setSelectedPlugin(null)
-                  setPermissionMessage('')
-                }}
+                onClick={handleClosePermissionModal}
               >
                 关闭
               </button>

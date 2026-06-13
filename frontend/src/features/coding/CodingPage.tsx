@@ -37,7 +37,9 @@ const CodingPage: React.FC = () => {
 
   // 同步 CC 模式到后端
   useEffect(() => {
-    codingApi.toggleCCMode(ccModeEnabled).catch(() => {})
+    codingApi.toggleCCMode(ccModeEnabled).catch((error) => {
+      appLogger.error({ event: 'cc_mode_sync_failed', module: 'coding', message: 'CC模式同步失败', extra: { error: error instanceof Error ? error.message : String(error) } })
+    })
   }, [ccModeEnabled])
 
   const handleSearch = useCallback(async () => {

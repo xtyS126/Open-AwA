@@ -5,6 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useInboxStore, type InboxMessage } from './store/inboxStore';
 import { useI18nStore } from '@/i18n';
 import { inboxApi } from './inboxApi';
+import { appLogger } from '@/shared/utils/logger';
 import { EmptyState } from '@/shared/components/ui';
 import styles from './InboxPage.module.css';
 
@@ -49,21 +50,27 @@ const InboxPage: React.FC = () => {
     try {
       await inboxApi.markAsRead(msg.id);
       markAsRead(msg.id);
-    } catch {}
+    } catch (error) {
+      appLogger.error({ event: 'inbox_mark_read_failed', module: 'inbox', message: '标记已读失败', extra: { messageId: msg.id, error: error instanceof Error ? error.message : String(error) } });
+    }
   };
 
   const handleMarkAllRead = async () => {
     try {
       await inboxApi.markAllRead(filter !== 'all' ? filter : undefined);
       markAllRead();
-    } catch {}
+    } catch (error) {
+      appLogger.error({ event: 'inbox_mark_all_read_failed', module: 'inbox', message: '全部标记已读失败', extra: { error: error instanceof Error ? error.message : String(error) } });
+    }
   };
 
   const handleDelete = async (msg: InboxMessage) => {
     try {
       await inboxApi.delete(msg.id);
       removeMessage(msg.id);
-    } catch {}
+    } catch (error) {
+      appLogger.error({ event: 'inbox_delete_failed', module: 'inbox', message: '删除消息失败', extra: { messageId: msg.id, error: error instanceof Error ? error.message : String(error) } });
+    }
   };
 
   const filtered = filter === 'all'

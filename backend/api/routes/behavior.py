@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from datetime import datetime, timedelta, timezone
-from db.models import get_db, BehaviorLog
+from db.models import get_db, BehaviorLog, User
 from api.dependencies import get_current_user
 from api.schemas import BehaviorStats
 
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/behaviors", tags=["Behavior Analysis"])
 async def get_behavior_stats(
     days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取当前用户的行为统计数据，按用户ID过滤防止信息泄露。
@@ -172,7 +172,7 @@ async def get_behavior_logs(
     limit: int = Query(50, ge=1, le=100),
     action_type: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取当前用户的行为日志，按用户ID过滤防止信息泄露。
@@ -206,7 +206,7 @@ async def log_behavior(
     action_type: str,
     details: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     处理log、behavior相关逻辑，并为调用方返回对应结果。

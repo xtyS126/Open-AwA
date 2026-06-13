@@ -843,7 +843,16 @@ class ExecutionLayer:
                 from config.security import decrypt_secret_value
                 api_key = decrypt_secret_value(raw_key)
             else:
+                # 当 ModelConfiguration 中没有 API Key 时，尝试从 ProviderCredential 表读取
                 api_key = None
+                try:
+                    cred = pricing_manager.get_provider_credential(provider)
+                    if cred and cred.api_key:
+                        from config.security import decrypt_secret_value
+                        api_key = decrypt_secret_value(cred.api_key)
+                        logger.info(f"已从 ProviderCredential 表为 {provider} 解析 API Key")
+                except Exception as e:
+                    logger.warning(f"从 ProviderCredential 表解析 API Key 失败: {e}")
             api_endpoint = config.api_endpoint
             max_tokens = getattr(config, "max_tokens_limit", None)
             selected_models: list[str] = []
@@ -1396,7 +1405,7 @@ class ExecutionLayer:
                 # 推断当前 scope
                 scope = str(context.get("scope") or context.get("execution_mode") or "chat")
                 if am.is_active_for(scope):
-                    denial = am.check_all(func_name, func_args)
+                    denial = await am.check_all(func_name, func_args)
                     if denial:
                         # 记录审计日志（fire-and-forget，不阻塞工具拒绝返回）
                         session_id = str(context.get("session_id", "") or "")

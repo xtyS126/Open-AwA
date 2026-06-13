@@ -21,7 +21,7 @@ from api.services.diary_writer import (
     resolve_diary_dir,
     save_diary,
 )
-from db.models import get_db
+from db.models import get_db, User
 
 router = APIRouter(prefix="/diary", tags=["diary"])
 
@@ -65,7 +65,7 @@ class DiaryReadResponse(BaseModel):
 )
 async def generate_diary(
     db: Session = Depends(get_db),
-    current_user: Any = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     触发日记生成。
@@ -79,7 +79,7 @@ async def generate_diary(
         db=db,
         range_start=range_start,
         range_end=range_end,
-        user_id=getattr(current_user, "id", None),
+        user_id=current_user.id,
     )
 
     if not materials:
@@ -98,7 +98,7 @@ async def generate_diary(
     personality = _load_soul_content()
 
     # 获取用户名和 Agent 名
-    user_name = getattr(current_user, "username", None) or getattr(current_user, "nickname", None) or "用户"
+    user_name = current_user.username or current_user.nickname or "用户"
     agent_name = "Open-AwA"
 
     # 调用 LLM 生成日记
@@ -146,7 +146,7 @@ async def generate_diary(
     summary="列出所有日记",
     description="返回所有已生成日记文件的列表。",
 )
-async def list_diary_entries(current_user=Depends(get_current_user)):
+async def list_diary_entries(current_user: User = Depends(get_current_user)):
     """
     列出当前用户的所有已生成日记文件。
     """
@@ -165,7 +165,7 @@ async def list_diary_entries(current_user=Depends(get_current_user)):
     summary="获取指定日期日记",
     description="按日期字符串（如 2026-05-16）读取对应的日记内容。",
 )
-async def get_diary(date: str, current_user=Depends(get_current_user)):
+async def get_diary(date: str, current_user: User = Depends(get_current_user)):
     """
     获取当前用户指定日期的日记内容。
     日期格式：YYYY-MM-DD。
