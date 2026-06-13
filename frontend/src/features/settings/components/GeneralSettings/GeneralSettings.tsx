@@ -2,7 +2,7 @@
  * 通用设置组件
  * 包括：主题、语言、工具回环、输出模式、主模型选择、AI参数配置
  */
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import type { ModelConfiguration, ModelCapabilitiesResponse } from '@/features/settings/modelsApi'
 import type { ModelPricing } from '@/features/billing/billingApi'
 import type { ModelOption } from '@/features/chat/store/chatStore'
@@ -62,7 +62,7 @@ interface GeneralSettingsProps {
   onSave: () => void
 }
 
-export function GeneralSettings({
+function GeneralSettingsInner({
   settings,
   outputMode,
   globalSelectedModel,
@@ -467,4 +467,5 @@ export function GeneralSettings({
   )
 }
 
+export const GeneralSettings = memo(GeneralSettingsInner)
 export default GeneralSettings

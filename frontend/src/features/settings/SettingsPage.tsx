@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Settings as SettingsIcon,
@@ -134,14 +134,14 @@ function SettingsPage() {
     }
   }, [location.search, navigate])
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
     if (tab === 'general') {
       navigate('/settings')
     } else {
       navigate(`/settings?tab=${tab}`)
     }
-  }
+  }, [navigate])
   const [settings, setSettings] = useState<Settings>({
     theme: 'light',
     language: 'zh',
@@ -333,7 +333,7 @@ function SettingsPage() {
   }
 
   // 加载可用远端模型列表（供通用设置页模型选择器使用）
-  const loadGlobalModelOptions = async () => {
+  const loadGlobalModelOptions = useCallback(async () => {
     setHasAttemptedGlobalModelLoad(true)
     setModelLoading(true)
     setModelError(null)
@@ -442,7 +442,7 @@ function SettingsPage() {
     } finally {
       setModelLoading(false)
     }
-  }
+  }, [configurations, globalSelectedModel, setGlobalSelectedModel, setModelOptions, setModelLoading, setModelError, remoteModelCacheRef])
 
   // 首次挂载时加载一次全局数据，后续 Tab 切换不再重复请求
   useEffect(() => {
@@ -450,28 +450,46 @@ function SettingsPage() {
     loadPrompts()
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tab 切换时按需加载当前 Tab 的专属数据
+  // 记录已加载数据的 Tab，避免重复请求
+  const loadedTabsRef = useRef<Set<string>>(new Set())
+
+  // 当数据变更时失效对应 Tab 的缓存，确保切换 Tab 时重新拉取最新数据
+  const invalidateTabCache = useCallback((tabs: string[]) => {
+    tabs.forEach(t => loadedTabsRef.current.delete(t))
+  }, [])
+
+  // Tab 切换时按需加载当前 Tab 的专属数据（带防抖，避免快速切换时重复请求）
   useEffect(() => {
-    if (activeTab === 'general') {
-      loadModelsData()
-      loadBillingData()
-    }
-    if (activeTab === 'billing') {
-      loadBillingData()
-    }
-    if (activeTab === 'data-retention') {
-      loadRetentionConfig()
-    }
-    if (activeTab === 'models') {
-      loadModelsData()
-    }
-    if (activeTab === 'api') {
-      loadApiProvidersData()
-    }
-    if (activeTab === 'data-collection') {
-      loadCollectionStatus()
-      loadRecordsPreview()
-    }
+    const tabSwitchTimer = setTimeout(() => {
+      // 如果该 Tab 数据已加载，跳过（减少重复请求）
+      if (loadedTabsRef.current.has(activeTab)) {
+        return
+      }
+      loadedTabsRef.current.add(activeTab)
+
+      if (activeTab === 'general') {
+        loadModelsData()
+        loadBillingData()
+      }
+      if (activeTab === 'billing') {
+        loadBillingData()
+      }
+      if (activeTab === 'data-retention') {
+        loadRetentionConfig()
+      }
+      if (activeTab === 'models') {
+        loadModelsData()
+      }
+      if (activeTab === 'api') {
+        loadApiProvidersData()
+      }
+      if (activeTab === 'data-collection') {
+        loadCollectionStatus()
+        loadRecordsPreview()
+      }
+    }, 150) // 150ms 防抖
+
+    return () => clearTimeout(tabSwitchTimer)
   }, [activeTab])
 
   const loadRetentionConfig = async () => {
@@ -1025,6 +1043,7 @@ function SettingsPage() {
       }
 
       invalidateRemoteModelCache(providerForm.provider)
+      invalidateTabCache(['general', 'models', 'api'])
       showNotification({ type: 'success', text: '模型导入及配置保存成功' })
       setShowImportModal(false)
 
@@ -1106,6 +1125,7 @@ function SettingsPage() {
       }
 
       invalidateRemoteModelCache(providerForm.provider)
+      invalidateTabCache(['general', 'models', 'api'])
       setSelectedForDeletion([])
       showNotification({ type: 'success', text: '批量删除及配置保存成功' })
       setShowDeleteModelsModal(false)
@@ -1431,7 +1451,7 @@ function SettingsPage() {
     }
   }
 
-  const saveSettings = async () => {
+  const saveSettings = useCallback(async () => {
     setSaving(true)
 
     try {
@@ -1473,11 +1493,11 @@ function SettingsPage() {
     } finally {
       setSaving(false)
     }
-  }
+  }, [settings, showNotification])
 
-  const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+  const handleChange = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
-  }
+  }, [])
 
   const handleEditModel = (model: ModelPricing) => {
     setEditingModel(model.id)
@@ -1503,13 +1523,13 @@ function SettingsPage() {
 
   // groupedModels and remaining functions
 
-  const groupedModels = models.reduce((acc, model) => {
+  const groupedModels = useMemo(() => models.reduce((acc, model) => {
     if (!acc[model.provider]) {
       acc[model.provider] = []
     }
     acc[model.provider].push(model)
     return acc
-  }, {} as Record<string, ModelPricing[]>)
+  }, {} as Record<string, ModelPricing[]>), [models])
 
   const renderSecondarySidebar = () => {
     const tabs = [

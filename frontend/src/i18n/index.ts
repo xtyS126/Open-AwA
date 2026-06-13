@@ -1,5 +1,8 @@
 /**
  * i18n 国际化框架 — 多语言支持和语言切换。
+ *
+ * 语言包采用动态加载策略：仅默认语言（zh-CN）在首屏加载，其他语言按需异步拉取，
+ * 减少初始打包体积约 180KB（三个非默认语言包）。
  */
 import { create } from 'zustand';
 
@@ -7,17 +10,19 @@ import { create } from 'zustand';
 export type LocaleKey = string;
 export type LocaleDict = Record<LocaleKey, string>;
 
-// 加载语言包
+// 默认语言包静态加载（zh-CN 为默认语言，首屏必需）
 import zhCN from './locales/zh-CN';
-import enUS from './locales/en-US';
-import jaJP from './locales/ja-JP';
-import ruRU from './locales/ru-RU';
 
-const LOCALES: Record<string, LocaleDict> = {
+// 其他语言包动态加载，减小首屏打包体积
+const localeLoaders: Record<string, () => Promise<{ default: LocaleDict }>> = {
+  'en-US': () => import('./locales/en-US'),
+  'ja-JP': () => import('./locales/ja-JP'),
+  'ru-RU': () => import('./locales/ru-RU'),
+};
+
+// 已加载的语言包缓存（zh-CN 默认已加载）
+const loadedLocales: Record<string, LocaleDict> = {
   'zh-CN': zhCN,
-  'en-US': enUS,
-  'ja-JP': jaJP,
-  'ru-RU': ruRU,
 };
 
 const FALLBACK_LOCALE = 'zh-CN';
@@ -34,6 +39,8 @@ interface I18nStore {
   locale: string;
   setLocale: (locale: string) => void;
   t: (key: string, params?: Record<string, string>) => string;
+  /** 当前语言包是否已加载完成（未加载时回退显示 key 或默认语言文本） */
+  isLocaleLoaded: boolean;
 }
 
 function _normalizeLocale(raw: string): string {
@@ -57,15 +64,54 @@ function getInitialLocale(): string {
   return _normalizeLocale(navigator.language) || FALLBACK_LOCALE;
 }
 
+/**
+ * 异步加载指定语言包，若已缓存则立即返回。
+ */
+async function loadLocaleAsync(locale: string): Promise<void> {
+  if (loadedLocales[locale]) return;
+  const loader = localeLoaders[locale];
+  if (!loader) return;
+  try {
+    const module = await loader();
+    loadedLocales[locale] = module.default;
+  } catch {
+    // 加载失败时静默处理，t() 会回退到默认语言
+    console.warn(`[i18n] Failed to load locale: ${locale}`);
+  }
+}
+
+/**
+ * 同步预加载当前初始语言包（在 store 创建前调用）。
+ * 若初始语言非 zh-CN，会在后台异步加载，期间 t() 回退到 zh-CN。
+ */
+const initialLocale = getInitialLocale();
+if (initialLocale !== FALLBACK_LOCALE) {
+  loadLocaleAsync(initialLocale);
+}
+
 export const useI18nStore = create<I18nStore>((set, get) => ({
-  locale: getInitialLocale(),
+  locale: initialLocale,
+  isLocaleLoaded: initialLocale === FALLBACK_LOCALE || Boolean(loadedLocales[initialLocale]),
   setLocale: (locale) => {
-    localStorage.setItem('openawa_locale', locale);
-    set({ locale });
+    const normalized = _normalizeLocale(locale);
+    if (!normalized || !localeLoaders[normalized] && normalized !== FALLBACK_LOCALE) return;
+    localStorage.setItem('openawa_locale', normalized);
+    // 标记为未加载，让 UI 显示过渡状态
+    const isLoaded = Boolean(loadedLocales[normalized]);
+    set({ locale: normalized, isLocaleLoaded: isLoaded });
+    // 异步加载语言包
+    if (!isLoaded) {
+      loadLocaleAsync(normalized).then(() => {
+        // 仅当用户未再切换语言时才更新加载状态
+        if (get().locale === normalized) {
+          set({ isLocaleLoaded: true });
+        }
+      });
+    }
   },
   t: (key, params) => {
     const { locale } = get();
-    const dict = LOCALES[locale] || LOCALES[FALLBACK_LOCALE] || {};
+    const dict = loadedLocales[locale] || loadedLocales[FALLBACK_LOCALE] || {};
     // 开发模式下检测缺失的翻译 key
     if (import.meta.env.DEV && !dict[key]) {
       console.warn(`[i18n] Missing translation: "${key}" (locale: ${locale})`);
