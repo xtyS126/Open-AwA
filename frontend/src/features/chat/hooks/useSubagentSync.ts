@@ -215,7 +215,7 @@ export function useSubagentSync({
       updateAssistantSegments(assistantMessageId, (segments = []) => {
         // 从当前 segments 读取已积累的日志，避免被超时消息覆盖
         const currentTool = (segments || []).flatMap(s => (s && 'toolEvents' in s && Array.isArray(s.toolEvents)) ? s.toolEvents : []).find(t => t && t.id === agentId)
-        const tempMeta = { toolEvents: currentTool ? [currentTool] : [], isThinking: false } as any
+        const tempMeta: AssistantExecutionMeta = { ...createEmptyExecutionMeta(), toolEvents: currentTool ? [currentTool] : [] }
         const toolMeta = applySubagentTimeout(tempMeta, timeoutPayload).toolEvents[0]
         if (!toolMeta) return segments || []
         return applyToolEventToSegments(segments, toolMeta)

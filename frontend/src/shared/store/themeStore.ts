@@ -10,6 +10,18 @@ export interface ThemeConfig {
   themeColor: string
   backgroundImage: string
   logoIcon: string
+  // 新增字段
+  borderRadius: string
+  density: 'compact' | 'default' | 'comfortable'
+  animationsEnabled: boolean
+  messageFontSize: string
+  codeFontFamily: string
+  customCSS: string
+  presetTheme: string
+  backgroundBlur: string
+  backgroundOverlay: string
+  avatarShape: 'circle' | 'rounded'
+  avatarBorder: string
 }
 
 interface ThemeState {
@@ -40,10 +52,39 @@ const getInitialConfig = (): ThemeConfig => {
       fontSize: safeGetItem('theme_fontSize', '') as string || '14px',
       themeColor: safeGetItem('theme_themeColor', '') as string || '',
       backgroundImage: safeGetItem('theme_backgroundImage', '') as string || '',
-      logoIcon: safeGetItem('theme_logoIcon', '') as string || ''
+      logoIcon: safeGetItem('theme_logoIcon', '') as string || '',
+      // 新增字段默认值
+      borderRadius: safeGetItem('theme_borderRadius', '') as string || '',
+      density: safeGetItem('theme_density', 'default') as 'compact' | 'default' | 'comfortable' || 'default',
+      animationsEnabled: safeGetItem('theme_animationsEnabled', 'true') !== 'false',
+      messageFontSize: safeGetItem('theme_messageFontSize', '') as string || '',
+      codeFontFamily: safeGetItem('theme_codeFontFamily', '') as string || '',
+      customCSS: safeGetItem('theme_customCSS', '') as string || '',
+      presetTheme: safeGetItem('theme_presetTheme', '') as string || '',
+      backgroundBlur: safeGetItem('theme_backgroundBlur', '') as string || '',
+      backgroundOverlay: safeGetItem('theme_backgroundOverlay', '') as string || '',
+      avatarShape: safeGetItem('theme_avatarShape', 'circle') as 'circle' | 'rounded' || 'circle',
+      avatarBorder: safeGetItem('theme_avatarBorder', '') as string || '',
     }
   }
-  return { fontFamily: '', fontSize: '14px', themeColor: '', backgroundImage: '', logoIcon: '' }
+  return {
+    fontFamily: '',
+    fontSize: '14px',
+    themeColor: '',
+    backgroundImage: '',
+    logoIcon: '',
+    borderRadius: '',
+    density: 'default',
+    animationsEnabled: true,
+    messageFontSize: '',
+    codeFontFamily: '',
+    customCSS: '',
+    presetTheme: '',
+    backgroundBlur: '',
+    backgroundOverlay: '',
+    avatarShape: 'circle',
+    avatarBorder: '',
+  }
 }
 
 const applyTheme = (theme: Theme) => {
@@ -86,6 +127,90 @@ const applyConfig = (config: ThemeConfig) => {
     root.style.removeProperty('--custom-theme-color')
     root.style.removeProperty('--color-primary')
     root.style.removeProperty('--button-bg')
+  }
+
+  // 圆角大小
+  if (config.borderRadius) {
+    root.style.setProperty('--custom-border-radius', config.borderRadius)
+  } else {
+    root.style.removeProperty('--custom-border-radius')
+  }
+
+  // 间距密度
+  const densityMap = { compact: '0.75', default: '1', comfortable: '1.25' }
+  if (config.density && config.density !== 'default') {
+    root.style.setProperty('--custom-density-multiplier', densityMap[config.density])
+  } else {
+    root.style.removeProperty('--custom-density-multiplier')
+  }
+
+  // 动效开关
+  if (config.animationsEnabled === false) {
+    root.style.setProperty('--custom-transition-duration', '0ms')
+  } else {
+    root.style.removeProperty('--custom-transition-duration')
+  }
+
+  // 消息字体大小
+  if (config.messageFontSize) {
+    root.style.setProperty('--custom-message-font-size', config.messageFontSize)
+  } else {
+    root.style.removeProperty('--custom-message-font-size')
+  }
+
+  // 代码字体
+  if (config.codeFontFamily) {
+    root.style.setProperty('--custom-code-font-family', config.codeFontFamily)
+  } else {
+    root.style.removeProperty('--custom-code-font-family')
+  }
+
+  // 背景模糊度
+  if (config.backgroundBlur) {
+    root.style.setProperty('--custom-background-blur', config.backgroundBlur)
+  } else {
+    root.style.removeProperty('--custom-background-blur')
+  }
+
+  // 背景覆盖层
+  if (config.backgroundOverlay) {
+    root.style.setProperty('--custom-background-overlay', config.backgroundOverlay)
+  } else {
+    root.style.removeProperty('--custom-background-overlay')
+  }
+
+  // 头像形状
+  const AVATAR_ROUNDED_RADIUS = '8px'
+  if (config.avatarShape && config.avatarShape !== 'circle') {
+    root.style.setProperty('--custom-avatar-shape', config.avatarShape === 'rounded' ? AVATAR_ROUNDED_RADIUS : '50%')
+  } else {
+    root.style.removeProperty('--custom-avatar-shape')
+  }
+
+  // 头像边框（需校验防止注入）
+  const CSS_VALUE_REGEX = /^[a-zA-Z0-9#.,()%\-\s]+$/
+  if (config.avatarBorder && CSS_VALUE_REGEX.test(config.avatarBorder)) {
+    root.style.setProperty('--custom-avatar-border', config.avatarBorder)
+  } else {
+    root.style.removeProperty('--custom-avatar-border')
+  }
+
+  // 自定义 CSS（需经过安全过滤）
+  let customStyleEl = document.getElementById('custom-theme-css')
+  if (config.customCSS) {
+    if (!customStyleEl) {
+      customStyleEl = document.createElement('style')
+      customStyleEl.id = 'custom-theme-css'
+      document.head.appendChild(customStyleEl)
+    }
+    // 移除危险 CSS 语法：url()、@import、expression()
+    const sanitized = config.customCSS
+      .replace(/url\s*\([^)]*\)/gi, '')
+      .replace(/@import\s+[^;]+;/gi, '')
+      .replace(/expression\s*\([^)]*\)/gi, '')
+    customStyleEl.textContent = sanitized
+  } else if (customStyleEl) {
+    customStyleEl.remove()
   }
 
   if (config.backgroundImage) {

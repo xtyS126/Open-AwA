@@ -117,15 +117,15 @@ export function parseStream(text: string): ParsedStreamState {
     }
   }
 
-  // --- Clean up final content ---
+  // --- 清理最终内容 ---
+  // 移除 <thinking>...</thinking> 块（含未闭合的，未闭合时后续内容视为思考内容）
   let finalContent = text
-    // Remove XML tags
     .replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '')
     .replace(/<file\s+path="[^"]+">[\s\S]*?(?:<\/file>|$)/gi, '')
     .replace(/<task\s+id="[^"]+"\s+status="[^"]+">[\s\S]*?(?:<\/task>|$)/gi, '')
     .replace(/<\/?files>/gi, '')
     .replace(/<\/?tasks>/gi, '')
-    // Remove Markdown blocks
+    // 移除 Markdown 块
     .replace(/(?:^|\n)>\s*(?:Thinking|思考过程)[:：]?\s*\n(?:>.*\n?)*/gi, '')
     .replace(/(?:^|\n)\*\*Files:?\*\*\s*\n(?:-\s+`[^`]+`\s*\n?)*/gi, '')
     .replace(/(?:^|\n)\*\*Tasks:?\*\*\s*\n(?:-\s+\[[ x-]\]\s+.*\n?)*/gi, '');

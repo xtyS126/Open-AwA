@@ -1,8 +1,11 @@
 /**
  * 新增供应商模态框组件
+ * 支持从供应商目录（pricing_data.json + 数据库）中选择预定义供应商，
+ * 也可自定义输入供应商标识。
  */
-import { PROVIDER_NAMES } from '@/assets/providers'
-import { getPresetProviderBaseUrl } from '@/features/settings/SettingsPage.utils'
+import { useEffect, useState } from 'react'
+import { modelsAPI } from '@/features/settings/modelsApi'
+import type { ModelProvider, ProviderCatalogModel } from '@/features/settings/modelsApi'
 import styles from '@/features/settings/SettingsPage.module.css'
 
 interface AddProviderFormState {
@@ -10,6 +13,8 @@ interface AddProviderFormState {
   display_name: string
   api_endpoint: string
   is_custom: boolean
+  /** 从目录选择的供应商携带的模型列表，创建后自动导入 */
+  catalog_models?: ProviderCatalogModel[]
 }
 
 interface CreateProviderModalProps {
@@ -36,9 +41,38 @@ export function CreateProviderModal({
   onChangeForm,
   onCreate,
 }: CreateProviderModalProps) {
+  const [catalogProviders, setCatalogProviders] = useState<ModelProvider[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+
+  // 打开模态框时加载供应商目录
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    setCatalogLoading(true)
+    modelsAPI.getProviderCatalog()
+      .then(res => {
+        if (!cancelled) {
+          setCatalogProviders(res.data.providers || [])
+        }
+      })
+      .catch(() => {
+        // 加载失败不影响主流程，使用空列表
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCatalogLoading(false)
+        }
+      })
+    return () => { cancelled = true }
+  }, [isOpen])
+
   if (!isOpen) {
     return null
   }
+
+  // 按 source 分组：推荐供应商（pricing_data）和已配置供应商（database）
+  const recommendedProviders = catalogProviders.filter(p => p.source === 'pricing_data')
+  const configuredProviders = catalogProviders.filter(p => p.source === 'database')
 
   return (
     <div className={styles['provider-modal-overlay']} onClick={onClose}>
@@ -58,6 +92,7 @@ export function CreateProviderModal({
             <select
               id="add-provider-select"
               value={addProviderForm.is_custom ? '__custom__' : addProviderForm.provider}
+              disabled={catalogLoading}
               onChange={(e) => {
                 const val = e.target.value
                 if (val === '__custom__') {
@@ -66,21 +101,40 @@ export function CreateProviderModal({
                     display_name: '',
                     api_endpoint: '',
                     is_custom: true,
+                    catalog_models: [],
                   })
-                } else {
+                } else if (val) {
+                  // 从目录中查找选中的供应商，自动填充 base_url 和模型列表
+                  const selected = catalogProviders.find(p => p.id === val)
                   onChangeForm({
                     provider: val,
-                    display_name: PROVIDER_NAMES[val] || val,
-                    api_endpoint: getPresetProviderBaseUrl(val),
+                    display_name: selected?.name || selected?.display_name || val,
+                    api_endpoint: selected?.base_url || '',
                     is_custom: false,
+                    catalog_models: selected?.models || [],
                   })
                 }
               }}
             >
-              <option value="">请选择供应商</option>
-              {Object.entries(PROVIDER_NAMES).map(([id, name]) => (
-                <option key={id} value={id}>{id} — {name}</option>
-              ))}
+              <option value="">{catalogLoading ? '加载中...' : '请选择供应商'}</option>
+              {recommendedProviders.length > 0 && (
+                <optgroup label="推荐供应商">
+                  {recommendedProviders.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.id} — {p.name}{p.model_count ? ` (${p.model_count} 个模型)` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {configuredProviders.length > 0 && (
+                <optgroup label="已配置供应商">
+                  {configuredProviders.map(p => (
+                    <option key={p.id} value={p.id} disabled>
+                      {p.id} — {p.name} (已配置)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
               <option value="__custom__">自定义...</option>
             </select>
             {addProviderForm.is_custom && (
@@ -114,6 +168,12 @@ export function CreateProviderModal({
               placeholder="https://api.example.com/v1"
             />
           </div>
+          {/* 显示选中供应商的模型数量提示 */}
+          {!addProviderForm.is_custom && addProviderForm.catalog_models && addProviderForm.catalog_models.length > 0 && (
+            <div style={{ fontSize: '0.85em', color: '#6b7280', marginTop: 4 }}>
+              创建后将自动导入 {addProviderForm.catalog_models.length} 个模型
+            </div>
+          )}
         </div>
         <div className={styles['provider-modal-actions']}>
           <button className={`btn ${styles['btn-secondary']}`} onClick={onClose} disabled={creatingProvider}>取消</button>

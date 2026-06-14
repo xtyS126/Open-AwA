@@ -306,7 +306,7 @@ describe('SettingsPage', () => {
     expect(payload).not.toHaveProperty('max_tokens')
   })
 
-  it.skip('通用设置默认模型使用惰性远端加载并复用缓存，且忽略本地回退模型', async () => {
+  it('通用设置默认模型使用惰性远端加载并复用缓存，且忽略本地回退模型', async () => {
     renderSettingsGeneralTab()
 
     expect(modelApiMocks.getModelsByProvider).not.toHaveBeenCalled()

@@ -8,6 +8,9 @@
   object-fit: cover;
   overflow: hidden;
   vertical-align: middle;
+  /* 支持从 CSS 变量读取自定义形状和边框 */
+  border-radius: var(--custom-avatar-shape, inherit);
+  border: var(--custom-avatar-border, none);
 }
 
 /* 尺寸 */

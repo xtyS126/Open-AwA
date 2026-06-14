@@ -114,7 +114,24 @@ export interface ModelProvider {
   has_api_key?: boolean
   selected_models?: string[]
   configuration_count?: number
-  source?: 'database' | 'pricing_json'
+  source?: 'database' | 'pricing_data'
+  model_count?: number
+  models?: ProviderCatalogModel[]
+}
+
+/** 供应商目录中的模型条目 */
+export interface ProviderCatalogModel {
+  name: string
+  input_price: number
+  output_price: number
+  currency: string
+  context_window: number | null
+}
+
+/** 供应商目录响应 */
+export interface ProviderCatalogResponse {
+  providers: ModelProvider[]
+  total: number
 }
 
 export interface ProviderDetailResponse {
@@ -144,6 +161,15 @@ export interface ProviderConnectionStatus {
   status: 'connected' | 'auth_error' | 'timeout' | 'unreachable' | 'unconfigured' | 'error'
   message: string
   display_name?: string
+}
+
+// 连通性测试结果
+export interface ConnectivityTestResult {
+  success: boolean
+  model_count?: number | null
+  error_message?: string | null
+  latency_ms: number
+  provider: string
 }
 
 export interface ProvidersStatusResponse {
@@ -235,6 +261,10 @@ export const modelsAPI = {
   getProviders: () =>
     api.get('/billing/providers'),
 
+  /** 获取供应商预填充目录（合并数据库和 pricing_data.json） */
+  getProviderCatalog: () =>
+    api.get<ProviderCatalogResponse>('/billing/provider-catalog'),
+
   getProviderDetail: (provider: string) =>
     api.get(`/billing/providers/${provider}`),
 
@@ -273,4 +303,12 @@ export const modelsAPI = {
   /** 获取脱敏的 API Key */
   getMaskedApiKey: (provider: string) =>
     api.get<{ masked_api_key: string | null; has_api_key: boolean }>(`/billing/credentials/${provider}/masked-key`),
+
+  /** 测试供应商连通性 */
+  testProviderConnectivity: (provider: string, apiKey: string, baseUrl?: string) =>
+    api.post<ConnectivityTestResult>('/system/connectivity-test', {
+      provider,
+      api_key: apiKey,
+      base_url: baseUrl || undefined,
+    }),
 }

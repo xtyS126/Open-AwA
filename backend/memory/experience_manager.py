@@ -22,11 +22,13 @@ class ExperienceManager:
     避免在异步事件循环中阻塞。
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Optional[Session] = None):
         """
         初始化经验管理器。
         参数:
-            db: SQLAlchemy 数据库会话实例
+            db: SQLAlchemy 数据库会话实例（可选）。
+                传入时用于向后兼容旧调用方式；所有 _sync 方法均使用独立会话，
+                不依赖此参数，因此新代码可省略。
         """
         self.db = db
         self._session_factory = SessionLocal
@@ -480,6 +482,47 @@ class ExperienceManager:
         
         return sorted(unique_experiences, key=calculate_score, reverse=True)
     
+    def _update_experience_quality_sync(
+        self,
+        experience_id: int,
+        success: bool,
+        feedback: Optional[Dict] = None
+    ) -> bool:
+        """同步方法：更新经验记录的质量评分与置信度。"""
+        db = self._new_session()
+        try:
+            experience = db.query(ExperienceMemory).filter(
+                ExperienceMemory.id == experience_id
+            ).first()
+            if not experience:
+                return False
+
+            if success:
+                experience.success_count += 1
+
+            if experience.usage_count > 0:
+                base_rate = experience.success_count / experience.usage_count
+
+                weeks_since_creation = (datetime.now(timezone.utc) - experience.created_at).days / 7
+                decay_rate = 0.95
+                decayed_rate = base_rate * (decay_rate ** weeks_since_creation)
+
+                experience.confidence = max(0.0, min(1.0, decayed_rate))
+
+            experience.last_access = datetime.now(timezone.utc)
+
+            if feedback:
+                metadata = json.loads(experience.experience_metadata or '{}')
+                metadata['last_feedback'] = feedback
+                experience.experience_metadata = json.dumps(metadata)
+
+            db.commit()
+
+            logger.info(f"Updated experience quality: {experience_id}, new confidence: {experience.confidence}")
+            return True
+        finally:
+            db.close()
+
     async def update_experience_quality(
         self,
         experience_id: int,
@@ -490,33 +533,10 @@ class ExperienceManager:
         更新experience、quality相关数据、配置或状态。
         阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
         """
-        experience = await self.get_experience_by_id(experience_id)
-        if not experience:
-            return False
-        
-        if success:
-            experience.success_count += 1
-        
-        if experience.usage_count > 0:
-            base_rate = experience.success_count / experience.usage_count
-            
-            weeks_since_creation = (datetime.now(timezone.utc) - experience.created_at).days / 7
-            decay_rate = 0.95
-            decayed_rate = base_rate * (decay_rate ** weeks_since_creation)
-            
-            experience.confidence = max(0.0, min(1.0, decayed_rate))
-        
-        experience.last_access = datetime.now(timezone.utc)
-        
-        if feedback:
-            metadata = json.loads(experience.experience_metadata or '{}')
-            metadata['last_feedback'] = feedback
-            experience.experience_metadata = json.dumps(metadata)
-        
-        self.db.commit()
-        
-        logger.info(f"Updated experience quality: {experience_id}, new confidence: {experience.confidence}")
-        return True
+        return await asyncio.to_thread(
+            self._update_experience_quality_sync,
+            experience_id, success, feedback
+        )
     
     async def archive_low_quality_experiences(self, batch_limit: int = 500) -> int:
         """

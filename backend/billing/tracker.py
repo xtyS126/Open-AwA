@@ -5,7 +5,7 @@
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime, date, timedelta, timezone
 import uuid
 import json
@@ -85,10 +85,10 @@ class UsageTracker:
         end_date: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0
-    ) -> List[UsageRecord]:
-        """按用户/会话/模型/时间范围多条件查询用量记录列表，支持分页。"""
+    ) -> Tuple[List[UsageRecord], int]:
+        """按用户/会话/模型/时间范围多条件查询用量记录列表，支持分页。返回记录列表和总匹配数。"""
         query = self.db.query(UsageRecord)
-        
+
         if user_id:
             query = query.filter(UsageRecord.user_id == user_id)
         if session_id:
@@ -101,8 +101,11 @@ class UsageTracker:
             query = query.filter(UsageRecord.created_at >= start_date)
         if end_date:
             query = query.filter(UsageRecord.created_at <= end_date)
-        
-        return query.order_by(UsageRecord.created_at.desc()).offset(offset).limit(limit).all()
+
+        # 分页前先统计总匹配数，供前端计算总页数
+        total = query.count()
+        records = query.order_by(UsageRecord.created_at.desc()).offset(offset).limit(limit).all()
+        return records, total
 
     def get_session_usage(self, session_id: str) -> Dict:
         """汇总指定会话的 token 用量和费用，按模型分组返回。使用 SQL 聚合查询避免全量加载。"""

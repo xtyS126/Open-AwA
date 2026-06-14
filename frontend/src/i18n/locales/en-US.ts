@@ -179,6 +179,7 @@ const enUS: Record<string, string> = {
   "chat.generatingDiary": "Generating diary...",
   "chat.diaryGenerated": "Diary generated ({date})",
   "chat.diaryFailed": "Diary generation failed",
+  "chat.feedbackFailed": "Feedback submission failed, please retry",
   "chat.undoFailed": "Undo failed",
   "chat.confirmDeleteConversation": "Confirm deleting this conversation? It can be recovered within 30 days.",
   "chat.confirmDeleteSelected": "Confirm deleting {count} selected conversations? They can be recovered within 30 days.",

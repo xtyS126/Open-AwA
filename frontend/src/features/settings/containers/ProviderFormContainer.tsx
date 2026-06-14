@@ -16,6 +16,7 @@ import type {
   OllamaModel,
   ProviderConnectionStatus,
   ModelConfiguration,
+  ProviderCatalogModel,
 } from '@/features/settings/modelsApi'
 import { getApiErrorDetail } from '@/shared/api/client'
 import { useNotification } from '@/shared/hooks/useNotification'
@@ -44,6 +45,8 @@ export interface AddProviderFormState {
   display_name: string
   api_endpoint: string
   is_custom: boolean
+  /** 从目录选择的供应商携带的模型列表，创建后自动导入 */
+  catalog_models?: ProviderCatalogModel[]
 }
 
 /** useProviderForm Hook 的入参接口 */
@@ -227,6 +230,15 @@ export function useProviderForm({
       remoteModelCacheRef.current.delete(providerId)
     } else {
       remoteModelCacheRef.current.clear()
+    }
+  }, [])
+
+  /** 失效供应商详情缓存（保存/创建/删除后必须调用，避免读取 stale 数据） */
+  const invalidateProviderDetailsCache = useCallback((providerId?: string) => {
+    if (providerId) {
+      providerDetailsCacheRef.current.delete(providerId)
+    } else {
+      providerDetailsCacheRef.current.clear()
     }
   }, [])
 
@@ -442,6 +454,7 @@ export function useProviderForm({
       }
 
       invalidateRemoteModelCache(providerForm.provider)
+      invalidateProviderDetailsCache(providerForm.provider)
       invalidateTabCache(['general', 'models', 'api'])
       showNotification({ type: 'success', text: '模型导入及配置保存成功' })
       setShowImportModal(false)
@@ -485,7 +498,7 @@ export function useProviderForm({
     } finally {
       setImporting(false)
     }
-  }, [providerForm, modalSelectedModels, configurations, showNotification, invalidateRemoteModelCache, invalidateTabCache, loadModelsData, loadApiProvidersData])
+  }, [providerForm, modalSelectedModels, configurations, showNotification, invalidateRemoteModelCache, invalidateProviderDetailsCache, invalidateTabCache, loadModelsData, loadApiProvidersData])
 
   /** 批量删除模型 */
   const handleBatchDeleteModels = useCallback(async () => {
@@ -525,6 +538,7 @@ export function useProviderForm({
       }
 
       invalidateRemoteModelCache(providerForm.provider)
+      invalidateProviderDetailsCache(providerForm.provider)
       invalidateTabCache(['general', 'models', 'api'])
       setSelectedForDeletion([])
       showNotification({ type: 'success', text: '批量删除及配置保存成功' })
@@ -539,7 +553,7 @@ export function useProviderForm({
     } finally {
       setDeletingModels(false)
     }
-  }, [providerForm, selectedForDeletion, showNotification, invalidateRemoteModelCache, invalidateTabCache, loadModelsData, loadApiProvidersData])
+  }, [providerForm, selectedForDeletion, showNotification, invalidateRemoteModelCache, invalidateProviderDetailsCache, invalidateTabCache, loadModelsData, loadApiProvidersData])
 
   /** 打开创建供应商模态框 */
   const handleOpenCreateProviderModal = useCallback(() => {
@@ -581,17 +595,45 @@ export function useProviderForm({
         api_endpoint: normalizedBaseUrl || undefined,
       })
 
+      // 自动导入 catalog_models 中的模型
+      const catalogModels = addProviderForm.catalog_models || []
+      const modelNames = catalogModels.map(m => m.name)
+      if (modelNames.length > 0) {
+        // 设置 selected_models，让供应商关联这些模型
+        await modelsAPI.updateProviderSelectedModels(providerId, {
+          selected_models: modelNames,
+        })
+        // 为每个模型创建独立的配置记录
+        for (const modelName of modelNames) {
+          try {
+            await modelsAPI.createConfiguration({
+              provider: providerId,
+              model: modelName,
+              display_name: modelName,
+              is_default: false,
+            })
+          } catch (e) {
+            // 409 冲突表示已存在，静默跳过
+            const status = (e as { response?: { status?: number } })?.response?.status
+            if (status !== 409) {
+              appLogger.error({ event: 'catalog_model_config_create_failed', module: 'settings', message: `Failed to create config for model: ${modelName}`, extra: { model: modelName } })
+            }
+          }
+        }
+      }
+
       setAddProviderForm(createInitialAddProviderForm())
       setShowCreateProviderModal(false)
       invalidateRemoteModelCache(providerId)
-      showNotification({ type: 'success', text: '供应商创建成功' })
+      invalidateProviderDetailsCache(providerId)
+      showNotification({ type: 'success', text: modelNames.length > 0 ? `供应商创建成功，已导入 ${modelNames.length} 个模型` : '供应商创建成功' })
       await loadApiProvidersData(providerId)
     } catch (error) {
       showNotification({ type: 'error', text: `供应商创建失败：${getApiErrorDetail(error)}` })
     } finally {
       setCreatingProvider(false)
     }
-  }, [addProviderForm, showNotification, invalidateRemoteModelCache, loadApiProvidersData, createInitialAddProviderForm])
+  }, [addProviderForm, showNotification, invalidateRemoteModelCache, invalidateProviderDetailsCache, loadApiProvidersData, createInitialAddProviderForm])
 
   /** 打开删除确认模态框 */
   const handleOpenDeleteConfirmModal = useCallback(() => {
@@ -617,6 +659,7 @@ export function useProviderForm({
     try {
       await modelsAPI.deleteProvider(providerForm.provider)
       invalidateRemoteModelCache(providerForm.provider)
+      invalidateProviderDetailsCache(providerForm.provider)
       showNotification({ type: 'success', text: '供应商删除成功' })
       setShowDeleteConfirmModal(false)
       // 清除已删除厂商的配置引用，防止后续操作指向无效配置
@@ -627,7 +670,7 @@ export function useProviderForm({
     } finally {
       setDeletingProvider(false)
     }
-  }, [providerForm.provider, showNotification, invalidateRemoteModelCache, loadApiProvidersData])
+  }, [providerForm.provider, showNotification, invalidateRemoteModelCache, invalidateProviderDetailsCache, loadApiProvidersData])
 
   /** 保存供应商配置 */
   const handleSaveProviderConfig = useCallback(async () => {
@@ -678,6 +721,7 @@ export function useProviderForm({
         providerApiKeyInputRef.current.value = ''
       }
       invalidateRemoteModelCache(providerForm.provider)
+      invalidateProviderDetailsCache(providerForm.provider)
       showNotification({ type: 'success', text: '供应商配置保存成功' })
       
       // 如果更新了 API Key，刷新脱敏显示
@@ -731,6 +775,7 @@ export function useProviderForm({
               providerApiKeyInputRef.current.value = ''
             }
             invalidateRemoteModelCache(providerForm.provider)
+            invalidateProviderDetailsCache(providerForm.provider)
             showNotification({ type: 'success', text: '配置已更新' })
             await loadApiProvidersData(providerForm.provider)
           } else {
@@ -745,7 +790,7 @@ export function useProviderForm({
     } finally {
       setSaving(false)
     }
-  }, [providerForm, configurations, showNotification, invalidateRemoteModelCache, loadApiProvidersData])
+  }, [providerForm, configurations, showNotification, invalidateRemoteModelCache, invalidateProviderDetailsCache, loadApiProvidersData])
 
   /** 发现 Ollama 模型 */
   const handleDiscoverOllamaModels = useCallback(async () => {

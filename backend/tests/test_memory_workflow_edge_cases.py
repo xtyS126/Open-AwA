@@ -40,7 +40,7 @@ from workflow.parser import WorkflowParser
 class FakeEmbeddingProvider:
     provider_name = "fake"
 
-    def embed_texts(self, texts):
+    async def embed_texts(self, texts):
         return [[1.0, 0.0, 0.0] for _ in texts]
 
 
@@ -60,13 +60,13 @@ class FakeVectorStore:
         self.deleted = []
         self.count_value = 0
 
-    def upsert_memory(self, memory_id, content, **kwargs):
+    async def upsert_memory(self, memory_id, content, **kwargs):
         self.upserts.append((memory_id, content, kwargs))
 
     def update_memory_metadata(self, memory_id, **kwargs):
         self.metadata_updates.append((memory_id, kwargs))
 
-    def search(self, *args, **kwargs):
+    async def search(self, *args, **kwargs):
         return list(self.search_results)
 
     def delete_memory(self, memory_id):
@@ -261,12 +261,12 @@ def test_working_memory_store_eviction_and_access_patterns():
     assert store.stats(None)["capacity"] == 2
 
 
-def test_vector_embedding_providers_and_factory(monkeypatch):
+async def test_vector_embedding_providers_and_factory(monkeypatch):
     """
     验证哈希、OpenAI、本地 sentence-transformers 以及工厂分支逻辑。
     """
     hash_provider = HashEmbeddingProvider(dimension=4)
-    vector = hash_provider.embed_texts([""])[0]
+    vector = (await hash_provider.embed_texts([""]))[0]
     assert len(vector) == 4
     assert pytest.approx(math.sqrt(sum(item * item for item in vector)), rel=1e-6) == 1.0
 
@@ -282,16 +282,29 @@ def test_vector_embedding_providers_and_factory(monkeypatch):
                 ]
             }
 
-    monkeypatch.setattr("memory.vector_store_manager.httpx.post", lambda *args, **kwargs: FakeResponse())
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("memory.vector_store_manager.httpx.AsyncClient", FakeAsyncClient)
     openai_provider = OpenAIEmbeddingProvider(api_key="secret")
-    assert openai_provider.embed_texts(["a", "b"]) == [[1.0, 0.0], [0.0, 1.0]]
+    assert (await openai_provider.embed_texts(["a", "b"])) == [[1.0, 0.0], [0.0, 1.0]]
 
     class FakeEncodedVectors:
         def tolist(self):
             return [[1.0, 2.0], [3.0, 4.0]]
 
     class FakeSentenceTransformer:
-        def __init__(self, model_name):
+        def __init__(self, model_name, cache_folder=None):
             self.model_name = model_name
 
         def encode(self, texts, normalize_embeddings=True):
@@ -299,7 +312,7 @@ def test_vector_embedding_providers_and_factory(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=FakeSentenceTransformer))
     local_provider = SentenceTransformerEmbeddingProvider("fake-model")
-    assert local_provider.embed_texts(["a", "b"]) == [[1.0, 2.0], [3.0, 4.0]]
+    assert (await local_provider.embed_texts(["a", "b"])) == [[1.0, 2.0], [3.0, 4.0]]
 
     monkeypatch.setattr("memory.vector_store_manager.settings.OPENAI_API_KEY", None, raising=False)
     with pytest.raises(RuntimeError):
@@ -327,7 +340,7 @@ def test_vector_embedding_providers_and_factory(monkeypatch):
     assert isinstance(fallback, HashEmbeddingProvider)
 
 
-def test_vector_store_manager_helper_paths(monkeypatch, tmp_path):
+async def test_vector_store_manager_helper_paths(monkeypatch, tmp_path):
     """
     验证向量管理器的初始化、元数据处理、更新与计数辅助逻辑。
     """
@@ -350,7 +363,7 @@ def test_vector_store_manager_helper_paths(monkeypatch, tmp_path):
     }
 
     manager.update_memory_metadata(999, foo="bar")
-    manager.upsert_memory(1, "hello", user_id="user-1", metadata={"nested": {"value": 1}})
+    await manager.upsert_memory(1, "hello", user_id="user-1", metadata={"nested": {"value": 1}})
     manager.update_memory_metadata(1, foo="bar")
 
     record = manager.collection.get(ids=[manager._document_id(1)], include=["documents", "metadatas", "embeddings"])

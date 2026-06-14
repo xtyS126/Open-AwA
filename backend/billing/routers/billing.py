@@ -6,14 +6,15 @@
 import asyncio
 import json
 
+from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 from fastapi import Body
 from datetime import datetime
 from loguru import logger
 
-from db.models import get_db
+from db.models import get_db, ConversationRecord
 from api.dependencies import get_current_user
 from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
@@ -29,9 +30,9 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
-# 提供商远端模型缓存（TTL 5 分钟），避免每次设置页加载都逐个调用提供商 API
-_provider_models_cache: Dict[str, tuple[float, dict]] = {}
+# 提供商远端模型缓存（TTL 5 分钟，最大 128 条），避免每次设置页加载都逐个调用提供商 API
 PROVIDER_MODELS_CACHE_TTL_SECONDS = 300  # 5 分钟
+_provider_models_cache: TTLCache = TTLCache(maxsize=128, ttl=PROVIDER_MODELS_CACHE_TTL_SECONDS)
 
 def _invalidate_provider_models_cache(provider_id: Optional[str] = None):
     """失效提供商远端模型缓存，provider_id 为 None 时清空全部缓存。"""
@@ -226,19 +227,19 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
     selected_models = pricing_manager.parse_selected_models(config.selected_models)
     spec = _parse_model_spec(config)
 
-    # 从 ProviderCredential 表解析 API 凭据
+    # 从 ProviderCredential 表解析 API 凭据（仅以 ProviderCredential 为单一来源，忽略旧版 ModelConfiguration.api_key）
     api_endpoint = config.api_endpoint
-    has_api_key = bool(config.api_key)
-    credential_id = getattr(config, "credential_id", None)
-    if credential_id:
-        cred = None
-        if cred_map is not None:
-            cred = cred_map.get(pricing_manager.normalize_provider(config.provider))
-        else:
-            cred = pricing_manager.get_provider_credential(config.provider)
-        if cred:
-            api_endpoint = cred.api_endpoint or api_endpoint
-            has_api_key = bool(cred.api_key) or has_api_key
+    has_api_key = False
+    # 按 provider 名称查询 ProviderCredential（不依赖 credential_id 字段，保证始终能获取凭据）
+    normalized_provider = pricing_manager.normalize_provider(config.provider)
+    cred = None
+    if cred_map is not None:
+        cred = cred_map.get(normalized_provider)
+    else:
+        cred = pricing_manager.get_provider_credential(normalized_provider)
+    if cred:
+        api_endpoint = cred.api_endpoint or api_endpoint
+        has_api_key = bool(cred.api_key)
 
     payload = {
         "id": config.id,
@@ -297,7 +298,7 @@ async def get_usage(
     使用 current_user.id 代替查询参数，防止越权访问他人用量数据。
     """
     tracker = UsageTracker(db)
-    records = tracker.get_usage_records(
+    records, total = tracker.get_usage_records(
         user_id=current_user.id,
         session_id=session_id,
         provider=provider,
@@ -305,7 +306,7 @@ async def get_usage(
         limit=limit,
         offset=offset
     )
-    
+
     return {
         "records": [
             {
@@ -327,7 +328,7 @@ async def get_usage(
             }
             for r in records
         ],
-        "total": len(records)
+        "total": total
     }
 
 
@@ -566,6 +567,15 @@ async def get_session_usage(
     获取session、usage相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
+    # 验证会话归属：确保用户只能查询自己的会话用量
+    record = db.query(ConversationRecord).filter(
+        ConversationRecord.session_id == session_id
+    ).order_by(ConversationRecord.timestamp.desc()).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    if str(record.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="无权访问此会话的用量数据")
+
     tracker = UsageTracker(db)
     usage = tracker.get_session_usage(session_id)
     return usage
@@ -700,6 +710,17 @@ async def get_configurations(
     """
     pricing_manager = PricingManager(db)
     configs = pricing_manager.get_active_configurations()
+
+    # 仅返回已配置供应商（有 ProviderCredential）的模型配置，
+    # 过滤掉仅有默认模板 ModelConfiguration 但未被用户添加的供应商
+    configured_providers = set(
+        pricing_manager.normalize_provider(row[0])
+        for row in db.query(ProviderCredential.provider).filter(
+            ProviderCredential.is_active == True
+        ).distinct().all()
+        if pricing_manager.normalize_provider(row[0])
+    )
+    configs = [c for c in configs if pricing_manager.normalize_provider(c.provider) in configured_providers]
 
     # 批量预加载所有 provider 的凭据，消除 serialize_configuration 中的 N+1 查询
     provider_ids = list({pricing_manager.normalize_provider(c.provider) for c in configs if getattr(c, "credential_id", None)})
@@ -841,7 +862,6 @@ async def set_default_configuration(
     }
 
 
-@router.put("/configurations/{config_id}/parameters")
 def _validate_parameter_range(
     value: float,
     min_val: float,
@@ -867,6 +887,7 @@ def _validate_parameter_range(
         )
 
 
+@router.put("/configurations/{config_id}/parameters")
 async def update_configuration_parameters(
     config_id: int,
     params: ModelParameterUpdateRequest,
@@ -1067,11 +1088,30 @@ async def get_providers(
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     pricing_manager = PricingManager(db)
-    providers = pricing_manager.get_provider_catalog()
-    
+    providers = pricing_manager.get_provider_catalog(configured_only=True)
+
     return {
         "providers": providers,
         "total": len(providers)
+    }
+
+
+@router.get("/provider-catalog")
+async def get_provider_catalog(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取供应商预填充目录，合并数据库和 pricing_data.json 中的供应商信息。
+    用于新增供应商时的下拉选择，支持预填充 base_url 和模型列表。
+    返回结果按 source 分组：database（已配置）和 pricing_data（推荐）。
+    """
+    pricing_manager = PricingManager(db)
+    catalog = pricing_manager.get_provider_catalog(include_pricing_data=True)
+
+    return {
+        "providers": catalog,
+        "total": len(catalog)
     }
 
 
@@ -1100,7 +1140,7 @@ async def get_provider_detail(
             "icon": (cred.icon if cred else None) or (getattr(config, "icon", None) if config else None),
             "api_endpoint": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
             "base_url": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
-            "has_api_key": bool(cred and cred.api_key) or bool(config and config.api_key),
+            "has_api_key": bool(cred and cred.api_key),  # 仅检查 ProviderCredential
             "selected_models": pricing_manager.parse_selected_models(config.selected_models) if config else []
         },
         "configuration": serialize_configuration(config, pricing_manager) if config else None
@@ -1311,9 +1351,7 @@ async def get_models_by_provider(
             cache_key = f"{provider_id}:{base_url}:{actual_api_key_stripped[:8]}"
             cached = _provider_models_cache.get(cache_key)
             if cached:
-                cache_time, cached_data = cached
-                if datetime.now().timestamp() - cache_time < PROVIDER_MODELS_CACHE_TTL_SECONDS:
-                    return cached_data
+                return cached
 
             try:
                 started_at = datetime.now().timestamp()
@@ -1330,12 +1368,14 @@ async def get_models_by_provider(
                     record_model_service_metric(provider_id, "models", "success", duration_ms)
                     data = result.get("models", [])
                     if isinstance(data, list):
+                        seen_model_names: Set[str] = set()
                         for index, item in enumerate(data):
                             if isinstance(item, dict):
                                 model_name = str(item.get("id") or item.get("name") or "").strip()
                                 if model_name.startswith("models/"):
                                     model_name = model_name.split("/", 1)[1]
-                                if model_name:
+                                if model_name and model_name not in seen_model_names:
+                                    seen_model_names.add(model_name)
                                     remote_models.append({
                                         "id": -(index + 1),
                                         "provider": provider_id,
@@ -1348,21 +1388,24 @@ async def get_models_by_provider(
                                     })
                     source = "remote"
                     # 缓存成功的远程模型列表，下次请求直接命中（TTL 5 分钟）
-                    _provider_models_cache[cache_key] = (datetime.now().timestamp(), {
+                    _provider_models_cache[cache_key] = {
                         "success": True,
                         "provider": provider_id,
                         "models": remote_models,
                         "selected_models": selected_models,
                         "source": source,
                         "error": None
-                    })
+                    }
                 else:
                     record_model_service_metric(provider_id, "models", "error", duration_ms)
                     error_detail = result.get("error", {})
-                    raise HTTPException(
-                        status_code=error_detail.get("status_code") or 502,
-                        detail=error_detail,
-                    )
+                    error_status = error_detail.get("status_code") or 502
+                    logger.bind(
+                        event="provider_models_fetch_error",
+                        module="billing",
+                        provider=provider_id,
+                        status_code=error_status,
+                    ).warning(f"提供商 {provider_id} 模型列表拉取失败（HTTP {error_status}），回退到本地数据")
             except RuntimeError:
                 raise
             except asyncio.TimeoutError:
@@ -1414,34 +1457,6 @@ async def get_models_by_provider(
             "selected_models": selected_models,
             "source": source,
             "error": None
-        }
-    except HTTPException as exc:
-        error_detail = exc.detail if isinstance(exc.detail, dict) else {}
-        error_code = error_detail.get("code", "provider_models_fetch_failed")
-        error_message = error_detail.get("message", "模型列表获取失败")
-        error_status = error_detail.get("status_code", exc.status_code)
-        error_reason = error_detail.get("details", {}).get("reason") or str(exc.detail)
-        logger.bind(
-            event="provider_models_fetch_failed",
-            module="billing",
-            error_type=type(exc).__name__,
-            provider=provider_id,
-            status_code=error_status,
-        ).warning(f"模型列表获取失败: {error_reason}")
-        return {
-            "success": False,
-            "provider": provider_id,
-            "models": [],
-            "selected_models": selected_models,
-            "source": "remote",
-            "error": build_standard_error(
-                error_code,
-                error_message,
-                request_id=request_id,
-                details={"reason": error_reason, "provider": provider_id},
-                retryable=bool(error_detail.get("retryable", False)),
-                status_code=error_status,
-            ),
         }
     except Exception as exc:
         logger.bind(

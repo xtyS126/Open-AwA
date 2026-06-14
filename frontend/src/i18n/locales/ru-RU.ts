@@ -170,6 +170,7 @@ const ruRU: Record<string, string> = {
   "chat.generatingDiary": "Создание дневника...",
   "chat.diaryGenerated": "Дневник создан ({date})",
   "chat.diaryFailed": "Ошибка создания",
+  "chat.feedbackFailed": "Не удалось отправить отзыв, повторите",
   "chat.undoFailed": "Ошибка отмены",
   "chat.confirmDeleteConversation": "Удалить диалог? Восстановление — 30 дн.",
   "chat.confirmDeleteSelected": "Удалить {count} диалогов? Восстановление — 30 дн.",

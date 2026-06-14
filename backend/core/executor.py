@@ -9,6 +9,7 @@ import json
 import re
 import time
 import urllib.parse
+from collections import OrderedDict
 from typing import Awaitable, Dict, Any, Optional, Callable
 
 import httpx
@@ -26,7 +27,6 @@ from core.litellm_adapter import (
 )
 from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
-from sqlalchemy.orm import Session
 
 # tool_result 在序列化后允许的最大字符数，超出部分将被截断。
 # 防止 plugin_/mcp_/task_ 等无内置截断的工具返回超大结果，导致 messages 列表无限膨胀。
@@ -121,8 +121,7 @@ class ExecutionLayer:
             "anthropic": "ANTHROPIC_API_KEY",
             "deepseek": "DEEPSEEK_API_KEY"
         }
-        self._tool_execution_cache: Dict[str, Dict[str, Any]] = {}
-        self._tool_execution_cache_order: list[str] = []
+        self._tool_execution_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         from config.settings import settings as _exec_settings
         self._max_tool_execution_cache = _exec_settings.TOOL_EXECUTION_CACHE_SIZE
         logger.info("ExecutionLayer initialized")
@@ -329,16 +328,16 @@ class ExecutionLayer:
     def _cache_tool_result(self, idempotency_key: str, result: Dict[str, Any]) -> None:
         """
         缓存工具执行结果，并控制缓存上限，防止内存持续增长。
+        使用 OrderedDict 实现 O(1) 的 LRU 淘汰。
         """
 
+        # 若已存在则先移除，重新插入到末尾以标记为最近使用
+        if idempotency_key in self._tool_execution_cache:
+            self._tool_execution_cache.move_to_end(idempotency_key)
         self._tool_execution_cache[idempotency_key] = dict(result)
-        if idempotency_key in self._tool_execution_cache_order:
-            self._tool_execution_cache_order.remove(idempotency_key)
-        self._tool_execution_cache_order.append(idempotency_key)
 
-        while len(self._tool_execution_cache_order) > self._max_tool_execution_cache:
-            oldest = self._tool_execution_cache_order.pop(0)
-            self._tool_execution_cache.pop(oldest, None)
+        while len(self._tool_execution_cache) > self._max_tool_execution_cache:
+            self._tool_execution_cache.popitem(last=False)
 
     def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
         """
@@ -818,6 +817,7 @@ class ExecutionLayer:
         db = context.get("db")
         config = None
 
+        pricing_manager = None
         if db:
             try:
                 from billing.pricing_manager import PricingManager
@@ -831,7 +831,7 @@ class ExecutionLayer:
                     config = pricing_manager.get_default_configuration()
             except Exception as e:
                 logger.opt(exception=True).error(
-                    f"Failed to resolve model configuration from database: {e}"
+                    f"从数据库解析模型配置失败: {e}"
                 )
 
         if config:
@@ -842,6 +842,19 @@ class ExecutionLayer:
             if raw_key:
                 from config.security import decrypt_secret_value
                 api_key = decrypt_secret_value(raw_key)
+                # raw_key 非空但解密结果为空，说明密钥损坏或 SECRET_KEY 变更，必须向上报告
+                if not api_key:
+                    return {
+                        "ok": False,
+                        "error": self._build_error(
+                            "llm_api_key_decrypt_failed",
+                            "API Key 解密失败，可能因 SECRET_KEY 变更导致密钥损坏",
+                            {
+                                "provider": provider,
+                                "model": model,
+                            }
+                        )
+                    }
             else:
                 # 当 ModelConfiguration 中没有 API Key 时，尝试从 ProviderCredential 表读取
                 api_key = None
@@ -850,16 +863,30 @@ class ExecutionLayer:
                     if cred and cred.api_key:
                         from config.security import decrypt_secret_value
                         api_key = decrypt_secret_value(cred.api_key)
-                        logger.info(f"已从 ProviderCredential 表为 {provider} 解析 API Key")
+                        if api_key:
+                            logger.info(f"已从 ProviderCredential 表为 {provider} 解析 API Key")
+                        else:
+                            # 凭据存在但解密失败，密钥损坏，必须向上报告
+                            return {
+                                "ok": False,
+                                "error": self._build_error(
+                                    "llm_api_key_decrypt_failed",
+                                    "ProviderCredential 中的 API Key 解密失败，可能因 SECRET_KEY 变更导致密钥损坏",
+                                    {
+                                        "provider": provider,
+                                        "model": model,
+                                    }
+                                )
+                            }
                 except Exception as e:
                     logger.warning(f"从 ProviderCredential 表解析 API Key 失败: {e}")
             api_endpoint = config.api_endpoint
             max_tokens = getattr(config, "max_tokens_limit", None)
             selected_models: list[str] = []
             try:
-                from billing.pricing_manager import PricingManager
                 selected_models = PricingManager.parse_selected_models(getattr(config, "selected_models", None))
-            except Exception:
+            except Exception as e:
+                logger.warning(f"解析 selected_models 失败，已降级为空列表: {e}")
                 selected_models = []
             model = self._pick_effective_model(provider, model, selected_models)
         else:
@@ -903,7 +930,6 @@ class ExecutionLayer:
                 api_endpoint = self.default_provider_endpoints.get(provider)
 
         try:
-            from billing.pricing_manager import PricingManager
             api_endpoint = PricingManager.build_provider_api_endpoint(provider, api_endpoint, "chat")
         except Exception as e:
             logger.error(f"Failed to normalize provider endpoint: {e}")
@@ -1376,6 +1402,117 @@ class ExecutionLayer:
 
             yield output_error
 
+    async def _request_user_permission(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> str:
+        """
+        当工具执行因权限不足被拒绝时，通过实时推送队列请求用户授权。
+        调用 security 路由的 enqueue_permission_request 将请求推送到前端，
+        然后阻塞等待用户回复（once/always/reject）。
+        超时后自动返回 "reject"。
+
+        返回:
+            str - 用户回复值: "once" / "always" / "reject"
+        """
+        try:
+            from api.routes.security import enqueue_permission_request
+        except ImportError:
+            logger.bind(
+                module="executor",
+                event="permission_module_import_failed",
+                tool_name=tool_name,
+            ).warning("权限请求模块导入失败，默认拒绝")
+            return "reject"
+
+        user_id = str(context.get("user_id", ""))
+        session_id = str(context.get("session_id", ""))
+
+        if not user_id:
+            logger.bind(
+                module="executor",
+                event="permission_request_no_user",
+                tool_name=tool_name,
+            ).warning("无法获取用户 ID，默认拒绝权限请求")
+            return "reject"
+
+        # 从工具参数中提取资源路径
+        resources: list[str] = []
+        for key in ("path", "file", "files", "command", "url", "directory"):
+            value = tool_args.get(key)
+            if isinstance(value, str) and value:
+                resources.append(value)
+            elif isinstance(value, list):
+                resources.extend(str(v) for v in value if v)
+
+        if not resources:
+            resources = [tool_name]
+
+        # 构建可持久化的权限规则名
+        save_rules: list[str] = []
+        # 从工具名推断 action 类型
+        if "write" in tool_name or "edit" in tool_name:
+            save_rules.append(f"write:{resources[0]}" if resources else "write:*")
+        elif "delete" in tool_name:
+            save_rules.append(f"delete:{resources[0]}" if resources else "delete:*")
+        elif "execute" in tool_name or "bash" in tool_name or "terminal" in tool_name:
+            save_rules.append(f"execute:{resources[0]}" if resources else "execute:*")
+        elif "read" in tool_name:
+            save_rules.append(f"read:{resources[0]}" if resources else "read:*")
+        else:
+            save_rules.append(f"{tool_name}:*")
+
+        # 推断 action 显示名称
+        if "write" in tool_name or "edit" in tool_name:
+            action = "write"
+        elif "delete" in tool_name:
+            action = "delete"
+        elif "execute" in tool_name or "bash" in tool_name or "terminal" in tool_name:
+            action = "execute"
+        elif "read" in tool_name:
+            action = "read"
+        else:
+            action = tool_name
+
+        logger.bind(
+            module="executor",
+            event="permission_request_sent",
+            tool_name=tool_name,
+            user_id=user_id,
+            session_id=session_id,
+            action=action,
+            resources=resources,
+        ).info(f"权限请求已发送: {tool_name} ({action})")
+
+        # 入队并等待用户回复
+        reply_future = enqueue_permission_request(
+            user_id=user_id,
+            session_id=session_id,
+            action=action,
+            resources=resources,
+            save=save_rules,
+            metadata={
+                "tool_name": tool_name,
+                "tool_args": {
+                    k: v for k, v in tool_args.items()
+                    if k in ("path", "file", "command", "url", "content")
+                },
+            },
+            agent=context.get("agent_name"),
+            timeout=120.0,
+        )
+
+        reply = await reply_future
+        logger.bind(
+            module="executor",
+            event="permission_reply_received",
+            tool_name=tool_name,
+            reply=reply,
+        ).info(f"权限请求回复: {tool_name} -> {reply}")
+        return reply
+
     async def _execute_tool_call(
         self,
         tool_call: Dict[str, Any],
@@ -1435,7 +1572,7 @@ class ExecutionLayer:
                         decision="allowed",
                     ))
         except ImportError:
-            pass  # 模块不可用时静默跳过
+            logger.warning("[自主模式] 安全检查模块导入失败，自主模式安全校验已跳过")
         except (TypeError, ValueError, KeyError) as exc:
             # 参数解析异常：安全模块内部数据异常应阻止操作（fail-closed）
             logger.error(f"[自主模式] 安全检查参数异常，拒绝执行: {exc}")
@@ -1473,7 +1610,7 @@ class ExecutionLayer:
             if updated_input:
                 func_args = {**func_args, **updated_input}
         except ImportError:
-            pass
+            logger.warning("[PreToolUse] 钩子调度模块导入失败，工具调用前校验已跳过")
 
         if func_name.startswith("plugin_"):
             remaining = func_name[len("plugin_"):]
@@ -1574,7 +1711,39 @@ class ExecutionLayer:
                 except ImportError:
                     pass  # ToolRegistry 模块不可用时回退到直接执行
                 except PermissionError:
-                    raise  # 权限拒绝异常不得回退，必须向上传播阻止执行
+                    # 权限拒绝：尝试通过实时推送队列请求用户授权
+                    reply = await self._request_user_permission(
+                        tool_name=func_name,
+                        tool_args=func_args,
+                        context=context,
+                    )
+                    if reply == "reject":
+                        return {
+                            "ok": False,
+                            "error": f"用户拒绝权限: {func_name}",
+                            "tool_name": func_name,
+                            "denied_by": "user",
+                        }
+                    # 用户允许（once/always），重新执行工具
+                    try:
+                        exec_result = await _tool_reg.execute(func_name, func_args, context)
+                        return {
+                            "ok": exec_result.status.value == "completed",
+                            "result": exec_result.result,
+                            "error": exec_result.error,
+                            "tool_name": func_name,
+                            "truncated": exec_result.truncated,
+                            "output_path": exec_result.output_path,
+                            "execution_time_ms": exec_result.execution_time_ms,
+                        }
+                    except PermissionError:
+                        # 用户授权后仍被拒绝（可能是 always 规则尚未持久化生效）
+                        return {
+                            "ok": False,
+                            "error": f"权限不足: {func_name}",
+                            "tool_name": func_name,
+                            "denied_by": "security",
+                        }
                 except Exception:
                     # ToolRegistry 执行意外失败时记录日志并拒绝执行，
                     # 不得回退到未经过权限检查的 builtin_tool_manager 路径
@@ -2106,14 +2275,14 @@ class ExecutionLayer:
     async def record_experience_feedback(
         self,
         experience_id: int,
-        success: bool,
-        db: Session
+        success: bool
     ) -> None:
         """
         更新经验条目的质量评分：根据执行成功/失败反馈调整经验的 success_metrics 置信度。
+        ExperienceManager 内部通过 asyncio.to_thread 使用独立会话，无需外部传入 db。
         """
         try:
-            manager = ExperienceManager(db)
+            manager = ExperienceManager(db=None)
             await manager.update_experience_quality(
                 experience_id=experience_id,
                 success=success

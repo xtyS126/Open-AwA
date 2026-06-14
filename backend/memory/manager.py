@@ -349,7 +349,7 @@ class MemoryManager:
     ) -> LongTermMemory:
         vector = embedding
         if vector is None:
-            vector = await asyncio.to_thread(self.vector_store.embedding_provider.embed_texts, [content])
+            vector = await self.vector_store.embedding_provider.embed_texts([content])
             vector = vector[0]
 
         memory = await asyncio.to_thread(
@@ -362,8 +362,7 @@ class MemoryManager:
             source_type,
             workspace_id,
         )
-        await asyncio.to_thread(
-            self.vector_store.upsert_memory,
+        await self.vector_store.upsert_memory(
             memory.id,
             content,
             user_id=user_id,
@@ -517,8 +516,7 @@ class MemoryManager:
 
         vector_scores: Dict[int, float] = {}
         if use_vector:
-            vector_hits = await asyncio.to_thread(
-                self.vector_store.search,
+            vector_hits = await self.vector_store.search(
                 query,
                 user_id=user_id,
                 limit=limit,

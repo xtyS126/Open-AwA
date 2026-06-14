@@ -1,0 +1,137 @@
+/* 权限请求通知栏样式 */
+
+.container {
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg-secondary, #fef3c7);
+  font-size: 13px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.header:hover {
+  background: var(--color-bg-tertiary, #fde68a);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon {
+  color: var(--color-warning, #d97706);
+  flex-shrink: 0;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--color-text-primary, #92400e);
+}
+
+.list {
+  padding: 0 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--color-bg-primary, #fff);
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+
+.itemInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.actionBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-warning, #d97706);
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.resourceText {
+  color: var(--color-text-secondary, #4b5563);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.detailBtn {
+  background: none;
+  border: none;
+  color: var(--color-primary, #3b82f6);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.detailBtn:hover {
+  text-decoration: underline;
+}
+
+.itemActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnApprove {
+  background: var(--color-success, #10b981);
+  color: #fff;
+}
+
+.btnApprove:hover:not(:disabled) {
+  background: var(--color-success-accent, #059669);
+}
+
+.btnDeny {
+  background: var(--color-bg-tertiary, #f3f4f6);
+  color: var(--color-text-secondary, #4b5563);
+}
+
+.btnDeny:hover:not(:disabled) {
+  background: var(--color-border, #e5e7eb);
+}

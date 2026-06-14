@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Set, Tuple
 from billing.models import ModelPricing, ModelConfiguration, ProviderCredential
 from datetime import datetime, timezone
 from loguru import logger
+from pathlib import Path
 import json
 
 
@@ -881,31 +882,40 @@ class PricingManager:
             query = query.filter(ModelPricing.provider == normalized_provider)
         return query.order_by(ModelPricing.provider, ModelPricing.model).all()
 
-    def get_provider_catalog(self) -> List[Dict]:
+    # 供应商预设 base_url 映射（与前端 PRESET_PROVIDER_BASE_URLS 保持一致）
+    _PRESET_BASE_URLS: Dict[str, str] = {
+        "openai": "https://api.openai.com/v1",
+        "anthropic": "https://api.anthropic.com/v1",
+        "google": "https://generativelanguage.googleapis.com/v1beta",
+        "deepseek": "https://api.deepseek.com/v1",
+        "alibaba": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "moonshot": "https://api.moonshot.cn/v1",
+        "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+        "ollama": "http://127.0.0.1:11434/v1",
+    }
+
+    @staticmethod
+    def _load_pricing_data_providers() -> Dict[str, Dict]:
         """
-        获取供应商目录，包含每个供应商的配置信息和已选模型列表。
-        同时涵盖 ModelConfiguration 和 ProviderCredential 中的 provider。
+        从 pricing_data.json 中提取供应商信息，按 provider 分组。
+        返回字典：{ provider_id: { name, base_url, models: [...] } }
 
-        优化：批量加载 credential 和 configuration，避免循环内对每个 provider
-        逐一查询数据库（N+1 → 3 次查询）。
+        读取失败时返回空字典，不影响主流程。
         """
-        # 1. 从 ModelConfiguration 获取 provider 列表
-        config_rows = self.db.query(ModelConfiguration.provider).filter(
-            ModelConfiguration.is_active == True
-        ).distinct().all()
-        # 2. 从 ProviderCredential 获取 provider 列表
-        cred_rows = self.db.query(ProviderCredential.provider).filter(
-            ProviderCredential.is_active == True
-        ).distinct().all()
+        try:
+            pricing_file = Path(__file__).parent.parent / "config" / "pricing" / "pricing_data.json"
+            if not pricing_file.exists():
+                return {}
+            with open(pricing_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.bind(module="pricing_manager", event="pricing_data_load_error").warning(
+                f"读取 pricing_data.json 失败: {exc}"
+            )
+            return {}
 
-        provider_ids = sorted({
-            self.normalize_provider(row[0])
-            for row in (config_rows + cred_rows)
-            if self.normalize_provider(row[0])
-        })
-
-        if not provider_ids:
-            return []
+        if not isinstance(data, list):
+            return {}
 
         provider_names = {
             "openai": "OpenAI",
@@ -914,63 +924,186 @@ class PricingManager:
             "deepseek": "DeepSeek",
             "alibaba": "阿里通义千问",
             "moonshot": "Kimi",
-            "zhipu": "智谱AI"
+            "zhipu": "智谱AI",
+            "ollama": "Ollama",
+        }
+
+        grouped: Dict[str, Dict] = {}
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            provider = PricingManager.normalize_provider(entry.get("provider"))
+            if not provider:
+                continue
+            if provider not in grouped:
+                grouped[provider] = {
+                    "name": provider_names.get(provider, provider.upper()),
+                    "base_url": PricingManager._PRESET_BASE_URLS.get(provider, ""),
+                    "models": [],
+                }
+            model_name = PricingManager.normalize_model(entry.get("model"))
+            if model_name:
+                grouped[provider]["models"].append({
+                    "name": model_name,
+                    "input_price": entry.get("input_price", 0),
+                    "output_price": entry.get("output_price", 0),
+                    "currency": entry.get("currency", "USD"),
+                    "context_window": entry.get("context_window"),
+                })
+
+        return grouped
+
+    def get_provider_catalog(self, include_pricing_data: bool = False, configured_only: bool = False) -> List[Dict]:
+        """
+        获取供应商目录，包含每个供应商的配置信息和已选模型列表。
+        同时涵盖 ModelConfiguration 和 ProviderCredential 中的 provider。
+
+        当 include_pricing_data=True 时，还会从 pricing_data.json 中提取
+        未在数据库中配置的供应商，合并到返回结果中。
+        数据库中的供应商优先级更高（source="database"），
+        pricing_data 中的供应商标记为 source="pricing_data"。
+
+        当 configured_only=True 时，仅返回拥有 ProviderCredential 的供应商，
+        忽略仅有 ModelConfiguration 但未被用户显式添加的供应商（如默认模板）。
+
+        优化：批量加载 credential 和 configuration，避免循环内对每个 provider
+        逐一查询数据库（N+1 → 3 次查询）。
+        """
+        # 1. 从 ProviderCredential 获取已配置的 provider 列表
+        cred_rows = self.db.query(ProviderCredential.provider).filter(
+            ProviderCredential.is_active == True
+        ).distinct().all()
+        cred_provider_ids = {
+            self.normalize_provider(row[0])
+            for row in cred_rows
+            if self.normalize_provider(row[0])
+        }
+
+        # 2. 从 ModelConfiguration 获取 provider 列表
+        config_rows = self.db.query(ModelConfiguration.provider).filter(
+            ModelConfiguration.is_active == True
+        ).distinct().all()
+        config_provider_ids = {
+            self.normalize_provider(row[0])
+            for row in config_rows
+            if self.normalize_provider(row[0])
+        }
+
+        if configured_only:
+            # 仅返回用户已显式添加的供应商（有 ProviderCredential 记录）
+            db_provider_ids = sorted(cred_provider_ids)
+        else:
+            # 合并两个来源的供应商
+            db_provider_ids = sorted(cred_provider_ids | config_provider_ids)
+
+        provider_names = {
+            "openai": "OpenAI",
+            "anthropic": "Anthropic",
+            "google": "Google",
+            "deepseek": "DeepSeek",
+            "alibaba": "阿里通义千问",
+            "moonshot": "Kimi",
+            "zhipu": "智谱AI",
+            "ollama": "Ollama",
         }
 
         # 3. 批量加载所有 provider 的 credential 和 configuration，消除循环内 N+1 查询
-        all_creds = self.db.query(ProviderCredential).filter(
-            ProviderCredential.provider.in_(provider_ids),
-            ProviderCredential.is_active == True
-        ).all()
-        cred_map: Dict[str, ProviderCredential] = {
-            self.normalize_provider(c.provider): c for c in all_creds
-        }
-
-        all_configs = self.db.query(ModelConfiguration).filter(
-            ModelConfiguration.provider.in_(provider_ids),
-            ModelConfiguration.is_active == True
-        ).all()
-        configs_by_provider: Dict[str, List[ModelConfiguration]] = {}
-        default_config_map: Dict[str, ModelConfiguration] = {}
-        for c in all_configs:
-            pid = self.normalize_provider(c.provider)
-            configs_by_provider.setdefault(pid, []).append(c)
-        for pid, configs in configs_by_provider.items():
-            # 优先取 is_default=True，否则取 sort_order 最小的第一个
-            default = next((c for c in configs if c.is_default), None)
-            if default is None and configs:
-                configs.sort(key=lambda c: (c.sort_order or 0, c.id or 0))
-                default = configs[0]
-            default_config_map[pid] = default
-
         result = []
-        for provider_id in provider_ids:
-            cred = cred_map.get(provider_id)
-            config = default_config_map.get(provider_id)
-            configs = configs_by_provider.get(provider_id, [])
 
-            # selected_models 从 ModelConfiguration 聚合
-            all_models = []
-            for c in configs:
-                all_models.extend(self.parse_selected_models(c.selected_models))
-            # 去重
-            seen = set()
-            selected_models = []
-            for m in all_models:
-                if m not in seen:
-                    seen.add(m)
-                    selected_models.append(m)
+        if db_provider_ids:
+            all_creds = self.db.query(ProviderCredential).filter(
+                ProviderCredential.provider.in_(db_provider_ids),
+                ProviderCredential.is_active == True
+            ).all()
+            cred_map: Dict[str, ProviderCredential] = {
+                self.normalize_provider(c.provider): c for c in all_creds
+            }
 
-            result.append({
-                "id": provider_id,
-                "name": provider_names.get(provider_id, provider_id.upper()),
-                "display_name": cred.display_name if cred else (config.display_name if config else provider_names.get(provider_id, provider_id.upper())),
-                "icon": cred.icon if cred else (config.icon if config else None),
-                "api_endpoint": cred.api_endpoint if cred else (config.api_endpoint if config else None),
-                "has_api_key": bool(cred and cred.api_key) or bool(config and config.api_key),
-                "selected_models": selected_models,
-                "configuration_count": len(configs)
-            })
+            all_configs = self.db.query(ModelConfiguration).filter(
+                ModelConfiguration.provider.in_(db_provider_ids),
+                ModelConfiguration.is_active == True
+            ).all()
+            configs_by_provider: Dict[str, List[ModelConfiguration]] = {}
+            default_config_map: Dict[str, ModelConfiguration] = {}
+            for c in all_configs:
+                pid = self.normalize_provider(c.provider)
+                configs_by_provider.setdefault(pid, []).append(c)
+            for pid, configs in configs_by_provider.items():
+                # 优先取 is_default=True，否则取 sort_order 最小的第一个
+                default = next((c for c in configs if c.is_default), None)
+                if default is None and configs:
+                    configs.sort(key=lambda c: (c.sort_order or 0, c.id or 0))
+                    default = configs[0]
+                default_config_map[pid] = default
+
+            for provider_id in db_provider_ids:
+                cred = cred_map.get(provider_id)
+                config = default_config_map.get(provider_id)
+                configs = configs_by_provider.get(provider_id, [])
+
+                # selected_models 从 ModelConfiguration 聚合
+                all_models = []
+                for c in configs:
+                    all_models.extend(self.parse_selected_models(c.selected_models))
+                # 去重
+                seen = set()
+                selected_models = []
+                for m in all_models:
+                    if m not in seen:
+                        seen.add(m)
+                        selected_models.append(m)
+
+                entry = {
+                    "id": provider_id,
+                    "name": provider_names.get(provider_id, provider_id.upper()),
+                    "display_name": cred.display_name if cred else (config.display_name if config else provider_names.get(provider_id, provider_id.upper())),
+                    "icon": cred.icon if cred else (config.icon if config else None),
+                    "api_endpoint": cred.api_endpoint if cred else (config.api_endpoint if config else None),
+                    "base_url": cred.api_endpoint if cred else (config.api_endpoint if config else None),
+                    "has_api_key": bool(cred and cred.api_key),  # 仅检查 ProviderCredential
+                    "selected_models": selected_models,
+                    "configuration_count": len(configs),
+                    "source": "database",
+                }
+
+                # 合并 pricing_data 中的模型列表（补充信息）
+                if include_pricing_data:
+                    pricing_providers = self._load_pricing_data_providers()
+                    pd_entry = pricing_providers.get(provider_id)
+                    if pd_entry:
+                        entry["models"] = pd_entry["models"]
+                        entry["model_count"] = len(pd_entry["models"])
+                        # 若数据库中没有 base_url，使用预设值
+                        if not entry.get("base_url") and pd_entry.get("base_url"):
+                            entry["base_url"] = pd_entry["base_url"]
+                    else:
+                        entry["models"] = []
+                        entry["model_count"] = 0
+
+                result.append(entry)
+
+        # 4. 合并 pricing_data.json 中未在数据库中配置的供应商
+        if include_pricing_data:
+            pricing_providers = self._load_pricing_data_providers()
+            db_provider_set = set(db_provider_ids)
+            for provider_id, pd_entry in pricing_providers.items():
+                if provider_id in db_provider_set:
+                    continue  # 数据库已有，跳过
+                result.append({
+                    "id": provider_id,
+                    "name": pd_entry["name"],
+                    "display_name": pd_entry["name"],
+                    "icon": None,
+                    "api_endpoint": pd_entry.get("base_url") or None,
+                    "base_url": pd_entry.get("base_url") or None,
+                    "has_api_key": False,
+                    "selected_models": [],
+                    "configuration_count": 0,
+                    "models": pd_entry["models"],
+                    "model_count": len(pd_entry["models"]),
+                    "source": "pricing_data",
+                })
+
         return result
 
     def get_providers(self) -> List[str]:

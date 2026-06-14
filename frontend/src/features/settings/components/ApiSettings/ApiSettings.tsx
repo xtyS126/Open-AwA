@@ -2,8 +2,8 @@
  * API 配置组件
  * 管理供应商侧边栏、详情表单、模型导入、连接状态检测和 Ollama 发现
  */
-import type { ModelConfiguration, ModelProvider, ProviderConnectionStatus, OllamaModel } from '@/features/settings/modelsApi'
-import { memo } from 'react'
+import type { ModelConfiguration, ModelProvider, ProviderConnectionStatus, OllamaModel, ConnectivityTestResult } from '@/features/settings/modelsApi'
+import { memo, useState } from 'react'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import { getProviderIcon } from '@/assets/providers'
 import { ModelConfigCard } from '@/features/settings/components/ModelConfigCard'
@@ -97,6 +97,8 @@ interface ApiSettingsProps {
   onSelectionChange: (modelName: string, checked: boolean) => void
   /** 打开批量删除确认 */
   onOpenDeleteModelsModal: () => void
+  /** 测试连通性回调 */
+  onTestConnectivity: (provider: string, apiKey: string, baseUrl?: string) => Promise<ConnectivityTestResult>
 }
 
 function ApiSettings({
@@ -115,6 +117,8 @@ function ApiSettings({
   ollamaError,
   saving,
   deletingProvider,
+  showApiKey,
+  onToggleShowApiKey,
   configurations,
   expandedModelConfigs,
   modelEditParams,
@@ -134,7 +138,42 @@ function ApiSettings({
   onUpdateModelEditParam,
   onSelectionChange,
   onOpenDeleteModelsModal,
+  onTestConnectivity,
 }: ApiSettingsProps) {
+  // 连通性测试状态
+  const [testingConnectivity, setTestingConnectivity] = useState(false)
+  const [connectivityResult, setConnectivityResult] = useState<ConnectivityTestResult | null>(null)
+
+  /** 执行连通性测试 */
+  const handleTestConnectivity = async () => {
+    if (!providerForm.provider) return
+    const apiKey = providerApiKeyInputRef.current?.value.trim() || ''
+    if (!apiKey) {
+      setConnectivityResult({
+        success: false,
+        error_message: '请先输入 API Key',
+        latency_ms: 0,
+        provider: providerForm.provider,
+      })
+      return
+    }
+    setTestingConnectivity(true)
+    setConnectivityResult(null)
+    try {
+      const result = await onTestConnectivity(providerForm.provider, apiKey, providerForm.api_endpoint || undefined)
+      setConnectivityResult(result)
+    } catch {
+      setConnectivityResult({
+        success: false,
+        error_message: '请求失败，请检查网络连接',
+        latency_ms: 0,
+        provider: providerForm.provider,
+      })
+    } finally {
+      setTestingConnectivity(false)
+    }
+  }
+
   return (
     <div className={styles['settings-section']}>
       <div className={styles['section-header']}>
@@ -247,14 +286,67 @@ function ApiSettings({
               <div className={styles['form-row']}>
                 <div className={styles['form-group']}>
                   <label>API Key</label>
-                  <input
-                    key={`provider-api-key-${providerForm.config_id ?? providerForm.provider}`}
-                    type="password"
-                    ref={providerApiKeyInputRef}
-                    defaultValue=""
-                    autoComplete="new-password"
-                    placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
-                  />
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <input
+                      key={`provider-api-key-${providerForm.config_id ?? providerForm.provider}`}
+                      type={showApiKey ? 'text' : 'password'}
+                      ref={providerApiKeyInputRef}
+                      defaultValue=""
+                      autoComplete="new-password"
+                      placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
+                      style={{ flex: 1 }}
+                    />
+                    {providerForm.has_api_key && providerForm.masked_api_key && (
+                      <button
+                        type="button"
+                        className={`btn ${styles['btn-secondary']}`}
+                        onClick={onToggleShowApiKey}
+                        style={{ whiteSpace: 'nowrap', minWidth: '80px' }}
+                      >
+                        {showApiKey ? '隐藏' : '显示'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`btn ${styles['btn-secondary']}`}
+                      onClick={handleTestConnectivity}
+                      disabled={testingConnectivity || !providerForm.provider}
+                      style={{ whiteSpace: 'nowrap', minWidth: '110px' }}
+                    >
+                      {testingConnectivity ? '测试中...' : '测试连通性'}
+                    </button>
+                  </div>
+                  {showApiKey && providerForm.masked_api_key && (
+                    <div style={{
+                      marginTop: '4px',
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      fontFamily: 'monospace',
+                    }}>
+                      当前密钥: {providerForm.masked_api_key}
+                    </div>
+                  )}
+                  {connectivityResult && (
+                    <div style={{
+                      marginTop: '6px',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      backgroundColor: connectivityResult.success ? '#f0fdf4' : '#fef2f2',
+                      color: connectivityResult.success ? '#166534' : '#991b1b',
+                      border: `1px solid ${connectivityResult.success ? '#bbf7d0' : '#fecaca'}`,
+                    }}>
+                      {connectivityResult.success ? (
+                        <span>
+                          [OK] 连接成功，可用模型 {connectivityResult.model_count ?? 0} 个 ({connectivityResult.latency_ms}ms)
+                        </span>
+                      ) : (
+                        <span>
+                          [FAIL] {connectivityResult.error_message || '未知错误'}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -264,9 +356,10 @@ function ApiSettings({
                   className={`btn ${styles['btn-secondary']}`}
                   onClick={async () => {
                     const nextApiKey = providerApiKeyInputRef.current?.value.trim() || ''
-                    if (nextApiKey && providerForm.config_id) {
+                    if (nextApiKey && providerForm.provider) {
                       try {
-                        await modelsAPI.updateConfiguration(providerForm.config_id, { api_key: nextApiKey })
+                        // 保存到 ProviderCredential 表（而非 ModelConfiguration 旧字段）
+                        await modelsAPI.saveProviderCredential(providerForm.provider, { api_key: nextApiKey })
                         onProviderFormChange(prev => ({ ...prev, has_api_key: true }))
                         if (providerApiKeyInputRef.current) {
                           providerApiKeyInputRef.current.value = ''

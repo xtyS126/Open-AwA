@@ -23,7 +23,7 @@ export const ThinkingProcess: React.FC<ThinkingProcessProps> = memo(({
     setUserInteracted(true);
   };
 
-  // Automatically handle streaming state changes
+  // 自动跟随流式状态变化
   useEffect(() => {
     if (!userInteracted) {
       setIsExpanded(defaultExpanded);
@@ -31,11 +31,15 @@ export const ThinkingProcess: React.FC<ThinkingProcessProps> = memo(({
   }, [defaultExpanded, userInteracted]);
 
   return (
-    <div className={styles.container}>
-      <div 
-        className={styles.header} 
+    <div className={`${styles.container} ${!isExpanded ? styles.collapsed : ''}`}>
+      <div
+        className={styles.header}
         onClick={handleToggle}
       >
+        {/* 树形节点圆点连接器 */}
+        <div className={`${styles.nodeDot} ${isThinking ? styles.nodeDotActive : ''}`}>
+          <div className={styles.nodeDotInner} />
+        </div>
         <div className={styles.titleArea}>
           <div className={styles.actionArea}>
             {isExpanded ? (
@@ -48,9 +52,9 @@ export const ThinkingProcess: React.FC<ThinkingProcessProps> = memo(({
           <span className={styles.title}>{title}</span>
         </div>
       </div>
-      
+
       {isExpanded && (
-        <div className={styles.content}>
+        <div className={`${styles.content} ${styles.contentEnter}`}>
           {children}
         </div>
       )}

@@ -1,63 +1,152 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 
 .segmentGroup {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 
-.intent {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
+/* ===== 树形节点通用样式 ===== */
+
+/* 树形节点行：圆点 + 水平连接线 + 内容 */
+.treeNode {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  padding: 4px 0;
+}
+
+/* 节点圆点 */
+.treeNodeDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+  margin-right: 8px;
+  transition: background-color 0.25s ease;
+}
+
+/* 水平连接线：从圆点到内容 */
+.treeNodeLine {
+  position: relative;
+  flex-shrink: 0;
+  width: 12px;
+  margin-top: 10px;
+}
+
+.treeNodeLine::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--color-border, #e2e8f0);
+}
+
+/* 节点内容区域 */
+.treeNodeContent {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== 意图节点（顶层） ===== */
+.intentNode {
+  /* 意图是顶层节点，使用特殊颜色 */
+}
+
+.intentNode .treeNodeDot {
+  background-color: var(--color-primary, #3b82f6);
+}
+
+.intentText {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+/* ===== 推理节点（意图的子节点） ===== */
+.reasoningNode .treeNodeDot {
+  background-color: #8b5cf6;
 }
 
 .reasoningText {
   white-space: pre-wrap;
   color: var(--color-text-secondary);
+  font-size: 13px;
   line-height: 1.6;
 }
 
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* ===== 子树容器（带左侧竖直连接线） ===== */
+.subTree {
+  position: relative;
+  padding-left: 16px;
+  margin-left: 4px;
+}
+
+/* 左侧竖直连接线 */
+.subTree::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 12px;
+  width: 2px;
+  background-color: var(--color-border, #e2e8f0);
+  border-radius: 1px;
+}
+
+/* ===== 分区标题节点 ===== */
+.sectionNode .treeNodeDot {
+  background-color: var(--color-text-tertiary, #94a3b8);
 }
 
 .sectionTitle {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.stepList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* ===== 步骤节点 ===== */
+.stepNode .treeNodeDot {
+  transition: background-color 0.3s ease;
 }
 
-.stepItem {
+.stepDotCompleted {
+  background-color: #22c55e;
+}
+
+.stepDotRunning {
+  background-color: #3b82f6;
+  animation: stepPulse 1.5s ease-in-out infinite;
+}
+
+.stepDotError {
+  background-color: #ef4444;
+}
+
+.stepDotPending {
+  background-color: #94a3b8;
+}
+
+@keyframes stepPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.stepContent {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  padding: 4px 0 4px 16px;
-  position: relative;
-}
-
-.stepItem::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background-color: var(--color-text-tertiary);
 }
 
 .stepStatus {
@@ -83,6 +172,7 @@
 
 .stepTitle {
   font-weight: 500;
+  font-size: 13px;
 }
 
 .stepSummary {
@@ -90,17 +180,35 @@
   font-size: 12px;
 }
 
-.toolList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* ===== 子代理节点 ===== */
+.subagentNode .treeNodeDot {
+  background-color: #f59e0b;
 }
 
-.subagentGrid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: stretch;
+.subagentNode .treeNodeLine::before {
+  background-color: #fbbf24;
+}
+
+.subagentContent {
+  width: 100%;
+}
+
+/* ===== 工具调用节点（叶子节点） ===== */
+.toolNode .treeNodeDot {
+  background-color: #06b6d4;
+}
+
+.toolNode .treeNodeLine::before {
+  background-color: #67e8f9;
+}
+
+.toolContent {
+  width: 100%;
+}
+
+/* ===== 用量信息节点 ===== */
+.usageNode .treeNodeDot {
+  background-color: var(--color-text-tertiary, #94a3b8);
 }
 
 .usageGrid {
@@ -118,4 +226,15 @@
 
 .usageItem:last-child {
   border-right: none;
+}
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 640px) {
+  .subTree {
+    padding-left: 12px;
+  }
+
+  .treeNodeLine {
+    width: 8px;
+  }
 }

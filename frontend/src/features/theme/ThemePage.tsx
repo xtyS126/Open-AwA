@@ -1,5 +1,6 @@
-import { useRef, ChangeEvent } from 'react'
+import { useRef, ChangeEvent, useState } from 'react'
 import { useThemeStore } from '@/shared/store/themeStore'
+import { presetThemes, applyPresetTheme } from './presetThemes'
 import styles from './ThemePage.module.css'
 
 export default function ThemePage() {
@@ -7,6 +8,7 @@ export default function ThemePage() {
   
   const logoInputRef = useRef<HTMLInputElement>(null)
   const bgInputRef = useRef<HTMLInputElement>(null)
+  const [customCSSError, setCustomCSSError] = useState<string>('')
 
   const handleFontFamilyChange = (e: ChangeEvent<HTMLInputElement>) => {
     setConfig({ fontFamily: e.target.value })
@@ -43,14 +45,60 @@ export default function ThemePage() {
       fontSize: '14px',
       themeColor: '',
       backgroundImage: '',
-      logoIcon: ''
+      logoIcon: '',
+      borderRadius: '',
+      density: 'default',
+      animationsEnabled: true,
+      messageFontSize: '',
+      codeFontFamily: '',
+      customCSS: '',
+      presetTheme: '',
+      backgroundBlur: '',
+      backgroundOverlay: '',
+      avatarShape: 'circle',
+      avatarBorder: '',
     })
+  }
+
+  const handlePresetThemeSelect = (presetId: string) => {
+    const presetConfig = applyPresetTheme(presetId)
+    setConfig(presetConfig)
+  }
+
+  const handleCustomCSSChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    const css = e.target.value
+    // 限制长度 10KB
+    if (css.length > 10240) {
+      setCustomCSSError('自定义 CSS 长度不能超过 10KB')
+      return
+    }
+    setCustomCSSError('')
+    setConfig({ customCSS: css })
   }
 
   return (
     <div className={styles['theme-page']}>
       <h2>外观与主题设置</h2>
       
+      {/* 预设主题 */}
+      <div className={styles['settings-group']}>
+        <h3>预设主题</h3>
+        <div className={styles['preset-grid']}>
+          {presetThemes.map((preset) => (
+            <div
+              key={preset.id}
+              className={`${styles['preset-card']} ${config.presetTheme === preset.id ? styles['preset-active'] : ''}`}
+              onClick={() => handlePresetThemeSelect(preset.id)}
+            >
+              <div className={styles['preset-color']} style={{ backgroundColor: preset.colors.primary }}></div>
+              <div className={styles['preset-name']}>{preset.name}</div>
+              <div className={styles['preset-desc']}>{preset.description}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 字体设置 */}
       <div className={styles['settings-group']}>
         <h3>字体设置</h3>
         <div className={styles['setting-item']}>
@@ -71,8 +119,90 @@ export default function ThemePage() {
             <option value="18px">较大 (18px)</option>
           </select>
         </div>
+        <div className={styles['setting-item']}>
+          <label>消息字体大小</label>
+          <select 
+            value={config.messageFontSize || '16px'} 
+            onChange={(e) => setConfig({ messageFontSize: e.target.value })}
+          >
+            <option value="14px">较小 (14px)</option>
+            <option value="16px">默认 (16px)</option>
+            <option value="18px">中等 (18px)</option>
+            <option value="20px">较大 (20px)</option>
+          </select>
+        </div>
+        <div className={styles['setting-item']}>
+          <label>代码字体</label>
+          <input 
+            type="text" 
+            placeholder="例如: 'Fira Code', 'Courier New', monospace" 
+            value={config.codeFontFamily}
+            onChange={(e) => setConfig({ codeFontFamily: e.target.value })}
+          />
+        </div>
       </div>
 
+      {/* 布局与间距 */}
+      <div className={styles['settings-group']}>
+        <h3>布局与间距</h3>
+        <div className={styles['setting-item']}>
+          <label>圆角大小: {config.borderRadius || '默认'}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max="20" 
+            value={config.borderRadius !== '' ? parseInt(config.borderRadius) : 8}
+            onChange={(e) => setConfig({ borderRadius: `${e.target.value}px` })}
+            className={styles['range-slider']}
+          />
+          <div className={styles['range-labels']}>
+            <span>0px (直角)</span>
+            <span>20px (圆润)</span>
+          </div>
+        </div>
+        <div className={styles['setting-item']}>
+          <label>间距密度</label>
+          <div className={styles['segmented-control']}>
+            <button
+              className={config.density === 'compact' ? styles['segment-active'] : ''}
+              onClick={() => setConfig({ density: 'compact' })}
+            >
+              紧凑
+            </button>
+            <button
+              className={config.density === 'default' ? styles['segment-active'] : ''}
+              onClick={() => setConfig({ density: 'default' })}
+            >
+              默认
+            </button>
+            <button
+              className={config.density === 'comfortable' ? styles['segment-active'] : ''}
+              onClick={() => setConfig({ density: 'comfortable' })}
+            >
+              宽松
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 动效设置 */}
+      <div className={styles['settings-group']}>
+        <h3>动效设置</h3>
+        <div className={styles['setting-item']}>
+          <label className={styles['toggle-label']}>
+            <span>启用动效</span>
+            <input 
+              type="checkbox" 
+              checked={config.animationsEnabled}
+              onChange={(e) => setConfig({ animationsEnabled: e.target.checked })}
+              className={styles['toggle-checkbox']}
+            />
+            <span className={styles['toggle-slider']}></span>
+          </label>
+        </div>
+      </div>
+
+      {/* 色彩与背景 */}
       <div className={styles['settings-group']}>
         <h3>色彩与背景</h3>
         <div className={styles['setting-item']}>
@@ -112,8 +242,67 @@ export default function ThemePage() {
             >清除背景图</button>
           )}
         </div>
+
+        {/* 背景图高级选项 */}
+        {config.backgroundImage && (
+          <>
+            <div className={styles['setting-item']}>
+              <label>背景模糊度: {config.backgroundBlur || '0px'}</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="20" 
+                value={parseInt(config.backgroundBlur) || 0}
+                onChange={(e) => setConfig({ backgroundBlur: `${e.target.value}px` })}
+                className={styles['range-slider']}
+              />
+            </div>
+            <div className={styles['setting-item']}>
+              <label>背景覆盖层颜色</label>
+              <input 
+                type="text" 
+                placeholder="例如: rgba(0, 0, 0, 0.3)" 
+                value={config.backgroundOverlay}
+                onChange={(e) => setConfig({ backgroundOverlay: e.target.value })}
+                pattern="^(rgba?|hsla?|#[0-9a-fA-F]{3,8}|[a-z]+).*$"
+              />
+            </div>
+          </>
+        )}
       </div>
 
+      {/* 头像设置 */}
+      <div className={styles['settings-group']}>
+        <h3>头像设置</h3>
+        <div className={styles['setting-item']}>
+          <label>头像形状</label>
+          <div className={styles['segmented-control']}>
+            <button
+              className={config.avatarShape === 'circle' ? styles['segment-active'] : ''}
+              onClick={() => setConfig({ avatarShape: 'circle' })}
+            >
+              圆形
+            </button>
+            <button
+              className={config.avatarShape === 'rounded' ? styles['segment-active'] : ''}
+              onClick={() => setConfig({ avatarShape: 'rounded' })}
+            >
+              圆角方形
+            </button>
+          </div>
+        </div>
+        <div className={styles['setting-item']}>
+          <label>头像边框样式</label>
+          <input 
+            type="text" 
+            placeholder="例如: 2px solid #3b82f6" 
+            value={config.avatarBorder}
+            onChange={(e) => setConfig({ avatarBorder: e.target.value })}
+          />
+        </div>
+      </div>
+
+      {/* 品牌设定 */}
       <div className={styles['settings-group']}>
         <h3>品牌设定</h3>
         <div className={styles['setting-item']}>
@@ -143,6 +332,27 @@ export default function ThemePage() {
                 >清除自定义 Logo</button>
              </div>
           )}
+        </div>
+      </div>
+
+      {/* 自定义 CSS */}
+      <div className={styles['settings-group']}>
+        <h3>自定义 CSS</h3>
+        <div className={styles['setting-item']}>
+          <label>高级用户可注入自定义样式代码</label>
+          <textarea
+            className={styles['css-editor']}
+            placeholder="/* 在此输入自定义 CSS 代码 */&#10;.my-class {&#10;  color: red;&#10;}"
+            value={config.customCSS}
+            onChange={handleCustomCSSChange}
+            rows={10}
+          />
+          {customCSSError && (
+            <span className={styles['error-text']}>{customCSSError}</span>
+          )}
+          <span className={styles['help-text']}>
+            最大长度: 10KB | 当前: {(config.customCSS?.length ?? 0).toLocaleString()} 字符 | 代码将实时应用到页面 | 请勿包含外部资源引用
+          </span>
         </div>
       </div>
 

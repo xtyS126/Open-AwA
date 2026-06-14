@@ -196,6 +196,8 @@ export interface UseChatStreamParams {
   setLoading: (loading: boolean) => void
   /** 获取当前消息元数据映射 */
   messageMeta: Record<string, AssistantExecutionMeta>
+  /** 更新消息元数据映射（direct 模式需要） */
+  setMessageMeta: React.Dispatch<React.SetStateAction<Record<string, AssistantExecutionMeta>>>
 }
 
 export interface UseChatStreamReturn {
@@ -237,6 +239,7 @@ export function useChatStream({
   setStreamingAssistantId,
   setLoading,
   messageMeta,
+  setMessageMeta,
 }: UseChatStreamParams): UseChatStreamReturn {
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
@@ -250,7 +253,6 @@ export function useChatStream({
   const addActiveToolCall = useChatStore((s) => s.addActiveToolCall)
   const removeActiveToolCall = useChatStore((s) => s.removeActiveToolCall)
   const resetActiveToolCalls = useChatStore((s) => s.resetActiveToolCalls)
-  const conversations = useChatStore((s) => s.conversations)
   const upsertConversation = useChatStore((s) => s.upsertConversation)
 
   const abortStream = useCallback(() => {
@@ -340,7 +342,7 @@ export function useChatStream({
         return
       }
 
-      const currentConversation = conversations.find((item) => item.session_id === targetSessionId)
+      const currentConversation = useChatStore.getState().conversations.find((item) => item.session_id === targetSessionId)
       const nowIso = new Date().toISOString()
       if (currentConversation && !hiddenUserMessage) {
         upsertConversation({
@@ -562,12 +564,7 @@ export function useChatStream({
             },
             updateMessage: useChatStore.getState().updateMessage,
             setMessageMeta: (updater) => {
-              // setMessageMeta 不在 chatStore 中，由 ChatPage 的 state 管理
-              // 这里通过 updater 回调直接修改（applyDirectAssistantResponse 内部使用）
-              // 由于 applyDirectAssistantResponse 期望 setMessageMeta 参数，
-              // 而 ChatPage 中 messageMeta 是本地 state，这里提供一个空实现
-              // 实际 meta 更新由 ChatPage 在流式结束后通过其他方式同步
-              updater({})
+              setMessageMeta(updater)
             },
             sanitizeDisplayedError,
             dispatchUsageUpdated: ({ callId, provider, model }) => {
@@ -654,8 +651,8 @@ export function useChatStream({
       addActiveToolCall,
       removeActiveToolCall,
       resetActiveToolCalls,
-      conversations,
       upsertConversation,
+      setMessageMeta,
     ]
   )
 

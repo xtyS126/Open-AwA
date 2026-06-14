@@ -7,9 +7,10 @@ import os
 import sys
 import platform
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, SecretStr
@@ -42,6 +43,36 @@ ENV_VAR_META = [
 
 ALLOWED_ENV_VARS = {v["name"] for v in ENV_VAR_META if v.get("allow_update")}
 TESTABLE_ENV_VARS = {v["name"] for v in ENV_VAR_META if v.get("allow_test")}
+
+# API Key 环境变量名到供应商标识的映射
+_API_KEY_TO_PROVIDER: Dict[str, str] = {
+    "OPENAI_API_KEY": "openai",
+    "ANTHROPIC_API_KEY": "anthropic",
+    "DEEPSEEK_API_KEY": "deepseek",
+    "QWEN_API_KEY": "qwen",
+    "ZHIPU_API_KEY": "zhipu",
+    "MOONSHOT_API_KEY": "moonshot",
+}
+
+# 供应商标识到对应 BASE_URL 环境变量名的映射
+_PROVIDER_TO_BASE_URL_ENV: Dict[str, str] = {
+    "openai": "",       # OpenAI 无自定义 BASE_URL 环境变量
+    "anthropic": "",    # Anthropic 无自定义 BASE_URL 环境变量
+    "deepseek": "",     # DeepSeek 无自定义 BASE_URL 环境变量
+    "qwen": "QWEN_BASE_URL",
+    "zhipu": "ZHIPU_BASE_URL",
+    "moonshot": "MOONSHOT_BASE_URL",
+}
+
+# 供应商默认 API 基础地址
+_PROVIDER_DEFAULT_BASE_URL: Dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "deepseek": "https://api.deepseek.com/v1",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+    "moonshot": "https://api.moonshot.cn/v1",
+}
 
 
 def _check_database() -> Dict[str, Any]:
@@ -298,29 +329,241 @@ async def update_env_variable(
     return {"success": True}
 
 
+class ConnectivityTestRequest(BaseModel):
+    """连通性测试请求体，支持两种模式：基于环境变量名或基于供应商。"""
+    # 模式一：基于环境变量名（兼容旧接口）
+    env_var_name: Optional[str] = Field(None, description="环境变量名，如 OPENAI_API_KEY")
+    # 模式二：基于供应商（推荐）
+    provider: Optional[str] = Field(None, description="供应商标识，如 openai、deepseek")
+    api_key: Optional[str] = Field(None, description="待测试的 API Key（明文，优先级高于环境变量）")
+    base_url: Optional[str] = Field(None, description="自定义 Base URL（可选，不传则使用默认地址）")
+
+
+def _build_models_url(provider: str, base_url: str) -> str:
+    """根据供应商和 base_url 构建 /models 端点完整 URL。"""
+    base = base_url.rstrip("/")
+    # Anthropic 使用 /v1/models 端点
+    if provider == "anthropic":
+        return f"{base}/v1/models"
+    # 如果 base_url 已包含 /v1 后缀，直接追加 /models
+    if base.endswith("/v1"):
+        return f"{base}/models"
+    # 否则追加 /v1/models
+    return f"{base}/v1/models"
+
+
+def _classify_http_error(status_code: int) -> str:
+    """根据 HTTP 状态码返回用户友好的中文错误描述。"""
+    if status_code == 401:
+        return "API Key 无效或已过期"
+    if status_code == 403:
+        return "API Key 权限不足"
+    if status_code == 404:
+        return "API 端点不存在，请检查 Base URL"
+    return f"未知错误: HTTP {status_code}"
+
+
+@router.post("/connectivity-test")
+async def test_connectivity(
+    payload: ConnectivityTestRequest,
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    对 LLM 供应商执行真实的 API 连通性测试。
+    通过调用供应商的 /v1/models 端点验证 API Key 是否有效以及网络是否可达。
+    支持两种调用模式：
+      1. 基于环境变量名（env_var_name）— 从环境变量读取 Key 和 Base URL
+      2. 基于供应商（provider + api_key + base_url）— 直接传入参数
+    """
+    # 确定供应商标识
+    provider: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+
+    if payload.provider:
+        # 模式二：基于供应商
+        provider = payload.provider.strip().lower()
+        api_key = (payload.api_key or "").strip()
+        base_url = (payload.base_url or "").strip() or None
+    elif payload.env_var_name:
+        # 模式一：基于环境变量名
+        env_name = payload.env_var_name.strip()
+        if env_name not in TESTABLE_ENV_VARS:
+            raise HTTPException(status_code=422, detail="暂不支持以此属性开展连通性检测")
+        provider = _API_KEY_TO_PROVIDER.get(env_name)
+        if not provider:
+            return {
+                "success": False,
+                "model_count": None,
+                "error_message": f"无法识别环境变量 {env_name} 对应的供应商",
+                "latency_ms": 0,
+                "provider": "unknown",
+            }
+        # 读取环境变量中的 API Key
+        raw_val = os.environ.get(env_name)
+        if raw_val is None:
+            raw_val = getattr(settings, env_name, "")
+        if isinstance(raw_val, SecretStr):
+            raw_val = raw_val.get_secret_value()
+        api_key = str(raw_val or "").strip()
+        # 读取对应的 BASE_URL 环境变量
+        base_url_env = _PROVIDER_TO_BASE_URL_ENV.get(provider, "")
+        if base_url_env:
+            raw_base = os.environ.get(base_url_env)
+            if raw_base is None:
+                raw_base = getattr(settings, base_url_env, "")
+            base_url = str(raw_base or "").strip() or None
+    else:
+        raise HTTPException(status_code=422, detail="必须提供 provider 或 env_var_name 参数")
+
+    # 校验必要参数
+    if not provider:
+        raise HTTPException(status_code=422, detail="无法确定供应商标识")
+    if not api_key:
+        return {
+            "success": False,
+            "model_count": None,
+            "error_message": "未提供 API Key",
+            "latency_ms": 0,
+            "provider": provider,
+        }
+
+    # 确定 Base URL：优先使用传入值，其次使用默认值
+    effective_base_url = base_url or _PROVIDER_DEFAULT_BASE_URL.get(provider)
+    if not effective_base_url:
+        return {
+            "success": False,
+            "model_count": None,
+            "error_message": f"未配置 {provider} 的 Base URL，且无默认地址",
+            "latency_ms": 0,
+            "provider": provider,
+        }
+
+    # 构建模型列表端点 URL
+    models_url = _build_models_url(provider, effective_base_url)
+
+    # 构建请求头
+    headers: Dict[str, str] = {}
+    if provider == "anthropic":
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+    else:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    # 发起真实 API 请求
+    start_time = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(models_url, headers=headers)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+
+        if response.status_code == 200:
+            # 解析模型数量
+            model_count = None
+            try:
+                data = response.json()
+                model_list = data.get("data", [])
+                if isinstance(model_list, list):
+                    model_count = len(model_list)
+            except (ValueError, KeyError):
+                pass
+
+            logger.bind(
+                event="connectivity_test",
+                module="system",
+                provider=provider,
+                status="success",
+                latency_ms=elapsed_ms,
+            ).info(f"连通性测试成功: provider={provider}, latency={elapsed_ms}ms")
+
+            return {
+                "success": True,
+                "model_count": model_count,
+                "error_message": None,
+                "latency_ms": elapsed_ms,
+                "provider": provider,
+            }
+        else:
+            error_msg = _classify_http_error(response.status_code)
+            logger.bind(
+                event="connectivity_test",
+                module="system",
+                provider=provider,
+                status="error",
+                status_code=response.status_code,
+                latency_ms=elapsed_ms,
+            ).warning(f"连通性测试失败: provider={provider}, status={response.status_code}")
+
+            return {
+                "success": False,
+                "model_count": None,
+                "error_message": error_msg,
+                "latency_ms": elapsed_ms,
+                "provider": provider,
+            }
+    except httpx.TimeoutException:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.bind(
+            event="connectivity_test",
+            module="system",
+            provider=provider,
+            status="timeout",
+            latency_ms=elapsed_ms,
+        ).warning(f"连通性测试超时: provider={provider}")
+        return {
+            "success": False,
+            "model_count": None,
+            "error_message": "连接超时（5秒），请检查网络或 Base URL",
+            "latency_ms": elapsed_ms,
+            "provider": provider,
+        }
+    except httpx.ConnectError:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.bind(
+            event="connectivity_test",
+            module="system",
+            provider=provider,
+            status="connect_error",
+            latency_ms=elapsed_ms,
+        ).warning(f"连通性测试连接失败: provider={provider}")
+        return {
+            "success": False,
+            "model_count": None,
+            "error_message": "无法连接到服务器，请检查 Base URL",
+            "latency_ms": elapsed_ms,
+            "provider": provider,
+        }
+    except Exception as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.bind(
+            event="connectivity_test",
+            module="system",
+            provider=provider,
+            status="error",
+            error_type=type(e).__name__,
+            latency_ms=elapsed_ms,
+        ).error(f"连通性测试异常: provider={provider}, error={e}")
+        return {
+            "success": False,
+            "model_count": None,
+            "error_message": f"未知错误: {type(e).__name__}",
+            "latency_ms": elapsed_ms,
+            "provider": provider,
+        }
+
+
 @router.get("/env-vars/{name}/test")
 async def test_env_variable(
     name: str,
     current_user: User = Depends(get_current_admin_user)
 ):
     """
-    针对选定的 API 环境变量执行格式校验（仅检查 Key 长度≥10 字符，不发起真实的 API 连通性请求）。
-    TODO: 集成为真实的连通性测试，例如调用对应 LLM 的 /v1/models 端点。
+    针对选定的 API 环境变量执行真实连通性测试。
+    通过调用对应 LLM 供应商的 /v1/models 端点验证 Key 有效性和网络可达性。
     """
     if name not in TESTABLE_ENV_VARS:
         raise HTTPException(status_code=422, detail="暂不支持以此属性开展连通性检测")
 
-    raw_val = os.environ.get(name)
-    if raw_val is None:
-        raw_val = getattr(settings, name, "")
-    if isinstance(raw_val, SecretStr):
-        raw_val = raw_val.get_secret_value()
-
-    raw_val = str(raw_val or "").strip()
-    if not raw_val:
-        return {"success": False, "message": f"未设置该 API Key {name}"}
-
-    if len(raw_val) < 10:
-        return {"success": False, "message": "API Key 格式不正确(字符太短)"}
-
-    return {"success": True, "message": "格式预检通过（长度≥10字符），请注意此测试不验证 Key 的有效性"}
+    # 复用连通性测试逻辑
+    request = ConnectivityTestRequest(env_var_name=name)
+    return await test_connectivity(request, current_user)

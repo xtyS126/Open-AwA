@@ -1,8 +1,10 @@
 """
-安全相关 API 路由模块，提供 RBAC 角色管理与审计日志查询接口。
+安全相关 API 路由模块，提供 RBAC 角色管理、审计日志查询与权限请求实时推送接口。
 """
 
+import asyncio
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -26,12 +28,204 @@ from api.schemas import (
     UserRoleResponse,
     UserRoleUpdate,
 )
+from config.settings import settings
 from db.models import AuditLog, User, get_db
 from db.permission_models import PermissionSaved, PROJECT_GLOBAL
 from security.rbac import RBACManager
 
 
 router = APIRouter(prefix="/api/security", tags=["Security"])
+
+
+# -------- 权限请求实时推送 --------
+
+class PendingPermissionRequest:
+    """待处理的权限请求条目。"""
+
+    def __init__(
+        self,
+        request_id: str,
+        user_id: str,
+        session_id: str,
+        action: str,
+        resources: list[str],
+        save: list[str] | None = None,
+        metadata: dict | None = None,
+        agent: str | None = None,
+    ) -> None:
+        self.request_id = request_id
+        self.user_id = user_id
+        self.session_id = session_id
+        self.action = action
+        self.resources = resources
+        self.save = save or []
+        self.metadata = metadata or {}
+        self.agent = agent
+        self.created_at = datetime.now(timezone.utc).isoformat()
+        # 用于等待回复的 Future，reply 端设置结果后，请求端即可拿到回复
+        self._reply_future: asyncio.Future[str] = asyncio.get_event_loop().create_future()
+
+    def to_dict(self) -> dict:
+        """序列化为前端可消费的字典格式。"""
+        return {
+            "id": self.request_id,
+            "session_id": self.session_id,
+            "action": self.action,
+            "resources": self.resources,
+            "save": self.save,
+            "metadata": self.metadata,
+            "agent": self.agent,
+            "created_at": self.created_at,
+        }
+
+
+# 内存队列：user_id -> 待处理权限请求列表
+_pending_permission_queue: dict[str, list[PendingPermissionRequest]] = {}
+
+# SSE 推送队列：user_id -> 该用户所有 SSE 连接的 asyncio.Queue 列表
+# 当新权限请求入队时，同时向所有已连接的 SSE 客户端推送事件
+_sse_subscribers: dict[str, list[asyncio.Queue[str]]] = {}
+
+
+def _get_user_queue(user_id: str) -> list[PendingPermissionRequest]:
+    """获取指定用户的待处理权限请求队列。"""
+    if user_id not in _pending_permission_queue:
+        _pending_permission_queue[user_id] = []
+    return _pending_permission_queue[user_id]
+
+
+def _subscribe_sse(user_id: str) -> asyncio.Queue[str]:
+    """注册一个 SSE 客户端订阅，返回用于接收事件的 asyncio.Queue。"""
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    if user_id not in _sse_subscribers:
+        _sse_subscribers[user_id] = []
+    _sse_subscribers[user_id].append(queue)
+    logger.bind(
+        event="sse_subscriber_added",
+        user_id=user_id,
+        subscriber_count=len(_sse_subscribers[user_id]),
+    ).debug(f"SSE 订阅者已注册: {user_id}")
+    return queue
+
+
+def _unsubscribe_sse(user_id: str, queue: asyncio.Queue[str]) -> None:
+    """移除一个 SSE 客户端订阅。"""
+    if user_id in _sse_subscribers:
+        try:
+            _sse_subscribers[user_id].remove(queue)
+        except ValueError:
+            pass
+        if not _sse_subscribers[user_id]:
+            del _sse_subscribers[user_id]
+    logger.bind(
+        event="sse_subscriber_removed",
+        user_id=user_id,
+    ).debug(f"SSE 订阅者已移除: {user_id}")
+
+
+def _broadcast_to_sse(user_id: str, event_data: dict) -> None:
+    """向指定用户的所有 SSE 客户端广播权限请求事件。"""
+    subscribers = _sse_subscribers.get(user_id, [])
+    if not subscribers:
+        return
+    payload = json.dumps(event_data, ensure_ascii=False)
+    for queue in subscribers:
+        try:
+            queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            logger.bind(
+                event="sse_queue_full",
+                user_id=user_id,
+            ).warning("SSE 推送队列已满，丢弃事件")
+
+
+def enqueue_permission_request(
+    user_id: str,
+    session_id: str,
+    action: str,
+    resources: list[str],
+    save: list[str] | None = None,
+    metadata: dict | None = None,
+    agent: str | None = None,
+    timeout: float = 120.0,
+) -> asyncio.Future[str]:
+    """
+    将权限请求加入用户队列，并返回一个 Future。
+    调用方 await 此 Future 即可阻塞等待用户回复（once/always/reject）。
+    超时后 Future 自动以 "reject" 结束。
+
+    参数:
+        user_id: 目标用户 ID
+        session_id: 会话 ID
+        action: 请求的操作类型（如 read/write/execute）
+        resources: 操作涉及的资源列表
+        save: 可持久化的权限规则名称列表
+        metadata: 附加元数据
+        agent: 发起请求的 Agent 标识
+        timeout: 等待回复的超时时间（秒），默认 120 秒
+
+    返回:
+        asyncio.Future[str] - 回复值为 "once"/"always"/"reject"
+    """
+    request_id = uuid.uuid4().hex[:16]
+    entry = PendingPermissionRequest(
+        request_id=request_id,
+        user_id=user_id,
+        session_id=session_id,
+        action=action,
+        resources=resources,
+        save=save,
+        metadata=metadata,
+        agent=agent,
+    )
+    queue = _get_user_queue(user_id)
+    queue.append(entry)
+
+    # 向所有已连接的 SSE 客户端广播权限请求事件
+    _broadcast_to_sse(user_id, entry.to_dict())
+
+    logger.bind(
+        event="permission_request_enqueued",
+        user_id=user_id,
+        request_id=request_id,
+        action=action,
+    ).info(f"权限请求已入队: {request_id} ({action})")
+
+    # 设置超时自动拒绝
+    async def _timeout_reject() -> None:
+        await asyncio.sleep(timeout)
+        if not entry._reply_future.done():
+            entry._reply_future.set_result("reject")
+            # 从队列中移除已超时的请求
+            try:
+                queue.remove(entry)
+            except ValueError:
+                pass
+            logger.bind(
+                event="permission_request_timeout",
+                user_id=user_id,
+                request_id=request_id,
+            ).warning(f"权限请求超时自动拒绝: {request_id}")
+
+    asyncio.create_task(_timeout_reject())
+
+    return entry._reply_future
+
+
+def _resolve_pending_request(user_id: str, request_id: str, reply: str) -> bool:
+    """
+    解析指定用户的待处理权限请求。
+    找到请求后设置 Future 结果并从队列中移除。
+    返回是否成功找到并解析了请求。
+    """
+    queue = _get_user_queue(user_id)
+    for entry in queue:
+        if entry.request_id == request_id:
+            if not entry._reply_future.done():
+                entry._reply_future.set_result(reply)
+            queue.remove(entry)
+            return True
+    return False
 
 
 # -------- RBAC 角色管理路由 --------
@@ -248,6 +442,115 @@ async def get_audit_stats(
 
 # -------- 持久化权限规则路由 --------
 
+@router.get("/permissions/pending")
+async def get_pending_permissions(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    获取当前用户待处理的权限请求列表。
+    前端通过轮询此接口实现权限请求的实时推送。
+    """
+    user_id = str(current_user.id)
+    queue = _pending_permission_queue.get(user_id, [])
+    return {
+        "requests": [entry.to_dict() for entry in queue],
+        "count": len(queue),
+    }
+
+
+@router.get("/permissions/stream")
+async def stream_permission_requests(
+    request: Request,
+    api_key: Optional[str] = Query(None, description="API Key（用于 SSE 连接认证，因 EventSource 不支持自定义 Header）"),
+    db: Session = Depends(get_db),
+):
+    """
+    SSE 端点：实时推送当前用户的权限请求事件。
+    前端连接此端点后，当后端有新的权限请求时，会以
+    event: permission_request 格式推送给客户端。
+    连接建立时先推送当前已有的待处理请求，之后持续监听新请求。
+
+    认证方式：优先使用 Authorization Header（标准 Bearer 认证），
+    若 Header 认证失败则尝试 query parameter 中的 api_key。
+    """
+    # 尝试标准认证（Authorization Header / Cookie）
+    user: Optional[User] = None
+    from api.dependencies import (
+        _normalize_request_token,
+        _get_owner_from_settings,
+        _resolve_jwt_user,
+        oauth2_scheme,
+    )
+    import secrets as _secrets
+
+    # 路径 1: Authorization Header 认证
+    credentials = await oauth2_scheme(request)
+    configured_key = settings.OPENAWA_API_KEY
+    if credentials:
+        token = _normalize_request_token(credentials.credentials)
+        # API Key 认证
+        if configured_key and token and _secrets.compare_digest(token, configured_key):
+            user = _get_owner_from_settings()
+        # JWT 认证
+        if user is None and token:
+            user = await _resolve_jwt_user(token, db)
+
+    # 路径 2: Cookie 认证
+    if user is None:
+        from config.security import ACCESS_TOKEN_COOKIE_NAME
+        cookie_token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
+        cookie_token_normalized = _normalize_request_token(cookie_token)
+        if cookie_token_normalized:
+            user = await _resolve_jwt_user(cookie_token_normalized, db)
+
+    # 路径 3: query parameter API Key 认证（EventSource 不支持自定义 Header）
+    if user is None and api_key:
+        normalized_key = _normalize_request_token(api_key)
+        if configured_key and normalized_key and _secrets.compare_digest(normalized_key, configured_key):
+            user = _get_owner_from_settings()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证失败，请提供有效的 API Key",
+        )
+
+    user_id = str(user.id)
+    sse_queue = _subscribe_sse(user_id)
+
+    async def event_generator():
+        try:
+            # 连接建立时先推送当前已有的待处理请求
+            existing = _pending_permission_queue.get(user_id, [])
+            for entry in existing:
+                yield f"event: permission_request\ndata: {json.dumps(entry.to_dict(), ensure_ascii=False)}\n\n"
+
+            # 持续监听新事件
+            while True:
+                try:
+                    # 使用 wait_for 避免无限阻塞，同时定期发送心跳
+                    payload = await asyncio.wait_for(sse_queue.get(), timeout=30.0)
+                    yield f"event: permission_request\ndata: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    # 发送心跳保持连接活跃
+                    yield ": heartbeat\n\n"
+        except asyncio.CancelledError:
+            # 客户端断开连接
+            pass
+        finally:
+            _unsubscribe_sse(user_id, sse_queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.post("/permissions/reply")
 async def reply_to_permission(
     body: PermissionReplyRequest,
@@ -260,15 +563,25 @@ async def reply_to_permission(
     当 reply 为 "always" 且 body.message 中包含权限规则名（action:resource 格式）时，
     将对应权限规则持久化到 PermissionSaved 表。
     reply 值由 Pydantic Literal 类型在请求解析阶段自动校验。
+    同时解析内存队列中对应的待处理请求，使请求方获得回复结果。
     """
     request_id = body.request_id
     reply = body.reply.lower()
+    user_id = str(current_user.id)
+
+    # 解析内存队列中的待处理请求
+    resolved = _resolve_pending_request(user_id, request_id, reply)
+    if not resolved:
+        logger.bind(
+            event="permission_reply_no_pending",
+            request_id=request_id,
+            user_id=user_id,
+        ).warning(f"回复的权限请求不在待处理队列中: {request_id}")
 
     # 持久化 "always allow" 规则
     if reply == "always":
         saved_count = 0
         # 尝试从消息中提取权限规则名进行保存
-        user_id = str(current_user.id)
         for rule_name in body.message.split(",") if body.message else []:
             rule_name = rule_name.strip()
             if not rule_name:
@@ -327,6 +640,13 @@ async def reply_to_permission(
         reply=reply,
         user_id=str(current_user.id),
     ).info(f"权限请求 {request_id} 已回复: {reply}")
+
+    # 向 SSE 客户端广播权限请求已回复事件，前端可据此移除已回复的请求
+    _broadcast_to_sse(user_id, {
+        "type": "permission_reply",
+        "request_id": request_id,
+        "reply": reply,
+    })
 
     return {"ok": True}
 

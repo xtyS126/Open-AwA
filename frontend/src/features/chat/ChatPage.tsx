@@ -19,9 +19,11 @@ import { ConfirmDialog } from '@/shared/components/ConfirmDialog'
 import { useChatStream } from './hooks/useChatStream'
 import { useSubagentSync } from './hooks/useSubagentSync'
 import { useMessageCache } from './hooks/useMessageCache'
+import { usePermissionRequest } from './hooks/usePermissionRequest'
 import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
+import { PermissionRequestNotification } from './components/PermissionRequestNotification'
 import type { FileAttachment } from './components/ChatInput'
 // P1: TaskPanel/TodoPanel 按需懒加载，减少聊天页首屏 JS
 const TaskPanel = React.lazy(() => import('./components/TaskPanel').then(m => ({ default: m.TaskPanel })))
@@ -51,7 +53,6 @@ function ChatPage() {
   const setOutputMode = useChatStore(s => s.setOutputMode)
   const setMessages = useChatStore(s => s.setMessages)
   const updateMessage = useChatStore(s => s.updateMessage)
-  const loadCachedMessages = useChatStore(s => s.loadCachedMessages)
   const upsertConversation = useChatStore(s => s.upsertConversation)
   const removeConversation = useChatStore(s => s.removeConversation)
   const setThinkingEnabled = useChatStore(s => s.setThinkingEnabled)
@@ -111,6 +112,14 @@ function ChatPage() {
   } = useTaskPanelState(messages, messageMeta, streamingAssistantId)
   const { addToast, ToastContainer } = useToast()
   const messageMetaRef = useRef<Record<string, import('@/features/chat/types').AssistantExecutionMeta>>({})
+
+  // 权限请求实时推送
+  const {
+    pendingRequests: permissionRequests,
+    approve: approvePermission,
+    approveAlways: approveAlwaysPermission,
+    deny: denyPermission,
+  } = usePermissionRequest(sessionId)
 
   const {
     getLocalMessagesForRestore,
@@ -261,14 +270,15 @@ function ChatPage() {
 
   useEffect(() => {
     if (conversationId && conversationId !== sessionId) {
+      // 仅调用 setSessionId，其内部已包含 loadMessages 逻辑
+      // 移除 loadCachedMessages 调用，避免与 setSessionId 内部的 loadMessages 产生竞态
       setSessionId(conversationId)
-      const cachedMsgs = getLocalMessagesForRestore(conversationId)
-      loadCachedMessages(conversationId)
-      setMessageMeta(buildMessageMetaFromMessages(cachedMsgs))
+      setMessageMeta({})
       setStreamingAssistantId(null)
+      setFeedbackState({})
       resetStreamExecutionState()
     }
-  }, [conversationId, loadCachedMessages, resetStreamExecutionState, sessionId, setSessionId])
+  }, [conversationId, resetStreamExecutionState, sessionId, setSessionId])
 
   useEffect(() => {
     if (!historyInitialized || conversationId || (sessionId && sessionId !== 'default')) {
@@ -440,6 +450,7 @@ function ChatPage() {
     setStreamingAssistantId,
     setLoading,
     messageMeta,
+    setMessageMeta,
   })
 
   const handleSend = useCallback(async (userMessage?: string, uploadedAttachments?: FileAttachment[], options?: import('./hooks/useChatStream').SendMessageOptions) => {
@@ -516,9 +527,15 @@ function ChatPage() {
       message_id: messageId,
       rating,
     }).catch(() => {
-      /* 静默失败，不影响 UI */
+      // 回滚乐观更新，移除该消息的反馈状态
+      setFeedbackState((prev) => {
+        const next = { ...prev }
+        delete next[messageId]
+        return next
+      })
+      addToast(t('chat.feedbackFailed'), 'error')
     })
-  }, [sessionId])
+  }, [sessionId, addToast, t])
 
   const handleUndoOperation = useCallback(async (operationId: string) => {
     try {
@@ -635,13 +652,15 @@ function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversations, createConversationAndNavigate, includeDeleted, navigate, removeConversation, sessionId, upsertConversation, loadConversationList, pendingDeleteSessionId])
 
-  // 在确认对话框打开时执行删除（通过 useEffect 响应 pendingDeleteSessionId 变化）
-  useEffect(() => {
-    if (pendingDeleteSessionId) {
-      void executeDeleteConversation()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingDeleteSessionId])
+  /* 取消删除会话 */
+  const cancelDeleteConversation = useCallback(() => {
+    setPendingDeleteSessionId(null)
+  }, [])
+
+  /* 确认删除会话 */
+  const confirmDeleteConversation = useCallback(() => {
+    void executeDeleteConversation()
+  }, [executeDeleteConversation])
 
   const handleRestoreConversation = useCallback(async (targetSessionId: string) => {
     const response = await conversationAPI.restoreSession(targetSessionId)
@@ -829,6 +848,12 @@ function ChatPage() {
         />
 
         <div className={styles['chat-main']}>
+          <PermissionRequestNotification
+            pendingRequests={permissionRequests}
+            onApprove={approvePermission}
+            onApproveAlways={approveAlwaysPermission}
+            onDeny={denyPermission}
+          />
           <MessageList
             messages={messages}
             messageMeta={messageMeta}
@@ -885,6 +910,18 @@ function ChatPage() {
           cancelText="继续"
           onConfirm={doAbort}
           onCancel={() => setShowAbortConfirm(false)}
+        />
+      )}
+      {pendingDeleteSessionId && (
+        <ConfirmDialog
+          isOpen={!!pendingDeleteSessionId}
+          title="删除会话"
+          message="确定要删除此会话吗？删除后无法恢复。"
+          type="danger"
+          confirmText="删除"
+          cancelText="取消"
+          onConfirm={confirmDeleteConversation}
+          onCancel={cancelDeleteConversation}
         />
       )}
     </div>

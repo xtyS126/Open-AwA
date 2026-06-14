@@ -1,6 +1,25 @@
 .container {
   margin: 16px 0;
   overflow: hidden;
+  position: relative;
+}
+
+/* 左侧竖直连接线 */
+.container::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 28px;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--color-border, #e2e8f0);
+  border-radius: 1px;
+  transition: opacity 0.2s ease;
+}
+
+/* 折叠状态下隐藏连接线 */
+.container.collapsed::before {
+  opacity: 0;
 }
 
 .header {
@@ -10,16 +29,52 @@
   cursor: pointer;
   user-select: none;
   transition: opacity 0.2s ease;
+  position: relative;
+  z-index: 1;
 }
 
 .header:hover {
   opacity: 0.8;
 }
 
+/* 节点圆点连接器 */
+.nodeDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border, #e2e8f0);
+  background-color: var(--bgPrimary, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.nodeDotActive {
+  border-color: var(--color-primary, #3b82f6);
+  background-color: var(--color-primary, #3b82f6);
+}
+
+.nodeDotInner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-text-tertiary, #94a3b8);
+  transition: background-color 0.25s ease;
+}
+
+.nodeDotActive .nodeDotInner {
+  background-color: #ffffff;
+}
+
 .titleArea {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: 8px;
 }
 
 .icon {
@@ -52,14 +107,45 @@
 }
 
 .chevron {
-  transition: transform 0.2s ease;
+  transition: transform 0.25s ease;
 }
 
 .content {
-  padding: 8px 0 8px 24px;
+  padding: 4px 0 8px 24px;
   font-size: 14px;
   color: var(--color-text-secondary);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+  /* 展开/折叠过渡动画 */
+  overflow: hidden;
+  transition: opacity 0.25s ease;
+}
+
+/* 内容区域淡入效果 */
+.contentEnter {
+  animation: contentFadeIn 0.25s ease forwards;
+}
+
+@keyframes contentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 640px) {
+  .content {
+    padding-left: 20px;
+  }
+
+  .container::before {
+    left: 6px;
+  }
 }

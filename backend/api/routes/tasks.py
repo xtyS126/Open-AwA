@@ -278,5 +278,10 @@ async def _fire_webhook(
 
     try:
         await _post()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.bind(
+            event="task_webhook_callback_error",
+            module="tasks",
+            webhook_url=f"{webhook_url[:30]}...",
+            error=str(e),
+        ).warning("Webhook 回调请求异常")

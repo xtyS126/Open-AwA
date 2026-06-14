@@ -475,7 +475,7 @@ class BehaviorLog(Base):
     user_id: Mapped[str] = mapped_column(String, index=True)
     action_type: Mapped[str] = mapped_column(String)
     details: Mapped[Dict[str, Any]] = mapped_column(JSON)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     __table_args__ = (
         Index("ix_behavior_user_action_ts", "user_id", "action_type", "timestamp"),

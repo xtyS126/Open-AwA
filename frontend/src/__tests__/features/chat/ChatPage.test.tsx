@@ -158,7 +158,7 @@ describe('ChatPage', () => {
     expect(screen.getByText('AI 助手')).toBeInTheDocument()
   })
 
-  it.skip('在流式结构化事件中展示悬浮任务面板并支持展开工具详情', async () => {
+  it('在流式结构化事件中展示悬浮任务面板并支持展开工具详情', async () => {
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       onEvent({
         type: 'chunk',
@@ -222,7 +222,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '帮我检查配置文件' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -241,7 +241,7 @@ describe('ChatPage', () => {
     expect(screen.getByText(/245ms/)).toBeInTheDocument()
   })
 
-  it.skip('为后台子代理建立独立同步，并在全部结束后一次性拉取 transcript', async () => {
+  it('为后台子代理建立独立同步，并在全部结束后一次性拉取 transcript', async () => {
     const streamMessages: string[] = []
     const continuationPayloads: Array<Record<string, unknown> | undefined> = []
 
@@ -317,7 +317,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '执行两个子任务' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -342,7 +342,7 @@ describe('ChatPage', () => {
     expect(screen.getByText('主代理继续完成。')).toBeInTheDocument()
   })
 
-  it.skip('遇到伪子代理 id 时只使用回退日志聚合，不请求 transcript', async () => {
+  it('遇到伪子代理 id 时只使用回退日志聚合，不请求 transcript', async () => {
     const continuationPayloads: Array<Record<string, unknown> | undefined> = []
 
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent, _onError, _requestOptions, executionOptions) => {
@@ -379,7 +379,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '执行一个伪子任务' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -395,7 +395,7 @@ describe('ChatPage', () => {
     expect(screen.getByText('续流完成。')).toBeInTheDocument()
   })
 
-  it.skip('前台子代理事件流不触发 runtime 轮询并直接渲染摘要', async () => {
+  it('前台子代理事件流不触发 runtime 轮询并直接渲染摘要', async () => {
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       onEvent({
         type: 'tool',
@@ -451,7 +451,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '执行一个前台子任务' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -540,7 +540,7 @@ describe('ChatPage', () => {
     expect(screen.getByText('主代理完成回复。')).toBeInTheDocument()
   })
 
-  it.skip('按回复边界拆分多轮思维链与回复段', async () => {
+  it('按回复边界拆分多轮思维链与回复段', async () => {
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       onEvent({
         type: 'chunk',
@@ -590,7 +590,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '请演示多轮工具调用' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -608,7 +608,7 @@ describe('ChatPage', () => {
     expect(screen.getAllByText('思维链').length).toBeGreaterThanOrEqual(2)
   })
 
-  it.skip('在收到流式阶段事件时展示实时状态文本', async () => {
+  it('在收到流式阶段事件时展示实时状态文本', async () => {
     let continueStream: (() => void) | null = null
     apiMocks.sendMessageStream.mockImplementation(
       async (_message, _sessionId, _provider, _model, onEvent) => new Promise<void>((resolve) => {
@@ -629,7 +629,7 @@ describe('ChatPage', () => {
     )
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '请先显示阶段状态' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!
@@ -712,7 +712,7 @@ describe('ChatPage', () => {
     expect(screen.getByText('最终回复。')).toBeInTheDocument()
   })
 
-  it.skip('在首次流式失败且尚未返回内容时自动重试一次', async () => {
+  it('在首次流式失败且尚未返回内容时自动重试一次', async () => {
     let attempt = 0
     apiMocks.sendMessageStream.mockImplementation(async (_message, _sessionId, _provider, _model, onEvent) => {
       attempt += 1
@@ -727,7 +727,7 @@ describe('ChatPage', () => {
     })
 
     await renderChatPage()
-    fireEvent.change(screen.getByPlaceholderText('type your question...'), {
+    fireEvent.change(screen.getByPlaceholderText(/type your question/i), {
       target: { value: '请在失败后自动重试' },
     })
     const sendBtn = screen.getAllByRole('button').find(btn => btn.classList.contains('btn-primary'))!

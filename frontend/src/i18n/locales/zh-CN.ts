@@ -179,6 +179,7 @@ const zhCN: Record<string, string> = {
   "chat.generatingDiary": "正在生成日记...",
   "chat.diaryGenerated": "日记已生成 ({date})",
   "chat.diaryFailed": "日记生成失败",
+  "chat.feedbackFailed": "反馈提交失败，请重试",
   "chat.undoFailed": "撤销操作失败",
   "chat.confirmDeleteConversation": "确认删除这个对话吗？删除后可在 30 天内恢复。",
   "chat.confirmDeleteSelected": "确认删除选中的 {count} 个对话吗？删除后可在 30 天内恢复。",

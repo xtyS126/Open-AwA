@@ -596,3 +596,134 @@ class TestCreateConfiguration:
             ModelConfiguration.model == "deepseek-chat",
         ).all()
         assert len(rows) == 1
+
+
+class TestGetProviderCatalog:
+    """
+    覆盖供应商目录合并逻辑：数据库供应商优先、pricing_data 供应商补充。
+    """
+
+    def test_get_provider_catalog_returns_database_providers(self, pricing_manager, db_session):
+        """
+        验证数据库中已配置的供应商出现在目录中，source 为 database。
+        """
+        from billing.models import ProviderCredential
+        db_session.add(ProviderCredential(
+            provider="openai",
+            display_name="OpenAI",
+            api_key="test-key",
+            api_endpoint="https://api.openai.com/v1",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="openai",
+            model="gpt-4o",
+            is_active=True,
+            is_default=True,
+        ))
+        db_session.commit()
+
+        catalog = pricing_manager.get_provider_catalog()
+
+        assert len(catalog) >= 1
+        openai_entry = next((p for p in catalog if p["id"] == "openai"), None)
+        assert openai_entry is not None
+        assert openai_entry["source"] == "database"
+        assert openai_entry["has_api_key"] is True
+
+    def test_get_provider_catalog_includes_pricing_data_providers(self, pricing_manager, db_session):
+        """
+        验证 include_pricing_data=True 时，pricing_data.json 中未配置的供应商出现在目录中。
+        """
+        catalog = pricing_manager.get_provider_catalog(include_pricing_data=True)
+
+        # pricing_data.json 包含 openai/anthropic/google/deepseek/alibaba/moonshot/zhipu
+        # 数据库为空，所以所有供应商都应标记为 pricing_data
+        pricing_data_entries = [p for p in catalog if p["source"] == "pricing_data"]
+        assert len(pricing_data_entries) >= 1, "应至少包含一个 pricing_data 供应商"
+
+        # 验证 pricing_data 供应商有 base_url 和 models
+        for entry in pricing_data_entries:
+            assert entry["base_url"], f"供应商 {entry['id']} 应有 base_url"
+            assert isinstance(entry["models"], list), f"供应商 {entry['id']} 应有 models 列表"
+            assert entry["model_count"] == len(entry["models"])
+
+    def test_database_provider_takes_precedence(self, pricing_manager, db_session):
+        """
+        验证数据库中已配置的供应商优先级高于 pricing_data，source 为 database。
+        """
+        from billing.models import ProviderCredential
+        db_session.add(ProviderCredential(
+            provider="openai",
+            display_name="My OpenAI",
+            api_key="test-key",
+            api_endpoint="https://custom.openai.com/v1",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="openai",
+            model="gpt-4o",
+            is_active=True,
+            is_default=True,
+        ))
+        db_session.commit()
+
+        catalog = pricing_manager.get_provider_catalog(include_pricing_data=True)
+
+        openai_entry = next((p for p in catalog if p["id"] == "openai"), None)
+        assert openai_entry is not None
+        assert openai_entry["source"] == "database", "数据库供应商应优先"
+        assert openai_entry["display_name"] == "My OpenAI", "应使用数据库中的 display_name"
+
+    def test_get_provider_catalog_without_pricing_data_no_extra_fields(self, pricing_manager, db_session):
+        """
+        验证 include_pricing_data=False（默认）时不包含 models 和 model_count 字段。
+        """
+        from billing.models import ProviderCredential
+        db_session.add(ProviderCredential(
+            provider="deepseek",
+            display_name="DeepSeek",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="deepseek",
+            model="deepseek-chat",
+            is_active=True,
+            is_default=True,
+        ))
+        db_session.commit()
+
+        catalog = pricing_manager.get_provider_catalog(include_pricing_data=False)
+
+        deepseek_entry = next((p for p in catalog if p["id"] == "deepseek"), None)
+        assert deepseek_entry is not None
+        assert "models" not in deepseek_entry, "不包含 pricing_data 时不应有 models 字段"
+        assert "model_count" not in deepseek_entry, "不包含 pricing_data 时不应有 model_count 字段"
+
+    def test_load_pricing_data_providers_returns_grouped_data(self):
+        """
+        验证 _load_pricing_data_providers 静态方法正确解析 pricing_data.json。
+        """
+        result = PricingManager._load_pricing_data_providers()
+
+        assert isinstance(result, dict)
+        # pricing_data.json 至少包含 openai 和 anthropic
+        assert "openai" in result
+        assert "anthropic" in result
+        assert "name" in result["openai"]
+        assert "base_url" in result["openai"]
+        assert "models" in result["openai"]
+        assert len(result["openai"]["models"]) > 0, "OpenAI 应至少有一个模型"
+
+    def test_pricing_data_provider_has_correct_model_structure(self):
+        """
+        验证 pricing_data 中每个模型条目包含必要字段。
+        """
+        result = PricingManager._load_pricing_data_providers()
+
+        for provider_id, data in result.items():
+            for model in data["models"]:
+                assert "name" in model, f"供应商 {provider_id} 的模型缺少 name 字段"
+                assert "input_price" in model, f"供应商 {provider_id} 模型 {model['name']} 缺少 input_price"
+                assert "output_price" in model, f"供应商 {provider_id} 模型 {model['name']} 缺少 output_price"
+                assert "currency" in model, f"供应商 {provider_id} 模型 {model['name']} 缺少 currency"

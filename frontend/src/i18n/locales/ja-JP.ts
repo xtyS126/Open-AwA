@@ -170,6 +170,7 @@ const jaJP: Record<string, string> = {
   "chat.generatingDiary": "日記生成中...",
   "chat.diaryGenerated": "日記生成完了 ({date})",
   "chat.diaryFailed": "日記生成失敗",
+  "chat.feedbackFailed": "フィードバック送信失敗、再試行してください",
   "chat.undoFailed": "取消失敗",
   "chat.confirmDeleteConversation": "この会話を削除しますか？30日以内に復元可能。",
   "chat.confirmDeleteSelected": "選択した{count}件の会話を削除しますか？30日以内に復元可能。",

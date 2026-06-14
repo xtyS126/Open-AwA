@@ -77,6 +77,9 @@ const initialSessionId = getActiveSessionId() || 'default'
 const initialSelectedModel = safeGetItem('chat_selected_model', '')
 const isInitialReasoner = initialSelectedModel.toLowerCase().includes('reasoner') || initialSelectedModel.toLowerCase().includes('r1') || initialSelectedModel.toLowerCase().includes('o1') || initialSelectedModel.toLowerCase().includes('o3')
 
+/** 加载请求序列号，用于防止异步加载竞态：只有最新请求的结果才会写入 state */
+let loadSequenceNumber = 0
+
 export const useChatStore = create<ChatState>((set) => ({
   // P1: 消息为空，由 ChatPage 在路由进入时通过 loadMessages() 异步加载
   messages: [],
@@ -147,11 +150,15 @@ export const useChatStore = create<ChatState>((set) => ({
 
   loadCachedMessages: (sessionId) => {
     // P1: 异步加载由 ChatPage 处理，这里同步设为空然后由调用方异步填充
+    const seq = ++loadSequenceNumber
     set({ messages: [] })
     loadMessages(sessionId).then((msgs) => {
-      const currentId = useChatStore.getState().sessionId
-      if (currentId === sessionId && Array.isArray(msgs) && msgs.length > 0) {
-        set({ messages: msgs as ChatMessage[] })
+      // 仅当此请求仍为最新时才写入 state，防止竞态
+      if (seq === loadSequenceNumber) {
+        const currentId = useChatStore.getState().sessionId
+        if (currentId === sessionId && Array.isArray(msgs) && msgs.length > 0) {
+          set({ messages: msgs as ChatMessage[] })
+        }
       }
     })
   },
@@ -171,11 +178,15 @@ export const useChatStore = create<ChatState>((set) => ({
   setSessionId: (id) => {
     setActiveSessionId(id)
     // P1: 先设空，异步加载
+    const seq = ++loadSequenceNumber
     set({ sessionId: id, messages: [] })
     loadMessages(id).then((msgs) => {
-      const currentId = useChatStore.getState().sessionId
-      if (currentId === id && Array.isArray(msgs) && msgs.length > 0) {
-        set({ messages: msgs as ChatMessage[] })
+      // 仅当此请求仍为最新时才写入 state，防止竞态
+      if (seq === loadSequenceNumber) {
+        const currentId = useChatStore.getState().sessionId
+        if (currentId === id && Array.isArray(msgs) && msgs.length > 0) {
+          set({ messages: msgs as ChatMessage[] })
+        }
       }
     })
   },

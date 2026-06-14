@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 import os
@@ -46,7 +47,7 @@ class EmbeddingProvider(Protocol):
 
     provider_name: str
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
         批量生成文本嵌入向量。
         """
@@ -90,7 +91,7 @@ class HashEmbeddingProvider:
         norm = math.sqrt(sum(value * value for value in values)) or 1.0
         return [value / norm for value in values]
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         return [self._embed_single(text) for text in texts]
 
 
@@ -113,19 +114,20 @@ class OpenAIEmbeddingProvider:
         self.endpoint = endpoint
         self.timeout = timeout
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        response = httpx.post(
-            self.endpoint,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.model,
-                "input": texts,
-            },
-            timeout=self.timeout,
-        )
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "input": texts,
+                },
+                timeout=self.timeout,
+            )
         response.raise_for_status()
         payload = response.json()
         data = sorted(payload.get("data", []), key=lambda item: item.get("index", 0))
@@ -191,10 +193,14 @@ class SentenceTransformerEmbeddingProvider:
         if self._model is not None:
             return
 
+        # 使用项目内的模型缓存目录，避免每次重启重复下载
+        _cache_dir = os.path.join(_MODELS_DIR, "sentence_transformers")
+        os.makedirs(_cache_dir, exist_ok=True)
+
         # 优先尝试 HuggingFace
         try:
-            self._model = self._SentenceTransformer(self.model_name)
-            logger.info(f"从 HuggingFace 加载模型成功: {self.model_name}")
+            self._model = self._SentenceTransformer(self.model_name, cache_folder=_cache_dir)
+            logger.info(f"从 HuggingFace 加载模型成功: {self.model_name} -> {_cache_dir}")
             return
         except Exception as hf_exc:
             logger.warning(f"从 HuggingFace 下载模型失败 ({self.model_name}): {hf_exc}")
@@ -202,7 +208,7 @@ class SentenceTransformerEmbeddingProvider:
         # 降级：尝试从魔搭社区下载
         local_path = self._try_download_from_modelscope()
         if local_path:
-            self._model = self._SentenceTransformer(local_path)
+            self._model = self._SentenceTransformer(local_path, cache_folder=_cache_dir)
             return
 
         # 两处都失败
@@ -211,9 +217,10 @@ class SentenceTransformerEmbeddingProvider:
             f"请检查网络连接，或安装 modelscope: pip install modelscope"
         )
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         self._ensure_model()
-        vectors = self._model.encode(texts, normalize_embeddings=True)
+        # CPU 密集型推理，放到线程池避免阻塞事件循环
+        vectors = await asyncio.to_thread(self._model.encode, texts, normalize_embeddings=True)
         return [list(map(float, vector)) for vector in vectors.tolist()]
 
 
@@ -320,7 +327,7 @@ class VectorStoreManager:
                 sanitized[key] = str(value)
         return sanitized
 
-    def upsert_memory(
+    async def upsert_memory(
         self,
         memory_id: int,
         content: str,
@@ -334,7 +341,7 @@ class VectorStoreManager:
         """
         新增或更新一条长期记忆向量记录。
         """
-        vector = embedding or self.embedding_provider.embed_texts([content])[0]
+        vector = embedding or (await self.embedding_provider.embed_texts([content]))[0]
         payload = {
             "memory_id": int(memory_id),
             "user_id": str(user_id or ""),
@@ -389,7 +396,7 @@ class VectorStoreManager:
             return first[0] if first else default
         return first
 
-    def search(
+    async def search(
         self,
         query_text: str,
         *,
@@ -401,7 +408,7 @@ class VectorStoreManager:
         执行语义向量搜索，并返回标准化结果。
         """
         where = self._build_where_clause(user_id=user_id, include_archived=include_archived)
-        vector = self.embedding_provider.embed_texts([query_text])[0]
+        vector = (await self.embedding_provider.embed_texts([query_text]))[0]
         result = self.collection.query(
             query_embeddings=[vector],
             n_results=limit,

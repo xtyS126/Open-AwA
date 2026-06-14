@@ -8,12 +8,13 @@
 """
 
 import argparse
-import os
+import logging
 import re
 import secrets
-import stat
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -31,16 +32,6 @@ def _read_existing_key() -> str | None:
         return match.group(1).strip()
     return None
 
-
-def _check_misplaced_key() -> str | None:
-    """检测是否误将密钥写成了 SECRET_KEY=... 而非 OPENAWA_API_KEY=..."""
-    if not ENV_LOCAL.exists():
-        return None
-    content = ENV_LOCAL.read_text(encoding="utf-8")
-    match = re.search(r"^SECRET_KEY=(.+)$", content, re.MULTILINE)
-    if match and not re.search(rf"^{KEY_NAME}=", content, re.MULTILINE):
-        return match.group(1).strip()
-    return None
 
 
 def generate_key() -> str:
@@ -77,8 +68,8 @@ def _restrict_permissions(path: Path) -> None:
         # Unix: 仅 owner 可读写
         import stat
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("设置文件权限失败（Windows 下可忽略）: %s", e)
 
 
 def main() -> None:
@@ -101,15 +92,6 @@ def main() -> None:
         help="强制替换已有密钥（默认：已有密钥则拒绝覆盖）",
     )
     args = parser.parse_args()
-
-    # 检测是否有误写为 SECRET_KEY 的情况
-    misplaced = _check_misplaced_key()
-    if misplaced and not args.force:
-        print(f"发现 .env.local 中存在 SECRET_KEY={misplaced}")
-        print("这可能就是您的访问密钥，但变量名应为 OPENAWA_API_KEY 而非 SECRET_KEY。")
-        print()
-        print("将自动修正为 OPENAWA_API_KEY...")
-        args.force = True  # 自动以 force 模式修正
 
     existing = _read_existing_key()
     if existing and not args.force and not args.show:

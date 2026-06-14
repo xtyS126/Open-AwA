@@ -10,6 +10,8 @@ import { lazy, Suspense, useCallback } from 'react'
 import { useSharedSettingsData } from '@/features/settings/hooks/useSharedSettingsData'
 import { useProviderForm, type ApiProviderFormState } from '@/features/settings/containers/ProviderFormContainer'
 import { useModelConfig } from '@/features/settings/containers/ModelConfigContainer'
+import { modelsAPI } from '@/features/settings/modelsApi'
+import type { ConnectivityTestResult } from '@/features/settings/modelsApi'
 
 // 懒加载组件，减少首屏 bundle 体积
 const ApiSettings = lazy(() => import('@/features/settings/components/ApiSettings').then(m => ({ default: m.ApiSettings })))
@@ -58,6 +60,16 @@ export function ApiTabContainer() {
     setProviderForm(updater)
   }, [setProviderForm])
 
+  // 连通性测试回调
+  const handleTestConnectivity = useCallback(async (
+    provider: string,
+    apiKey: string,
+    baseUrl?: string
+  ): Promise<ConnectivityTestResult> => {
+    const response = await modelsAPI.testProviderConnectivity(provider, apiKey, baseUrl)
+    return response.data as ConnectivityTestResult
+  }, [])
+
   return (
     <>
       {providerFormState.message && (
@@ -82,6 +94,8 @@ export function ApiTabContainer() {
           ollamaError={providerFormState.ollamaError}
           saving={providerFormState.saving}
           deletingProvider={providerFormState.deletingProvider}
+          showApiKey={providerFormState.showApiKey}
+          onToggleShowApiKey={() => providerFormState.setShowApiKey(prev => !prev)}
           configurations={configurations}
           expandedModelConfigs={modelConfigState.expandedModelConfigs}
           modelEditParams={modelConfigState.modelEditParams}
@@ -107,6 +121,7 @@ export function ApiTabContainer() {
             }
           }}
           onOpenDeleteModelsModal={() => providerFormState.setShowDeleteModelsModal(true)}
+          onTestConnectivity={handleTestConnectivity}
         />
       </Suspense>
 

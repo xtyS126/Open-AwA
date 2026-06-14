@@ -74,10 +74,12 @@ function ChatMessageInner({ message, messageMeta, streamingAssistantId, isLastMe
   const isCurrentlyStreaming = streamingAssistantId === message.id && isLastMessage && message.role === 'assistant'
   const [copied, setCopied] = useState(false)
 
+  // 仅依赖当前消息的 meta，避免整个 messageMeta 变化导致所有消息组件重计算
+  const currentMeta = messageMeta[message.id]
   const assistantSegments = useMemo(() => {
     if (message.role !== 'assistant') return []
-    return getAssistantSegments(message, messageMeta[message.id])
-  }, [message, messageMeta])
+    return getAssistantSegments(message, currentMeta)
+  }, [message, currentMeta])
 
   const groupedSegments = useMemo(() => {
     return groupAssistantSegments(assistantSegments)

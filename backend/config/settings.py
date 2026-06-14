@@ -5,7 +5,6 @@
 
 from pathlib import Path
 import os
-import secrets
 from typing import Iterable, Optional
 
 from dotenv import dotenv_values
@@ -16,7 +15,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
 _PROJECT_DIR = _BACKEND_DIR.parent
-_DEFAULT_LOCAL_ENV_FILE = _BACKEND_DIR / ".env.local"
 _ENV_FILE_PRIORITY = (
     _BACKEND_DIR / ".env.local",
     _PROJECT_DIR / ".env.local",
@@ -64,28 +62,6 @@ def is_production_environment(environment: Optional[str]) -> bool:
     return normalized in {"production", "prod", "live"}
 
 
-def generate_secret_key() -> str:
-    """
-    生成并持久化开发环境使用的 SECRET_KEY。
-    仅在配置已确认不是生产环境且未提供现有密钥时调用。
-    """
-    env_local_path = _DEFAULT_LOCAL_ENV_FILE
-    new_key = secrets.token_urlsafe(32)
-    logger.warning(
-        "SECRET_KEY not set, generating new key and persisting to .env.local. "
-        "This is not secure for production!"
-    )
-    try:
-        env_local_path.parent.mkdir(parents=True, exist_ok=True)
-        prefix = ""
-        if env_local_path.exists() and env_local_path.stat().st_size > 0:
-            prefix = "\n"
-        with open(env_local_path, "a", encoding="utf-8") as f:
-            f.write(f"{prefix}SECRET_KEY={new_key}\n")
-    except OSError as e:
-        logger.warning(f"无法持久化 SECRET_KEY 到 .env.local: {e}")
-    return new_key
-
 
 def build_default_database_url() -> str:
     """
@@ -120,7 +96,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
     
-    SECRET_KEY: str = ""
+    SECRET_KEY: str = "openawa-dev-default"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     
@@ -225,21 +201,14 @@ class Settings(BaseSettings):
         在完成环境加载后补齐运行期默认值，避免导入阶段绕过环境文件配置。
         """
         environment = str(self.ENVIRONMENT or "development").strip() or "development"
-        secret_key = str(self.SECRET_KEY or "").strip()
 
         if environment != self.ENVIRONMENT:
             object.__setattr__(self, "ENVIRONMENT", environment)
 
-        if secret_key:
-            if secret_key != self.SECRET_KEY:
-                object.__setattr__(self, "SECRET_KEY", secret_key)
-            return self
+        if is_production_environment(environment) and self.SECRET_KEY == "openawa-dev-default":
+            logger.error("SECRET_KEY must be explicitly set in production environment")
+            raise ValueError("SECRET_KEY must be explicitly set in production environment")
 
-        if is_production_environment(environment):
-            logger.error("SECRET_KEY environment variable is required in production environment")
-            raise ValueError("SECRET_KEY environment variable is required in production environment")
-
-        object.__setattr__(self, "SECRET_KEY", generate_secret_key())
         return self
 
 

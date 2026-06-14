@@ -39,7 +39,7 @@ class SemanticTestEmbeddingProvider:
             ["工作流", "自动化", "文件"],
         ]
 
-    def embed_texts(self, texts):
+    async def embed_texts(self, texts):
         return [self._embed_single(text) for text in texts]
 
     def _embed_single(self, text):

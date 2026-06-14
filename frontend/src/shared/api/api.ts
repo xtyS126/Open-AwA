@@ -78,9 +78,9 @@ export function parseSSELines(
       continue
     }
 
-    // 解析数据行
-    if (line.startsWith('data: ')) {
-      const dataStr = line.slice(6)
+    // 解析数据行（兼容 "data: " 和 "data:" 两种格式）
+    if (line.startsWith('data:')) {
+      const dataStr = line.startsWith('data: ') ? line.slice(6) : line.slice(5)
 
       // 完成标记，停止解析
       if (dataStr === '[DONE]') {
