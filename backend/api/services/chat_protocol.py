@@ -63,42 +63,54 @@ async def build_sse_response(stream_generator: AsyncGenerator) -> StreamingRespo
     推理内容使用 event: reasoning 类型单独发送，正常内容使用默认事件类型。
     """
     async def event_generator():
-        async for chunk in stream_generator:
-            chunk_type = chunk.get("type")
+        try:
+            async for chunk in stream_generator:
+                chunk_type = chunk.get("type")
 
-            # 错误事件直接透传
-            if chunk_type == "error":
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                continue
+                # 错误事件直接透传
+                if chunk_type == "error":
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    continue
 
-            # cancelled 事件直接透传，取消后不再继续发送
-            if chunk_type == "cancelled":
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                break
+                # cancelled 事件直接透传，取消后不再继续发送
+                if chunk_type == "cancelled":
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    break
 
-            # 非 chunk 事件保持原样透传，供前端消费 status/plan/task/tool/usage 等结构化事件
-            if chunk_type and chunk_type != "chunk":
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                continue
+                # 非 chunk 事件保持原样透传，供前端消费 status/plan/task/tool/usage 等结构化事件
+                if chunk_type and chunk_type != "chunk":
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    continue
 
-            reasoning = chunk.get("reasoning_content", "")
-            content = chunk.get("content", "")
+                reasoning = chunk.get("reasoning_content", "")
+                content = chunk.get("content", "")
 
-            # 先发送推理内容（如果有），使用 reasoning 事件类型
-            if reasoning:
-                yield f"event: reasoning\ndata: {json.dumps({'content': reasoning}, ensure_ascii=False)}\n\n"
+                # 先发送推理内容（如果有），使用 reasoning 事件类型
+                if reasoning:
+                    yield f"event: reasoning\ndata: {json.dumps({'content': reasoning}, ensure_ascii=False)}\n\n"
 
-            # 再发送正常内容（如果有），使用默认事件类型
-            if content:
-                yield f"data: {json.dumps({'type': 'chunk', 'content': content}, ensure_ascii=False)}\n\n"
-
-        yield "data: [DONE]\n\n"
+                # 再发送正常内容（如果有），使用默认事件类型
+                if content:
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': content}, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            # 生成器异常时向前端发送错误事件，避免前端无限等待
+            logger.bind(
+                event="sse_generator_error",
+                module="chat_protocol",
+                error_type=type(exc).__name__,
+                error_message=sanitize_for_logging(str(exc)),
+            ).error(f"SSE 生成器异常: {exc}")
+            yield f"data: {json.dumps({'type': 'error', 'error': {'message': '流式响应异常，请重试'}}, ensure_ascii=False)}\n\n"
+        finally:
+            # 无论正常结束还是异常，都必须发送 [DONE] 信号，否则前端会无限等待
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),
-        media_type="text/event-stream",
+        media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )

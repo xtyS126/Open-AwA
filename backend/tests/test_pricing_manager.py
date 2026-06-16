@@ -82,16 +82,15 @@ class TestInitializeDefaultConfigurations:
         """
         count = pricing_manager.initialize_default_configurations()
 
-        assert count == 17, "Should create 17 default configurations"
+        assert count == 15, "Should create 15 default configurations"
 
         configs = db_session.query(ModelConfiguration).all()
-        assert len(configs) == 17, "Should have 17 configurations in database"
+        assert len(configs) == 15, "Should have 15 configurations in database"
 
         providers = [c.provider for c in configs]
         assert "openai" in providers
         assert "anthropic" in providers
         assert "google" in providers
-        assert "deepseek" in providers
         assert "alibaba" in providers
         assert "moonshot" in providers
         assert "zhipu" in providers
@@ -185,7 +184,7 @@ class TestInitializeDefaultConfigurations:
 
         assert count2 == 0, "Second initialization should return 0"
         configs = db_session.query(ModelConfiguration).all()
-        assert len(configs) == 17, "Should still have only 17 configurations"
+        assert len(configs) == 15, "Should still have only 17 configurations"
 
     def test_initialize_no_duplicate_provider_model_combinations(self, pricing_manager, db_session):
         """
@@ -202,7 +201,7 @@ class TestInitializeDefaultConfigurations:
             assert key not in seen, f"Duplicate configuration: {key}"
             seen.add(key)
 
-        assert len(seen) == 17, "Should have 17 unique provider:model combinations"
+        assert len(seen) == 15, "Should have 17 unique provider:model combinations"
 
 
 class TestInitializeDefaultPricing:
@@ -267,7 +266,7 @@ class TestGetActiveConfigurations:
 
         active = pricing_manager.get_active_configurations()
 
-        assert len(active) == 17
+        assert len(active) == 15
         for config in active:
             assert config.is_active is True
 
@@ -284,7 +283,7 @@ class TestGetActiveConfigurations:
 
         active = pricing_manager.get_active_configurations()
 
-        assert len(active) == 16
+        assert len(active) == 14
         inactive_ids = [c.id for c in db_session.query(ModelConfiguration).filter(
             ModelConfiguration.is_active == False
         ).all()]

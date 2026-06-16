@@ -424,14 +424,49 @@ class PricingManager:
             "temperature": 0.7, "top_k": 0.9,
             "supports_temperature": True, "supports_top_k": True,
             "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 16384, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
             "status": "active",
         },
         ("openai", "gpt-4o-mini"): {
             "temperature": 0.7, "top_k": 0.9,
             "supports_temperature": True, "supports_top_k": True,
             "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 16384, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("openai", "gpt-4.1"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 1047576, "max_output_tokens": 32768, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("openai", "gpt-4.1-mini"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 1047576, "max_output_tokens": 32768, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("openai", "gpt-4.1-nano"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 1047576, "max_output_tokens": 32768, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("openai", "o1"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": False, "supports_top_k": False,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 100000, "supports_function_calling": True, "supports_streaming": True}),
+            "status": "active",
+        },
+        ("openai", "o3-mini"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": False, "supports_top_k": False,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 100000, "supports_function_calling": True, "supports_streaming": True}),
             "status": "active",
         },
         ("openai", "gpt-3.5-turbo"): {
@@ -448,6 +483,20 @@ class PricingManager:
             "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
             "status": "active",
         },
+        ("anthropic", "claude-3.5-haiku"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("anthropic", "claude-3-opus"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
         ("anthropic", "claude-3-haiku"): {
             "temperature": 0.7, "top_k": 0.9,
             "supports_temperature": True, "supports_top_k": True,
@@ -459,14 +508,14 @@ class PricingManager:
             "temperature": 0.7, "top_k": 0.9,
             "supports_temperature": True, "supports_top_k": True,
             "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 65536, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
+            "model_spec": json.dumps({"context_window": 64000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True}),
             "status": "active",
         },
         ("deepseek", "deepseek-reasoner"): {
             "temperature": 0.7, "top_k": 0.9,
             "supports_temperature": False, "supports_top_k": False,
             "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 65536, "max_output_tokens": 4096, "supports_streaming": True}),
+            "model_spec": json.dumps({"context_window": 64000, "max_output_tokens": 8192, "supports_streaming": True}),
             "status": "active",
         },
         ("google", "gemini-2.0-flash"): {
@@ -474,6 +523,13 @@ class PricingManager:
             "supports_temperature": True, "supports_top_k": True,
             "supports_vision": True, "is_multimodal": True,
             "model_spec": json.dumps({"context_window": 1048576, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
+            "status": "active",
+        },
+        ("google", "gemini-1.5-pro"): {
+            "temperature": 0.7, "top_k": 0.9,
+            "supports_temperature": True, "supports_top_k": True,
+            "supports_vision": True, "is_multimodal": True,
+            "model_spec": json.dumps({"context_window": 2097152, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
             "status": "active",
         },
         ("alibaba", "qwen-plus"): {
@@ -503,18 +559,18 @@ class PricingManager:
         {
             "provider": "openai",
             "model": "gpt-4.1",
-            "input_price": 6.00,
-            "output_price": 18.00,
+            "input_price": 2.00,
+            "output_price": 8.00,
             "currency": "USD",
-            "context_window": 1000000
+            "context_window": 1047576
         },
         {
             "provider": "openai",
             "model": "gpt-4.1-mini",
-            "input_price": 0.30,
-            "output_price": 1.20,
+            "input_price": 0.40,
+            "output_price": 1.60,
             "currency": "USD",
-            "context_window": 1000000
+            "context_window": 1047576
         },
         {
             "provider": "openai",
@@ -522,7 +578,7 @@ class PricingManager:
             "input_price": 0.10,
             "output_price": 0.40,
             "currency": "USD",
-            "context_window": 1000000
+            "context_window": 1047576
         },
         {
             "provider": "openai",
@@ -530,23 +586,23 @@ class PricingManager:
             "input_price": 15.00,
             "output_price": 60.00,
             "currency": "USD",
-            "context_window": 100000
+            "context_window": 200000
         },
         {
             "provider": "openai",
             "model": "gpt-4o",
-            "input_price": 6.00,
-            "output_price": 18.00,
+            "input_price": 2.50,
+            "output_price": 10.00,
             "currency": "USD",
-            "context_window": 1000000
+            "context_window": 128000
         },
         {
             "provider": "openai",
             "model": "gpt-4o-mini",
-            "input_price": 0.30,
-            "output_price": 1.20,
+            "input_price": 0.15,
+            "output_price": 0.60,
             "currency": "USD",
-            "context_window": 1000000
+            "context_window": 128000
         },
         {
             "provider": "anthropic",

@@ -35,7 +35,7 @@
     "is_multimodal": true,
     "model_spec": {
       "context_window": 128000,
-      "max_output_tokens": 4096,
+      "max_output_tokens": 16384,
       "supports_function_calling": true,
       "supports_streaming": true,
       "supports_vision": true
@@ -61,7 +61,7 @@
     "is_multimodal": true,
     "model_spec": {
       "context_window": 128000,
-      "max_output_tokens": 4096,
+      "max_output_tokens": 16384,
       "supports_function_calling": true,
       "supports_streaming": true,
       "supports_vision": true
@@ -912,8 +912,8 @@
     "supports_vision": false,
     "is_multimodal": false,
     "model_spec": {
-      "context_window": 65536,
-      "max_output_tokens": 4096,
+      "context_window": 64000,
+      "max_output_tokens": 8192,
       "supports_function_calling": true,
       "supports_streaming": true
     },
@@ -936,8 +936,8 @@
     "supports_vision": false,
     "is_multimodal": false,
     "model_spec": {
-      "context_window": 65536,
-      "max_output_tokens": 4096,
+      "context_window": 64000,
+      "max_output_tokens": 8192,
       "supports_streaming": true
     },
     "status": "active",

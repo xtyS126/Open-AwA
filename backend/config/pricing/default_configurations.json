@@ -54,22 +54,13 @@
     "sort_order": 5
   },
   {
-    "provider": "deepseek",
-    "model": "deepseek-v4-flash",
-    "display_name": "DeepSeek V4 Flash",
-    "description": "DeepSeek最新快速模型，100万token上下文",
-    "is_active": true,
-    "is_default": false,
-    "sort_order": 6
-  },
-  {
     "provider": "alibaba",
     "model": "qwen3.5-plus",
     "display_name": "Qwen 3.5 Plus",
     "description": "阿里通义千问最新旗舰，支持图像理解",
     "is_active": true,
     "is_default": false,
-    "sort_order": 7
+    "sort_order": 6
   },
   {
     "provider": "alibaba",
@@ -78,7 +69,7 @@
     "description": "阿里通义千问快速模型，性价比高",
     "is_active": true,
     "is_default": false,
-    "sort_order": 8
+    "sort_order": 7
   },
   {
     "provider": "moonshot",
@@ -87,7 +78,7 @@
     "description": "Kimi最新模型，支持缓存折扣",
     "is_active": true,
     "is_default": false,
-    "sort_order": 9
+    "sort_order": 8
   },
   {
     "provider": "zhipu",
@@ -96,7 +87,7 @@
     "description": "智谱AI最新旗舰，支持图像理解",
     "is_active": true,
     "is_default": false,
-    "sort_order": 10
+    "sort_order": 9
   },
   {
     "provider": "openai",
@@ -105,7 +96,7 @@
     "description": "OpenAI最新旗舰模型，支持多模态与工具调用",
     "is_active": true,
     "is_default": false,
-    "sort_order": 11
+    "sort_order": 10
   },
   {
     "provider": "anthropic",
@@ -114,16 +105,7 @@
     "description": "Anthropic最新旗舰，200万token上下文，支持缓存折扣",
     "is_active": true,
     "is_default": false,
-    "sort_order": 12
-  },
-  {
-    "provider": "deepseek",
-    "model": "deepseek-v4-pro",
-    "display_name": "DeepSeek V4 Pro",
-    "description": "DeepSeek最新旗舰，100万token上下文",
-    "is_active": true,
-    "is_default": false,
-    "sort_order": 13
+    "sort_order": 11
   },
   {
     "provider": "alibaba",
@@ -132,7 +114,7 @@
     "description": "阿里通义千问最新旗舰，支持图像理解",
     "is_active": true,
     "is_default": false,
-    "sort_order": 14
+    "sort_order": 12
   },
   {
     "provider": "moonshot",
@@ -141,7 +123,7 @@
     "description": "Moonshot最新模型，128K上下文，支持缓存折扣",
     "is_active": true,
     "is_default": false,
-    "sort_order": 15
+    "sort_order": 13
   },
   {
     "provider": "zhipu",
@@ -150,6 +132,6 @@
     "description": "智谱AI高性能模型，128K上下文",
     "is_active": true,
     "is_default": false,
-    "sort_order": 16
+    "sort_order": 14
   }
 ]

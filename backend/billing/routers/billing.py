@@ -18,7 +18,7 @@ from db.models import get_db, ConversationRecord
 from api.dependencies import get_current_user
 from billing.tracker import UsageTracker
 from billing.pricing_manager import PricingManager
-from billing.models import ProviderCredential
+from billing.models import ModelConfiguration, ProviderCredential
 from billing.budget_manager import BudgetManager
 from billing.reporter import BillingReporter
 from config.config_loader import config_loader
@@ -1122,8 +1122,10 @@ async def get_provider_detail(
     current_user = Depends(get_current_user)
 ):
     """
-    获取provider、detail相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取供应商详情，包含凭据信息、默认配置和聚合的已选模型列表。
+    selected_models 从该供应商的所有 ModelConfiguration 聚合，
+    并在默认配置的 selected_models 为空时从各模型配置的 model 字段推导，
+    确保页面重新打开后已导入模型的状态不会丢失。
     """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
@@ -1133,6 +1135,30 @@ async def get_provider_detail(
     if not config and not cred:
         raise HTTPException(status_code=404, detail="Provider not found")
 
+    # 聚合 selected_models：与 get_provider_catalog 保持一致，从该供应商的所有配置聚合
+    provider_configs: List = []
+    if config or cred:
+        provider_configs = db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider_id,
+            ModelConfiguration.is_active == True
+        ).all()
+
+    aggregated_models: List[str] = []
+    seen: Set[str] = set()
+    for c in provider_configs:
+        for m in pricing_manager.parse_selected_models(c.selected_models):
+            if m not in seen:
+                seen.add(m)
+                aggregated_models.append(m)
+
+    # 回退：若聚合结果为空但存在模型配置记录，从 model 字段推导
+    if not aggregated_models and provider_configs:
+        for c in provider_configs:
+            model_name = pricing_manager.normalize_model(c.model)
+            if model_name and model_name not in seen:
+                seen.add(model_name)
+                aggregated_models.append(model_name)
+
     return {
         "provider": {
             "id": provider_id,
@@ -1141,7 +1167,7 @@ async def get_provider_detail(
             "api_endpoint": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
             "base_url": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
             "has_api_key": bool(cred and cred.api_key),  # 仅检查 ProviderCredential
-            "selected_models": pricing_manager.parse_selected_models(config.selected_models) if config else []
+            "selected_models": aggregated_models
         },
         "configuration": serialize_configuration(config, pricing_manager) if config else None
     }
@@ -1280,15 +1306,35 @@ async def update_provider_selected_models(
     current_user = Depends(get_current_user)
 ):
     """
-    更新provider、selected、models相关数据、配置或状态。
-    阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
+    更新供应商的已选模型列表。
+    若该供应商尚无默认 ModelConfiguration，则自动创建一个占位配置，
+    确保 selected_models 始终能持久化，避免页面重新打开后状态丢失。
     """
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
     config = pricing_manager.get_default_provider_configuration(provider_id)
 
     if not config:
-        raise HTTPException(status_code=404, detail="Provider configuration not found")
+        # 自动创建默认配置，使 selected_models 可持久化
+        try:
+            config = pricing_manager.create_configuration({
+                "provider": provider_id,
+                "model": f"{provider_id}_default",
+                "display_name": f"{provider_id.upper()} Default",
+                "is_default": True,
+                "selected_models": payload.selected_models,
+            })
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        # 模型选择变更后失效对应的远端模型缓存
+        _invalidate_provider_models_cache()
+
+        return {
+            "success": True,
+            "provider": provider_id,
+            "selected_models": pricing_manager.parse_selected_models(config.selected_models)
+        }
 
     updated = pricing_manager.update_configuration(
         config.id,
