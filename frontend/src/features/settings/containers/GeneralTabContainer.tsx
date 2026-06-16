@@ -170,7 +170,7 @@ export function GeneralTabContainer() {
     try {
       const response = await modelsAPI.getProviders()
       const providersList: ModelProvider[] = response.data.providers || []
-      const validProviders = providersList.filter((provider) => (provider.configuration_count || 0) > 0)
+      const validProviders = providersList.filter((provider) => (provider.configuration_count || 0) > 0 && provider.has_api_key === true)
 
       if (validProviders.length === 0) {
         setModelOptions([])

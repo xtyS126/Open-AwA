@@ -89,6 +89,18 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: apiProxyTarget,
           changeOrigin: true,
+          // SSE 流式响应必须禁用代理缓冲，否则 Vite 开发代理会攒满整个响应再转发
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              // 检测 SSE 响应，移除可能导致代理缓冲的响应头
+              if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+                // 移除 content-length 以防止代理等待完整响应体
+                delete proxyRes.headers['content-length']
+                // 移除 content-encoding 以防止代理尝试解压缓冲
+                delete proxyRes.headers['content-encoding']
+              }
+            })
+          },
         },
       },
     },

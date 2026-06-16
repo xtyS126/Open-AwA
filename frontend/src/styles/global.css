@@ -18,6 +18,23 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color var(--transition-slow), color var(--transition-slow);
+  /* 主题系统：背景图、模糊度、覆盖层 */
+  background-image: var(--custom-bg-image, none);
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
+}
+
+/* 主题系统：背景模糊度与覆盖层伪元素 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(var(--custom-background-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--custom-background-blur, 0px));
+  background: var(--custom-background-overlay, transparent);
+  pointer-events: none;
 }
 
 button {

@@ -136,7 +136,7 @@ export interface ProviderCatalogResponse {
 
 export interface ProviderDetailResponse {
   provider: ModelProvider
-  configuration: ModelConfiguration
+  configuration: ModelConfiguration | null
 }
 
 // Ollama 模型发现结果

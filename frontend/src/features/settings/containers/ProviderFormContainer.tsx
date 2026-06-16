@@ -49,6 +49,15 @@ export interface AddProviderFormState {
   catalog_models?: ProviderCatalogModel[]
 }
 
+/** 供应商详情缓存条目（含 TTL 时间戳） */
+interface ProviderDetailCacheEntry {
+  data: ProviderDetailResponse
+  cachedAt: number
+}
+
+/** 供应商详情缓存 TTL：5 分钟 */
+const PROVIDER_DETAIL_CACHE_TTL = 5 * 60 * 1000
+
 /** useProviderForm Hook 的入参接口 */
 export interface UseProviderFormParams {
   /** 所有配置记录（用于导入模型时判断是否已存在） */
@@ -212,7 +221,7 @@ export function useProviderForm({
   // Refs
   const providerApiKeyInputRef = useRef<HTMLInputElement | null>(null)
   const remoteModelCacheRef = useRef<Map<string, { signature: string; fetchedAt: number; options: Array<{ id: string; provider: string; model: string; display_name: string }> }>>(new Map())
-  const providerDetailsCacheRef = useRef<Map<string, ProviderDetailResponse>>(new Map())
+  const providerDetailsCacheRef = useRef<Map<string, ProviderDetailCacheEntry>>(new Map())
 
   const [saving, setSaving] = useState(false)
 
@@ -286,7 +295,7 @@ export function useProviderForm({
     }
   }, [invalidateRemoteModelCache])
 
-  /** 加载供应商详情 */
+  /** 加载供应商详情（优化：并行获取脱敏 Key 和模型列表） */
   const loadProviderDetail = useCallback(async (providerId: string) => {
     if (!providerId) return
 
@@ -294,52 +303,64 @@ export function useProviderForm({
     setProviderModelsError(null)
 
     try {
-      // 先检查缓存
-      let detailData = providerDetailsCacheRef.current.get(providerId)
+      // 先检查缓存（含 TTL 校验）
+      let detailData: ProviderDetailResponse | undefined
+      const cached = providerDetailsCacheRef.current.get(providerId)
+      if (cached && Date.now() - cached.cachedAt < PROVIDER_DETAIL_CACHE_TTL) {
+        detailData = cached.data
+      }
 
       if (!detailData) {
-        // 缓存未命中，从 API 获取
+        // 缓存未命中或已过期，从 API 获取
         const detailRes = await modelsAPI.getProviderDetail(providerId)
         detailData = detailRes.data as ProviderDetailResponse
         // 更新缓存
-        providerDetailsCacheRef.current.set(providerId, detailData)
+        providerDetailsCacheRef.current.set(providerId, { data: detailData, cachedAt: Date.now() })
       }
 
       const config = detailData.configuration
       const providerData = detailData.provider
 
-      const selectedModels = Array.isArray(config.selected_models)
+      // configuration 可能为 null（供应商仅有 ProviderCredential 但无 ModelConfiguration）
+      const selectedModels = config && Array.isArray(config.selected_models) && config.selected_models.length > 0
         ? config.selected_models
         : (providerData.selected_models || [])
 
-      const api_endpoint = (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string
+      const api_endpoint = config
+        ? (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string
+        : (providerData.base_url || providerData.api_endpoint || '') as string
 
-      // 获取脱敏 API Key
-      let maskedApiKey: string | null = null
-      if (providerData.has_api_key) {
-        try {
-          const maskedRes = await modelsAPI.getMaskedApiKey(providerId)
-          maskedApiKey = maskedRes.data.masked_api_key
-        } catch {
-          // 获取失败不影响主流程
-        }
-      }
-
+      // 立即设置表单状态，让用户先看到供应商基本信息
       setProviderForm({
-        config_id: config.id,
-        provider: config.provider || providerId,
-        display_name: config.display_name || providerData.display_name || providerData.name || providerId,
-        icon: config.icon || providerData.icon || '',
+        config_id: config?.id ?? null,
+        provider: config?.provider || providerId,
+        display_name: config?.display_name || providerData.display_name || providerData.name || providerId,
+        icon: config?.icon || providerData.icon || '',
         api_endpoint,
         api_key: '',
-        has_api_key: Boolean(config.has_api_key ?? providerData.has_api_key),
+        has_api_key: Boolean(config?.has_api_key ?? providerData.has_api_key),
         selected_models: selectedModels,
-        masked_api_key: maskedApiKey
+        masked_api_key: null
       })
       setSelectedProviderId(providerId)
       setShowApiKey(false)
 
-      await fetchProviderModels(providerId, selectedModels, false, { api_endpoint })
+      // 并行获取脱敏 API Key 和供应商模型列表，减少串行等待时间
+      const [maskedApiKey] = await Promise.all([
+        // 获取脱敏 API Key（失败不阻塞主流程）
+        providerData.has_api_key
+          ? modelsAPI.getMaskedApiKey(providerId)
+              .then(res => res.data.masked_api_key as string | null)
+              .catch(() => null as string | null)
+          : Promise.resolve(null as string | null),
+        // 获取供应商模型列表（内部已处理错误，不会抛出异常）
+        fetchProviderModels(providerId, selectedModels, false, { api_endpoint })
+      ])
+
+      // 更新脱敏 API Key（模型列表已由 fetchProviderModels 内部更新）
+      if (maskedApiKey) {
+        setProviderForm(prev => ({ ...prev, masked_api_key: maskedApiKey }))
+      }
     } catch {
       showNotification({ type: 'error', text: '加载供应商详情失败' })
     } finally {
@@ -353,13 +374,12 @@ export function useProviderForm({
     setProviderModelsError(null)
     try {
       const providersRes = await modelsAPI.getProviders()
+      // 后端 get_provider_catalog(configured_only=True) 已过滤仅返回有 ProviderCredential 的供应商，
+      // 前端无需再次过滤，避免将用户已添加但尚未完整配置的供应商误排除
       const providerList: ModelProvider[] = providersRes.data.providers || []
-      const validProviders = providerList.filter(item =>
-        (item.configuration_count || 0) > 0 || item.has_api_key || item.api_endpoint
-      )
-      setProviders(validProviders)
+      setProviders(providerList)
 
-      if (validProviders.length === 0) {
+      if (providerList.length === 0) {
         setSelectedProviderId('')
         setProviderForm({
           config_id: null,
@@ -377,23 +397,24 @@ export function useProviderForm({
 
       // 优化：并行获取所有供应商详情
       const results = await Promise.allSettled(
-        validProviders.map(provider => modelsAPI.getProviderDetail(provider.id))
+        providerList.map(provider => modelsAPI.getProviderDetail(provider.id))
       )
 
-      // 更新缓存
+      // 更新缓存（含 TTL 时间戳）
+      const now = Date.now()
       results.forEach((result, index) => {
         if (result.status === 'fulfilled') {
           providerDetailsCacheRef.current.set(
-            validProviders[index].id,
-            result.value.data as ProviderDetailResponse
+            providerList[index].id,
+            { data: result.value.data as ProviderDetailResponse, cachedAt: now }
           )
         }
       })
 
       const preferred = preferredProviderId || selectedProviderId
-      const nextProviderId = preferred && validProviders.some(item => item.id === preferred)
+      const nextProviderId = preferred && providerList.some(item => item.id === preferred)
         ? preferred
-        : validProviders[0].id
+        : providerList[0].id
 
       await loadProviderDetail(nextProviderId)
     } catch {
@@ -405,7 +426,7 @@ export function useProviderForm({
 
   /** 导入模型 */
   const handleImportModels = useCallback(async () => {
-    if (!providerForm.config_id || !providerForm.provider) {
+    if (!providerForm.provider) {
       showNotification({ type: 'error', text: '当前供应商配置不完整' })
       return
     }
@@ -436,12 +457,10 @@ export function useProviderForm({
       }
       await modelsAPI.saveProviderCredential(providerForm.provider, credPayload)
 
-      // 2. 更新 selected_models（如果有已有配置则更新）
-      if (providerForm.config_id) {
-        await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
-          selected_models: newSelected
-        })
-      }
+      // 2. 持久化 selected_models（后端会在无默认配置时自动创建，确保状态不丢失）
+      await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
+        selected_models: newSelected
+      })
 
       setProviderForm(prev => ({
         ...prev,
@@ -710,7 +729,8 @@ export function useProviderForm({
 
       setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))
       await modelsAPI.saveProviderCredential(providerForm.provider, credPayload)
-      if (providerForm.config_id) {
+      // 持久化 selected_models（后端会在无默认配置时自动创建，确保状态不丢失）
+      if (providerForm.selected_models.length > 0) {
         await modelsAPI.updateProviderSelectedModels(providerForm.provider, {
           selected_models: providerForm.selected_models
         })
