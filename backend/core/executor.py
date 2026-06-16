@@ -736,6 +736,9 @@ class ExecutionLayer:
                     state = "failed"
                     error_message = str(chunk.get("error") or "子代理执行失败").strip() or "子代理执行失败"
                     summary = summary or error_message
+                    # 转发错误事件到前端，确保实时可见
+                    if callable(on_subagent_event):
+                        await on_subagent_event(chunk)
 
             if not agent_id:
                 return {

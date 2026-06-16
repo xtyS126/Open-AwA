@@ -2,9 +2,10 @@
  * Agent 切换器 — 在聊天页面中切换当前 Agent 类型。
  * 改变 Agent 类型会影响系统提示、工具可用性和对话行为。
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Eye, Zap, Wrench } from 'lucide-react'
-import { subagentsApi, AgentType } from '@/shared/api/subagentsApi'
+import type { LucideIcon } from 'lucide-react'
+import { subagentsApi } from '@/shared/api/subagentsApi'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './AgentSwitcher.module.css'
 
@@ -13,7 +14,7 @@ interface AgentSwitcherProps {
   onAgentChange: (agentType: string) => void
 }
 
-const AGENT_ICONS: Record<string, React.FC<{ size?: number }>> = {
+const AGENT_ICONS: Record<string, LucideIcon> = {
   Explore: Eye,
   Plan: Zap,
   'general-purpose': Wrench,
@@ -25,21 +26,29 @@ const AGENT_LABELS: Record<string, string> = {
   'general-purpose': '通用',
 }
 
-const DEFAULT_AGENTS: AgentType[] = [
-  { name: 'Explore', type: 'Explore', description: '只读代码搜索和调研', isolation_mode: 'inherit' },
-  { name: 'Plan', type: 'Plan', description: '仅只读规划分析', isolation_mode: 'inherit' },
-  { name: 'general-purpose', type: 'general-purpose', description: '完整读写能力', isolation_mode: 'fresh' },
+/** Agent 切换器内部使用的 Agent 项 */
+interface AgentSwitcherItem {
+  name: string
+  type: string
+  description: string
+}
+
+const DEFAULT_AGENTS: AgentSwitcherItem[] = [
+  { name: 'Explore', type: 'Explore', description: '只读代码搜索和调研' },
+  { name: 'Plan', type: 'Plan', description: '仅只读规划分析' },
+  { name: 'general-purpose', type: 'general-purpose', description: '完整读写能力' },
 ]
 
 const AgentSwitcher: React.FC<AgentSwitcherProps> = ({ currentAgent, onAgentChange }) => {
-  const [agents, setAgents] = useState<AgentType[]>(DEFAULT_AGENTS)
+  const [agents, setAgents] = useState<AgentSwitcherItem[]>(DEFAULT_AGENTS)
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     subagentsApi.listAgents().then((data) => {
       if (!cancelled && data.agents?.length > 0) {
-        setAgents(data.agents)
+        // 后端 RegisteredAgent 用 name 兼容 type 字段
+        setAgents(data.agents.map((a) => ({ name: a.name, type: a.name, description: a.description })))
       }
     }).catch((error) => {
       appLogger.error({ event: 'agent_list_failed', module: 'chat', message: '加载Agent列表失败', extra: { error: error instanceof Error ? error.message : String(error) } })
@@ -47,7 +56,6 @@ const AgentSwitcher: React.FC<AgentSwitcherProps> = ({ currentAgent, onAgentChan
     return () => { cancelled = true }
   }, [])
 
-  const selectedAgent = agents.find((a) => a.type === currentAgent) || agents[0]
   const Icon = AGENT_ICONS[currentAgent] || Zap
 
   return (

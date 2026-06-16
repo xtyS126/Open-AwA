@@ -4,29 +4,34 @@
 来源参考: https://github.com/langchain-ai/langgraph
 """
 
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from loguru import logger
-from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from core.subagent import SubAgentManager, AgentState, AgentGraph
-from db.models import User, get_db
+from db.models import User
 
 
 router = APIRouter(prefix="/api/subagents", tags=["subagents"])
 
-# 全局子Agent管理器实例
+# 全局子Agent管理器实例及线程锁
 _manager: Optional[SubAgentManager] = None
+_manager_lock = threading.Lock()
 
 
 def _get_manager() -> SubAgentManager:
-    """获取或初始化子Agent管理器。"""
+    """获取或初始化子Agent管理器（线程安全）。"""
     global _manager
     if _manager is None:
-        _manager = SubAgentManager()
-        _register_builtin_agents(_manager)
+        with _manager_lock:
+            # 双重检查，避免多线程重复初始化
+            if _manager is None:
+                _manager = SubAgentManager()
+                _register_builtin_agents(_manager)
     return _manager
 
 
@@ -152,7 +157,6 @@ class RunParallelRequest(BaseModel):
 @router.get("/agents")
 async def list_agents(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """获取所有已注册的子Agent（需认证）。"""
     manager = _get_manager()
@@ -163,7 +167,6 @@ async def list_agents(
 @router.get("/graphs")
 async def list_graphs(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """获取所有已创建的执行图（需认证）。"""
     manager = _get_manager()
@@ -175,7 +178,6 @@ async def list_graphs(
 async def get_graph(
     graph_name: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """获取指定图的详细信息（需认证）。"""
     manager = _get_manager()
@@ -189,7 +191,6 @@ async def get_graph(
 async def run_graph(
     req: RunGraphRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """运行指定的Agent执行图（需认证）。"""
     manager = _get_manager()
@@ -221,7 +222,6 @@ async def run_graph(
 async def run_sequential(
     req: RunSequentialRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """顺序执行多个子Agent（需认证）。"""
     manager = _get_manager()
@@ -244,7 +244,6 @@ async def run_sequential(
 async def run_parallel(
     req: RunParallelRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """并行执行多个子Agent（需认证）。"""
     manager = _get_manager()

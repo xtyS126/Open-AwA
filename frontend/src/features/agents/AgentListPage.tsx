@@ -2,7 +2,8 @@
  * Agent 管理页面 — 列出所有已注册的 Agent 类型，支持创建、编辑、删除。
  */
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Edit, Trash2, Copy, Play, Zap, Eye, Wrench } from 'lucide-react'
+import { Plus, Edit, Trash2, Copy, Zap, Eye, Wrench } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { subagentsApi } from '@/shared/api/subagentsApi'
 import AgentCreateModal from './components/AgentCreateModal'
 import styles from './AgentListPage.module.css'
@@ -16,7 +17,7 @@ interface AgentInfo {
   model?: string
 }
 
-const AGENT_TYPE_ICONS: Record<string, React.FC<{ size?: number }>> = {
+const AGENT_TYPE_ICONS: Record<string, LucideIcon> = {
   Explore: Eye,
   Plan: Zap,
   'general-purpose': Wrench,
@@ -38,7 +39,12 @@ const AgentListPage: React.FC = () => {
     setLoading(true)
     try {
       const data = await subagentsApi.listAgents()
-      setAgents(data.agents || [])
+      // 后端返回 RegisteredAgent，映射为页面所需的 AgentInfo
+      setAgents((data.agents || []).map((a) => ({
+        name: a.name,
+        type: a.name,
+        description: a.description,
+      })))
     } catch {
       setAgents([])
     } finally {

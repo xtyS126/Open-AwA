@@ -265,7 +265,10 @@ class AgentGraph:
         """
         执行整个Agent图。
         从入口节点开始，按照边的定义逐步执行，直到到达终止节点或无后续节点。
+        当同一层级存在多个可执行节点时，并行执行并合并状态。
         """
+        import copy
+
         if not self.entry_point:
             raise ValueError("未设置入口节点，请调用 set_entry_point()")
         if self.entry_point not in self.nodes:
@@ -286,26 +289,73 @@ class AgentGraph:
             steps += 1
             next_nodes = []
 
-            for node_name in current_nodes:
+            if len(current_nodes) == 1:
+                # 单节点：直接执行，无需拷贝
+                node_name = current_nodes[0]
                 if node_name not in self.nodes:
                     logger.warning(f"Node '{node_name}' not found, skipping")
-                    continue
+                else:
+                    node = self.nodes[node_name]
+                    try:
+                        state = await self._execute_node(node, state)
+                    except Exception as e:
+                        logger.error(f"Node '{node_name}' failed: {e}")
+                        state.errors[node_name] = str(e)
+                        state.metadata['has_failures'] = True
+                        # 失败时不继续该节点的后继节点
+                        continue
 
-                node = self.nodes[node_name]
-                try:
-                    state = await self._execute_node(node, state)
-                except Exception as e:
-                    logger.error(f"Node '{node_name}' failed: {e}")
-                    # 在 state.errors 和 metadata 中记录失败，调用方可通过 has_failures 判断图是否整体成功
-                    state.errors[node_name] = str(e)
-                    state.metadata['has_failures'] = True
-                    # 失败时不继续该节点的后继节点
-                    continue
+                    if node_name not in self.finish_points:
+                        successors = self._get_next_nodes(node_name, state)
+                        next_nodes.extend(successors)
+            else:
+                # 多节点并行：每个节点获取状态的深拷贝，执行后合并
+                async def _run_parallel_node(n_name: str, n_state: AgentState) -> tuple[str, AgentState, Optional[str]]:
+                    """并行执行单个节点，返回 (节点名, 结果状态, 错误信息)。"""
+                    if n_name not in self.nodes:
+                        return n_name, n_state, None
+                    node = self.nodes[n_name]
+                    try:
+                        result = await self._execute_node(node, n_state)
+                        return n_name, result, None
+                    except Exception as exc:
+                        return n_name, n_state, str(exc)
 
-                # 确定下一步
-                if node_name not in self.finish_points:
-                    successors = self._get_next_nodes(node_name, state)
-                    next_nodes.extend(successors)
+                # 为每个并行节点创建独立的状态副本
+                parallel_tasks = []
+                for node_name in current_nodes:
+                    node_state = AgentState(
+                        messages=copy.deepcopy(state.messages),
+                        context=copy.deepcopy(state.context),
+                        results=copy.deepcopy(state.results),
+                        errors=copy.deepcopy(state.errors),
+                        metadata=copy.deepcopy(state.metadata),
+                    )
+                    parallel_tasks.append(_run_parallel_node(node_name, node_state))
+
+                # 并行执行所有节点
+                parallel_results = await asyncio.gather(*parallel_tasks)
+
+                # 合并所有并行节点的结果
+                for node_name, result_state, error_msg in parallel_results:
+                    if error_msg:
+                        logger.error(f"Node '{node_name}' failed: {error_msg}")
+                        state.errors[node_name] = error_msg
+                        state.metadata['has_failures'] = True
+                        continue
+
+                    # 合并结果和消息
+                    state.results.update(result_state.results)
+                    for msg in result_state.messages[len(state.messages):]:
+                        state.messages.append(msg)
+                    # 合并上下文（并行节点新增的键）
+                    for key, value in result_state.context.items():
+                        if key not in state.context:
+                            state.context[key] = value
+
+                    if node_name not in self.finish_points:
+                        successors = self._get_next_nodes(node_name, result_state)
+                        next_nodes.extend(successors)
 
             current_nodes = list(set(next_nodes))
 
@@ -422,8 +472,10 @@ class SubAgentManager:
                             timeout: float = 120.0) -> AgentState:
         """
         并行执行多个子Agent。
-        每个Agent接收状态的副本，最后合并结果。
+        每个Agent接收状态的深拷贝，最后合并结果。
         """
+        import copy
+
         state = initial_state or AgentState()
         tasks = []
 
@@ -432,14 +484,16 @@ class SubAgentManager:
             if not agent_info:
                 state.errors[agent_name] = "Agent未注册"
                 continue
-            # 每个Agent获取独立的状态副本（浅拷贝，仅复制容器引用）
+            # 每个Agent获取独立的状态深拷贝，避免并行执行时的数据竞争
             agent_state = AgentState(
-                messages=state.messages.copy(),
-                context=state.context.copy(),
-                results=state.results.copy(),
-                metadata=state.metadata.copy()
+                messages=copy.deepcopy(state.messages),
+                context=copy.deepcopy(state.context),
+                results=copy.deepcopy(state.results),
+                metadata=copy.deepcopy(state.metadata)
             )
-            tasks.append((agent_name, agent_info['handler'](agent_state)))
+            # 记录每个子代理的初始消息数，用于后续增量合并
+            initial_message_count = len(agent_state.messages)
+            tasks.append((agent_name, agent_info['handler'](agent_state), initial_message_count))
 
         if tasks:
             try:
@@ -448,14 +502,18 @@ class SubAgentManager:
                     timeout=timeout
                 )
 
-                for (agent_name, _), result in zip(tasks, results):
+                for (agent_name, _, initial_msg_count), result in zip(tasks, results):
                     if isinstance(result, Exception):
                         state.errors[agent_name] = str(result)
                         logger.error(f"Parallel sub-agent '{agent_name}' failed: {result}")
                     elif isinstance(result, AgentState):
-                        # 合并结果
+                        # 合并结果：仅追加子代理新增的消息
                         state.results[agent_name] = result.results
-                        state.messages.extend(result.messages[len(state.messages):])
+                        new_messages = result.messages[initial_msg_count:]
+                        state.messages.extend(new_messages)
+                        # 合并子代理产生的错误
+                        for key, value in result.errors.items():
+                            state.errors[f"{agent_name}.{key}"] = value
                     else:
                         state.results[agent_name] = result
             except asyncio.TimeoutError:
@@ -585,11 +643,15 @@ class SubAgentManager:
                             f"请提出您的论点或回应之前的观点。"
                         )
                         state.add_message("user", debate_prompt)
+                        # 记录当前消息数，用于增量合并
+                        msg_count_before = len(state.messages)
                         try:
                             result_state = await agent_info["handler"](state)
                             if isinstance(result_state, AgentState):
                                 round_results[agent_name] = result_state.results
-                                state.messages.extend(result_state.messages[-5:])
+                                # 仅追加子代理新增的消息，避免重复
+                                new_messages = result_state.messages[msg_count_before:]
+                                state.messages.extend(new_messages)
                         except Exception as e:
                             logger.warning(f"辩论中 Agent {agent_name} 错误: {str(e)}")
 
