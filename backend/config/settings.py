@@ -183,6 +183,32 @@ class Settings(BaseSettings):
     SSL_KEYFILE_PASSWORD: Optional[str] = None
     SSL_CA_CERTS: Optional[str] = None
     
+    # --- Agent 引擎增强配置 ---
+
+    # 自主纠错最大轮数（超出则请求人工介入）
+    AGENT_SELF_CORRECTION_MAX_ROUNDS: int = 3
+
+    # 单步骤超时（秒）
+    AGENT_STEP_TIMEOUT_SECONDS: int = 30
+
+    # 单任务全局超时（秒）
+    AGENT_TASK_TIMEOUT_SECONDS: int = 300
+
+    # 指数退避重试基础间隔（秒）
+    AGENT_RETRY_BASE_INTERVAL: float = 2.0
+
+    # 指数退避重试最大间隔（秒）
+    AGENT_RETRY_MAX_INTERVAL: float = 60.0
+
+    # 指数退避随机抖动系数（0.0-1.0）
+    AGENT_RETRY_JITTER: float = 0.1
+
+    # 步骤快照最大保留数量（防止内存泄漏）
+    AGENT_SNAPSHOT_MAX_COUNT: int = 50
+
+    # 模型降级策略：主模型失败时是否自动切换备用模型
+    AGENT_MODEL_FALLBACK_ENABLED: bool = True
+
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
 

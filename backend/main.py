@@ -20,6 +20,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
 from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from api.routes.data import router as data_router
 from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
 from api.routes.marketplace import router as marketplace_router
@@ -39,6 +40,10 @@ from api.routes.magic_commands import router as magic_commands_router
 from api.routes.heartbeat import router as heartbeat_router
 from api.routes.tts import router as tts_router
 from api.routes.tasks import router as tasks_router
+from api.routes.roles import router as roles_router
+from api.routes.role_market import router as role_market_router
+from api.routes.terminal import router as terminal_router
+from api.routes.im import router as im_router
 
 from billing.routers import billing
 from config.logging import (
@@ -216,6 +221,20 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         except Exception as exc:
             logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
             raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
+
+    # 初始化预设角色
+    with profiler.step("preset_roles_init"):
+        try:
+            from core.role_engine import RoleEngine
+            _preset_db = SessionLocal()
+            try:
+                added = RoleEngine.ensure_presets_in_db(_preset_db)
+                if added > 0:
+                    logger.bind(event="preset_roles_initialized", module="startup").info(f"初始化 {added} 个预设角色")
+            finally:
+                _preset_db.close()
+        except Exception as e:
+            logger.bind(event="preset_roles_init_error", module="startup").warning(f"预设角色初始化失败: {e}")
 
     with profiler.step("billing_tables"):
         logger.bind(event="billing_tables_initialized", module="main").info("billing tables initialized")
@@ -401,6 +420,15 @@ async def _shutdown_autonomous_mode() -> None:
         logger.warning(f"自主模式关闭异常: {e}")
 
 
+async def _shutdown_data_collector() -> None:
+    """关闭数据收集器。"""
+    try:
+        from data.collector import data_collector
+        await data_collector.stop()
+    except Exception as e:
+        logger.bind(event="data_collector_stop_error", module="shutdown").warning(f"数据收集器关闭失败: {e}")
+
+
 async def lifespan(app: FastAPI):
     """
     管理应用启动与关闭阶段的全局生命周期。
@@ -419,6 +447,13 @@ async def lifespan(app: FastAPI):
         await _startup_background_tasks(profiler)
         # 17. 自主运行模式初始化（在所有其他初始化之后）
         await _startup_autonomous_mode(profiler)
+        # 18. 初始化数据收集器
+        try:
+            from data.collector import data_collector
+            await data_collector.start()
+            logger.bind(event="data_collector_initialized", module="startup").info("数据收集器已初始化")
+        except Exception as e:
+            logger.bind(event="data_collector_init_error", module="startup").warning(f"数据收集器初始化失败: {e}")
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
         raise
@@ -430,6 +465,7 @@ async def lifespan(app: FastAPI):
     shutdown_errors: list[str] = []
     for step_name, step_fn in (
         ("autonomous_mode", _shutdown_autonomous_mode),
+        ("data_collector", _shutdown_data_collector),
         ("scheduled_task_manager", scheduled_task_manager.stop),
         ("shared_http_client", close_shared_client),
     ):
@@ -856,6 +892,11 @@ app.include_router(inbox_router)
 app.include_router(magic_commands_router, prefix=settings.API_V1_STR)
 app.include_router(tts_router)
 app.include_router(tasks_router)
+app.include_router(roles_router, prefix=settings.API_V1_STR)
+app.include_router(role_market_router, prefix=settings.API_V1_STR)
+app.include_router(data_router, prefix=settings.API_V1_STR)
+app.include_router(terminal_router, prefix=settings.API_V1_STR)
+app.include_router(im_router, prefix=settings.API_V1_STR)
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath

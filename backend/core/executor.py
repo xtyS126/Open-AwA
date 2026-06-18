@@ -1134,17 +1134,36 @@ class ExecutionLayer:
 
         _tools = context.get("_tools")
         _thinking_params = context.get("_thinking_params")
-        result = await litellm_chat_completion(
-            provider=resolved["provider"],
-            model=resolved["model"],
-            messages=messages,
-            api_key=resolved["api_key"],
-            api_base=resolved.get("api_endpoint"),
-            max_tokens=self._resolve_max_tokens(resolved),
-            request_id=resolved.get("request_id"),
-            tools=_tools,
-            thinking_params=_thinking_params,
-        )
+        step_timeout = context.get("step_timeout", settings.AGENT_STEP_TIMEOUT_SECONDS)
+        try:
+            result = await asyncio.wait_for(
+                litellm_chat_completion(
+                    provider=resolved["provider"],
+                    model=resolved["model"],
+                    messages=messages,
+                    api_key=resolved["api_key"],
+                    api_base=resolved.get("api_endpoint"),
+                    max_tokens=self._resolve_max_tokens(resolved),
+                    request_id=resolved.get("request_id"),
+                    tools=_tools,
+                    thinking_params=_thinking_params,
+                ),
+                timeout=step_timeout,
+            )
+        except asyncio.TimeoutError:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            record_model_service_metric(resolved["provider"], "chat", "error", duration_ms)
+            logger.bind(
+                event="llm_call_timeout",
+                module="executor",
+                provider=resolved["provider"],
+                model=resolved["model"],
+                timeout_seconds=step_timeout,
+            ).warning(f"LLM 调用超时 ({step_timeout}s)")
+            return {
+                "ok": False,
+                "error": {"message": f"LLM 调用超时 ({step_timeout}s)", "type": "timeout"},
+            }
 
         # 支持 tool_calls 循环：检测到工具调用时自动执行并将结果回传 LLM
         max_rounds = resolve_max_tool_call_rounds(context)
@@ -1197,17 +1216,34 @@ class ExecutionLayer:
             if _abort:
                 break
 
-            result = await litellm_chat_completion(
-                provider=resolved["provider"],
-                model=resolved["model"],
-                messages=messages,
-                api_key=resolved["api_key"],
-                api_base=resolved.get("api_endpoint"),
-                max_tokens=self._resolve_max_tokens(resolved),
-                request_id=resolved.get("request_id"),
-                tools=_tools,
-                thinking_params=_thinking_params,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    litellm_chat_completion(
+                        provider=resolved["provider"],
+                        model=resolved["model"],
+                        messages=messages,
+                        api_key=resolved["api_key"],
+                        api_base=resolved.get("api_endpoint"),
+                        max_tokens=self._resolve_max_tokens(resolved),
+                        request_id=resolved.get("request_id"),
+                        tools=_tools,
+                        thinking_params=_thinking_params,
+                    ),
+                    timeout=step_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.bind(
+                    event="llm_call_timeout",
+                    module="executor",
+                    provider=resolved["provider"],
+                    model=resolved["model"],
+                    timeout_seconds=step_timeout,
+                    round=round_count,
+                ).warning(f"工具调用循环中 LLM 调用超时 ({step_timeout}s)，第 {round_count} 轮")
+                result = {
+                    "ok": False,
+                    "error": {"message": f"LLM 调用超时 ({step_timeout}s)", "type": "timeout"},
+                }
 
             if not result.get("ok"):
                 break
@@ -1525,6 +1561,7 @@ class ExecutionLayer:
         """
         执行单个工具调用，根据 function name 分发到对应的处理器。
         """
+        _tool_start_time = time.time()
         func_name = tool_call.get("function", {}).get("name", "")
         raw_func_name = func_name
         func_args_str = tool_call.get("function", {}).get("arguments", "{}")
@@ -1941,7 +1978,24 @@ class ExecutionLayer:
             else:
                 return {"ok": False, "error": f"未知任务运行时工具: {task_action}"}
 
-        return {"ok": False, "error": f"No handler for tool: {func_name}"}
+        output = {"ok": False, "error": f"No handler for tool: {func_name}"}
+
+        # 收集工具调用数据
+        try:
+            from data.collector import data_collector
+            await data_collector.collect_tool_call({
+                "conversation_id": context.get("session_id", ""),
+                "role_id": context.get("role_id", ""),
+                "tool_name": func_name,
+                "tool_params": func_args,
+                "result_summary": str(output.get("response", ""))[:500],
+                "success": output.get("ok", False),
+                "duration_ms": int((time.time() - _tool_start_time) * 1000),
+            })
+        except Exception:
+            pass  # 数据收集不影响主流程
+
+        return output
 
     @staticmethod
     def _build_tool_message(tool_call: Dict[str, Any], exec_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -2269,11 +2323,26 @@ class ExecutionLayer:
         return output
     
     async def retry_step(self, step: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        重试失败的执行步骤。直接委派给 execute_step，不增加额外幂等键——允许绕过缓存重新执行。
-        """
-        logger.info(f"Retrying step: {step.get('action')}")
-        return await self.execute_step(step, context)
+        """使用指数退避策略重试失败的执行步骤。"""
+        from core.retry import RetryPolicy, execute_with_retry
+
+        policy = RetryPolicy(max_attempts=3)
+        result = await execute_with_retry(
+            self.execute_step,
+            step,
+            context,
+            policy=policy,
+            retryable_exceptions=(Exception,),
+        )
+
+        if result.success:
+            return result.result
+
+        return {
+            "status": "failed",
+            "response": f"重试 {result.attempts} 次后仍然失败: {result.last_error}",
+            "error": str(result.last_error),
+        }
     
     async def record_experience_feedback(
         self,

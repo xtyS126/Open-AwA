@@ -9,6 +9,8 @@ import EditorPane from './components/EditorPane'
 import DiffView from './components/DiffView'
 import GitPanel from './components/GitPanel'
 import CodingChatPanel from './components/CodingChatPanel'
+import TerminalPanel from './components/TerminalPanel'
+import ModeSwitcher, { type ExecutionMode } from './components/ModeSwitcher'
 import { useCodingStore } from './store/codingStore'
 import { codingApi } from './codingApi'
 import { appLogger } from '@/shared/utils/logger'
@@ -20,12 +22,15 @@ const CodingPage: React.FC = () => {
     diffMode, setDiffMode, openFiles, activeFilePath,
   } = useCodingStore()
   const [showGit, setShowGit] = useState(false)
+  const [showTerminal, setShowTerminal] = useState(false)
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('solo')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [diffData, setDiffData] = useState<{ original: string; modified: string; filePath: string } | null>(null)
   const [layouts] = useState({
     fileTreeWidth: 240,
     gitPanelHeight: 180,
+    terminalPanelHeight: 220,
   })
 
   useEffect(() => {
@@ -122,11 +127,19 @@ const CodingPage: React.FC = () => {
             {ccModeEnabled ? 'CC ON' : 'CC OFF'}
           </button>
           <button
-            className={styles.gitToggle}
+            className={`${styles.gitToggle} ${showTerminal ? styles.gitActive : ''}`}
+            onClick={() => setShowTerminal(!showTerminal)}
+            title={showTerminal ? '隐藏终端面板' : '显示终端面板'}
+          >
+            终端
+          </button>
+          <button
+            className={`${styles.gitToggle} ${showGit ? styles.gitActive : ''}`}
             onClick={() => setShowGit(!showGit)}
           >
             Git
           </button>
+          <ModeSwitcher mode={executionMode} onModeChange={setExecutionMode} />
         </div>
         <div className={styles.toolbarCenter}>
           <input
@@ -198,6 +211,16 @@ const CodingPage: React.FC = () => {
           <CodingChatPanel />
         </div>
       </div>
+
+      {/* 底部：终端面板 */}
+      {showTerminal && (
+        <div className={styles.bottomPanel} style={{ height: layouts.terminalPanelHeight }}>
+          <TerminalPanel
+            cwd={projectDir || undefined}
+            onClose={() => setShowTerminal(false)}
+          />
+        </div>
+      )}
 
       {/* 底部：Git 面板 */}
       {showGit && (

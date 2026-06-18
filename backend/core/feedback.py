@@ -3,6 +3,7 @@
 这些文件决定了用户请求在内部被如何拆解,编排以及最终落地执行.
 """
 
+import asyncio
 import time
 from typing import Dict, List, Any, Optional
 from loguru import logger
@@ -234,37 +235,58 @@ class FeedbackLayer:
 
         await asyncio.to_thread(_sync_record)
 
-    async def diagnose_error(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """诊断工具执行错误,根据错误消息分类为 timeout/network/auth 等类型并给出修复建议."""
-        error_message = result.get("message", "")
-        
-        diagnosis = {
-            "type": "unknown",
-            "suggestion": "Please try again or provide more details."
+    async def diagnose_error(
+        self,
+        error: Exception,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        诊断执行错误的原因，生成结构化的诊断报告。
+
+        返回:
+            {
+                "error_type": "tool_execution | llm_call | timeout | unknown",
+                "error_message": "...",
+                "likely_cause": "...",
+                "suggested_fix": "..."
+            }
+        """
+        error_type = "unknown"
+        error_message = str(error)
+        likely_cause = ""
+        suggested_fix = ""
+
+        # 根据异常类型分类
+        error_class_name = type(error).__name__.lower()
+        if "timeout" in error_class_name or isinstance(error, asyncio.TimeoutError):
+            error_type = "timeout"
+            likely_cause = "执行超时，可能是目标服务响应慢或任务过于复杂"
+            suggested_fix = "增加超时时间或简化任务步骤"
+        elif "tool" in error_class_name or "execution" in error_class_name:
+            error_type = "tool_execution"
+            likely_cause = "工具执行失败，可能是参数错误或目标环境问题"
+            suggested_fix = "检查工具参数并重试，或使用替代工具"
+        elif "llm" in error_class_name or "api" in error_class_name:
+            error_type = "llm_call"
+            likely_cause = "LLM 调用失败，可能是模型服务不可用或请求格式错误"
+            suggested_fix = "切换到备用模型或调整请求参数"
+        else:
+            likely_cause = f"未知错误类型: {type(error).__name__}"
+            suggested_fix = "检查错误详情并手动修复"
+
+        logger.bind(
+            event="error_diagnosed",
+            module="feedback",
+            error_type=error_type,
+            error_message=error_message[:200],
+        ).info(f"错误诊断完成: {error_type}")
+
+        return {
+            "error_type": error_type,
+            "error_message": error_message,
+            "likely_cause": likely_cause,
+            "suggested_fix": suggested_fix,
         }
-        
-        if "timeout" in error_message.lower():
-            diagnosis = {
-                "type": "timeout",
-                "suggestion": "The operation took too long. Try a simpler task or increase timeout."
-            }
-        elif "permission" in error_message.lower():
-            diagnosis = {
-                "type": "permission",
-                "suggestion": "Permission denied. Check file permissions."
-            }
-        elif "not found" in error_message.lower():
-            diagnosis = {
-                "type": "not_found",
-                "suggestion": "The resource was not found. Check the path or name."
-            }
-        elif "syntax" in error_message.lower():
-            diagnosis = {
-                "type": "syntax",
-                "suggestion": "There might be a syntax error in your request."
-            }
-        
-        return diagnosis
 
 
 # 全局 FeedbackLayer 实例注册表,供 API 路由访问

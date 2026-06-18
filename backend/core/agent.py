@@ -1582,6 +1582,7 @@ class AIAgent:
         优先检测魔法命令，匹配时跳过 LLM 处理。
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
+        _stream_start_time = time.time()
 
         # 检测魔法命令
         cmd_result = await self._check_and_handle_magic_command(user_input, context)
@@ -1599,6 +1600,24 @@ class AIAgent:
         yield self._build_status_event("starting", "正在准备对话上下文")
 
         self._prepare_context(user_input, context)
+
+        # 角色引擎集成：如果上下文中有 role_id，加载角色配置并应用
+        role_id = context.get("role_id")
+        if role_id:
+            try:
+                from core.role_engine import RoleEngine
+                from db.models import SessionLocal
+                _role_db = SessionLocal()
+                try:
+                    role_engine = RoleEngine(db=_role_db)
+                    role = role_engine.load_role(role_id)
+                    if role:
+                        context = role_engine.apply_role_to_context(role, context)
+                finally:
+                    _role_db.close()
+            except Exception as e:
+                logger.bind(event="role_engine_error", module="agent").warning(f"角色引擎加载失败: {e}")
+
         await self._inject_runtime_capabilities(context)
 
         # 构建多模态消息内容（若用户上传了附件）
@@ -1658,6 +1677,11 @@ class AIAgent:
 
             final_only_mode = self._is_final_only_mode(context)
 
+            # 初始化 RollbackManager，供工具调用循环和自主纠错使用
+            if not context.get("_rollback_manager"):
+                from core.rollback import RollbackManager
+                context["_rollback_manager"] = RollbackManager()
+
             round_count = 0
             max_rounds = resolve_max_tool_call_rounds(context)
 
@@ -1686,6 +1710,16 @@ class AIAgent:
                         tool_calls = chunk.get("tool_calls", [])
 
                         logger.info(f"Detected {len(tool_calls)} tool_calls in stream mode, executing...")
+
+                        # 在工具执行前保存快照，供回滚和自主纠错使用
+                        rollback_manager = context.get("_rollback_manager")
+                        if rollback_manager:
+                            rollback_manager.save_snapshot(
+                                step_index=round_count,
+                                step_action="tool_calls",
+                                context=context,
+                                description=f"第 {round_count} 轮工具调用前快照",
+                            )
 
                         # 发射 task 事件
                         yield emit_task_event({
@@ -1915,6 +1949,22 @@ class AIAgent:
                     tool_events=accumulated_tool_events if accumulated_tool_events else None,
                 )
         finally:
+            # 收集对话数据
+            try:
+                from data.collector import data_collector
+                await data_collector.collect_conversation({
+                    "conversation_id": context.get("session_id", ""),
+                    "role_id": context.get("role_id", ""),
+                    "user_message": user_input[:2000] if user_input else "",
+                    "assistant_message": full_content[:2000] if full_content else "",
+                    "tools_used": [evt.get("name", "") for evt in accumulated_tool_events] if accumulated_tool_events else [],
+                    "model_used": context.get("model", ""),
+                    "token_count": {},
+                    "response_time_ms": int((time.time() - _stream_start_time) * 1000),
+                })
+            except Exception:
+                pass  # 数据收集不影响主流程
+
             unregister_agent_task(session_id)
 
     async def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -2701,9 +2751,74 @@ class AIAgent:
     def clear_results(self) -> None:
         """
         清空当前会话中累积的技能和插件执行结果列表。
-        通常在新一轮对话开始时调用，避免历史执行结果干扰后续判断。
+        通常在新轮对话开始时调用，避免历史执行结果干扰后续判断。
         """
         logger.info("Clearing skill and plugin results")
         self.skill_results.clear()
         self.plugin_results.clear()
         logger.info("Results cleared successfully")
+
+    async def _self_correction_loop(
+        self,
+        step: Dict[str, Any],
+        context: Dict[str, Any],
+        error: Exception,
+    ) -> Dict[str, Any]:
+        """
+        自主纠错循环：诊断错误 -> 生成修复计划 -> 回滚 -> 重新执行。
+        最多执行 AGENT_SELF_CORRECTION_MAX_ROUNDS 轮纠错，超出则请求人工介入。
+        """
+        from config.settings import settings
+
+        max_rounds = settings.AGENT_SELF_CORRECTION_MAX_ROUNDS
+        rollback_manager = context.get("_rollback_manager")
+
+        for correction_round in range(1, max_rounds + 1):
+            logger.bind(
+                event="self_correction_round",
+                module="agent",
+                round=correction_round,
+                max_rounds=max_rounds,
+            ).info(f"自主纠错第 {correction_round}/{max_rounds} 轮")
+
+            # 1. 诊断错误
+            diagnosis = await self.feedback.diagnose_error(error, context)
+
+            # 2. 生成修复计划
+            fix_plan = await self.planner.generate_fix_plan(diagnosis, context)
+
+            # 3. 回滚到上一个稳定状态
+            if rollback_manager:
+                restored_context = rollback_manager.get_context_after_rollback()
+                if restored_context:
+                    # 只更新非内部键的上下文
+                    for key, value in restored_context.items():
+                        if not key.startswith("_"):
+                            context[key] = value
+
+            # 4. 执行修复计划
+            try:
+                result = await self.executor.execute_step(fix_plan, context)
+                if result.get("status") != "failed":
+                    logger.bind(
+                        event="self_correction_success",
+                        module="agent",
+                        round=correction_round,
+                    ).info(f"自主纠错第 {correction_round} 轮成功")
+                    return result
+                error = Exception(result.get("response", "修复计划执行失败"))
+            except Exception as e:
+                error = e
+
+        # 超出最大纠错轮数，请求人工介入
+        logger.bind(
+            event="self_correction_exhausted",
+            module="agent",
+            max_rounds=max_rounds,
+        ).warning(f"自主纠错 {max_rounds} 轮后仍失败，需要人工介入")
+
+        return {
+            "status": "needs_human_intervention",
+            "response": f"自主纠错 {max_rounds} 轮后仍失败，需要人工介入",
+            "error": str(error),
+        }

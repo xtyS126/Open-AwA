@@ -579,6 +579,44 @@ class UserFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), comment="反馈时间")
 
 
+class AgentRole(Base):
+    """AI 角色定义模型，存储角色的性格、专长、工具权限和模型配置。"""
+    __tablename__ = "agent_roles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    avatar_url: Mapped[str] = mapped_column(String(500), default="")
+
+    # 角色核心定义
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    personality: Mapped[dict] = mapped_column(JSON, default=dict)
+    expertise: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # 知识绑定
+    knowledge_base_ids: Mapped[dict] = mapped_column(JSON, default=list)
+
+    # 工具权限
+    allowed_tools: Mapped[dict] = mapped_column(JSON, default=list)
+    allowed_skills: Mapped[dict] = mapped_column(JSON, default=list)
+
+    # 模型配置
+    model_config: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # 元数据
+    creator_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_preset: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
 class ExperienceExtractionLog(Base):
     """
     经验提取日志，记录每次经验自动提取的过程和质量评估。
@@ -594,6 +632,72 @@ class ExperienceExtractionLog(Base):
     extraction_quality: Mapped[float] = mapped_column(Float, default=0.0)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ConversationData(Base):
+    """对话数据收集模型，记录完整对话上下文和角色信息。"""
+    __tablename__ = "conversation_data"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), index=True)
+    role_id: Mapped[str] = mapped_column(String(64), default="")
+    user_message: Mapped[str] = mapped_column(Text)
+    assistant_message: Mapped[str] = mapped_column(Text)
+    tools_used: Mapped[dict] = mapped_column(JSON, default=list)
+    model_used: Mapped[str] = mapped_column(String(100), default="")
+    token_count: Mapped[dict] = mapped_column(JSON, default=dict)
+    response_time_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class ToolCallData(Base):
+    """工具调用数据收集模型，记录工具名、参数、结果和耗时。"""
+    __tablename__ = "tool_call_data"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), index=True)
+    role_id: Mapped[str] = mapped_column(String(64), default="")
+    tool_name: Mapped[str] = mapped_column(String(100))
+    tool_params: Mapped[dict] = mapped_column(JSON)
+    result_summary: Mapped[str] = mapped_column(Text, default="")
+    success: Mapped[bool] = mapped_column(Boolean)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class ExecutionTrace(Base):
+    """执行轨迹模型，记录规划-执行-反馈完整链路。"""
+    __tablename__ = "execution_trace"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), index=True)
+    role_id: Mapped[str] = mapped_column(String(64), default="")
+    plan_steps: Mapped[dict] = mapped_column(JSON)
+    executed_steps: Mapped[dict] = mapped_column(JSON)
+    error_steps: Mapped[dict] = mapped_column(JSON, default=list)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    rollback_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class RoleSwitchEvent(Base):
+    """角色切换事件模型，记录角色切换时间和原因。"""
+    __tablename__ = "role_switch_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_role_id: Mapped[str] = mapped_column(String(64), default="")
+    to_role_id: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
 
 
 class PromptConfig(Base):
@@ -1332,6 +1436,120 @@ def _migrate_short_term_memory_rich_fields(use_engine=None):
             logger.info("Migrated short_term_memory: added tool_events column")
 
 
+def _migrate_agent_roles(inspector, conn) -> None:
+    """迁移：创建 agent_roles 表。"""
+    if "agent_roles" not in inspector.get_table_names():
+        conn.execute(text("""
+            CREATE TABLE agent_roles (
+                id VARCHAR(64) PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                description TEXT DEFAULT '',
+                avatar_url VARCHAR(500) DEFAULT '',
+                system_prompt TEXT NOT NULL,
+                personality JSON DEFAULT '{}',
+                expertise JSON DEFAULT '{}',
+                knowledge_base_ids JSON DEFAULT '[]',
+                allowed_tools JSON DEFAULT '[]',
+                allowed_skills JSON DEFAULT '[]',
+                model_config JSON DEFAULT '{}',
+                creator_id INTEGER REFERENCES users(id),
+                is_public BOOLEAN DEFAULT 0,
+                usage_count INTEGER DEFAULT 0,
+                is_preset BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+
+def _migrate_conversation_data(inspector, conn) -> None:
+    """迁移：创建 conversation_data 表。"""
+    if "conversation_data" not in inspector.get_table_names():
+        conn.execute(text("""
+            CREATE TABLE conversation_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id VARCHAR(64),
+                role_id VARCHAR(64) DEFAULT '',
+                user_message TEXT,
+                assistant_message TEXT,
+                tools_used JSON DEFAULT '[]',
+                model_used VARCHAR(100) DEFAULT '',
+                token_count JSON DEFAULT '{}',
+                response_time_ms INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("CREATE INDEX ix_conversation_data_conversation_id ON conversation_data(conversation_id)"))
+        conn.execute(text("CREATE INDEX ix_conversation_data_created_at ON conversation_data(created_at)"))
+
+
+def _migrate_tool_call_data(inspector, conn) -> None:
+    """迁移：创建 tool_call_data 表。"""
+    if "tool_call_data" not in inspector.get_table_names():
+        conn.execute(text("""
+            CREATE TABLE tool_call_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id VARCHAR(64),
+                role_id VARCHAR(64) DEFAULT '',
+                tool_name VARCHAR(100),
+                tool_params JSON,
+                result_summary TEXT DEFAULT '',
+                success BOOLEAN,
+                duration_ms INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("CREATE INDEX ix_tool_call_data_conversation_id ON tool_call_data(conversation_id)"))
+        conn.execute(text("CREATE INDEX ix_tool_call_data_created_at ON tool_call_data(created_at)"))
+
+
+def _migrate_execution_trace(inspector, conn) -> None:
+    """迁移：创建 execution_trace 表。"""
+    if "execution_trace" not in inspector.get_table_names():
+        conn.execute(text("""
+            CREATE TABLE execution_trace (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id VARCHAR(64),
+                role_id VARCHAR(64) DEFAULT '',
+                plan_steps JSON,
+                executed_steps JSON,
+                error_steps JSON DEFAULT '[]',
+                retry_count INTEGER DEFAULT 0,
+                rollback_count INTEGER DEFAULT 0,
+                total_duration_ms INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("CREATE INDEX ix_execution_trace_conversation_id ON execution_trace(conversation_id)"))
+        conn.execute(text("CREATE INDEX ix_execution_trace_created_at ON execution_trace(created_at)"))
+
+
+def _migrate_role_switch_event(inspector, conn) -> None:
+    """迁移：创建 role_switch_event 表。"""
+    if "role_switch_event" not in inspector.get_table_names():
+        conn.execute(text("""
+            CREATE TABLE role_switch_event (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_role_id VARCHAR(64) DEFAULT '',
+                to_role_id VARCHAR(64),
+                reason TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("CREATE INDEX ix_role_switch_event_created_at ON role_switch_event(created_at)"))
+
+
+def _migrate_user_feedback_add_columns(inspector, conn) -> None:
+    """迁移：为 user_feedback 表添加 conversation_id、role_id、feedback_type 列。"""
+    columns = [col["name"] for col in inspector.get_columns("user_feedback")]
+    if "conversation_id" not in columns:
+        conn.execute(text("ALTER TABLE user_feedback ADD COLUMN conversation_id VARCHAR(64) DEFAULT ''"))
+    if "role_id" not in columns:
+        conn.execute(text("ALTER TABLE user_feedback ADD COLUMN role_id VARCHAR(64) DEFAULT ''"))
+    if "feedback_type" not in columns:
+        conn.execute(text("ALTER TABLE user_feedback ADD COLUMN feedback_type VARCHAR(20) DEFAULT ''"))
+
+
 def init_db(bind_engine=None):
     """
     初始化数据库表结构并执行必要的迁移操作。
@@ -1356,6 +1574,15 @@ def init_db(bind_engine=None):
     _migrate_user_role_fk(use_engine=use_engine)
     _migrate_model_configuration_new_params(use_engine=use_engine)
     _migrate_permission_saved(use_engine=use_engine)
+    # Agent 角色与数据收集相关迁移
+    _inspector = inspect(use_engine)
+    with use_engine.begin() as _conn:
+        _migrate_agent_roles(_inspector, _conn)
+        _migrate_conversation_data(_inspector, _conn)
+        _migrate_tool_call_data(_inspector, _conn)
+        _migrate_execution_trace(_inspector, _conn)
+        _migrate_role_switch_event(_inspector, _conn)
+        _migrate_user_feedback_add_columns(_inspector, _conn)
 
 
 def _migrate_user_role_fk(use_engine=None):

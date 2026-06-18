@@ -237,3 +237,59 @@ class PlanningLayer:
             prompt_parts.append(f"   适用场景：{trigger}\n")
         
         return "".join(prompt_parts)
+
+    async def generate_fix_plan(
+        self,
+        diagnosis: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        基于错误诊断结果生成修复计划。
+
+        返回:
+            {
+                "action": "tool_call | llm_call | retry",
+                "tool": "...",
+                "parameters": {...},
+                "prompt": "...",
+                "description": "修复说明"
+            }
+        """
+        error_type = diagnosis.get("error_type", "unknown")
+        suggested_fix = diagnosis.get("suggested_fix", "")
+        error_message = diagnosis.get("error_message", "")
+
+        # 根据错误类型生成修复计划
+        if error_type == "timeout":
+            fix_plan = {
+                "action": "retry",
+                "description": f"超时重试: {suggested_fix}",
+                "prompt": f"上一步执行超时。请简化操作步骤，分步执行。原始错误: {error_message[:200]}",
+            }
+        elif error_type == "tool_execution":
+            fix_plan = {
+                "action": "llm_call",
+                "description": f"工具执行修复: {suggested_fix}",
+                "prompt": f"工具执行失败，请分析原因并尝试替代方案。原始错误: {error_message[:200]}",
+            }
+        elif error_type == "llm_call":
+            fix_plan = {
+                "action": "llm_call",
+                "description": f"LLM 调用修复: {suggested_fix}",
+                "prompt": f"LLM 调用失败，请使用更简洁的方式重新尝试。原始错误: {error_message[:200]}",
+            }
+        else:
+            fix_plan = {
+                "action": "llm_call",
+                "description": f"通用修复: {suggested_fix}",
+                "prompt": f"执行出错，请分析错误原因并提供修复方案。原始错误: {error_message[:200]}",
+            }
+
+        logger.bind(
+            event="fix_plan_generated",
+            module="planner",
+            error_type=error_type,
+            fix_action=fix_plan["action"],
+        ).info(f"修复计划已生成: {fix_plan['action']}")
+
+        return fix_plan

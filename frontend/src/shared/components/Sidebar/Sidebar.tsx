@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,
-  Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell
+  Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell,
+  Users, BarChart3, ShoppingBag
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useI18nStore } from '@/i18n'
@@ -14,7 +15,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'data' | 'im' | 'roleMarket'
 }
 
 interface MenuGroup {
@@ -37,8 +38,12 @@ const renderIcon = (type: string, size = 18) => {
     case 'settings': return <Settings size={size} />
     case 'experience': return <Award size={size} />
     case 'communication': return <Radio size={size} />
+    case 'im': return <Radio size={size} />
     case 'theme': return <Palette size={size} />
     case 'inbox': return <Bell size={size} />
+    case 'roles': return <Users size={size} />
+    case 'roleMarket': return <ShoppingBag size={size} />
+    case 'data': return <BarChart3 size={size} />
     default: return <MessageSquare size={size} />
   }
 }
@@ -68,6 +73,9 @@ const renderIcon = (type: string, size = 18) => {
       items: [
         { path: '/tts', label: t('sidebar.tts') || 'TTS', iconType: 'skills' as const },
         { path: '/agents', label: t('sidebar.agents') || 'Agents', iconType: 'skills' as const },
+        { path: '/roles', label: t('sidebar.roles') || '角色管理', iconType: 'roles' as const },
+        { path: '/role-market', label: t('sidebar.roleMarket') || '角色市场', iconType: 'roleMarket' as const },
+        { path: '/data', label: t('sidebar.data') || '数据看板', iconType: 'data' as const },
         { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
@@ -88,6 +96,7 @@ const renderIcon = (type: string, size = 18) => {
       items: [
         { path: '/settings', label: t('sidebar.settings'), iconType: 'settings' as const },
         { path: '/communication', label: t('sidebar.communication'), iconType: 'communication' as const },
+        { path: '/im', label: t('sidebar.im') || 'IM 渠道', iconType: 'im' as const },
       ]
     }
   ]
