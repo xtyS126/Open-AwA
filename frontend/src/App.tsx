@@ -43,6 +43,7 @@ const RoleMarketPage = React.lazy(() => import('@/features/marketplace/RoleMarke
 const TtsPage = React.lazy(() => import('@/features/tts/TtsPage'))
 const DataDashboard = React.lazy(() => import('@/features/data/DataDashboard'))
 const ImChannelsPage = React.lazy(() => import('@/features/im/ImChannelsPage'))
+const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -120,6 +121,7 @@ function AppRoutes() {
               <Route path="/data" element={<ErrorBoundary name="Data"><DataDashboard /></ErrorBoundary>} />
               <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
               <Route path="/im" element={<ErrorBoundary name="ImChannels"><ImChannelsPage /></ErrorBoundary>} />
+            <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
             </Routes>
           </div>
         </Suspense>

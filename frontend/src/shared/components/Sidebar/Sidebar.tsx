@@ -78,6 +78,7 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/data', label: t('sidebar.data') || '数据看板', iconType: 'data' as const },
         { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
+        { path: '/workflows', label: t('sidebar.workflows') || '工作流', iconType: 'scheduledTasks' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
         { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
         { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },
