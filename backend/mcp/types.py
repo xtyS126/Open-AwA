@@ -33,6 +33,16 @@ class MCPResource(BaseModel):
     mime_type: Optional[str] = Field(None, alias="mimeType", description="资源 MIME 类型")
 
 
+class MCPResourceContent(BaseModel):
+    """MCP 资源内容，包含读取资源后返回的实际数据"""
+    model_config = ConfigDict(populate_by_name=True)
+
+    uri: str = Field(..., description="资源唯一标识符")
+    mime_type: Optional[str] = Field(None, alias="mimeType", description="资源 MIME 类型")
+    text: Optional[str] = Field(None, description="文本内容（文本资源）")
+    blob: Optional[str] = Field(None, description="Base64 编码的二进制内容（二进制资源）")
+
+
 class MCPServerConfig(BaseModel):
     """MCP Server 连接配置"""
     name: str = Field(..., description="服务器显示名称")

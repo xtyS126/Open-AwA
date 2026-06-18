@@ -213,3 +213,68 @@ async def hot_reload_config(current_user: User = Depends(get_current_user)):
         "reloaded": False,
         "message": "配置未发生变更",
     }
+
+
+# ==================== MCP 资源管理 ====================
+
+@router.get("/resources")
+async def list_all_resources(current_user: User = Depends(get_current_user)):
+    """获取所有已连接 MCP Server 的资源列表（聚合）"""
+    manager = _get_manager()
+    try:
+        resources = await manager.get_all_resources()
+        return {"success": True, "resources": resources, "count": len(resources)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取资源列表失败: {str(e)}")
+
+
+@router.get("/servers/{server_id}/resources")
+async def list_server_resources(
+    server_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """获取指定 MCP Server 的资源列表"""
+    manager = _get_manager()
+    try:
+        resources = await manager.get_server_resources(server_id)
+        return {
+            "success": True,
+            "server_id": server_id,
+            "resources": [
+                {
+                    "uri": r.uri,
+                    "name": r.name,
+                    "description": r.description,
+                    "mime_type": r.mime_type,
+                }
+                for r in resources
+            ],
+            "count": len(resources),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取资源列表失败: {str(e)}")
+
+
+@router.post("/servers/{server_id}/resources/read")
+async def read_server_resource(
+    server_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """读取指定 MCP Server 的资源内容"""
+    uri = body.get("uri")
+    if not uri:
+        raise HTTPException(status_code=400, detail="缺少 uri 参数")
+    manager = _get_manager()
+    try:
+        content = await manager.read_server_resource(server_id, uri)
+        return {
+            "success": True,
+            "server_id": server_id,
+            "uri": content.uri,
+            "mime_type": content.mime_type,
+            "text": content.text,
+            "blob": content.blob,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取资源失败: {str(e)}")

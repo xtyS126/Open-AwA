@@ -9,7 +9,7 @@ from loguru import logger
 
 from mcp.protocol import MCPProtocol
 from mcp.transport import MCPTransport, MCPTransportError, SSETransport, StdioTransport  # noqa: F401
-from mcp.types import MCPResource, MCPServerConfig, MCPTool, MCPToolCallResponse, TransportType
+from mcp.types import MCPResource, MCPResourceContent, MCPServerConfig, MCPTool, MCPToolCallResponse, TransportType
 
 
 class MCPClientError(Exception):
@@ -190,6 +190,26 @@ class MCPClient:
         result = response.get("result", {})
         resources_data = result.get("resources", [])
         return [MCPResource(**res) for res in resources_data]
+
+    async def read_resource(self, uri: str) -> MCPResourceContent:
+        """
+        读取指定 URI 的资源内容。
+        :param uri: 资源 URI（如 file:///path/to/file）
+        :return: 资源内容对象
+        """
+        response = await self._send_request(self._protocol.read_resource(uri))
+        result = response.get("result", {})
+        contents_data = result.get("contents", [])
+        if not contents_data:
+            return MCPResourceContent(uri=uri, mime_type=None, text="", blob=None)
+        # 取第一个内容块（多数 MCP Server 单次返回单个资源）
+        first = contents_data[0]
+        return MCPResourceContent(
+            uri=first.get("uri", uri),
+            mime_type=first.get("mimeType"),
+            text=first.get("text"),
+            blob=first.get("blob"),
+        )
 
     async def _send_request(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """

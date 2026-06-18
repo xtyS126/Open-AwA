@@ -12,7 +12,7 @@ from loguru import logger
 
 from mcp.client import MCPClient, MCPClientError
 from mcp.config_store import MCPConfigStore
-from mcp.types import MCPServerConfig, MCPTool, MCPToolCallResponse
+from mcp.types import MCPServerConfig, MCPTool, MCPToolCallResponse, MCPResource, MCPResourceContent
 
 
 class MCPManager:
@@ -157,6 +157,52 @@ class MCPManager:
         if not client.is_connected:
             raise MCPClientError(f"MCP Server 未连接: {server_id}")
         return await client.list_tools()
+
+    async def get_server_resources(self, server_id: str) -> List[MCPResource]:
+        """
+        获取指定 Server 的资源列表。
+        :param server_id: 服务器 ID
+        :return: 资源列表
+        """
+        client = self._get_client(server_id)
+        if not client.is_connected:
+            raise MCPClientError(f"MCP Server 未连接: {server_id}")
+        return await client.list_resources()
+
+    async def read_server_resource(self, server_id: str, uri: str) -> MCPResourceContent:
+        """
+        读取指定 Server 的资源内容。
+        :param server_id: 服务器 ID
+        :param uri: 资源 URI
+        :return: 资源内容对象
+        """
+        client = self._get_client(server_id)
+        if not client.is_connected:
+            raise MCPClientError(f"MCP Server 未连接: {server_id}")
+        return await client.read_resource(uri)
+
+    async def get_all_resources(self) -> List[Dict[str, Any]]:
+        """
+        获取所有已连接 Server 的资源列表（聚合）。
+        :return: 资源列表，每项包含 server_id 和资源定义
+        """
+        all_resources: List[Dict[str, Any]] = []
+        for server_id, client in self._clients.items():
+            if not client.is_connected:
+                continue
+            try:
+                resources = await client.list_resources()
+                for res in resources:
+                    all_resources.append({
+                        "server_id": server_id,
+                        "uri": res.uri,
+                        "name": res.name,
+                        "description": res.description,
+                        "mime_type": res.mime_type,
+                    })
+            except Exception as e:
+                logger.warning(f"获取 Server {server_id} 资源列表失败: {e}")
+        return all_resources
 
     def get_server_status(self, server_id: str) -> Dict[str, Any]:
         """

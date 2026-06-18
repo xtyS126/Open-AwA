@@ -231,7 +231,23 @@ class SSETransport(MCPTransport):
     """
     SSE 传输层实现。
     通过 HTTP SSE 连接远程 MCP Server，使用 httpx 异步客户端。
+    支持 origin 白名单校验，防止跨域攻击。
     """
+
+    # 允许的 origin 白名单（空列表表示不校验）
+    _allowed_origins: set = set()
+
+    @classmethod
+    def set_allowed_origins(cls, origins: list) -> None:
+        """设置全局 origin 白名单。"""
+        cls._allowed_origins = {o.rstrip("/").lower() for o in origins if o}
+
+    @classmethod
+    def is_origin_allowed(cls, origin: str) -> bool:
+        """检查 origin 是否在白名单中。白名单为空时允许所有 origin。"""
+        if not cls._allowed_origins:
+            return True
+        return origin.rstrip("/").lower() in cls._allowed_origins
 
     def __init__(self, url: str, headers: Optional[Dict[str, str]] = None):
         """
@@ -250,11 +266,20 @@ class SSETransport(MCPTransport):
         return self._connected and self._client is not None
 
     async def connect(self) -> None:
-        """建立 HTTP SSE 连接"""
+        """建立 HTTP SSE 连接，含 origin 校验"""
         if self._connected:
             return
         try:
             import httpx
+            # origin 校验：从 URL 提取 origin 并检查白名单
+            from urllib.parse import urlparse
+            parsed = urlparse(self._url)
+            origin = f"{parsed.scheme}://{parsed.netloc}".lower()
+            if not self.is_origin_allowed(origin):
+                raise MCPTransportError(
+                    f"SSE 连接 origin 被拒绝: {origin} 不在白名单中"
+                )
+
             self._client = httpx.AsyncClient(timeout=httpx.Timeout(DEFAULT_TIMEOUT))
             # 通过 GET 请求建立 SSE 连接，获取消息端点
             self._message_endpoint = f"{self._url}/message"
@@ -264,6 +289,8 @@ class SSETransport(MCPTransport):
             )
         except ImportError:
             raise MCPTransportError("SSE 传输需要 httpx 库，请执行: pip install httpx")
+        except MCPTransportError:
+            raise
         except Exception as e:
             raise MCPTransportError(f"建立 SSE 连接失败: {e}") from e
 
