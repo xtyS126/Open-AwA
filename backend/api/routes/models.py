@@ -1,12 +1,14 @@
 """
-模型管理路由，提供 Ollama 本地模型发现和提供商连接状态查询接口。
+模型管理路由，提供 Ollama 本地模型发现、提供商连接状态、故障转移与延迟监控接口。
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
+from typing import Optional
 
 from api.dependencies import get_current_user, get_db
 from core.litellm_adapter import litellm_check_provider_connection, litellm_list_models
+from core.failover import get_failover_manager
 from config.settings import settings
 from billing.pricing_manager import PricingManager
 from billing.models import ModelConfiguration
@@ -123,3 +125,120 @@ async def get_model_capabilities(
             }
 
     raise HTTPException(status_code=404, detail=f"模型 {provider}/{model} 的能力信息未找到")
+
+
+# ── 故障转移与延迟监控 API ──────────────────────────────────────────
+
+
+@router.get("/failover/circuit-breakers")
+async def get_circuit_breakers_status(
+    current_user=Depends(get_current_user),
+):
+    """
+    获取所有模型提供商的熔断器状态。
+    返回每个提供商的熔断器状态（closed/open/half_open）、失败计数、恢复超时等。
+    """
+    manager = get_failover_manager()
+    status = manager.get_circuit_breaker_status()
+    return {
+        "success": True,
+        "circuit_breakers": status,
+        "total": len(status),
+    }
+
+
+@router.get("/failover/chains")
+async def get_failover_chains(
+    current_user=Depends(get_current_user),
+):
+    """
+    获取所有已注册的故障转移链。
+    """
+    manager = get_failover_manager()
+    chains = manager.list_chains()
+    return {
+        "success": True,
+        "chains": {
+            key: [
+                {
+                    "provider": c.provider,
+                    "model": c.model,
+                    "priority": c.priority,
+                    "weight": c.weight,
+                    "tags": c.tags,
+                }
+                for c in candidates
+            ]
+            for key, candidates in chains.items()
+        },
+        "total": len(chains),
+    }
+
+
+@router.get("/failover/events")
+async def get_failover_events(
+    limit: int = Query(50, ge=1, le=500, description="返回事件数量"),
+    chain_key: Optional[str] = Query(None, description="按链标识过滤"),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取最近的故障转移事件列表。
+    """
+    manager = get_failover_manager()
+    events = manager.get_events(limit=limit, chain_key=chain_key)
+    return {
+        "success": True,
+        "events": [
+            {
+                "timestamp": e.timestamp.isoformat(),
+                "primary_provider": e.primary_provider,
+                "primary_model": e.primary_model,
+                "fallback_provider": e.fallback_provider,
+                "fallback_model": e.fallback_model,
+                "reason": e.reason,
+                "request_id": e.request_id,
+            }
+            for e in events
+        ],
+        "total": len(events),
+    }
+
+
+@router.get("/latency/stats")
+async def get_latency_stats(
+    provider: Optional[str] = Query(None, description="按提供商过滤"),
+    model: Optional[str] = Query(None, description="按模型过滤"),
+    limit: int = Query(100, ge=10, le=1000, description="统计样本数"),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取模型调用的延迟统计。
+    返回 count、avg_ms、p50_ms、p95_ms、p99_ms、ttft_avg_ms、success_rate。
+    """
+    manager = get_failover_manager()
+    stats = manager.get_latency_stats(provider=provider, model=model, limit=limit)
+    return {
+        "success": True,
+        "filter": {"provider": provider, "model": model, "limit": limit},
+        "stats": stats,
+    }
+
+
+@router.get("/latency/providers")
+async def get_providers_latency_summary(
+    current_user=Depends(get_current_user),
+):
+    """
+    获取所有提供商的延迟汇总，用于延迟 benchmark 面板。
+    """
+    manager = get_failover_manager()
+    # 获取所有出现过的 provider
+    providers_set = manager.list_latency_providers()
+    summary: dict = {}
+    for provider in providers_set:
+        summary[provider] = manager.get_latency_stats(provider=provider)
+    return {
+        "success": True,
+        "providers": summary,
+        "total": len(summary),
+    }
