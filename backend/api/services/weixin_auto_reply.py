@@ -5,6 +5,7 @@
 串成一个可重复调用、可持久化恢复的后端闭环。
 
 v2: 集成跨渠道上下文，使微信回复能引用 web UI 中的对话历史。
+v3: 支持多媒体消息识别（图片/语音/文件），并通过事件总线向 WebSocket 推送实时通知。
 """
 
 from __future__ import annotations
@@ -33,6 +34,85 @@ AutoReplyGenerator = Callable[[Session, WeixinBinding, Dict[str, Any]], Awaitabl
 
 DEFAULT_AUTO_REPLY_FALLBACK_TEXT = "我暂时无法生成合适的回复，请稍后再试。"
 DEFAULT_AUTO_REPLY_POLL_INTERVAL_SECONDS = 3
+
+# 多媒体消息类型常量
+MULTIMEDIA_TYPE_IMAGE = "image"
+MULTIMEDIA_TYPE_VOICE = "voice"
+MULTIMEDIA_TYPE_FILE = "file"
+MULTIMEDIA_TYPE_VIDEO = "video"
+
+# 微信上游 item.type 与多媒体类型的映射
+_ITEM_TYPE_TO_MULTIMEDIA = {
+    2: MULTIMEDIA_TYPE_IMAGE,
+    3: MULTIMEDIA_TYPE_VOICE,
+    4: MULTIMEDIA_TYPE_VIDEO,
+    5: MULTIMEDIA_TYPE_FILE,
+}
+
+
+class WeixinEventBus:
+    """
+    进程内微信消息事件总线。
+
+    用于在自动回复轮询循环与 WebSocket 实时推送端点之间传递新消息事件。
+    每个用户拥有独立的 asyncio.Queue，避免相互干扰。
+    """
+
+    def __init__(self) -> None:
+        self._queues: Dict[str, asyncio.Queue[Dict[str, Any]]] = {}
+        self._lock = asyncio.Lock()
+
+    async def subscribe(self, user_id: str, maxsize: int = 100) -> asyncio.Queue[Dict[str, Any]]:
+        """为指定用户订阅事件，返回专属队列。"""
+        user_key = _safe_text(user_id)
+        async with self._lock:
+            queue = self._queues.get(user_key)
+            if queue is None:
+                queue = asyncio.Queue(maxsize=max(maxsize, 1))
+                self._queues[user_key] = queue
+            return queue
+
+    async def unsubscribe(self, user_id: str) -> None:
+        """取消订阅并清理队列。"""
+        user_key = _safe_text(user_id)
+        async with self._lock:
+            self._queues.pop(user_key, None)
+
+    async def publish(self, user_id: str, event: Dict[str, Any]) -> None:
+        """向指定用户发布事件，队列满时丢弃最旧事件以避免阻塞轮询。"""
+        user_key = _safe_text(user_id)
+        async with self._lock:
+            queue = self._queues.get(user_key)
+        if queue is None:
+            return
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.bind(
+                    module="weixin.event_bus",
+                    user_id=user_key,
+                ).warning("事件队列已满，丢弃新事件")
+
+
+# 全局事件总线单例
+_EVENT_BUS: Optional[WeixinEventBus] = None
+
+
+def get_event_bus() -> WeixinEventBus:
+    """获取全局微信事件总线单例。"""
+    global _EVENT_BUS
+    if _EVENT_BUS is None:
+        _EVENT_BUS = WeixinEventBus()
+    return _EVENT_BUS
+
+
 DEFAULT_MAX_PROCESSED_MESSAGES = 500
 DEFAULT_MAX_REPLY_LENGTH = 1000
 DEFAULT_MAX_MESSAGE_PROCESS_RETRIES = 3
@@ -149,6 +229,143 @@ def extract_weixin_text(message: Dict[str, Any]) -> str:
         return "\n".join(part for part in text_parts if part).strip()
 
     return ""
+
+
+def extract_weixin_multimedia(message: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从微信消息结构中提取多媒体信息。
+
+    返回字典包含以下字段（缺失则为空）：
+    - media_type: image/voice/file/video，无多媒体时为空字符串
+    - media_id: 上游媒体资源 ID
+    - file_url: 媒体文件 URL（图片/视频）
+    - file_name: 文件名（文件消息）
+    - file_size: 文件大小（字节）
+    - duration_ms: 语音/视频时长（毫秒）
+    - format: 媒体格式（如 amr/mp4/jpg）
+
+    当消息不是多媒体消息时，返回 media_type 为空字符串的字典。
+    """
+    if not isinstance(message, dict):
+        return {"media_type": ""}
+
+    nested_msg = message.get("msg") if isinstance(message.get("msg"), dict) else message
+    item_list = message.get("item_list")
+    if not isinstance(item_list, list) and isinstance(nested_msg, dict):
+        item_list = nested_msg.get("item_list")
+
+    result: Dict[str, Any] = {
+        "media_type": "",
+        "media_id": "",
+        "file_url": "",
+        "file_name": "",
+        "file_size": 0,
+        "duration_ms": 0,
+        "format": "",
+    }
+
+    # 顶层 message_type 字段优先识别
+    top_type = _safe_text(message.get("message_type") or message.get("type"))
+    if top_type in {MULTIMEDIA_TYPE_IMAGE, MULTIMEDIA_TYPE_VOICE, MULTIMEDIA_TYPE_FILE, MULTIMEDIA_TYPE_VIDEO}:
+        result["media_type"] = top_type
+
+    # 遍历 item_list 识别多媒体条目
+    if isinstance(item_list, list):
+        for item in item_list:
+            if not isinstance(item, dict):
+                continue
+            item_type_raw = item.get("type")
+            try:
+                item_type_int = int(item_type_raw) if item_type_raw is not None else None
+            except (TypeError, ValueError):
+                item_type_int = None
+
+            mapped = _ITEM_TYPE_TO_MULTIMEDIA.get(item_type_int) if item_type_int is not None else None
+            if not result["media_type"] and mapped:
+                result["media_type"] = mapped
+
+            # 提取各类多媒体字段
+            image_item = item.get("image_item") if isinstance(item.get("image_item"), dict) else {}
+            voice_item = item.get("voice_item") if isinstance(item.get("voice_item"), dict) else {}
+            file_item = item.get("file_item") if isinstance(item.get("file_item"), dict) else {}
+            video_item = item.get("video_item") if isinstance(item.get("video_item"), dict) else {}
+
+            if image_item:
+                result["media_id"] = result["media_id"] or _safe_text(image_item.get("media_id") or image_item.get("md5"))
+                result["file_url"] = result["file_url"] or _safe_text(image_item.get("url") or image_item.get("file_url"))
+                result["format"] = result["format"] or _safe_text(image_item.get("format"))
+            if voice_item:
+                result["media_id"] = result["media_id"] or _safe_text(voice_item.get("media_id"))
+                result["format"] = result["format"] or _safe_text(voice_item.get("format") or "amr")
+                try:
+                    result["duration_ms"] = int(voice_item.get("duration_ms") or voice_item.get("duration") or 0)
+                except (TypeError, ValueError):
+                    result["duration_ms"] = 0
+            if file_item:
+                result["media_id"] = result["media_id"] or _safe_text(file_item.get("media_id"))
+                result["file_name"] = result["file_name"] or _safe_text(file_item.get("file_name") or file_item.get("name"))
+                try:
+                    result["file_size"] = int(file_item.get("file_size") or file_item.get("size") or 0)
+                except (TypeError, ValueError):
+                    result["file_size"] = 0
+                result["format"] = result["format"] or _safe_text(file_item.get("format"))
+            if video_item:
+                result["media_id"] = result["media_id"] or _safe_text(video_item.get("media_id"))
+                result["file_url"] = result["file_url"] or _safe_text(video_item.get("url") or video_item.get("file_url"))
+                try:
+                    result["duration_ms"] = result["duration_ms"] or int(video_item.get("duration_ms") or 0)
+                except (TypeError, ValueError):
+                    pass
+                result["format"] = result["format"] or _safe_text(video_item.get("format") or "mp4")
+
+    # 顶层字段兜底
+    if not result["media_id"]:
+        result["media_id"] = _safe_text(message.get("media_id") or nested_msg.get("media_id"))
+    if not result["file_url"]:
+        result["file_url"] = _safe_text(message.get("file_url") or nested_msg.get("file_url"))
+    if not result["file_name"]:
+        result["file_name"] = _safe_text(message.get("file_name") or nested_msg.get("file_name"))
+
+    return result
+
+
+def build_multimedia_description(multimedia: Dict[str, Any]) -> str:
+    """
+    根据多媒体信息生成可读的描述文本，用于注入 AI 上下文或日志展示。
+
+    返回空字符串表示多媒体信息不可用。
+    """
+    media_type = _safe_text(multimedia.get("media_type"))
+    if not media_type:
+        return ""
+
+    parts: List[str] = []
+    if media_type == MULTIMEDIA_TYPE_IMAGE:
+        parts.append("[图片消息]")
+    elif media_type == MULTIMEDIA_TYPE_VOICE:
+        parts.append("[语音消息]")
+    elif media_type == MULTIMEDIA_TYPE_FILE:
+        parts.append("[文件消息]")
+    elif media_type == MULTIMEDIA_TYPE_VIDEO:
+        parts.append("[视频消息]")
+
+    file_name = _safe_text(multimedia.get("file_name"))
+    if file_name:
+        parts.append(f"文件名: {file_name}")
+    file_size = int(multimedia.get("file_size") or 0)
+    if file_size > 0:
+        parts.append(f"大小: {file_size} 字节")
+    duration_ms = int(multimedia.get("duration_ms") or 0)
+    if duration_ms > 0:
+        parts.append(f"时长: {duration_ms} 毫秒")
+    media_format = _safe_text(multimedia.get("format"))
+    if media_format:
+        parts.append(f"格式: {media_format}")
+    file_url = _safe_text(multimedia.get("file_url"))
+    if file_url:
+        parts.append(f"URL: {file_url}")
+
+    return " ".join(parts)
 
 
 def build_weixin_message_id(message: Dict[str, Any]) -> str:
@@ -269,19 +486,27 @@ def strip_reasoning_content(payload: Any) -> Any:
 def normalize_inbound_message(message: Dict[str, Any]) -> Dict[str, Any]:
     """
     统一整理微信入站消息，方便后续做过滤、幂等和发送。
+
+    多媒体消息（图片/语音/文件/视频）即使没有可回复文本也会被标记为 replyable，
+    并附带 multimedia 字段供上层处理。
     """
     from_user_id = _safe_text(message.get("from_user_id"))
     context_token = _safe_text(message.get("context_token"))
     text = extract_weixin_text(message)
     message_id = build_weixin_message_id(message)
     message_type = _safe_text(message.get("message_type") or message.get("type"))
-    replyable = bool(from_user_id and context_token and text)
+    multimedia = extract_weixin_multimedia(message)
+    media_type = _safe_text(multimedia.get("media_type"))
+
+    # 多媒体消息即使没有文本也允许回复，AI 可基于描述生成回复
+    has_multimedia = bool(media_type)
+    replyable = bool(from_user_id and context_token and (text or has_multimedia))
     skip_reason = ""
     if not from_user_id:
         skip_reason = "missing_from_user_id"
     elif not context_token:
         skip_reason = "missing_context_token"
-    elif not text:
+    elif not text and not has_multimedia:
         skip_reason = "missing_text"
 
     return {
@@ -289,7 +514,9 @@ def normalize_inbound_message(message: Dict[str, Any]) -> Dict[str, Any]:
         "from_user_id": from_user_id,
         "context_token": context_token,
         "text": text,
-        "message_type": message_type,
+        "message_type": message_type or media_type,
+        "multimedia": multimedia,
+        "multimedia_description": build_multimedia_description(multimedia) if has_multimedia else "",
         "replyable": replyable,
         "skip_reason": skip_reason,
         "raw_message": dict(message),
@@ -559,6 +786,20 @@ class WeixinAutoReplyService:
                             error=existing.get("error", "max retries exceeded"),
                         )
                         continue
+
+                # 发布新消息事件到事件总线，供 WebSocket 实时推送
+                await get_event_bus().publish(
+                    user_id,
+                    {
+                        "event": "new_message",
+                        "message_id": inbound["message_id"],
+                        "from_user_id": inbound["from_user_id"],
+                        "text": _truncate_text(inbound["text"], 200),
+                        "message_type": inbound["message_type"],
+                        "multimedia": inbound.get("multimedia") if inbound.get("multimedia", {}).get("media_type") else None,
+                        "timestamp": now_iso,
+                    },
+                )
 
                 if not inbound["replyable"]:
                     skipped_count += 1

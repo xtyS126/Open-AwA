@@ -3,13 +3,15 @@
 与 skills.py 中的扫码登录路由配合使用，提供完整的微信集成管理能力。
 
 v2: 新增微信对话历史查询端点，实现跨渠道上下文可视化。
+v3: 新增 WebSocket 实时消息推送端点与多媒体消息查询接口。
 """
 
+import asyncio
 import json
 from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
@@ -18,12 +20,13 @@ from api.dependencies import get_current_user
 from api.services.weixin_auto_reply import (
     WeixinAutoReplyService,
     get_auto_reply_manager,
+    get_event_bus,
     _AUTO_REPLY_MANAGER,
     DEFAULT_CROSS_CHANNEL_CONTEXT_TURNS,
 )
-from config.security import decrypt_secret_value, encrypt_secret_value
+from config.security import decode_access_token, decrypt_secret_value, encrypt_secret_value
 from config.settings import settings
-from db.models import ShortTermMemory, Skill, WeixinBinding, WeixinAutoReplyRule, get_db
+from db.models import SessionLocal, ShortTermMemory, Skill, User, WeixinBinding, WeixinAutoReplyRule, get_db
 from core.weixin_utils import (
     normalize_binding_status as _normalize_binding_status,
     deserialize_skill_config as _deserialize_skill_config,
@@ -695,3 +698,232 @@ async def get_cross_channel_context(
         "weixin_sessions_count": len(weixin_sessions),
         "weixin_sessions": list(weixin_sessions.values())[:limit],
     }
+
+
+# ──────────────────────────────────────────────
+#  多媒体消息查询
+# ──────────────────────────────────────────────
+
+class WeixinMultimediaMessageResponse(BaseModel):
+    """微信多媒体消息响应模型"""
+    message_id: str = ""
+    from_user_id: str = ""
+    message_type: str = ""
+    text: str = ""
+    media_type: str = ""
+    media_id: str = ""
+    file_url: str = ""
+    file_name: str = ""
+    file_size: int = 0
+    duration_ms: int = 0
+    media_format: str = ""
+    timestamp: str = ""
+
+
+@router.get("/multimedia/recent", response_model=List[WeixinMultimediaMessageResponse])
+async def list_recent_multimedia(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(default=20, ge=1, le=100),
+    media_type: Optional[str] = Query(default=None, pattern=r"^(image|voice|file|video)$"),
+):
+    """
+    列出当前用户最近的微信多媒体消息。
+
+    通过扫描 ShortTermMemory 中 weixin:auto: 前缀的元数据，
+    返回包含多媒体描述的最近消息。可选 media_type 过滤特定类型。
+    """
+    user_id = str(current_user.id)
+    try:
+        memories = (
+            db.query(ShortTermMemory)
+            .filter(
+                ShortTermMemory.session_id.like("weixin:auto:%"),
+                ShortTermMemory.workspace_id == "default",
+            )
+            .order_by(ShortTermMemory.timestamp.desc())
+            .limit(limit * 10)
+            .all()
+        )
+    except Exception as exc:
+        logger.error(f"[weixin] 查询多媒体消息失败: {exc}")
+        raise HTTPException(status_code=500, detail="查询多媒体消息失败")
+
+    results: List[WeixinMultimediaMessageResponse] = []
+    for mem in memories:
+        content_str = str(mem.content or "")
+        # 多媒体消息内容以 [图片消息]/[语音消息]/[文件消息]/[视频消息] 标记开头
+        media_marker_map = {
+            "image": "[图片消息]",
+            "voice": "[语音消息]",
+            "file": "[文件消息]",
+            "video": "[视频消息]",
+        }
+        detected_type = ""
+        for mtype, marker in media_marker_map.items():
+            if marker in content_str:
+                detected_type = mtype
+                break
+        if not detected_type:
+            continue
+        if media_type and detected_type != media_type:
+            continue
+
+        # 解析 session_id 提取 from_user_id
+        sid = mem.session_id or ""
+        parts = sid.replace("weixin:auto:", "").split(":", 1)
+        from_user_id = parts[1] if len(parts) > 1 else ""
+
+        results.append(
+            WeixinMultimediaMessageResponse(
+                message_id=f"{sid}:{mem.id}",
+                from_user_id=from_user_id,
+                message_type=detected_type,
+                text=content_str[:500],
+                media_type=detected_type,
+                timestamp=mem.timestamp.isoformat() if mem.timestamp else "",
+            )
+        )
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+@router.get("/multimedia/{message_id}")
+async def get_multimedia_detail(
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取指定多媒体消息的详细信息。
+
+    message_id 格式: {session_id}:{memory_id}
+    """
+    if ":" not in message_id:
+        raise HTTPException(status_code=400, detail="无效的消息 ID 格式")
+
+    parts = message_id.rsplit(":", 1)
+    session_id, memory_id_str = parts[0], parts[1]
+    try:
+        memory_id = int(memory_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的消息 ID 格式")
+
+    try:
+        memory = db.query(ShortTermMemory).filter(
+            ShortTermMemory.id == memory_id,
+            ShortTermMemory.session_id == session_id,
+        ).first()
+    except Exception as exc:
+        logger.error(f"[weixin] 查询多媒体详情失败: {exc}")
+        raise HTTPException(status_code=500, detail="查询多媒体详情失败")
+
+    if not memory:
+        raise HTTPException(status_code=404, detail="未找到指定的多媒体消息")
+
+    return {
+        "message_id": message_id,
+        "session_id": session_id,
+        "content": str(memory.content or ""),
+        "role": memory.role or "",
+        "timestamp": memory.timestamp.isoformat() if memory.timestamp else "",
+        "reasoning_content": str(memory.reasoning_content or "") if memory.reasoning_content else "",
+        "tool_events": memory.tool_events if memory.tool_events else [],
+    }
+
+
+# ──────────────────────────────────────────────
+#  WebSocket 实时消息推送
+# ──────────────────────────────────────────────
+
+async def _ws_authenticate(token: str) -> Optional[str]:
+    """WebSocket 鉴权：解析 token 并返回 user_id，失败返回 None。"""
+    if not token:
+        return None
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+    username = payload.get("sub")
+    if not isinstance(username, str):
+        return None
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if user is None or user.role == "disabled":
+            return None
+        return str(user.id)
+    except Exception:
+        return None
+    finally:
+        db.close()
+
+
+@router.websocket("/ws")
+async def weixin_ws_endpoint(
+    websocket: WebSocket,
+    token: str = Query(default=""),
+):
+    """
+    微信实时消息推送 WebSocket 端点。
+
+    鉴权方式：通过 query 参数 `token` 传递 JWT。
+    鉴权通过后订阅事件总线，将新消息事件实时推送给前端。
+
+    推送事件格式：
+    {
+        "event": "new_message",
+        "message_id": "...",
+        "from_user_id": "...",
+        "text": "...",
+        "message_type": "...",
+        "multimedia": {...} | null,
+        "timestamp": "..."
+    }
+    """
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    user_id = await _ws_authenticate(token)
+    if user_id is None:
+        await websocket.close(code=4002, reason="Invalid or expired token")
+        return
+
+    await websocket.accept()
+    event_bus = get_event_bus()
+    queue = await event_bus.subscribe(user_id)
+
+    logger.bind(
+        event="weixin_ws_connected",
+        module="weixin.ws",
+        user_id=user_id,
+    ).info("微信 WebSocket 连接已建立")
+
+    try:
+        await websocket.send_json({"event": "connected", "user_id": user_id})
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                await websocket.send_json(event)
+            except asyncio.TimeoutError:
+                # 发送心跳保活
+                await websocket.send_json({"event": "ping", "timestamp": datetime.now(timezone.utc).isoformat()})
+    except WebSocketDisconnect:
+        logger.bind(
+            event="weixin_ws_disconnected",
+            module="weixin.ws",
+            user_id=user_id,
+        ).info("微信 WebSocket 连接已断开")
+    except Exception as exc:
+        logger.bind(
+            event="weixin_ws_error",
+            module="weixin.ws",
+            user_id=user_id,
+            error_type=type(exc).__name__,
+        ).warning(f"微信 WebSocket 异常: {exc}")
+    finally:
+        await event_bus.unsubscribe(user_id)

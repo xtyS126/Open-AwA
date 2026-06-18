@@ -1117,7 +1117,43 @@ export const weixinAPI = {
     api.put<WeixinAutoReplyRule>(`/weixin/auto-reply/rules/${ruleId}`, payload),
   deleteRule: (ruleId: number) =>
     api.delete<{ message: string }>(`/weixin/auto-reply/rules/${ruleId}`),
+  // 多媒体消息查询
+  listRecentMultimedia: (params?: { limit?: number; media_type?: 'image' | 'voice' | 'file' | 'video' }) =>
+    api.get<WeixinMultimediaMessage[]>('/weixin/multimedia/recent', { params }),
+  getMultimediaDetail: (messageId: string) =>
+    api.get<WeixinMultimediaDetail>(`/weixin/multimedia/${messageId}`),
 }
+
+export interface WeixinMultimediaMessage {
+  message_id: string
+  from_user_id: string
+  message_type: string
+  text: string
+  media_type: 'image' | 'voice' | 'file' | 'video' | ''
+  media_id: string
+  file_url: string
+  file_name: string
+  file_size: number
+  duration_ms: number
+  media_format: string
+  timestamp: string
+}
+
+export interface WeixinMultimediaDetail {
+  message_id: string
+  session_id: string
+  content: string
+  role: string
+  timestamp: string
+  reasoning_content: string
+  tool_events: Array<Record<string, unknown>>
+}
+
+// 微信 WebSocket 实时消息事件类型
+export type WeixinWsEvent =
+  | { event: 'connected'; user_id: string }
+  | { event: 'new_message'; message_id: string; from_user_id: string; text: string; message_type: string; multimedia: WeixinMultimediaMessage | null; timestamp: string }
+  | { event: 'ping'; timestamp: string }
 
 export interface DiaryGenerateResponse {
   success: boolean
