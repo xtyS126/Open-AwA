@@ -1,10 +1,11 @@
 """
-工作流执行引擎，负责顺序执行、条件分支、异常处理以及与技能/插件/工具的集成。
+工作流执行引擎，负责顺序执行、条件分支、并行执行、子工作流组合、异常处理以及与技能/插件/工具的集成。
 """
 
 from __future__ import annotations
 
 import ast
+import asyncio
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -91,15 +92,19 @@ class WorkflowEngine:
         user_id: Optional[str] = None,
         input_context: Optional[Dict[str, Any]] = None,
         format_hint: Optional[str] = None,
+        depth: int = 0,
     ) -> Dict[str, Any]:
         """
         执行工作流定义，并在可用时落库执行记录。
+        depth 参数用于子工作流递归深度追踪。
         """
         parsed = self.parser.parse_definition(definition, format_hint=format_hint)
         runtime = {
             "context": dict(input_context or {}),
             "steps": {},
             "last_result": {},
+            "_sub_workflow_depth": depth,
+            "_user_id": user_id,
         }
 
         execution_record = self._create_execution_record(
@@ -123,6 +128,7 @@ class WorkflowEngine:
                 "status": "completed",
                 "workflow_name": output["workflow_name"],
                 "steps": step_results,
+                "final_context": runtime["context"],
                 "last_result": runtime["last_result"],
                 "execution_id": execution_record.id if execution_record else None,
             }
@@ -210,6 +216,10 @@ class WorkflowEngine:
             return await self._execute_skill_step(step, runtime)
         if step_type == "plugin":
             return await self._execute_plugin_step(step, runtime)
+        if step_type == "parallel":
+            return await self._execute_parallel_step(step, runtime)
+        if step_type == "sub_workflow":
+            return await self._execute_sub_workflow_step(step, runtime)
         raise ValueError(f"不支持的工作流步骤类型: {step_type}")
 
     async def _execute_condition_step(self, step: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
@@ -293,6 +303,153 @@ class WorkflowEngine:
             "success": result.get("status") == "success",
             "result": result,
             "error": result.get("message") if result.get("status") != "success" else None,
+        }
+
+    async def _execute_parallel_step(self, step: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        并行执行多个分支，每个分支是一组串行步骤。
+        所有分支同时启动，等待全部完成后聚合结果。
+        任一分支失败时（on_error != continue），整个并行步骤标记为失败。
+        """
+        branches = step.get("branches", [])
+        if not branches:
+            raise ValueError(f"并行步骤 {step['id']} 缺少 branches")
+
+        async def _run_branch(branch_index: int, branch_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+            """执行单个分支的所有串行步骤。"""
+            # 每个分支使用 runtime 的副本，避免分支间互相污染
+            branch_runtime = {
+                "context": dict(runtime["context"]),
+                "steps": dict(runtime["steps"]),
+                "last_result": dict(runtime["last_result"]),
+            }
+            try:
+                branch_results = await self._execute_steps(branch_steps, branch_runtime)
+                return {
+                    "branch_index": branch_index,
+                    "success": True,
+                    "results": branch_results,
+                    "final_context": branch_runtime["context"],
+                    "last_result": branch_runtime["last_result"],
+                }
+            except Exception as exc:
+                return {
+                    "branch_index": branch_index,
+                    "success": False,
+                    "error": str(exc),
+                    "results": [],
+                }
+
+        # 使用 asyncio.gather 并行执行所有分支
+        branch_tasks = [
+            _run_branch(index, branch)
+            for index, branch in enumerate(branches)
+        ]
+        branch_results = await asyncio.gather(*branch_tasks, return_exceptions=False)
+
+        # 聚合结果：将各分支的 last_result 合并到主 runtime
+        # 如果多个分支产生同名 key，后执行的分支覆盖（按 branch_index 顺序）
+        all_success = True
+        for br in branch_results:
+            if not br.get("success"):
+                all_success = False
+            # 合并分支的 context 到主 runtime
+            if br.get("final_context"):
+                runtime["context"].update(br["final_context"])
+            # 将分支结果存入 steps，以 branch_{index} 为 key
+            runtime["steps"][f"{step['id']}_branch_{br['branch_index']}"] = br.get("results", [])
+
+        # 最后一个分支的 last_result 作为并行步骤的 last_result
+        if branch_results:
+            runtime["last_result"] = branch_results[-1].get("last_result", runtime["last_result"])
+
+        on_error = step.get("on_error", "stop")
+        if not all_success and on_error != "continue":
+            failed_branches = [br["branch_index"] for br in branch_results if not br.get("success")]
+            raise RuntimeError(f"并行步骤 {step['id']} 分支 {failed_branches} 执行失败")
+
+        return {
+            "step_id": step["id"],
+            "type": "parallel",
+            "success": all_success,
+            "result": {
+                "branch_count": len(branches),
+                "branch_results": branch_results,
+            },
+            "error": None if all_success else "部分分支执行失败",
+        }
+
+    async def _execute_sub_workflow_step(self, step: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行子工作流步骤：从数据库加载子工作流定义并递归执行。
+        支持参数传递与结果回传，通过 max_depth 限制递归深度防止无限循环。
+        """
+        # 检查递归深度
+        current_depth = runtime.get("_sub_workflow_depth", 0)
+        max_depth = step.get("max_depth", 5)
+        if current_depth >= max_depth:
+            raise RuntimeError(
+                f"子工作流步骤 {step['id']} 超过最大递归深度 {max_depth}，"
+                f"当前深度 {current_depth}，可能存在循环引用"
+            )
+
+        workflow_id = step.get("workflow_id")
+        workflow_name = step.get("workflow_name")
+
+        if self.db_session is None:
+            raise RuntimeError("子工作流执行需要数据库会话，当前引擎未配置 db_session")
+
+        # 从数据库加载子工作流定义
+        from db.models import Workflow
+        query = self.db_session.query(Workflow)
+        if workflow_id is not None:
+            sub_workflow = query.filter(Workflow.id == workflow_id).first()
+        else:
+            sub_workflow = query.filter(Workflow.name == workflow_name).first()
+
+        if sub_workflow is None:
+            raise RuntimeError(
+                f"子工作流步骤 {step['id']} 引用的工作流不存在: "
+                f"workflow_id={workflow_id}, workflow_name={workflow_name}"
+            )
+
+        # 渲染输入参数
+        raw_inputs = step.get("inputs", {})
+        sub_inputs = self._render_data(raw_inputs, runtime)
+        if not isinstance(sub_inputs, dict):
+            sub_inputs = {}
+
+        # 合并父工作流的 context 和子工作流的 inputs
+        sub_context = {**runtime["context"], **sub_inputs}
+
+        # 递归执行子工作流，增加递归深度计数
+        sub_result = await self.execute_definition(
+            sub_workflow.definition,
+            workflow_id=sub_workflow.id,
+            workflow_name=sub_workflow.name,
+            user_id=runtime.get("_user_id"),
+            input_context=sub_context,
+            depth=current_depth + 1,
+        )
+
+        # 将子工作流的 final_context 合并回主 runtime
+        if sub_result.get("status") == "completed":
+            # 子工作流的 last_result 作为步骤结果
+            runtime["last_result"] = sub_result.get("last_result", {})
+            # 子工作流的 context 中新增的 key 合并回主 runtime
+            # 注意：只合并非冲突的 key，避免子工作流覆盖父工作流的关键状态
+            sub_final_context = sub_result.get("final_context", {})
+            if isinstance(sub_final_context, dict):
+                for key, value in sub_final_context.items():
+                    if key not in runtime["context"]:
+                        runtime["context"][key] = value
+
+        return {
+            "step_id": step["id"],
+            "type": "sub_workflow",
+            "success": sub_result.get("status") == "completed",
+            "result": sub_result,
+            "error": sub_result.get("error") if sub_result.get("status") != "completed" else None,
         }
 
     def _render_data(self, value: Any, runtime: Dict[str, Any]) -> Any:

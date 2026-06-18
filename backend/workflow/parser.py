@@ -77,4 +77,32 @@ class WorkflowParser:
                 for child_index, child in enumerate(step.get("on_false", []))
             ]
 
+        if step_type == "parallel":
+            # parallel 步骤包含 branches 字段，每个 branch 是一组串行步骤，所有 branches 并行执行
+            raw_branches = step.get("branches", [])
+            if not isinstance(raw_branches, list) or not raw_branches:
+                raise ValueError(f"并行步骤 {step_id} 缺少 branches 或 branches 为空")
+            normalized_branches = []
+            for branch_index, branch in enumerate(raw_branches):
+                if not isinstance(branch, list):
+                    # 单个步骤也允许，自动包装为单元素列表
+                    branch = [branch]
+                normalized_branch = [
+                    self._normalize_step(child, index=child_index)
+                    for child_index, child in enumerate(branch)
+                ]
+                normalized_branches.append(normalized_branch)
+            normalized["branches"] = normalized_branches
+
+        if step_type == "sub_workflow":
+            # sub_workflow 步骤引用其他工作流，通过 workflow_id 或 workflow_name 指定
+            workflow_id = step.get("workflow_id")
+            workflow_name = step.get("workflow_name")
+            if workflow_id is None and not workflow_name:
+                raise ValueError(f"子工作流步骤 {step_id} 必须指定 workflow_id 或 workflow_name")
+            normalized["workflow_id"] = workflow_id
+            normalized["workflow_name"] = str(workflow_name) if workflow_name else None
+            normalized["inputs"] = step.get("inputs", {}) if isinstance(step.get("inputs"), dict) else {}
+            normalized["max_depth"] = int(step.get("max_depth", 5))
+
         return normalized

@@ -1,8 +1,10 @@
 """
-工作流引擎单元测试，验证定义解析、步骤执行、条件分支、失败处理和边界情况。
+工作流引擎单元测试，验证定义解析、步骤执行、条件分支、并行执行、子工作流组合和边界情况。
 """
 
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 
@@ -725,3 +727,518 @@ def test_resolve_placeholder_list_index():
     }
     result = engine._render_data("{{ context.items.0 }}", runtime)
     assert result == "a"  # list 通过 .isdigit() 检测后使用 int 索引
+
+
+# ==================== 并行步骤（parallel）解析测试 ====================
+
+def test_parse_parallel_step_with_branches():
+    """parallel 步骤应正确解析 branches 字段，每个 branch 是一组串行步骤。"""
+    parser = WorkflowParser()
+    result = parser.parse_definition({
+        "steps": [{
+            "id": "par1",
+            "type": "parallel",
+            "branches": [
+                [{"id": "a1", "type": "tool", "tool": "x", "action": "y"}],
+                [{"id": "b1", "type": "tool", "tool": "x", "action": "y"}],
+            ],
+        }],
+    })
+    step = result["steps"][0]
+    assert step["type"] == "parallel"
+    assert len(step["branches"]) == 2
+    assert step["branches"][0][0]["id"] == "a1"
+    assert step["branches"][1][0]["id"] == "b1"
+
+
+def test_parse_parallel_step_single_step_branch():
+    """parallel 步骤的 branch 支持单个步骤（非列表），自动包装为单元素列表。"""
+    parser = WorkflowParser()
+    result = parser.parse_definition({
+        "steps": [{
+            "id": "par1",
+            "type": "parallel",
+            "branches": [
+                {"id": "a1", "type": "tool", "tool": "x", "action": "y"},
+                {"id": "b1", "type": "tool", "tool": "x", "action": "y"},
+            ],
+        }],
+    })
+    step = result["steps"][0]
+    assert len(step["branches"]) == 2
+    # 单个步骤被自动包装为列表
+    assert isinstance(step["branches"][0], list)
+    assert step["branches"][0][0]["id"] == "a1"
+
+
+def test_parse_parallel_step_missing_branches_raises():
+    """parallel 步骤缺少 branches 应抛出 ValueError。"""
+    parser = WorkflowParser()
+    with pytest.raises(ValueError, match="缺少 branches"):
+        parser.parse_definition({
+            "steps": [{"id": "par1", "type": "parallel"}],
+        })
+
+
+def test_parse_parallel_step_empty_branches_raises():
+    """parallel 步骤 branches 为空列表应抛出 ValueError。"""
+    parser = WorkflowParser()
+    with pytest.raises(ValueError, match="branches 为空"):
+        parser.parse_definition({
+            "steps": [{"id": "par1", "type": "parallel", "branches": []}],
+        })
+
+
+# ==================== 子工作流步骤（sub_workflow）解析测试 ====================
+
+def test_parse_sub_workflow_step_with_id():
+    """sub_workflow 步骤通过 workflow_id 引用子工作流。"""
+    parser = WorkflowParser()
+    result = parser.parse_definition({
+        "steps": [{
+            "id": "sub1",
+            "type": "sub_workflow",
+            "workflow_id": 42,
+            "inputs": {"key": "value"},
+        }],
+    })
+    step = result["steps"][0]
+    assert step["type"] == "sub_workflow"
+    assert step["workflow_id"] == 42
+    assert step["inputs"] == {"key": "value"}
+    assert step["max_depth"] == 5  # 默认值
+
+
+def test_parse_sub_workflow_step_with_name():
+    """sub_workflow 步骤通过 workflow_name 引用子工作流。"""
+    parser = WorkflowParser()
+    result = parser.parse_definition({
+        "steps": [{
+            "id": "sub1",
+            "type": "sub_workflow",
+            "workflow_name": "子工作流",
+            "max_depth": 3,
+        }],
+    })
+    step = result["steps"][0]
+    assert step["workflow_name"] == "子工作流"
+    assert step["workflow_id"] is None
+    assert step["max_depth"] == 3
+
+
+def test_parse_sub_workflow_step_missing_reference_raises():
+    """sub_workflow 步骤未指定 workflow_id 和 workflow_name 应抛出 ValueError。"""
+    parser = WorkflowParser()
+    with pytest.raises(ValueError, match="必须指定 workflow_id 或 workflow_name"):
+        parser.parse_definition({
+            "steps": [{"id": "sub1", "type": "sub_workflow"}],
+        })
+
+
+# ==================== 并行步骤执行测试 ====================
+
+@pytest.mark.asyncio
+async def test_execute_parallel_step_all_branches_success(engine_no_db, mock_tool_success, monkeypatch):
+    """所有分支都成功时，并行步骤应返回 success=True。"""
+    from tools.registry import built_in_tool_registry
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", mock_tool_success)
+
+    definition = {
+        "steps": [{
+            "id": "par1",
+            "type": "parallel",
+            "branches": [
+                [{"id": "a1", "type": "tool", "tool": "echo", "action": "say"}],
+                [{"id": "b1", "type": "tool", "tool": "echo", "action": "say"}],
+                [{"id": "c1", "type": "tool", "tool": "echo", "action": "say"}],
+            ],
+        }],
+    }
+
+    result = await engine_no_db.execute_definition(definition)
+
+    assert result["status"] == "completed"
+    par_step = result["steps"][0]
+    assert par_step["type"] == "parallel"
+    assert par_step["success"] is True
+    assert par_step["result"]["branch_count"] == 3
+    # 所有分支都成功
+    for br in par_step["result"]["branch_results"]:
+        assert br["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_execute_parallel_step_branches_run_concurrently(engine_no_db, monkeypatch):
+    """并行步骤的分支应同时执行，总耗时接近最慢分支而非所有分支之和。"""
+    import time
+    from tools.registry import built_in_tool_registry
+
+    execution_log: list = []
+
+    async def _slow_execute(tool_name, *, action, params, config):
+        execution_log.append(f"{tool_name}_start")
+        await asyncio.sleep(0.1)  # 模拟耗时操作
+        execution_log.append(f"{tool_name}_end")
+        return {"success": True, "tool": tool_name, "action": action, "result": "done"}
+
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", _slow_execute)
+
+    definition = {
+        "steps": [{
+            "id": "par1",
+            "type": "parallel",
+            "branches": [
+                [{"id": "a1", "type": "tool", "tool": "branch_a", "action": "run"}],
+                [{"id": "b1", "type": "tool", "tool": "branch_b", "action": "run"}],
+            ],
+        }],
+    }
+
+    start_time = time.monotonic()
+    result = await engine_no_db.execute_definition(definition)
+    elapsed = time.monotonic() - start_time
+
+    assert result["status"] == "completed"
+    # 并行执行总耗时应接近单分支耗时（0.1s），而非两倍（0.2s）
+    assert elapsed < 0.2, f"并行执行耗时 {elapsed:.3f}s 超过预期，可能未真正并行"
+
+
+@pytest.mark.asyncio
+async def test_execute_parallel_step_one_branch_fails(engine_no_db, mock_tool_success, mock_tool_failure, monkeypatch):
+    """一个分支失败时（默认 on_error=stop），并行步骤应标记为失败并抛出异常。"""
+    from tools.registry import built_in_tool_registry
+
+    call_count = [0]
+
+    async def _mixed_execute(tool_name, *, action, params, config):
+        call_count[0] += 1
+        if call_count[0] == 2:  # 第二个调用失败
+            return {"success": False, "tool": tool_name, "action": action, "error": "branch_b 失败"}
+        return {"success": True, "tool": tool_name, "action": action, "result": "ok"}
+
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", _mixed_execute)
+
+    definition = {
+        "steps": [{
+            "id": "par1",
+            "type": "parallel",
+            "branches": [
+                [{"id": "a1", "type": "tool", "tool": "branch_a", "action": "run"}],
+                [{"id": "b1", "type": "tool", "tool": "branch_b", "action": "run"}],
+            ],
+        }],
+    }
+
+    result = await engine_no_db.execute_definition(definition)
+
+    # 默认 on_error=stop，并行步骤失败导致整个工作流失败
+    assert result["status"] == "failed"
+    assert "分支" in result.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_execute_parallel_step_continue_on_error(engine_no_db, monkeypatch):
+    """设置 on_error=continue 时，即使部分分支失败，并行步骤也继续。"""
+    from tools.registry import built_in_tool_registry
+
+    call_count = [0]
+
+    async def _mixed_execute(tool_name, *, action, params, config):
+        call_count[0] += 1
+        if "fail" in tool_name:
+            return {"success": False, "tool": tool_name, "action": action, "error": "预期失败"}
+        return {"success": True, "tool": tool_name, "action": action, "result": "ok"}
+
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", _mixed_execute)
+
+    definition = {
+        "steps": [
+            {
+                "id": "par1",
+                "type": "parallel",
+                "on_error": "continue",
+                "branches": [
+                    [{"id": "a1", "type": "tool", "tool": "ok_branch", "action": "run"}],
+                    [{"id": "b1", "type": "tool", "tool": "fail_branch", "action": "run"}],
+                ],
+            },
+            {"id": "after", "type": "tool", "tool": "after_tool", "action": "run"},
+        ],
+    }
+
+    result = await engine_no_db.execute_definition(definition)
+
+    assert result["status"] == "completed"
+    par_step = result["steps"][0]
+    assert par_step["success"] is False  # 并行步骤本身标记为失败
+    # 但后续步骤继续执行
+    assert result["steps"][1]["step_id"] == "after"
+
+
+@pytest.mark.asyncio
+async def test_execute_parallel_step_multi_step_branch(engine_no_db, mock_tool_success, monkeypatch):
+    """每个分支可以包含多个串行步骤。"""
+    from tools.registry import built_in_tool_registry
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", mock_tool_success)
+
+    definition = {
+        "steps": [{
+            "id": "par1",
+            "type": "parallel",
+            "branches": [
+                [
+                    {"id": "a1", "type": "tool", "tool": "a", "action": "x"},
+                    {"id": "a2", "type": "tool", "tool": "a", "action": "y"},
+                ],
+                [{"id": "b1", "type": "tool", "tool": "b", "action": "x"}],
+            ],
+        }],
+    }
+
+    result = await engine_no_db.execute_definition(definition)
+
+    assert result["status"] == "completed"
+    par_step = result["steps"][0]
+    # 分支 0 有 2 个步骤，分支 1 有 1 个步骤
+    assert len(par_step["result"]["branch_results"][0]["results"]) == 2
+    assert len(par_step["result"]["branch_results"][1]["results"]) == 1
+
+
+# ==================== 子工作流执行测试 ====================
+
+@pytest.mark.asyncio
+async def test_execute_sub_workflow_without_db_raises(engine_no_db):
+    """没有数据库会话时，子工作流步骤应失败。"""
+    definition = {
+        "steps": [{
+            "id": "sub1",
+            "type": "sub_workflow",
+            "workflow_id": 1,
+        }],
+    }
+
+    result = await engine_no_db.execute_definition(definition)
+
+    assert result["status"] == "failed"
+    assert "数据库会话" in result.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_execute_sub_workflow_with_mock_db(engine_no_db, mock_tool_success, monkeypatch):
+    """使用 mock 数据库测试子工作流执行。"""
+    from tools.registry import built_in_tool_registry
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", mock_tool_success)
+
+    # 创建 mock 数据库会话和 Workflow 模型
+    class MockWorkflow:
+        def __init__(self):
+            self.id = 42
+            self.name = "子工作流"
+            self.definition = {
+                "name": "子工作流",
+                "steps": [
+                    {"id": "sub_step1", "type": "tool", "tool": "sub_tool", "action": "run"},
+                ],
+            }
+
+    class MockExecutionRecord:
+        """模拟 WorkflowExecution 记录，支持属性赋值。"""
+        def __init__(self):
+            self.id = 1
+            self.status = None
+            self.output_payload = None
+            self.error_message = None
+            self.completed_at = None
+        def __setattr__(self, key, value):
+            object.__setattr__(self, key, value)
+
+    class MockQuery:
+        def __init__(self, workflow):
+            self.workflow = workflow
+        def filter(self, *args, **kwargs):
+            return self
+        def first(self):
+            return self.workflow
+
+    class MockDbSession:
+        def __init__(self):
+            self._workflow = MockWorkflow()
+            self._record = MockExecutionRecord()
+        def query(self, model):
+            return MockQuery(self._workflow)
+        def add(self, record):
+            # 模拟 WorkflowExecution 记录添加
+            pass
+        def commit(self):
+            pass
+        def refresh(self, record):
+            pass
+        def rollback(self):
+            pass
+
+    engine = WorkflowEngine(db_session=MockDbSession(), skill_engine=None)
+
+    definition = {
+        "steps": [{
+            "id": "sub1",
+            "type": "sub_workflow",
+            "workflow_id": 42,
+            "inputs": {"extra_key": "extra_value"},
+        }],
+    }
+
+    result = await engine.execute_definition(definition)
+
+    assert result["status"] == "completed"
+    sub_step = result["steps"][0]
+    assert sub_step["type"] == "sub_workflow"
+    assert sub_step["success"] is True
+    # 子工作流的结果应包含其执行状态
+    assert sub_step["result"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_execute_sub_workflow_not_found(engine_no_db, mock_tool_success, monkeypatch):
+    """子工作流不存在时应失败。"""
+    from tools.registry import built_in_tool_registry
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", mock_tool_success)
+
+    class MockExecutionRecord:
+        def __init__(self):
+            self.id = 1
+            self.status = None
+            self.output_payload = None
+            self.error_message = None
+            self.completed_at = None
+
+    class MockQuery:
+        def filter(self, *args, **kwargs):
+            return self
+        def first(self):
+            return None  # 工作流不存在
+
+    class MockDbSession:
+        def query(self, model):
+            return MockQuery()
+        def add(self, record):
+            pass
+        def commit(self):
+            pass
+        def refresh(self, record):
+            pass
+        def rollback(self):
+            pass
+
+    engine = WorkflowEngine(db_session=MockDbSession(), skill_engine=None)
+
+    definition = {
+        "steps": [{
+            "id": "sub1",
+            "type": "sub_workflow",
+            "workflow_id": 999,
+        }],
+    }
+
+    result = await engine.execute_definition(definition)
+
+    assert result["status"] == "failed"
+    assert "不存在" in result.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_execute_sub_workflow_depth_limit(engine_no_db, mock_tool_success, monkeypatch):
+    """子工作流递归深度超过限制时应失败。"""
+    from tools.registry import built_in_tool_registry
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", mock_tool_success)
+
+    # 创建自引用的 mock 工作流（无限递归）
+    class MockWorkflow:
+        def __init__(self):
+            self.id = 1
+            self.name = "recursive"
+            self.definition = {
+                "name": "recursive",
+                "steps": [
+                    {
+                        "id": "sub1",
+                        "type": "sub_workflow",
+                        "workflow_id": 1,
+                        "max_depth": 2,  # 限制深度为 2
+                    },
+                ],
+            }
+
+    class MockExecutionRecord:
+        def __init__(self):
+            self.id = 1
+            self.status = None
+            self.output_payload = None
+            self.error_message = None
+            self.completed_at = None
+
+    class MockQuery:
+        def filter(self, *args, **kwargs):
+            return self
+        def first(self):
+            return MockWorkflow()
+
+    class MockDbSession:
+        def query(self, model):
+            return MockQuery()
+        def add(self, record):
+            pass
+        def commit(self):
+            pass
+        def refresh(self, record):
+            pass
+        def rollback(self):
+            pass
+
+    engine = WorkflowEngine(db_session=MockDbSession(), skill_engine=None)
+
+    definition = {
+        "steps": [{
+            "id": "sub1",
+            "type": "sub_workflow",
+            "workflow_id": 1,
+            "max_depth": 2,
+        }],
+    }
+
+    result = await engine.execute_definition(definition)
+
+    # 递归到第 2 层时应被拦截
+    assert result["status"] == "failed"
+    assert "最大递归深度" in result.get("error", "")
+
+
+# ==================== 并行+串行混合工作流测试 ====================
+
+@pytest.mark.asyncio
+async def test_execute_mixed_parallel_sequential_workflow(engine_no_db, mock_tool_success, monkeypatch):
+    """并行步骤与串行步骤混合的工作流应正确执行。"""
+    from tools.registry import built_in_tool_registry
+    monkeypatch.setattr(built_in_tool_registry, "execute_tool", mock_tool_success)
+
+    definition = {
+        "steps": [
+            {"id": "start", "type": "tool", "tool": "init", "action": "setup"},
+            {
+                "id": "par1",
+                "type": "parallel",
+                "branches": [
+                    [{"id": "a1", "type": "tool", "tool": "task_a", "action": "run"}],
+                    [{"id": "b1", "type": "tool", "tool": "task_b", "action": "run"}],
+                ],
+            },
+            {"id": "end", "type": "tool", "tool": "finalize", "action": "cleanup"},
+        ],
+    }
+
+    result = await engine_no_db.execute_definition(definition)
+
+    assert result["status"] == "completed"
+    assert len(result["steps"]) == 3
+    assert result["steps"][0]["step_id"] == "start"
+    assert result["steps"][1]["type"] == "parallel"
+    assert result["steps"][2]["step_id"] == "end"
