@@ -813,6 +813,66 @@ class TaskAgentSession(Base):
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class SubagentDefinition(Base):
+    """
+    子智能体图定义持久化模型。
+
+    存储用户自定义的 Agent 图结构（节点、边、入口、出口），
+    服务重启后可从数据库恢复，避免运行时态丢失。
+    """
+    __tablename__ = "subagent_definitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    # 图结构 JSON：{nodes: [...], edges: [...], entry_point, finish_points}
+    graph_definition: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 创建者用户 ID（多租户隔离）
+    user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    # 是否为内置图（内置图不可删除）
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 标签（用于分类和搜索）
+    tags: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_subagent_def_user_name", "user_id", "name"),
+    )
+
+
+class SubagentExecutionHistory(Base):
+    """
+    子智能体执行历史记录模型。
+
+    持久化每次图执行的结果，便于后续查询、审计和回放。
+    """
+    __tablename__ = "subagent_execution_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 关联的图定义名称（可为内置图名）
+    graph_name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    # 执行触发者用户 ID
+    user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    # 执行模式：graph / sequential / parallel / delegate
+    execution_mode: Mapped[str] = mapped_column(String(20), default="graph")
+    # 初始上下文（JSON）
+    initial_context: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 执行结果（JSON）
+    results: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 错误信息（JSON）
+    errors: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 执行日志（节点级执行记录）
+    execution_log: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    # 是否成功
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 执行耗时（秒）
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class TaskItem(Base):
     """
     共享任务清单项模型，记录任务主题、描述、状态、依赖与执行结果。
