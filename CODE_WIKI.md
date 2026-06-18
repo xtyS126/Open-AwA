@@ -100,7 +100,7 @@ Open-AwA/
 ├── backend/               # FastAPI 后端
 │   ├── main.py            # FastAPI 入口
 │   ├── api/               # 路由、依赖注入、Schema
-│   │   ├── routes/        # 业务路由（30+ 模块）
+│   │   ├── routes/        # 业务路由（39 个模块）
 │   │   ├── services/      # 服务层（聊天协议、WebSocket管理）
 │   │   ├── dependencies.py # 认证与DB依赖注入
 │   │   └── schemas.py     # Pydantic 请求/响应模型

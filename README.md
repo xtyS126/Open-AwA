@@ -37,21 +37,42 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 
 基于现有代码，可以确认的模块包括：
 
-- 聊天接口与 WebSocket 会话通信（支持多轮对话上下文，自动注入历史消息）
-- 用户注册、登录与 `/auth/me` 鉴权信息获取
-- 技能的增删改查、执行、配置读取、上传解析与经验提取
-- 内置文件管理、终端执行、网页搜索工具统一注册，并可作为内置技能复用
-- 插件的增删改查、启用/禁用（同步运行时加载/卸载）、执行、工具描述读取、上传解包、权限授权、日志查看、热更新与回滚、插件发现
-- 短期记忆、工作内存、长期记忆与经验记忆管理，支持长期记忆向量检索、质量评估、归档与统计
+- 聊天接口与 WebSocket 会话通信（支持多轮对话上下文，自动注入历史消息、流式分段、思维链展示、子代理编排）
+- 用户注册、登录与 `/auth/me` 鉴权信息获取（JWT HttpOnly Cookie + CSRF Double Submit + 登录速率限制）
+- 技能的增删改查、执行、配置读取、上传解析与经验提取，以及技能市场
+- 内置文件管理、终端执行、网页搜索、编码工具（LSP/Git/Diff）、TTS 等统一注册，并可作为内置技能复用
+- 插件的增删改查、启用/禁用（同步运行时加载/卸载）、执行、工具描述读取、上传解包、权限授权、日志查看、热更新与回滚、插件市场
+- 短期记忆、工作内存、长期记忆与经验记忆管理，支持长期记忆向量检索、混合检索、质量评估、归档与统计
 - 工作流定义解析、顺序执行、条件分支，以及工具、技能、插件步骤编排
 - 提示词配置管理
 - 行为日志与统计
 - 会话记录预览、导出、清理与采集开关
 - 模型定价、预算、报表、配置管理等计费能力
+- 子代理（Subagent）编排：三级隔离、生命周期状态机、资源限制与编排器
+- 任务运行时（task_runtime）：任务注册、会话、运行器与存储
+- 定时任务管理（scheduled_tasks）：cron 调度、模板、日历视图
+- MCP 协议客户端：Stdio/SSE 双传输、工具发现与调用、资源访问
+- IM 渠道集成：飞书、Telegram、钉钉、Discord、Slack、QQ、Matrix、iMessage、企业微信等多渠道适配
+- 微信集成：扫码登录、自动回复、技能适配
+- 角色系统（roles）：预设角色、角色市场、角色引擎
+- 用户画像（user_profile）：自动提取、置信度、时间线、雷达图
+- 编码助手（coding）：AST 搜索、文件树、Diff、Git 集成、LSP 代理、Claude Code 集成
+- 工作区（workspace）：多项目工作区管理
+- 收件箱（inbox）：消息聚合
+- 数据仪表盘（data）：数据收集器与可视化
+- TTS 语音合成：豆包 TTS、语音克隆、语音库
+- 终端（terminal）：远程终端执行
+- 系统监控（system）：系统状态、健康检查
+- 自主运行模式（autonomous）：审计、检查点、硬拒绝规则
+- 心跳（heartbeat）：存活探测
+- 魔法命令（magic_commands）：快捷指令
+- 测试运行器（test_runner）：测试用例执行
+- 日志查询与导出（logs）：结构化日志、JSONL 导出
+- 安全模块：RBAC、审计日志、PII 脱敏、沙箱、统一访问控制
 
 后端路由注册见：
 
-- [main.py](backend/main.py#L52-L76)
+- [main.py](backend/main.py#L860-L899)
 
 数据库模型见：
 
@@ -94,19 +115,38 @@ Open-AwA 是一个以 FastAPI 后端和 React 前端构建的 AI Agent 实验性
 ```text
 Open-AwA/
 ├─ backend/                     # FastAPI 后端
-│  ├─ api/routes/               # 业务路由
+│  ├─ api/routes/               # 业务路由（39 个模块）
 │  ├─ billing/                  # 计费相关模块
+│  ├─ channels/                 # IM 渠道适配（飞书/Telegram/钉钉等）
 │  ├─ config/                   # 配置与安全
 │  ├─ core/                     # Agent 核心流程
+│  │  ├─ autonomous/            # 自主运行模式
+│  │  ├─ builtin_tools/         # 内置工具（notify/todo）
+│  │  ├─ coding/                # 编码助手（AST/LSP/Git/Diff）
+│  │  ├─ context/               # 上下文压缩与 token 预算
+│  │  ├─ heartbeat/             # 心跳引擎
+│  │  ├─ startup/               # 启动 profiler 与任务
+│  │  ├─ task_runtime/          # 任务运行时
+│  │  └─ workspace/             # 工作区管理
+│  ├─ data/                     # 数据收集器
 │  ├─ db/                       # SQLAlchemy 模型与数据库初始化
+│  ├─ im/                       # IM 适配器（飞书/Telegram）
+│  ├─ mcp/                      # MCP 协议客户端
 │  ├─ memory/                   # 记忆与经验管理
 │  ├─ plugins/                  # 插件系统核心
+│  ├─ security/                 # 审计日志、权限控制、沙箱隔离
 │  ├─ skills/                   # Skill 系统
+│  ├─ tools/                    # 内置工具注册器
+│  ├─ workflow/                 # 工作流引擎与解析器
 │  ├─ tests/                    # 后端测试
 │  └─ main.py                   # FastAPI 入口
+├─ openawa/                     # Open-AwA CLI 包
+│  ├─ cli/                      # 命令行入口（serve/migrate/doctor/plugin 等）
+│  ├─ config/                   # CLI 配置
+│  └─ core/                     # CLI 核心启动逻辑
 ├─ frontend/                    # React 前端
-│  ├─ src/features/             # 功能模块（页面、组件、状态）
-│  ├─ src/shared/               # 共享资源（组件、API、状态、类型、工具）
+│  ├─ src/features/             # 功能模块（按领域拆分，含页面/组件/store/api）
+│  ├─ src/shared/               # 共享资源（api/components/store/hooks/types/utils/perf）
 │  ├─ src/__tests__/            # 前端单测
 │  ├─ tests/e2e/                # Playwright E2E
 │  └─ package.json
@@ -158,31 +198,39 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 ### 后端启动行为
 
-后端在启动时会：
+后端启动流程已拆分为独立步骤，便于排障与单元测试：
 
-1. 初始化主数据库表
-2. 创建计费模块表结构
-3. 初始化默认模型定价配置
-4. 初始化 RBAC 角色权限与本地用户
-5. 初始化插件管理器全局单例，自动发现并加载已启用插件
-6. 挂载各业务路由
-7. 配置允许的 CORS 来源
+1. 基础设施初始化：LiteLLM 依赖检测、模型供应商可用性检查、`OPENAWA_API_KEY` 校验（未配置或长度不足 32 字符将拒绝启动）
+2. 数据层初始化：DB 建表、计费表、预设角色（RoleEngine）、RBAC 内置角色、Owner 用户创建、默认模型定价与配置
+3. 插件系统初始化：市场种子、插件发现、已启用插件加载、`system-tools` 内置插件注册
+4. 后台任务初始化：定时任务管理器、微信自动回复（按 `auto_start_reply` 配置）
+5. 自主运行模式初始化（仅通过 `.env` 配置启用）
+6. 数据收集器初始化
+7. 挂载各业务路由（39 个路由模块）
+8. 配置 CORS、CSRF、CSP、速率限制等中间件
 
 代码位置：
 
-- [main.py](backend/main.py#L22-L76)
+- [main.py](backend/main.py#L181-L460)
 
 ### 默认配置
 
-默认配置来自 [settings.py](backend/config/settings.py#L24-L59)，其中较重要的项包括：
+默认配置来自 [settings.py](backend/config/settings.py#L76-L241)，其中较重要的项包括：
 
 - `API_V1_STR=/api`
-- `DATABASE_URL=sqlite:///./backend/openawa.db`
+- `DATABASE_URL=sqlite:///./backend/openawa.db`（绝对路径锚定到 backend 目录）
 - `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
 - `SANDBOX_TIMEOUT=30`
 - `SANDBOX_MEMORY_LIMIT=512m`
+- `SANDBOX_BACKEND=restricted_python`
 - `LOG_LEVEL=INFO`
 - `VECTOR_DB_PATH=backend/data/vector_db`
+- `OPENAWA_API_KEY=`（必填，未配置时拒绝启动，可运行 `python generate_api_key.py` 生成）
+- `OPENAWA_OWNER_USERNAME=admin`
+- `RATE_LIMIT_BACKEND=memory`（多 worker 部署时建议 `database`）
+- `TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
+- `MAX_TOOL_CALL_ROUNDS=12`
+- `AGENT_TASK_TIMEOUT_SECONDS=300`
 
 长期记忆向量检索默认会读取以下配置或环境变量：
 
@@ -192,10 +240,13 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 生产环境中应显式设置：
 
-- `SECRET_KEY`
+- `SECRET_KEY`（生产环境未显式设置时启动会报错）
+- `OPENAWA_API_KEY`（必填，至少 32 字符）
 - `DATABASE_URL`
-- `ALLOWED_ORIGINS`
-- 各模型提供方 API Key
+- `ALLOWED_ORIGINS`（生产环境未配置时拒绝启动）
+- `ENVIRONMENT=production`
+- 各模型提供方 API Key（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `QWEN_API_KEY` / `ZHIPU_API_KEY` / `MOONSHOT_API_KEY`）
+- 可选：`SSL_CERTFILE` / `SSL_KEYFILE` 启用 HTTPS
 
 前端开发阶段常用环境变量（`frontend/.env.development`）：
 
@@ -207,19 +258,47 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 ### 后端主要路由
 
-已在入口文件注册的主路由包括：
+已在入口文件注册的主路由包括（共 39 个模块）：
 
-- `/api/auth`
-- `/api/chat`
-- `/api/skills`
-- `/api/plugins`
-- `/api/memory`
-- `/api/workflows`
-- `/api/prompts`
-- `/api/behaviors`
-- `/api/experiences`
-- `/api/conversations`
-- `/api/billing`
+- `/api/auth` - 认证（登录/注册/登出/csrf-token）
+- `/api/chat` - 聊天（HTTP + WebSocket）
+- `/api/skills` - 技能管理（含微信技能 `/skills/weixin/*`）
+- `/api/plugins` - 插件管理
+- `/api/memory` - 记忆管理（含向量检索/归档/质量/统计）
+- `/api/workflows` - 工作流
+- `/api/scheduled_tasks` - 定时任务
+- `/api/diary` - 日记
+- `/api/prompts` - 提示词配置
+- `/api/behaviors` - 行为分析
+- `/api/experiences` - 经验记忆
+- `/api/experience_files` - 经验文件
+- `/api/conversations` - 会话记录
+- `/api/logs` - 日志查询与导出
+- `/api/mcp/*` - MCP 协议
+- `/api/models/*` - 模型配置
+- `/api/billing/*` - 计费
+- `/api/marketplace/*` - 插件市场
+- `/api/security/*` - 安全
+- `/api/weixin/*` - 微信
+- `/api/tools/*` - 内置工具
+- `/api/subagents/*` - 子代理
+- `/api/task_runtime/*` - 任务运行时
+- `/api/user/*` - 用户管理（含头像静态文件）
+- `/api/user_profile/*` - 用户画像
+- `/api/system/*` - 系统监控
+- `/api/test_runner/*` - 测试运行器
+- `/api/workspace/*` - 工作区
+- `/api/heartbeat/*` - 心跳
+- `/api/coding/*` - 编码助手
+- `/api/inbox/*` - 收件箱
+- `/api/magic_commands/*` - 魔法命令
+- `/api/tts/*` - TTS 语音合成
+- `/api/tasks/*` - 任务
+- `/api/roles/*` - 角色管理
+- `/api/role_market/*` - 角色市场
+- `/api/data/*` - 数据仪表盘
+- `/api/terminal/*` - 终端
+- `/api/im/*` - IM 渠道
 
 可参考以下代码：
 
@@ -228,10 +307,13 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - [skills.py](backend/api/routes/skills.py#L17-L368)
 - [plugins.py](backend/api/routes/plugins.py#L15-L519)
 - [memory.py](backend/api/routes/memory.py#L12-L121)
+- [subagents.py](backend/api/routes/subagents.py)
+- [coding.py](backend/api/routes/coding.py)
+- [mcp.py](backend/api/routes/mcp.py)
 
 ### 记忆与工作流扩展接口
 
-本轮新增或增强的后端接口包括：
+后端记忆与工作流相关接口包括：
 
 - `/api/memory/vector-search`：长期记忆混合检索与语义检索入口
 - `/api/memory/archive`：执行长期记忆归档
@@ -246,29 +328,50 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 ### 前端页面
 
-前端目前包含以下页面路由：
+前端目前包含以下页面路由（共 30+ 个）：
 
-- `/chat`
-- `/dashboard`
-- `/settings`
-- `/skills`
-- `/plugins`（自动重定向到 `/plugins/manage`）
-- `/plugins/manage`
-- `/plugins/config/:pluginId`
-- `/memory`
-- `/billing`
+- `/login` - 登录页
+- `/chat` - 聊天页（支持 `/chat/:conversationId` 会话切换）
+- `/dashboard` - 仪表盘
+- `/settings` - 设置页（含模型/计费/数据采集/数据保留/外观/通用/MCP/权限/安全/环境变量等 Tab）
+- `/skills` - 技能管理
+- `/skills/market` - 技能市场
+- `/scheduled-tasks` - 定时任务
+- `/plugins` - 插件管理（自动重定向到 `/plugins/manage`）
+- `/plugins/manage` - 插件列表
+- `/plugins/config/:pluginId` - 插件配置
+- `/plugins/marketplace` - 插件市场
+- `/memory` - 记忆管理
+- `/experience` - 经验记忆
+- `/billing` - 计费
+- `/communication` - 微信通讯
+- `/user` - 用户中心
+- `/profile/edit` - 用户画像编辑
+- `/test` - 测试页
+- `/workspace` - 工作区
+- `/coding` - 编码助手
+- `/inbox` - 收件箱
+- `/agents` - 子代理列表
+- `/roles` - 角色管理
+- `/role-market` - 角色市场
+- `/data` - 数据仪表盘
+- `/tts` - TTS 语音合成
+- `/im` - IM 渠道
 
 代码位置：
 
-- [App.tsx](frontend/src/App.tsx#L70-L88)
+- [App.tsx](frontend/src/App.tsx#L64-L128)
 
 其中几个核心页面对应实现：
 
-- [ChatPage.tsx](frontend/src/features/chat/ChatPage.tsx#L1-L259)
-- [DashboardPage.tsx](frontend/src/features/dashboard/DashboardPage.tsx#L1-L128)
-- [PluginsPage.tsx](frontend/src/features/plugins/PluginsPage.tsx#L1-L260)
-- [MemoryPage.tsx](frontend/src/features/memory/MemoryPage.tsx#L1-L154)
-- [BillingPage.tsx](frontend/src/features/billing/BillingPage.tsx#L1-L249)
+- [ChatPage.tsx](frontend/src/features/chat/ChatPage.tsx)
+- [DashboardPage.tsx](frontend/src/features/dashboard/DashboardPage.tsx)
+- [PluginsPage.tsx](frontend/src/features/plugins/PluginsPage.tsx)
+- [MemoryPage.tsx](frontend/src/features/memory/MemoryPage.tsx)
+- [BillingPage.tsx](frontend/src/features/billing/BillingPage.tsx)
+- [SettingsPage.tsx](frontend/src/features/settings/SettingsPage.tsx)
+- [CodingPage.tsx](frontend/src/features/coding/CodingPage.tsx)
+- [ScheduledTasksPage.tsx](frontend/src/features/scheduledTasks/ScheduledTasksPage.tsx)
 
 ## 插件开发文档
 
@@ -378,10 +481,53 @@ E2E 配置见：
 - [回归测试报告](docs/reports/回归测试报告.md)
 - [插件开发手册](docs/插件开发手册/插件开发手册.md)
 
+## 愿景规划（暂未实现）
+
+以下是项目的远期愿景方向，记录于此作为长期路线图参考，不作为当前实现的承诺。
+
+### 目标形态：贾维斯式多终端 AI 助手
+
+将 Open-AwA 从"AI Agent 实验平台"演进为类似贾维斯的跨终端智能助手：
+
+- **云端服务器**：FastAPI 后端即服务，支持多用户、多设备接入
+- **手机端 App**：多端登录、会话漫游、消息实时同步
+- **电脑端**：浏览器访问 + 原生桌面封装（托盘常驻、全局快捷键唤起、语音唤醒）
+- **语音交互**：语音输入 + AI 语音回复，支持打断与多音色
+- **主动感知**：AI 主动推送提醒（日程摘要、消息提醒、异常告警）
+- **跨端任务接力**：手机发起的复杂任务自动路由到电脑端执行
+
+### 阶段性路线图
+
+#### 阶段 1：多端会话同步基础（MVP）
+- 后端：设备注册 API、会话同步协议（基于现有 WebSocket 扩展）、消息序列号与冲突解决
+- 前端：抽离会话状态到 Zustand + 持久化、多设备管理页
+- 移动端：PWA 起步（manifest + service worker + 响应式适配），零原生开发成本验证多端体验
+
+#### 阶段 2：语音交互
+- ASR：浏览器 Web Speech API 起步 -> 后期接 Whisper API
+- TTS：Edge TTS / Azure TTS，支持中文多音色
+- 唤醒词：桌面端用 Tauri/Electron 封装获得麦克风常驻权限
+- 前端：语音按钮 + 波形动画 + 中断控制
+
+#### 阶段 3：桌面端原生封装
+- Tauri 封装现有 Web 端（包体小 ~10MB、Rust 安全）
+- 系统托盘常驻 + 全局快捷键（如 Alt+Space 唤起）+ 开机自启
+- 麦克风后台权限
+
+#### 阶段 4：主动感知与跨端接力
+- 事件总线：日历/邮件/文件变更等事件源接入
+- 推送系统：手机端 Web Push + 桌面端系统通知
+- 任务路由：手机发起的复杂任务自动转到电脑端执行
+
+#### 阶段 5：移动端原生升级
+- 当 PWA 验证体验不足时，升级到 React Native + Expo
+- 复用后端 API，重写原生 UI，获得推送/生物识别/后台能力
+
 ## 已知情况说明
 
 以下内容是根据当前代码观察得到，建议在后续开发中继续收敛：
 
-- 前端初始化流程会自动注册并登录测试用户，属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](frontend/src/App.tsx#L20-L53)
-- `PluginsPage` 中存在“浏览插件市场”按钮，但当前仓库未看到对应市场实现
+- 前端 `App.tsx` 中保留了开发态自动登录逻辑（通过 `useAppInitialization` Hook），属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](frontend/src/App.tsx#L131-L173)
+- 后端启动强制要求 `OPENAWA_API_KEY`（至少 32 字符），未配置时拒绝启动，可通过 `python generate_api_key.py` 生成
+- 生产环境（`ENVIRONMENT=production`）启动时会强制校验 `SECRET_KEY` 与 `ALLOWED_ORIGINS`，未配置将拒绝启动
 - README 只描述已存在的接口与页面，不对未完成功能做保证
