@@ -4,7 +4,7 @@ import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,
   Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell,
-  Users, BarChart3, ShoppingBag
+  Users, BarChart3, ShoppingBag, Network
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useI18nStore } from '@/i18n'
@@ -15,7 +15,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'data' | 'im' | 'roleMarket'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'data' | 'im' | 'roleMarket' | 'subagents'
 }
 
 interface MenuGroup {
@@ -44,6 +44,7 @@ const renderIcon = (type: string, size = 18) => {
     case 'roles': return <Users size={size} />
     case 'roleMarket': return <ShoppingBag size={size} />
     case 'data': return <BarChart3 size={size} />
+    case 'subagents': return <Network size={size} />
     default: return <MessageSquare size={size} />
   }
 }
@@ -79,6 +80,7 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/workflows', label: t('sidebar.workflows') || '工作流', iconType: 'scheduledTasks' as const },
+        { path: '/subagents', label: t('sidebar.subagents') || '子智能体', iconType: 'subagents' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
         { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
         { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },

@@ -141,6 +141,80 @@ export interface OrchestratorCapabilities {
   default_limits: ResourceLimits
 }
 
+// ── 图定义持久化类型 ──────────────────────────────────────────
+
+/** 图定义 Schema 节点 */
+export interface GraphNodeSchema {
+  name: string
+  agent: string
+  description?: string
+}
+
+/** 图定义 Schema 边 */
+export interface GraphEdgeSchema {
+  source: string
+  target: string
+  condition?: string
+}
+
+/** 图定义 Schema */
+export interface GraphDefinitionSchema {
+  nodes: GraphNodeSchema[]
+  edges: GraphEdgeSchema[]
+  entry_point: string
+  finish_points: string[]
+}
+
+/** 图定义创建请求 */
+export interface SubagentDefinitionCreate {
+  name: string
+  description?: string
+  graph_definition: GraphDefinitionSchema
+  tags?: string
+}
+
+/** 图定义更新请求 */
+export interface SubagentDefinitionUpdate {
+  name?: string
+  description?: string
+  graph_definition?: GraphDefinitionSchema
+  tags?: string
+}
+
+/** 图定义响应 */
+export interface SubagentDefinitionResponse {
+  id: number
+  name: string
+  description: string
+  graph_definition: GraphDefinitionSchema
+  user_id: string
+  is_builtin: boolean
+  tags: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** 运行图定义请求 */
+export interface RunDefinitionRequest {
+  context?: Record<string, unknown>
+  messages?: Array<{ role: string; content: string }>
+}
+
+/** 执行历史响应 */
+export interface ExecutionHistoryResponse {
+  id: number
+  graph_name: string
+  user_id: string
+  execution_mode: string
+  initial_context: Record<string, unknown>
+  results: Record<string, unknown>
+  errors: Record<string, unknown>
+  execution_log: Array<Record<string, unknown>>
+  success: boolean
+  duration_seconds: number
+  created_at: string
+}
+
 export const subagentsApi = {
   async listAgents(): Promise<{ agents: RegisteredAgent[]; count: number }> {
     const { data } = await api.get('/subagents/agents')
@@ -195,6 +269,51 @@ export const subagentsApi = {
   /** 获取编排器能力描述（隔离级别/合并策略/默认资源限制） */
   async getCapabilities(): Promise<OrchestratorCapabilities> {
     const { data } = await api.get('/subagents/orchestrator/capabilities')
+    return data
+  },
+
+  // ── 图定义持久化 API ──────────────────────────────────────
+
+  /** 列出当前用户的图定义（含内置图） */
+  async listDefinitions(): Promise<{ definitions: SubagentDefinitionResponse[]; count: number }> {
+    const { data } = await api.get('/subagents/definitions')
+    return data
+  },
+
+  /** 创建图定义 */
+  async createDefinition(payload: SubagentDefinitionCreate): Promise<SubagentDefinitionResponse> {
+    const { data } = await api.post('/subagents/definitions', payload)
+    return data
+  },
+
+  /** 更新图定义 */
+  async updateDefinition(id: number, payload: SubagentDefinitionUpdate): Promise<SubagentDefinitionResponse> {
+    const { data } = await api.put(`/subagents/definitions/${id}`, payload)
+    return data
+  },
+
+  /** 删除图定义 */
+  async deleteDefinition(id: number): Promise<{ success: boolean; id: number }> {
+    const { data } = await api.delete(`/subagents/definitions/${id}`)
+    return data
+  },
+
+  /** 运行图定义 */
+  async runDefinition(id: number, payload: RunDefinitionRequest): Promise<GraphExecutionResult> {
+    const { data } = await api.post(`/subagents/definitions/${id}/run`, payload)
+    return data
+  },
+
+  /** 查询执行历史列表（支持按图名称过滤） */
+  async listExecutionHistory(graphName?: string): Promise<{ history: ExecutionHistoryResponse[]; count: number }> {
+    const params = graphName ? { graph_name: graphName } : {}
+    const { data } = await api.get('/subagents/history', { params })
+    return data
+  },
+
+  /** 获取执行历史详情 */
+  async getExecutionHistory(id: number): Promise<ExecutionHistoryResponse> {
+    const { data } = await api.get(`/subagents/history/${id}`)
     return data
   },
 }

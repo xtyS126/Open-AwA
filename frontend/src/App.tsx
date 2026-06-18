@@ -44,6 +44,7 @@ const TtsPage = React.lazy(() => import('@/features/tts/TtsPage'))
 const DataDashboard = React.lazy(() => import('@/features/data/DataDashboard'))
 const ImChannelsPage = React.lazy(() => import('@/features/im/ImChannelsPage'))
 const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage'))
+const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -122,6 +123,7 @@ function AppRoutes() {
               <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
               <Route path="/im" element={<ErrorBoundary name="ImChannels"><ImChannelsPage /></ErrorBoundary>} />
             <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
+            <Route path="/subagents" element={<ErrorBoundary name="SubAgents"><SubAgentPage /></ErrorBoundary>} />
             </Routes>
           </div>
         </Suspense>
