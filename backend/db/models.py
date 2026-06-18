@@ -1151,6 +1151,96 @@ class PluginDownloadLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
+# -------- P2 安全增强：细粒度权限与主动防御 --------
+
+
+class CustomRole(Base):
+    """
+    自定义角色模型，支持用户创建具有细粒度权限的角色。
+    与内置 Role 表互补，permissions 字段存储 resource:action 格式的权限列表。
+    """
+    __tablename__ = "custom_roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(100), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    # 权限列表 JSON 数组，格式: ["plugin:install", "skill:execute", "model:use", "billing:view"]
+    permissions: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # 创建者用户 ID
+    created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class IpAccessList(Base):
+    """
+    IP 白名单/黑名单模型，支持单 IP 和 CIDR 网段。
+    list_type: whitelist（白名单，优先级最高）/ blacklist（黑名单）
+    """
+    __tablename__ = "ip_access_list"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # IP 地址或 CIDR 网段，如 "192.168.1.1" 或 "10.0.0.0/8"
+    ip_cidr: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    list_type: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    # whitelist / blacklist
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # 过期时间，None 表示永不过期
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+
+    __table_args__ = (
+        Index("ix_ip_access_list_type_cidr", "list_type", "ip_cidr", unique=True),
+    )
+
+
+class AnomalyEvent(Base):
+    """
+    异常行为事件模型，记录检测到的异常请求模式。
+    event_type: rate_burst（速率突发）/ repeated_failure（重复失败）/ suspicious_pattern（可疑模式）
+    """
+    __tablename__ = "anomaly_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    # 触发阈值描述，如 "100 requests in 60s"
+    trigger_detail: Mapped[str] = mapped_column(Text, default="")
+    # 实际观测值，如 "120 requests"
+    observed_value: Mapped[str] = mapped_column(Text, default="")
+    # 处置动作：warn/throttle/block
+    action_taken: Mapped[str] = mapped_column(String(20), default="warn")
+    is_resolved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class CsrfToken(Base):
+    """
+    CSRF token 模型，支持 token 自动轮换与一次性使用。
+    """
+    __tablename__ = "csrf_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 def _migrate_profile_facts_table(use_engine=None):
     """
     迁移：创建 profile_facts 和 profile_extraction_logs 表（如不存在）。

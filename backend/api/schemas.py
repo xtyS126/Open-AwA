@@ -1010,6 +1010,138 @@ class PermissionCheckResponse(BaseModel):
     permission: str = Field(..., description="检查的权限")
 
 
+# -------- P2 安全增强：细粒度权限与主动防御 --------
+
+
+class CustomRoleCreate(BaseModel):
+    """自定义角色创建请求"""
+    name: str = Field(..., min_length=1, max_length=50, description="角色名称")
+    display_name: str = Field(default="", max_length=100, description="显示名称")
+    description: str = Field(default="", max_length=500, description="角色描述")
+    permissions: List[str] = Field(..., min_length=1, description="权限列表，格式 resource:action")
+
+
+class CustomRoleUpdate(BaseModel):
+    """自定义角色更新请求"""
+    display_name: Optional[str] = Field(None, max_length=100, description="显示名称")
+    description: Optional[str] = Field(None, max_length=500, description="角色描述")
+    permissions: Optional[List[str]] = Field(None, min_length=1, description="权限列表")
+
+
+class CustomRoleResponse(BaseModel):
+    """自定义角色响应模型"""
+    id: int = Field(..., description="角色 ID")
+    name: str = Field(..., description="角色名称")
+    display_name: str = Field(default="", description="显示名称")
+    description: str = Field(default="", description="角色描述")
+    permissions: List[str] = Field(default_factory=list, description="权限列表")
+    created_by: Optional[str] = Field(None, description="创建者")
+    is_system: bool = Field(default=False, description="是否系统角色")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
+
+
+class FineGrainedPermissionCheckRequest(BaseModel):
+    """细粒度权限检查请求"""
+    user_id: str = Field(..., description="用户 ID")
+    permission: str = Field(..., description="权限标识，如 plugin:install")
+
+
+class FineGrainedPermissionCheckResponse(BaseModel):
+    """细粒度权限检查响应"""
+    allowed: bool = Field(..., description="是否允许")
+    permission: str = Field(..., description="检查的权限")
+
+
+class IpAccessEntryCreate(BaseModel):
+    """IP 访问条目创建请求"""
+    ip_cidr: str = Field(..., description="IP 地址或 CIDR 网段")
+    list_type: str = Field(..., description="whitelist 或 blacklist")
+    reason: str = Field(default="", max_length=500, description="添加原因")
+    expires_at: Optional[datetime] = Field(None, description="过期时间，None 表示永不过期")
+
+
+class IpAccessEntryResponse(BaseModel):
+    """IP 访问条目响应模型"""
+    id: int = Field(..., description="条目 ID")
+    ip_cidr: str = Field(..., description="IP 地址或 CIDR 网段")
+    list_type: str = Field(..., description="列表类型")
+    reason: str = Field(default="", description="添加原因")
+    created_by: Optional[str] = Field(None, description="创建者")
+    is_active: bool = Field(default=True, description="是否活跃")
+    expires_at: Optional[str] = Field(None, description="过期时间 ISO 格式")
+    created_at: Optional[str] = Field(None, description="创建时间 ISO 格式")
+
+
+class IpAccessCheckRequest(BaseModel):
+    """IP 访问检查请求"""
+    ip_address: str = Field(..., description="待检查的 IP 地址")
+
+
+class IpAccessCheckResponse(BaseModel):
+    """IP 访问检查响应"""
+    allowed: bool = Field(..., description="是否允许")
+    reason: str = Field(default="", description="决策原因")
+    matched_list: str = Field(default="none", description="命中的列表类型")
+
+
+class AnomalyEventResponse(BaseModel):
+    """异常事件响应模型"""
+    id: int = Field(..., description="事件 ID")
+    event_type: Literal["rate_burst", "repeated_failure", "suspicious_pattern"] = Field(
+        ..., description="事件类型"
+    )
+    user_id: Optional[str] = Field(None, description="用户 ID")
+    ip_address: Optional[str] = Field(None, description="IP 地址")
+    trigger_detail: str = Field(default="", description="触发阈值描述")
+    observed_value: str = Field(default="", description="实际观测值")
+    action_taken: Literal["warn", "throttle", "block"] = Field(
+        default="warn", description="处置动作"
+    )
+    is_resolved: bool = Field(default=False, description="是否已解决")
+    created_at: Optional[str] = Field(None, description="创建时间 ISO 格式")
+    resolved_at: Optional[str] = Field(None, description="解决时间 ISO 格式")
+
+
+class CsrfTokenGenerateRequest(BaseModel):
+    """CSRF token 生成请求"""
+    session_id: Optional[str] = Field(None, max_length=64, description="会话 ID")
+    ttl_hours: int = Field(default=24, ge=1, le=168, description="有效期（小时）")
+
+
+class CsrfTokenResponse(BaseModel):
+    """CSRF token 响应模型"""
+    token: str = Field(..., description="token 字符串")
+    expires_at: str = Field(..., description="过期时间 ISO 格式")
+
+
+class CsrfTokenValidateRequest(BaseModel):
+    """CSRF token 校验请求"""
+    token: str = Field(..., description="待校验的 token")
+    consume: bool = Field(default=True, description="是否一次性消费")
+
+
+class CsrfTokenValidateResponse(BaseModel):
+    """CSRF token 校验响应"""
+    valid: bool = Field(..., description="是否有效")
+    reason: str = Field(default="", description="校验原因")
+
+
+class CsrfTokenRotateRequest(BaseModel):
+    """CSRF token 轮换请求"""
+    old_token: str = Field(..., description="待轮换的旧 token")
+    session_id: Optional[str] = Field(None, max_length=64, description="会话 ID")
+    ttl_hours: int = Field(default=24, ge=1, le=168, description="新 token 有效期（小时）")
+
+
+class UserRateLimitStatsResponse(BaseModel):
+    """用户速率限制统计响应"""
+    user_id: str = Field(..., description="用户 ID")
+    current_count: int = Field(..., description="当前窗口请求数")
+    max_requests: int = Field(..., description="窗口内最大请求数")
+    window_seconds: int = Field(..., description="窗口大小（秒）")
+
+
 class AuditLogResponse(BaseModel):
     """审计日志响应模型"""
     id: int = Field(..., description="日志 ID")
