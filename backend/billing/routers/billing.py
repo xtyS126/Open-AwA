@@ -1609,3 +1609,41 @@ async def get_config_by_type(
     except Exception as e:
         logger.error("获取配置[%s]失败: %s", config_type, e)
         raise HTTPException(status_code=500, detail=f"获取配置[{config_type}]失败: {str(e)}")
+
+
+# ==================== 预算预警与成本优化建议 ====================
+
+@router.get("/alerts")
+async def get_budget_alerts(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的预算预警事件列表。"""
+    from billing.alerts import BudgetAlertService
+    service = BudgetAlertService(db)
+    alerts = service.check_and_generate_alerts(str(current_user.id))
+    return {"success": True, "alerts": alerts, "count": len(alerts)}
+
+
+@router.get("/alerts/all")
+async def get_all_budget_alerts(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取所有用户的预算预警事件（管理员视角）。"""
+    from billing.alerts import BudgetAlertService
+    service = BudgetAlertService(db)
+    alerts = service.get_active_alerts()
+    return {"success": True, "alerts": alerts, "count": len(alerts)}
+
+
+@router.get("/optimization-suggestions")
+async def get_optimization_suggestions(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的成本优化建议报告。"""
+    from billing.alerts import CostOptimizationService
+    service = CostOptimizationService(db)
+    report = service.get_optimization_suggestions(str(current_user.id))
+    return {"success": True, "report": report}
