@@ -860,6 +860,119 @@ class MarketplaceSearchResponse(BaseModel):
     page_size: int = Field(default=12, description="每页数量")
 
 
+# -------- 插件市场版本管理数据模型 --------
+
+class PluginVersionResponse(BaseModel):
+    """插件版本响应模型"""
+    id: int = Field(..., description="版本记录 ID")
+    plugin_id: str = Field(..., description="插件 ID")
+    version: str = Field(..., description="版本号")
+    changelog: str = Field(default="", description="变更日志")
+    download_url: str = Field(default="", description="下载地址")
+    sha256_checksum: str = Field(default="", description="SHA256 校验和")
+    min_platform_version: Optional[str] = Field(None, description="最低平台版本")
+    max_platform_version: Optional[str] = Field(None, description="最高平台版本")
+    is_published: bool = Field(default=True, description="是否已发布")
+    published_at: datetime = Field(..., description="发布时间")
+    release_channel: str = Field(default="stable", description="发布通道")
+
+    model_config = {"from_attributes": True}
+
+
+class PluginVersionListResponse(BaseModel):
+    """插件版本列表响应模型"""
+    plugin_id: str = Field(..., description="插件 ID")
+    versions: List[PluginVersionResponse] = Field(default_factory=list, description="版本列表")
+    total: int = Field(default=0, description="版本总数")
+
+
+class PluginInstallWithVersionRequest(BaseModel):
+    """带版本号的插件安装请求"""
+    version: Optional[str] = Field(None, description="指定版本号，为空则安装最新稳定版")
+
+
+class PluginUpgradeRequest(BaseModel):
+    """插件升级请求"""
+    target_version: str = Field(..., description="目标版本号")
+
+
+class PluginUpgradeResponse(BaseModel):
+    """插件升级响应"""
+    success: bool = Field(..., description="是否成功")
+    plugin_id: str = Field(..., description="插件 ID")
+    previous_version: str = Field(..., description="原版本")
+    current_version: str = Field(..., description="当前版本")
+    message: str = Field(default="", description="附加消息")
+
+
+class PluginUpdateCheckResponse(BaseModel):
+    """插件更新检查响应"""
+    has_update: bool = Field(..., description="是否有可用更新")
+    current_version: str = Field(..., description="当前版本")
+    latest_version: Optional[str] = Field(None, description="最新版本")
+    latest_changelog: Optional[str] = Field(None, description="最新版本变更日志")
+
+
+# -------- 插件市场社区功能数据模型 --------
+
+class PluginRatingCreate(BaseModel):
+    """插件评分创建请求"""
+    score: int = Field(..., ge=1, le=5, description="评分（1-5 星）")
+
+
+class PluginRatingSummaryResponse(BaseModel):
+    """插件评分汇总响应"""
+    plugin_id: str = Field(..., description="插件 ID")
+    average_score: float = Field(default=0.0, description="平均分")
+    total_count: int = Field(default=0, description="评分总数")
+    distribution: Dict[int, int] = Field(default_factory=dict, description="评分分布（1-5 星各数量）")
+    user_score: Optional[int] = Field(None, description="当前用户评分")
+
+
+class PluginReviewCreate(BaseModel):
+    """插件评论创建请求"""
+    content: str = Field(..., min_length=1, max_length=2000, description="评论内容")
+    rating: Optional[int] = Field(None, ge=1, le=5, description="附带评分（1-5 星，可选）")
+
+
+class PluginReviewUpdate(BaseModel):
+    """插件评论更新请求"""
+    content: Optional[str] = Field(None, min_length=1, max_length=2000, description="评论内容")
+    rating: Optional[int] = Field(None, ge=1, le=5, description="附带评分")
+
+
+class PluginReviewResponse(BaseModel):
+    """插件评论响应模型"""
+    id: int = Field(..., description="评论 ID")
+    plugin_id: str = Field(..., description="插件 ID")
+    user_id: str = Field(..., description="用户 ID")
+    username: str = Field(default="", description="用户名")
+    content: str = Field(..., description="评论内容")
+    rating: Optional[int] = Field(None, description="附带评分")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+
+    model_config = {"from_attributes": True}
+
+
+class PluginReviewListResponse(BaseModel):
+    """插件评论列表响应"""
+    plugin_id: str = Field(..., description="插件 ID")
+    reviews: List[PluginReviewResponse] = Field(default_factory=list, description="评论列表")
+    total: int = Field(default=0, description="评论总数")
+    page: int = Field(default=1, description="当前页码")
+    page_size: int = Field(default=20, description="每页数量")
+
+
+class PluginDownloadResponse(BaseModel):
+    """插件下载响应"""
+    success: bool = Field(..., description="是否成功")
+    plugin_id: str = Field(..., description="插件 ID")
+    version: str = Field(..., description="下载版本")
+    sha256: str = Field(default="", description="实际 SHA256 校验和")
+    message: str = Field(default="", description="附加消息")
+
+
 # -------- 安全与 RBAC 相关数据模型 --------
 
 class RoleResponse(BaseModel):

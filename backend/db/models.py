@@ -1064,6 +1064,93 @@ class ProfileExtractionLog(Base):
     log_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
 
+class PluginVersion(Base):
+    """
+    插件版本历史模型，记录每个插件的版本发布信息。
+    支持版本对比、升级检测、回滚操作。
+    """
+    __tablename__ = "plugin_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plugin_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+    changelog: Mapped[str] = mapped_column(Text, default="")
+    download_url: Mapped[str] = mapped_column(String(500), default="")
+    sha256_checksum: Mapped[str] = mapped_column(String(64), default="")
+    min_platform_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    max_platform_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    # 兼容性标记：stable/beta/dev
+    release_channel: Mapped[str] = mapped_column(String(20), default="stable")
+
+    __table_args__ = (
+        Index("ix_plugin_version_plugin_id_version", "plugin_id", "version", unique=True),
+    )
+
+
+class PluginRating(Base):
+    """
+    插件评分模型，每个用户对每个插件仅保留一条评分记录（覆盖更新）。
+    """
+    __tablename__ = "plugin_ratings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plugin_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-5 星
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_plugin_rating_plugin_user", "plugin_id", "user_id", unique=True),
+    )
+
+
+class PluginReview(Base):
+    """
+    插件评论模型，用户可对插件发表评论并附带评分。
+    """
+    __tablename__ = "plugin_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plugin_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(100), default="")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-5 星，可选
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class PluginDownloadLog(Base):
+    """
+    插件下载日志模型，记录每次下载操作的状态与来源。
+    """
+    __tablename__ = "plugin_download_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plugin_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String(50), default="")
+    user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="started")
+    # started/success/failed/cancelled
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(20), default="remote")
+    # remote/local/cache
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 def _migrate_profile_facts_table(use_engine=None):
     """
     迁移：创建 profile_facts 和 profile_extraction_logs 表（如不存在）。
