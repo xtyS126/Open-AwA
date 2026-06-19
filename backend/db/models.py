@@ -1241,6 +1241,58 @@ class CsrfToken(Base):
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+# -------- P3 Chain-of-Thought 推理审计 --------
+
+
+class ReasoningAudit(Base):
+    """
+    推理审计模型，记录每次推理过程的元数据、耗时与 token 统计。
+    用于推理质量分析、性能优化和成本追踪。
+    """
+    __tablename__ = "reasoning_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 会话 ID，关联 short_term_memory
+    session_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # 用户 ID
+    user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    # 模型提供商
+    provider: Mapped[str] = mapped_column(String(50), default="")
+    # 模型名称
+    model: Mapped[str] = mapped_column(String(100), default="")
+    # 推理深度（0-5）
+    thinking_depth: Mapped[int] = mapped_column(Integer, default=0)
+    # 复杂度等级（simple/moderate/complex）
+    complexity: Mapped[str] = mapped_column(String(20), default="simple")
+    # 复杂度评分（0-100）
+    complexity_score: Mapped[int] = mapped_column(Integer, default=0)
+    # 是否用户手动覆盖深度
+    is_user_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 推理内容长度（字符数）
+    reasoning_length: Mapped[int] = mapped_column(Integer, default=0)
+    # 推理 token 数（区分于输出 token）
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    # 输出 token 数
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    # 输入 token 数
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    # 推理耗时（毫秒）
+    reasoning_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # 总耗时（毫秒）
+    total_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # 首 token 时间（毫秒，从请求开始到首个 token 返回）
+    ttft_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # 是否成功完成
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 错误信息（失败时）
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 审计元数据（JSON，存储评估原因等）
+    audit_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 def _migrate_profile_facts_table(use_engine=None):
     """
     迁移：创建 profile_facts 和 profile_extraction_logs 表（如不存在）。

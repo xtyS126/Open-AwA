@@ -26,6 +26,7 @@ from api.routes.diary import router as diary_router
 from api.routes.marketplace import router as marketplace_router
 from api.routes.security import router as security_router
 from api.routes.security_enhanced import router as security_enhanced_router
+from api.routes.cot_audit import router as cot_audit_router
 from api.routes.weixin import router as weixin_router
 from api.routes.tools import router as tools_router
 from api.routes.subagents import router as subagents_router
@@ -879,6 +880,7 @@ app.include_router(billing.router)
 app.include_router(marketplace_router)
 app.include_router(security_router)
 app.include_router(security_enhanced_router)
+app.include_router(cot_audit_router)
 app.include_router(weixin_router)
 app.include_router(tools_router)
 app.include_router(subagents_router)

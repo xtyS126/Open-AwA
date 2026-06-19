@@ -1142,6 +1142,75 @@ class UserRateLimitStatsResponse(BaseModel):
     window_seconds: int = Field(..., description="窗口大小（秒）")
 
 
+# -------- P3 Chain-of-Thought 推理审计 --------
+
+
+class ComplexityAssessRequest(BaseModel):
+    """复杂度评估请求"""
+    user_input: str = Field(..., min_length=1, max_length=10000, description="用户输入文本")
+
+
+class ComplexityAssessResponse(BaseModel):
+    """复杂度评估响应"""
+    complexity: str = Field(..., description="复杂度等级: simple/moderate/complex")
+    thinking_depth: int = Field(..., ge=0, le=5, description="推荐推理深度")
+    score: int = Field(..., ge=0, le=100, description="复杂度评分")
+    reasons: List[str] = Field(default_factory=list, description="评估依据")
+
+
+class ReasoningAuditResponse(BaseModel):
+    """推理审计记录响应模型"""
+    id: int = Field(..., description="审计记录 ID")
+    session_id: str = Field(..., description="会话 ID")
+    user_id: Optional[str] = Field(None, description="用户 ID")
+    provider: str = Field(default="", description="模型提供商")
+    model: str = Field(default="", description="模型名称")
+    thinking_depth: int = Field(default=0, description="推理深度")
+    complexity: str = Field(default="simple", description="复杂度等级")
+    complexity_score: int = Field(default=0, description="复杂度评分")
+    is_user_override: bool = Field(default=False, description="是否用户手动覆盖")
+    reasoning_length: int = Field(default=0, description="推理内容长度")
+    reasoning_tokens: int = Field(default=0, description="推理 token 数")
+    output_tokens: int = Field(default=0, description="输出 token 数")
+    input_tokens: int = Field(default=0, description="输入 token 数")
+    reasoning_duration_ms: int = Field(default=0, description="推理耗时（毫秒）")
+    total_duration_ms: int = Field(default=0, description="总耗时（毫秒）")
+    ttft_ms: int = Field(default=0, description="首 token 时间（毫秒）")
+    success: bool = Field(default=True, description="是否成功")
+    error_message: Optional[str] = Field(None, description="错误信息")
+    audit_metadata: Optional[Dict[str, Any]] = Field(None, description="审计元数据")
+    created_at: Optional[str] = Field(None, description="创建时间 ISO 格式")
+
+
+class ReasoningAuditListResponse(BaseModel):
+    """推理审计列表响应"""
+    audits: List[ReasoningAuditResponse] = Field(default_factory=list, description="审计记录列表")
+    total: int = Field(default=0, description="总数")
+    page: int = Field(default=1, description="当前页码")
+    page_size: int = Field(default=20, description="每页数量")
+
+
+class ReasoningAuditStatsResponse(BaseModel):
+    """推理审计统计响应"""
+    total: int = Field(default=0, description="审计总数")
+    success_rate: float = Field(default=0.0, description="成功率（百分比）")
+    avg_reasoning_tokens: float = Field(default=0.0, description="平均推理 token 数")
+    avg_output_tokens: float = Field(default=0.0, description="平均输出 token 数")
+    avg_reasoning_duration_ms: float = Field(default=0.0, description="平均推理耗时（毫秒）")
+    avg_total_duration_ms: float = Field(default=0.0, description="平均总耗时（毫秒）")
+    avg_ttft_ms: float = Field(default=0.0, description="平均首 token 时间（毫秒）")
+    complexity_distribution: Dict[str, int] = Field(default_factory=dict, description="复杂度分布")
+    depth_distribution: Dict[str, int] = Field(default_factory=dict, description="深度分布")
+
+
+class ReasoningExportResponse(BaseModel):
+    """推理内容导出响应"""
+    session_id: str = Field(..., description="会话 ID")
+    format: str = Field(default="json", description="导出格式")
+    items: List[Dict[str, Any]] = Field(default_factory=list, description="导出项列表")
+    total: int = Field(default=0, description="导出项总数")
+
+
 class AuditLogResponse(BaseModel):
     """审计日志响应模型"""
     id: int = Field(..., description="日志 ID")
