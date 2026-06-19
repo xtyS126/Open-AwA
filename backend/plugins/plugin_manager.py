@@ -21,6 +21,7 @@ import zipfile
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import ipaddress
@@ -29,6 +30,7 @@ import httpx
 from loguru import logger
 
 from .base_plugin import BasePlugin
+from .bundle_detector import BundleDetector, BundleFormat, BundleManifestAdapter
 from .extension_protocol import ExtensionRegistry
 from .hot_update_manager import HotUpdateManager, RollbackManager
 from .plugin_lifecycle import PluginState, PluginStateMachine, TransitionExecutor
@@ -147,6 +149,9 @@ class PluginManager:
         self.rollback_manager = RollbackManager()
         self.hot_update_manager = HotUpdateManager(rollback_manager=self.rollback_manager)
         self.db_session_factory = db_session_factory
+        # bundle 格式检测器：识别 OpenClaw/Codex/Claude/Cursor 等兼容格式
+        self._bundle_detector = BundleDetector()
+        self._bundle_adapter = BundleManifestAdapter()
         logger.info(f"PluginManager initialized with plugins_dir: {self.plugins_dir}")
 
     def _get_default_plugins_dir(self) -> str:
@@ -769,10 +774,15 @@ class PluginManager:
     def _discover_plugins_in_directory(self, search_dir: str) -> List[Dict[str, Any]]:
         """
         在指定目录中搜索并发现插件。
-        
+
+        支持两种发现模式：
+        1. Python 插件：扫描 .py 文件，提取 BasePlugin 子类元数据
+        2. Bundle 插件：扫描子目录中的 manifest 文件，识别 OpenClaw/Codex/Claude/Cursor
+           等兼容格式，适配为内部 manifest 格式（标记 executable=False，仅可发现展示）
+
         Args:
             search_dir: 搜索目录路径。
-            
+
         Returns:
             发现的插件信息列表。
         """
@@ -780,6 +790,9 @@ class PluginManager:
 
         if not os.path.exists(search_dir):
             return discovered_plugins
+
+        # 已发现的插件名集合，避免 Python 插件与 bundle 插件重复
+        discovered_names: Set[str] = set()
 
         for root, dirs, files in os.walk(search_dir):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
@@ -791,13 +804,131 @@ class PluginManager:
                     if plugin_info:
                         discovered_plugins.append(plugin_info)
                         plugin_name = plugin_info["name"]
+                        discovered_names.add(plugin_name)
                         self.plugin_metadata[plugin_name] = plugin_info
                         self._runtime_permission_store.setdefault(plugin_name, set())
                         if plugin_name not in self.loaded_plugins:
                             self.state_machine.set_state(plugin_name, PluginState.REGISTERED)
                         logger.debug(f"Discovered plugin: {plugin_name} at {plugin_path}")
 
+            # 扫描当前目录下的子目录，检测 bundle 格式插件
+            for dir_name in list(dirs):
+                subdir_path = os.path.join(root, dir_name)
+                bundle_info = self._scan_bundle_directory(subdir_path)
+                if bundle_info is None:
+                    continue
+                plugin_name = bundle_info["name"]
+                if plugin_name in discovered_names:
+                    logger.debug(
+                        f"Bundle 插件 '{plugin_name}' 与已发现插件重名，跳过: {subdir_path}"
+                    )
+                    continue
+                discovered_plugins.append(bundle_info)
+                discovered_names.add(plugin_name)
+                self.plugin_metadata[plugin_name] = bundle_info
+                self._runtime_permission_store.setdefault(plugin_name, set())
+                if plugin_name not in self.loaded_plugins:
+                    self.state_machine.set_state(plugin_name, PluginState.REGISTERED)
+                logger.debug(
+                    f"Discovered bundle plugin ({bundle_info.get('bundle_format')}): "
+                    f"{plugin_name} at {subdir_path}"
+                )
+
         return discovered_plugins
+
+    def _scan_bundle_directory(self, plugin_dir: str) -> Optional[Dict[str, Any]]:
+        """
+        扫描目录是否为 bundle 格式插件（OpenClaw/Codex/Claude/Cursor/原生）。
+
+        仅当目录中存在对应 manifest 文件时才识别为 bundle 插件。
+        对于 Open-AwA 原生 manifest.json，若同目录已有 .py 插件则跳过（避免重复）。
+
+        Args:
+            plugin_dir: 待检测的插件目录路径。
+
+        Returns:
+            插件元数据字典；若不是 bundle 格式则返回 None。
+        """
+        dir_path = Path(plugin_dir)
+        if not dir_path.is_dir():
+            return None
+
+        detection = self._bundle_detector.detect(dir_path)
+        if not detection.detected:
+            return None
+
+        # Open-AwA 原生格式：若目录树中有 .py 文件，让 _scan_plugin_file 处理，避免重复
+        # .py 文件可能在子目录中（如 src/index.py），需递归检查
+        if detection.format == BundleFormat.OPENAWA:
+            has_py_plugin = self._directory_contains_python_plugin(plugin_dir)
+            if has_py_plugin:
+                return None
+
+        adapted = self._bundle_adapter.adapt(detection)
+        if adapted is None:
+            return None
+
+        # 构建 bundle 插件元数据
+        manifest_dict = adapted.to_manifest_dict_strict()
+        manifest_path_str = str(detection.manifest_path) if detection.manifest_path else None
+
+        return {
+            "name": adapted.name,
+            "version": adapted.version,
+            "description": adapted.description,
+            "path": None,  # bundle 插件无 Python 入口文件
+            "root_dir": plugin_dir,
+            "class_name": None,
+            "module": None,
+            "manifest": manifest_dict,
+            "manifest_path": manifest_path_str,
+            "config_path": None,
+            "schema_path": None,
+            "default_config": {},
+            "security_scan": {
+                "blocked": False,
+                "reasons": [],
+                "requested_permissions": list(adapted.permissions),
+            },
+            "requested_permissions": list(adapted.permissions),
+            # bundle 专有字段
+            "bundle_format": detection.format.value if detection.format else None,
+            "executable": adapted.executable,
+            "openclaw_id": adapted.openclaw_id,
+            "openclaw_kind": adapted.openclaw_kind,
+            "openclaw_providers": list(adapted.openclaw_providers),
+            "openclaw_channels": list(adapted.openclaw_channels),
+            "openclaw_skills": list(adapted.openclaw_skills),
+        }
+
+    def _directory_contains_python_plugin(self, plugin_dir: str) -> bool:
+        """
+        递归检查目录树中是否包含 Python 插件文件（.py，最多 3 层深度）。
+
+        用于区分 Open-AwA 原生格式插件：
+        - 有 .py 文件 → 由 _scan_plugin_file 处理（提取 BasePlugin 子类元数据）
+        - 无 .py 文件 → 由 bundle 适配器处理（纯 manifest 插件）
+
+        Args:
+            plugin_dir: 待检查的插件目录路径。
+
+        Returns:
+            若目录树中存在 .py 文件（非下划线开头）则返回 True。
+        """
+        for current_root, current_dirs, current_files in os.walk(plugin_dir):
+            # 限制递归深度为 3 层，避免深层遍历影响性能
+            rel_depth = os.path.relpath(current_root, plugin_dir).count(os.sep)
+            if rel_depth > 3:
+                current_dirs[:] = []
+                continue
+            current_dirs[:] = [
+                d for d in current_dirs
+                if not d.startswith(".") and d != "__pycache__"
+            ]
+            for f in current_files:
+                if f.endswith(".py") and not f.startswith("_"):
+                    return True
+        return False
 
     def discover_plugins(self) -> List[Dict[str, Any]]:
         """
@@ -1700,6 +1831,18 @@ class PluginManager:
             return False
 
         metadata = self.plugin_metadata[plugin_name]
+
+        # bundle 插件（OpenClaw/Codex/Claude/Cursor）无 Python 入口，无法在进程内加载
+        # 仅支持发现、展示、配置；执行需通过外部桥接机制
+        if not metadata.get("executable", True):
+            bundle_format = metadata.get("bundle_format", "unknown")
+            logger.error(
+                f"Plugin '{plugin_name}' is a {bundle_format} bundle plugin "
+                f"(executable=False), cannot be loaded in-process. "
+                f"Use external bridge to execute it."
+            )
+            return False
+
         plugin_path = metadata["path"]
         holder: Dict[str, Any] = {}
 

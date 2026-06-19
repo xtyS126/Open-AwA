@@ -7,6 +7,11 @@ SKILL.md 标准格式加载器 — 支持 Anthropic Agent Skills 开放标准。
 - L3 资源文件：按需加载 scripts/、references/、assets/ 中的文件
 
 兼容策略：优先 SKILL.md → 回退 skill.yaml → 最后 DB config 字段。
+
+OpenClaw 扩展兼容：
+- 解析 metadata.openclaw 中的 gating 字段（requires.bins/env/config、primaryEnv、install）
+- 支持 command-dispatch: tool 模式（slash 命令绕过模型直接派发到工具）
+- 支持 user-invocable、disable-model-invocation、always 等 OpenClaw 专有字段
 """
 
 from __future__ import annotations
@@ -36,16 +41,127 @@ RECOMMENDED_SUBDIRS = ("scripts", "references", "assets")
 # YAML frontmatter 正则：匹配开头的 --- ... --- 块
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
+# OpenClaw command-dispatch 合法值
+OPENCLAW_COMMAND_DISPATCH_VALUES = {"tool"}
+# OpenClaw command-arg-mode 合法值
+OPENCLAW_COMMAND_ARG_MODE_VALUES = {"raw", "quoted", "json"}
+# OpenClaw os 过滤合法值
+OPENCLAW_OS_VALUES = {"darwin", "linux", "win32"}
+
 
 # ---------------------------------------------------------------------------
 # 数据结构
 # ---------------------------------------------------------------------------
 
 @dataclass
+class SkillOpenClawGating:
+    """
+    OpenClaw 专有的 gating 字段（来自 metadata.openclaw）。
+    用于声明 skill 启用前的环境要求。
+
+    字段对应 OpenClaw 官方规范：
+    - requires.bins: 所有二进制必须在 PATH 上
+    - requires.anyBins: 至少一个二进制在 PATH 上
+    - requires.env: 每个环境变量必须存在或通过 config 提供
+    - requires.config: 每个 openclaw.json 路径必须为 truthy
+    - primaryEnv: 与 skills.entries.<name>.apiKey 关联的环境变量名
+    - install: 安装器规格数组（brew/node/go/uv/download）
+    """
+    required_bins: List[str] = field(default_factory=list)
+    required_any_bins: List[str] = field(default_factory=list)
+    required_env: List[str] = field(default_factory=list)
+    required_config: List[str] = field(default_factory=list)
+    primary_env: Optional[str] = None
+    install: List[Dict[str, Any]] = field(default_factory=list)
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_metadata(cls, metadata: Any) -> "SkillOpenClawGating":
+        """
+        从 frontmatter 的 metadata 字段解析 OpenClaw gating。
+
+        Args:
+            metadata: frontmatter 中 metadata 字段的值（可能是 dict 或 None）。
+
+        Returns:
+            SkillOpenClawGating 实例。若 metadata 不是字典或不含 openclaw 键，返回空实例。
+        """
+        if not isinstance(metadata, dict):
+            return cls()
+
+        # OpenClaw gating 位于 metadata.openclaw；旧版兼容 metadata.clawdbot
+        openclaw_meta = metadata.get("openclaw")
+        if not isinstance(openclaw_meta, dict):
+            openclaw_meta = metadata.get("clawdbot")
+        if not isinstance(openclaw_meta, dict):
+            return cls()
+
+        requires = openclaw_meta.get("requires", {}) or {}
+        if not isinstance(requires, dict):
+            requires = {}
+
+        required_bins = requires.get("bins", []) or []
+        required_any_bins = requires.get("anyBins", []) or []
+        required_env = requires.get("env", []) or []
+        required_config = requires.get("config", []) or []
+
+        # 确保列表类型安全
+        def _as_str_list(value: Any) -> List[str]:
+            if isinstance(value, list):
+                return [str(item) for item in value]
+            return []
+
+        install = openclaw_meta.get("install", []) or []
+        if not isinstance(install, list):
+            install = []
+
+        return cls(
+            required_bins=_as_str_list(required_bins),
+            required_any_bins=_as_str_list(required_any_bins),
+            required_env=_as_str_list(required_env),
+            required_config=_as_str_list(required_config),
+            primary_env=openclaw_meta.get("primaryEnv") if isinstance(openclaw_meta.get("primaryEnv"), str) else None,
+            install=[item for item in install if isinstance(item, dict)],
+            raw=openclaw_meta,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典表示，用于持久化或日志。"""
+        return {
+            "required_bins": self.required_bins,
+            "required_any_bins": self.required_any_bins,
+            "required_env": self.required_env,
+            "required_config": self.required_config,
+            "primary_env": self.primary_env,
+            "install": self.install,
+        }
+
+    @property
+    def has_requirements(self) -> bool:
+        """是否声明了任何 gating 要求。"""
+        return bool(
+            self.required_bins
+            or self.required_any_bins
+            or self.required_env
+            or self.required_config
+        )
+
+
+@dataclass
 class SkillMetadata:
     """
     L1 元数据：始终加载，token 成本极低。
     对应 Anthropic 标准中 SKILL.md 的 YAML frontmatter。
+
+    兼容 OpenClaw 扩展字段：
+    - user_invocable: 是否暴露为用户 slash 命令（默认 True）
+    - disable_model_invocation: 为 True 时不进入 agent system prompt
+    - command_dispatch: 设为 "tool" 时 slash 命令绕过模型直接派发到工具
+    - command_tool: command_dispatch=tool 时要调用的工具名
+    - command_arg_mode: 工具派发时原始参数字符串转发方式
+    - always: 为 True 时跳过所有 gate，总是包含
+    - os_filter: 平台过滤
+    - openclaw_gating: OpenClaw 专有 gating 字段
     """
     name: str
     description: str
@@ -57,6 +173,16 @@ class SkillMetadata:
     tags: List[str] = field(default_factory=list)
     allowed_tools: Optional[str] = None  # 实验性：安全沙箱声明
     raw_frontmatter: Dict[str, Any] = field(default_factory=dict)
+    # OpenClaw 扩展字段
+    user_invocable: bool = True
+    disable_model_invocation: bool = False
+    command_dispatch: Optional[str] = None
+    command_tool: Optional[str] = None
+    command_arg_mode: str = "raw"
+    always: bool = False
+    os_filter: Optional[str] = None
+    homepage: Optional[str] = None
+    openclaw_gating: SkillOpenClawGating = field(default_factory=SkillOpenClawGating)
 
     def to_skill_config(self) -> Dict[str, Any]:
         """将元数据转换为内部 skill_config 格式（兼容现有系统）。"""
@@ -70,6 +196,16 @@ class SkillMetadata:
             "license": self.license,
             "compatibility": self.compatibility,
             "allowed_tools": self.allowed_tools,
+            # OpenClaw 扩展字段（向后兼容：旧消费者可忽略）
+            "user_invocable": self.user_invocable,
+            "disable_model_invocation": self.disable_model_invocation,
+            "command_dispatch": self.command_dispatch,
+            "command_tool": self.command_tool,
+            "command_arg_mode": self.command_arg_mode,
+            "always": self.always,
+            "os_filter": self.os_filter,
+            "homepage": self.homepage,
+            "openclaw_gating": self.openclaw_gating.to_dict() if self.openclaw_gating.has_requirements else None,
         }
 
 
@@ -179,7 +315,7 @@ class SkillMarkdownLoader:
         return None
 
     def _load_metadata_from_skill_md(self, file_path: Path) -> Optional[SkillMetadata]:
-        """从 SKILL.md 加载 L1 元数据。"""
+        """从 SKILL.md 加载 L1 元数据（含 OpenClaw 扩展字段）。"""
         try:
             content = file_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as e:
@@ -198,17 +334,87 @@ class SkillMarkdownLoader:
         if not description:
             logger.warning(f"SKILL.md 缺少 'description' 字段，将使用空描述: {file_path}")
 
+        # 解析 OpenClaw 扩展字段
+        user_invocable = frontmatter.get("user-invocable", True)
+        if not isinstance(user_invocable, bool):
+            user_invocable = True
+
+        disable_model_invocation = frontmatter.get("disable-model-invocation", False)
+        if not isinstance(disable_model_invocation, bool):
+            disable_model_invocation = False
+
+        command_dispatch = frontmatter.get("command-dispatch")
+        if command_dispatch not in OPENCLAW_COMMAND_DISPATCH_VALUES:
+            if command_dispatch is not None:
+                logger.warning(
+                    f"SKILL.md 中 command-dispatch 值 '{command_dispatch}' 不合法，"
+                    f"合法值: {OPENCLAW_COMMAND_DISPATCH_VALUES}，已忽略"
+                )
+            command_dispatch = None
+
+        command_tool = frontmatter.get("command-tool")
+        if not isinstance(command_tool, str):
+            command_tool = None
+        elif command_dispatch != "tool":
+            logger.warning(
+                f"SKILL.md 中 command-tool='{command_tool}' 但 command-dispatch 不是 'tool'，已忽略"
+            )
+            command_tool = None
+
+        command_arg_mode = frontmatter.get("command-arg-mode", "raw")
+        if command_arg_mode not in OPENCLAW_COMMAND_ARG_MODE_VALUES:
+            logger.warning(
+                f"SKILL.md 中 command-arg-mode 值 '{command_arg_mode}' 不合法，"
+                f"合法值: {OPENCLAW_COMMAND_ARG_MODE_VALUES}，回退为 'raw'"
+            )
+            command_arg_mode = "raw"
+
+        always = frontmatter.get("always", False)
+        if not isinstance(always, bool):
+            always = False
+
+        os_filter = frontmatter.get("os")
+        if os_filter is not None and os_filter not in OPENCLAW_OS_VALUES:
+            logger.warning(
+                f"SKILL.md 中 os 值 '{os_filter}' 不合法，合法值: {OPENCLAW_OS_VALUES}，已忽略"
+            )
+            os_filter = None
+
+        homepage = frontmatter.get("homepage")
+        if not isinstance(homepage, str):
+            homepage = None
+
+        # 解析 OpenClaw gating（metadata.openclaw）
+        openclaw_gating = SkillOpenClawGating.from_metadata(frontmatter.get("metadata"))
+
+        # author 兼容：顶层 author 或 metadata.author
+        metadata_field = frontmatter.get("metadata")
+        metadata_author = None
+        if isinstance(metadata_field, dict):
+            metadata_author = metadata_field.get("author")
+            if not isinstance(metadata_author, str):
+                metadata_author = None
+
         return SkillMetadata(
             name=str(name).strip(),
             description=str(description).strip(),
             version=str(frontmatter.get("version", "1.0.0")).strip(),
             license=frontmatter.get("license"),
             compatibility=frontmatter.get("compatibility"),
-            author=frontmatter.get("author") or frontmatter.get("metadata", {}).get("author"),
+            author=frontmatter.get("author") or metadata_author,
             category=frontmatter.get("category", "general"),
             tags=frontmatter.get("tags", []) if isinstance(frontmatter.get("tags"), list) else [],
             allowed_tools=frontmatter.get("allowed-tools"),
             raw_frontmatter=frontmatter,
+            user_invocable=user_invocable,
+            disable_model_invocation=disable_model_invocation,
+            command_dispatch=command_dispatch,
+            command_tool=command_tool,
+            command_arg_mode=command_arg_mode,
+            always=always,
+            os_filter=os_filter,
+            homepage=homepage,
+            openclaw_gating=openclaw_gating,
         )
 
     def _load_metadata_from_legacy(self, file_path: Path) -> Optional[SkillMetadata]:
