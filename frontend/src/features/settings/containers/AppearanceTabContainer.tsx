@@ -4,11 +4,13 @@
  */
 import { useRef, ChangeEvent, useState } from 'react'
 import { useThemeStore } from '@/shared/store/themeStore'
+import { useI18nStore, LANGUAGES } from '@/i18n'
 import { presetThemes, applyPresetTheme } from '@/features/theme/presetThemes'
 import styles from '@/features/theme/ThemePage.module.css'
 
 export function AppearanceTabContainer() {
   const { config, setConfig } = useThemeStore()
+  const { locale, setLocale, isLocaleLoaded, t } = useI18nStore()
 
   const logoInputRef = useRef<HTMLInputElement>(null)
   const bgInputRef = useRef<HTMLInputElement>(null)
@@ -82,6 +84,30 @@ export function AppearanceTabContainer() {
 
   return (
     <div className={styles['theme-page']}>
+      {/* 语言设置 */}
+      <div className={styles['settings-group']}>
+        <h3>{t('settings.language') || '语言设置'}</h3>
+        <div className={styles['setting-item']}>
+          <label>{t('settings.interfaceLanguage') || '界面语言'}</label>
+          <select
+            value={locale}
+            onChange={(e) => setLocale(e.target.value)}
+            disabled={!isLocaleLoaded}
+          >
+            {LANGUAGES.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.nativeName} ({lang.name})
+              </option>
+            ))}
+          </select>
+          <span className={styles['help-text']}>
+            {isLocaleLoaded
+              ? (t('settings.languageLoaded') || '语言包已加载')
+              : (t('settings.languageLoading') || '正在加载语言包...')}
+          </span>
+        </div>
+      </div>
+
       {/* 预设主题 */}
       <div className={styles['settings-group']}>
         <h3>预设主题</h3>
