@@ -751,6 +751,310 @@
   border-top: 1px solid var(--color-border, #e5e7eb);
 }
 
+/* ============ 图视图（可视化编辑器） ============ */
+
+/* 视图切换按钮组 */
+.viewToggle {
+  display: flex;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+}
+
+.viewToggle button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--color-bg, #ffffff);
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 13px;
+  transition: background var(--transition-fast, 150ms ease),
+              color var(--transition-fast, 150ms ease);
+}
+
+.viewToggle button:hover {
+  color: var(--color-text, #111827);
+}
+
+.viewToggle button.toggleActive {
+  background: var(--color-primary, #3b82f6);
+  color: #ffffff;
+}
+
+/* 子区段标题（节点/边子标题） */
+.subSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.subSectionHeader:first-child {
+  margin-top: 0;
+}
+
+/* reactflow 画布容器 */
+.graphContainer {
+  width: 100%;
+  height: 520px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  background: var(--color-bg-secondary, #f9fafb);
+}
+
+/* 自定义节点容器 */
+.graphNode {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  min-height: 72px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-left: 4px solid #3b82f6;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  font-size: 13px;
+  cursor: pointer;
+  transition: box-shadow var(--transition-fast, 150ms ease),
+              transform var(--transition-fast, 150ms ease);
+}
+
+.graphNode:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+/* 节点头部：Agent 名称（按 agent 着色） */
+.graphNodeHeader {
+  padding: 4px 10px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 节点主体 */
+.graphNodeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+}
+
+.graphNodeTitle {
+  font-weight: 600;
+  color: var(--color-text, #111827);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphNodeDesc {
+  font-size: 11px;
+  color: var(--color-text-secondary, #6b7280);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphNodeBadges {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+/* 节点连接点 */
+.graphNodeHandle {
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary, #3b82f6);
+  border: 2px solid var(--color-bg, #ffffff);
+}
+
+/* reactflow 边标签 */
+:global(.react-flow__edge-text) {
+  font-size: 12px;
+  font-weight: 500;
+  fill: var(--color-text-secondary, #6b7280);
+}
+
+:global(.react-flow__edge-textBg) {
+  fill: var(--color-bg, #ffffff);
+  stroke: var(--color-border, #e5e7eb);
+  stroke-width: 1;
+}
+
+/* ============ 委派任务 ============ */
+
+.delegateContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.delegateLayout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.delegateFormPanel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.delegateSidePanel {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.delegateSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.delegateSectionHeader h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text, #111827);
+}
+
+.pollHint {
+  font-size: 12px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+/* 任务表单列表 */
+.taskFormList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.taskFormRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg, #ffffff);
+}
+
+.taskFormMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.taskFormInline {
+  display: flex;
+  gap: 8px;
+}
+
+.taskFormInline .formRow {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+/* 委派底部：合并策略 + 按钮 */
+.delegateFooter {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-secondary, #f9fafb);
+}
+
+.delegateFooter .formRow {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* 编排器能力提示 */
+.capabilitiesHint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--color-bg-secondary, #f9fafb);
+  border-radius: var(--radius-sm, 6px);
+  font-size: 12px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+/* 活跃任务列表 */
+.activeTaskList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.activeTaskItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg, #ffffff);
+}
+
+.activeTaskInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.activeTaskId {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text, #111827);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, 'Monaco', 'Consolas', monospace);
+}
+
+/* 委派结果区 */
+.delegateResult {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg, #ffffff);
+}
+
 /* ---- 响应式 ---- */
 @media (max-width: 768px) {
   .header {
@@ -837,6 +1141,31 @@
 
   .modalForm {
     min-width: auto;
+  }
+
+  .delegateContainer {
+    padding: 16px;
+  }
+
+  .delegateLayout {
+    flex-direction: column;
+  }
+
+  .delegateSidePanel {
+    width: 100%;
+  }
+
+  .taskFormInline {
+    flex-direction: column;
+  }
+
+  .delegateFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .graphContainer {
+    height: 400px;
   }
 }
 

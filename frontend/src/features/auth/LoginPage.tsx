@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { authAPI, getApiErrorDetail, setTempApiKey, persistApiKey, clearCachedApiKey } from '@/shared/api/api'
+import { authAPI, setTempApiKey, persistApiKey, clearCachedApiKey } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './LoginPage.module.css'

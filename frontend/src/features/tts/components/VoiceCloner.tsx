@@ -74,7 +74,7 @@ const VoiceCloner: React.FC = () => {
             setCloneStatus('failed')
             setCloneError(status.error_message || '训练失败')
           } else {
-            setCloneProgress((prev) => Math.min(prev + 5, 90))
+            setCloneProgress(Math.min(cloneProgress + 5, 90))
           }
         } catch {
           // 轮询出错不中断
@@ -86,7 +86,7 @@ const VoiceCloner: React.FC = () => {
     } finally {
       setIsSubmitting(false)
     }
-  }, [voiceName, audioFile, contextTexts, isSubmitting, setCloneError, setCloneStatus, setCloneSpeakerId, setCloneProgress, loadSpeakers])
+  }, [voiceName, audioFile, contextTexts, isSubmitting, cloneProgress, setCloneError, setCloneStatus, setCloneSpeakerId, setCloneProgress, loadSpeakers])
 
   const handleReset = useCallback(() => {
     resetCloneState()

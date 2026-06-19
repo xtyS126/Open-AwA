@@ -1,10 +1,15 @@
 """
 模型管理路由，提供 Ollama 本地模型发现、提供商连接状态、故障转移与延迟监控接口。
+同时提供 LLM Registry（注册中心）、任务路由配置和用量统计接口。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from typing import Optional
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+from sqlalchemy import func
 
 from api.dependencies import get_current_user, get_db
 from core.litellm_adapter import litellm_check_provider_connection, litellm_list_models
@@ -12,6 +17,7 @@ from core.failover import get_failover_manager
 from config.settings import settings
 from billing.pricing_manager import PricingManager
 from billing.models import ModelConfiguration
+from db.models import LLMUsage
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -241,4 +247,216 @@ async def get_providers_latency_summary(
         "success": True,
         "providers": summary,
         "total": len(summary),
+    }
+
+
+# ── LLM Registry 与路由配置 ──────────────────────────────────────────
+
+# 任务路由规则存储（模块级，服务重启后重置）
+# 格式：{task_type: [{"provider": "...", "model": "...", "priority": 1}, ...]}
+_task_routing_rules: dict = {}
+
+
+class LLMRoutingRuleRequest(BaseModel):
+    """LLM 任务路由规则配置请求体。"""
+    task_type: str = Field(..., description="任务类型：agent/chat/summary/code/vision 等")
+    rules: list[dict] = Field(
+        default_factory=list,
+        description="路由规则列表，每项包含 provider/model/priority 字段",
+    )
+
+
+class LLMRoutingRulesResponse(BaseModel):
+    """LLM 路由规则响应模型。"""
+    task_type: str
+    rules: list[dict]
+
+
+@router.get("/llm/registry")
+async def get_llm_registry(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    获取已注册的 LLM Provider 列表。
+    从数据库 model_configurations 表中提取所有活跃的提供商及其模型。
+    """
+    # 查询所有活跃的模型配置
+    configs = (
+        db.query(ModelConfiguration)
+        .filter(ModelConfiguration.is_active == True)
+        .all()
+    )
+    # 按 provider 分组，收集每个 provider 下的模型列表
+    registry: dict = {}
+    for config in configs:
+        provider = PricingManager.normalize_provider(config.provider)
+        if provider not in registry:
+            registry[provider] = {
+                "provider": provider,
+                "display_name": config.display_name or provider,
+                "models": [],
+            }
+        registry[provider]["models"].append({
+            "model": config.model,
+            "display_name": config.display_name or config.model,
+            "max_tokens": config.max_tokens,
+            "is_default": config.is_default,
+        })
+    return {
+        "success": True,
+        "data": {
+            "providers": list(registry.values()),
+            "total": len(registry),
+        },
+        "message": "LLM Provider 注册列表",
+    }
+
+
+@router.put("/llm/routing")
+async def update_llm_routing(
+    request: LLMRoutingRuleRequest,
+    current_user=Depends(get_current_user),
+):
+    """
+    配置指定任务类型的 LLM 路由规则。
+    路由规则按优先级排序，客户端在调用时根据 task_type 选择对应规则链。
+    """
+    # 按 priority 排序规则列表
+    sorted_rules = sorted(request.rules, key=lambda r: r.get("priority", 99))
+    _task_routing_rules[request.task_type] = sorted_rules
+    logger.bind(
+        event="llm_routing_updated",
+        module="models",
+        task_type=request.task_type,
+        rules_count=len(sorted_rules),
+    ).info("LLM 路由规则已更新")
+    return {
+        "success": True,
+        "data": {
+            "task_type": request.task_type,
+            "rules": sorted_rules,
+        },
+        "message": "路由规则已更新",
+    }
+
+
+@router.get("/llm/routing")
+async def get_llm_routing(
+    task_type: Optional[str] = Query(None, description="按任务类型过滤，不传则返回全部"),
+    current_user=Depends(get_current_user),
+):
+    """
+    获取已配置的 LLM 路由规则。
+    可按 task_type 过滤，不传参数则返回全部已配置规则。
+    """
+    if task_type:
+        rules = _task_routing_rules.get(task_type, [])
+        return {
+            "success": True,
+            "data": {
+                "task_type": task_type,
+                "rules": rules,
+            },
+            "message": "路由规则查询结果",
+        }
+    return {
+        "success": True,
+        "data": {
+            "routing_rules": {
+                task: rules
+                for task, rules in _task_routing_rules.items()
+            },
+            "total": len(_task_routing_rules),
+        },
+        "message": "全部路由规则",
+    }
+
+
+@router.get("/llm/usage")
+async def get_llm_usage(
+    user_id: Optional[str] = Query(None, description="按用户 ID 过滤"),
+    task_type: Optional[str] = Query(None, description="按任务类型过滤"),
+    provider: Optional[str] = Query(None, description="按 Provider 过滤"),
+    limit: int = Query(100, ge=1, le=1000, description="返回记录数"),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    获取 LLM 用量统计，支持按用户、任务类型和 Provider 维度过滤。
+    返回详细记录及聚合统计（总 token 数、总成本、平均延迟等）。
+    """
+    # 构建查询条件
+    query = db.query(LLMUsage)
+    if user_id:
+        query = query.filter(LLMUsage.user_id == user_id)
+    if task_type:
+        query = query.filter(LLMUsage.task_type == task_type)
+    if provider:
+        query = query.filter(LLMUsage.provider == provider)
+    # 获取最近记录
+    records = query.order_by(LLMUsage.created_at.desc()).limit(limit).all()
+    # 聚合统计
+    agg = (
+        db.query(
+            func.count(LLMUsage.id).label("total_calls"),
+            func.sum(LLMUsage.total_tokens).label("total_tokens"),
+            func.sum(LLMUsage.prompt_tokens).label("total_prompt_tokens"),
+            func.sum(LLMUsage.completion_tokens).label("total_completion_tokens"),
+            func.sum(LLMUsage.cost).label("total_cost"),
+            func.avg(LLMUsage.latency_ms).label("avg_latency_ms"),
+            func.sum(
+                func.case((LLMUsage.success == True, 1), else_=0)
+            ).label("success_count"),
+            func.sum(
+                func.case((LLMUsage.success == False, 1), else_=0)
+            ).label("failure_count"),
+        )
+    )
+    if user_id:
+        agg = agg.filter(LLMUsage.user_id == user_id)
+    if task_type:
+        agg = agg.filter(LLMUsage.task_type == task_type)
+    if provider:
+        agg = agg.filter(LLMUsage.provider == provider)
+    agg_row = agg.first()
+    return {
+        "success": True,
+        "data": {
+            "records": [
+                {
+                    "id": r.id,
+                    "user_id": r.user_id,
+                    "task_type": r.task_type,
+                    "provider": r.provider,
+                    "model": r.model,
+                    "prompt_tokens": r.prompt_tokens,
+                    "completion_tokens": r.completion_tokens,
+                    "total_tokens": r.total_tokens,
+                    "cost": round(r.cost, 6),
+                    "latency_ms": r.latency_ms,
+                    "success": r.success,
+                    "error_message": r.error_message,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in records
+            ],
+            "summary": {
+                "total_calls": agg_row.total_calls or 0,
+                "total_tokens": agg_row.total_tokens or 0,
+                "total_prompt_tokens": agg_row.total_prompt_tokens or 0,
+                "total_completion_tokens": agg_row.total_completion_tokens or 0,
+                "total_cost": round(agg_row.total_cost or 0.0, 6),
+                "avg_latency_ms": round(agg_row.avg_latency_ms or 0.0, 2),
+                "success_count": agg_row.success_count or 0,
+                "failure_count": agg_row.failure_count or 0,
+            },
+            "filter": {
+                "user_id": user_id,
+                "task_type": task_type,
+                "provider": provider,
+                "limit": limit,
+            },
+        },
+        "message": "LLM 用量统计",
     }

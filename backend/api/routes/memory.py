@@ -4,7 +4,10 @@
 
 from typing import List, Optional
 
+from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -18,7 +21,7 @@ from api.schemas import (
     ShortTermMemoryCreate,
     ShortTermMemoryResponse,
 )
-from db.models import ConversationRecord, LongTermMemory, ShortTermMemory, SessionLocal, User, get_db
+from db.models import ConversationRecord, LongTermMemory, MemoryDecayConfig, ShortTermMemory, SessionLocal, User, get_db
 from memory.manager import MemoryManager
 
 
@@ -187,20 +190,26 @@ async def delete_long_term_memory(
 @router.get(
     "/search",
     summary="搜索长期记忆",
-    description="根据关键词搜索长期记忆内容。"
+    description="根据关键词搜索长期记忆内容，支持按记忆层级过滤。"
 )
 async def search_memories(
     query: str,
     include_archived: bool = Query(False, description="是否包含已归档记忆"),
+    layer: Optional[str] = Query(None, description="记忆层级过滤：core（核心事实）/episodic（情景记忆）/semantic（语义知识）/working（工作记忆）"),
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user)
 ):
-    return await manager.search_memories(
+    # 执行搜索，获取候选记忆列表
+    results = await manager.search_memories(
         query=query,
         user_id=str(current_user.id),
         include_archived=include_archived,
         use_vector=True,
     )
+    # 如果指定了层级过滤，按 memory_layer 字段筛选
+    if layer:
+        results = [m for m in results if getattr(m, 'memory_layer', None) == layer]
+    return results
 
 
 @router.post(
@@ -265,12 +274,97 @@ async def get_memory_quality(
 
 @router.get(
     "/stats",
-    response_model=MemoryStatsResponse,
     summary="获取增强记忆统计",
-    description="返回长期记忆、工作内存与向量存储的综合统计信息。",
+    description="返回长期记忆、工作内存、向量存储及分层记忆统计信息。",
 )
 async def get_memory_stats(
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    return await manager.get_memory_stats(user_id=str(current_user.id))
+    # 获取基础统计数据
+    base_stats = await manager.get_memory_stats(user_id=str(current_user.id))
+    # 查询各记忆层级的计数
+    layer_counts = (
+        db.query(
+            LongTermMemory.memory_layer,
+            func.count(LongTermMemory.id).label("count"),
+        )
+        .filter(
+            LongTermMemory.user_id == str(current_user.id),
+            LongTermMemory.archive_status != "archived",
+        )
+        .group_by(LongTermMemory.memory_layer)
+        .all()
+    )
+    # 构建层级统计，确保所有层级都有默认值
+    layer_stats = {
+        "core": 0,
+        "episodic": 0,
+        "semantic": 0,
+        "working": 0,
+    }
+    for layer_name, count in layer_counts:
+        if layer_name in layer_stats:
+            layer_stats[layer_name] = count
+    return {
+        **base_stats,
+        "layer_stats": layer_stats,
+    }
+
+
+# ── 记忆衰减配置请求模型 ──────────────────────────────────────────
+
+
+class MemoryDecayConfigRequest(BaseModel):
+    """记忆衰减配置请求体，按层级设置衰减参数。"""
+    layer: str = Field(..., description="记忆层级：core/episodic/semantic/working")
+    decay_function: str = Field(default="exponential", description="衰减函数：exponential/linear/none")
+    half_life_days: int = Field(default=30, ge=1, le=3650, description="半衰期（天）")
+    threshold: float = Field(default=0.1, ge=0.0, le=1.0, description="衰减阈值（低于此值归档）")
+    enabled: bool = Field(default=True, description="是否启用衰减")
+
+
+@router.put(
+    "/decay-config",
+    summary="配置记忆衰减参数",
+    description="为指定记忆层级设置衰减函数、半衰期和阈值参数。",
+)
+async def update_decay_config(
+    config: MemoryDecayConfigRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # 查找或创建该层级的衰减配置
+    existing = db.query(MemoryDecayConfig).filter(
+        MemoryDecayConfig.layer == config.layer
+    ).first()
+    if existing:
+        # 更新已有配置
+        existing.decay_function = config.decay_function
+        existing.half_life_days = config.half_life_days
+        existing.threshold = config.threshold
+        existing.enabled = config.enabled
+    else:
+        # 创建新配置
+        existing = MemoryDecayConfig(
+            layer=config.layer,
+            decay_function=config.decay_function,
+            half_life_days=config.half_life_days,
+            threshold=config.threshold,
+            enabled=config.enabled,
+        )
+        db.add(existing)
+    db.commit()
+    db.refresh(existing)
+    return {
+        "success": True,
+        "data": {
+            "layer": existing.layer,
+            "decay_function": existing.decay_function,
+            "half_life_days": existing.half_life_days,
+            "threshold": existing.threshold,
+            "enabled": existing.enabled,
+        },
+        "message": "衰减配置已更新",
+    }

@@ -8,10 +8,14 @@ v3: 新增 WebSocket 实时消息推送端点与多媒体消息查询接口。
 
 import asyncio
 import json
+import os
+import re
+import tempfile
+from pathlib import Path
 from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
@@ -31,11 +35,103 @@ from core.weixin_utils import (
     normalize_binding_status as _normalize_binding_status,
     deserialize_skill_config as _deserialize_skill_config,
 )
-from skills.weixin_skill_adapter import WeixinSkillAdapter
+from skills.weixin_skill_adapter import (
+    WeixinAdapterError,
+    WeixinRuntimeConfig,
+    WeixinSkillAdapter,
+    load_binding as _load_weixin_binding,
+)
 
 
 router = APIRouter(prefix="/api/weixin", tags=["Weixin"])
 _WEIXIN_SKILL_NAME = "weixin_dispatch"
+
+# 多媒体上传安全配置
+_MULTIMEDIA_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+_MULTIMEDIA_ALLOWED_MIME_TYPES: Dict[str, str] = {
+    "image/jpeg": "image",
+    "image/png": "image",
+    "image/gif": "image",
+    "audio/amr": "voice",
+    "audio/mp3": "voice",
+    "audio/mpeg": "voice",
+    "video/mp4": "video",
+    "application/pdf": "file",
+}
+_MULTIMEDIA_ALLOWED_MEDIA_TYPES = {"image", "voice", "video", "file"}
+
+
+def _parse_multimedia_metadata(content: str) -> Dict[str, Any]:
+    """
+    从多媒体消息文本描述中解析元数据字段。
+
+    build_multimedia_description 生成的文本格式示例：
+    - [图片消息] URL: https://... 格式: jpg
+    - [语音消息] 时长: 3000 毫秒 格式: amr
+    - [文件消息] 文件名: doc.pdf 大小: 2048 字节
+    - [视频消息] URL: https://... 时长: 10000 毫秒 格式: mp4
+
+    返回字典包含 media_id/file_url/file_name/file_size/duration_ms/media_format，
+    无法解析的字段保持空值。
+    """
+    result: Dict[str, Any] = {
+        "media_id": "",
+        "file_url": "",
+        "file_name": "",
+        "file_size": 0,
+        "duration_ms": 0,
+        "media_format": "",
+    }
+    if not content:
+        return result
+
+    url_match = re.search(r"URL:\s*(\S+)", content)
+    if url_match:
+        result["file_url"] = url_match.group(1)
+
+    name_match = re.search(r"文件名:\s*(\S+)", content)
+    if name_match:
+        result["file_name"] = name_match.group(1)
+
+    size_match = re.search(r"大小:\s*(\d+)\s*字节", content)
+    if size_match:
+        try:
+            result["file_size"] = int(size_match.group(1))
+        except ValueError:
+            result["file_size"] = 0
+
+    duration_match = re.search(r"时长:\s*(\d+)\s*毫秒", content)
+    if duration_match:
+        try:
+            result["duration_ms"] = int(duration_match.group(1))
+        except ValueError:
+            result["duration_ms"] = 0
+
+    format_match = re.search(r"格式:\s*(\S+)", content)
+    if format_match:
+        result["media_format"] = format_match.group(1)
+
+    media_id_match = re.search(r"media_id[:\s]+(\S+)", content, re.IGNORECASE)
+    if media_id_match:
+        result["media_id"] = media_id_match.group(1)
+
+    return result
+
+
+def _sanitize_upload_filename(filename: str) -> str:
+    """
+    清理上传文件名，防止路径穿越攻击。
+    仅保留文件名部分，移除目录分隔符和特殊字符。
+    """
+    if not filename:
+        return "upload.bin"
+    # 取 basename 防止路径穿越
+    safe_name = os.path.basename(filename)
+    # 移除潜在的危险字符
+    safe_name = re.sub(r"[^\w.\-]", "_", safe_name)
+    if not safe_name or safe_name in {".", ".."}:
+        return "upload.bin"
+    return safe_name
 
 
 def _recover_binding_from_skill_config(db: Session, app_user_id: str) -> Optional[WeixinBinding]:
@@ -774,6 +870,9 @@ async def list_recent_multimedia(
         parts = sid.replace("weixin:auto:", "").split(":", 1)
         from_user_id = parts[1] if len(parts) > 1 else ""
 
+        # 从消息文本描述中提取 media_id/file_url/file_size/duration_ms 等元数据
+        metadata = _parse_multimedia_metadata(content_str)
+
         results.append(
             WeixinMultimediaMessageResponse(
                 message_id=f"{sid}:{mem.id}",
@@ -781,6 +880,12 @@ async def list_recent_multimedia(
                 message_type=detected_type,
                 text=content_str[:500],
                 media_type=detected_type,
+                media_id=metadata.get("media_id", ""),
+                file_url=metadata.get("file_url", ""),
+                file_name=metadata.get("file_name", ""),
+                file_size=int(metadata.get("file_size", 0) or 0),
+                duration_ms=int(metadata.get("duration_ms", 0) or 0),
+                media_format=metadata.get("media_format", ""),
                 timestamp=mem.timestamp.isoformat() if mem.timestamp else "",
             )
         )
@@ -832,6 +937,137 @@ async def get_multimedia_detail(
         "reasoning_content": str(memory.reasoning_content or "") if memory.reasoning_content else "",
         "tool_events": memory.tool_events if memory.tool_events else [],
     }
+
+
+class WeixinMultimediaSendResponse(BaseModel):
+    """微信多媒体发送结果响应模型"""
+    success: bool
+    media_type: str
+    media_id: str
+    to_user: str
+    file_name: str
+    file_size: int
+    upload_result: Dict[str, Any] = {}
+    send_result: Dict[str, Any] = {}
+
+
+@router.post("/multimedia/send", response_model=WeixinMultimediaSendResponse)
+async def send_multimedia(
+    to_user: str = Form(..., min_length=1, max_length=128),
+    media_type: str = Form(..., pattern=r"^(image|voice|video|file)$"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    上传并发送微信多媒体消息。
+
+    接收文件上传 + 目标用户 + 消息类型，执行以下流程：
+    1. 安全校验：文件大小限制 50MB、MIME 类型白名单、文件名路径穿越防护
+    2. 将上传文件保存到临时目录
+    3. 调用 upload_media 上传临时素材获取 media_id
+    4. 调用对应的 send_xxx_message 发送多媒体消息
+    5. 清理临时文件并返回发送结果
+    """
+    user_id = str(current_user.id)
+
+    # 校验 media_type 与 MIME 类型白名单
+    content_type = str(file.content_type or "").lower()
+    if content_type not in _MULTIMEDIA_ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型: {content_type or '未知'}，允许的类型: {', '.join(sorted(_MULTIMEDIA_ALLOWED_MIME_TYPES.keys()))}",
+        )
+    mime_inferred_type = _MULTIMEDIA_ALLOWED_MIME_TYPES[content_type]
+    if media_type != mime_inferred_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"media_type={media_type} 与文件 MIME 类型 {content_type} 不匹配，应为 {mime_inferred_type}",
+        )
+
+    # 读取文件内容并校验大小
+    try:
+        file_bytes = await file.read()
+    except Exception as exc:
+        logger.error(f"[weixin] 读取上传文件失败: user={user_id}, error={exc}")
+        raise HTTPException(status_code=400, detail="读取上传文件失败")
+    file_size = len(file_bytes)
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if file_size > _MULTIMEDIA_MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件大小 {file_size} 字节超过限制 {_MULTIMEDIA_MAX_FILE_SIZE} 字节 (50MB)",
+        )
+
+    # 清理文件名，防止路径穿越
+    safe_filename = _sanitize_upload_filename(file.filename or "")
+
+    # 加载微信绑定配置
+    binding = _ensure_binding_exists(db, user_id)
+    if not binding:
+        raise HTTPException(status_code=400, detail="未找到微信绑定记录，请先绑定微信账号")
+    runtime = _load_weixin_binding(db, user_id)
+    if not runtime or not runtime.token:
+        raise HTTPException(status_code=400, detail="微信绑定配置无效，token 为空")
+
+    adapter = WeixinSkillAdapter()
+
+    # 保存到临时文件
+    temp_file_path: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{safe_filename}", prefix="weixin_upload_") as temp_file:
+            temp_file.write(file_bytes)
+            temp_file_path = temp_file.name
+
+        # 上传临时素材
+        try:
+            upload_result = await adapter.upload_media(
+                config=runtime,
+                media_type=media_type,
+                file_path=temp_file_path,
+            )
+        except WeixinAdapterError as exc:
+            logger.warning(f"[weixin] 上传多媒体素材失败: user={user_id}, code={exc.code}, msg={exc.message}")
+            raise HTTPException(status_code=502, detail=f"上传素材失败: {exc.message}")
+
+        media_id = str(upload_result.get("media_id") or "")
+
+        # 根据类型调用对应的发送方法
+        try:
+            if media_type == "image":
+                send_result = await adapter.send_image_message(runtime, to_user, media_id)
+            elif media_type == "voice":
+                send_result = await adapter.send_voice_message(runtime, to_user, media_id)
+            elif media_type == "video":
+                send_result = await adapter.send_video_message(runtime, to_user, media_id)
+            else:
+                send_result = await adapter.send_file_message(runtime, to_user, media_id)
+        except WeixinAdapterError as exc:
+            logger.warning(f"[weixin] 发送多媒体消息失败: user={user_id}, code={exc.code}, msg={exc.message}")
+            raise HTTPException(status_code=502, detail=f"发送多媒体消息失败: {exc.message}")
+
+        logger.info(
+            f"[weixin] 多媒体消息发送成功: user={user_id}, to={to_user}, type={media_type}, "
+            f"file={safe_filename}, size={file_size}, media_id={media_id}"
+        )
+        return WeixinMultimediaSendResponse(
+            success=True,
+            media_type=media_type,
+            media_id=media_id,
+            to_user=to_user,
+            file_name=safe_filename,
+            file_size=file_size,
+            upload_result=upload_result,
+            send_result=send_result,
+        )
+    finally:
+        # 清理临时文件
+        if temp_file_path:
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
 
 
 # ──────────────────────────────────────────────

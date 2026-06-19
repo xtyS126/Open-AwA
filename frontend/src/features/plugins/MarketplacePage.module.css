@@ -139,6 +139,7 @@
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
+  cursor: pointer;
 }
 
 .plugin-card:hover {
@@ -321,4 +322,376 @@
 .back-btn:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+/* ==================== 插件卡片评分摘要 ==================== */
+
+.plugin-rating {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.plugin-rating-stars {
+  color: #f5a623;
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+
+.plugin-rating-text {
+  color: var(--color-text-secondary);
+}
+
+.plugin-rating-empty {
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+/* ==================== 插件详情 Modal ==================== */
+
+.detail-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-subtle, var(--color-border));
+}
+
+.detail-loading {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+/* 详情头部 */
+.detail-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.detail-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: var(--color-primary);
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.detail-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-description {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.detail-author,
+.detail-version,
+.detail-category,
+.detail-installs {
+  display: inline-flex;
+  align-items: center;
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 评分汇总区 */
+.rating-summary {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.rating-overview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 140px;
+  padding: 12px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md, 8px);
+}
+
+.rating-average {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.rating-stars {
+  color: #f5a623;
+  font-size: 16px;
+  letter-spacing: 2px;
+}
+
+.rating-count {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.rating-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-subtle, var(--color-border));
+  width: 100%;
+  justify-content: center;
+}
+
+.rating-user-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.rating-user-stars {
+  display: flex;
+  gap: 2px;
+}
+
+/* 评分分布柱状图 */
+.rating-distribution {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+}
+
+.distribution-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.distribution-label {
+  color: var(--color-text-secondary);
+  min-width: 32px;
+}
+
+.distribution-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.distribution-fill {
+  height: 100%;
+  background: #f5a623;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.distribution-count {
+  color: var(--color-text-secondary);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* 星级按钮（通用） */
+.rating-star-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #f5a623;
+  padding: 2px;
+  line-height: 1;
+  transition: transform 0.1s ease;
+}
+
+.rating-star-btn:hover {
+  transform: scale(1.15);
+}
+
+/* ==================== 评论列表 ==================== */
+
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.review-item {
+  padding: 12px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.review-author {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.review-stars {
+  color: #f5a623;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.review-time {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+.review-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.review-action-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.review-action-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.review-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.review-action-danger:hover:not(:disabled) {
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
+.review-content {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 评论分页 */
+.review-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* ==================== 评论表单 ==================== */
+
+.review-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-rating {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-rating-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.form-rating-stars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-rating-clear {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  margin-left: 6px;
+}
+
+.form-rating-clear:hover {
+  color: var(--color-primary);
+}
+
+.form-error {
+  color: #e5484d;
+  font-size: 12px;
+  margin: 0;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

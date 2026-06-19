@@ -435,6 +435,108 @@
   resize: vertical;
 }
 
+/* ---- 图视图 ---- */
+.graphContainer {
+  width: 100%;
+  height: 600px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg-secondary, #f9fafb);
+}
+
+/* 自定义节点容器 */
+.graphNode {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  min-height: 64px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+  background: var(--color-bg-primary, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  font-size: 13px;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.graphNode:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+/* 节点头部：类型标签（按步骤类型着色） */
+.graphNodeHeader {
+  padding: 4px 10px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 节点主体：步骤名称 */
+.graphNodeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+}
+
+.graphNodeTitle {
+  font-weight: 500;
+  color: var(--color-text-primary, #111827);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphNodeRef {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #9ca3af);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 节点连接点 */
+.graphNodeHandle {
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary, #3b82f6);
+  border: 2px solid var(--color-bg-primary, #ffffff);
+}
+
+/* reactflow 边标签 */
+:global(.react-flow__edge-text) {
+  font-size: 12px;
+  font-weight: 500;
+  fill: var(--color-text-secondary, #6b7280);
+}
+
+:global(.react-flow__edge-textBg) {
+  fill: var(--color-bg-primary, #ffffff);
+  stroke: var(--color-border, #e5e7eb);
+  stroke-width: 1;
+}
+
+/* reactflow 控制按钮 */
+:global(.react-flow__controls-button) {
+  background: var(--color-bg-primary, #ffffff);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  color: var(--color-text-secondary, #6b7280);
+}
+
+:global(.react-flow__controls-button:hover) {
+  background: var(--color-bg-tertiary, #f3f4f6);
+}
+
+:global(.react-flow__controls-button svg) {
+  fill: var(--color-text-secondary, #6b7280);
+}
+
 /* ---- 执行结果 ---- */
 .executionResult {
   border-top: 1px solid var(--color-border, #e5e7eb);

@@ -329,6 +329,281 @@ class WeixinSkillAdapter:
         """
         return await self._send_message(config, payload)
 
+    async def upload_media(
+        self,
+        config: WeixinRuntimeConfig,
+        media_type: str,
+        file_path: str,
+    ) -> Dict[str, Any]:
+        """
+        上传临时素材到微信 /cgi-bin/media/upload 接口，返回包含 media_id 的响应。
+
+        media_type 取值：image/voice/video/file。
+        使用 multipart/form-data 异步上传，超时时间固定 30 秒。
+        """
+        normalized_type = str(media_type or "").strip().lower()
+        if normalized_type not in {"image", "voice", "video", "file"}:
+            raise WeixinAdapterError(
+                code="WEIXIN_INVALID_MEDIA_TYPE",
+                message="media_type 必须为 image/voice/video/file 之一",
+                details={"media_type": media_type},
+                suggestions=["检查调用方传入的 media_type 参数"],
+            )
+        if not file_path or not os.path.isfile(file_path):
+            raise WeixinAdapterError(
+                code="WEIXIN_MEDIA_FILE_NOT_FOUND",
+                message="待上传的素材文件不存在",
+                details={"file_path": file_path},
+                suggestions=["确认文件路径正确且文件可读"],
+            )
+
+        params: Dict[str, Any] = {
+            "access_token": config.token,
+            "type": normalized_type,
+        }
+        response = await self._api_upload(
+            config=config,
+            endpoint="cgi-bin/media/upload",
+            file_path=file_path,
+            file_field="media",
+            extra_params=params,
+            timeout_seconds=30,
+        )
+
+        errcode = response.get("errcode")
+        if errcode:
+            raise WeixinAdapterError(
+                code="WEIXIN_UPLOAD_FAILED",
+                message=f"上传素材失败: errcode={errcode}, errmsg={response.get('errmsg', '')}",
+                details={"response": response},
+                suggestions=["检查 access_token 是否有效、文件格式是否符合微信要求"],
+            )
+
+        media_id = str(response.get("media_id") or "").strip()
+        if not media_id:
+            raise WeixinAdapterError(
+                code="WEIXIN_UPLOAD_NO_MEDIA_ID",
+                message="上传素材成功但未返回 media_id",
+                details={"response": response},
+                suggestions=["联系上游服务排查响应结构"],
+            )
+
+        return {
+            "media_type": normalized_type,
+            "media_id": media_id,
+            "created_at": response.get("created_at"),
+            "type": response.get("type", normalized_type),
+            "raw_response": response,
+        }
+
+    async def send_image_message(
+        self,
+        config: WeixinRuntimeConfig,
+        user_id: str,
+        media_id: str,
+    ) -> Dict[str, Any]:
+        """发送图片消息，item type=2，使用 image_item 携带 media_id。"""
+        return await self._send_media_message(
+            config=config,
+            user_id=user_id,
+            item_type=2,
+            item_key="image_item",
+            item_payload={"media_id": media_id},
+        )
+
+    async def send_voice_message(
+        self,
+        config: WeixinRuntimeConfig,
+        user_id: str,
+        media_id: str,
+    ) -> Dict[str, Any]:
+        """发送语音消息，item type=3，使用 voice_item 携带 media_id。"""
+        return await self._send_media_message(
+            config=config,
+            user_id=user_id,
+            item_type=3,
+            item_key="voice_item",
+            item_payload={"media_id": media_id},
+        )
+
+    async def send_video_message(
+        self,
+        config: WeixinRuntimeConfig,
+        user_id: str,
+        media_id: str,
+    ) -> Dict[str, Any]:
+        """发送视频消息，item type=4，使用 video_item 携带 media_id。"""
+        return await self._send_media_message(
+            config=config,
+            user_id=user_id,
+            item_type=4,
+            item_key="video_item",
+            item_payload={"media_id": media_id},
+        )
+
+    async def send_file_message(
+        self,
+        config: WeixinRuntimeConfig,
+        user_id: str,
+        media_id: str,
+    ) -> Dict[str, Any]:
+        """发送文件消息，item type=5，使用 file_item 携带 media_id。"""
+        return await self._send_media_message(
+            config=config,
+            user_id=user_id,
+            item_type=5,
+            item_key="file_item",
+            item_payload={"media_id": media_id},
+        )
+
+    async def _send_media_message(
+        self,
+        config: WeixinRuntimeConfig,
+        user_id: str,
+        item_type: int,
+        item_key: str,
+        item_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        复用 send_text_message 的请求模式发送多媒体消息。
+        通过 item_list 携带对应类型的多媒体条目，context_token 优先从缓存读取。
+        """
+        to_user_id = str(user_id or "").strip()
+        media_id = str(item_payload.get("media_id") or "").strip()
+        if not to_user_id:
+            raise WeixinAdapterError(
+                code="WEIXIN_INPUT_MISSING_FIELDS",
+                message="发送多媒体消息缺少 to_user_id",
+                details={"missing_fields": ["to_user_id"]},
+                suggestions=["提供有效的目标用户 ID"],
+            )
+        if not media_id:
+            raise WeixinAdapterError(
+                code="WEIXIN_INPUT_MISSING_FIELDS",
+                message="发送多媒体消息缺少 media_id",
+                details={"missing_fields": ["media_id"]},
+                suggestions=["先调用 upload_media 获取 media_id"],
+            )
+
+        context_token = self._get_context_token(config.account_id, to_user_id)
+        if not context_token:
+            raise WeixinAdapterError(
+                code="WEIXIN_INPUT_MISSING_FIELDS",
+                message="发送多媒体消息缺少 context_token",
+                details={"missing_fields": ["context_token"]},
+                suggestions=["先执行 get_updates 建立上下文缓存"],
+            )
+
+        client_id = f"ilink-{uuid.uuid4().hex[:8]}"
+        request_body = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": client_id,
+                "message_type": 2,
+                "message_state": 2,
+                "context_token": context_token,
+                "item_list": [
+                    {
+                        "type": item_type,
+                        item_key: item_payload,
+                    }
+                ],
+            }
+        }
+        response = await self._api_post(config=config, endpoint="ilink/bot/sendmessage", body=request_body)
+        return {
+            "request": {
+                "to_user_id": to_user_id,
+                "client_id": client_id,
+                "context_token": context_token,
+                "item_type": item_type,
+                "item_key": item_key,
+                "media_id": media_id,
+            },
+            "response": response,
+        }
+
+    async def _api_upload(
+        self,
+        config: WeixinRuntimeConfig,
+        endpoint: str,
+        file_path: str,
+        file_field: str,
+        extra_params: Optional[Dict[str, Any]] = None,
+        timeout_seconds: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        以 multipart/form-data 方式上传文件到微信上游接口。
+        与 _api_post 共享鉴权与错误处理逻辑，但请求体使用文件流。
+        """
+        url = f"{config.base_url}/{endpoint.lstrip('/')}"
+        params: Dict[str, Any] = dict(extra_params or {})
+        headers = {
+            "AuthorizationType": "ilink_bot_token",
+            "Authorization": f"Bearer {config.token}",
+            "iLink-App-ClientVersion": "1",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                with open(file_path, "rb") as file_handle:
+                    response = await client.post(
+                        url,
+                        params=params,
+                        files={file_field: file_handle},
+                        headers=headers,
+                    )
+            if response.status_code == 401:
+                logger.warning(f"[weixin] token 认证失败 (401), account_id={config.account_id}, endpoint={endpoint}")
+                config.binding_status = "expired"
+                raise WeixinAdapterError(
+                    code="WEIXIN_TOKEN_EXPIRED",
+                    message="微信 token 已失效，请重新扫码登录",
+                    details={"endpoint": endpoint, "status_code": 401, "binding_status": "expired"},
+                    suggestions=["重新执行扫码登录流程以刷新 token"],
+                )
+            if response.status_code >= 400:
+                raise WeixinAdapterError(
+                    code="WEIXIN_UPSTREAM_HTTP_ERROR",
+                    message=f"上游请求失败: HTTP {response.status_code}",
+                    details={"endpoint": endpoint, "status_code": response.status_code, "response_text": response.text[:500]},
+                    suggestions=["检查 token 是否有效、base_url 是否正确，或稍后重试"],
+                )
+            content_type = response.headers.get("content-type", "")
+            if "application/json" in content_type.lower():
+                return response.json()
+            raw = response.text.strip()
+            if raw.startswith("{") or raw.startswith("["):
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError:
+                    pass
+            return {"raw_text": raw}
+        except WeixinAdapterError:
+            raise
+        except httpx.TimeoutException:
+            raise WeixinAdapterError(
+                code="WEIXIN_TIMEOUT",
+                message="weixin 上传素材超时",
+                details={"endpoint": endpoint, "timeout_seconds": timeout_seconds},
+                suggestions=["提高 timeout_seconds 或检查网络连通性"],
+            )
+        except httpx.HTTPError as exc:
+            raise WeixinAdapterError(
+                code="WEIXIN_HTTP_ERROR",
+                message="weixin 上传素材请求异常",
+                details={"endpoint": endpoint, "error": str(exc)},
+                suggestions=["检查网络、代理和证书配置"],
+            )
+        except OSError as exc:
+            raise WeixinAdapterError(
+                code="WEIXIN_FILE_READ_ERROR",
+                message="读取待上传素材文件失败",
+                details={"file_path": file_path, "error": str(exc)},
+                suggestions=["确认文件存在且有读权限"],
+            )
+
     async def get_updates(
         self,
         config: WeixinRuntimeConfig,

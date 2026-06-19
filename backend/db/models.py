@@ -332,6 +332,7 @@ class LongTermMemory(Base):
     """
     长期记忆模型，存储用户的持久化学习记忆。
     每条记忆归属于特定用户（user_id），支持多租户隔离。
+    支持多层记忆架构：core（核心事实）/episodic（情景记忆）/semantic（语义知识）/working（工作记忆）。
     """
     __tablename__ = "long_term_memory"
 
@@ -348,9 +349,12 @@ class LongTermMemory(Base):
     quality_score: Mapped[float] = mapped_column(Float, default=0.0)
     archive_status: Mapped[str] = mapped_column(String(50), default="active", index=True)
     memory_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 记忆层级：core（核心事实，永久保留）/episodic（情景记忆，时间衰减）/semantic（语义知识，关联强化）/working（工作记忆，会话级）
+    memory_layer: Mapped[str] = mapped_column(String(20), default="semantic", index=True, comment="记忆层级：core/episodic/semantic/working")
 
     __table_args__ = (
         Index("ix_ltm_ws_archive", "workspace_id", "archive_status"),
+        Index("ix_ltm_user_layer", "user_id", "memory_layer"),
     )
 
 
@@ -1290,6 +1294,128 @@ class ReasoningAudit(Base):
     audit_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+# -------- Soul Engine 用户画像系统 --------
+
+
+class UserProfile(Base):
+    """
+    用户五层画像模型，存储从行为中推断的用户特征。
+    五层结构：surface（行为表象）/interest（兴趣偏好）/role（角色认同）/values（价值驱动）/core（核心人格）。
+    """
+    __tablename__ = "user_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    # 五层画像 JSON 数据
+    profile_data: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # MBTI 类型（如 INTJ、ENFP 等）
+    mbti: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # 认知风格（如 analytical、creative、practical 等）
+    cognitive_style: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # 画像更新时间
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+    # 画像置信度（0.0-1.0）
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+
+
+class UserProfileOverride(Base):
+    """
+    用户画像覆盖层，存储用户手动编辑的画像信息。
+    用户编辑优先于 AI 推断，实现"用户编辑 ⊕ AI 画像"的合并逻辑。
+    """
+    __tablename__ = "user_profile_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    # 覆盖层 JSON 数据
+    overrides: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class InterestProbe(Base):
+    """
+    兴趣推测探针，存储系统推测的用户潜在兴趣，等待用户确认或拒绝。
+    通过苏格拉底式对话向用户确认，确认后写入正式画像。
+    """
+    __tablename__ = "interest_probes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    # 推测的兴趣假设
+    hypothesis: Mapped[str] = mapped_column(Text, nullable=False)
+    # 推测依据（JSON，如 {"source": "behavior_analysis", "confidence": 0.7}）
+    reasoning: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # 状态：pending（待确认）/confirmed（已确认）/rejected（已拒绝）
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    # 探针问题（苏格拉底式提问）
+    probe_question: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class MemoryDecayConfig(Base):
+    """
+    记忆衰减配置，存储各层记忆的衰减参数。
+    支持按记忆层级配置不同的衰减函数和半衰期。
+    """
+    __tablename__ = "memory_decay_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 记忆层级：core/episodic/semantic/working
+    layer: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
+    # 衰减函数：exponential（指数衰减）/linear（线性衰减）/none（不衰减）
+    decay_function: Mapped[str] = mapped_column(String(20), default="exponential")
+    # 半衰期（天）
+    half_life_days: Mapped[int] = mapped_column(Integer, default=30)
+    # 衰减阈值（低于此值归档）
+    threshold: Mapped[float] = mapped_column(Float, default=0.1)
+    # 是否启用衰减
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class LLMUsage(Base):
+    """
+    LLM 用量记录，追踪每次 LLM 调用的 token 用量、成本和延迟。
+    支持按用户/任务/Provider 维度统计。
+    """
+    __tablename__ = "llm_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+    # 任务类型（如 soul、discovery、recommendation、evaluation、agent 等）
+    task_type: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    # Provider 名称（如 openai、claude、gemini 等）
+    provider: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    # 模型名称
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Token 用量
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    # 成本（美元）
+    cost: Mapped[float] = mapped_column(Float, default=0.0)
+    # 延迟（毫秒）
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # 是否成功
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 错误信息
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    __table_args__ = (
+        Index("ix_llm_usage_user_task", "user_id", "task_type"),
+        Index("ix_llm_usage_provider_model", "provider", "model"),
     )
 
 

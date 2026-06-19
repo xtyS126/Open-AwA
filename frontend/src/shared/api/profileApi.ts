@@ -124,6 +124,7 @@ export async function getProfileFacts(params?: {
   category?: string
   min_confidence?: number
   active_only?: boolean
+  limit?: number
 }): Promise<FactsListResponse> {
   const { data } = await sharedApi.get(`${PROFILE_BASE}/facts`, { params })
   return data

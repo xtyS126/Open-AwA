@@ -312,11 +312,30 @@ class MemoryManager:
         memory_metadata: Optional[Dict[str, Any]] = None,
         source_type: Optional[str] = None,
         workspace_id: str = "default",
+        memory_layer: str = "semantic",
     ) -> LongTermMemory:
         metadata = dict(memory_metadata or {})
         if source_type and "source_type" not in metadata:
             metadata["source_type"] = source_type
         now = datetime.now(timezone.utc)
+        
+        # 根据记忆层级设置不同的初始权重和衰减策略
+        if memory_layer == "core":
+            # Core Memory：永久保留，高权重
+            importance = max(importance, 0.9)
+            metadata["memory_layer"] = "core"
+        elif memory_layer == "episodic":
+            # Episodic Memory：时间衰减，按访问频率强化
+            importance = max(importance, 0.5)
+            metadata["memory_layer"] = "episodic"
+        elif memory_layer == "working":
+            # Working Memory：会话级，结束清理
+            importance = min(importance, 0.3)
+            metadata["memory_layer"] = "working"
+        else:
+            # Semantic Memory：默认层，关联强化
+            metadata["memory_layer"] = memory_layer
+        
         memory = LongTermMemory(
             content=content,
             importance=importance,
@@ -328,6 +347,7 @@ class MemoryManager:
             confidence=max(0.35, min(1.0, 0.45 + (importance * 0.4))),
             archive_status="active",
             memory_metadata=metadata,
+            memory_layer=memory_layer,
         )
         memory.quality_score = self._calculate_quality_score(memory, reference_time=now)
         with self.session_factory() as db:

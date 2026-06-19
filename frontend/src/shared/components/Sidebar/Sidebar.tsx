@@ -193,7 +193,7 @@ const renderIcon = (type: string, size = 18) => {
               {config.logoIcon ? (
                 <img src={config.logoIcon} alt="Logo" className={styles['custom-logo-icon']} />
               ) : (
-                <span className={styles['logo-icon']}><Cat size={24} /></span>
+                <img src="/logo.svg" alt="Logo" className={styles['custom-logo-icon']} />
               )}
               <span className={styles['logo-text']}>Open-AwA</span>
             </div>

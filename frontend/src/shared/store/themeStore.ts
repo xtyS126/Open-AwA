@@ -245,7 +245,7 @@ const applyConfig = (config: ThemeConfig) => {
   } else {
     const link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']")
     if (link) {
-      link.href = '/vite.svg'
+      link.href = '/logo.svg'
     }
   }
 }

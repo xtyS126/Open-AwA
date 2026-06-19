@@ -17,7 +17,21 @@ import {
   RefreshCw,
   Code,
   Eye,
+  Network,
 } from 'lucide-react'
+import ReactFlow, {
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  Position,
+  useEdgesState,
+  useNodesState,
+  type NodeProps,
+  type Node,
+  type Edge,
+} from 'reactflow'
+import 'reactflow/dist/style.css'
 
 import {
   WorkflowResponse,
@@ -33,6 +47,14 @@ import {
 } from '@/shared/api/workflowApi'
 import { appLogger } from '@/shared/utils/logger'
 import { Button, Input, Modal, Textarea, EmptyState, Badge } from '@/shared/components/ui'
+import {
+  STEP_TYPE_COLORS,
+  findStepById,
+  stepsToGraph,
+  updateStepInTree,
+  type WorkflowEdgeData,
+  type WorkflowNodeData,
+} from './workflowGraph'
 
 import styles from './WorkflowPage.module.css'
 
@@ -82,6 +104,38 @@ function createDefaultStep(type: WorkflowStepType): WorkflowStep {
       return { ...base, workflow_id: null, workflow_name: null, inputs: {}, max_depth: 5 }
   }
 }
+
+/* ---- 图视图自定义节点 ---- */
+
+/** 自定义节点组件：按步骤类型着色，显示类型标签与步骤名称 */
+function WorkflowNodeComponent({ data }: NodeProps<WorkflowNodeData>) {
+  const color = STEP_TYPE_COLORS[data.stepType]
+  const typeLabel = data.isReference
+    ? '引用'
+    : STEP_TYPE_META[data.stepType as WorkflowStepType].label
+  return (
+    <div
+      className={styles.graphNode}
+      style={{ borderLeftColor: color }}
+      data-step-type={data.stepType}
+    >
+      <Handle type="target" position={Position.Top} className={styles.graphNodeHandle} />
+      <div className={styles.graphNodeHeader} style={{ backgroundColor: color }}>
+        {typeLabel}
+      </div>
+      <div className={styles.graphNodeBody}>
+        <span className={styles.graphNodeTitle}>{data.title}</span>
+        {data.isReference && data.referenceName && (
+          <span className={styles.graphNodeRef}>{data.referenceName}</span>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className={styles.graphNodeHandle} />
+    </div>
+  )
+}
+
+/** reactflow 节点类型映射（模块级定义，避免每次渲染重建） */
+const nodeTypes = { workflowNode: WorkflowNodeComponent }
 
 /* ---- 步骤编辑器组件 ---- */
 
@@ -370,7 +424,8 @@ export default function WorkflowPage() {
   const [editingStep, setEditingStep] = useState<WorkflowStep | null>(null)
   const [editingIndex, setEditingIndex] = useState<number>(-1)
   const [executionResult, setExecutionResult] = useState<WorkflowExecutionResponse | null>(null)
-  const [viewMode, setViewMode] = useState<'visual' | 'json'>('visual')
+  const [viewMode, setViewMode] = useState<'visual' | 'json' | 'graph'>('visual')
+  const [editingFromGraph, setEditingFromGraph] = useState(false)
 
   /** 加载工作流列表 */
   const loadWorkflows = useCallback(async () => {
@@ -421,11 +476,15 @@ export default function WorkflowPage() {
 
   /** 更新步骤 */
   const handleUpdateStep = (updated: WorkflowStep) => {
-    if (editingIndex >= 0) {
+    if (editingFromGraph && editingStep) {
+      /* 图视图模式：按步骤 ID 在步骤树中递归更新 */
+      setSteps(prev => updateStepInTree(prev, editingStep.id, updated))
+    } else if (editingIndex >= 0) {
       setSteps(prev => prev.map((s, i) => (i === editingIndex ? updated : s)))
     }
     setEditingStep(null)
     setEditingIndex(-1)
+    setEditingFromGraph(false)
   }
 
   /** 删除步骤 */
@@ -540,6 +599,30 @@ export default function WorkflowPage() {
     }, null, 2)
   }, [workflowName, workflowDescription, steps])
 
+  /** 图视图：从 steps 计算节点与边（含 dagre 布局） */
+  const computedGraph = useMemo(() => stepsToGraph(steps), [steps])
+
+  /** reactflow 节点/边状态（允许拖拽，steps 变更时同步） */
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<WorkflowNodeData>(computedGraph.nodes)
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<WorkflowEdgeData>(computedGraph.edges)
+
+  useEffect(() => {
+    setRfNodes(computedGraph.nodes)
+    setRfEdges(computedGraph.edges)
+  }, [computedGraph, setRfNodes, setRfEdges])
+
+  /** 图视图节点双击：打开 StepEditor 编辑步骤属性 */
+  const handleNodeDoubleClick = useCallback((_event: unknown, node: Node<WorkflowNodeData>) => {
+    /* 引用占位节点不可编辑 */
+    if (node.data.isReference) return
+    const found = findStepById(steps, node.id)
+    if (found) {
+      setEditingStep(found)
+      setEditingIndex(-1)
+      setEditingFromGraph(true)
+    }
+  }, [steps])
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -646,6 +729,13 @@ export default function WorkflowPage() {
                   <Eye size={16} />
                 </button>
                 <button
+                  className={viewMode === 'graph' ? styles.toggleActive : ''}
+                  onClick={() => setViewMode('graph')}
+                  aria-label="图视图"
+                >
+                  <Network size={16} />
+                </button>
+                <button
                   className={viewMode === 'json' ? styles.toggleActive : ''}
                   onClick={() => setViewMode('json')}
                   aria-label="JSON 视图"
@@ -666,7 +756,7 @@ export default function WorkflowPage() {
               />
             </div>
 
-            {viewMode === 'visual' ? (
+            {viewMode === 'visual' && (
               <>
                 <div className={styles.stepsHeader}>
                   <h3>步骤列表 ({steps.length})</h3>
@@ -701,7 +791,35 @@ export default function WorkflowPage() {
                   </div>
                 )}
               </>
-            ) : (
+            )}
+
+            {viewMode === 'graph' && (
+              <div className={styles.graphContainer}>
+                {steps.length === 0 ? (
+                  <EmptyState
+                    title="暂无步骤"
+                    description="切换到可视化视图添加步骤后查看图结构"
+                  />
+                ) : (
+                  <ReactFlow
+                    nodes={rfNodes}
+                    edges={rfEdges as Edge[]}
+                    nodeTypes={nodeTypes}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeDoubleClick={handleNodeDoubleClick}
+                    fitView
+                    minZoom={0.2}
+                    maxZoom={2}
+                  >
+                    <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+                    <Controls />
+                  </ReactFlow>
+                )}
+              </div>
+            )}
+
+            {viewMode === 'json' && (
               <div className={styles.jsonPreview}>
                 <Textarea
                   value={jsonPreview}
@@ -773,6 +891,7 @@ export default function WorkflowPage() {
           onClose={() => {
             setEditingStep(null)
             setEditingIndex(-1)
+            setEditingFromGraph(false)
           }}
           title="编辑步骤"
         >
@@ -782,6 +901,7 @@ export default function WorkflowPage() {
             onCancel={() => {
               setEditingStep(null)
               setEditingIndex(-1)
+              setEditingFromGraph(false)
             }}
           />
         </Modal>

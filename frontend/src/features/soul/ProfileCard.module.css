@@ -1,0 +1,114 @@
+.profile-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: box-shadow var(--transition-fast);
+}
+
+.profile-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: inherit;
+  font-family: inherit;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.card-header:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.expand-icon {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.layer-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confidence-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+.card-body {
+  padding: 0 20px 20px 20px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.description {
+  margin: 16px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.structured-section {
+  margin-top: 12px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0 0 8px 0;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.data-key {
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+  width: 30%;
+  white-space: nowrap;
+}
+
+.data-value {
+  color: var(--color-text);
+  word-break: break-word;
+}

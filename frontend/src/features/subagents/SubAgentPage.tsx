@@ -17,7 +17,21 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  Send,
+  XCircle,
+  Loader,
 } from 'lucide-react'
+import ReactFlow, {
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  Position,
+  type NodeProps,
+  type Node,
+  type Edge,
+} from 'reactflow'
+import 'reactflow/dist/style.css'
 import { Button, Input, Modal, Textarea, EmptyState, Badge, Card } from '@/shared/components/ui'
 import { getApiErrorDetail } from '@/shared/api/client'
 import {
@@ -32,8 +46,21 @@ import {
   type ExecutionHistoryResponse,
   type GraphExecutionResult,
   type RegisteredAgent,
+  type DelegateRequest,
+  type DelegateResponse,
+  type SubagentTaskInput,
+  type IsolationLevel,
+  type MergeStrategy,
+  type ActiveTasksResponse,
+  type OrchestratorCapabilities,
+  type SubagentLifecycleState,
 } from '@/shared/api/subagentsApi'
 import { appLogger } from '@/shared/utils/logger'
+import {
+  getAgentColor,
+  graphDefinitionToFlow,
+  type SubagentNodeData,
+} from './subagentGraph'
 import styles from './SubAgentPage.module.css'
 
 /* ---- 工具函数 ---- */
@@ -94,7 +121,63 @@ function prettyJson(obj: unknown): string {
 }
 
 /* ---- 标签页类型 ---- */
-type TabKey = 'definitions' | 'history' | 'agents'
+type TabKey = 'definitions' | 'history' | 'agents' | 'delegate'
+
+/* ---- 图定义编辑器视图模式 ---- */
+type GraphViewMode = 'table' | 'visual'
+
+/* ---- 委派任务表单行 ---- */
+interface DelegateTaskFormRow {
+  /** 任务指令 */
+  instruction: string
+  /** 允许的工具（逗号分隔） */
+  allowedTools: string
+  /** 隔离级别 */
+  isolationLevel: IsolationLevel
+  /** 最大轮次（可选，空字符串表示不设置） */
+  maxTurns: string
+  /** 最大 token 数（可选） */
+  maxTokens: string
+  /** 最大执行时间秒数（可选） */
+  maxTime: string
+}
+
+/* ---- 隔离级别选项 ---- */
+const ISOLATION_LEVEL_OPTIONS: Array<{ value: IsolationLevel; label: string }> = [
+  { value: 1, label: 'CONTEXT' },
+  { value: 2, label: 'PROCESS' },
+  { value: 3, label: 'SANDBOX' },
+]
+
+/* ---- 合并策略选项 ---- */
+const MERGE_STRATEGY_OPTIONS: Array<{ value: MergeStrategy; label: string }> = [
+  { value: 'concatenate', label: 'CONCATENATE' },
+  { value: 'dag', label: 'DAG' },
+  { value: 'llm_summary', label: 'LLM_SUMMARY' },
+  { value: 'voting', label: 'VOTING' },
+]
+
+/* ---- 生命周期状态对应的 Badge 变体 ---- */
+function getLifecycleBadgeVariant(
+  state: SubagentLifecycleState,
+): 'primary' | 'success' | 'warning' | 'error' {
+  switch (state) {
+    case 'completed':
+      return 'success'
+    case 'running':
+    case 'created':
+    case 'waiting':
+      return 'primary'
+    case 'timeout':
+    case 'terminated':
+      return 'warning'
+    case 'error':
+    case 'cancelled':
+      return 'error'
+    default:
+      return 'primary'
+  }
+}
 
 /* ---- 执行结果展示组件 ---- */
 
@@ -178,6 +261,42 @@ function RunResultDisplay({ result }: RunResultDisplayProps) {
   )
 }
 
+/* ---- 图视图自定义节点组件 ---- */
+
+/** 自定义节点组件：按 agent 字段着色，显示节点名称/Agent/描述与入口终点标记 */
+function SubagentNodeComponent({ data }: NodeProps<SubagentNodeData>) {
+  const color = getAgentColor(data.agent)
+  return (
+    <div
+      className={styles.graphNode}
+      style={{ borderLeftColor: color }}
+      data-entry={data.isEntryPoint ? 'true' : 'false'}
+      data-finish={data.isFinishPoint ? 'true' : 'false'}
+    >
+      <Handle type="target" position={Position.Top} className={styles.graphNodeHandle} />
+      <div className={styles.graphNodeHeader} style={{ backgroundColor: color }}>
+        {data.agent || '未指定 Agent'}
+      </div>
+      <div className={styles.graphNodeBody}>
+        <span className={styles.graphNodeTitle}>{data.title}</span>
+        {data.node.description && (
+          <span className={styles.graphNodeDesc}>{data.node.description}</span>
+        )}
+        {(data.isEntryPoint || data.isFinishPoint) && (
+          <div className={styles.graphNodeBadges}>
+            {data.isEntryPoint && <Badge variant="primary" text="入口" />}
+            {data.isFinishPoint && <Badge variant="success" text="终点" />}
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className={styles.graphNodeHandle} />
+    </div>
+  )
+}
+
+/** reactflow 节点类型映射（模块级定义，避免每次渲染重建） */
+const nodeTypes = { subagentNode: SubagentNodeComponent }
+
 /* ---- 主页面组件 ---- */
 
 export default function SubAgentPage() {
@@ -227,6 +346,24 @@ export default function SubAgentPage() {
   /* ---- 运行弹窗状态 ---- */
   const [runContext, setRunContext] = useState('{}')
   const [runMessages, setRunMessages] = useState('[]')
+
+  /* ---- 图视图状态 ---- */
+  const [graphViewMode, setGraphViewMode] = useState<GraphViewMode>('table')
+  /** 可视化模式下正在编辑的节点索引（null 表示未编辑） */
+  const [editingNodeIndex, setEditingNodeIndex] = useState<number | null>(null)
+  /** 节点编辑弹窗草稿 */
+  const [nodeEditDraft, setNodeEditDraft] = useState<GraphNodeSchema | null>(null)
+
+  /* ---- 委派任务状态 ---- */
+  const [delegateTasks, setDelegateTasks] = useState<DelegateTaskFormRow[]>([
+    { instruction: '', allowedTools: '', isolationLevel: 1, maxTurns: '', maxTokens: '', maxTime: '' },
+  ])
+  const [mergeStrategy, setMergeStrategy] = useState<MergeStrategy>('concatenate')
+  const [delegateResult, setDelegateResult] = useState<DelegateResponse | null>(null)
+  const [activeTasks, setActiveTasks] = useState<ActiveTasksResponse | null>(null)
+  const [isDelegating, setIsDelegating] = useState(false)
+  const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null)
+  const [capabilities, setCapabilities] = useState<OrchestratorCapabilities | null>(null)
 
   /* ---- 卸载安全引用 ---- */
   const mountedRef = useRef(true)
@@ -305,12 +442,58 @@ export default function SubAgentPage() {
     }
   }, [])
 
+  /** 加载当前活跃的子代理任务列表 */
+  const loadActiveTasks = useCallback(async () => {
+    try {
+      const resp = await subagentsApi.getActiveTasks()
+      if (!mountedRef.current) return
+      setActiveTasks(resp)
+    } catch (err) {
+      if (!mountedRef.current) return
+      appLogger.error({
+        event: 'subagents_active_tasks_load_failed',
+        module: 'subagents',
+        message: '加载活跃任务失败',
+        extra: { error: String(err) },
+      })
+    }
+  }, [])
+
+  /** 加载编排器能力描述（隔离级别/合并策略/默认资源限制） */
+  const loadCapabilities = useCallback(async () => {
+    try {
+      const caps = await subagentsApi.getCapabilities()
+      if (!mountedRef.current) return
+      setCapabilities(caps)
+    } catch (err) {
+      if (!mountedRef.current) return
+      appLogger.error({
+        event: 'subagents_capabilities_load_failed',
+        module: 'subagents',
+        message: '加载编排器能力失败',
+        extra: { error: String(err) },
+      })
+    }
+  }, [])
+
   /* ---- 初始加载 ---- */
   useEffect(() => {
     loadDefinitions()
     loadHistory()
     loadAgents()
   }, [loadDefinitions, loadHistory, loadAgents])
+
+  /* ---- 委派任务轮询：delegate 标签页激活时每 3 秒拉取活跃任务 ---- */
+  useEffect(() => {
+    if (activeTab !== 'delegate') return
+    /* 进入标签页时立即拉取一次 + 加载能力 */
+    loadActiveTasks()
+    loadCapabilities()
+    const timer = setInterval(() => {
+      loadActiveTasks()
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [activeTab, loadActiveTasks, loadCapabilities])
 
   /* ---- 派生状态 ---- */
 
@@ -338,6 +521,9 @@ export default function SubAgentPage() {
     return history.filter(h => h.graph_name === historyFilter)
   }, [history, historyFilter])
 
+  /** 图视图：从 editGraph 计算 reactflow 节点与边（含 dagre 布局） */
+  const computedFlow = useMemo(() => graphDefinitionToFlow(editGraph), [editGraph])
+
   /* ---- 事件处理 ---- */
 
   /** 切换标签页 */
@@ -350,8 +536,9 @@ export default function SubAgentPage() {
   const handleRefresh = useCallback(() => {
     if (activeTab === 'definitions') loadDefinitions()
     else if (activeTab === 'history') loadHistory()
-    else loadAgents()
-  }, [activeTab, loadDefinitions, loadHistory, loadAgents])
+    else if (activeTab === 'agents') loadAgents()
+    else if (activeTab === 'delegate') loadActiveTasks()
+  }, [activeTab, loadDefinitions, loadHistory, loadAgents, loadActiveTasks])
 
   /** 选中图定义进行编辑 */
   const handleSelectDefinition = useCallback((def: SubagentDefinitionResponse) => {
@@ -637,11 +824,165 @@ export default function SubAgentPage() {
     setExpandedHistoryId(prev => (prev === id ? null : id))
   }, [])
 
+  /* ---- 图视图节点编辑 ---- */
+
+  /** 可视化视图节点双击：打开编辑弹窗 */
+  const handleNodeDoubleClick = useCallback(
+    (_event: unknown, node: Node<SubagentNodeData>) => {
+      if (isReadOnly) return
+      const idx = node.data.index
+      const target = editGraph.nodes[idx]
+      if (!target) return
+      setEditingNodeIndex(idx)
+      setNodeEditDraft({ ...target })
+    },
+    [editGraph.nodes, isReadOnly],
+  )
+
+  /** 节点编辑弹窗字段变更 */
+  const handleNodeDraftChange = useCallback(
+    (field: keyof GraphNodeSchema, value: string) => {
+      setNodeEditDraft(prev => (prev ? { ...prev, [field]: value } : prev))
+    },
+    [],
+  )
+
+  /** 保存节点编辑（同步回 editGraph，可视化与表格双向同步） */
+  const handleNodeEditSave = useCallback(() => {
+    if (editingNodeIndex === null || !nodeEditDraft) return
+    setEditGraph(prev => ({
+      ...prev,
+      nodes: prev.nodes.map((n, i) => (i === editingNodeIndex ? { ...nodeEditDraft } : n)),
+    }))
+    setEditingNodeIndex(null)
+    setNodeEditDraft(null)
+  }, [editingNodeIndex, nodeEditDraft])
+
+  /** 取消节点编辑 */
+  const handleNodeEditCancel = useCallback(() => {
+    setEditingNodeIndex(null)
+    setNodeEditDraft(null)
+  }, [])
+
+  /* ---- 委派任务处理 ---- */
+
+  /** 更新委派任务表单行字段 */
+  const handleDelegateTaskChange = useCallback(
+    (index: number, field: keyof DelegateTaskFormRow, value: string | IsolationLevel) => {
+      setDelegateTasks(prev =>
+        prev.map((t, i) => (i === index ? { ...t, [field]: value } : t)),
+      )
+    },
+    [],
+  )
+
+  /** 添加委派任务行 */
+  const handleAddDelegateTask = useCallback(() => {
+    setDelegateTasks(prev => [
+      ...prev,
+      { instruction: '', allowedTools: '', isolationLevel: 1, maxTurns: '', maxTokens: '', maxTime: '' },
+    ])
+  }, [])
+
+  /** 删除委派任务行 */
+  const handleDeleteDelegateTask = useCallback((index: number) => {
+    setDelegateTasks(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
+  /** 发起委派：将表单转换为 SubagentTaskInput 并调用 API */
+  const handleDelegate = useCallback(async () => {
+    /* 校验：至少一个任务有指令 */
+    const validTasks = delegateTasks.filter(t => t.instruction.trim())
+    if (validTasks.length === 0) {
+      setError('至少需要填写一个任务的指令')
+      return
+    }
+
+    setIsDelegating(true)
+    setError(null)
+    setDelegateResult(null)
+    try {
+      const tasks: SubagentTaskInput[] = validTasks.map((t, i) => {
+        const task: SubagentTaskInput = {
+          task_id: `task_${Date.now().toString(36)}_${i}`,
+          instruction: t.instruction.trim(),
+        }
+        const tools = t.allowedTools.split(',').map(s => s.trim()).filter(Boolean)
+        if (tools.length > 0) task.allowed_tools = tools
+        task.isolation_level = t.isolationLevel
+        /* 资源限制：仅当至少一个字段填写时携带 */
+        const maxTurns = Number(t.maxTurns)
+        const maxTokens = Number(t.maxTokens)
+        const maxTime = Number(t.maxTime)
+        if (t.maxTurns || t.maxTokens || t.maxTime) {
+          task.resource_limits = {}
+          if (t.maxTurns && !Number.isNaN(maxTurns)) task.resource_limits.max_turns = maxTurns
+          if (t.maxTokens && !Number.isNaN(maxTokens)) task.resource_limits.max_tokens = maxTokens
+          if (t.maxTime && !Number.isNaN(maxTime)) task.resource_limits.max_time_seconds = maxTime
+        }
+        return task
+      })
+
+      const payload: DelegateRequest = { tasks, merge_strategy: mergeStrategy }
+      const result = await subagentsApi.delegate(payload)
+      if (!mountedRef.current) return
+      setDelegateResult(result)
+      appLogger.info({
+        event: 'subagents_delegate_completed',
+        module: 'subagents',
+        message: '委派任务完成',
+        extra: { success: result.success, taskCount: tasks.length },
+      })
+      /* 委派后立即刷新活跃任务 */
+      loadActiveTasks()
+    } catch (err) {
+      if (!mountedRef.current) return
+      appLogger.error({
+        event: 'subagents_delegate_failed',
+        module: 'subagents',
+        message: '委派任务失败',
+        extra: { error: String(err) },
+      })
+      setError(getErrorMessage(err, '委派任务失败'))
+    } finally {
+      if (mountedRef.current) setIsDelegating(false)
+    }
+  }, [delegateTasks, mergeStrategy, loadActiveTasks])
+
+  /** 取消指定活跃任务 */
+  const handleCancelTask = useCallback(async (taskId: string) => {
+    setCancellingTaskId(taskId)
+    try {
+      await subagentsApi.cancelTask(taskId)
+      if (!mountedRef.current) return
+      appLogger.info({
+        event: 'subagents_task_cancelled',
+        module: 'subagents',
+        message: '任务已取消',
+        extra: { taskId },
+      })
+      /* 立即刷新活跃任务状态 */
+      loadActiveTasks()
+    } catch (err) {
+      if (!mountedRef.current) return
+      appLogger.error({
+        event: 'subagents_task_cancel_failed',
+        module: 'subagents',
+        message: '取消任务失败',
+        extra: { taskId, error: String(err) },
+      })
+      setError(getErrorMessage(err, '取消任务失败'))
+    } finally {
+      if (mountedRef.current) setCancellingTaskId(null)
+    }
+  }, [loadActiveTasks])
+
   /* ---- 标签页配置 ---- */
   const tabs: Array<{ key: TabKey; label: string }> = [
     { key: 'definitions', label: '图定义管理' },
     { key: 'history', label: '执行历史' },
     { key: 'agents', label: '已注册 Agent' },
+    { key: 'delegate', label: '委派任务' },
   ]
 
   /* ---- 渲染 ---- */
@@ -811,116 +1152,175 @@ export default function SubAgentPage() {
                       />
                     </div>
 
-                    {/* 图定义编辑器 */}
+                    {/* 图定义编辑器：视图切换工具栏 */}
                     <div className={styles.graphSection}>
                       <div className={styles.graphSectionHeader}>
-                        <h3>节点 ({editGraph.nodes.length})</h3>
-                        {!isReadOnly && (
-                          <Button variant="secondary" size="sm" onClick={handleAddNode}>
-                            <Plus size={14} />
-                            添加节点
-                          </Button>
-                        )}
-                      </div>
-                      {editGraph.nodes.length === 0 ? (
-                        <p className={styles.emptyHint}>暂无节点，点击添加节点按钮创建</p>
-                      ) : (
-                        <div className={styles.nodeList}>
-                          {editGraph.nodes.map((node, index) => (
-                            <div key={index} className={styles.nodeRow}>
-                              <Input
-                                value={node.name}
-                                onChange={e => handleNodeChange(index, 'name', e.target.value)}
-                                placeholder="节点名称"
-                                className={styles.nodeNameInput}
-                                disabled={isReadOnly}
-                              />
-                              <Input
-                                value={node.agent}
-                                onChange={e => handleNodeChange(index, 'agent', e.target.value)}
-                                placeholder="Agent 名称"
-                                className={styles.nodeAgentInput}
-                                disabled={isReadOnly}
-                              />
-                              <Input
-                                value={node.description || ''}
-                                onChange={e => handleNodeChange(index, 'description', e.target.value)}
-                                placeholder="描述（可选）"
-                                className={styles.nodeDescInput}
-                                disabled={isReadOnly}
-                              />
-                              {!isReadOnly && (
-                                <button
-                                  className={styles.iconButtonDanger}
-                                  onClick={() => handleDeleteNode(index)}
-                                  aria-label="删除节点"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                        <h3>图定义编辑 ({editGraph.nodes.length} 节点 / {editGraph.edges.length} 边)</h3>
+                        <div className={styles.viewToggle}>
+                          <button
+                            className={graphViewMode === 'table' ? styles.toggleActive : ''}
+                            onClick={() => setGraphViewMode('table')}
+                            aria-label="表格视图"
+                          >
+                            表格
+                          </button>
+                          <button
+                            className={graphViewMode === 'visual' ? styles.toggleActive : ''}
+                            onClick={() => setGraphViewMode('visual')}
+                            aria-label="可视化视图"
+                          >
+                            <Network size={14} />
+                            可视化
+                          </button>
                         </div>
-                      )}
-                    </div>
+                      </div>
 
-                    <div className={styles.graphSection}>
-                      <div className={styles.graphSectionHeader}>
-                        <h3>边 ({editGraph.edges.length})</h3>
-                        {!isReadOnly && (
-                          <Button variant="secondary" size="sm" onClick={handleAddEdge}>
-                            <Plus size={14} />
-                            添加边
-                          </Button>
-                        )}
-                      </div>
-                      {editGraph.edges.length === 0 ? (
-                        <p className={styles.emptyHint}>暂无边，点击添加边按钮创建</p>
-                      ) : (
-                        <div className={styles.edgeList}>
-                          {editGraph.edges.map((edge, index) => (
-                            <div key={index} className={styles.edgeRow}>
-                              <select
-                                className={styles.select}
-                                value={edge.source}
-                                onChange={e => handleEdgeChange(index, 'source', e.target.value)}
-                                disabled={isReadOnly}
-                              >
-                                <option value="">源节点</option>
-                                {nodeNames.map(name => (
-                                  <option key={name} value={name}>{name}</option>
-                                ))}
-                              </select>
-                              <select
-                                className={styles.select}
-                                value={edge.target}
-                                onChange={e => handleEdgeChange(index, 'target', e.target.value)}
-                                disabled={isReadOnly}
-                              >
-                                <option value="">目标节点</option>
-                                {nodeNames.map(name => (
-                                  <option key={name} value={name}>{name}</option>
-                                ))}
-                              </select>
-                              <Input
-                                value={edge.condition || ''}
-                                onChange={e => handleEdgeChange(index, 'condition', e.target.value)}
-                                placeholder="条件（可选）"
-                                className={styles.edgeConditionInput}
-                                disabled={isReadOnly}
-                              />
-                              {!isReadOnly && (
-                                <button
-                                  className={styles.iconButtonDanger}
-                                  onClick={() => handleDeleteEdge(index)}
-                                  aria-label="删除边"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              )}
+                      {/* 表格视图：节点 + 边列表 */}
+                      {graphViewMode === 'table' && (
+                        <>
+                          <div className={styles.subSectionHeader}>
+                            <span>节点 ({editGraph.nodes.length})</span>
+                            {!isReadOnly && (
+                              <Button variant="secondary" size="sm" onClick={handleAddNode}>
+                                <Plus size={14} />
+                                添加节点
+                              </Button>
+                            )}
+                          </div>
+                          {editGraph.nodes.length === 0 ? (
+                            <p className={styles.emptyHint}>暂无节点，点击添加节点按钮创建</p>
+                          ) : (
+                            <div className={styles.nodeList}>
+                              {editGraph.nodes.map((node, index) => (
+                                <div key={index} className={styles.nodeRow}>
+                                  <Input
+                                    value={node.name}
+                                    onChange={e => handleNodeChange(index, 'name', e.target.value)}
+                                    placeholder="节点名称"
+                                    className={styles.nodeNameInput}
+                                    disabled={isReadOnly}
+                                  />
+                                  <Input
+                                    value={node.agent}
+                                    onChange={e => handleNodeChange(index, 'agent', e.target.value)}
+                                    placeholder="Agent 名称"
+                                    className={styles.nodeAgentInput}
+                                    disabled={isReadOnly}
+                                  />
+                                  <Input
+                                    value={node.description || ''}
+                                    onChange={e => handleNodeChange(index, 'description', e.target.value)}
+                                    placeholder="描述（可选）"
+                                    className={styles.nodeDescInput}
+                                    disabled={isReadOnly}
+                                  />
+                                  {!isReadOnly && (
+                                    <button
+                                      className={styles.iconButtonDanger}
+                                      onClick={() => handleDeleteNode(index)}
+                                      aria-label="删除节点"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          )}
+
+                          <div className={styles.subSectionHeader}>
+                            <span>边 ({editGraph.edges.length})</span>
+                            {!isReadOnly && (
+                              <Button variant="secondary" size="sm" onClick={handleAddEdge}>
+                                <Plus size={14} />
+                                添加边
+                              </Button>
+                            )}
+                          </div>
+                          {editGraph.edges.length === 0 ? (
+                            <p className={styles.emptyHint}>暂无边，点击添加边按钮创建</p>
+                          ) : (
+                            <div className={styles.edgeList}>
+                              {editGraph.edges.map((edge, index) => (
+                                <div key={index} className={styles.edgeRow}>
+                                  <select
+                                    className={styles.select}
+                                    value={edge.source}
+                                    onChange={e => handleEdgeChange(index, 'source', e.target.value)}
+                                    disabled={isReadOnly}
+                                  >
+                                    <option value="">源节点</option>
+                                    {nodeNames.map(name => (
+                                      <option key={name} value={name}>{name}</option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className={styles.select}
+                                    value={edge.target}
+                                    onChange={e => handleEdgeChange(index, 'target', e.target.value)}
+                                    disabled={isReadOnly}
+                                  >
+                                    <option value="">目标节点</option>
+                                    {nodeNames.map(name => (
+                                      <option key={name} value={name}>{name}</option>
+                                    ))}
+                                  </select>
+                                  <Input
+                                    value={edge.condition || ''}
+                                    onChange={e => handleEdgeChange(index, 'condition', e.target.value)}
+                                    placeholder="条件（可选）"
+                                    className={styles.edgeConditionInput}
+                                    disabled={isReadOnly}
+                                  />
+                                  {!isReadOnly && (
+                                    <button
+                                      className={styles.iconButtonDanger}
+                                      onClick={() => handleDeleteEdge(index)}
+                                      aria-label="删除边"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* 可视化视图：reactflow 画布（按 agent 着色，dagre 自动布局） */}
+                      {graphViewMode === 'visual' && (
+                        <>
+                          {!isReadOnly && (
+                            <div className={styles.subSectionHeader}>
+                              <span>节点 ({editGraph.nodes.length})</span>
+                              <Button variant="secondary" size="sm" onClick={handleAddNode}>
+                                <Plus size={14} />
+                                添加节点
+                              </Button>
+                            </div>
+                          )}
+                          {editGraph.nodes.length === 0 ? (
+                            <p className={styles.emptyHint}>暂无节点，点击添加节点按钮创建</p>
+                          ) : (
+                            <div className={styles.graphContainer}>
+                              <ReactFlow
+                                nodes={computedFlow.nodes}
+                                edges={computedFlow.edges as Edge[]}
+                                nodeTypes={nodeTypes}
+                                onNodeDoubleClick={handleNodeDoubleClick}
+                                fitView
+                                minZoom={0.2}
+                                maxZoom={2}
+                                nodesDraggable={!isReadOnly}
+                              >
+                                <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+                                <Controls />
+                              </ReactFlow>
+                            </div>
+                          )}
+                          <p className={styles.hint}>双击节点可编辑名称/Agent/描述；边条件以标签显示</p>
+                        </>
                       )}
                     </div>
 
@@ -1090,6 +1490,223 @@ export default function SubAgentPage() {
             )}
           </div>
         )}
+
+        {/* ---- 委派任务 ---- */}
+        {activeTab === 'delegate' && (
+          <div className={styles.delegateContainer}>
+            <div className={styles.delegateLayout}>
+              {/* 左侧：任务表单 */}
+              <section className={styles.delegateFormPanel}>
+                <div className={styles.delegateSectionHeader}>
+                  <h3>任务列表 ({delegateTasks.length})</h3>
+                  <Button variant="secondary" size="sm" onClick={handleAddDelegateTask}>
+                    <Plus size={14} />
+                    添加任务
+                  </Button>
+                </div>
+
+                <div className={styles.taskFormList}>
+                  {delegateTasks.map((task, index) => (
+                    <div key={index} className={styles.taskFormRow}>
+                      <div className={styles.taskFormMain}>
+                        <div className={styles.formRow}>
+                          <label className={styles.formLabel}>指令 #{index + 1}</label>
+                          <Textarea
+                            value={task.instruction}
+                            onChange={e => handleDelegateTaskChange(index, 'instruction', e.target.value)}
+                            rows={2}
+                            placeholder="任务指令"
+                          />
+                        </div>
+                        <div className={styles.taskFormInline}>
+                          <div className={styles.formRow}>
+                            <label className={styles.formLabel}>允许工具（逗号分隔）</label>
+                            <Input
+                              value={task.allowedTools}
+                              onChange={e => handleDelegateTaskChange(index, 'allowedTools', e.target.value)}
+                              placeholder="tool_a, tool_b"
+                            />
+                          </div>
+                          <div className={styles.formRow}>
+                            <label className={styles.formLabel}>隔离级别</label>
+                            <select
+                              className={styles.select}
+                              value={task.isolationLevel}
+                              onChange={e => handleDelegateTaskChange(index, 'isolationLevel', Number(e.target.value) as IsolationLevel)}
+                            >
+                              {ISOLATION_LEVEL_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className={styles.taskFormInline}>
+                          <div className={styles.formRow}>
+                            <label className={styles.formLabel}>最大轮次（可选）</label>
+                            <Input
+                              type="number"
+                              value={task.maxTurns}
+                              onChange={e => handleDelegateTaskChange(index, 'maxTurns', e.target.value)}
+                              placeholder="如 10"
+                            />
+                          </div>
+                          <div className={styles.formRow}>
+                            <label className={styles.formLabel}>最大 Token（可选）</label>
+                            <Input
+                              type="number"
+                              value={task.maxTokens}
+                              onChange={e => handleDelegateTaskChange(index, 'maxTokens', e.target.value)}
+                              placeholder="如 4096"
+                            />
+                          </div>
+                          <div className={styles.formRow}>
+                            <label className={styles.formLabel}>最大时间秒（可选）</label>
+                            <Input
+                              type="number"
+                              value={task.maxTime}
+                              onChange={e => handleDelegateTaskChange(index, 'maxTime', e.target.value)}
+                              placeholder="如 120"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      {delegateTasks.length > 1 && (
+                        <button
+                          className={styles.iconButtonDanger}
+                          onClick={() => handleDeleteDelegateTask(index)}
+                          aria-label="删除任务"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 合并策略 + 委派按钮 */}
+                <div className={styles.delegateFooter}>
+                  <div className={styles.formRow}>
+                    <label className={styles.formLabel}>合并策略</label>
+                    <select
+                      className={styles.select}
+                      value={mergeStrategy}
+                      onChange={e => setMergeStrategy(e.target.value as MergeStrategy)}
+                    >
+                      {MERGE_STRATEGY_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    variant="primary"
+                    onClick={handleDelegate}
+                    disabled={isDelegating}
+                    loading={isDelegating}
+                  >
+                    {isDelegating ? <Loader size={16} className={styles.spinning} /> : <Send size={16} />}
+                    {isDelegating ? '委派中...' : '发起委派'}
+                  </Button>
+                </div>
+
+                {/* 编排器能力提示 */}
+                {capabilities && (
+                  <div className={styles.capabilitiesHint}>
+                    <span>默认轮次: {capabilities.default_limits.max_turns}</span>
+                    <span>默认 Token: {capabilities.default_limits.max_tokens}</span>
+                    <span>默认超时: {capabilities.default_limits.max_time_seconds}s</span>
+                    {activeTasks && <span>最大并行: {activeTasks.max_parallel}</span>}
+                  </div>
+                )}
+              </section>
+
+              {/* 右侧：活跃任务 + 委派结果 */}
+              <section className={styles.delegateSidePanel}>
+                {/* 活跃任务列表（每 3 秒轮询） */}
+                <div className={styles.delegateSectionHeader}>
+                  <h3>活跃任务</h3>
+                  <span className={styles.pollHint}>每 3 秒自动刷新</span>
+                </div>
+                {!activeTasks || Object.keys(activeTasks.active_tasks).length === 0 ? (
+                  <EmptyState title="暂无活跃任务" description="发起委派后将在此显示任务状态" />
+                ) : (
+                  <div className={styles.activeTaskList}>
+                    {Object.entries(activeTasks.active_tasks).map(([taskId, state]) => (
+                      <div key={taskId} className={styles.activeTaskItem}>
+                        <div className={styles.activeTaskInfo}>
+                          <span className={styles.activeTaskId}>{taskId}</span>
+                          <Badge variant={getLifecycleBadgeVariant(state)} text={state} />
+                        </div>
+                        <button
+                          className={styles.iconButtonDanger}
+                          onClick={() => handleCancelTask(taskId)}
+                          disabled={cancellingTaskId === taskId || state === 'completed' || state === 'cancelled' || state === 'terminated'}
+                          aria-label="取消任务"
+                        >
+                          {cancellingTaskId === taskId ? <Loader size={16} className={styles.spinning} /> : <XCircle size={16} />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 委派结果 */}
+                {delegateResult && (
+                  <div className={styles.delegateResult}>
+                    <div className={styles.runResultHeader}>
+                      <h4>委派结果</h4>
+                      <Badge
+                        variant={delegateResult.success ? 'success' : 'error'}
+                        text={delegateResult.success ? '成功' : '失败'}
+                      />
+                    </div>
+                    {delegateResult.merged_output && (
+                      <div className={styles.runResultSection}>
+                        <h5>合并输出</h5>
+                        <pre className={styles.jsonBlock}>{delegateResult.merged_output}</pre>
+                      </div>
+                    )}
+                    {delegateResult.results.length > 0 && (
+                      <div className={styles.runResultSection}>
+                        <h5>任务结果 ({delegateResult.results.length})</h5>
+                        <div className={styles.executionLogList}>
+                          {delegateResult.results.map((r, i) => (
+                            <div key={i} className={styles.executionLogItem}>
+                              <div className={styles.executionLogHeader}>
+                                <span className={styles.executionLogNode}>{r.task_id}</span>
+                                <Badge
+                                  variant={r.success ? 'success' : 'error'}
+                                  text={r.success ? '成功' : '失败'}
+                                />
+                                <Badge variant="primary" text={r.lifecycle_state} />
+                                {r.elapsed_seconds > 0 && (
+                                  <span className={styles.executionLogDuration}>
+                                    {formatDuration(r.elapsed_seconds)}
+                                  </span>
+                                )}
+                              </div>
+                              {r.error && (
+                                <div className={styles.executionLogError}>{r.error}</div>
+                              )}
+                              {r.output && (
+                                <div className={styles.messageContent}>{r.output}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {delegateResult.security_issues.length > 0 && (
+                      <div className={styles.runResultSection}>
+                        <h5>安全问题</h5>
+                        <pre className={styles.jsonBlock}>{prettyJson(delegateResult.security_issues)}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 创建图定义弹窗 */}
@@ -1173,6 +1790,47 @@ export default function SubAgentPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* 节点编辑弹窗（可视化视图双击节点触发） */}
+      <Modal
+        open={editingNodeIndex !== null}
+        onClose={handleNodeEditCancel}
+        title={`编辑节点 #${editingNodeIndex !== null ? editingNodeIndex + 1 : ''}`}
+      >
+        {nodeEditDraft && (
+          <div className={styles.modalForm}>
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>节点名称</label>
+              <Input
+                value={nodeEditDraft.name}
+                onChange={e => handleNodeDraftChange('name', e.target.value)}
+                placeholder="节点名称"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>Agent 名称</label>
+              <Input
+                value={nodeEditDraft.agent}
+                onChange={e => handleNodeDraftChange('agent', e.target.value)}
+                placeholder="Agent 名称"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label className={styles.formLabel}>描述</label>
+              <Textarea
+                value={nodeEditDraft.description || ''}
+                onChange={e => handleNodeDraftChange('description', e.target.value)}
+                rows={3}
+                placeholder="节点描述（可选）"
+              />
+            </div>
+            <div className={styles.modalFooter}>
+              <Button variant="ghost" onClick={handleNodeEditCancel}>取消</Button>
+              <Button variant="primary" onClick={handleNodeEditSave}>保存</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )

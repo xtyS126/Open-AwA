@@ -1,4 +1,5 @@
 import { useWechatConfig } from './useWechatConfig'
+import WechatMultimediaPanel from './WechatMultimediaPanel'
 import styles from './WechatConfigModule.module.css'
 
 export default function WechatConfigModule() {
@@ -463,6 +464,8 @@ export default function WechatConfigModule() {
                   </p>
                 )}
               </div>
+
+              <WechatMultimediaPanel />
 
               {weixinHealthResult && (
                 <div className={`${styles['health-result']} ${weixinHealthResult.ok ? styles['success'] : styles['error']}`}>

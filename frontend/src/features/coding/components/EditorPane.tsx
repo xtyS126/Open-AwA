@@ -4,7 +4,6 @@
  */
 import React, { useCallback, useRef, useEffect } from 'react'
 import Editor, { OnMount } from '@monaco-editor/react'
-import type { editor } from 'monaco-editor'
 import { useCodingStore } from '../store/codingStore'
 import { codingApi } from '../codingApi'
 import { useThemeStore } from '@/shared/store/themeStore'
@@ -37,7 +36,6 @@ const EditorPane: React.FC = () => {
   }, [projectDir, markFileClean])
 
   const handleEditorMount: OnMount = useCallback((editor) => {
-    editorRef.current = editor
     // Ctrl+S 保存 — 通过 ref 读取最新 activeFile，避免闭包过期
     editor.addAction({
       id: 'save-file',

@@ -22,7 +22,7 @@ interface FileChunkIndicatorProps {
 /**
  * 估算文件的 Token 数量。
  */
-export function estimateTokens(fileName: string, fileSize: number, mimeType?: string): number {
+export function estimateTokens(_fileName: string, fileSize: number, mimeType?: string): number {
   // 图片固定 Token (基于常见模型定价)
   if (mimeType?.startsWith('image/')) {
     return 85;  // 低分辨率图片基础 token 数

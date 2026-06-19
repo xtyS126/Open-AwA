@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { Zap, Search } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Zap } from 'lucide-react'
 import { useI18nStore } from '@/i18n'
 import { magicCommandsApi, MagicCommand } from '@/shared/api/magicCommandsApi'
 import styles from './CommandPalette.module.css'
@@ -77,7 +77,7 @@ export function CommandPalette({ inputValue, onSelectCommand, visible }: Command
     <div className={styles.palette} ref={paletteRef}>
       <div className={styles.header}>
         <Zap size={14} />
-        <span>{t('magicCommands.title', 'magic commands') || '魔法命令'}</span>
+        <span>{t('magicCommands.title') || '魔法命令'}</span>
       </div>
       <div className={styles.list}>
         {filtered.map((cmd, idx) => (

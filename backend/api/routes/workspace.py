@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from core.workspace.manager import WorkspaceManager
+from core.soul_state import SoulStateManager
 from db.models import get_db
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
@@ -216,3 +217,47 @@ def update_heartbeat_config(workspace_id: str, body: HeartbeatConfigUpdate, mgr:
     if not ws:
         raise HTTPException(status_code=404, detail=f"工作区 '{workspace_id}' 不存在")
     return {"message": "心跳配置已更新"}
+
+
+# ---- 灵魂状态管理 API ----
+
+class SoulInjectionToggle(BaseModel):
+    """灵魂注入开关切换请求体。"""
+    enabled: bool
+
+
+@router.get("/{workspace_id}/soul/injection-status")
+def get_soul_injection_status(workspace_id: str):
+    """
+    获取工作区灵魂注入状态。
+    """
+    soul_mgr = SoulStateManager(workspace_id)
+    return soul_mgr.get_state_summary()
+
+
+@router.put("/{workspace_id}/soul/injection-toggle")
+def toggle_soul_injection(workspace_id: str, body: SoulInjectionToggle):
+    """
+    切换工作区灵魂注入开关。
+    """
+    soul_mgr = SoulStateManager(workspace_id)
+    soul_mgr.set_injection_enabled(body.enabled)
+    return {
+        "message": f"灵魂注入已{'启用' if body.enabled else '禁用'}",
+        "workspace_id": workspace_id,
+        "enabled": body.enabled
+    }
+
+
+@router.post("/{workspace_id}/soul/reset")
+def reset_soul_state(workspace_id: str):
+    """
+    重置工作区灵魂状态。
+    """
+    soul_mgr = SoulStateManager(workspace_id)
+    soul_mgr.reset_state()
+    return {
+        "message": "灵魂状态已重置",
+        "workspace_id": workspace_id
+    }
+

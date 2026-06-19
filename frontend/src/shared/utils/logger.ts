@@ -1,5 +1,3 @@
-import Cookies from 'js-cookie'
-
 type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
 
 interface LoggerPayload {

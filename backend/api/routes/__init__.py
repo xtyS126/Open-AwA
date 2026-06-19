@@ -3,3 +3,5 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
+from api.routes import soul
+

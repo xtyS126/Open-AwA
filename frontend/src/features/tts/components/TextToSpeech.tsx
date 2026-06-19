@@ -1,7 +1,7 @@
 /**
  * TTS 文本转语音组件 — 文本输入 + 参数调节 + 合成 + 播放。
  */
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import { useTtsStore } from '../store/ttsStore'
 import { ttsApi } from '../ttsApi'
@@ -39,7 +39,6 @@ const TextToSpeech: React.FC = () => {
     audioBlob, setAudioBlob,
     audioUrl, setAudioUrl,
   } = useTtsStore()
-  const audioRef = useRef<HTMLAudioElement>(null)
 
   const handleSynthesize = useCallback(async () => {
     if (!text.trim() || isSynthesizing) return

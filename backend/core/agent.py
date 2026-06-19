@@ -26,6 +26,7 @@ from .conversation_recorder import conversation_recorder
 from .magic_commands import get_magic_command_registry
 from .context.compressor import ContextCompressor
 from .context.token_budget import TokenBudget
+from .soul_state import SoulStateManager
 from api.services.chat_protocol import (
     emit_task_event,
     emit_tool_event,
@@ -127,6 +128,9 @@ class AIAgent:
             self.feedback.set_memory_manager(self.memory_manager)
             self.workflow_engine = WorkflowEngine(db_session=self._db_session, skill_engine=self.skill_engine)
         
+        # 初始化灵魂状态管理器（默认工作区）
+        self.soul_state_manager = SoulStateManager(workspace_id="default")
+        
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
 
     async def _record_with_backpressure(self, coro) -> Any:
@@ -222,6 +226,43 @@ class AIAgent:
             context["db"] = self._db_session
 
         context["_record_hook"] = self._schedule_record
+
+        # SoulEngine 画像注入：将用户画像摘要注入到上下文
+        self._inject_soul_profile(context)
+
+    def _inject_soul_profile(self, context: Dict[str, Any]) -> None:
+        """
+        将 SoulEngine 用户画像注入到上下文中，供 LLM 调用时使用。
+        画像信息会附加到 system_prompt 或 context 中，帮助 Agent 个性化响应。
+        """
+        try:
+            from soul.engine import SoulEngine
+            # 获取全局 SoulEngine 实例
+            soul_engine = getattr(self, '_soul_engine', None)
+            if soul_engine is None:
+                return
+
+            user_id = context.get("user_id", "")
+            if not user_id:
+                return
+
+            profile_summary = soul_engine.get_profile_for_prompt(user_id)
+            if profile_summary:
+                # 注入到 context 中，供 system prompt 构建时使用
+                existing_user_context = context.get("user_context", "")
+                if existing_user_context:
+                    context["user_context"] = f"{existing_user_context}\n\n{profile_summary}"
+                else:
+                    context["user_context"] = profile_summary
+
+                logger.bind(
+                    user_id=user_id,
+                ).debug("SoulEngine 画像已注入到上下文")
+
+        except Exception as e:
+            logger.bind(event="soul_profile_inject_error").warning(
+                f"SoulEngine 画像注入失败: {e}"
+            )
 
     def _build_multimodal_context(self, user_input: str, context: Dict[str, Any]) -> None:
         """
@@ -1601,9 +1642,23 @@ class AIAgent:
 
         self._prepare_context(user_input, context)
 
-        # 角色引擎集成：如果上下文中有 role_id，加载角色配置并应用
+        # 灵魂注入开关检查：若禁用则跳过角色引擎
         role_id = context.get("role_id")
-        if role_id:
+        soul_injection_enabled = True
+        if hasattr(self, 'soul_state_manager') and self.soul_state_manager is not None:
+            try:
+                soul_injection_enabled = self.soul_state_manager.is_injection_enabled()
+                if not soul_injection_enabled:
+                    logger.bind(event="soul_injection_skipped", module="agent").info(
+                        f"灵魂注入已禁用，跳过角色引擎加载 (workspace_id={context.get('workspace_id', 'unknown')})"
+                    )
+            except Exception as e:
+                logger.bind(event="soul_state_check_error", module="agent").warning(
+                    f"灵魂状态检查失败，默认启用角色引擎: {e}"
+                )
+
+        # 角色引擎集成：如果上下文中有 role_id，加载角色配置并应用
+        if role_id and soul_injection_enabled:
             try:
                 from core.role_engine import RoleEngine
                 from db.models import SessionLocal
@@ -1613,6 +1668,14 @@ class AIAgent:
                     role = role_engine.load_role(role_id)
                     if role:
                         context = role_engine.apply_role_to_context(role, context)
+                        # 角色引擎加载成功，标记灵魂注入完成
+                        if hasattr(self, 'soul_state_manager') and self.soul_state_manager is not None:
+                            try:
+                                self.soul_state_manager.mark_injection_completed()
+                            except Exception as e:
+                                logger.bind(event="soul_state_mark_error", module="agent").warning(
+                                    f"标记灵魂注入完成失败: {e}"
+                                )
                 finally:
                     _role_db.close()
             except Exception as e:

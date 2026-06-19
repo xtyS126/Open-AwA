@@ -19,7 +19,7 @@ from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul
 from api.routes.data import router as data_router
 from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
@@ -411,6 +411,37 @@ async def _startup_autonomous_mode(profiler: StartupProfiler) -> None:
         raise
 
 
+def _startup_mcp_sse_origin(profiler: StartupProfiler) -> None:
+    """配置 MCP SSE 传输层的 origin 白名单。
+
+    通过环境变量 MCP_SSE_ALLOWED_ORIGINS（逗号分隔）配置允许的 origin 列表，
+    防止跨域攻击。未配置时记录 WARNING 日志提示安全风险，并保持白名单为空
+    （SSETransport 在白名单为空时允许所有 origin，仅适用于开发环境）。
+    """
+    with profiler.step("mcp_sse_origin_config"):
+        from mcp.transport import SSETransport
+
+        raw_origins = os.getenv("MCP_SSE_ALLOWED_ORIGINS", "")
+        origins = [item.strip() for item in raw_origins.split(",") if item.strip()]
+        SSETransport.set_allowed_origins(origins)
+        if origins:
+            logger.bind(
+                event="mcp_sse_origin_configured",
+                module="main",
+                origin_count=len(origins),
+            ).info(
+                f"MCP SSE origin 白名单已配置，共 {len(origins)} 个 origin"
+            )
+        else:
+            logger.bind(
+                event="mcp_sse_origin_not_configured",
+                module="main",
+            ).warning(
+                "未配置 MCP_SSE_ALLOWED_ORIGINS 环境变量，MCP SSE 传输将允许所有 origin。"
+                "生产环境必须显式配置白名单以防止跨域攻击。"
+            )
+
+
 async def _shutdown_autonomous_mode() -> None:
     """关闭自主模式管理器。"""
     try:
@@ -456,6 +487,8 @@ async def lifespan(app: FastAPI):
             logger.bind(event="data_collector_initialized", module="startup").info("数据收集器已初始化")
         except Exception as e:
             logger.bind(event="data_collector_init_error", module="startup").warning(f"数据收集器初始化失败: {e}")
+        # 19. 配置 MCP SSE 传输层 origin 白名单
+        _startup_mcp_sse_origin(profiler)
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
         raise
@@ -867,6 +900,7 @@ app.include_router(plugins.router, prefix=settings.API_V1_STR)
 app.include_router(memory.router, prefix=settings.API_V1_STR)
 app.include_router(workflows.router, prefix=settings.API_V1_STR)
 app.include_router(scheduled_tasks.router, prefix=settings.API_V1_STR)
+app.include_router(soul.router)
 app.include_router(diary_router, prefix=settings.API_V1_STR)
 app.include_router(prompts.router, prefix=settings.API_V1_STR)
 app.include_router(behavior.router, prefix=settings.API_V1_STR)

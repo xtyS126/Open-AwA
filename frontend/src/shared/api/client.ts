@@ -5,7 +5,6 @@
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
-import { useAuthStore } from '@/shared/store/authStore'
 import { safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
