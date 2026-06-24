@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Open-AwA 配置</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f9fafb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      color: #1f2937;
+    }
+    .container {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .description {
+      color: #6b7280;
+      font-size: 0.875rem;
+      margin-bottom: 1.5rem;
+    }
+    .field { margin-bottom: 1rem; }
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+    input {
+      width: 100%;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.875rem;
+    }
+    input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+    }
+    .result {
+      padding: 0.625rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .result.success { background: #d1fae5; color: #065f46; display: block; }
+    .result.error { background: #fee2e2; color: #991b1b; display: block; }
+    .actions { display: flex; gap: 0.5rem; }
+    button {
+      flex: 1;
+      padding: 0.625rem;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #ffffff;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    button:hover:not(:disabled) { background: #f9fafb; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.primary {
+      background: #3b82f6;
+      color: #ffffff;
+      border-color: #3b82f6;
+    }
+    button.primary:hover:not(:disabled) { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>欢迎使用 Open-AwA</h1>
+    <p class="description">请输入后端服务地址以开始使用。后端需已部署并运行中。</p>
+
+    <div class="field">
+      <label for="backend-url">后端 URL</label>
+      <input id="backend-url" type="text" placeholder="http://localhost:8000/api" value="">
+    </div>
+
+    <div id="result" class="result"></div>
+
+    <div class="actions">
+      <button id="test-btn">测试连接</button>
+      <button id="save-btn" class="primary" disabled>保存并启动</button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+    const urlInput = document.getElementById('backend-url')
+    const testBtn = document.getElementById('test-btn')
+    const saveBtn = document.getElementById('save-btn')
+    const resultDiv = document.getElementById('result')
+
+    let testPassed = false
+
+    testBtn.addEventListener('click', async () => {
+      const url = urlInput.value.trim()
+      if (!url) {
+        showResult('error', '请输入后端 URL')
+        return
+      }
+      testBtn.disabled = true
+      testBtn.textContent = '测试中...'
+      resultDiv.className = 'result'
+
+      try {
+        const result = await ipcRenderer.invoke('backend:test-connection', { url })
+        if (result.ok) {
+          showResult('success', '连接成功（延迟 ' + result.latency + 'ms）')
+          testPassed = true
+          saveBtn.disabled = false
+        } else {
+          showResult('error', '连接失败：' + (result.error || '未知错误'))
+          testPassed = false
+          saveBtn.disabled = true
+        }
+      } catch (err) {
+        showResult('error', '测试失败：' + err.message)
+      } finally {
+        testBtn.disabled = false
+        testBtn.textContent = '测试连接'
+      }
+    })
+
+    saveBtn.addEventListener('click', async () => {
+      if (!testPassed) return
+      const url = urlInput.value.trim()
+      saveBtn.disabled = true
+      saveBtn.textContent = '保存中...'
+
+      try {
+        await ipcRenderer.invoke('backend:set-url', { url })
+        // 主进程会收到 backend:url-saved 事件后关闭引导窗口并打开主窗口
+      } catch (err) {
+        showResult('error', '保存失败：' + err.message)
+        saveBtn.disabled = false
+        saveBtn.textContent = '保存并启动'
+      }
+    })
+
+    function showResult(type, message) {
+      resultDiv.className = 'result ' + type
+      resultDiv.textContent = message
+    }
+  </script>
+</body>
+</html>

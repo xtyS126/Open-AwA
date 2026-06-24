@@ -1,0 +1,40 @@
+appId: com.openawa.desktop
+productName: Open-AwA
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - dist/**/*
+  - resources/**/*
+  - package.json
+extraResources:
+  - from: resources/frontend
+    to: frontend
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icons/icon.png
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: resources/icons/icon.png
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: resources/icons/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: openawa
+  repo: openawa-desktop

@@ -6,6 +6,25 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { WeixinWsEvent } from '../api/api'
+import { API_BASE_URL } from '@/shared/api/client'
+
+/**
+ * 根据 API_BASE_URL 推导 WebSocket URL
+ * - 相对路径（/api）：使用当前页面 host
+ * - 绝对 URL：使用该 URL 的 host 与协议
+ */
+function deriveWebSocketUrl(token: string): string {
+  // 判断 API_BASE_URL 是否为绝对 URL
+  if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
+    const url = new URL(API_BASE_URL)
+    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${url.host}${url.pathname}/weixin/ws?token=${encodeURIComponent(token)}`
+  }
+  // 相对路径：使用当前页面 host（web 模式）
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  return `${protocol}//${host}${API_BASE_URL}/weixin/ws?token=${encodeURIComponent(token)}`
+}
 
 export interface UseWeixinWebSocketOptions {
   /** 是否启用 WebSocket 连接 */
@@ -82,9 +101,7 @@ export function useWeixinWebSocket(
     }
 
     manualCloseRef.current = false
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    const url = `${protocol}//${host}/api/weixin/ws?token=${encodeURIComponent(token)}`
+    const url = deriveWebSocketUrl(token)
 
     try {
       const ws = new WebSocket(url)

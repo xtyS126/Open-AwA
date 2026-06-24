@@ -1,0 +1,33 @@
+{
+  "name": "openawa-desktop",
+  "version": "1.0.0",
+  "description": "Open-AwA 桌面端应用",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "build:frontend": "tsx scripts/build-frontend.ts",
+    "build:main": "tsc -p tsconfig.json",
+    "build": "npm run build:frontend && npm run build:main && electron-builder",
+    "build:win": "npm run build:frontend && npm run build:main && electron-builder --win",
+    "build:mac": "npm run build:frontend && npm run build:main && electron-builder --mac",
+    "build:linux": "npm run build:frontend && npm run build:main && electron-builder --linux",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.2.0",
+    "electron-log": "^5.1.0"
+  },
+  "devDependencies": {
+    "electron": "^35.7.5",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0",
+    "vitest": "^2.1.8",
+    "@types/node": "^25.5.2",
+    "eslint": "^9.0.0"
+  }
+}

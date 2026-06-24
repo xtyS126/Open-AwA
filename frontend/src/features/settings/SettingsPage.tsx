@@ -16,8 +16,10 @@ import {
   Palette,
   Wrench,
   ChevronRight,
+  Server,
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { lazy, Suspense } from 'react'
 import styles from './SettingsPage.module.css'
 
@@ -33,6 +35,7 @@ const PermissionSettings = lazy(() => import('./PermissionSettings'))
 const EnvVarSettings = lazy(() => import('./EnvVarSettings'))
 const MCPSettings = lazy(() => import('./MCPSettings'))
 const AppearanceTabContainer = lazy(() => import('./containers/AppearanceTabContainer').then(m => ({ default: m.AppearanceTabContainer })))
+const BackendConnectionTabContainer = lazy(() => import('./containers/BackendConnectionTabContainer').then(m => ({ default: m.BackendConnectionTabContainer })))
 
 /** 旧 Tab ID 到新 URL 的重定向映射 */
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
@@ -135,6 +138,7 @@ function SettingsPage() {
       { id: 'appearance', label: '外观', icon: <Palette size={18} /> },
       { id: 'prompts', label: '提示词', icon: <Cpu size={18} /> },
       { id: 'billing', label: '计费', icon: <Briefcase size={18} /> },
+      { id: 'backend', label: '后端连接', icon: <Server size={18} /> },
       { id: 'advanced', label: '高级', icon: <Wrench size={18} /> },
     ]
 
@@ -204,47 +208,59 @@ function SettingsPage() {
     switch (activeSubTab) {
       case 'data-retention':
         return (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <DataRetentionTabContainer />
-          </Suspense>
+          <ErrorBoundary name="DataRetentionSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <DataRetentionTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )
       case 'data-collection':
         return (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <DataCollectionTabContainer />
-          </Suspense>
+          <ErrorBoundary name="DataCollectionSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <DataCollectionTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )
       case 'security':
         return (
           <div className={styles['settings-section']}>
             <h2>安全审计</h2>
-            <Suspense fallback={<TabLoadingFallback />}>
-              <SecuritySettings />
-            </Suspense>
+            <ErrorBoundary name="SecuritySettings">
+              <Suspense fallback={<TabLoadingFallback />}>
+                <SecuritySettings />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         )
       case 'mcp':
         return (
           <div className={styles['settings-section']}>
-            <Suspense fallback={<TabLoadingFallback />}>
-              <MCPSettings />
-            </Suspense>
+            <ErrorBoundary name="MCPSettings">
+              <Suspense fallback={<TabLoadingFallback />}>
+                <MCPSettings />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         )
       case 'permissions':
         return (
           <div className={styles['settings-section']}>
-            <Suspense fallback={<TabLoadingFallback />}>
-              <PermissionSettings />
-            </Suspense>
+            <ErrorBoundary name="PermissionSettings">
+              <Suspense fallback={<TabLoadingFallback />}>
+                <PermissionSettings />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         )
       case 'env-vars':
         return (
           <div className={styles['settings-section']}>
-            <Suspense fallback={<TabLoadingFallback />}>
-              <EnvVarSettings />
-            </Suspense>
+            <ErrorBoundary name="EnvVarSettings">
+              <Suspense fallback={<TabLoadingFallback />}>
+                <EnvVarSettings />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         )
       default:
@@ -260,33 +276,51 @@ function SettingsPage() {
     >
       <div className={styles['settings-content']}>
         {activeTab === 'general' && (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <GeneralTabContainer />
-          </Suspense>
+          <ErrorBoundary name="GeneralSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <GeneralTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'api' && (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <ApiTabContainer />
-          </Suspense>
+          <ErrorBoundary name="ApiSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <ApiTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'appearance' && (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <AppearanceTabContainer />
-          </Suspense>
+          <ErrorBoundary name="AppearanceSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <AppearanceTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'prompts' && (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <PromptsTabContainer />
-          </Suspense>
+          <ErrorBoundary name="PromptsSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <PromptsTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'billing' && (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <BillingTabContainer />
-          </Suspense>
+          <ErrorBoundary name="BillingSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <BillingTabContainer />
+            </Suspense>
+          </ErrorBoundary>
+        )}
+
+        {activeTab === 'backend' && (
+          <ErrorBoundary name="BackendConnection">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <BackendConnectionTabContainer />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'advanced' && renderAdvancedContent()}

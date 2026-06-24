@@ -5,33 +5,69 @@
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
-import { safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
+import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
   _apiKeyRetried?: boolean
 }
 
-const API_BASE_URL = '/api'
+// 替换原有的：const API_BASE_URL = '/api'
+const BACKEND_URL_STORAGE_KEY = 'openawa_backend_url'
+
+/**
+ * 动态解析后端 baseURL
+ * 优先级：preload 注入 > localStorage > 默认 /api
+ */
+function resolveBaseURL(): string {
+  // 优先级 1：桌面端 preload 注入
+  if (typeof window !== 'undefined' && window.__OPENAWA_BACKEND__?.url) {
+    return window.__OPENAWA_BACKEND__.url
+  }
+  // 优先级 2：用户在设置页配置的远程后端
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem(BACKEND_URL_STORAGE_KEY)
+    if (stored) {
+      return stored
+    }
+  }
+  // 优先级 3：默认相对路径（web 模式走 Vite proxy）
+  return '/api'
+}
+
+export const API_BASE_URL = resolveBaseURL()
+
+/**
+ * 设置后端 URL 并持久化到 localStorage
+ * 同步更新 axios 实例 baseURL，运行时立即生效
+ */
+export function setBackendUrl(url: string): void {
+  const normalizedUrl = url.trim() || '/api'
+  api.defaults.baseURL = normalizedUrl
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, normalizedUrl)
+  }
+}
+
 const API_KEY_STORAGE_KEY = 'openawa_api_key'
 
 // 模块级内存变量，作为 API Key 的主要运行时存储
-// （AVOID sessionStorage 到内存的读取路径，仅在验证成功后持久化）
-let _inMemoryApiKey = safeSessionGetItem(API_KEY_STORAGE_KEY, '')
+// （AVOID localStorage 到内存的读取路径，仅在验证成功后持久化）
+let _inMemoryApiKey = safeGetItem(API_KEY_STORAGE_KEY, '')
 
-/** 获取当前有效的 API Key（优先内存，降级 sessionStorage） */
+/** 获取当前有效的 API Key（优先内存，降级 localStorage） */
 export const getCachedApiKey = (): string => {
   if (_inMemoryApiKey) {
     return _inMemoryApiKey
   }
-  // 降级：从 sessionStorage 恢复（仅页面首次加载时触发）
-  _inMemoryApiKey = safeSessionGetItem(API_KEY_STORAGE_KEY, '')
+  // 降级：从 localStorage 恢复（仅页面首次加载时触发）
+  _inMemoryApiKey = safeGetItem(API_KEY_STORAGE_KEY, '')
   return _inMemoryApiKey
 }
 
-/** 将 API Key 持久化到 sessionStorage 并更新内存缓存（仅在验证成功后调用） */
+/** 将 API Key 持久化到 localStorage 并更新内存缓存（仅在验证成功后调用） */
 export const persistApiKey = (key: string): void => {
   _inMemoryApiKey = key
-  safeSessionSetItem(API_KEY_STORAGE_KEY, key)
+  safeSetItem(API_KEY_STORAGE_KEY, key)
 }
 
 /** 临时设置 API Key 到内存（用于验证，验证成功后再调用 persistApiKey 持久化） */
@@ -42,7 +78,7 @@ export const setTempApiKey = (key: string): void => {
 /** 清除所有存储中的 API Key */
 export const clearCachedApiKey = (): void => {
   _inMemoryApiKey = ''
-  safeSessionSetItem(API_KEY_STORAGE_KEY, '')
+  safeSetItem(API_KEY_STORAGE_KEY, '')
 }
 
 export const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
@@ -176,5 +212,4 @@ export const getApiErrorDetail = (error: unknown): string => {
   return ''
 }
 
-export { API_BASE_URL }
 export default api
