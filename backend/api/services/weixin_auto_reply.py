@@ -55,50 +55,60 @@ class WeixinEventBus:
     进程内微信消息事件总线。
 
     用于在自动回复轮询循环与 WebSocket 实时推送端点之间传递新消息事件。
-    每个用户拥有独立的 asyncio.Queue，避免相互干扰。
+    每个用户的每个设备拥有独立的 asyncio.Queue，支持同用户多设备并发订阅，
+    事件发布时广播到该用户所有设备的队列。
     """
 
     def __init__(self) -> None:
-        self._queues: Dict[str, asyncio.Queue[Dict[str, Any]]] = {}
+        # user_id -> 该用户所有订阅队列列表（每个设备一个独立队列）
+        self._subscribers: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
         self._lock = asyncio.Lock()
 
     async def subscribe(self, user_id: str, maxsize: int = 100) -> asyncio.Queue[Dict[str, Any]]:
-        """为指定用户订阅事件，返回专属队列。"""
+        """为指定用户订阅事件，每个设备返回独立队列。"""
         user_key = _safe_text(user_id)
+        queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=max(maxsize, 1))
         async with self._lock:
-            queue = self._queues.get(user_key)
-            if queue is None:
-                queue = asyncio.Queue(maxsize=max(maxsize, 1))
-                self._queues[user_key] = queue
-            return queue
+            self._subscribers.setdefault(user_key, []).append(queue)
+        return queue
 
-    async def unsubscribe(self, user_id: str) -> None:
-        """取消订阅并清理队列。"""
+    async def unsubscribe(self, user_id: str, queue: asyncio.Queue[Dict[str, Any]]) -> None:
+        """移除指定设备的订阅队列，不影响该用户其他设备。"""
         user_key = _safe_text(user_id)
         async with self._lock:
-            self._queues.pop(user_key, None)
+            queues = self._subscribers.get(user_key)
+            if not queues:
+                return
+            try:
+                queues.remove(queue)
+            except ValueError:
+                pass
+            if not queues:
+                self._subscribers.pop(user_key, None)
 
     async def publish(self, user_id: str, event: Dict[str, Any]) -> None:
-        """向指定用户发布事件，队列满时丢弃最旧事件以避免阻塞轮询。"""
+        """向指定用户的所有设备广播事件。"""
         user_key = _safe_text(user_id)
         async with self._lock:
-            queue = self._queues.get(user_key)
-        if queue is None:
+            queues = list(self._subscribers.get(user_key, []))
+        if not queues:
             return
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            try:
-                queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
+        for queue in queues:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                logger.bind(
-                    module="weixin.event_bus",
-                    user_id=user_key,
-                ).warning("事件队列已满，丢弃新事件")
+                # 队列满，丢弃最旧事件后重试
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    logger.bind(
+                        module="weixin.event_bus",
+                        user_id=user_key,
+                    ).warning("事件队列已满，丢弃新事件")
 
 
 # 全局事件总线单例

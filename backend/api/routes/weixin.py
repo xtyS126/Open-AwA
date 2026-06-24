@@ -1162,4 +1162,4 @@ async def weixin_ws_endpoint(
             error_type=type(exc).__name__,
         ).warning(f"微信 WebSocket 异常: {exc}")
     finally:
-        await event_bus.unsubscribe(user_id)
+        await event_bus.unsubscribe(user_id, queue)

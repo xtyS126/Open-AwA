@@ -146,6 +146,19 @@ async def handle_websocket_session(
                     "idempotency_key": message_data.get("idempotency_key"),
                 }
 
+                # 多端同步：将用户消息广播给同会话其他设备
+                await ws_manager.broadcast_to_session(
+                    session_id,
+                    {
+                        "type": "sync",
+                        "event": "user_message",
+                        "session_id": session_id,
+                        "content": message_data.get("content", ""),
+                        "request_id": message_request_id,
+                    },
+                    exclude=websocket,
+                )
+
                 result = await agent.process(message_data.get("content", ""), context)
 
                 response_payload = {
@@ -162,6 +175,19 @@ async def handle_websocket_session(
                     "response",
                     response_payload,
                     message_request_id,
+                )
+
+                # 多端同步：将 Agent 响应广播给同会话其他设备
+                await ws_manager.broadcast_to_session(
+                    session_id,
+                    {
+                        "type": "sync",
+                        "event": "agent_response",
+                        "session_id": session_id,
+                        "payload": response_payload,
+                        "request_id": message_request_id,
+                    },
+                    exclude=websocket,
                 )
 
             elif message_data.get("type") == "confirm":
@@ -193,7 +219,7 @@ async def handle_websocket_session(
                 )
 
     except WebSocketDisconnect:
-        ws_manager.disconnect(session_id)
+        ws_manager.disconnect(session_id, websocket)
         logger.bind(
             event="chat_ws_disconnected",
             module="chat",
@@ -203,7 +229,7 @@ async def handle_websocket_session(
             user_id=user_id,
         ).info("websocket disconnected")
     except Exception as exc:
-        ws_manager.disconnect(session_id)
+        ws_manager.disconnect(session_id, websocket)
         logger.bind(
             event="chat_ws_error",
             module="chat",
@@ -233,7 +259,7 @@ async def handle_websocket_session(
         finally:
             await websocket.close(code=4005, reason="Internal server error")
     finally:
-        ws_manager.disconnect(session_id)
+        ws_manager.disconnect(session_id, websocket)
 
 
 def emit_task_event(task_data: Dict[str, Any]) -> Dict[str, Any]:

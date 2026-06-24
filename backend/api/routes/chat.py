@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from loguru import logger
 
 from api.dependencies import get_current_user
-from api.schemas import ChatMessage, ChatResponse, ConfirmationRequest, UserFeedbackRequest
+from api.schemas import ChatMessage, ChatResponse, ChatUndoOperationRequest, ConfirmationRequest, UserFeedbackRequest
 from api.services.chat_protocol import build_sse_response, handle_websocket_session
 from api.services.ws_manager import ws_manager
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
@@ -368,9 +368,9 @@ async def websocket_endpoint(
     # --- 鉴权通过，为 Agent 创建独立会话，贯穿整个 WebSocket 生命周期 ---
     db = SessionLocal()
     try:
-        await ws_manager.connect(session_id, websocket)
-
         user_id = user.id
+
+        await ws_manager.connect(session_id, websocket, user_id=user_id)
 
         logger.bind(
             event="chat_ws_connected",
@@ -605,13 +605,11 @@ from core.checkpoint_store import checkpoint_store
 )
 async def undo_operation(
     request: Request,
-    data: Dict[str, Any],
+    data: ChatUndoOperationRequest,
     current_user=Depends(get_current_user)
 ):
     """撤销操作检查点。"""
-    operation_id = data.get("operation_id")
-    if not operation_id:
-        raise HTTPException(status_code=400, detail="缺少 operation_id")
+    operation_id = data.operation_id
 
     result = checkpoint_store.undo(operation_id)
 

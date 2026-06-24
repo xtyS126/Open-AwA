@@ -103,6 +103,40 @@ ALLOWED_ORIGINS = _resolve_allowed_origins()
 logger.bind(event="cors_configured", module="main", allowed_origins=sanitize_for_logging(ALLOWED_ORIGINS)).info("cors configured")
 
 
+def _resolve_allow_origin_regex() -> Optional[str]:
+    """
+    解析局域网跨域访问开关。
+
+    当环境变量 ALLOW_LAN_ACCESS=true 时，返回匹配私有网段 IP 的正则表达式，
+    使局域网内设备（手机/平板/桌面等）可通过本机 IP 访问后端服务，实现多端互通。
+
+    匹配范围：
+      - localhost / 127.0.0.1
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+    支持 http/https 协议与任意端口。
+    未开启时返回 None，仅依赖显式白名单 ALLOWED_ORIGINS。
+    """
+    if os.getenv("ALLOW_LAN_ACCESS", "").lower() != "true":
+        return None
+    return (
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|"
+        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+        r"192\.168\.\d{1,3}\.\d{1,3}"
+        r")(:\d+)?$"
+    )
+
+
+ALLOW_LAN_ORIGIN_REGEX = _resolve_allow_origin_regex()
+if ALLOW_LAN_ORIGIN_REGEX:
+    logger.bind(event="lan_access_enabled", module="main").info(
+        "局域网跨域访问已开启，允许私有网段 IP 的多端接入"
+    )
+
+
 # ==================== 启动步骤拆分 ====================
 # 将原 lifespan 中的初始化逻辑按职责拆分为独立函数：
 #   1. 基础设施（LiteLLM 依赖检测）
@@ -150,13 +184,14 @@ def _ensure_api_key() -> None:
     3. 运行 python generate_api_key.py 手动生成
     """
     # 优先从 settings 读取（已由 pydantic-settings 从 .env.local 加载），降级到 os.getenv
-    api_key = (getattr(settings, "OPENAWA_API_KEY", "") or "").strip()
+    api_key = settings.OPENAWA_API_KEY.get_secret_value().strip()
     if not api_key:
         api_key = os.getenv("OPENAWA_API_KEY", "").strip()
 
     if api_key and len(api_key) >= 32:
-        if not (getattr(settings, "OPENAWA_API_KEY", "") or "").strip():
-            object.__setattr__(settings, "OPENAWA_API_KEY", api_key)
+        if not settings.OPENAWA_API_KEY.get_secret_value().strip():
+            from pydantic import SecretStr
+            object.__setattr__(settings, "OPENAWA_API_KEY", SecretStr(api_key))
         logger.bind(event="api_key_configured", module="main").info(
             "OPENAWA_API_KEY 已加载"
         )
@@ -806,6 +841,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOW_LAN_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, CLIENT_VERSION_HEADER, _CSRF_HEADER_NAME],
@@ -1010,6 +1046,74 @@ async def metrics(current_user = Depends(get_current_user)):
         prometheus_registry.render(),
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
+
+
+@app.get("/api/endpoints")
+async def list_endpoints(request: Request):
+    """
+    服务发现端点，返回后端所有可用服务入口清单。
+
+    供多端客户端（Web/移动端/桌面端）在连接前动态获取服务拓扑，
+    包括 WebSocket、SSE、REST 端点路径与特性开关。
+    无需认证，便于客户端在建立会话前完成服务发现。
+    """
+    scheme = request.url.scheme
+    host = request.url.netloc
+    ws_scheme = "wss" if scheme == "https" else "ws"
+    api_prefix = settings.API_V1_STR
+
+    return {
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "base_url": f"{scheme}://{host}",
+        "ws_base_url": f"{ws_scheme}://{host}",
+        "api_prefix": api_prefix,
+        "endpoints": {
+            "websocket": [
+                {
+                    "path": f"{api_prefix}/chat/ws/{{session_id}}",
+                    "auth": "query:token",
+                    "desc": "聊天会话实时通讯，支持同会话多设备同步",
+                },
+                {
+                    "path": f"{api_prefix}/weixin/ws",
+                    "auth": "query:token",
+                    "desc": "微信消息实时推送",
+                },
+                {
+                    "path": f"{api_prefix}/terminal/ws/{{session_id}}",
+                    "auth": "query:token",
+                    "desc": "终端会话 WebSocket",
+                },
+            ],
+            "sse": [
+                {
+                    "path": f"{api_prefix}/security/permissions/stream",
+                    "auth": "query:api_key",
+                    "desc": "权限请求 SSE 推流，支持同用户多设备订阅",
+                },
+            ],
+            "rest": [
+                {"prefix": f"{api_prefix}/auth", "desc": "认证与会话"},
+                {"prefix": f"{api_prefix}/chat", "desc": "聊天与会话历史"},
+                {"prefix": f"{api_prefix}/conversation", "desc": "会话管理"},
+                {"prefix": f"{api_prefix}/memory", "desc": "记忆管理"},
+                {"prefix": f"{api_prefix}/skills", "desc": "技能引擎"},
+                {"prefix": f"{api_prefix}/plugins", "desc": "插件系统"},
+                {"prefix": f"{api_prefix}/im", "desc": "IM 渠道管理"},
+                {"prefix": f"{api_prefix}/billing", "desc": "计费与用量"},
+                {"prefix": f"{api_prefix}/user", "desc": "用户与个人资料"},
+                {"prefix": f"{api_prefix}/roles", "desc": "角色管理"},
+                {"prefix": f"{api_prefix}/tasks", "desc": "任务管理"},
+                {"prefix": f"{api_prefix}/tts", "desc": "语音合成"},
+            ],
+        },
+        "features": {
+            "lan_access": ALLOW_LAN_ORIGIN_REGEX is not None,
+            "ssl": settings.is_ssl_enabled(),
+            "multi_device_sync": True,
+        },
+    }
 
 
 def get_server_host() -> str:
