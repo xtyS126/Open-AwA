@@ -7,6 +7,7 @@ import asyncio
 import json
 import time
 import uuid
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from loguru import logger
 from .comprehension import ComprehensionLayer
@@ -14,6 +15,7 @@ from .planner import PlanningLayer
 from .executor import ExecutionLayer, resolve_max_tool_call_rounds
 from .feedback import FeedbackLayer
 from .metrics import record_tool_execution_metric
+from .abort_controller import AbortController
 from memory.experience_manager import ExperienceManager
 from skills.experience_extractor import ExperienceExtractor
 from skills.skill_engine import SkillEngine
@@ -24,8 +26,10 @@ from workflow.engine import WorkflowEngine
 from .behavior_logger import behavior_logger
 from .conversation_recorder import conversation_recorder
 from .magic_commands import get_magic_command_registry
-from .context.compressor import ContextCompressor
+from .compaction_manager import CompactionManager
 from .context.token_budget import TokenBudget
+from .budget_tracker import BudgetTracker
+from .content_replacement import ContentReplacementState, enforce_tool_result_budget
 from .soul_state import SoulStateManager
 from api.services.chat_protocol import (
     emit_task_event,
@@ -39,6 +43,7 @@ from api.services.chat_protocol import (
 )
 
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 # 活跃 Agent 任务容量上限：防止异常断流或取消链路不完整时字典无限增长
@@ -90,6 +95,47 @@ def _cleanup_completed_tasks() -> None:
                     ).debug("清理已完成的 Agent 任务条目")
 
 
+class AgentState(Enum):
+    """
+    Agent 主循环的显式状态机枚举。
+
+    状态分为两类：
+    - 继续态（CONTINUE_*）：循环需继续执行下一轮
+    - 终态（TERMINAL_*）：循环应停止，对应不同的结束原因
+    """
+
+    # 继续态：检测到 tool_calls，需要执行工具后继续下一轮 LLM 调用
+    CONTINUE_TOOL_CALLS = "continue_tool_calls"
+    # 继续态：上下文超限（finish_reason=length），需要压缩后继续
+    CONTINUE_COMPACT = "continue_compact"
+    # 终态：模型正常结束（finish_reason=stop）
+    TERMINAL_END_TURN = "terminal_end_turn"
+    # 终态：达到最大轮次上限
+    TERMINAL_MAX_ROUNDS = "terminal_max_rounds"
+    # 终态：模型拒绝（finish_reason=content_filter）
+    TERMINAL_REFUSAL = "terminal_refusal"
+    # 终态：预算耗尽
+    TERMINAL_BUDGET_EXHAUSTED = "terminal_budget_exhausted"
+
+    @property
+    def is_terminal(self) -> bool:
+        """判断当前状态是否为终态，终态时主循环应退出。"""
+        return self in (
+            AgentState.TERMINAL_END_TURN,
+            AgentState.TERMINAL_MAX_ROUNDS,
+            AgentState.TERMINAL_REFUSAL,
+            AgentState.TERMINAL_BUDGET_EXHAUSTED,
+        )
+
+    @property
+    def is_continuation(self) -> bool:
+        """判断当前状态是否为继续态，继续态时主循环应执行下一轮。"""
+        return self in (
+            AgentState.CONTINUE_TOOL_CALLS,
+            AgentState.CONTINUE_COMPACT,
+        )
+
+
 class AIAgent:
     """
     封装与AIAgent相关的核心逻辑与运行状态。
@@ -130,7 +176,17 @@ class AIAgent:
         
         # 初始化灵魂状态管理器（默认工作区）
         self.soul_state_manager = SoulStateManager(workspace_id="default")
-        
+
+        # 初始化预算追踪器，用于在 Agent 主循环中追踪 token 使用量
+        self.budget_tracker: BudgetTracker = BudgetTracker()
+
+        # 初始化工具结果内容替换状态，用于在 LLM 调用前应用工具结果预算
+        self.content_replacement_state: ContentReplacementState = ContentReplacementState()
+
+        # 根中止控制器：每次 process_stream 创建新的根 controller，
+        # 流结束时 abort 清理所有子任务（工具执行、子代理等）
+        self.root_abort_controller: Optional[AbortController] = None
+
         logger.info("AI Agent initialized with SkillEngine and PluginManager integration")
 
     async def _record_with_backpressure(self, coro) -> Any:
@@ -329,6 +385,90 @@ class AIAgent:
         }
         payload.update(extra)
         return payload
+
+    @staticmethod
+    def _map_finish_reason_to_state(
+        finish_reason: str,
+        current_round: int,
+        max_rounds: int,
+    ) -> AgentState:
+        """
+        将 LLM 返回的 finish_reason 映射为 AgentState 状态机状态。
+
+        映射规则：
+        - current_round >= max_rounds 时优先返回 TERMINAL_MAX_ROUNDS（防止无限循环）
+        - tool_calls -> CONTINUE_TOOL_CALLS（执行工具后继续下一轮）
+        - stop -> TERMINAL_END_TURN（正常结束）
+        - length -> CONTINUE_COMPACT（上下文超限，压缩后继续）
+        - content_filter -> TERMINAL_REFUSAL（模型拒绝）
+        - 其他未知值 -> TERMINAL_END_TURN（安全回退）
+
+        参数:
+            finish_reason: LLM 返回的结束原因字符串
+            current_round: 当前已执行的轮次（从 1 开始计数）
+            max_rounds: 允许的最大轮次上限
+
+        返回:
+            对应的 AgentState 枚举值
+        """
+        # 最大轮次检查优先级最高，避免在边界处仍触发工具调用导致无限循环
+        if current_round >= max_rounds:
+            return AgentState.TERMINAL_MAX_ROUNDS
+
+        normalized = str(finish_reason or "").strip().lower()
+        if normalized == "tool_calls":
+            return AgentState.CONTINUE_TOOL_CALLS
+        if normalized == "stop":
+            return AgentState.TERMINAL_END_TURN
+        if normalized == "length":
+            return AgentState.CONTINUE_COMPACT
+        if normalized == "content_filter":
+            return AgentState.TERMINAL_REFUSAL
+        # 未知 finish_reason 安全回退为正常结束
+        return AgentState.TERMINAL_END_TURN
+
+    def _record_round_budget_usage(
+        self,
+        *,
+        user_input: str,
+        context: Dict[str, Any],
+        round_content: str,
+        round_reasoning: str,
+    ) -> None:
+        """
+        估算并记录本轮 LLM 调用的 token 使用量到预算追踪器。
+
+        流式响应不直接返回 usage 信息，因此基于本轮输入和输出文本进行启发式估算：
+        - 输入 token：用户输入 + 对话历史
+        - 输出 token：本轮生成的内容 + 推理内容
+
+        参数:
+            user_input: 本轮有效的用户输入
+            context: 执行上下文，可能包含 conversation_history
+            round_content: 本轮 LLM 生成的回复内容
+            round_reasoning: 本轮 LLM 生成的推理内容
+        """
+        token_budget = TokenBudget()
+
+        # 估算输入 token：用户输入 + 对话历史
+        input_text = user_input or ""
+        conversation_history = context.get("conversation_history", [])
+        if isinstance(conversation_history, list):
+            for msg in conversation_history:
+                if isinstance(msg, dict):
+                    content = msg.get("content", "")
+                    if isinstance(content, str):
+                        input_text += " " + content
+        input_tokens = token_budget.estimate_tokens(input_text)
+
+        # 估算输出 token：本轮生成的内容 + 推理内容
+        output_text = (round_content or "") + (round_reasoning or "")
+        output_tokens = token_budget.estimate_tokens(output_text)
+
+        self.budget_tracker.record_usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
     @staticmethod
     def _get_stream_tool_kind(tool_name: str) -> str:
@@ -1594,6 +1734,7 @@ class AIAgent:
         """
         自动检测并压缩对话上下文。
         当 token 使用量超过阈值时触发压缩，返回压缩后的消息列表。
+        使用 CompactionManager 进行结构化摘要压缩，断路器保护避免反复失败。
         """
         model_name = context.get("model", "default")
         budget = TokenBudget(model_name=model_name)
@@ -1604,16 +1745,41 @@ class AIAgent:
         if not budget.should_compress() and len(messages) <= 40:
             return messages
 
-        compressor = ContextCompressor()
-        result = compressor.compress(messages)
+        # 使用 CompactionManager 进行压缩，窗口大小取自 TokenBudget
+        compaction = CompactionManager(model_context_window=budget.max_tokens)
+
+        # 设置 LLM 调用函数：复用 executor 的 LLM 配置解析与调用能力
+        # 构建最小化上下文，仅包含配置解析所需字段，避免注入对话历史
+        async def _compaction_llm_call(prompt: str, **kwargs) -> str:
+            summary_ctx: Dict[str, Any] = {
+                "provider": context.get("provider"),
+                "model": context.get("model"),
+                "db": context.get("db"),
+                "request_id": context.get("request_id"),
+            }
+            try:
+                result = await self.executor._call_llm_api(prompt, summary_ctx)
+                if isinstance(result, dict) and result.get("ok"):
+                    return result.get("response", "") or ""
+                return ""
+            except Exception as exc:
+                logger.warning(f"压缩摘要 LLM 调用失败: {exc}")
+                return ""
+
+        compaction.set_llm_call(_compaction_llm_call)
+
+        result = await compaction.compact(messages=messages)
+        compressed_messages = result["messages"]
+
         logger.bind(
             event="auto_context_compressed",
             original_count=len(messages),
-            compressed_count=len(result["compressed_messages"]),
+            compressed_count=len(compressed_messages),
             tokens_before=current_tokens,
-            tokens_after=budget.count_messages(result["compressed_messages"]),
+            tokens_after=budget.count_messages(compressed_messages),
+            compacted=result.get("compacted", False),
         ).info("对话上下文已自动压缩")
-        return result["compressed_messages"]
+        return compressed_messages
 
     async def process_stream(self, user_input: str, context: Dict[str, Any]):
         """
@@ -1624,6 +1790,10 @@ class AIAgent:
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
         _stream_start_time = time.time()
+
+        # 创建本轮流的根中止控制器，所有工具执行和子代理共享其子 controller
+        # 流结束（正常或异常）时调用 abort() 清理所有子任务
+        self.root_abort_controller = AbortController()
 
         # 检测魔法命令
         cmd_result = await self._check_and_handle_magic_command(user_input, context)
@@ -1716,7 +1886,7 @@ class AIAgent:
                     if relevant_memories:
                         context["vector_retrieved_memories"] = relevant_memories
                         logger.info(f"Stream: 检索到 {len(relevant_memories)} 条相关长期记忆")
-                except Exception as mem_err:
+                except (SQLAlchemyError, asyncio.TimeoutError, ValueError) as mem_err:
                     logger.warning(f"Stream 自动记忆检索失败: {mem_err}")
 
             intent = await self.comprehension.recognize_intent(effective_user_input)
@@ -1748,7 +1918,9 @@ class AIAgent:
             round_count = 0
             max_rounds = resolve_max_tool_call_rounds(context)
 
-            while round_count < max_rounds:
+            # 显式状态机：初始状态为继续工具调用，终态时退出循环
+            state = AgentState.CONTINUE_TOOL_CALLS
+            while not state.is_terminal and not self.budget_tracker.is_near_completion():
                 # 在每轮循环开始检查取消信号
                 if current_task and current_task.cancelled():
                     yield {"type": "cancelled", "content": "", "reasoning_content": ""}
@@ -1758,6 +1930,16 @@ class AIAgent:
                 round_content = ""
                 round_reasoning = ""
                 background_subagents_spawned = False
+
+                # 在每次 LLM 调用前应用工具结果预算：替换旧工具结果以控制 token 用量
+                _tool_messages_for_budget = context.get("_tool_messages", [])
+                if _tool_messages_for_budget:
+                    _tool_result_budget = self.budget_tracker.max_input_tokens // 4
+                    context["_tool_messages"] = enforce_tool_result_budget(
+                        _tool_messages_for_budget,
+                        self.content_replacement_state,
+                        _tool_result_budget,
+                    )
 
                 async for chunk in self.executor._call_llm_api_stream(effective_user_input, context):
                     if "error" in chunk:
@@ -1800,6 +1982,8 @@ class AIAgent:
                             tool_name = tc.get("function", {}).get("name", "unknown")
                             tool_id = tc.get("id", "")
                             tool_kind = self._get_stream_tool_kind(tool_name)
+                            # 为每个工具创建子中止控制器，根 controller abort 时级联中止
+                            tool_abort = self.root_abort_controller.create_child()
                             spawn_agent_type = "Explore"
                             spawn_description = ""
 
@@ -1988,8 +2172,36 @@ class AIAgent:
                         output_chunk["reasoning_content"] = reasoning
                     yield output_chunk
 
-                if not tool_calls_detected:
-                    break  # 没有工具调用，退出 while 循环
+                # 根据本轮 finish_reason 推进状态机
+                # tool_calls_detected=True 对应 finish_reason=tool_calls，否则对应 stop
+                finish_reason = "tool_calls" if tool_calls_detected else "stop"
+                state = self._map_finish_reason_to_state(
+                    finish_reason=finish_reason,
+                    current_round=round_count,
+                    max_rounds=max_rounds,
+                )
+
+                # 记录本轮 LLM 调用的 token 使用量到预算追踪器
+                self._record_round_budget_usage(
+                    user_input=effective_user_input,
+                    context=context,
+                    round_content=round_content,
+                    round_reasoning=round_reasoning,
+                )
+
+                # 预算即将耗尽时转换为 TERMINAL_BUDGET_EXHAUSTED 状态
+                if self.budget_tracker.is_near_completion():
+                    state = AgentState.TERMINAL_BUDGET_EXHAUSTED
+                    logger.bind(
+                        event="budget_near_completion",
+                        module="agent",
+                        usage_ratio=self.budget_tracker.usage_ratio(),
+                        total_used=self.budget_tracker.total_used(),
+                        remaining=self.budget_tracker.remaining(),
+                    ).info("预算即将耗尽，提前结束本轮对话")
+                    yield self._build_status_event(
+                        "budget_exhausted", "预算即将耗尽，提前结束本轮对话"
+                    )
 
             # TaskCompleted 钩子：流完成后触发质量门控
             try:
@@ -2027,6 +2239,11 @@ class AIAgent:
                 })
             except Exception:
                 pass  # 数据收集不影响主流程
+
+            # 中止根控制器，级联清理所有子任务（工具执行、子代理等）
+            if self.root_abort_controller is not None:
+                self.root_abort_controller.abort(reason="process_stream_finished")
+                self.root_abort_controller = None
 
             unregister_agent_task(session_id)
 
@@ -2606,8 +2823,8 @@ class AIAgent:
                 })
             
             return formatted_experiences
-            
-        except Exception as e:
+
+        except (SQLAlchemyError, asyncio.TimeoutError, ValueError) as e:
             logger.bind(
                 event="experience_retrieval_error",
                 module="agent",
@@ -2644,7 +2861,7 @@ class AIAgent:
                 }
                 for memory in memories
             ]
-        except Exception as e:
+        except (SQLAlchemyError, asyncio.TimeoutError, ValueError) as e:
             logger.bind(
                 event="long_term_memory_retrieval_error",
                 module="agent",
@@ -2733,7 +2950,7 @@ class AIAgent:
                 f"Extracted experience and saved to file: {experience_data.get('save_result', {}).get('file_name', '')}"
             )
             
-        except Exception as e:
+        except (SQLAlchemyError, asyncio.TimeoutError, ValueError, json.JSONDecodeError) as e:
             logger.bind(
                 event="experience_extraction_error",
                 module="agent",

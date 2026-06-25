@@ -24,7 +24,8 @@ const DiffView: React.FC<DiffViewProps> = ({
   onAccept,
   onReject,
 }) => {
-  const { theme } = useThemeStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const theme = useThemeStore(s => s.theme)
   const [accepted, setAccepted] = useState(false)
 
   const handleAccept = useCallback(() => {

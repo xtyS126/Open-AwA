@@ -2,10 +2,11 @@
  * Coding 聊天面板 — 上下文感知的 AI 编码助手。
  * 支持分析、解释、重构、生成测试等代码操作。
  */
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { Send, Code, GitBranch, Bug, ScrollText } from 'lucide-react'
 import { useCodingStore } from '../store/codingStore'
 import { chatAPI } from '@/shared/api/api'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './CodingChatPanel.module.css'
 
 interface ChatMessage {
@@ -21,11 +22,24 @@ const QUICK_ACTIONS = [
 ]
 
 const CodingChatPanel: React.FC = () => {
-  const { activeFilePath, openFiles } = useCodingStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const activeFilePath = useCodingStore(s => s.activeFilePath)
+  const openFiles = useCodingStore(s => s.openFiles)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // 组件卸载时取消进行中的流式请求，防止资源泄露
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+    }
+  }, [])
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
 
@@ -41,6 +55,10 @@ const CodingChatPanel: React.FC = () => {
     setMessages((prev) => [...prev, { role: 'user', content: messageText }])
     setInput('')
     setIsLoading(true)
+
+    // 创建 AbortController 以支持组件卸载时取消请求
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
 
     try {
       const sessionId = `coding-${Date.now()}`
@@ -58,14 +76,27 @@ const CodingChatPanel: React.FC = () => {
           }
         },
         (error) => {
-          console.error('Coding 聊天流错误:', error)
+          appLogger.error({
+            event: 'coding_chat_stream_error',
+            message: 'Coding 聊天流错误',
+            module: 'coding_chat_panel',
+            extra: { error: String(error) },
+          })
         },
+        { signal: abortController.signal },  // requestOptions: 传递 AbortSignal 支持取消
       )
       setMessages((prev) => [...prev, { role: 'assistant', content: responseText }])
-    } catch {
+    } catch (err) {
+      // AbortError 是组件卸载时的主动取消，不显示错误消息
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return
+      }
       setMessages((prev) => [...prev, { role: 'assistant', content: '处理请求时出错，请重试。' }])
     } finally {
       setIsLoading(false)
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null
+      }
     }
   }, [input, isLoading, activeFile])
 

@@ -485,7 +485,7 @@ async def stream_permission_requests(
 
     # 路径 1: Authorization Header 认证
     credentials = await oauth2_scheme(request)
-    configured_key = settings.OPENAWA_API_KEY
+    configured_key = settings.OPENAWA_API_KEY.get_secret_value()
     if credentials:
         token = _normalize_request_token(credentials.credentials)
         # API Key 认证

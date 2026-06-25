@@ -41,7 +41,8 @@ export const MessageList = memo(function MessageList({
   feedbackState,
   onUndo,
 }: MessageListProps) {
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
 
   /** 流式输出时自动跟随最新内容 */

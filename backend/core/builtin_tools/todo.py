@@ -46,7 +46,7 @@ def _build_summary(todos: List[Dict[str, Any]], warning: Optional[str] = None) -
             f"待处理 {pending}，进行中 {in_progress}，已完成 {completed}"
         )
     if warning:
-        base += f"\n⚠️ {warning}"
+        base += f"\n[WARN] {warning}"
     return base
 
 

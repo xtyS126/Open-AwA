@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
+from core.context.token_budget import TokenBudget
+
 
 # 摘要生成模板（参考 OpenCode SUMMARY_TEMPLATE）
 SUMMARY_TEMPLATE = """Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
@@ -66,6 +68,17 @@ class CompactionConfig:
     tool_output_max_chars: int = 2_000
 
 
+# 断路器阈值：连续摘要生成失败达到此次数后，跳过压缩以保护系统
+MAX_CONSECUTIVE_FAILURES = 3
+
+# 可安全清除输出的工具集合
+# 这些工具的输出通常较大且可安全清除，用于 MicroCompact 轻量级压缩
+COMPACTABLE_TOOLS = {"Read", "Shell", "Grep", "Glob", "WebSearch", "Edit", "Write"}
+
+# MicroCompact 保留的最近消息条数：超出此阈值之前的工具输出会被清除
+MICRO_COMPACT_RECENT_THRESHOLD = 5
+
+
 @dataclass
 class TokenEstimate:
     """Token 估算结果"""
@@ -75,68 +88,105 @@ class TokenEstimate:
     tools_tokens: int = 0
 
 
-class TokenEstimator:
+@dataclass
+class PreservedSegment:
+    """保留段标识，记录压缩边界保留的消息段 UUID"""
+    anchor_uuid: str
+    head_uuid: str
+    tail_uuid: str
+
+
+@dataclass
+class CompactBoundaryMessage:
+    """压缩边界消息，标记上下文压缩发生的位置"""
+    is_compact_boundary: bool = True
+    preserved_segment: Optional[PreservedSegment] = None
+
+
+def create_compact_boundary_message(
+    anchor_uuid: str,
+    head_uuid: str,
+    tail_uuid: str,
+) -> Dict[str, Any]:
     """
-    轻量级 token 估算器。
+    创建压缩边界消息。
 
-    在大规模部署中应替换为 tiktoken 精确计数。
-    当前使用字符数 / 4 的粗略估算（适用于中英文混合场景）。
+    Args:
+        anchor_uuid: 锚定消息 UUID
+        head_uuid: 保留段头部 UUID
+        tail_uuid: 保留段尾部 UUID
+
+    Returns:
+        dict 格式的系统消息，标记压缩边界
     """
+    # 构建保留段标识，封装 UUID 信息
+    segment = PreservedSegment(
+        anchor_uuid=anchor_uuid,
+        head_uuid=head_uuid,
+        tail_uuid=tail_uuid,
+    )
+    content = (
+        "[CompactBoundary] 此处为上下文压缩边界。\n"
+        f"保留段: anchor={segment.anchor_uuid}, "
+        f"head={segment.head_uuid}, tail={segment.tail_uuid}"
+    )
+    return {
+        "role": "system",
+        "content": content,
+    }
 
-    # 粗略估算比例（英文约 4 字符/token，中文约 1-2 字符/token）
-    CHARS_PER_TOKEN = 3.5
 
-    @classmethod
-    def estimate(cls, text: str) -> int:
-        """估算文本的 token 数量"""
-        if not text:
-            return 0
-        # 简单字符比例估算
-        return max(1, int(len(text) / cls.CHARS_PER_TOKEN))
+# 模块级 TokenBudget 实例，用于统一 token 估算
+# 使用中文 1.5 字符/token + 英文 4 字符/token 的启发式
+_token_budget = TokenBudget()
 
-    @classmethod
-    def estimate_message(cls, message: Dict[str, Any]) -> int:
-        """估算单条消息的 token 数量"""
-        content = message.get("content", "")
-        if isinstance(content, str):
-            return cls.estimate(content)
-        if isinstance(content, list):
-            # 多模态内容
-            total = 0
-            for part in content:
-                if isinstance(part, dict) and "text" in part:
-                    total += cls.estimate(part["text"])
-            return total
-        return cls.estimate(str(content))
 
-    @classmethod
-    def estimate_messages(cls, messages: List[Dict[str, Any]]) -> int:
-        """估算消息列表的总 token 数量"""
-        return sum(cls.estimate_message(msg) for msg in messages)
+def _estimate_text_tokens(text: str) -> int:
+    """使用 TokenBudget 估算文本的 token 数量"""
+    return _token_budget.estimate_tokens(text)
 
-    @classmethod
-    def estimate_tools(cls, tools: List[Dict[str, Any]]) -> int:
-        """估算工具定义的 token 数量"""
-        tools_json = json.dumps(tools, ensure_ascii=False)
-        return cls.estimate(tools_json)
 
-    @classmethod
-    def estimate_total(
-        cls,
-        system_prompt: str = "",
-        messages: Optional[List[Dict[str, Any]]] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> TokenEstimate:
-        """估算完整请求的总 token 数量"""
-        system_tokens = cls.estimate(system_prompt)
-        messages_tokens = cls.estimate_messages(messages or [])
-        tools_tokens = cls.estimate_tools(tools or [])
-        return TokenEstimate(
-            total=system_tokens + messages_tokens + tools_tokens,
-            system_tokens=system_tokens,
-            messages_tokens=messages_tokens,
-            tools_tokens=tools_tokens,
-        )
+def _estimate_message_tokens(message: Dict[str, Any]) -> int:
+    """估算单条消息的 token 数量"""
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return _estimate_text_tokens(content)
+    if isinstance(content, list):
+        # 多模态内容：累加各文本部分
+        total = 0
+        for part in content:
+            if isinstance(part, dict) and "text" in part:
+                total += _estimate_text_tokens(part["text"])
+        return total
+    return _estimate_text_tokens(str(content))
+
+
+def _estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
+    """估算消息列表的总 token 数量"""
+    return sum(_estimate_message_tokens(msg) for msg in messages)
+
+
+def _estimate_tools_tokens(tools: List[Dict[str, Any]]) -> int:
+    """估算工具定义的 token 数量"""
+    tools_json = json.dumps(tools, ensure_ascii=False)
+    return _estimate_text_tokens(tools_json)
+
+
+def _estimate_total_tokens(
+    system_prompt: str = "",
+    messages: Optional[List[Dict[str, Any]]] = None,
+    tools: Optional[List[Dict[str, Any]]] = None,
+) -> TokenEstimate:
+    """估算完整请求的总 token 数量，返回分项明细"""
+    system_tokens = _estimate_text_tokens(system_prompt)
+    messages_tokens = _estimate_messages_tokens(messages or [])
+    tools_tokens = _estimate_tools_tokens(tools or [])
+    return TokenEstimate(
+        total=system_tokens + messages_tokens + tools_tokens,
+        system_tokens=system_tokens,
+        messages_tokens=messages_tokens,
+        tools_tokens=tools_tokens,
+    )
 
 
 class CompactionManager:
@@ -158,6 +208,8 @@ class CompactionManager:
         self.model_context_window = model_context_window
         self.config = config or CompactionConfig()
         self.llm_call: Optional[callable] = None  # LLM 调用函数
+        # 断路器：连续摘要生成失败计数，达到 MAX_CONSECUTIVE_FAILURES 后跳过压缩
+        self._consecutive_failures: int = 0
 
     def set_llm_call(self, llm_call: callable) -> None:
         """
@@ -184,7 +236,7 @@ class CompactionManager:
         if self.model_context_window <= 0:
             return False
 
-        estimate = TokenEstimator.estimate_total(system_prompt, messages, tools)
+        estimate = _estimate_total_tokens(system_prompt, messages, tools)
         available = self.model_context_window - max(output_tokens, self.config.buffer_tokens)
 
         return estimate.total > available
@@ -210,7 +262,7 @@ class CompactionManager:
 
         # 从后往前扫描，优先保留最近的消息
         for msg in reversed(messages):
-            msg_tokens = TokenEstimator.estimate_message(msg)
+            msg_tokens = _estimate_message_tokens(msg)
             if accumulated + msg_tokens <= keep:
                 selected_recent.insert(0, msg)
                 accumulated += msg_tokens
@@ -309,6 +361,8 @@ class CompactionManager:
         """
         调用 LLM 生成结构化摘要。
 
+        成功时重置断路器计数，失败时递增计数。
+
         Args:
             head_messages: 需要被压缩的消息
             previous_summary: 之前的摘要（用于增量合并）
@@ -318,6 +372,7 @@ class CompactionManager:
         """
         if not self.llm_call:
             logger.warning("CompactionManager 未配置 LLM 调用函数，无法生成摘要")
+            self._consecutive_failures += 1
             return None
 
         if not head_messages:
@@ -326,12 +381,13 @@ class CompactionManager:
         prompt = self.build_summary_prompt(head_messages, previous_summary)
 
         # 验证摘要 prompt 不会超过上下文窗口
-        prompt_tokens = TokenEstimator.estimate(prompt)
+        prompt_tokens = _estimate_text_tokens(prompt)
         if prompt_tokens > self.model_context_window - self.config.summary_output_tokens:
             logger.warning(
                 f"摘要 prompt 过大 ({prompt_tokens} tokens)，"
                 f"超过窗口限制 ({self.model_context_window})"
             )
+            self._consecutive_failures += 1
             return None
 
         try:
@@ -341,11 +397,92 @@ class CompactionManager:
                 temperature=0.1,  # 低温度以获得稳定输出
             )
             if not summary or not summary.strip():
+                self._consecutive_failures += 1
                 return None
+            # 成功生成摘要，重置断路器计数
+            self._consecutive_failures = 0
             return summary.strip()
         except Exception as e:
             logger.error(f"生成摘要失败: {e}")
+            self._consecutive_failures += 1
             return None
+
+    def micro_compact(
+        self,
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        轻量级压缩：替换旧工具输出为清除标记。
+
+        不调用 LLM，仅替换 COMPACTABLE_TOOLS 中工具的旧输出内容。
+        "旧"定义为消息索引早于最近 N 条消息（N=MICRO_COMPACT_RECENT_THRESHOLD）。
+
+        Args:
+            messages: 消息列表
+
+        Returns:
+            新的消息列表（不修改原列表）
+        """
+        if not messages:
+            return []
+
+        total = len(messages)
+        result: List[Dict[str, Any]] = []
+
+        for index, msg in enumerate(messages):
+            if msg.get("role") == "tool":
+                tool_name = msg.get("name", "")
+                # 判断是否为可压缩工具且为旧消息
+                is_compactable = tool_name in COMPACTABLE_TOOLS
+                is_old = index < total - MICRO_COMPACT_RECENT_THRESHOLD
+                if is_compactable and is_old:
+                    # 替换 content 为清除标记，复制消息避免修改原列表
+                    new_msg = dict(msg)
+                    new_msg["content"] = "[Old tool result content cleared]"
+                    result.append(new_msg)
+                    continue
+            result.append(msg)
+
+        return result
+
+    def group_messages_by_api_round(
+        self,
+        messages: List[Dict[str, Any]],
+    ) -> List[List[Dict[str, Any]]]:
+        """
+        按 API 轮次分组消息。
+
+        以"新 assistant 响应开始"为边界分组：
+        - 遇到 role="assistant" 的消息开始新的一组
+        - 后续的 role="tool" 消息归入当前组
+        - 其他消息（user/system）归入当前组（若无当前组则新建）
+
+        Args:
+            messages: 消息列表
+
+        Returns:
+            分组后的消息列表
+        """
+        if not messages:
+            return []
+
+        groups: List[List[Dict[str, Any]]] = []
+        current_group: List[Dict[str, Any]] = []
+
+        for msg in messages:
+            if msg.get("role") == "assistant":
+                # assistant 消息开始新的一组
+                if current_group:
+                    groups.append(current_group)
+                current_group = [msg]
+            else:
+                # 其他消息归入当前组
+                current_group.append(msg)
+
+        if current_group:
+            groups.append(current_group)
+
+        return groups
 
     async def compact(
         self,
@@ -357,6 +494,9 @@ class CompactionManager:
     ) -> Dict[str, Any]:
         """
         执行完整压缩流程。
+
+        优先尝试 MicroCompact 轻量级压缩（不调用 LLM），若 token 数降至阈值以下则直接返回；
+        否则继续执行全量压缩（调用 LLM 生成摘要）。
 
         Returns:
             {
@@ -376,10 +516,35 @@ class CompactionManager:
                 "summary_message": None,
             }
 
-        # 分离消息
-        head_messages, recent_messages = self.select_messages(messages)
+        # 优先尝试 MicroCompact（轻量级压缩，不调用 LLM）
+        micro_compacted = self.micro_compact(messages)
+        micro_estimate = _estimate_total_tokens(
+            system_prompt, micro_compacted, tools
+        )
+        available = self.model_context_window - max(
+            output_tokens, self.config.buffer_tokens
+        )
 
-        if not head_messages:
+        if micro_estimate.total <= available:
+            logger.info(
+                f"MicroCompact 压缩成功: token {micro_estimate.total} <= {available},"
+                f" 无需调用 LLM"
+            )
+            return {
+                "compacted": True,
+                "messages": micro_compacted,
+                "summary": previous_summary,
+                "summary_message": None,
+            }
+
+        logger.info("MicroCompact 不足以降低 token，执行全量压缩")
+
+        # 断路器保护：连续失败达上限时跳过压缩，避免反复触发失败的 LLM 调用
+        if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            logger.warning(
+                f"断路器触发：连续摘要生成失败 {self._consecutive_failures} 次，"
+                f"跳过压缩（阈值 {MAX_CONSECUTIVE_FAILURES}）"
+            )
             return {
                 "compacted": False,
                 "messages": messages,
@@ -387,15 +552,26 @@ class CompactionManager:
                 "summary_message": None,
             }
 
-        # 生成摘要
+        # 分离消息（使用 micro_compacted 以利用已清除的工具输出）
+        head_messages, recent_messages = self.select_messages(micro_compacted)
+
+        if not head_messages:
+            return {
+                "compacted": False,
+                "messages": micro_compacted,
+                "summary": previous_summary,
+                "summary_message": None,
+            }
+
+        # 生成摘要（失败时 generate_summary 内部已递增断路器计数）
         summary = await self.generate_summary(head_messages, previous_summary)
 
         if not summary:
-            # 摘要生成失败，仍然返回最近消息
-            logger.warning("摘要生成失败，使用未压缩的消息列表")
+            # 摘要生成失败，返回 MicroCompact 后的消息列表
+            logger.warning("摘要生成失败，使用 MicroCompact 后的消息列表")
             return {
                 "compacted": False,
-                "messages": messages,
+                "messages": micro_compacted,
                 "summary": previous_summary,
                 "summary_message": None,
             }

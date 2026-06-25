@@ -19,21 +19,38 @@ def safe_resolve_path(file_path: str) -> str:
 
 def is_path_safe(file_path: str, allowed_directories: List[str]) -> bool:
     """
-    处理is、path、safe相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    校验路径是否在允许目录白名单内。
+    对于不存在的路径，校验其父目录是否在白名单内，防止 TOCTOU 攻击。
     """
     try:
-        resolved_path = safe_resolve_path(file_path)
-        
-        if not os.path.exists(resolved_path):
-            return True
-        
+        resolved_path = Path(safe_resolve_path(file_path))
+
+        # 路径不存在时，校验父目录在白名单内（防止通过符号链接绕过）
+        if not resolved_path.exists():
+            parent = resolved_path.parent
+            # 逐级向上查找存在的父目录
+            while not parent.exists() and parent != parent.parent:
+                parent = parent.parent
+            if not parent.exists():
+                return False
+            # 校验最近存在的父目录是否在白名单内
+            parent_resolved = Path(os.path.realpath(str(parent)))
+            for allowed_dir in allowed_directories:
+                allowed_resolved = Path(os.path.realpath(allowed_dir))
+                try:
+                    parent_resolved.relative_to(allowed_resolved)
+                    return True
+                except ValueError:
+                    continue
+            return False
+
+        # 路径存在时，校验路径本身在白名单内
         for allowed_dir in allowed_directories:
-            allowed_resolved = os.path.realpath(allowed_dir)
-            common = os.path.commonpath([resolved_path, allowed_resolved])
-            if common == allowed_resolved:
+            allowed_resolved = Path(os.path.realpath(allowed_dir))
+            common = os.path.commonpath([str(resolved_path), str(allowed_resolved)])
+            if common == str(allowed_resolved):
                 return True
-        
+
         return False
     except Exception:
         return False

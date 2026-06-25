@@ -44,7 +44,7 @@ const FileTreeItem: React.FC<{
         onClick={handleToggle}
       >
         <span className={styles.icon}>
-          {node.type === 'directory' ? (expanded ? '📂' : '📁') : '📄'}
+          {node.type === 'directory' ? (expanded ? '[DIR-OPEN]' : '[DIR]') : '[FILE]'}
         </span>
         <span className={styles.name}>{node.name}</span>
       </div>
@@ -61,7 +61,8 @@ const FileTreeItem: React.FC<{
 };
 
 const FileTree: React.FC = () => {
-  const { projectDir } = useCodingStore();
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const projectDir = useCodingStore(s => s.projectDir);
   const [rootTree, setRootTree] = useState<FileTreeNode | null>(null);
   const [loading, setLoading] = useState(true);
 

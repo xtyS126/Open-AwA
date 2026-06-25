@@ -193,6 +193,11 @@ async def synthesize_tts_stream(
 
 # ---- 声音复刻端点 ----
 
+# 声音复刻音频上传安全限制
+TTS_CLONE_MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
+TTS_CLONE_ALLOWED_MIME_TYPES = {"audio/wav", "audio/wave", "audio/x-wav", "audio/vnd.wave"}
+
+
 @router.post("/clone")
 async def clone_voice(
     voice_name: str = Form(..., description="音色名称"),
@@ -211,12 +216,26 @@ async def clone_voice(
             detail="豆包声音复刻服务未配置",
         )
 
-    # 校验文件格式
+    # 校验文件名扩展
     if not audio_file.filename or not audio_file.filename.lower().endswith(".wav"):
         raise HTTPException(status_code=400, detail="仅支持 WAV 格式音频文件")
 
+    # 校验 MIME 类型白名单
+    content_type = (audio_file.content_type or "").lower()
+    if content_type and content_type not in TTS_CLONE_ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的音频 MIME 类型: {content_type}，仅支持 WAV",
+        )
+
     try:
         audio_bytes = await audio_file.read()
+        # 校验文件大小上限（防止 DoS）
+        if len(audio_bytes) > TTS_CLONE_MAX_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"音频文件过大（{len(audio_bytes)} 字节），最大允许 {TTS_CLONE_MAX_SIZE_BYTES} 字节",
+            )
         if len(audio_bytes) < 1024:  # 至少 1KB
             raise HTTPException(status_code=400, detail="音频文件过小，需要至少 14 秒的 WAV 文件")
 
@@ -233,6 +252,8 @@ async def clone_voice(
             "voice_name": voice_name,
             "message": f"声音复刻训练已提交，speaker_id: {speaker_id}。请使用 GET /api/tts/clone/{speaker_id} 查询进度。",
         }
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

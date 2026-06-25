@@ -10,7 +10,7 @@ import {
   applyToolUpdate,
   hasExecutionMeta,
 } from '@/features/chat/utils/executionMeta'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
 
 /**
  * 从消息分段中构建执行元数据。
@@ -129,7 +129,7 @@ function mergeServerHistoryWithCached(
  * 优先从当前 store 获取，否则从 IndexedDB 缓存获取。
  */
 function getLocalMessagesForRestore(targetSessionId: string): ChatMessage[] {
-  const state = useChatStore.getState()
+  const state = useSessionStore.getState()
   if (state.sessionId === targetSessionId && state.messages.length > 0) {
     return state.messages
   }
@@ -159,7 +159,7 @@ export function useMessageCache(): UseMessageCacheReturn {
   /** 刷新对话缓存到 IndexedDB */
   const flushConversationCache = useCallback(() => {
     // 使用 store 内置的 flushMessages（内部调用 IndexedDB saveMessages）
-    useChatStore.getState().flushMessages()
+    useSessionStore.getState().flushMessages()
   }, [])
 
   return {

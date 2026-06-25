@@ -12,6 +12,9 @@ OpenClaw 扩展兼容：
 - 解析 metadata.openclaw 中的 gating 字段（requires.bins/env/config、primaryEnv、install）
 - 支持 command-dispatch: tool 模式（slash 命令绕过模型直接派发到工具）
 - 支持 user-invocable、disable-model-invocation、always 等 OpenClaw 专有字段
+
+Task 16 扩展：
+- 支持 execution-mode 字段（steps / prompt / fork），默认 steps 保持向后兼容
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import yaml
 from loguru import logger
@@ -37,6 +40,9 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_INSTRUCTIONS_LENGTH = 5000  # tokens 估算，实际按字符数近似
 RECOMMENDED_SUBDIRS = ("scripts", "references", "assets")
+
+# execution-mode 合法值（Task 16: Skill 双模执行）
+EXECUTION_MODE_VALUES = ("steps", "prompt", "fork")
 
 # YAML frontmatter 正则：匹配开头的 --- ... --- 块
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -162,6 +168,9 @@ class SkillMetadata:
     - always: 为 True 时跳过所有 gate，总是包含
     - os_filter: 平台过滤
     - openclaw_gating: OpenClaw 专有 gating 字段
+
+    Task 16 扩展字段：
+    - execution_mode: 技能执行模式（steps / prompt / fork），默认 steps
     """
     name: str
     description: str
@@ -183,6 +192,8 @@ class SkillMetadata:
     os_filter: Optional[str] = None
     homepage: Optional[str] = None
     openclaw_gating: SkillOpenClawGating = field(default_factory=SkillOpenClawGating)
+    # Task 16: Skill 双模执行字段
+    execution_mode: Literal["steps", "prompt", "fork"] = "steps"
 
     def to_skill_config(self) -> Dict[str, Any]:
         """将元数据转换为内部 skill_config 格式（兼容现有系统）。"""
@@ -206,6 +217,8 @@ class SkillMetadata:
             "os_filter": self.os_filter,
             "homepage": self.homepage,
             "openclaw_gating": self.openclaw_gating.to_dict() if self.openclaw_gating.has_requirements else None,
+            # Task 16: 执行模式字段
+            "execution_mode": self.execution_mode,
         }
 
 
@@ -315,7 +328,7 @@ class SkillMarkdownLoader:
         return None
 
     def _load_metadata_from_skill_md(self, file_path: Path) -> Optional[SkillMetadata]:
-        """从 SKILL.md 加载 L1 元数据（含 OpenClaw 扩展字段）。"""
+        """从 SKILL.md 加载 L1 元数据（含 OpenClaw 扩展字段与 execution-mode）。"""
         try:
             content = file_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as e:
@@ -395,6 +408,15 @@ class SkillMarkdownLoader:
             if not isinstance(metadata_author, str):
                 metadata_author = None
 
+        # Task 16: 解析 execution-mode 字段（默认 steps 保持向后兼容）
+        execution_mode = frontmatter.get("execution-mode", "steps")
+        if execution_mode not in EXECUTION_MODE_VALUES:
+            logger.warning(
+                f"SKILL.md 中 execution-mode 值 '{execution_mode}' 不合法，"
+                f"合法值: {EXECUTION_MODE_VALUES}，回退为 'steps'"
+            )
+            execution_mode = "steps"
+
         return SkillMetadata(
             name=str(name).strip(),
             description=str(description).strip(),
@@ -415,6 +437,7 @@ class SkillMarkdownLoader:
             os_filter=os_filter,
             homepage=homepage,
             openclaw_gating=openclaw_gating,
+            execution_mode=execution_mode,
         )
 
     def _load_metadata_from_legacy(self, file_path: Path) -> Optional[SkillMetadata]:

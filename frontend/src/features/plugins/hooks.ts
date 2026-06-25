@@ -72,9 +72,9 @@ export function useDiscoveredPlugins() {
     setError(null)
     try {
       const response = await pluginsAPI.discover()
-      // 后端可能返回 { discovered: [...], total_count } 或直接返回数组
+      // 后端返回裸数组
       const data = response.data
-      const list = Array.isArray(data) ? data : (data?.discovered || [])
+      const list = Array.isArray(data) ? data : []
       setDiscovered(list)
     } catch (error) {
       setError(getErrorMessage(error, '本地插件发现失败'))

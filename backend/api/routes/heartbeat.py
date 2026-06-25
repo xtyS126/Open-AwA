@@ -2,9 +2,10 @@
 心跳 API 路由 — 提供工作空间心跳配置管理和手动触发接口。
 """
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -15,6 +16,22 @@ router = APIRouter(prefix="/api/workspaces", tags=["Heartbeat"])
 
 # 工作空间 ID 仅允许字母、数字、连字符和下划线，防止路径遍历
 _WORKSPACE_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{1,100}$')
+
+
+class HeartbeatConfigUpdateRequest(BaseModel):
+    """心跳配置更新请求体。"""
+
+    enabled: Optional[bool] = Field(default=None, description="是否启用心跳")
+    interval_seconds: Optional[int] = Field(default=None, ge=1, le=86400, description="心跳间隔（秒）")
+    prompt: Optional[str] = Field(default=None, max_length=10000, description="心跳提示词")
+    # 允许额外的配置字段，兼容引擎动态配置
+    model_config = {"extra": "allow"}
+
+
+class HeartbeatFileUpdateRequest(BaseModel):
+    """HEARTBEAT.md 文件更新请求体。"""
+
+    content: str = Field(default="", max_length=100000, description="HEARTBEAT.md 文件内容")
 
 
 def _validate_workspace_id(workspace_id: str) -> None:
@@ -43,12 +60,12 @@ async def get_heartbeat_config(
 @router.put("/{workspace_id}/heartbeat", summary="更新工作空间的心跳配置")
 async def update_heartbeat_config(
     workspace_id: str,
-    body: Dict[str, Any],
+    body: HeartbeatConfigUpdateRequest,
     current_user: User = Depends(get_current_user),
 ):
     """更新指定工作空间的心跳配置。"""
     engine = _ensure_engine(workspace_id)
-    engine.configure(body)
+    engine.configure(body.model_dump(exclude_none=True))
     return {"success": True, "config": engine.get_config()}
 
 
@@ -67,11 +84,10 @@ async def test_heartbeat(
 @router.put("/{workspace_id}/heartbeat/file", summary="更新 HEARTBEAT.md 内容")
 async def update_heartbeat_file(
     workspace_id: str,
-    body: Dict[str, Any],
+    body: HeartbeatFileUpdateRequest,
     current_user: User = Depends(get_current_user),
 ):
     """更新工作空间的 HEARTBEAT.md 内容。"""
     engine = _ensure_engine(workspace_id)
-    content = body.get("content", "")
-    engine.update_heartbeat_file(content)
+    engine.update_heartbeat_file(body.content)
     return {"success": True, "message": "HEARTBEAT.md 已更新"}

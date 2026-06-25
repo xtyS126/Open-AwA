@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { shallow } from 'zustand/shallow'
 import { authAPI, setTempApiKey, persistApiKey, clearCachedApiKey } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
 import { appLogger } from '@/shared/utils/logger'
@@ -10,7 +11,11 @@ import styles from './LoginPage.module.css'
  * 单用户模式下不再需要用户名密码登录。
  */
 function LoginPage() {
-  const { setAuth, setInitialized } = useAuthStore()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { setAuth, setInitialized } = useAuthStore(s => ({
+    setAuth: s.setAuth,
+    setInitialized: s.setInitialized,
+  }), shallow)
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)

@@ -2,9 +2,10 @@ export interface BehaviorStats {
   total_interactions: number
   total_tools_used: number
   average_response_time: number
-  top_intents: Intent[]
-  chart_data: ChartData[]
+  top_intents?: Intent[]
+  chart_data?: ChartData[]
   date_range?: string
+  [key: string]: unknown
 }
 
 export interface Intent {
@@ -50,21 +51,21 @@ export interface Provider {
 export interface Plugin {
   id: string
   name: string
-  version: string
+  version?: string | null
   enabled: boolean
-  description?: string
-  author?: string
+  description?: string | null
+  author?: string | null
   // 插件分类，'builtin' 表示系统内置插件
-  category?: string
-  source?: string
-  [key: string]: string | number | boolean | undefined
+  category?: string | null
+  source?: string | null
+  [key: string]: unknown
 }
 
 export interface Skill {
   id: string
   name: string
-  version: string
+  version?: string | null
   enabled: boolean
-  description?: string
-  [key: string]: string | number | boolean | undefined
+  description?: string | null
+  [key: string]: unknown
 }

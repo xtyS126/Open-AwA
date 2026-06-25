@@ -1,6 +1,11 @@
 """
 技能系统模块，负责技能注册、加载、校验、执行或适配外部能力。
 当 Agent 需要调用外部能力时，通常会经过这一层完成查找、验证与执行。
+
+Task 16 扩展：支持 execution_mode 双模执行分派
+- steps 模式：执行传统步骤逻辑（默认，保持向后兼容）
+- prompt 模式：技能作为 prompt 注入，返回 prompt 文本
+- fork 模式：技能启动 Fork 子 Agent 执行，返回 task_id
 """
 
 from typing import Dict, List, Optional, Any
@@ -15,6 +20,8 @@ from .skill_validator import SkillValidator, ValidationResult
 from .skill_loader import SkillLoader
 from .skill_executor import SkillExecutor, ExecutionResult
 from .weixin_skill_adapter import WeixinSkillAdapter
+from .skill_prompt_resolver import get_prompt_for_command
+from .skill_fork_executor import execute_forked_skill
 
 
 @dataclass
@@ -88,6 +95,11 @@ class SkillEngine:
     """
     封装与SkillEngine相关的核心逻辑与运行状态。
     该类通常是当前文件中组织数据与调度行为的主要封装单元。
+
+    Task 16 扩展：根据 skill_config.execution_mode 分派执行模式
+    - "steps": 执行传统步骤逻辑（默认）
+    - "prompt": 调用 get_prompt_for_command 返回 prompt 文本
+    - "fork": 调用 execute_forked_skill 启动 Fork 子 Agent
     """
     def __init__(self, db_session):
         """初始化技能引擎：创建 SkillRegistry、SkillValidator 和 SkillExecutor 子组件。"""
@@ -187,8 +199,22 @@ class SkillEngine:
 
     async def execute_skill(self, skill_name: str, inputs: Dict, context: Dict) -> Dict[str, Any]:
         """
-        处理execute、skill相关逻辑，并为调用方返回对应结果。
-        阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+        执行技能：根据 execution_mode 分派到对应执行路径。
+
+        Task 16 扩展分派逻辑：
+        - "steps"（默认）: 执行传统步骤逻辑（含 weixin adapter 路由）
+        - "prompt": 调用 get_prompt_for_command 返回 prompt 文本
+        - "fork": 调用 execute_forked_skill 启动 Fork 子 Agent，返回 task_id
+
+        Args:
+            skill_name: 技能名称。
+            inputs: 调用方传入的输入参数。
+            context: 共享上下文。
+
+        Returns:
+            执行结果字典，包含 success、skill_name、execution_id 等字段。
+            prompt 模式额外返回 prompt 字段；
+            fork 模式额外返回 task_id 字段。
         """
         execution_id = self._generate_log_id()
         metrics = self._start_performance_tracking(skill_name)
@@ -294,6 +320,80 @@ class SkillEngine:
 
             merged_inputs = {**inputs, **context}
 
+            # Task 16: 根据 execution_mode 分派执行路径（默认 steps 保持向后兼容）
+            execution_mode = skill_config.get('execution_mode', 'steps')
+
+            if execution_mode == 'prompt':
+                # prompt 模式：技能作为 prompt 注入，返回 prompt 文本
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='PROMPT_MODE_DISPATCH',
+                    message=f'Dispatching to prompt mode: {skill_name}',
+                    details={'execution_id': execution_id, 'execution_mode': execution_mode}
+                )
+                prompt_text = get_prompt_for_command(
+                    skill_name, merged_inputs, skill_config=skill_config
+                )
+                metrics.finalize()
+
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='PROMPT_MODE_SUCCESS',
+                    message=f'Prompt mode executed successfully: {skill_name}',
+                    details={
+                        'execution_id': execution_id,
+                        'prompt_length': len(prompt_text),
+                    }
+                )
+                self.registry.increment_usage(skill_name)
+
+                return {
+                    'success': True,
+                    'skill_name': skill_name,
+                    'execution_id': execution_id,
+                    'execution_mode': 'prompt',
+                    'prompt': prompt_text,
+                    'outputs': {'prompt': prompt_text},
+                    'steps': [],
+                    'metrics': metrics.to_dict(),
+                    'execution_time': metrics.duration,
+                }
+
+            if execution_mode == 'fork':
+                # fork 模式：启动 Fork 子 Agent 执行，返回 task_id（异步执行）
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='FORK_MODE_DISPATCH',
+                    message=f'Dispatching to fork mode: {skill_name}',
+                    details={'execution_id': execution_id, 'execution_mode': execution_mode}
+                )
+                task_id = execute_forked_skill(skill_config, context)
+                metrics.finalize()
+
+                self._add_execution_log(
+                    skill_name=skill_name,
+                    event_type='FORK_MODE_SUCCESS',
+                    message=f'Fork mode dispatched successfully: {skill_name}',
+                    details={
+                        'execution_id': execution_id,
+                        'task_id': task_id,
+                    }
+                )
+                self.registry.increment_usage(skill_name)
+
+                return {
+                    'success': True,
+                    'skill_name': skill_name,
+                    'execution_id': execution_id,
+                    'execution_mode': 'fork',
+                    'task_id': task_id,
+                    'outputs': {'task_id': task_id},
+                    'steps': [],
+                    'metrics': metrics.to_dict(),
+                    'execution_time': metrics.duration,
+                }
+
+            # steps 模式（默认）：执行传统步骤逻辑
             if self.weixin_adapter.is_weixin_skill(skill_config):
                 self._add_execution_log(
                     skill_name=skill_name,

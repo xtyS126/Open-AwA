@@ -124,11 +124,11 @@ class Settings(BaseSettings):
 
     # API Key 认证配置（单用户模式）
     # 全局 API Key，未设置时启动时自动生成并写入 .env.local
-    OPENAWA_API_KEY: str = ""
+    OPENAWA_API_KEY: SecretStr = SecretStr("")
     # Owner 用户名（默认 admin）
     OPENAWA_OWNER_USERNAME: str = "admin"
     # Owner 密码（未设置时自动生成，仅用于 JWT 兼容路径）
-    OPENAWA_OWNER_PASSWORD: str = ""
+    OPENAWA_OWNER_PASSWORD: SecretStr = SecretStr("")
     # Owner 昵称（可选，用于用户画像初始化）
     OPENAWA_OWNER_NICKNAME: str = ""
     # Owner 邮箱（可选，用于用户画像初始化）
@@ -234,6 +234,11 @@ class Settings(BaseSettings):
         if is_production_environment(environment) and self.SECRET_KEY == "openawa-dev-default":
             logger.error("SECRET_KEY must be explicitly set in production environment")
             raise ValueError("SECRET_KEY must be explicitly set in production environment")
+
+        # 生产环境强制 SECRET_KEY 长度至少 32 字符，防止弱密钥
+        if is_production_environment(environment) and len(self.SECRET_KEY) < 32:
+            logger.error("SECRET_KEY must be at least 32 characters in production environment")
+            raise ValueError("SECRET_KEY must be at least 32 characters in production environment")
 
         return self
 

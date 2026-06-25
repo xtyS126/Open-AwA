@@ -5,7 +5,10 @@ import { chatAPI, conversationAPI, diaryAPI } from '@/shared/api/api'
 import { useConversationHistory } from '@/features/chat/hooks/useConversationHistory'
 import { useStreamExecutionState } from '@/features/chat/hooks/useStreamExecutionState'
 import { useTaskPanelState } from '@/features/chat/hooks/useTaskPanelState'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { useToolCallStore } from '@/features/chat/store/toolCallStore'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { shallow } from 'zustand/shallow'
 import {
   applyToolPatchToSegments,
@@ -16,6 +19,7 @@ import { useI18nStore } from '@/i18n'
 import { appLogger } from '@/shared/utils/logger'
 import { useToast } from '@/shared/components/Toast'
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { useChatStream } from './hooks/useChatStream'
 import { useSubagentSync } from './hooks/useSubagentSync'
 import { useMessageCache } from './hooks/useMessageCache'
@@ -33,31 +37,33 @@ import styles from './ChatPage.module.css'
 
 function ChatPage() {
   const navigate = useNavigate()
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   const { conversationId } = useParams<{ conversationId?: string }>()
   // 原子化 store selector：避免流式输出期间 messages 等高频字段变化导致整个聊天页重渲染
   // 数组/对象字段使用 shallow 做浅比较，避免内容相同时的假阳性重渲染
-  const messages = useChatStore(s => s.messages, shallow)
-  const conversations = useChatStore(s => s.conversations, shallow)
+  // 分域 Store 拆分后，各域状态独立订阅，互不影响
+  const messages = useSessionStore(s => s.messages, shallow)
+  const conversations = useSessionStore(s => s.conversations, shallow)
   // 标量字段使用简单 selector（默认 === 比较）
-  const isLoading = useChatStore(s => s.isLoading)
-  const sessionId = useChatStore(s => s.sessionId)
-  const outputMode = useChatStore(s => s.outputMode)
-  const selectedModel = useChatStore(s => s.selectedModel)
-  const conversationsHasMore = useChatStore(s => s.conversationsHasMore)
-  const thinkingEnabled = useChatStore(s => s.thinkingEnabled)
-  const thinkingDepth = useChatStore(s => s.thinkingDepth)
+  const isLoading = useSessionStore(s => s.isLoading)
+  const sessionId = useSessionStore(s => s.sessionId)
+  const conversationsHasMore = useSessionStore(s => s.conversationsHasMore)
+  const outputMode = usePreferenceStore(s => s.outputMode)
+  const selectedModel = useModelStore(s => s.selectedModel)
+  const thinkingEnabled = usePreferenceStore(s => s.thinkingEnabled)
+  const thinkingDepth = usePreferenceStore(s => s.thinkingDepth)
   // Actions — 在 create() 中定义后引用永不变，单独提取避免触发数据订阅
-  const setLoading = useChatStore(s => s.setLoading)
-  const setSessionId = useChatStore(s => s.setSessionId)
-  const setOutputMode = useChatStore(s => s.setOutputMode)
-  const setMessages = useChatStore(s => s.setMessages)
-  const updateMessage = useChatStore(s => s.updateMessage)
-  const upsertConversation = useChatStore(s => s.upsertConversation)
-  const removeConversation = useChatStore(s => s.removeConversation)
-  const setThinkingEnabled = useChatStore(s => s.setThinkingEnabled)
-  const setThinkingDepth = useChatStore(s => s.setThinkingDepth)
-  const resetActiveToolCalls = useChatStore(s => s.resetActiveToolCalls)
+  const setLoading = useSessionStore(s => s.setLoading)
+  const setSessionId = useSessionStore(s => s.setSessionId)
+  const setOutputMode = usePreferenceStore(s => s.setOutputMode)
+  const setMessages = useSessionStore(s => s.setMessages)
+  const updateMessage = useSessionStore(s => s.updateMessage)
+  const upsertConversation = useSessionStore(s => s.upsertConversation)
+  const removeConversation = useSessionStore(s => s.removeConversation)
+  const setThinkingEnabled = usePreferenceStore(s => s.setThinkingEnabled)
+  const setThinkingDepth = usePreferenceStore(s => s.setThinkingDepth)
+  const resetActiveToolCalls = useToolCallStore(s => s.resetActiveToolCalls)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isMountedRef = useRef(true)
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
@@ -185,8 +191,21 @@ function ChatPage() {
   useEffect(() => {
     isMountedRef.current = true
     return () => {
+      // 组件卸载时取消进行中的流式请求并清理子代理定时器，防止资源泄露
       isMountedRef.current = false
+      try {
+        chatStream.abortStream()
+      } catch (err) {
+        // 卸载阶段忽略 abort 错误
+        void err
+      }
+      try {
+        subagentSync.cleanupAllSubagentTimers()
+      } catch (err) {
+        void err
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -252,7 +271,7 @@ function ChatPage() {
     setStreamingAssistantId(null)
     resetStreamExecutionState()
 
-    const fallbackConversation = useChatStore.getState().conversations.find(
+    const fallbackConversation = useSessionStore.getState().conversations.find(
       (item) => item.session_id !== missingSessionId && !item.deleted_at
     )
 
@@ -315,19 +334,19 @@ function ChatPage() {
         const history = response.data
         if (Array.isArray(history)) {
           const restored = history.filter(Boolean).map((msg: {
-            id: string
+            id?: string | number
             role: string
             content: string
-            timestamp: string
-            reasoning_content?: string
-            toolEvents?: import('@/features/chat/types').ChatMessage['toolEvents']
+            timestamp?: string
+            reasoning_content?: string | null
+            toolEvents?: unknown
             segments?: import('@/features/chat/types').AssistantMessageSegment[]
           }) => ({
             id: msg.id?.toString() || crypto.randomUUID(),
             role: msg.role as 'user' | 'assistant',
             content: msg.content,
             reasoning_content: typeof msg.reasoning_content === 'string' ? msg.reasoning_content : undefined,
-            timestamp: new Date(msg.timestamp),
+            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
             toolEvents: Array.isArray(msg.toolEvents) ? msg.toolEvents : undefined,
             segments: Array.isArray(msg.segments) ? msg.segments : undefined,
           }))
@@ -348,7 +367,7 @@ function ChatPage() {
         if (cancelled) return
 
         const statusCode = (error as { response?: { status?: number } })?.response?.status
-        if (statusCode === 404 && useChatStore.getState().sessionId === sessionId) {
+        if (statusCode === 404 && useSessionStore.getState().sessionId === sessionId) {
           appLogger.warning({
             event: 'chat_history_missing',
             module: 'chat_page',
@@ -508,7 +527,7 @@ function ChatPage() {
 
   const handleAbort = useCallback(() => {
     // 通过 getState() 读取最新 activeToolCalls，避免 useCallback 依赖 activeToolCalls 导致引用频繁变化
-    if (useChatStore.getState().activeToolCalls.length > 0) {
+    if (useToolCallStore.getState().activeToolCalls.length > 0) {
       setShowAbortConfirm(true)
       return
     }
@@ -552,7 +571,7 @@ function ChatPage() {
   }, [])
 
   const handleRegenerate = useCallback(async (messageId: string) => {
-    const currentMessages = useChatStore.getState().messages
+    const currentMessages = useSessionStore.getState().messages
     const msgIndex = currentMessages.findIndex((m) => m.id === messageId)
     if (msgIndex === -1) return
 
@@ -824,79 +843,83 @@ function ChatPage() {
         {historySidebarOpen && isCompactViewport && (
           <button className={styles['history-overlay']} onClick={closeHistorySidebar} aria-label="关闭历史记录遮罩" />
         )}
-        <ConversationSidebar
-          open={historySidebarOpen}
-          loading={historyLoading}
-          error={historyError}
-          conversations={conversations}
-          activeSessionId={sessionId}
-          search={historySearchInput}
-          sortBy={historySort}
-          includeDeleted={includeDeleted}
-          hasMore={conversationsHasMore}
-          onToggle={toggleHistorySidebar}
-          onSearchChange={setHistorySearchInput}
-          onSortChange={setHistorySort}
-          onIncludeDeletedChange={setIncludeDeleted}
-          onCreateConversation={handleSidebarCreateConversation}
-          onSelectConversation={handleSelectConversation}
-          onRenameConversation={handleRenameConversation}
-          onDeleteConversation={handleDeleteConversation}
-          onBatchDeleteConversations={handleBatchDeleteConversations}
-          onRestoreConversation={handleRestoreConversation}
-          onLoadMore={handleLoadMoreConversations}
-        />
+        <ErrorBoundary name="ConversationSidebar">
+          <ConversationSidebar
+            open={historySidebarOpen}
+            loading={historyLoading}
+            error={historyError}
+            conversations={conversations}
+            activeSessionId={sessionId}
+            search={historySearchInput}
+            sortBy={historySort}
+            includeDeleted={includeDeleted}
+            hasMore={conversationsHasMore}
+            onToggle={toggleHistorySidebar}
+            onSearchChange={setHistorySearchInput}
+            onSortChange={setHistorySort}
+            onIncludeDeletedChange={setIncludeDeleted}
+            onCreateConversation={handleSidebarCreateConversation}
+            onSelectConversation={handleSelectConversation}
+            onRenameConversation={handleRenameConversation}
+            onDeleteConversation={handleDeleteConversation}
+            onBatchDeleteConversations={handleBatchDeleteConversations}
+            onRestoreConversation={handleRestoreConversation}
+            onLoadMore={handleLoadMoreConversations}
+          />
+        </ErrorBoundary>
 
         <div className={styles['chat-main']}>
-          <PermissionRequestNotification
-            pendingRequests={permissionRequests}
-            onApprove={approvePermission}
-            onApproveAlways={approveAlwaysPermission}
-            onDeny={denyPermission}
-          />
-          <MessageList
-            messages={messages}
-            messageMeta={messageMeta}
-            streamingAssistantId={streamingAssistantId}
-            isLoading={isLoading}
-            outputMode={outputMode}
-            streamStatusText={streamStatusText}
-            messagesEndRef={messagesEndRef}
-            onEditMessage={handleEditMessage}
-            onRegenerate={handleRegenerate}
-            onFeedback={handleFeedback}
-            feedbackState={feedbackState}
-            onUndo={handleUndoOperation}
-          />
-
-          <React.Suspense fallback={null}>
-            <TodoPanel
-              items={todoItems}
-              summary={todoSummary}
+          <ErrorBoundary name="ChatMain">
+            <PermissionRequestNotification
+              pendingRequests={permissionRequests}
+              onApprove={approvePermission}
+              onApproveAlways={approveAlwaysPermission}
+              onDeny={denyPermission}
             />
-          </React.Suspense>
+            <MessageList
+              messages={messages}
+              messageMeta={messageMeta}
+              streamingAssistantId={streamingAssistantId}
+              isLoading={isLoading}
+              outputMode={outputMode}
+              streamStatusText={streamStatusText}
+              messagesEndRef={messagesEndRef}
+              onEditMessage={handleEditMessage}
+              onRegenerate={handleRegenerate}
+              onFeedback={handleFeedback}
+              feedbackState={feedbackState}
+              onUndo={handleUndoOperation}
+            />
 
-          <React.Suspense fallback={null}>
-            <TaskPanel
-              steps={activeExecution?.meta.steps || []}
-              toolEvents={activeExecution?.meta.toolEvents || []}
-              isStreaming={activeExecution?.isStreaming || false}
-              onStopAgent={(agentId) => void handleStopAgent(agentId)}
-              expanded={taskPanelExpanded}
-            onToggle={toggleTaskPanel}
-          />
-          </React.Suspense>
+            <React.Suspense fallback={null}>
+              <TodoPanel
+                items={todoItems}
+                summary={todoSummary}
+              />
+            </React.Suspense>
 
-          <ChatInput
-            onSend={handleChatInputSend}
-            isLoading={isLoading}
-            streamingAssistantId={streamingAssistantId}
-            onAbort={handleAbort}
-            aborting={aborting}
-            onDiaryCommand={handleDiaryCommand}
-            editContent={editContent}
-            focusTrigger={shouldFocusInput}
-          />
+            <React.Suspense fallback={null}>
+              <TaskPanel
+                steps={activeExecution?.meta.steps || []}
+                toolEvents={activeExecution?.meta.toolEvents || []}
+                isStreaming={activeExecution?.isStreaming || false}
+                onStopAgent={(agentId) => void handleStopAgent(agentId)}
+                expanded={taskPanelExpanded}
+              onToggle={toggleTaskPanel}
+            />
+            </React.Suspense>
+
+            <ChatInput
+              onSend={handleChatInputSend}
+              isLoading={isLoading}
+              streamingAssistantId={streamingAssistantId}
+              onAbort={handleAbort}
+              aborting={aborting}
+              onDiaryCommand={handleDiaryCommand}
+              editContent={editContent}
+              focusTrigger={shouldFocusInput}
+            />
+          </ErrorBoundary>
         </div>
       </div>
       <ToastContainer />

@@ -2,6 +2,7 @@
 会话聚合与会话接口回归测试，覆盖会话归属修复与前端依赖的 CRUD 契约。
 """
 
+import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,7 +17,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api.dependencies import get_current_user, get_db
 from config.settings import settings
-from core.conversation_sessions import ensure_conversation
+from core.conversation_recorder import JsonlTranscriptWriter
+from core.conversation_sessions import (
+    deserialize_messages_with_interrupt_detection,
+    ensure_conversation,
+    load_conversation_for_resume,
+)
 from core.feedback import FeedbackLayer
 from db.models import Base, Conversation, ConversationRecord
 from main import app
@@ -320,3 +326,253 @@ def test_rename_session_rejects_other_users_conversation():
             json={"title": "不应成功"},
         )
         assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 会话恢复（--resume）相关测试
+# ---------------------------------------------------------------------------
+
+
+def _write_transcript(
+    base_dir: str,
+    session_id: str,
+    records: list[dict],
+) -> None:
+    """辅助函数：将消息记录列表写入 JSONL 文件。"""
+    writer = JsonlTranscriptWriter(session_id=session_id, base_dir=base_dir)
+    for record in records:
+        writer.append(
+            uuid=record["uuid"],
+            parent_uuid=record.get("parent_uuid"),
+            type=record["type"],
+            content=record["content"],
+            timestamp=record.get("timestamp", "2026-01-01T00:00:00+00:00"),
+        )
+    writer.close()
+
+
+def test_load_conversation_for_resume_from_jsonl(tmp_path: Path) -> None:
+    """验证从 JSONL 文件加载会话消息，type 字段正确映射为 role。"""
+    base_dir = str(tmp_path / "transcripts")
+    _write_transcript(
+        base_dir,
+        "resume-jsonl-test",
+        [
+            {"uuid": "msg-1", "parent_uuid": None, "type": "user", "content": "你好"},
+            {"uuid": "msg-2", "parent_uuid": "msg-1", "type": "assistant", "content": "你好，我是助手"},
+        ],
+    )
+
+    messages = load_conversation_for_resume("resume-jsonl-test", base_dir=base_dir)
+
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "你好"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "你好，我是助手"
+    # 验证 JSONL 元数据字段保留
+    assert messages[0]["uuid"] == "msg-1"
+    assert messages[0]["parent_uuid"] is None
+    assert messages[1]["parent_uuid"] == "msg-1"
+
+
+def test_load_conversation_for_resume_fallback_to_db(monkeypatch) -> None:
+    """JSONL 文件不存在时，应回退到数据库 ConversationRecord 加载。"""
+    # 替换 SessionLocal 为测试数据库会话工厂
+    from core import conversation_sessions
+
+    monkeypatch.setattr(conversation_sessions, "SessionLocal", TestingSessionLocal)
+
+    db = TestingSessionLocal()
+    try:
+        db.add(
+            ConversationRecord(
+                session_id="resume-db-test",
+                user_id="user-1",
+                node_type="chat",
+                user_message="数据库回退问题",
+                llm_output={"content": "数据库回退回复"},
+                status="success",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # 使用不存在的 base_dir 确保 JSONL 文件不存在
+    messages = load_conversation_for_resume(
+        "resume-db-test",
+        base_dir="data/nonexistent_transcripts_for_test",
+    )
+
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "数据库回退问题"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "数据库回退回复"
+
+
+def test_load_conversation_for_resume_empty(tmp_path: Path) -> None:
+    """空会话（无 JSONL 且无数据库记录）应返回空列表。"""
+    from core import conversation_sessions
+
+    # 临时替换 SessionLocal 以使用测试数据库
+    original_session_local = conversation_sessions.SessionLocal
+    conversation_sessions.SessionLocal = TestingSessionLocal
+    try:
+        messages = load_conversation_for_resume(
+            "resume-empty-test",
+            base_dir=str(tmp_path / "empty_transcripts"),
+        )
+        assert messages == []
+    finally:
+        conversation_sessions.SessionLocal = original_session_local
+
+
+def test_deserialize_filters_unresolved_tool_uses() -> None:
+    """验证过滤未完成 tool_use：无对应 tool 结果的 tool_use 块应被移除。"""
+    messages = [
+        {"role": "user", "content": "请搜索资料"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "我来搜索"},
+                {"type": "tool_use", "id": "tool-1", "name": "search", "input": {"q": "test"}},
+            ],
+        },
+        # 缺少 tool_call_id="tool-1" 的 tool 结果消息
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(messages)
+
+    # 未完成 tool_use 被检测为中断
+    assert was_interrupted is True
+    # 过滤后: user + assistant(仅保留 text 块) + 续接 prompt = 3 条
+    assert len(filtered) == 3
+    assistant_msg = next(m for m in filtered if m["role"] == "assistant")
+    assert all(item.get("type") != "tool_use" for item in assistant_msg["content"])
+    # 末尾应注入续接 prompt
+    assert filtered[-1]["role"] == "user"
+    assert filtered[-1]["content"] == "Continue from where you left off."
+
+
+def test_deserialize_filters_orphaned_thinking() -> None:
+    """验证过滤孤立 thinking：只含 thinking 的 assistant 消息应被移除。"""
+    messages = [
+        {"role": "user", "content": "你好"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "让我想想"},
+            ],
+        },
+        {"role": "assistant", "content": "你好，很高兴见到你"},
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(messages)
+
+    # 正常会话不中断
+    assert was_interrupted is False
+    # 只含 thinking 的孤立消息被移除
+    assert len(filtered) == 2
+    assert filtered[0]["role"] == "user"
+    assert filtered[1]["role"] == "assistant"
+    assert filtered[1]["content"] == "你好，很高兴见到你"
+
+
+def test_deserialize_filters_whitespace_assistant() -> None:
+    """验证过滤空白 assistant：content 为纯空白的 assistant 消息应被移除。"""
+    messages = [
+        {"role": "user", "content": "请回复"},
+        {"role": "assistant", "content": "   "},
+        {"role": "assistant", "content": "这是有效回复"},
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(messages)
+
+    # 正常会话不中断
+    assert was_interrupted is False
+    # 空白 assistant 消息被移除
+    assert len(filtered) == 2
+    assert filtered[0]["role"] == "user"
+    assert filtered[1]["role"] == "assistant"
+    assert filtered[1]["content"] == "这是有效回复"
+
+
+def test_deserialize_detects_interrupt_user_last() -> None:
+    """验证检测中断：最后一条为 user 消息时应判定为中断。"""
+    messages = [
+        {"role": "user", "content": "第一个问题"},
+        {"role": "assistant", "content": "第一个回复"},
+        {"role": "user", "content": "第二个问题"},  # 用户发送后未收到响应
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(
+        messages, session_id="interrupt-user-last"
+    )
+
+    assert was_interrupted is True
+    # 末尾注入续接 prompt
+    assert filtered[-1]["role"] == "user"
+    assert filtered[-1]["content"] == "Continue from where you left off."
+    # 原始消息保留
+    assert len(filtered) == 4
+
+
+def test_deserialize_detects_interrupt_unfinished_tool() -> None:
+    """验证检测中断：最后一条 assistant 含未完成 tool_use 时应判定为中断。"""
+    messages = [
+        {"role": "user", "content": "请执行搜索"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "正在搜索"},
+                {"type": "tool_use", "id": "tool-99", "name": "search", "input": {"q": "test"}},
+            ],
+        },
+        # 缺少 tool_call_id="tool-99" 的 tool 结果消息，表示 AI 调用工具时被中断
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(
+        messages, session_id="interrupt-tool"
+    )
+
+    assert was_interrupted is True
+    # 末尾注入续接 prompt
+    assert filtered[-1]["role"] == "user"
+    assert filtered[-1]["content"] == "Continue from where you left off."
+
+
+def test_deserialize_injects_continue_prompt() -> None:
+    """验证中断时注入续接 prompt，且 prompt 内容与位置正确。"""
+    messages = [
+        {"role": "user", "content": "问题"},
+        {"role": "assistant", "content": "回复"},
+        {"role": "user", "content": "追问"},  # 中断点
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(messages)
+
+    assert was_interrupted is True
+    # 续接 prompt 应为最后一条消息
+    continue_prompt = filtered[-1]
+    assert continue_prompt["role"] == "user"
+    assert continue_prompt["content"] == "Continue from where you left off."
+    # 续接 prompt 前一条应为原始最后一条 user 消息
+    assert filtered[-2]["content"] == "追问"
+
+
+def test_deserialize_no_interrupt() -> None:
+    """验证正常会话（最后一条为 assistant 文本回复）不注入续接 prompt。"""
+    messages = [
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "你好，有什么可以帮你的？"},
+    ]
+
+    filtered, was_interrupted = deserialize_messages_with_interrupt_detection(messages)
+
+    assert was_interrupted is False
+    # 不注入续接 prompt，消息数量不变
+    assert len(filtered) == 2
+    assert filtered[-1]["role"] == "assistant"
+    assert filtered[-1]["content"] == "你好，有什么可以帮你的？"

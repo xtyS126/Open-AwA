@@ -45,7 +45,7 @@ class FeishuAdapter(ChannelAdapter):
                 json={"app_id": app_id, "app_secret": app_secret},
             )
             if resp.status_code != 200:
-                logger.error(f"飞书获取 token 失败: {resp.text}")
+                logger.error(f"飞书获取 token 失败: status={resp.status_code}")
                 return False
 
             data = resp.json()

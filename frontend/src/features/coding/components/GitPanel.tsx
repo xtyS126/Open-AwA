@@ -2,6 +2,7 @@
  * Git 面板组件 — 显示 Git 状态、更改和基本操作。
  */
 import React, { useEffect, useState } from 'react';
+import { shallow } from 'zustand/shallow';
 import { useCodingStore } from '../store/codingStore';
 import { codingApi } from '../codingApi';
 import styles from './GitPanel.module.css';
@@ -11,7 +12,13 @@ interface GitPanelProps {
 }
 
 const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
-  const { gitBranch, gitChanges, setGitStatus, projectDir } = useCodingStore();
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { gitBranch, gitChanges, setGitStatus, projectDir } = useCodingStore(s => ({
+    gitBranch: s.gitBranch,
+    gitChanges: s.gitChanges,
+    setGitStatus: s.setGitStatus,
+    projectDir: s.projectDir,
+  }), shallow);
   const [loading, setLoading] = useState(true);
   const [commitMsg, setCommitMsg] = useState('');
   const [log, setLog] = useState<any[]>([]);

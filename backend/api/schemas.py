@@ -1252,6 +1252,11 @@ class UserFeedbackRequest(BaseModel):
     comment: Optional[str] = Field(default=None, max_length=1000, description="可选反馈备注")
 
 
+class ChatUndoOperationRequest(BaseModel):
+    """撤销 AI 执行的文件操作请求体。"""
+    operation_id: str = Field(..., min_length=1, max_length=200, description="待撤销的操作 ID")
+
+
 # -------- 任务执行（非交互式）--------
 
 class TaskExecuteRequest(BaseModel):

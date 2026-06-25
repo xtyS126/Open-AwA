@@ -1,12 +1,25 @@
 """
 HookManager 单元测试。
 测试 Hook 注册、触发、链式调用、隔离执行、超时控制。
+同时验证 HookResult 7 种结果类型及 hook_updated_input/hook_updated_output 合并函数。
 """
 
 import asyncio
-import pytest
+from unittest.mock import patch
 
-from core.hook_manager import HookManager, HookName, HookContext
+import pytest
+from loguru import logger
+
+from core.hook_manager import (
+    HOOK_TIMING_DISPLAY_THRESHOLD_MS,
+    HookContext,
+    HookManager,
+    HookName,
+    HookResult,
+    HookResultType,
+    hook_updated_input,
+    hook_updated_output,
+)
 
 
 class TestHookManager:
@@ -21,7 +34,7 @@ class TestHookManager:
 
     @pytest.mark.asyncio
     async def test_register_and_trigger(self, manager):
-        """注册并触发 Hook"""
+        """注册并触发 Hook（向后兼容：字符串返回值转换为 APPROVE + modified_output）"""
         results = []
 
         async def my_hook(ctx, data):
@@ -32,7 +45,9 @@ class TestHookManager:
 
         triggered = await manager.trigger("test.hook", "hello")
         assert len(triggered) == 1
-        assert triggered[0] == "processed_hello"
+        # 字符串返回值被转换为 HookResult(APPROVE, modified_output=...)
+        assert triggered[0].result_type == HookResultType.APPROVE
+        assert triggered[0].modified_output == "processed_hello"
         assert results[0] == "hello"
 
     @pytest.mark.asyncio
@@ -77,8 +92,8 @@ class TestHookManager:
         manager.register("good-plugin", "test.isolated", working_hook)
 
         results = await manager.trigger("test.isolated", "data")
-        # working_hook 应该仍然返回结果
-        assert "success" in results
+        # working_hook 应该仍然返回结果（字符串被包装为 APPROVE + modified_output）
+        assert any(r.modified_output == "success" for r in results)
         assert call_count == ["failed", "worked"]
 
     @pytest.mark.asyncio
@@ -127,9 +142,9 @@ class TestHookManager:
 
         result = await manager.trigger_chain("test.chain_iso", {"value": 5})
         # bad_transform 失败，但数据应继续流动
-        # good_transform: 5 → 6
+        # good_transform: 5 -> 6
         # bad_transform: fails, data stays 6
-        # another_good: 6 → 16
+        # another_good: 6 -> 16
         assert result["value"] == 16
 
     def test_unregister_plugin(self, manager):
@@ -212,3 +227,399 @@ class TestHookName:
         assert HookName.LLM_AFTER_RESPONSE == "llm.after_response"
         assert HookName.SESSION_CREATED == "session.created"
         assert HookName.SESSION_CLOSED == "session.closed"
+
+
+class TestHookResultType:
+    """HookResultType 枚举测试"""
+
+    def test_hook_result_type_enum(self):
+        """验证 7 种 HookResultType 枚举值"""
+        assert HookResultType.APPROVE == "approve"
+        assert HookResultType.DENY == "deny"
+        assert HookResultType.MODIFY_INPUT == "modify_input"
+        assert HookResultType.MODIFY_OUTPUT == "modify_output"
+        assert HookResultType.PREVENT_CONTINUATION == "prevent_continuation"
+        assert HookResultType.REPLACE_RESULT == "replace_result"
+        assert HookResultType.ERROR == "error"
+
+    def test_hook_result_type_count(self):
+        """验证枚举成员数量为 7"""
+        members = list(HookResultType)
+        assert len(members) == 7
+
+
+class TestHookResultDataclass:
+    """HookResult 数据类测试"""
+
+    def test_hook_result_dataclass(self):
+        """验证 HookResult 数据类的字段和默认值"""
+        # 默认值：所有可选字段为 None
+        result = HookResult(result_type=HookResultType.APPROVE)
+        assert result.result_type == HookResultType.APPROVE
+        assert result.modified_input is None
+        assert result.modified_output is None
+        assert result.replace_result is None
+        assert result.error_message is None
+        assert result.reason is None
+
+    def test_hook_result_with_all_fields(self):
+        """验证 HookResult 可携带所有字段"""
+        result = HookResult(
+            result_type=HookResultType.MODIFY_INPUT,
+            modified_input={"key": "value"},
+            modified_output={"output": "data"},
+            replace_result="replaced",
+            error_message="something went wrong",
+            reason="test reason",
+        )
+        assert result.modified_input == {"key": "value"}
+        assert result.modified_output == {"output": "data"}
+        assert result.replace_result == "replaced"
+        assert result.error_message == "something went wrong"
+        assert result.reason == "test reason"
+
+
+class TestTriggerReturnsHookResult:
+    """验证 trigger 方法返回 List[HookResult]"""
+
+    @pytest.fixture
+    def manager(self):
+        """创建 HookManager 实例"""
+        mgr = HookManager()
+        yield mgr
+        mgr.clear()
+
+    @pytest.mark.asyncio
+    async def test_trigger_returns_list_of_results(self, manager):
+        """验证 trigger 返回 List[HookResult]"""
+        async def my_hook(ctx, data):
+            return HookResult(result_type=HookResultType.APPROVE)
+
+        manager.register("p1", "test.return_type", my_hook)
+        results = await manager.trigger("test.return_type", "data")
+
+        assert isinstance(results, list)
+        assert len(results) == 1
+        assert isinstance(results[0], HookResult)
+        assert results[0].result_type == HookResultType.APPROVE
+
+    @pytest.mark.asyncio
+    async def test_trigger_empty_when_no_hooks(self, manager):
+        """验证无钩子注册时返回空列表"""
+        results = await manager.trigger("no.hook.registered", "data")
+        assert results == []
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_trigger_backward_compat_bool(self, manager):
+        """验证 bool 返回值的向后兼容：True -> APPROVE, False -> DENY"""
+        async def approve_hook(ctx, data):
+            return True
+
+        async def deny_hook(ctx, data):
+            return False
+
+        manager.register("p-approve", "test.bool", approve_hook)
+        results = await manager.trigger("test.bool", "data")
+        assert results[0].result_type == HookResultType.APPROVE
+
+        manager.clear()
+        manager.register("p-deny", "test.bool", deny_hook)
+        results = await manager.trigger("test.bool", "data")
+        assert results[0].result_type == HookResultType.DENY
+
+    @pytest.mark.asyncio
+    async def test_trigger_backward_compat_none(self, manager):
+        """验证 None 返回值的向后兼容：None -> APPROVE"""
+        async def none_hook(ctx, data):
+            return None
+
+        manager.register("p-none", "test.none", none_hook)
+        results = await manager.trigger("test.none", "data")
+        assert results[0].result_type == HookResultType.APPROVE
+
+
+class TestHookResultTypes:
+    """验证 7 种 HookResultType 在 trigger 中的行为"""
+
+    @pytest.fixture
+    def manager(self):
+        """创建 HookManager 实例"""
+        mgr = HookManager()
+        yield mgr
+        mgr.clear()
+
+    @pytest.mark.asyncio
+    async def test_hook_approve(self, manager):
+        """验证 APPROVE 结果类型"""
+        async def approve_hook(ctx, data):
+            return HookResult(result_type=HookResultType.APPROVE, reason="放行")
+
+        manager.register("p1", "test.approve", approve_hook)
+        results = await manager.trigger("test.approve", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.APPROVE
+        assert results[0].reason == "放行"
+
+    @pytest.mark.asyncio
+    async def test_hook_deny(self, manager):
+        """验证 DENY 结果类型"""
+        async def deny_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.DENY,
+                reason="权限不足",
+            )
+
+        manager.register("p1", "test.deny", deny_hook)
+        results = await manager.trigger("test.deny", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.DENY
+        assert results[0].reason == "权限不足"
+
+    @pytest.mark.asyncio
+    async def test_hook_modify_input(self, manager):
+        """验证 MODIFY_INPUT 结果类型"""
+        async def modify_input_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.MODIFY_INPUT,
+                modified_input={"added_field": "injected"},
+            )
+
+        manager.register("p1", "test.modify_input", modify_input_hook)
+        results = await manager.trigger("test.modify_input", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.MODIFY_INPUT
+        assert results[0].modified_input == {"added_field": "injected"}
+
+    @pytest.mark.asyncio
+    async def test_hook_modify_output(self, manager):
+        """验证 MODIFY_OUTPUT 结果类型"""
+        async def modify_output_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.MODIFY_OUTPUT,
+                modified_output={"rewritten": True},
+            )
+
+        manager.register("p1", "test.modify_output", modify_output_hook)
+        results = await manager.trigger("test.modify_output", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.MODIFY_OUTPUT
+        assert results[0].modified_output == {"rewritten": True}
+
+    @pytest.mark.asyncio
+    async def test_hook_prevent_continuation(self, manager):
+        """验证 PREVENT_CONTINUATION 结果类型"""
+        async def prevent_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.PREVENT_CONTINUATION,
+                reason="检测到危险操作",
+            )
+
+        manager.register("p1", "test.prevent", prevent_hook)
+        results = await manager.trigger("test.prevent", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.PREVENT_CONTINUATION
+        assert results[0].reason == "检测到危险操作"
+
+    @pytest.mark.asyncio
+    async def test_hook_replace_result(self, manager):
+        """验证 REPLACE_RESULT 结果类型"""
+        async def replace_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.REPLACE_RESULT,
+                replace_result={"cached": "value"},
+            )
+
+        manager.register("p1", "test.replace", replace_hook)
+        results = await manager.trigger("test.replace", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.REPLACE_RESULT
+        assert results[0].replace_result == {"cached": "value"}
+
+    @pytest.mark.asyncio
+    async def test_hook_error(self, manager):
+        """验证 ERROR 结果类型"""
+        async def error_hook(ctx, data):
+            return HookResult(
+                result_type=HookResultType.ERROR,
+                error_message="钩子内部校验失败",
+            )
+
+        manager.register("p1", "test.error", error_hook)
+        results = await manager.trigger("test.error", "data")
+        assert len(results) == 1
+        assert results[0].result_type == HookResultType.ERROR
+        assert results[0].error_message == "钩子内部校验失败"
+
+
+class TestHookUpdatedInput:
+    """验证 hook_updated_input 合并函数"""
+
+    def test_hook_updated_input_merges(self):
+        """验证多个 MODIFY_INPUT 结果合并到原始输入"""
+        original = {"a": 1, "b": 2}
+        results = [
+            HookResult(
+                result_type=HookResultType.MODIFY_INPUT,
+                modified_input={"b": 20, "c": 30},
+            ),
+            HookResult(
+                result_type=HookResultType.MODIFY_INPUT,
+                modified_input={"c": 300},
+            ),
+        ]
+        merged = hook_updated_input(results, original)
+        # 后者覆盖前者
+        assert merged == {"a": 1, "b": 20, "c": 300}
+
+    def test_hook_updated_input_no_modify_results(self):
+        """无 MODIFY_INPUT 结果时返回原始输入的副本"""
+        original = {"a": 1}
+        results = [
+            HookResult(result_type=HookResultType.APPROVE),
+            HookResult(result_type=HookResultType.DENY),
+        ]
+        merged = hook_updated_input(results, original)
+        assert merged == {"a": 1}
+        # 验证返回的是新对象
+        assert merged is not original
+
+    def test_hook_updated_input_empty_results(self):
+        """空结果列表时返回原始输入的副本"""
+        original = {"x": 1}
+        merged = hook_updated_input([], original)
+        assert merged == {"x": 1}
+        assert merged is not original
+
+    def test_hook_updated_input_does_not_mutate_original(self):
+        """验证合并操作不修改原始输入"""
+        original = {"a": 1}
+        results = [
+            HookResult(
+                result_type=HookResultType.MODIFY_INPUT,
+                modified_input={"b": 2},
+            ),
+        ]
+        hook_updated_input(results, original)
+        # 原始输入不应被修改
+        assert original == {"a": 1}
+
+
+class TestHookUpdatedOutput:
+    """验证 hook_updated_output 函数"""
+
+    def test_hook_updated_output(self):
+        """验证 MODIFY_OUTPUT 结果替换原始输出"""
+        original_output = {"status": "ok", "data": "original"}
+        results = [
+            HookResult(
+                result_type=HookResultType.MODIFY_OUTPUT,
+                modified_output={"status": "ok", "data": "modified"},
+            ),
+        ]
+        updated = hook_updated_output(results, original_output)
+        assert updated == {"status": "ok", "data": "modified"}
+
+    def test_hook_updated_output_last_wins(self):
+        """验证多个 MODIFY_OUTPUT 时最后一个生效"""
+        original_output = "original"
+        results = [
+            HookResult(
+                result_type=HookResultType.MODIFY_OUTPUT,
+                modified_output="first",
+            ),
+            HookResult(
+                result_type=HookResultType.MODIFY_OUTPUT,
+                modified_output="second",
+            ),
+        ]
+        updated = hook_updated_output(results, original_output)
+        assert updated == "second"
+
+    def test_hook_updated_output_no_modify_results(self):
+        """无 MODIFY_OUTPUT 结果时返回原始输出"""
+        original_output = {"data": "original"}
+        results = [
+            HookResult(result_type=HookResultType.APPROVE),
+            HookResult(result_type=HookResultType.DENY),
+        ]
+        updated = hook_updated_output(results, original_output)
+        assert updated == {"data": "original"}
+
+    def test_hook_updated_output_empty_results(self):
+        """空结果列表时返回原始输出"""
+        original_output = "original"
+        updated = hook_updated_output([], original_output)
+        assert updated == "original"
+
+
+class TestHookTimingThreshold:
+    """验证钩子执行耗时阈值日志"""
+
+    @pytest.fixture
+    def manager(self):
+        """创建 HookManager 实例"""
+        mgr = HookManager()
+        yield mgr
+        mgr.clear()
+
+    @pytest.mark.asyncio
+    async def test_hook_timing_threshold(self, manager):
+        """验证钩子执行耗时超过阈值时记录 warning 日志"""
+        # 收集日志消息的列表
+        log_messages = []
+
+        def log_sink(message):
+            log_messages.append(str(message))
+
+        # 添加临时日志 sink
+        sink_id = logger.add(log_sink, level="WARNING")
+
+        try:
+            async def fast_hook(ctx, data):
+                return HookResult(result_type=HookResultType.APPROVE)
+
+            manager.register("p1", "test.timing", fast_hook)
+
+            # 将阈值设为 -1，确保任何钩子执行都会触发耗时 warning
+            with patch("core.hook_manager.HOOK_TIMING_DISPLAY_THRESHOLD_MS", -1):
+                await manager.trigger("test.timing", "data")
+
+            # 验证 warning 日志中包含耗时信息
+            timing_warnings = [
+                msg for msg in log_messages if "执行耗时" in msg
+            ]
+            assert len(timing_warnings) >= 1
+            assert "test.timing" in timing_warnings[0]
+        finally:
+            logger.remove(sink_id)
+
+    @pytest.mark.asyncio
+    async def test_hook_timing_below_threshold_no_warning(self, manager):
+        """验证钩子执行耗时未超过阈值时不记录 warning 日志"""
+        log_messages = []
+
+        def log_sink(message):
+            log_messages.append(str(message))
+
+        sink_id = logger.add(log_sink, level="WARNING")
+
+        try:
+            async def fast_hook(ctx, data):
+                return HookResult(result_type=HookResultType.APPROVE)
+
+            manager.register("p1", "test.timing_ok", fast_hook)
+
+            # 阈值保持默认 500ms，快速钩子不应触发 warning
+            await manager.trigger("test.timing_ok", "data")
+
+            timing_warnings = [
+                msg for msg in log_messages if "执行耗时" in msg
+            ]
+            assert len(timing_warnings) == 0
+        finally:
+            logger.remove(sink_id)
+
+    def test_threshold_constant_value(self):
+        """验证 HOOK_TIMING_DISPLAY_THRESHOLD_MS 常量值为 500"""
+        assert HOOK_TIMING_DISPLAY_THRESHOLD_MS == 500

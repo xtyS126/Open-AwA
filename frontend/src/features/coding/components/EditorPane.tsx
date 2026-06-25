@@ -4,18 +4,32 @@
  */
 import React, { useCallback, useRef, useEffect } from 'react'
 import Editor, { OnMount } from '@monaco-editor/react'
+import { shallow } from 'zustand/shallow'
 import { useCodingStore } from '../store/codingStore'
 import { codingApi } from '../codingApi'
 import { useThemeStore } from '@/shared/store/themeStore'
 import styles from './EditorPane.module.css'
 
 const EditorPane: React.FC = () => {
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     openFiles, activeFilePath, closeFile, setActiveFile,
     updateFileContent, markFileClean, projectDir,
     editorFontSize, editorTabSize, editorWordWrap, editorMinimap,
-  } = useCodingStore()
-  const { theme } = useThemeStore()
+  } = useCodingStore(s => ({
+    openFiles: s.openFiles,
+    activeFilePath: s.activeFilePath,
+    closeFile: s.closeFile,
+    setActiveFile: s.setActiveFile,
+    updateFileContent: s.updateFileContent,
+    markFileClean: s.markFileClean,
+    projectDir: s.projectDir,
+    editorFontSize: s.editorFontSize,
+    editorTabSize: s.editorTabSize,
+    editorWordWrap: s.editorWordWrap,
+    editorMinimap: s.editorMinimap,
+  }), shallow)
+  const theme = useThemeStore(s => s.theme)
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
   const activeFileRef = useRef(activeFile)

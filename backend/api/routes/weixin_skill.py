@@ -900,6 +900,16 @@ async def weixin_qr_wait(
         redirect_host = base_response["redirect_host"]
         response = dict(base_response)
         if redirect_host:
+            # SSRF 防护：校验 redirect_host 在白名单内，防止上游重定向到内网
+            if redirect_host.lower() not in WEIXIN_QR_ALLOWED_DOMAINS:
+                _build_qr_logger(
+                    payload.session_key, "redirect_host_rejected",
+                    redirect_host=redirect_host,
+                ).warning("weixin qr redirect host rejected by ssrf policy")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"重定向主机不在白名单内: {redirect_host}",
+                )
             poll_base_url = f"https://{redirect_host}"
             with WEIXIN_QR_SESSIONS_LOCK:
                 active_session = WEIXIN_QR_SESSIONS.get(payload.session_key)

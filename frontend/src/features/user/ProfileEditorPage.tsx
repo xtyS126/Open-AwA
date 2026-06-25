@@ -8,6 +8,7 @@ import {
   ArrowLeft, Plus, Check, X, Edit3, Trash2, Loader2,
   Search, Save, AlertCircle,
 } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { useProfileStore } from '@/shared/store/profileStore'
 import { extractProfile } from '@/shared/api/profileApi'
 import { PROFILE_CATEGORY_LABELS } from './profileCategoryLabels'
@@ -17,6 +18,7 @@ const ALL_CATEGORIES = '全部'
 
 function ProfileEditorPage() {
   const navigate = useNavigate()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     facts, loading, extracting, error,
     fetchFacts, fetchStats,
@@ -24,7 +26,21 @@ function ProfileEditorPage() {
     confirmFact, disputeFactItem,
     setSelectedCategory,
     clearError,
-  } = useProfileStore()
+  } = useProfileStore(s => ({
+    facts: s.facts,
+    loading: s.loading,
+    extracting: s.extracting,
+    error: s.error,
+    fetchFacts: s.fetchFacts,
+    fetchStats: s.fetchStats,
+    editFact: s.editFact,
+    addFact: s.addFact,
+    removeFact: s.removeFact,
+    confirmFact: s.confirmFact,
+    disputeFactItem: s.disputeFactItem,
+    setSelectedCategory: s.setSelectedCategory,
+    clearError: s.clearError,
+  }), shallow)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [editingFactId, setEditingFactId] = useState<string | null>(null)

@@ -125,7 +125,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    api_key = settings.OPENAWA_API_KEY
+    api_key = settings.OPENAWA_API_KEY.get_secret_value()
     has_api_key_auth = False
 
     if credentials:
@@ -164,7 +164,7 @@ async def get_optional_current_user(
     尝试获取当前登录用户，未认证时返回 None 而非抛出异常。
     适用于允许匿名访问但可选附加用户信息的接口。
     """
-    api_key = settings.OPENAWA_API_KEY
+    api_key = settings.OPENAWA_API_KEY.get_secret_value()
 
     if credentials:
         token = _normalize_request_token(credentials.credentials)

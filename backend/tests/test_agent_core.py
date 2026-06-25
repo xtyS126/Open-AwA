@@ -6,7 +6,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
-from core.agent import AIAgent
+from core.agent import AIAgent, AgentState
 
 
 # ==================== Agent 初始化测试 ====================
@@ -607,3 +607,129 @@ class TestMultimodalAndThinking:
             mock_build.return_value = None
             agent._build_thinking_context(ctx)
             assert "_thinking_params" not in ctx
+
+
+# ==================== AgentState 枚举测试 ====================
+
+
+class TestAgentStateEnum:
+    """验证 AgentState 枚举的终态/继续态判断逻辑。"""
+
+    def test_agent_state_is_terminal_end_turn(self):
+        """TERMINAL_END_TURN 应被识别为终态。"""
+        assert AgentState.TERMINAL_END_TURN.is_terminal is True
+
+    def test_agent_state_is_terminal_max_rounds(self):
+        """TERMINAL_MAX_ROUNDS 应被识别为终态。"""
+        assert AgentState.TERMINAL_MAX_ROUNDS.is_terminal is True
+
+    def test_agent_state_is_terminal_refusal(self):
+        """TERMINAL_REFUSAL 应被识别为终态。"""
+        assert AgentState.TERMINAL_REFUSAL.is_terminal is True
+
+    def test_agent_state_is_terminal_budget_exhausted(self):
+        """TERMINAL_BUDGET_EXHAUSTED 应被识别为终态。"""
+        assert AgentState.TERMINAL_BUDGET_EXHAUSTED.is_terminal is True
+
+    def test_agent_state_is_terminal_continue_tool_calls_false(self):
+        """CONTINUE_TOOL_CALLS 不应是终态。"""
+        assert AgentState.CONTINUE_TOOL_CALLS.is_terminal is False
+
+    def test_agent_state_is_terminal_continue_compact_false(self):
+        """CONTINUE_COMPACT 不应是终态。"""
+        assert AgentState.CONTINUE_COMPACT.is_terminal is False
+
+    def test_agent_state_is_continuation_tool_calls(self):
+        """CONTINUE_TOOL_CALLS 应被识别为继续态。"""
+        assert AgentState.CONTINUE_TOOL_CALLS.is_continuation is True
+
+    def test_agent_state_is_continuation_compact(self):
+        """CONTINUE_COMPACT 应被识别为继续态。"""
+        assert AgentState.CONTINUE_COMPACT.is_continuation is True
+
+    def test_agent_state_is_continuation_end_turn_false(self):
+        """TERMINAL_END_TURN 不应是继续态。"""
+        assert AgentState.TERMINAL_END_TURN.is_continuation is False
+
+    def test_agent_state_is_continuation_max_rounds_false(self):
+        """TERMINAL_MAX_ROUNDS 不应是继续态。"""
+        assert AgentState.TERMINAL_MAX_ROUNDS.is_continuation is False
+
+    def test_agent_state_is_continuation_refusal_false(self):
+        """TERMINAL_REFUSAL 不应是继续态。"""
+        assert AgentState.TERMINAL_REFUSAL.is_continuation is False
+
+    def test_agent_state_is_continuation_budget_exhausted_false(self):
+        """TERMINAL_BUDGET_EXHAUSTED 不应是继续态。"""
+        assert AgentState.TERMINAL_BUDGET_EXHAUSTED.is_continuation is False
+
+
+# ==================== finish_reason 到 AgentState 映射测试 ====================
+
+
+class TestMapFinishReasonToState:
+    """验证 _map_finish_reason_to_state 的映射规则。"""
+
+    def test_map_finish_reason_tool_calls_returns_continue_tool_calls(self):
+        """finish_reason=tool_calls 且未达最大轮次时应返回 CONTINUE_TOOL_CALLS。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="tool_calls", current_round=1, max_rounds=10
+        )
+        assert state is AgentState.CONTINUE_TOOL_CALLS
+
+    def test_map_finish_reason_stop_returns_terminal_end_turn(self):
+        """finish_reason=stop 时应返回 TERMINAL_END_TURN。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="stop", current_round=1, max_rounds=10
+        )
+        assert state is AgentState.TERMINAL_END_TURN
+
+    def test_map_finish_reason_length_returns_continue_compact(self):
+        """finish_reason=length 时应返回 CONTINUE_COMPACT（上下文超限需压缩）。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="length", current_round=1, max_rounds=10
+        )
+        assert state is AgentState.CONTINUE_COMPACT
+
+    def test_map_finish_reason_content_filter_returns_terminal_refusal(self):
+        """finish_reason=content_filter 时应返回 TERMINAL_REFUSAL。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="content_filter", current_round=1, max_rounds=10
+        )
+        assert state is AgentState.TERMINAL_REFUSAL
+
+    def test_map_finish_reason_max_rounds_returns_terminal_max_rounds(self):
+        """current_round >= max_rounds 时无论 finish_reason 都应返回 TERMINAL_MAX_ROUNDS。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="tool_calls", current_round=10, max_rounds=10
+        )
+        assert state is AgentState.TERMINAL_MAX_ROUNDS
+
+    def test_map_finish_reason_max_rounds_exceeds_boundary(self):
+        """current_round 超过 max_rounds 时也应返回 TERMINAL_MAX_ROUNDS。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="stop", current_round=11, max_rounds=10
+        )
+        assert state is AgentState.TERMINAL_MAX_ROUNDS
+
+    def test_map_finish_reason_unknown_returns_terminal_end_turn(self):
+        """未知 finish_reason 应安全回退到 TERMINAL_END_TURN。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="unknown_reason", current_round=1, max_rounds=10
+        )
+        assert state is AgentState.TERMINAL_END_TURN
+
+    def test_map_finish_reason_empty_string_returns_terminal_end_turn(self):
+        """空 finish_reason 应安全回退到 TERMINAL_END_TURN。"""
+        agent = AIAgent()
+        state = agent._map_finish_reason_to_state(
+            finish_reason="", current_round=1, max_rounds=10
+        )
+        assert state is AgentState.TERMINAL_END_TURN

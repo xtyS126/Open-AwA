@@ -49,8 +49,8 @@ const KIND_LABELS: Record<ToolKind, string> = {
 const STATUS_ICONS: Record<ToolCallStatus, string> = {
   pending: '⏳',   // ⏳
   running: '▶',   // ▶
-  completed: '✅', // ✅
-  error: '❌',     // ❌
+  completed: '[DONE]', // 完成
+  error: '[FAIL]',     // 错误
 }
 
 interface ToolCallCardProps {

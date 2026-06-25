@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
 from pathlib import Path as PathLib
 from copy import deepcopy
+from pydantic import BaseModel
 from db.models import get_db, Plugin
 from api.dependencies import get_current_user, get_current_admin_user
 from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, PluginUpdate, PluginExecute, PluginPermissionStatus, PluginPermissionUpdateRequest, PluginPermissionUpdateResponse, PluginToolsResponse, PluginValidationResult, PluginValidationRequest, PluginDiscoveryResult, PluginLogsResponse, PluginLogLevelUpdate, PluginLogLevelResponse, PluginLogEntry, HotUpdateRequest, HotUpdateResponse, RollbackRequest, RollbackResponse
@@ -16,6 +17,13 @@ from plugins.plugin_manager import PluginManager
 from plugins import plugin_instance
 from plugins.plugin_logger import LogManager
 from loguru import logger
+
+
+class PluginConfigSaveRequest(BaseModel):
+    """插件配置保存请求体。配置为动态 key-value，由插件 schema 定义具体字段。"""
+
+    # 允许任意配置字段，但确保顶层是 JSON 对象
+    model_config = {"extra": "allow"}
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_ZIP_FILES = 100
@@ -533,16 +541,15 @@ async def get_plugin_config_schema(
 )
 async def save_plugin_config(
     plugin_id: str,
-    payload: Dict[str, Any] = Body(default_factory=dict),
+    payload: PluginConfigSaveRequest = Body(default_factory=PluginConfigSaveRequest),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="配置体必须是 JSON 对象")
-    return _persist_plugin_config(db=db, plugin=plugin, next_config=payload)
+    config_dict = payload.model_dump()
+    return _persist_plugin_config(db=db, plugin=plugin, next_config=config_dict)
 
 
 @router.post(

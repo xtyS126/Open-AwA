@@ -2,6 +2,7 @@
  * 工作区管理页面 — 多智能体工作区的创建、切换和管理。
  */
 import React, { useEffect, useState } from 'react';
+import { shallow } from 'zustand/shallow';
 import { useWorkspaceStore, type Workspace } from './store/workspaceStore';
 import { workspaceApi } from './workspaceApi';
 import { EmptyState } from '@/shared/components/ui';
@@ -17,12 +18,18 @@ const AGENT_TYPES: Record<string, string> = {
 };
 
 const WorkspacePage: React.FC = () => {
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     workspaces,
     currentWorkspaceId,
     setWorkspaces,
     setCurrentWorkspace,
-  } = useWorkspaceStore();
+  } = useWorkspaceStore(s => ({
+    workspaces: s.workspaces,
+    currentWorkspaceId: s.currentWorkspaceId,
+    setWorkspaces: s.setWorkspaces,
+    setCurrentWorkspace: s.setCurrentWorkspace,
+  }), shallow);
 
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -63,8 +70,9 @@ const WorkspacePage: React.FC = () => {
       setCreateDesc('');
       setError('');
       await loadWorkspaces();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || '创建工作区失败');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err?.response?.data?.detail || '创建工作区失败');
     }
   };
 
@@ -74,8 +82,9 @@ const WorkspacePage: React.FC = () => {
       await workspaceApi.get(ws.id);
       setCurrentWorkspace(ws.id);
       setError('');
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || '切换工作区失败，请确认工作区存在');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err?.response?.data?.detail || '切换工作区失败，请确认工作区存在');
     }
   };
 
@@ -88,8 +97,9 @@ const WorkspacePage: React.FC = () => {
     try {
       await workspaceApi.delete(ws.id);
       await loadWorkspaces();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || '删除工作区失败');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err?.response?.data?.detail || '删除工作区失败');
     }
   };
 
@@ -97,8 +107,9 @@ const WorkspacePage: React.FC = () => {
     try {
       await workspaceApi.update(ws.id, { is_enabled: !ws.is_enabled });
       await loadWorkspaces();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || '更新工作区失败');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err?.response?.data?.detail || '更新工作区失败');
     }
   };
 

@@ -31,6 +31,8 @@ import re
 import sys
 from typing import List, Tuple
 
+from loguru import logger
+
 
 def escape_html(text: str) -> str:
     """
@@ -465,22 +467,21 @@ def main():
     # ---------- 处理输入文件扩展名 ----------
     # 如果用户指定了非 .md 文件，给出提示但仍继续处理
     if not input_path.lower().endswith(('.md', '.markdown', '.mdown', '.mkd')):
-        print(f"⚠️  警告: 输入文件扩展名不是常见的 Markdown 扩展名，将继续处理。",
-              file=sys.stderr)
+        logger.warning(f"[WARN] 警告: 输入文件扩展名不是常见的 Markdown 扩展名，将继续处理。")
 
     # ---------- 读取、转换、写入 ----------
     try:
-        print(f"📖 正在读取: {input_path}")
+        logger.info(f"[READ] 正在读取: {input_path}")
         markdown_content = read_markdown_file(input_path)
-        print(f"   ✓ 读取成功 ({len(markdown_content)} 字符)")
+        logger.info(f"   ✓ 读取成功 ({len(markdown_content)} 字符)")
 
-        print(f"🔄 正在转换 Markdown → HTML ...")
+        logger.info(f"[CONVERT] 正在转换 Markdown → HTML ...")
         html_content = convert_markdown_to_html(markdown_content)
-        print(f"   ✓ 转换完成 ({len(html_content)} 字符)")
+        logger.info(f"   ✓ 转换完成 ({len(html_content)} 字符)")
 
-        print(f"💾 正在写入: {output_path}")
+        logger.info(f"[WRITE] 正在写入: {output_path}")
         write_html_file(output_path, html_content)
-        print(f"   ✓ 写入成功")
+        logger.info(f"   ✓ 写入成功")
 
         # 显示输出文件大小
         file_size = os.path.getsize(output_path)
@@ -491,36 +492,36 @@ def main():
         else:
             size_str = f"{file_size / (1024 * 1024):.1f} MB"
 
-        print(f"\n✅ 转换完成！")
-        print(f"   输入: {os.path.abspath(input_path)}")
-        print(f"   输出: {os.path.abspath(output_path)} ({size_str})")
+        logger.info(f"\n[DONE] 转换完成！")
+        logger.info(f"   输入: {os.path.abspath(input_path)}")
+        logger.info(f"   输出: {os.path.abspath(output_path)} ({size_str})")
 
     except FileNotFoundError as e:
-        print(f"❌ 错误: {e}", file=sys.stderr)
+        logger.error(f"[FAIL] 错误: {e}")
         sys.exit(1)
 
     except IsADirectoryError as e:
-        print(f"❌ 错误: {e}", file=sys.stderr)
-        print(f"   请指定一个 Markdown 文件而非目录。", file=sys.stderr)
+        logger.error(f"[FAIL] 错误: {e}")
+        logger.error(f"   请指定一个 Markdown 文件而非目录。")
         sys.exit(1)
 
     except PermissionError as e:
-        print(f"❌ 错误: {e}", file=sys.stderr)
-        print(f"   请检查文件权限后重试。", file=sys.stderr)
+        logger.error(f"[FAIL] 错误: {e}")
+        logger.error(f"   请检查文件权限后重试。")
         sys.exit(1)
 
     except UnicodeDecodeError as e:
-        print(f"❌ 错误: 无法以 UTF-8 编码读取文件。", file=sys.stderr)
-        print(f"   详细信息: {e}", file=sys.stderr)
-        print(f"   请确保文件使用 UTF-8 编码保存。", file=sys.stderr)
+        logger.error(f"[FAIL] 错误: 无法以 UTF-8 编码读取文件。")
+        logger.error(f"   详细信息: {e}")
+        logger.error(f"   请确保文件使用 UTF-8 编码保存。")
         sys.exit(1)
 
     except OSError as e:
-        print(f"❌ I/O 错误: {e}", file=sys.stderr)
+        logger.error(f"[FAIL] I/O 错误: {e}")
         sys.exit(1)
 
     except Exception as e:
-        print(f"❌ 未知错误: {e}", file=sys.stderr)
+        logger.error(f"[FAIL] 未知错误: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

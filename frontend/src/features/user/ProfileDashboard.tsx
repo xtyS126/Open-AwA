@@ -9,6 +9,7 @@ import {
   RefreshCw, Edit3, Download, Trash2, TrendingUp,
   PieChart, Clock, Activity, Loader2, Sparkles,
 } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { useProfileStore } from '@/shared/store/profileStore'
 import { exportProfile, purgeProfile } from '@/shared/api/profileApi'
 import ProfileRadarChart from './ProfileRadarChart'
@@ -18,12 +19,27 @@ import styles from './ProfileDashboard.module.css'
 
 function ProfileDashboard() {
   const navigate = useNavigate()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     facts, factsTotal, stats, extractionLogs,
     loading, extracting, error,
     fetchFacts, fetchStats, fetchExtractionLogs,
     triggerExtraction, refreshAllFacts, clearError,
-  } = useProfileStore()
+  } = useProfileStore(s => ({
+    facts: s.facts,
+    factsTotal: s.factsTotal,
+    stats: s.stats,
+    extractionLogs: s.extractionLogs,
+    loading: s.loading,
+    extracting: s.extracting,
+    error: s.error,
+    fetchFacts: s.fetchFacts,
+    fetchStats: s.fetchStats,
+    fetchExtractionLogs: s.fetchExtractionLogs,
+    triggerExtraction: s.triggerExtraction,
+    refreshAllFacts: s.refreshAllFacts,
+    clearError: s.clearError,
+  }), shallow)
 
   const [exporting, setExporting] = useState(false)
 

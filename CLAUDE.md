@@ -30,6 +30,265 @@ npm run typecheck                        # TypeScript 类型检查 (tsc --noEmit
 npm run e2e                              # Playwright E2E 测试
 ```
 
+## Automated Verification & Self-Healing Workflow
+
+Claude Code 在完成代码修改后，必须通过真实操作验证代码可行性，并在测试失败时自主诊断、修复并重新测试，形成"修改 → 验证 → 修复 → 重测"的闭环。本节定义该闭环的标准流程。
+
+### Service Lifecycle Management（服务生命周期管理）
+
+验证前必须确保后端服务运行。服务管理命令：
+
+```bash
+# 启动后端（端口 8000，后台运行，日志输出到 backend/logs/）
+cd backend
+python main.py
+
+# 启动前端开发服务器（端口 5173，仅前端验证时需要）
+cd frontend
+npm run dev
+```
+
+服务健康检查（无需认证，用于快速探测服务是否存活）：
+
+```bash
+# 轻量连通性探测 — 返回 {"pong": true, "timestamp": ...}
+curl http://localhost:8000/api/system/ping
+
+# 完整系统诊断（需认证）— 检查 DB/插件/技能/MCP 子系统
+curl -H "Authorization: Bearer <TOKEN>" http://localhost:8000/api/system/diagnostics
+```
+
+启动判定规则：
+- `GET /api/system/ping` 在 30 秒内返回 200 且 `pong=true` → 服务就绪
+- 超时或连接拒绝 → 检查 `backend/logs/` 下的启动日志，定位启动失败原因（端口占用、DB 初始化失败、插件加载异常等）
+
+### Authentication & API Access（认证与 API 访问）
+
+自动化测试需要先获取认证凭据。登录流程：
+
+```bash
+# 登录获取 access_token 和 csrf_token（OAuth2PasswordRequestForm 格式）
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=<USER>&password=<PWD>"
+```
+
+返回结构：
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "bearer",
+  "csrf_token": "<CSRF_TOKEN>"
+}
+```
+
+后续请求需携带：
+- `Authorization: Bearer <access_token>` — 所有受保护接口
+- `X-CSRF-Token: <csrf_token>` — 所有状态变更接口（POST/PUT/PATCH/DELETE）
+- Cookie — access_token 同时写入 HttpOnly Cookie，curl/requests 会自动管理
+
+默认测试账号（需预先通过 `backend/scripts/init_db.py` 或首次启动时创建）：
+- 普通用户：`test_user` / `Test@123456`
+- 管理员：`admin` / `Admin@123456`
+
+### Real Operation Verification Procedure（真实操作验证流程）
+
+完成代码修改后，按以下顺序执行真实操作验证。每一步通过后才进入下一步；任一步骤失败则进入下文的 Self-Healing Bug Fix Loop（自主修 Bug 循环）。
+
+#### 步骤 1：静态检查（快速失败，无需启动服务）
+
+```powershell
+# OCR AI 审查 + lint + typecheck，跳过测试以加速反馈
+.\scripts\code-audit.ps1 -SkipTests
+```
+
+- 通过 → 进入步骤 2
+- 失败 → 进入自愈循环
+
+#### 步骤 2：单元测试（验证代码逻辑正确性）
+
+```bash
+# 后端单元测试
+cd backend && pytest -x --tb=short
+
+# 前端单元测试
+cd frontend && npm run test
+```
+
+- 全部通过 → 进入步骤 3
+- 失败 → 进入自愈循环，针对失败的测试用例定位修复
+
+#### 步骤 3：服务启动验证（验证服务能正常拉起）
+
+```bash
+# 启动后端服务（后台运行）
+cd backend && python main.py &
+
+# 等待服务就绪（最多 30 秒轮询）
+curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/api/system/ping
+```
+
+- `pong=true` → 进入步骤 4
+- 启动失败 → 检查 `backend/logs/` 日志，进入自愈循环
+
+#### 步骤 4：E2E 场景验证（通过 test-scenarios 运行真实业务路径）
+
+系统内置 10 个真实 E2E 测试场景（定义在 `backend/api/routes/test_runner.py`），覆盖：服务健康、系统诊断、对话生命周期、非流式聊天、插件发现、技能列表、文件工具、定时任务、用户会话、MCP 状态。
+
+```bash
+# 获取认证 token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=test_user&password=Test@123456" | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+# 列出所有可用场景
+curl -s http://localhost:8000/api/test-scenarios
+
+# 运行全部 10 个场景（返回 passed/failed/total 汇总）
+curl -s -X POST http://localhost:8000/api/test-scenarios/run-all \
+  -H "Authorization: Bearer $TOKEN"
+
+# 运行单个场景（如非流式聊天）
+curl -s -X POST http://localhost:8000/api/test-scenarios/run \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "chat-nonstream"}'
+```
+
+场景列表：
+| 场景名 | 类别 | 验证内容 |
+|--------|------|----------|
+| `health-basic` | 基础设施 | `/health` 端点可达 |
+| `diagnostics-full` | 基础设施 | DB/插件/技能/MCP 全量诊断 |
+| `conversation-lifecycle` | 对话管理 | 创建→重命名→软删除→恢复 |
+| `chat-nonstream` | AI 聊天 | AIAgent.process 返回有效响应 |
+| `plugin-discovery` | 插件系统 | 插件发现与已加载列表 |
+| `skills-list` | 技能系统 | 技能列表与启用状态 |
+| `tool-file-operation` | 工具调用 | 文件列表与读取工具 |
+| `scheduled-task-lifecycle` | 定时任务 | 创建→查询→取消 |
+| `auth-session-valid` | 身份认证 | 当前用户会话有效 |
+| `mcp-status` | MCP 服务 | MCP 服务器连接状态 |
+
+- `failed=0` → 进入步骤 5
+- `failed>0` → 进入自愈循环，针对失败场景定位修复
+
+#### 步骤 5：API 集成测试（使用 api-testing skill 覆盖全部路由模块）
+
+项目内置 `api-testing` skill（位于 `backend/skills/external/api-testing/`），通过 YAML 定义测试用例，覆盖全部 24+ API 路由模块。
+
+```bash
+# 运行全部 API 集成测试（生成 Markdown + JSON 报告）
+cd backend/skills/external/api-testing
+python -m core
+
+# 报告输出到 reports/ 目录
+# - reports/api-test-report-<timestamp>.md（人类可读）
+# - reports/api-test-report-<timestamp>.json（机器可读）
+```
+
+- 全部通过 → 进入步骤 6
+- 失败 → 进入自愈循环
+
+#### 步骤 6：前端构建验证
+
+```bash
+cd frontend && npm run build
+```
+
+- 构建成功且无警告 → 验证完成，可提交
+- 构建失败 → 进入自愈循环
+
+### Self-Healing Bug Fix Loop（自主修 Bug 循环）
+
+当任一验证步骤失败时，Claude Code 必须自主执行以下闭环，最多迭代 3 次：
+
+```
+[失败] → 诊断根因 → 应用最小修复 → 重跑失败用例 → [通过?]
+                                                      [是] → 重跑完整验证流程
+                                                      [否] → 迭代次数 +1
+                                                            [迭代<3] → 继续诊断
+                                                            [迭代=3] → 停止，向用户报告
+```
+
+#### 诊断阶段
+
+1. **捕获完整失败信息**：读取测试输出的完整错误堆栈、失败用例名、断言期望值与实际值
+2. **定位根因**：
+   - 单元测试失败 → 用 `Read` 打开失败测试文件，理解断言逻辑 → 用 `Grep` 找到被测函数实现 → 对比期望与实际
+   - E2E 场景失败 → 读取场景返回的 `detail` 字段 → 定位 `backend/api/routes/test_runner.py` 中对应场景函数 → 追踪到实际业务代码
+   - 服务启动失败 → 读取 `backend/logs/` 下的启动日志 → 定位异常堆栈
+   - 静态检查失败 → 读取 `reports/audit-result.txt` 和 `reports/ocr-review.txt`
+3. **区分失败类型**：
+   - 代码缺陷 → 修复实现
+   - 测试本身错误（断言过时、mock 不匹配）→ 修复测试
+   - 环境问题（依赖缺失、端口占用）→ 修复环境
+
+#### 修复阶段
+
+1. **最小修复原则**：只修改导致失败的代码，不重构、不优化、不扩大改动范围
+2. **保持类型安全**：Python 函数完整类型标注，TypeScript 禁用 `any`
+3. **保持中文注释**：新增注释必须中文，无 emoji
+4. **不引入新依赖**：除非失败原因明确是缺少依赖
+
+#### 重测阶段
+
+1. **先重跑失败的单个用例**（快速验证修复有效）：
+   ```bash
+   # 后端单个测试
+   cd backend && pytest tests/test_xxx.py::test_function_name -x --tb=short
+
+   # 前端单个测试
+   cd frontend && npm run test -- --run src/__tests__/xxx.test.ts
+
+   # 单个 E2E 场景
+   curl -s -X POST http://localhost:8000/api/test-scenarios/run \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "<失败的场景名>"}'
+   ```
+2. **单用例通过后，重跑完整验证流程**（步骤 1-6）确保修复未引入回归
+3. **记录修复过程**：在最终报告中说明根因和修复方案
+
+#### 终止条件与用户报告
+
+达到以下任一条件时停止自愈循环：
+- 所有验证步骤通过 → 验证成功，可提交代码
+- 迭代 3 次仍未通过 → 停止，向用户报告
+
+用户报告必须包含：
+- 失败的验证步骤和具体用例名
+- 根因分析（定位到文件和行号）
+- 已尝试的修复方案及每次修复后的测试结果
+- 失败的完整错误输出（截取关键部分）
+- 建议的下一步操作（如需用户介入的环境问题、需讨论的设计决策等）
+
+### Verification Checklist（提交前验证清单）
+
+在执行 `git commit` 前，必须确认以下全部通过：
+
+- [ ] 步骤 1：`.\scripts\code-audit.ps1 -SkipTests` 静态检查通过
+- [ ] 步骤 2：后端 `pytest` + 前端 `npm run test` 全部通过
+- [ ] 步骤 3：后端服务启动且 `GET /api/system/ping` 返回 `pong=true`
+- [ ] 步骤 4：`POST /api/test-scenarios/run-all` 返回 `failed=0`
+- [ ] 步骤 5：`api-testing` skill 全部 API 集成测试通过
+- [ ] 步骤 6：前端 `npm run build` 构建成功无警告
+- [ ] 自愈循环（如有失败）未超过 3 次迭代
+- [ ] OCR 完整审计 `.\scripts\code-audit.ps1` 通过（含测试）
+
+### Common Failure Patterns（常见失败模式与快速定位）
+
+| 失败现象 | 快速定位 | 修复方向 |
+|----------|----------|----------|
+| 服务启动后立即退出 | `backend/logs/` 启动日志 | 检查 DB 连接、端口占用、插件加载 |
+| `chat-nonstream` 场景失败 | 场景返回的 `detail.response_preview` | 检查 LLM API Key 配置、`model_service.py` |
+| `conversation-lifecycle` 失败 | `core/conversation_sessions.py` | 检查 DB session 提交、外键约束 |
+| `plugin-discovery` 失败 | `plugins/plugin_instance.get()` | 检查插件目录扫描、插件加载异常 |
+| 认证 401 | `api/dependencies.py` `get_current_user` | 检查 token 过期、JWT 黑名单、Cookie 传递 |
+| CSRF 403 | 请求头 `X-CSRF-Token` | 确认 state-changing 请求携带 CSRF token |
+| 速率限制 429 | `RateLimitStore` | 测试中避免高频请求，或等待窗口重置 |
+| 前端构建类型错误 | `tsc --noEmit` 输出 | 修复 TypeScript 类型，禁用 `any` |
+| pytest 测试污染 | `conftest.py` fixture 隔离 | 确保测试间 DB 状态隔离，使用事务回滚 |
+
 ## Architecture Overview
 
 Open-AwA is an AI Agent experimental platform with a **FastAPI backend** and **React frontend**, following a microkernel + plugin architecture.
@@ -113,6 +372,8 @@ features/settings/
 5. If no auth needed (like `/health`), skip dependency injection
 
 ## System Diagnostics and Test Runner
+
+> 完整的自动化验证流程见 [Automated Verification & Self-Healing Workflow](#automated-verification--self-healing-workflow)。本节为端点速查参考。
 
 Two diagnostic layers are available, both designed for automated validation:
 
@@ -233,6 +494,8 @@ git commit -m "[Type] 变更描述"
 ### OCR Viewer 自动化审计（每次提交前强制执行）
 
 **每完成一个阶段或准备 git commit 前，必须先运行 OCR 审计，审查通过后才能提交。不可跳过此步骤。**
+
+> OCR 审计是 [Automated Verification & Self-Healing Workflow](#automated-verification--self-healing-workflow) 步骤 1 的组成部分。完整提交前验证清单见 [Verification Checklist](#verification-checklist提交前验证清单)。
 
 ```powershell
 # 完整审计（含 ocr AI 审查 + 测试）

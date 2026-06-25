@@ -4,14 +4,23 @@ MCP 管理器模块，负责管理多个 MCP Server 的连接生命周期。
 支持配置持久化、热更新检测与版本回滚。
 """
 
+import asyncio
+import json
 import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from mcp.client import MCPClient, MCPClientError
+from mcp.client import (
+    MCPClient,
+    MCPClientError,
+    _create_mcp_client,
+    _make_connection_key,
+    is_mcp_session_expired_error,
+)
 from mcp.config_store import MCPConfigStore
+from mcp.transport import MCPTransportError
 from mcp.types import MCPServerConfig, MCPTool, MCPToolCallResponse, MCPResource, MCPResourceContent
 
 
@@ -55,15 +64,21 @@ class MCPManager:
     def add_server(self, config: MCPServerConfig, server_id: Optional[str] = None) -> str:
         """
         添加 MCP Server 配置并持久化。
+        使用 memoize 连接模式创建客户端（key = server_id + config JSON 哈希）。
+
         :param config: 服务器配置
         :param server_id: 可选的自定义 ID，未指定则自动生成
         :return: 分配的 server_id
         """
         if server_id is None:
             server_id = str(uuid.uuid4())
+        # 通过 memoize 函数创建客户端，相同 config 在 TTL 内复用同一实例
+        cache_key = _make_connection_key(server_id, config)
+        config_json = json.dumps(config.model_dump(), sort_keys=True)
+        client = _create_mcp_client(cache_key, config_json)
         with self._lock:
             self._configs[server_id] = config
-            self._clients[server_id] = MCPClient(config)
+            self._clients[server_id] = client
         # 持久化到配置文件
         self._config_store.set_server(server_id, config.model_dump())
         logger.bind(module="mcp.manager", event="server_added").info(
@@ -137,6 +152,15 @@ class MCPManager:
     ) -> MCPToolCallResponse:
         """
         调用指定 Server 上的工具。
+
+        当检测到会话过期错误（HTTP 404 或 JSON-RPC -32001）时：
+        1. 清除连接缓存（memoize 缓存）
+        2. 清除工具列表缓存（LRU 缓存）
+        3. 清除资源列表缓存（LRU 缓存）
+        4. 自动重连一次后重试调用
+        5. 重连失败则抛出原始异常
+        6. 只重试一次，避免无限重试
+
         :param server_id: 服务器 ID
         :param tool_name: 工具名称
         :param arguments: 调用参数
@@ -145,7 +169,35 @@ class MCPManager:
         client = self._get_client(server_id)
         if not client.is_connected:
             raise MCPClientError(f"MCP Server 未连接: {server_id}")
-        return await client.call_tool(tool_name, arguments)
+
+        try:
+            return await client.call_tool(tool_name, arguments)
+        except MCPClientError as e:
+            # 非会话过期错误直接抛出
+            if not is_mcp_session_expired_error(e):
+                raise
+
+            # 会话过期，清除所有缓存
+            logger.bind(
+                module="mcp.manager", event="session_expired", server_id=server_id
+            ).warning(f"MCP 会话过期，清除缓存: {server_id}")
+            # 1. 清除连接缓存（memoize 缓存）
+            _create_mcp_client.cache_clear()
+            # 2. 清除工具列表缓存和 3. 资源列表缓存（LRU 缓存）
+            client.clear_caches()
+
+            # 自动重连一次，失败则抛出原始异常
+            try:
+                await client.disconnect()
+                await client.connect()
+            except (MCPClientError, MCPTransportError, asyncio.TimeoutError, ConnectionError) as reconnect_error:
+                logger.bind(
+                    module="mcp.manager", event="reconnect_failed", server_id=server_id
+                ).warning(f"MCP 重连失败: {reconnect_error}")
+                raise e from reconnect_error
+
+            # 重连成功后重试原始调用（只重试一次）
+            return await client.call_tool(tool_name, arguments)
 
     async def get_server_tools(self, server_id: str) -> List[MCPTool]:
         """
@@ -200,7 +252,7 @@ class MCPManager:
                         "description": res.description,
                         "mime_type": res.mime_type,
                     })
-            except Exception as e:
+            except (MCPClientError, MCPTransportError, asyncio.TimeoutError, ConnectionError) as e:
                 logger.warning(f"获取 Server {server_id} 资源列表失败: {e}")
         return all_resources
 
@@ -273,7 +325,7 @@ class MCPManager:
                         config = MCPServerConfig(**config_dict)
                         self._configs[server_id] = config
                         self._clients[server_id] = MCPClient(config)
-                    except Exception as exc:
+                    except (ValueError, TypeError, MCPClientError) as exc:
                         logger.bind(
                             module="mcp.manager", event="restore_error", server_id=server_id
                         ).warning(f"恢复 MCP Server 配置失败: {exc}")
@@ -330,7 +382,7 @@ class MCPManager:
                             logger.bind(module="mcp.manager", event="hot_reload_update").info(
                                 f"热更新：重建 Server {config.name} ({server_id}) 客户端"
                             )
-                except Exception as exc:
+                except (ValueError, TypeError, json.JSONDecodeError) as exc:
                     logger.bind(
                         module="mcp.manager", event="hot_reload_error", server_id=server_id
                     ).warning(f"热更新配置解析失败: {exc}")

@@ -10,9 +10,10 @@ export interface LongTermMemory {
   id: number
   content: string
   importance: number
-  access_count: number
+  access_count?: number
   created_at?: string
   last_access?: string
+  [key: string]: unknown
 }
 
 export interface Prompt {

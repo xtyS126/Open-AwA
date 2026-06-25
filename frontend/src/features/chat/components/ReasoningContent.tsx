@@ -24,7 +24,8 @@ export const ReasoningContent: React.FC<ReasoningContentProps> = ({
   content,
   isStreaming,
 }) => {
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   // 仅在当前会话内保留展开状态，避免落盘到浏览器存储中。
   const getInitialState = () => {
     const saved = reasoningExpansionMemory.get(messageId)

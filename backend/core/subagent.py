@@ -428,6 +428,7 @@ class AgentGraph:
                     try:
                         result = edge.condition(state)
                     except Exception as exc:
+                        # 用户提供的条件回调边界：单个条件失败不应影响整体流程
                         logger.bind(module="subagent", event="condition_error").warning(
                             f"条件边回调异常: {exc}"
                         )
@@ -480,6 +481,7 @@ class AgentGraph:
                     state.errors[node.name] = error_msg
                     raise
             except Exception as e:
+                # 用户提供的节点函数边界：捕获所有非系统级异常以防止单节点失败影响整个图
                 error_msg = f"节点 '{node.name}' 执行失败: {str(e)}"
                 logger.error(error_msg)
                 if attempts >= max_attempts:
@@ -531,6 +533,7 @@ class AgentGraph:
                     try:
                         state = await self._execute_node(node, state)
                     except Exception as e:
+                        # 节点执行边界（含用户函数）：隔离单节点失败，避免影响整个图执行
                         logger.error(f"Node '{node_name}' failed: {e}")
                         state.errors[node_name] = str(e)
                         state.metadata['has_failures'] = True
@@ -551,6 +554,7 @@ class AgentGraph:
                         result = await self._execute_node(node, n_state)
                         return n_name, result, None
                     except Exception as exc:
+                        # 节点执行边界（含用户函数）：返回错误信息而非抛出，便于并行合并
                         return n_name, n_state, str(exc)
 
                 # 为每个并行节点创建独立的状态副本
@@ -694,6 +698,7 @@ class SubAgentManager:
                 logger.info(f"Running sequential sub-agent: {agent_name}")
                 state = await agent_info['handler'](state)
             except Exception as e:
+                # 用户提供的子Agent handler 边界：隔离单个子Agent失败，避免影响其他子Agent
                 logger.error(f"Sub-agent '{agent_name}' failed: {e}")
                 state.errors[agent_name] = str(e)
 
@@ -822,6 +827,7 @@ class SubAgentManager:
                 state.add_message("system", f"[{agent_name} 超时，对话终止]")
                 break
             except Exception as e:
+                # 子Agent handler 边界：对话异常时记录错误并终止该Agent对话
                 state.errors[agent_name] = str(e)
                 logger.bind(event="conversation_error", agent=agent_name).warning(str(e))
                 break
@@ -885,6 +891,7 @@ class SubAgentManager:
                                 new_messages = result_state.messages[msg_count_before:]
                                 state.messages.extend(new_messages)
                         except Exception as e:
+                            # 辩论 handler 边界：单个Agent发言失败不影响其他Agent
                             logger.warning(f"辩论中 Agent {agent_name} 错误: {str(e)}")
 
                     state.results[f"round_{round_num}"] = round_results
@@ -899,6 +906,7 @@ class SubAgentManager:
                             if isinstance(consensus_state, AgentState):
                                 state.results["consensus"] = consensus_state.results
                         except Exception as e:
+                            # 共识合成 handler 边界：失败时记录错误而非中断
                             state.results["consensus"] = {"error": str(e)}
 
         except asyncio.TimeoutError:
@@ -973,6 +981,7 @@ class SubagentOrchestrator:
         tasks: Sequence[SubagentTask],
         executor: SubagentExecutorFunc,
         merge_strategy: ResultMergeStrategy = ResultMergeStrategy.CONCATENATE,
+        auto_verify: bool = False,
     ) -> tuple[List[SubagentResult], str]:
         """
         并行委派所有任务，收集结果并按策略合并。
@@ -981,6 +990,7 @@ class SubagentOrchestrator:
             tasks: 子代理任务列表
             executor: 执行函数，接收 SubagentTask 返回 SubagentResult
             merge_strategy: 结果合并策略
+            auto_verify: 是否在任务成功后自动调用验证代理验证结果
 
         Returns:
             (结果列表, 合并后的文本)
@@ -1022,6 +1032,21 @@ class SubagentOrchestrator:
                     )
                 )
 
+        # auto_verify：对每个成功结果自动调用验证代理（Task 12.3）
+        if auto_verify:
+            verify_pairs = [
+                (task, result)
+                for task, result in zip(tasks, normalized)
+                if result.success
+            ]
+            if verify_pairs:
+                await asyncio.gather(
+                    *[
+                        self._run_verification(task, result, executor)
+                        for task, result in verify_pairs
+                    ]
+                )
+
         merged_text = merge_results(normalized, merge_strategy)
         return normalized, merged_text
 
@@ -1029,10 +1054,15 @@ class SubagentOrchestrator:
         self,
         task: SubagentTask,
         executor: SubagentExecutorFunc,
+        auto_verify: bool = False,
     ) -> SubagentResult:
-        """委派单个子代理任务。"""
+        """委派单个子代理任务。auto_verify=True 时在任务成功后自动调用验证代理。"""
         async with self.semaphore:
-            return await self._execute_subagent(task, executor)
+            result = await self._execute_subagent(task, executor)
+        # 信号量已释放，独立执行验证任务
+        if auto_verify and result.success:
+            await self._run_verification(task, result, executor)
+        return result
 
     async def cancel(self, task_id: str) -> bool:
         """
@@ -1071,6 +1101,53 @@ class SubagentOrchestrator:
         }
 
     # ── 内部方法 ──────────────────────────────────────────────
+
+    async def _run_verification(
+        self,
+        original_task: SubagentTask,
+        result: SubagentResult,
+        executor: SubagentExecutorFunc,
+    ) -> None:
+        """
+        自动调用验证代理对原任务结果进行独立验证（Task 12.3）。
+
+        验证结果附加到原结果的 metadata["verification"] 中。
+        验证失败时不影响原结果，仅记录警告日志。
+        """
+        # 延迟导入避免循环依赖
+        from core.task_runtime.definitions import BUILTIN_AGENT_DEFINITIONS
+
+        verify_def = BUILTIN_AGENT_DEFINITIONS.get("verification")
+        if verify_def is None:
+            logger.bind(module="subagent_orchestrator").warning(
+                "验证代理定义未找到，跳过自动验证"
+            )
+            return
+
+        # 构造验证任务：原任务描述 + 完成结果
+        verify_task = SubagentTask(
+            task_id=f"{original_task.task_id}_verify",
+            instruction=(
+                f"请独立验证以下任务的执行结果。\n\n"
+                f"原始任务描述：\n{original_task.instruction}\n\n"
+                f"执行结果：\n{result.output}\n\n"
+                f"请实际运行测试或读取文件验证结果正确性，给出明确验证结论。"
+            ),
+            allowed_tools=list(verify_def.tools),
+            isolation_level=IsolationLevel.CONTEXT,
+        )
+
+        try:
+            async with self.semaphore:
+                verify_result = await self._execute_subagent(verify_task, executor)
+            result.metadata["verification"] = verify_result.to_dict()
+        except Exception as exc:
+            # 自动验证边界：验证失败不影响原结果，仅记录警告
+            logger.bind(
+                module="subagent_orchestrator",
+                task_id=original_task.task_id,
+                error=str(exc),
+            ).warning(f"自动验证执行失败: {exc}")
 
     async def _execute_subagent(
         self,
@@ -1175,6 +1252,7 @@ class SubagentOrchestrator:
                 lifecycle_state=SubagentLifecycleState.CANCELLED,
             )
         except Exception as exc:
+            # 子代理执行总边界：捕获所有非系统级异常，转为 ERROR 状态返回
             await self._transition(task.task_id, SubagentLifecycleState.ERROR)
             elapsed = time.time() - start_time
             logger.bind(
@@ -1195,7 +1273,7 @@ class SubagentOrchestrator:
             if worktree_info and self._worktree_manager:
                 try:
                     await self._worktree_manager.cleanup_worktree(task.task_id)
-                except Exception as cleanup_exc:
+                except (OSError, RuntimeError) as cleanup_exc:
                     logger.bind(
                         module="subagent_orchestrator",
                         task_id=task.task_id,

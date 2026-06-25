@@ -3,7 +3,9 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrowserRouter } from 'react-router-dom'
 import ChatPage from '@/features/chat/ChatPage'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 
 const apiMocks = vi.hoisted(() => ({
   sendMessageStream: vi.fn(),
@@ -144,18 +146,22 @@ describe('ChatPage responsive sidebar', () => {
     })
     taskRuntimeMocks.stopAgent.mockResolvedValue({ ok: true, agent_id: 'agt-1', status: 'stopped' })
     taskRuntimeMocks.getTranscript.mockResolvedValue({ agent_id: 'agt-1', transcript: [], entry_count: 0 })
-    useChatStore.setState({
+    useSessionStore.setState({
       messages: [],
       isLoading: false,
       sessionId: 'session-1',
       conversations: [buildConversationSummary('session-1')],
       conversationsTotal: 1,
       conversationsHasMore: false,
-      outputMode: 'stream',
+    })
+    useModelStore.setState({
       selectedModel: 'openai:gpt-4o-mini',
       modelOptions: [],
       modelLoading: false,
       modelError: null,
+    })
+    usePreferenceStore.setState({
+      outputMode: 'stream',
     })
   })
 

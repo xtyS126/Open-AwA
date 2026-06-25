@@ -1,20 +1,23 @@
 /**
- * 全局模型选择 hook，从 chatStore 精确提取设置页需要的字段。
- * 使用 Zustand shallow selector 避免将整个 chatStore（含 IndexedDB 持久化模块）拉入设置页的打包。
+ * 全局模型选择 hook，从分域 Store 精确提取设置页需要的字段。
+ * 使用 Zustand selector 避免将整个 Store 拉入设置页的打包。
+ *
+ * 模型相关状态来自 modelStore，输出模式来自 preferenceStore。
  */
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 
 export function useGlobalModelSelection() {
-  const selectedModel = useChatStore(s => s.selectedModel)
-  const setSelectedModel = useChatStore(s => s.setSelectedModel)
-  const modelOptions = useChatStore(s => s.modelOptions)
-  const setModelOptions = useChatStore(s => s.setModelOptions)
-  const modelLoading = useChatStore(s => s.modelLoading)
-  const setModelLoading = useChatStore(s => s.setModelLoading)
-  const modelError = useChatStore(s => s.modelError)
-  const setModelError = useChatStore(s => s.setModelError)
-  const outputMode = useChatStore(s => s.outputMode)
-  const setOutputMode = useChatStore(s => s.setOutputMode)
+  const selectedModel = useModelStore(s => s.selectedModel)
+  const setSelectedModel = useModelStore(s => s.setSelectedModel)
+  const modelOptions = useModelStore(s => s.modelOptions)
+  const setModelOptions = useModelStore(s => s.setModelOptions)
+  const modelLoading = useModelStore(s => s.modelLoading)
+  const setModelLoading = useModelStore(s => s.setModelLoading)
+  const modelError = useModelStore(s => s.modelError)
+  const setModelError = useModelStore(s => s.setModelError)
+  const outputMode = usePreferenceStore(s => s.outputMode)
+  const setOutputMode = usePreferenceStore(s => s.setOutputMode)
 
   return {
     selectedModel,

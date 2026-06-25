@@ -3,14 +3,24 @@
  * 将 ThemePage 的设置内容集成到设置页面的外观 Tab 中
  */
 import { useRef, ChangeEvent, useState } from 'react'
+import { shallow } from 'zustand/shallow'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { useI18nStore, LANGUAGES } from '@/i18n'
 import { presetThemes, applyPresetTheme } from '@/features/theme/presetThemes'
 import styles from '@/features/theme/ThemePage.module.css'
 
 export function AppearanceTabContainer() {
-  const { config, setConfig } = useThemeStore()
-  const { locale, setLocale, isLocaleLoaded, t } = useI18nStore()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { config, setConfig } = useThemeStore(s => ({
+    config: s.config,
+    setConfig: s.setConfig,
+  }), shallow)
+  const { locale, setLocale, isLocaleLoaded, t } = useI18nStore(s => ({
+    locale: s.locale,
+    setLocale: s.setLocale,
+    isLocaleLoaded: s.isLocaleLoaded,
+    t: s.t,
+  }), shallow)
 
   const logoInputRef = useRef<HTMLInputElement>(null)
   const bgInputRef = useRef<HTMLInputElement>(null)

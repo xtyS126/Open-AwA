@@ -26,7 +26,7 @@ from config.security import (
 )
 from config.settings import settings
 from db.models import LoginDevice, User as UserModel, get_db
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from security.rate_limit_store import get_rate_limit_store
 
 
@@ -318,10 +318,10 @@ async def rotate_api_key(
 
     # 生成新 Key
     new_key = "sk-" + _secmod.token_urlsafe(32)
-    old_key = settings.OPENAWA_API_KEY
+    old_key = settings.OPENAWA_API_KEY.get_secret_value()
 
     # 更新 runtime settings
-    object.__setattr__(settings, "OPENAWA_API_KEY", new_key)
+    object.__setattr__(settings, "OPENAWA_API_KEY", SecretStr(new_key))
 
     # 更新 .env.local
     env_local_path = _FsPath(__file__).resolve().parents[2] / ".env.local"
@@ -362,8 +362,13 @@ async def rotate_api_key(
     try:
         from core.owner import invalidate_owner_cache
         invalidate_owner_cache()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.bind(
+            event="owner_cache_invalidation_failed",
+            module="auth",
+            action="rotate_api_key",
+            error=str(exc),
+        ).warning(f"清除 owner 缓存失败，可能使用过期数据: {exc}")
 
     return {
         "message": "API Key 已轮转。请将新 Key 分发到所有客户端。旧 Key 立即失效。",

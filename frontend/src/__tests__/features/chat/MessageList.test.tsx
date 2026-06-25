@@ -20,7 +20,9 @@ function createI18nStoreMock() {
       return dict[key] || key
     }
   }
-  return () => store
+  // 支持选择器模式 useI18nStore(s => s.t) 和全量订阅 useI18nStore()
+  const mockFn: any = (selector?: (s: typeof store) => unknown) => selector ? selector(store) : store
+  return mockFn
 }
 
 import React from 'react'

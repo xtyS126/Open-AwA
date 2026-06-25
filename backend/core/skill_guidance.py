@@ -6,6 +6,7 @@
 - 根据代理权限过滤不可用的技能
 - 格式化技能列表注入到系统提示中
 - 支持远程技能源（Git URL）和内嵌技能
+- 基于 Token 预算管理技能列表长度，避免占用过多上下文窗口
 """
 
 import re
@@ -14,6 +15,128 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from pydantic import BaseModel, Field
+
+from core.context.token_budget import TokenBudget
+
+
+# 预算紧张阈值：剩余预算低于最大预算的 20% 时只展示技能名称
+TIGHT_BUDGET_THRESHOLD_RATIO = 0.2
+
+# 无预算或全部技能被截断时的占位文本
+SKILLS_OMITTED_TEXT = "[技能列表因预算限制已省略]"
+
+
+def _skill_priority_key(skill: Dict[str, Any]) -> tuple:
+    """
+    计算技能排序优先级键。
+
+    排序规则：
+    1. 内置技能（is_builtin=True）优先级最高
+    2. 用户常用技能（usage_count > 5）次之
+    3. 其他技能最后
+
+    同优先级组内按 usage_count 降序排列。
+
+    Args:
+        skill: 技能字典
+
+    Returns:
+        可比较的优先级键元组（值越小优先级越高）
+    """
+    is_builtin = bool(skill.get("is_builtin", False))
+    usage_count = int(skill.get("usage_count", 0) or 0)
+
+    if is_builtin:
+        priority_group = 0
+    elif usage_count > 5:
+        priority_group = 1
+    else:
+        priority_group = 2
+
+    # usage_count 取负值实现降序排列
+    return (priority_group, -usage_count)
+
+
+def format_commands_with_budget(
+    skills: List[Dict[str, Any]],
+    context_window: int,
+    max_budget_ratio: float = 0.01,
+) -> str:
+    """
+    在 Token 预算内格式化技能命令列表。
+
+    算法流程：
+    1. 计算 max_budget = context_window * max_budget_ratio
+    2. 按优先级排序技能（内置 > 用户常用 > 其他）
+    3. 逐个添加技能描述，累计 token 数
+    4. 预算紧张时（剩余 < 20%），只展示技能名称
+    5. 超预算时停止添加
+
+    Args:
+        skills: 技能列表，每个技能可包含 name、description、is_builtin、usage_count 字段
+        context_window: 上下文窗口大小（token 数）
+        max_budget_ratio: 最大预算占比，默认 0.01（1%）
+
+    Returns:
+        格式化后的技能列表文本；无预算或空列表时返回占位提示
+    """
+    if not skills:
+        return ""
+
+    # 计算最大 token 预算
+    max_budget = int(context_window * max_budget_ratio)
+    if max_budget <= 0:
+        return SKILLS_OMITTED_TEXT
+
+    budget_estimator = TokenBudget()
+    tight_budget_threshold = max_budget * TIGHT_BUDGET_THRESHOLD_RATIO
+
+    # 按优先级排序：内置 > 用户常用 > 其他
+    sorted_skills = sorted(skills, key=_skill_priority_key)
+
+    lines: List[str] = []
+    used_tokens = 0
+
+    for index, skill in enumerate(sorted_skills, 1):
+        name = skill.get("name") or "unknown"
+        desc = skill.get("description") or ""
+        # 转义控制字符防止系统提示注入
+        name = name.replace("\n", " ").replace("\r", "")
+        desc = desc.replace("\n", " ").replace("\r", "")
+
+        remaining_budget = max_budget - used_tokens
+
+        # 预算紧张时只展示技能名称
+        if remaining_budget < tight_budget_threshold:
+            name_only_line = f"{index}. **{name}**"
+            name_only_tokens = budget_estimator.estimate_tokens(name_only_line)
+            if used_tokens + name_only_tokens > max_budget:
+                break
+            lines.append(name_only_line)
+            used_tokens += name_only_tokens
+            continue
+
+        # 预算充足时完整展示
+        full_line = f"{index}. **{name}**: {desc}"
+        full_tokens = budget_estimator.estimate_tokens(full_line)
+
+        if used_tokens + full_tokens > max_budget:
+            # 完整展示超预算，尝试降级为只展示名称
+            name_only_line = f"{index}. **{name}**"
+            name_only_tokens = budget_estimator.estimate_tokens(name_only_line)
+            if used_tokens + name_only_tokens <= max_budget:
+                lines.append(name_only_line)
+                used_tokens += name_only_tokens
+            # 当前技能已无法完整展示，后续技能更不可能，停止添加
+            break
+
+        lines.append(full_line)
+        used_tokens += full_tokens
+
+    if not lines:
+        return SKILLS_OMITTED_TEXT
+
+    return "\n".join(lines)
 
 
 class SkillSource(BaseModel):
@@ -60,6 +183,9 @@ class SkillGuidance:
 {skills_list}
 
 使用技能时，请调用 `skill` 工具并指定技能名称和输入参数。"""
+
+    # 默认上下文窗口大小（用于未显式传入 context_window 的兼容场景）
+    DEFAULT_CONTEXT_WINDOW = 128000
 
     def __init__(self, skill_engine=None):
         self._skill_engine = skill_engine
@@ -128,6 +254,8 @@ class SkillGuidance:
                     "version": skill.version,
                     "description": skill.description,
                     "enabled": skill.enabled,
+                    "is_builtin": bool(getattr(skill, "is_builtin", False)),
+                    "usage_count": int(getattr(skill, "usage_count", 0) or 0),
                 })
 
             return available
@@ -138,12 +266,19 @@ class SkillGuidance:
     def format_skills_guidance(
         self,
         skills: List[Dict[str, Any]],
+        context_window: Optional[int] = None,
+        max_budget_ratio: float = 0.01,
     ) -> str:
         """
         格式化技能列表为系统提示文本。
 
+        当提供 context_window 时，使用基于 Token 预算的 format_commands_with_budget
+        来管理技能列表长度；未提供时使用默认窗口大小以保持兼容。
+
         Args:
             skills: 可用技能列表
+            context_window: 上下文窗口大小（token 数），未提供时使用默认值
+            max_budget_ratio: 最大预算占比，默认 0.01
 
         Returns:
             格式化的技能指导文本
@@ -151,22 +286,23 @@ class SkillGuidance:
         if not skills:
             return "当前没有可用的技能。"
 
-        lines = []
-        for i, skill in enumerate(skills, 1):
-            name = skill.get("name") or "unknown"
-            desc = skill.get("description") or ""
-            # 转义控制字符防止系统提示注入
-            name = name.replace("\n", " ").replace("\r", "")
-            desc = desc.replace("\n", " ").replace("\r", "")
-            lines.append(f"{i}. **{name}**: {desc}")
+        # 使用预算管理生成技能列表文本
+        window = context_window if context_window is not None else self.DEFAULT_CONTEXT_WINDOW
+        skills_list = format_commands_with_budget(
+            skills,
+            context_window=window,
+            max_budget_ratio=max_budget_ratio,
+        )
 
-        skills_list = "\n".join(lines)
+        # 预算管理返回占位文本时，直接使用占位文本作为技能列表
         return self.GUIDANCE_TEMPLATE.format(skills_list=skills_list)
 
     async def generate_guidance(
         self,
         agent_permissions: Optional[List[Dict[str, str]]] = None,
         agent_type: Optional[str] = None,
+        context_window: Optional[int] = None,
+        max_budget_ratio: float = 0.01,
     ) -> SkillGuidanceResult:
         """
         生成完整的技能指导文本。
@@ -174,6 +310,8 @@ class SkillGuidance:
         Args:
             agent_permissions: 代理权限规则
             agent_type: 代理类型
+            context_window: 上下文窗口大小（token 数），用于预算管理
+            max_budget_ratio: 最大预算占比，默认 0.01
 
         Returns:
             SkillGuidanceResult 包含指导文本和统计信息
@@ -188,7 +326,11 @@ class SkillGuidance:
                 agent_type=agent_type,
             )
 
-            skills_text = self.format_skills_guidance(available_skills)
+            skills_text = self.format_skills_guidance(
+                available_skills,
+                context_window=context_window,
+                max_budget_ratio=max_budget_ratio,
+            )
 
             return SkillGuidanceResult(
                 skills_text=skills_text,

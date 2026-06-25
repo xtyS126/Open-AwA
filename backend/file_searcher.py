@@ -21,6 +21,8 @@ import argparse
 import fnmatch
 import time
 
+from loguru import logger
+
 
 def search_by_name(root_dir: str, pattern: str) -> list[str]:
     """
@@ -172,27 +174,27 @@ def main() -> None:
     start_time = time.time()
 
     if args.name:
-        print(f"🔍 按文件名模式搜索: \"{args.name}\"")
-        print(f"   目标目录: {target_dir}")
-        print("-" * 60)
+        logger.info(f"[SEARCH] 按文件名模式搜索: \"{args.name}\"")
+        logger.info(f"   目标目录: {target_dir}")
+        logger.info("-" * 60)
         results = search_by_name(target_dir, args.name)
     else:
-        print(f"🔍 按文件内容搜索关键词: \"{args.content}\"")
-        print(f"   目标目录: {target_dir}")
-        print("-" * 60)
+        logger.info(f"[SEARCH] 按文件内容搜索关键词: \"{args.content}\"")
+        logger.info(f"   目标目录: {target_dir}")
+        logger.info("-" * 60)
         results = search_by_content(target_dir, args.content)
 
     elapsed = time.time() - start_time
 
     # 输出结果
     if not results:
-        print("未找到匹配的文件。")
+        logger.info("未找到匹配的文件。")
     else:
-        print(f"\n匹配结果（共 {len(results)} 个文件）:\n")
+        logger.info(f"\n匹配结果（共 {len(results)} 个文件）:\n")
         for i, file_path in enumerate(results, start=1):
-            print(f"  {i:>4}. {file_path}")
+            logger.info(f"  {i:>4}. {file_path}")
 
-    print(f"\n✅ 搜索完成，耗时 {elapsed:.3f} 秒")
+    logger.info(f"\n[DONE] 搜索完成，耗时 {elapsed:.3f} 秒")
 
 
 if __name__ == "__main__":

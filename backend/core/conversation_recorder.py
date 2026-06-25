@@ -6,7 +6,8 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -304,3 +305,113 @@ class ConversationRecorder:
 
 
 conversation_recorder = ConversationRecorder()
+
+
+class JsonlTranscriptWriter:
+    """
+    JSONL 旁路日志写入器，以追加方式记录会话消息到 JSONL 文件。
+    每行记录 {uuid, parent_uuid, type, content, timestamp}，parent_uuid 形成父链。
+    与 ConversationRecorder 解耦，仅做同步文件追加写入，保证写入持久化。
+    """
+
+    def __init__(self, session_id: str, base_dir: str = "data/transcripts") -> None:
+        """
+        初始化 JSONL 写入器。
+
+        Args:
+            session_id: 会话 ID，用于生成文件名 {session_id}.jsonl。
+            base_dir: JSONL 文件存放目录，默认为 data/transcripts。
+        """
+        self.session_id = session_id
+        self.base_dir = Path(base_dir)
+        self.file_path = self.base_dir / f"{session_id}.jsonl"
+        # 确保目录存在，不存在则自动创建（含父目录）
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._closed = False
+
+    def append(
+        self,
+        *,
+        uuid: str,
+        parent_uuid: Optional[str],
+        type: str,
+        content: Any,
+        timestamp: Optional[str] = None,
+    ) -> None:
+        """
+        追加一行 JSON 记录到 JSONL 文件。
+
+        每次调用都会以追加模式打开文件、写入一行后关闭，确保数据持久化。
+
+        Args:
+            uuid: 消息唯一 ID，必填。
+            parent_uuid: 父消息 UUID，根消息为 None。
+            type: 消息类型（如 "user"/"assistant"/"tool"/"system"/"summary"）。
+            content: 消息内容，任意 JSON 可序列化值。
+            timestamp: ISO 8601 格式时间戳，默认使用当前 UTC 时间。
+
+        Raises:
+            RuntimeError: 写入器已关闭时再次调用 append。
+            TypeError: content 包含无法 JSON 序列化的对象。
+        """
+        if self._closed:
+            raise RuntimeError("JsonlTranscriptWriter 已关闭，不能再写入")
+
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc).isoformat()
+
+        record = {
+            "uuid": uuid,
+            "parent_uuid": parent_uuid,
+            "type": type,
+            "content": content,
+            "timestamp": timestamp,
+        }
+        # ensure_ascii=False 保留中文等非 ASCII 字符的可读性
+        line = json.dumps(record, ensure_ascii=False)
+        # 追加模式打开并立即关闭，保证每行落盘持久化
+        with open(self.file_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+    def close(self) -> None:
+        """
+        关闭写入器，标记为已关闭状态，后续 append 调用将抛出异常。
+
+        由于 append 采用每次打开关闭的策略，此处无需释放文件句柄，
+        仅用于标记写入器生命周期结束。
+        """
+        self._closed = True
+
+
+def replay_transcript(
+    session_id: str,
+    base_dir: str = "data/transcripts",
+) -> List[Dict[str, Any]]:
+    """
+    从 JSONL 文件回放会话消息列表。
+
+    按文件写入顺序（即 uuid 顺序）返回消息列表。文件不存在时返回空列表。
+
+    Args:
+        session_id: 会话 ID，对应文件名 {session_id}.jsonl。
+        base_dir: JSONL 文件存放目录，默认为 data/transcripts。
+
+    Returns:
+        消息字典列表，每个字典包含 {uuid, parent_uuid, type, content, timestamp}。
+
+    Raises:
+        json.JSONDecodeError: 文件中存在无法解析的行。
+    """
+    file_path = Path(base_dir) / f"{session_id}.jsonl"
+    if not file_path.exists():
+        return []
+
+    messages: List[Dict[str, Any]] = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            # 跳过空行，提升对意外空行的容错性
+            if not stripped:
+                continue
+            messages.append(json.loads(stripped))
+    return messages

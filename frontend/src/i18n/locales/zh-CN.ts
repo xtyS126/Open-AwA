@@ -1403,6 +1403,12 @@ const zhCN: Record<string, string> = {
   // ===== 侧边栏补充 =====
   "sidebar.tts": "TTS 语音",
   "sidebar.agents": "Agent",
+  "sidebar.roles": "角色管理",
+  "sidebar.roleMarket": "角色市场",
+  "sidebar.data": "数据看板",
+  "sidebar.workflows": "工作流",
+  "sidebar.subagents": "子智能体",
+  "sidebar.im": "IM 渠道",
 
   // ===== 聊天补充 =====
   "chat.empty": "你好！有什么可以帮助你的吗？",

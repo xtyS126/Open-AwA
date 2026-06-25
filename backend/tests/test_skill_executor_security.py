@@ -6,12 +6,20 @@ SkillExecutor 安全模块单元测试。
 - Shell 命令白名单
 - 路径遍历防护
 - SkillExecutor 代码/Shell/文件操作安全
+- Task 16: Skill 双模执行（steps / prompt / fork）
 """
 
 import os
+import uuid
 import pytest
+import yaml
 from pathlib import Path
+from unittest.mock import MagicMock
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from db.models import Base, Skill
 from security.backends import RestrictedPythonBackend, SandboxBackend
 from skills.skill_executor import (
     SkillExecutor,
@@ -446,3 +454,261 @@ class TestSkillExecutorFileAction:
                 "read", {"path": "../../../etc/passwd"}
             )
         assert "校验失败" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Task 16: Skill 双模执行测试（steps / prompt / fork）
+# ---------------------------------------------------------------------------
+
+def _create_test_db_session():
+    """创建内存 SQLite 数据库会话，用于 SkillEngine 测试。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    session_local = sessionmaker(bind=engine)
+    return session_local()
+
+
+def _create_skill_record(db_session, name, config):
+    """在数据库中创建测试技能记录。"""
+    skill = Skill(
+        id=str(uuid.uuid4()),
+        name=name,
+        version=config.get("version", "1.0.0"),
+        description=config.get("description", ""),
+        config=yaml.dump(config),
+        category="general",
+        tags="[]",
+        dependencies="[]",
+        author="tester",
+        enabled=True,
+        usage_count=0,
+    )
+    db_session.add(skill)
+    db_session.commit()
+    return skill
+
+
+class TestSkillMetadataExecutionMode:
+    """测试 SkillMetadata 的 execution_mode 字段（SubTask 16.1）。"""
+
+    def test_skill_metadata_execution_mode_default(self):
+        """验证默认 execution_mode 为 'steps'，保持向后兼容。"""
+        from skills.skill_md_loader import SkillMetadata
+
+        meta = SkillMetadata(name="test-skill", description="测试技能")
+        assert meta.execution_mode == "steps"
+
+    def test_skill_metadata_execution_mode_prompt(self):
+        """验证可以设置 execution_mode 为 'prompt'。"""
+        from skills.skill_md_loader import SkillMetadata
+
+        meta = SkillMetadata(
+            name="test-skill",
+            description="测试技能",
+            execution_mode="prompt",
+        )
+        assert meta.execution_mode == "prompt"
+
+    def test_skill_metadata_execution_mode_fork(self):
+        """验证可以设置 execution_mode 为 'fork'。"""
+        from skills.skill_md_loader import SkillMetadata
+
+        meta = SkillMetadata(
+            name="test-skill",
+            description="测试技能",
+            execution_mode="fork",
+        )
+        assert meta.execution_mode == "fork"
+
+
+class TestGetPromptForCommand:
+    """测试 get_prompt_for_command 函数（SubTask 16.2）。"""
+
+    def test_get_prompt_for_command_returns_prompt(self):
+        """验证返回 prompt 字符串。"""
+        from skills.skill_prompt_resolver import get_prompt_for_command
+
+        skill_config = {
+            "name": "test-skill",
+            "description": "这是一个测试技能",
+            "prompt": "请执行测试任务",
+        }
+        result = get_prompt_for_command(
+            "test-skill", {}, skill_config=skill_config
+        )
+        assert isinstance(result, str)
+        assert "请执行测试任务" in result
+
+    def test_get_prompt_for_command_with_context(self):
+        """验证带上下文的 prompt 模板变量替换。"""
+        from skills.skill_prompt_resolver import get_prompt_for_command
+
+        skill_config = {
+            "name": "test-skill",
+            "description": "测试技能",
+            "prompt": "请分析 {language} 代码",
+        }
+        context = {"language": "Python"}
+        result = get_prompt_for_command(
+            "test-skill", context, skill_config=skill_config
+        )
+        assert "Python" in result
+        # 模板变量已被替换
+        assert "{language}" not in result
+
+
+class TestExecuteForkedSkill:
+    """测试 execute_forked_skill 函数（SubTask 16.4）。"""
+
+    def test_execute_forked_skill_returns_task_id(self):
+        """验证返回 task_id 字符串。"""
+        from skills.skill_fork_executor import execute_forked_skill
+
+        skill = {
+            "name": "fork-skill",
+            "description": "Fork 模式测试技能",
+        }
+        parent_context = {
+            "messages": [
+                {"role": "user", "content": "你好"},
+            ],
+            "user_id": "u_001",
+        }
+        task_id = execute_forked_skill(skill, parent_context)
+
+        # 返回值应为非空字符串
+        assert isinstance(task_id, str)
+        assert len(task_id) > 0
+
+
+class TestPrepareForkedCommandContext:
+    """测试 prepare_forked_command_context 函数（SubTask 16.5）。"""
+
+    def test_prepare_forked_command_context(self):
+        """验证桥接函数为 Fork 子 Agent 准备上下文。"""
+        from skills.skill_fork_executor import prepare_forked_command_context
+
+        skill = {
+            "name": "fork-skill",
+            "description": "Fork 模式测试技能",
+        }
+        parent_context = {
+            "messages": [{"role": "user", "content": "父任务"}],
+            "user_id": "u_001",
+            "conversation_id": "conv_001",
+        }
+        prepared = prepare_forked_command_context(skill, parent_context)
+
+        # 验证技能信息已注入
+        assert prepared["skill_id"] == "fork-skill"
+        assert prepared["skill_name"] == "fork-skill"
+        assert prepared["skill_description"] == "Fork 模式测试技能"
+
+        # 验证 Fork 子 Agent 标志已设置
+        assert prepared["is_fork_child"] is True
+
+        # 验证父上下文内容保留
+        assert prepared["user_id"] == "u_001"
+        assert prepared["conversation_id"] == "conv_001"
+
+        # 验证深拷贝独立性：修改 prepared 不影响 parent_context
+        prepared["messages"].append({"role": "assistant", "content": "子"})
+        assert len(parent_context["messages"]) == 1
+
+
+class TestSkillEngineDualModeExecution:
+    """测试 SkillEngine 的双模执行分派（SubTask 16.3）。"""
+
+    @pytest.fixture
+    def db_session(self):
+        """创建内存数据库会话。"""
+        session = _create_test_db_session()
+        yield session
+        session.close()
+
+    @pytest.fixture
+    def skill_engine(self, db_session):
+        """创建 SkillEngine 实例。"""
+        from skills.skill_engine import SkillEngine
+        return SkillEngine(db_session)
+
+    @pytest.mark.asyncio
+    async def test_execute_skill_steps_mode(self, skill_engine, db_session):
+        """验证 steps 模式执行（默认模式，保持向后兼容）。"""
+        config = {
+            "name": "steps-skill",
+            "version": "1.0.0",
+            "description": "steps 模式技能",
+            "execution_mode": "steps",
+            "steps": [
+                {"action": "test", "tool": "default", "params": {}}
+            ],
+        }
+        _create_skill_record(db_session, "steps-skill", config)
+
+        result = await skill_engine.execute_skill(
+            skill_name="steps-skill",
+            inputs={},
+            context={},
+        )
+
+        assert result["success"] is True
+        assert result["skill_name"] == "steps-skill"
+        # steps 模式应执行步骤并返回步骤结果
+        assert "steps" in result
+        assert len(result["steps"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_execute_skill_prompt_mode(self, skill_engine, db_session):
+        """验证 prompt 模式执行：返回 prompt 字符串。"""
+        config = {
+            "name": "prompt-skill",
+            "version": "1.0.0",
+            "description": "prompt 模式技能",
+            "execution_mode": "prompt",
+            "prompt": "请执行 {task}",
+        }
+        _create_skill_record(db_session, "prompt-skill", config)
+
+        result = await skill_engine.execute_skill(
+            skill_name="prompt-skill",
+            inputs={},
+            context={"task": "代码审查"},
+        )
+
+        assert result["success"] is True
+        assert result["skill_name"] == "prompt-skill"
+        # prompt 模式应返回 prompt 字段
+        assert "prompt" in result
+        assert "代码审查" in result["prompt"]
+        # execution_mode 标记
+        assert result.get("execution_mode") == "prompt"
+
+    @pytest.mark.asyncio
+    async def test_execute_skill_fork_mode(self, skill_engine, db_session):
+        """验证 fork 模式执行：返回 task_id。"""
+        config = {
+            "name": "fork-skill",
+            "version": "1.0.0",
+            "description": "fork 模式技能",
+            "execution_mode": "fork",
+        }
+        _create_skill_record(db_session, "fork-skill", config)
+
+        result = await skill_engine.execute_skill(
+            skill_name="fork-skill",
+            inputs={},
+            context={"messages": []},
+        )
+
+        assert result["success"] is True
+        assert result["skill_name"] == "fork-skill"
+        # fork 模式应返回 task_id 字段
+        assert "task_id" in result
+        assert isinstance(result["task_id"], str)
+        assert len(result["task_id"]) > 0
+        # execution_mode 标记
+        assert result.get("execution_mode") == "fork"

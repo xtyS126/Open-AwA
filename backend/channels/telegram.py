@@ -54,7 +54,7 @@ class TelegramAdapter(ChannelAdapter):
                     self._connected = True
                     return True
 
-            logger.error(f"Telegram 验证失败: {resp.text}")
+            logger.error(f"Telegram 验证失败: status={resp.status_code}")
             return False
 
         except Exception as e:

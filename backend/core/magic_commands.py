@@ -130,8 +130,9 @@ class MagicCommandRegistry:
 
     async def _handle_compact(self, context: dict) -> dict:
         """处理 /compact 命令 — 实际执行上下文压缩并保存到长期记忆。"""
-        from core.context.compressor import ContextCompressor
+        from core.compaction_manager import CompactionManager
         from core.context.token_budget import TokenBudget
+        from core.executor import ExecutionLayer
         from memory.manager import MemoryManager
 
         session_id = context.get("session_id", "default")
@@ -150,40 +151,78 @@ class MagicCommandRegistry:
                 if m.role in ("user", "assistant")
             ]
 
-            compressor = ContextCompressor()
             budget = TokenBudget(model_name=model_name)
             current_tokens = budget.count_messages(history)
 
-            if compressor.should_compress(current_tokens, budget.max_tokens):
-                result = compressor.compress(history)
-                # 将压缩摘要保存到长期记忆
-                if result.get("summary"):
-                    try:
-                        await memory_manager.add_long_term_memory(
-                            user_id=context.get("user_id", ""),
-                            content=f"[对话压缩摘要] {result['summary'][:2000]}",
-                            importance=0.5,
-                            memory_metadata={
-                                "source": "compact_command",
-                                "session_id": session_id,
-                                "compressed_turns": result["removed_count"],
-                            },
-                        )
-                    except Exception:
-                        pass  # 记忆保存失败不影响压缩结果
+            # 使用 CompactionManager 进行压缩
+            compaction = CompactionManager(model_context_window=budget.max_tokens)
 
-                return {
-                    "action": "compact",
-                    "success": True,
-                    "message": f"上下文已压缩，移除了 {result['removed_count']} 条历史消息",
-                    "removed_count": result["removed_count"],
-                    "summary": result["summary"][:500] if result["summary"] else "",
-                    "stats": {
-                        "original_tokens": current_tokens,
-                        "max_tokens": budget.max_tokens,
-                        "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
-                    },
-                }
+            # 设置 LLM 调用函数：复用 ExecutionLayer 的配置解析与调用能力
+            executor = ExecutionLayer()
+
+            async def _compaction_llm_call(prompt: str, **kwargs) -> str:
+                llm_db = SessionLocal()
+                try:
+                    llm_ctx: dict = {"model": model_name, "db": llm_db}
+                    result = await executor._call_llm_api(prompt, llm_ctx)
+                    if isinstance(result, dict) and result.get("ok"):
+                        return result.get("response", "") or ""
+                    return ""
+                except Exception:
+                    return ""
+                finally:
+                    llm_db.close()
+
+            compaction.set_llm_call(_compaction_llm_call)
+
+            if compaction.should_compact(messages=history):
+                result = await compaction.compact(messages=history)
+                if result["compacted"]:
+                    # 将压缩摘要保存到长期记忆
+                    if result.get("summary"):
+                        try:
+                            await memory_manager.add_long_term_memory(
+                                user_id=context.get("user_id", ""),
+                                content=f"[对话压缩摘要] {result['summary'][:2000]}",
+                                importance=0.5,
+                                memory_metadata={
+                                    "source": "compact_command",
+                                    "session_id": session_id,
+                                    "compressed_turns": len(history) - len(result["messages"]),
+                                },
+                            )
+                        except Exception as mem_exc:
+                            # 记忆保存失败不影响压缩结果，但需记录日志以便排查
+                            logger.bind(
+                                event="compact_memory_save_failed",
+                                module="magic_commands",
+                                session_id=session_id,
+                                error=str(mem_exc),
+                            ).warning(f"压缩摘要保存到长期记忆失败: {mem_exc}")
+
+                    return {
+                        "action": "compact",
+                        "success": True,
+                        "message": f"上下文已压缩，移除了 {len(history) - len(result['messages'])} 条历史消息",
+                        "removed_count": len(history) - len(result["messages"]),
+                        "summary": result["summary"][:500] if result["summary"] else "",
+                        "stats": {
+                            "original_tokens": current_tokens,
+                            "max_tokens": budget.max_tokens,
+                            "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
+                        },
+                    }
+                else:
+                    return {
+                        "action": "compact",
+                        "success": True,
+                        "message": "摘要生成失败，未执行压缩",
+                        "stats": {
+                            "current_tokens": current_tokens,
+                            "max_tokens": budget.max_tokens,
+                            "usage_ratio": round(current_tokens / budget.max_tokens, 3) if budget.max_tokens > 0 else 0,
+                        },
+                    }
             else:
                 return {
                     "action": "compact",

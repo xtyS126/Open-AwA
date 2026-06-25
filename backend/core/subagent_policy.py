@@ -38,7 +38,11 @@ class SubagentPolicy:
     # 资源限制
     max_tool_calls: int = 50  # 单次执行最大工具调用次数
     max_tokens: int = 100000  # 单次执行最大 token 消耗
-    
+
+    # Task 13: Fork 机制控制
+    allow_fork: bool = False  # 是否允许 Fork 子 Agent
+    max_fork_depth: int = 2  # 最大 Fork 深度（防止无限递归 Fork）
+
     def __post_init__(self):
         """校验参数合法性。"""
         if self.max_concurrent < 1:
@@ -49,6 +53,24 @@ class SubagentPolicy:
             raise ValueError("max_tool_calls 必须 >= 1")
         if self.max_tokens < 1000:
             raise ValueError("max_tokens 必须 >= 1000")
+        if self.max_fork_depth < 1:
+            raise ValueError("max_fork_depth 必须 >= 1")
+
+    def can_fork(self, current_depth: int) -> bool:
+        """
+        判断当前 Fork 深度是否允许继续 Fork。
+
+        仅当策略允许 Fork 且当前深度未超过最大 Fork 深度时返回 True。
+
+        Args:
+            current_depth: 当前 Fork 嵌套深度（0 表示顶层 Agent）
+
+        Returns:
+            True 表示可以 Fork；False 表示不可 Fork。
+        """
+        if not self.allow_fork:
+            return False
+        return current_depth < self.max_fork_depth
     
     def check_depth_allowed(self, current_depth: int) -> bool:
         """
@@ -104,6 +126,8 @@ class SubagentPolicy:
             "allow_mcp": self.allow_mcp,
             "max_tool_calls": self.max_tool_calls,
             "max_tokens": self.max_tokens,
+            "allow_fork": self.allow_fork,
+            "max_fork_depth": self.max_fork_depth,
         }
     
     @classmethod
@@ -119,6 +143,8 @@ class SubagentPolicy:
             allow_mcp=data.get("allow_mcp", True),
             max_tool_calls=data.get("max_tool_calls", 50),
             max_tokens=data.get("max_tokens", 100000),
+            allow_fork=data.get("allow_fork", False),
+            max_fork_depth=data.get("max_fork_depth", 2),
         )
     
     @classmethod

@@ -11,6 +11,12 @@ from core.tool_registry import (
     ToolPriority,
     ToolStatus,
     ToolExecutionResult,
+    resolve_concurrency_safe,
+)
+from core.tool_factory import (
+    build_tool,
+    is_command_read_only,
+    TOOL_DEFAULTS,
 )
 
 
@@ -279,3 +285,233 @@ class TestToolExecutionResult:
         d = result.to_dict()
         assert d["ok"] is False
         assert d["error"] == "Something went wrong"
+
+
+class TestToolDefinitionConcurrencyFields:
+    """ToolDefinition 并发属性字段测试"""
+
+    def test_tool_definition_new_fields_default(self):
+        """验证新字段默认值（失败关闭：默认偏向不并发执行）"""
+        tool = ToolDefinition(
+            name="test_tool",
+            description="A test tool",
+        )
+        # 失败关闭默认值
+        assert tool.is_concurrency_safe is False
+        assert tool.is_read_only is False
+        assert tool.is_destructive is False
+        assert tool.should_defer is False
+        assert tool.always_load is False
+        assert tool.max_result_size_chars is None
+        assert tool.interrupt_behavior == "cancel"
+
+    def test_resolve_concurrency_safe_bool(self):
+        """验证 bool 类型的并发安全判定"""
+        # is_concurrency_safe=True
+        tool_safe = ToolDefinition(
+            name="safe_tool",
+            description="safe",
+            is_concurrency_safe=True,
+        )
+        assert resolve_concurrency_safe(tool_safe, {}) is True
+
+        # is_concurrency_safe=False
+        tool_unsafe = ToolDefinition(
+            name="unsafe_tool",
+            description="unsafe",
+            is_concurrency_safe=False,
+        )
+        assert resolve_concurrency_safe(tool_unsafe, {}) is False
+
+    def test_resolve_concurrency_safe_callable(self):
+        """验证 callable 类型的并发安全判定"""
+        def judge(params: dict) -> bool:
+            return params.get("read_only", False)
+
+        tool = ToolDefinition(
+            name="callable_tool",
+            description="callable judge",
+            is_concurrency_safe=judge,
+        )
+        # callable 返回 True
+        assert resolve_concurrency_safe(tool, {"read_only": True}) is True
+        # callable 返回 False
+        assert resolve_concurrency_safe(tool, {"read_only": False}) is False
+
+    def test_resolve_concurrency_safe_callable_exception(self):
+        """验证 callable 抛异常时返回 False（失败关闭）"""
+        def bad_judge(params: dict) -> bool:
+            raise RuntimeError("judge failed")
+
+        tool = ToolDefinition(
+            name="bad_tool",
+            description="bad judge",
+            is_concurrency_safe=bad_judge,
+        )
+        # callable 抛异常时应返回 False
+        assert resolve_concurrency_safe(tool, {}) is False
+
+
+class TestToolFactory:
+    """工具工厂 build_tool 测试"""
+
+    def test_build_tool_defaults(self):
+        """验证工厂构造使用 TOOL_DEFAULTS 默认值"""
+        tool = build_tool({
+            "name": "default_tool",
+            "description": "uses defaults",
+        })
+        assert tool.name == "default_tool"
+        assert tool.description == "uses defaults"
+        # 验证并发属性回退到 TOOL_DEFAULTS
+        assert tool.is_concurrency_safe == TOOL_DEFAULTS["is_concurrency_safe"]
+        assert tool.is_read_only == TOOL_DEFAULTS["is_read_only"]
+        assert tool.is_destructive == TOOL_DEFAULTS["is_destructive"]
+        assert tool.should_defer == TOOL_DEFAULTS["should_defer"]
+        assert tool.always_load == TOOL_DEFAULTS["always_load"]
+        assert tool.max_result_size_chars == TOOL_DEFAULTS["max_result_size_chars"]
+        assert tool.interrupt_behavior == TOOL_DEFAULTS["interrupt_behavior"]
+
+    def test_build_tool_custom_values(self):
+        """验证工厂构造自定义值"""
+        tool = build_tool({
+            "name": "custom_tool",
+            "description": "custom values",
+            "is_read_only": True,
+            "is_concurrency_safe": True,
+            "is_destructive": False,
+            "should_defer": True,
+            "always_load": True,
+            "max_result_size_chars": 5000,
+            "interrupt_behavior": "wait",
+        })
+        assert tool.is_read_only is True
+        assert tool.is_concurrency_safe is True
+        assert tool.is_destructive is False
+        assert tool.should_defer is True
+        assert tool.always_load is True
+        assert tool.max_result_size_chars == 5000
+        assert tool.interrupt_behavior == "wait"
+
+    def test_build_tool_invalid_interrupt_behavior(self):
+        """验证无效 interrupt_behavior 抛 ValueError"""
+        with pytest.raises(ValueError, match="interrupt_behavior"):
+            build_tool({
+                "name": "bad_interrupt",
+                "description": "invalid interrupt",
+                "interrupt_behavior": "invalid_value",
+            })
+
+    def test_build_tool_invalid_concurrency_safe_type(self):
+        """验证 is_concurrency_safe 非法类型抛 ValueError"""
+        with pytest.raises(ValueError, match="is_concurrency_safe"):
+            build_tool({
+                "name": "bad_safe",
+                "description": "invalid safe type",
+                "is_concurrency_safe": "not_a_bool",  # 字符串非法
+            })
+
+    def test_build_tool_callable_concurrency_safe(self):
+        """验证 is_concurrency_safe 接受 callable"""
+        def judge(params: dict) -> bool:
+            return True
+
+        tool = build_tool({
+            "name": "callable_tool",
+            "description": "callable safe",
+            "is_concurrency_safe": judge,
+        })
+        assert callable(tool.is_concurrency_safe)
+
+
+class TestIsCommandReadOnly:
+    """run_command 输入驱动判定函数测试"""
+
+    def test_is_command_read_only_ls(self):
+        """验证 ls 命令只读"""
+        assert is_command_read_only({"command": "ls"}) is True
+        assert is_command_read_only({"command": "ls -la /tmp"}) is True
+
+    def test_is_command_read_only_rm(self):
+        """验证 rm 命令非只读"""
+        assert is_command_read_only({"command": "rm -rf /tmp"}) is False
+
+    def test_is_command_read_only_git_status(self):
+        """验证 git status 命令只读"""
+        assert is_command_read_only({"command": "git status"}) is True
+        assert is_command_read_only({"command": "git log --oneline"}) is True
+        assert is_command_read_only({"command": "git diff"}) is True
+
+    def test_is_command_read_only_cat_grep(self):
+        """验证 cat/grep/find 命令只读"""
+        assert is_command_read_only({"command": "cat /etc/hosts"}) is True
+        assert is_command_read_only({"command": "grep foo bar.txt"}) is True
+        assert is_command_read_only({"command": "find . -name '*.py'"}) is True
+
+    def test_is_command_read_only_empty_command(self):
+        """验证空命令返回 False（失败关闭）"""
+        assert is_command_read_only({"command": ""}) is False
+        assert is_command_read_only({}) is False
+
+    def test_is_command_read_only_non_dict_input(self):
+        """验证非字典输入返回 False（失败关闭）"""
+        assert is_command_read_only("ls") is False  # type: ignore[arg-type]
+        assert is_command_read_only(None) is False  # type: ignore[arg-type]
+
+    def test_is_command_read_only_prefix_not_match(self):
+        """验证前缀相似但不匹配的命令非只读（避免 lsv 误匹配 ls）"""
+        assert is_command_read_only({"command": "lsv"}) is False
+        assert is_command_read_only({"command": "catapult"}) is False
+
+
+class TestBuiltinToolsConcurrencyAttributes:
+    """内置工具并发属性测试"""
+
+    def test_builtin_tools_concurrency_attributes(self):
+        """验证内置工具注册后并发属性正确声明"""
+        from core.tool_entries import register_builtin_tools
+
+        registry = ToolRegistry()
+        register_builtin_tools(registry)
+
+        # 只读文件操作：is_read_only=True, is_concurrency_safe=True
+        read_tool = registry.get("builtin_read_file")
+        assert read_tool is not None
+        assert read_tool.is_read_only is True
+        assert read_tool.is_concurrency_safe is True
+
+        list_tool = registry.get("builtin_list_files")
+        assert list_tool is not None
+        assert list_tool.is_read_only is True
+        assert list_tool.is_concurrency_safe is True
+
+        exists_tool = registry.get("builtin_file_exists")
+        assert exists_tool is not None
+        assert exists_tool.is_read_only is True
+        assert exists_tool.is_concurrency_safe is True
+
+        # 破坏性文件操作：is_destructive=True, is_concurrency_safe=False
+        write_tool = registry.get("builtin_write_file")
+        assert write_tool is not None
+        assert write_tool.is_destructive is True
+        assert write_tool.is_concurrency_safe is False
+
+        delete_tool = registry.get("builtin_delete_file")
+        assert delete_tool is not None
+        assert delete_tool.is_destructive is True
+        assert delete_tool.is_concurrency_safe is False
+
+        # 命令执行：is_concurrency_safe 为 callable（输入驱动判定）
+        cmd_tool = registry.get("builtin_run_command")
+        assert cmd_tool is not None
+        assert callable(cmd_tool.is_concurrency_safe)
+        # 只读命令应判定为并发安全
+        assert resolve_concurrency_safe(cmd_tool, {"command": "ls"}) is True
+        # 非只读命令应判定为不并发安全
+        assert resolve_concurrency_safe(cmd_tool, {"command": "rm -rf /"}) is False
+
+        # 只读网络操作：is_read_only=True, is_concurrency_safe=True
+        web_tool = registry.get("builtin_web_search")
+        assert web_tool is not None
+        assert web_tool.is_read_only is True
+        assert web_tool.is_concurrency_safe is True

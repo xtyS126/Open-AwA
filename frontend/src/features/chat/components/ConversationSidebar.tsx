@@ -45,7 +45,8 @@ function formatTimestamp(value?: string | null): string {
 }
 
 function ConversationSidebar(props: ConversationSidebarProps) {
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   const {
     open,
     loading,

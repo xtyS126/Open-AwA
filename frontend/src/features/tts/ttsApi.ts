@@ -67,6 +67,7 @@ export const ttsApi = {
     onChunk: (base64: string) => void,
     onDone: () => void,
     onError: (error: string) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     const token = document.cookie.match(/access_token=([^;]+)/)?.[1] || ''
     const response = await fetch(`/api${API_BASE}/synthesize/stream`, {
@@ -77,6 +78,7 @@ export const ttsApi = {
       },
       body: JSON.stringify(req),
       credentials: 'include',
+      signal,
     })
 
     if (!response.ok) {
@@ -122,7 +124,18 @@ export const ttsApi = {
       }
       onDone()
     } catch (e) {
+      // AbortError 是用户主动取消，不视为错误
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        return
+      }
       onError(`流读取错误: ${e}`)
+    } finally {
+      // 确保释放 reader 锁，防止资源泄露
+      try {
+        reader.releaseLock()
+      } catch {
+        // reader 已释放或已关闭时忽略
+      }
     }
   },
 

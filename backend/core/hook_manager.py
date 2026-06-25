@@ -52,6 +52,33 @@ class HookName(str, Enum):
     PLUGIN_LOADED = "plugin.loaded"
 
 
+class HookResultType(str, Enum):
+    """
+    Hook 结果类型枚举。
+
+    用于明确表达钩子对后续执行流程的决策意图，
+    替代原先返回 bool/None 的隐式约定。
+    """
+    # 批准执行
+    APPROVE = "approve"
+    # 拒绝执行
+    DENY = "deny"
+    # 修改输入（携带 modified_input 字段）
+    MODIFY_INPUT = "modify_input"
+    # 修改输出（携带 modified_output 字段）
+    MODIFY_OUTPUT = "modify_output"
+    # 阻止后续链路继续执行
+    PREVENT_CONTINUATION = "prevent_continuation"
+    # 替换结果，跳过实际执行（携带 replace_result 字段）
+    REPLACE_RESULT = "replace_result"
+    # 错误（携带 error_message 字段）
+    ERROR = "error"
+
+
+# 钩子执行耗时告警阈值（毫秒），超过该值会记录 warning 日志
+HOOK_TIMING_DISPLAY_THRESHOLD_MS = 500
+
+
 @dataclass
 class HookContext:
     """Hook 执行上下文"""
@@ -72,6 +99,153 @@ class HookRegistration:
     timeout_seconds: float = 30.0
     enabled: bool = True
     created_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class HookResult:
+    """
+    Hook 执行结果。
+
+    每个钩子回调返回一个 HookResult，表达对后续流程的决策意图。
+    不同 result_type 携带不同字段：
+    - APPROVE: 无附加字段，表示放行
+    - DENY: 可携带 reason 说明拒绝原因
+    - MODIFY_INPUT: 携带 modified_input 用于覆盖原始输入
+    - MODIFY_OUTPUT: 携带 modified_output 用于覆盖原始输出
+    - PREVENT_CONTINUATION: 可携带 reason 说明阻止原因
+    - REPLACE_RESULT: 携带 replace_result 跳过实际执行直接返回
+    - ERROR: 携带 error_message 说明错误原因
+    """
+    result_type: HookResultType
+    # 用于 MODIFY_INPUT：合并到原始输入的覆写字段
+    modified_input: Optional[dict] = None
+    # 用于 MODIFY_OUTPUT：替换原始输出的值
+    modified_output: Optional[Any] = None
+    # 用于 REPLACE_RESULT：跳过实际执行直接返回的结果
+    replace_result: Optional[Any] = None
+    # 用于 ERROR：错误信息
+    error_message: Optional[str] = None
+    # 说明原因（DENY/PREVENT_CONTINUATION/ERROR 等场景的补充说明）
+    reason: Optional[str] = None
+
+
+def _coerce_to_hook_result(raw: Any) -> HookResult:
+    """
+    将钩子回调的原始返回值转换为 HookResult。
+
+    向后兼容策略：
+    - HookResult 实例：原样返回
+    - bool: True -> APPROVE, False -> DENY
+    - None: -> APPROVE（默认放行）
+    - dict: 尝试解析 result_type/decision 等字段，失败则视为 APPROVE 并把返回值放入 modified_output
+    - 其他类型: 视为 APPROVE 并把返回值放入 modified_output（保留原始返回值供调用方使用）
+
+    Args:
+        raw: 钩子回调的原始返回值
+
+    Returns:
+        转换后的 HookResult 实例
+    """
+    if isinstance(raw, HookResult):
+        return raw
+
+    if raw is None:
+        return HookResult(result_type=HookResultType.APPROVE)
+
+    if isinstance(raw, bool):
+        if raw:
+            return HookResult(result_type=HookResultType.APPROVE)
+        return HookResult(result_type=HookResultType.DENY, reason="钩子返回 False")
+
+    if isinstance(raw, dict):
+        # 兼容 dict 形式的返回值，尝试解析已知字段
+        result_type_raw = raw.get("result_type")
+        decision = raw.get("decision")
+        if result_type_raw is not None:
+            try:
+                result_type = HookResultType(str(result_type_raw))
+            except ValueError:
+                result_type = HookResultType.APPROVE
+            return HookResult(
+                result_type=result_type,
+                modified_input=raw.get("modified_input"),
+                modified_output=raw.get("modified_output"),
+                replace_result=raw.get("replace_result"),
+                error_message=raw.get("error_message"),
+                reason=raw.get("reason"),
+            )
+        if decision is not None:
+            # 兼容 task_runtime.hook_dispatcher 的 decision 字段
+            decision_str = str(decision).lower()
+            if decision_str == "deny":
+                return HookResult(
+                    result_type=HookResultType.DENY,
+                    reason=raw.get("reason", ""),
+                    modified_input=raw.get("updated_input"),
+                )
+            if decision_str == "ask":
+                return HookResult(
+                    result_type=HookResultType.DENY,
+                    reason=raw.get("reason", "钩子要求人工确认"),
+                )
+            # allow / defer 等视为 APPROVE
+            return HookResult(
+                result_type=HookResultType.APPROVE,
+                modified_input=raw.get("updated_input"),
+            )
+        # 无法识别的 dict，视为 APPROVE 并保留原始返回值
+        return HookResult(result_type=HookResultType.APPROVE, modified_output=raw)
+
+    # 其他类型（字符串、数字等）：视为 APPROVE 并保留原始返回值
+    return HookResult(result_type=HookResultType.APPROVE, modified_output=raw)
+
+
+def hook_updated_input(results: List[HookResult], original_input: dict) -> dict:
+    """
+    合并所有 MODIFY_INPUT 类型钩子的 modified_input 到原始输入。
+
+    合并策略：以 original_input 为基础，依次用每个 MODIFY_INPUT 结果的
+    modified_input 进行浅合并（后者覆盖前者）。
+
+    Args:
+        results: 钩子结果列表
+        original_input: 原始输入字典
+
+    Returns:
+        合并后的输入字典（新对象，不修改 original_input）
+    """
+    merged: Dict[str, Any] = dict(original_input)
+    for result in results:
+        if (
+            result.result_type == HookResultType.MODIFY_INPUT
+            and result.modified_input is not None
+        ):
+            merged.update(result.modified_input)
+    return merged
+
+
+def hook_updated_output(results: List[HookResult], original_output: Any) -> Any:
+    """
+    应用所有 MODIFY_OUTPUT 类型钩子的修改，返回最终输出。
+
+    策略：遍历所有 MODIFY_INPUT 结果，最后一个非 None 的 modified_output 生效。
+    若没有任何 MODIFY_OUTPUT 结果，返回 original_output。
+
+    Args:
+        results: 钩子结果列表
+        original_output: 原始输出
+
+    Returns:
+        修改后的输出（若有 MODIFY_OUTPUT），否则原始输出
+    """
+    updated = original_output
+    for result in results:
+        if (
+            result.result_type == HookResultType.MODIFY_OUTPUT
+            and result.modified_output is not None
+        ):
+            updated = result.modified_output
+    return updated
 
 
 class HookManager:
@@ -209,12 +383,15 @@ class HookManager:
         data: Any = None,
         context: Optional[HookContext] = None,
         default_timeout: float = 30.0,
-    ) -> List[Any]:
+    ) -> List[HookResult]:
         """
         触发 Hook。
 
         所有注册的回调按注册顺序依次执行，每个回调在隔离作用域中运行。
         单个回调失败不会影响其他回调的执行。
+
+        钩子回调的原始返回值会通过 _coerce_to_hook_result 转换为 HookResult，
+        保持对 bool/None/dict 等旧式返回值的向后兼容。
 
         Args:
             hook_name: Hook 名称
@@ -223,26 +400,28 @@ class HookManager:
             default_timeout: 默认超时时间
 
         Returns:
-            所有成功回调的返回值列表
+            所有成功回调的 HookResult 列表；无注册钩子时返回空列表
         """
         registrations = self._hooks.get(hook_name, [])
         if not registrations:
             return []
 
         ctx = context or HookContext(hook_name=hook_name)
-        results: List[Any] = []
+        results: List[HookResult] = []
 
         for reg in registrations:
             if not reg.enabled:
                 continue
 
             timeout = reg.timeout_seconds or default_timeout
+            # 记录单个钩子执行耗时，超过阈值时记录 warning
+            hook_start = time.perf_counter()
             try:
-                result = await asyncio.wait_for(
+                raw_result = await asyncio.wait_for(
                     reg.callback(ctx, data),
                     timeout=timeout,
                 )
-                results.append(result)
+                results.append(_coerce_to_hook_result(raw_result))
             except asyncio.TimeoutError:
                 logger.warning(
                     f"Hook {hook_name} (插件: {reg.plugin_id}) 超时 ({timeout}s)"
@@ -250,6 +429,12 @@ class HookManager:
             except Exception as e:
                 logger.error(
                     f"Hook {hook_name} (插件: {reg.plugin_id}) 执行异常: {e}"
+                )
+
+            elapsed_ms = int((time.perf_counter() - hook_start) * 1000)
+            if elapsed_ms > HOOK_TIMING_DISPLAY_THRESHOLD_MS:
+                logger.warning(
+                    f"钩子 {hook_name} (插件: {reg.plugin_id}) 执行耗时 {elapsed_ms}ms"
                 )
 
         return results

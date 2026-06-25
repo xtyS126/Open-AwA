@@ -3,9 +3,33 @@ MCP 协议类型定义模块，声明工具、资源、服务器配置及消息�
 所有类型均基于 Pydantic BaseModel，用于请求校验与序列化。
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 from typing import Optional, List, Dict, Any
 from enum import Enum
+
+
+# MCP 工具全限定名前缀，三段式格式 mcp__<server>__<tool>
+MCP_TOOL_NAME_PREFIX = "mcp__"
+MCP_TOOL_NAME_SEPARATOR = "__"
+
+
+def build_mcp_tool_name(server: str, tool: str) -> str:
+    """
+    构建 MCP 工具的三段式全限定名。
+
+    格式：mcp__<server>__<tool>（双下划线分隔）
+    示例：build_mcp_tool_name("github", "create_issue") -> "mcp__github__create_issue"
+
+    :param server: MCP Server 名称
+    :param tool: 工具名称
+    :return: 三段式全限定名
+    :raises ValueError: server 或 tool 为空时抛出
+    """
+    if not server:
+        raise ValueError("server 不能为空")
+    if not tool:
+        raise ValueError("tool 不能为空")
+    return f"{MCP_TOOL_NAME_PREFIX}{server}{MCP_TOOL_NAME_SEPARATOR}{tool}"
 
 
 class TransportType(str, Enum):
@@ -21,6 +45,20 @@ class MCPTool(BaseModel):
     name: str = Field(..., description="工具名称")
     description: Optional[str] = Field(None, description="工具描述")
     input_schema: Optional[Dict[str, Any]] = Field(None, alias="inputSchema", description="工具输入参数的 JSON Schema")
+    server_name: Optional[str] = Field(None, description="所属 MCP Server 名称，用于生成全限定名")
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def fully_qualified_name(self) -> str:
+        """
+        工具全限定名（只读），格式 mcp__<server>__<tool>。
+
+        当 server_name 已提供时返回三段式全限定名；
+        否则回退为工具名本身，保证向后兼容。
+        """
+        if self.server_name:
+            return build_mcp_tool_name(self.server_name, self.name)
+        return self.name
 
 
 class MCPResource(BaseModel):

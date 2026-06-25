@@ -2,6 +2,7 @@
  * 收件箱页面 — 集中管理审批通知、任务结果和系统消息。
  */
 import React, { useEffect, useState, useCallback } from 'react';
+import { shallow } from 'zustand/shallow';
 import { useInboxStore, type InboxMessage } from './store/inboxStore';
 import { useI18nStore } from '@/i18n';
 import { inboxApi } from './inboxApi';
@@ -16,14 +17,22 @@ const CATEGORY_I18N_KEY: Record<string, string> = {
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
-  notification: '📬',
-  approval: '🔐',
-  task_result: '✅',
+  notification: '[MAIL]',
+  approval: '[AUTH]',
+  task_result: '[DONE]',
 };
 
 const InboxPage: React.FC = () => {
-  const { messages, unreadCount, setMessages, markAsRead, markAllRead, removeMessage } = useInboxStore();
-  const { t } = useI18nStore();
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { messages, unreadCount, setMessages, markAsRead, markAllRead, removeMessage } = useInboxStore(s => ({
+    messages: s.messages,
+    unreadCount: s.unreadCount,
+    setMessages: s.setMessages,
+    markAsRead: s.markAsRead,
+    markAllRead: s.markAllRead,
+    removeMessage: s.removeMessage,
+  }), shallow);
+  const t = useI18nStore(s => s.t);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [error, setError] = useState('');
@@ -119,7 +128,7 @@ const InboxPage: React.FC = () => {
               className={`${styles.message} ${!msg.read ? styles.unread : ''}`}
               onClick={() => !msg.read && handleMarkRead(msg)}
             >
-              <span className={styles.icon}>{CATEGORY_ICONS[msg.category] || '📌'}</span>
+              <span className={styles.icon}>{CATEGORY_ICONS[msg.category] || '[NOTE]'}</span>
               <div className={styles.msgContent}>
                 <div className={styles.msgHeader}>
                   <span className={styles.msgCategory}>

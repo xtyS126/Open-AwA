@@ -15,6 +15,29 @@ import {
   logStreamParseWarning,
   API_BASE_URL,
 } from './client'
+import type {
+  SkillsListResponse,
+  SkillItem,
+  SkillParseUploadResponse,
+  PluginsListResponse,
+  PluginItem,
+  PluginsDiscoverResponse,
+  PluginInstallResponse,
+  ShortTermMemoryItem,
+  ShortTermMemoryListResponse,
+  LongTermMemoryItem,
+  LongTermMemoryListResponse,
+  MemorySearchResponse,
+  PromptItem,
+  PromptsListResponse,
+  BehaviorStatsResponse,
+  BehaviorLogsResponse,
+  ChatHistoryResponse,
+  ChatUploadResponse,
+  ChatCancelResponse,
+  ChatFeedbackResponse,
+  ChatUndoOperationResponse,
+} from './types'
 
 // 向后兼容：保持原有命名导出
 export {
@@ -438,40 +461,40 @@ export const chatAPI = {
     }
   },
   getHistory: (sessionId: string) =>
-    api.get(`/chat/history/${sessionId}`),
+    api.get<ChatHistoryResponse>(`/chat/history/${sessionId}`),
   confirmOperation: (confirmed: boolean, step: unknown) =>
     api.post('/chat/confirm', { confirmed, step }),
   upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/chat/upload', formData, {
+    return api.post<ChatUploadResponse>('/chat/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
 
   /** 取消正在执行的 Agent 任务 */
   cancelSession: (sessionId: string) =>
-    api.post(`/chat/cancel/${sessionId}`),
+    api.post<ChatCancelResponse>(`/chat/cancel/${sessionId}`),
 
   /** 提交用户消息反馈（点赞/点踩） */
   sendFeedback: (payload: ChatFeedbackPayload) =>
-    api.post('/chat/feedback', payload),
+    api.post<ChatFeedbackResponse>('/chat/feedback', payload),
 
   /** 撤销 AI 执行的文件操作 */
   undoOperation: (payload: UndoOperationPayload) =>
-    api.post('/chat/undo-operation', payload),
+    api.post<ChatUndoOperationResponse>('/chat/undo-operation', payload),
 }
 
 export const skillsAPI = {
-  getAll: () => api.get('/skills'),
-  getOne: (id: string) => api.get(`/skills/${id}`),
-  install: (skill: ApiPayload) => api.post('/skills', skill),
-  uninstall: (id: string) => api.delete(`/skills/${id}`),
-  toggle: (id: string) => api.put(`/skills/${id}/toggle`),
+  getAll: () => api.get<SkillsListResponse>('/skills'),
+  getOne: (id: string) => api.get<SkillItem>(`/skills/${id}`),
+  install: (skill: ApiPayload) => api.post<SkillItem>('/skills', skill),
+  uninstall: (id: string) => api.delete<{ ok: boolean; message?: string }>(`/skills/${id}`),
+  toggle: (id: string) => api.put<SkillItem>(`/skills/${id}/toggle`),
   parseUpload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/skills/parse-upload', formData, {
+    return api.post<SkillParseUploadResponse>('/skills/parse-upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -547,26 +570,26 @@ export interface SystemLogsQueryResponse {
 }
 
 export const pluginsAPI = {
-  getAll: () => api.get('/plugins'),
-  getOne: (id: string) => api.get(`/plugins/${id}`),
-  discover: () => api.get('/plugins/discover'),
-  install: (plugin: ApiPayload) => api.post('/plugins', plugin),
+  getAll: () => api.get<PluginsListResponse>('/plugins'),
+  getOne: (id: string) => api.get<PluginItem>(`/plugins/${id}`),
+  discover: () => api.get<PluginsDiscoverResponse>('/plugins/discover'),
+  install: (plugin: ApiPayload) => api.post<PluginInstallResponse>('/plugins', plugin),
   execute: (id: string, method: string, params: Record<string, unknown> = {}) =>
-    api.post(`/plugins/${id}/execute`, { method, params }),
-  update: (id: string, payload: ApiPayload) => api.put(`/plugins/${id}`, payload),
-  uninstall: (id: string) => api.delete(`/plugins/${id}`),
-  toggle: (id: string) => api.put(`/plugins/${id}/toggle`),
+    api.post<{ result: unknown; error?: string }>(`/plugins/${id}/execute`, { method, params }),
+  update: (id: string, payload: ApiPayload) => api.put<PluginItem>(`/plugins/${id}`, payload),
+  uninstall: (id: string) => api.delete<{ ok: boolean; message?: string }>(`/plugins/${id}`),
+  toggle: (id: string) => api.put<PluginItem>(`/plugins/${id}/toggle`),
   upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/plugins/upload', formData, {
+    return api.post<PluginInstallResponse>('/plugins/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     })
   },
   importFromUrl: (sourceUrl: string, timeoutSeconds: number = 30) =>
-    api.post('/plugins/import-url', { source_url: sourceUrl, timeout_seconds: timeoutSeconds }),
+    api.post<PluginInstallResponse>('/plugins/import-url', { source_url: sourceUrl, timeout_seconds: timeoutSeconds }),
   getPermissions: (id: string) => api.get<PluginPermissionStatus>(`/plugins/${id}/permissions`),
   authorizePermissions: (id: string, permissions: string[]) =>
     api.post<PluginPermissionUpdateResponse>(`/plugins/${id}/permissions/authorize`, { permissions }),
@@ -666,26 +689,26 @@ export const testRunnerAPI = {
 
 export const memoryAPI = {
   getShortTerm: (sessionId: string) =>
-    api.get(`/memory/short-term/${sessionId}`),
+    api.get<ShortTermMemoryListResponse>(`/memory/short-term/${sessionId}`),
   addShortTerm: (sessionId: string, role: string, content: string) =>
-    api.post('/memory/short-term', { session_id: sessionId, role, content }),
+    api.post<ShortTermMemoryItem>('/memory/short-term', { session_id: sessionId, role, content }),
   deleteShortTerm: (id: number) =>
-    api.delete(`/memory/short-term/${id}`),
-  getLongTerm: () => api.get('/memory/long-term'),
+    api.delete<{ ok: boolean; message?: string }>(`/memory/short-term/${id}`),
+  getLongTerm: () => api.get<LongTermMemoryListResponse>('/memory/long-term'),
   addLongTerm: (content: string, importance: number = 0.5) =>
-    api.post('/memory/long-term', { content, importance }),
+    api.post<LongTermMemoryItem>('/memory/long-term', { content, importance }),
   deleteLongTerm: (id: number) =>
-    api.delete(`/memory/long-term/${id}`),
-  search: (query: string) => api.get('/memory/search', { params: { query } }),
+    api.delete<{ ok: boolean; message?: string }>(`/memory/long-term/${id}`),
+  search: (query: string) => api.get<MemorySearchResponse>('/memory/search', { params: { query } }),
 }
 
 export const promptsAPI = {
-  getAll: () => api.get('/prompts'),
-  getActive: () => api.get('/prompts/active'),
-  getOne: (id: string) => api.get(`/prompts/${id}`),
-  create: (prompt: ApiPayload) => api.post('/prompts', prompt),
-  update: (id: string, prompt: ApiPayload) => api.put(`/prompts/${id}`, prompt),
-  delete: (id: string) => api.delete(`/prompts/${id}`),
+  getAll: () => api.get<PromptsListResponse>('/prompts'),
+  getActive: () => api.get<PromptItem>('/prompts/active'),
+  getOne: (id: string) => api.get<PromptItem>(`/prompts/${id}`),
+  create: (prompt: ApiPayload) => api.post<PromptItem>('/prompts', prompt),
+  update: (id: string, prompt: ApiPayload) => api.put<PromptItem>(`/prompts/${id}`, prompt),
+  delete: (id: string) => api.delete<{ ok: boolean; message?: string }>(`/prompts/${id}`),
 }
 
 export interface ConversationSessionSummary {
@@ -896,11 +919,11 @@ export const conversationAPI = {
 
 export const behaviorAPI = {
   getStats: (days: number = 7) =>
-    api.get(`/behaviors/stats?days=${days}`),
+    api.get<BehaviorStatsResponse>(`/behaviors/stats?days=${days}`),
   getLogs: (skip: number = 0, limit: number = 50) =>
-    api.get(`/behaviors/logs?skip=${skip}&limit=${limit}`),
+    api.get<BehaviorLogsResponse>(`/behaviors/logs?skip=${skip}&limit=${limit}`),
   logBehavior: (actionType: string, details: string) =>
-    api.post('/behaviors/log', { action_type: actionType, details }),
+    api.post<{ ok: boolean; message?: string }>('/behaviors/log', { action_type: actionType, details }),
 }
 
 export interface WeixinConfig {

@@ -3,6 +3,7 @@
  */
 import React, { useCallback } from 'react'
 import { Send, Loader2 } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { useTtsStore } from '../store/ttsStore'
 import { ttsApi } from '../ttsApi'
 import AudioPlayer from './AudioPlayer'
@@ -25,6 +26,7 @@ const FORMATS = [
 ]
 
 const TextToSpeech: React.FC = () => {
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     text, setText,
     speedRatio, setSpeedRatio,
@@ -38,7 +40,31 @@ const TextToSpeech: React.FC = () => {
     isStreaming, setIsStreaming,
     audioBlob, setAudioBlob,
     audioUrl, setAudioUrl,
-  } = useTtsStore()
+  } = useTtsStore(s => ({
+    text: s.text,
+    setText: s.setText,
+    speedRatio: s.speedRatio,
+    setSpeedRatio: s.setSpeedRatio,
+    volumeRatio: s.volumeRatio,
+    setVolumeRatio: s.setVolumeRatio,
+    pitchRatio: s.pitchRatio,
+    setPitchRatio: s.setPitchRatio,
+    emotion: s.emotion,
+    setEmotion: s.setEmotion,
+    emotionScale: s.emotionScale,
+    setEmotionScale: s.setEmotionScale,
+    audioFormat: s.audioFormat,
+    setAudioFormat: s.setAudioFormat,
+    selectedSpeakerId: s.selectedSpeakerId,
+    isSynthesizing: s.isSynthesizing,
+    setIsSynthesizing: s.setIsSynthesizing,
+    isStreaming: s.isStreaming,
+    setIsStreaming: s.setIsStreaming,
+    audioBlob: s.audioBlob,
+    setAudioBlob: s.setAudioBlob,
+    audioUrl: s.audioUrl,
+    setAudioUrl: s.setAudioUrl,
+  }), shallow)
 
   const handleSynthesize = useCallback(async () => {
     if (!text.trim() || isSynthesizing) return

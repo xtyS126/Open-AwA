@@ -1,24 +1,48 @@
 /**
  * 声音复刻组件 — 上传音频样本，创建专属音色。
  */
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { Upload, Loader2, CheckCircle, XCircle } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { ttsApi } from '../ttsApi'
 import { useTtsStore } from '../store/ttsStore'
 import styles from './VoiceCloner.module.css'
 
 const VoiceCloner: React.FC = () => {
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     cloneProgress, cloneStatus, cloneSpeakerId, cloneError,
     setCloneProgress, setCloneStatus, setCloneSpeakerId, setCloneError,
     resetCloneState, loadSpeakers,
-  } = useTtsStore()
+  } = useTtsStore(s => ({
+    cloneProgress: s.cloneProgress,
+    cloneStatus: s.cloneStatus,
+    cloneSpeakerId: s.cloneSpeakerId,
+    cloneError: s.cloneError,
+    setCloneProgress: s.setCloneProgress,
+    setCloneStatus: s.setCloneStatus,
+    setCloneSpeakerId: s.setCloneSpeakerId,
+    setCloneError: s.setCloneError,
+    resetCloneState: s.resetCloneState,
+    loadSpeakers: s.loadSpeakers,
+  }), shallow)
 
   const [voiceName, setVoiceName] = useState('')
   const [contextTexts, setContextTexts] = useState('')
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 组件卸载时清理轮询定时器，防止状态更新作用于已卸载组件
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }
+  }, [])
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -61,32 +85,41 @@ const VoiceCloner: React.FC = () => {
       setCloneProgress(10)
 
       // 轮询训练状态
-      const pollInterval = setInterval(async () => {
+      pollIntervalRef.current = setInterval(async () => {
         try {
           const status = await ttsApi.getCloneStatus(result.speaker_id)
           if (status.status === 'ready') {
-            clearInterval(pollInterval)
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current)
+              pollIntervalRef.current = null
+            }
             setCloneStatus('ready')
             setCloneProgress(100)
             loadSpeakers()
           } else if (status.status === 'failed') {
-            clearInterval(pollInterval)
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current)
+              pollIntervalRef.current = null
+            }
             setCloneStatus('failed')
             setCloneError(status.error_message || '训练失败')
           } else {
-            setCloneProgress(Math.min(cloneProgress + 5, 90))
+            // 使用 getState 读取最新进度，避免闭包陈旧值
+            const currentProgress = useTtsStore.getState().cloneProgress
+            setCloneProgress(Math.min(currentProgress + 5, 90))
           }
         } catch {
           // 轮询出错不中断
         }
       }, 3000)
-    } catch (e: any) {
+    } catch (e: unknown) {
       setCloneStatus('failed')
-      setCloneError(e?.response?.data?.detail || e?.message || '复刻请求失败')
+      const err = e as { response?: { data?: { detail?: string } }; message?: string }
+      setCloneError(err?.response?.data?.detail || err?.message || '复刻请求失败')
     } finally {
       setIsSubmitting(false)
     }
-  }, [voiceName, audioFile, contextTexts, isSubmitting, cloneProgress, setCloneError, setCloneStatus, setCloneSpeakerId, setCloneProgress, loadSpeakers])
+  }, [voiceName, audioFile, contextTexts, isSubmitting, setCloneError, setCloneStatus, setCloneSpeakerId, setCloneProgress, loadSpeakers])
 
   const handleReset = useCallback(() => {
     resetCloneState()

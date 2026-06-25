@@ -2,7 +2,8 @@ import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from '@/features/settings/SettingsPage'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 const modelApiMocks = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ const modelApiMocks = vi.hoisted(() => ({
   updateConfiguration: vi.fn(),
   saveProviderCredential: vi.fn(),
   getProviderCredential: vi.fn(),
+  getProviderCatalog: vi.fn(),
 }))
 
 const billingApiMocks = vi.hoisted(() => ({
@@ -91,11 +93,13 @@ describe('SettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
-    useChatStore.setState({
+    useModelStore.setState({
       selectedModel: '',
       modelOptions: [],
       modelLoading: false,
       modelError: null,
+    })
+    usePreferenceStore.setState({
       outputMode: 'stream',
     })
 
@@ -218,6 +222,14 @@ describe('SettingsPage', () => {
     })
     modelApiMocks.createConfiguration.mockResolvedValue({ data: { success: true } })
     modelApiMocks.saveProviderCredential.mockResolvedValue({ data: { success: true } })
+    modelApiMocks.getProviderCatalog.mockResolvedValue({
+      data: {
+        providers: [
+          { id: 'openai', name: 'OpenAI', display_name: 'OpenAI', base_url: 'https://api.openai.com/v1', source: 'pricing_data' },
+          { id: 'anthropic', name: 'Anthropic', display_name: 'Anthropic', base_url: 'https://api.anthropic.com/v1', source: 'pricing_data' },
+        ],
+      },
+    })
     modelApiMocks.updateConfiguration.mockResolvedValue({ data: {} })
     modelApiMocks.updateParameters.mockResolvedValue({ data: { success: true } })
     modelApiMocks.resetParameters.mockResolvedValue({
@@ -265,19 +277,28 @@ describe('SettingsPage', () => {
     expect(within(dialog).queryByText('API Key（可选）')).not.toBeInTheDocument()
     expect(within(dialog).queryByText('最大 Token 数（可选）')).not.toBeInTheDocument()
 
-    const providerSelect = within(dialog).getByLabelText('供应商标识')
+    // 等待供应商目录加载完成（select 不再 disabled）
+    const providerSelect = await screen.findByLabelText('供应商标识')
+    await waitFor(() => {
+      expect(providerSelect).not.toBeDisabled()
+    })
+
     fireEvent.change(providerSelect, { target: { value: 'openai' } })
 
     const baseUrlInput = screen.getByPlaceholderText('https://api.example.com/v1') as HTMLInputElement
     const displayNameInput = screen.getByLabelText('显示名称（可选）') as HTMLInputElement
 
-    expect(displayNameInput.value).toBe('OpenAI')
-    expect(baseUrlInput.value).toBe('https://api.openai.com/v1')
+    await waitFor(() => {
+      expect(displayNameInput.value).toBe('OpenAI')
+      expect(baseUrlInput.value).toBe('https://api.openai.com/v1')
+    })
 
     fireEvent.change(providerSelect, { target: { value: 'anthropic' } })
 
-    expect(displayNameInput.value).toBe('Anthropic')
-    expect(baseUrlInput.value).toBe('https://api.anthropic.com/v1')
+    await waitFor(() => {
+      expect(displayNameInput.value).toBe('Anthropic')
+      expect(baseUrlInput.value).toBe('https://api.anthropic.com/v1')
+    })
   })
 
   it('提交新增供应商表单时仅发送显示名称和规范化基础 URL', async () => {
@@ -285,7 +306,13 @@ describe('SettingsPage', () => {
 
     fireEvent.click(await screen.findByText('新增供应商'))
 
-    fireEvent.change(screen.getByLabelText('供应商标识'), { target: { value: 'openai' } })
+    // 等待供应商目录加载完成
+    const providerSelect = await screen.findByLabelText('供应商标识')
+    await waitFor(() => {
+      expect(providerSelect).not.toBeDisabled()
+    })
+
+    fireEvent.change(providerSelect, { target: { value: 'openai' } })
     fireEvent.change(screen.getByLabelText('显示名称（可选）'), { target: { value: 'OpenAI 国际站' } })
     fireEvent.change(screen.getByLabelText('基础 URL（可选）'), {
       target: { value: 'https://api.openai.com/v1/chat/completions' }
@@ -310,7 +337,10 @@ describe('SettingsPage', () => {
     renderSettingsGeneralTab()
 
     expect(modelApiMocks.getModelsByProvider).not.toHaveBeenCalled()
-    expect(screen.getByText('加载远端模型')).toBeInTheDocument()
+    // 等待懒加载的 GeneralTabContainer 完成渲染
+    await waitFor(() => {
+      expect(screen.getByText('加载远端模型')).toBeInTheDocument()
+    })
 
     fireEvent.click(screen.getByText('加载远端模型'))
 

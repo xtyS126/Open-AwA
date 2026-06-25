@@ -26,7 +26,7 @@ async def run_startup(tasks: list[StartupTask], profiler: StartupProfiler) -> No
     编排启动流程：
     1. 过滤：dev_fast 模式下跳过标记为 skip_in_dev_fast 的任务
     2. 按 tier 分层执行
-    3. BLOCKING 任务按依赖顺序执行完毕后，服务 ready
+    3. BLOCKING 任务按依赖拓扑排序执行，同一 ready 批次内并行，服务 ready
     4. WARMUP 任务在后台异步执行
     """
     dev_fast = is_dev_fast_start()
@@ -51,7 +51,8 @@ async def run_startup(tasks: list[StartupTask], profiler: StartupProfiler) -> No
     # 执行 BLOCKING 任务（拓扑排序按依赖）
     completed: set[str] = set()
 
-    async def execute_blocking(task: StartupTask) -> None:
+    async def execute_blocking(task: StartupTask) -> str:
+        # 依赖校验：依赖必须已完成（不直接更新 completed，避免并行竞态）
         for dep in task.depends_on:
             if dep not in completed:
                 raise RuntimeError(
@@ -59,9 +60,11 @@ async def run_startup(tasks: list[StartupTask], profiler: StartupProfiler) -> No
                 )
         with profiler.step(task.name):
             await task.coro()
-        completed.add(task.name)
+        return task.name
 
-    # 简单的拓扑执行：多轮扫描直到全部完成
+    # 拓扑执行：多轮扫描，每轮收集 ready 任务（所有依赖已完成）
+    # 同一 ready 批次内任务无相互依赖，用 asyncio.gather 并行执行
+    # 不同批次之间串行（后一批依赖前一批的结果）
     remaining = list(blocking)
     while remaining:
         ready = [t for t in remaining if all(d in completed for d in t.depends_on)]
@@ -69,9 +72,9 @@ async def run_startup(tasks: list[StartupTask], profiler: StartupProfiler) -> No
             # 存在未满足依赖或循环依赖
             unresolved = [t.name for t in remaining]
             raise RuntimeError(f"无法解析的启动任务依赖: {unresolved}")
-        # BLOCKING 任务串行执行以保证确定性
-        for task in ready:
-            await execute_blocking(task)
+        # 同一 ready 批次内并行执行，gather 完成后统一更新 completed 集合
+        results = await asyncio.gather(*[execute_blocking(t) for t in ready])
+        completed.update(results)
         remaining = [t for t in remaining if t.name not in completed]
 
     logger.bind(event="startup_ready", module="startup").info("核心启动完成，服务已就绪")

@@ -4,6 +4,7 @@
  * 底部：Git 面板
  */
 import React, { useEffect, useState, useCallback } from 'react'
+import { shallow } from 'zustand/shallow'
 import FileTree from './components/FileTree'
 import EditorPane from './components/EditorPane'
 import DiffView from './components/DiffView'
@@ -14,18 +15,41 @@ import ModeSwitcher, { type ExecutionMode } from './components/ModeSwitcher'
 import { useCodingStore } from './store/codingStore'
 import { codingApi } from './codingApi'
 import { appLogger } from '@/shared/utils/logger'
+import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import styles from './CodingPage.module.css'
 
+// 搜索结果项（来自 AST 搜索接口）
+interface SearchResultItem {
+  file?: string
+  line?: number
+  column?: number
+  name?: string
+  kind?: string
+  type?: string
+  match?: string
+  [key: string]: unknown
+}
+
 const CodingPage: React.FC = () => {
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     setProjectDir, projectDir, ccModeEnabled, toggleCCMode,
     diffMode, setDiffMode, openFiles, activeFilePath,
-  } = useCodingStore()
+  } = useCodingStore(s => ({
+    setProjectDir: s.setProjectDir,
+    projectDir: s.projectDir,
+    ccModeEnabled: s.ccModeEnabled,
+    toggleCCMode: s.toggleCCMode,
+    diffMode: s.diffMode,
+    setDiffMode: s.setDiffMode,
+    openFiles: s.openFiles,
+    activeFilePath: s.activeFilePath,
+  }), shallow)
   const [showGit, setShowGit] = useState(false)
   const [showTerminal, setShowTerminal] = useState(false)
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('solo')
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([])
   const [diffData, setDiffData] = useState<{ original: string; modified: string; filePath: string } | null>(null)
   const [layouts] = useState({
     fileTreeWidth: 240,
@@ -62,7 +86,7 @@ const CodingPage: React.FC = () => {
     }
   }, [searchQuery, projectDir])
 
-  const handleResultClick = async (result: any) => {
+  const handleResultClick = async (result: SearchResultItem) => {
     if (result.file) {
       try {
         const data = await codingApi.readFile(result.file, projectDir || undefined)
@@ -162,23 +186,27 @@ const CodingPage: React.FC = () => {
       <div className={styles.mainPanel}>
         {/* 左侧：文件树 */}
         <div className={styles.leftPanel} style={{ width: layouts.fileTreeWidth }}>
-          <FileTree />
+          <ErrorBoundary name="FileTree">
+            <FileTree />
+          </ErrorBoundary>
         </div>
 
         {/* 中间：编辑器或 Diff 视图 */}
         <div className={styles.centerPanel}>
-          {diffMode && diffData ? (
-            <DiffView
-              original={diffData.original}
-              modified={diffData.modified}
-              filePath={diffData.filePath}
-              language={activeFile?.language}
-              onAccept={handleAcceptDiff}
-              onReject={handleRejectDiff}
-            />
-          ) : (
-            <EditorPane />
-          )}
+          <ErrorBoundary name="EditorPane">
+            {diffMode && diffData ? (
+              <DiffView
+                original={diffData.original}
+                modified={diffData.modified}
+                filePath={diffData.filePath}
+                language={activeFile?.language}
+                onAccept={handleAcceptDiff}
+                onReject={handleRejectDiff}
+              />
+            ) : (
+              <EditorPane />
+            )}
+          </ErrorBoundary>
           {/* 搜索结果覆盖层 */}
           {searchResults.length > 0 && (
             <div className={styles.searchResults}>
@@ -208,24 +236,30 @@ const CodingPage: React.FC = () => {
 
         {/* 右侧：Coding 聊天助手面板 */}
         <div className={styles.rightPanel}>
-          <CodingChatPanel />
+          <ErrorBoundary name="CodingChatPanel">
+            <CodingChatPanel />
+          </ErrorBoundary>
         </div>
       </div>
 
       {/* 底部：终端面板 */}
       {showTerminal && (
         <div className={styles.bottomPanel} style={{ height: layouts.terminalPanelHeight }}>
-          <TerminalPanel
-            cwd={projectDir || undefined}
-            onClose={() => setShowTerminal(false)}
-          />
+          <ErrorBoundary name="TerminalPanel">
+            <TerminalPanel
+              cwd={projectDir || undefined}
+              onClose={() => setShowTerminal(false)}
+            />
+          </ErrorBoundary>
         </div>
       )}
 
       {/* 底部：Git 面板 */}
       {showGit && (
         <div className={styles.bottomPanel} style={{ height: layouts.gitPanelHeight }}>
-          <GitPanel onFileClick={handleGitFileClick} />
+          <ErrorBoundary name="GitPanel">
+            <GitPanel onFileClick={handleGitFileClick} />
+          </ErrorBoundary>
         </div>
       )}
     </div>

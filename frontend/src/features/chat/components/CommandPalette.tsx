@@ -11,7 +11,8 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ inputValue, onSelectCommand, visible }: CommandPaletteProps) {
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   const [commands, setCommands] = useState<MagicCommand[]>([])
   const [filtered, setFiltered] = useState<MagicCommand[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)

@@ -1402,6 +1402,12 @@ const enUS: Record<string, string> = {
   // ===== Sidebar Extras =====
   "sidebar.tts": "TTS Voice",
   "sidebar.agents": "Agents",
+  "sidebar.roles": "Roles",
+  "sidebar.roleMarket": "Role Market",
+  "sidebar.data": "Data Dashboard",
+  "sidebar.workflows": "Workflows",
+  "sidebar.subagents": "Sub-Agents",
+  "sidebar.im": "IM Channels",
 
   // ===== Chat Extras =====
   "chat.empty": "Hello! How can I help you?",

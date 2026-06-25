@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Shield, Monitor, Camera, Loader2, AlertCircle, BarChart3,
 } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { useAuthStore } from '@/shared/store/authStore'
 import { userAPI, passwordAPI } from '@/shared/api/api'
 import type { LoginDeviceItem } from '@/shared/api/api'
@@ -14,7 +15,11 @@ type TabKey = 'profile' | 'security' | 'devices'
 
 function UserCenterPage() {
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { user, logout } = useAuthStore(s => ({
+    user: s.user,
+    logout: s.logout,
+  }), shallow)
 
   const [activeTab, setActiveTab] = useState<TabKey>('profile')
   const [loading, setLoading] = useState(true)

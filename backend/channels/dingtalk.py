@@ -46,7 +46,7 @@ class DingTalkAdapter(ChannelAdapter):
                 json={"appKey": client_id, "appSecret": client_secret},
             )
             if resp.status_code != 200:
-                logger.error(f"钉钉获取 token 失败: {resp.text}")
+                logger.error(f"钉钉获取 token 失败: status={resp.status_code}")
                 return False
 
             data = resp.json()
@@ -59,7 +59,7 @@ class DingTalkAdapter(ChannelAdapter):
                 json={"clientId": client_id, "userAgent": "Open-AwA"},
             )
             if resp2.status_code != 200:
-                logger.error(f"钉钉获取连接信息失败: {resp2.text}")
+                logger.error(f"钉钉获取连接信息失败: status={resp2.status_code}")
                 return False
 
             conn_data = resp2.json()

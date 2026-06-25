@@ -3,15 +3,23 @@
  */
 import React, { useEffect } from 'react'
 import { Mic, Trash2 } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { useTtsStore } from '../store/ttsStore'
 import { ttsApi } from '../ttsApi'
 import styles from './VoiceLibrary.module.css'
 
 const VoiceLibrary: React.FC = () => {
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
   const {
     speakers, selectedSpeakerId, setSelectedSpeaker,
     speakersLoading, loadSpeakers,
-  } = useTtsStore()
+  } = useTtsStore(s => ({
+    speakers: s.speakers,
+    selectedSpeakerId: s.selectedSpeakerId,
+    setSelectedSpeaker: s.setSelectedSpeaker,
+    speakersLoading: s.speakersLoading,
+    loadSpeakers: s.loadSpeakers,
+  }), shallow)
 
   useEffect(() => {
     loadSpeakers()

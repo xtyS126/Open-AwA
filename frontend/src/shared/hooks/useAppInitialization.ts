@@ -6,7 +6,8 @@ import { loadServerPreferences } from '@/shared/utils/preferenceSync'
 import { safeGetItem } from '@/shared/utils/safeStorage'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 
 interface UserProfile {
   username: string
@@ -36,24 +37,24 @@ function rehydrateStores() {
 
   const selectedModel = safeGetItem('chat_selected_model', '')
   if (selectedModel) {
-    useChatStore.getState().setSelectedModel(selectedModel, { syncToServer: false })
+    useModelStore.getState().setSelectedModel(selectedModel, { syncToServer: false })
   }
 
   const outputMode = safeGetItem('chat_output_mode', '') as 'stream' | 'direct'
   if (outputMode === 'stream' || outputMode === 'direct') {
-    useChatStore.getState().setOutputMode(outputMode, { syncToServer: false })
+    usePreferenceStore.getState().setOutputMode(outputMode, { syncToServer: false })
   }
 
   const thinkingEnabled = safeGetItem('chat_thinking_enabled', '')
   if (thinkingEnabled !== '') {
-    useChatStore.getState().setThinkingEnabled(thinkingEnabled === 'true', { syncToServer: false })
+    usePreferenceStore.getState().setThinkingEnabled(thinkingEnabled === 'true', { syncToServer: false })
   }
 
   const thinkingDepth = safeGetItem('chat_thinking_depth', '')
   if (thinkingDepth !== '') {
     const parsed = Number(thinkingDepth)
     if (parsed >= 0 && parsed <= 5) {
-      useChatStore.getState().setThinkingDepth(parsed, { syncToServer: false })
+      usePreferenceStore.getState().setThinkingDepth(parsed, { syncToServer: false })
     }
   }
 }

@@ -10,7 +10,7 @@ import re
 import time
 import urllib.parse
 from collections import OrderedDict
-from typing import Awaitable, Dict, Any, Optional, Callable
+from typing import Awaitable, Dict, Any, Optional, Callable, List, Tuple
 
 import httpx
 from loguru import logger
@@ -25,6 +25,7 @@ from core.litellm_adapter import (
     litellm_chat_completion,
     litellm_chat_completion_stream,
 )
+from core.tool_use_context import ToolUseContext, coerce_tool_context
 from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
 
@@ -1186,8 +1187,12 @@ class ExecutionLayer:
             messages.append(assistant_msg)
 
             _abort = False
-            for tc in tool_calls:
-                exec_result = await self._execute_tool_call(tc, context)
+            # 使用 StreamingToolExecutor 并发调度工具调用
+            # 只读并发安全工具可同时执行，破坏性工具串行执行
+            ordered_results = await self._execute_tool_calls_concurrent(
+                tool_calls, context
+            )
+            for tc, exec_result in ordered_results:
                 if exec_result.get("ok"):
                     consecutive_errors = 0
                 else:
@@ -1336,7 +1341,36 @@ class ExecutionLayer:
                 thinking_params=_thinking_params,
             )
 
-            async for chunk in stream_gen:
+            # 流式整体超时控制：每个 chunk 之间最长等待 STREAM_CHUNK_TIMEOUT_SECONDS
+            # 防止 LLM 服务 hang 住但不断开连接导致永久阻塞
+            STREAM_CHUNK_TIMEOUT_SECONDS = 120.0
+            stream_iter = stream_gen.__aiter__()
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        stream_iter.__anext__(),
+                        timeout=STREAM_CHUNK_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    duration_ms = int((time.perf_counter() - started_at) * 1000)
+                    record_model_service_metric(resolved["provider"], "chat_stream", "timeout", duration_ms)
+                    logger.bind(
+                        event="llm_stream_timeout",
+                        module="executor",
+                        provider=resolved["provider"],
+                        model=resolved["model"],
+                        timeout_seconds=STREAM_CHUNK_TIMEOUT_SECONDS,
+                    ).error(f"流式 LLM 调用超时（{STREAM_CHUNK_TIMEOUT_SECONDS}s 无响应）")
+                    yield {
+                        "error": {
+                            "message": f"流式响应超时（{STREAM_CHUNK_TIMEOUT_SECONDS}s 无数据）",
+                            "type": "timeout",
+                        }
+                    }
+                    return
+                except StopAsyncIteration:
+                    break
+
                 # 错误事件直接转发
                 if "error" in chunk:
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
@@ -1552,6 +1586,87 @@ class ExecutionLayer:
         ).info(f"权限请求回复: {tool_name} -> {reply}")
         return reply
 
+    async def _apply_post_tool_use_hooks(
+        self,
+        result: Dict[str, Any],
+        tool_name: str,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        应用 PostToolUse 钩子（hook_manager 系统）。
+
+        处理 MODIFY_OUTPUT 和 PREVENT_CONTINUATION 结果类型：
+        - MODIFY_OUTPUT: 使用 hook_updated_output 修改后的输出替换原始结果
+        - PREVENT_CONTINUATION: 在结果中设置 prevent_continuation 标志位
+        """
+        try:
+            from core.hook_manager import (
+                HookContext as _HookContext,
+                HookName as _HookName,
+                HookResultType as _HookResultType,
+                hook_manager as _hook_manager,
+                hook_updated_output as _hook_updated_output,
+            )
+            _post_results = await _hook_manager.trigger(
+                _HookName.TOOL_AFTER_EXECUTE,
+                data={
+                    "tool_name": tool_name,
+                    "result": result,
+                    "context": context,
+                },
+                context=_HookContext(
+                    hook_name=_HookName.TOOL_AFTER_EXECUTE.value,
+                    session_id=str(context.get("session_id", "") or "") or None,
+                    user_id=str(context.get("user_id", "") or "") or None,
+                ),
+            )
+            # 应用 MODIFY_OUTPUT：最后一个非 None 的 modified_output 生效
+            result = _hook_updated_output(_post_results, result)
+            # 检查 PREVENT_CONTINUATION：设置标志位
+            for _post_result in _post_results:
+                if _post_result.result_type == _HookResultType.PREVENT_CONTINUATION:
+                    if isinstance(result, dict):
+                        result["prevent_continuation"] = True
+                        if _post_result.reason:
+                            result["prevent_continuation_reason"] = _post_result.reason
+                    break
+        except ImportError:
+            logger.warning("[PostToolUse] hook_manager 模块导入失败，跳过 PostToolUse 钩子")
+        return result
+
+    def _build_tool_use_context(self, context: Dict[str, Any]) -> ToolUseContext:
+        """
+        从执行上下文 Dict 构造 ToolUseContext 实例，用于显式依赖注入到工具 execute 函数。
+
+        渐进式迁移：将散乱的 context Dict 中的标识字段、中止控制器、内容替换状态与回调
+        集中到 ToolUseContext，工具可通过 coerce_tool_context 适配器获取。
+
+        Args:
+            context: 执行上下文 Dict，包含 session_id/user_id/agent_id 等字段
+
+        Returns:
+            构造完成的 ToolUseContext 实例
+        """
+        return ToolUseContext(
+            session_id=str(context.get("session_id", "") or ""),
+            user_id=str(context.get("user_id", "") or ""),
+            agent_id=str(context.get("agent_id", context.get("session_id", "")) or ""),
+            abort_controller=context.get("abort_controller"),
+            content_replacement_state=context.get("content_replacement_state"),
+            record_usage=context.get("record_usage"),
+            record_latency=context.get("record_latency"),
+            spawn_subagent=context.get("spawn_subagent"),
+            metadata={
+                k: v for k, v in context.items()
+                if k not in {
+                    "session_id", "user_id", "agent_id",
+                    "abort_controller", "content_replacement_state",
+                    "record_usage", "record_latency", "spawn_subagent",
+                    "_tool_use_context",
+                }
+            },
+        )
+
     async def _execute_tool_call(
         self,
         tool_call: Dict[str, Any],
@@ -1573,6 +1688,10 @@ class ExecutionLayer:
 
         if not func_name:
             return {"ok": False, "error": "tool_call missing function name"}
+
+        # 构造 ToolUseContext，供工具 execute 函数通过显式依赖注入访问
+        # 不直接修改 context，避免污染传入 spawn_agent 等下游调用方的上下文
+        _tool_use_context = self._build_tool_use_context(context)
 
         # 自主模式：四层安全洋葱检查（非阻塞，拒绝即返回）
         try:
@@ -1652,6 +1771,55 @@ class ExecutionLayer:
         except ImportError:
             logger.warning("[PreToolUse] 钩子调度模块导入失败，工具调用前校验已跳过")
 
+        # PreToolUse 钩子（hook_manager 系统）：支持 APPROVE/DENY/MODIFY_INPUT/REPLACE_RESULT/ERROR
+        try:
+            from core.hook_manager import (
+                HookContext as _HookContext,
+                HookName as _HookName,
+                HookResultType as _HookResultType,
+                hook_manager as _hook_manager,
+                hook_updated_input as _hook_updated_input,
+            )
+            _pre_results = await _hook_manager.trigger(
+                _HookName.TOOL_BEFORE_EXECUTE,
+                data={
+                    "tool_name": func_name,
+                    "tool_args": func_args,
+                    "context": context,
+                },
+                context=_HookContext(
+                    hook_name=_HookName.TOOL_BEFORE_EXECUTE.value,
+                    session_id=str(context.get("session_id", "") or "") or None,
+                    user_id=str(context.get("user_id", "") or "") or None,
+                ),
+            )
+            for _pre_result in _pre_results:
+                if _pre_result.result_type == _HookResultType.DENY:
+                    return {
+                        "ok": False,
+                        "error": _pre_result.reason or f"工具调用被钩子拒绝: {func_name}",
+                        "blocked_by_hook": True,
+                        "tool_name": func_name,
+                    }
+                if _pre_result.result_type == _HookResultType.ERROR:
+                    return {
+                        "ok": False,
+                        "error": _pre_result.error_message or "PreToolUse 钩子执行错误",
+                        "blocked_by_hook": True,
+                        "tool_name": func_name,
+                    }
+                if _pre_result.result_type == _HookResultType.REPLACE_RESULT:
+                    return {
+                        "ok": True,
+                        "result": _pre_result.replace_result,
+                        "tool_name": func_name,
+                        "replaced_by_hook": True,
+                    }
+            # 合并所有 MODIFY_INPUT 结果到 func_args
+            func_args = _hook_updated_input(_pre_results, func_args)
+        except ImportError:
+            logger.warning("[PreToolUse] hook_manager 模块导入失败，跳过 hook_manager 钩子校验")
+
         if func_name.startswith("plugin_"):
             remaining = func_name[len("plugin_"):]
             if "__" in remaining:
@@ -1697,7 +1865,8 @@ class ExecutionLayer:
                 # 检查插件返回结果状态，非成功状态标记为失败
                 if isinstance(result, dict) and result.get("status") == "error":
                     return {"ok": False, "error": result.get("message", "Plugin returned error"), "result": result, "tool_name": func_name}
-                return {"ok": True, "result": result, "tool_name": func_name}
+                _plugin_output = {"ok": True, "result": result, "tool_name": func_name}
+                return await self._apply_post_tool_use_hooks(_plugin_output, func_name, context)
             except Exception as exc:
                 logger.bind(
                     module="executor",
@@ -1716,7 +1885,8 @@ class ExecutionLayer:
             try:
                 manager = MCPManager()
                 result = await manager.call_tool(server_id, mcp_tool_name, func_args)
-                return {"ok": True, "result": result, "tool_name": func_name}
+                _mcp_output = {"ok": True, "result": result, "tool_name": func_name}
+                return await self._apply_post_tool_use_hooks(_mcp_output, func_name, context)
             except Exception as exc:
                 logger.bind(
                     module="executor",
@@ -1728,6 +1898,8 @@ class ExecutionLayer:
 
         if func_name.startswith("builtin_"):
             builtin_name = func_name[len("builtin_"):]
+            # 构造包含 ToolUseContext 的工具执行上下文副本，避免污染原 context
+            tool_exec_context = {**context, "_tool_use_context": _tool_use_context}
             # 优先通过 ToolRegistry 执行（支持权限检查、截断、统计等）
             _tool_reg = None
             try:
@@ -1738,8 +1910,8 @@ class ExecutionLayer:
                 try:
                     registered_tool = _tool_reg.get(func_name)
                     if registered_tool and registered_tool.execute:
-                        exec_result = await _tool_reg.execute(func_name, func_args, context)
-                        return {
+                        exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
+                        _builtin_reg_output = {
                             "ok": exec_result.status.value == "completed",
                             "result": exec_result.result,
                             "error": exec_result.error,
@@ -1748,6 +1920,7 @@ class ExecutionLayer:
                             "output_path": exec_result.output_path,
                             "execution_time_ms": exec_result.execution_time_ms,
                         }
+                        return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
                 except ImportError:
                     pass  # ToolRegistry 模块不可用时回退到直接执行
                 except PermissionError:
@@ -1766,8 +1939,8 @@ class ExecutionLayer:
                         }
                     # 用户允许（once/always），重新执行工具
                     try:
-                        exec_result = await _tool_reg.execute(func_name, func_args, context)
-                        return {
+                        exec_result = await _tool_reg.execute(func_name, func_args, tool_exec_context)
+                        _builtin_reg_output = {
                             "ok": exec_result.status.value == "completed",
                             "result": exec_result.result,
                             "error": exec_result.error,
@@ -1776,6 +1949,7 @@ class ExecutionLayer:
                             "output_path": exec_result.output_path,
                             "execution_time_ms": exec_result.execution_time_ms,
                         }
+                        return await self._apply_post_tool_use_hooks(_builtin_reg_output, func_name, context)
                     except PermissionError:
                         # 用户授权后仍被拒绝（可能是 always 规则尚未持久化生效）
                         return {
@@ -1802,7 +1976,8 @@ class ExecutionLayer:
             try:
                 result = await builtin_tool_manager.execute_tool(builtin_name, func_args)
                 ok = bool(result.get("success"))
-                return {"ok": ok, "result": result, "tool_name": func_name}
+                _builtin_output = {"ok": ok, "result": result, "tool_name": func_name}
+                return await self._apply_post_tool_use_hooks(_builtin_output, func_name, context)
             except Exception as exc:
                 logger.bind(
                     module="executor",
@@ -1996,6 +2171,98 @@ class ExecutionLayer:
             pass  # 数据收集不影响主流程
 
         return output
+
+    async def _execute_tool_calls_concurrent(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        context: Dict[str, Any],
+    ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        """
+        使用 StreamingToolExecutor 并发调度工具调用。
+
+        调度策略：
+        - 只读且并发安全的工具可同时执行
+        - 破坏性工具串行执行
+        - 队列中有破坏性工具时阻塞其他工具
+
+        返回结果按原始 tool_calls 顺序排列，保持与同步执行相同的接口契约。
+
+        Args:
+            tool_calls: 工具调用列表
+            context: 执行上下文
+
+        Returns:
+            (tool_call, exec_result) 元组列表，按原始顺序排列
+        """
+        from core.streaming_tool_executor import StreamingToolExecutor
+        from core.tool_registry import tool_registry as global_tool_registry
+
+        streaming_executor = StreamingToolExecutor(
+            tool_registry=global_tool_registry,
+            max_concurrent=5,
+        )
+
+        # 提交所有工具调用到调度队列
+        for tc in tool_calls:
+            tc_id = tc.get("id", "")
+            func_name = tc.get("function", {}).get("name", "")
+            func_args_str = tc.get("function", {}).get("arguments", "{}")
+            try:
+                func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+            except json.JSONDecodeError:
+                func_args = {}
+            streaming_executor.submit(tc_id, func_name, func_args)
+
+        # 工具执行函数：构造合成 tool_call 并委托给 _execute_tool_call
+        async def _execute_fn(tool_name: str, input_params: dict) -> Dict[str, Any]:
+            synthetic_tc = {
+                "id": "",
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": json.dumps(input_params, ensure_ascii=False),
+                },
+            }
+            return await self._execute_tool_call(synthetic_tc, context)
+
+        # 启动调度循环（后台任务，与 yield_completed 并发运行）
+        schedule_task = asyncio.create_task(
+            streaming_executor.process_queue(_execute_fn)
+        )
+
+        # 收集结果，按 tool_call_id 映射
+        results_by_id: Dict[str, Any] = {}
+        async for tracked in streaming_executor.yield_completed():
+            results_by_id[tracked.tool_call_id] = tracked
+
+        # 确保调度任务完成
+        await schedule_task
+
+        # 按原始顺序构建结果列表，保持与同步执行相同的接口契约
+        ordered_results: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+        for tc in tool_calls:
+            tc_id = tc.get("id", "")
+            tracked = results_by_id.get(tc_id)
+            if tracked is None:
+                # 防御性处理：结果丢失视为失败
+                exec_result = {"ok": False, "error": f"工具结果丢失: {tc_id}"}
+            elif tracked.error is not None:
+                exec_result = {
+                    "ok": False,
+                    "error": str(tracked.error),
+                    "tool_name": tracked.tool_name,
+                }
+            elif isinstance(tracked.result, dict):
+                exec_result = tracked.result
+            else:
+                exec_result = {
+                    "ok": True,
+                    "result": tracked.result,
+                    "tool_name": tracked.tool_name,
+                }
+            ordered_results.append((tc, exec_result))
+
+        return ordered_results
 
     @staticmethod
     def _build_tool_message(tool_call: Dict[str, Any], exec_result: Dict[str, Any]) -> Dict[str, Any]:

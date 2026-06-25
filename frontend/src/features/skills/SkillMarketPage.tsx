@@ -11,7 +11,8 @@ const SOURCE_LABELS: Record<string, string> = { clawhub: 'ClawHub', 'skills.sh':
 const SOURCE_COLORS: Record<string, string> = { clawhub: '#8b5cf6', 'skills.sh': '#f59e0b', github: '#333', modelscope: '#06b6d4' };
 
 const SkillMarketPage: React.FC = () => {
-  const { t } = useI18nStore();
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t);
   const [skills, setSkills] = useState<MarketSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

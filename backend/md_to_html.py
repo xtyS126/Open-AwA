@@ -24,6 +24,8 @@ import sys
 import time
 from pathlib import Path
 
+from loguru import logger
+
 
 def escape_html(text: str) -> str:
     """转义HTML特殊字符"""
@@ -312,8 +314,8 @@ def watch_mode(input_path: str, output_path: str = None, style: str = 'default')
     input_path = Path(input_path)
     last_mtime = input_path.stat().st_mtime if input_path.exists() else 0
     
-    print(f"👀 监视模式已启动: {input_path}")
-    print("   按 Ctrl+C 退出")
+    logger.info(f"[WATCH] 监视模式已启动: {input_path}")
+    logger.info("   按 Ctrl+C 退出")
     
     try:
         while True:
@@ -323,12 +325,12 @@ def watch_mode(input_path: str, output_path: str = None, style: str = 'default')
                     last_mtime = current_mtime
                     try:
                         out = convert_file(str(input_path), output_path, style)
-                        print(f"✅ 已转换: {input_path} → {out} ({time.strftime('%H:%M:%S')})")
+                        logger.info(f"[DONE] 已转换: {input_path} → {out} ({time.strftime('%H:%M:%S')})")
                     except Exception as e:
-                        print(f"❌ 转换失败: {e}")
+                        logger.error(f"[FAIL] 转换失败: {e}")
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n👋 监视模式已退出")
+        logger.info("\n[EXIT] 监视模式已退出")
 
 
 def main():
@@ -364,9 +366,9 @@ def main():
     
     try:
         output_path = convert_file(args.input, args.output, style, standalone)
-        print(f"✅ 转换完成: {output_path}")
+        logger.info(f"[DONE] 转换完成: {output_path}")
     except Exception as e:
-        print(f"❌ 错误: {e}", file=sys.stderr)
+        logger.error(f"[FAIL] 错误: {e}")
         sys.exit(1)
 
 

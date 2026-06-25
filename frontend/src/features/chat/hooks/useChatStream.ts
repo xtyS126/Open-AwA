@@ -1,7 +1,8 @@
 import { useRef, useCallback } from 'react'
 import { chatAPI } from '@/shared/api/api'
 import type { ChatContinuationPayload } from '@/shared/api/api'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
+import { useToolCallStore } from '@/features/chat/store/toolCallStore'
 import { handleStreamChunkEvent } from '@/features/chat/utils/handleStreamChunkEvent'
 import { dispatchStructuredStreamEvent } from '@/features/chat/utils/dispatchStructuredStreamEvent'
 import { applyDirectAssistantResponse } from '@/features/chat/utils/applyDirectAssistantResponse'
@@ -249,11 +250,11 @@ export function useChatStream({
     lastUpdateTime: Date.now(),
   })
 
-  const addMessage = useChatStore((s) => s.addMessage)
-  const addActiveToolCall = useChatStore((s) => s.addActiveToolCall)
-  const removeActiveToolCall = useChatStore((s) => s.removeActiveToolCall)
-  const resetActiveToolCalls = useChatStore((s) => s.resetActiveToolCalls)
-  const upsertConversation = useChatStore((s) => s.upsertConversation)
+  const addMessage = useSessionStore((s) => s.addMessage)
+  const addActiveToolCall = useToolCallStore((s) => s.addActiveToolCall)
+  const removeActiveToolCall = useToolCallStore((s) => s.removeActiveToolCall)
+  const resetActiveToolCalls = useToolCallStore((s) => s.resetActiveToolCalls)
+  const upsertConversation = useSessionStore((s) => s.upsertConversation)
 
   const abortStream = useCallback(() => {
     activeAbortControllerRef.current?.abort()
@@ -270,7 +271,7 @@ export function useChatStream({
       const messageText = (userMessage || '').trim()
       const safeAttachments = uploadedAttachments || []
       if (!messageText && safeAttachments.length === 0 && !options?.continuation) return
-      if (useChatStore.getState().isLoading && !options?.continuation) return
+      if (useSessionStore.getState().isLoading && !options?.continuation) return
 
       const hiddenUserMessage = Boolean(options?.hiddenUserMessage)
 
@@ -342,7 +343,7 @@ export function useChatStream({
         return
       }
 
-      const currentConversation = useChatStore.getState().conversations.find((item) => item.session_id === targetSessionId)
+      const currentConversation = useSessionStore.getState().conversations.find((item) => item.session_id === targetSessionId)
       const nowIso = new Date().toISOString()
       if (currentConversation && !hiddenUserMessage) {
         upsertConversation({
@@ -562,7 +563,7 @@ export function useChatStream({
             addMessage: (role, content, reasoningContent, messageId) => {
               addMessage(role, content, reasoningContent, messageId)
             },
-            updateMessage: useChatStore.getState().updateMessage,
+            updateMessage: useSessionStore.getState().updateMessage,
             setMessageMeta: (updater) => {
               setMessageMeta(updater)
             },

@@ -742,6 +742,12 @@ class ConversationRecord(Base):
     status: Mapped[str] = mapped_column(String, default="success")
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     record_metadata: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 消息唯一 ID，用于 JSONL 旁路日志与数据库记录的关联（可选，向后兼容）
+    uuid: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    # 父消息 UUID，形成消息父链，支持子 Agent 旁路链回溯（可选，向后兼容）
+    parent_uuid: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    # 是否为子 Agent 旁路链消息，默认 False 表示主链消息
+    is_sidechain: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (
         Index("ix_conversations_user_ts", "user_id", "timestamp"),
@@ -1647,6 +1653,28 @@ def _migrate_skill_json_columns(use_engine=None):
             )
 
 
+def _migrate_conversation_record_sidechain_columns(use_engine=None):
+    """
+    为 conversation_records 表补齐旁路链相关字段：uuid、parent_uuid、is_sidechain。
+    这些字段用于 JSONL 旁路日志与数据库记录的关联，以及子 Agent 旁路链回溯。
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+    if "conversation_records" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("conversation_records")}
+    with target_engine.begin() as connection:
+        if "uuid" not in columns:
+            connection.execute(text("ALTER TABLE conversation_records ADD COLUMN uuid VARCHAR"))
+        if "parent_uuid" not in columns:
+            connection.execute(text("ALTER TABLE conversation_records ADD COLUMN parent_uuid VARCHAR"))
+        if "is_sidechain" not in columns:
+            connection.execute(text("ALTER TABLE conversation_records ADD COLUMN is_sidechain BOOLEAN DEFAULT 0"))
+            connection.execute(text("UPDATE conversation_records SET is_sidechain = 0 WHERE is_sidechain IS NULL"))
+
+
 def _migrate_conversation_columns(use_engine=None):
     """
     为 conversations 表补齐会话聚合所需字段，并从历史记录中回填缺失会话。
@@ -1974,6 +2002,7 @@ def init_db(bind_engine=None):
     # 计费模型已统一使用 db.models.Base，与主业务模型共享同一 Metadata
     Base.metadata.create_all(bind=use_engine)
     _migrate_conversation_record_metadata_column(use_engine=use_engine)
+    _migrate_conversation_record_sidechain_columns(use_engine=use_engine)
     _migrate_plugin_columns(use_engine=use_engine)
     _migrate_long_term_memory_user_id(use_engine=use_engine)
     _migrate_long_term_memory_enhancements(use_engine=use_engine)

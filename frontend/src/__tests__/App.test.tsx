@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { resetAppInitializationStateForTests } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
+import { useModelStore } from '@/features/chat/store/modelStore'
+import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 
 const authApiMocks = vi.hoisted(() => ({
@@ -57,18 +59,22 @@ describe('App', () => {
       isAuthenticated: false,
       isInitialized: false,
     })
-    useChatStore.setState({
+    useSessionStore.setState({
       messages: [],
       isLoading: false,
       sessionId: 'default',
       conversations: [],
       conversationsTotal: 0,
       conversationsHasMore: false,
-      outputMode: 'stream',
+    })
+    useModelStore.setState({
       selectedModel: '',
       modelOptions: [],
       modelLoading: false,
       modelError: null,
+    })
+    usePreferenceStore.setState({
+      outputMode: 'stream',
       thinkingEnabled: false,
       thinkingDepth: 0,
     })

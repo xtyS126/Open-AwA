@@ -47,7 +47,7 @@ class WeComAdapter(ChannelAdapter):
                 params={"corpid": corpid, "corpsecret": corpsecret},
             )
             if resp.status_code != 200:
-                logger.error(f"企业微信获取 token 失败: {resp.text}")
+                logger.error(f"企业微信获取 token 失败: status={resp.status_code}")
                 return False
 
             data = resp.json()

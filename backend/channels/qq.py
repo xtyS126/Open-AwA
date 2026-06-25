@@ -51,7 +51,7 @@ class QQAdapter(ChannelAdapter):
                 },
             )
             if resp.status_code != 200:
-                logger.error(f"QQ 获取 token 失败: {resp.text}")
+                logger.error(f"QQ 获取 token 失败: status={resp.status_code}")
                 return False
 
             data = resp.json()

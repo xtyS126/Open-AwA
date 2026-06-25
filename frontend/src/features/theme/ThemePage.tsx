@@ -1,10 +1,15 @@
 import { useRef, ChangeEvent, useState } from 'react'
+import { shallow } from 'zustand/shallow'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { presetThemes, applyPresetTheme } from './presetThemes'
 import styles from './ThemePage.module.css'
 
 export default function ThemePage() {
-  const { config, setConfig } = useThemeStore()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { config, setConfig } = useThemeStore(s => ({
+    config: s.config,
+    setConfig: s.setConfig,
+  }), shallow)
   
   const logoInputRef = useRef<HTMLInputElement>(null)
   const bgInputRef = useRef<HTMLInputElement>(null)

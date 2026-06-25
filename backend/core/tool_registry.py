@@ -16,7 +16,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -47,6 +47,7 @@ class ToolDefinition:
     - LLM 接口（parameters_schema, success_schema）
     - 执行逻辑（execute 函数）
     - 权限信息（permission action/resource）
+    - 并发属性（is_concurrency_safe, is_read_only, is_destructive 等）
     """
     name: str
     description: str
@@ -61,6 +62,21 @@ class ToolDefinition:
     priority: ToolPriority = ToolPriority.APPLICATION
     enabled: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # 并发属性字段（失败关闭：默认值均偏向不并发执行）
+    # 是否并发安全，可为 bool 或基于输入参数判定的 callable
+    is_concurrency_safe: Union[bool, Callable[[dict], bool]] = False
+    # 是否只读工具（无副作用）
+    is_read_only: bool = False
+    # 是否破坏性操作（删除、覆写等）
+    is_destructive: bool = False
+    # 是否应延迟执行（避免阻塞关键路径）
+    should_defer: bool = False
+    # 是否总是加载到 LLM 上下文
+    always_load: bool = False
+    # 结果最大字符数（None 表示不限制）
+    max_result_size_chars: Optional[int] = None
+    # 中断行为：cancel（取消）/ wait（等待）/ detach（分离）
+    interrupt_behavior: str = "cancel"
 
     def __post_init__(self):
         if not self.permission_action:
@@ -78,6 +94,45 @@ class ToolDefinition:
                 "parameters": self.parameters_schema,
             },
         }
+
+
+def resolve_concurrency_safe(
+    definition: ToolDefinition,
+    input_params: dict,
+) -> bool:
+    """
+    根据工具定义和输入参数解析并发安全性。
+
+    失败关闭原则：任何异常或不确定情况均返回 False（不并发执行）。
+
+    Args:
+        definition: 工具定义实例
+        input_params: 工具调用的输入参数
+
+    Returns:
+        是否并发安全
+    """
+    is_safe = definition.is_concurrency_safe
+    # bool 类型直接返回
+    if isinstance(is_safe, bool):
+        return is_safe
+    # callable 类型调用判定函数
+    if callable(is_safe):
+        try:
+            result = is_safe(input_params)
+            return bool(result)
+        except Exception as e:
+            # 失败关闭：callable 抛异常时返回 False
+            logger.warning(
+                f"工具 '{definition.name}' 的 is_concurrency_safe callable 抛异常，"
+                f"默认返回 False: {type(e).__name__}: {e}"
+            )
+            return False
+    # 既不是 bool 也不是 callable，失败关闭返回 False
+    logger.warning(
+        f"工具 '{definition.name}' 的 is_concurrency_safe 类型非法: {type(is_safe).__name__}"
+    )
+    return False
 
 
 @dataclass

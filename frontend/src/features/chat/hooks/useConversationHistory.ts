@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { conversationAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
 import type { ConversationSessionSummary } from '@/features/chat/types'
 
 export type ConversationSortKey = 'last_message_at' | 'title'
@@ -31,7 +31,7 @@ function mergeConversationSummaries(
  * 统一管理聊天页历史侧栏的视口状态、筛选条件与列表加载逻辑。
  */
 export function useConversationHistory() {
-  const setConversations = useChatStore((state) => state.setConversations)
+  const setConversations = useSessionStore((state) => state.setConversations)
   const [isCompactViewport, setIsCompactViewport] = useState(getIsCompactViewport)
   const [historySidebarOpen, setHistorySidebarOpen] = useState(() => !getIsCompactViewport())
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -93,7 +93,7 @@ export function useConversationHistory() {
       })
 
       const incomingItems = response.data.items || []
-      const existingItems = append ? useChatStore.getState().conversations : []
+      const existingItems = append ? useSessionStore.getState().conversations : []
       const nextItems = append ? mergeConversationSummaries(existingItems, incomingItems) : incomingItems
       setConversations(nextItems, response.data.total, response.data.has_more)
       setHistoryPage(response.data.page)

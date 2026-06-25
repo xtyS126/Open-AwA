@@ -8,10 +8,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcp.client import MCPClient
+from mcp.client import MCPClient, MCPClientError
 from mcp.manager import MCPManager
 from mcp.transport import SSETransport, MCPTransportError
-from mcp.types import MCPResource, MCPResourceContent, MCPServerConfig, TransportType
+from mcp.types import (
+    MCPResource,
+    MCPResourceContent,
+    MCPServerConfig,
+    MCPTool,
+    TransportType,
+    build_mcp_tool_name,
+)
+from core.permission_manager import (
+    PermissionEffect,
+    PermissionRule,
+    evaluate_effect,
+    matches_mcp_server,
+    wildcard_match,
+)
 
 
 # ==================== MCPResourceContent 类型测试 ====================
@@ -242,7 +256,8 @@ async def test_manager_get_all_resources_handles_errors(reset_manager_singleton)
 
     mock_client1 = MagicMock()
     mock_client1.is_connected = True
-    mock_client1.list_resources = AsyncMock(side_effect=Exception("连接断开"))
+    # 使用域异常 MCPClientError 模拟连接失败（与 mcp/manager.py 中收窄后的异常元组匹配）
+    mock_client1.list_resources = AsyncMock(side_effect=MCPClientError("连接断开"))
 
     mock_client2 = MagicMock()
     mock_client2.is_connected = True
@@ -305,3 +320,188 @@ async def test_manager_get_server_resources(reset_manager_singleton):
     assert len(resources) == 2
     assert resources[0].uri == "file:///a.txt"
     assert resources[1].name == "B"
+
+
+# ==================== MCP 工具三段式命名测试 ====================
+
+def test_build_mcp_tool_name_format():
+    """build_mcp_tool_name 应生成 mcp__<server>__<tool> 三段式格式。"""
+    # 标准格式验证
+    assert build_mcp_tool_name("github", "create_issue") == "mcp__github__create_issue"
+    assert build_mcp_tool_name("filesystem", "read_file") == "mcp__filesystem__read_file"
+    # 前缀为 mcp__
+    assert build_mcp_tool_name("server1", "tool1").startswith("mcp__")
+    # 双下划线分隔三段
+    parts = build_mcp_tool_name("server1", "tool1").split("__")
+    assert parts == ["mcp", "server1", "tool1"]
+
+
+def test_build_mcp_tool_name_with_underscore_in_tool():
+    """工具名含下划线时应完整保留在第三段中。"""
+    # 工具名本身含下划线，应完整保留
+    name = build_mcp_tool_name("github", "create_pull_request")
+    assert name == "mcp__github__create_pull_request"
+    # 确保三段式结构正确（前两段为 mcp 和 github）
+    assert name.startswith("mcp__github__")
+    # 工具名部分应完整保留
+    assert name.endswith("create_pull_request")
+
+
+def test_mcp_tool_fully_qualified_name():
+    """MCPTool 的 fully_qualified_name 应根据 server_name 自动计算。"""
+    # 提供 server_name 时应生成三段式全限定名
+    tool = MCPTool(name="create_issue", server_name="github")
+    assert tool.fully_qualified_name == "mcp__github__create_issue"
+
+    # 未提供 server_name 时应回退为工具名本身（向后兼容）
+    tool_no_server = MCPTool(name="standalone_tool")
+    assert tool_no_server.fully_qualified_name == "standalone_tool"
+
+    # fully_qualified_name 为只读计算属性，构造时传入的同名参数应被忽略
+    tool_override = MCPTool(name="x", server_name="y", fully_qualified_name="custom")
+    assert tool_override.fully_qualified_name == "mcp__y__x"
+
+    # 实例创建后不能直接设置 fully_qualified_name 属性（只读）
+    with pytest.raises((AttributeError, TypeError)):
+        tool.fully_qualified_name = "tampered"
+
+
+# ==================== MCP 服务级权限匹配测试 ====================
+
+def test_matches_mcp_server_exact():
+    """matches_mcp_server 三段式模式应精确匹配。"""
+    # 三段式精确匹配
+    assert matches_mcp_server(
+        "mcp__github__create_issue",
+        "mcp__github__create_issue",
+    ) is True
+    # 不同工具名不匹配
+    assert matches_mcp_server(
+        "mcp__github__create_issue",
+        "mcp__github__read_file",
+    ) is False
+    # 不同服务名不匹配
+    assert matches_mcp_server(
+        "mcp__github__create_issue",
+        "mcp__gitlab__create_issue",
+    ) is False
+
+
+def test_matches_mcp_server_wildcard():
+    """matches_mcp_server 两段式模式应匹配该服务下所有工具。"""
+    # 两段式服务级匹配：mcp__github 匹配 mcp__github__* 的所有工具
+    assert matches_mcp_server("mcp__github", "mcp__github__create_issue") is True
+    assert matches_mcp_server("mcp__github", "mcp__github__read_file") is True
+    assert matches_mcp_server("mcp__github", "mcp__github__any_tool") is True
+    # 不应匹配其他服务的工具
+    assert matches_mcp_server("mcp__github", "mcp__gitlab__create_issue") is False
+    # 不应匹配服务名仅为前缀的其他服务（如 github 和 github_extra）
+    assert matches_mcp_server("mcp__github", "mcp__github_extra__tool") is False
+
+
+def test_matches_mcp_server_no_match():
+    """matches_mcp_server 不匹配的场景应返回 False。"""
+    # 非 MCP 前缀的模式不参与服务级匹配
+    assert matches_mcp_server("skill:read", "mcp__github__create_issue") is False
+    assert matches_mcp_server("read", "mcp__github__create_issue") is False
+    # 三段式模式与不同工具不匹配
+    assert matches_mcp_server("mcp__github__tool1", "mcp__github__tool2") is False
+    # 两段式模式与不同服务不匹配
+    assert matches_mcp_server("mcp__server1", "mcp__server2__tool1") is False
+
+
+def test_wildcard_match_mcp_server():
+    """wildcard_match 应支持 MCP 服务级通配符匹配。"""
+    # mcp__server1__* 匹配 mcp__server1__tool1
+    assert wildcard_match("mcp__server1__*", "mcp__server1__tool1") is True
+    assert wildcard_match("mcp__server1__*", "mcp__server1__tool2") is True
+    # mcp__server1__* 不匹配其他服务
+    assert wildcard_match("mcp__server1__*", "mcp__server2__tool1") is False
+
+    # mcp__server1* 匹配 mcp__server1__tool1（前缀通配符）
+    assert wildcard_match("mcp__server1*", "mcp__server1__tool1") is True
+    assert wildcard_match("mcp__server1*", "mcp__server1__tool2") is True
+    # mcp__server1* 不匹配其他服务
+    assert wildcard_match("mcp__server1*", "mcp__server2__tool1") is False
+
+    # 保持现有通配符行为不变
+    assert wildcard_match("*", "mcp__server1__tool1") is True
+    assert wildcard_match("skill:*", "skill:read") is True
+    assert wildcard_match("skill:*", "plugin:read") is False
+
+
+def test_permission_manager_mcp_server_rule():
+    """权限管理器应支持 MCP 服务级规则批量授权。"""
+    # 1. 通过 matches_mcp_server 验证两段式服务级规则
+    # mcp__github 规则匹配 github 服务下所有工具
+    assert matches_mcp_server("mcp__github", "mcp__github__create_issue") is True
+    assert matches_mcp_server("mcp__github", "mcp__github__read_file") is True
+    # 其他服务的工具不匹配
+    assert matches_mcp_server("mcp__github", "mcp__gitlab__create_issue") is False
+
+    # 2. 通过 evaluate_effect 验证通配符规则（mcp__github__*）
+    wildcard_rule = PermissionRule(
+        action="mcp_tool",
+        resource="mcp__github__*",
+        effect=PermissionEffect.ALLOW,
+    )
+    # github 服务下的工具应被允许
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__create_issue", [wildcard_rule]
+    ) == PermissionEffect.ALLOW
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__any_tool", [wildcard_rule]
+    ) == PermissionEffect.ALLOW
+    # 其他服务的工具不匹配，回退为 ASK
+    assert evaluate_effect(
+        "mcp_tool", "mcp__gitlab__create_issue", [wildcard_rule]
+    ) == PermissionEffect.ASK
+
+    # 3. 通过 evaluate_effect 验证前缀通配符规则（mcp__github*）
+    prefix_rule = PermissionRule(
+        action="mcp_tool",
+        resource="mcp__github*",
+        effect=PermissionEffect.ALLOW,
+    )
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__create_issue", [prefix_rule]
+    ) == PermissionEffect.ALLOW
+    assert evaluate_effect(
+        "mcp_tool", "mcp__gitlab__create_issue", [prefix_rule]
+    ) == PermissionEffect.ASK
+
+    # 4. 精确工具级规则：仅允许特定工具
+    tool_rule = PermissionRule(
+        action="mcp_tool",
+        resource="mcp__github__create_issue",
+        effect=PermissionEffect.ALLOW,
+    )
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__create_issue", [tool_rule]
+    ) == PermissionEffect.ALLOW
+    # 其他工具不匹配精确规则，回退为 ASK
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__read_file", [tool_rule]
+    ) == PermissionEffect.ASK
+
+    # 5. last-match-wins：服务级 ALLOW 在前，具体工具 DENY 在后应覆盖
+    combined_rules = [
+        PermissionRule(
+            action="mcp_tool",
+            resource="mcp__github__*",
+            effect=PermissionEffect.ALLOW,
+        ),
+        PermissionRule(
+            action="mcp_tool",
+            resource="mcp__github__dangerous",
+            effect=PermissionEffect.DENY,
+        ),
+    ]
+    # 普通工具仍允许
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__create_issue", combined_rules
+    ) == PermissionEffect.ALLOW
+    # 危险工具被拒绝（后匹配覆盖）
+    assert evaluate_effect(
+        "mcp_tool", "mcp__github__dangerous", combined_rules
+    ) == PermissionEffect.DENY

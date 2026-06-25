@@ -6,7 +6,7 @@
 import { userAPI } from '@/shared/api/api'
 import { safeSetItem } from '@/shared/utils/safeStorage'
 
-const PREFERENCE_WRITERS: Record<string, (value: any) => void> = {
+const PREFERENCE_WRITERS: Record<string, (value: unknown) => void> = {
   theme: (value) => {
     safeSetItem('theme', String(value))
     updateAppSettingsField('theme', value)
@@ -22,11 +22,11 @@ const PREFERENCE_WRITERS: Record<string, (value: any) => void> = {
   outputMode: (value) => safeSetItem('chat_output_mode', String(value)),
 }
 
-function updateAppSettingsField(field: string, value: any): void {
+function updateAppSettingsField(field: string, value: unknown): void {
   try {
     const raw = localStorage.getItem('app_settings')
     if (raw) {
-      const settings = JSON.parse(raw)
+      const settings = JSON.parse(raw) as Record<string, unknown>
       if (typeof settings === 'object' && settings !== null) {
         settings[field] = value
         localStorage.setItem('app_settings', JSON.stringify(settings))
@@ -44,7 +44,7 @@ function updateAppSettingsField(field: string, value: any): void {
 export async function loadServerPreferences(): Promise<void> {
   try {
     const response = await userAPI.getPreferences()
-    const prefs: Record<string, any> = response.data?.preferences || {}
+    const prefs: Record<string, unknown> = response.data?.preferences || {}
     for (const [key, value] of Object.entries(prefs)) {
       const writer = PREFERENCE_WRITERS[key]
       if (writer && value !== null && value !== undefined) {
@@ -60,7 +60,7 @@ export async function loadServerPreferences(): Promise<void> {
  * 在本地状态已更新后，将单个偏好变更同步到服务端。
  * 触发即忘，不阻塞 UI。
  */
-export function syncPreferenceToServer(key: string, value: any): void {
+export function syncPreferenceToServer(key: string, value: unknown): void {
   userAPI.updatePreferences({ [key]: value }).catch(() => {
     // 静默失败，localStorage 已更新
   })

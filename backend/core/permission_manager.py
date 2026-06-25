@@ -18,6 +18,15 @@ from typing import Any, Dict, List, Optional, Set
 
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
+
+from core.denial_tracking import (
+    DENIAL_LIMITS,
+    DenialTrackingState,
+    record_denial,
+    record_success,
+    should_fallback_to_prompting,
+)
 
 
 class PermissionEffect(str, Enum):
@@ -77,6 +86,8 @@ def wildcard_match(pattern: str, value: str) -> bool:
     - * 匹配任意字符串（含空串）
     - prefix:* 匹配 prefix: 开头的任意值
     - 完全相同时也算匹配
+    - [NEW] mcp__server1__* 匹配 mcp__server1__tool1（MCP 服务级通配符）
+    - [NEW] mcp__server1* 匹配 mcp__server1__tool1（MCP 前缀通配符）
     """
     if pattern == "*" or value == "*":
         return True
@@ -92,6 +103,47 @@ def wildcard_match(pattern: str, value: str) -> bool:
         suffix = pattern[1:]
         if value.endswith(suffix):
             return True
+    # [NEW] MCP 服务级通配符匹配：mcp__server1__* 匹配 mcp__server1__tool1
+    if pattern.endswith("__*"):
+        prefix = pattern[:-3]  # 去掉 __*，保留 mcp__server1
+        if value.startswith(prefix + "__"):
+            return True
+    # [NEW] MCP 前缀通配符匹配：mcp__server1* 匹配 mcp__server1__tool1
+    # 排除已处理的 :* 与 __* 情况，避免重复匹配
+    elif pattern.endswith("*") and not pattern.endswith(":*"):
+        prefix = pattern[:-1]  # 去掉末尾 *
+        if value.startswith(prefix):
+            return True
+    return False
+
+
+def matches_mcp_server(pattern: str, tool_name: str) -> bool:
+    """
+    判断 MCP 服务级权限规则是否匹配工具全限定名。
+
+    匹配规则：
+    - pattern 为两段（mcp__server1）：匹配该服务下所有工具（mcp__server1__*）
+    - pattern 为三段（mcp__server1__tool1）：精确匹配
+    - 完全相同时也算匹配
+
+    :param pattern: 权限规则模式（两段或三段）
+    :param tool_name: 工具全限定名（三段式 mcp__<server>__<tool>）
+    :return: 是否匹配
+    """
+    # 完全相同直接匹配
+    if pattern == tool_name:
+        return True
+
+    # 非 MCP 前缀的模式不参与服务级匹配
+    if not pattern.startswith("mcp__"):
+        return False
+
+    pattern_parts = pattern.split("__")
+    # 两段式（mcp__server1）：服务级匹配，匹配 mcp__server1__* 的所有工具
+    if len(pattern_parts) == 2:
+        return tool_name.startswith(pattern + "__")
+
+    # 三段式（mcp__server1__tool1）：已由完全相等判断处理，此处不匹配
     return False
 
 
@@ -171,6 +223,7 @@ class PermissionManager:
     2. 管理待处理的权限请求（ask 模式）
     3. 处理用户回复（allow/deny/always）
     4. 持久化 "always" 决策
+    5. 追踪权限拒绝次数，auto 模式下超限回退到人工模式
     """
 
     def __init__(self, db_session=None):
@@ -183,6 +236,10 @@ class PermissionManager:
         self._on_permission_asked: Optional[callable] = None
         # 全局默认规则
         self._global_rules: List[PermissionRule] = []
+        # 全局权限拒绝追踪状态
+        self.denial_state: DenialTrackingState = DenialTrackingState()
+        # 是否处于 auto 模式（自动授权，超限回退到人工模式）
+        self.auto_mode: bool = False
 
     def set_event_callback(self, callback: callable) -> None:
         """设置权限请求事件回调（用于 WebSocket/SSE 推送）"""
@@ -191,6 +248,56 @@ class PermissionManager:
     def set_global_rules(self, rules: List[PermissionRule]) -> None:
         """设置全局权限规则"""
         self._global_rules = rules
+
+    def set_auto_mode(self, enabled: bool) -> None:
+        """设置 auto 模式开关（auto 模式下自动授权，超限回退到人工模式）"""
+        self.auto_mode = enabled
+
+    def _get_active_denial_state(
+        self,
+        local_denial_tracking: Optional[DenialTrackingState],
+    ) -> DenialTrackingState:
+        """获取当前生效的拒绝追踪状态：local 优先于全局"""
+        if local_denial_tracking is not None:
+            return local_denial_tracking
+        return self.denial_state
+
+    def _update_denial_state(
+        self,
+        new_state: DenialTrackingState,
+        local_denial_tracking: Optional[DenialTrackingState],
+    ) -> None:
+        """
+        更新拒绝追踪状态。
+
+        若传入 local_denial_tracking，则原地更新其字段（保持引用不变）；
+        否则更新全局 self.denial_state。
+        """
+        if local_denial_tracking is not None:
+            # 原地更新 local 状态字段，保持调用方引用可见
+            local_denial_tracking.consecutive_denials = new_state.consecutive_denials
+            local_denial_tracking.total_denials = new_state.total_denials
+        else:
+            self.denial_state = new_state
+
+    def _check_and_fallback(
+        self,
+        state: DenialTrackingState,
+        local_denial_tracking: Optional[DenialTrackingState],
+    ) -> None:
+        """
+        在 auto 模式下检查是否需要回退到人工模式。
+
+        触发条件：should_fallback_to_prompting(state) 返回 True。
+        回退动作：关闭 auto_mode 并记录 warning 日志。
+        """
+        if not self.auto_mode:
+            return
+        if should_fallback_to_prompting(state):
+            self.auto_mode = False
+            logger.warning(
+                f"连续拒绝超限，回退到人工模式: consecutive={state.consecutive_denials}"
+            )
 
     def _get_agent_rules(self, agent_id: Optional[str] = None) -> List[PermissionRule]:
         """
@@ -267,7 +374,7 @@ class PermissionManager:
                 self._saved_cache = {}
             self._saved_cache[cache_key] = await asyncio.to_thread(_sync_load)
             return self._saved_cache[cache_key]
-        except Exception as e:
+        except (SQLAlchemyError, asyncio.TimeoutError, ImportError) as e:
             logger.warning(f"加载已保存权限失败: {e}")
             return []
 
@@ -290,17 +397,21 @@ class PermissionManager:
         metadata: Optional[Dict[str, Any]] = None,
         agent_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        local_denial_tracking: Optional[DenialTrackingState] = None,
     ) -> Dict[str, Any]:
         """
         发起权限请求。
 
         评估权限规则后：
-        - allow → 直接返回 {effect: "allow"}
-        - deny → 抛出 PermissionDeniedError
+        - allow → 直接返回 {effect: "allow"}，并记录一次成功（重置连续拒绝）
+        - deny → 抛出 PermissionDeniedError，并记录一次拒绝
         - ask → 创建待处理请求，返回 {id, effect: "ask"}
 
         user_id 用于过滤已保存的权限规则（仅加载当前用户的规则）。
         待处理请求需要通过 reply() 完成。
+
+        local_denial_tracking 用于子 Agent 本地拒绝追踪，优先于全局 self.denial_state。
+        在 auto 模式下，若拒绝超限将自动回退到人工模式。
         """
         import uuid
 
@@ -318,6 +429,12 @@ class PermissionManager:
 
         # 决定最终效果（deny 优先，ask 其次）
         if PermissionEffect.DENY in effects:
+            # 记录一次拒绝并检查是否需要回退到人工模式
+            active_state = self._get_active_denial_state(local_denial_tracking)
+            new_state = record_denial(active_state)
+            self._update_denial_state(new_state, local_denial_tracking)
+            self._check_and_fallback(new_state, local_denial_tracking)
+
             relevant_rules = [
                 rule for rule in (self._get_agent_rules(agent_id) + self._global_rules)
                 if wildcard_match(rule.action, action)
@@ -328,7 +445,14 @@ class PermissionManager:
             )
 
         if PermissionEffect.ASK in effects:
-            # 创建权限请求
+            # auto 模式下，ASK 自动放行（仍记录成功以重置连续拒绝）
+            if self.auto_mode:
+                active_state = self._get_active_denial_state(local_denial_tracking)
+                new_state = record_success(active_state)
+                self._update_denial_state(new_state, local_denial_tracking)
+                return {"id": request_id, "effect": "allow"}
+
+            # manual 模式：创建权限请求等待用户回复
             request = PermissionRequest(
                 id=request_id,
                 session_id=session_id,
@@ -348,7 +472,7 @@ class PermissionManager:
             if self._on_permission_asked:
                 try:
                     await self._on_permission_asked(request.model_dump())
-                except Exception as e:
+                except (TypeError, ValueError, RuntimeError, AttributeError, asyncio.TimeoutError) as e:
                     logger.warning(f"权限请求通知回调失败: {e}")
 
             logger.info(
@@ -356,7 +480,10 @@ class PermissionManager:
             )
             return {"id": request_id, "effect": "ask"}
 
-        # allow
+        # allow：记录一次成功以重置连续拒绝
+        active_state = self._get_active_denial_state(local_denial_tracking)
+        new_state = record_success(active_state)
+        self._update_denial_state(new_state, local_denial_tracking)
         return {"id": request_id, "effect": "allow"}
 
     async def assert_permission(
@@ -367,6 +494,7 @@ class PermissionManager:
         save: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         agent_id: Optional[str] = None,
+        local_denial_tracking: Optional[DenialTrackingState] = None,
     ) -> None:
         """
         断言权限（阻塞版本）。
@@ -375,6 +503,8 @@ class PermissionManager:
         - allow → 直接返回
         - deny → 抛出 PermissionDeniedError
         - ask → 阻塞等待用户回复
+
+        local_denial_tracking 用于子 Agent 本地拒绝追踪，优先于全局 self.denial_state。
         """
         result = await self.ask(
             session_id=session_id,
@@ -383,6 +513,7 @@ class PermissionManager:
             save=save,
             metadata=metadata,
             agent_id=agent_id,
+            local_denial_tracking=local_denial_tracking,
         )
 
         if result["effect"] == "allow":
@@ -497,13 +628,17 @@ class PermissionManager:
             # 清除缓存以重新加载
             self._saved_cache = None
             logger.info(f"已持久化权限: action={action} resources={resources}")
-        except Exception as e:
+        except (SQLAlchemyError, asyncio.TimeoutError, ImportError) as e:
             logger.error(f"持久化权限失败: {e}")
             if self._db_session:
                 try:
                     await asyncio.to_thread(self._db_session.rollback)
-                except Exception:
-                    pass
+                except SQLAlchemyError as rollback_exc:
+                    logger.bind(
+                        event="permission_rollback_failed",
+                        module="permission_manager",
+                        error=str(rollback_exc),
+                    ).error(f"权限回滚失败，数据库状态可能不一致: {rollback_exc}")
 
     def get_pending_requests(self, session_id: Optional[str] = None) -> List[PermissionRequest]:
         """获取待处理的权限请求"""

@@ -20,7 +20,8 @@ function getStatusLabel(status: string): string {
 }
 
 export function InlineToolCallCard({ tool, onUndo }: InlineToolCallCardProps) {
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   const [expanded, setExpanded] = useState(false)
   const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone'>('idle')
   const isRunning = tool.status === 'running'

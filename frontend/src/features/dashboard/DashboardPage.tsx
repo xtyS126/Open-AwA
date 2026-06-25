@@ -130,10 +130,10 @@ function DashboardPage() {
       setStats(behaviorRes.data)
       setBillingStats(billingRes.data)
 
-      /* 从真实接口汇总系统概览 */
-      const skillsList = Array.isArray(skillsRes.data) ? skillsRes.data : (skillsRes.data?.skills || [])
-      const pluginsList = Array.isArray(pluginsRes.data) ? pluginsRes.data : (pluginsRes.data?.plugins || [])
-      const memoriesList = Array.isArray(memoryRes.data) ? memoryRes.data : (memoryRes.data?.memories || [])
+      /* 从真实接口汇总系统概览（API 返回裸数组） */
+      const skillsList = Array.isArray(skillsRes.data) ? skillsRes.data : []
+      const pluginsList = Array.isArray(pluginsRes.data) ? pluginsRes.data : []
+      const memoriesList = Array.isArray(memoryRes.data) ? memoryRes.data : []
 
       setSystemOverview({
         skillsTotal: skillsList.length,

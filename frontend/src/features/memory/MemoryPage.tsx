@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { conversationAPI, memoryAPI } from '@/shared/api/api'
 import { ShortTermMemory, LongTermMemory } from '@/shared/types/api'
-import { useChatStore } from '@/features/chat/store/chatStore'
+import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './MemoryPage.module.css'
 
@@ -26,7 +26,7 @@ function MemoryPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState('')
   const [shortTermEmptyMessage, setShortTermEmptyMessage] = useState('暂无短期记忆')
-  const chatSessionId = useChatStore((state) => state.sessionId)
+  const chatSessionId = useSessionStore((state) => state.sessionId)
 
   const getCandidateSessionIds = useCallback(async () => {
     const candidates = new Set<string>()

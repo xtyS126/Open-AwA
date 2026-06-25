@@ -28,7 +28,8 @@ const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   modelName,
   onCompact,
 }) => {
-  const { t } = useI18nStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t)
   const ratio = budget > 0 ? Math.min(used / budget, 1) : 0
   const percentage = Math.round(ratio * 100)
   const barColor = ratio > 0.9 ? '#dc2626' : ratio > 0.7 ? '#f59e0b' : '#22c55e'

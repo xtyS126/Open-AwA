@@ -15,7 +15,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const EnvVarSettings: React.FC = () => {
-  const { t } = useI18nStore();
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const t = useI18nStore(s => s.t);
   const [vars, setVars] = useState<EnvVarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingKey, setEditingKey] = useState<string | null>(null);

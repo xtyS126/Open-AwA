@@ -122,22 +122,22 @@ class ReportGenerator:
 
         # 通过率
         pass_pct = s.pass_rate * 100
-        emoji = "✅" if pass_pct >= 95 else ("⚠️" if pass_pct >= 80 else "❌")
+        emoji = "[PASS]" if pass_pct >= 95 else ("[WARN]" if pass_pct >= 80 else "[FAIL]")
         lines.append(f"## {emoji} 总体通过率: {pass_pct:.1f}%")
         lines.append("")
         lines.append(self._build_pass_rate_bar(s.pass_rate))
         lines.append("")
 
         # 摘要统计
-        lines.append("## 📊 执行摘要")
+        lines.append("## [CHART] 执行摘要")
         lines.append("")
         lines.append("| 指标 | 数值 |")
         lines.append("|------|------|")
         lines.append(f"| 总用例数 | {s.total} |")
-        lines.append(f"| ✅ 通过 | {s.passed} |")
-        lines.append(f"| ❌ 失败 | {s.failed} |")
-        lines.append(f"| 💥 错误 | {s.error} |")
-        lines.append(f"| ⏭️ 跳过 | {s.skipped} |")
+        lines.append(f"| [PASS] 通过 | {s.passed} |")
+        lines.append(f"| [FAIL] 失败 | {s.failed} |")
+        lines.append(f"| [ERROR] 错误 | {s.error} |")
+        lines.append(f"| [SKIP] 跳过 | {s.skipped} |")
         lines.append(f"| 通过率 | {pass_pct:.1f}% |")
         lines.append(f"| 总耗时 | {s.total_duration_ms:.0f}ms ({s.total_duration_ms / 1000:.2f}s) |")
         lines.append(f"| 平均耗时 | {s.avg_duration_ms:.0f}ms |")
@@ -157,13 +157,13 @@ class ReportGenerator:
 
         # 模块分布
         if report.module_breakdown:
-            lines.append("## 📦 模块分布")
+            lines.append("## [MODULE] 模块分布")
             lines.append("")
             lines.append("| 模块 | 总数 | 通过 | 失败 | 错误 | 通过率 | 平均耗时 |")
             lines.append("|------|------|------|------|------|--------|----------|")
             for module_name, stat in sorted(report.module_breakdown.items()):
                 pct = stat.pass_rate * 100
-                status_icon = "✅" if stat.failed == 0 and stat.error == 0 else "❌"
+                status_icon = "[PASS]" if stat.failed == 0 and stat.error == 0 else "[FAIL]"
                 lines.append(
                     f"| {status_icon} {module_name} | {stat.total} | {stat.passed} | "
                     f"{stat.failed} | {stat.error} | {pct:.0f}% | {stat.avg_duration_ms:.0f}ms |"
@@ -172,13 +172,13 @@ class ReportGenerator:
 
         # 失败/错误用例详情
         if report.failures:
-            lines.append("## 🔴 失败与错误详情")
+            lines.append("## [FAIL] 失败与错误详情")
             lines.append("")
             for idx, result in enumerate(report.failures, 1):
                 lines.extend(self._render_failure_detail(idx, result))
                 lines.append("")
         else:
-            lines.append("## 🎉 所有测试用例通过！")
+            lines.append("## [DONE] 所有测试用例通过！")
             lines.append("")
 
         # 页脚
@@ -345,8 +345,8 @@ class ReportGenerator:
         """渲染单个失败/错误用例的详情"""
         lines: List[str] = []
         status_label = {
-            "fail": "❌ 断言失败",
-            "error": "💥 执行错误",
+            "fail": "[FAIL] 断言失败",
+            "error": "[ERROR] 执行错误",
         }.get(result.status, result.status)
 
         lines.append(f"### {index}. {status_label} — {result.case_name}")
@@ -365,7 +365,7 @@ class ReportGenerator:
         if result.request:
             lines.append("")
             lines.append("<details>")
-            lines.append("<summary>📤 请求详情</summary>")
+            lines.append("<summary>[REQ] 请求详情</summary>")
             lines.append("")
             lines.append(f"- **方法**: `{result.request.method}`")
             lines.append(f"- **URL**: `{result.request.url}`")
@@ -378,7 +378,7 @@ class ReportGenerator:
         if result.response:
             lines.append("")
             lines.append("<details>")
-            lines.append("<summary>📥 响应详情</summary>")
+            lines.append("<summary>[RESP] 响应详情</summary>")
             lines.append("")
             lines.append(f"- **状态码**: {result.response.status_code}")
             lines.append(f"- **Content-Type**: {result.response.content_type}")
@@ -393,7 +393,7 @@ class ReportGenerator:
         if result.failed_assertions:
             lines.append("")
             lines.append("<details open>")
-            lines.append("<summary>🔍 断言失败详情</summary>")
+            lines.append("<summary>[ASSERT] 断言失败详情</summary>")
             lines.append("")
             lines.append("| 断言类型 | 期望值 | 实际值 | 说明 |")
             lines.append("|----------|--------|--------|------|")

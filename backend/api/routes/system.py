@@ -352,6 +352,60 @@ def _build_models_url(provider: str, base_url: str) -> str:
     return f"{base}/v1/models"
 
 
+def _validate_connectivity_url(url: str) -> Optional[str]:
+    """
+    SSRF 防护：校验连通性测试 URL 不指向内网/回环/保留/云元数据地址。
+    返回 None 表示通过；返回字符串表示拒绝原因。
+    """
+    import socket
+
+    try:
+        parsed = urlparse(url)
+    except ValueError as exc:
+        return f"URL 解析失败: {exc}"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "URL 缺少主机名"
+
+    # 强制 HTTPS（生产环境）
+    if settings.ENVIRONMENT == "production" and parsed.scheme != "https":
+        return f"生产环境仅允许 HTTPS，当前协议: {parsed.scheme}"
+
+    # 云元数据地址黑名单
+    cloud_metadata_hosts = {"169.254.169.254", "metadata.google.internal"}
+    if hostname.lower() in cloud_metadata_hosts:
+        return f"禁止访问云元数据地址: {hostname}"
+
+    # 解析主机名为 IP，校验是否为私有/回环/保留地址
+    try:
+        # 直接解析为 IP（如果是 IP 字面量）
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+            return f"禁止访问内网/回环/保留地址: {ip}"
+        if ip.is_multicast:
+            return f"禁止访问组播地址: {ip}"
+    except ValueError:
+        # 不是 IP 字面量，解析域名
+        try:
+            addrinfos = socket.getaddrinfo(hostname, None)
+        except socket.gaierror as exc:
+            return f"域名解析失败: {hostname} ({exc})"
+
+        for addrinfo in addrinfos:
+            addr = addrinfo[4][0]
+            try:
+                ip = ipaddress.ip_address(addr)
+                if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                    return f"域名 {hostname} 解析到内网地址: {ip}"
+                if ip.is_multicast:
+                    return f"域名 {hostname} 解析到组播地址: {ip}"
+            except ValueError:
+                continue
+
+    return None
+
+
 def _classify_http_error(status_code: int) -> str:
     """根据 HTTP 状态码返回用户友好的中文错误描述。"""
     if status_code == 401:
@@ -441,6 +495,23 @@ async def test_connectivity(
 
     # 构建模型列表端点 URL
     models_url = _build_models_url(provider, effective_base_url)
+
+    # SSRF 防护：校验 base_url 不指向内网/回环/云元数据地址
+    ssrf_error = _validate_connectivity_url(models_url)
+    if ssrf_error:
+        logger.bind(
+            event="connectivity_test",
+            module="system",
+            provider=provider,
+            status="ssrf_blocked",
+        ).warning(f"连通性测试被 SSRF 策略拒绝: {ssrf_error}")
+        return {
+            "success": False,
+            "model_count": None,
+            "error_message": f"Base URL 被安全策略拒绝: {ssrf_error}",
+            "latency_ms": 0,
+            "provider": provider,
+        }
 
     # 构建请求头
     headers: Dict[str, str] = {}

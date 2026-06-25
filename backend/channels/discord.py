@@ -54,7 +54,7 @@ class DiscordAdapter(ChannelAdapter):
                 self._connected = True
                 return True
             else:
-                logger.error(f"Discord 连接验证失败: {resp.status_code} {resp.text}")
+                logger.error(f"Discord 连接验证失败: status={resp.status_code}")
                 return False
 
         except Exception as e:
