@@ -33,8 +33,8 @@ interface MessageListProps {
   onUndo?: (operationId: string) => Promise<void>
 }
 
-/** 虚拟滚动阈值：消息数超过此值时启用 Virtuoso */
-const VIRTUAL_THRESHOLD = 100
+/** 虚拟滚动阈值：消息数达到此值时启用 Virtuoso，避免长对话下 DOM 节点过多 */
+const VIRTUAL_THRESHOLD = 15
 
 export const MessageList = memo(function MessageList({
   messages,

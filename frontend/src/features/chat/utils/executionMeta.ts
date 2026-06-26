@@ -15,7 +15,6 @@ export const SUBAGENT_INACTIVITY_TIMEOUT_MS = 30000
 
 const SUBAGENT_TRUNCATION_NOTICE = '[日志过长，已截断]\n'
 const SUBAGENT_ERROR_PREFIX = /^error\s*[:：]/i
-const STRUCTURED_SUBAGENT_PREFIX_RE = /^\[(思考|工具|任务|状态|计划|错误|ERROR)\]/
 
 function normalizeSubagentName(agentType: unknown): string {
   const normalizedType = String(agentType || '').trim() || 'unknown'
@@ -45,12 +44,14 @@ function appendSubagentLogs(existingLogs: string, chunk: string): Pick<SubagentE
   }
 }
 
-function getStructuredSubagentLogSeparator(existingLogs: string, nextChunk: string): string {
+function getStructuredSubagentLogSeparator(existingLogs: string, _nextChunk: string): string {
+  // 已有日志为空或已以换行结尾时无需分隔符
   if (!existingLogs || existingLogs.endsWith('\n')) {
     return ''
   }
 
-  return STRUCTURED_SUBAGENT_PREFIX_RE.test(nextChunk) ? '\n' : ''
+  // 每条日志条目都应独占一行，确保 description/message/summary 之间有换行分隔
+  return '\n'
 }
 
 function normalizeSubagentState(

@@ -266,7 +266,8 @@ describe('SettingsPage', () => {
   it('新增供应商弹窗仅保留显示名称和基础 URL，并随预置供应商切换自动更新', async () => {
     renderSettingsApiTab()
 
-    fireEvent.click(await screen.findByText('新增供应商'))
+    // 首次触发 ApiSettings 懒加载，完整测试套件中模块编译耗时较高，放宽超时
+    fireEvent.click(await screen.findByText('新增供应商', undefined, { timeout: 5000 }))
 
     const dialog = screen.getByRole('dialog', { name: '新增供应商' })
     expect(within(dialog).getByLabelText('显示名称（可选）')).toBeInTheDocument()

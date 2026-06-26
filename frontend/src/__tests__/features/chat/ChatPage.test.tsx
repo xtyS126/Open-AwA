@@ -244,7 +244,8 @@ describe('ChatPage', () => {
     expect(screen.getByText('工具调用')).toBeInTheDocument()
     expect(screen.getByText('用量信息')).toBeInTheDocument()
     expect(screen.getByText(/\$0\.0123/)).toBeInTheDocument()
-    expect(screen.getByText(/245ms/)).toBeInTheDocument()
+    // 245ms 同时出现在消息头部耗时徽章和用量信息节点中，使用 getAllByText 兼容多处匹配
+    expect(screen.getAllByText(/245ms/).length).toBeGreaterThan(0)
   })
 
   it('为后台子代理建立独立同步，并在全部结束后一次性拉取 transcript', async () => {

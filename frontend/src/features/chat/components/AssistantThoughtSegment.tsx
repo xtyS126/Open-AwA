@@ -182,18 +182,23 @@ function AssistantThoughtSegmentInner({ segments, isStreaming, onUndo }: Assista
         {/* 用量信息：底部节点 */}
         {usage && (
           <div className={styles.subTree}>
-            <TreeNode className={styles.usageNode}>
-              <div className={styles.usageGrid}>
-                <span className={styles.usageItem}>输入 {formatUsageTokens(usage.input_tokens)}</span>
-                <span className={styles.usageItem}>输出 {formatUsageTokens(usage.output_tokens)}</span>
-                <span className={styles.usageItem}>
-                  成本 {formatUsageCost(usage.total_cost, usage.currency)}
-                </span>
-                {usage.duration_ms && (
-                  <span className={styles.usageItem}>耗时 {usage.duration_ms}ms</span>
-                )}
-              </div>
+            <TreeNode className={styles.sectionNode}>
+              <span className={styles.sectionTitle}>用量信息</span>
             </TreeNode>
+            <div className={styles.subTree}>
+              <TreeNode className={styles.usageNode}>
+                <div className={styles.usageGrid}>
+                  <span className={styles.usageItem}>输入 {formatUsageTokens(usage.input_tokens)}</span>
+                  <span className={styles.usageItem}>输出 {formatUsageTokens(usage.output_tokens)}</span>
+                  <span className={styles.usageItem}>
+                    成本 {formatUsageCost(usage.total_cost, usage.currency)}
+                  </span>
+                  {usage.duration_ms && (
+                    <span className={styles.usageItem}>耗时 {usage.duration_ms}ms</span>
+                  )}
+                </div>
+              </TreeNode>
+            </div>
           </div>
         )}
       </ThinkingProcess>
