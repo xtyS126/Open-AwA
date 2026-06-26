@@ -1,144 +1,637 @@
-.memory-page {
-  padding: 24px;
+/* 记忆管理页面样式 —— 对齐 Canvas 设计参考 (open-awa-canvas/pages/memory.html) */
+/* 所有取值使用 var() 引用 tokens.css 设计令牌，禁止硬编码值 */
+
+.memoryPage {
+  padding: var(--space-8);
   overflow-y: auto;
   height: 100%;
+  background: var(--color-bg);
 }
 
-.page-header {
+/* ========== 页面标题 ========== */
+
+.pageHeader {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-8);
 }
 
-.memory-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-  padding-bottom: 8px;
-}
-
-.memory-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.memory-card {
-  background: var(--color-bg-tertiary);
-  border: none;
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.memory-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-.memory-role {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-primary);
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-
-.memory-content-text {
-  font-size: 14px;
-  line-height: 1.6;
+.pageTitle {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-display);
   color: var(--color-text);
-  white-space: pre-wrap;
-  margin-bottom: 12px;
+  margin: 0;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
 }
 
-.memory-footer {
+.pageSubtitle {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.pageActions {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
+  gap: var(--space-3);
 }
 
-.memory-importance,
-.memory-access {
-  background: var(--color-bg-secondary);
-  color: var(--color-text-secondary);
-  padding: 4px 10px;
+/* 次要按钮 —— 边框样式 */
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
   border-radius: var(--radius-md);
-}
-
-.btn-sm {
-  padding: 4px 12px;
-  font-size: 12px;
-}
-
-.tab-btn {
-  padding: 8px 16px;
-  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--color-text-secondary);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   cursor: pointer;
+  transition: border-color var(--transition-base), color var(--transition-base);
+}
+
+.btnSecondary:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btnSecondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========== 统计概览卡片网格（4 列） ========== */
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+
+/* 统计卡片 —— 对齐 Canvas: bg-white rounded-xl border p-5 shadow-sm */
+.statCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base);
+}
+
+.statCard:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 卡片顶部行 —— 图标盒 + 趋势图标/会话徽章 */
+.statTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+/* 图标盒 —— 40x40 圆角软背景，颜色由内联 style 注入 */
+.statIconBox {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 当前会话徽章 —— 短期记忆卡片专用 */
+.sessionBadge {
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-medium);
+  background: var(--color-success-soft-bg);
+  color: var(--color-success-strong);
   white-space: nowrap;
 }
 
-.tab-btn:hover {
-  background: var(--color-bg-tertiary);
+/* 大号数值 —— 2xl 加粗，紧凑字间距 */
+.statValue {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-display);
+  color: var(--color-text);
+  margin: 0;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
 }
 
-.tab-btn.active {
-  background: var(--color-primary);
-  color: white;
+/* 副标题 —— xs 三级文字色 */
+.statLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-tertiary);
+  margin: var(--space-1) 0 0 0;
 }
 
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-lg);
+/* ========== 三栏布局：左侧记忆列表 + 右侧系统状态 ========== */
+
+.mainLayout {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
 }
 
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: var(--color-text-secondary);
+/* 左侧列表列 —— 弹性填充 */
+.memoryListColumn {
+  flex: 1;
+  min-width: 0;
 }
 
-.status-message-error {
-  margin-bottom: 16px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  background: var(--color-error-bg);
-  color: var(--color-error);
+/* 右侧系统状态侧栏 —— 固定 360px */
+.sidebar {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
 }
 
-.session-hint {
-  margin-bottom: 12px;
-  padding: 10px 14px;
+/* ========== 会话提示 ========== */
+
+.sessionHint {
+  margin-bottom: var(--space-3);
+  padding: 10px var(--space-4);
   border-radius: var(--radius-md);
   background: var(--color-bg-secondary);
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
-.btn {
-  padding: 8px 16px;
-  border: none;
+/* ========== 记忆条目列表卡片 ========== */
+
+.listCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* 列表头部 —— 标题 + 搜索 */
+.listHeader {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.listHeaderTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.listTitle {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  margin: 0;
+}
+
+/* 条数徽章 —— 主色软背景 */
+.countBadge {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+/* 搜索框容器 —— 相对定位容纳图标 */
+.searchWrap {
+  position: relative;
+}
+
+/* 搜索图标 —— 绝对定位左侧居中 */
+.searchIcon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+/* 搜索输入框 —— 聚焦时显示主色发光阴影 */
+.searchInput {
+  width: 100%;
+  padding: 10px var(--space-4) 10px 40px;
   border-radius: var(--radius-md);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  outline: none;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  box-sizing: border-box;
 }
 
-.btn-danger {
+.searchInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.searchInput:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+/* ========== 记忆条目列表项 ========== */
+
+.listItems {
+  /* divide-y 效果 —— 子项之间用细分隔线 */
+}
+
+/* 记忆条目 —— px-6 py-4 */
+.memoryItem {
+  padding: var(--space-4) var(--space-6);
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-subtle);
+  transition: background var(--transition-base);
+}
+
+.memoryItem:last-child {
+  border-bottom: none;
+}
+
+.memoryItem:hover {
+  background: var(--color-primary-softest-bg);
+}
+
+/* 条目顶部行 —— 标题 + 类型徽章 */
+.memoryItemTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+/* 条目标题 —— sm medium */
+.memoryItemTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-snug);
+  color: var(--color-text);
+  margin: 0;
+  padding-right: var(--space-4);
+  word-break: break-word;
+}
+
+/* 类型徽章 —— 圆角胶囊，按类型着色 */
+.typeBadgeLongTerm,
+.typeBadgeExperience {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  padding: 2px var(--space-2-5);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+/* 长期记忆徽章 —— 蓝色 */
+.typeBadgeLongTerm {
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+/* 经验徽章 —— 紫色 */
+.typeBadgeExperience {
+  background: var(--color-tag-purple-bg);
+  color: var(--color-tag-purple-text);
+}
+
+/* 条目底部行 —— 时间 + 置信度 + 删除按钮 */
+.memoryItemBottom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+/* 时间文字 —— xs 三级色 */
+.memoryTime {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* 置信度区域 —— 标签 + 进度条 + 数值 */
+.confidenceWrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  max-width: 200px;
+}
+
+.confidenceLabel {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* 置信度进度条轨道 —— h-1.5 rounded-full 灰色背景 */
+.confidenceTrack {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+
+/* 置信度填充条 —— 颜色由内联 style 注入，宽度 0.6s 过渡 */
+.confidenceFill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.6s ease;
+}
+
+/* 置信度数值 —— xs medium，颜色由内联 style 注入 */
+.confidenceValue {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* 删除按钮 —— 淡色，悬停时变红 */
+.deleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-base), background var(--transition-base);
+}
+
+.deleteBtn:hover {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+/* ========== 空状态 ========== */
+
+.emptyState {
+  text-align: center;
+  padding: 60px var(--space-5);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ========== 错误提示 ========== */
+
+.errorMessage {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
   background: var(--color-error-bg);
   color: var(--color-error);
+  font-size: var(--text-sm);
 }
 
-.btn-danger:hover {
-  background: rgba(239, 68, 68, 0.15);
+/* ========== 加载状态 ========== */
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-secondary);
+}
+
+/* ========== 系统状态侧栏卡片 ========== */
+
+.sidebarCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base);
+}
+
+.sidebarCard:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 侧栏卡片头部 —— 图标盒 + 标题 */
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  margin-bottom: var(--space-4);
+}
+
+/* 侧栏图标盒 —— 32x32 圆角软背景 */
+.sidebarIconBox {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebarTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  margin: 0;
+}
+
+/* ========== 键值对列表 ========== */
+
+.kvList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 键值行 —— 两端对齐 */
+.kvRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kvLabel {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.kvValue {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+}
+
+/* 状态行 —— 绿点 + 文字 */
+.kvStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+}
+
+.kvStatusText {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-success);
+}
+
+/* 代码值 —— 等宽字体 + 灰色背景 */
+.codeValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+/* ========== 权重滑块 ========== */
+
+.sliderList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.sliderBlock {
+  /* 单个滑块块 */
+}
+
+/* 滑块头部 —— 标签 + 数值 */
+.sliderHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.sliderLabel {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.sliderValue {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+/* 滑块容器 —— 相对定位，高度等于滑块圆点 */
+.sliderWrapper {
+  position: relative;
+  height: 18px;
+  display: flex;
+  align-items: center;
+}
+
+/* 滑块轨道 —— 6px 高度，圆角，灰色背景 */
+.sliderTrack {
+  position: absolute;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--space-1-5);
+  background: var(--color-bg-tertiary);
+  overflow: hidden;
+}
+
+/* 滑块填充条 —— 颜色由内联 style 注入，宽度 0.3s 过渡 */
+.sliderFill {
+  height: 100%;
+  border-radius: var(--space-1-5);
+  transition: width 0.3s ease;
+}
+
+/* 滑块圆点 —— 18px 圆形，白色边框，阴影 */
+.sliderThumb {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--color-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%);
+  transition: left 0.3s ease;
+  pointer-events: none;
+  top: 50%;
+  margin-top: -9px;
+  z-index: 1;
+}
+
+/* 原生 range input —— 透明覆盖在视觉滑块上，提供交互 */
+.sliderInput {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+/* ========== 开关行 ========== */
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-1);
+}
+
+/* ========== 响应式适配 ========== */
+
+/* 平板及以下 —— 统计卡片降为 2 列，三栏布局变为单列堆叠 */
+@media (max-width: 1024px) {
+  .statGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mainLayout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+  }
+}
+
+/* 移动端 —— 统计卡片单列堆叠 */
+@media (max-width: 640px) {
+  .memoryPage {
+    padding: var(--space-4);
+  }
+
+  .statGrid {
+    grid-template-columns: 1fr;
+  }
 }

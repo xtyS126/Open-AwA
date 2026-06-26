@@ -130,74 +130,77 @@ function SettingsPage() {
     setAdvancedExpanded(prev => !prev)
   }, [])
 
-  /** 渲染侧边栏 */
-  const renderSecondarySidebar = () => {
+  /** 渲染水平标签栏（对齐 Canvas 设计参考）*/
+  const renderTabBar = () => {
     const tabs = [
-      { id: 'general', label: '通用设置', icon: <SettingsIcon size={18} /> },
-      { id: 'api', label: 'API配置', icon: <Plug size={18} /> },
-      { id: 'appearance', label: '外观', icon: <Palette size={18} /> },
-      { id: 'prompts', label: '提示词', icon: <Cpu size={18} /> },
-      { id: 'billing', label: '计费', icon: <Briefcase size={18} /> },
-      { id: 'backend', label: '后端连接', icon: <Server size={18} /> },
-      { id: 'advanced', label: '高级', icon: <Wrench size={18} /> },
+      { id: 'general', label: '通用', icon: <SettingsIcon size={16} /> },
+      { id: 'api', label: '模型', icon: <Plug size={16} /> },
+      { id: 'appearance', label: '外观', icon: <Palette size={16} /> },
+      { id: 'prompts', label: '提示词', icon: <Cpu size={16} /> },
+      { id: 'billing', label: '计费', icon: <Briefcase size={16} /> },
+      { id: 'backend', label: '后端连接', icon: <Server size={16} /> },
+      { id: 'advanced', label: '高级', icon: <Wrench size={16} /> },
     ]
 
     return (
-      <div className={styles['secondary-nav']} role="tablist" aria-label="设置分类">
+      <div className={styles['tab-bar']} role="tablist" aria-label="设置分类">
         {tabs.map(tab => (
-          <div key={tab.id}>
-            <button
-              className={`${styles['nav-item']} ${activeTab === tab.id ? styles['active'] : ''}`}
-              onClick={() => {
-                if (tab.id === 'advanced') {
-                  // 点击高级 Tab 时切换展开状态并激活
-                  if (activeTab !== 'advanced') {
-                    handleTabChange('advanced')
-                  } else {
-                    toggleAdvancedExpanded()
-                  }
+          <button
+            key={tab.id}
+            className={`${styles['tab-item']} ${activeTab === tab.id ? styles['active'] : ''}`}
+            onClick={() => {
+              if (tab.id === 'advanced') {
+                // 点击高级 Tab 时切换展开状态并激活
+                if (activeTab !== 'advanced') {
+                  handleTabChange('advanced')
                 } else {
-                  handleTabChange(tab.id)
+                  toggleAdvancedExpanded()
                 }
-              }}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              aria-label={tab.label}
-              aria-expanded={tab.id === 'advanced' ? advancedExpanded : undefined}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-              {tab.id === 'advanced' && (
-                <ChevronRight
-                  size={14}
-                  className={`${styles['chevron']} ${advancedExpanded ? styles['chevron-expanded'] : ''}`}
-                />
-              )}
-            </button>
-            {/* 高级子导航 */}
-            {tab.id === 'advanced' && advancedExpanded && (
-              <div className={styles['sub-nav']}>
-                {ADVANCED_SUB_ITEMS.map(sub => (
-                  <button
-                    key={sub.id}
-                    className={`${styles['sub-nav-item']} ${activeTab === 'advanced' && activeSubTab === sub.id ? styles['sub-active'] : ''}`}
-                    onClick={() => {
-                      if (activeTab !== 'advanced') {
-                        setActiveTab('advanced')
-                      }
-                      handleSubTabChange(sub.id)
-                    }}
-                    role="tab"
-                    aria-selected={activeTab === 'advanced' && activeSubTab === sub.id}
-                    aria-label={sub.label}
-                  >
-                    {sub.icon}
-                    <span>{sub.label}</span>
-                  </button>
-                ))}
-              </div>
+              } else {
+                handleTabChange(tab.id)
+              }
+            }}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-label={tab.label}
+            aria-expanded={tab.id === 'advanced' ? advancedExpanded : undefined}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+            {tab.id === 'advanced' && (
+              <ChevronRight
+                size={14}
+                className={`${styles['chevron']} ${advancedExpanded ? styles['chevron-expanded'] : ''}`}
+              />
             )}
-          </div>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  /** 渲染高级 Tab 的子标签栏（水平排列，对齐 Canvas）*/
+  const renderAdvancedSubTabBar = () => {
+    if (!advancedExpanded) return null
+    return (
+      <div className={styles['sub-tab-bar']} role="tablist" aria-label="高级设置分类">
+        {ADVANCED_SUB_ITEMS.map(sub => (
+          <button
+            key={sub.id}
+            className={`${styles['sub-tab-item']} ${activeTab === 'advanced' && activeSubTab === sub.id ? styles['sub-active'] : ''}`}
+            onClick={() => {
+              if (activeTab !== 'advanced') {
+                setActiveTab('advanced')
+              }
+              handleSubTabChange(sub.id)
+            }}
+            role="tab"
+            aria-selected={activeTab === 'advanced' && activeSubTab === sub.id}
+            aria-label={sub.label}
+          >
+            {sub.icon}
+            <span>{sub.label}</span>
+          </button>
         ))}
       </div>
     )
@@ -271,9 +274,11 @@ function SettingsPage() {
   return (
     <PageLayout
       title="设置"
-      secondarySidebar={renderSecondarySidebar()}
       className={styles['settings-page']}
     >
+      {/* 水平标签栏（对齐 Canvas 设计参考）*/}
+      {renderTabBar()}
+
       <div className={styles['settings-content']}>
         {activeTab === 'general' && (
           <ErrorBoundary name="GeneralSettings">
@@ -323,7 +328,13 @@ function SettingsPage() {
           </ErrorBoundary>
         )}
 
-        {activeTab === 'advanced' && renderAdvancedContent()}
+        {activeTab === 'advanced' && (
+          <>
+            {/* 高级 Tab 子标签栏（水平排列）*/}
+            {renderAdvancedSubTabBar()}
+            {renderAdvancedContent()}
+          </>
+        )}
       </div>
     </PageLayout>
   )

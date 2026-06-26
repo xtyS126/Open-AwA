@@ -1,0 +1,50 @@
+/* StatCard 统计卡片组件样式 —— 对齐 Canvas dashboard 统计卡片 */
+
+.statCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  transition: box-shadow var(--transition-base);
+}
+.statCard:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 顶部行 —— 标签与图标两端对齐 */
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+/* 标签 —— 次要文字色 */
+.label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* 图标容器 —— 默认主色，可被 accentColor 覆盖 */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+
+/* 大号数值 —— 3xl 加粗，使用展示字体 */
+.value {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  font-family: var(--font-display);
+  color: var(--color-text);
+  line-height: var(--leading-tight);
+  margin-bottom: var(--space-2);
+}
+
+/* 底部趋势徽章容器 */
+.trend {
+  display: inline-flex;
+  align-items: center;
+}

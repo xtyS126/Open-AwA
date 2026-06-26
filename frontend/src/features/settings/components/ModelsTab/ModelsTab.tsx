@@ -7,6 +7,8 @@ import type { ModelConfiguration, ModelProvider, ProviderModel } from '@/feature
 import { AddConfigForm } from './AddConfigForm'
 import { ModelManagementTable } from './ModelManagementTable'
 import { MODALITY_TYPES, MODALITY_LABELS } from '@/features/settings/SettingsPage.utils'
+import { Badge } from '@/shared/components/ui/Badge'
+import { getProviderIcon } from '@/assets/providers'
 import styles from '@/features/settings/SettingsPage.module.css'
 
 interface ConfigModelOption {
@@ -113,6 +115,15 @@ export function ModelsTab({
     return configurations.find(c => c.id === editingConfigId) || null
   }, [configurations, editingConfigId])
 
+  // 计算每个供应商的模型配置数量
+  const providerModelCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    configurations.forEach(config => {
+      counts[config.provider] = (counts[config.provider] || 0) + 1
+    })
+    return counts
+  }, [configurations])
+
   // 模态类型常量（已从 utils 导入）
 
   return (
@@ -144,6 +155,62 @@ export function ModelsTab({
           onFieldChange={onFieldChange}
           onAdd={onAddConfiguration}
         />
+      )}
+
+      {/* 供应商卡片网格（对齐 Canvas 设计参考）*/}
+      {providers.length > 0 && (
+        <div className={styles['provider-cards-section']}>
+          <div className={styles['provider-cards-header']}>
+            <h2>模型配置</h2>
+          </div>
+          <div className={styles['provider-cards-grid']}>
+            {providers.map(provider => {
+              // 获取供应商图标
+              const icon = provider.icon || getProviderIcon(provider.id)
+              // 判断连接状态：ollama 为本地，其余依据 has_api_key/api_key_status
+              const isLocal = provider.id.toLowerCase() === 'ollama'
+              const isConnected = !isLocal && (provider.has_api_key === true || provider.api_key_status === 'active')
+              const modelCount = provider.configuration_count ?? providerModelCounts[provider.id] ?? 0
+              const displayName = provider.display_name || provider.name || providerNameMap[provider.id] || provider.id
+
+              return (
+                <div key={provider.id} className={styles['provider-card']}>
+                  {/* 供应商品牌图标盒子（44x44 圆角）*/}
+                  <div className={styles['provider-card-icon']}>
+                    {icon ? (
+                      <img src={icon} alt={displayName} />
+                    ) : (
+                      <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600 }}>
+                        {displayName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  {/* 中间内容：名称 + 状态徽标 + 模型数量 */}
+                  <div className={styles['provider-card-body']}>
+                    <div className={styles['provider-card-title-row']}>
+                      <span className={styles['provider-card-name']}>{displayName}</span>
+                      {isLocal ? (
+                        <Badge variant="warning" text="本地" />
+                      ) : isConnected ? (
+                        <Badge variant="success" text="已连接" />
+                      ) : null}
+                    </div>
+                    <p className={styles['provider-card-sub']}>
+                      {modelCount > 0 ? `${modelCount} 个模型已配置` : '暂无模型配置'}
+                    </p>
+                  </div>
+                  {/* 配置按钮 */}
+                  <button
+                    className={styles['provider-card-config-btn']}
+                    onClick={onToggleAddForm}
+                  >
+                    配置
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
 
       {/* 模型配置表格 */}

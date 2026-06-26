@@ -1,57 +1,63 @@
 .settings-page {
-  /* Inherits from PageLayout */
+  /* 继承自 PageLayout，无额外样式覆盖 */
 }
 
-.secondary-nav {
+/* ===== 水平标签栏（对齐 Canvas 设计参考）===== */
+/* 主标签栏容器：底部 1px 分割线，水平排列 */
+.tab-bar {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 32px;
+  /* 负边距 + 内边距使分割线贯穿容器 padding，对齐 Canvas -mx-8 px-8 */
+  margin-left: -32px;
+  margin-right: -32px;
+  padding-left: 32px;
+  padding-right: 32px;
+  overflow-x: auto;
 }
 
-.nav-item {
-  display: flex;
+/* 隐藏水平标签栏滚动条 */
+.tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-bar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 单个标签按钮：下边框指示激活态 */
+.tab-item {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 12px 16px;
   background: transparent;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  text-align: left;
-  transition: var(--transition-base);
-  position: relative;
+  color: var(--color-text-tertiary);
   border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: var(--font-medium);
+  text-align: left;
+  white-space: nowrap;
+  transition: var(--transition-base);
   cursor: pointer;
 }
 
-.nav-item:hover {
-  background: var(--color-primary-softest-bg);
-  color: var(--color-text);
+.tab-item:hover {
+  opacity: 0.8;
 }
 
-.nav-item.active {
-  background: var(--color-primary-soft-bg);
+/* 激活态：主色文字 + 主色下边框 + 半粗字重 */
+.tab-item.active {
   color: var(--color-primary);
-  font-weight: var(--font-medium);
-}
-
-.nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  width: 3px;
-  height: 18px;
-  background: var(--color-primary);
-  border-radius: 0 4px 4px 0;
-}
-
-.nav-item.active svg {
-  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: var(--font-semibold);
 }
 
 /* 高级 Tab 箭头图标 */
 .chevron {
-  margin-left: auto;
   transition: transform 0.2s ease;
   color: var(--color-text-secondary);
 }
@@ -60,56 +66,50 @@
   transform: rotate(90deg);
 }
 
-/* 子导航容器 */
-.sub-nav {
+/* 高级子导航：水平排列，置于主标签栏下方 */
+.sub-tab-bar {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-  animation: subNavExpand 0.2s ease-out;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 24px;
+  margin-left: -32px;
+  margin-right: -32px;
+  padding-left: 32px;
+  padding-right: 32px;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-@keyframes subNavExpand {
-  from {
-    opacity: 0;
-    max-height: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 400px;
-  }
+.sub-tab-bar::-webkit-scrollbar {
+  display: none;
 }
 
-/* 子导航项 */
-.sub-nav-item {
-  display: flex;
+.sub-tab-item {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px 8px 42px;
+  gap: 8px;
+  padding: 10px 16px;
   background: transparent;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  text-align: left;
-  transition: var(--transition-base);
+  color: var(--color-text-tertiary);
   border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  font-weight: var(--font-medium);
+  text-align: left;
+  white-space: nowrap;
+  transition: var(--transition-base);
   cursor: pointer;
 }
 
-.sub-nav-item:hover {
-  background: var(--color-primary-softest-bg);
-  color: var(--color-text);
+.sub-tab-item:hover {
+  opacity: 0.8;
 }
 
-/* 子导航项激活状态 */
-.sub-nav-item.sub-active {
-  background: var(--color-primary-soft-bg);
+.sub-tab-item.sub-active {
   color: var(--color-primary);
-  font-weight: var(--font-medium);
-}
-
-.sub-nav-item.sub-active svg {
-  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: var(--font-semibold);
 }
 
 .settings-content {
@@ -1086,6 +1086,110 @@
   gap: 8px;
 }
 
+/* ===== Provider 卡片网格（对齐 Canvas 设计参考）===== */
+.provider-cards-section {
+  margin-bottom: 32px;
+}
+
+.provider-cards-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.provider-cards-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.provider-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+/* 单个供应商卡片：横向布局（图标 + 名称状态 + 配置按钮） */
+.provider-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-base);
+  cursor: pointer;
+}
+
+.provider-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* 供应商品牌图标盒子：44x44 圆角 */
+.provider-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.provider-card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 卡片中间内容区：名称 + 状态徽标 + 模型数量 */
+.provider-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-card-name {
+  font-size: 14px;
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.provider-card-sub {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+/* 配置按钮：边框样式 */
+.provider-card-config-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition-base);
+  flex-shrink: 0;
+}
+
+.provider-card-config-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 /* ===== Model Management Table ===== */
 
 .model-mgmt-table-wrapper {
@@ -1098,6 +1202,15 @@
   font-weight: 600;
 }
 
+/* 表格容器：圆角边框 + 阴影（对齐 Canvas）*/
+.model-mgmt-table-container {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  background: var(--color-bg);
+}
+
 .model-mgmt-table {
   width: 100%;
   border-collapse: collapse;
@@ -1106,17 +1219,25 @@
 
 .model-mgmt-table th,
 .model-mgmt-table td {
-  padding: 10px 12px;
+  padding: 12px 20px;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
 }
 
+/* 表头：bg-tertiary 背景 + 大写 + 字间距 + text-xs（对齐 Canvas）*/
 .model-mgmt-table th {
   background: var(--color-bg-tertiary);
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--color-text-secondary);
+  font-weight: var(--font-medium);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.model-mgmt-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .model-mgmt-table tbody tr:hover {
@@ -1127,17 +1248,20 @@
   background: var(--color-bg-tertiary) !important;
 }
 
+/* 模型图标徽章：8x8 圆角方块（对齐 Canvas 品牌色图标）*/
 .model-icon-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
   background: var(--color-primary);
   color: white;
   font-size: 12px;
   font-weight: 600;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .model-name-cell {
@@ -1179,28 +1303,47 @@
   color: #d97706;
 }
 
+/* 模型类型徽标（对齐 Canvas：primary-soft 表示对话，purple 表示对话+推理）*/
 .modality-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   white-space: nowrap;
 }
 
 .modality-text {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-tertiary);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
 }
 
 .modality-vision {
-  background: var(--color-primary-softer-bg);
+  background: var(--color-primary-soft-bg);
   color: var(--color-primary);
 }
 
 .modality-multimodal {
-  background: #f3e8ff;
-  color: #9333ea;
+  background: var(--color-tag-purple-bg);
+  color: var(--color-tag-purple-text);
+}
+
+/* 状态列：Toggle + 启用文字（对齐 Canvas）*/
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-text {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-success);
+}
+
+.status-text.inactive {
+  color: var(--color-text-tertiary);
 }
 
 /* 模型编辑模态框 */

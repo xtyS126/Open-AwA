@@ -1,40 +1,53 @@
+/* 工具调用卡片：对齐 Canvas tool-card（border，radius-sm，header bg-tertiary，body padding） */
 .inlineContainer {
-  display: inline-block;
-  margin-right: 8px;
+  display: block;
+  margin-top: var(--space-2);
+  margin-right: var(--space-2);
   vertical-align: middle;
 }
 
+/* 卡片头部：对齐 Canvas tool-card-header（bg-tertiary，border，text-xs，font-medium，secondary） */
 .inlineBadge {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  font-size: 13px;
-  color: #555;
-  background-color: rgba(0, 0, 0, 0.04);
-  border-radius: 4px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.2s;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
   white-space: nowrap;
 }
 
 .inlineBadge:hover {
-  background-color: rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-secondary);
+  border-color: var(--color-primary);
 }
 
 .inlineText {
-  font-family: monospace;
+  font-family: var(--font-mono);
+  color: var(--color-primary);
 }
 
 .statusText {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
 }
 
+/* 状态色：错误使用 error，运行中使用 primary */
 .status-error {
-  color: #dc2626;
-  background-color: rgba(220, 38, 38, 0.1);
+  color: var(--color-error-strong);
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+}
+
+.status-running {
+  color: var(--color-primary);
 }
 
 .spin {
@@ -46,39 +59,42 @@
   100% { transform: rotate(360deg); }
 }
 
+/* 卡片主体：对齐 Canvas tool-card-body（padding 12px，text-xs，secondary，line-height normal） */
 .expandedDetails {
   display: block;
-  margin-top: 4px;
-  margin-bottom: 8px;
-  padding: 8px;
-  background: #fcfcfc;
-  border: 1px solid #eee;
-  border-radius: 6px;
-  font-size: 12px;
+  margin-top: 0;
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
 }
 
 .errorText {
-  color: #dc2626;
-  margin-bottom: 4px;
+  color: var(--color-error-strong);
+  margin-bottom: var(--space-1);
 }
 
 .undoBtn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  margin-top: 6px;
-  border: 1px solid var(--color-warning-border, #fbbf24);
-  border-radius: 6px;
-  background: var(--color-warning-bg, rgba(251, 191, 36, 0.08));
-  color: var(--color-warning-strong, #d97706);
-  font-size: 12px;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  margin-top: var(--space-2);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-strong);
+  font-size: var(--text-xs);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .undoBtn:hover {
-  background: var(--color-warning-bg-hover, rgba(251, 191, 36, 0.16));
+  background: var(--color-warning-soft-bg);
 }
 
 .undoBtn:disabled {
@@ -88,7 +104,7 @@
 
 .undoneLabel {
   display: inline-block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: #059669;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-success-strong);
 }

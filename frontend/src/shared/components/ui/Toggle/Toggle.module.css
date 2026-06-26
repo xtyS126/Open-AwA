@@ -1,0 +1,70 @@
+/* Toggle 切换开关组件样式 —— 对齐 Canvas 设计参考 */
+
+.toggle {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+  transition: background var(--transition-fast);
+  /* 默认居中对齐，便于在行内使用 */
+  vertical-align: middle;
+}
+
+/* 激活态 —— 主色背景 */
+.toggle.active {
+  background: var(--color-primary);
+}
+
+/* 圆形 thumb —— 默认贴左 */
+.thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+
+/* 激活态 thumb 向右平移 */
+.toggle.active .thumb {
+  transform: translateX(var(--thumb-travel, 18px));
+}
+
+/* 尺寸：md = 40x22px，thumb 18px，平移 18px */
+.md {
+  width: 40px;
+  height: 22px;
+  --thumb-travel: 18px;
+}
+.md .thumb {
+  width: 18px;
+  height: 18px;
+}
+
+/* 尺寸：sm = 32x18px，thumb 14px，平移 14px */
+.sm {
+  width: 32px;
+  height: 18px;
+  --thumb-travel: 14px;
+}
+.sm .thumb {
+  width: 14px;
+  height: 14px;
+}
+
+/* 禁用态 */
+.toggle.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 聚焦可见态 —— 无障碍 */
+.toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

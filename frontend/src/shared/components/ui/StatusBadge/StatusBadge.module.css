@@ -1,0 +1,73 @@
+/* StatusBadge 状态徽章组件样式 —— 对齐 Canvas 设计参考 */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* 尺寸 —— md 默认 4px 12px 内边距 + text-xs */
+.md {
+  padding: 4px 12px;
+  font-size: var(--text-xs);
+}
+
+/* sm 紧凑尺寸 —— 2px 8px 内边距 + 更小字号 */
+.sm {
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+}
+
+/* 圆点指示器 —— md 默认 6px */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+/* sm 尺寸圆点略小 */
+.sm .dot {
+  width: 5px;
+  height: 5px;
+}
+
+/* 状态变体 —— active（启用/运行中）：成功绿 */
+.active {
+  background: var(--color-success-bg);
+  color: var(--color-success-strong);
+}
+.active .dot {
+  background: var(--color-success);
+}
+
+/* 状态变体 —— inactive（停用/未激活）：灰色 */
+.inactive {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+}
+.inactive .dot {
+  background: var(--color-text-tertiary);
+}
+
+/* 状态变体 —— pending（等待中）：警告黄 */
+.pending {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-strong);
+}
+.pending .dot {
+  background: var(--color-warning);
+}
+
+/* 状态变体 —— error（异常）：错误红 */
+.error {
+  background: var(--color-error-bg);
+  color: var(--color-error-strong);
+}
+.error .dot {
+  background: var(--color-error);
+}

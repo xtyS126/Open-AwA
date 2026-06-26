@@ -1,50 +1,52 @@
-/* Badge 徽标组件样式 */
+/* Badge 徽标组件样式 —— 对齐 Canvas 设计参考 */
 
 /* dot 模式 — 8px 圆点 */
 .dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
-/* text 模式 — pill 标签 */
+/* text 模式 — pill 标签（对齐 Canvas：padding 2px 10px、radius-full、text-xs、font-medium） */
 .text {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-size: 12px;
+  gap: var(--space-1);
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
   font-weight: var(--font-medium);
   line-height: 1;
   white-space: nowrap;
 }
 
-/* 变体颜色 */
+/* dot 模式变体颜色 —— 实心圆点 */
 .primary { background-color: var(--color-primary); }
 .success { background-color: var(--color-success); }
 .warning { background-color: var(--color-warning); }
 .error   { background-color: var(--color-error); }
 
-/* text 模式背景与文字色（soft-bg + strong 色） */
+/* text 模式背景与文字色（soft-bg + strong 色，对齐 Canvas 语义色板） */
+/* primary 变体映射到 Canvas 的 info 风格（蓝色信息标签） */
 .text.primary {
-  background-color: var(--color-primary-soft-bg);
-  color: var(--color-primary);
+  background-color: var(--color-info-bg);
+  color: var(--color-primary-dark);
 }
 
 .text.success {
-  background-color: var(--color-success-soft-bg);
+  background-color: var(--color-success-bg);
   color: var(--color-success-strong);
 }
 
 .text.warning {
-  background-color: var(--color-warning-soft-bg);
+  background-color: var(--color-warning-bg);
   color: var(--color-warning-strong);
 }
 
 .text.error {
-  background-color: var(--color-error-soft-bg);
+  background-color: var(--color-error-bg);
   color: var(--color-error-strong);
 }

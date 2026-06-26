@@ -4,7 +4,7 @@ import tsParser from '@typescript-eslint/parser'
 import reactHooks from 'eslint-plugin-react-hooks'
 
 export default [
-  { ignores: ['dist/**', 'coverage/**', 'test-results/**'] },
+  { ignores: ['dist/**', 'coverage/**', 'test-results/**', '.vite-e2e-cache/**', 'node_modules/**'] },
   js.configs.recommended,
   {
     files: ['src/**/*.ts', 'src/**/*.tsx'],

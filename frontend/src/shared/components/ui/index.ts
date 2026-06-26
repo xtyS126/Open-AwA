@@ -40,3 +40,12 @@ export type { SegmentedControlProps, SegmentedOption } from './SegmentedControl'
 
 export { Avatar } from './Avatar'
 export type { AvatarProps, AvatarSize, AvatarShape } from './Avatar'
+
+export { Toggle } from './Toggle'
+export type { ToggleProps, ToggleSize } from './Toggle'
+
+export { StatCard } from './StatCard'
+export type { StatCardProps } from './StatCard'
+
+export { StatusBadge } from './StatusBadge'
+export type { StatusBadgeProps, StatusBadgeVariant, StatusBadgeSize } from './StatusBadge'
