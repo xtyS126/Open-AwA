@@ -47,7 +47,7 @@ class FeedbackLayer:
             "success": True
         }
     
-    async def generate_response(self, results: List[Dict[str, Any]], context: Dict[str, Any] | None = None) -> str:
+    async def generate_response(self, results: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None) -> str:
         """根据工具执行结果列表生成面向用户的自然语言反馈文本, 支持通过 context._record_hook 注入行为记录回调."""
         started_at = time.perf_counter()
         if not results:
@@ -64,8 +64,9 @@ class FeedbackLayer:
                             "results_count": 0
                         }
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    # 反馈生成是关键路径，记录日志而非静默吞异常
+                    logger.warning("反馈行为记录回调失败（空结果路径）", exc_info=e)
             return response_text
 
         responses = []
@@ -105,8 +106,9 @@ class FeedbackLayer:
                         "results_count": len(results)
                     }
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                # 反馈生成是关键路径，记录日志而非静默吞异常
+                logger.warning("反馈行为记录回调失败", exc_info=e)
 
         return response_text
     

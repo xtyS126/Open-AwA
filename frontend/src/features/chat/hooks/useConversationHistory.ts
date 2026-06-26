@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { conversationAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
@@ -32,6 +32,8 @@ function mergeConversationSummaries(
  */
 export function useConversationHistory() {
   const setConversations = useSessionStore((state) => state.setConversations)
+  // 跨标签页会话变更版本号：变化时重新加载会话列表
+  const conversationsVersion = useSessionStore((state) => state.conversationsVersion)
   const [isCompactViewport, setIsCompactViewport] = useState(getIsCompactViewport)
   const [historySidebarOpen, setHistorySidebarOpen] = useState(() => !getIsCompactViewport())
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -111,6 +113,21 @@ export function useConversationHistory() {
       setHistoryInitialized(true)
     }
   }, [historySearch, historySort, includeDeleted, setConversations])
+
+  // 跨标签页会话变更监听：当其他标签页广播会话变更导致 conversationsVersion 自增时，
+  // 重新加载会话列表。使用 ref 记录上一次版本号，避免初始挂载时触发重复加载。
+  const prevConversationsVersionRef = useRef(conversationsVersion)
+  useEffect(() => {
+    if (prevConversationsVersionRef.current === conversationsVersion) {
+      return
+    }
+    prevConversationsVersionRef.current = conversationsVersion
+    // 仅在初始化完成后才响应版本变化，避免与初始加载竞态
+    if (!historyInitialized) {
+      return
+    }
+    void loadConversationList(1, false)
+  }, [conversationsVersion, loadConversationList, historyInitialized])
 
   return {
     isCompactViewport,

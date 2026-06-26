@@ -53,11 +53,6 @@ export default function LocalSearchPage() {
     init()
   }, [init])
 
-  /* 加载服务端索引统计 */
-  useEffect(() => {
-    loadStats()
-  }, [])
-
   const loadStats = async () => {
     try {
       const res = await toolsAPI.searchStats()
@@ -66,6 +61,25 @@ export default function LocalSearchPage() {
       }
     } catch {
       /* 服务端统计加载失败不影响客户端搜索 */
+    }
+  }
+
+  /* 加载服务端索引统计 */
+  useEffect(() => {
+    loadStats()
+  }, [])
+
+  const handleServerSearch = async (q: string) => {
+    try {
+      const res = await toolsAPI.localSearch(q, 20, 'tfidf')
+      if (res.data.success && res.data.data) {
+        const data = res.data.data as unknown as { results: SearchResultItem[] }
+        setServerResults(data.results || [])
+      } else {
+        setError(res.data.error || '服务端搜索失败')
+      }
+    } catch (e) {
+      setError(`服务端搜索请求失败: ${e instanceof Error ? e.message : '未知错误'}`)
     }
   }
 
@@ -113,20 +127,6 @@ export default function LocalSearchPage() {
     },
     [query, searchMode, flexSearch]
   )
-
-  const handleServerSearch = async (q: string) => {
-    try {
-      const res = await toolsAPI.localSearch(q, 20, 'tfidf')
-      if (res.data.success && res.data.data) {
-        const data = res.data.data as unknown as { results: SearchResultItem[] }
-        setServerResults(data.results || [])
-      } else {
-        setError(res.data.error || '服务端搜索失败')
-      }
-    } catch (e) {
-      setError(`服务端搜索请求失败: ${e instanceof Error ? e.message : '未知错误'}`)
-    }
-  }
 
   /* 索引文档到客户端 */
   const handleIndexToClient = useCallback(() => {

@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>仪表盘 - Open-AwA</title>
+    <style id="theme-vars">
+/* Open-AwA Design Tokens - Canvas Brand CSS */
+/* 基于前端 tokens.css 提取，用于画布页面渲染 */
+
+:root {
+  /* 主色调 */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-ring: rgba(59, 130, 246, 0.2);
+  --color-primary-soft-bg: rgba(59, 130, 246, 0.1);
+  --color-primary-softer-bg: rgba(59, 130, 246, 0.08);
+  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
+
+  /* 背景色 */
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f8fafc;
+  --color-bg-tertiary: #f1f5f9;
+
+  /* 文字色 */
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+
+  /* 边框色 */
+  --color-border: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+
+  /* 语义色 */
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-success-soft-bg: #d1fae5;
+  --color-success-strong: #047857;
+
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.12);
+  --color-error-soft-bg: #fee2e2;
+  --color-error-strong: #b91c1c;
+
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.16);
+  --color-warning-soft-bg: #fef3c7;
+  --color-warning-strong: #b45309;
+
+  --color-info: #3b82f6;
+  --color-info-bg: #dbeafe;
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+
+  /* 遮罩 */
+  --color-overlay: rgba(15, 23, 42, 0.5);
+  --color-overlay-soft: rgba(15, 23, 42, 0.3);
+
+  /* 图表色板 */
+  --color-chart-primary: #3b82f6;
+  --color-chart-secondary: #10b981;
+  --color-chart-3: #ef4444;
+  --color-chart-4: #f59e0b;
+  --color-chart-5: #8b5cf6;
+  --color-chart-6: #ec4899;
+
+  /* 标签色 */
+  --color-tag-purple-bg: rgba(139, 92, 246, 0.12);
+  --color-tag-purple-text: #6d28d9;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* 字体 */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+
+  /* 字体大小 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* 字重 */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* 行高 */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.75;
+
+  /* 圆角 */
+  --radius-none: 0;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-glow: 0 0 0 3px var(--color-primary-ring);
+  --shadow-card-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* 过渡 */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* 布局 */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 68px;
+}
+
+/* 暗色主题 */
+.dark {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-dark: #2563eb;
+  --color-primary-ring: rgba(59, 130, 246, 0.3);
+  --color-primary-soft-bg: rgba(59, 130, 246, 0.15);
+  --color-primary-softer-bg: rgba(59, 130, 246, 0.1);
+  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
+
+  --color-bg: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+
+  --color-text: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-tertiary: #94a3b8;
+
+  --color-border: #334155;
+  --color-border-subtle: #1e293b;
+
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.2);
+  --color-success-soft-bg: rgba(52, 211, 153, 0.1);
+  --color-success-strong: #10b981;
+
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.2);
+  --color-error-soft-bg: rgba(248, 113, 113, 0.1);
+  --color-error-strong: #ef4444;
+
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.2);
+  --color-warning-soft-bg: rgba(251, 191, 36, 0.1);
+  --color-warning-strong: #f59e0b;
+
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.2);
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-overlay-soft: rgba(0, 0, 0, 0.5);
+
+  --color-tag-purple-bg: rgba(167, 139, 250, 0.2);
+  --color-tag-purple-text: #c4b5fd;
+
+  --shadow-card-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--color-primary);
+    --color-border: var(--color-border);
+    --color-chart-3: var(--color-chart-3);
+    --color-chart-4: var(--color-chart-4);
+    --color-chart-5: var(--color-chart-5);
+  }
+  @layer base {
+    body { background: var(--color-background); color: var(--color-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+    <style>
+      /* 侧边栏导航项样式 */
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: var(--radius-sm);
+        color: var(--color-text-secondary);
+        font-size: var(--text-sm);
+        transition: all var(--transition-fast);
+        cursor: pointer;
+        text-decoration: none;
+        position: relative;
+      }
+      .nav-item:hover {
+        background: var(--color-primary-softest-bg);
+        color: var(--color-text);
+      }
+      .nav-item.active {
+        background: var(--color-primary-soft-bg);
+        color: var(--color-primary);
+        font-weight: var(--font-medium);
+      }
+      .nav-item.active::before {
+        content: '';
+        position: absolute;
+        left: -12px;
+        top: 4px;
+        bottom: 4px;
+        width: 3px;
+        background: var(--color-primary);
+        border-radius: var(--radius-full);
+      }
+      .nav-item svg {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+      }
+      .nav-group-label {
+        font-size: 11px;
+        font-weight: var(--font-medium);
+        color: var(--color-text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 8px 12px 4px;
+      }
+      /* 统计卡片 */
+      .stat-card {
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-6);
+        transition: box-shadow var(--transition-base);
+      }
+      .stat-card:hover {
+        box-shadow: var(--shadow-card-hover);
+      }
+      /* 状态徽章 */
+      .badge-success {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 10px;
+        border-radius: var(--radius-full);
+        font-size: var(--text-xs);
+        font-weight: var(--font-medium);
+        background: var(--color-success-bg);
+        color: var(--color-success-strong);
+      }
+      .badge-info {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 10px;
+        border-radius: var(--radius-full);
+        font-size: var(--text-xs);
+        font-weight: var(--font-medium);
+        background: var(--color-info-bg);
+        color: var(--color-primary-dark);
+      }
+      .badge-warning {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 10px;
+        border-radius: var(--radius-full);
+        font-size: var(--text-xs);
+        font-weight: var(--font-medium);
+        background: var(--color-warning-bg);
+        color: var(--color-warning-strong);
+      }
+      /* 系统资源卡片 */
+      .system-card {
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-5);
+        transition: box-shadow var(--transition-base);
+      }
+      .system-card:hover {
+        box-shadow: var(--shadow-md);
+      }
+      /* 活动表格 */
+      .activity-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+      .activity-table th {
+        font-size: var(--text-xs);
+        font-weight: var(--font-medium);
+        color: var(--color-text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 10px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .activity-table td {
+        font-size: var(--text-sm);
+        color: var(--color-text-secondary);
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border-subtle);
+      }
+      .activity-table tbody tr:hover {
+        background: var(--color-primary-softest-bg);
+      }
+      /* 图表容器 */
+      .chart-container {
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: var(--space-6);
+      }
+      /* 滚动条 */
+      .sidebar-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      .sidebar-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .sidebar-scroll::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: var(--radius-full);
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased" style="background: var(--color-bg-secondary); color: var(--color-text);">
+
+    <div class="flex h-screen overflow-hidden">
+
+        <!-- ========== 左侧侧边栏 ========== -->
+        <aside class="w-[260px] flex-shrink-0 h-full flex flex-col border-r" style="background: var(--color-bg); border-color: var(--color-border);">
+
+            <!-- Logo 头部 -->
+            <div class="flex items-center gap-3 px-5 py-4 border-b" style="border-color: var(--color-border);">
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--color-primary);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <span class="font-semibold text-base" style="color: var(--color-text); font-family: var(--font-display);">Open-AwA</span>
+            </div>
+
+            <!-- 导航列表 -->
+            <nav class="flex-1 overflow-y-auto sidebar-scroll px-3 py-3">
+
+                <!-- 控制组 -->
+                <div class="nav-group-label">控制</div>
+                <a href="#" class="nav-item" data-dom-id="nav-chat">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span>聊天</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    <span>编程</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span>工作区</span>
+                </a>
+                <a href="#" class="nav-item active" data-dom-id="nav-dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+                    <span>仪表盘</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span>计费</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <span>消息</span>
+                </a>
+
+                <!-- 智能体组 -->
+                <div class="nav-group-label mt-4">智能体</div>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    <span>TTS</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>Agents</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>角色管理</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                    <span>角色市场</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    <span>数据看板</span>
+                </a>
+                <a href="#" class="nav-item" data-dom-id="nav-skills">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    <span>技能</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>定时任务</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span>工作流</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>子智能体</span>
+                </a>
+                <a href="#" class="nav-item" data-dom-id="nav-plugins">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    <span>插件</span>
+                </a>
+                <a href="#" class="nav-item" data-dom-id="nav-memory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                    <span>记忆</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                    <span>经验</span>
+                </a>
+
+                <!-- 外观组 -->
+                <div class="nav-group-label mt-4">外观</div>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <span>主题</span>
+                </a>
+
+                <!-- 系统组 -->
+                <div class="nav-group-label mt-4">系统</div>
+                <a href="#" class="nav-item" data-dom-id="nav-settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>设置</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                    <span>通信</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <span>IM渠道</span>
+                </a>
+
+            </nav>
+
+            <!-- 底部：主题切换 + 版本 -->
+            <div class="px-4 py-3 border-t" style="border-color: var(--color-border);">
+                <div class="flex items-center justify-between">
+                    <button class="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs" style="color: var(--color-text-tertiary); background: var(--color-bg-tertiary);" id="theme-toggle" onclick="toggleTheme()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                        <span>切换主题</span>
+                    </button>
+                    <span class="text-xs" style="color: var(--color-text-tertiary);">v0.1.0</span>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- ========== 主内容区域 ========== -->
+        <main class="flex-1 overflow-y-auto">
+
+            <div class="max-w-6xl mx-auto px-8 py-8">
+
+                <!-- 页面标题 -->
+                <div class="mb-8">
+                    <h1 class="text-2xl font-bold" style="color: var(--color-text); font-family: var(--font-display);">仪表盘</h1>
+                    <p class="mt-1 text-sm" style="color: var(--color-text-secondary);">系统运行状态概览</p>
+                </div>
+
+                <!-- ========== 统计卡片行 ========== -->
+                <div class="grid grid-cols-4 gap-5 mb-8">
+
+                    <!-- 今日交互 -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm" style="color: var(--color-text-secondary);">今日交互</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-primary);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        </div>
+                        <div class="text-3xl font-bold mb-2" style="color: var(--color-text); font-family: var(--font-display);">1,234</div>
+                        <div class="badge-success">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                            +12.5%
+                        </div>
+                    </div>
+
+                    <!-- 活跃技能 -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm" style="color: var(--color-text-secondary);">活跃技能</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-warning);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        </div>
+                        <div class="text-3xl font-bold mb-2" style="color: var(--color-text); font-family: var(--font-display);">28<span class="text-lg font-normal" style="color: var(--color-text-tertiary);">/35</span></div>
+                        <div class="text-xs" style="color: var(--color-text-tertiary);">已启用 / 总计</div>
+                    </div>
+
+                    <!-- 运行插件 -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm" style="color: var(--color-text-secondary);">运行插件</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-chart-5);"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                        </div>
+                        <div class="text-3xl font-bold mb-2" style="color: var(--color-text); font-family: var(--font-display);">12</div>
+                        <div class="badge-info">
+                            3 个可更新
+                        </div>
+                    </div>
+
+                    <!-- 成本消耗 -->
+                    <div class="stat-card">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm" style="color: var(--color-text-secondary);">成本消耗</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-success);"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        </div>
+                        <div class="text-3xl font-bold mb-2" style="color: var(--color-text); font-family: var(--font-display);">$2.45</div>
+                        <div class="badge-success">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/></svg>
+                            -8.3%
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- ========== 图表区域 (双列) ========== -->
+                <div class="grid grid-cols-2 gap-5 mb-8">
+
+                    <!-- 近7天交互趋势 -->
+                    <div class="chart-container">
+                        <h3 class="text-sm font-semibold mb-4" style="color: var(--color-text);">近7天交互趋势</h3>
+                        <svg viewBox="0 0 400 180" class="w-full" preserveAspectRatio="xMidYMid meet">
+                            <!-- 网格线 -->
+                            <line x1="40" y1="10" x2="40" y2="150" stroke="var(--color-border)" stroke-width="1"/>
+                            <line x1="40" y1="150" x2="390" y2="150" stroke="var(--color-border)" stroke-width="1"/>
+                            <line x1="40" y1="115" x2="390" y2="115" stroke="var(--color-border-subtle)" stroke-width="0.5" stroke-dasharray="4,4"/>
+                            <line x1="40" y1="80" x2="390" y2="80" stroke="var(--color-border-subtle)" stroke-width="0.5" stroke-dasharray="4,4"/>
+                            <line x1="40" y1="45" x2="390" y2="45" stroke="var(--color-border-subtle)" stroke-width="0.5" stroke-dasharray="4,4"/>
+
+                            <!-- Y轴标签 -->
+                            <text x="30" y="154" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">0</text>
+                            <text x="30" y="119" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">400</text>
+                            <text x="30" y="84" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">800</text>
+                            <text x="30" y="49" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">1200</text>
+
+                            <!-- X轴标签 -->
+                            <text x="60" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周一</text>
+                            <text x="115" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周二</text>
+                            <text x="170" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周三</text>
+                            <text x="225" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周四</text>
+                            <text x="280" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周五</text>
+                            <text x="335" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周六</text>
+                            <text x="385" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周日</text>
+
+                            <!-- 渐变填充区域 -->
+                            <defs>
+                                <linearGradient id="interactionGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.2"/>
+                                    <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0.01"/>
+                                </linearGradient>
+                            </defs>
+                            <path d="M60,110 L115,95 L170,80 L225,65 L280,50 L335,35 L385,20 L385,150 L60,150 Z" fill="url(#interactionGrad)"/>
+
+                            <!-- 折线 -->
+                            <polyline points="60,110 115,95 170,80 225,65 280,50 335,35 385,20" fill="none" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+                            <!-- 数据点 -->
+                            <circle cx="60" cy="110" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                            <circle cx="115" cy="95" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                            <circle cx="170" cy="80" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                            <circle cx="225" cy="65" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                            <circle cx="280" cy="50" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                            <circle cx="335" cy="35" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                            <circle cx="385" cy="20" r="4" fill="var(--color-bg)" stroke="var(--color-primary)" stroke-width="2"/>
+                        </svg>
+                    </div>
+
+                    <!-- 成本趋势 -->
+                    <div class="chart-container">
+                        <h3 class="text-sm font-semibold mb-4" style="color: var(--color-text);">成本趋势</h3>
+                        <svg viewBox="0 0 400 180" class="w-full" preserveAspectRatio="xMidYMid meet">
+                            <!-- 网格线 -->
+                            <line x1="40" y1="10" x2="40" y2="150" stroke="var(--color-border)" stroke-width="1"/>
+                            <line x1="40" y1="150" x2="390" y2="150" stroke="var(--color-border)" stroke-width="1"/>
+                            <line x1="40" y1="115" x2="390" y2="115" stroke="var(--color-border-subtle)" stroke-width="0.5" stroke-dasharray="4,4"/>
+                            <line x1="40" y1="80" x2="390" y2="80" stroke="var(--color-border-subtle)" stroke-width="0.5" stroke-dasharray="4,4"/>
+                            <line x1="40" y1="45" x2="390" y2="45" stroke="var(--color-border-subtle)" stroke-width="0.5" stroke-dasharray="4,4"/>
+
+                            <!-- Y轴标签 -->
+                            <text x="30" y="154" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">$0</text>
+                            <text x="30" y="119" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">$2</text>
+                            <text x="30" y="84" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">$4</text>
+                            <text x="30" y="49" text-anchor="end" fill="var(--color-text-tertiary)" font-size="10">$6</text>
+
+                            <!-- X轴标签 -->
+                            <text x="60" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周一</text>
+                            <text x="115" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周二</text>
+                            <text x="170" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周三</text>
+                            <text x="225" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周四</text>
+                            <text x="280" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周五</text>
+                            <text x="335" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周六</text>
+                            <text x="385" y="168" text-anchor="middle" fill="var(--color-text-tertiary)" font-size="10">周日</text>
+
+                            <!-- 渐变填充区域 -->
+                            <defs>
+                                <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="var(--color-chart-secondary)" stop-opacity="0.2"/>
+                                    <stop offset="100%" stop-color="var(--color-chart-secondary)" stop-opacity="0.01"/>
+                                </linearGradient>
+                            </defs>
+                            <path d="M60,85 L115,75 L170,95 L225,60 L280,70 L335,55 L385,65 L385,150 L60,150 Z" fill="url(#costGrad)"/>
+
+                            <!-- 折线 -->
+                            <polyline points="60,85 115,75 170,95 225,60 280,70 335,55 385,65" fill="none" stroke="var(--color-chart-secondary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+                            <!-- 数据点 -->
+                            <circle cx="60" cy="85" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                            <circle cx="115" cy="75" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                            <circle cx="170" cy="95" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                            <circle cx="225" cy="60" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                            <circle cx="280" cy="70" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                            <circle cx="335" cy="55" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                            <circle cx="385" cy="65" r="4" fill="var(--color-bg)" stroke="var(--color-chart-secondary)" stroke-width="2"/>
+                        </svg>
+                    </div>
+
+                </div>
+
+                <!-- ========== 系统资源区域 ========== -->
+                <div class="mb-8">
+                    <h2 class="text-lg font-semibold mb-4" style="color: var(--color-text); font-family: var(--font-display);">系统资源</h2>
+                    <div class="grid grid-cols-4 gap-5">
+
+                        <!-- 技能引擎 -->
+                        <div class="system-card">
+                            <div class="flex items-center gap-2.5 mb-3">
+                                <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-primary-soft-bg);">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                </div>
+                                <div>
+                                    <div class="text-sm font-medium" style="color: var(--color-text);">技能引擎</div>
+                                    <div class="badge-success mt-0.5">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--color-success)" stroke="none"><circle cx="12" cy="12" r="5"/></svg>
+                                        运行中
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs" style="color: var(--color-text-tertiary);">28 active / 35 total</div>
+                        </div>
+
+                        <!-- 插件系统 -->
+                        <div class="system-card">
+                            <div class="flex items-center gap-2.5 mb-3">
+                                <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-tag-purple-bg);">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-tag-purple-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                                </div>
+                                <div>
+                                    <div class="text-sm font-medium" style="color: var(--color-text);">插件系统</div>
+                                    <div class="badge-success mt-0.5">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--color-success)" stroke="none"><circle cx="12" cy="12" r="5"/></svg>
+                                        运行中
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs" style="color: var(--color-text-tertiary);">12 active</div>
+                        </div>
+
+                        <!-- 记忆系统 -->
+                        <div class="system-card">
+                            <div class="flex items-center gap-2.5 mb-3">
+                                <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-warning-bg);">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning-strong)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                                </div>
+                                <div>
+                                    <div class="text-sm font-medium" style="color: var(--color-text);">记忆系统</div>
+                                    <div class="badge-success mt-0.5">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--color-success)" stroke="none"><circle cx="12" cy="12" r="5"/></svg>
+                                        运行中
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs" style="color: var(--color-text-tertiary);">1,247 长期记忆</div>
+                        </div>
+
+                        <!-- MCP 服务 -->
+                        <div class="system-card">
+                            <div class="flex items-center gap-2.5 mb-3">
+                                <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-success-bg);">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-success-strong)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                                </div>
+                                <div>
+                                    <div class="text-sm font-medium" style="color: var(--color-text);">MCP 服务</div>
+                                    <div class="badge-success mt-0.5">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--color-success)" stroke="none"><circle cx="12" cy="12" r="5"/></svg>
+                                        运行中
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs" style="color: var(--color-text-tertiary);">3 connections</div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- ========== 最近活动区域 ========== -->
+                <div class="mb-8">
+                    <h2 class="text-lg font-semibold mb-4" style="color: var(--color-text); font-family: var(--font-display);">最近活动</h2>
+                    <div class="rounded-xl border overflow-hidden" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg);">
+                        <table class="activity-table">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>事件</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 13px;">14:23</td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                            <span>执行技能: web_search</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge-success">成功</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 13px;">14:15</td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-chart-5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                                            <span>插件更新: data-chart v2.1</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge-info">完成</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 13px;">13:58</td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                            <span>定时任务: 每日报告</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge-warning">运行中</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 13px;">13:42</td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                                            <span>记忆写入: 会话 #1024 上下文</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge-success">成功</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 13px;">13:30</td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success-strong)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                                            <span>MCP 连接: filesystem-server</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge-info">已连接</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 13px;">13:15</td>
+                                    <td>
+                                        <div class="flex items-center gap-2">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                                            <span>LLM 调用失败: provider timeout</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; background: var(--color-error-bg); color: var(--color-error-strong);">失败</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+        </main>
+
+    </div>
+
+    <script>
+        /* 主题切换功能 */
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                html.classList.add('light');
+            } else {
+                html.classList.remove('light');
+                html.classList.add('dark');
+            }
+        }
+    </script>
+
+</body>
+</html>

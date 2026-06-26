@@ -1,16 +1,22 @@
 /**
  * 系统通知 IPC 处理器
  */
-import { ipcMain, Notification } from 'electron'
+import { ipcMain, Notification, type IpcMainInvokeEvent } from 'electron'
+import log from 'electron-log'
 import { IPC_CHANNELS } from '../../shared/ipc-channels'
 import type { NotificationRequest } from '../../shared/types'
 import { getMainWindow } from '../window'
 
 /** 显示系统通知 */
 export function handleShowNotification(
-  _event: unknown,
+  _event: IpcMainInvokeEvent,
   request: NotificationRequest
-): void {
+): { success: boolean } {
+  // 部分平台 Notification 可能不可用
+  if (!Notification.isSupported()) {
+    log.warn('当前平台不支持系统通知')
+    return { success: false }
+  }
   const notification = new Notification({
     title: request.title,
     body: request.body,
@@ -28,6 +34,7 @@ export function handleShowNotification(
   })
 
   notification.show()
+  return { success: true }
 }
 
 /** 注册通知 IPC 处理器 */

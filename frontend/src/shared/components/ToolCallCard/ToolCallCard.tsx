@@ -63,12 +63,14 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   toolCall,
   defaultExpanded = false,
 }) => {
-  // 空值防御：若父组件传入 null/undefined 则返回 null
+  // Hooks 必须在任何条件返回之前调用，确保每次渲染顺序一致
+  const [expanded, setExpanded] = useState(defaultExpanded)
+
+  // 空值防御：若父组件传入 null/undefined 则返回 null（在 hooks 之后）
   if (!toolCall) {
     return null
   }
 
-  const [expanded, setExpanded] = useState(defaultExpanded)
   const kind = toolCall.kind || 'tool'
   const color = KIND_COLORS[kind] || KIND_COLORS.tool
   const label = KIND_LABELS[kind] || '工具'

@@ -250,6 +250,7 @@ function emit(level: LogLevel, payload: LoggerPayload): void {
   } else if (level === 'WARNING') {
     console.warn(text)
   } else {
+    // eslint-disable-next-line no-console -- 日志基础设施，INFO 级别需使用 console.log 输出
     console.log(text)
   }
 

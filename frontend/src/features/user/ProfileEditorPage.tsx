@@ -11,6 +11,7 @@ import {
 import { shallow } from 'zustand/shallow'
 import { useProfileStore } from '@/shared/store/profileStore'
 import { extractProfile } from '@/shared/api/profileApi'
+import { useNotification } from '@/shared/hooks/useNotification'
 import { PROFILE_CATEGORY_LABELS } from './profileCategoryLabels'
 import styles from './ProfileEditorPage.module.css'
 
@@ -49,7 +50,8 @@ function ProfileEditorPage() {
   const [newCategory, setNewCategory] = useState('preference')
   const [newKey, setNewKey] = useState('')
   const [newValue, setNewValue] = useState('')
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  // 使用统一的 useNotification hook 管理成功消息，自动清理定时器避免内存泄漏
+  const { message: successMsg, showNotification: showSuccessMsg } = useNotification(2000)
   const [activeCategory, setActiveCategory] = useState(ALL_CATEGORIES)
 
   useEffect(() => {
@@ -78,8 +80,7 @@ function ProfileEditorPage() {
     await editFact(factId, editValue.trim())
     setEditingFactId(null)
     setEditValue('')
-    setSuccessMsg('已更新')
-    setTimeout(() => setSuccessMsg(null), 2000)
+    showSuccessMsg({ type: 'success', text: '已更新' })
   }
 
   const handleAdd = async () => {
@@ -88,35 +89,30 @@ function ProfileEditorPage() {
     setShowAddForm(false)
     setNewKey('')
     setNewValue('')
-    setSuccessMsg('已添加')
-    setTimeout(() => setSuccessMsg(null), 2000)
+    showSuccessMsg({ type: 'success', text: '已添加' })
   }
 
   const handleDelete = async (factId: string) => {
     if (!confirm('确定删除此画像事实吗？')) return
     await removeFact(factId)
-    setSuccessMsg('已删除')
-    setTimeout(() => setSuccessMsg(null), 2000)
+    showSuccessMsg({ type: 'success', text: '已删除' })
   }
 
   const handleVerify = async (factId: string) => {
     await confirmFact(factId)
-    setSuccessMsg('已确认')
-    setTimeout(() => setSuccessMsg(null), 2000)
+    showSuccessMsg({ type: 'success', text: '已确认' })
   }
 
   const handleDispute = async (factId: string) => {
     await disputeFactItem(factId)
-    setSuccessMsg('已反馈，将重新评估')
-    setTimeout(() => setSuccessMsg(null), 2000)
+    showSuccessMsg({ type: 'success', text: '已反馈，将重新评估' })
   }
 
   const handleExtract = async () => {
     await extractProfile({})
     await fetchFacts()
     await fetchStats()
-    setSuccessMsg('提取完成')
-    setTimeout(() => setSuccessMsg(null), 2000)
+    showSuccessMsg({ type: 'success', text: '提取完成' })
   }
 
   // 按类别分组
@@ -154,7 +150,7 @@ function ProfileEditorPage() {
         </button>
         <h1>画像编辑器</h1>
         <div className={styles['top-actions']}>
-          {successMsg && <span className={styles['success-msg']}>{successMsg}</span>}
+          {successMsg && <span className={styles['success-msg']}>{successMsg.text}</span>}
           <button
             className="btn btn-primary"
             onClick={() => void handleExtract()}

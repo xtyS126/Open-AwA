@@ -139,7 +139,7 @@ async def chat(
             status="cancelled",
             response="",
             session_id=message.session_id,
-            error="任务已被用户取消",
+            error={"code": "task_cancelled", "message": "任务已被用户取消"},
             request_id=context["request_id"],
         )
     except Exception as exc:
@@ -155,7 +155,7 @@ async def chat(
             status="error",
             response="",
             session_id=message.session_id,
-            error=f"处理请求时发生内部错误: {str(exc)}",
+            error={"code": "agent_process_failed", "message": f"处理请求时发生内部错误: {str(exc)}"},
             request_id=context["request_id"],
         )
 

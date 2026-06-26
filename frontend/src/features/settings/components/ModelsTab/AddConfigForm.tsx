@@ -4,6 +4,9 @@
 import type { ModelProvider, ProviderModel } from '@/features/settings/modelsApi'
 import styles from '@/features/settings/SettingsPage.module.css'
 
+/** 表单字段值的类型：文本输入为 string，复选框为 boolean */
+type FormFieldValue = string | boolean
+
 interface AddConfigFormProps {
   /** 是否显示表单 */
   show: boolean
@@ -29,7 +32,7 @@ interface AddConfigFormProps {
   /** 模型选择变更回调 */
   onModelChange: (model: string) => void
   /** 其他字段变更回调 */
-  onFieldChange: (field: string, value: any) => void
+  onFieldChange: (field: string, value: FormFieldValue) => void
   /** 添加配置回调 */
   onAdd: () => void
 }

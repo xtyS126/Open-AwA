@@ -1,7 +1,8 @@
 /**
  * 开机自启 IPC 处理器
  */
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, type IpcMainInvokeEvent } from 'electron'
+import log from 'electron-log'
 import { IPC_CHANNELS } from '../../shared/ipc-channels'
 import { getAutostart, setAutostart } from '../../shared/config-store'
 
@@ -11,12 +12,14 @@ export function handleGetAutostart(): boolean {
 }
 
 /** 设置开机自启 */
-export function handleSetAutostart(_event: unknown, enabled: boolean): boolean {
+export function handleSetAutostart(_event: IpcMainInvokeEvent, enabled: boolean): boolean {
   try {
     app.setLoginItemSettings({ openAtLogin: enabled })
     setAutostart(enabled)
     return true
-  } catch {
+  } catch (err) {
+    // 记录日志而非静默吞异常
+    log.error('设置开机自启失败:', err)
     return false
   }
 }

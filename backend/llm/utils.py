@@ -25,6 +25,10 @@ def build_thinking_params(
     """
     from billing.pricing_manager import PricingManager
 
+    # 兼容 thinking_depth 未传入或为 None 的情况，避免 None < int 比较失败
+    if thinking_depth is None:
+        thinking_depth = 0
+
     normalized = PricingManager.normalize_provider(provider)
     if not model:
         return {}

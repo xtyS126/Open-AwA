@@ -3,28 +3,32 @@
  */
 import { Tray, Menu, nativeImage, app } from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
+import log from 'electron-log'
 import { IPC_CHANNELS } from '../shared/ipc-channels'
-import { getMinimizeToTray } from '../shared/config-store'
 import { getMainWindow } from './window'
 
 /** 托盘实例 */
 let tray: Tray | null = null
 
-/** 创建托盘图标（使用占位图标，后续替换） */
+/** 创建托盘图标（路径不存在时回退空图标并记录 warning，不再静默） */
 function createTrayIcon(): Electron.NativeImage {
-  // 使用内置图标或占位图标
-  // 实际项目中应替换为 resources/icons/tray.png
   const iconPath = path.join(__dirname, '..', '..', 'resources', 'icons', 'tray.png')
-  try {
-    return nativeImage.createFromPath(iconPath)
-  } catch {
-    // 占位：空图标
+  if (!fs.existsSync(iconPath)) {
+    // 图标资源缺失时记录 warning，便于用户/开发者发现
+    // 不抛错以保证应用可用，回退到空图标
+    log.warn(`托盘图标不存在: ${iconPath}，回退到空图标。请放置图标资源以正常显示托盘。`)
     return nativeImage.createEmpty()
   }
+  return nativeImage.createFromPath(iconPath)
 }
 
 /** 设置系统托盘 */
 export function setupTray(): void {
+  // 防止重复创建托盘
+  if (tray) {
+    return
+  }
   const icon = createTrayIcon()
   tray = new Tray(icon)
   tray.setToolTip('Open-AwA')
@@ -80,4 +84,12 @@ export function setupTray(): void {
 /** 获取托盘实例 */
 export function getTray(): Tray | null {
   return tray
+}
+
+/** 销毁托盘（在 will-quit 中调用，避免 Windows 退出后图标残留） */
+export function destroyTray(): void {
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
 }

@@ -8,9 +8,9 @@ import log from 'electron-log'
 import { createMainWindow, getMainWindow } from './window'
 import { registerAllIpcHandlers } from './ipc'
 import { setupMenu } from './menu'
-import { setupTray } from './tray'
+import { setupTray, destroyTray } from './tray'
 import { registerGlobalShortcuts, unregisterAllShortcuts } from './shortcuts'
-import { initAutoUpdater } from './updater'
+import { initAutoUpdater, disposeAutoUpdater } from './updater'
 import { getBackendUrl } from '../shared/config-store'
 
 // 配置日志
@@ -21,7 +21,12 @@ log.transports.file.resolvePathFn = () => path.join(app.getPath('userData'), 'lo
 // 全局异常处理
 process.on('uncaughtException', (error) => {
   log.error('uncaughtException:', error)
-  dialog.showErrorBox('应用错误', `发生未预期错误：\n${error.message}\n\n应用将退出。`)
+  // app.quit 可能再次抛错导致循环，加保护
+  try {
+    dialog.showErrorBox('应用错误', `发生未预期错误：\n${error.message}\n\n应用将退出。`)
+  } catch (dialogErr) {
+    log.error('显示错误对话框失败:', dialogErr)
+  }
   app.quit()
 })
 
@@ -61,6 +66,9 @@ if (!gotTheLock) {
         const url = process.env.OPENAWA_BACKEND_URL || getBackendUrl()
         if (url) {
           startMainWindow()
+        } else {
+          // 未配置过：重新引导
+          showOnboardingWindow()
         }
       }
     })
@@ -73,13 +81,24 @@ app.on('window-all-closed', () => {
   }
 })
 
-// 退出时注销全局快捷键
+// 退出时清理资源：注销全局快捷键 + 销毁托盘 + 清理更新定时器
 app.on('will-quit', () => {
   unregisterAllShortcuts()
+  destroyTray()
+  disposeAutoUpdater()
 })
+
+/** 引导窗口引用 */
+let onboardingWindow: BrowserWindow | null = null
 
 /** 显示引导窗口 */
 function showOnboardingWindow(): void {
+  // 防止重复创建引导窗口
+  if (onboardingWindow) {
+    onboardingWindow.focus()
+    return
+  }
+
   const onboardingWin = new BrowserWindow({
     width: 480,
     height: 400,
@@ -88,10 +107,14 @@ function showOnboardingWindow(): void {
     maximizable: false,
     show: false,
     webPreferences: {
-      contextIsolation: false,
-      nodeIntegration: true,
+      preload: path.join(__dirname, '..', 'preload', 'onboarding.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   })
+
+  onboardingWindow = onboardingWin
 
   onboardingWin.loadFile(path.join(__dirname, '..', '..', 'resources', 'onboarding.html'))
   onboardingWin.once('ready-to-show', () => {
@@ -99,9 +122,21 @@ function showOnboardingWindow(): void {
   })
 
   // 监听后端 URL 设置成功事件（由 backend.ts 的 handleSetUrl 发送）
-  ipcMain.once('backend:url-saved', () => {
+  const onUrlSaved = (): void => {
     onboardingWin.close()
     startMainWindow()
+  }
+  ipcMain.once('backend:url-saved', onUrlSaved)
+
+  // 用户直接关闭引导窗口（点 X）时：清理 once 监听器并退出应用
+  // 否则监听器永远不会触发，应用卡死在无窗口状态
+  onboardingWin.on('closed', () => {
+    ipcMain.removeListener('backend:url-saved', onUrlSaved)
+    onboardingWindow = null
+    // 若主窗口尚未启动（即用户未保存就关窗），退出应用
+    if (!getMainWindow()) {
+      app.quit()
+    }
   })
 }
 

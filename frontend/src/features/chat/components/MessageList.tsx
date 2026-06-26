@@ -4,6 +4,7 @@
  */
 import { memo, useCallback, useRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { ArrowDown } from 'lucide-react'
 import type { ChatMessage as ChatMessageType, AssistantExecutionMeta } from '@/features/chat/types'
 import { useI18nStore } from '@/i18n'
 import { ChatMessage } from './ChatMessage'
@@ -17,6 +18,14 @@ interface MessageListProps {
   outputMode: 'stream' | 'direct'
   streamStatusText: string
   messagesEndRef: React.RefObject<HTMLDivElement | null>
+  /** 滚动容器 ref callback，由 useChatAutoScroll 提供，用于绑定滚动事件 */
+  scrollContainerRef?: (el: HTMLElement | null) => void
+  /** 是否显示"跳到最新"悬浮按钮 */
+  showJumpToLatest?: boolean
+  /** 点击"跳到最新"按钮的回调 */
+  onJumpToLatest?: () => void
+  /** 未读新消息数量（用于按钮文案，可选） */
+  unreadCount?: number
   onEditMessage?: (content: string) => void
   onRegenerate?: (messageId: string) => void
   onFeedback?: (messageId: string, rating: 1 | -1) => void
@@ -35,6 +44,10 @@ export const MessageList = memo(function MessageList({
   outputMode,
   streamStatusText,
   messagesEndRef,
+  scrollContainerRef,
+  showJumpToLatest = false,
+  onJumpToLatest,
+  unreadCount = 0,
   onEditMessage,
   onRegenerate,
   onFeedback,
@@ -71,10 +84,23 @@ export const MessageList = memo(function MessageList({
     )
   }
 
+  /** "跳到最新"悬浮按钮：当用户远离底部且有新内容到达时显示 */
+  const jumpToLatestButton = showJumpToLatest && onJumpToLatest ? (
+    <button
+      type="button"
+      className={styles['jumpToLatestBtn']}
+      onClick={onJumpToLatest}
+      aria-label={t('chat.jumpToLatest')}
+    >
+      <ArrowDown size={14} />
+      <span>{unreadCount > 0 ? t('chat.unreadMessages', { count: String(unreadCount) }) : t('chat.jumpToLatest')}</span>
+    </button>
+  ) : null
+
   /* 空状态 */
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表">
+      <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表" ref={scrollContainerRef}>
         <div className={styles['chat-empty']}>
           <p>{t('chat.empty')}</p>
         </div>
@@ -96,7 +122,7 @@ export const MessageList = memo(function MessageList({
   /* 消息超过阈值使用虚拟滚动，否则普通渲染 */
   if (messages.length >= VIRTUAL_THRESHOLD) {
     return (
-      <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表">
+      <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表" ref={scrollContainerRef}>
         <Virtuoso
           ref={virtuosoRef}
           data={messages}
@@ -109,13 +135,14 @@ export const MessageList = memo(function MessageList({
           }}
           style={{ height: '100%' }}
         />
+        {jumpToLatestButton}
       </div>
     )
   }
 
   /* 普通渲染（消息较少时避免 Virtuoso 的开销） */
   return (
-    <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表">
+    <div className={styles['chat-messages']} role="log" aria-live="polite" aria-label="消息列表" ref={scrollContainerRef}>
       {messages.map((message, index) => (
         <ChatMessage
           key={message.id}
@@ -134,6 +161,8 @@ export const MessageList = memo(function MessageList({
       {LoadingFooter}
 
       <div ref={messagesEndRef as React.RefObject<HTMLDivElement>} />
+
+      {jumpToLatestButton}
     </div>
   )
 })

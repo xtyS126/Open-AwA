@@ -36,9 +36,10 @@ class UserResponse(UserBase):
 
 
 class Token(BaseModel):
-    """JWT 认证令牌响应：包含 access_token 和 token_type。"""
+    """JWT 认证令牌响应：包含 access_token、token_type 和 csrf_token。"""
     access_token: str
     token_type: str
+    csrf_token: str
 
 
 class TokenData(BaseModel):

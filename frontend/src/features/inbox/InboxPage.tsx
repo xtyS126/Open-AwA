@@ -41,7 +41,7 @@ const InboxPage: React.FC = () => {
     try {
       const data = await inboxApi.list();
       setMessages(data.messages || []);
-    } catch (e) {
+    } catch {
       setError(t('inbox.loadFailed'));
     } finally {
       setLoading(false);

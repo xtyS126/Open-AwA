@@ -1416,6 +1416,8 @@ const zhCN: Record<string, string> = {
   "chat.loading.streaming": "{status}...",
   "chat.provider": "供应商",
   "chat.model": "模型",
+  "chat.jumpToLatest": "跳到最新",
+  "chat.unreadMessages": "{count} 条新消息",
 };
 
 export default zhCN;

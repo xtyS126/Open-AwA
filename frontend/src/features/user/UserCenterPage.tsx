@@ -7,6 +7,7 @@ import { shallow } from 'zustand/shallow'
 import { useAuthStore } from '@/shared/store/authStore'
 import { userAPI, passwordAPI } from '@/shared/api/api'
 import type { LoginDeviceItem } from '@/shared/api/api'
+import { passwordChangeSchema } from '@/shared/schemas/auth'
 import { appLogger } from '@/shared/utils/logger'
 import ProfileDashboard from './ProfileDashboard'
 import styles from './UserCenterPage.module.css'
@@ -92,12 +93,15 @@ function UserCenterPage() {
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
     setPasswordMsg(null)
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      setPasswordMsg({ type: 'error', text: '请填写所有密码字段' })
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordMsg({ type: 'error', text: '两次输入的新密码不一致' })
+    // 使用 zod schema 进行前端校验：必填 + 两次密码一致
+    const parseResult = passwordChangeSchema.safeParse({
+      oldPassword,
+      newPassword,
+      confirmPassword,
+    })
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0]
+      setPasswordMsg({ type: 'error', text: firstIssue?.message ?? '输入无效' })
       return
     }
     setPasswordSubmitting(true)

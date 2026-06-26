@@ -11,6 +11,51 @@ from loguru import logger
 from config.settings import settings
 
 
+# 不可序列化的键名前缀和精确键名集合，深拷贝时跳过
+_UNSERIALIZABLE_KEY_PREFIXES = ("_", "db", "session", "pricing")
+_UNSERIALIZABLE_EXACT_KEYS = {
+    "db", "session", "pricing_manager", "rollback_manager",
+    "abort_controller", "content_replacement_state",
+    "record_usage", "record_latency", "spawn_subagent",
+    "agent", "executor", "planner", "comprehension", "feedback",
+}
+
+
+def _is_unserializable_key(key: str) -> bool:
+    """判断 context 键是否可能持有不可序列化对象。"""
+    if key in _UNSERIALIZABLE_EXACT_KEYS:
+        return True
+    for prefix in _UNSERIALIZABLE_KEY_PREFIXES:
+        if key.startswith(prefix):
+            return True
+    return False
+
+
+def _safe_deepcopy_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    安全深拷贝 Agent 上下文，跳过不可序列化的对象。
+
+    Agent context 中常含 db session、回调函数、模块对象等，
+    直接 deepcopy 会触发 "cannot pickle 'module' object" 错误。
+    本函数仅拷贝可序列化的标量/列表/字典数据，跳过可疑键。
+    """
+    result: Dict[str, Any] = {}
+    for key, value in context.items():
+        if _is_unserializable_key(key):
+            continue
+        try:
+            result[key] = copy.deepcopy(value)
+        except (TypeError, ValueError, AttributeError) as e:
+            # 单个键拷贝失败时跳过，记录调试日志
+            logger.bind(
+                event="snapshot_key_skip",
+                module="rollback",
+                key=key,
+                error=str(e),
+            ).debug(f"深拷贝 context 键 '{key}' 失败，已跳过: {e}")
+    return result
+
+
 @dataclass
 class StepSnapshot:
     """步骤执行快照。"""
@@ -41,7 +86,7 @@ class RollbackManager:
         description: str = "",
     ) -> StepSnapshot:
         """保存步骤执行前的上下文快照。"""
-        context_copy = copy.deepcopy(context)
+        context_copy = _safe_deepcopy_context(context)
 
         snapshot = StepSnapshot(
             step_index=step_index,

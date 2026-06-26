@@ -57,8 +57,8 @@ export interface RoleCreateRequest {
   is_public?: boolean
 }
 
-/** 更新角色请求 */
-export interface RoleUpdateRequest extends Partial<RoleCreateRequest> {}
+/** 更新角色请求（所有字段均可选） */
+export type RoleUpdateRequest = Partial<RoleCreateRequest>
 
 /** 角色激活响应 */
 export interface RoleActivateResponse {

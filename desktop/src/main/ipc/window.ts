@@ -1,5 +1,8 @@
 /**
  * 窗口控制 IPC 处理器
+ *
+ * 注意：窗口最大化状态变化的事件桥接已移至 window.ts 的 attachWindowEventBridge
+ * 统一管理，避免重复监听和时序问题（窗口创建前注册监听器失效）。
  */
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc-channels'
@@ -47,15 +50,4 @@ export function registerWindowIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, handleMaximize)
   ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, handleClose)
   ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, handleIsMaximized)
-
-  // 监听窗口最大化状态变化，通知渲染进程
-  const win = getMainWindow()
-  if (win) {
-    win.on('maximize', () => {
-      win.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZE_STATE_CHANGED, { isMaximized: true })
-    })
-    win.on('unmaximize', () => {
-      win.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZE_STATE_CHANGED, { isMaximized: false })
-    })
-  }
 }

@@ -150,24 +150,52 @@ if ALLOW_LAN_ORIGIN_REGEX:
 def _check_model_provider_availability() -> None:
     """检查是否至少有一个模型供应商配置了有效的 API Key。
 
+    优先查询数据库 provider_credentials 表（spec 重构后 API Key 统一存数据库），
+    同时保留 .env 环境变量检查作为向后兼容补充。
     未配置任何 Key 时发出警告（不阻塞启动），方便开发者第一时间发现配置缺失。
     """
+    configured = []
+
+    # 1. 查询数据库 provider_credentials 表中有效凭据（is_active 且 api_key 非空且非 enc: 旧密文）
+    try:
+        from db.models import SessionLocal
+        from sqlalchemy import text as _sql_text
+        db = SessionLocal()
+        try:
+            # 统计有效 provider：api_key 非空且不以 enc: 开头（enc: 旧密文已失效）
+            result = db.execute(
+                _sql_text(
+                    "SELECT provider FROM provider_credentials "
+                    "WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != '' "
+                    "AND api_key NOT LIKE 'enc:%'"
+                )
+            )
+            for row in result:
+                configured.append(str(row[0]))
+        finally:
+            db.close()
+    except Exception as exc:
+        # 数据库尚未初始化（表不存在）或查询失败时降级为 DEBUG，不阻塞启动
+        logger.bind(event="provider_check_db_skipped", module="main").debug(
+            f"数据库凭据查询跳过（表可能尚未初始化）: {exc}"
+        )
+
+    # 2. 补充检查 .env 环境变量（向后兼容，数据库无凭据时作为兜底提示）
     provider_keys = {
         "openai": settings.OPENAI_API_KEY,
         "anthropic": settings.ANTHROPIC_API_KEY,
         "deepseek": settings.DEEPSEEK_API_KEY,
     }
-    configured = []
     for name, key in provider_keys.items():
-        if key is not None:
+        if key is not None and name not in configured:
             raw = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
             if raw.strip():
                 configured.append(name)
 
     if not configured:
         logger.bind(event="no_model_provider_configured", module="main").warning(
-            "未检测到任何已配置 API Key 的模型供应商 (OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY)。"
-            "所有 LLM 调用将失败，请在 .env 中至少配置一个供应商的 API Key。"
+            "未检测到任何已配置 API Key 的模型供应商。"
+            "请在设置页录入供应商 API Key，或在 .env 中配置 OPENAI_API_KEY / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY。"
         )
     else:
         logger.bind(event="provider_check", module="main").info(
@@ -236,6 +264,54 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
         _ensure_api_key()
 
 
+async def _scan_legacy_encrypted_keys(db_session) -> None:
+    """启动时扫描 provider_credentials 和 model_configurations 两表中的 enc: 旧密文，记录 WARNING 日志。
+
+    旧算法密文(enc:)在密钥拆分后已无法解密，需提示用户重新录入。
+    扫描失败时仅记录 ERROR 日志，不阻塞服务启动（解密路径已对 enc: 旧密文做兜底失效处理）。
+    不自动清空数据库中的旧密文，保留数据以便用户在设置页查看后重新录入。
+    """
+    from sqlalchemy import text
+
+    try:
+        # 统计 provider_credentials 表中以 enc: 开头的旧密文记录数
+        provider_result = db_session.execute(
+            text("SELECT COUNT(*) FROM provider_credentials WHERE api_key LIKE 'enc:%'")
+        )
+        provider_count = int(provider_result.scalar() or 0)
+
+        # 统计 model_configurations 表中以 enc: 开头的旧密文记录数（legacy 字段，保留兼容）
+        model_result = db_session.execute(
+            text("SELECT COUNT(*) FROM model_configurations WHERE api_key LIKE 'enc:%'")
+        )
+        model_count = int(model_result.scalar() or 0)
+
+        total = provider_count + model_count
+
+        if total > 0:
+            logger.bind(
+                event="legacy_encrypted_keys_detected",
+                module="startup",
+                provider_count=provider_count,
+                model_count=model_count,
+                total=total,
+            ).warning(
+                f"检测到 {total} 条旧算法密文(enc:)，已标记失效，请通知用户在设置页重新录入 API Key"
+                f"（provider_credentials={provider_count}，model_configurations={model_count}）"
+            )
+        else:
+            logger.bind(
+                event="legacy_encrypted_keys_clean",
+                module="startup",
+            ).info("未检测到旧算法密文，密钥迁移状态正常")
+    except Exception as exc:
+        # 扫描失败不阻塞启动，解密路径已对 enc: 旧密文做兜底失效处理
+        logger.bind(
+            event="legacy_encrypted_keys_scan_error",
+            module="startup",
+        ).error(f"扫描旧算法密文失败，跳过告警（不阻塞启动）: {exc}")
+
+
 async def _startup_data_init(profiler: StartupProfiler) -> None:
     """数据层初始化：DB 建表、计费配置、RBAC 角色、Owner 用户创建。"""
     from db.models import SessionLocal
@@ -256,7 +332,18 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
             init_db()
             logger.bind(event="db_initialized", module="main").info("database initialized")
         except Exception as exc:
-            logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
+            # 针对 SQLite 常见的 readonly/locked 错误给出明确诊断提示
+            exc_msg = str(exc).lower()
+            if "readonly" in exc_msg or "locked" in exc_msg or "database is locked" in exc_msg:
+                logger.bind(event="db_init_error", module="main").error(
+                    f"数据库初始化失败（数据库被占用或只读）: {exc}\n"
+                    "常见原因：1) 另一个后端实例正在运行并占用数据库锁；"
+                    "2) 数据库文件或所在目录无写权限；"
+                    "3) WAL 文件(-wal/-shm)残留且被锁定。"
+                    "请检查是否有残留 python main.py 进程，或清理 openawa.db-wal/openawa.db-shm 后重试。"
+                )
+            else:
+                logger.bind(event="db_init_error", module="main").error(f"数据库初始化失败: {exc}")
             raise RuntimeError(f"数据库初始化失败，服务无法启动: {exc}") from exc
 
     # 初始化预设角色
@@ -291,6 +378,14 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
             removed = pricing_manager.remove_legacy_default_configurations()
             if removed > 0:
                 logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
+        finally:
+            db.close()
+
+    # 扫描历史 enc: 旧密文并记录告警，提示用户重新录入（扫描失败不阻塞启动）
+    with profiler.step("legacy_encrypted_keys_scan"):
+        db = SessionLocal()
+        try:
+            await _scan_legacy_encrypted_keys(db)
         finally:
             db.close()
 
@@ -345,13 +440,14 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
         db = SessionLocal()
         try:
             # 迁移：删除已由 system-tools 插件接管的内置技能记录
-            for skill_name in ["file_manager", "terminal_executor"]:
-                old_skill = db.query(Skill).filter(Skill.name == skill_name).first()
-                if old_skill:
-                    db.delete(old_skill)
-                    logger.bind(event="skill_migrated", module="main", skill=skill_name).info(
-                        f"已迁移内置技能 {skill_name} 至 system-tools 插件"
-                    )
+            # 批量查询避免循环内单条查询（N+1 问题）
+            skills_to_remove = ["file_manager", "terminal_executor"]
+            old_skills = db.query(Skill).filter(Skill.name.in_(skills_to_remove)).all()
+            for old_skill in old_skills:
+                db.delete(old_skill)
+                logger.bind(event="skill_migrated", module="main", skill=old_skill.name).info(
+                    f"已迁移内置技能 {old_skill.name} 至 system-tools 插件"
+                )
             db.commit()
 
             # 注册 system-tools 系统内置插件（如不存在）

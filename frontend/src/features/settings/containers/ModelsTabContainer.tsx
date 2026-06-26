@@ -114,7 +114,7 @@ export function ModelsTabContainer() {
       try {
         const response = await modelsAPI.getModelsByProvider(provider)
         setProviderModels(response.data.models || [])
-      } catch (error) {
+      } catch {
         appLogger.error({ event: 'provider_models_load_failed', message: 'Failed to load provider models', module: 'settings' })
       }
     } else {

@@ -98,7 +98,8 @@
   </div>
 
   <script>
-    const { ipcRenderer } = require('electron')
+    // 通过 contextBridge 暴露的最小 API，不再直接 require('electron')
+    const onboarding = window.__OPENAWA_ONBOARDING__
     const urlInput = document.getElementById('backend-url')
     const testBtn = document.getElementById('test-btn')
     const saveBtn = document.getElementById('save-btn')
@@ -117,7 +118,7 @@
       resultDiv.className = 'result'
 
       try {
-        const result = await ipcRenderer.invoke('backend:test-connection', { url })
+        const result = await onboarding.testConnection(url)
         if (result.ok) {
           showResult('success', '连接成功（延迟 ' + result.latency + 'ms）')
           testPassed = true
@@ -128,7 +129,7 @@
           saveBtn.disabled = true
         }
       } catch (err) {
-        showResult('error', '测试失败：' + err.message)
+        showResult('error', '测试失败：' + (err && err.message ? err.message : String(err)))
       } finally {
         testBtn.disabled = false
         testBtn.textContent = '测试连接'
@@ -142,10 +143,10 @@
       saveBtn.textContent = '保存中...'
 
       try {
-        await ipcRenderer.invoke('backend:set-url', { url })
+        await onboarding.setUrl(url)
         // 主进程会收到 backend:url-saved 事件后关闭引导窗口并打开主窗口
       } catch (err) {
-        showResult('error', '保存失败：' + err.message)
+        showResult('error', '保存失败：' + (err && err.message ? err.message : String(err)))
         saveBtn.disabled = false
         saveBtn.textContent = '保存并启动'
       }

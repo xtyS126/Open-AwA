@@ -4,7 +4,7 @@ import { buildSegmentsFromLegacyMessage } from '@/features/chat/utils/assistantS
 
 interface ApplyDirectAssistantResponseOptions {
   assistantMessageId: string
-  responseData: Record<string, any>
+  responseData: Record<string, unknown>
   addMessage: (
     role: 'assistant',
     content: string,
@@ -82,16 +82,19 @@ export function applyDirectAssistantResponse(options: ApplyDirectAssistantRespon
     return true
   }
 
-  if (backendError && typeof backendError === 'object' && typeof backendError.message === 'string') {
-    const backendErrorMessage = sanitizeDisplayedError(backendError.message)
-    addMessage('assistant', `请求失败：${backendErrorMessage}`, undefined, assistantMessageId)
-    updateMessage(assistantMessageId, (message) => ({
-      ...message,
-      segments: buildSegmentsFromLegacyMessage({
-        content: `请求失败：${backendErrorMessage}`,
-      }),
-    }))
-    return true
+  if (backendError && typeof backendError === 'object') {
+    const errObj = backendError as Record<string, unknown>
+    if (typeof errObj.message === 'string') {
+      const backendErrorMessage = sanitizeDisplayedError(errObj.message)
+      addMessage('assistant', `请求失败：${backendErrorMessage}`, undefined, assistantMessageId)
+      updateMessage(assistantMessageId, (message) => ({
+        ...message,
+        segments: buildSegmentsFromLegacyMessage({
+          content: `请求失败：${backendErrorMessage}`,
+        }),
+      }))
+      return true
+    }
   }
 
   if (reasoningContent || hasExecutionMeta(nextMeta)) {

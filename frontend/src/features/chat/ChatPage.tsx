@@ -24,6 +24,9 @@ import { useChatStream } from './hooks/useChatStream'
 import { useSubagentSync } from './hooks/useSubagentSync'
 import { useMessageCache } from './hooks/useMessageCache'
 import { usePermissionRequest } from './hooks/usePermissionRequest'
+import { useChatAutoScroll } from './hooks/useChatAutoScroll'
+import { useChatBroadcast } from './hooks/useChatBroadcast'
+import type { ChatBroadcastEvent } from './hooks/useChatBroadcast'
 import ConversationSidebar from './components/ConversationSidebar'
 import { MessageList } from './components/MessageList'
 import { ChatInput } from './components/ChatInput'
@@ -65,6 +68,14 @@ function ChatPage() {
   const setThinkingDepth = usePreferenceStore(s => s.setThinkingDepth)
   const resetActiveToolCalls = useToolCallStore(s => s.resetActiveToolCalls)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // 自动滚动 hook：暴露容器 ref、未读新内容标记、强制滚动方法、内容增长回调
+  // threshold=150 表示用户距底部 150px 内视为"在底部附近"，自动跟随流式输出
+  const {
+    containerRef: scrollContainerRef,
+    onContentGrow,
+    hasNewContent,
+    scrollToLatest,
+  } = useChatAutoScroll({ threshold: 150, behavior: 'smooth' })
   const isMountedRef = useRef(true)
   const pendingConversationCreationRef = useRef<Promise<string> | null>(null)
   const [messageMeta, setMessageMeta] = useState<Record<string, import('@/features/chat/types').AssistantExecutionMeta>>({})
@@ -72,6 +83,25 @@ function ChatPage() {
   const [editContent, setEditContent] = useState<string>('')
   const [shouldFocusInput, setShouldFocusInput] = useState<number>(0)
   const [feedbackState, setFeedbackState] = useState<Record<string, 1 | -1 | undefined>>({})
+  // 跨标签页广播 hook：同步流式内容与会话列表变更到其他标签页
+  const {
+    broadcastStreamStart,
+    broadcastStreamChunk,
+    broadcastStreamEnd,
+    broadcastConversationChange,
+    subscribe,
+  } = useChatBroadcast()
+  // streamingAssistantId 的 ref 镜像，供订阅回调同步读取最新值，
+  // 避免回调闭包捕获到过期的 streamingAssistantId 导致防重复失效
+  const streamingAssistantIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    streamingAssistantIdRef.current = streamingAssistantId
+  }, [streamingAssistantId])
+  // 标记当前流式是否需要广播到其他标签页。
+  // 在 handleSend 中设置，在 streamingAssistantId 变化的 useEffect 中读取，
+  // 用于判断是否发送 broadcastStreamStart。避免在 options 中注入 assistantMessageId
+  // 导致 useChatStream 误判 assistantMessageCreated=true，从而破坏重试与消息创建逻辑。
+  const shouldBroadcastCurrentStreamRef = useRef(false)
   const {
     streamConnectionState,
     streamStatusText,
@@ -88,6 +118,8 @@ function ChatPage() {
   const [todoSummary, setTodoSummary] = useState<string>('')
   const [aborting, setAborting] = useState<boolean>(false)
   const [showAbortConfirm, setShowAbortConfirm] = useState<boolean>(false)
+  // 密钥失效提示对话框：收到 llm_api_key_stale 错误码时弹出，引导用户跳转设置页
+  const [showApiKeyStaleDialog, setShowApiKeyStaleDialog] = useState<boolean>(false)
   /* 删除会话确认状态 */
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null)
   /* 批量删除会话确认状态（预留） */
@@ -174,15 +206,12 @@ function ChatPage() {
     }
   }, [appendAssistantMessageText, streamingAssistantId])
 
-  const scrollToBottom = useCallback(() => {
-    if (document.hidden) return
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
-
-  // P0: 仅在新消息增加时触发自动滚动，不再因 messageMeta 变化频繁滚动
+  // P0: 监听消息数量与最后一条消息内容长度变化，触发自动滚动 hook
+  // 流式输出期间 messages.length 不变，但 content 长度持续增长，需要同时监听两者
+  const lastMessageContentLength = messages[messages.length - 1]?.content.length ?? 0
   useEffect(() => {
-    scrollToBottom()
-  }, [messages.length, scrollToBottom])
+    onContentGrow()
+  }, [messages.length, lastMessageContentLength, onContentGrow])
 
   useEffect(() => {
     messageMetaRef.current = messageMeta
@@ -212,12 +241,13 @@ function ChatPage() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         flushBuffer()
-        setTimeout(scrollToBottom, 50)
+        // 用户切回标签页时强制滚动到底部，重置未读新内容标记
+        setTimeout(scrollToLatest, 50)
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [flushBuffer, scrollToBottom])
+  }, [flushBuffer, scrollToLatest])
 
   useEffect(() => {
     appLogger.info({
@@ -228,6 +258,126 @@ function ChatPage() {
       message: 'chat page mounted',
     })
   }, [])
+
+  // 跨标签页广播订阅：接收其他标签页的流式与会话变更事件，应用到当前 store。
+  // 防重复关键：若当前标签页正在主动流式该消息（streamingAssistantIdRef 与事件 messageId 一致），
+  // 说明当前标签页是发起方，跳过应用远程事件，避免重复追加。
+  useEffect(() => {
+    const unsubscribe = subscribe((event: ChatBroadcastEvent) => {
+      // 防重复：当前标签页正在主动流式该消息时，跳过远程事件
+      if (
+        streamingAssistantIdRef.current !== null &&
+        event.type !== 'conversation_changed' &&
+        event.messageId === streamingAssistantIdRef.current
+      ) {
+        return
+      }
+      switch (event.type) {
+        case 'stream_start':
+          useSessionStore.getState().applyRemoteStreamStart(
+            event.sessionId,
+            event.messageId,
+            event.userMessage
+          )
+          break
+        case 'stream_chunk':
+          useSessionStore.getState().applyRemoteStreamChunk(
+            event.sessionId,
+            event.messageId,
+            event.content,
+            event.reasoning
+          )
+          break
+        case 'stream_end':
+          useSessionStore.getState().applyRemoteStreamEnd(
+            event.sessionId,
+            event.messageId,
+            event.finalContent,
+            event.finalReasoning
+          )
+          break
+        case 'conversation_changed':
+          useSessionStore.getState().applyRemoteConversationChange()
+          break
+      }
+    })
+    return unsubscribe
+  }, [subscribe])
+
+  // 节流广播流式 chunk：监听当前流式助手消息的 content/reasoning_content 变化，
+  // 按 200ms 间隔或 50 字符增量的阈值节流广播，避免高频 chunk 淹没其他标签页。
+  const lastChunkBroadcastRef = useRef<{ content: string; time: number }>({
+    content: '',
+    time: 0,
+  })
+  useEffect(() => {
+    if (!streamingAssistantId) return
+    const currentMessage = messages.find((m) => m.id === streamingAssistantId)
+    if (!currentMessage || currentMessage.role !== 'assistant') return
+
+    const now = Date.now()
+    const contentDelta = currentMessage.content.length - lastChunkBroadcastRef.current.content.length
+    // 节流：距上次广播不足 200ms 且内容增量不足 50 字符时跳过
+    if (now - lastChunkBroadcastRef.current.time < 200 && contentDelta < 50) {
+      return
+    }
+
+    // 使用 getState().sessionId 读取最新会话 ID，避免闭包捕获过期值
+    const currentSessionId = useSessionStore.getState().sessionId
+    if (currentSessionId === 'default') return
+
+    broadcastStreamChunk(
+      currentSessionId,
+      streamingAssistantId,
+      currentMessage.content,
+      currentMessage.reasoning_content
+    )
+    lastChunkBroadcastRef.current = { content: currentMessage.content, time: now }
+  }, [streamingAssistantId, messages, broadcastStreamChunk])
+
+  // 流式开始/结束广播：检测 streamingAssistantId 的状态过渡。
+  // - null → 非空：流式开始，广播 stream_start（携带最后一条用户消息）
+  // - 非空 → null：流式结束，广播 stream_end（携带最终内容）
+  // 同时在流式开始时重置节流状态。
+  const prevStreamingIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prevId = prevStreamingIdRef.current
+    prevStreamingIdRef.current = streamingAssistantId
+
+    if (prevId && !streamingAssistantId) {
+      // 从非空变为 null：流式结束，广播最终内容
+      const finalMessage = useSessionStore.getState().messages.find((m) => m.id === prevId)
+      const currentSessionId = useSessionStore.getState().sessionId
+      if (finalMessage && currentSessionId !== 'default') {
+        broadcastStreamEnd(
+          currentSessionId,
+          prevId,
+          finalMessage.content,
+          finalMessage.reasoning_content
+        )
+      }
+      // 重置节流状态，为下次流式做准备
+      lastChunkBroadcastRef.current = { content: '', time: 0 }
+      // 重置广播标记
+      shouldBroadcastCurrentStreamRef.current = false
+    } else if (!prevId && streamingAssistantId) {
+      // 从 null 变为非空：流式开始
+      // 重置节流状态，确保第一个 chunk 能立即广播
+      lastChunkBroadcastRef.current = { content: '', time: 0 }
+      // 仅在需要广播时（用户主动发送消息）发送 stream_start
+      if (shouldBroadcastCurrentStreamRef.current) {
+        const currentSessionId = useSessionStore.getState().sessionId
+        if (currentSessionId !== 'default') {
+          // 从 store 中读取最后一条用户消息作为广播内容
+          const currentMessages = useSessionStore.getState().messages
+          const lastUserMessage = [...currentMessages].reverse().find((m) => m.role === 'user')
+          if (lastUserMessage) {
+            broadcastStreamStart(currentSessionId, streamingAssistantId, lastUserMessage.content)
+          }
+        }
+      }
+    }
+  }, [streamingAssistantId, broadcastStreamStart, broadcastStreamEnd])
 
   const createConversationAndNavigate = useCallback(async (replace: boolean = false) => {
     if (pendingConversationCreationRef.current) {
@@ -245,6 +395,8 @@ function ChatPage() {
       setStreamingAssistantId(null)
       resetStreamExecutionState()
       navigate(`/chat/${nextConversation.session_id}`, { replace })
+      // 广播会话列表变更到其他标签页
+      broadcastConversationChange()
       return nextConversation.session_id
     })()
 
@@ -255,7 +407,7 @@ function ChatPage() {
     } finally {
       pendingConversationCreationRef.current = null
     }
-  }, [clearHistoryError, navigate, resetStreamExecutionState, setMessages, setSessionId, upsertConversation])
+  }, [broadcastConversationChange, clearHistoryError, navigate, resetStreamExecutionState, setMessages, setSessionId, upsertConversation])
 
   const ensureConversationSession = useCallback(async () => {
     if (sessionId && sessionId !== 'default') {
@@ -270,6 +422,8 @@ function ChatPage() {
     setMessageMeta({})
     setStreamingAssistantId(null)
     resetStreamExecutionState()
+    // 会话被移除后广播变更到其他标签页
+    broadcastConversationChange()
 
     const fallbackConversation = useSessionStore.getState().conversations.find(
       (item) => item.session_id !== missingSessionId && !item.deleted_at
@@ -281,7 +435,7 @@ function ChatPage() {
     }
 
     await createConversationAndNavigate(true)
-  }, [createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessages])
+  }, [broadcastConversationChange, createConversationAndNavigate, navigate, removeConversation, resetStreamExecutionState, setMessages])
 
   useEffect(() => {
     void loadConversationList(1, false)
@@ -470,9 +624,17 @@ function ChatPage() {
     setLoading,
     messageMeta,
     setMessageMeta,
+    onApiKeyStale: () => setShowApiKeyStaleDialog(true),
   })
 
+  // 标记当前流式是否需要广播到其他标签页（声明于 hook 顶部，供 handleSend 与 useEffect 共享）
   const handleSend = useCallback(async (userMessage?: string, uploadedAttachments?: FileAttachment[], options?: import('./hooks/useChatStream').SendMessageOptions) => {
+    const messageText = (userMessage || '').trim()
+    // 仅在用户发送实际消息（非隐藏消息、非续流）时广播流式开始
+    const shouldBroadcastStart =
+      messageText.length > 0 && !options?.hiddenUserMessage && !options?.continuation
+    shouldBroadcastCurrentStreamRef.current = shouldBroadcastStart
+
     await chatStream.handleSendMessage(
       userMessage,
       uploadedAttachments,
@@ -483,10 +645,11 @@ function ChatPage() {
         if (sessionId && sessionId !== 'default') {
           void loadConversationList(1, false)
         }
+        // 流式结束后广播会话变更（last_message_at 等已更新）
+        broadcastConversationChange()
       }
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatStream, ensureConversationSession, flushConversationCache, sessionId, loadConversationList])
+  }, [chatStream, ensureConversationSession, flushConversationCache, sessionId, loadConversationList, broadcastConversationChange])
 
   handleSendRef.current = handleSend
 
@@ -604,9 +767,11 @@ function ChatPage() {
     resetStreamExecutionState()
     resetTaskPanelState()
     navigate(`/chat/${newConv.session_id}`, { replace: true })
+    // 重新生成会话涉及会话增删，广播变更到其他标签页
+    broadcastConversationChange()
 
     void handleSendRef.current?.(lastUserMsg.content, [])
-  }, [sessionId, removeConversation, upsertConversation, setSessionId, setMessages, setStreamingAssistantId, resetStreamExecutionState, resetTaskPanelState, navigate])
+  }, [broadcastConversationChange, sessionId, removeConversation, upsertConversation, setSessionId, setMessages, setStreamingAssistantId, resetStreamExecutionState, resetTaskPanelState, navigate])
 
   const handleCreateConversation = useCallback(async () => {
     setMessageMeta({})
@@ -640,7 +805,9 @@ function ChatPage() {
   const handleRenameConversation = useCallback(async (targetSessionId: string, title: string) => {
     const response = await conversationAPI.renameSession(targetSessionId, title)
     upsertConversation(response.data as import('@/features/chat/types').ConversationSessionSummary)
-  }, [upsertConversation])
+    // 重命名后广播变更到其他标签页
+    broadcastConversationChange()
+  }, [broadcastConversationChange, upsertConversation])
 
   /* 请求删除会话 - 显示确认对话框 */
   const handleDeleteConversation = useCallback((targetSessionId: string) => {
@@ -668,8 +835,9 @@ function ChatPage() {
       }
     }
     void loadConversationList(1, false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, createConversationAndNavigate, includeDeleted, navigate, removeConversation, sessionId, upsertConversation, loadConversationList, pendingDeleteSessionId])
+    // 删除会话后广播变更到其他标签页
+    broadcastConversationChange()
+  }, [broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, navigate, removeConversation, sessionId, upsertConversation, loadConversationList, pendingDeleteSessionId])
 
   /* 取消删除会话 */
   const cancelDeleteConversation = useCallback(() => {
@@ -688,7 +856,9 @@ function ChatPage() {
       navigate(`/chat/${targetSessionId}`, { replace: true })
     }
     void loadConversationList(1, false)
-  }, [navigate, sessionId, upsertConversation, loadConversationList])
+    // 恢复会话后广播变更到其他标签页
+    broadcastConversationChange()
+  }, [broadcastConversationChange, navigate, sessionId, upsertConversation, loadConversationList])
 
   const handleLoadMoreConversations = useCallback(() => {
     if (historyLoading || !conversationsHasMore) {
@@ -728,7 +898,9 @@ function ChatPage() {
     }
 
     void loadConversationList(1, false)
-  }, [conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation, t])
+    // 批量删除会话后广播变更到其他标签页
+    broadcastConversationChange()
+  }, [broadcastConversationChange, conversations, createConversationAndNavigate, includeDeleted, loadConversationList, navigate, removeConversation, sessionId, upsertConversation, t])
 
   const handleStopAgent = useCallback(async (agentId: string) => {
     try {
@@ -884,6 +1056,9 @@ function ChatPage() {
               outputMode={outputMode}
               streamStatusText={streamStatusText}
               messagesEndRef={messagesEndRef}
+              scrollContainerRef={scrollContainerRef}
+              showJumpToLatest={hasNewContent}
+              onJumpToLatest={scrollToLatest}
               onEditMessage={handleEditMessage}
               onRegenerate={handleRegenerate}
               onFeedback={handleFeedback}
@@ -945,6 +1120,22 @@ function ChatPage() {
           cancelText="取消"
           onConfirm={confirmDeleteConversation}
           onCancel={cancelDeleteConversation}
+        />
+      )}
+      {/* 密钥失效提示对话框：点击「跳转设置」导航到 /settings 路由 */}
+      {showApiKeyStaleDialog && (
+        <ConfirmDialog
+          isOpen={showApiKeyStaleDialog}
+          title="API Key 已失效"
+          message="该供应商 API Key 已失效，请在设置页重新录入"
+          type="warning"
+          confirmText="跳转设置"
+          cancelText="稍后处理"
+          onConfirm={() => {
+            setShowApiKeyStaleDialog(false)
+            navigate('/settings')
+          }}
+          onCancel={() => setShowApiKeyStaleDialog(false)}
         />
       )}
     </div>

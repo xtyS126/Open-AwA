@@ -5,6 +5,7 @@
 
 from pathlib import Path
 import os
+import secrets
 from typing import Iterable, Optional
 
 from dotenv import dotenv_values
@@ -96,7 +97,14 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
     
-    SECRET_KEY: str = "openawa-dev-default"
+    # 三密钥独立配置：JWT 签名、CSRF 签名、Fernet 对称加密各自独立可轮换
+    # 详见 apply_runtime_defaults 校验器
+    # JWT 签名专用密钥（HS256），生产环境长度 >= 32
+    JWT_SECRET_KEY: str = ""
+    # CSRF token 签名派生专用密钥，生产环境长度 >= 32
+    CSRF_SECRET_KEY: str = ""
+    # Fernet 对称加密专用密钥（base64-urlsafe 32 字节格式）
+    ENCRYPTION_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     
@@ -225,20 +233,65 @@ class Settings(BaseSettings):
     def apply_runtime_defaults(self) -> "Settings":
         """
         在完成环境加载后补齐运行期默认值，避免导入阶段绕过环境文件配置。
+
+        三密钥独立校验策略：
+        - 生产环境：JWT_SECRET_KEY / CSRF_SECRET_KEY / ENCRYPTION_KEY 任一缺失或长度不足 32，
+          各自独立生成一次性随机密钥保证服务可启动，并独立记录 CRITICAL 日志。
+        - 开发环境：ENCRYPTION_KEY 为空时自动生成保证 Fernet 可初始化；
+          JWT_SECRET_KEY / CSRF_SECRET_KEY 为空时使用固定开发默认值并记录 INFO 日志。
         """
         environment = str(self.ENVIRONMENT or "development").strip() or "development"
 
         if environment != self.ENVIRONMENT:
             object.__setattr__(self, "ENVIRONMENT", environment)
 
-        if is_production_environment(environment) and self.SECRET_KEY == "openawa-dev-default":
-            logger.error("SECRET_KEY must be explicitly set in production environment")
-            raise ValueError("SECRET_KEY must be explicitly set in production environment")
-
-        # 生产环境强制 SECRET_KEY 长度至少 32 字符，防止弱密钥
-        if is_production_environment(environment) and len(self.SECRET_KEY) < 32:
-            logger.error("SECRET_KEY must be at least 32 characters in production environment")
-            raise ValueError("SECRET_KEY must be at least 32 characters in production environment")
+        if is_production_environment(environment):
+            # 生产环境：三个密钥各自独立校验，互不影响
+            if not self.JWT_SECRET_KEY or len(self.JWT_SECRET_KEY) < 32:
+                object.__setattr__(self, "JWT_SECRET_KEY", secrets.token_urlsafe(64))
+                logger.critical(
+                    "生产环境未显式配置 JWT_SECRET_KEY 或密钥过短，已生成一次性随机密钥。"
+                    "该密钥重启后失效，已签发的 JWT token 将全部失效。"
+                    "请尽快显式设置 JWT_SECRET_KEY 环境变量（长度 >= 32）。"
+                )
+            if not self.CSRF_SECRET_KEY or len(self.CSRF_SECRET_KEY) < 32:
+                object.__setattr__(self, "CSRF_SECRET_KEY", secrets.token_urlsafe(64))
+                logger.critical(
+                    "生产环境未显式配置 CSRF_SECRET_KEY 或密钥过短，已生成一次性随机密钥。"
+                    "该密钥重启后失效，已签发的 CSRF token 将全部失效。"
+                    "请尽快显式设置 CSRF_SECRET_KEY 环境变量（长度 >= 32）。"
+                )
+            if not self.ENCRYPTION_KEY or len(self.ENCRYPTION_KEY) < 32:
+                # 延迟导入避免模块加载阶段对 cryptography 的强依赖
+                from cryptography.fernet import Fernet
+                object.__setattr__(self, "ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+                logger.critical(
+                    "生产环境未显式配置 ENCRYPTION_KEY 或密钥过短，已生成一次性随机密钥。"
+                    "该密钥重启后失效，已加密的 API Key 将无法解密。"
+                    "请尽快显式设置 ENCRYPTION_KEY 环境变量（base64-urlsafe 32 字节）。"
+                )
+        else:
+            # 开发环境：保证服务可启动，使用可预测默认值便于联调
+            if not self.JWT_SECRET_KEY:
+                object.__setattr__(self, "JWT_SECRET_KEY", "openawa-dev-jwt-default-32chars-minimum!!")
+                logger.info(
+                    "开发环境未配置 JWT_SECRET_KEY，已使用固定开发默认值。"
+                    "生产环境请显式设置 JWT_SECRET_KEY 环境变量（长度 >= 32）。"
+                )
+            if not self.CSRF_SECRET_KEY:
+                object.__setattr__(self, "CSRF_SECRET_KEY", "openawa-dev-csrf-default-32chars-minimum!!")
+                logger.info(
+                    "开发环境未配置 CSRF_SECRET_KEY，已使用固定开发默认值。"
+                    "生产环境请显式设置 CSRF_SECRET_KEY 环境变量（长度 >= 32）。"
+                )
+            if not self.ENCRYPTION_KEY:
+                # 开发环境使用固定默认值，避免重启后密钥变化导致已加密数据无法解密
+                # 如需自定义密钥，请在 .env.local 中设置 ENCRYPTION_KEY（base64-urlsafe 32 字节）
+                object.__setattr__(self, "ENCRYPTION_KEY", "MtBIvOX8B_AGq5_4WeNjGpboilROKxqQxy8YwmpD-OQ=")
+                logger.info(
+                    "开发环境未配置 ENCRYPTION_KEY，已使用固定开发默认值。"
+                    "生产环境请显式设置 ENCRYPTION_KEY 环境变量（base64-urlsafe 32 字节）。"
+                )
 
         return self
 

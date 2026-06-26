@@ -4,7 +4,7 @@
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -35,7 +35,7 @@ def list_messages(
     category: Optional[str] = None,
     unread_only: bool = False,
     limit: int = 50,
-):
+) -> Dict[str, Any]:
     """
     获取收件箱消息列表。
     支持按类别筛选和仅未读过滤。
@@ -56,7 +56,7 @@ def list_messages(
 
 
 @router.post("")
-def create_message(body: InboxMessageCreate):
+def create_message(body: InboxMessageCreate) -> Dict[str, str]:
     """
     创建收件箱消息（由系统内部调用）。
     """
@@ -80,7 +80,7 @@ def create_message(body: InboxMessageCreate):
 
 
 @router.post("/{message_id}/read")
-def mark_as_read(message_id: str):
+def mark_as_read(message_id: str) -> Dict[str, str]:
     """
     标记消息为已读。
     """
@@ -92,7 +92,7 @@ def mark_as_read(message_id: str):
 
 
 @router.post("/read-all")
-def mark_all_read(category: Optional[str] = None):
+def mark_all_read(category: Optional[str] = None) -> Dict[str, Any]:
     """
     标记所有（或指定类别）消息为已读。
     """
@@ -105,7 +105,7 @@ def mark_all_read(category: Optional[str] = None):
 
 
 @router.delete("/{message_id}")
-def delete_message(message_id: str):
+def delete_message(message_id: str) -> Dict[str, str]:
     """
     删除收件箱消息。
     """
@@ -118,7 +118,7 @@ def delete_message(message_id: str):
 
 
 @router.get("/count")
-def get_unread_count():
+def get_unread_count() -> Dict[str, int]:
     """
     获取未读消息数量。
     """

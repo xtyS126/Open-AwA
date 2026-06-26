@@ -3,7 +3,7 @@
  * 提供类型安全的配置读写接口
  */
 import Store from 'electron-store'
-import { DEFAULT_CONFIG, type AppConfig, type WindowBounds } from './types'
+import { DEFAULT_CONFIG, type AppConfig, type WindowBounds, type UpdateConfig } from './types'
 
 let _store: Store<AppConfig> | null = null
 
@@ -70,7 +70,7 @@ export function setAutostart(autostart: boolean): void {
 }
 
 /** 获取自动更新配置 */
-export function getUpdateConfig() {
+export function getUpdateConfig(): UpdateConfig {
   return getConfigStore().get('update')
 }
 

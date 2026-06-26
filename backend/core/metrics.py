@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from threading import Lock
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 
 MetricKey = Tuple[Tuple[str, str], ...]
@@ -27,7 +27,7 @@ class SimplePrometheusRegistry:
         self._metadata: Dict[str, Dict[str, str]] = {}
 
     @staticmethod
-    def _normalize_labels(labels: Dict[str, str] | None) -> MetricKey:
+    def _normalize_labels(labels: Optional[Dict[str, str]]) -> MetricKey:
         normalized = {
             str(key): str(value)
             for key, value in (labels or {}).items()

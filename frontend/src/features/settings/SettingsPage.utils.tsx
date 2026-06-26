@@ -91,7 +91,7 @@ export function normalizeProviderBaseUrl(provider: string, apiEndpoint: string):
 
   try {
     new URL(raw)
-  } catch (e) {
+  } catch {
     // 返回原始值，让后端或其他逻辑处理
   }
 

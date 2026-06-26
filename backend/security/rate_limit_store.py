@@ -136,7 +136,7 @@ class MemoryRateLimitStore(RateLimitStore):
             self._attempts.pop(rate_limit_key, None)
             self._blocked_until.pop(rate_limit_key, None)
 
-    def _test_inject_state(self, stale_key: str | None = None, blocked_until: float = 0.0) -> None:
+    def _test_inject_state(self, stale_key: Optional[str] = None, blocked_until: float = 0.0) -> None:
         """
         测试辅助方法：注入指定的限流状态，避免测试直接操作私有属性。
 

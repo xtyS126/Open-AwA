@@ -38,21 +38,21 @@ const WorkspacePage: React.FC = () => {
   const [createType, setCreateType] = useState('default');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadWorkspaces();
-  }, []);
-
   const loadWorkspaces = async () => {
     try {
       setLoading(true);
       const data = await workspaceApi.list();
       setWorkspaces(data.workspaces);
-    } catch (e) {
+    } catch {
       setError('加载工作区列表失败');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadWorkspaces();
+  }, []);
 
   const handleCreate = async () => {
     if (!createName.trim()) {

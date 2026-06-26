@@ -145,11 +145,13 @@ export async function pruneOldSessions(maxSessions: number = 50): Promise<void> 
   // 获取所有缓存的会话及时间戳，按时间排序后删除最旧的
   const allKeys = await db.getAllKeys(STORE_NAME)
   if (allKeys.length <= maxSessions) return
+  // IndexedDB 存储的记录结构（含时间戳字段，用于按时间排序）
+  interface BucketRecord { timestamp?: number }
   const entries: { key: string; updatedAt: number }[] = []
   for (const key of allKeys) {
     try {
-      const record = await db.get(STORE_NAME, key)
-      entries.push({ key: key as string, updatedAt: (record as any)?.timestamp || 0 })
+      const record = (await db.get(STORE_NAME, key)) as BucketRecord | undefined
+      entries.push({ key: key as string, updatedAt: record?.timestamp || 0 })
     } catch { entries.push({ key: key as string, updatedAt: 0 }) }
   }
   entries.sort((a, b) => a.updatedAt - b.updatedAt)

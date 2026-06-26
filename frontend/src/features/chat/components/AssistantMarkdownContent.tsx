@@ -1,5 +1,5 @@
-import { useMemo, useState, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
@@ -10,6 +10,8 @@ import styles from './MessageContent.module.css'
 
 interface AssistantMarkdownContentProps {
   content: string
+  /** 是否处于流式输出状态；流式期间启用容错预处理和节流渲染 */
+  streaming?: boolean
 }
 
 /**
@@ -107,14 +109,162 @@ function preprocessImageContent(content: string): string {
   return processed
 }
 
-function AssistantMarkdownContent({ content }: AssistantMarkdownContentProps) {
+/**
+ * 流式期间容错预处理：自动闭合未完成的 Markdown 语法结构。
+ * 纯函数，无副作用。
+ *
+ * 处理范围：
+ * - 未闭合代码块（```/~~~ 围栏出现次数为奇数）→ 末尾追加闭合围栏
+ * - 未闭合块级公式（$$ 出现次数为奇数）→ 末尾追加 $$
+ * - 未闭合强调标记（** __ * _）→ 末尾追加对应闭合符号
+ *
+ * 注意事项：
+ * - 行内公式 $...$ 不自动闭合（避免误判），由 KaTeX 自行处理
+ * - 代码块内的内容跳过统计，避免误判
+ * - 双字符标记（** __）先于单字符标记（* _）统计，避免重复计数
+ * - 代码块未闭合时仅闭合代码块，其他标记交给渲染器显示原文
+ */
+function preprocessStreamingContent(content: string): string {
+  if (!content) return content
+
+  const lines = content.split('\n')
+  let inCodeBlock = false
+  let codeBlockFenceCount = 0
+
+  // 代码块外的标记统计
+  let dollarDollarCount = 0
+  let doubleStarCount = 0
+  let doubleUnderscoreCount = 0
+  let singleStarCount = 0
+  let singleUnderscoreCount = 0
+
+  for (const line of lines) {
+    // 检测代码块围栏（``` 或 ~~~），支持行首空白
+    const fenceMatch = line.match(/^\s*(```+|~~~+)/)
+    if (fenceMatch) {
+      inCodeBlock = !inCodeBlock
+      codeBlockFenceCount++
+      continue
+    }
+
+    // 跳过代码块内的行
+    if (inCodeBlock) continue
+
+    // 统计 $$（块级公式分隔符）
+    let dollarPos = 0
+    while ((dollarPos = line.indexOf('$$', dollarPos)) !== -1) {
+      dollarDollarCount++
+      dollarPos += 2
+    }
+
+    // 统计 **（双星号强调）
+    let doubleStarPos = 0
+    while ((doubleStarPos = line.indexOf('**', doubleStarPos)) !== -1) {
+      doubleStarCount++
+      doubleStarPos += 2
+    }
+
+    // 统计 __（双下划线强调）
+    let doubleUnderPos = 0
+    while ((doubleUnderPos = line.indexOf('__', doubleUnderPos)) !== -1) {
+      doubleUnderscoreCount++
+      doubleUnderPos += 2
+    }
+
+    // 统计 *（单星号，先剔除 ** 避免重复计数）
+    const withoutDoubleStar = line.replace(/\*\*/g, '')
+    let singleStarPos = 0
+    while ((singleStarPos = withoutDoubleStar.indexOf('*', singleStarPos)) !== -1) {
+      singleStarCount++
+      singleStarPos += 1
+    }
+
+    // 统计 _（单下划线，先剔除 __ 避免重复计数）
+    const withoutDoubleUnder = line.replace(/__/g, '')
+    let singleUnderPos = 0
+    while ((singleUnderPos = withoutDoubleUnder.indexOf('_', singleUnderPos)) !== -1) {
+      singleUnderscoreCount++
+      singleUnderPos += 1
+    }
+  }
+
+  let result = content
+
+  // 代码块未闭合：仅闭合代码块，其他标记交给渲染器显示原文
+  if (codeBlockFenceCount % 2 === 1) {
+    result += '\n```\n'
+    return result
+  }
+
+  // 闭合未完成的块级公式
+  if (dollarDollarCount % 2 === 1) {
+    result += '\n$$\n'
+  }
+
+  // 闭合未完成的双字符强调标记（先 ** 后 __）
+  if (doubleStarCount % 2 === 1) {
+    result += '**'
+  }
+  if (doubleUnderscoreCount % 2 === 1) {
+    result += '__'
+  }
+
+  // 闭合未完成的单字符强调标记（先 * 后 _）
+  if (singleStarCount % 2 === 1) {
+    result += '*'
+  }
+  if (singleUnderscoreCount % 2 === 1) {
+    result += '_'
+  }
+
+  return result
+}
+
+function AssistantMarkdownContent({ content, streaming = false }: AssistantMarkdownContentProps) {
   const remarkPlugins = useMemo(() => [remarkMath, remarkGfm], [])
   const rehypePlugins = useMemo(() => [rehypeKatex, rehypeHighlight], [])
 
-  const processedContent = useMemo(() => preprocessImageContent(content), [content])
+  // 流式节流相关 refs：记录上次渲染的内容和时间戳
+  const lastRenderedContentRef = useRef<string>('')
+  const lastRenderTimeRef = useRef<number>(0)
+  const [throttledContent, setThrottledContent] = useState<string>(content)
 
-  const imageComponents = useMemo(() => ({
-    img: ({ src, alt }: any) => {
+  // 节流逻辑：流式期间限制重渲染频率，避免高频解析 Markdown/KaTeX
+  // 触发条件（任一）：streaming=false / 内容变化 >= 50 字符 / 距上次渲染 >= 200ms
+  // 监听 streaming 变化可确保流式结束瞬间立即用完整内容渲染一次
+  useEffect(() => {
+    if (!streaming) {
+      // 非流式：始终使用最新内容（包括流式结束的瞬间）
+      setThrottledContent(content)
+      lastRenderedContentRef.current = content
+      lastRenderTimeRef.current = Date.now()
+      return
+    }
+
+    // 流式期间：内容变化 >= 50 字符 或 距上次渲染 >= 200ms 时才更新
+    const now = Date.now()
+    const contentDiff = Math.abs(content.length - lastRenderedContentRef.current.length)
+    const timeDiff = now - lastRenderTimeRef.current
+
+    if (contentDiff >= 50 || timeDiff >= 200) {
+      setThrottledContent(content)
+      lastRenderedContentRef.current = content
+      lastRenderTimeRef.current = now
+    }
+  }, [content, streaming])
+
+  // 实际渲染内容：流式时经过容错预处理，再统一经过图片预处理
+  const processedContent = useMemo(() => {
+    const rawContent = streaming
+      ? preprocessStreamingContent(throttledContent)
+      : throttledContent
+    return preprocessImageContent(rawContent)
+  }, [throttledContent, streaming])
+
+  const imageComponents = useMemo<Components>(() => ({
+    img: (props) => {
+      // 提取 react-markdown 注入的 props，忽略其余 ExtraProps 字段
+      const { src, alt } = props as { src?: string; alt?: string }
       return <ImageWithLightbox src={src} alt={alt} />
     },
   }), [])

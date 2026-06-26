@@ -42,7 +42,7 @@ export function DataCollectionTabContainer() {
       const response = await conversationAPI.getCollectionStatus()
       setCollectionEnabled(Boolean(response.data.enabled))
       setCollectionStats(response.data.stats || null)
-    } catch (error) {
+    } catch {
       appLogger.error({ event: 'collection_status_load_failed', message: '加载采集状态失败', module: 'settings' })
       showNotification({ type: 'error', text: '加载收集状态失败' })
     }
@@ -54,7 +54,7 @@ export function DataCollectionTabContainer() {
     try {
       const response = await conversationAPI.getRecordsPreview(20)
       setRecordsPreview(response.data.records || [])
-    } catch (error) {
+    } catch {
       appLogger.error({ event: 'records_preview_load_failed', message: '加载记录预览失败', module: 'settings' })
       showNotification({ type: 'error', text: '加载最近记录失败' })
     } finally {
@@ -76,7 +76,7 @@ export function DataCollectionTabContainer() {
       setCollectionEnabled(enabled)
       await loadCollectionStatus()
       showNotification({ type: 'success', text: enabled ? '已开启数据收集' : '已关闭数据收集' })
-    } catch (error) {
+    } catch {
       showNotification({ type: 'error', text: '更新收集开关失败' })
     } finally {
       setUpdatingCollection(false)
@@ -111,7 +111,7 @@ export function DataCollectionTabContainer() {
       window.URL.revokeObjectURL(downloadUrl)
 
       showNotification({ type: 'success', text: '导出完成' })
-    } catch (error) {
+    } catch {
       showNotification({ type: 'error', text: '导出失败' })
     } finally {
       setExportingRecords(false)
@@ -129,7 +129,7 @@ export function DataCollectionTabContainer() {
       showNotification({ type: 'success', text: `清理完成：已删除 ${deleted} 条记录` })
       await loadRecordsPreview()
       await loadCollectionStatus()
-    } catch (error) {
+    } catch {
       showNotification({ type: 'error', text: '清理失败' })
     } finally {
       setCleaningRecords(false)

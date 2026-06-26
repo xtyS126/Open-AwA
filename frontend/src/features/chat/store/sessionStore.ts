@@ -34,6 +34,11 @@ interface SessionState {
   conversationsHasMore: boolean
   /** 固定的对话历史 ID 列表 */
   pinnedConversations: string[]
+  /**
+   * 会话列表版本号：跨标签页广播会话变更时自增，
+   * useConversationHistory 监听该字段变化后重新加载会话列表。
+   */
+  conversationsVersion: number
   addMessage: (
     role: 'user' | 'assistant',
     content: string,
@@ -59,6 +64,42 @@ interface SessionState {
   removeConversation: (sessionId: string) => void
   pinConversation: (sessionId: string) => void
   unpinConversation: (sessionId: string) => void
+  /**
+   * 应用远程标签页广播的流式开始事件。
+   * 仅当当前会话与事件会话一致时生效；若用户消息或助手消息已存在则跳过，避免重复。
+   */
+  applyRemoteStreamStart: (
+    sessionId: string,
+    messageId: string,
+    userMessage: string
+  ) => void
+  /**
+   * 应用远程标签页广播的流式 chunk 事件。
+   * 仅当当前会话与事件会话一致时生效。
+   * 注意：广播携带的是当前累计的完整内容（非增量），因此这里采用整体替换而非追加，
+   * 避免节流丢帧导致的内容缺失或重复拼接。
+   */
+  applyRemoteStreamChunk: (
+    sessionId: string,
+    messageId: string,
+    content: string,
+    reasoning?: string
+  ) => void
+  /**
+   * 应用远程标签页广播的流式结束事件。
+   * 仅当当前会话与事件会话一致时生效；设置最终内容并清除加载状态。
+   */
+  applyRemoteStreamEnd: (
+    sessionId: string,
+    messageId: string,
+    finalContent: string,
+    finalReasoning?: string
+  ) => void
+  /**
+   * 应用远程标签页广播的会话列表变更事件。
+   * 仅自增 conversationsVersion，由 useConversationHistory 监听后重新加载。
+   */
+  applyRemoteConversationChange: () => void
 }
 
 const initialSessionId = getActiveSessionId() || 'default'
@@ -76,7 +117,7 @@ function loadPinnedConversations(): string[] {
   }
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
   // 消息为空，由 ChatPage 在路由进入时通过 loadMessages() 异步加载
   messages: [],
   isLoading: false,
@@ -85,6 +126,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   conversationsTotal: getConversationSummaries().length,
   conversationsHasMore: false,
   pinnedConversations: loadPinnedConversations(),
+  conversationsVersion: 0,
 
   addMessage: (role, content, reasoning_content, id, isError) => {
     const messageId = id || crypto.randomUUID()
@@ -236,4 +278,82 @@ export const useSessionStore = create<SessionState>((set) => ({
       persistPinnedConversations(next)
       return { pinnedConversations: next }
     }),
+
+  applyRemoteStreamStart: (sessionId, messageId, userMessage) => {
+    const state = get()
+    // 仅当当前会话与事件会话一致时生效
+    if (state.sessionId !== sessionId) return
+
+    // 防重复：若助手消息已存在，说明 stream_start 已应用过，整体跳过
+    const assistantExists = state.messages.some((msg) => msg.id === messageId)
+    if (assistantExists) return
+
+    // 防重复：若最后一条消息是内容相同的用户消息，跳过添加用户消息
+    const lastMessage = state.messages[state.messages.length - 1]
+    const userMessageExists =
+      lastMessage && lastMessage.role === 'user' && lastMessage.content === userMessage
+
+    const nextMessages: ChatMessage[] = [...state.messages]
+    if (!userMessageExists) {
+      nextMessages.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date(),
+      })
+    }
+    // 追加空助手消息，后续 chunk/end 通过 messageId 更新
+    nextMessages.push({
+      id: messageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    })
+
+    set({ messages: nextMessages, isLoading: true })
+  },
+
+  applyRemoteStreamChunk: (sessionId, messageId, content, reasoning) => {
+    const state = get()
+    if (state.sessionId !== sessionId) return
+
+    // 广播携带的是当前累计的完整内容，采用整体替换避免节流丢帧导致的内容缺失或重复拼接
+    set((current) => ({
+      messages: current.messages.map((msg) =>
+        msg.id === messageId && msg.role === 'assistant'
+          ? {
+              ...msg,
+              content,
+              ...(reasoning !== undefined ? { reasoning_content: reasoning } : {}),
+            }
+          : msg
+      ),
+    }))
+  },
+
+  applyRemoteStreamEnd: (sessionId, messageId, finalContent, finalReasoning) => {
+    const state = get()
+    if (state.sessionId !== sessionId) return
+
+    set((current) => ({
+      messages: current.messages.map((msg) =>
+        msg.id === messageId && msg.role === 'assistant'
+          ? {
+              ...msg,
+              content: finalContent,
+              ...(finalReasoning !== undefined
+                ? { reasoning_content: finalReasoning }
+                : {}),
+            }
+          : msg
+      ),
+      isLoading: false,
+    }))
+  },
+
+  applyRemoteConversationChange: () => {
+    set((state) => ({
+      conversationsVersion: (state.conversationsVersion || 0) + 1,
+    }))
+  },
 }))

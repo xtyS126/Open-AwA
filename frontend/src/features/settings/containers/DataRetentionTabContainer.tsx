@@ -37,7 +37,7 @@ export function DataRetentionTabContainer() {
       const response = await billingAPI.getRetention()
       setRetentionConfig(response.data)
       setRetentionDays(response.data.retention_days)
-    } catch (error) {
+    } catch {
       appLogger.error({ event: 'retention_config_load_failed', message: 'Failed to load retention config', module: 'settings' })
     } finally {
       setLoadingRetention(false)

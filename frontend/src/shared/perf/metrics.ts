@@ -22,6 +22,7 @@ export function mark(name: string): void {
   marks.push({ name, timestamp })
 
   if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console -- 开发环境性能调试输出
     console.debug(`[perf] ${name}: ${timestamp.toFixed(1)}ms`)
   }
 }

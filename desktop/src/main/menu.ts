@@ -4,6 +4,7 @@
 import { Menu, app } from 'electron'
 import { IPC_CHANNELS } from '../shared/ipc-channels'
 import { getMainWindow } from './window'
+import { checkForUpdates } from './updater'
 
 /** 构建菜单模板 */
 function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
@@ -66,16 +67,18 @@ function buildMenuTemplate(): Electron.MenuItemConstructorOptions[] {
         {
           label: '关于',
           click: () => {
-            const win = getMainWindow()
-            // 可扩展为打开关于对话框
-            win?.webContents.send(IPC_CHANNELS.ACTION_NEW_CHAT)
+            // 显示关于对话框（Electron 内置）
+            // 不再误发 ACTION_NEW_CHAT 事件
+            app.showAboutPanel()
           },
         },
         {
           label: '检查更新',
           click: () => {
-            const win = getMainWindow()
-            win?.webContents.send(IPC_CHANNELS.UPDATE_STATUS_CHANGED, { status: 'checking' })
+            // 真正触发更新检查，而非只发一个状态事件
+            checkForUpdates().catch(() => {
+              // updater 内部已通过事件通知错误，此处静默
+            })
           },
         },
         ...(isDev ? [

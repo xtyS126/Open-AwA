@@ -21,7 +21,7 @@ export function PromptsTabContainer() {
       if (response.data && response.data.content) {
         setPromptContent(response.data.content)
       }
-    } catch (error) {
+    } catch {
       appLogger.error({ event: 'prompts_load_failed', message: 'Failed to load prompts', module: 'settings' })
     }
   }, [])
@@ -46,7 +46,7 @@ export function PromptsTabContainer() {
         })
       }
       showNotification({ type: 'success', text: '设置保存成功' })
-    } catch (error) {
+    } catch {
       showNotification({ type: 'error', text: '保存失败，请重试' })
     } finally {
       setSaving(false)

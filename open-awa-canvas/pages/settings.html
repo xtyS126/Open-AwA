@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统设置 - Open-AwA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style id="theme-vars">
+/* Open-AwA Design Tokens - Canvas Brand CSS */
+/* 基于前端 tokens.css 提取，用于画布页面渲染 */
+
+:root {
+  /* 主色调 */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-ring: rgba(59, 130, 246, 0.2);
+  --color-primary-soft-bg: rgba(59, 130, 246, 0.1);
+  --color-primary-softer-bg: rgba(59, 130, 246, 0.08);
+  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
+
+  /* 背景色 */
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f8fafc;
+  --color-bg-tertiary: #f1f5f9;
+
+  /* 文字色 */
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+
+  /* 边框色 */
+  --color-border: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+
+  /* 语义色 */
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-success-soft-bg: #d1fae5;
+  --color-success-strong: #047857;
+
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.12);
+  --color-error-soft-bg: #fee2e2;
+  --color-error-strong: #b91c1c;
+
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.16);
+  --color-warning-soft-bg: #fef3c7;
+  --color-warning-strong: #b45309;
+
+  --color-info: #3b82f6;
+  --color-info-bg: #dbeafe;
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+
+  /* 遮罩 */
+  --color-overlay: rgba(15, 23, 42, 0.5);
+  --color-overlay-soft: rgba(15, 23, 42, 0.3);
+
+  /* 图表色板 */
+  --color-chart-primary: #3b82f6;
+  --color-chart-secondary: #10b981;
+  --color-chart-3: #ef4444;
+  --color-chart-4: #f59e0b;
+  --color-chart-5: #8b5cf6;
+  --color-chart-6: #ec4899;
+
+  /* 标签色 */
+  --color-tag-purple-bg: rgba(139, 92, 246, 0.12);
+  --color-tag-purple-text: #6d28d9;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* 字体 */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+
+  /* 字体大小 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* 字重 */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* 行高 */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.75;
+
+  /* 圆角 */
+  --radius-none: 0;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-glow: 0 0 0 3px var(--color-primary-ring);
+  --shadow-card-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* 过渡 */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* 布局 */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 68px;
+}
+
+/* 暗色主题 */
+.dark {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-dark: #2563eb;
+  --color-primary-ring: rgba(59, 130, 246, 0.3);
+  --color-primary-soft-bg: rgba(59, 130, 246, 0.15);
+  --color-primary-softer-bg: rgba(59, 130, 246, 0.1);
+  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
+
+  --color-bg: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+
+  --color-text: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-tertiary: #94a3b8;
+
+  --color-border: #334155;
+  --color-border-subtle: #1e293b;
+
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.2);
+  --color-success-soft-bg: rgba(52, 211, 153, 0.1);
+  --color-success-strong: #10b981;
+
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.2);
+  --color-error-soft-bg: rgba(248, 113, 113, 0.1);
+  --color-error-strong: #ef4444;
+
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.2);
+  --color-warning-soft-bg: rgba(251, 191, 36, 0.1);
+  --color-warning-strong: #f59e0b;
+
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.2);
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-overlay-soft: rgba(0, 0, 0, 0.5);
+
+  --color-tag-purple-bg: rgba(167, 139, 250, 0.2);
+  --color-tag-purple-text: #c4b5fd;
+
+  --shadow-card-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--color-primary);
+    --color-border: var(--color-border);
+    --color-chart-3: var(--color-chart-3);
+    --color-chart-4: var(--color-chart-4);
+    --color-chart-5: var(--color-chart-5);
+  }
+  @layer base {
+    body { background: var(--color-background); color: var(--color-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+      /* 切换开关 */
+      .toggle-switch {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        border-radius: 11px;
+        background: var(--color-border);
+        cursor: pointer;
+        transition: background var(--transition-base);
+      }
+      .toggle-switch.active {
+        background: var(--color-primary);
+      }
+      .toggle-switch::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        box-shadow: var(--shadow-sm);
+        transition: transform var(--transition-base);
+      }
+      .toggle-switch.active::after {
+        transform: translateX(18px);
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased" style="background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans);">
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ========== 左侧边栏 ========== -->
+  <aside class="flex flex-col flex-shrink-0 border-r h-full" style="width: 260px; background: var(--color-bg); border-color: var(--color-border);">
+
+    <!-- Logo -->
+    <div class="flex items-center gap-3 px-5 h-14 border-b" style="border-color: var(--color-border);">
+      <div class="flex items-center justify-center w-8 h-8 rounded-lg" style="background: var(--color-primary);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <span class="font-semibold text-base" style="color: var(--color-text);">Open-AwA</span>
+    </div>
+
+    <!-- 导航 -->
+    <nav class="flex-1 overflow-y-auto py-3 px-3 no-scrollbar">
+
+      <!-- 控制 -->
+      <div class="mb-1">
+        <p class="px-2 mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-tertiary);">控制</p>
+        <a data-dom-id="nav-dashboard" href="dashboard.html" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          仪表盘
+        </a>
+      </div>
+
+      <!-- 智能体 -->
+      <div class="mb-1 mt-4">
+        <p class="px-2 mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-tertiary);">智能体</p>
+        <a data-dom-id="nav-chat" href="chat.html" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          对话
+        </a>
+        <a data-dom-id="nav-skills" href="skills.html" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          技能
+        </a>
+        <a data-dom-id="nav-plugins" href="plugins.html" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          插件
+        </a>
+        <a data-dom-id="nav-memory" href="memory.html" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          记忆
+        </a>
+      </div>
+
+      <!-- 外观 -->
+      <div class="mb-1 mt-4">
+        <p class="px-2 mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-tertiary);">外观</p>
+        <a data-dom-id="nav-appearance" href="#" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          主题
+        </a>
+      </div>
+
+      <!-- 系统 -->
+      <div class="mb-1 mt-4">
+        <p class="px-2 mb-1 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-tertiary);">系统</p>
+        <!-- 设置 - ACTIVE -->
+        <a data-dom-id="nav-settings" href="settings.html" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer" style="color: var(--color-primary); background: var(--color-primary-soft-bg); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          设置
+        </a>
+        <a data-dom-id="nav-communication" href="#" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          通信
+        </a>
+        <a data-dom-id="nav-im-channels" href="#" class="flex items-center gap-3 px-2 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="color: var(--color-text-secondary); border-radius: var(--radius-sm);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          IM渠道
+        </a>
+      </div>
+
+    </nav>
+
+    <!-- 底部 -->
+    <div class="border-t px-4 py-3 flex items-center justify-between" style="border-color: var(--color-border);">
+      <button class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer" style="color: var(--color-text-tertiary);" title="切换主题">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <span class="text-xs" style="color: var(--color-text-tertiary);">v0.1.0</span>
+    </div>
+
+  </aside>
+
+  <!-- ========== 主内容区域 ========== -->
+  <main class="flex-1 overflow-y-auto no-scrollbar" style="background: var(--color-bg-secondary);">
+
+    <div class="max-w-6xl mx-auto px-8 py-8">
+
+      <!-- 页面标题 -->
+      <div class="mb-6">
+        <h1 class="text-2xl font-bold" style="color: var(--color-text); font-family: var(--font-display);">系统设置</h1>
+        <p class="text-sm mt-1" style="color: var(--color-text-secondary);">管理模型配置、API 设置、外观和系统参数</p>
+      </div>
+
+      <!-- 标签栏 -->
+      <div class="flex gap-0 border-b mb-8 -mx-8 px-8" style="border-color: var(--color-border);">
+        <button class="px-4 py-3 text-sm font-semibold transition-colors cursor-pointer border-b-2" style="color: var(--color-primary); border-color: var(--color-primary);">模型管理</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">API 设置</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">外观</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">通用</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">计费</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">数据收集</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">MCP 配置</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">安全</button>
+        <button class="px-4 py-3 text-sm font-medium transition-colors cursor-pointer border-b-2 border-transparent hover:opacity-80" style="color: var(--color-text-tertiary);">后端连接</button>
+      </div>
+
+      <!-- ===== 模型配置 ===== -->
+      <div class="mb-8">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-semibold" style="color: var(--color-text);">模型配置</h2>
+          <button class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer" style="background: var(--color-primary); color: white; border-radius: var(--radius-sm);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            添加模型
+          </button>
+        </div>
+
+        <!-- Provider 卡片网格 -->
+        <div class="grid grid-cols-2 gap-4">
+
+          <!-- OpenAI -->
+          <div class="flex items-center gap-4 p-5 rounded-xl border transition-shadow cursor-pointer" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+            <div class="flex items-center justify-center w-11 h-11 rounded-lg flex-shrink-0" style="background: #1a1a2e;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text);">OpenAI</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-success-bg); color: var(--color-success-strong);">已连接</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--color-text-tertiary);">3 个模型已配置</p>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex-shrink-0" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">配置</button>
+          </div>
+
+          <!-- DeepSeek -->
+          <div class="flex items-center gap-4 p-5 rounded-xl border transition-shadow cursor-pointer" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+            <div class="flex items-center justify-center w-11 h-11 rounded-lg flex-shrink-0" style="background: #1e3a5f;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 6v6l4 2"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text);">DeepSeek</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-success-bg); color: var(--color-success-strong);">已连接</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--color-text-tertiary);">2 个模型已配置</p>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex-shrink-0" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">配置</button>
+          </div>
+
+          <!-- Google Gemini -->
+          <div class="flex items-center gap-4 p-5 rounded-xl border transition-shadow cursor-pointer" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+            <div class="flex items-center justify-center w-11 h-11 rounded-lg flex-shrink-0" style="background: #ea4335;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 19h20L12 2z"/><circle cx="12" cy="14" r="2" fill="white"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text);">Google Gemini</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-success-bg); color: var(--color-success-strong);">已连接</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--color-text-tertiary);">1 个模型已配置</p>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex-shrink-0" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">配置</button>
+          </div>
+
+          <!-- Ollama -->
+          <div class="flex items-center gap-4 p-5 rounded-xl border transition-shadow cursor-pointer" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+            <div class="flex items-center justify-center w-11 h-11 rounded-lg flex-shrink-0" style="background: #4a5568;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text);">Ollama (本地)</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-warning-bg); color: var(--color-warning-strong);">本地</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--color-text-tertiary);">2 个模型已配置</p>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex-shrink-0" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">配置</button>
+          </div>
+
+          <!-- Moonshot -->
+          <div class="flex items-center gap-4 p-5 rounded-xl border transition-shadow cursor-pointer" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+            <div class="flex items-center justify-center w-11 h-11 rounded-lg flex-shrink-0" style="background: #2d3748;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text);">Moonshot</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-success-bg); color: var(--color-success-strong);">已连接</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--color-text-tertiary);">1 个模型已配置</p>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex-shrink-0" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">配置</button>
+          </div>
+
+          <!-- 通义千问 -->
+          <div class="flex items-center gap-4 p-5 rounded-xl border transition-shadow cursor-pointer" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+            <div class="flex items-center justify-center w-11 h-11 rounded-lg flex-shrink-0" style="background: #ff6a00;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" style="color: var(--color-text);">通义千问</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-success-bg); color: var(--color-success-strong);">已连接</span>
+              </div>
+              <p class="text-xs mt-0.5" style="color: var(--color-text-tertiary);">1 个模型已配置</p>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer flex-shrink-0" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">配置</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== 模型列表 ===== -->
+      <div>
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-semibold" style="color: var(--color-text);">模型列表</h2>
+        </div>
+
+        <div class="rounded-xl border overflow-hidden" style="background: var(--color-bg); border-color: var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);">
+          <table class="w-full text-sm">
+            <thead>
+              <tr style="background: var(--color-bg-tertiary);">
+                <th class="text-left px-5 py-3 font-medium text-xs uppercase tracking-wider" style="color: var(--color-text-tertiary);">模型名称</th>
+                <th class="text-left px-5 py-3 font-medium text-xs uppercase tracking-wider" style="color: var(--color-text-tertiary);">提供商</th>
+                <th class="text-left px-5 py-3 font-medium text-xs uppercase tracking-wider" style="color: var(--color-text-tertiary);">类型</th>
+                <th class="text-left px-5 py-3 font-medium text-xs uppercase tracking-wider" style="color: var(--color-text-tertiary);">上下文长度</th>
+                <th class="text-left px-5 py-3 font-medium text-xs uppercase tracking-wider" style="color: var(--color-text-tertiary);">状态</th>
+                <th class="text-right px-5 py-3 font-medium text-xs uppercase tracking-wider" style="color: var(--color-text-tertiary);">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- gpt-4o -->
+              <tr class="border-t" style="border-color: var(--color-border);">
+                <td class="px-5 py-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style="background: #1a1a2e;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                    </div>
+                    <div>
+                      <p class="font-medium" style="color: var(--color-text);">gpt-4o</p>
+                      <p class="text-xs" style="color: var(--color-text-tertiary);">GPT-4 Omni</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-5 py-4" style="color: var(--color-text-secondary);">OpenAI</td>
+                <td class="px-5 py-4">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-primary-soft-bg); color: var(--color-primary);">对话</span>
+                </td>
+                <td class="px-5 py-4" style="color: var(--color-text-secondary);">128K</td>
+                <td class="px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <div class="toggle-switch active"></div>
+                    <span class="text-xs font-medium" style="color: var(--color-success);">启用</span>
+                  </div>
+                </td>
+                <td class="px-5 py-4 text-right">
+                  <div class="flex items-center justify-end gap-2">
+                    <button class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer" style="border-color: var(--color-border); color: var(--color-text-secondary);">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      编辑
+                    </button>
+                    <button class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer" style="border-color: var(--color-border); color: var(--color-error);">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                      删除
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- deepseek-chat -->
+              <tr class="border-t" style="border-color: var(--color-border);">
+                <td class="px-5 py-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style="background: #1e3a5f;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 6v6l4 2"/></svg>
+                    </div>
+                    <div>
+                      <p class="font-medium" style="color: var(--color-text);">deepseek-chat</p>
+                      <p class="text-xs" style="color: var(--color-text-tertiary);">DeepSeek V3</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-5 py-4" style="color: var(--color-text-secondary);">DeepSeek</td>
+                <td class="px-5 py-4">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-tag-purple-bg); color: var(--color-tag-purple-text);">对话+推理</span>
+                </td>
+                <td class="px-5 py-4" style="color: var(--color-text-secondary);">64K</td>
+                <td class="px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <div class="toggle-switch active"></div>
+                    <span class="text-xs font-medium" style="color: var(--color-success);">启用</span>
+                  </div>
+                </td>
+                <td class="px-5 py-4 text-right">
+                  <div class="flex items-center justify-end gap-2">
+                    <button class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer" style="border-color: var(--color-border); color: var(--color-text-secondary);">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      编辑
+                    </button>
+                    <button class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer" style="border-color: var(--color-border); color: var(--color-error);">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                      删除
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- gemini-pro -->
+              <tr class="border-t" style="border-color: var(--color-border);">
+                <td class="px-5 py-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0" style="background: #ea4335;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 19h20L12 2z"/><circle cx="12" cy="14" r="2" fill="white"/></svg>
+                    </div>
+                    <div>
+                      <p class="font-medium" style="color: var(--color-text);">gemini-pro</p>
+                      <p class="text-xs" style="color: var(--color-text-tertiary);">Gemini 1.5 Pro</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-5 py-4" style="color: var(--color-text-secondary);">Google</td>
+                <td class="px-5 py-4">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background: var(--color-primary-soft-bg); color: var(--color-primary);">对话</span>
+                </td>
+                <td class="px-5 py-4" style="color: var(--color-text-secondary);">1M</td>
+                <td class="px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <div class="toggle-switch active"></div>
+                    <span class="text-xs font-medium" style="color: var(--color-success);">启用</span>
+                  </div>
+                </td>
+                <td class="px-5 py-4 text-right">
+                  <div class="flex items-center justify-end gap-2">
+                    <button class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer" style="border-color: var(--color-border); color: var(--color-text-secondary);">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      编辑
+                    </button>
+                    <button class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer" style="border-color: var(--color-border); color: var(--color-error);">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                      删除
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

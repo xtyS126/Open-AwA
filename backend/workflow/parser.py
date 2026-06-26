@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
@@ -16,7 +16,7 @@ class WorkflowParser:
     工作流定义解析器。
     """
 
-    def parse_definition(self, definition: Union[str, Dict[str, Any]], format_hint: str | None = None) -> Dict[str, Any]:
+    def parse_definition(self, definition: Union[str, Dict[str, Any]], format_hint: Optional[str] = None) -> Dict[str, Any]:
         """
         解析工作流定义并返回规范化结果。
         """
@@ -42,7 +42,7 @@ class WorkflowParser:
             "steps": normalized_steps,
         }
 
-    def _load_text_definition(self, definition: str, format_hint: str | None = None) -> Dict[str, Any]:
+    def _load_text_definition(self, definition: str, format_hint: Optional[str] = None) -> Dict[str, Any]:
         text = definition.strip()
         if not text:
             raise ValueError("工作流定义不能为空")

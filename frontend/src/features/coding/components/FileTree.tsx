@@ -2,10 +2,27 @@
  * 文件树组件 — 显示项目目录结构，支持展开/折叠和文件选择。
  */
 import React, { useEffect, useState } from 'react';
-import { codingApi } from '../codingApi';
+import { codingApi, type CodingTreeNode } from '../codingApi';
 import { useCodingStore, type FileTreeNode } from '../store/codingStore';
 import { appLogger } from '@/shared/utils/logger';
 import styles from './FileTree.module.css';
+
+/**
+ * 将后端 getTree 返回的嵌套节点（不含 path）映射为前端 FileTreeNode（含 path）。
+ * 递归为每个节点拼接相对路径，保证点击文件时能取到正确路径。
+ */
+function mapTreeNodes(nodes: CodingTreeNode[], parentPath = ''): FileTreeNode[] {
+  return nodes.map((node) => {
+    const path = parentPath ? `${parentPath}/${node.name}` : node.name;
+    return {
+      name: node.name,
+      type: node.type,
+      path,
+      expanded: node.expanded,
+      children: node.children ? mapTreeNodes(node.children, path) : undefined,
+    };
+  });
+}
 
 const FileTreeItem: React.FC<{
   node: FileTreeNode;
@@ -24,14 +41,22 @@ const FileTreeItem: React.FC<{
       try {
         const data = await codingApi.listDir(node.path);
         if (data.items) {
-          setChildren(data.items.map((item: any) => ({
+          setChildren(data.items.map((item) => ({
             name: item.name,
             type: item.type,
             path: item.path,
             expanded: false,
           })));
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        // 展开子目录失败时记录警告，避免静默吞异常导致用户无反馈
+        appLogger.warning({
+          event: 'file_tree_expand_failed',
+          module: 'coding',
+          message: '展开目录失败',
+          extra: { path: node.path, error: e instanceof Error ? e.message : String(e) },
+        });
+      }
     }
     setExpanded(!expanded);
   };
@@ -80,7 +105,7 @@ const FileTree: React.FC = () => {
           type: 'directory',
           path: '',
           expanded: true,
-          children: data.tree,
+          children: mapTreeNodes(data.tree, ''),
         });
       }
     } catch (e) {

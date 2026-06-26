@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { LogOut } from 'lucide-react'
+import { shallow } from 'zustand/shallow'
 import { useAuthStore } from '@/shared/store/authStore'
 import { authAPI } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
@@ -11,7 +12,11 @@ interface UserFloatingAreaProps {
 
 export function UserFloatingArea({ collapsed = false }: UserFloatingAreaProps) {
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
+  const { user, logout } = useAuthStore(s => ({
+    user: s.user,
+    logout: s.logout,
+  }), shallow)
 
   const handleLogout = async () => {
     try {

@@ -1,4 +1,5 @@
 import { useWechatConfig } from './useWechatConfig'
+import type { WeixinAutoReplyRule, WeixinAutoReplyRuleCreate } from '@/shared/api/api'
 import WechatMultimediaPanel from './WechatMultimediaPanel'
 import styles from './WechatConfigModule.module.css'
 
@@ -282,7 +283,7 @@ export default function WechatConfigModule() {
                     <div className={styles['actions-row']}>
                       <button
                         className={`btn btn-primary`}
-                        onClick={() => void handleSaveRule(editingRule as any)}
+                        onClick={() => void handleSaveRule(editingRule as WeixinAutoReplyRule | WeixinAutoReplyRuleCreate)}
                         disabled={savingRule || !editingRule.rule_name || !editingRule.match_pattern || !editingRule.reply_content}
                       >
                         {savingRule ? '保存中...' : '保存规则'}

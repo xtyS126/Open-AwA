@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .definitions import AgentDefinition, BUILTIN_AGENT_DEFINITIONS
 
 
-def _parse_json_field(value: Optional[str], default: list | dict) -> list | dict:
+def _parse_json_field(value: Optional[str], default: Union[list, dict]) -> Union[list, dict]:
     """安全解析 JSON 字段。"""
     if not value:
         return default

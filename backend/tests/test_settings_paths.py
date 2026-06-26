@@ -66,15 +66,49 @@ def test_preload_environment_variables_supports_legacy_getenv_paths(tmp_path: Pa
     assert os.getenv("LOCAL_FLAG") == "backend"
 
 
-def test_settings_rejects_missing_secret_key_in_production_env_file(tmp_path: Path, monkeypatch):
+def test_settings_generates_secret_keys_in_production_when_missing(tmp_path: Path, monkeypatch):
     """
-    生产环境配置文件缺少 SECRET_KEY 时，应在 Settings 初始化阶段直接失败。
+    生产环境配置文件缺少 JWT_SECRET_KEY / CSRF_SECRET_KEY / ENCRYPTION_KEY 时，
+    应分别自动生成一次性随机密钥保证服务可启动，并各自独立记录 CRITICAL 日志警告
+    （遵循 AGENTS.md「自动生成」语义与三密钥独立校验策略）。
+    生成的密钥长度应 >= 32 字符。
     """
-    for key in ("ENVIRONMENT", "SECRET_KEY"):
-        monkeypatch.delenv(key, raising=False)
+    # loguru 在导入时已捕获原始 sys.stderr，capsys 无法拦截；
+    # 改用 loguru 推荐的 sink 捕获模式（注册临时 handler 收集日志记录）。
+    from loguru import logger
 
-    env_file = tmp_path / ".env"
-    env_file.write_text("ENVIRONMENT=production\n", encoding="utf-8")
+    captured_records: list[str] = []
+    sink_id = logger.add(
+        lambda message: captured_records.append(message.record["message"]),
+        level="CRITICAL",
+    )
 
-    with pytest.raises(ValidationError, match="SECRET_KEY environment variable is required in production environment"):
-        Settings(_env_file=env_file)
+    try:
+        # 清除所有可能影响测试的密钥环境变量，确保三个新密钥都未配置
+        for key in (
+            "ENVIRONMENT",
+            "JWT_SECRET_KEY",
+            "CSRF_SECRET_KEY",
+            "ENCRYPTION_KEY",
+            "SECRET_KEY",  # 旧密钥环境变量也清除，避免历史残留影响
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("ENVIRONMENT=production\n", encoding="utf-8")
+
+        settings_instance = Settings(_env_file=env_file)
+    finally:
+        logger.remove(sink_id)
+
+    # 三个新密钥各自应生成随机值，长度 >= 32
+    assert len(settings_instance.JWT_SECRET_KEY) >= 32
+    assert len(settings_instance.CSRF_SECRET_KEY) >= 32
+    assert len(settings_instance.ENCRYPTION_KEY) >= 32
+
+    # 应各自独立记录 CRITICAL 警告，包含对应密钥名称与提示语
+    joined = "\n".join(captured_records)
+    assert "JWT_SECRET_KEY" in joined
+    assert "CSRF_SECRET_KEY" in joined
+    assert "ENCRYPTION_KEY" in joined
+    assert "一次性随机密钥" in joined

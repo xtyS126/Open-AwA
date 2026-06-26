@@ -1,0 +1,205 @@
+{
+  "project": {
+    "name": "Open-AwA AI Agent Platform",
+    "path": "d:/代码/Open-AwA/open-awa-canvas",
+    "operation": "create",
+    "deviceType": "desktop",
+    "language": "zh-CN",
+    "dashboardMode": false,
+    "replicationMode": null,
+    "sourceUrl": null,
+    "visualSpecExcerpt": null,
+    "styleDefinitionBrief": "AI Agent SaaS platform, cool slate + blue accent, Inter font system, clean information-dense layout, subtle borders and depth",
+    "designRead": "SaaS management console / developer & AI practitioners / professional and clean / information-dense / avoid decorative excess",
+    "designDials": {
+      "layoutVariance": 2,
+      "motionIntensity": 1,
+      "visualDensity": 4
+    },
+    "styleContinuityAnchors": {
+      "colorSystem": {
+        "primaryColorRole": "blue #3b82f6 for primary actions, active states, links",
+        "brandHuePolicy": "single blue primary; status colors for semantic only",
+        "stateColors": "success green, error red, warning amber, info blue"
+      },
+      "shapeSystem": "radius-sm: 6px, radius-md: 10px, radius-lg: 14px, max 20px for pills",
+      "typographySystem": "Inter as primary sans-serif, 14px base, 400/500/600/700 weights",
+      "spacingSystem": "4px base grid, 8/12/16/20/24/32/40/48px scale",
+      "componentLanguage": "clean card-based UI, subtle borders, minimal shadows",
+      "surfaceAndDepth": "border-led surfaces, shadows only for floating layers",
+      "imageryAndIconography": "lucide-style icons, minimal imagery",
+      "interactionTone": "professional, functional, minimal animation"
+    },
+    "specsConstraints": null,
+    "sharedProjectShellContract": {
+      "navigationShell": "left sidebar 260px with grouped menu items, logo header, theme toggle footer, active item blue highlight with left indicator bar",
+      "primaryColorSystem": "blue #3b82f6 primary, no secondary accent",
+      "typographySystem": "Inter, 14px body, 12px group labels uppercase, 16px logo text",
+      "radiusScale": "6px sm, 10px md, 14px lg",
+      "surfaceDepthModel": "border-led cards, subtle 1px borders, shadow-sm for cards",
+      "ctaStyle": "rounded buttons with blue fill, hover darken + translateY(-1px)",
+      "alignmentRules": "flex column layout, sidebar fixed, main content scrollable"
+    },
+    "generationTree": {
+      "root": {
+        "nodeId": "gen-project-shell",
+        "kind": "project-shell",
+        "pageIds": ["page-chat", "page-dashboard", "page-settings", "page-skills", "page-plugins", "page-memory"],
+        "output": "partials/project-shell.html",
+        "sharedRegions": ["sidebar"],
+        "privateRegions": [],
+        "mutableSlots": ["activeNavItem", "pageTitle", "mainContent"],
+        "status": "planned",
+        "children": [
+          { "nodeId": "gen-page-chat", "kind": "page-leaf", "pageIds": ["page-chat"], "output": "pages/chat.html", "status": "planned", "children": [] },
+          { "nodeId": "gen-page-dashboard", "kind": "page-leaf", "pageIds": ["page-dashboard"], "output": "pages/dashboard.html", "status": "planned", "children": [] },
+          { "nodeId": "gen-page-settings", "kind": "page-leaf", "pageIds": ["page-settings"], "output": "pages/settings.html", "status": "planned", "children": [] },
+          { "nodeId": "gen-page-skills", "kind": "page-leaf", "pageIds": ["page-skills"], "output": "pages/skills.html", "status": "planned", "children": [] },
+          { "nodeId": "gen-page-plugins", "kind": "page-leaf", "pageIds": ["page-plugins"], "output": "pages/plugins.html", "status": "planned", "children": [] },
+          { "nodeId": "gen-page-memory", "kind": "page-leaf", "pageIds": ["page-memory"], "output": "pages/memory.html", "status": "planned", "children": [] }
+        ]
+      }
+    }
+  },
+  "designSource": {
+    "operatingMode": "free-explore",
+    "libraryIdentity": { "name": null, "id": null, "version": null, "scope": null, "path": null, "versionSource": null },
+    "libraryPath": null,
+    "cssFilePath": "d:/代码/Open-AwA/open-awa-canvas/colors_and_type.css",
+    "brandPrefix": "",
+    "themeMode": "light",
+    "designDecisionSummary": "AI Agent platform with slate-blue palette, Inter font, information-dense card-based layout",
+    "componentContractKind": null,
+    "forbiddenInventedComponents": [],
+    "allowedComponents": ["input", "button", "card", "table", "tabs", "modal", "badge", "sidebar", "chat-bubble", "tooltip"],
+    "styleConstraints": {
+      "radiusMax": 14,
+      "spacingBase": 4,
+      "fontSizeBody": 14,
+      "fontSizeMin": 12,
+      "controlHeightDefault": 36,
+      "controlHeightLarge": 42
+    },
+    "productContext": {
+      "kitType": "ai-agent-platform",
+      "productType": "SaaS AI operations platform"
+    },
+    "actualTokenNameReference": [
+      { "semanticPurpose": "Primary action color", "tokenName": "--color-primary" },
+      { "semanticPurpose": "Background", "tokenName": "--color-bg" },
+      { "semanticPurpose": "Secondary background", "tokenName": "--color-bg-secondary" },
+      { "semanticPurpose": "Text primary", "tokenName": "--color-text" },
+      { "semanticPurpose": "Text secondary", "tokenName": "--color-text-secondary" },
+      { "semanticPurpose": "Border", "tokenName": "--color-border" },
+      { "semanticPurpose": "Card background", "tokenName": "--color-bg-secondary" }
+    ]
+  },
+  "pages": [
+    {
+      "nodeId": "page-chat",
+      "slug": "chat",
+      "title": "AI 聊天",
+      "htmlSrc": "pages/chat.html",
+      "pageIndex": 1,
+      "stateGroupId": null,
+      "stateRole": null,
+      "baseStatePageId": null,
+      "pageType": "information-dense",
+      "businessScenario": "Core AI chat interface with conversation list, message area, and input",
+      "visualNorthStar": "Clean split-panel chat with sidebar conversations, message bubbles, and rich input area",
+      "compositionPattern": "sidebar-detail split layout",
+      "continuityAnchors": ["sidebar navigation shell", "primary color system"]
+    },
+    {
+      "nodeId": "page-dashboard",
+      "slug": "dashboard",
+      "title": "仪表盘",
+      "htmlSrc": "pages/dashboard.html",
+      "pageIndex": 2,
+      "stateGroupId": null,
+      "stateRole": null,
+      "baseStatePageId": null,
+      "pageType": "information-dense",
+      "businessScenario": "System overview with metrics, charts, and status indicators",
+      "visualNorthStar": "Data dashboard with stat cards, line charts, and system overview grid",
+      "compositionPattern": "metric-cards + chart dual-column layout",
+      "continuityAnchors": ["sidebar navigation shell", "primary color system"]
+    },
+    {
+      "nodeId": "page-settings",
+      "slug": "settings",
+      "title": "系统设置",
+      "htmlSrc": "pages/settings.html",
+      "pageIndex": 3,
+      "stateGroupId": null,
+      "stateRole": null,
+      "baseStatePageId": null,
+      "pageType": "information-dense",
+      "businessScenario": "System configuration with tabbed sections for models, API, appearance",
+      "visualNorthStar": "Tabbed settings page with organized form sections and configuration cards",
+      "compositionPattern": "tab-navigation + form-section layout",
+      "continuityAnchors": ["sidebar navigation shell", "primary color system"]
+    },
+    {
+      "nodeId": "page-skills",
+      "slug": "skills",
+      "title": "技能管理",
+      "htmlSrc": "pages/skills.html",
+      "pageIndex": 4,
+      "stateGroupId": null,
+      "stateRole": null,
+      "baseStatePageId": null,
+      "pageType": "information-dense",
+      "businessScenario": "Skill inventory with enable/disable toggles and skill details",
+      "visualNorthStar": "Skill list with toggle controls, category badges, and detail cards",
+      "compositionPattern": "list-with-detail layout",
+      "continuityAnchors": ["sidebar navigation shell", "primary color system"]
+    },
+    {
+      "nodeId": "page-plugins",
+      "slug": "plugins",
+      "title": "插件管理",
+      "htmlSrc": "pages/plugins.html",
+      "pageIndex": 5,
+      "stateGroupId": null,
+      "stateRole": null,
+      "baseStatePageId": null,
+      "pageType": "information-dense",
+      "businessScenario": "Plugin marketplace with installed/available tabs and plugin cards",
+      "visualNorthStar": "Plugin grid with status badges, action buttons, and marketplace cards",
+      "compositionPattern": "grid-card layout",
+      "continuityAnchors": ["sidebar navigation shell", "primary color system"]
+    },
+    {
+      "nodeId": "page-memory",
+      "slug": "memory",
+      "title": "记忆管理",
+      "htmlSrc": "pages/memory.html",
+      "pageIndex": 6,
+      "stateGroupId": null,
+      "stateRole": null,
+      "baseStatePageId": null,
+      "pageType": "information-dense",
+      "businessScenario": "Memory system overview with long-term, short-term, and experience sections",
+      "visualNorthStar": "Memory dashboard with segmented sections showing memory types and search",
+      "compositionPattern": "segmented-section layout",
+      "continuityAnchors": ["sidebar navigation shell", "primary color system"]
+    }
+  ],
+  "assets": [],
+  "wiringPlan": [
+    { "from": "page-chat", "to": "page-dashboard", "hideEdge": true },
+    { "from": "page-chat", "to": "page-settings", "hideEdge": true },
+    { "from": "page-chat", "to": "page-skills", "hideEdge": true },
+    { "from": "page-chat", "to": "page-plugins", "hideEdge": true },
+    { "from": "page-chat", "to": "page-memory", "hideEdge": true }
+  ],
+  "hiddenInteractionPlan": [
+    { "domId": "nav-chat", "targetPageId": "page-chat" },
+    { "domId": "nav-dashboard", "targetPageId": "page-dashboard" },
+    { "domId": "nav-settings", "targetPageId": "page-settings" },
+    { "domId": "nav-skills", "targetPageId": "page-skills" },
+    { "domId": "nav-plugins", "targetPageId": "page-plugins" },
+    { "domId": "nav-memory", "targetPageId": "page-memory" }
+  ]
+}

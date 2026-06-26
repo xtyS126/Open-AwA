@@ -72,6 +72,20 @@ interface ChatStreamEvent {
 }
 
 /**
+ * 构造一个携带 error.code 的 Error 对象。
+ * 当 code 存在时挂载到 Error 的 code 属性上，便于上层按错误码分支处理
+ * （例如 llm_api_key_stale 触发跳转设置对话框）。
+ * 不改变 Error.name，避免破坏既有 onError(new Error(msg)) 形态的断言。
+ */
+function createStreamError(message: string, code?: string): Error {
+  const error = new Error(message) as Error & { code?: string }
+  if (code) {
+    error.code = code
+  }
+  return error
+}
+
+/**
  * 解析 SSE 事件行并触发相应的回调。
  * 用于处理流式响应中的 chunk 和 tail 数据。
  *
@@ -123,7 +137,10 @@ export function parseSSELines(
         }
         // error 类型：触发错误回调
         else if (data.type === 'error') {
-          onError?.(new Error(data.error?.message || 'Stream error'))
+          const errorCode = typeof data.error?.code === 'string' ? data.error.code : undefined
+          const errorMessage = typeof data.error?.message === 'string' ? data.error.message : 'Stream error'
+          // 保留错误码，便于上层按 code 做分支处理（如 llm_api_key_stale）
+          onError?.(createStreamError(errorMessage, errorCode))
         }
         // 其他有类型的事件：直接传递
         else if (data?.type) {
@@ -244,7 +261,8 @@ export interface ChatResponsePayload {
   response: string
   reasoning_content?: string | null
   session_id?: string | null
-  error?: { message?: string; [key: string]: unknown } | null
+  // error.code 用于上层分支处理，如 llm_api_key_stale 触发跳转设置
+  error?: { code?: string; message?: string; [key: string]: unknown } | null
   request_id?: string | null
 }
 
@@ -364,6 +382,12 @@ export const chatAPI = {
         headers['Authorization'] = `Bearer ${apiKey}`
       }
 
+      // 防御性清洗：移除 header 值中的非 ISO-8859-1 字符
+      for (const hKey of Object.keys(headers)) {
+        // eslint-disable-next-line no-control-regex
+        headers[hKey] = headers[hKey].replace(/[^\x00-\xFF]/g, '')
+      }
+
       const response = await fetch(url, {
         method: 'POST',
         credentials: 'same-origin',
@@ -383,7 +407,9 @@ export const chatAPI = {
         isErrorLogged = true
         const err = await response.json().catch(() => ({}))
         const errorMessage = err?.detail || err?.error?.message || 'Request failed'
-        
+        // 保留后端返回的错误码，便于上层按 code 分支处理（如 llm_api_key_stale）
+        const errorCode = typeof err?.error?.code === 'string' ? err.error.code : undefined
+
         appLogger.error({
           event: 'api_response',
           module: 'api',
@@ -397,7 +423,7 @@ export const chatAPI = {
             error: errorMessage,
           },
         })
-        throw new Error(errorMessage)
+        throw createStreamError(errorMessage, errorCode)
       }
 
       appLogger.info({

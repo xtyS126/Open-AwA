@@ -395,3 +395,138 @@ async def test_ai_agent_process_stream_allows_more_than_five_tool_rounds(monkeyp
 
     assert stream_call_count["value"] == 7
     assert any(event.get("content") == "第七轮完成。" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_build_sse_response_forwards_structured_error_from_chunk():
+    """
+    生成器 yield 出结构化错误 chunk（含 error dict）时，
+    SSE 应透传底层 error code 和 message，不统一显示「流式响应异常，请重试」。
+    """
+
+    async def fake_stream_with_structured_error():
+        # 模拟 executor 返回的 {"ok": False, "error": {...}} 结构
+        yield {
+            "ok": False,
+            "error": {
+                "code": "llm_api_key_stale",
+                "message": "API Key 已失效，请在设置页重新录入",
+            },
+        }
+
+    response = await build_sse_response(fake_stream_with_structured_error())
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk.decode("utf-8"))
+        else:
+            chunks.append(chunk)
+
+    body = "".join(chunks)
+
+    # 应包含与底层一致的 code 和 message
+    assert "llm_api_key_stale" in body
+    assert "API Key 已失效，请在设置页重新录入" in body
+    # 不应回退为通用错误消息
+    assert "流式响应异常，请重试" not in body
+
+    # 验证 SSE event 格式：data: {"type": "error", "error": {"code": ..., "message": ...}}
+    assert 'data: {"type": "error", "error": {"code": "llm_api_key_stale", "message": "API Key 已失效，请在设置页重新录入"}}' in body
+    # 应以 [DONE] 结束
+    assert body.endswith("data: [DONE]\n\n")
+
+
+@pytest.mark.asyncio
+async def test_build_sse_response_forwards_error_from_type_error_chunk():
+    """
+    生成器 yield 出 type=error + message 字符串的 chunk 时，
+    SSE 应提取 message 透传，code 回退为 stream_internal_error。
+    """
+    async def fake_stream_with_type_error():
+        yield {
+            "type": "error",
+            "message": "上游模型超时，请稍后重试",
+        }
+
+    response = await build_sse_response(fake_stream_with_type_error())
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk.decode("utf-8"))
+        else:
+            chunks.append(chunk)
+
+    body = "".join(chunks)
+
+    # 应透传 message，code 回退为 stream_internal_error
+    assert "stream_internal_error" in body
+    assert "上游模型超时，请稍后重试" in body
+    assert "流式响应异常，请重试" not in body
+
+
+@pytest.mark.asyncio
+async def test_build_sse_response_forwards_error_from_generator_exception():
+    """
+    生成器抛异常时（异常 args[0] 为 dict 形式的错误结构），
+    SSE 应从异常中提取 error code 和 message 透传给客户端。
+    """
+    async def fake_stream_that_raises():
+        yield {"type": "status", "phase": "starting"}
+        # 模拟 agent 抛出携带结构化错误信息的异常
+        raise Exception({
+            "ok": False,
+            "error": {
+                "code": "llm_api_key_decrypt_failed",
+                "message": "API Key 解密失败，请重新录入",
+            },
+        })
+
+    response = await build_sse_response(fake_stream_that_raises())
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk.decode("utf-8"))
+        else:
+            chunks.append(chunk)
+
+    body = "".join(chunks)
+
+    # 应从异常中提取 code 和 message 透传
+    assert "llm_api_key_decrypt_failed" in body
+    assert "API Key 解密失败，请重新录入" in body
+    assert "流式响应异常，请重试" not in body
+    # 应以 [DONE] 结束
+    assert body.endswith("data: [DONE]\n\n")
+
+
+@pytest.mark.asyncio
+async def test_build_sse_response_falls_back_for_plain_exception():
+    """
+    生成器抛普通异常（无结构化错误信息）时，
+    SSE 应回退为 stream_internal_error + str(exc)，而非统一显示「流式响应异常，请重试」。
+    """
+    async def fake_stream_with_plain_exception():
+        yield {"type": "status", "phase": "starting"}
+        raise RuntimeError("数据库连接失败")
+
+    response = await build_sse_response(fake_stream_with_plain_exception())
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk.decode("utf-8"))
+        else:
+            chunks.append(chunk)
+
+    body = "".join(chunks)
+
+    # 应回退为 stream_internal_error + 异常 message
+    assert "stream_internal_error" in body
+    assert "数据库连接失败" in body
+    # str(exc) 非空时不应使用通用兜底消息
+    assert "流式响应异常，请重试" not in body
+    # 应以 [DONE] 结束
+    assert body.endswith("data: [DONE]\n\n")

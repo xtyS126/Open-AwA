@@ -25,6 +25,7 @@ vi.mock('electron', () => {
     isMaximized: vi.fn(() => false),
     isFocused: vi.fn(() => false),
     isVisible: vi.fn(() => true),
+    isDestroyed: vi.fn(() => false),
     getPosition: vi.fn(() => [0, 0]),
     getSize: vi.fn(() => [1280, 800]),
     setBounds: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('electron', () => {
     setMinimumSize: vi.fn(),
     setMaximumSize: vi.fn(),
     setBackgroundColor: vi.fn(),
+    reload: vi.fn(),
     webContents: {
       openDevTools: vi.fn(),
       closeDevTools: vi.fn(),
@@ -60,6 +62,8 @@ vi.mock('electron', () => {
       on: vi.fn(),
       off: vi.fn(),
       once: vi.fn(),
+      setLoginItemSettings: vi.fn(),
+      showAboutPanel: vi.fn(),
     },
     BrowserWindow,
     ipcMain: {
@@ -84,14 +88,28 @@ vi.mock('electron', () => {
       on: vi.fn(),
       off: vi.fn(),
     },
-    Notification: vi.fn(),
+    // Notification 构造函数 + 静态方法 isSupported
+    Notification: (() => {
+      const N = vi.fn()
+      ;(N as unknown as { isSupported: () => boolean }).isSupported = vi.fn(() => true)
+      return N
+    })(),
     globalShortcut: {
       register: vi.fn(),
       unregister: vi.fn(),
       unregisterAll: vi.fn(),
       isRegistered: vi.fn(() => false),
     },
-    Tray: vi.fn(),
+    Tray: vi.fn(() => ({
+      setToolTip: vi.fn(),
+      setContextMenu: vi.fn(),
+      on: vi.fn(),
+      destroy: vi.fn(),
+    })),
+    nativeImage: {
+      createFromPath: vi.fn(() => ({})),
+      createEmpty: vi.fn(() => ({})),
+    },
     Menu: {
       buildFromTemplate: vi.fn(),
       setApplicationMenu: vi.fn(),
@@ -159,5 +177,43 @@ vi.mock('electron-store', () => {
         }
       }
     },
+  }
+})
+
+// mock electron-log（主进程日志）
+vi.mock('electron-log', () => {
+  const log = {
+    transports: {
+      file: { level: 'info', resolvePathFn: () => '/tmp/openawa-test/main.log' },
+      console: { level: 'info' },
+    },
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }
+  return { default: log }
+})
+
+// mock electron-updater（自动更新）
+vi.mock('electron-updater', () => ({
+  autoUpdater: {
+    autoDownload: false,
+    autoInstallOnAppQuit: false,
+    setFeedURL: vi.fn(),
+    on: vi.fn(),
+    checkForUpdates: vi.fn(() => Promise.resolve()),
+    downloadUpdate: vi.fn(() => Promise.resolve()),
+    quitAndInstall: vi.fn(),
+  },
+}))
+
+// mock fs.existsSync（tray.ts 检查图标是否存在）
+// 默认返回 false 走空图标回退路径，测试不需要真实图标文件
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    existsSync: vi.fn(() => false),
   }
 })

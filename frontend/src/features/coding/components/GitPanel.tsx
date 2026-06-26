@@ -4,7 +4,8 @@
 import React, { useEffect, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useCodingStore } from '../store/codingStore';
-import { codingApi } from '../codingApi';
+import { codingApi, type GitLogItem } from '../codingApi';
+import { appLogger } from '@/shared/utils/logger';
 import styles from './GitPanel.module.css';
 
 interface GitPanelProps {
@@ -21,28 +22,35 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
   }), shallow);
   const [loading, setLoading] = useState(true);
   const [commitMsg, setCommitMsg] = useState('');
-  const [log, setLog] = useState<any[]>([]);
+  const [log, setLog] = useState<GitLogItem[]>([]);
   const [activeTab, setActiveTab] = useState<'changes' | 'log'>('changes');
-
-  useEffect(() => {
-    loadStatus();
-  }, [projectDir]);
 
   const loadStatus = async () => {
     try {
       setLoading(true);
       const status = await codingApi.gitStatus(projectDir || undefined);
+      // 区分联合类型：仅在 is_repo 为 true 时提取 branch/changes
       if (status.is_repo) {
         setGitStatus(status.branch || '', status.changes || []);
       }
       const logData = await codingApi.gitLog(20, projectDir || undefined);
       if (logData.commits) setLog(logData.commits);
     } catch (e) {
-      /* ignore */
+      // 状态加载失败时记录警告，避免静默吞异常导致用户无反馈
+      appLogger.warning({
+        event: 'git_status_load_failed',
+        module: 'coding',
+        message: '加载 Git 状态失败',
+        extra: { error: e instanceof Error ? e.message : String(e) },
+      });
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadStatus();
+  }, [projectDir]);
 
   const handleCommit = async () => {
     if (!commitMsg.trim()) return;
@@ -51,7 +59,12 @@ const GitPanel: React.FC<GitPanelProps> = ({ onFileClick }) => {
       setCommitMsg('');
       await loadStatus();
     } catch (e) {
-      console.error('Commit failed:', e);
+      appLogger.error({
+        event: 'git_commit_failed',
+        module: 'coding',
+        message: 'Git 提交失败',
+        extra: { error: e instanceof Error ? e.message : String(e) },
+      });
     }
   };
 

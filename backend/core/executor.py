@@ -844,6 +844,17 @@ class ExecutionLayer:
             # 从加密存储中解密 API 密钥
             raw_key = config.api_key or ""
             if raw_key:
+                # 旧算法密文已失效（SECRET_KEY 拆分后无法解密），提前返回明确错误，
+                # 避免被 decrypt_secret_value 静默吞掉导致空头请求 LLM 网关
+                if raw_key.startswith("enc:"):
+                    return {
+                        "ok": False,
+                        "error": self._build_error(
+                            "llm_api_key_stale",
+                            "API Key 已失效，请在设置页重新录入",
+                            {"provider": provider, "model": model}
+                        )
+                    }
                 from config.security import decrypt_secret_value
                 api_key = decrypt_secret_value(raw_key)
                 # raw_key 非空但解密结果为空，说明密钥损坏或 SECRET_KEY 变更，必须向上报告
@@ -865,6 +876,16 @@ class ExecutionLayer:
                 try:
                     cred = pricing_manager.get_provider_credential(provider)
                     if cred and cred.api_key:
+                        # 旧算法密文已失效，提前返回明确错误，避免被 decrypt 静默吞掉
+                        if cred.api_key.startswith("enc:"):
+                            return {
+                                "ok": False,
+                                "error": self._build_error(
+                                    "llm_api_key_stale",
+                                    "API Key 已失效，请在设置页重新录入",
+                                    {"provider": provider, "model": model}
+                                )
+                            }
                         from config.security import decrypt_secret_value
                         api_key = decrypt_secret_value(cred.api_key)
                         if api_key:
@@ -2167,8 +2188,9 @@ class ExecutionLayer:
                 "success": output.get("ok", False),
                 "duration_ms": int((time.time() - _tool_start_time) * 1000),
             })
-        except Exception:
-            pass  # 数据收集不影响主流程
+        except Exception as e:
+            # 数据收集不影响主流程，但记录日志便于排查
+            logger.warning("工具数据收集失败", exc_info=e)
 
         return output
 

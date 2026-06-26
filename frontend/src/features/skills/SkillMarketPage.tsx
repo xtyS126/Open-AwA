@@ -46,7 +46,7 @@ const SkillMarketPage: React.FC = () => {
     try {
       await installMarketSkill(skill.name, skill.source, skill.source_url);
       setSkills((prev) => prev.map((s) => s.name === skill.name ? { ...s, installed: true } : s));
-    } catch (e) {
+    } catch {
       setError(t('skillMarket.installFailed', { name: skill.name }));
     } finally {
       setLoadingSkill(null);

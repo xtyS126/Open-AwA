@@ -1342,11 +1342,11 @@ class AIAgent:
         user_message: str,
         context: Dict[str, Any],
         status: str = "success",
-        error_message: str | None = None,
+        error_message: Optional[str] = None,
         llm_input: Any = None,
         llm_output: Any = None,
-        llm_tokens_used: int | None = None,
-        execution_duration_ms: int | None = None,
+        llm_tokens_used: Optional[int] = None,
+        execution_duration_ms: Optional[int] = None,
         metadata: Any = None,
     ) -> None:
         """
@@ -1410,10 +1410,10 @@ class AIAgent:
         user_id: str,
         node_type: str,
         status: str,
-        error_message: str | None,
+        error_message: Optional[str],
         llm_output: Any,
-        llm_tokens_used: int | None,
-        execution_duration_ms: int | None,
+        llm_tokens_used: Optional[int],
+        execution_duration_ms: Optional[int],
         metadata: Any,
     ) -> List[Dict[str, Any]]:
         """
@@ -2237,8 +2237,9 @@ class AIAgent:
                     "token_count": {},
                     "response_time_ms": int((time.time() - _stream_start_time) * 1000),
                 })
-            except Exception:
-                pass  # 数据收集不影响主流程
+            except Exception as e:
+                # 数据收集不影响主流程，但记录日志便于排查
+                logger.warning("流式数据收集失败", exc_info=e)
 
             # 中止根控制器，级联清理所有子任务（工具执行、子代理等）
             if self.root_abort_controller is not None:

@@ -92,6 +92,9 @@ export function useWeixinWebSocket(
     setConnected(false)
   }, [clearReconnectTimer])
 
+  // 使用 ref 打破 connect 与自身的循环引用，避免函数先使用后声明
+  const connectRef = useRef<() => void>(() => {})
+
   const connect = useCallback(() => {
     if (typeof window === 'undefined') return
     const token = localStorage.getItem('access_token') || ''
@@ -135,7 +138,7 @@ export function useWeixinWebSocket(
           // 自动重连
           clearReconnectTimer()
           reconnectTimerRef.current = setTimeout(() => {
-            connect()
+            connectRef.current()
           }, reconnectInterval)
         }
       }
@@ -143,6 +146,12 @@ export function useWeixinWebSocket(
       setError(err instanceof Error ? err.message : 'WebSocket 连接失败')
     }
   }, [clearReconnectTimer, reconnectInterval])
+
+  // 保持 connectRef 指向最新的 connect 函数，供 setTimeout 内部调用
+  // 必须在 useEffect 中更新 ref，避免渲染期间修改 ref
+  useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
 
   const reconnect = useCallback(() => {
     clearReconnectTimer()

@@ -35,6 +35,8 @@ export interface ApiProviderFormState {
   api_endpoint: string
   api_key: string
   has_api_key: boolean
+  // 密钥状态：active 已配置且可用 / stale 旧算法密文已失效 / missing 未配置
+  api_key_status?: 'active' | 'stale' | 'missing'
   selected_models: string[]
   masked_api_key: string | null
 }
@@ -174,6 +176,7 @@ export function useProviderForm({
     api_endpoint: '',
     api_key: '',
     has_api_key: false,
+    api_key_status: 'missing',
     selected_models: [],
     masked_api_key: null
   })
@@ -330,6 +333,12 @@ export function useProviderForm({
         ? (config.base_url || config.api_endpoint || (config as unknown as Record<string, unknown>).api_url || providerData.base_url || providerData.api_endpoint || (providerData as unknown as Record<string, unknown>).api_url || '') as string
         : (providerData.base_url || providerData.api_endpoint || '') as string
 
+      // 优先使用 config.api_key_status，其次回退到 providerData.api_key_status
+      // 当 has_api_key=true 且无 status 时视为 active；当 has_api_key=false 时视为 missing
+      const hasApiKey = Boolean(config?.has_api_key ?? providerData.has_api_key)
+      const apiKeyStatus: 'active' | 'stale' | 'missing' =
+        config?.api_key_status ?? providerData.api_key_status ?? (hasApiKey ? 'active' : 'missing')
+
       // 立即设置表单状态，让用户先看到供应商基本信息
       setProviderForm({
         config_id: config?.id ?? null,
@@ -338,7 +347,8 @@ export function useProviderForm({
         icon: config?.icon || providerData.icon || '',
         api_endpoint,
         api_key: '',
-        has_api_key: Boolean(config?.has_api_key ?? providerData.has_api_key),
+        has_api_key: hasApiKey,
+        api_key_status: apiKeyStatus,
         selected_models: selectedModels,
         masked_api_key: null
       })
@@ -389,6 +399,7 @@ export function useProviderForm({
           api_endpoint: '',
           api_key: '',
           has_api_key: false,
+          api_key_status: 'missing',
           selected_models: [],
           masked_api_key: null
         })
@@ -752,10 +763,11 @@ export function useProviderForm({
             ...prev,
             api_endpoint: normalizedBaseUrl,
             has_api_key: true,
+            api_key_status: 'active',
             masked_api_key: maskedRes.data.masked_api_key
           }))
         } catch {
-          setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl, has_api_key: true }))
+          setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl, has_api_key: true, api_key_status: 'active' }))
         }
       } else {
         setProviderForm(prev => ({ ...prev, api_endpoint: normalizedBaseUrl }))

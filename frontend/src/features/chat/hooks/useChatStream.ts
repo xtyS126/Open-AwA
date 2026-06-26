@@ -17,6 +17,22 @@ import type { TodoItem } from '@/features/chat/components/TodoPanel'
 
 const MAX_STREAM_RETRY_COUNT = 1
 
+/** 后端返回的密钥失效错误码，需引导用户跳转设置页重新录入 */
+const LLM_API_KEY_STALE_CODE = 'llm_api_key_stale'
+
+/** 密钥失效时展示给用户的提示文案 */
+const LLM_API_KEY_STALE_USER_MESSAGE = '[!] 该供应商 API Key 已失效，请在设置页重新录入'
+
+/**
+ * 从 Error 对象中提取流式错误携带的 code 字段。
+ * api.ts 的 createStreamError 会将后端 error.code 挂载到 Error.code 属性上，
+ * 这里读取该属性；不存在或非字符串时返回 undefined。
+ */
+function extractStreamErrorCode(error: Error): string | undefined {
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
 function sanitizeDisplayedError(message: string): string {
   return String(message || '')
     .replace(/&/g, '&amp;')
@@ -199,6 +215,11 @@ export interface UseChatStreamParams {
   messageMeta: Record<string, AssistantExecutionMeta>
   /** 更新消息元数据映射（direct 模式需要） */
   setMessageMeta: React.Dispatch<React.SetStateAction<Record<string, AssistantExecutionMeta>>>
+  /**
+   * 当后端返回 llm_api_key_stale 错误码时触发，调用方应弹出引导用户
+   * 跳转设置页重新录入 API Key 的对话框。
+   */
+  onApiKeyStale?: () => void
 }
 
 export interface UseChatStreamReturn {
@@ -241,6 +262,7 @@ export function useChatStream({
   setLoading,
   messageMeta,
   setMessageMeta,
+  onApiKeyStale,
 }: UseChatStreamParams): UseChatStreamReturn {
   const activeRequestIdRef = useRef(0)
   const activeAbortControllerRef = useRef<AbortController | null>(null)
@@ -510,16 +532,24 @@ export function useChatStream({
                   retry_count: attempt,
                 },
               })
+              // 密钥失效错误：使用专用提示文案并通知上层弹出跳转设置对话框
+              const streamErrorCode = extractStreamErrorCode(normalizedError)
+              const displayedMessage = streamErrorCode === LLM_API_KEY_STALE_CODE
+                ? LLM_API_KEY_STALE_USER_MESSAGE
+                : friendlyErrorMessage
+              if (streamErrorCode === LLM_API_KEY_STALE_CODE) {
+                onApiKeyStale?.()
+              }
               if (!assistantMessageCreated) {
-                addMessage('assistant', friendlyErrorMessage, undefined, assistantMessageId, true)
+                addMessage('assistant', displayedMessage, undefined, assistantMessageId, true)
                 assistantMessageCreated = true
                 updateAssistantSegments(assistantMessageId, (segments) =>
                   appendAssistantChunk(segments, {
-                    content: friendlyErrorMessage,
+                    content: displayedMessage,
                   })
                 )
               } else {
-                const errorContent = `\n\n${friendlyErrorMessage}`
+                const errorContent = `\n\n${displayedMessage}`
                 appendAssistantMessageText(assistantMessageId, errorContent)
                 updateAssistantSegments(assistantMessageId, (segments) =>
                   appendAssistantChunk(segments, {
@@ -557,21 +587,37 @@ export function useChatStream({
           if (!isMountedRef.current || activeRequestIdRef.current !== requestId) {
             return
           }
-          applyDirectAssistantResponse({
-            assistantMessageId,
-            responseData: response.data,
-            addMessage: (role, content, reasoningContent, messageId) => {
-              addMessage(role, content, reasoningContent, messageId)
-            },
-            updateMessage: useSessionStore.getState().updateMessage,
-            setMessageMeta: (updater) => {
-              setMessageMeta(updater)
-            },
-            sanitizeDisplayedError,
-            dispatchUsageUpdated: ({ callId, provider, model }) => {
-              dispatchBillingUsageUpdated({ callId, provider, model })
-            },
-          })
+          // 密钥失效错误：跳过默认渲染流程，直接展示专用提示并通知上层弹出对话框
+          const directErrorCode = response.data?.error?.code
+          if (directErrorCode === LLM_API_KEY_STALE_CODE) {
+            streamErrorHandled = true
+            onApiKeyStale?.()
+            addMessage('assistant', LLM_API_KEY_STALE_USER_MESSAGE, undefined, assistantMessageId, true)
+            updateAssistantSegments(assistantMessageId, (segments) =>
+              appendAssistantChunk(segments, {
+                content: LLM_API_KEY_STALE_USER_MESSAGE,
+              })
+            )
+            finalizeAssistantMessageSegments(assistantMessageId)
+            streamExecution.clearStreamStageMessage()
+            streamExecution.setIdleStreamState()
+          } else {
+            applyDirectAssistantResponse({
+              assistantMessageId,
+              responseData: response.data as unknown as Record<string, unknown>,
+              addMessage: (role, content, reasoningContent, messageId) => {
+                addMessage(role, content, reasoningContent, messageId)
+              },
+              updateMessage: useSessionStore.getState().updateMessage,
+              setMessageMeta: (updater) => {
+                setMessageMeta(updater)
+              },
+              sanitizeDisplayedError,
+              dispatchUsageUpdated: ({ callId, provider, model }) => {
+                dispatchBillingUsageUpdated({ callId, provider, model })
+              },
+            })
+          }
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -654,6 +700,7 @@ export function useChatStream({
       resetActiveToolCalls,
       upsertConversation,
       setMessageMeta,
+      onApiKeyStale,
     ]
   )
 

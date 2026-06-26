@@ -25,7 +25,7 @@ export function useSharedSettingsData() {
       const configs: ModelConfiguration[] = configsRes.data.configurations || []
       setConfigurations(configs)
       setProviders(providersRes.data.providers || [])
-    } catch (error) {
+    } catch {
       appLogger.error({ event: 'models_data_load_failed', message: 'Failed to load models data', module: 'settings' })
     } finally {
       setLoadingConfigs(false)

@@ -113,10 +113,6 @@ function DashboardPage() {
   })
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadStats()
-  }, [])
-
   const loadStats = async () => {
     try {
       /* 并发加载所有数据源 */
@@ -142,12 +138,16 @@ function DashboardPage() {
         pluginsEnabled: pluginsList.filter((p: { enabled?: boolean }) => p.enabled).length,
         longTermMemories: memoriesList.length,
       })
-    } catch (error) {
+    } catch {
       setStats(null)
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadStats()
+  }, [])
 
   const formatCurrency = (amount: number, currency: string = 'USD') => {
     const symbol = currency === 'CNY' ? '¥' : '$'

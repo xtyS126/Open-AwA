@@ -98,48 +98,56 @@ def get_password_hash(password: str) -> str:
 
 
 def _build_secret_cipher() -> Fernet:
-    """
-    基于 SECRET_KEY 派生稳定的对称加密密钥，用于敏感令牌的加密存储。
-    """
-    key_material = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(key_material))
+    """直接使用 ENCRYPTION_KEY 构造 Fernet，不再 SHA256 派生。"""
+    return Fernet(settings.ENCRYPTION_KEY.encode("utf-8"))
 
 
 def encrypt_secret_value(value: str) -> str:
     """
     对敏感字符串进行加密，空值直接返回空字符串。
-    已加密值会原样返回，避免重复加密。
+    已加密值（enc: 或 enc2: 前缀）原样返回，避免重复加密。
+    新密文统一使用 enc2: 前缀标识新算法 + 新密钥。
     """
     normalized = str(value or "").strip()
     if not normalized:
         return ""
-    if normalized.startswith("enc:"):
+    # 已加密值原样返回，避免重复加密（兼容旧 enc: 与新 enc2:）
+    if normalized.startswith("enc:") or normalized.startswith("enc2:"):
         return normalized
     cipher = _build_secret_cipher()
-    return f"enc:{cipher.encrypt(normalized.encode('utf-8')).decode('utf-8')}"
+    return f"enc2:{cipher.encrypt(normalized.encode('utf-8')).decode('utf-8')}"
 
 
 def decrypt_secret_value(value: str) -> str:
     """
     解密敏感字符串，兼容历史明文数据。
-    解密失败时返回空字符串并记录告警，避免继续传播损坏的令牌。
+    - 空/无前缀明文：原样返回
+    - enc: 旧算法密文：直接返回空字符串并记录 warning（旧密钥已废弃，需重新录入）
+    - enc2: 新算法密文：用新 Fernet 解密，失败返回空 + warning
     """
     normalized = str(value or "").strip()
     if not normalized:
         return ""
-    if not normalized.startswith("enc:"):
-        return normalized
 
-    encrypted_payload = normalized[4:]
-    if not encrypted_payload:
+    # 旧算法密文：密钥已废弃，不尝试解密，直接返回空
+    if normalized.startswith("enc:"):
+        logger.warning("检测到旧算法密文(enc:)，已标记失效，需重新录入")
         return ""
 
-    try:
-        cipher = _build_secret_cipher()
-        return cipher.decrypt(encrypted_payload.encode("utf-8")).decode("utf-8")
-    except (InvalidToken, ValueError) as exc:
-        logger.warning(f"敏感字段解密失败，已按空值处理: {type(exc).__name__}")
-        return ""
+    # 新算法密文：用 ENCRYPTION_KEY 构造的 Fernet 解密
+    if normalized.startswith("enc2:"):
+        encrypted_payload = normalized[5:]
+        if not encrypted_payload:
+            return ""
+        try:
+            cipher = _build_secret_cipher()
+            return cipher.decrypt(encrypted_payload.encode("utf-8")).decode("utf-8")
+        except (InvalidToken, ValueError) as exc:
+            logger.warning(f"敏感字段解密失败，已按空值处理: {type(exc).__name__}")
+            return ""
+
+    # 无前缀明文：原样返回（兼容历史明文存储）
+    return normalized
 
 
 def set_access_token_cookie(response: Response, access_token: str) -> None:
@@ -183,7 +191,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
@@ -193,7 +201,7 @@ def decode_access_token(token: str) -> Optional[dict]:
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
         expires_at = payload.get("exp")
         if expires_at is None:
             return None
@@ -218,7 +226,7 @@ _CSRF_TOKEN_MAX_AGE_SECONDS = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
 def _derive_csrf_signing_key() -> bytes:
     """
-    从 SECRET_KEY 使用 HKDF (HMAC-SHA256) 派生 CSRF 签名密钥。
+    从 CSRF_SECRET_KEY 使用 HKDF (HMAC-SHA256) 派生 CSRF 签名密钥。
     使用 HKDF 而非裸 SHA-256 提供更强的密钥派生保证（RFC 5869）。
     context_seed 作为 info 参数确保与 JWT 等其他密钥独立。
     """
@@ -226,7 +234,7 @@ def _derive_csrf_signing_key() -> bytes:
     # 使用 hashlib 内置的 HKDF（Python 3.12+ 可用，回退到手动实现）
     try:
         key_material = hashlib.hkdf(
-            ikm=settings.SECRET_KEY.encode("utf-8"),
+            ikm=settings.CSRF_SECRET_KEY.encode("utf-8"),
             length=32,
             salt=context_seed,
             info=b"csrf-signing",
@@ -235,7 +243,7 @@ def _derive_csrf_signing_key() -> bytes:
     except AttributeError:
         # Python < 3.12 回退：使用 SHA-256 作为保守的密钥派生
         key_material = hashlib.sha256(
-            settings.SECRET_KEY.encode("utf-8") + context_seed
+            settings.CSRF_SECRET_KEY.encode("utf-8") + context_seed
         ).digest()
     return key_material
 

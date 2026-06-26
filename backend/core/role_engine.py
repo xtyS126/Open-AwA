@@ -158,9 +158,13 @@ class RoleEngine:
     def ensure_presets_in_db(db: Session) -> int:
         """确保预设角色已写入数据库，返回新增数量。"""
         added = 0
+        # 批量查询已存在的预设角色 ID，避免循环内单条查询（N+1 问题）
+        preset_ids = [preset["id"] for preset in PRESET_ROLES]
+        existing_ids = set(
+            row.id for row in db.query(AgentRole.id).filter(AgentRole.id.in_(preset_ids)).all()
+        )
         for preset in PRESET_ROLES:
-            existing = db.query(AgentRole).filter(AgentRole.id == preset["id"]).first()
-            if not existing:
+            if preset["id"] not in existing_ids:
                 role = AgentRole(**preset)
                 db.add(role)
                 added += 1

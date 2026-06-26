@@ -2,9 +2,12 @@
  * 预加载脚本
  * 通过 contextBridge 暴露白名单 API 给渲染进程
  * 严格隔离：不暴露 ipcRenderer 原始对象
+ *
+ * 注意：本脚本在 sandbox: true 下运行，禁止 import 任何依赖 Node.js 内建模块
+ * （fs/path/child_process 等）或依赖它们的第三方包（如 electron-store）。
+ * 需要持久化配置的值一律通过 ipcRenderer.invoke 向主进程获取。
  */
 import { contextBridge, ipcRenderer, app } from 'electron'
-import { getBackendUrl } from '../shared/config-store'
 import { IPC_CHANNELS } from '../shared/ipc-channels'
 
 /** 允许渲染进程调用的 IPC 通道白名单 */
@@ -35,15 +38,13 @@ const ALLOWED_ON_CHANNELS = new Set<string>([
   IPC_CHANNELS.WINDOW_MAXIMIZE_STATE_CHANGED,
 ])
 
-/** 后端信息（启动时从 electron-store 读取） */
-const backendUrl = getBackendUrl()
-
-/** 应用版本 */
+/** 应用版本（app.getVersion 在 sandbox 下可用，无需 fs） */
 const appVersion = app.getVersion()
 
-// 注入后端信息
+// 注入后端信息：url 留空，由渲染进程通过 BACKEND_GET_URL 拉取
+// 这样可避免 preload 顶层读取 electron-store 导致 sandbox 下崩溃
 contextBridge.exposeInMainWorld('__OPENAWA_BACKEND__', {
-  url: backendUrl,
+  url: '',
   version: appVersion,
 })
 

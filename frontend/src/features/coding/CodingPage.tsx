@@ -18,16 +18,15 @@ import { appLogger } from '@/shared/utils/logger'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import styles from './CodingPage.module.css'
 
-// 搜索结果项（来自 AST 搜索接口）
+// 搜索结果项（来自 AST 搜索接口，兼容定义搜索与模式搜索两种命中结构）
 interface SearchResultItem {
-  file?: string
-  line?: number
-  column?: number
+  file: string
+  line: number
   name?: string
-  kind?: string
   type?: string
   match?: string
-  [key: string]: unknown
+  context?: string
+  col?: number
 }
 
 const CodingPage: React.FC = () => {
@@ -100,7 +99,7 @@ const CodingPage: React.FC = () => {
           })
         }
       } catch (e) {
-        /* ignore */
+        appLogger.error({ event: 'search_result_open_failed', module: 'coding', message: String(e), extra: { file: result.file, stack: e instanceof Error ? e.stack : undefined } })
       }
     }
   }
@@ -111,8 +110,11 @@ const CodingPage: React.FC = () => {
       const diffResult = await codingApi.gitDiff(filePath, false, projectDir || undefined)
       const activeFile = openFiles.find((f) => f.path === filePath)
       const currentContent = activeFile?.content || ''
-      // 使用 Git diff API 返回的原始内容，若不可用则回退到当前内容
-      const originalContent = (diffResult && diffResult.original) || currentContent
+      // 后端 gitDiff 仅返回统一 diff 文本（diffResult.diff），不返回原始文件内容。
+      // TODO: 后端补充 git show HEAD:<file> 接口以获取原始内容，使 DiffView 能展示真正的差异。
+      // 当前回退到当前内容，DiffView 暂不展示差异（保持原有行为）。
+      void diffResult  // 标记已消费响应，等待后端补全 original 字段
+      const originalContent = currentContent
 
       setDiffData({
         original: originalContent,

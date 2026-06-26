@@ -7,6 +7,7 @@ import hashlib
 import json
 import zipfile
 from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -166,7 +167,7 @@ def cmd_validate(zip_path: str) -> None:
 @click.option(
     "--output", "-o", default=None, help="signature.json 输出路径，默认与 zip 同目录"
 )
-def cmd_sign(zip_path: str, output: str | None) -> None:
+def cmd_sign(zip_path: str, output: Optional[str]) -> None:
     """
     处理cmd、sign相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。

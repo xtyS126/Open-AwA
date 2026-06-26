@@ -16,7 +16,7 @@ from core.litellm_adapter import litellm_check_provider_connection, litellm_list
 from core.failover import get_failover_manager
 from config.settings import settings
 from billing.pricing_manager import PricingManager
-from billing.models import ModelConfiguration
+from billing.models import ModelConfiguration, ProviderCredential
 from db.models import LLMUsage
 from sqlalchemy.orm import Session
 
@@ -56,6 +56,8 @@ async def get_providers_status(
     """
     logger.bind(event="providers_status", module="models").info("checking providers status")
 
+    pricing_manager = PricingManager(db)
+
     # 从数据库获取所有不同的 provider 配置
     configs = db.query(ModelConfiguration).filter(
         ModelConfiguration.is_active == True
@@ -72,10 +74,30 @@ async def get_providers_status(
     provider_status_list = []
 
     # 检查数据库中的已配置 provider
+    from config.security import decrypt_secret_value
     for provider_id, config in seen_providers.items():
-        base_url = config.api_endpoint or config.base_url if hasattr(config, 'base_url') else config.api_endpoint
-        api_key = config.api_key or ""
-        status = await litellm_check_provider_connection(provider=provider_id, api_base=base_url or "", api_key=api_key)
+        base_url = config.api_endpoint or getattr(config, 'base_url', None) or ""
+
+        # 优先从 ProviderCredential 获取 API Key（单一来源，与 billing 路由保持一致）
+        raw_key = ""
+        api_endpoint_from_cred = None
+        credential = pricing_manager.get_provider_credential(provider_id)
+        if credential:
+            api_endpoint_from_cred = credential.api_endpoint
+            raw_key = credential.api_key or ""
+        # 降级到 ModelConfiguration 的 api_key 字段（legacy）
+        if not raw_key:
+            raw_key = config.api_key or ""
+
+        # 解密 API Key：旧算法密文（enc: 前缀）已失效，跳过解密
+        api_key = ""
+        if raw_key and not raw_key.startswith("enc:"):
+            api_key = decrypt_secret_value(raw_key)
+
+        # 凭据中的 endpoint 优先级高于 ModelConfiguration
+        effective_base_url = api_endpoint_from_cred or base_url
+
+        status = await litellm_check_provider_connection(provider=provider_id, api_base=effective_base_url, api_key=api_key)
         status["display_name"] = config.display_name or provider_id
         provider_status_list.append(status)
 

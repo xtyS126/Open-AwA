@@ -28,24 +28,6 @@ export default function PluginCommandSelector({
     selectedCommandName || null
   )
 
-  useEffect(() => {
-    loadCommands()
-  }, [])
-
-  // 当外部传入选中值时同步
-  useEffect(() => {
-    if (selectedPluginName && selectedCommandName) {
-      setExpandedPlugin(selectedPluginName)
-      setSelectedCommand(selectedCommandName)
-      const found = commands.find(
-        (c) =>
-          c.plugin_name === selectedPluginName &&
-          c.command_name === selectedCommandName
-      )
-      if (found) onSelect(found)
-    }
-  }, [selectedPluginName, selectedCommandName, commands])
-
   const loadCommands = async () => {
     setLoading(true)
     setError('')
@@ -66,6 +48,24 @@ export default function PluginCommandSelector({
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadCommands()
+  }, [])
+
+  // 当外部传入选中值时同步
+  useEffect(() => {
+    if (selectedPluginName && selectedCommandName) {
+      setExpandedPlugin(selectedPluginName)
+      setSelectedCommand(selectedCommandName)
+      const found = commands.find(
+        (c) =>
+          c.plugin_name === selectedPluginName &&
+          c.command_name === selectedCommandName
+      )
+      if (found) onSelect(found)
+    }
+  }, [selectedPluginName, selectedCommandName, commands])
 
   // 按插件分组命令
   const grouped = useCallback(() => {

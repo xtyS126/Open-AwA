@@ -82,6 +82,11 @@ if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = function() {};
 }
 
+// jsdom 未实现 Element.scrollTo，自动滚动 hook 在测试中会调用它
+if (!HTMLElement.prototype.scrollTo) {
+  HTMLElement.prototype.scrollTo = function() {};
+}
+
 // Ensure a #root element exists for main.tsx bootstrap
 if (!document.getElementById('root')) {
   const root = document.createElement('div')

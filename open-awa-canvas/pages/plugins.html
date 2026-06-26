@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>插件管理 - Open-AwA</title>
+    <style id="theme-vars">
+/* Open-AwA Design Tokens - Canvas Brand CSS */
+/* 基于前端 tokens.css 提取，用于画布页面渲染 */
+
+:root {
+  /* 主色调 */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-ring: rgba(59, 130, 246, 0.2);
+  --color-primary-soft-bg: rgba(59, 130, 246, 0.1);
+  --color-primary-softer-bg: rgba(59, 130, 246, 0.08);
+  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
+
+  /* 背景色 */
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f8fafc;
+  --color-bg-tertiary: #f1f5f9;
+
+  /* 文字色 */
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+
+  /* 边框色 */
+  --color-border: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+
+  /* 语义色 */
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-success-soft-bg: #d1fae5;
+  --color-success-strong: #047857;
+
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.12);
+  --color-error-soft-bg: #fee2e2;
+  --color-error-strong: #b91c1c;
+
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.16);
+  --color-warning-soft-bg: #fef3c7;
+  --color-warning-strong: #b45309;
+
+  --color-info: #3b82f6;
+  --color-info-bg: #dbeafe;
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #dc2626;
+
+  /* 遮罩 */
+  --color-overlay: rgba(15, 23, 42, 0.5);
+  --color-overlay-soft: rgba(15, 23, 42, 0.3);
+
+  /* 图表色板 */
+  --color-chart-primary: #3b82f6;
+  --color-chart-secondary: #10b981;
+  --color-chart-3: #ef4444;
+  --color-chart-4: #f59e0b;
+  --color-chart-5: #8b5cf6;
+  --color-chart-6: #ec4899;
+
+  /* 标签色 */
+  --color-tag-purple-bg: rgba(139, 92, 246, 0.12);
+  --color-tag-purple-text: #6d28d9;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* 字体 */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+
+  /* 字体大小 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* 字重 */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* 行高 */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.75;
+
+  /* 圆角 */
+  --radius-none: 0;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-glow: 0 0 0 3px var(--color-primary-ring);
+  --shadow-card-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* 过渡 */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* 布局 */
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 68px;
+}
+
+/* 暗色主题 */
+.dark {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-dark: #2563eb;
+  --color-primary-ring: rgba(59, 130, 246, 0.3);
+  --color-primary-soft-bg: rgba(59, 130, 246, 0.15);
+  --color-primary-softer-bg: rgba(59, 130, 246, 0.1);
+  --color-primary-softest-bg: rgba(59, 130, 246, 0.05);
+
+  --color-bg: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+
+  --color-text: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-tertiary: #94a3b8;
+
+  --color-border: #334155;
+  --color-border-subtle: #1e293b;
+
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.2);
+  --color-success-soft-bg: rgba(52, 211, 153, 0.1);
+  --color-success-strong: #10b981;
+
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.2);
+  --color-error-soft-bg: rgba(248, 113, 113, 0.1);
+  --color-error-strong: #ef4444;
+
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.2);
+  --color-warning-soft-bg: rgba(251, 191, 36, 0.1);
+  --color-warning-strong: #f59e0b;
+
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.2);
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-overlay-soft: rgba(0, 0, 0, 0.5);
+
+  --color-tag-purple-bg: rgba(167, 139, 250, 0.2);
+  --color-tag-purple-text: #c4b5fd;
+
+  --shadow-card-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--color-primary);
+    --color-border: var(--color-border);
+    --color-chart-3: var(--color-chart-3);
+    --color-chart-4: var(--color-chart-4);
+    --color-chart-5: var(--color-chart-5);
+  }
+  @layer base {
+    body { background: var(--color-bg); color: var(--color-text); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen font-sans antialiased" style="font-family: var(--font-sans);">
+
+    <main class="flex min-h-screen">
+
+        <!-- ========== LEFT SIDEBAR ========== -->
+        <aside class="fixed top-0 left-0 h-full flex flex-col border-r" style="width: var(--sidebar-width); background: var(--color-bg); border-color: var(--color-border);">
+
+            <!-- Logo -->
+            <div class="flex items-center gap-3 px-5 py-4 border-b" style="border-color: var(--color-border);">
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--color-primary);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                </div>
+                <span class="text-base font-semibold" style="color: var(--color-text);">Open-AwA</span>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 overflow-y-auto py-3 no-scrollbar">
+                <!-- 对话 group -->
+                <div class="px-3 mb-1">
+                    <span class="block px-3 text-xs font-medium uppercase tracking-wider mb-1" style="color: var(--color-text-tertiary);">对话</span>
+                    <a href="#" data-dom-id="nav-chat" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="message-square" class="w-4 h-4"></i>
+                        <span>对话</span>
+                    </a>
+                </div>
+
+                <!-- 智能体 group -->
+                <div class="px-3 mb-1 mt-4">
+                    <span class="block px-3 text-xs font-medium uppercase tracking-wider mb-1" style="color: var(--color-text-tertiary);">智能体</span>
+                    <a href="#" data-dom-id="nav-dashboard" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                        <span>仪表盘</span>
+                    </a>
+                    <a href="#" data-dom-id="nav-skills" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                        <span>技能</span>
+                    </a>
+                    <a href="#" data-dom-id="nav-plugins" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="background: var(--color-primary-soft-bg); color: var(--color-primary);">
+                        <i data-lucide="puzzle" class="w-4 h-4"></i>
+                        <span>插件</span>
+                    </a>
+                    <a href="#" data-dom-id="nav-agents" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="bot" class="w-4 h-4"></i>
+                        <span>子智能体</span>
+                    </a>
+                </div>
+
+                <!-- 记忆 group -->
+                <div class="px-3 mb-1 mt-4">
+                    <span class="block px-3 text-xs font-medium uppercase tracking-wider mb-1" style="color: var(--color-text-tertiary);">记忆</span>
+                    <a href="#" data-dom-id="nav-memory" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="brain" class="w-4 h-4"></i>
+                        <span>记忆管理</span>
+                    </a>
+                    <a href="#" data-dom-id="nav-experiences" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="book-open" class="w-4 h-4"></i>
+                        <span>经验库</span>
+                    </a>
+                </div>
+
+                <!-- 设置 group -->
+                <div class="px-3 mb-1 mt-4">
+                    <span class="block px-3 text-xs font-medium uppercase tracking-wider mb-1" style="color: var(--color-text-tertiary);">设置</span>
+                    <a href="#" data-dom-id="nav-settings" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150" style="color: var(--color-text-secondary);">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                        <span>设置</span>
+                    </a>
+                </div>
+            </nav>
+
+            <!-- User -->
+            <div class="px-3 py-3 border-t" style="border-color: var(--color-border);">
+                <div class="flex items-center gap-3 px-3 py-2 rounded-lg">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white" style="background: var(--color-primary);">A</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium truncate" style="color: var(--color-text);">Admin</div>
+                        <div class="text-xs truncate" style="color: var(--color-text-tertiary);">admin@open-awa.ai</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ========== MAIN CONTENT ========== -->
+        <div class="flex-1 flex flex-col" style="margin-left: var(--sidebar-width);">
+
+            <!-- Page Header -->
+            <header class="flex items-center justify-between px-8 py-5 border-b" style="border-color: var(--color-border);">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="puzzle" class="w-6 h-6" style="color: var(--color-primary);"></i>
+                    <h1 class="text-xl font-bold" style="color: var(--color-text);">插件管理</h1>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors duration-150 cursor-pointer" style="border-color: var(--color-border); color: var(--color-text-secondary); background: var(--color-bg);">
+                        <i data-lucide="store" class="w-4 h-4"></i>
+                        插件市场
+                    </button>
+                    <button class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors duration-150 cursor-pointer" style="background: var(--color-primary);">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        安装插件
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto px-8 py-6">
+
+                <!-- Tab Bar -->
+                <div class="flex items-center gap-1 mb-6 border-b" style="border-color: var(--color-border);">
+                    <button data-dom-id="tab-installed" class="px-4 py-2.5 text-sm font-medium transition-colors duration-150 relative cursor-pointer" style="color: var(--color-primary);">
+                        已安装
+                        <span class="absolute bottom-0 left-0 right-0 h-0.5 rounded-full" style="background: var(--color-primary);"></span>
+                    </button>
+                    <button data-dom-id="tab-market" class="px-4 py-2.5 text-sm font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-tertiary);">
+                        市场探索
+                    </button>
+                    <button data-dom-id="tab-config" class="px-4 py-2.5 text-sm font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-tertiary);">
+                        配置
+                    </button>
+                </div>
+
+                <!-- Stats Summary Row -->
+                <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="rounded-lg px-5 py-4 border" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-primary-soft-bg);">
+                                <i data-lucide="package" class="w-4 h-4" style="color: var(--color-primary);"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs font-medium" style="color: var(--color-text-tertiary);">已安装</div>
+                                <div class="text-lg font-bold" style="color: var(--color-text);">5 个插件</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rounded-lg px-5 py-4 border" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-success-bg);">
+                                <i data-lucide="check-circle-2" class="w-4 h-4" style="color: var(--color-success);"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs font-medium" style="color: var(--color-text-tertiary);">已启用</div>
+                                <div class="text-lg font-bold" style="color: var(--color-text);">4 个</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rounded-lg px-5 py-4 border" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background: var(--color-warning-bg);">
+                                <i data-lucide="refresh-cw" class="w-4 h-4" style="color: var(--color-warning);"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs font-medium" style="color: var(--color-text-tertiary);">可更新</div>
+                                <div class="text-lg font-bold" style="color: var(--color-text);">1 个</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Plugin Cards Grid -->
+                <div class="grid grid-cols-2 gap-4">
+
+                    <!-- data-chart plugin -->
+                    <div class="rounded-lg border overflow-hidden transition-shadow duration-200 hover:shadow-md" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="h-1" style="background: var(--color-success);"></div>
+                        <div class="p-5">
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--color-success-bg);">
+                                        <i data-lucide="bar-chart-3" class="w-5 h-5" style="color: var(--color-success);"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-semibold" style="color: var(--color-text); font-family: var(--font-mono);">data-chart</span>
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: var(--color-bg-tertiary); color: var(--color-text-secondary);">v2.1.0</span>
+                                        </div>
+                                        <span class="inline-block text-xs px-2 py-0.5 rounded-md mt-1 font-medium" style="background: var(--color-primary-soft-bg); color: var(--color-primary);">数据可视化</span>
+                                    </div>
+                                </div>
+                                <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-success-bg); color: var(--color-success-strong);">
+                                    <span class="w-1.5 h-1.5 rounded-full" style="background: var(--color-success);"></span>
+                                    已启用
+                                </span>
+                            </div>
+                            <p class="text-sm mb-4 leading-relaxed" style="color: var(--color-text-secondary);">将数据转换为可视化图表，支持多种图表类型</p>
+                            <div class="flex items-center gap-2 pt-3 border-t" style="border-color: var(--color-border-subtle);">
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-secondary); background: var(--color-bg-tertiary);">
+                                    <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                                    设置
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-warning-strong); background: var(--color-warning-bg);">
+                                    <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+                                    禁用
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer ml-auto" style="color: var(--color-error-strong); background: var(--color-error-bg);">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    卸载
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- hello-world plugin -->
+                    <div class="rounded-lg border overflow-hidden transition-shadow duration-200 hover:shadow-md" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="h-1" style="background: var(--color-primary);"></div>
+                        <div class="p-5">
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--color-primary-soft-bg);">
+                                        <i data-lucide="hand" class="w-5 h-5" style="color: var(--color-primary);"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-semibold" style="color: var(--color-text); font-family: var(--font-mono);">hello-world</span>
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: var(--color-bg-tertiary); color: var(--color-text-secondary);">v1.0.0</span>
+                                        </div>
+                                        <span class="inline-block text-xs px-2 py-0.5 rounded-md mt-1 font-medium" style="background: var(--color-bg-tertiary); color: var(--color-text-secondary);">示例</span>
+                                    </div>
+                                </div>
+                                <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-success-bg); color: var(--color-success-strong);">
+                                    <span class="w-1.5 h-1.5 rounded-full" style="background: var(--color-success);"></span>
+                                    已启用
+                                </span>
+                            </div>
+                            <p class="text-sm mb-4 leading-relaxed" style="color: var(--color-text-secondary);">Hello World 示例插件，展示插件开发基本结构</p>
+                            <div class="flex items-center gap-2 pt-3 border-t" style="border-color: var(--color-border-subtle);">
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-secondary); background: var(--color-bg-tertiary);">
+                                    <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                                    设置
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-warning-strong); background: var(--color-warning-bg);">
+                                    <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+                                    禁用
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer ml-auto" style="color: var(--color-error-strong); background: var(--color-error-bg);">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    卸载
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- system-tools plugin -->
+                    <div class="rounded-lg border overflow-hidden transition-shadow duration-200 hover:shadow-md" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="h-1" style="background: var(--color-chart-5);"></div>
+                        <div class="p-5">
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--color-tag-purple-bg);">
+                                        <i data-lucide="wrench" class="w-5 h-5" style="color: var(--color-chart-5);"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-semibold" style="color: var(--color-text); font-family: var(--font-mono);">system-tools</span>
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: var(--color-bg-tertiary); color: var(--color-text-secondary);">v1.3.0</span>
+                                        </div>
+                                        <span class="inline-block text-xs px-2 py-0.5 rounded-md mt-1 font-medium" style="background: var(--color-tag-purple-bg); color: var(--color-tag-purple-text);">系统</span>
+                                    </div>
+                                </div>
+                                <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-success-bg); color: var(--color-success-strong);">
+                                    <span class="w-1.5 h-1.5 rounded-full" style="background: var(--color-success);"></span>
+                                    已启用
+                                </span>
+                            </div>
+                            <p class="text-sm mb-4 leading-relaxed" style="color: var(--color-text-secondary);">系统工具集合，提供进程管理、文件监控等系统级操作</p>
+                            <div class="flex items-center gap-2 pt-3 border-t" style="border-color: var(--color-border-subtle);">
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-secondary); background: var(--color-bg-tertiary);">
+                                    <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                                    设置
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-warning-strong); background: var(--color-warning-bg);">
+                                    <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+                                    禁用
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer ml-auto" style="color: var(--color-error-strong); background: var(--color-error-bg);">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    卸载
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- theme-switcher plugin -->
+                    <div class="rounded-lg border overflow-hidden transition-shadow duration-200 hover:shadow-md" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="h-1" style="background: var(--color-chart-4);"></div>
+                        <div class="p-5">
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--color-warning-bg);">
+                                        <i data-lucide="palette" class="w-5 h-5" style="color: var(--color-chart-4);"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-semibold" style="color: var(--color-text); font-family: var(--font-mono);">theme-switcher</span>
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: var(--color-bg-tertiary); color: var(--color-text-secondary);">v1.0.2</span>
+                                        </div>
+                                        <span class="inline-block text-xs px-2 py-0.5 rounded-md mt-1 font-medium" style="background: var(--color-warning-bg); color: var(--color-warning-strong);">外观</span>
+                                    </div>
+                                </div>
+                                <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-success-bg); color: var(--color-success-strong);">
+                                    <span class="w-1.5 h-1.5 rounded-full" style="background: var(--color-success);"></span>
+                                    已启用
+                                </span>
+                            </div>
+                            <p class="text-sm mb-4 leading-relaxed" style="color: var(--color-text-secondary);">动态主题切换，支持亮色和暗色模式切换</p>
+                            <div class="flex items-center gap-2 pt-3 border-t" style="border-color: var(--color-border-subtle);">
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-secondary); background: var(--color-bg-tertiary);">
+                                    <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                                    设置
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-warning-strong); background: var(--color-warning-bg);">
+                                    <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+                                    禁用
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer ml-auto" style="color: var(--color-error-strong); background: var(--color-error-bg);">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    卸载
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- twitter-monitor plugin -->
+                    <div class="rounded-lg border overflow-hidden transition-shadow duration-200 hover:shadow-md" style="background: var(--color-bg); border-color: var(--color-border);">
+                        <div class="h-1" style="background: var(--color-text-tertiary);"></div>
+                        <div class="p-5">
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--color-bg-tertiary);">
+                                        <i data-lucide="at-sign" class="w-5 h-5" style="color: var(--color-text-tertiary);"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-semibold" style="color: var(--color-text); font-family: var(--font-mono);">twitter-monitor</span>
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: var(--color-bg-tertiary); color: var(--color-text-secondary);">v1.1.0</span>
+                                        </div>
+                                        <span class="inline-block text-xs px-2 py-0.5 rounded-md mt-1 font-medium" style="background: var(--color-info-bg); color: var(--color-primary);">社交媒体</span>
+                                    </div>
+                                </div>
+                                <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-bg-tertiary); color: var(--color-text-tertiary);">
+                                    <span class="w-1.5 h-1.5 rounded-full" style="background: var(--color-text-tertiary);"></span>
+                                    已停用
+                                </span>
+                            </div>
+                            <p class="text-sm mb-4 leading-relaxed" style="color: var(--color-text-secondary);">Twitter/X 账号监控，自动追踪和摘要推文内容</p>
+                            <div class="flex items-center gap-2 pt-3 border-t" style="border-color: var(--color-border-subtle);">
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-text-secondary); background: var(--color-bg-tertiary);">
+                                    <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                                    设置
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer" style="color: var(--color-success-strong); background: var(--color-success-bg);">
+                                    <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                                    启用
+                                </button>
+                                <button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 cursor-pointer ml-auto" style="color: var(--color-error-strong); background: var(--color-error-bg);">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    卸载
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

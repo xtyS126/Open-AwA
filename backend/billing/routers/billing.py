@@ -230,6 +230,7 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
     # 从 ProviderCredential 表解析 API 凭据（仅以 ProviderCredential 为单一来源，忽略旧版 ModelConfiguration.api_key）
     api_endpoint = config.api_endpoint
     has_api_key = False
+    api_key_status = "missing"  # 默认缺失状态，后续根据凭据前缀判定
     # 按 provider 名称查询 ProviderCredential（不依赖 credential_id 字段，保证始终能获取凭据）
     normalized_provider = pricing_manager.normalize_provider(config.provider)
     cred = None
@@ -239,7 +240,19 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         cred = pricing_manager.get_provider_credential(normalized_provider)
     if cred:
         api_endpoint = cred.api_endpoint or api_endpoint
-        has_api_key = bool(cred.api_key)
+        raw_cred_key = cred.api_key or ""
+        if not raw_cred_key:
+            # 凭据为空，标记为缺失
+            has_api_key = False
+            api_key_status = "missing"
+        elif raw_cred_key.startswith("enc:"):
+            # 旧算法密文已失效（SECRET_KEY 拆分后无法解密），引导用户重新录入
+            has_api_key = False
+            api_key_status = "stale"
+        else:
+            # enc2: 新算法密文 或 无前缀明文（历史兼容），视为有效
+            has_api_key = True
+            api_key_status = "active"
 
     payload = {
         "id": config.id,
@@ -251,6 +264,7 @@ def serialize_configuration(config, pricing_manager: PricingManager, include_sec
         "api_endpoint": api_endpoint,
         "base_url": api_endpoint,
         "has_api_key": has_api_key,
+        "api_key_status": api_key_status,
         "selected_models": selected_models,
         "is_active": config.is_active,
         "is_default": config.is_default,
@@ -1159,6 +1173,15 @@ async def get_provider_detail(
                 seen.add(model_name)
                 aggregated_models.append(model_name)
 
+    # 根据凭据前缀判定状态，与 serialize_configuration 逻辑保持一致
+    raw_cred_key = (cred.api_key if cred else "") or ""
+    if not raw_cred_key:
+        provider_api_key_status = "missing"
+    elif raw_cred_key.startswith("enc:"):
+        provider_api_key_status = "stale"
+    else:
+        provider_api_key_status = "active"
+
     return {
         "provider": {
             "id": provider_id,
@@ -1166,7 +1189,8 @@ async def get_provider_detail(
             "icon": (cred.icon if cred else None) or (getattr(config, "icon", None) if config else None),
             "api_endpoint": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
             "base_url": (cred.api_endpoint if cred else None) or (config.api_endpoint if config else None),
-            "has_api_key": bool(cred and cred.api_key),  # 仅检查 ProviderCredential
+            "has_api_key": bool(raw_cred_key and not raw_cred_key.startswith("enc:")),  # 仅检查 ProviderCredential
+            "api_key_status": provider_api_key_status,
             "selected_models": aggregated_models
         },
         "configuration": serialize_configuration(config, pricing_manager) if config else None
@@ -1225,10 +1249,20 @@ async def save_provider_credential(
     cred = pricing_manager.upsert_provider_credential(provider_id, data.dict(exclude_none=True))
     # 凭据变更后失效对应的远端模型缓存
     _invalidate_provider_models_cache()
+    # 新保存的凭据使用 enc2: 前缀（encrypt_secret_value 已升级），状态判定与查询接口一致
+    raw_saved_key = cred.api_key or ""
+    if not raw_saved_key:
+        saved_api_key_status = "missing"
+    elif raw_saved_key.startswith("enc:"):
+        # 兜底：理论上不应出现，因为 encrypt_secret_value 现在输出 enc2:
+        saved_api_key_status = "stale"
+    else:
+        saved_api_key_status = "active"
     return {
         "success": True,
         "provider": cred.provider,
-        "has_api_key": bool(cred.api_key),
+        "has_api_key": bool(raw_saved_key and not raw_saved_key.startswith("enc:")),
+        "api_key_status": saved_api_key_status,
         "api_endpoint": cred.api_endpoint,
     }
 
@@ -1245,12 +1279,21 @@ async def get_provider_credential(
     cred = pricing_manager.get_provider_credential(provider_id)
     if not cred:
         raise HTTPException(status_code=404, detail="Provider credential not found")
+    # 根据凭据前缀判定状态：enc: 旧密文失效，enc2: 或明文有效，空值缺失
+    raw_cred_key = cred.api_key or ""
+    if not raw_cred_key:
+        cred_api_key_status = "missing"
+    elif raw_cred_key.startswith("enc:"):
+        cred_api_key_status = "stale"
+    else:
+        cred_api_key_status = "active"
     return {
         "provider": cred.provider,
         "display_name": cred.display_name,
         "icon": cred.icon,
         "api_endpoint": cred.api_endpoint,
-        "has_api_key": bool(cred.api_key),
+        "has_api_key": bool(raw_cred_key and not raw_cred_key.startswith("enc:")),
+        "api_key_status": cred_api_key_status,
         "is_active": cred.is_active,
         "created_at": cred.created_at.isoformat() if cred.created_at else None,
         "updated_at": cred.updated_at.isoformat() if cred.updated_at else None,
@@ -1275,6 +1318,16 @@ async def get_provider_masked_api_key(
         return {
             "masked_api_key": None,
             "has_api_key": False,
+            "api_key_status": "missing",
+        }
+
+    raw_key = cred.api_key or ""
+    if raw_key.startswith("enc:"):
+        # 旧算法密文已失效，不尝试解密，引导用户重新录入
+        return {
+            "masked_api_key": None,
+            "has_api_key": False,
+            "api_key_status": "stale",
         }
 
     # 解密 API Key
@@ -1283,6 +1336,7 @@ async def get_provider_masked_api_key(
         return {
             "masked_api_key": None,
             "has_api_key": False,
+            "api_key_status": "stale",
         }
 
     # 脱敏处理：长度小于 8 位全部用 * 替代，否则显示前4位和后4位
@@ -1295,6 +1349,7 @@ async def get_provider_masked_api_key(
     return {
         "masked_api_key": masked_key,
         "has_api_key": True,
+        "api_key_status": "active",
     }
 
 

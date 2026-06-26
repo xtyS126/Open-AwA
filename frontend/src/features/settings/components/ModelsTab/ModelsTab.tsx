@@ -18,6 +18,9 @@ interface ConfigModelOption {
   configuration: ModelConfiguration
 }
 
+/** 表单字段值的类型：文本输入为 string，复选框为 boolean */
+type FormFieldValue = string | boolean
+
 interface ModelsTabProps {
   /** 是否显示添加表单 */
   showAddForm: boolean
@@ -60,7 +63,7 @@ interface ModelsTabProps {
   /** 模型变更回调 */
   onModelChange: (model: string) => void
   /** 表单字段变更回调 */
-  onFieldChange: (field: string, value: any) => void
+  onFieldChange: (field: string, value: FormFieldValue) => void
   /** 添加配置回调 */
   onAddConfiguration: () => void
   /** 编辑配置回调 */
@@ -70,7 +73,7 @@ interface ModelsTabProps {
   /** 取消编辑回调 */
   onCancelEdit: () => void
   /** 模态字段变更回调 */
-  onEditFormChange: (field: string, value: any) => void
+  onEditFormChange: (field: string, value: FormFieldValue) => void
   /** 切换模态类型回调 */
   onToggleModality: (direction: 'input' | 'output', modality: string) => void
   /** 删除配置回调 */

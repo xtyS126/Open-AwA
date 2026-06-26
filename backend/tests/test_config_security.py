@@ -74,7 +74,8 @@ class TestSecretEncryption:
 
         original = "sk-abc123def456"
         encrypted = encrypt_secret_value(original)
-        assert encrypted.startswith("enc:")
+        # 新算法密文使用 enc2: 前缀，与历史 enc: 区分
+        assert encrypted.startswith("enc2:")
         assert original not in encrypted
 
         decrypted = decrypt_secret_value(encrypted)
@@ -89,9 +90,12 @@ class TestSecretEncryption:
     def test_encrypt_already_encrypted(self):
         from config.security import encrypt_secret_value
 
-        already = "enc:some_encrypted_value"
-        result = encrypt_secret_value(already)
-        assert result == already  # 不重复加密
+        # enc: 旧前缀和 enc2: 新前缀都应原样返回，避免重复加密
+        already_legacy = "enc:some_encrypted_value"
+        assert encrypt_secret_value(already_legacy) == already_legacy
+
+        already_new = "enc2:some_encrypted_value"
+        assert encrypt_secret_value(already_new) == already_new
 
     def test_decrypt_plain_text(self):
         from config.security import decrypt_secret_value
@@ -107,14 +111,14 @@ class TestSecretEncryption:
     def test_decrypt_empty_payload(self):
         from config.security import decrypt_secret_value
 
-        # "enc:" 后无实际内容
-        assert decrypt_secret_value("enc:") == ""
+        # "enc2:" 后无实际内容
+        assert decrypt_secret_value("enc2:") == ""
 
     def test_decrypt_corrupted_payload(self):
         from config.security import decrypt_secret_value
 
-        result = decrypt_secret_value("enc:not_a_valid_encrypted_payload_!")
-        # 解密失败返回空字符串，不抛异常
+        # 新算法密文损坏时应返回空字符串，不抛异常
+        result = decrypt_secret_value("enc2:not_a_valid_encrypted_payload_!")
         assert result == ""
 
 
@@ -286,9 +290,10 @@ class TestJWTToken:
         from config.settings import settings
         from jose import jwt
 
+        # JWT 签名密钥改用独立的 JWT_SECRET_KEY
         token = jwt.encode(
             {"sub": "user-no-exp", "jti": "test-jti"},
-            settings.SECRET_KEY,
+            settings.JWT_SECRET_KEY,
             algorithm=settings.ALGORITHM,
         )
         payload = decode_access_token(token)
@@ -304,3 +309,109 @@ class TestJWTToken:
         p2 = decode_access_token(t2)
 
         assert p1["jti"] != p2["jti"]
+
+
+class TestSecretEncryptionPrefixHandling:
+    """
+    覆盖 SECRET_KEY 拆分后 enc:/enc2:/明文 三种前缀的解密行为，
+    以及 encrypt_secret_value 的新前缀输出与不重复加密语义。
+    """
+
+    def test_decrypt_legacy_enc_prefix_returns_empty_and_warns(self):
+        """
+        旧 enc: 前缀密文已失效，应直接返回空字符串并记录 warning。
+        """
+        from config.security import decrypt_secret_value
+        from loguru import logger
+
+        captured_records: list[str] = []
+        sink_id = logger.add(
+            lambda message: captured_records.append(message.record["message"]),
+            level="WARNING",
+        )
+        try:
+            result = decrypt_secret_value("enc:legacy_encrypted_payload")
+        finally:
+            logger.remove(sink_id)
+
+        # 不尝试解密，直接返回空
+        assert result == ""
+        # 应记录 warning 说明检测到旧算法密文
+        joined = "\n".join(captured_records)
+        assert "enc:" in joined or "旧算法" in joined
+
+    def test_decrypt_enc2_prefix_returns_plaintext(self):
+        """
+        enc2: 新前缀密文应使用 ENCRYPTION_KEY 解密回原文。
+        """
+        from config.security import encrypt_secret_value, decrypt_secret_value
+
+        original = "sk-test-key-for-enc2-decrypt-12345"
+        encrypted = encrypt_secret_value(original)
+        # 确保确实使用 enc2: 前缀加密
+        assert encrypted.startswith("enc2:")
+
+        decrypted = decrypt_secret_value(encrypted)
+        assert decrypted == original
+
+    def test_decrypt_plain_text_returns_as_is(self):
+        """
+        无前缀明文应原样返回（兼容历史明文存储）。
+        """
+        from config.security import decrypt_secret_value
+
+        plain_value = "sk-plain-api-key-without-prefix"
+        assert decrypt_secret_value(plain_value) == plain_value
+
+    def test_decrypt_enc2_corrupted_payload_returns_empty_and_warns(self):
+        """
+        enc2: 前缀但密文损坏时应返回空字符串并记录 warning，不抛异常。
+        """
+        from config.security import decrypt_secret_value
+        from loguru import logger
+
+        captured_records: list[str] = []
+        sink_id = logger.add(
+            lambda message: captured_records.append(message.record["message"]),
+            level="WARNING",
+        )
+        try:
+            result = decrypt_secret_value("enc2:not_a_valid_encrypted_payload_!")
+        finally:
+            logger.remove(sink_id)
+
+        assert result == ""
+        # 应记录 warning 说明解密失败
+        joined = "\n".join(captured_records)
+        assert "解密失败" in joined or "InvalidToken" in joined
+
+    def test_encrypt_outputs_enc2_prefix(self):
+        """
+        新加密输出必须以 enc2: 开头，标记新算法 + 新密钥。
+        """
+        from config.security import encrypt_secret_value
+
+        encrypted = encrypt_secret_value("sk-fresh-api-key-12345")
+        assert encrypted.startswith("enc2:")
+        # 明文不应出现在密文中
+        assert "sk-fresh-api-key-12345" not in encrypted
+
+    def test_encrypt_skips_legacy_enc_prefix_input(self):
+        """
+        已加密值（enc: 旧前缀）原样返回，不重复加密。
+        """
+        from config.security import encrypt_secret_value
+
+        already_legacy = "enc:legacy_encrypted_value_should_be_passthrough"
+        result = encrypt_secret_value(already_legacy)
+        assert result == already_legacy
+
+    def test_encrypt_skips_enc2_prefix_input(self):
+        """
+        已加密值（enc2: 新前缀）原样返回，不重复加密。
+        """
+        from config.security import encrypt_secret_value
+
+        already_new = "enc2:new_encrypted_value_should_be_passthrough"
+        result = encrypt_secret_value(already_new)
+        assert result == already_new

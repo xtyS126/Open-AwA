@@ -77,8 +77,9 @@ class SlackAdapter(ChannelAdapter):
         if self._ws:
             try:
                 await self._ws.close()
-            except Exception:
-                pass
+            except Exception as e:
+                # 记录日志而非静默吞异常，便于排查连接清理问题
+                logger.warning("Slack WebSocket 关闭失败", exc_info=e)
             self._ws = None
         if self._http_client:
             await self._http_client.aclose()

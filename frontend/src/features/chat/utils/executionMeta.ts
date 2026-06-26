@@ -530,16 +530,17 @@ export function normalizeUsage(raw: unknown): UsageMeta | undefined {
   return nextUsage
 }
 
-export function buildExecutionMetaFromPayload(payload: Record<string, any>): AssistantExecutionMeta {
+export function buildExecutionMetaFromPayload(payload: Record<string, unknown>): AssistantExecutionMeta {
   let meta = createEmptyExecutionMeta()
 
   if (payload.plan && typeof payload.plan === 'object') {
+    const plan = payload.plan as Record<string, unknown>
     meta = {
       ...meta,
-      intent: typeof payload.plan.intent === 'string' ? payload.plan.intent : undefined,
-      requiresConfirmation: Boolean(payload.plan.requires_confirmation ?? payload.plan.requiresConfirmation),
-      steps: Array.isArray(payload.plan.steps)
-        ? payload.plan.steps.map((step: Record<string, unknown>, index: number) => ({
+      intent: typeof plan.intent === 'string' ? plan.intent : undefined,
+      requiresConfirmation: Boolean(plan.requires_confirmation ?? plan.requiresConfirmation),
+      steps: Array.isArray(plan.steps)
+        ? plan.steps.map((step: Record<string, unknown>, index: number) => ({
             step: Number(step.step || index + 1),
             action: String(step.action || ''),
             purpose: typeof step.purpose === 'string' ? step.purpose : undefined,

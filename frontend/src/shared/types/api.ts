@@ -57,6 +57,8 @@ export interface BillingProvider {
   icon?: string | null
   api_endpoint?: string | null
   has_api_key?: boolean
+  // 密钥状态：active 已配置且可用 / stale 旧算法密文已失效 / missing 未配置
+  api_key_status?: 'active' | 'stale' | 'missing'
   selected_models?: string[]
   configuration_count?: number
 }
@@ -71,6 +73,8 @@ export interface BillingModelConfiguration {
   api_endpoint?: string | null
   api_key?: string | null
   has_api_key?: boolean
+  // 密钥状态：active 已配置且可用 / stale 旧算法密文已失效 / missing 未配置
+  api_key_status?: 'active' | 'stale' | 'missing'
   selected_models?: string[]
   is_active: boolean
   is_default: boolean

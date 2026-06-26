@@ -7,8 +7,9 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from db.models import Base
-from billing.models import ModelConfiguration, ModelPricing
+from billing.models import ModelConfiguration, ModelPricing, ProviderCredential
 from billing.pricing_manager import PricingManager
+from billing.routers.billing import serialize_configuration
 
 
 def _create_pricing_session_with_schema(include_capability_columns: bool):
@@ -726,3 +727,236 @@ class TestGetProviderCatalog:
                 assert "input_price" in model, f"供应商 {provider_id} 模型 {model['name']} 缺少 input_price"
                 assert "output_price" in model, f"供应商 {provider_id} 模型 {model['name']} 缺少 output_price"
                 assert "currency" in model, f"供应商 {provider_id} 模型 {model['name']} 缺少 currency"
+
+
+class TestSerializeConfigurationApiKeyStatus:
+    """
+    覆盖 serialize_configuration 在不同 API Key 前缀下返回的
+    has_api_key / api_key_status 字段，确保 SECRET_KEY 拆分后
+    旧 enc: 密文被正确标记为 stale，引导用户重新录入。
+    """
+
+    def test_serialize_configuration_returns_stale_for_legacy_enc_prefix(
+        self, pricing_manager, db_session
+    ):
+        """
+        旧 enc: 前缀密文已失效，应返回 has_api_key=False, api_key_status="stale"。
+        """
+        # 准备旧算法密文的 ProviderCredential
+        db_session.add(ProviderCredential(
+            provider="deepseek",
+            display_name="DeepSeek",
+            api_key="enc:legacy_encrypted_payload_that_should_be_invalid",
+            api_endpoint="https://api.deepseek.com/v1",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="deepseek",
+            model="deepseek-chat",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "deepseek",
+            ModelConfiguration.model == "deepseek-chat",
+        ).first()
+
+        payload = serialize_configuration(config, pricing_manager)
+
+        assert payload["has_api_key"] is False
+        assert payload["api_key_status"] == "stale"
+
+    def test_serialize_configuration_returns_active_for_enc2_prefix(
+        self, pricing_manager, db_session
+    ):
+        """
+        enc2: 新前缀密文应返回 has_api_key=True, api_key_status="active"。
+        """
+        from config.security import encrypt_secret_value
+
+        # 使用新算法加密真实 API Key
+        encrypted_key = encrypt_secret_value("sk-real-deepseek-key-12345")
+        assert encrypted_key.startswith("enc2:")
+
+        db_session.add(ProviderCredential(
+            provider="deepseek",
+            display_name="DeepSeek",
+            api_key=encrypted_key,
+            api_endpoint="https://api.deepseek.com/v1",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="deepseek",
+            model="deepseek-chat",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "deepseek",
+            ModelConfiguration.model == "deepseek-chat",
+        ).first()
+
+        payload = serialize_configuration(config, pricing_manager)
+
+        assert payload["has_api_key"] is True
+        assert payload["api_key_status"] == "active"
+
+    def test_serialize_configuration_returns_active_for_plain_text_key(
+        self, pricing_manager, db_session
+    ):
+        """
+        无前缀明文（历史兼容）应返回 has_api_key=True, api_key_status="active"。
+        """
+        db_session.add(ProviderCredential(
+            provider="openai",
+            display_name="OpenAI",
+            api_key="sk-plain-legacy-key-without-prefix",
+            api_endpoint="https://api.openai.com/v1",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="openai",
+            model="gpt-4o",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "openai",
+            ModelConfiguration.model == "gpt-4o",
+        ).first()
+
+        payload = serialize_configuration(config, pricing_manager)
+
+        assert payload["has_api_key"] is True
+        assert payload["api_key_status"] == "active"
+
+    def test_serialize_configuration_returns_missing_for_empty_api_key(
+        self, pricing_manager, db_session
+    ):
+        """
+        ProviderCredential 存在但 api_key 为空时，应返回
+        has_api_key=False, api_key_status="missing"。
+        """
+        db_session.add(ProviderCredential(
+            provider="anthropic",
+            display_name="Anthropic",
+            api_key="",  # 显式空字符串
+            api_endpoint="https://api.anthropic.com",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="anthropic",
+            model="claude-3-5-sonnet",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "anthropic",
+            ModelConfiguration.model == "claude-3-5-sonnet",
+        ).first()
+
+        payload = serialize_configuration(config, pricing_manager)
+
+        assert payload["has_api_key"] is False
+        assert payload["api_key_status"] == "missing"
+
+    def test_serialize_configuration_returns_missing_for_null_api_key(
+        self, pricing_manager, db_session
+    ):
+        """
+        ProviderCredential 存在但 api_key 为 None 时，应返回
+        has_api_key=False, api_key_status="missing"。
+        """
+        db_session.add(ProviderCredential(
+            provider="google",
+            display_name="Google",
+            api_key=None,  # 显式 None
+            api_endpoint="https://generativelanguage.googleapis.com",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="google",
+            model="gemini-2.0-flash",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "google",
+            ModelConfiguration.model == "gemini-2.0-flash",
+        ).first()
+
+        payload = serialize_configuration(config, pricing_manager)
+
+        assert payload["has_api_key"] is False
+        assert payload["api_key_status"] == "missing"
+
+    def test_serialize_configuration_returns_missing_when_no_credential(
+        self, pricing_manager, db_session
+    ):
+        """
+        无 ProviderCredential 记录时，应返回
+        has_api_key=False, api_key_status="missing"。
+        """
+        db_session.add(ModelConfiguration(
+            provider="moonshot",
+            model="moonshot-v1-32k",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "moonshot",
+            ModelConfiguration.model == "moonshot-v1-32k",
+        ).first()
+
+        payload = serialize_configuration(config, pricing_manager)
+
+        assert payload["has_api_key"] is False
+        assert payload["api_key_status"] == "missing"
+
+    def test_serialize_configuration_uses_cred_map_to_skip_n_plus_1(
+        self, pricing_manager, db_session
+    ):
+        """
+        传入 cred_map 时应使用映射表而非逐个查询，且仍能正确识别 enc: 旧密文。
+        """
+        db_session.add(ProviderCredential(
+            provider="zhipu",
+            display_name="Zhipu",
+            api_key="enc:legacy_zhipu_key_should_be_stale",
+            api_endpoint="https://open.bigmodel.cn/api/paas/v4",
+            is_active=True,
+        ))
+        db_session.add(ModelConfiguration(
+            provider="zhipu",
+            model="glm-4",
+            is_active=True,
+            is_default=False,
+        ))
+        db_session.commit()
+
+        config = db_session.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == "zhipu",
+            ModelConfiguration.model == "glm-4",
+        ).first()
+
+        # 构造预加载映射表
+        normalized = pricing_manager.normalize_provider("zhipu")
+        cred = pricing_manager.get_provider_credential(normalized)
+        cred_map = {normalized: cred}
+
+        payload = serialize_configuration(config, pricing_manager, cred_map=cred_map)
+
+        assert payload["has_api_key"] is False
+        assert payload["api_key_status"] == "stale"

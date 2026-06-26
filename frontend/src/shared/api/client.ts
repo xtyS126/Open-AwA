@@ -95,6 +95,29 @@ export const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail')
   })
 }
 
+/**
+ * 清洗 header 值，移除所有非 ISO-8859-1 字符。
+ * 浏览器 XMLHttpRequest.setRequestHeader 仅接受 ISO-8859-1 范围内的字符，
+ * 若值含 UTF-8 字符（如中文、零宽空格等）会抛出异常导致请求中止。
+ */
+function sanitizeHeaderValue(value: unknown): string {
+  if (value == null) return ''
+  const str = String(value)
+  // 移除所有码点 > 255 的字符（非 ISO-8859-1）
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/[^\x00-\xFF]/g, '')
+}
+
+/** 清洗 config 中所有 header 值，确保仅含 ISO-8859-1 字符 */
+function sanitizeHeaders(headers: Record<string, unknown>): void {
+  for (const key of Object.keys(headers)) {
+    const val = headers[key]
+    if (val != null && typeof val !== 'boolean') {
+      headers[key] = sanitizeHeaderValue(val)
+    }
+  }
+}
+
 /** Axios 实例，所有 API 调用通过此实例发起 */
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -112,6 +135,10 @@ api.interceptors.request.use(async (config) => {
   if (_inMemoryApiKey && !config.headers['Authorization']) {
     config.headers['Authorization'] = `Bearer ${_inMemoryApiKey}`
   }
+
+  // 防御性清洗：移除 header 值中的非 ISO-8859-1 字符
+  // 防止浏览器 setRequestHeader 抛出异常导致请求静默失败
+  sanitizeHeaders(config.headers as unknown as Record<string, unknown>)
 
   appLogger.info({
     event: 'api_request',

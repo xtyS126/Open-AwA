@@ -50,8 +50,8 @@ class PendingPermissionRequest:
         action: str,
         resources: list[str],
         save: list[str] | None = None,
-        metadata: dict | None = None,
-        agent: str | None = None,
+        metadata: Optional[dict] = None,
+        agent: Optional[str] = None,
     ) -> None:
         self.request_id = request_id
         self.user_id = user_id
@@ -145,8 +145,8 @@ def enqueue_permission_request(
     action: str,
     resources: list[str],
     save: list[str] | None = None,
-    metadata: dict | None = None,
-    agent: str | None = None,
+    metadata: Optional[dict] = None,
+    agent: Optional[str] = None,
     timeout: float = 120.0,
 ) -> asyncio.Future[str]:
     """

@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ipcMain } from 'electron'
 import { getConfigStore, getBackendUrl, setBackendUrl } from '../src/shared/config-store'
 
+// 模拟 IpcMainInvokeEvent（实际只需 sender，此处用空对象即可，handler 未使用 event）
+const mockEvent = {} as Electron.IpcMainInvokeEvent
+
 describe('后端地址 IPC', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -26,16 +29,30 @@ describe('后端地址 IPC', () => {
 
   it('handleSetUrl 保存后端 URL 并返回 success', async () => {
     const { handleSetUrl } = await import('../src/main/ipc/backend')
-    const result = await handleSetUrl(null, { url: 'http://new:9000/api' })
+    const result = await handleSetUrl(mockEvent, { url: 'http://new:9000/api' })
     expect(result).toEqual({ success: true })
     expect(getBackendUrl()).toBe('http://new:9000/api')
+  })
+
+  it('handleSetUrl 拒绝非 http/https 协议', async () => {
+    const { handleSetUrl } = await import('../src/main/ipc/backend')
+    const result = await handleSetUrl(mockEvent, { url: 'file:///etc/passwd' })
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('协议')
+  })
+
+  it('handleSetUrl 拒绝空 URL', async () => {
+    const { handleSetUrl } = await import('../src/main/ipc/backend')
+    const result = await handleSetUrl(mockEvent, { url: '' })
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('空')
   })
 
   it('handleTestConnection 测试可达的后端返回 ok', async () => {
     // mock fetch
     global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch
     const { handleTestConnection } = await import('../src/main/ipc/backend')
-    const result = await handleTestConnection(null, { url: 'http://test:8000/api' })
+    const result = await handleTestConnection(mockEvent, { url: 'http://test:8000/api' })
     expect(result.ok).toBe(true)
     expect(result.latency).toBeGreaterThanOrEqual(0)
   })
@@ -43,8 +60,15 @@ describe('后端地址 IPC', () => {
   it('handleTestConnection 测试不可达的后端返回 error', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof fetch
     const { handleTestConnection } = await import('../src/main/ipc/backend')
-    const result = await handleTestConnection(null, { url: 'http://unreachable:9999/api' })
+    const result = await handleTestConnection(mockEvent, { url: 'http://unreachable:9999/api' })
     expect(result.ok).toBe(false)
     expect(result.error).toContain('ECONNREFUSED')
+  })
+
+  it('handleTestConnection 拒绝非 http/https 协议', async () => {
+    const { handleTestConnection } = await import('../src/main/ipc/backend')
+    const result = await handleTestConnection(mockEvent, { url: 'javascript:alert(1)' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('协议')
   })
 })

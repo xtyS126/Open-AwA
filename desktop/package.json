@@ -2,6 +2,7 @@
   "name": "openawa-desktop",
   "version": "1.0.0",
   "description": "Open-AwA 桌面端应用",
+  "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "tsx scripts/dev.ts",
@@ -14,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src"
   },
   "dependencies": {
     "electron-store": "^10.0.0",
@@ -28,6 +29,8 @@
     "tsx": "^4.7.0",
     "vitest": "^2.1.8",
     "@types/node": "^25.5.2",
-    "eslint": "^9.0.0"
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "typescript-eslint": "^8.0.0"
   }
 }

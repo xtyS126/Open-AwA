@@ -1415,6 +1415,8 @@ const enUS: Record<string, string> = {
   "chat.loading.streaming": "{status}...",
   "chat.provider": "Provider",
   "chat.model": "Model",
+  "chat.jumpToLatest": "Jump to latest",
+  "chat.unreadMessages": "{count} new messages",
 };
 
 export default enUS;

@@ -66,7 +66,8 @@ function NavigationLogger() {
 
 function AppRoutes() {
   const location = useLocation()
-  const { isAuthenticated } = useAuthStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   if (!isAuthenticated) {
     return (
@@ -135,7 +136,8 @@ function AppRoutes() {
 }
 
 function App() {
-  const { isInitialized } = useAuthStore()
+  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
+  const isInitialized = useAuthStore(s => s.isInitialized)
   const { theme } = useThemeStore()
   const shellMarkedRef = useRef<boolean | null>(null)
   useAppInitialization()

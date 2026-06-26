@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { shallow } from 'zustand/shallow'
 import { authAPI, setTempApiKey, persistApiKey, clearCachedApiKey } from '@/shared/api/api'
 import { useAuthStore } from '@/shared/store/authStore'
+import { apiKeySchema } from '@/shared/schemas/auth'
 import { appLogger } from '@/shared/utils/logger'
 import styles from './LoginPage.module.css'
 
@@ -9,6 +10,7 @@ import styles from './LoginPage.module.css'
  * API Key 配置页面。
  * 首次使用时输入 API Key 进行认证，后续自动从浏览器缓存读取。
  * 单用户模式下不再需要用户名密码登录。
+ * 表单校验使用 zod schema（apiKeySchema），与后端 OPENAWA_API_KEY 最小长度约束对齐。
  */
 function LoginPage() {
   // 使用选择器 + shallow 浅比较，避免整个 store 变化触发重渲染
@@ -22,25 +24,26 @@ function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!apiKey.trim()) {
-      setError('请输入访问密钥')
+    // 使用 zod schema 进行前端校验，提供即时反馈
+    const parseResult = apiKeySchema.safeParse({ apiKey: apiKey.trim() })
+    if (!parseResult.success) {
+      // 取第一条错误信息展示给用户
+      const firstIssue = parseResult.error.issues[0]
+      setError(firstIssue?.message ?? '输入无效')
       return
     }
-    if (apiKey.trim().length < 20) {
-      setError('认证失败')
-      return
-    }
+    const validApiKey = parseResult.data.apiKey
 
     setLoading(true)
     setError(null)
 
     try {
       // 临时写入内存以便 getMe() 请求携带访问密钥
-      setTempApiKey(apiKey.trim())
+      setTempApiKey(validApiKey)
       const response = await authAPI.getMe()
       const data = response.data || {}
       // 验证成功后才持久化到 sessionStorage
-      persistApiKey(apiKey.trim())
+      persistApiKey(validApiKey)
       setAuth(
         {
           username: data.username || 'admin',
@@ -50,7 +53,7 @@ function LoginPage() {
           phone: data.phone,
           role: data.role,
         },
-        apiKey.trim()
+        validApiKey
       )
       setInitialized(true)
       appLogger.info({

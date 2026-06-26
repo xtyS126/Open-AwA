@@ -102,8 +102,9 @@ class MatrixAdapter(ChannelAdapter):
         if self._client:
             try:
                 await self._client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                # 记录日志而非静默吞异常
+                logger.warning("Matrix 客户端关闭失败", exc_info=e)
             self._client = None
         self._connected = False
 

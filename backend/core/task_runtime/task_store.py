@@ -67,9 +67,12 @@ def validate_dependencies(db: Session, task_id: str) -> List[str]:
         return []
 
     unmet = []
+    # 批量查询所有依赖任务，避免循环内单条查询（N+1 问题）
+    dep_tasks = db.query(TaskItem).filter(TaskItem.task_id.in_(deps)).all()
+    dep_status_map = {dt.task_id: dt.status for dt in dep_tasks}
     for dep_id in deps:
-        dep_task = db.query(TaskItem).filter(TaskItem.task_id == dep_id).first()
-        if not dep_task or dep_task.status != "completed":
+        dep_status = dep_status_map.get(dep_id)
+        if dep_status is None or dep_status != "completed":
             unmet.append(dep_id)
 
     if unmet:

@@ -120,7 +120,7 @@ export function GeneralTabContainer() {
       if (response.data && response.data.content) {
         setSettings(prev => ({ ...prev, promptContent: response.data.content }))
       }
-    } catch (error) {
+    } catch {
       appLogger.error({ event: 'prompts_load_failed', message: 'Failed to load prompts', module: 'settings' })
     }
   }, [])

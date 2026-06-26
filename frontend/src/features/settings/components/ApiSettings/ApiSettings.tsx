@@ -19,6 +19,8 @@ interface ApiProviderFormState {
   api_endpoint: string
   api_key: string
   has_api_key: boolean
+  // 密钥状态：active 已配置且可用 / stale 旧算法密文已失效 / missing 未配置
+  api_key_status?: 'active' | 'stale' | 'missing'
   selected_models: string[]
   masked_api_key: string | null
 }
@@ -293,8 +295,20 @@ function ApiSettings({
                       ref={providerApiKeyInputRef}
                       defaultValue=""
                       autoComplete="new-password"
-                      placeholder={providerForm.has_api_key ? '已配置密钥，留空表示不修改' : '输入供应商 API Key'}
-                      style={{ flex: 1 }}
+                      // 密钥已失效时提示重新录入；已配置密钥时提示留空不修改；其余提示输入
+                      placeholder={
+                        providerForm.api_key_status === 'stale'
+                          ? '请重新输入 API Key'
+                          : providerForm.has_api_key
+                            ? '已配置密钥，留空表示不修改'
+                            : '输入供应商 API Key'
+                      }
+                      style={{
+                        flex: 1,
+                        ...(providerForm.api_key_status === 'stale'
+                          ? { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }
+                          : {}),
+                      }}
                     />
                     {providerForm.has_api_key && providerForm.masked_api_key && (
                       <button
@@ -316,6 +330,20 @@ function ApiSettings({
                       {testingConnectivity ? '测试中...' : '测试连通性'}
                     </button>
                   </div>
+                  {/* 密钥已失效警告：黄色提示用户重新录入 */}
+                  {providerForm.api_key_status === 'stale' && (
+                    <div style={{
+                      marginTop: '6px',
+                      padding: '6px 10px',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      backgroundColor: '#fffbeb',
+                      color: '#b45309',
+                      border: '1px solid #fde68a',
+                    }}>
+                      [!] 密钥已失效，请重新录入
+                    </div>
+                  )}
                   {showApiKey && providerForm.masked_api_key && (
                     <div style={{
                       marginTop: '4px',
@@ -360,7 +388,7 @@ function ApiSettings({
                       try {
                         // 保存到 ProviderCredential 表（而非 ModelConfiguration 旧字段）
                         await modelsAPI.saveProviderCredential(providerForm.provider, { api_key: nextApiKey })
-                        onProviderFormChange(prev => ({ ...prev, has_api_key: true }))
+                        onProviderFormChange(prev => ({ ...prev, has_api_key: true, api_key_status: 'active' }))
                         if (providerApiKeyInputRef.current) {
                           providerApiKeyInputRef.current.value = ''
                         }

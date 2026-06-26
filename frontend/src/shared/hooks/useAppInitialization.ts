@@ -175,10 +175,11 @@ export function useAppInitialization() {
   const setInitialized = useAuthStore((state) => state.setInitialized)
   const setAuth = useAuthStore((state) => state.setAuth)
   const logout = useAuthStore((state) => state.logout)
-  const rehydratedRef = useRef(false)
+  const rehydratedRef = useRef<boolean | null>(null)
 
-  // P0: 同步回填本地状态（仅首次渲染执行，避免重复读取 localStorage）
-  if (!rehydratedRef.current) {
+  // P0: 同步回填本地状态（仅首次渲染执行，确保主题等首屏状态在 React 首次渲染前已就位）
+  // 使用 React 推荐的懒初始化模式：ref.current == null 检查允许在渲染期间访问
+  if (rehydratedRef.current == null) {
     rehydratedRef.current = true
     rehydrateStores()
   }
