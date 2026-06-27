@@ -1,6 +1,6 @@
 /**
  * 消息列表组件 — 使用 react-virtuoso 虚拟滚动优化长对话渲染性能。
- * 超过 100 条消息时自动启用虚拟化，保证滚动流畅。
+ * 超过 15 条消息时自动启用虚拟化，保证滚动流畅。
  */
 import { memo, useCallback, useRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'

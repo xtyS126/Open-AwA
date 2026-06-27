@@ -1789,7 +1789,6 @@ class AIAgent:
         优先检测魔法命令，匹配时跳过 LLM 处理。
         """
         logger.info(f"Processing user input (stream), length={len(user_input)}")
-        _stream_start_time = time.time()
 
         # 创建本轮流的根中止控制器，所有工具执行和子代理共享其子 controller
         # 流结束（正常或异常）时调用 abort() 清理所有子任务
@@ -1867,6 +1866,12 @@ class AIAgent:
         if current_task is not None and session_id:
             register_agent_task(session_id, current_task)
 
+        # 提前初始化流式处理变量，避免 try 块早期异常导致 finally 中引用未定义变量
+        full_content = ""
+        full_reasoning = ""
+        accumulated_tool_events: list = []
+        _stream_start_time = time.time()
+
         try:
             conversation_history = await self._build_conversation_history(session_id)
             # 自动检测并压缩上下文
@@ -1904,9 +1909,7 @@ class AIAgent:
                 "plan": plan,
             }
 
-            full_content = ""
-            full_reasoning = ""
-            accumulated_tool_events: list = []  # 收集本轮所有工具调用事件，用于持久化
+            # 流式变量已在 try 块前初始化，此处无需重复赋值
 
             final_only_mode = self._is_final_only_mode(context)
 
@@ -2294,6 +2297,12 @@ class AIAgent:
         current_task = asyncio.current_task()
         if current_task is not None and session_id:
             register_agent_task(session_id, current_task)
+
+        # 提前初始化流式处理变量，避免 try 块早期异常导致 finally 中引用未定义变量
+        full_content = ""
+        full_reasoning = ""
+        accumulated_tool_events: list = []
+        _stream_start_time = time.time()
 
         try:
             conversation_history = await self._build_conversation_history(session_id)

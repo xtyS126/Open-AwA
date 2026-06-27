@@ -77,6 +77,11 @@ function buildMessageMetaFromMessages(messages: ChatMessage[]): Record<string, A
 /**
  * 合并服务器历史与缓存消息。
  * 保留缓存中的 reasoning_content、toolEvents、segments 等本地增强字段。
+ *
+ * 匹配策略：以 (role, content) 作为消息指纹，按内容匹配而非按数组索引匹配。
+ * 这样即使某条消息的 content 在远程与缓存间存在细微差异（流式累积版本 vs 后端存储版本），
+ * 也不会破坏后续消息的匹配，避免缓存中靠后的用户消息（如第二轮提问）被整体丢弃。
+ * 缓存中未被远程匹配的消息（如尚未持久化的乐观插入消息）会追加到结果尾部，避免丢失。
  */
 function mergeServerHistoryWithCached(
   remoteMessages: ChatMessage[],
@@ -86,16 +91,35 @@ function mergeServerHistoryWithCached(
     return cachedMessages
   }
 
-  const mergedMessages = remoteMessages.map((remoteMessage, index) => {
-    const cachedMessage = cachedMessages[index]
-    if (
-      !cachedMessage ||
-      cachedMessage.role !== remoteMessage.role ||
-      cachedMessage.content !== remoteMessage.content
-    ) {
+  // 构建 (role, content) -> 缓存索引列表的映射，支持重复内容的消息各取一份
+  const cacheIndicesByKey = new Map<string, number[]>()
+  cachedMessages.forEach((msg, index) => {
+    const key = `${msg.role}:${msg.content}`
+    const list = cacheIndicesByKey.get(key)
+    if (list) {
+      list.push(index)
+    } else {
+      cacheIndicesByKey.set(key, [index])
+    }
+  })
+
+  const usedCacheIndices = new Set<number>()
+
+  const mergedMessages = remoteMessages.map((remoteMessage) => {
+    const key = `${remoteMessage.role}:${remoteMessage.content}`
+    const indices = cacheIndicesByKey.get(key)
+    if (!indices || indices.length === 0) {
       return remoteMessage
     }
 
+    // 取第一个未使用的缓存索引，保证重复内容消息各自匹配
+    const cacheIndex = indices.find((i) => !usedCacheIndices.has(i))
+    if (cacheIndex === undefined) {
+      return remoteMessage
+    }
+    usedCacheIndices.add(cacheIndex)
+
+    const cachedMessage = cachedMessages[cacheIndex]
     if (remoteMessage.role !== 'assistant') {
       return remoteMessage
     }
@@ -108,20 +132,10 @@ function mergeServerHistoryWithCached(
     }
   })
 
-  const isPrefixMatch = remoteMessages.every((remoteMessage, index) => {
-    const cachedMessage = cachedMessages[index]
-    return Boolean(
-      cachedMessage &&
-      cachedMessage.role === remoteMessage.role &&
-      cachedMessage.content === remoteMessage.content
-    )
-  })
+  // 追加缓存中未匹配的消息（如尚未持久化的乐观插入消息），保持缓存原始顺序
+  const extraCached = cachedMessages.filter((_, index) => !usedCacheIndices.has(index))
 
-  if (isPrefixMatch && cachedMessages.length > remoteMessages.length) {
-    return [...mergedMessages, ...cachedMessages.slice(remoteMessages.length)]
-  }
-
-  return mergedMessages
+  return [...mergedMessages, ...extraCached]
 }
 
 /**

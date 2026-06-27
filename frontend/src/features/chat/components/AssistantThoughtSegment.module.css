@@ -115,6 +115,19 @@
   letter-spacing: 0.5px;
 }
 
+/* 分区块：标题 + 平铺内容，减少嵌套层级 */
+.sectionBlock {
+  margin-top: 8px;
+  margin-left: 4px;
+}
+
+.sectionBlock .sectionTitle {
+  display: block;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
 /* ===== 步骤节点 ===== */
 .stepNode .treeNodeDot {
   transition: background-color 0.3s ease;

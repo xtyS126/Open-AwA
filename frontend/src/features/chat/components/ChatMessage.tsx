@@ -31,21 +31,24 @@ type GroupedSegment =
   | AssistantReplySegment
 
 function groupAssistantSegments(segments: AssistantMessageSegment[]): GroupedSegment[] {
-  const result: GroupedSegment[] = []
-  let currentThoughtGroup: AssistantThoughtSegmentData[] | null = null
+  // 将所有 thought 段合并到一个分组置于顶部，reply 段按原顺序排在后面
+  // 避免思维链与回复交替穿插，提升可读性
+  const thoughtSegments: AssistantThoughtSegmentData[] = []
+  const replySegments: AssistantReplySegment[] = []
 
   for (const segment of segments) {
     if (segment.kind === 'thought') {
-      if (!currentThoughtGroup) {
-        currentThoughtGroup = []
-        result.push({ kind: 'thought_group', id: `group-${segment.id}`, segments: currentThoughtGroup })
-      }
-      currentThoughtGroup.push(segment)
+      thoughtSegments.push(segment)
     } else {
-      currentThoughtGroup = null
-      result.push(segment)
+      replySegments.push(segment)
     }
   }
+
+  const result: GroupedSegment[] = []
+  if (thoughtSegments.length > 0) {
+    result.push({ kind: 'thought_group', id: `group-${thoughtSegments[0].id}`, segments: thoughtSegments })
+  }
+  result.push(...replySegments)
 
   return result
 }

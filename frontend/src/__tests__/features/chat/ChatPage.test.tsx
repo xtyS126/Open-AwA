@@ -612,7 +612,8 @@ describe('ChatPage', () => {
     expect(screen.getByText('第一轮回复。')).toBeInTheDocument()
     expect(screen.getByText('继续思考第二轮。')).toBeInTheDocument()
     expect(screen.getByText('第二轮回复-A第二轮回复-B')).toBeInTheDocument()
-    expect(screen.getAllByText('思维链').length).toBeGreaterThanOrEqual(2)
+    // 所有思维链段合并为一个分组集中展示，避免与回复交替穿插
+    expect(screen.getAllByText('思维链').length).toBeGreaterThanOrEqual(1)
   })
 
   it('在收到流式阶段事件时展示实时状态文本', async () => {

@@ -97,107 +97,79 @@ function AssistantThoughtSegmentInner({ segments, isStreaming, onUndo }: Assista
                 </div>
               )}
 
-              {/* 执行步骤：推理的子节点 */}
+              {/* 执行步骤：分组标题 + 平铺步骤，避免层层嵌套 */}
               {segment.steps.length > 0 && (
-                <div className={styles.subTree}>
-                  <TreeNode className={styles.sectionNode}>
-                    <span className={styles.sectionTitle}>执行步骤</span>
-                  </TreeNode>
-                  <div className={styles.subTree}>
-                    {segment.steps.map((step) => (
-                      <TreeNode
-                        key={`${step.step}-${step.action}`}
-                        className={styles.stepNode}
-                        dotClassName={getStepDotClass(step.status)}
-                      >
-                        <div className={styles.stepContent}>
-                          <span className={`${styles.stepStatus} ${styles[`status-${step.status}`]}`}>
-                            {getStatusText(step.status)}
-                          </span>
-                          <span className={styles.stepTitle}>{getTaskTitle(step)}</span>
-                          {step.summary && <span className={styles.stepSummary}>{step.summary}</span>}
-                        </div>
-                      </TreeNode>
-                    ))}
-                  </div>
+                <div className={styles.sectionBlock}>
+                  <div className={styles.sectionTitle}>执行步骤</div>
+                  {segment.steps.map((step) => (
+                    <TreeNode
+                      key={`${step.step}-${step.action}`}
+                      className={styles.stepNode}
+                      dotClassName={getStepDotClass(step.status)}
+                    >
+                      <div className={styles.stepContent}>
+                        <span className={`${styles.stepStatus} ${styles[`status-${step.status}`]}`}>
+                          {getStatusText(step.status)}
+                        </span>
+                        <span className={styles.stepTitle}>{getTaskTitle(step)}</span>
+                        {step.summary && <span className={styles.stepSummary}>{step.summary}</span>}
+                      </div>
+                    </TreeNode>
+                  ))}
                 </div>
               )}
 
-              {/* 子代理执行：步骤的嵌套子节点 */}
+              {/* 子代理执行：分组标题 + 平铺容器 */}
               {subagentTools.length > 0 && (
-                <div className={styles.subTree}>
-                  <TreeNode className={styles.sectionNode}>
-                    <span className={styles.sectionTitle}>子代理执行</span>
-                  </TreeNode>
-                  <div className={styles.subTree}>
-                    {subagentTools.map((tool) => (
-                      <TreeNode
-                        key={tool.id}
-                        className={styles.subagentNode}
-                      >
-                        <div className={styles.subagentContent}>
-                          <SubagentExecutionContainer
-                            id={tool.id}
-                            name={tool.name}
-                            status={tool.status === 'error' ? 'error' : tool.status === 'completed' ? 'completed' : 'running'}
-                            statusLabel={tool.status === 'completed' ? '已完成' : tool.status === 'error' ? '异常' : '运行中'}
-                            logs={tool.subagent?.logs || tool.detail || ''}
-                            truncated={Boolean(tool.subagent?.truncated)}
-                            depth={1}
-                          />
-                        </div>
-                      </TreeNode>
-                    ))}
-                  </div>
+                <div className={styles.sectionBlock}>
+                  <div className={styles.sectionTitle}>子代理执行</div>
+                  {subagentTools.map((tool) => (
+                    <div key={tool.id} className={styles.subagentContent}>
+                      <SubagentExecutionContainer
+                        id={tool.id}
+                        name={tool.name}
+                        status={tool.status === 'error' ? 'error' : tool.status === 'completed' ? 'completed' : 'running'}
+                        statusLabel={tool.status === 'completed' ? '已完成' : tool.status === 'error' ? '异常' : '运行中'}
+                        logs={tool.subagent?.logs || tool.detail || ''}
+                        truncated={Boolean(tool.subagent?.truncated)}
+                        depth={1}
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* 工具调用：叶子节点 */}
+              {/* 工具调用：分组标题 + 平铺卡片 */}
               {regularTools.length > 0 && (
-                <div className={styles.subTree}>
-                  <TreeNode className={styles.sectionNode}>
-                    <span className={styles.sectionTitle}>工具调用</span>
-                  </TreeNode>
-                  <div className={styles.subTree}>
-                    {regularTools.map((tool) => (
-                      <TreeNode
-                        key={tool.id}
-                        className={styles.toolNode}
-                      >
-                        <div className={styles.toolContent}>
-                          <InlineToolCallCard
-                            tool={tool}
-                            onUndo={onUndo}
-                          />
-                        </div>
-                      </TreeNode>
-                    ))}
-                  </div>
+                <div className={styles.sectionBlock}>
+                  <div className={styles.sectionTitle}>工具调用</div>
+                  {regularTools.map((tool) => (
+                    <div key={tool.id} className={styles.toolContent}>
+                      <InlineToolCallCard
+                        tool={tool}
+                        onUndo={onUndo}
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           )
         })}
 
-        {/* 用量信息：底部节点 */}
+        {/* 用量信息：底部平铺 */}
         {usage && (
-          <div className={styles.subTree}>
-            <TreeNode className={styles.sectionNode}>
-              <span className={styles.sectionTitle}>用量信息</span>
-            </TreeNode>
-            <div className={styles.subTree}>
-              <TreeNode className={styles.usageNode}>
-                <div className={styles.usageGrid}>
-                  <span className={styles.usageItem}>输入 {formatUsageTokens(usage.input_tokens)}</span>
-                  <span className={styles.usageItem}>输出 {formatUsageTokens(usage.output_tokens)}</span>
-                  <span className={styles.usageItem}>
-                    成本 {formatUsageCost(usage.total_cost, usage.currency)}
-                  </span>
-                  {usage.duration_ms && (
-                    <span className={styles.usageItem}>耗时 {usage.duration_ms}ms</span>
-                  )}
-                </div>
-              </TreeNode>
+          <div className={styles.sectionBlock}>
+            <div className={styles.sectionTitle}>用量信息</div>
+            <div className={styles.usageGrid}>
+              <span className={styles.usageItem}>输入 {formatUsageTokens(usage.input_tokens)}</span>
+              <span className={styles.usageItem}>输出 {formatUsageTokens(usage.output_tokens)}</span>
+              <span className={styles.usageItem}>
+                成本 {formatUsageCost(usage.total_cost, usage.currency)}
+              </span>
+              {usage.duration_ms && (
+                <span className={styles.usageItem}>耗时 {usage.duration_ms}ms</span>
+              )}
             </div>
           </div>
         )}

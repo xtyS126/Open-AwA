@@ -235,6 +235,11 @@ select:focus-visible {
 }
 
 .page-transition-wrapper {
+  /* 撑满父容器并传递高度给子页面，避免 height:100% 失效导致滚动塌缩 */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   animation: pageFadeIn 300ms ease-out;
 }
 

@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, Integer
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from db.models import get_db, BehaviorLog, User

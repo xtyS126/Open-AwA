@@ -127,10 +127,18 @@ export function ToolParamViewer({ data, label, defaultExpanded = false }: ToolPa
 
   return (
     <div className={styles['container']}>
-      <button
-        type="button"
+      {/* 外层用 div 避免嵌套 button 触发 validateDOMNesting 警告 */}
+      <div
         className={styles['header']}
         onClick={() => setExpanded((prev) => !prev)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setExpanded((prev) => !prev)
+          }
+        }}
       >
         <span className={`${styles['chevron']} ${expanded ? styles['expanded'] : ''}`}>▶</span>
         <span className={styles['label']}>{label}</span>
@@ -145,7 +153,7 @@ export function ToolParamViewer({ data, label, defaultExpanded = false }: ToolPa
         >
           复制
         </button>
-      </button>
+      </div>
       {expanded && (
         <div className={styles['body']}>
           <pre className={styles['code']}>

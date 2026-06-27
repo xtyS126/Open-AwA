@@ -136,12 +136,21 @@ function compactSubagentContainers(toolEvents: ToolEventMeta[]): ToolEventMeta[]
 }
 
 function isSubagentFailure(state: unknown, summary: unknown): boolean {
+  // 仅依据后端 subagent_stop 事件的 state 字段判断失败。
+  // 不再用正则测试 summary 内容：summary 是子代理的回复文本，
+  // 内容不可预测（可能以 "Error:" 开头讨论错误处理），会导致误判。
+  // 后端 emit_subagent_stop_event 总是携带权威的 state 字段
+  // （completed/failed/error/stopped/timeout），真正失败时 state 会是 'failed'。
   const normalizedState = String(state || '').trim().toLowerCase()
-  const normalizedSummary = String(summary || '').trim()
   if (normalizedState === 'failed' || normalizedState === 'error') {
     return true
   }
-  return SUBAGENT_ERROR_PREFIX.test(normalizedSummary)
+  // state 为空时，用 summary 作为后备判断（仅匹配纯错误消息格式）
+  if (!normalizedState) {
+    const normalizedSummary = String(summary || '').trim()
+    return SUBAGENT_ERROR_PREFIX.test(normalizedSummary)
+  }
+  return false
 }
 
 function normalizeRuntimeSubagentStatus(state: unknown, hasError: boolean): TaskStatus {

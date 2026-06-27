@@ -77,17 +77,32 @@ describe('executionMeta', () => {
     )
   })
 
-  it('将 completed 但带 Error 前缀摘要的子代理识别为失败', () => {
+  it('依据 state 字段判定失败，不再因 summary 以 Error 开头而误判 completed 子代理', () => {
+    // state=completed 但 summary 以 "Error:" 开头（如子代理讨论错误处理），
+    // 不应被误判为失败——仅依据 state 字段判断
     const meta = applySubagentStop(createEmptyExecutionMeta(), {
       agentId: 'agt-2',
       agentType: 'coder',
       state: 'completed',
-      summary: 'Error: model unavailable',
+      summary: 'Error: model unavailable 这个问题需要处理',
+    })
+
+    expect(meta.toolEvents[0].status).toBe('completed')
+    expect(meta.toolEvents[0].subagent?.exitCode).toBe(0)
+    expect(meta.toolEvents[0].subagent?.errorText).toBeUndefined()
+  })
+
+  it('state 为 failed 时识别为失败', () => {
+    const meta = applySubagentStop(createEmptyExecutionMeta(), {
+      agentId: 'agt-3',
+      agentType: 'coder',
+      state: 'failed',
+      summary: 'KeyError: missing config',
     })
 
     expect(meta.toolEvents[0].status).toBe('error')
     expect(meta.toolEvents[0].subagent?.exitCode).toBe(1)
-    expect(meta.toolEvents[0].subagent?.errorText).toContain('model unavailable')
+    expect(meta.toolEvents[0].subagent?.errorText).toContain('KeyError')
   })
 
   it('在超过 20 个子代理容器时隐藏最早完成的容器', () => {
