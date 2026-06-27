@@ -558,9 +558,9 @@ class SkillExecutor:
             except Exception as e:
                 raise RuntimeError(f"LLM 调用错误: {e}")
 
-        # 无 LLM 客户端时返回占位响应（用于测试）
-        logger.warning("No LLM client configured, returning placeholder response")
-        return {'response': f"[占位响应] action={action!r}", 'model': model}
+        # 无 LLM 客户端时直接抛错，避免占位字符串流入业务流程
+        logger.warning("No LLM client configured for skill execution")
+        raise RuntimeError("LLM client not configured for skill execution")
 
     async def _execute_default_action(self, action: str, params: Dict) -> Any:
         """

@@ -420,9 +420,9 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
     """插件系统初始化：市场种子、插件发现、已启用插件加载。"""
     from db.models import SessionLocal
 
-    with profiler.step("marketplace_seed"):
+    with profiler.step("marketplace_discover"):
         from plugins.marketplace.registry import marketplace_registry
-        marketplace_registry.seed_built_in_plugins()
+        marketplace_registry.discover_from_plugins_dir(db_session_factory=SessionLocal)
 
     with profiler.step("plugin_discover"):
         from plugins.plugin_manager import PluginManager

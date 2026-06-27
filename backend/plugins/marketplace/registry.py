@@ -3,7 +3,11 @@
 负责插件的注册、检索、搜索与分类管理。
 """
 
+import json
+import os
+from pathlib import Path
 from typing import Dict, List, Optional
+
 from loguru import logger
 
 
@@ -94,76 +98,104 @@ class MarketplaceRegistry:
                 categories.add(cat)
         return sorted(categories)
 
-    def seed_built_in_plugins(self) -> None:
-        """初始化内置示例插件到注册表"""
-        built_in = [
-            {
-                "id": "hello-world",
-                "name": "Hello World",
-                "description": "最简示例插件，演示插件生命周期与日志输出",
-                "author": "Open-AwA Team",
-                "version": "1.0.0",
-                "category": "tool",
-                "tags": ["示例", "入门", "工具"],
-                "download_url": "",
-                "icon": "",
-                "install_count": 128,
-            },
-            {
-                "id": "theme-switcher",
-                "name": "Theme Switcher",
-                "description": "演示存储API与UI扩展点的主题切换插件",
-                "author": "Open-AwA Team",
-                "version": "1.0.0",
-                "category": "theme",
-                "tags": ["主题", "UI", "外观"],
-                "download_url": "",
-                "icon": "",
-                "install_count": 256,
-            },
-            {
-                "id": "data-chart",
-                "name": "Data Chart",
-                "description": "演示API拦截与权限申请的数据图表插件",
-                "author": "Open-AwA Team",
-                "version": "1.0.0",
-                "category": "data",
-                "tags": ["数据", "图表", "可视化"],
-                "download_url": "",
-                "icon": "",
-                "install_count": 512,
-            },
-            {
-                "id": "user-profile-chat",
-                "name": "User Profile Chat",
-                "description": "基于聊天记录分析并生成用户画像的插件，可识别用户兴趣偏好、交流风格和关注领域",
-                "author": "Open-AwA Team",
-                "version": "1.0.0",
-                "category": "tool",
-                "tags": ["用户画像", "聊天分析", "AI"],
-                "download_url": "",
-                "icon": "",
-                "install_count": 64,
-            },
-            {
-                "id": "user-profile-extractor",
-                "name": "User Profile Extractor",
-                "description": "基于LLM的智能用户画像提取插件，从对话历史中自动识别身份特征、偏好、知识水平、沟通风格等多维画像信息，支持置信度模型和生命周期管理",
-                "author": "Open-AwA Team",
-                "version": "1.0.0",
-                "category": "tool",
-                "tags": ["用户画像", "LLM", "智能提取", "置信度"],
-                "download_url": "",
-                "icon": "",
-                "install_count": 0,
-            },
-        ]
+    def discover_from_plugins_dir(
+        self,
+        plugins_dir: Optional[str] = None,
+        db_session_factory=None,
+    ) -> None:
+        """
+        扫描插件目录下的所有 manifest.json，从真实清单动态构造市场插件元数据。
 
-        for plugin_meta in built_in:
-            self.register_plugin(plugin_meta)
+        Args:
+            plugins_dir: 插件目录路径。默认为 <repo_root>/plugins。
+            db_session_factory: SQLAlchemy Session 工厂，用于查询 PluginDownloadLog 统计真实 install_count。
+                若为 None 则所有插件 install_count 为 0。
+        """
+        # 解析插件目录，默认为仓库根目录下的 plugins
+        if plugins_dir is None:
+            plugins_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..", "plugins")
+            )
 
-        logger.bind(event="marketplace_seed", module="marketplace").info(
-            f"已注册 {len(built_in)} 个内置示例插件"
+        plugins_path = Path(plugins_dir)
+        if not plugins_path.exists() or not plugins_path.is_dir():
+            logger.bind(event="marketplace_discover", module="marketplace").warning(
+                f"插件目录不存在或非目录: {plugins_dir}"
+            )
+            return
+
+        # 统计真实 install_count：按 plugin_id 聚合 status='success' 的下载数
+        install_counts: Dict[str, int] = {}
+        if db_session_factory is not None:
+            session = db_session_factory()
+            try:
+                # 延迟导入避免循环依赖
+                from db.models import PluginDownloadLog
+                from sqlalchemy import func
+
+                rows = (
+                    session.query(
+                        PluginDownloadLog.plugin_id,
+                        func.count(PluginDownloadLog.id).label("cnt"),
+                    )
+                    .filter(PluginDownloadLog.status == "success")
+                    .group_by(PluginDownloadLog.plugin_id)
+                    .all()
+                )
+                install_counts = {row.plugin_id: int(row.cnt) for row in rows}
+            except Exception as e:
+                # 启动边界：DB 查询失败不应阻塞市场发现，install_count 降级为 0
+                logger.bind(event="marketplace_discover", module="marketplace").warning(
+                    f"查询插件下载统计失败，install_count 将全部置 0: {e}"
+                )
+            finally:
+                session.close()
+
+        # 遍历插件子目录，从 manifest.json 构造元数据
+        registered = 0
+        for sub in plugins_path.iterdir():
+            if not sub.is_dir():
+                continue
+            if sub.name == "system-tools":
+                # system-tools 由 DB 单独管理，跳过市场注册
+                continue
+            manifest_file = sub / "manifest.json"
+            if not manifest_file.exists():
+                continue
+            try:
+                with manifest_file.open("r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                plugin_id = manifest.get("name")
+                if not plugin_id:
+                    logger.bind(
+                        event="marketplace_discover",
+                        module="marketplace",
+                        plugin_dir=sub.name,
+                    ).warning(f"manifest.json 缺少 name 字段，跳过: {sub.name}")
+                    continue
+                metadata = {
+                    "id": plugin_id,
+                    "name": manifest.get("name"),
+                    "version": manifest.get("version", "1.0.0"),
+                    "description": manifest.get("description", ""),
+                    "author": manifest.get("author", "Unknown"),
+                    "category": manifest.get("category", "other"),
+                    "tags": manifest.get("tags", []),
+                    "download_url": "",
+                    "icon": "",
+                    "install_count": int(install_counts.get(plugin_id, 0)),
+                }
+                self.register_plugin(metadata)
+                registered += 1
+            except (json.JSONDecodeError, OSError, KeyError, ValueError, TypeError) as e:
+                logger.bind(
+                    event="marketplace_discover",
+                    module="marketplace",
+                    plugin_dir=sub.name,
+                ).warning(f"解析 manifest.json 失败，跳过插件 {sub.name}: {e}")
+
+        logger.bind(event="marketplace_discover", module="marketplace").info(
+            f"已从真实清单发现 {registered} 个插件"
         )
 
 
