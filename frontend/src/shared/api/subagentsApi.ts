@@ -277,7 +277,9 @@ export const subagentsApi = {
   /** 列出当前用户的图定义（含内置图） */
   async listDefinitions(): Promise<{ definitions: SubagentDefinitionResponse[]; count: number }> {
     const { data } = await api.get('/subagents/definitions')
-    return data
+    // 后端直接返回数组（List[SubagentDefinitionResponse]），前端适配为 { definitions, count }
+    const list = Array.isArray(data) ? data : (data?.definitions ?? [])
+    return { definitions: list, count: list.length }
   },
 
   /** 创建图定义 */

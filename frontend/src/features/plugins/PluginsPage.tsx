@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   AtSign,
@@ -25,6 +25,7 @@ import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { StatusBadge } from '@/shared/components/ui'
 import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
+import PluginSectionNav from '@/features/plugins/PluginSectionNav'
 import {
   usePluginDelete,
   usePluginImport,
@@ -458,30 +459,25 @@ function PluginsPage() {
 
   if (loading) {
     return (
-      <PageLayout className={styles['plugins-page']}>
+      <PageLayout
+        title="插件管理"
+        secondarySidebar={<PluginSectionNav />}
+        className={styles['plugins-page']}
+      >
         <div className={styles['loading']}>加载中...</div>
       </PageLayout>
     )
   }
 
   const selectedPermissionStatus = selectedPlugin ? permissionStatusMap[selectedPlugin.id] : undefined
-  const tabClass = ({ isActive }: { isActive: boolean }) =>
-    `${styles['tab']} ${isActive ? styles['tab-active'] : ''}`.trim()
 
   return (
-    <PageLayout className={styles['plugins-page']}>
-      {/* 页面头部 —— 图标 + 标题 + 副标题 + 操作按钮 */}
-      <header className={styles['page-header']}>
-        <div className={styles['header-left']}>
-          <div className={styles['header-icon']}>
-            <Puzzle size={20} />
-          </div>
-          <div>
-            <h1 className={styles['header-title']}>插件管理</h1>
-            <p className={styles['header-subtitle']}>管理已安装插件、探索市场与配置</p>
-          </div>
-        </div>
-        <div className={styles['header-actions']}>
+    <PageLayout
+      title="插件管理"
+      secondarySidebar={<PluginSectionNav />}
+      className={styles['plugins-page']}
+      actions={
+        <>
           <input
             type="file"
             ref={fileInputRef}
@@ -505,21 +501,9 @@ function PluginsPage() {
             <Plus size={16} />
             {importing ? '导入中...' : '安装插件'}
           </button>
-        </div>
-      </header>
-
-      {/* Tab 栏 —— 已安装 / 市场探索 / 配置 */}
-      <nav className={styles['tab-bar']} aria-label="插件模块导航">
-        <NavLink to="/plugins/manage" end className={tabClass}>
-          已安装
-        </NavLink>
-        <NavLink to="/plugins/marketplace" className={tabClass}>
-          市场探索
-        </NavLink>
-        <NavLink to="/plugins/config/default" className={tabClass}>
-          配置
-        </NavLink>
-      </nav>
+        </>
+      }
+    >
 
       {/* 统计概览行 —— 已安装 / 已启用 / 已停用 */}
       <div className={styles['stats-row']}>

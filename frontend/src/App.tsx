@@ -37,7 +37,6 @@ const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePag
 const CodingPage = React.lazy(() => import('@/features/coding/CodingPage'))
 const InboxPage = React.lazy(() => import('@/features/inbox/InboxPage'))
 const SkillMarketPage = React.lazy(() => import('@/features/skills/SkillMarketPage'))
-const AgentListPage = React.lazy(() => import('@/features/agents/AgentListPage'))
 const RolesPage = React.lazy(() => import('@/features/roles/RolesPage'))
 const RoleMarketPage = React.lazy(() => import('@/features/marketplace/RoleMarketPage'))
 const TtsPage = React.lazy(() => import('@/features/tts/TtsPage'))
@@ -118,7 +117,6 @@ function AppRoutes() {
               <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
               <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />
               <Route path="/inbox" element={<ErrorBoundary name="Inbox"><InboxPage /></ErrorBoundary>} />
-              <Route path="/agents" element={<ErrorBoundary name="Agents"><AgentListPage /></ErrorBoundary>} />
               <Route path="/roles" element={<ErrorBoundary name="Roles"><RolesPage /></ErrorBoundary>} />
               <Route path="/role-market" element={<ErrorBoundary name="RoleMarket"><RoleMarketPage /></ErrorBoundary>} />
               <Route path="/data" element={<ErrorBoundary name="Data"><DataDashboard /></ErrorBoundary>} />

@@ -73,7 +73,6 @@ const renderIcon = (type: string, size = 18) => {
       title: t('sidebar.agent'),
       items: [
         { path: '/tts', label: t('sidebar.tts') || 'TTS', iconType: 'skills' as const },
-        { path: '/agents', label: t('sidebar.agents') || 'Agents', iconType: 'skills' as const },
         { path: '/roles', label: t('sidebar.roles') || '角色管理', iconType: 'roles' as const },
         { path: '/role-market', label: t('sidebar.roleMarket') || '角色市场', iconType: 'roleMarket' as const },
         { path: '/data', label: t('sidebar.data') || '数据看板', iconType: 'data' as const },

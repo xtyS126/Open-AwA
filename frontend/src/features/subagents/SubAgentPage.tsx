@@ -499,7 +499,7 @@ export default function SubAgentPage() {
 
   /** 当前选中的图定义对象 */
   const selectedDef = useMemo(
-    () => definitions.find(d => d.id === selectedDefId) ?? null,
+    () => (Array.isArray(definitions) ? definitions : []).find(d => d.id === selectedDefId) ?? null,
     [definitions, selectedDefId],
   )
 
