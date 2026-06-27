@@ -308,7 +308,9 @@ export const subagentsApi = {
   async listExecutionHistory(graphName?: string): Promise<{ history: ExecutionHistoryResponse[]; count: number }> {
     const params = graphName ? { graph_name: graphName } : {}
     const { data } = await api.get('/subagents/history', { params })
-    return data
+    // 后端直接返回数组（List[ExecutionHistoryResponse]），前端适配为 { history, count }
+    const list = Array.isArray(data) ? data : (data?.history ?? [])
+    return { history: list, count: list.length }
   },
 
   /** 获取执行历史详情 */

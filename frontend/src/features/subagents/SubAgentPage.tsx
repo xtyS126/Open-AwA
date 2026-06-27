@@ -511,7 +511,8 @@ export default function SubAgentPage() {
 
   /** 历史记录中的图名称选项（去重） */
   const graphNameOptions = useMemo(() => {
-    const set = new Set(history.map(h => h.graph_name))
+    const list = Array.isArray(history) ? history : []
+    const set = new Set(list.map(h => h.graph_name))
     return Array.from(set)
   }, [history])
 
