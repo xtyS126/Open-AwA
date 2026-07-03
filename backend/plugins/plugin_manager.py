@@ -157,13 +157,15 @@ class PluginManager:
     def _get_default_plugins_dir(self) -> str:
         """
         获取默认的插件目录路径，若不存在则自动创建。
-        
+
+        plugin_manager.py 本身位于 backend/plugins/ 目录下，
+        因此默认插件目录即为当前文件所在目录（backend/plugins/），
+        内置插件（如 openbiliclaw_builtin）与用户安装的插件均在此目录下。
+
         Returns:
             插件目录的绝对路径。
         """
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        repo_root_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
-        default_dir = os.path.join(repo_root_dir, "plugins")
+        default_dir = os.path.dirname(os.path.abspath(__file__))
         if not os.path.exists(default_dir):
             os.makedirs(default_dir, exist_ok=True)
             logger.info(f"Created default plugins directory: {default_dir}")

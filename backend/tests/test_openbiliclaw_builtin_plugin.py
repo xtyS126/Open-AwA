@@ -1,7 +1,7 @@
 """OpenBiliClaw 内置插件入口类的单元测试。
 
 覆盖三个核心场景：
-1. manifest.json 字段解析：name/version/source/uninstallable 等关键字段
+1. manifest.json 字段解析：name/version/pluginApiVersion/extensions 等关键字段
 2. 依赖检测逻辑：mock importlib.util.find_spec 验证关键依赖缺失时抛
    BuiltinPluginDependencyError，可选依赖缺失仅记录告警
 3. 技能转换：initialize 成功后 get_tools 返回 10 个工具，
@@ -55,23 +55,23 @@ def _load_manifest() -> Dict[str, Any]:
 
 
 def test_manifest_has_correct_name_and_version():
-    """manifest 应声明正确的 name、version、source 与 uninstallable 字段。"""
+    """manifest 应声明正确的 name、version、pluginApiVersion 与 extensions 字段。"""
     manifest = _load_manifest()
 
     assert manifest["name"] == "openbiliclaw-builtin"
     assert manifest["version"] == "0.3.147"
-    assert manifest["source"] == "builtin"
-    assert manifest["uninstallable"] is True
+    assert manifest["pluginApiVersion"] == "1.0.0"
+    assert isinstance(manifest["extensions"], list) and len(manifest["extensions"]) >= 1
 
 
 def test_manifest_declares_required_fields():
-    """manifest 应包含 description、author、category 等基础描述字段。"""
+    """manifest 应包含 description、author、permissions 等基础描述字段。"""
     manifest = _load_manifest()
 
     assert "description" in manifest and isinstance(manifest["description"], str)
     assert manifest["description"].strip() != ""
     assert "author" in manifest and isinstance(manifest["author"], str)
-    assert "category" in manifest and isinstance(manifest["category"], str)
+    assert "permissions" in manifest and isinstance(manifest["permissions"], list)
 
 
 def test_plugin_class_attributes_match_manifest():

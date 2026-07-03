@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "OpenAwA Cookie 助手",
+  "version": "1.1.0",
+  "description": "OpenAwA 浏览器扩展 - 获取 B 站/X/抖音等平台 Cookie 并同步到 OpenAwA 后端的 openbiliclaw-builtin 插件配置",
+  "permissions": [
+    "activeTab",
+    "cookies",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.bilibili.com/*",
+    "*://*.x.com/*",
+    "*://*.twitter.com/*",
+    "*://*.douyin.com/*",
+    "*://*.xiaohongshu.com/*",
+    "*://*.youtube.com/*",
+    "*://*.zhihu.com/*",
+    "*://*.reddit.com/*",
+    "*://*.redd.it/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import PluginsPage from '@/features/plugins/PluginsPage'
 import { pluginsAPI } from '@/shared/api/api'
+import { getPlugins, searchPlugins, installPlugin, getPluginRating } from '@/features/plugins/marketplaceApi'
 
 // 拦截 useNavigate，便于在内置插件"设置"按钮跳转测试中断言路由
 const mockNavigate = vi.fn()
@@ -28,7 +29,16 @@ vi.mock('@/shared/api/api', () => ({
     importFromUrl: vi.fn(),
     // discover 用于本地插件扫描，mock 后避免触发真实网络请求
     discover: vi.fn(),
+    install: vi.fn(),
   },
+}))
+
+vi.mock('@/features/plugins/marketplaceApi', () => ({
+  getPlugins: vi.fn(),
+  searchPlugins: vi.fn(),
+  installPlugin: vi.fn(),
+  // 评分摘要查询：默认返回空评分，避免市场 Tab loadRatings 触发未处理拒绝
+  getPluginRating: vi.fn(),
 }))
 
 const getAllMock = pluginsAPI.getAll as ReturnType<typeof vi.fn>
@@ -187,83 +197,6 @@ describe('PluginsPage permissions', () => {
       expect(pluginsAPI.uninstall).toHaveBeenCalledWith('plugin-1')
       expect(screen.getByText('已批量删除 1 个插件')).toBeInTheDocument()
     })
-  })
-
-  it('应在本地导入时校验 zip 扩展名与文件大小', async () => {
-    const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
-
-    await waitFor(() => {
-      expect(pluginsAPI.getAll).toHaveBeenCalled()
-    })
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
-    expect(fileInput).toBeInTheDocument()
-
-    const invalidExtensionFile = new File(['content'], 'plugin.txt', { type: 'text/plain' })
-    fireEvent.change(fileInput, { target: { files: [invalidExtensionFile] } })
-
-    expect(globalThis.alert).toHaveBeenCalledWith('只支持 .zip 格式的插件包')
-    expect(pluginsAPI.upload).not.toHaveBeenCalled()
-
-    const oversizedFile = new File(['content'], 'plugin.zip', { type: 'application/zip' })
-    Object.defineProperty(oversizedFile, 'size', { value: 51 * 1024 * 1024 })
-    fireEvent.change(fileInput, { target: { files: [oversizedFile] } })
-
-    expect(globalThis.alert).toHaveBeenCalledWith('插件包大小无效或已超过 50MB 限制')
-    expect(pluginsAPI.upload).not.toHaveBeenCalled()
-  })
-
-  it('应在远程导入时去除 URL 首尾空白并成功调用接口', async () => {
-    importFromUrlMock.mockResolvedValue({ data: { message: 'ok' } })
-
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
-
-    await waitFor(() => {
-      expect(pluginsAPI.getAll).toHaveBeenCalled()
-    })
-
-    const urlInput = screen.getByPlaceholderText('输入远程 ZIP URL（支持白名单域名）')
-    fireEvent.change(urlInput, { target: { value: '   https://example.com/plugin.zip   ' } })
-    fireEvent.click(screen.getByText('URL 导入'))
-
-    await waitFor(() => {
-      expect(pluginsAPI.importFromUrl).toHaveBeenCalledWith('https://example.com/plugin.zip', 30)
-      expect(screen.getByText('远程 URL 导入成功')).toBeInTheDocument()
-    })
-  })
-
-  it('应在本地 zip 导入成功后刷新列表并提示成功', async () => {
-    uploadMock.mockResolvedValue({ data: { message: 'ok' } })
-    const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
-
-    await waitFor(() => {
-      expect(pluginsAPI.getAll).toHaveBeenCalled()
-    })
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
-    const zipFile = new File(['content'], 'demo-plugin.zip', { type: 'application/zip' })
-    fireEvent.change(fileInput, { target: { files: [zipFile] } })
-
-    await waitFor(() => {
-      expect(pluginsAPI.upload).toHaveBeenCalledTimes(1)
-      expect(screen.getByText('插件导入成功')).toBeInTheDocument()
-    })
-  })
-
-  it('应在远程 URL 为空时给出提示且不发起导入请求', async () => {
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
-
-    await waitFor(() => {
-      expect(pluginsAPI.getAll).toHaveBeenCalled()
-    })
-
-    fireEvent.change(screen.getByPlaceholderText('输入远程 ZIP URL（支持白名单域名）'), {
-      target: { value: '   ' },
-    })
-    fireEvent.click(screen.getByText('URL 导入'))
-
-    expect(pluginsAPI.importFromUrl).not.toHaveBeenCalled()
-    expect(screen.getByText('请输入远程 URL')).toBeInTheDocument()
   })
 
   it('应支持从 config 回退解析作者与简介', async () => {
@@ -561,5 +494,465 @@ describe('PluginsPage builtin plugins section', () => {
       fireEvent.click(configButton)
       expect(mockNavigate).toHaveBeenCalledWith('/plugins/config/builtin-1')
     })
+  })
+})
+
+// ============================================================================
+// 市场 Tab 测试 —— 从 MarketplacePage.test.tsx 迁移
+// 合并后通过点击「市场」Tab 切换至市场视图
+// ============================================================================
+
+describe('PluginsPage 市场 Tab', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('alert', vi.fn())
+    ;(getPlugins as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        plugins: [
+          {
+            id: 'plugin-1',
+            name: 'Alpha Plugin',
+            description: 'alpha desc',
+            author: 'alpha-author',
+            version: '1.0.0',
+            category: 'tool',
+            tags: ['tool'],
+            download_url: 'https://example.com/alpha.zip',
+            icon: '',
+            install_count: 10,
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 12,
+      },
+    })
+    ;(searchPlugins as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        plugins: [
+          {
+            id: 'plugin-2',
+            name: 'Search Plugin',
+            description: 'search desc',
+            author: 'search-author',
+            version: '1.2.3',
+            category: 'tool',
+            tags: ['search'],
+            download_url: 'https://example.com/search.zip',
+            icon: '',
+            install_count: 3,
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 12,
+      },
+    })
+    ;(installPlugin as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ok: true } })
+    // 评分摘要查询：默认返回空评分（total_count=0 时组件渲染"暂无评分"）
+    ;(getPluginRating as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { average_score: 0, total_count: 0, distribution: {}, user_score: null },
+    })
+    // 本地插件相关 mock —— 默认空数据，避免本地插件区域渲染干扰断言
+    getAllMock.mockResolvedValue({ data: [] })
+    discoverMock.mockResolvedValue({ data: [] })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  /** 切换到市场 Tab */
+  function switchToMarket() {
+    fireEvent.click(screen.getByText('市场'))
+  }
+
+  it('应加载市场插件并支持分类筛选', async () => {
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    // 先等待已安装 Tab 渲染完成
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    // 切换到市场 Tab
+    switchToMarket()
+
+    await waitFor(() => {
+      expect(getPlugins).toHaveBeenCalledWith({ category: undefined, page: 1, page_size: 12 })
+      expect(screen.getByText('Alpha Plugin')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('工具'))
+
+    await waitFor(() => {
+      expect(getPlugins).toHaveBeenLastCalledWith({ category: 'tool', page: 1, page_size: 12 })
+    })
+  })
+
+  it('应支持搜索并展示搜索结果', async () => {
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    switchToMarket()
+
+    await waitFor(() => {
+      expect(screen.getByText('Alpha Plugin')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('搜索插件名称、描述或标签...'), {
+      target: { value: 'search keyword' },
+    })
+    fireEvent.click(screen.getByText('搜索'))
+
+    await waitFor(() => {
+      expect(searchPlugins).toHaveBeenCalled()
+    })
+  })
+
+  it('应在安装成功后显示已安装状态', async () => {
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    switchToMarket()
+
+    await waitFor(() => {
+      // 市场卡片中"安装"按钮应存在
+      expect(screen.getByText('安装')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('安装'))
+
+    await waitFor(() => {
+      expect(installPlugin).toHaveBeenCalledWith('plugin-1')
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+  })
+
+  it('应在安装失败时提示错误', async () => {
+    ;(installPlugin as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
+      response: { data: { detail: '服务异常' } },
+    })
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    switchToMarket()
+
+    await waitFor(() => {
+      expect(screen.getByText('安装')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('安装'))
+
+    await waitFor(() => {
+      expect(globalThis.alert).toHaveBeenCalledWith('安装失败: 服务异常')
+    })
+  })
+})
+
+// ============================================================================
+// 市场 Tab 内置插件过滤测试
+// 前端过滤逻辑：visiblePlugins = plugins.filter((p) => p.source !== 'builtin')
+// 即使后端返回内置插件，前端也应过滤掉不展示
+// ============================================================================
+
+describe('PluginsPage 市场 Tab 内置插件过滤', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('alert', vi.fn())
+    // 评分摘要查询：默认返回空评分，避免 loadRatings 未处理拒绝污染测试输出
+    ;(getPluginRating as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { average_score: 0, total_count: 0, distribution: {}, user_score: null },
+    })
+    // 本地插件相关 mock —— 默认空数据，避免本地插件区域渲染干扰断言
+    getAllMock.mockResolvedValue({ data: [] })
+    discoverMock.mockResolvedValue({ data: [] })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('does not show builtin plugins in marketplace: 内置插件不显示在市场列表', async () => {
+    ;(getPlugins as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        plugins: [
+          {
+            id: 'user-1',
+            name: 'User Plugin',
+            description: 'user desc',
+            author: 'user-author',
+            version: '1.0.0',
+            category: 'tool',
+            tags: ['tool'],
+            download_url: 'https://example.com/user.zip',
+            icon: '',
+            install_count: 5,
+            source: 'user',
+          },
+          {
+            id: 'builtin-1',
+            name: 'Builtin Plugin',
+            description: 'builtin desc',
+            author: 'system',
+            version: '0.3.147',
+            category: 'builtin',
+            tags: [],
+            download_url: '',
+            icon: '',
+            install_count: 0,
+            source: 'builtin',
+          },
+        ],
+        total: 2,
+        page: 1,
+        page_size: 12,
+      },
+    })
+
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    await waitFor(() => {
+      expect(screen.getByText('User Plugin')).toBeInTheDocument()
+    })
+    // 内置插件应被前端过滤掉，不出现在市场列表中
+    expect(screen.queryByText('Builtin Plugin')).not.toBeInTheDocument()
+  })
+
+  it('shows all user plugins in marketplace: 用户插件全部展示', async () => {
+    ;(getPlugins as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        plugins: [
+          {
+            id: 'u1',
+            name: 'User Alpha',
+            description: 'alpha desc',
+            author: 'author-a',
+            version: '1.0.0',
+            category: 'tool',
+            tags: [],
+            download_url: '',
+            icon: '',
+            install_count: 0,
+            source: 'user',
+          },
+          {
+            id: 'u2',
+            name: 'User Beta',
+            description: 'beta desc',
+            author: 'author-b',
+            version: '2.0.0',
+            category: 'tool',
+            tags: [],
+            download_url: '',
+            icon: '',
+            install_count: 0,
+            source: 'user',
+          },
+        ],
+        total: 2,
+        page: 1,
+        page_size: 12,
+      },
+    })
+
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    await waitFor(() => {
+      // 两个用户插件都应展示在市场列表中
+      expect(screen.getByText('User Alpha')).toBeInTheDocument()
+      expect(screen.getByText('User Beta')).toBeInTheDocument()
+    })
+  })
+
+  it('shows empty state when only builtin plugins exist: 仅内置插件时显示空状态', async () => {
+    ;(getPlugins as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        plugins: [
+          {
+            id: 'b1',
+            name: 'Builtin Only',
+            description: 'should be hidden',
+            author: 'system',
+            version: '1.0.0',
+            category: 'builtin',
+            tags: [],
+            download_url: '',
+            icon: '',
+            install_count: 0,
+            source: 'builtin',
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 12,
+      },
+    })
+
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    await waitFor(() => {
+      // 内置插件被过滤后 visiblePlugins 为空，触发 EmptyState 渲染
+      expect(screen.getByText('未找到匹配的插件')).toBeInTheDocument()
+      expect(screen.getByText('尝试更换搜索关键词或筛选条件')).toBeInTheDocument()
+    })
+    // 内置插件名称不应出现在页面中
+    expect(screen.queryByText('Builtin Only')).not.toBeInTheDocument()
+  })
+})
+
+// ============================================================================
+// 市场 Tab 本地安装工具栏测试 —— 从 MarketplacePage.test.tsx 迁移
+// 职责：市场 Tab 集中承载 ZIP 上传 / URL 导入 / 本地可用插件扫描
+// 覆盖：ZIP 扩展名与大小校验、URL 首尾空白处理、zip 导入成功、URL 空值校验
+// ============================================================================
+
+describe('PluginsPage 市场 Tab 本地安装工具栏', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('alert', vi.fn())
+    // 市场列表返回空，避免在线插件卡片干扰本地安装断言
+    ;(getPlugins as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { plugins: [], total: 0, page: 1, page_size: 12 },
+    })
+    ;(getPluginRating as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { average_score: 0, total_count: 0, distribution: {}, user_score: null },
+    })
+    // 已安装插件列表与本地发现均返回空，避免本地可用插件区域渲染干扰
+    getAllMock.mockResolvedValue({ data: [] })
+    discoverMock.mockResolvedValue({ data: [] })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('应在本地导入时校验 zip 扩展名与文件大小', async () => {
+    const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    // 等待市场 Tab 渲染（file input 出现）
+    await waitFor(() => {
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+      expect(fileInput).toBeInTheDocument()
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+
+    const invalidExtensionFile = new File(['content'], 'plugin.txt', { type: 'text/plain' })
+    fireEvent.change(fileInput, { target: { files: [invalidExtensionFile] } })
+
+    expect(globalThis.alert).toHaveBeenCalledWith('只支持 .zip 格式的插件包')
+    expect(pluginsAPI.upload).not.toHaveBeenCalled()
+
+    const oversizedFile = new File(['content'], 'plugin.zip', { type: 'application/zip' })
+    Object.defineProperty(oversizedFile, 'size', { value: 51 * 1024 * 1024 })
+    fireEvent.change(fileInput, { target: { files: [oversizedFile] } })
+
+    expect(globalThis.alert).toHaveBeenCalledWith('插件包大小无效或已超过 50MB 限制')
+    expect(pluginsAPI.upload).not.toHaveBeenCalled()
+  })
+
+  it('应在远程导入时去除 URL 首尾空白并成功调用接口', async () => {
+    importFromUrlMock.mockResolvedValue({ data: { message: 'ok' } })
+
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('输入远程 ZIP URL（支持白名单域名）')).toBeInTheDocument()
+    })
+
+    const urlInput = screen.getByPlaceholderText('输入远程 ZIP URL（支持白名单域名）')
+    fireEvent.change(urlInput, { target: { value: '   https://example.com/plugin.zip   ' } })
+    fireEvent.click(screen.getByText('URL 导入'))
+
+    await waitFor(() => {
+      expect(pluginsAPI.importFromUrl).toHaveBeenCalledWith('https://example.com/plugin.zip', 30)
+      expect(screen.getByText('远程 URL 导入成功')).toBeInTheDocument()
+    })
+  })
+
+  it('应在本地 zip 导入成功后刷新列表并提示成功', async () => {
+    uploadMock.mockResolvedValue({ data: { message: 'ok' } })
+    const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    await waitFor(() => {
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+      expect(fileInput).toBeInTheDocument()
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['content'], 'demo-plugin.zip', { type: 'application/zip' })
+    fireEvent.change(fileInput, { target: { files: [zipFile] } })
+
+    await waitFor(() => {
+      expect(pluginsAPI.upload).toHaveBeenCalledTimes(1)
+      expect(screen.getByText('插件导入成功')).toBeInTheDocument()
+    })
+  })
+
+  it('应在远程 URL 为空时给出提示且不发起导入请求', async () => {
+    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('市场'))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('输入远程 ZIP URL（支持白名单域名）')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('输入远程 ZIP URL（支持白名单域名）'), {
+      target: { value: '   ' },
+    })
+    fireEvent.click(screen.getByText('URL 导入'))
+
+    expect(pluginsAPI.importFromUrl).not.toHaveBeenCalled()
+    expect(screen.getByText('请输入远程 URL')).toBeInTheDocument()
   })
 })

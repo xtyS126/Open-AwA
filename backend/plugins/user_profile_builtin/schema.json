@@ -1,0 +1,182 @@
+{
+  "type": "object",
+  "title": "用户画像插件配置",
+  "description": "配置画像提取、置信度衰减、上下文注入与生命周期管理的运行参数。LLM 提取调用受 executor 全局配置约束，此处仅控制画像相关参数。",
+  "properties": {
+    "extraction_max_turns": {
+      "type": "number",
+      "title": "单次提取最大对话轮次",
+      "description": "单次画像提取分析的对话历史最大轮数，超过则截断取最近 N 轮",
+      "default": 50,
+      "minimum": 5,
+      "maximum": 500
+    },
+    "extraction_max_behavior_logs": {
+      "type": "number",
+      "title": "单次提取最大行为日志数",
+      "description": "单次画像提取分析的行为日志最大条数",
+      "default": 200,
+      "minimum": 10,
+      "maximum": 5000
+    },
+    "extraction_max_existing_context_chars": {
+      "type": "number",
+      "title": "已有画像上下文最大字符数",
+      "description": "提取时注入 Prompt 的已有画像上下文长度上限，避免 token 超限",
+      "default": 3000,
+      "minimum": 500,
+      "maximum": 20000
+    },
+    "extraction_default_model": {
+      "type": "string",
+      "title": "默认提取 LLM 模型",
+      "description": "未显式指定 model_name 时使用的 LLM 模型标识",
+      "default": "gpt-4o-mini",
+      "x-component": "input",
+      "maxLength": 128
+    },
+    "extraction_trigger_auto": {
+      "type": "boolean",
+      "title": "启用自动触发",
+      "description": "开启后在对话结束时自动触发画像提取",
+      "default": true,
+      "x-component": "switch"
+    },
+    "extraction_auto_interval_turns": {
+      "type": "number",
+      "title": "自动触发间隔轮次",
+      "description": "每多少轮对话自动触发一次画像提取",
+      "default": 20,
+      "minimum": 1,
+      "maximum": 200
+    },
+    "confidence_high_threshold": {
+      "type": "number",
+      "title": "高置信度阈值",
+      "description": "置信度高于此值标记为「高」（绿色徽章）",
+      "default": 0.75,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_medium_threshold": {
+      "type": "number",
+      "title": "中置信度阈值",
+      "description": "置信度高于此值标记为「中」（黄色徽章），低于则标记为「低」",
+      "default": 0.40,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_archive_threshold": {
+      "type": "number",
+      "title": "归档置信度阈值",
+      "description": "有效置信度低于此值的事实将被归档（is_active=False）",
+      "default": 0.15,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_explicit_base": {
+      "type": "number",
+      "title": "显式来源基础置信度",
+      "description": "用户明确告知的事实的基础置信度（如「我是 Java 开发者」）",
+      "default": 0.95,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_manual_base": {
+      "type": "number",
+      "title": "手动添加基础置信度",
+      "description": "通过 API 手动添加事实的基础置信度",
+      "default": 0.90,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_feedback_base": {
+      "type": "number",
+      "title": "反馈来源基础置信度",
+      "description": "通过用户反馈推断的事实的基础置信度",
+      "default": 0.80,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_inferred_base": {
+      "type": "number",
+      "title": "推断来源基础置信度",
+      "description": "LLM 从对话中推断的事实的基础置信度",
+      "default": 0.50,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_behavioral_base": {
+      "type": "number",
+      "title": "行为来源基础置信度",
+      "description": "从行为日志推断的事实的基础置信度",
+      "default": 0.55,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "injection_max_context_chars": {
+      "type": "number",
+      "title": "注入上下文最大字符数",
+      "description": "注入到 Agent 系统上下文的画像文本最大长度，超过则截断",
+      "default": 3000,
+      "minimum": 500,
+      "maximum": 20000
+    },
+    "injection_max_facts_per_category": {
+      "type": "number",
+      "title": "每类最大注入事实数",
+      "description": "注入上下文时每个画像类别最多包含的事实条数",
+      "default": 15,
+      "minimum": 1,
+      "maximum": 100
+    },
+    "injection_min_confidence": {
+      "type": "number",
+      "title": "注入最低置信度",
+      "description": "仅注入置信度高于此值的事实到 Agent 上下文",
+      "default": 0.30,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "lifecycle_archived_retention_days": {
+      "type": "number",
+      "title": "归档事实保留天数",
+      "description": "归档后保留的天数，超过则永久删除",
+      "default": 90,
+      "minimum": 1,
+      "maximum": 3650
+    },
+    "lifecycle_refresh_interval_hours": {
+      "type": "number",
+      "title": "生命周期刷新间隔（小时）",
+      "description": "定期刷新所有事实有效置信度的时间间隔",
+      "default": 24,
+      "minimum": 1,
+      "maximum": 720
+    },
+    "lifecycle_cleanup_interval_hours": {
+      "type": "number",
+      "title": "过期清理间隔（小时）",
+      "description": "定期清理已归档超期事实的时间间隔",
+      "default": 168,
+      "minimum": 1,
+      "maximum": 2160
+    },
+    "max_facts_per_user": {
+      "type": "number",
+      "title": "单用户最大事实数",
+      "description": "单个用户可存储的画像事实总数上限，超过时按置信度与时间淘汰",
+      "default": 500,
+      "minimum": 50,
+      "maximum": 10000
+    },
+    "enabled_categories": {
+      "type": "string",
+      "title": "启用的画像维度",
+      "description": "逗号分隔的画像维度类别名，留空则启用全部维度。可选值：identity,preference,expertise,behavior,goal,communication_style,emotional_state,context,custom",
+      "default": "",
+      "x-component": "input"
+    }
+  },
+  "required": []
+}

@@ -1046,24 +1046,9 @@ const zhCN: Record<string, string> = {
   "plugins.config.fieldInvalidRule": "{field}配置的校验规则无效",
   "plugins.config.fieldNotInOptions": "{field}必须是预设选项之一",
 
-  // ===== 插件市场 =====
-  "plugins.marketplace.title": "插件市场",
-  "plugins.marketplace.back": "返回插件管理",
-  "plugins.marketplace.searchPlaceholder": "搜索插件名称、描述或标签...",
-  "plugins.marketplace.loading": "加载中...",
-  "plugins.marketplace.empty": "未找到匹配的插件",
-  "plugins.marketplace.installCount": "{count} 次安装",
-  "plugins.marketplace.installed": "已安装",
-  "plugins.marketplace.installing": "安装中...",
-  "plugins.marketplace.install": "安装",
-  "plugins.marketplace.prevPage": "上一页",
-  "plugins.marketplace.nextPage": "下一页",
-  "plugins.marketplace.unknownError": "未知错误",
-
   // ===== 插件导航 =====
   "plugins.nav.my": "我的插件",
   "plugins.nav.config": "插件配置",
-  "plugins.nav.marketplace": "插件市场",
 
   // ===== 记忆 =====
   "memory.title": "记忆管理",

@@ -1045,24 +1045,9 @@ const enUS: Record<string, string> = {
   "plugins.config.fieldInvalidRule": "{field} validation rule is invalid",
   "plugins.config.fieldNotInOptions": "{field} must be one of the preset options",
 
-  // ===== Plugin Marketplace =====
-  "plugins.marketplace.title": "Plugin Marketplace",
-  "plugins.marketplace.back": "Back to Plugins",
-  "plugins.marketplace.searchPlaceholder": "Search by name, description, or tags...",
-  "plugins.marketplace.loading": "Loading...",
-  "plugins.marketplace.empty": "No matching plugins found",
-  "plugins.marketplace.installCount": "{count} installs",
-  "plugins.marketplace.installed": "Installed",
-  "plugins.marketplace.installing": "Installing...",
-  "plugins.marketplace.install": "Install",
-  "plugins.marketplace.prevPage": "Previous",
-  "plugins.marketplace.nextPage": "Next",
-  "plugins.marketplace.unknownError": "Unknown error",
-
   // ===== Plugin Nav =====
   "plugins.nav.my": "My Plugins",
   "plugins.nav.config": "Plugin Config",
-  "plugins.nav.marketplace": "Marketplace",
 
   // ===== Memory =====
   "memory.title": "Memory Management",

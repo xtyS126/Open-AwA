@@ -82,7 +82,6 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/subagents', label: t('sidebar.subagents') || '子智能体', iconType: 'subagents' as const },
         { path: '/discussions', label: t('sidebar.discussions'), iconType: 'discussions' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
-        { path: '/plugins/marketplace', label: t('sidebar.pluginMarket'), iconType: 'roleMarket' as const },
         { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
         { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },
       ]
@@ -150,9 +149,6 @@ const renderIcon = (type: string, size = 18) => {
     }
     if (path === '/plugins/manage') {
       return location.pathname === '/plugins/manage' || location.pathname.startsWith('/plugins/config')
-    }
-    if (path === '/plugins/marketplace') {
-      return location.pathname === '/plugins/marketplace'
     }
     if (path === '/discussions') {
       // 讨论任务详情页 /discussions/:id 也高亮列表项

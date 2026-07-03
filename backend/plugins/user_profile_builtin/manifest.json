@@ -1,0 +1,17 @@
+{
+  "name": "user-profile-builtin",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "用户画像提取内置插件，基于 LLM 从对话与行为日志中提取结构化用户特征，并通过衰减、巩固、归档机制管理画像生命周期",
+  "author": "Open-AwA Team",
+  "permissions": ["database:read", "database:write", "llm:call"],
+  "auto_authorize_permissions": true,
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "extract_user_profile",
+      "version": "1.0.0",
+      "config": {}
+    }
+  ]
+}

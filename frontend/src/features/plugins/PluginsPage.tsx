@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -22,29 +22,32 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
-import { StatusBadge, Tooltip } from '@/shared/components/ui'
+import { EmptyState, StatusBadge, Tooltip } from '@/shared/components/ui'
 import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
 import {
   usePluginDelete,
-  usePluginImport,
   usePluginList,
   usePluginPermissions,
   usePluginToggle,
   useDiscoveredPlugins,
+  usePluginImport,
 } from '@/features/plugins/hooks'
 import { isBuiltinPlugin, isUninstallablePlugin } from '@/features/plugins/pluginTypes'
-import { pluginsAPI } from '@/shared/api/api'
 import { useToast } from '@/shared/components/Toast'
 import { useI18nStore } from '@/i18n'
+import { pluginsAPI } from '@/shared/api/api'
+import {
+  getPlugins,
+  searchPlugins,
+  installPlugin,
+  getPluginRating,
+  type MarketplacePlugin,
+  type PluginRatingSummary,
+} from './marketplaceApi'
+import PluginDetailModal from './PluginDetailModal'
 import styles from './PluginsPage.module.css'
-
-const MAX_PLUGIN_UPLOAD_SIZE = 50 * 1024 * 1024
-const ALLOWED_PLUGIN_MIME_TYPES = new Set([
-  'application/zip',
-  'application/x-zip-compressed',
-  'multipart/x-zip',
-])
+import marketStyles from './MarketplacePage.module.css'
 
 /** 从 API 错误对象中提取可读消息 —— 兼容 detail 与 error 两种字段 */
 function getPluginErrorMessage(error: unknown, fallback: string): string {
@@ -439,17 +442,546 @@ const PluginCard = React.memo(function PluginCard(props: PluginCardProps): React
   )
 })
 
+// ============================================================================
+// 市场 Tab —— 集中承载所有"获取新插件"入口
+// 在线市场安装 / ZIP 上传 / URL 远程导入 / 本地可用插件扫描
+// ============================================================================
+
+/** 市场分类选项配置 */
+const MARKET_CATEGORY_OPTIONS = [
+  { key: 'all', label: '全部' },
+  { key: 'tool', label: '工具' },
+  { key: 'theme', label: '主题' },
+  { key: 'data', label: '数据' },
+  { key: 'other', label: '其他' },
+]
+
+/** 实心星与空心星 Unicode 字符 */
+const STAR_FILLED = '\u2605'
+const STAR_EMPTY = '\u2606'
+
+/** ZIP 上传大小上限：50MB */
+const MAX_PLUGIN_UPLOAD_SIZE = 50 * 1024 * 1024
+/** 允许的 ZIP MIME 类型白名单 */
+const ALLOWED_PLUGIN_MIME_TYPES = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'multipart/x-zip',
+])
+
+/** 根据评分渲染 5 颗星（实心/空心） */
+function renderStars(score: number): string {
+  const rounded = Math.round(score)
+  let result = ''
+  for (let i = 1; i <= 5; i++) {
+    result += i <= rounded ? STAR_FILLED : STAR_EMPTY
+  }
+  return result
+}
+
+/**
+ * MarketplaceTab —— 市场 Tab 内容组件。
+ *
+ * 集中承载所有"获取新插件"入口：
+ * - 在线市场安装（搜索、分类筛选、详情查看）
+ * - ZIP 上传安装
+ * - URL 远程导入
+ * - 本地可用插件扫描与一键安装
+ *
+ * 安装成功后通过 onInstalled 回调通知父组件刷新已安装列表。
+ */
+interface MarketplaceTabProps {
+  /** 插件安装成功后回调（用于刷新已安装列表） */
+  onInstalled: () => void
+}
+
+function MarketplaceTab({ onInstalled }: MarketplaceTabProps): React.ReactElement {
+  const { addToast, ToastContainer } = useToast()
+  const [plugins, setPlugins] = useState<MarketplacePlugin[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [installingId, setInstallingId] = useState<string | null>(null)
+  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set())
+  /* 评分汇总缓存：pluginId -> 评分摘要 */
+  const [ratingsMap, setRatingsMap] = useState<Record<string, PluginRatingSummary>>({})
+  /* 当前打开详情的插件 */
+  const [detailPlugin, setDetailPlugin] = useState<MarketplacePlugin | null>(null)
+
+  /* 本地安装相关状态 —— ZIP 上传 + URL 导入 */
+  const [remoteUrl, setRemoteUrl] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { loading: importing, error: importError, importFromFile, importFromUrl, retry: retryImport } = usePluginImport()
+
+  /* 已安装插件列表 —— 用于过滤本地已发现的未注册插件 */
+  const { plugins: installedPlugins, refresh: refreshInstalled } = usePluginList()
+  /* 本地已发现的插件 */
+  const {
+    discovered,
+    loading: discoverLoading,
+    error: discoverError,
+    refresh: refreshDiscovered,
+  } = useDiscoveredPlugins()
+  /* 本地安装中状态：pluginName -> boolean */
+  const [installingLocalPlugins, setInstallingLocalPlugins] = useState<Set<string>>(new Set())
+
+  /**
+   * 前端过滤内置插件 —— 双重保险，确保 source=builtin 的插件不在市场展示。
+   * 即使后端 API 已经过滤，前端仍保留此校验以防数据回流。
+   */
+  const visiblePlugins = useMemo(() => {
+    return plugins.filter((p) => p.source !== 'builtin')
+  }, [plugins])
+
+  /** 过滤出未注册到数据库的本地插件（已发现但未安装） */
+  const unregisteredPlugins = useMemo(() => {
+    const registeredNames = new Set(installedPlugins.map((p) => p.name.toLowerCase()))
+    return discovered.filter((d) => !registeredNames.has(d.name.toLowerCase()))
+  }, [discovered, installedPlugins])
+
+  const pageSize = 12
+
+  /** 批量加载当前页插件的评分摘要 */
+  const loadRatings = useCallback(async (pluginIds: string[]) => {
+    if (pluginIds.length === 0) return
+    // 并行获取每个插件的评分摘要，单个失败不影响其他
+    const results = await Promise.allSettled(
+      pluginIds.map((id) => getPluginRating(id))
+    )
+    const next: Record<string, PluginRatingSummary> = {}
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        next[pluginIds[index]] = result.value.data
+      }
+    })
+    setRatingsMap(next)
+  }, [])
+
+  /** 加载插件列表 */
+  const loadPlugins = useCallback(async () => {
+    setLoading(true)
+    try {
+      const response = await getPlugins({
+        category: activeCategory === 'all' ? undefined : activeCategory,
+        page,
+        page_size: pageSize,
+      })
+      setPlugins(response.data.plugins)
+      setTotal(response.data.total)
+      // 加载评分摘要
+      loadRatings(response.data.plugins.map((p) => p.id))
+    } catch (error) {
+      console.error('加载插件列表失败:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [activeCategory, page, loadRatings])
+
+  /** 搜索插件 */
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      loadPlugins()
+      return
+    }
+    setPage(1)
+  }
+
+  /** 在线安装插件 */
+  const handleInstall = async (pluginId: string) => {
+    setInstallingId(pluginId)
+    try {
+      await installPlugin(pluginId)
+      setInstalledIds((prev) => new Set(prev).add(pluginId))
+      // 通知父组件刷新已安装列表
+      onInstalled()
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      alert(`安装失败: ${detail || '未知错误'}`)
+    } finally {
+      setInstallingId(null)
+    }
+  }
+
+  /** 处理分类切换 */
+  const handleCategoryChange = (category: string) => {
+    setActiveCategory(category)
+    setPage(1)
+    setSearchQuery('')
+  }
+
+  /** 处理搜索框回车 */
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch()
+    }
+  }
+
+  /** 点击插件卡片打开详情 */
+  const handleCardClick = (plugin: MarketplacePlugin) => {
+    setDetailPlugin(plugin)
+  }
+
+  /** 阻止卡片内按钮点击冒泡到卡片 */
+  const stopPropagation = (e: React.MouseEvent) => {
+    e.stopPropagation()
+  }
+
+  /* ==================== 本地安装相关处理函数 ==================== */
+
+  /** 触发文件选择对话框 */
+  const handleClickImport = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  /** 处理 ZIP 文件上传 —— 校验扩展名与大小后调用上传接口 */
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0]
+      const isZipExtension = file.name.toLowerCase().endsWith('.zip')
+      const isAllowedMimeType = !file.type || ALLOWED_PLUGIN_MIME_TYPES.has(file.type)
+
+      if (!isZipExtension || !isAllowedMimeType) {
+        alert('只支持 .zip 格式的插件包')
+        return
+      }
+      if (file.size <= 0 || file.size > MAX_PLUGIN_UPLOAD_SIZE) {
+        alert('插件包大小无效或已超过 50MB 限制')
+        return
+      }
+
+      try {
+        await importFromFile(file)
+        await refreshInstalled()
+        onInstalled()
+        addToast('插件导入成功', 'success')
+      } catch {
+        addToast('插件导入失败', 'error')
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    }
+  }, [importFromFile, refreshInstalled, onInstalled, addToast])
+
+  /** 处理 URL 导入 —— 去除首尾空白后调用远程导入接口 */
+  const handleImportByUrl = useCallback(async () => {
+    const trimmedUrl = remoteUrl.trim()
+    if (!trimmedUrl) {
+      addToast('请输入远程 URL', 'warning')
+      return
+    }
+    try {
+      await importFromUrl(trimmedUrl)
+      setRemoteUrl('')
+      await refreshInstalled()
+      onInstalled()
+      addToast('远程 URL 导入成功', 'success')
+    } catch {
+      addToast('远程 URL 导入失败', 'error')
+    }
+  }, [remoteUrl, importFromUrl, refreshInstalled, onInstalled, addToast])
+
+  /** 安装本地发现的插件到数据库 */
+  const handleInstallLocal = useCallback(async (pluginName: string, pluginVersion: string) => {
+    setInstallingLocalPlugins((prev) => new Set(prev).add(pluginName))
+    try {
+      await pluginsAPI.install({ name: pluginName, version: pluginVersion, config: {} })
+      await refreshInstalled()
+      await refreshDiscovered()
+      onInstalled()
+      addToast(`插件 "${pluginName}" 安装成功`, 'success')
+    } catch {
+      addToast(`插件 "${pluginName}" 安装失败`, 'error')
+    } finally {
+      setInstallingLocalPlugins((prev) => {
+        const next = new Set(prev)
+        next.delete(pluginName)
+        return next
+      })
+    }
+  }, [refreshInstalled, refreshDiscovered, onInstalled, addToast])
+
+  useEffect(() => {
+    // 搜索状态时重新搜索（支持分页），非搜索状态加载列表
+    if (searchQuery.trim()) {
+      setLoading(true)
+      searchPlugins(searchQuery.trim(), page, pageSize)
+        .then(response => {
+          setPlugins(response.data.plugins)
+          setTotal(response.data.total)
+          loadRatings(response.data.plugins.map((p) => p.id))
+        })
+        .catch(error => console.error('搜索插件失败:', error))
+        .finally(() => setLoading(false))
+    } else {
+      loadPlugins()
+    }
+  }, [loadPlugins, searchQuery, page, loadRatings])
+
+  /** 生成插件图标首字母 */
+  const getIconLetter = (name: string) => {
+    return name.charAt(0).toUpperCase()
+  }
+
+  const totalPages = Math.ceil(total / pageSize)
+
+  return (
+    <>
+      {/* 本地安装工具栏 —— ZIP 上传 + URL 导入 */}
+      <div className={marketStyles['local-install-toolbar']}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          accept=".zip"
+          onChange={handleFileUpload}
+        />
+        <button
+          className={marketStyles['install-btn']}
+          onClick={handleClickImport}
+          disabled={importing}
+        >
+          <Plus size={14} />
+          {importing ? '导入中...' : '上传 ZIP 安装'}
+        </button>
+        <input
+          className={marketStyles['search-input']}
+          style={{ flex: 1, maxWidth: 360 }}
+          placeholder="输入远程 ZIP URL（支持白名单域名）"
+          value={remoteUrl}
+          onChange={(e) => setRemoteUrl(e.target.value)}
+        />
+        <button
+          className={marketStyles['search-btn']}
+          onClick={() => { void handleImportByUrl() }}
+          disabled={importing}
+        >
+          <Link2 size={14} />
+          URL 导入
+        </button>
+      </div>
+
+      {/* 导入错误提示 */}
+      {importError && (
+        <div className={marketStyles['inline-error']}>
+          <span>{importError}</span>
+          <button className={marketStyles['search-btn']} onClick={() => { void retryImport() }}>
+            重试
+          </button>
+        </div>
+      )}
+
+      {/* 搜索栏 */}
+      <div className={marketStyles['search-bar']}>
+        <input
+          className={marketStyles['search-input']}
+          type="text"
+          placeholder="搜索插件名称、描述或标签..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button className={marketStyles['search-btn']} onClick={handleSearch}>
+          搜索
+        </button>
+      </div>
+
+      {/* 分类筛选 */}
+      <div className={marketStyles['category-filter']}>
+        {MARKET_CATEGORY_OPTIONS.map((cat) => (
+          <button
+            key={cat.key}
+            className={`${marketStyles['category-tag']} ${
+              activeCategory === cat.key ? marketStyles['category-tag-active'] : ''
+            }`}
+            onClick={() => handleCategoryChange(cat.key)}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 加载中 */}
+      {loading && <div className={marketStyles['loading']}>加载中...</div>}
+
+      {/* 插件卡片网格 */}
+      {!loading && (
+        <div className={marketStyles['plugins-grid']}>
+          {visiblePlugins.length === 0 ? (
+            <EmptyState title="未找到匹配的插件" description="尝试更换搜索关键词或筛选条件" />
+          ) : (
+            visiblePlugins.map((plugin) => {
+              const rating = ratingsMap[plugin.id]
+              return (
+                <div
+                  key={plugin.id}
+                  className={marketStyles['plugin-card']}
+                  onClick={() => handleCardClick(plugin)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleCardClick(plugin)
+                    }
+                  }}
+                >
+                  {/* 图标 */}
+                  <div className={marketStyles['plugin-icon']}>
+                    {getIconLetter(plugin.name)}
+                  </div>
+
+                  {/* 名称 */}
+                  <h3 className={marketStyles['plugin-name']}>{plugin.name}</h3>
+
+                  {/* 描述 */}
+                  <p className={marketStyles['plugin-description']}>
+                    {plugin.description}
+                  </p>
+
+                  {/* 标签 */}
+                  {plugin.tags && plugin.tags.length > 0 && (
+                    <div className={marketStyles['plugin-tags']}>
+                      {plugin.tags.map((tag) => (
+                        <span key={tag} className={marketStyles['plugin-tag']}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 作者与版本 */}
+                  <div className={marketStyles['plugin-meta']}>
+                    <span className={marketStyles['plugin-author']}>{plugin.author}</span>
+                    <span className={marketStyles['plugin-version']}>v{plugin.version}</span>
+                  </div>
+
+                  {/* 评分摘要 */}
+                  <div className={marketStyles['plugin-rating']}>
+                    {rating && rating.total_count > 0 ? (
+                      <>
+                        <span className={marketStyles['plugin-rating-stars']}>
+                          {renderStars(rating.average_score)}
+                        </span>
+                        <span className={marketStyles['plugin-rating-text']}>
+                          {rating.average_score.toFixed(1)} ({rating.total_count} 人)
+                        </span>
+                      </>
+                    ) : (
+                      <span className={marketStyles['plugin-rating-empty']}>暂无评分</span>
+                    )}
+                  </div>
+
+                  {/* 底部：安装数/安装按钮 */}
+                  <div className={marketStyles['plugin-footer']} onClick={stopPropagation}>
+                    <span className={marketStyles['plugin-install-count']}>
+                      {plugin.install_count} 次安装
+                    </span>
+                    {installedIds.has(plugin.id) ? (
+                      <span className={marketStyles['installed-badge']}>已安装</span>
+                    ) : (
+                      <button
+                        className={marketStyles['install-btn']}
+                        onClick={() => handleInstall(plugin.id)}
+                        disabled={installingId === plugin.id}
+                      >
+                        {installingId === plugin.id ? '安装中...' : '安装'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* 分页控件 */}
+      {!loading && totalPages > 1 && (
+        <div className={marketStyles['pagination']}>
+          <button
+            className={marketStyles['pagination-btn']}
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            上一页
+          </button>
+          <span className={marketStyles['pagination-info']}>
+            {page} / {totalPages}
+          </span>
+          <button
+            className={marketStyles['pagination-btn']}
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            下一页
+          </button>
+        </div>
+      )}
+
+      {/* 本地可用插件区域 —— 扫描本地未注册插件，一键安装 */}
+      <div className={marketStyles['local-plugins-section']}>
+        <h2 className={marketStyles['section-title']}>本地可用插件</h2>
+        {discoverLoading ? (
+          <div className={marketStyles['loading']}>扫描本地插件中...</div>
+        ) : discoverError ? (
+          <div className={marketStyles['inline-error']}>
+            <span>{discoverError}</span>
+            <button className={marketStyles['search-btn']} onClick={() => { void refreshDiscovered() }}>
+              重试
+            </button>
+          </div>
+        ) : unregisteredPlugins.length === 0 ? (
+          <div className={marketStyles['loading']}>所有本地插件均已安装</div>
+        ) : (
+          <div className={marketStyles['plugins-grid']}>
+            {unregisteredPlugins.map((dp) => (
+              <div key={dp.name} className={`${marketStyles['plugin-card']} ${marketStyles['local-card']}`}>
+                <div className={marketStyles['plugin-icon']}>
+                  <Puzzle size={24} />
+                </div>
+                <h3 className={marketStyles['plugin-name']}>{dp.name}</h3>
+                <p className={marketStyles['plugin-description']}>
+                  {dp.description || '暂无简介'}
+                </p>
+                <div className={marketStyles['plugin-meta']}>
+                  <span className={marketStyles['plugin-version']}>v{dp.version || '1.0.0'}</span>
+                  <StatusBadge status="inactive" label={dp.state !== 'unknown' ? dp.state : '未安装'} />
+                </div>
+                <div className={marketStyles['plugin-footer']}>
+                  <button
+                    className={marketStyles['install-btn']}
+                    onClick={() => { void handleInstallLocal(dp.name, dp.version) }}
+                    disabled={installingLocalPlugins.has(dp.name)}
+                  >
+                    <Plus size={14} />
+                    {installingLocalPlugins.has(dp.name) ? '安装中...' : '安装'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 插件详情 Modal */}
+      <PluginDetailModal
+        open={detailPlugin !== null}
+        onClose={() => setDetailPlugin(null)}
+        plugin={detailPlugin}
+      />
+      <ToastContainer />
+    </>
+  )
+}
+
 function PluginsPage() {
   const navigate = useNavigate()
   const { t } = useI18nStore()
+  /* 当前激活的 Tab：installed=已安装管理，market=插件市场 */
+  const [activeTab, setActiveTab] = useState<'installed' | 'market'>('installed')
   const { plugins, loading, error: listError, retry: retryLoadPlugins, refresh: refreshPlugins } = usePluginList()
-  const {
-    loading: importing,
-    error: importError,
-    retry: retryImport,
-    importFromFile,
-    importFromUrl,
-  } = usePluginImport()
   const {
     loading: deleting,
     error: deleteError,
@@ -472,12 +1004,6 @@ function PluginsPage() {
     authorizePermissions,
     revokePermissions,
   } = usePluginPermissions()
-  const {
-    discovered,
-    loading: discoverLoading,
-    error: discoverError,
-    refresh: refreshDiscovered,
-  } = useDiscoveredPlugins()
   const { addToast, ToastContainer } = useToast()
   const [permissionMessage, setPermissionMessage] = useState('')
   const [permissionModalOpen, setPermissionModalOpen] = useState(false)
@@ -485,10 +1011,7 @@ function PluginsPage() {
   const [debugPluginId, setDebugPluginId] = useState<string | null>(null)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [remoteUrl, setRemoteUrl] = useState('')
   const [expandedDescriptions, setExpandedDescriptions] = useState<Record<string, boolean>>({})
-  const [installingPlugins, setInstallingPlugins] = useState<Set<string>>(new Set())
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filteredPlugins = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase()
@@ -520,30 +1043,7 @@ function PluginsPage() {
     return { total, enabled, disabled }
   }, [plugins])
 
-  /** 过滤出未注册到数据库的本地插件（已发现但未安装） */
-  const unregisteredPlugins = useMemo(() => {
-    const registeredNames = new Set(plugins.map((p) => p.name.toLowerCase()))
-    return discovered.filter((d) => !registeredNames.has(d.name.toLowerCase()))
-  }, [discovered, plugins])
-
-  /** 安装本地发现的插件到数据库 */
-  const handleInstallLocal = useCallback(async (pluginName: string, pluginVersion: string) => {
-    setInstallingPlugins((prev) => new Set(prev).add(pluginName))
-    try {
-      await pluginsAPI.install({ name: pluginName, version: pluginVersion, config: {} })
-      await refreshPlugins()
-      await refreshDiscovered()
-      addToast(`插件 "${pluginName}" 安装成功`, 'success')
-    } catch {
-      addToast(`插件 "${pluginName}" 安装失败`, 'error')
-    } finally {
-      setInstallingPlugins((prev) => {
-        const next = new Set(prev)
-        next.delete(pluginName)
-        return next
-      })
-    }
-  }, [refreshPlugins, refreshDiscovered, addToast])
+  /** 过滤出未注册到数据库的本地插件（已发现但未安装） —— 由 MarketplaceTab 内联组件承载 */
 
   const refreshPluginPermissions = useCallback(async (plugin: Plugin) => {
     return refreshPermissions(plugin)
@@ -627,49 +1127,6 @@ function PluginsPage() {
     }
   }, [deleteOne, refreshPlugins, addToast, t])
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0]
-      const isZipExtension = file.name.toLowerCase().endsWith('.zip')
-      const isAllowedMimeType = !file.type || ALLOWED_PLUGIN_MIME_TYPES.has(file.type)
-
-      if (!isZipExtension || !isAllowedMimeType) {
-        alert('只支持 .zip 格式的插件包')
-        return
-      }
-      if (file.size <= 0 || file.size > MAX_PLUGIN_UPLOAD_SIZE) {
-        alert('插件包大小无效或已超过 50MB 限制')
-        return
-      }
-
-      try {
-        await importFromFile(file)
-        await refreshPlugins()
-        addToast('插件导入成功', 'success')
-      } catch {
-        addToast('插件导入失败', 'error')
-      } finally {
-        if (fileInputRef.current) fileInputRef.current.value = ''
-      }
-    }
-  }, [importFromFile, refreshPlugins, addToast])
-
-  const handleImportByUrl = useCallback(async () => {
-    const trimmedUrl = remoteUrl.trim()
-    if (!trimmedUrl) {
-      addToast('请输入远程 URL', 'warning')
-      return
-    }
-    try {
-      await importFromUrl(trimmedUrl)
-      setRemoteUrl('')
-      await refreshPlugins()
-      addToast('远程 URL 导入成功', 'success')
-    } catch {
-      addToast('远程 URL 导入失败', 'error')
-    }
-  }, [remoteUrl, importFromUrl, refreshPlugins, addToast])
-
   const handleToggleSelectAll = useCallback((checked: boolean) => {
     // 仅选中用户插件（内置插件不可删除，不参与批量选择）
     if (checked) {
@@ -704,25 +1161,16 @@ function PluginsPage() {
     }
   }, [selectedIds, deleteBatch, refreshPlugins, addToast])
 
-  const handleClickImport = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleRemoteUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setRemoteUrl(e.target.value)
-  }, [])
-
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchKeyword(e.target.value)
   }, [])
 
   const handleRetryErrors = useCallback(() => {
     if (listError) retryLoadPlugins()
-    if (importError) retryImport()
     if (deleteError) retryDelete()
     if (permissionError) retryPermission()
     if (toggleError) retryToggle()
-  }, [listError, importError, deleteError, permissionError, toggleError, retryLoadPlugins, retryImport, retryDelete, retryPermission, retryToggle])
+  }, [listError, deleteError, permissionError, toggleError, retryLoadPlugins, retryDelete, retryPermission, retryToggle])
 
   const handleToggleDescription = useCallback((pluginId: string) => {
     setExpandedDescriptions((prev) => ({ ...prev, [pluginId]: !prev[pluginId] }))
@@ -748,10 +1196,6 @@ function PluginsPage() {
     handleUninstall(plugin)
   }, [handleUninstall])
 
-  const handleInstallLocalPlugin = useCallback((pluginName: string, pluginVersion: string) => {
-    handleInstallLocal(pluginName, pluginVersion)
-  }, [handleInstallLocal])
-
   const handleClosePermissionModal = useCallback(() => {
     setPermissionModalOpen(false)
     setSelectedPlugin(null)
@@ -762,7 +1206,7 @@ function PluginsPage() {
   const allUserSelected = groupedPlugins.userPlugins.length > 0
     && groupedPlugins.userPlugins.every((item) => selectedIds.includes(item.id))
 
-  if (loading) {
+  if (loading && activeTab === 'installed') {
     return (
       <PageLayout
         title="插件管理"
@@ -807,14 +1251,7 @@ function PluginsPage() {
       title="插件管理"
       className={styles['plugins-page']}
       actions={
-        <>
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            accept=".zip"
-            onChange={handleFileUpload}
-          />
+        activeTab === 'installed' ? (
           <button
             className={`${styles['btn']} ${styles['btn-outline']}`}
             onClick={() => { void refreshPlugins() }}
@@ -823,297 +1260,234 @@ function PluginsPage() {
             <RefreshCw size={16} />
             刷新
           </button>
-          <button
-            className={`${styles['btn']} ${styles['btn-primary']}`}
-            onClick={handleClickImport}
-            disabled={importing}
-          >
-            <Plus size={16} />
-            {importing ? '导入中...' : '安装插件'}
-          </button>
-        </>
+        ) : null
       }
     >
-
-      {/* 统计概览行 —— 已安装 / 已启用 / 已停用 */}
-      <div className={styles['stats-row']}>
-        <div className={styles['stat-card']}>
-          <div className={`${styles['stat-icon']} ${styles['stat-icon-primary']}`}>
-            <Package size={18} />
-          </div>
-          <div>
-            <div className={styles['stat-label']}>已安装</div>
-            <div className={styles['stat-value']}>{stats.total} 个</div>
-          </div>
-        </div>
-        <div className={styles['stat-card']}>
-          <div className={`${styles['stat-icon']} ${styles['stat-icon-success']}`}>
-            <CheckCircle2 size={18} />
-          </div>
-          <div>
-            <div className={styles['stat-label']}>已启用</div>
-            <div className={styles['stat-value']}>{stats.enabled} 个</div>
-          </div>
-        </div>
-        <div className={styles['stat-card']}>
-          <div className={`${styles['stat-icon']} ${styles['stat-icon-warning']}`}>
-            <AlertTriangle size={18} />
-          </div>
-          <div>
-            <div className={styles['stat-label']}>已停用</div>
-            <div className={styles['stat-value']}>{stats.disabled} 个</div>
-          </div>
-        </div>
-      </div>
-
-      {/* 工具栏 —— 搜索 + 全选 + 批量删除 + URL 导入 */}
-      <div className={styles['toolbar']}>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <Search size={16} style={{ position: 'absolute', left: 12, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
-          <input
-            className={styles['search-input']}
-            style={{ paddingLeft: 36 }}
-            placeholder="搜索插件名称 / 版本 / 作者 / 简介"
-            value={searchKeyword}
-            onChange={handleSearchChange}
-          />
-        </div>
-        <label className={styles['select-all']}>
-          <input
-            type="checkbox"
-            checked={allUserSelected}
-            onChange={(e) => handleToggleSelectAll(e.target.checked)}
-          />
-          全选当前结果
-        </label>
+      {/* Tab 切换 —— 已安装 / 市场 */}
+      <div className={styles['tabs']}>
         <button
-          className={`${styles['btn']} ${styles['btn-danger']}`}
-          onClick={() => { void handleBatchDelete() }}
-          disabled={selectedIds.length === 0 || deleting}
+          className={`${styles['tab']} ${activeTab === 'installed' ? styles['tab-active'] : ''}`}
+          onClick={() => setActiveTab('installed')}
         >
-          {deleting ? '删除中...' : `批量删除(${selectedIds.length})`}
+          <Package size={16} />
+          已安装
+          <span className={styles['tab-count']}>{plugins.length}</span>
         </button>
-        <input
-          className={styles['url-input']}
-          placeholder="输入远程 ZIP URL（支持白名单域名）"
-          value={remoteUrl}
-          onChange={handleRemoteUrlChange}
-        />
         <button
-          className={`${styles['btn']} ${styles['btn-secondary']}`}
-          onClick={() => { void handleImportByUrl() }}
-          disabled={importing}
+          className={`${styles['tab']} ${activeTab === 'market' ? styles['tab-active'] : ''}`}
+          onClick={() => setActiveTab('market')}
         >
-          <Link2 size={16} />
-          URL 导入
+          <Puzzle size={16} />
+          市场
         </button>
       </div>
 
-      {/* 错误提示 */}
-      {(listError || importError || deleteError || permissionError || toggleError) && (
-        <div className={styles['inline-error']}>
-          <span>{listError || importError || deleteError || permissionError || toggleError}</span>
-          <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={handleRetryErrors}>
-            重试
-          </button>
-        </div>
-      )}
-
-      {/* 插件卡片分区 —— 用户插件 + 系统内置插件 */}
-      {groupedPlugins.userPlugins.length === 0 && groupedPlugins.builtinPlugins.length === 0 ? (
-        /* 全局空状态：没有任何插件或搜索无结果 */
-        <div className={styles['plugins-grid']}>
-          <div className={styles['empty-state']}>
-            <p>{plugins.length === 0 ? '还没有安装任何插件' : '没有匹配的插件'}</p>
-            <button
-              className={`${styles['btn']} ${styles['btn-primary']}`}
-              onClick={handleClickImport}
-              disabled={importing}
-            >
-              <Plus size={16} />
-              {importing ? '导入中...' : '安装插件'}
-            </button>
-          </div>
-        </div>
-      ) : (
+      {activeTab === 'installed' ? (
         <>
-          {/* 用户插件分区 */}
-          <section className={styles['plugin-section']}>
-            <div className={styles['section-header']}>
-              <h2 className={styles['section-title']}>{t('plugins.section.user')}</h2>
-              <span className={styles['count-badge']}>{groupedPlugins.userPlugins.length}</span>
+          {/* 统计概览行 —— 已安装 / 已启用 / 已停用 */}
+          <div className={styles['stats-row']}>
+            <div className={styles['stat-card']}>
+              <div className={`${styles['stat-icon']} ${styles['stat-icon-primary']}`}>
+                <Package size={18} />
+              </div>
+              <div>
+                <div className={styles['stat-label']}>已安装</div>
+                <div className={styles['stat-value']}>{stats.total} 个</div>
+              </div>
             </div>
-            {groupedPlugins.userPlugins.length === 0 ? (
-              <div className={styles['empty-state']}>
-                <p>{t('plugins.section.userEmpty')}</p>
+            <div className={styles['stat-card']}>
+              <div className={`${styles['stat-icon']} ${styles['stat-icon-success']}`}>
+                <CheckCircle2 size={18} />
               </div>
-            ) : (
-              <div className={styles['plugins-grid']}>
-                {groupedPlugins.userPlugins.map(renderPluginCard)}
+              <div>
+                <div className={styles['stat-label']}>已启用</div>
+                <div className={styles['stat-value']}>{stats.enabled} 个</div>
               </div>
-            )}
-          </section>
+            </div>
+            <div className={styles['stat-card']}>
+              <div className={`${styles['stat-icon']} ${styles['stat-icon-warning']}`}>
+                <AlertTriangle size={18} />
+              </div>
+              <div>
+                <div className={styles['stat-label']}>已停用</div>
+                <div className={styles['stat-value']}>{stats.disabled} 个</div>
+              </div>
+            </div>
+          </div>
 
-          {/* 系统内置插件分区 —— 仅在有内置插件时渲染 */}
-          {groupedPlugins.builtinPlugins.length > 0 && (
-            <section className={`${styles['plugin-section']} ${styles['builtin-section']}`}>
-              <div className={styles['section-header']}>
-                <div className={styles['section-title-row']}>
-                  <Shield size={18} className={styles['builtin-shield-icon']} />
-                  <h2 className={styles['section-title']}>{t('plugins.section.builtin')}</h2>
-                  <span className={`${styles['count-badge']} ${styles['builtin-badge']}`}>
-                    {groupedPlugins.builtinPlugins.length}
-                  </span>
-                </div>
-                <p className={styles['section-description']}>
-                  {t('plugins.section.builtin.description')}
-                </p>
-              </div>
-              <div className={styles['plugins-grid']}>
-                {groupedPlugins.builtinPlugins.map(renderPluginCard)}
-              </div>
-            </section>
-          )}
-        </>
-      )}
-
-      {/* 本地可用插件区域 */}
-      <div className={styles['local-plugins-section']}>
-        <h2 className={styles['section-title']}>本地可用插件</h2>
-        {discoverLoading ? (
-          <div className={styles['local-loading']}>扫描本地插件中...</div>
-        ) : discoverError ? (
-          <div className={styles['inline-error']}>
-            <span>{discoverError}</span>
-            <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={() => { void refreshDiscovered() }}>
-              重试
+          {/* 工具栏 —— 搜索 + 全选 + 批量删除 */}
+          <div className={styles['toolbar']}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search size={16} style={{ position: 'absolute', left: 12, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
+              <input
+                className={styles['search-input']}
+                style={{ paddingLeft: 36 }}
+                placeholder="搜索插件名称 / 版本 / 作者 / 简介"
+                value={searchKeyword}
+                onChange={handleSearchChange}
+              />
+            </div>
+            <label className={styles['select-all']}>
+              <input
+                type="checkbox"
+                checked={allUserSelected}
+                onChange={(e) => handleToggleSelectAll(e.target.checked)}
+              />
+              全选当前结果
+            </label>
+            <button
+              className={`${styles['btn']} ${styles['btn-danger']}`}
+              onClick={() => { void handleBatchDelete() }}
+              disabled={selectedIds.length === 0 || deleting}
+            >
+              {deleting ? '删除中...' : `批量删除(${selectedIds.length})`}
             </button>
           </div>
-        ) : unregisteredPlugins.length === 0 ? (
-          <div className={styles['local-empty']}>所有本地插件均已安装</div>
-        ) : (
-          <div className={styles['plugins-grid']}>
-            {unregisteredPlugins.map((dp) => (
-              <div key={dp.name} className={`${styles['plugin-card']} ${styles['local-card']}`}>
-                <div className={styles['card-color-bar']} style={{ background: 'var(--color-text-tertiary)' }} />
-                <div className={styles['card-body']}>
-                  <div className={styles['card-header']}>
-                    <div className={styles['card-header-left']}>
-                      <div
-                        className={styles['plugin-icon-box']}
-                        style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
-                      >
-                        <Puzzle size={20} />
-                      </div>
-                      <div>
-                        <div className={styles['plugin-name-row']}>
-                          <span className={styles['plugin-name']}>{dp.name}</span>
-                          <span className={styles['version-badge']}>v{dp.version || '1.0.0'}</span>
-                        </div>
-                        <span
-                          className={styles['category-badge']}
-                          style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}
-                        >
-                          {dp.state !== 'unknown' ? dp.state : '未安装'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className={styles['card-header-right']}>
-                      <StatusBadge status="inactive" label="未安装" />
-                    </div>
-                  </div>
-                  <p className={styles['card-description']}>
-                    {dp.description || '暂无简介'}
-                  </p>
-                  <div className={styles['card-footer']}>
-                    <button
-                      className={`${styles['action-btn']} ${styles['action-btn-success']}`}
-                      onClick={() => handleInstallLocalPlugin(dp.name, dp.version)}
-                      disabled={installingPlugins.has(dp.name)}
-                    >
-                      <Plus size={14} />
-                      {installingPlugins.has(dp.name) ? '安装中...' : '安装'}
-                    </button>
-                  </div>
-                </div>
+
+          {/* 错误提示 */}
+          {(listError || deleteError || permissionError || toggleError) && (
+            <div className={styles['inline-error']}>
+              <span>{listError || deleteError || permissionError || toggleError}</span>
+              <button className={`${styles['btn']} ${styles['btn-secondary']}`} onClick={handleRetryErrors}>
+                重试
+              </button>
+            </div>
+          )}
+
+          {/* 插件卡片分区 —— 用户插件 + 系统内置插件 */}
+          {groupedPlugins.userPlugins.length === 0 && groupedPlugins.builtinPlugins.length === 0 ? (
+            /* 全局空状态：没有任何插件或搜索无结果 */
+            <div className={styles['plugins-grid']}>
+              <div className={styles['empty-state']}>
+                <p>{plugins.length === 0 ? '还没有安装任何插件' : '没有匹配的插件'}</p>
+                <button
+                  className={`${styles['btn']} ${styles['btn-primary']}`}
+                  onClick={() => setActiveTab('market')}
+                >
+                  <Puzzle size={16} />
+                  去市场安装
+                </button>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 权限模态框 */}
-      {permissionModalOpen && selectedPlugin && (
-        <div className={styles['permission-modal-overlay']} role="dialog" aria-modal="true">
-          <div className={styles['permission-modal']}>
-            <h3>插件权限</h3>
-            <p className={styles['permission-modal-plugin']}>{selectedPlugin.name}</p>
-
-            {permissionLoading ? (
-              <div className={styles['permission-loading']}>权限加载中...</div>
-            ) : (
-              <>
-                <div className={styles['permission-section']}>
-                  <div className={styles['permission-section-title']}>申请权限</div>
-                  {selectedPermissionStatus && selectedPermissionStatus.requested_permissions.length > 0 ? (
-                    <div className={styles['permission-list']}>
-                      {selectedPermissionStatus.requested_permissions.map((permission) => {
-                        const granted = selectedPermissionStatus.granted_permissions.includes(permission)
-                        return (
-                          <div key={permission} className={styles['permission-item']}>
-                            <span>{permission}</span>
-                            <span className={granted ? styles['permission-granted'] : styles['permission-missing']}>
-                              {granted ? '已授权' : '待授权'}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className={styles['permission-empty']}>当前插件未声明敏感权限</div>
-                  )}
+            </div>
+          ) : (
+            <>
+              {/* 用户插件分区 */}
+              <section className={styles['plugin-section']}>
+                <div className={styles['section-header']}>
+                  <h2 className={styles['section-title']}>{t('plugins.section.user')}</h2>
+                  <span className={styles['count-badge']}>{groupedPlugins.userPlugins.length}</span>
                 </div>
-
-                {selectedPermissionStatus && selectedPermissionStatus.granted_permissions.length > 0 && (
-                  <div className={styles['permission-section']}>
-                    <div className={styles['permission-section-title']}>已授权权限</div>
-                    <div className={styles['permission-list']}>
-                      {selectedPermissionStatus.granted_permissions.map((permission) => (
-                        <div key={`granted-${permission}`} className={styles['permission-item']}>
-                          <span>{permission}</span>
-                          <button
-                            className={styles['permission-revoke-btn']}
-                            onClick={() => { void handleRevokePermission(permission) }}
-                          >
-                            撤销
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                {groupedPlugins.userPlugins.length === 0 ? (
+                  <div className={styles['empty-state']}>
+                    <p>{t('plugins.section.userEmpty')}</p>
+                  </div>
+                ) : (
+                  <div className={styles['plugins-grid']}>
+                    {groupedPlugins.userPlugins.map(renderPluginCard)}
                   </div>
                 )}
-              </>
-            )}
+              </section>
 
-            {permissionMessage && <div className={styles['permission-message']}>{permissionMessage}</div>}
+              {/* 系统内置插件分区 —— 仅在有内置插件时渲染 */}
+              {groupedPlugins.builtinPlugins.length > 0 && (
+                <section className={`${styles['plugin-section']} ${styles['builtin-section']}`}>
+                  <div className={styles['section-header']}>
+                    <div className={styles['section-title-row']}>
+                      <Shield size={18} className={styles['builtin-shield-icon']} />
+                      <h2 className={styles['section-title']}>{t('plugins.section.builtin')}</h2>
+                      <span className={`${styles['count-badge']} ${styles['builtin-badge']}`}>
+                        {groupedPlugins.builtinPlugins.length}
+                      </span>
+                    </div>
+                    <p className={styles['section-description']}>
+                      {t('plugins.section.builtin.description')}
+                    </p>
+                  </div>
+                  <div className={styles['plugins-grid']}>
+                    {groupedPlugins.builtinPlugins.map(renderPluginCard)}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
 
-            <div className={styles['permission-actions']}>
-              <button
-                className={`${styles['btn']} ${styles['btn-primary']}`}
-                onClick={() => { void handleAuthorizeMissingPermissions() }}
-                disabled={permissionLoading}
-              >
-                授权缺失权限
-              </button>
-              <button
-                className={`${styles['btn']} ${styles['btn-secondary']}`}
-                onClick={handleClosePermissionModal}
-              >
-                关闭
-              </button>
+          {/* 权限模态框 */}
+          {permissionModalOpen && selectedPlugin && (
+            <div className={styles['permission-modal-overlay']} role="dialog" aria-modal="true">
+              <div className={styles['permission-modal']}>
+                <h3>插件权限</h3>
+                <p className={styles['permission-modal-plugin']}>{selectedPlugin.name}</p>
+
+                {permissionLoading ? (
+                  <div className={styles['permission-loading']}>权限加载中...</div>
+                ) : (
+                  <>
+                    <div className={styles['permission-section']}>
+                      <div className={styles['permission-section-title']}>申请权限</div>
+                      {selectedPermissionStatus && selectedPermissionStatus.requested_permissions.length > 0 ? (
+                        <div className={styles['permission-list']}>
+                          {selectedPermissionStatus.requested_permissions.map((permission) => {
+                            const granted = selectedPermissionStatus.granted_permissions.includes(permission)
+                            return (
+                              <div key={permission} className={styles['permission-item']}>
+                                <span>{permission}</span>
+                                <span className={granted ? styles['permission-granted'] : styles['permission-missing']}>
+                                  {granted ? '已授权' : '待授权'}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className={styles['permission-empty']}>当前插件未声明敏感权限</div>
+                      )}
+                    </div>
+
+                    {selectedPermissionStatus && selectedPermissionStatus.granted_permissions.length > 0 && (
+                      <div className={styles['permission-section']}>
+                        <div className={styles['permission-section-title']}>已授权权限</div>
+                        <div className={styles['permission-list']}>
+                          {selectedPermissionStatus.granted_permissions.map((permission) => (
+                            <div key={`granted-${permission}`} className={styles['permission-item']}>
+                              <span>{permission}</span>
+                              <button
+                                className={styles['permission-revoke-btn']}
+                                onClick={() => { void handleRevokePermission(permission) }}
+                              >
+                                撤销
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {permissionMessage && <div className={styles['permission-message']}>{permissionMessage}</div>}
+
+                <div className={styles['permission-actions']}>
+                  <button
+                    className={`${styles['btn']} ${styles['btn-primary']}`}
+                    onClick={() => { void handleAuthorizeMissingPermissions() }}
+                    disabled={permissionLoading}
+                  >
+                    授权缺失权限
+                  </button>
+                  <button
+                    className={`${styles['btn']} ${styles['btn-secondary']}`}
+                    onClick={handleClosePermissionModal}
+                  >
+                    关闭
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
+      ) : (
+        /* 市场 Tab —— 集中承载所有获取新插件入口 */
+        <MarketplaceTab onInstalled={() => { void refreshPlugins() }} />
       )}
       <ToastContainer />
     </PageLayout>

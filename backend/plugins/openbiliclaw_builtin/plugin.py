@@ -68,7 +68,8 @@ class OpenBiliClawBuiltinPlugin(BasePlugin):
     name: str = "openbiliclaw-builtin"
     version: str = "0.3.147"
     description: str = (
-        "OpenBiliClaw 内置插件，提供 B 站内容发现、用户画像与推荐能力"
+        "OpenBiliClaw 内容接入插件 - 为 OpenAwA AI 提供 B 站/X/抖音/小红书等"
+        "多平台内容数据采集渠道（仅接入数据，AI 能力由主平台提供）"
     )
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:

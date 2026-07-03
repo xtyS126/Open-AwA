@@ -498,6 +498,33 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                     module="main",
                     plugin="openbiliclaw-builtin",
                 ).info("已注册系统内置插件 openbiliclaw-builtin")
+
+            # 注册 user-profile-builtin 系统内置插件（如不存在）
+            # 该插件封装 ProfileExtractor/ProfileLifecycle/ProfileInjector，
+            # 暴露画像提取/摘要/刷新/清理 4 个工具供 Agent 调用
+            existing_user_profile = db.query(PluginModel).filter(
+                PluginModel.name == "user-profile-builtin"
+            ).first()
+            if not existing_user_profile:
+                new_user_profile = PluginModel(
+                    id=str(uuid.uuid4()),
+                    name="user-profile-builtin",
+                    version="1.0.0",
+                    enabled=True,
+                    config={},
+                    category="builtin",
+                    author="Open-AwA Team",
+                    source="builtin",
+                    is_uninstallable=False,
+                    dependencies=[],
+                )
+                db.add(new_user_profile)
+                db.commit()
+                logger.bind(
+                    event="builtin_plugin_seeded",
+                    module="main",
+                    plugin="user-profile-builtin",
+                ).info("已注册系统内置插件 user-profile-builtin")
         except Exception as exc:
             logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
             db.rollback()

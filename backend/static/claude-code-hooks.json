@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST http://127.0.0.1:8000/api/notifications -H \"Content-Type: application/json\" -H \"Authorization: Bearer $OPENAWA_TOKEN\" -d '{\"title\":\"Claude Code Notification\",\"body\":\"$CLAUDE_NOTIFICATION\",\"notification_type\":\"info\"}'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST http://127.0.0.1:8000/api/notifications -H \"Content-Type: application/json\" -H \"Authorization: Bearer $OPENAWA_TOKEN\" -d '{\"title\":\"Claude Code Stopped\",\"body\":\"Task completed\",\"notification_type\":\"success\"}'"
+          }
+        ]
+      }
+    ]
+  }
+}

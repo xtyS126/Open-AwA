@@ -29,7 +29,6 @@ const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
 const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
 const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
-const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplacePage'))
 const TestPage = React.lazy(() => import('@/features/test/TestPage'))
 const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
 const CodingPage = React.lazy(() => import('@/features/coding/CodingPage'))
@@ -109,7 +108,6 @@ function AppRoutes() {
                 <Route index element={<Navigate to="manage" replace />} />
                 <Route path="manage" element={<ErrorBoundary name="Plugins"><PluginsPage /></ErrorBoundary>} />
                 <Route path="config/:pluginId" element={<ErrorBoundary name="PluginConfig"><PluginConfigPage /></ErrorBoundary>} />
-                <Route path="marketplace" element={<ErrorBoundary name="Marketplace"><MarketplacePage /></ErrorBoundary>} />
               </Route>
               <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
               <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />

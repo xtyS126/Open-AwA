@@ -64,32 +64,51 @@ curl -H "Authorization: Bearer <TOKEN>" http://localhost:8000/api/system/diagnos
 
 ### Authentication & API Access（认证与 API 访问）
 
-自动化测试需要先获取认证凭据。登录流程：
+OpenAwA 后端采用 **API Key 优先** 认证策略（见 `backend/api/dependencies.py` `get_current_user`）：
+
+1. **路径 1（主认证，推荐）**：`Authorization: Bearer <OPENAWA_API_KEY>` — API Key 匹配后直接返回 owner 用户，跳过 JWT 解析和黑名单检查
+2. **路径 2（兼容降级）**：JWT Bearer token（来自 `/api/auth/login`）— 仅用于前端浏览器会话兼容
+3. **路径 3（兼容降级）**：HttpOnly Cookie — 仅用于前端浏览器会话兼容
+
+> **API Key 是首选认证方式**，自动化测试、CLI 工具、浏览器扩展均应使用 API Key，无需用户名密码登录。
+> 用户名密码登录仅用于前端 Web UI 会话（HttpOnly Cookie + CSRF），后端服务进程不应使用。
+
+#### API Key 获取
 
 ```bash
-# 登录获取 access_token 和 csrf_token（OAuth2PasswordRequestForm 格式）
+# 方式 1：生成新 API Key（写入 backend/.env.local）
+cd backend && python generate_api_key.py
+
+# 方式 2：从现有配置读取
+grep OPENAWA_API_KEY backend/.env.local
+```
+
+API Key 必须至少 32 字符，未配置时后端拒绝启动。
+
+#### 使用 API Key 调用 API
+
+```bash
+# 所有受保护接口只需携带 Authorization 头
+curl -H "Authorization: Bearer <OPENAWA_API_KEY>" http://localhost:8000/api/system/diagnostics
+
+# 状态变更接口（POST/PUT/PATCH/DELETE）同样只需 Authorization，无需 CSRF token
+curl -X PUT -H "Authorization: Bearer <OPENAWA_API_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"key":"value"}' \
+     http://localhost:8000/api/plugins/<id>/config
+```
+
+#### JWT 登录（仅前端 Web UI 使用）
+
+前端浏览器会话仍使用 JWT + Cookie + CSRF，登录流程：
+
+```bash
 curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=<USER>&password=<PWD>"
 ```
 
-返回结构：
-```json
-{
-  "access_token": "eyJ...",
-  "token_type": "bearer",
-  "csrf_token": "<CSRF_TOKEN>"
-}
-```
-
-后续请求需携带：
-- `Authorization: Bearer <access_token>` — 所有受保护接口
-- `X-CSRF-Token: <csrf_token>` — 所有状态变更接口（POST/PUT/PATCH/DELETE）
-- Cookie — access_token 同时写入 HttpOnly Cookie，curl/requests 会自动管理
-
-默认测试账号（需预先通过 `backend/scripts/init_db.py` 或首次启动时创建）：
-- 普通用户：`test_user` / `Test@123456`
-- 管理员：`admin` / `Admin@123456`
+返回 `access_token` + `csrf_token`，前端通过 HttpOnly Cookie 自动管理会话。**此路径不适用于自动化测试和 CLI 工具。**
 
 ### Real Operation Verification Procedure（真实操作验证流程）
 
@@ -136,21 +155,19 @@ curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/api/sys
 系统内置 10 个真实 E2E 测试场景（定义在 `backend/api/routes/test_runner.py`），覆盖：服务健康、系统诊断、对话生命周期、非流式聊天、插件发现、技能列表、文件工具、定时任务、用户会话、MCP 状态。
 
 ```bash
-# 获取认证 token
-TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=test_user&password=Test@123456" | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+# 使用 API Key 认证（从 backend/.env.local 读取）
+API_KEY=$(grep OPENAWA_API_KEY backend/.env.local | cut -d'=' -f2- | tr -d '"')
 
-# 列出所有可用场景
+# 列出所有可用场景（无需认证）
 curl -s http://localhost:8000/api/test-scenarios
 
-# 运行全部 10 个场景（返回 passed/failed/total 汇总）
+# 运行全部 10 个场景（API Key 认证，返回 passed/failed/total 汇总）
 curl -s -X POST http://localhost:8000/api/test-scenarios/run-all \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer $API_KEY"
 
 # 运行单个场景（如非流式聊天）
 curl -s -X POST http://localhost:8000/api/test-scenarios/run \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"name": "chat-nonstream"}'
 ```
@@ -240,9 +257,10 @@ cd frontend && npm run build
    # 前端单个测试
    cd frontend && npm run test -- --run src/__tests__/xxx.test.ts
 
-   # 单个 E2E 场景
+   # 单个 E2E 场景（使用 API Key）
+   API_KEY=$(grep OPENAWA_API_KEY backend/.env.local | cut -d'=' -f2- | tr -d '"')
    curl -s -X POST http://localhost:8000/api/test-scenarios/run \
-     -H "Authorization: Bearer $TOKEN" \
+     -H "Authorization: Bearer $API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"name": "<失败的场景名>"}'
    ```

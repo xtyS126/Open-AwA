@@ -274,6 +274,51 @@
   color: var(--color-primary);
 }
 
+/* ==================== 本地安装工具栏 ==================== */
+
+/* 工具栏容器 —— ZIP 上传 + URL 导入并排 */
+.local-install-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+
+/* 内联错误提示条 —— 与 PluginsPage 风格保持一致 */
+.inline-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+/* ==================== 本地可用插件区域 ==================== */
+
+.local-plugins-section {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.section-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-4);
+  color: var(--color-text);
+}
+
+/* 本地插件卡片 —— 虚线边框区分未注册状态 */
+.local-card {
+  border-style: dashed;
+}
+
 /* ==================== 插件卡片评分摘要 ==================== */
 
 .plugin-rating {

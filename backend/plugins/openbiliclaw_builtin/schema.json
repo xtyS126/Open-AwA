@@ -1,0 +1,176 @@
+{
+  "type": "object",
+  "title": "OpenBiliClaw 内容接入插件配置",
+  "description": "配置多平台内容接入渠道。本插件仅负责采集与暴露 B 站/X/抖音/小红书等平台的内容数据给 OpenAwA 主平台 AI 使用，不内置任何 LLM/Embedding 配置（AI 能力由 OpenAwA 主平台统一提供）。敏感字段（cookie 等）保存到数据库后自动加密，前端展示为掩码。",
+  "properties": {
+    "bilibili_cookie": {
+      "type": "string",
+      "title": "B 站 Cookie",
+      "description": "B 站登录 Cookie（含 SESSDATA / bili_jct / DedeUserID），用于调用需要登录的 API。可通过 OpenAwA Cookie 助手浏览器扩展一键同步",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "bilibili_user_agent": {
+      "type": "string",
+      "title": "B 站请求 User-Agent",
+      "description": "调用 B 站 API 时使用的 User-Agent，留空则使用内置默认值",
+      "default": "",
+      "x-component": "input",
+      "maxLength": 512
+    },
+    "bilibili_request_timeout_seconds": {
+      "type": "number",
+      "title": "B 站请求超时（秒）",
+      "description": "调用 B 站 API 的单次请求超时时间",
+      "default": 15,
+      "minimum": 1,
+      "maximum": 120
+    },
+    "bilibili_max_concurrent_requests": {
+      "type": "number",
+      "title": "B 站最大并发请求数",
+      "description": "对 B 站 API 的最大并发请求数量，超过则排队等待",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 50
+    },
+    "x_cookie": {
+      "type": "string",
+      "title": "X (Twitter) Cookie",
+      "description": "X 平台登录 Cookie，用于采集点赞/收藏/时间线历史。可通过 OpenAwA Cookie 助手浏览器扩展一键同步",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "douyin_cookie": {
+      "type": "string",
+      "title": "抖音 Cookie",
+      "description": "抖音网页版登录 Cookie，用于采集互动历史。可通过 OpenAwA Cookie 助手浏览器扩展一键同步",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "xiaohongshu_cookie": {
+      "type": "string",
+      "title": "小红书 Cookie",
+      "description": "小红书网页版登录 Cookie，用于采集笔记互动数据。可通过 OpenAwA Cookie 助手浏览器扩展一键同步",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "youtube_cookie": {
+      "type": "string",
+      "title": "YouTube Cookie",
+      "description": "YouTube 登录 Cookie，用于采集观看历史（可选）",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "zhihu_cookie": {
+      "type": "string",
+      "title": "知乎 Cookie",
+      "description": "知乎登录 Cookie，用于采集关注/收藏/浏览历史",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "reddit_cookie": {
+      "type": "string",
+      "title": "Reddit Cookie",
+      "description": "Reddit 登录 Cookie，用于采集 upvote/save 历史",
+      "default": "",
+      "x-component": "code-editor",
+      "maxLength": 8192
+    },
+    "data_path": {
+      "type": "string",
+      "title": "数据存储路径",
+      "description": "采集到的多平台事件、索引、cookie 缓存等数据的存储目录",
+      "default": "./data/openbiliclaw",
+      "x-component": "input",
+      "maxLength": 512
+    },
+    "enable_bili_history": {
+      "type": "boolean",
+      "title": "启用 B 站历史记录采集",
+      "description": "开启后定期采集用户的 B 站观看历史与互动数据",
+      "default": true,
+      "x-component": "switch"
+    },
+    "enable_bili_recommendation": {
+      "type": "boolean",
+      "title": "启用 B 站推荐能力",
+      "description": "开启后基于采集数据为 AI 提供推荐上下文（推荐生成由主平台 AI 完成）",
+      "default": true,
+      "x-component": "switch"
+    },
+    "enable_x_history": {
+      "type": "boolean",
+      "title": "启用 X (Twitter) 历史采集",
+      "description": "开启后采集 X 平台的点赞与收藏历史（需先填 x_cookie）",
+      "default": false,
+      "x-component": "switch"
+    },
+    "enable_douyin_history": {
+      "type": "boolean",
+      "title": "启用抖音历史采集",
+      "description": "开启后采集抖音互动历史（需先填 douyin_cookie）",
+      "default": false,
+      "x-component": "switch"
+    },
+    "enable_xiaohongshu_history": {
+      "type": "boolean",
+      "title": "启用小红书历史采集",
+      "description": "开启后采集小红书互动历史（需先填 xiaohongshu_cookie）",
+      "default": false,
+      "x-component": "switch"
+    },
+    "enable_youtube_history": {
+      "type": "boolean",
+      "title": "启用 YouTube 历史采集",
+      "description": "开启后采集 YouTube 观看历史（需先填 youtube_cookie）",
+      "default": false,
+      "x-component": "switch"
+    },
+    "enable_zhihu_history": {
+      "type": "boolean",
+      "title": "启用知乎历史采集",
+      "description": "开启后采集知乎互动历史（需先填 zhihu_cookie）",
+      "default": false,
+      "x-component": "switch"
+    },
+    "enable_reddit_history": {
+      "type": "boolean",
+      "title": "启用 Reddit 历史采集",
+      "description": "开启后采集 Reddit 互动历史（需先填 reddit_cookie）",
+      "default": false,
+      "x-component": "switch"
+    },
+    "discovery_cycle_seconds": {
+      "type": "number",
+      "title": "内容发现周期（秒）",
+      "description": "后台内容采集任务的执行间隔",
+      "default": 3600,
+      "minimum": 60,
+      "maximum": 86400
+    },
+    "max_events_per_cycle": {
+      "type": "number",
+      "title": "单周期最大事件数",
+      "description": "单个发现周期内最多采集的事件数量",
+      "default": 500,
+      "minimum": 10,
+      "maximum": 10000
+    },
+    "log_level": {
+      "type": "string",
+      "title": "日志级别",
+      "description": "插件内部日志的输出级别",
+      "default": "INFO",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "x-component": "select"
+    }
+  },
+  "required": []
+}

@@ -259,8 +259,8 @@ function PluginConfigPage() {
       {!activePluginId && !pluginListLoading && plugins.length === 0 && (
         <div className={styles['empty-state']}>
           <p>暂无已安装的插件</p>
-          <button className="btn btn-primary" onClick={() => navigate('/plugins/marketplace')}>
-            去市场看看
+          <button className="btn btn-primary" onClick={() => navigate('/plugins/manage')}>
+            去插件管理看看
           </button>
         </div>
       )}

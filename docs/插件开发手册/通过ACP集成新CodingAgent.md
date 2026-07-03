@@ -62,14 +62,12 @@ AGENT_CONFIG = ACPAgentConfig(
 启动后端服务后调用 `GET /api/acp/agents`，确认新 agent 出现在列表中：
 
 ```bash
-# 获取 token
-TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=test_user&password=Test@123456" | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+# 使用 API Key 认证（从 backend/.env.local 读取）
+API_KEY=$(grep OPENAWA_API_KEY backend/.env.local | cut -d'=' -f2- | tr -d '"')
 
 # 列出所有 agent
 curl -s http://localhost:8000/api/acp/agents \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer $API_KEY"
 ```
 
 预期响应包含新 agent 的 `id`、`name`、`command`、`enabled` 与 `available` 字段。

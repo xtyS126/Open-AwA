@@ -107,6 +107,10 @@ def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
     """
     根据插件名解析插件根目录，优先使用扫描元数据，其次回退到目录与 manifest 查找。
     所有路径均验证不溢出插件根目录，防止路径遍历攻击。
+
+    兼容两种插件入口结构：
+    - 扁平结构：``<plugin_root>/plugin.py``（内置插件常用）
+    - 嵌套结构：``<plugin_root>/src/index.py``（外部插件常用）
     """
     plugins_base = PathLib(_get_plugin_manager().plugins_dir).resolve()
 
@@ -114,14 +118,22 @@ def _resolve_plugin_root_dir(plugin_name: str) -> Optional[str]:
     metadata = _get_plugin_manager().plugin_metadata.get(plugin_name, {})
     metadata_path = metadata.get("path")
     if isinstance(metadata_path, str) and metadata_path:
-        # 约定插件入口通常为 <plugin_root>/src/index.py
-        root_candidate = PathLib(metadata_path).resolve().parent.parent
-        if root_candidate.is_dir() and root_candidate.is_relative_to(plugins_base):
-            return str(root_candidate)
+        entry_file = PathLib(metadata_path).resolve()
+        # 扁平结构：入口文件所在目录直接包含 manifest.json
+        direct_root = entry_file.parent
+        if (direct_root / "manifest.json").is_file() and direct_root.is_relative_to(plugins_base):
+            return str(direct_root)
+        # 嵌套结构：约定插件入口通常为 <plugin_root>/src/index.py
+        nested_root = direct_root.parent
+        if nested_root.is_dir() and nested_root.is_relative_to(plugins_base):
+            return str(nested_root)
 
-    direct_candidate = plugins_base / plugin_name
-    if direct_candidate.resolve().is_relative_to(plugins_base) and direct_candidate.is_dir():
-        return str(direct_candidate)
+    # 回退：直接拼接插件名（兼容下划线/横线命名差异）
+    name_variants = [plugin_name, plugin_name.replace("-", "_")]
+    for variant in name_variants:
+        direct_candidate = plugins_base / variant
+        if direct_candidate.resolve().is_relative_to(plugins_base) and direct_candidate.is_dir():
+            return str(direct_candidate)
 
     if not plugins_base.is_dir():
         return None

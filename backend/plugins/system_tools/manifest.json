@@ -1,0 +1,17 @@
+{
+  "name": "system-tools",
+  "version": "1.0.0",
+  "pluginApiVersion": "1.0.0",
+  "description": "系统工具集内置插件，提供文件管理、终端执行、网页搜索、本地检索、记忆管理与浏览器扩展能力",
+  "author": "Open-AwA Team",
+  "permissions": ["filesystem:read", "filesystem:write", "process:execute"],
+  "auto_authorize_permissions": true,
+  "extensions": [
+    {
+      "point": "tool",
+      "name": "file_manager",
+      "version": "1.0.0",
+      "config": {}
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenAwA Cookie 助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <img src="../icons/icon48.png" alt="logo" class="logo">
+      <div class="title-group">
+        <h1 class="title">OpenAwA Cookie 助手</h1>
+        <span class="version">v1.1.0</span>
+      </div>
+    </header>
+
+    <!-- 后端配置区 -->
+    <section class="section" id="backend-section">
+      <h2 class="section-title">后端配置</h2>
+      <div class="form-row">
+        <label for="backend-host">地址</label>
+        <input type="text" id="backend-host" placeholder="127.0.0.1" value="127.0.0.1">
+      </div>
+      <div class="form-row">
+        <label for="backend-port">端口</label>
+        <input type="number" id="backend-port" placeholder="8000" value="8000" min="1" max="65535">
+      </div>
+      <button id="btn-save-backend" class="btn btn-secondary">保存后端配置</button>
+      <div id="backend-status" class="status-line"></div>
+    </section>
+
+    <!-- API Key 认证区 -->
+    <section class="section" id="apikey-section">
+      <h2 class="section-title">API Key 认证</h2>
+      <div class="form-row">
+        <label for="api-key">OpenAwA API Key</label>
+        <input type="password" id="api-key" placeholder="粘贴 OPENAWA_API_KEY（至少 32 字符）" autocomplete="off">
+      </div>
+      <div class="form-row">
+        <label class="checkbox-row">
+          <input type="checkbox" id="show-api-key">
+          <span>显示明文</span>
+        </label>
+      </div>
+      <button id="btn-save-apikey" class="btn btn-primary">保存 API Key</button>
+      <button id="btn-clear-apikey" class="btn btn-secondary hidden">清除 API Key</button>
+      <div id="apikey-status" class="status-line"></div>
+      <p class="hint-text">API Key 来自后端 <code>OPENAWA_API_KEY</code> 环境变量或 <code>backend/.env.local</code>。运行 <code>python generate_api_key.py</code> 可生成。</p>
+    </section>
+
+    <!-- Cookie 获取区 -->
+    <section class="section" id="cookie-section">
+      <h2 class="section-title">Cookie 获取与同步</h2>
+      <div class="form-row">
+        <label for="platform-select">目标平台</label>
+        <select id="platform-select">
+          <option value="bilibili">B 站 (bilibili.com)</option>
+          <option value="x">X / Twitter (x.com)</option>
+          <option value="douyin">抖音 (douyin.com)</option>
+          <option value="xiaohongshu">小红书 (xiaohongshu.com)</option>
+          <option value="youtube">YouTube (youtube.com)</option>
+          <option value="zhihu">知乎 (zhihu.com)</option>
+          <option value="reddit">Reddit (reddit.com)</option>
+        </select>
+      </div>
+      <div class="btn-group">
+        <button id="btn-fetch-cookie" class="btn btn-primary">获取 Cookie</button>
+        <button id="btn-sync-cookie" class="btn btn-primary" disabled>同步到后端</button>
+      </div>
+      <div id="cookie-preview" class="cookie-preview hidden">
+        <div class="preview-header">
+          <span>Cookie 预览（掩码）</span>
+          <span id="cookie-length" class="cookie-length"></span>
+        </div>
+        <pre id="cookie-content" class="cookie-content"></pre>
+      </div>
+      <div id="cookie-status" class="status-line"></div>
+    </section>
+
+    <!-- 同步目标插件信息 -->
+    <section class="section info-section">
+      <h2 class="section-title">同步目标</h2>
+      <p class="info-text">Cookie 将同步到 OpenAwA 后端的 <code>openbiliclaw-builtin</code> 插件配置中的 <code>bilibili_cookie</code> 字段（B 站）或对应字段。API Key 认证自动获得 owner 权限。</p>
+    </section>
+
+    <footer class="footer">
+      <span id="global-status" class="status-line"></span>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
