@@ -543,6 +543,29 @@ ALLOWED_UPLOAD_EXTENSIONS = {
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
 
+# 图片类型 magic bytes 校验表（防扩展名/MIME 伪造）
+# 仅对图片类型强制校验，文档类型（pdf/txt/md/csv）内容不可枚举，跳过
+_CHAT_UPLOAD_MAGIC_BYTES: Dict[str, tuple] = {
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".gif": (b"GIF87a", b"GIF89a"),
+    ".webp": (b"RIFF",),  # WEBP 容器头部，进一步校验偏移 8-12 字节为 WEBP
+}
+
+
+def _validate_chat_upload_magic_bytes(data: bytes, ext: str) -> bool:
+    """校验上传文件首部 magic bytes 是否与扩展名声明一致。"""
+    expected = _CHAT_UPLOAD_MAGIC_BYTES.get(ext)
+    if not expected:
+        return True  # 非图片类型不强制校验
+    if not any(data.startswith(magic) for magic in expected):
+        return False
+    # WEBP 额外校验偏移 8-12
+    if ext == ".webp" and len(data) >= 12 and data[8:12] != b"WEBP":
+        return False
+    return True
+
 
 @router.post(
     "/upload",
@@ -575,6 +598,11 @@ async def upload_chat_file(
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail=f"文件大小超过限制（最大 {MAX_UPLOAD_SIZE // 1024 // 1024}MB）")
 
+    # 校验文件 magic bytes，防止扩展名/MIME 伪造（防存储型 XSS 与恶意文件上传）
+    if not _validate_chat_upload_magic_bytes(content, ext):
+        logger.warning(f"chat 文件上传 magic bytes 校验失败: ext={ext}, filename={file.filename}")
+        raise HTTPException(status_code=400, detail="文件内容与声明的类型不匹配")
+
     # 生成安全文件名（UUID + 原始扩展名，防止路径遍历）
     safe_filename = f"{uuid.uuid4().hex}{ext}"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -584,7 +612,9 @@ async def upload_chat_file(
         with open(file_path, "wb") as f:
             f.write(content)
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"文件写入失败: {exc}")
+        # 不向客户端泄露内部异常细节（文件系统路径等），仅记录日志
+        logger.error(f"chat 文件上传写入失败: {exc}", exc_info=exc)
+        raise HTTPException(status_code=500, detail="文件保存失败，请稍后重试")
 
     # 判断文件类型分类
     image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp"}

@@ -189,12 +189,14 @@ def _get_project_dir(project_dir: Optional[str] = None) -> str:
     """获取项目根目录。"""
     raw = project_dir or DEFAULT_PROJECT_DIR
     # 防止通过 project_dir 参数遍历到系统根目录
-    resolved = os.path.realpath(os.path.abspath(raw))
-    default_resolved = os.path.realpath(os.path.abspath(DEFAULT_PROJECT_DIR))
-    # 仅当请求目录在默认项目目录子树内或等于默认目录时放行
-    if not (resolved == default_resolved or resolved.startswith(default_resolved + os.sep)):
+    resolved = Path(os.path.realpath(os.path.abspath(raw))).resolve()
+    default_resolved = Path(os.path.realpath(os.path.abspath(DEFAULT_PROJECT_DIR))).resolve()
+    # 使用 relative_to 替代 startswith，防止前缀绕过（符号链接/短文件名/大小写等场景）
+    try:
+        resolved.relative_to(default_resolved)
+    except ValueError:
         raise HTTPException(status_code=403, detail="禁止访问指定项目目录")
-    return resolved
+    return str(resolved)
 
 
 def _validate_file_path(file_path: str, project_dir: str, *, is_write: bool = False) -> str:
@@ -222,18 +224,21 @@ def _validate_file_path(file_path: str, project_dir: str, *, is_write: bool = Fa
         logger.warning(f"敏感文件访问被拒绝: {file_path}")
         raise HTTPException(status_code=403, detail="禁止访问敏感文件")
 
-    # 第 2 层：自有路径遍历防护
-    root_real = os.path.realpath(project_dir)
-    resolved = os.path.realpath(os.path.join(root_real, file_path.lstrip("/\\")))
-    if not resolved.startswith(root_real + os.sep) and resolved != root_real:
-        raise HTTPException(status_code=403, detail="禁止访问项目目录外的文件")
+    # 第 2 层：自有路径遍历防护（使用 relative_to 替代 startswith，防前缀绕过）
+    root_real = Path(os.path.realpath(project_dir)).resolve()
+    resolved = Path(os.path.realpath(os.path.join(str(root_real), file_path.lstrip("/\\")))).resolve()
+    try:
+        resolved.relative_to(root_real)
+    except ValueError:
+        if resolved != root_real:
+            raise HTTPException(status_code=403, detail="禁止访问项目目录外的文件")
 
     # 第 3 层：复用沙箱 is_path_allowed（含 .env deny 规则、TOCTOU 防护）
-    if not is_path_allowed(resolved, is_write=is_write, working_dir=root_real):
+    if not is_path_allowed(str(resolved), is_write=is_write, working_dir=str(root_real)):
         logger.warning(f"路径被沙箱拒绝: {file_path} (resolved={resolved})")
         raise HTTPException(status_code=403, detail="路径被沙箱安全策略拒绝")
 
-    return resolved
+    return str(resolved)
 
 
 # ---- Request Schemas ----

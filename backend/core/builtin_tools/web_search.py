@@ -258,10 +258,11 @@ class WebSearchSkill:
         """
         # 1. SSRF 校验：若 security.search_ssrf 模块可用则校验 base_url
         #    Task 9 尚未执行时模块不存在，用 ImportError 兜底跳过
+        #    安全策略：默认禁止内网/回环/链路本地地址，防止已认证用户探测内网服务
         try:
             from security.search_ssrf import validate_search_url
 
-            is_valid, err = validate_search_url(base_url, allow_private=True)
+            is_valid, err = validate_search_url(base_url, allow_private=False)
             if not is_valid:
                 raise ValueError(f"SearXNG base_url SSRF 校验失败: {err}")
         except ImportError:

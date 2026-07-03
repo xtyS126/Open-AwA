@@ -1119,6 +1119,9 @@ def _build_csp_header() -> str:
         # 保留 ws://localhost:* 与 ws://127.0.0.1:* 用于 Vite HMR 与本地 PTY/预览服务
         "connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*; "
         "frame-src 'self'; "
+        "frame-ancestors 'self'; "
+        "worker-src 'self'; "
+        "child-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
@@ -1127,11 +1130,24 @@ def _build_csp_header() -> str:
 
 _CSP_HEADER_VALUE = _build_csp_header()
 
+# 预生成额外安全响应头缓存（与 CSP 一样在启动时构建一次）
+# 这些头是 OWASP 推荐的最低安全基线，防御点击劫持/MIME 嗅探/Referer 泄露等
+_DEBUG_MODE_FOR_HEADERS = os.getenv("DEBUG_MODE", "").lower() == "true"
+_SECURITY_HEADERS: dict = {
+    "X-Content-Type-Options": "nosniff",  # 禁止浏览器 MIME 嗅探
+    "X-Frame-Options": "DENY",  # 禁止页面被嵌入 iframe（防点击劫持，CSP frame-ancestors 的旧浏览器后备）
+    "Referrer-Policy": "strict-origin-when-cross-origin",  # 跨域请求仅发送 origin，不泄露完整 URL
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",  # 禁用敏感浏览器 API
+}
+# HSTS 仅在生产 TLS 环境启用（开发环境 http 会导致浏览器标记不安全）
+if not _DEBUG_MODE_FOR_HEADERS:
+    _SECURITY_HEADERS["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
 
 @app.middleware("http")
 async def _add_csp_header(request: Request, call_next):
     """
-    为所有响应添加 Content-Security-Policy 头。
+    为所有响应添加 Content-Security-Policy 头与其他安全响应头。
     CSP 作为 XSS 攻击的第二道防线，在默认 React 转义基础上提供额外保护。
     script-src 禁止 unsafe-inline，通过 Trusted Types + nonce 方案防御 XSS。
     style-src 在调试模式下保留 unsafe-inline 以兼容 React 热更新样式注入。
@@ -1140,6 +1156,8 @@ async def _add_csp_header(request: Request, call_next):
     """
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = _CSP_HEADER_VALUE
+    for key, value in _SECURITY_HEADERS.items():
+        response.headers[key] = value
     return response
 
 # Rate Limiting 配置

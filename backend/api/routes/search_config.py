@@ -149,7 +149,15 @@ async def update_search_config(
         if not parsed.hostname:
             raise HTTPException(status_code=400, detail="base_url 缺少主机名")
 
-        allow_private = bool(payload.extra_config.get("allow_private_network", False))
+        # 安全策略：allow_private_network 仅管理员可开启，防止普通用户扫描内网
+        # 普通用户传入此字段将被强制降级为 False
+        requested_allow_private = bool(payload.extra_config.get("allow_private_network", False))
+        is_admin = getattr(current_user, "role", "user") == "admin"
+        allow_private = requested_allow_private and is_admin
+        if requested_allow_private and not is_admin:
+            logger.warning(
+                f"非管理员用户尝试开启 allow_private_network 被拒绝: user_id={current_user.id}"
+            )
         is_valid, error_message = validate_search_url(base_url, allow_private=allow_private)
         if not is_valid:
             logger.bind(

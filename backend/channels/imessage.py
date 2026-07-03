@@ -76,12 +76,30 @@ class IMessageAdapter(ChannelAdapter):
 
         text = self.format_bot_message(message.content)
 
-        # 转义 AppleScript 中的特殊字符
-        escaped_text = text.replace('\\', '\\\\').replace('"', '\\"')
+        # AppleScript 字符串上下文中需转义的特殊字符：
+        # - 反斜杠和双引号（基础）
+        # - 花括号 {}（AppleScript 中用于列表/记录字面量，可破坏脚本结构）
+        # - 竖线 |（AppleScript 中用于转义标识符边界）
+        # - 换行符/制表符（AppleScript 字符串中需用 \n/\t 转义形式）
+        # 通过严格白名单转义，避免 conversation_id/content 注入任意 AppleScript 代码
+        def _escape_applescript_str(s: str) -> str:
+            # 顺序很重要：先转义反斜杠，再转义其他
+            s = s.replace('\\', '\\\\')
+            s = s.replace('"', '\\"')
+            s = s.replace('{', '\\{')
+            s = s.replace('}', '\\}')
+            s = s.replace('|', '\\|')
+            s = s.replace('\n', '\\n')
+            s = s.replace('\r', '\\r')
+            s = s.replace('\t', '\\t')
+            return s
+
+        escaped_recipient = _escape_applescript_str(recipient)
+        escaped_text = _escape_applescript_str(text)
 
         script = f'''
         tell application "Messages"
-            set targetBuddy to "{recipient}"
+            set targetBuddy to "{escaped_recipient}"
             set targetService to id of service "iMessage"
             set theBuddy to buddy targetBuddy of service "iMessage"
             send "{escaped_text}" to theBuddy
@@ -96,14 +114,17 @@ class IMessageAdapter(ChannelAdapter):
                 timeout=15,
             )
             if result.returncode != 0:
-                return {"success": False, "error": result.stderr.strip()}
+                # 不向调用方泄露 osascript 完整 stderr（可能含主机路径等）
+                return {"success": False, "error": "iMessage 发送失败"}
             return {"success": True, "response": "消息已发送"}
         except subprocess.TimeoutExpired:
             return {"success": False, "error": "AppleScript 执行超时"}
         except FileNotFoundError:
             return {"success": False, "error": "osascript 不可用"}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            # 记录完整异常到日志，对外返回通用错误
+            logger.error("imessage 发送异常", exc_info=e)
+            return {"success": False, "error": "发送异常"}
 
     async def receive_messages(self) -> AsyncIterator[ChannelMessage]:
         """
