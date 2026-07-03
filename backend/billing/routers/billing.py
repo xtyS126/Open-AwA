@@ -7,7 +7,7 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 # 第三方库
 from cachetools import TTLCache
@@ -308,7 +308,7 @@ async def get_usage(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的用量记录。
     使用 current_user.id 代替查询参数，防止越权访问他人用量数据。
@@ -353,7 +353,7 @@ async def get_cost_statistics(
     period: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的成本统计。
     使用 current_user.id 代替查询参数，防止越权访问他人成本数据。
@@ -368,7 +368,7 @@ async def get_models(
     provider: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取models相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -404,7 +404,7 @@ async def update_model_pricing(
     update_data: PricingUpdateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新model、pricing相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -439,7 +439,7 @@ async def update_model_pricing(
 async def get_budget(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取当前登录用户的预算状态。
     使用 current_user.id 代替查询参数，防止越权访问他人预算。
@@ -454,7 +454,7 @@ async def create_budget(
     budget_data: BudgetCreateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     创建budget相关对象、记录或执行结果。
     实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
@@ -494,7 +494,7 @@ async def update_budget(
     update_data: BudgetUpdateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新budget相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -524,7 +524,7 @@ async def delete_budget(
     budget_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     删除budget相关对象或持久化记录。
     实现中通常还会同时处理资源释放、状态回收或关联数据清理。
@@ -544,7 +544,7 @@ async def get_report(
     format: str = Query("json", pattern="^(json|csv)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取当前登录用户的计费报告。
     使用 current_user.id 代替查询参数，防止越权查看他人报告。
@@ -578,7 +578,7 @@ async def get_session_usage(
     session_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取session、usage相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -607,7 +607,7 @@ async def estimate_cost(
     video_seconds: float = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理estimate、cost相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -648,7 +648,7 @@ async def estimate_cost(
 async def initialize_default_pricing(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理initialize、default、pricing相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -666,7 +666,7 @@ async def initialize_default_pricing(
 async def get_retention_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取retention、config相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -692,7 +692,7 @@ async def update_retention_config(
     cleanup: bool = Query(False, description="Whether to cleanup old records"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新retention、config相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -719,7 +719,7 @@ async def update_retention_config(
 async def get_configurations(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取configurations相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -761,7 +761,7 @@ async def get_configuration(
     config_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取configuration相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -780,7 +780,7 @@ async def create_configuration(
     config_data: ModelConfigCreateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     创建configuration相关对象、记录或执行结果。
     实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
@@ -806,7 +806,7 @@ async def update_configuration(
     update_data: ModelConfigUpdateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新configuration相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -839,7 +839,7 @@ async def delete_configuration(
     config_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     删除configuration相关对象或持久化记录。
     实现中通常还会同时处理资源释放、状态回收或关联数据清理。
@@ -861,7 +861,7 @@ async def set_default_configuration(
     config_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     设置default、configuration相关配置或运行状态。
     此类方法通常会直接影响后续执行路径或运行上下文中的关键数据。
@@ -909,7 +909,7 @@ async def update_configuration_parameters(
     params: ModelParameterUpdateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新指定模型配置的运行参数（temperature、top_k、top_p、max_tokens_limit、
     frequency_penalty、presence_penalty、timeout、retry_count）。
@@ -985,7 +985,7 @@ async def get_configuration_capabilities(
     config_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取指定模型配置的能力信息、默认参数与限制范围。
     """
@@ -1045,7 +1045,7 @@ async def reset_configuration_parameters(
     config_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     将指定模型配置的所有运行参数重置为系统默认值。
     """
@@ -1079,7 +1079,7 @@ async def batch_update_configuration_status(
     payload: BatchStatusUpdateRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     批量更新模型配置状态。
     """
@@ -1098,7 +1098,7 @@ async def batch_update_configuration_status(
 async def get_providers(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取providers相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -1116,7 +1116,7 @@ async def get_providers(
 async def get_provider_catalog(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取供应商预填充目录，合并数据库和 pricing_data.json 中的供应商信息。
     用于新增供应商时的下拉选择，支持预填充 base_url 和模型列表。
@@ -1136,7 +1136,7 @@ async def get_provider_detail(
     provider: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取供应商详情，包含凭据信息、默认配置和聚合的已选模型列表。
     selected_models 从该供应商的所有 ModelConfiguration 聚合，
@@ -1204,7 +1204,7 @@ async def delete_provider(
     provider: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     删除provider相关对象或持久化记录。
     实现中通常还会同时处理资源释放、状态回收或关联数据清理。
@@ -1242,7 +1242,7 @@ async def save_provider_credential(
     data: ProviderCredentialRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """保存/更新 Provider 的 API 凭据。"""
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
@@ -1274,7 +1274,7 @@ async def get_provider_credential(
     provider: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """获取指定 Provider 的凭据信息（不含明文 API Key）。"""
     pricing_manager = PricingManager(db)
     provider_id = pricing_manager.normalize_provider(provider)
@@ -1307,7 +1307,7 @@ async def get_provider_masked_api_key(
     provider: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """获取指定 Provider 的脱敏 API Key，用于前端安全展示。"""
     from config.security import decrypt_secret_value
 
@@ -1360,7 +1360,7 @@ async def get_provider_plain_api_key(
     provider: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取指定 Provider 的明文 API Key。
     仅供已认证用户在前端点击"显示"按钮时主动调用，
@@ -1411,7 +1411,7 @@ async def update_provider_selected_models(
     payload: ProviderModelSelectionRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新供应商的已选模型列表。
     若该供应商尚无默认 ModelConfiguration，则自动创建一个占位配置，
@@ -1465,7 +1465,7 @@ async def get_models_by_provider(
     payload: Optional[ProviderModelsFetchRequest] = Body(default=None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取models、by、provider相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -1640,7 +1640,7 @@ async def update_retention(
     cleanup: bool = Body(False),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新retention相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -1671,7 +1671,7 @@ CONFIG_TYPE_MAP = {
 
 
 @router.get("/configs")
-async def get_all_configs(current_user = Depends(get_current_user)):
+async def get_all_configs(current_user = Depends(get_current_user)) -> Dict[str, Any]:
     try:
         pricing_task = config_loader.load_pricing_data_async()
         configs_task = config_loader.load_default_configurations_async()
@@ -1700,7 +1700,7 @@ async def get_all_configs(current_user = Depends(get_current_user)):
 async def get_config_by_type(
     config_type: str,
     current_user = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     if config_type not in CONFIG_TYPE_MAP:
         raise HTTPException(
             status_code=400,
@@ -1724,7 +1724,7 @@ async def get_config_by_type(
 async def get_budget_alerts(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """获取当前用户的预算预警事件列表。"""
     from billing.alerts import BudgetAlertService
     service = BudgetAlertService(db)
@@ -1736,7 +1736,7 @@ async def get_budget_alerts(
 async def get_all_budget_alerts(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """获取所有用户的预算预警事件（管理员视角）。"""
     from billing.alerts import BudgetAlertService
     service = BudgetAlertService(db)
@@ -1748,7 +1748,7 @@ async def get_all_budget_alerts(
 async def get_optimization_suggestions(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """获取当前用户的成本优化建议报告。"""
     from billing.alerts import CostOptimizationService
     service = CostOptimizationService(db)
