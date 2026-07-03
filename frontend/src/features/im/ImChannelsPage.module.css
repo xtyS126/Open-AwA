@@ -2,8 +2,7 @@
 
 .container {
   padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: 100%;
   color: var(--color-text);
 }
 
@@ -29,6 +28,38 @@
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
+}
+
+/* 顶部 Tab 切换 */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover, var(--color-bg-secondary));
+}
+
+.tabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 600;
 }
 
 /* 状态徽章 */

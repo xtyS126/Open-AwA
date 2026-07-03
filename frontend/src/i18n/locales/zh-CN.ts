@@ -62,7 +62,6 @@ const zhCN: Record<string, string> = {
   "sidebar.experience": "经验",
   "sidebar.theme": "外观",
   "sidebar.settings": "设置",
-  "sidebar.communication": "通讯配置",
   "sidebar.agent": "代理",
   "sidebar.menu": "菜单",
   "sidebar.expand": "展开",
@@ -1125,12 +1124,6 @@ const zhCN: Record<string, string> = {
   "theme.restoreDefault": "恢复所有默认设置",
   "theme.fileTooLarge": "文件大小不能超过 2MB",
 
-  // ===== 通讯配置 =====
-  "communication.title": "通讯配置",
-  "communication.wechat": "微信",
-  "communication.loading": "加载模块中...",
-  "communication.configHint": "配置外部通讯渠道，如微信 iLink 集成。",
-
   // ===== 微信配置 =====
   "wechat.title": "微信通讯配置",
   "wechat.loadingConfig": "加载配置中...",
@@ -1461,7 +1454,6 @@ const zhCN: Record<string, string> = {
   "sidebar.agents": "Agent",
   "sidebar.roles": "角色管理",
   "sidebar.roleMarket": "角色市场",
-  "sidebar.data": "数据看板",
   "sidebar.workflows": "工作流",
   "sidebar.subagents": "子智能体",
   "sidebar.im": "IM 渠道",

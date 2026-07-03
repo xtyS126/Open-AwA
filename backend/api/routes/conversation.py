@@ -75,6 +75,27 @@ def _to_dict(record: ConversationRecord) -> Dict[str, Any]:
     }
 
 
+def _to_preview_dict(record: ConversationRecord) -> Dict[str, Any]:
+    """
+    轻量预览序列化：仅返回必要字段，排除 llm_input/llm_output/metadata 等大字段。
+    用于 records-preview 端点，避免向前端回传完整 LLM payload 导致响应过大。
+    """
+    return {
+        "id": record.id,
+        "session_id": record.session_id,
+        "user_id": record.user_id,
+        "node_type": record.node_type,
+        "user_message": record.user_message,
+        "timestamp": record.timestamp.isoformat() if record.timestamp else None,
+        "provider": record.provider,
+        "model": record.model,
+        "llm_tokens_used": record.llm_tokens_used,
+        "execution_duration_ms": record.execution_duration_ms,
+        "status": record.status,
+        "error_message": record.error_message,
+    }
+
+
 def _serialize_conversation(conversation: Conversation) -> Dict[str, Any]:
     """
     将会话聚合对象序列化为前端所需结构。
@@ -236,7 +257,7 @@ async def get_records_preview(
     ).info("conversation records preview loaded")
 
     return {
-        "records": [_to_dict(item) for item in records],
+        "records": [_to_preview_dict(item) for item in records],
         "count": len(records),
         "limit": limit,
     }

@@ -245,12 +245,152 @@
   color: var(--color-text-secondary);
 }
 
+/* ========== 业务数据分区（合并自 DataDashboard） ========== */
+
+/* 业务统计卡片网格（4 列） —— 与页面顶部统计卡片区分，采用更紧凑的图标+数值布局 */
+.bizStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+/* 业务统计卡片 —— 图标 + 数值/标签水平排列 */
+.bizStatCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  transition: box-shadow var(--transition-base);
+}
+
+.bizStatCard:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.bizStatIcon {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.bizStatInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bizStatValue {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  line-height: var(--leading-tight);
+}
+
+.bizStatLabel {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-normal);
+}
+
+/* 角色使用分布卡片容器 */
+.bizRoleCard {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  transition: box-shadow var(--transition-base);
+}
+
+.bizRoleCard:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 角色使用分布标题 —— 含图标 */
+.bizRoleTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-4) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bizRoleTitle svg {
+  color: var(--color-primary);
+}
+
+/* 角色使用列表 —— 垂直堆叠 */
+.roleUsageList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 单条角色使用项 —— 名称 + 条形 + 数值 */
+.roleUsageItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.roleName {
+  min-width: 100px;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 条形图轨道 */
+.roleBar {
+  flex: 1;
+  height: 8px;
+  background: var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* 条形图填充 —— 主色，宽度由 inline style 控制 */
+.roleBarFill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.roleCount {
+  min-width: 40px;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+
+/* 业务数据空状态/加载占位 */
+.bizEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+}
+
 /* ========== 响应式适配 ========== */
 
 /* 平板及以下 —— 统计/系统网格降为 2 列，图表降为 1 列 */
 @media (max-width: 1024px) {
   .statGrid,
-  .systemGrid {
+  .systemGrid,
+  .bizStatsGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -266,7 +406,12 @@
   }
 
   .statGrid,
-  .systemGrid {
+  .systemGrid,
+  .bizStatsGrid {
     grid-template-columns: 1fr;
+  }
+
+  .roleName {
+    min-width: 70px;
   }
 }

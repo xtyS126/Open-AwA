@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import {
   Activity, ShieldCheck, ShieldX, Server, Globe,
   RefreshCw, CheckCircle2, XCircle, AlertTriangle,
@@ -40,6 +40,11 @@ function getCategoryIcon(category: string) {
 }
 
 export default function TestPage() {
+  // 开发模式守卫：非开发环境下重定向到仪表盘
+  if (!import.meta.env.DEV) {
+    return <Navigate to="/dashboard" replace />
+  }
+
   const navigate = useNavigate()
   const [tests, setTests] = useState<FeatureTest[]>([
     { name: 'server-ping', label: '服务器连通性', category: 'backend', status: 'idle', message: '待检测', detail: null },

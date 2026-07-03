@@ -1,5 +1,5 @@
 /**
- * UserPage 测试套件 — 用户中心页面（当前 UI：AI 画像/安全设置/设备管理三标签）
+ * UserPage 测试套件 — 用户中心页面（当前 UI：个人信息/画像总览/事实管理/洋葱画像四标签）
  */
 import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -101,37 +101,36 @@ describe('UserCenterPage', () => {
   })
 
   // ============ 标签导航 ============
-  it('渲染三个标签页导航', async () => {
+  it('渲染四个标签页导航', async () => {
     getProfileMock.mockResolvedValueOnce({ data: createMockProfile() })
     getDevicesMock.mockResolvedValueOnce({ data: createMockDevices() })
     render(<BrowserRouter><UserCenterPage /></BrowserRouter>)
     await waitFor(() => { expect(screen.getByText('个人信息')).toBeInTheDocument() })
-    expect(screen.getByText('AI 画像')).toBeInTheDocument()
-    expect(screen.getByText('安全设置')).toBeInTheDocument()
-    expect(screen.getByText('设备管理')).toBeInTheDocument()
+    expect(screen.getByText('画像总览')).toBeInTheDocument()
+    expect(screen.getByText('事实管理')).toBeInTheDocument()
+    expect(screen.getByText('洋葱画像')).toBeInTheDocument()
   })
 
-  // ============ 安全设置 ============
-  it('切换到安全设置标签显示密码修改和退出登录', async () => {
+  // ============ 个人信息 Tab（含密码修改和退出登录） ============
+  it('个人信息标签显示密码修改和退出登录', async () => {
     getProfileMock.mockResolvedValueOnce({ data: createMockProfile() })
     getDevicesMock.mockResolvedValueOnce({ data: createMockDevices() })
     render(<BrowserRouter><UserCenterPage /></BrowserRouter>)
     await waitFor(() => { expect(screen.getByText('个人信息')).toBeInTheDocument() })
 
-    fireEvent.click(screen.getByText('安全设置'))
+    // 个人信息 Tab 为默认 Tab，密码修改和退出登录直接在其中
     await waitFor(() => { expect(screen.getByRole('heading', { name: '修改密码' })).toBeInTheDocument() })
     expect(screen.getByRole('heading', { name: '退出登录' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument()
   })
 
-  // ============ 设备管理 ============
-  it('切换到设备管理标签显示设备列表', async () => {
+  // ============ 设备管理（个人信息 Tab 子区域） ============
+  it('个人信息标签包含设备列表', async () => {
     getProfileMock.mockResolvedValueOnce({ data: createMockProfile() })
     getDevicesMock.mockResolvedValueOnce({ data: createMockDevices() })
     render(<BrowserRouter><UserCenterPage /></BrowserRouter>)
     await waitFor(() => { expect(screen.getByText('个人信息')).toBeInTheDocument() })
 
-    fireEvent.click(screen.getByText('设备管理'))
     await waitFor(() => { expect(screen.getByRole('heading', { name: '登录设备' })).toBeInTheDocument() })
   })
 
@@ -142,7 +141,7 @@ describe('UserCenterPage', () => {
     render(<BrowserRouter><UserCenterPage /></BrowserRouter>)
     await waitFor(() => { expect(screen.getByText('个人信息')).toBeInTheDocument() })
 
-    fireEvent.click(screen.getByText('安全设置'))
+    // 退出登录在个人信息 Tab 中，无需切换
     await waitFor(() => { expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument() })
 
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }))

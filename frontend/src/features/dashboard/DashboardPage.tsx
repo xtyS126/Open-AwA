@@ -1,11 +1,14 @@
 /**
  * 仪表盘页面 —— 对齐 Canvas 设计参考 (open-awa-canvas/pages/dashboard.html)。
- * 结构：页面标题 / 4 列统计卡片 / 2 列折线图 / 4 列系统资源 / 最近活动表格。
+ * 结构：页面标题 / 4 列统计卡片 / 2 列折线图 / 4 列系统资源 / 最近活动表格 / 业务数据分区。
  * 数据获取逻辑保持不变，仅重构布局与可视化呈现。
+ * 业务数据分区合并自原 DataDashboard（对话数/工具调用/平均响应时间/用户反馈/角色使用分布）。
  */
 import { useState, useEffect, useMemo, memo, type ReactNode } from 'react'
+import { BarChart3, MessageSquare, Wrench, Activity, ThumbsUp } from 'lucide-react'
 import { behaviorAPI, skillsAPI, pluginsAPI, memoryAPI } from '@/shared/api/api'
 import { billingAPI } from '@/features/billing/billingApi'
+import { getDataStats, type DataStats } from '@/shared/api/dataApi'
 import { BehaviorStats, BillingStats } from '@/features/dashboard/dashboard'
 import { StatCard, Badge } from '@/shared/components/ui'
 import styles from './DashboardPage.module.css'
@@ -296,19 +299,23 @@ function DashboardPage() {
     longTermMemories: 0,
   })
   const [loading, setLoading] = useState(true)
+  /* 业务数据状态 —— 合并自 DataDashboard，独立于系统概览，加载失败时为 null */
+  const [dataStats, setDataStats] = useState<DataStats | null>(null)
 
   const loadStats = async () => {
     try {
-      /* 并发加载所有数据源 —— 保持原有调用不变 */
-      const [behaviorRes, billingRes, skillsRes, pluginsRes, memoryRes] = await Promise.all([
+      /* 并发加载所有数据源 —— 保持原有调用不变，业务数据并行拉取 */
+      const [behaviorRes, billingRes, skillsRes, pluginsRes, memoryRes, dataRes] = await Promise.all([
         behaviorAPI.getStats(7).catch(() => ({ data: null })),
         billingAPI.getCostStatistics({ period: 'monthly' }).catch(() => ({ data: null })),
         skillsAPI.getAll().catch(() => ({ data: [] })),
         pluginsAPI.getAll().catch(() => ({ data: [] })),
         memoryAPI.getLongTerm().catch(() => ({ data: [] })),
+        getDataStats().catch(() => null),
       ])
       setStats(behaviorRes.data)
       setBillingStats(billingRes.data)
+      setDataStats(dataRes)
 
       /* 从真实接口汇总系统概览（API 返回裸数组） */
       const skillsList = Array.isArray(skillsRes.data) ? skillsRes.data : []
@@ -381,6 +388,12 @@ function DashboardPage() {
       : 0
     return buildYAxis(max, '$')
   }, [costChartData])
+
+  /* 角色使用分布最大值 —— 用于条形图百分比计算（合并自 DataDashboard） */
+  const maxRoleCount = useMemo(() => {
+    if (!dataStats || dataStats.role_usage.length === 0) return 0
+    return Math.max(...dataStats.role_usage.map(r => r.count))
+  }, [dataStats])
 
   if (loading) {
     return <div className={styles.loading}>加载中...</div>
@@ -542,6 +555,77 @@ function DashboardPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ========== 业务数据分区（合并自 DataDashboard） ========== */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>业务数据</h2>
+
+        {dataStats ? (
+          <>
+            {/* 业务统计卡片 —— 对话数 / 工具调用 / 平均响应时间 / 用户反馈 */}
+            <div className={styles.bizStatsGrid}>
+              <div className={styles.bizStatCard}>
+                <MessageSquare size={24} className={styles.bizStatIcon} />
+                <div className={styles.bizStatInfo}>
+                  <span className={styles.bizStatValue}>{dataStats.conversation_count}</span>
+                  <span className={styles.bizStatLabel}>对话数</span>
+                </div>
+              </div>
+              <div className={styles.bizStatCard}>
+                <Wrench size={24} className={styles.bizStatIcon} />
+                <div className={styles.bizStatInfo}>
+                  <span className={styles.bizStatValue}>{dataStats.tool_call_count}</span>
+                  <span className={styles.bizStatLabel}>工具调用</span>
+                </div>
+              </div>
+              <div className={styles.bizStatCard}>
+                <Activity size={24} className={styles.bizStatIcon} />
+                <div className={styles.bizStatInfo}>
+                  <span className={styles.bizStatValue}>{dataStats.avg_response_time_ms.toFixed(0)}ms</span>
+                  <span className={styles.bizStatLabel}>平均响应时间</span>
+                </div>
+              </div>
+              <div className={styles.bizStatCard}>
+                <ThumbsUp size={24} className={styles.bizStatIcon} />
+                <div className={styles.bizStatInfo}>
+                  <span className={styles.bizStatValue}>{dataStats.feedback_count}</span>
+                  <span className={styles.bizStatLabel}>用户反馈</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 角色使用分布条形图 */}
+            {dataStats.role_usage.length > 0 && (
+              <div className={styles.bizRoleCard}>
+                <h3 className={styles.bizRoleTitle}>
+                  <BarChart3 size={18} />
+                  角色使用分布
+                </h3>
+                <div className={styles.roleUsageList}>
+                  {dataStats.role_usage.map(item => (
+                    <div key={item.role_id} className={styles.roleUsageItem}>
+                      <span className={styles.roleName}>{item.role_id || '默认'}</span>
+                      <div className={styles.roleBar}>
+                        <div
+                          className={styles.roleBarFill}
+                          style={{
+                            width: maxRoleCount > 0
+                              ? `${Math.min(100, (item.count / maxRoleCount) * 100)}%`
+                              : '0%',
+                          }}
+                        />
+                      </div>
+                      <span className={styles.roleCount}>{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className={styles.bizEmpty} role="status">暂无业务数据</div>
+        )}
       </div>
     </div>
   )

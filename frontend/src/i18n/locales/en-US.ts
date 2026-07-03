@@ -62,7 +62,6 @@ const enUS: Record<string, string> = {
   "sidebar.experience": "Experience",
   "sidebar.theme": "Appearance",
   "sidebar.settings": "Settings",
-  "sidebar.communication": "Channels",
   "sidebar.agent": "Agents",
   "sidebar.menu": "Menu",
   "sidebar.expand": "Expand",
@@ -1124,12 +1123,6 @@ const enUS: Record<string, string> = {
   "theme.restoreDefault": "Restore All Defaults",
   "theme.fileTooLarge": "File must not exceed 2MB",
 
-  // ===== Communication =====
-  "communication.title": "Communication Settings",
-  "communication.wechat": "WeChat",
-  "communication.loading": "Loading module...",
-  "communication.configHint": "Configure external communication channels, such as WeChat iLink integration.",
-
   // ===== WeChat Config =====
   "wechat.title": "WeChat Communication Config",
   "wechat.loadingConfig": "Loading config...",
@@ -1460,7 +1453,6 @@ const enUS: Record<string, string> = {
   "sidebar.agents": "Agents",
   "sidebar.roles": "Roles",
   "sidebar.roleMarket": "Role Market",
-  "sidebar.data": "Data Dashboard",
   "sidebar.workflows": "Workflows",
   "sidebar.subagents": "Sub-Agents",
   "sidebar.im": "IM Channels",

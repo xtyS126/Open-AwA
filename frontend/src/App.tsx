@@ -28,9 +28,7 @@ const PluginConfigPage = React.lazy(() => import('@/features/plugins/PluginConfi
 const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
 const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
 const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
-const CommunicationPage = React.lazy(() => import('@/features/chat/CommunicationPage'))
 const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
-const ProfileEditorPage = React.lazy(() => import('@/features/user/ProfileEditorPage'))
 const MarketplacePage = React.lazy(() => import('@/features/plugins/MarketplacePage'))
 const TestPage = React.lazy(() => import('@/features/test/TestPage'))
 const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
@@ -40,11 +38,9 @@ const SkillMarketPage = React.lazy(() => import('@/features/skills/SkillMarketPa
 const RolesPage = React.lazy(() => import('@/features/roles/RolesPage'))
 const RoleMarketPage = React.lazy(() => import('@/features/marketplace/RoleMarketPage'))
 const TtsPage = React.lazy(() => import('@/features/tts/TtsPage'))
-const DataDashboard = React.lazy(() => import('@/features/data/DataDashboard'))
 const ImChannelsPage = React.lazy(() => import('@/features/im/ImChannelsPage'))
 const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage'))
 const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'))
-const SoulPage = React.lazy(() => import('@/features/soul/SoulPage'))
 const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
 const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
 
@@ -63,6 +59,14 @@ function NavigationLogger() {
   }, [location.pathname])
 
   return null
+}
+
+// 开发模式路由守卫：非开发环境下重定向到仪表盘
+const DevTestRoute = () => {
+  if (!import.meta.env.DEV) {
+    return <Navigate to="/dashboard" replace />
+  }
+  return <TestPage />
 }
 
 function AppRoutes() {
@@ -111,22 +115,17 @@ function AppRoutes() {
               <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
               <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
               <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
-              <Route path="/communication" element={<ErrorBoundary name="Communication"><CommunicationPage /></ErrorBoundary>} />
-              <Route path="/theme" element={<Navigate to="/settings?tab=appearance" replace />} />
               <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
-              <Route path="/profile/edit" element={<ErrorBoundary name="ProfileEditor"><ProfileEditorPage /></ErrorBoundary>} />
-              <Route path="/test" element={<ErrorBoundary name="Test"><TestPage /></ErrorBoundary>} />
+              <Route path="/dev/test" element={<ErrorBoundary name="Test"><DevTestRoute /></ErrorBoundary>} />
               <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
               <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />
               <Route path="/inbox" element={<ErrorBoundary name="Inbox"><InboxPage /></ErrorBoundary>} />
               <Route path="/roles" element={<ErrorBoundary name="Roles"><RolesPage /></ErrorBoundary>} />
               <Route path="/role-market" element={<ErrorBoundary name="RoleMarket"><RoleMarketPage /></ErrorBoundary>} />
-              <Route path="/data" element={<ErrorBoundary name="Data"><DataDashboard /></ErrorBoundary>} />
               <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
               <Route path="/im" element={<ErrorBoundary name="ImChannels"><ImChannelsPage /></ErrorBoundary>} />
             <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
             <Route path="/subagents" element={<ErrorBoundary name="SubAgents"><SubAgentPage /></ErrorBoundary>} />
-            <Route path="/soul" element={<ErrorBoundary name="Soul"><SoulPage /></ErrorBoundary>} />
             <Route path="/vibe-coding" element={<ErrorBoundary name="VibeCoding"><VibeCodingPage /></ErrorBoundary>} />
             <Route path="/discussions" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
             <Route path="/discussions/:id" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />

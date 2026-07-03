@@ -1,11 +1,10 @@
 /**
  * 记忆管理页面 —— 对齐 Canvas 设计参考 (open-awa-canvas/pages/memory.html)。
- * 结构：页面标题 / 4 列统计卡片 / 左侧记忆列表 + 右侧系统状态侧栏。
- * 数据获取逻辑保持不变（短期/长期记忆），新增经验库数据加载。
+ * 结构：页面标题 / 统计卡片 / 左侧记忆列表 + 右侧系统状态侧栏。
+ * 数据获取逻辑保持不变（短期/长期记忆）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { conversationAPI, memoryAPI } from '@/shared/api/api'
-import { experiencesAPI } from '@/features/experiences/experiencesApi'
 import { ShortTermMemory, LongTermMemory } from '@/shared/types/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
 import { appLogger } from '@/shared/utils/logger'
@@ -16,21 +15,11 @@ import styles from './MemoryPage.module.css'
  * 类型定义
  * ============================================================ */
 
-/* 经验条目数据结构 —— 从 experiencesAPI 返回中提取所需字段 */
-interface ExperienceItem {
-  id: number
-  title: string
-  content: string
-  confidence: number
-  created_at: string
-  last_access: string
-}
-
-/* 统一记忆列表项 —— 合并长期记忆与经验为统一展示模型 */
+/* 统一记忆列表项 —— 长期记忆展示模型 */
 interface MemoryListItem {
   key: string
   content: string
-  type: 'long-term' | 'experience'
+  type: 'long-term'
   confidence: number
   time: string
   onDelete: (() => void) | null
@@ -71,13 +60,6 @@ const FileIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" {...svgBase}>
     <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
     <polyline points="13 2 13 9 20 9" />
-  </svg>
-)
-
-/* 经验库图标（星形） */
-const StarIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" {...svgBase}>
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
   </svg>
 )
 
@@ -240,7 +222,6 @@ function MemoryPage() {
   /* ----- 数据状态 ----- */
   const [shortTermMemories, setShortTermMemories] = useState<ShortTermMemory[]>([])
   const [longTermMemories, setLongTermMemories] = useState<LongTermMemory[]>([])
-  const [experiences, setExperiences] = useState<ExperienceItem[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -302,15 +283,20 @@ function MemoryPage() {
     setShortTermMemories([])
   }, [getCandidateSessionIds])
 
-  /* 加载所有数据 —— 短期 + 长期 + 经验，各数据源独立容错 */
+  /* 加载所有数据 —— 短期 + 长期，两个数据源相互独立，并行加载并各自容错 */
   const loadAllData = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
 
-    /* 短期记忆加载 —— 优先执行，保证会话探测逻辑正常运行 */
-    try {
-      await loadShortTermMemories()
-    } catch (error) {
+    /* 两路并行：短期记忆、长期记忆同时发起，互不阻塞 */
+    const [shortTermResult, longTermResult] = await Promise.allSettled([
+      loadShortTermMemories(),
+      memoryAPI.getLongTerm(),
+    ])
+
+    /* 短期记忆结果处理 —— 失败时记录错误并提示，不影响其他数据展示 */
+    if (shortTermResult.status === 'rejected') {
+      const error = shortTermResult.reason
       appLogger.error({
         event: 'memory_page_load_short_term_failed',
         module: 'memory',
@@ -322,11 +308,11 @@ function MemoryPage() {
       setLoadError(getErrorMessage(error, '加载短期记忆失败，请稍后重试'))
     }
 
-    /* 长期记忆加载 */
-    try {
-      const response = await memoryAPI.getLongTerm()
-      setLongTermMemories(response.data)
-    } catch (error) {
+    /* 长期记忆结果处理 —— 失败时清空列表并记录错误 */
+    if (longTermResult.status === 'fulfilled') {
+      setLongTermMemories(longTermResult.value.data)
+    } else {
+      const error = longTermResult.reason
       appLogger.error({
         event: 'memory_page_load_long_term_failed',
         module: 'memory',
@@ -337,24 +323,6 @@ function MemoryPage() {
       })
       setLongTermMemories([])
     }
-
-    /* 经验库数据加载 —— 独立 try/catch，失败不影响其他数据展示 */
-    let experiencesData: ExperienceItem[] = []
-    try {
-      const response = await experiencesAPI.getExperiences({ limit: 50 })
-      const rawData = response.data
-      experiencesData = Array.isArray(rawData) ? (rawData as ExperienceItem[]) : []
-    } catch (error) {
-      appLogger.warning({
-        event: 'memory_page_load_experiences_failed',
-        module: 'memory',
-        action: 'load_experiences',
-        status: 'failure',
-        message: '加载经验库失败',
-        extra: { error: error instanceof Error ? error.message : String(error) },
-      })
-    }
-    setExperiences(experiencesData)
 
     setLoading(false)
   }, [loadShortTermMemories])
@@ -384,7 +352,7 @@ function MemoryPage() {
     }
   }
 
-  /* 构建统一记忆列表 —— 合并长期记忆与经验，按时间倒序 */
+  /* 构建记忆列表 —— 仅长期记忆，按时间倒序 */
   const unifiedList = useMemo<MemoryListItem[]>(() => {
     const items: MemoryListItem[] = []
 
@@ -399,17 +367,6 @@ function MemoryPage() {
       })
     }
 
-    for (const exp of experiences) {
-      items.push({
-        key: `exp-${exp.id}`,
-        content: exp.title || exp.content,
-        type: 'experience',
-        confidence: exp.confidence,
-        time: exp.created_at || exp.last_access || '',
-        onDelete: null,
-      })
-    }
-
     /* 按时间倒序排列 —— 有时间的在前，无时间的在后 */
     items.sort((a, b) => {
       const timeA = a.time ? new Date(a.time).getTime() : 0
@@ -419,7 +376,7 @@ function MemoryPage() {
 
     return items
     // handleDeleteLongTerm 不作为依赖 —— 它是组件内函数，每次渲染都重新创建
-  }, [longTermMemories, experiences])
+  }, [longTermMemories])
 
   /* 搜索过滤 —— 按内容模糊匹配 */
   const filteredList = useMemo<MemoryListItem[]>(() => {
@@ -435,7 +392,6 @@ function MemoryPage() {
   /* 统计数值 */
   const longTermCount = longTermMemories.length
   const shortTermCount = shortTermMemories.length
-  const experienceCount = experiences.length
   const vectorCount = longTermCount /* 每条长期记忆对应一个向量索引 */
 
   return (
@@ -458,7 +414,7 @@ function MemoryPage() {
         </div>
       </div>
 
-      {/* ========== 统计概览卡片（4 列） ========== */}
+      {/* ========== 统计概览卡片 ========== */}
       <div className={styles.statGrid}>
         {/* 长期记忆 */}
         <div className={styles.statCard}>
@@ -482,18 +438,6 @@ function MemoryPage() {
           </div>
           <p className={styles.statValue}>{shortTermCount.toLocaleString()}</p>
           <p className={styles.statLabel}>短期记忆</p>
-        </div>
-
-        {/* 经验库 */}
-        <div className={styles.statCard}>
-          <div className={styles.statTop}>
-            <div className={styles.statIconBox} style={{ background: 'var(--color-tag-purple-bg)' }}>
-              <span style={{ color: 'var(--color-chart-5)' }}><StarIcon /></span>
-            </div>
-            <TrendUpIcon color="var(--color-chart-5)" />
-          </div>
-          <p className={styles.statValue}>{experienceCount.toLocaleString()}</p>
-          <p className={styles.statLabel}>经验库</p>
         </div>
 
         {/* 向量索引 */}
@@ -553,14 +497,8 @@ function MemoryPage() {
                   <div key={item.key} className={styles.memoryItem}>
                     <div className={styles.memoryItemTop}>
                       <p className={styles.memoryItemTitle}>{item.content}</p>
-                      <span
-                        className={
-                          item.type === 'long-term'
-                            ? styles.typeBadgeLongTerm
-                            : styles.typeBadgeExperience
-                        }
-                      >
-                        {item.type === 'long-term' ? '长期记忆' : '经验'}
+                      <span className={styles.typeBadgeLongTerm}>
+                        长期记忆
                       </span>
                     </div>
                     <div className={styles.memoryItemBottom}>
@@ -574,18 +512,14 @@ function MemoryPage() {
                             className={styles.confidenceFill}
                             style={{
                               width: `${Math.round(item.confidence * 100)}%`,
-                              background: item.type === 'long-term'
-                                ? 'var(--color-primary)'
-                                : 'var(--color-chart-5)',
+                              background: 'var(--color-primary)',
                             }}
                           />
                         </div>
                         <span
                           className={styles.confidenceValue}
                           style={{
-                            color: item.type === 'long-term'
-                              ? 'var(--color-primary)'
-                              : 'var(--color-chart-5)',
+                            color: 'var(--color-primary)',
                           }}
                         >
                           {item.confidence.toFixed(2)}

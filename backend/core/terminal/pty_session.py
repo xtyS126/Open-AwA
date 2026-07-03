@@ -133,14 +133,17 @@ class PTYSession:
                 "Windows 平台需要安装 pywinpty（pip install pywinpty）"
             ) from e
 
-        # pywinpty 的 spawn 接收环境变量与初始尺寸
+        # pywinpty 的 spawn 不接受 cols/rows 参数，需在 spawn 后调用 set_size
         self._winpty_proc = PtyProcess.spawn(
             self.command,
             cwd=self.cwd,
             env=self.env,
-            cols=self.cols,
-            rows=self.rows,
         )
+        # 设置初始终端尺寸
+        try:
+            self._winpty_proc.set_size(self.cols, self.rows)
+        except Exception:
+            pass  # 部分版本可能不支持，忽略
 
     async def _reader_loop(self) -> None:
         """读取协程：从 PTY 读取数据并写入 VT 屏幕，并调用输出回调。"""

@@ -3,8 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,
-  Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell,
-  Users, BarChart3, ShoppingBag, Network, Terminal,
+  Cat, Sun, Moon, Menu, ChevronDown, Bell,
+  Users, ShoppingBag, Network, Terminal,
   MessagesSquare
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
@@ -16,7 +16,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'data' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions'
 }
 
 interface MenuGroup {
@@ -38,13 +38,10 @@ const renderIcon = (type: string, size = 18) => {
     case 'memory': return <Brain size={size} />
     case 'settings': return <Settings size={size} />
     case 'experience': return <Award size={size} />
-    case 'communication': return <Radio size={size} />
     case 'im': return <Radio size={size} />
-    case 'theme': return <Palette size={size} />
     case 'inbox': return <Bell size={size} />
     case 'roles': return <Users size={size} />
     case 'roleMarket': return <ShoppingBag size={size} />
-    case 'data': return <BarChart3 size={size} />
     case 'subagents': return <Network size={size} />
     case 'vibeCoding': return <Terminal size={size} />
     case 'discussions': return <MessagesSquare size={size} />
@@ -79,7 +76,6 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/tts', label: t('sidebar.tts') || 'TTS', iconType: 'skills' as const },
         { path: '/roles', label: t('sidebar.roles') || '角色管理', iconType: 'roles' as const },
         { path: '/role-market', label: t('sidebar.roleMarket') || '角色市场', iconType: 'roleMarket' as const },
-        { path: '/data', label: t('sidebar.data') || '数据看板', iconType: 'data' as const },
         { path: '/skills', label: t('sidebar.skills'), iconType: 'skills' as const },
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/workflows', label: t('sidebar.workflows') || '工作流', iconType: 'scheduledTasks' as const },
@@ -91,18 +87,10 @@ const renderIcon = (type: string, size = 18) => {
       ]
     },
     {
-      id: 'appearance',
-      title: t('sidebar.theme'),
-      items: [
-        { path: '/theme', label: t('sidebar.theme'), iconType: 'theme' as const },
-      ]
-    },
-    {
       id: 'settings',
       title: t('sidebar.settings'),
       items: [
         { path: '/settings', label: t('sidebar.settings'), iconType: 'settings' as const },
-        { path: '/communication', label: t('sidebar.communication'), iconType: 'communication' as const },
         { path: '/im', label: t('sidebar.im') || 'IM 渠道', iconType: 'im' as const },
       ]
     }
@@ -112,7 +100,6 @@ const renderIcon = (type: string, size = 18) => {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     control: true,
     agent: true,
-    appearance: true,
     settings: true,
   })
 
@@ -166,9 +153,6 @@ const renderIcon = (type: string, size = 18) => {
     if (path === '/discussions') {
       // 讨论任务详情页 /discussions/:id 也高亮列表项
       return location.pathname === '/discussions' || location.pathname.startsWith('/discussions/')
-    }
-    if (path === '/communication') {
-      return location.pathname === '/communication'
     }
     if (path === '/settings') {
       return location.pathname === '/settings' && (!location.search || !location.search.includes('tab='))
