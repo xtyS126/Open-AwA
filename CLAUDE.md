@@ -725,7 +725,7 @@ git commit -m "[Type] 变更描述"
 
 > 本节是长期迭代沉淀的"已知陷阱库"。每次遇到新坑点必须追加到此；每次开始任务前必须扫描相关条目。
 
-- **Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop
+- **OUTDATED: Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop（已修复：实际为同步实现，描述失真，2026-07-04 审计确认）
 - **SQLite FK not enforced by default**: Foreign key constraints need explicit connection parameter
 - **Vector DB path is relative**: `VECTOR_DB_PATH` resolves relative to `backend/`, can break if working directory changes
 - **Plugin Manager is a singleton**: Use `plugins.plugin_instance.get()`, never create `PluginManager()` directly. Use `pm.has_plugin(name)` / `pm.is_plugin_loaded(name)` instead of `getattr(pm, "plugin_metadata", {})`.

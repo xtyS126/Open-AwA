@@ -252,7 +252,7 @@ ACP（Agent Client Protocol）是一套用于调用本地 vibe coding 应用的�
 
 ### 7.1 架构与并发
 
-- **Blocking ORM in async**: `ExperienceManager` 中 `async def` 调用同步 SQLAlchemy 查询，可能阻塞事件循环
+- **OUTDATED: Blocking ORM in async**: `ExperienceManager` 中 `async def` 调用同步 SQLAlchemy 查询，可能阻塞事件循环（已修复：实际为同步实现，AGENTS.md 描述失真，2026-07-04 审计确认）
 - **SQLite FK not enforced by default**: 外键约束需要在连接参数中显式启用
 - **Vector DB path is relative**: `VECTOR_DB_PATH = "./data/vector_db"`，工作目录不同会导致路径问题
 - **Billing tables init required**: `PricingManager.ensure_configuration_schema()` 必须在 lifespan startup 中执行

@@ -139,6 +139,72 @@ def _broadcast_to_sse(user_id: str, event_data: dict) -> None:
             ).warning("SSE 推送队列已满，丢弃事件")
 
 
+# -------- SSE 一次性 Ticket 机制 --------
+# 用于替代 URL query 传递 API Key：前端先通过标准认证调用 POST /permissions/sse-ticket
+# 换取一次性短时 ticket，再以 ?ticket=<ticket> 连接 SSE，避免 API Key 泄露到日志/Referer/历史
+import secrets as _secrets_module
+import threading as _threading_module
+from dataclasses import dataclass as _dataclass
+
+_SSE_TICKET_TTL_SECONDS = 60  # ticket 有效期 60 秒
+_SSE_TICKET_CLEANUP_THRESHOLD = 256  # 触发过期清理的阈值
+
+
+@_dataclass
+class _SseTicketEntry:
+    """SSE 一次性 ticket 条目。"""
+    user_id: str
+    expires_at: float
+    used: bool = False
+
+
+# 内存 ticket 表：ticket_str -> _SseTicketEntry
+_sse_tickets: dict[str, _SseTicketEntry] = {}
+_sse_tickets_lock = _threading_module.Lock()
+
+
+def _issue_sse_ticket(user_id: str) -> str:
+    """为指定用户签发一次性 SSE ticket，返回 ticket 字符串。"""
+    now = datetime.now(timezone.utc).timestamp()
+    ticket = _secrets_module.token_urlsafe(32)
+    with _sse_tickets_lock:
+        # 惰性清理过期 ticket，避免内存无限增长
+        if len(_sse_tickets) > _SSE_TICKET_CLEANUP_THRESHOLD:
+            expired_keys = [k for k, v in _sse_tickets.items() if v.expires_at < now]
+            for k in expired_keys:
+                _sse_tickets.pop(k, None)
+        _sse_tickets[ticket] = _SseTicketEntry(
+            user_id=user_id,
+            expires_at=now + _SSE_TICKET_TTL_SECONDS,
+        )
+    return ticket
+
+
+def _consume_sse_ticket(ticket: str) -> Optional[str]:
+    """
+    校验并消费一次性 SSE ticket。
+    成功返回 user_id，失败（不存在/已使用/已过期）返回 None。
+    一旦调用即标记为 used，防止重放攻击。
+    """
+    if not ticket:
+        return None
+    now = datetime.now(timezone.utc).timestamp()
+    with _sse_tickets_lock:
+        entry = _sse_tickets.get(ticket)
+        if entry is None:
+            return None
+        # 已使用或已过期：移除并拒绝
+        if entry.used or entry.expires_at < now:
+            _sse_tickets.pop(ticket, None)
+            return None
+        # 标记为已使用（一次性）
+        entry.used = True
+        # 延迟移除：保留一小段时间以便客户端完成连接握手
+        # 但为简化实现，此处立即移除（一次性语义）
+        _sse_tickets.pop(ticket, None)
+        return entry.user_id
+
+
 def enqueue_permission_request(
     user_id: str,
     session_id: str,
@@ -458,10 +524,31 @@ async def get_pending_permissions(
     }
 
 
+@router.post("/permissions/sse-ticket")
+async def issue_sse_ticket(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    签发一次性短时 SSE ticket，用于替代 URL query 传递 API Key。
+
+    前端调用此端点（通过标准 Authorization Header 或 Cookie 认证）获取 ticket，
+    随后以 `?ticket=<ticket>` 连接 `/permissions/stream`。
+    ticket 一次性使用，有效期 60 秒，避免 API Key 泄露到 access log / Referer / 浏览器历史。
+    """
+    user_id = str(current_user.id)
+    ticket = _issue_sse_ticket(user_id)
+    logger.bind(
+        event="sse_ticket_issued",
+        user_id=user_id,
+    ).debug("已签发 SSE 一次性 ticket")
+    return {"ticket": ticket, "expires_in": _SSE_TICKET_TTL_SECONDS}
+
+
 @router.get("/permissions/stream")
 async def stream_permission_requests(
     request: Request,
-    api_key: Optional[str] = Query(None, description="API Key（用于 SSE 连接认证，因 EventSource 不支持自定义 Header）"),
+    ticket: Optional[str] = Query(None, description="一次性 SSE ticket（首选方式，通过 POST /permissions/sse-ticket 获取）"),
+    api_key: Optional[str] = Query(None, description="（已弃用）API Key，存在 URL 泄露风险，建议改用 ticket"),
     db: Session = Depends(get_db),
 ):
     """
@@ -470,10 +557,12 @@ async def stream_permission_requests(
     event: permission_request 格式推送给客户端。
     连接建立时先推送当前已有的待处理请求，之后持续监听新请求。
 
-    认证方式：优先使用 Authorization Header（标准 Bearer 认证），
-    若 Header 认证失败则尝试 query parameter 中的 api_key。
+    认证方式（按优先级）：
+    1. ticket：一次性短时 ticket（首选，通过 POST /permissions/sse-ticket 获取）
+    2. Authorization Header（标准 Bearer 认证）
+    3. Cookie 认证
+    4. api_key（已弃用，存在 URL 泄露风险，仅为向后兼容保留）
     """
-    # 尝试标准认证（Authorization Header / Cookie）
     user: Optional[User] = None
     from api.dependencies import (
         _normalize_request_token,
@@ -483,19 +572,38 @@ async def stream_permission_requests(
     )
     import secrets as _secrets
 
-    # 路径 1: Authorization Header 认证
-    credentials = await oauth2_scheme(request)
-    configured_key = settings.OPENAWA_API_KEY.get_secret_value()
-    if credentials:
-        token = _normalize_request_token(credentials.credentials)
-        # API Key 认证
-        if configured_key and token and _secrets.compare_digest(token, configured_key):
-            user = _get_owner_from_settings()
-        # JWT 认证
-        if user is None and token:
-            user = await _resolve_jwt_user(token, db)
+    # 路径 1（首选）: ticket 一次性认证
+    if ticket:
+        ticket_user_id = _consume_sse_ticket(ticket)
+        if ticket_user_id is not None:
+            # 通过 ticket 解析用户身份
+            ticket_user = db.query(User).filter(User.id == ticket_user_id).first()
+            if ticket_user is not None:
+                user = ticket_user
+            else:
+                logger.bind(
+                    event="sse_ticket_user_missing",
+                    user_id=ticket_user_id,
+                ).warning("ticket 对应的用户不存在")
+        else:
+            logger.bind(
+                event="sse_ticket_invalid",
+            ).warning("无效或已过期的 SSE ticket")
 
-    # 路径 2: Cookie 认证
+    # 路径 2: Authorization Header 认证
+    if user is None:
+        credentials = await oauth2_scheme(request)
+        configured_key = settings.OPENAWA_API_KEY.get_secret_value()
+        if credentials:
+            token = _normalize_request_token(credentials.credentials)
+            # API Key 认证
+            if configured_key and token and _secrets.compare_digest(token, configured_key):
+                user = _get_owner_from_settings()
+            # JWT 认证
+            if user is None and token:
+                user = await _resolve_jwt_user(token, db)
+
+    # 路径 3: Cookie 认证
     if user is None:
         from config.security import ACCESS_TOKEN_COOKIE_NAME
         cookie_token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
@@ -503,8 +611,12 @@ async def stream_permission_requests(
         if cookie_token_normalized:
             user = await _resolve_jwt_user(cookie_token_normalized, db)
 
-    # 路径 3: query parameter API Key 认证（EventSource 不支持自定义 Header）
+    # 路径 4（已弃用）: query parameter API Key 认证
+    # EventSource 不支持自定义 Header，旧客户端降级使用 query parameter
     if user is None and api_key:
+        logger.bind(
+            event="sse_legacy_api_key_used",
+        ).warning("使用已弃用的 api_key query 参数建立 SSE 连接，建议迁移到 ticket 流程")
         normalized_key = _normalize_request_token(api_key)
         if configured_key and normalized_key and _secrets.compare_digest(normalized_key, configured_key):
             user = _get_owner_from_settings()

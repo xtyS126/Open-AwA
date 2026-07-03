@@ -3,7 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 import asyncio
 import json
 import os
@@ -114,6 +114,27 @@ def _is_origin_allowed(origin: str) -> bool:
         pass
 
     return False
+
+
+def _extract_token_from_subprotocol(websocket: WebSocket) -> tuple:
+    """
+    从 Sec-WebSocket-Protocol 子协议头提取 bearer token。
+
+    子协议格式：bearer.<token>
+
+    Returns:
+        (token, subprotocol) 元组。token 为 None 表示未找到；
+        subprotocol 为需要回显的子协议标识（浏览器要求 accept 时回显，否则拒绝连接）。
+    """
+    protocol_header = websocket.headers.get("sec-websocket-protocol", "")
+    if not protocol_header:
+        return (None, None)
+    for proto in protocol_header.split(","):
+        proto = proto.strip()
+        if proto.startswith("bearer."):
+            token = proto[len("bearer."):]
+            return (token, proto)
+    return (None, None)
 
 
 def _build_upload_metadata_path(filename: str) -> Path:
@@ -374,6 +395,9 @@ async def websocket_endpoint(
     """
     处理websocket、endpoint相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+
+    鉴权方式：优先 query 参数 token（向后兼容），缺失时从 Sec-WebSocket-Protocol
+    子协议头提取 bearer.<token>，避免 token 出现在 URL（泄露到日志/Referer/历史）。
     """
     # Origin 校验（防 CSWSH 跨站 WebSocket 劫持，参考 P0-2）
     # 必须在 accept() 前完成，避免恶意页面借助浏览器自动携带的 Cookie 建立跨站 WS
@@ -381,6 +405,11 @@ async def websocket_endpoint(
     if not _is_origin_allowed(origin):
         await websocket.close(code=4010, reason="Origin not allowed")
         return
+
+    # token 解析：优先取 query 参数，缺失时尝试从 Sec-WebSocket-Protocol 子协议提取
+    subprotocol: Optional[str] = None
+    if not token:
+        token, subprotocol = _extract_token_from_subprotocol(websocket)
 
     if token is None:
         await websocket.close(code=4001, reason="Missing authentication token")
@@ -441,7 +470,7 @@ async def websocket_endpoint(
     try:
         user_id = user.id
 
-        await ws_manager.connect(session_id, websocket, user_id=user_id)
+        await ws_manager.connect(session_id, websocket, user_id=user_id, subprotocol=subprotocol)
 
         logger.bind(
             event="chat_ws_connected",

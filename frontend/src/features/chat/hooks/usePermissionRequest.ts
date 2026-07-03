@@ -98,26 +98,42 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
 
     let cancelled = false
 
-    const connect = () => {
+    const connect = async () => {
       if (cancelled) return
 
       const baseUrl = `${API_BASE_URL}/security/permissions/stream`
       let eventSource: EventSource
 
       if (hasCookie) {
-        // 优先使用 Cookie 认证，URL 不携带 api_key，避免凭据泄露到日志/Referer
+        // 优先使用 Cookie 认证，URL 不携带任何凭据
         eventSource = new EventSource(baseUrl, { withCredentials: true })
       } else if (apiKey) {
-        // 无 Cookie 时降级使用 query parameter 传递 API Key（EventSource 不支持自定义 Header）
-        appLogger.warning({
-          event: 'permission_sse_fallback_to_query_param',
-          module: 'usePermissionRequest',
-          message: '降级使用 query parameter 传递 API Key，存在日志泄露风险',
-        })
-        const url = `${baseUrl}?api_key=${encodeURIComponent(apiKey)}`
-        eventSource = new EventSource(url)
+        // 无 Cookie 时通过一次性 ticket 建立 SSE 连接（SEC-16 修复）
+        // ticket 一次性使用、60 秒过期，避免 API Key 泄露到 access log / Referer / 浏览器历史
+        try {
+          const ticketResp = await securityAPI.requestSseTicket()
+          if (cancelled) return
+          const ticket = ticketResp.data.ticket
+          eventSource = new EventSource(`${baseUrl}?ticket=${encodeURIComponent(ticket)}`)
+        } catch (err) {
+          if (cancelled) return
+          appLogger.warning({
+            event: 'permission_sse_ticket_fetch_failed',
+            module: 'usePermissionRequest',
+            message: '获取 SSE ticket 失败，降级使用 api_key query 参数',
+            extra: { error: err instanceof Error ? err.message : String(err) },
+          })
+          // 降级：仍使用 api_key（向后兼容，但记录警告）
+          const url = `${baseUrl}?api_key=${encodeURIComponent(apiKey)}`
+          eventSource = new EventSource(url)
+        }
       } else {
         // 已在 useEffect 入口拦截，理论上不会到达
+        return
+      }
+
+      if (cancelled) {
+        eventSource.close()
         return
       }
 
@@ -168,7 +184,9 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
           message: `SSE 连接断开，${delay}ms 后重连（第 ${reconnectAttemptRef.current} 次）`,
         })
 
-        setTimeout(connect, delay)
+        setTimeout(() => {
+          if (!cancelled) connect()
+        }, delay)
       }
     }
 

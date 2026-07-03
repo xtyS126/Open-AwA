@@ -93,6 +93,12 @@ export interface SavedPermissionsList {
   total: number
 }
 
+/** SSE 一次性 ticket 响应 */
+export interface SseTicketResult {
+  ticket: string
+  expires_in: number
+}
+
 // -------- 接口方法 --------
 
 export const securityAPI = {
@@ -142,6 +148,17 @@ export const securityAPI = {
   /** 回复权限请求（TODO: 待权限请求轮询/WebSocket 集成后启用） */
   replyToPermission(reply: PermissionReply) {
     return api.post<{ ok: boolean }>('/security/permissions/reply', reply)
+  },
+
+  /**
+   * 申请一次性 SSE ticket。
+   *
+   * 用于替代 URL query 传递 API Key：前端通过标准 Authorization Header
+   * 调用此端点换取短时 ticket，再以 ?ticket=<ticket> 连接 SSE 端点，
+   * 避免 API Key 泄露到 access log / Referer / 浏览器历史。
+   */
+  requestSseTicket() {
+    return api.post<SseTicketResult>('/security/permissions/sse-ticket')
   },
 
   /** 获取已保存的权限列表 */

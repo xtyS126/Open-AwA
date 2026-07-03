@@ -51,15 +51,20 @@ class WebSocketManager:
         session_id: str,
         websocket: WebSocket,
         user_id: Optional[str] = None,
+        subprotocol: Optional[str] = None,
     ) -> None:
         """
         接受 WebSocket 连接并注册到会话连接列表。
 
         同一 session_id 的多次连接会追加到列表，实现多设备并发。
         若传入 user_id，则建立 user -> session 映射，支持用户级广播。
-        连接成功后自动启动全局心跳任务（幂等）。
+        连接成功后自动启动全局心跳任务（幂等，已运行则跳过）。
+
+        Args:
+            subprotocol: 可选的子协议标识，用于回显 Sec-WebSocket-Protocol 头。
+                         当客户端通过子协议传递 token 时，必须回显以完成握手。
         """
-        await websocket.accept()
+        await websocket.accept(subprotocol=subprotocol) if subprotocol else await websocket.accept()
         conns = self._session_connections.setdefault(session_id, [])
         conns.append(websocket)
         self._last_activity[id(websocket)] = time.monotonic()

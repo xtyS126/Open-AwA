@@ -1122,15 +1122,43 @@ def _validate_ws_origin(origin: Optional[str]) -> bool:
     return False
 
 
+def _extract_token_from_subprotocol(websocket: WebSocket) -> str:
+    """
+    从 Sec-WebSocket-Protocol 子协议头中提取 JWT token。
+
+    前端（useWeixinWebSocket.ts）以 `bearer.<token>` 形式通过子协议传递 token，
+    避免 token 出现在 URL query（会泄露到 access log / Referer / 浏览器历史）。
+
+    支持的子协议格式：
+        - bearer.<token>     标准格式（首选）
+        - <token>            兼容旧客户端的裸 token
+
+    返回空字符串表示未提供 token。
+    """
+    raw = websocket.headers.get("sec-websocket-protocol", "")
+    if not raw:
+        return ""
+    # 浏览器可能以逗号分隔发送多个候选协议，逐个解析
+    for candidate in raw.split(","):
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        if candidate.startswith("bearer."):
+            return candidate[len("bearer."):]
+        # 兼容裸 token：仅当候选值看起来不像标准子协议名时才视为 token
+        # 标准子协议名通常只包含字母数字与连字符，且不含点号
+        if "." in candidate and not candidate.islower():
+            return candidate
+    return ""
+
+
 @router.websocket("/ws")
-async def weixin_ws_endpoint(
-    websocket: WebSocket,
-    token: str = Query(default=""),
-):
+async def weixin_ws_endpoint(websocket: WebSocket):
     """
     微信实时消息推送 WebSocket 端点。
 
-    鉴权方式：通过 query 参数 `token` 传递 JWT。
+    鉴权方式（SEC-16）：通过 Sec-WebSocket-Protocol 子协议头传递 `bearer.<token>`，
+    不再从 URL query 读取，避免 token 泄露到 access log / Referer / 浏览器历史。
     鉴权通过后订阅事件总线，将新消息事件实时推送给前端。
 
     推送事件格式：
@@ -1151,6 +1179,8 @@ async def weixin_ws_endpoint(
         await websocket.close(code=4003, reason="Origin not allowed")
         return
 
+    # SEC-16: 从子协议头读取 token，避免 URL 泄露
+    token = _extract_token_from_subprotocol(websocket)
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
@@ -1160,6 +1190,8 @@ async def weixin_ws_endpoint(
         await websocket.close(code=4002, reason="Invalid or expired token")
         return
 
+    # 不回显子协议：RFC 6455 规定服务器可以选择不返回 Sec-WebSocket-Protocol 头，
+    # 此时浏览器仍会接受连接。避免在响应头中再次携带 token。
     await websocket.accept()
     event_bus = get_event_bus()
     queue = await event_bus.subscribe(user_id)
