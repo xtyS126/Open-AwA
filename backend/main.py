@@ -19,7 +19,7 @@ from loguru import logger
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul, discussions, search_config  # [NEW] Task 3+9: 讨论任务 + 搜索配置路由
 from api.routes.data import router as data_router
 from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
@@ -46,6 +46,9 @@ from api.routes.roles import router as roles_router
 from api.routes.role_market import router as role_market_router
 from api.routes.terminal import router as terminal_router
 from api.routes.im import router as im_router
+from api.routes.acp import router as acp_router
+from api.routes.preview_proxy import router as preview_proxy_router
+from api.routes.notifications import router as notifications_router
 
 from billing.routers import billing
 from config.logging import (
@@ -469,6 +472,32 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                 logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
                     "已注册系统内置插件 system-tools"
                 )
+
+            # 注册 openbiliclaw-builtin 系统内置插件（如不存在）
+            # 该插件声明 is_uninstallable=True，禁止通过 API 卸载或禁用
+            existing_openbiliclaw = db.query(PluginModel).filter(
+                PluginModel.name == "openbiliclaw-builtin"
+            ).first()
+            if not existing_openbiliclaw:
+                new_openbiliclaw = PluginModel(
+                    id=str(uuid.uuid4()),
+                    name="openbiliclaw-builtin",
+                    version="0.3.147",
+                    enabled=True,
+                    config={},
+                    category="builtin",
+                    author="OpenBiliClaw Team",
+                    source="builtin",
+                    is_uninstallable=True,
+                    dependencies=[],
+                )
+                db.add(new_openbiliclaw)
+                db.commit()
+                logger.bind(
+                    event="builtin_plugin_seeded",
+                    module="main",
+                    plugin="openbiliclaw-builtin",
+                ).info("已注册系统内置插件 openbiliclaw-builtin")
         except Exception as exc:
             logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
             db.rollback()
@@ -476,6 +505,8 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
             db.close()
 
         pm = plugin_instance.get()
+        # 导入内置插件依赖缺失异常，用于在加载循环中单独捕获
+        from plugins.openbiliclaw_builtin.plugin import BuiltinPluginDependencyError
         db = SessionLocal()
         try:
             enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
@@ -483,13 +514,49 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
                 if p.name in pm.plugin_metadata:
                     try:
                         pm.load_plugin(p.name)
-                        logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(f"plugin loaded: {p.name}")
-                        granted = p.granted_permissions or []
-                        if granted:
-                            pm.restore_plugin_permissions(p.name, granted)
+                        logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(
+                            f"plugin loaded: {p.name}"
+                        )
+                        # 内置插件不需要权限审批，跳过 restore_plugin_permissions
+                        if p.source == "builtin":
+                            # 检查内置插件是否以 loaded_with_warnings 状态加载
+                            loaded_instance = pm.loaded_plugins.get(p.name)
+                            if loaded_instance is not None and hasattr(
+                                loaded_instance, "get_dependency_warnings"
+                            ):
+                                warnings_list = loaded_instance.get_dependency_warnings()
+                                if warnings_list:
+                                    logger.bind(
+                                        event="plugin_loaded_with_warnings",
+                                        module="main",
+                                        plugin=p.name,
+                                        warning_count=len(warnings_list),
+                                    ).info(
+                                        f"内置插件 {p.name} 以 loaded_with_warnings 状态加载，"
+                                        f"warnings={len(warnings_list)}"
+                                    )
+                        else:
+                            granted = p.granted_permissions or []
+                            if granted:
+                                pm.restore_plugin_permissions(p.name, granted)
+                    except BuiltinPluginDependencyError as dep_exc:
+                        # 内置插件依赖缺失：仅记录 WARNING，不阻塞启动
+                        logger.bind(
+                            event="builtin_plugin_dependency_missing",
+                            module="main",
+                            plugin=p.name,
+                            missing_packages=dep_exc.missing_packages,
+                        ).warning(
+                            f"内置插件 {p.name} 依赖缺失，跳过加载: "
+                            f"missing_packages={dep_exc.missing_packages}"
+                        )
                     except Exception as exc:
-                        logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(f"plugin load failed: {exc}")
-            logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info("plugin system initialized")
+                        logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(
+                            f"plugin load failed: {exc}"
+                        )
+            logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info(
+                "plugin system initialized"
+            )
         finally:
             db.close()
 
@@ -540,6 +607,66 @@ async def _startup_autonomous_mode(profiler: StartupProfiler) -> None:
             "自主运行模式初始化失败，请检查 .env 配置"
         )
         raise
+
+
+async def _startup_acp_service(profiler: StartupProfiler) -> None:
+    """初始化 ACP (Agent Client Protocol) 服务。
+
+    扫描 acp_host.agents.discover_agents() 返回的所有内置 agent 配置，
+    为每个 agent 调用 init_acp_service 注册 ACPService 实例到模块级单例注册表。
+    实际的 ACP 子进程会话在首次 prompt 时通过 ACPService.run_turn 创建。
+    启动失败时仅记录日志，不阻塞主流程（acp SDK 未安装时也走降级路径）。
+    """
+    with profiler.step("acp_service_init"):
+        try:
+            from acp_host import init_acp_service
+            from acp_host.core import ACPConfig
+            from acp_host.agents import discover_agents
+
+            agents = discover_agents()
+            if not agents:
+                logger.bind(event="acp_no_agents", module="startup").warning(
+                    "未发现任何 ACP agent 配置，跳过 ACP 服务初始化"
+                )
+                return
+            acp_config = ACPConfig(agents=agents)
+            for agent_id in acp_config.agents.keys():
+                init_acp_service(agent_id, acp_config)
+            logger.bind(
+                event="acp_services_initialized",
+                module="startup",
+                agent_count=len(agents),
+                agents=list(agents.keys()),
+            ).info(f"ACP 服务已初始化 {len(agents)} 个 agent")
+        except Exception as exc:
+            # acp SDK 缺失或 agent 配置加载失败时仅记录日志，不阻塞启动
+            logger.bind(
+                event="acp_init_failed",
+                module="startup",
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            ).warning(f"ACP 服务初始化失败（不阻塞启动）: {exc}")
+
+
+async def _shutdown_acp_service() -> None:
+    """关闭 ACP 服务，清理所有已注册的 ACPService 实例。
+
+    遍历 discover_agents() 返回的 agent_id 调用 close_acp_service。
+    单个 agent 关闭失败不影响其他 agent 的清理。
+    """
+    try:
+        from acp_host import close_acp_service
+        from acp_host.agents import discover_agents
+
+        agents = discover_agents()
+        for agent_id in agents.keys():
+            try:
+                close_acp_service(agent_id)
+            except Exception as exc:
+                logger.warning(f"关闭 ACP agent '{agent_id}' 失败: {exc}")
+        logger.bind(event="acp_services_closed", module="shutdown").info("ACP 服务已关闭")
+    except Exception as exc:
+        logger.warning(f"ACP 服务关闭异常: {exc}")
 
 
 def _startup_mcp_sse_origin(profiler: StartupProfiler) -> None:
@@ -611,14 +738,16 @@ async def lifespan(app: FastAPI):
         await _startup_background_tasks(profiler)
         # 17. 自主运行模式初始化（在所有其他初始化之后）
         await _startup_autonomous_mode(profiler)
-        # 18. 初始化数据收集器
+        # 18. ACP 服务初始化（数据库初始化之后，按 agent 注册 ACPService 实例）
+        await _startup_acp_service(profiler)
+        # 19. 初始化数据收集器
         try:
             from data.collector import data_collector
             await data_collector.start()
             logger.bind(event="data_collector_initialized", module="startup").info("数据收集器已初始化")
         except Exception as e:
             logger.bind(event="data_collector_init_error", module="startup").warning(f"数据收集器初始化失败: {e}")
-        # 19. 配置 MCP SSE 传输层 origin 白名单
+        # 20. 配置 MCP SSE 传输层 origin 白名单
         _startup_mcp_sse_origin(profiler)
     except Exception:
         logger.bind(event="app_startup_failed", module="main").error("启动过程发生异常，服务将终止")
@@ -631,6 +760,7 @@ async def lifespan(app: FastAPI):
     shutdown_errors: list[str] = []
     for step_name, step_fn in (
         ("autonomous_mode", _shutdown_autonomous_mode),
+        ("acp_service", _shutdown_acp_service),
         ("data_collector", _shutdown_data_collector),
         ("scheduled_task_manager", scheduled_task_manager.stop),
         ("shared_http_client", close_shared_client),
@@ -962,7 +1092,9 @@ async def _add_csp_header(request: Request, call_next):
         f"style-src {style_src}; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob: https:; "
-        "connect-src 'self' ws: wss:; "
+        # 仅允许同源与本地回环 WebSocket，禁止页面连接任意 ws/wss 源
+        # 保留 ws://localhost:* 与 ws://127.0.0.1:* 用于 Vite HMR 与本地 PTY/预览服务
+        "connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*; "
         "frame-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self'; "
@@ -1067,6 +1199,20 @@ app.include_router(role_market_router, prefix=settings.API_V1_STR)
 app.include_router(data_router, prefix=settings.API_V1_STR)
 app.include_router(terminal_router, prefix=settings.API_V1_STR)
 app.include_router(im_router, prefix=settings.API_V1_STR)
+# ACP 路由前缀已内置在 router 定义中（/api/acp），无需 settings.API_V1_STR 前缀
+app.include_router(acp_router)
+# 本地开发服务器反向代理，前缀 /api/preview 已内置在 router 定义中
+app.include_router(preview_proxy_router)
+# 通知 HTTP API，前缀 /api/notifications 已内置在 router 定义中
+app.include_router(notifications_router)
+# [NEW] Task 3: 多 Agent 讨论任务路由，前缀 /api/discussions 已内置在 router 定义中
+app.include_router(discussions.router)
+app.include_router(search_config.router)  # [NEW] Task 9: 搜索配置路由
+# [NOTE] Task 3 SubTask 3.9: DiscussionOrchestrator 未提供独立的 init() 方法，
+# 三个角色（critic/validator/approver）的 system prompt 已由 core/discussion/roles.py
+# 静态定义，orchestrator 在 run_discussion_round 中按顺序调用 build_role_messages
+# 构建 messages，无需在 lifespan 中显式注册内置角色 Agent。
+# Orchestrator 单例由 api/routes/discussions.py 的 _get_orchestrator() 懒加载初始化。
 
 # 挂载用户头像静态文件目录
 from pathlib import Path as FsPath
@@ -1244,6 +1390,8 @@ def _run_uvicorn_server(uvicorn_module, host: str, port: int, debug_mode: bool =
         "port": port,
         "access_log": debug_mode,
         "log_level": "debug" if debug_mode else "warning",
+        # WebSocket 消息大小上限 1MB，防止恶意客户端发送超大帧导致内存耗尽 DoS
+        "ws_max_size": 1024 * 1024,
     }
 
     # HTTPS 配置：证书和私钥同时存在时自动启用 TLS

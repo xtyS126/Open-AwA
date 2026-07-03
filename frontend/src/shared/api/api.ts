@@ -2,15 +2,21 @@
  * API 模块统一入口。
  * 客户端实例和认证逻辑已提取至 client.ts，类型定义已提取至 types.ts。
  * 本文件保留所有 API 端点函数，供全应用导入使用。
- * 单用户模式下使用 API Key (Bearer) 认证。
+ *
+ * 认证策略：
+ *   - 单用户模式：使用 API Key (Bearer) 认证
+ *   - 状态变更请求自动附加 X-CSRF-Token（CSRF 防御已恢复，对应 P0-9）
+ *   - 应用启动或登录成功后调用 refreshCsrfToken() 拉取 per-session CSRF token
  */
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
 import {
   api,
   getCachedApiKey,
   setTempApiKey,
-  persistApiKey,
+  persistApiKey as _persistApiKey,
   clearCachedApiKey,
+  refreshCsrfToken,
+  getCachedCsrfToken,
   getApiErrorDetail,
   logStreamParseWarning,
   API_BASE_URL,
@@ -43,10 +49,28 @@ import type {
 export {
   getCachedApiKey,
   setTempApiKey,
-  persistApiKey,
   clearCachedApiKey,
   getApiErrorDetail,
   logStreamParseWarning,
+  refreshCsrfToken,
+  getCachedCsrfToken,
+}
+
+/**
+ * 持久化 API Key 后异步拉取 CSRF token。
+ *
+ * 此函数包装了 client.ts 的 persistApiKey：在 API Key 持久化成功后，
+ * 触发后台异步拉取 per-session CSRF token，确保后续状态变更请求携带 X-CSRF-Token。
+ *
+ * 调用时机：登录成功后由 LoginPage 调用。CSRF token 拉取失败不阻塞登录流程，
+ * 后续 POST/PUT/PATCH/DELETE 请求会因缺失 CSRF token 被后端拒绝（响应拦截器会自动重试一次）。
+ *
+ * @param key 已验证通过的 API Key
+ */
+export function persistApiKey(key: string): void {
+  _persistApiKey(key)
+  // 异步拉取 CSRF token，不阻塞登录主流程；失败时仅记录警告
+  void refreshCsrfToken()
 }
 
 // 端点函数内部使用的本地类型别名
@@ -446,10 +470,23 @@ export const chatAPI = {
       let done = false
       let buffer = ''
 
+      // SSE 流式响应最大大小限制 —— 防止后端异常/恶意推送导致前端内存耗尽
+      const MAX_RESPONSE_BYTES = 10 * 1024 * 1024 // 10MB 上限
+      let totalBytes = 0
+
       while (!done) {
         const { value, done: doneReading } = await reader.read()
         done = doneReading
         if (value) {
+          // 累计已接收字节数，超过上限主动取消流并抛出错误
+          totalBytes += value.byteLength
+          if (totalBytes > MAX_RESPONSE_BYTES) {
+            // 取消流读取，触发后端连接关闭
+            void reader.cancel().catch(() => {
+              // 忽略取消流时的异常（连接已关闭等情况）
+            })
+            throw new Error('响应超过 10MB 上限，已中止')
+          }
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''

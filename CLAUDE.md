@@ -332,6 +332,7 @@ comprehension.py → planner.py → executor.py → feedback.py
 | Workflow | `backend/workflow/` | `engine.py`, `parser.py` |
 | Tools | `backend/tools/` | Tool registry, built-in tools (file, terminal, search, todo) |
 | System Diagnostics | `backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
+| ACP Vibe Coding | `backend/acp_host/` | `core.py` (dataclasses + exceptions), `client.py` (ACPHostedClient), `service.py` (ACPService singleton), `permissions.py` (hard-block policy), `tool_adapter.py`, `agents/` (4 built-in agents) |
 
 ### Frontend Structure
 
@@ -384,6 +385,52 @@ Two diagnostic layers are available, both designed for automated validation:
 - **`POST /api/test-scenarios/run-all`** — Runs all 10 scenarios, returns pass/fail report
 
 Test scenarios exercise real production code paths (AIAgent, conversation CRUD, plugin discovery, etc.), not mocked. Use these for Claude Code-triggered validation.
+
+## ACP Vibe Coding API
+
+ACP（Agent Client Protocol）用于调用本地 vibe coding 应用（Claude Code / Codex / OpenClaw / OpenCode）。所有端点强制鉴权，会话按 `(user_id, session_id)` 隔离。
+
+### ACP Agent 与会话端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/acp/agents` | 列出所有 agent + `available` 状态（同步探测包到线程池） |
+| POST | `/api/acp/sessions` | 创建会话，body `{agent, cwd}`，返回 `session_id` |
+| GET | `/api/acp/sessions` | 列出当前用户活动会话 |
+| POST | `/api/acp/sessions/{id}/prompt` | 发起一轮 prompt，body `{prompt, restart?}`，SSE 流式响应 |
+| POST | `/api/acp/sessions/{id}/permission` | 恢复 permission，body `{option_id}` |
+| POST | `/api/acp/sessions/{id}/cancel` | 取消当前轮 |
+| DELETE | `/api/acp/sessions/{id}` | 关闭并移除会话 |
+
+SSE 事件类型：`text` | `tool` | `status` | `permission` | `usage` | `result` | `error`。客户端断开时后端自动调用 `ACPService.cancel_turn` 取消未完成的 prompt。
+
+### 通知 API（Claude Code Hooks 集成）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/notifications` | 发送通知，body `{title, body, pane_id?, notification_type}` |
+| GET | `/api/notifications?limit=N` | 列出最近 N 条通知（默认 50，最大 100） |
+| GET | `/api/notifications/stream` | SSE 长连接，30s 心跳，实时推送 |
+
+Hooks 模板见 `backend/static/claude-code-hooks.json`。
+
+### 文件预览与反向代理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/coding/preview/file?path=<path>` | 按扩展名分发渲染（Markdown/图片/音视频/Office） |
+| GET | `/api/preview/{port}/{path:path}` | 反向代理到 `127.0.0.1:{port}` |
+
+SSRF 防护：`/api/preview/{port}/...` 拒绝 `port < 1024` 或 `> 65535`，强制目标主机为 `127.0.0.1`。
+
+### 终端 PTY API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/terminal/sessions/{id}/snapshot` | 返回屏幕网格快照（cols/rows/grid） |
+| WebSocket | `/terminal/ws/pty/{session_id}?token=...` | PTY 双向通信（input/output/resize/shell_info） |
+
+注意：terminal 路由前缀为 `/terminal`（无 `/api` 前缀）。
 
 ## Plugin System Architecture
 
@@ -536,6 +583,10 @@ git commit -m "[Type] 变更描述"
 - **模型参数 or 陷阱**: `getattr(config, "retry_count", 3) or 3` 会将 `0` 误判为未设置，必须使用 `is not None` 检查
 - **SSRF 防护**: `BASE_URL` 校验拒绝内网/本地/链路本地 IP 地址，修改模型服务 URL 验证逻辑时需保持此检查
 - **Tool calls 结果截断**: 过长的工具调用结果会被截断后再传给 LLM，修改截断阈值时注意上下文窗口限制
+- **ACP SDK 缺失优雅降级**: `acp` Python SDK 是可选依赖，缺失时 `ACPService.run_turn`/`resume_permission` 抛 `ACPConfigurationError`，但状态管理方法（`get_session`/`close_chat_session`/`cancel_turn`）仍可正常工作
+- **pywinpty 仅 Windows**: POSIX 系统用标准库 `pty`，Windows 用 `pywinpty` 提供 PTY 能力
+- **ACP 会话隔离机制**: 按 `chat_id = f"{user_id}:{session_id}"` 隔离，每个 `(chat_id, agent)` 对应一个 `_Conversation` 实例，模块级 `_acp_services` 字典按 agent 标识索引 service 实例
+- **ACP 硬阻断策略**: `rm -rf /`、`sudo rm -rf`、`mkfs`、`dd if=` 命令子串直接拒绝，不进入用户审批流程
 
 ## API Path Prefix
 

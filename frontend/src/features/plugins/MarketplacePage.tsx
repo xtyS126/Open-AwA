@@ -2,7 +2,7 @@
  * 插件市场页面组件，提供插件浏览、搜索、分类筛选与安装功能。
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import PluginSectionNav from '@/features/plugins/PluginSectionNav'
@@ -56,6 +56,14 @@ function MarketplacePage() {
   const [ratingsMap, setRatingsMap] = useState<Record<string, PluginRatingSummary>>({})
   /* 当前打开详情的插件 */
   const [detailPlugin, setDetailPlugin] = useState<MarketplacePlugin | null>(null)
+
+  /**
+   * 前端过滤内置插件 —— 双重保险，确保 source=builtin 的插件不在市场展示。
+   * 即使后端 API 已经过滤，前端仍保留此校验以防数据回流。
+   */
+  const visiblePlugins = useMemo(() => {
+    return plugins.filter((p) => p.source !== 'builtin')
+  }, [plugins])
 
   const pageSize = 12
 
@@ -212,10 +220,10 @@ function MarketplacePage() {
       {/* 插件卡片网格 */}
       {!loading && (
         <div className={styles['plugins-grid']}>
-          {plugins.length === 0 ? (
+          {visiblePlugins.length === 0 ? (
             <EmptyState title="未找到匹配的插件" description="尝试更换搜索关键词或筛选条件" />
           ) : (
-            plugins.map((plugin) => {
+            visiblePlugins.map((plugin) => {
               const rating = ratingsMap[plugin.id]
               return (
                 <div

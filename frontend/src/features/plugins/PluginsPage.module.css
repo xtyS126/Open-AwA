@@ -600,3 +600,95 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ========== 插件分区与内置标识 ========== */
+
+/* 单个分区容器 —— 用户插件区与系统内置插件区共用 */
+.plugin-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 系统内置插件分区 —— 浅色背景与左侧边框区分 */
+.builtin-section {
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-info-bg, rgba(59, 130, 246, 0.06));
+  border-left: 3px solid var(--color-info, var(--color-primary));
+}
+
+/* 分区头部 —— 标题行 + 计数徽章 */
+.section-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 标题行 —— 图标 + 标题 + 数量徽章 */
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 覆盖通用 section-title，分区场景下移除默认下边距 */
+.plugin-section .section-title {
+  margin-bottom: 0;
+}
+
+/* 计数徽章 —— 标题右侧数量标识 */
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-none);
+}
+
+/* 内置分区计数徽章 —— 使用主题色突出 */
+.builtin-badge {
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+}
+
+/* 内置分区盾牌图标 —— 与标题对齐 */
+.builtin-shield-icon {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+/* 分区描述文字 —— 辅助说明 */
+.section-description {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-relaxed);
+  margin: 0;
+}
+
+/* 内置插件卡片 —— 浅色边框区分 */
+.builtin-card {
+  border-color: var(--color-primary-border, rgba(59, 130, 246, 0.2));
+  background: var(--color-bg);
+}
+
+/* 卡片头部盾牌徽章 —— 名称行内受保护标识 */
+.builtin-shield-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}

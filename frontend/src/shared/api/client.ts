@@ -1,7 +1,13 @@
 /**
  * Axios 客户端实例、API Key 管理和请求/响应拦截器。
  * 所有 API 模块通过此 client 发起请求。
- * 单用户模式下使用 API Key (Bearer) 认证，不再需要 CSRF 保护。
+ *
+ * 认证策略：
+ *   - 单用户模式：使用 API Key (Bearer) 认证
+ *   - 状态变更请求（POST/PUT/PATCH/DELETE）自动附加 X-CSRF-Token 头
+ *   - 应用启动或登录成功后调用 refreshCsrfToken() 拉取 per-session CSRF token
+ *   - 收到 403 missing_csrf_token / invalid_csrf_token 时自动刷新并重试一次
+ *     （即便 Bearer 模式下后端豁免 CSRF，保留 CSRF 防御可避免 Cookie 路径被滥用）
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
@@ -9,6 +15,7 @@ import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
   _apiKeyRetried?: boolean
+  _csrfRetried?: boolean
 }
 
 // 替换原有的：const API_BASE_URL = '/api'
@@ -81,6 +88,49 @@ export const clearCachedApiKey = (): void => {
   safeSetItem(API_KEY_STORAGE_KEY, '')
 }
 
+// CSRF token 内存缓存。
+// 仅在内存中保存，不持久化到 localStorage，避免跨标签页复用过期 token。
+// 由 refreshCsrfToken() 在应用启动或登录成功后从后端拉取。
+let _csrfToken: string | null = null
+
+/**
+ * 从后端拉取并缓存 per-session CSRF token。
+ *
+ * 调用时机：
+ *   - 应用启动时（推荐在 useAppInitialization 中调用）
+ *   - 登录成功后（persistApiKey 触发）
+ *   - 收到 403 missing_csrf_token / invalid_csrf_token 后自动调用
+ *
+ * 拉取失败时降级处理：仅记录警告，不阻塞应用启动。
+ * 此后状态变更请求会因缺失 X-CSRF-Token 被后端拒绝，但不会影响 GET 等只读请求。
+ *
+ * 注意：使用 api 实例调用 GET /auth/csrf-token。GET 请求不会附加 X-CSRF-Token，
+ * 因此不会因 CSRF 校验失败而递归。
+ */
+export async function refreshCsrfToken(): Promise<void> {
+  try {
+    const response = await api.get('/auth/csrf-token', { withCredentials: true })
+    const token = response.data?.csrf_token
+    if (typeof token === 'string' && token) {
+      _csrfToken = token
+    }
+  } catch (e) {
+    // 拉取失败不阻塞应用启动：可能后端使用 Bearer 模式豁免 CSRF，或尚未启用 CSRF 中间件
+    // 仅记录警告，避免在控制台抛出未捕获异常
+    appLogger.warning({
+      event: 'csrf_token_fetch_failed',
+      module: 'api',
+      action: 'GET',
+      status: 'warning',
+      message: 'CSRF token 拉取失败，状态变更请求可能被后端拒绝',
+      extra: { error: e instanceof Error ? e.message : String(e) },
+    })
+  }
+}
+
+/** 返回当前缓存的 CSRF token（供调试或测试使用） */
+export const getCachedCsrfToken = (): string | null => _csrfToken
+
 export const logStreamParseWarning = (payload: string, source: 'chunk' | 'tail') => {
   appLogger.warning({
     event: 'chat_stream_parse_warning',
@@ -136,6 +186,13 @@ api.interceptors.request.use(async (config) => {
     config.headers['Authorization'] = `Bearer ${_inMemoryApiKey}`
   }
 
+  // 为状态变更请求附加 CSRF token（防 CSRF 攻击，对应 P0-9）
+  // Bearer 模式下后端会豁免 CSRF，但保留该头可避免 Cookie 路径被滥用
+  const method = (config.method || 'get').toLowerCase()
+  if (['post', 'put', 'patch', 'delete'].includes(method) && _csrfToken) {
+    config.headers['X-CSRF-Token'] = _csrfToken
+  }
+
   // 防御性清洗：移除 header 值中的非 ISO-8859-1 字符
   // 防止浏览器 setRequestHeader 抛出异常导致请求静默失败
   sanitizeHeaders(config.headers as unknown as Record<string, unknown>)
@@ -183,6 +240,36 @@ api.interceptors.response.use(
     const isExpectedAuthError = (
       (error?.config?.url === '/auth/me' && error?.response?.status === 401)
     )
+
+    // CSRF token 失效或缺失时自动刷新并重试一次（对应 P0-9）
+    // 后端在 Cookie 认证路径下会返回 403 + missing_csrf_token / invalid_csrf_token
+    // 此处只重试一次，避免无限循环
+    const csrfErrorCode = error?.response?.data?.error as string | undefined
+    const isCsrfError = (
+      error?.response?.status === 403 &&
+      (csrfErrorCode === 'missing_csrf_token' || csrfErrorCode === 'invalid_csrf_token')
+    )
+    const requestConfig = error?.config as RetriableApiRequest | undefined
+    if (isCsrfError && requestConfig && !requestConfig._csrfRetried) {
+      requestConfig._csrfRetried = true
+      try {
+        await refreshCsrfToken()
+        if (_csrfToken) {
+          requestConfig.headers['X-CSRF-Token'] = _csrfToken
+          return api.request(requestConfig)
+        }
+      } catch (refreshError) {
+        // 刷新失败则继续走原有错误处理流程
+        appLogger.warning({
+          event: 'csrf_retry_failed',
+          module: 'api',
+          action: error?.config?.method?.toUpperCase() || 'GET',
+          status: 'warning',
+          message: 'CSRF token 自动重试失败',
+          extra: { error: refreshError instanceof Error ? refreshError.message : String(refreshError) },
+        })
+      }
+    }
 
     if (!isExpectedAuthError) {
       const errorUrl = error?.config?.url || 'unknown'

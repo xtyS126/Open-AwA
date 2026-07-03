@@ -17,6 +17,7 @@ import {
   Wrench,
   ChevronRight,
   Server,
+  Search as SearchTabIcon,
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
@@ -36,6 +37,7 @@ const EnvVarSettings = lazy(() => import('./EnvVarSettings'))
 const MCPSettings = lazy(() => import('./MCPSettings'))
 const AppearanceTabContainer = lazy(() => import('./containers/AppearanceTabContainer').then(m => ({ default: m.AppearanceTabContainer })))
 const BackendConnectionTabContainer = lazy(() => import('./containers/BackendConnectionTabContainer').then(m => ({ default: m.BackendConnectionTabContainer })))
+const SearchTabContainer = lazy(() => import('./containers/SearchTabContainer').then(m => ({ default: m.SearchTabContainer })))
 
 /** 旧 Tab ID 到新 URL 的重定向映射 */
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
@@ -136,6 +138,7 @@ function SettingsPage() {
       { id: 'general', label: '通用', icon: <SettingsIcon size={16} /> },
       { id: 'api', label: '模型', icon: <Plug size={16} /> },
       { id: 'appearance', label: '外观', icon: <Palette size={16} /> },
+      { id: 'search', label: '搜索', icon: <SearchTabIcon size={16} /> },
       { id: 'prompts', label: '提示词', icon: <Cpu size={16} /> },
       { id: 'billing', label: '计费', icon: <Briefcase size={16} /> },
       { id: 'backend', label: '后端连接', icon: <Server size={16} /> },
@@ -300,6 +303,14 @@ function SettingsPage() {
           <ErrorBoundary name="AppearanceSettings">
             <Suspense fallback={<TabLoadingFallback />}>
               <AppearanceTabContainer />
+            </Suspense>
+          </ErrorBoundary>
+        )}
+
+        {activeTab === 'search' && (
+          <ErrorBoundary name="SearchSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <SearchTabContainer />
             </Suspense>
           </ErrorBoundary>
         )}

@@ -59,6 +59,28 @@ frontend/src/
 部署指南见 [docs/指南/部署与运行说明.md](docs/指南/部署与运行说明.md)，测试策略见 [docs/指南/测试说明.md](docs/指南/测试说明.md)。
 插件开发见 [docs/插件开发手册/](docs/插件开发手册/)。
 
+### ACP Vibe Coding 集成
+
+ACP（Agent Client Protocol）是一套用于调用本地 vibe coding 应用的开放协议。Open-AwA 作为 ACP Host，通过子进程方式拉起 Claude Code、Codex、OpenClaw、OpenCode 等 CLI Agent，并以 SSE 流式方式把 Agent 事件回传给前端，实现统一的 vibe coding 体验。
+
+关键文件：
+
+- `backend/acp_host/` - ACP 核心模块
+  - `core.py` - 共享数据结构与异常层级（`ACPAgentConfig`/`ACPConfig`/`SuspendedPermission`/`ACPErrors` 异常族）
+  - `client.py` - 托管客户端 `ACPHostedClient`，处理 ACP 协议事件分发与 permission 挂起-恢复
+  - `service.py` - `ACPService` 服务层，管理子进程生命周期、prompt 轮次与模块级单例注册表
+  - `permissions.py` - 权限审批适配器与硬阻断安全策略
+  - `tool_adapter.py` - 工具调用事件渲染适配
+  - `agents/` - 内置 Agent 配置目录（`claude_code.py`/`codex.py`/`openclaw.py`/`opencode.py`）
+- `backend/api/routes/acp.py` - ACP REST API 路由（`/api/acp/agents`、`/sessions`、SSE prompt 等）
+- `backend/core/terminal/` - VT100 仿真器与 PTY 持久会话
+  - `vt_screen.py` - ANSI/SGR 转义序列解析与字符网格维护
+  - `pty_session.py` - PTY 进程封装与屏幕快照
+- `backend/api/routes/preview_proxy.py` - 反向代理（用于本地开发服务器预览，SSRF 防护）
+- `backend/api/routes/notifications.py` - 通知 HTTP API（用于 Claude Code hooks 集成）
+- `backend/static/claude-code-hooks.json` - Claude Code hooks 配置模板
+- `frontend/src/features/vibe-coding/` - 前端三栏布局页面（Agent 选择 / 会话面板 / 终端 / 文件预览）
+
 ---
 
 ## Code Style
@@ -100,6 +122,12 @@ frontend/src/
 - **Plugin Manager is a singleton**: 通过 `plugins.plugin_instance.get()` 获取，不要直接 `PluginManager()` 创建新实例
 - **Conversation history auto-injected**: Agent 自动从 ShortTermMemory 加载对话历史，无需手动传递
 - **Backend root directory file scatter**: backend 根目录散落了 14+ 个独立脚本（`replace_file.py`、`elevate_script.ps1`、`grant_perm.ps1` 等），这些是一次性迁移辅助脚本，不属于应用代码。后续路线图将统一迁移到 `scripts/` 目录。新增脚本不应放在根目录。
+- **ACP SDK 是可选依赖**: `acp` Python SDK 缺失时 `ACPService` 优雅降级，状态管理方法（`get_session`/`close_chat_session`/`cancel_turn`）仍可用，但 `run_turn`/`resume_permission` 抛 `ACPConfigurationError`
+- **pywinpty 仅 Windows 需要**: POSIX 系统使用标准库 `pty`，Windows 使用 `pywinpty` 提供 PTY 能力
+- **ACP 会话隔离**: 按 `chat_id = f"{user_id}:{session_id}"` 隔离，每个 `(chat_id, agent)` 组合对应一个 `_Conversation` 实例
+- **ACP Permission 挂起-恢复**: 使用 `asyncio.Future` + `SuspendedPermission` 载体实现，用户审批后通过 `resolve_permission` 恢复执行
+- **ACP 硬阻断安全策略**: `rm -rf /`、`sudo rm -rf`、`mkfs`、`dd if=` 命令子串直接拒绝执行，不进入用户审批流程
+- **ACP 进程树清理**: 使用 `psutil.Process.children(recursive=True)` 递归 kill 子进程，psutil 不可用时回退到 POSIX `os.kill` 或 Windows `taskkill /T`
 
 ---
 

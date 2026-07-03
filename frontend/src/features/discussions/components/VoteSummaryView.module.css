@@ -1,0 +1,97 @@
+/* 投票摘要视图样式 */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  background: var(--color-bg, #ffffff);
+  border: 1px solid var(--color-border-subtle, #e5e7eb);
+  border-radius: var(--radius-md, 8px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-1, 4px);
+}
+
+.roundLabel {
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-medium, 500);
+  color: var(--color-text-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px) 0;
+  font-size: var(--text-sm, 13px);
+  color: var(--color-text, #111827);
+  cursor: default;
+}
+
+.roleName {
+  font-weight: var(--font-medium, 500);
+  min-width: 100px;
+  color: var(--color-text, #111827);
+}
+
+.decision {
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-semibold, 600);
+  padding: 2px 8px;
+  border-radius: var(--radius-full, 999px);
+  min-width: 48px;
+  text-align: center;
+}
+
+.reason {
+  flex: 1;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary, #9ca3af);
+  margin-left: var(--space-2, 8px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 投票决策颜色变体 */
+.approve {
+  color: var(--color-success-strong, #059669);
+  background: var(--color-success-bg, rgba(16, 185, 129, 0.1));
+}
+
+.reject {
+  color: var(--color-error-strong, #dc2626);
+  background: var(--color-error-bg, rgba(239, 68, 68, 0.1));
+}
+
+.abstain {
+  color: var(--color-warning-strong, #d97706);
+  background: var(--color-warning-bg, rgba(245, 158, 11, 0.1));
+}
+
+.pending {
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.pendingText {
+  color: var(--color-text-tertiary, #9ca3af);
+  background: var(--color-bg-tertiary, #f3f4f6);
+}
+
+/* 黑暗模式适配 */
+:global(.dark) .container {
+  background: var(--color-bg, #1f2937);
+  border-color: var(--color-border-subtle, #374151);
+}
+
+:global(.dark) .roleName,
+:global(.dark) .row {
+  color: var(--color-text, #f9fafb);
+}

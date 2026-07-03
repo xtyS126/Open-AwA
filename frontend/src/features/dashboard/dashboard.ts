@@ -57,7 +57,10 @@ export interface Plugin {
   author?: string | null
   // 插件分类，'builtin' 表示系统内置插件
   category?: string | null
+  // 插件来源，'builtin' 表示系统内置，'user' 表示用户安装
   source?: string | null
+  // 是否不可卸载，True 表示内置插件受保护，禁止卸载/禁用/删除
+  is_uninstallable?: boolean | null
   [key: string]: unknown
 }
 

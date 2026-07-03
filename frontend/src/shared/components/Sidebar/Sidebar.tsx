@@ -4,7 +4,8 @@ import {
   MessageSquare, LayoutDashboard, CreditCard, Zap,
   Clock, Blocks, Brain, Settings, Award, Radio,
   Cat, Sun, Moon, Menu, ChevronDown, Palette, Bell,
-  Users, BarChart3, ShoppingBag, Network
+  Users, BarChart3, ShoppingBag, Network, Terminal,
+  MessagesSquare
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useI18nStore } from '@/i18n'
@@ -15,7 +16,7 @@ import styles from './Sidebar.module.css'
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'data' | 'im' | 'roleMarket' | 'subagents'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'communication' | 'theme' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'data' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions'
 }
 
 interface MenuGroup {
@@ -45,6 +46,8 @@ const renderIcon = (type: string, size = 18) => {
     case 'roleMarket': return <ShoppingBag size={size} />
     case 'data': return <BarChart3 size={size} />
     case 'subagents': return <Network size={size} />
+    case 'vibeCoding': return <Terminal size={size} />
+    case 'discussions': return <MessagesSquare size={size} />
     default: return <MessageSquare size={size} />
   }
 }
@@ -62,6 +65,7 @@ const renderIcon = (type: string, size = 18) => {
       items: [
         { path: '/chat', label: t('sidebar.chat'), iconType: 'chat' as const },
         { path: '/coding', label: t('sidebar.coding'), iconType: 'coding' as const },
+        { path: '/vibe-coding', label: t('sidebar.vibeCoding'), iconType: 'vibeCoding' as const },
         { path: '/workspace', label: t('sidebar.workspace'), iconType: 'workspace' as const },
         { path: '/dashboard', label: t('sidebar.dashboard'), iconType: 'dashboard' as const },
         { path: '/billing', label: t('sidebar.billing'), iconType: 'billing' as const },
@@ -80,6 +84,7 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/scheduled-tasks', label: t('sidebar.scheduledTasks'), iconType: 'scheduledTasks' as const },
         { path: '/workflows', label: t('sidebar.workflows') || '工作流', iconType: 'scheduledTasks' as const },
         { path: '/subagents', label: t('sidebar.subagents') || '子智能体', iconType: 'subagents' as const },
+        { path: '/discussions', label: t('sidebar.discussions'), iconType: 'discussions' as const },
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
         { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
         { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },
@@ -157,6 +162,10 @@ const renderIcon = (type: string, size = 18) => {
     }
     if (path === '/plugins/manage') {
       return location.pathname.startsWith('/plugins')
+    }
+    if (path === '/discussions') {
+      // 讨论任务详情页 /discussions/:id 也高亮列表项
+      return location.pathname === '/discussions' || location.pathname.startsWith('/discussions/')
     }
     if (path === '/communication') {
       return location.pathname === '/communication'

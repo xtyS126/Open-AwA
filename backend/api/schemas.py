@@ -153,6 +153,8 @@ class PluginResponse(PluginBase):
     author: Optional[str] = None
     # 插件来源
     source: Optional[str] = None
+    # 是否为不可卸载的内置插件（True 表示受 403 保护，不可卸载/禁用）
+    is_uninstallable: bool = False
 
     class Config:
         """Pydantic 配置：启用 ORM 模式，支持从数据库对象直接构建响应模型。"""

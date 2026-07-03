@@ -16,6 +16,7 @@ from api.schemas import PluginCreate, PluginImportUrlRequest, PluginResponse, Pl
 from plugins.plugin_manager import PluginManager
 from plugins import plugin_instance
 from plugins.plugin_logger import LogManager
+from security.audit import AuditLogger
 from loguru import logger
 
 
@@ -396,6 +397,28 @@ async def uninstall_plugin(
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
 
+    # 内置插件不可卸载
+    if plugin.is_uninstallable:
+        logger.bind(
+            event="builtin_plugin_operation_blocked",
+            module="plugins",
+            plugin=plugin.name,
+            action="uninstall",
+        ).warning(f"尝试卸载内置插件 {plugin.name} 已被拦截")
+        # 记录审计日志（不阻塞 403 响应）
+        try:
+            audit_logger = AuditLogger(db)
+            await audit_logger.log(
+                user_id=str(current_user.id),
+                action="plugin:uninstall",
+                resource=plugin.name,
+                result="blocked",
+                details={"reason": "builtin_plugin_uninstallable"},
+            )
+        except Exception as audit_exc:
+            logger.warning(f"审计日志写入失败: {audit_exc}")
+        raise HTTPException(status_code=403, detail="内置插件不可卸载或禁用")
+
     # 从运行时卸载插件
     pm = _get_plugin_manager()
     if plugin.name in pm.loaded_plugins:
@@ -427,7 +450,29 @@ async def toggle_plugin(
     plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
-    
+
+    # 内置插件不可禁用/启用切换
+    if plugin.is_uninstallable:
+        logger.bind(
+            event="builtin_plugin_operation_blocked",
+            module="plugins",
+            plugin=plugin.name,
+            action="toggle",
+        ).warning(f"尝试切换内置插件 {plugin.name} 启用状态已被拦截")
+        # 记录审计日志（不阻塞 403 响应）
+        try:
+            audit_logger = AuditLogger(db)
+            await audit_logger.log(
+                user_id=str(current_user.id),
+                action="plugin:toggle",
+                resource=plugin.name,
+                result="blocked",
+                details={"reason": "builtin_plugin_uninstallable"},
+            )
+        except Exception as audit_exc:
+            logger.warning(f"审计日志写入失败: {audit_exc}")
+        raise HTTPException(status_code=403, detail="内置插件不可卸载或禁用")
+
     plugin.enabled = not plugin.enabled
     db.commit()
 

@@ -1,0 +1,13 @@
+{
+  "name": "openbiliclaw-builtin",
+  "version": "0.3.147",
+  "pluginApiVersion": "1.0.0",
+  "description": "OpenBiliClaw 内置插件，提供 B 站内容发现、用户画像与推荐能力",
+  "author": "OpenBiliClaw Team",
+  "source": "builtin",
+  "category": "builtin",
+  "uninstallable": true,
+  "extensions": [],
+  "permissions": ["network:http"],
+  "auto_authorize_permissions": false
+}

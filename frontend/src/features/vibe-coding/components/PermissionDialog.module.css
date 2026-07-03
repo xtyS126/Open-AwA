@@ -1,0 +1,186 @@
+/* PermissionDialog 权限审批弹窗样式 */
+
+/* 详情区块通用容器 */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 标题行：工具名 + kind 徽章并排 */
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.toolName {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.kindBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft-bg);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+}
+
+/* 行式键值对 */
+.kvRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kvLabel {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kvValue {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+/* 命令展示 —— 等宽字体 */
+.command {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
+
+/* 路径列表 */
+.pathList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pathItem {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+}
+
+/* 摘要文本 */
+.summary {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+}
+
+/* 选项列表 */
+.optionsTitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.option:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-softest-bg);
+}
+
+.option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.optionLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+}
+
+.optionKind {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+}
+
+.optionHint {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* 底部按钮区 */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.cancelBtn {
+  padding: 6px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.cancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

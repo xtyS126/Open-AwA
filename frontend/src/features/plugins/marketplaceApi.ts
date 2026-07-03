@@ -15,6 +15,8 @@ export interface MarketplacePlugin {
   download_url: string
   icon: string
   install_count: number
+  /** 插件来源，'builtin' 表示系统内置（市场不展示） */
+  source?: string
 }
 
 /** 插件列表/搜索响应结构 */

@@ -1,20 +1,87 @@
 """
-网页搜索工具 - 使用 DuckDuckGo 搜索引擎获取搜索结果。
-参考来源: duckduckgo-search (https://github.com/deedy5/duckduckgo_search)
+网页搜索工具 - 支持 DuckDuckGo 与 SearXNG 多 Provider 搜索。
+DuckDuckGo 实现参考: duckduckgo-search (https://github.com/deedy5/duckduckgo_search)
 作者: deedy5
 许可: MIT License
 """
 
 import asyncio
-import urllib.parse
+import contextlib
 import json
-from typing import Dict, Any, List, Optional
+import time
+import urllib.parse
+from typing import Any, Dict, List, Optional
+
+import httpx
 from loguru import logger
 
 # 最大返回结果数
 MAX_RESULTS = 10
 # 请求超时（秒）
 REQUEST_TIMEOUT = 15
+# provider 配置缓存 TTL（秒），避免每次搜索都查询数据库
+_CACHE_TTL_SECONDS = 10.0
+# provider 配置内存缓存（结构: {"data": dict|None, "expires_at": float}）
+# 使用 time.monotonic() 作为时间戳，避免系统时间回拨影响
+_provider_config_cache: Dict[str, Any] = {"data": None, "expires_at": 0.0}
+
+
+def _load_provider_config() -> Dict[str, Any]:
+    """
+    从数据库读取激活的搜索 provider 配置，带 10 秒内存缓存。
+
+    Returns:
+        包含 provider/base_url/api_key/extra_config 的字典。
+        若数据库不可用或无激活配置，返回默认 duckduckgo 配置。
+    """
+    # 1. 检查缓存是否有效（使用 monotonic 时钟，避免系统时间回拨影响）
+    now = time.monotonic()
+    if _provider_config_cache["data"] is not None and now < _provider_config_cache["expires_at"]:
+        return _provider_config_cache["data"]
+
+    # 2. 默认配置（数据库不可用或无激活配置时使用）
+    default_cfg: Dict[str, Any] = {
+        "provider": "duckduckgo",
+        "base_url": None,
+        "api_key": None,
+        "extra_config": {},
+    }
+
+    # 3. 查询数据库获取激活的 provider 配置
+    try:
+        # 延迟导入，避免模块加载阶段数据库未初始化
+        from db.models import SearchProviderConfig, SessionLocal
+
+        with contextlib.closing(SessionLocal()) as db:
+            cfg = (
+                db.query(SearchProviderConfig)
+                .filter(SearchProviderConfig.enabled == True)  # noqa: E712
+                .first()
+            )
+            if cfg:
+                result = {
+                    "provider": cfg.provider or "duckduckgo",
+                    "base_url": cfg.base_url,
+                    "api_key": cfg.api_key,
+                    "extra_config": cfg.extra_config or {},
+                }
+            else:
+                # 数据库无激活配置，使用默认 duckduckgo
+                result = default_cfg
+    except ImportError as e:
+        # db.models 模块不可用时降级
+        logger.warning(f"无法导入数据库模型，使用默认 duckduckgo 配置: {e}")
+        result = default_cfg
+    except Exception as e:
+        # 数据库查询异常统一降级（可能涉及 SQLAlchemyError/OSError 等多种类型）
+        # 此处为缓存兜底函数，必须保证不阻塞搜索功能
+        logger.warning(f"读取搜索 provider 配置失败，使用默认 duckduckgo 配置: {e}")
+        result = default_cfg
+
+    # 4. 更新缓存
+    _provider_config_cache["data"] = result
+    _provider_config_cache["expires_at"] = now + _CACHE_TTL_SECONDS
+    return result
 
 
 class WebSearchSkill:
@@ -58,28 +125,93 @@ class WebSearchSkill:
     async def _search(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行网页搜索。
-        使用 DuckDuckGo HTML 搜索接口，不需要 API Key。
+        根据激活的 provider 配置分发到 SearXNG 或 DuckDuckGo。
+        SearXNG 失败时自动降级到 DuckDuckGo。
         """
+        import http.client
+
         query = kwargs.get('query', '').strip()
         max_results = kwargs.get('max_results', self.max_results)
 
         if not query:
             return {"success": False, "error": "搜索关键词不能为空"}
 
+        # 读取激活的 provider 配置（带 10 秒内存缓存）
+        cfg = _load_provider_config()
+        provider = cfg.get("provider", "duckduckgo")
+        base_url = cfg.get("base_url")
+
+        # SearXNG 路径：配置为 searxng 且提供 base_url 时尝试
+        if provider == "searxng" and base_url:
+            try:
+                results = await asyncio.wait_for(
+                    self._searxng_search(query, max_results, base_url),
+                    timeout=REQUEST_TIMEOUT,
+                )
+                logger.info(
+                    f"SearXNG search completed: query='{query}', results={len(results)}"
+                )
+                return {
+                    "success": True,
+                    "query": query,
+                    "results": results,
+                    "count": len(results),
+                    "provider": "searxng",
+                }
+            except asyncio.TimeoutError:
+                # SearXNG 超时，降级到 DuckDuckGo
+                logger.warning(
+                    f"SearXNG search timed out, falling back to DuckDuckGo: query='{query}'"
+                )
+            except (httpx.TimeoutException, httpx.HTTPError) as e:
+                # SearXNG HTTP/超时异常，降级到 DuckDuckGo
+                logger.warning(
+                    f"SearXNG search HTTP error, falling back to DuckDuckGo: {e}"
+                )
+            except ValueError as e:
+                # SearXNG JSON 解析或 SSRF 校验失败，降级到 DuckDuckGo
+                logger.warning(
+                    f"SearXNG search invalid data, falling back to DuckDuckGo: {e}"
+                )
+            except OSError as e:
+                # SearXNG 网络异常，降级到 DuckDuckGo
+                logger.warning(
+                    f"SearXNG search network error, falling back to DuckDuckGo: {e}"
+                )
+            except Exception as e:
+                # 未知异常也降级到 DuckDuckGo，确保搜索可用性
+                logger.warning(
+                    f"SearXNG search unknown error, falling back to DuckDuckGo: {e}"
+                )
+            # 降级到 DuckDuckGo 路径继续执行
+
+        # DuckDuckGo 路径（默认 provider 或 SearXNG 降级）
         try:
             results = await self._duckduckgo_search(query, max_results)
-            logger.info(f"Web search completed: query='{query}', results={len(results)}")
+            logger.info(
+                f"DuckDuckGo search completed: query='{query}', results={len(results)}"
+            )
             return {
                 "success": True,
                 "query": query,
                 "results": results,
-                "count": len(results)
+                "count": len(results),
+                "provider": "duckduckgo",
             }
+        except asyncio.TimeoutError:
+            logger.warning(f"Search timed out for query: {query}")
+            return {"success": False, "error": "搜索请求超时"}
+        except (http.client.HTTPException, OSError) as e:
+            # 网络错误：DNS 解析失败、连接被拒、SSL 握手失败等
+            logger.error(f"DuckDuckGo search network error: {e}")
+            return {"success": False, "error": f"搜索失败: 网络错误 - {str(e)}"}
+        except ValueError as e:
+            # SSRF 校验失败或 HTML 解析异常
+            logger.error(f"DuckDuckGo search invalid data: {e}")
+            return {"success": False, "error": f"搜索失败: {str(e)}"}
         except Exception as e:
-            if "搜索请求超时" in str(e):
-                logger.warning(f"Web search timed out: {e}")
-            else:
-                logger.error(f"Web search error: {e}")
+            # 安全网：捕获未知异常，避免 Agent 崩溃
+            logger.error(f"Search unexpected error: {e}")
             return {"success": False, "error": f"搜索失败: {str(e)}"}
 
     async def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict[str, str]]:
@@ -105,12 +237,72 @@ class WebSearchSkill:
             results = self._parse_ddg_html(raw_html, max_results)
         except asyncio.TimeoutError:
             logger.warning(f"DuckDuckGo search timed out for query: {query}")
-            raise Exception("搜索请求超时")
-        except Exception as e:
+            raise  # 重新抛出 TimeoutError，由上层 _search() 统一处理
+        except (http.client.HTTPException, OSError, ValueError) as e:
+            # 网络错误/SSRF 校验失败/HTML 解析异常等，原样抛出由上层处理
             logger.error(f"DuckDuckGo search error: {e}")
             raise
 
         return results
+
+    async def _searxng_search(
+        self, query: str, max_results: int, base_url: str
+    ) -> List[Dict[str, str]]:
+        """
+        通过 SearXNG 实例搜索。
+
+        调用 {base_url}/search?q={query}&format=json&pageno=1，
+        解析返回的 JSON results 数组，提取 title/url/content 字段。
+
+        异常由上层 _search() 捕获后降级到 DuckDuckGo。
+        """
+        # 1. SSRF 校验：若 security.search_ssrf 模块可用则校验 base_url
+        #    Task 9 尚未执行时模块不存在，用 ImportError 兜底跳过
+        try:
+            from security.search_ssrf import validate_search_url
+
+            is_valid, err = validate_search_url(base_url, allow_private=True)
+            if not is_valid:
+                raise ValueError(f"SearXNG base_url SSRF 校验失败: {err}")
+        except ImportError:
+            # security.search_ssrf 模块未找到，跳过 SSRF 校验
+            logger.warning(
+                "security.search_ssrf 模块未找到，跳过 SearXNG base_url SSRF 校验"
+            )
+
+        # 2. 拼接请求 URL（清理 base_url 末尾斜杠）
+        search_url = base_url.rstrip('/') + '/search'
+        params = {"q": query, "format": "json", "pageno": 1}
+
+        # 3. 请求头（仅含 ISO-8859-1 字符，避免编码异常）
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (compatible; Open-AwA/1.0)',
+            'Accept': 'application/json',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        }
+
+        # 4. 发送请求（httpx.AsyncClient，超时 15 秒，跟随重定向）
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(REQUEST_TIMEOUT),
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(search_url, params=params, headers=headers)
+            response.raise_for_status()
+
+            # 5. 解析 JSON
+            data = response.json()
+            raw_results = data.get("results", [])[:max_results]
+
+            # 6. 转换为统一格式（title/url/snippet）
+            results: List[Dict[str, str]] = []
+            for r in raw_results:
+                results.append({
+                    "title": str(r.get("title", "") or ""),
+                    "url": str(r.get("url", "") or ""),
+                    "snippet": str(r.get("content", "") or ""),
+                })
+
+            return results
 
     async def _http_get(self, host: str, path: str) -> str:
         """异步HTTP GET请求，包含SSRF防护。"""

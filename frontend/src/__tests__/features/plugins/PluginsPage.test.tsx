@@ -1,9 +1,20 @@
 import '@testing-library/jest-dom/vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import PluginsPage from '@/features/plugins/PluginsPage'
 import { pluginsAPI } from '@/shared/api/api'
+
+// 拦截 useNavigate，便于在内置插件"设置"按钮跳转测试中断言路由
+const mockNavigate = vi.fn()
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 vi.mock('@/shared/api/api', () => ({
   pluginsAPI: {
@@ -15,11 +26,15 @@ vi.mock('@/shared/api/api', () => ({
     revokePermissions: vi.fn(),
     upload: vi.fn(),
     importFromUrl: vi.fn(),
+    // discover 用于本地插件扫描，mock 后避免触发真实网络请求
+    discover: vi.fn(),
   },
 }))
 
 const getAllMock = pluginsAPI.getAll as ReturnType<typeof vi.fn>
 const uninstallMock = pluginsAPI.uninstall as ReturnType<typeof vi.fn>
+const discoverMock = pluginsAPI.discover as ReturnType<typeof vi.fn>
+const toggleMock = pluginsAPI.toggle as ReturnType<typeof vi.fn>
 const getPermissionsMock = pluginsAPI.getPermissions as ReturnType<typeof vi.fn>
 const authorizePermissionsMock = pluginsAPI.authorizePermissions as ReturnType<typeof vi.fn>
 const revokePermissionsMock = pluginsAPI.revokePermissions as ReturnType<typeof vi.fn>
@@ -277,6 +292,274 @@ describe('PluginsPage permissions', () => {
           '这是一个来自配置的超长简介，用于覆盖简介回退逻辑。这段文字会超过八十个字符，以便展示查看简介与收起简介按钮并验证交互。',
         ),
       ).toBeInTheDocument()
+    })
+  })
+})
+
+// ============================================================================
+// SubTask 15.6: 内置插件分区测试 —— 覆盖分组渲染、按钮禁用、交互拦截
+// 内置插件判定：source === 'builtin' 且 is_uninstallable === true
+// 内置插件特征：禁用/启用按钮被禁用 + 不渲染卸载按钮 + 不渲染复选框 + Shield 徽章
+// ============================================================================
+
+describe('PluginsPage builtin plugins section', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('alert', vi.fn())
+    vi.stubGlobal('confirm', vi.fn(() => true))
+
+    // 默认 mock 数据：2 个用户插件 + 1 个内置插件（openbiliclaw-builtin）
+    getAllMock.mockResolvedValue({
+      data: [
+        {
+          id: 'user-1',
+          name: 'alpha-plugin',
+          version: '1.0.0',
+          enabled: true,
+          source: 'user',
+        },
+        {
+          id: 'user-2',
+          name: 'beta-plugin',
+          version: '2.0.0',
+          enabled: false,
+          source: 'user',
+        },
+        {
+          id: 'builtin-1',
+          name: 'openbiliclaw-builtin',
+          version: '0.3.147',
+          enabled: true,
+          source: 'builtin',
+          category: 'builtin',
+          is_uninstallable: true,
+        },
+      ],
+    })
+    // discover mock 返回空数组，避免本地插件区域渲染干扰断言
+    discoverMock.mockResolvedValue({ data: [] })
+    uninstallMock.mockResolvedValue({ data: { message: 'ok' } })
+    toggleMock.mockResolvedValue({ data: { message: 'ok' } })
+    getPermissionsMock.mockResolvedValue({
+      data: {
+        plugin_id: 'builtin-1',
+        plugin_name: 'openbiliclaw-builtin',
+        requested_permissions: [],
+        granted_permissions: [],
+        missing_permissions: [],
+      },
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  // ==================== 分组渲染测试（5 个用例）====================
+  describe('分组渲染', () => {
+    it('renders user plugins section: 应渲染用户插件分区标题', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('用户插件')).toBeInTheDocument()
+      })
+    })
+
+    it('renders builtin plugins section: 应渲染系统内置插件分区标题与描述', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        // 分区标题来自 i18n key plugins.section.builtin
+        expect(screen.getByText('系统内置插件')).toBeInTheDocument()
+        // 分区描述来自 i18n key plugins.section.builtin.description
+        expect(screen.getByText('系统自带插件，不可卸载')).toBeInTheDocument()
+      })
+    })
+
+    it('hides builtin section when no builtin plugins: 无内置插件时不渲染内置分区', async () => {
+      // mock 数据全部为用户插件，无 source=builtin
+      getAllMock.mockResolvedValue({
+        data: [
+          { id: 'user-1', name: 'alpha-plugin', version: '1.0.0', enabled: true, source: 'user' },
+          { id: 'user-2', name: 'beta-plugin', version: '2.0.0', enabled: true, source: 'user' },
+        ],
+      })
+
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('用户插件')).toBeInTheDocument()
+        // 内置插件分区应完全不渲染（实现为 builtinPlugins.length > 0 才渲染）
+        expect(screen.queryByText('系统内置插件')).not.toBeInTheDocument()
+      })
+    })
+
+    it('renders correct count badge for each section: 各分区计数徽章正确', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      // 通过分区标题定位 section 容器，再在容器内查找计数徽章
+      const userSection = screen.getByText('用户插件').closest('section')!
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      // 用户插件分区计数徽章应为 2
+      expect(within(userSection).getByText('2')).toBeInTheDocument()
+      // 内置插件分区计数徽章应为 1
+      expect(within(builtinSection).getByText('1')).toBeInTheDocument()
+    })
+
+    it('renders builtin plugin with correct name: 内置插件名称与版本正确渲染', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        // 卡片头部应显示完整的插件名称
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+        // 版本徽章格式为 "v{version}"
+        expect(screen.getByText('v0.3.147')).toBeInTheDocument()
+      })
+    })
+  })
+
+  // ==================== 按钮禁用测试（6 个用例）====================
+  describe('按钮禁用', () => {
+    it('does not render uninstall button for builtin plugin: 内置插件卡片不渲染卸载按钮', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      // 定位内置插件分区
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      // 实现为完全不渲染卸载按钮（{!isProtected && <button>...</button>}），而非 disabled
+      expect(within(builtinSection).queryByText('卸载')).not.toBeInTheDocument()
+    })
+
+    it('disables toggle button for builtin plugin: 内置插件禁用按钮被禁用', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      // openbiliclaw-builtin 已启用，显示"禁用"按钮
+      const toggleButton = within(builtinSection).getByText('禁用').closest('button')!
+      expect(toggleButton).toBeDisabled()
+      // aria-disabled 与 aria-label 标识禁用原因
+      expect(toggleButton).toHaveAttribute('aria-disabled', 'true')
+      expect(toggleButton).toHaveAttribute('aria-label', '内置插件不可禁用')
+    })
+
+    it('does not render checkbox for builtin plugin: 内置插件卡片不渲染复选框', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      // 内置插件不渲染复选框（不可参与批量删除）
+      const checkboxes = within(builtinSection).queryAllByRole('checkbox')
+      expect(checkboxes).toHaveLength(0)
+    })
+
+    it('shows tooltip explaining why button is disabled: 内置插件禁用按钮 Tooltip 提示文案正确', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      const toggleButton = within(builtinSection).getByText('禁用').closest('button')!
+      // Tooltip 是纯 CSS 实现（data-tip 属性始终存在于 DOM），无需 hover 即可断言
+      // 禁用按钮被 Tooltip span 包裹，data-tip 应为 i18n 文案"内置插件不可禁用"
+      const tooltipWrapper = toggleButton.parentElement
+      expect(tooltipWrapper).toHaveAttribute('data-tip', '内置插件不可禁用')
+    })
+
+    it('keeps view config button enabled for builtin plugin: 内置插件设置按钮保持可用', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      // "设置"按钮始终可点击（仅跳转配置页，不涉及禁用/卸载逻辑）
+      const configButton = within(builtinSection).getByText('设置').closest('button')!
+      expect(configButton).not.toBeDisabled()
+    })
+
+    it('keeps all action buttons enabled for user plugin: 用户插件禁用与卸载按钮均启用', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('alpha-plugin')).toBeInTheDocument()
+      })
+
+      const userSection = screen.getByText('用户插件').closest('section')!
+      // alpha-plugin 已启用，"禁用"按钮应可点击
+      const disableButton = within(userSection).getByText('禁用').closest('button')!
+      expect(disableButton).not.toBeDisabled()
+      // 用户插件应渲染"卸载"按钮且可点击（2 个用户插件各 1 个）
+      const uninstallButtons = within(userSection).getAllByText('卸载')
+      expect(uninstallButtons).toHaveLength(2)
+      uninstallButtons.forEach((btn) => {
+        const button = btn.closest('button')
+        expect(button).not.toBeNull()
+        expect(button!).not.toBeDisabled()
+      })
+    })
+  })
+
+  // ==================== 交互拦截测试（3 个用例）====================
+  describe('交互拦截', () => {
+    it('clicking toggle on builtin plugin does not call toggle api: 内置插件点击禁用按钮不触发 toggle API', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      const toggleButton = within(builtinSection).getByText('禁用').closest('button')!
+
+      // 按钮 disabled，fireEvent.click 不会触发 onClick 回调
+      fireEvent.click(toggleButton)
+      // toggle API 不应被调用（按钮层 + handler 层双重防护）
+      expect(toggleMock).not.toHaveBeenCalled()
+    })
+
+    it('builtin plugin has no uninstall button so uninstall api never called: 内置插件无卸载按钮，uninstall API 不会被调用', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      // 内置插件卡片不渲染"卸载"按钮，因此 uninstall API 永远不会被调用
+      expect(within(builtinSection).queryByText('卸载')).not.toBeInTheDocument()
+      expect(uninstallMock).not.toHaveBeenCalled()
+    })
+
+    it('clicking view config on builtin plugin navigates to config page: 内置插件点击设置按钮跳转到配置页', async () => {
+      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+
+      await waitFor(() => {
+        expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
+      })
+
+      const builtinSection = screen.getByText('系统内置插件').closest('section')!
+      const configButton = within(builtinSection).getByText('设置').closest('button')!
+
+      // 点击"设置"按钮，应调用 navigate 跳转到配置页（而非打开 modal）
+      fireEvent.click(configButton)
+      expect(mockNavigate).toHaveBeenCalledWith('/plugins/config/builtin-1')
     })
   })
 })

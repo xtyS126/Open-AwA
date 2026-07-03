@@ -3,7 +3,7 @@
 这里的结构定义直接决定了持久化层能够保存哪些业务数据。
 """
 
-from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, Index, inspect, text, event
+from sqlalchemy import create_engine, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, Index, UniqueConstraint, inspect, text, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
@@ -12,6 +12,7 @@ from loguru import logger
 from config.settings import settings
 import json
 import time
+import uuid
 import yaml
 
 
@@ -196,6 +197,8 @@ class Plugin(Base):
     dependencies: Mapped[List[str]] = mapped_column(JSON)
     granted_permissions: Mapped[List[str]] = mapped_column(JSON, default=list)
     installed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # 是否不可卸载（内置插件为 True，用户不可卸载/禁用）
+    is_uninstallable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="是否不可卸载（内置插件为 True）")
 
 
 class SkillExecutionLog(Base):
@@ -1425,6 +1428,97 @@ class LLMUsage(Base):
     )
 
 
+class DiscussionTask(Base):
+    """
+    多 Agent 讨论任务模型，记录待评审的提议动作、讨论上下文、当前轮次与状态。
+    状态机：created -> discussing -> pending_approval -> approved/rejected -> executing -> completed/failed
+    proposed_action 结构：{"type": "plugin_command"|"tool_call"|"subagent_delegate", "payload": {...}}
+    """
+    __tablename__ = "discussion_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # 发起用户（外键到 users.id；users.id 为 String 类型，故此处使用 String 以保证外键约束有效）
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    # 提议动作：{"type": "plugin_command"|"tool_call"|"subagent_delegate", "payload": {...}}
+    proposed_action: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    # 讨论上下文，默认空 dict
+    context: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 任务状态：created/discussing/pending_approval/approved/rejected/executing/completed/failed
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")
+    # 当前讨论轮次
+    round: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # 最大讨论轮次
+    max_rounds: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_discussion_user_status", "user_id", "status"),
+        Index("idx_discussion_created_at", "created_at"),
+    )
+
+
+class DiscussionVote(Base):
+    """
+    讨论任务投票记录，每个角色（critic/validator/approver）每轮投出一票。
+    transcript 存储该角色本轮发言的消息序列，便于回放完整讨论过程。
+    """
+    __tablename__ = "discussion_votes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # 所属讨论任务（外键级联删除）
+    discussion_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("discussion_tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    # 投票角色：critic/validator/approver
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 轮次序号
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 投票决策：approve/reject/abstain
+    vote: Mapped[str] = mapped_column(String(16), nullable=False)
+    # 投票理由
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 该角色本轮发言消息序列，默认空 list
+    transcript: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("discussion_id", "role", "round", name="uq_discussion_vote_role_round"),
+    )
+
+
+class SearchProviderConfig(Base):
+    """
+    搜索 Provider 配置模型，支持 duckduckgo / searxng / disabled 三种 provider。
+    extra_config 用于存放 allow_private_network 等扩展开关。
+    """
+    __tablename__ = "search_provider_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # provider 名称：duckduckgo/searxng/disabled
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 服务基址（duckduckgo 可为空）
+    base_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # API Key（可选，用于需要鉴权的 provider）
+    api_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 扩展配置，默认空 dict（存放 allow_private_network 等开关）
+    extra_config: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("idx_search_provider_enabled", "provider", "enabled"),
+    )
+
+
 def _migrate_profile_facts_table(use_engine=None):
     """
     迁移：创建 profile_facts 和 profile_extraction_logs 表（如不存在）。
@@ -1495,6 +1589,13 @@ def _migrate_plugin_columns(use_engine=None):
             connection.execute(text("UPDATE plugins SET installed_at = :installed_at WHERE installed_at IS NULL"), {"installed_at": now})
         if "granted_permissions" not in columns:
             connection.execute(text("ALTER TABLE plugins ADD COLUMN granted_permissions TEXT DEFAULT '[]'"))
+        if "is_uninstallable" not in columns:
+            # 补齐 is_uninstallable 列：标识内置插件不可卸载（与 Plugin.is_uninstallable 模型字段对齐）
+            # 旧数据库缺该列时，main.py startup 查询 PluginModel 会抛 OperationalError
+            connection.execute(text("ALTER TABLE plugins ADD COLUMN is_uninstallable BOOLEAN DEFAULT 0 NOT NULL"))
+            logger.bind(event="plugin_column_added", module="db", column="is_uninstallable").info(
+                "已为 plugins 表补齐 is_uninstallable 列"
+            )
 
 
 def _migrate_long_term_memory_user_id(use_engine=None):

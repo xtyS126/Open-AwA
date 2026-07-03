@@ -14,6 +14,7 @@ from api.dependencies import get_current_user
 from api.schemas import SkillCreate, SkillResponse, SkillUpdate, SkillExecute, SkillConfigResponse, SkillValidationResult, SkillValidationRequest
 from skills.skill_engine import SkillEngine
 from skills.skill_validator import SkillValidator
+from skills.skill_md_loader import SkillMarkdownLoader
 from config.logging import sanitize_for_logging
 from loguru import logger
 import yaml
@@ -1540,6 +1541,71 @@ async def validate_skill(skill_data: SkillValidationRequest):
     return result
 
 
+def _find_skill_config_in_zip(zip_file: zipfile.ZipFile) -> tuple:
+    """
+    在 ZIP 包中查找技能配置文件，优先 SKILL.md，其次 skill.yaml/skill.yml。
+
+    参数:
+        zip_file: 已打开的 zipfile.ZipFile 对象。
+
+    返回:
+        (config_type, config_name) 元组。
+        config_type 为 "skillmd" 或 "yaml" 或 None；
+        config_name 为命中的文件名，未命中时为 None。
+    """
+    names = zip_file.namelist()
+    # 优先查找 SKILL.md（大小写敏感，精确匹配文件名）
+    skill_md_candidates = [
+        name for name in names
+        if name == "SKILL.md" or name.endswith("/SKILL.md")
+    ]
+    if skill_md_candidates:
+        return "skillmd", skill_md_candidates[0]
+    # 回退查找 skill.yaml / skill.yml
+    yaml_candidates = [
+        name for name in names
+        if name.endswith('skill.yaml') or name.endswith('skill.yml')
+    ]
+    if yaml_candidates:
+        return "yaml", yaml_candidates[0]
+    return None, None
+
+
+def _parse_skillmd_config(content: str) -> Dict[str, Any]:
+    """
+    解析 SKILL.md 内容，构建技能配置字典。
+
+    使用 SkillMarkdownLoader.parse_frontmatter 解析 YAML frontmatter 与 Markdown 正文，
+    校验 SKILL.md 标准必需字段 name 和 description，并将指令体写入 instructions/prompt，
+    同时把 execution-mode frontmatter 字段映射到 execution_mode（下划线）。
+
+    参数:
+        content: SKILL.md 文件的完整文本内容。
+
+    返回:
+        包含 frontmatter 字段与指令体的配置字典。
+
+    异常:
+        HTTPException: 当缺少必需字段 name 或 description 时抛出 400 错误。
+    """
+    frontmatter, body_text = SkillMarkdownLoader.parse_frontmatter(content)
+
+    # SKILL.md 标准仅需 name 和 description，不需要 adapter/version
+    for field in ('name', 'description'):
+        if field not in frontmatter or not frontmatter[field]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"SKILL.md 配置缺少必需字段: {field}"
+            )
+
+    config_dict: Dict[str, Any] = dict(frontmatter)  # 复制 frontmatter
+    config_dict["instructions"] = body_text  # L2 指令体（Markdown 正文）
+    config_dict["prompt"] = body_text  # 供 get_prompt_for_command 在 prompt 模式读取
+    # execution-mode frontmatter 字段映射到 execution_mode（下划线）
+    config_dict["execution_mode"] = frontmatter.get("execution-mode", "steps")
+    return config_dict
+
+
 @router.post("/install-from-package")
 async def install_skill_from_package(
     file: UploadFile = File(...),
@@ -1549,6 +1615,7 @@ async def install_skill_from_package(
     """
     处理install、skill、from、package相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    支持两种配置文件格式：优先 SKILL.md（agentskills.io 标准），回退 skill.yaml。
     """
     try:
         if file.content_type and file.content_type not in ["application/zip", "application/x-zip-compressed"]:
@@ -1570,32 +1637,70 @@ async def install_skill_from_package(
             if info.file_size > MAX_UPLOAD_SIZE:
                 raise HTTPException(status_code=400, detail=f"ZIP中单个文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
         
-        config_files = [name for name in zip_file.namelist() if name.endswith('skill.yaml') or name.endswith('skill.yml')]
-        if not config_files:
-            raise HTTPException(status_code=400, detail="技能包中未找到skill.yaml配置文件")
+        config_type, config_name = _find_skill_config_in_zip(zip_file)
+        if config_type is None:
+            raise HTTPException(
+                status_code=400,
+                detail="技能包中未找到 SKILL.md 或 skill.yaml 配置文件"
+            )
         
-        config_content = zip_file.read(config_files[0]).decode('utf-8')
-        config_dict = yaml.safe_load(config_content)
+        if config_type == "skillmd":
+            # SKILL.md 路径：当 zip 同时含 SKILL.md 和 skill.yaml 时，记录优先 SKILL.md
+            yaml_also_present = any(
+                name.endswith('skill.yaml') or name.endswith('skill.yml')
+                for name in zip_file.namelist()
+            )
+            if yaml_also_present:
+                logger.bind(
+                    event="skill_package_config_priority",
+                    module="skills",
+                    action="install_from_package",
+                    status="info",
+                ).info("优先 SKILL.md")
+            config_content = zip_file.read(config_name).decode('utf-8')
+            config_dict = _parse_skillmd_config(config_content)
+            # SKILL.md 路径：config 字段存储 config_dict（字典）
+            skill_name = config_dict['name']
+            skill_version = config_dict.get('version', '1.0.0')
+            skill_description = config_dict['description']
+            skill_config = config_dict
+            skill_category = config_dict.get('category', 'general')
+            skill_tags = config_dict.get('tags', [])
+            skill_dependencies = config_dict.get('dependencies', [])
+            skill_author = config_dict.get('author', 'unknown')
+        else:
+            # yaml 路径：保持现有逻辑不变
+            config_content = zip_file.read(config_name).decode('utf-8')
+            config_dict = yaml.safe_load(config_content)
+            
+            required_fields = ['name', 'version', 'description', 'adapter']
+            for field in required_fields:
+                if field not in config_dict:
+                    raise HTTPException(status_code=400, detail=f"技能配置缺少必需字段: {field}")
+            
+            skill_name = config_dict['name']
+            skill_version = config_dict['version']
+            skill_description = config_dict['description']
+            skill_config = config_content  # 现有行为：存储原始 YAML 字符串
+            skill_category = config_dict.get('category', 'general')
+            skill_tags = config_dict.get('tags', [])
+            skill_dependencies = config_dict.get('dependencies', [])
+            skill_author = config_dict.get('author', 'unknown')
         
-        required_fields = ['name', 'version', 'description', 'adapter']
-        for field in required_fields:
-            if field not in config_dict:
-                raise HTTPException(status_code=400, detail=f"技能配置缺少必需字段: {field}")
-        
-        existing_skill = db.query(Skill).filter(Skill.name == config_dict['name']).first()
+        existing_skill = db.query(Skill).filter(Skill.name == skill_name).first()
         if existing_skill:
-            raise HTTPException(status_code=400, detail=f"技能 '{config_dict['name']}' 已存在")
+            raise HTTPException(status_code=400, detail=f"技能 '{skill_name}' 已存在")
         
         new_skill = Skill(
             id=str(uuid.uuid4()),
-            name=config_dict['name'],
-            version=config_dict['version'],
-            description=config_dict['description'],
-            config=config_content,
-            category=config_dict.get('category', 'general'),
-            tags=config_dict.get('tags', []),
-            dependencies=config_dict.get('dependencies', []),
-            author=config_dict.get('author', 'unknown'),
+            name=skill_name,
+            version=skill_version,
+            description=skill_description,
+            config=skill_config,
+            category=skill_category,
+            tags=skill_tags,
+            dependencies=skill_dependencies,
+            author=skill_author,
             enabled=True
         )
         

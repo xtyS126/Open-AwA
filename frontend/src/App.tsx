@@ -45,6 +45,8 @@ const ImChannelsPage = React.lazy(() => import('@/features/im/ImChannelsPage'))
 const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage'))
 const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'))
 const SoulPage = React.lazy(() => import('@/features/soul/SoulPage'))
+const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
+const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
 
 function NavigationLogger() {
   const location = useLocation()
@@ -125,6 +127,9 @@ function AppRoutes() {
             <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
             <Route path="/subagents" element={<ErrorBoundary name="SubAgents"><SubAgentPage /></ErrorBoundary>} />
             <Route path="/soul" element={<ErrorBoundary name="Soul"><SoulPage /></ErrorBoundary>} />
+            <Route path="/vibe-coding" element={<ErrorBoundary name="VibeCoding"><VibeCodingPage /></ErrorBoundary>} />
+            <Route path="/discussions" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
+            <Route path="/discussions/:id" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
             </Routes>
           </div>
         </Suspense>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
-import { StatusBadge } from '@/shared/components/ui'
+import { StatusBadge, Tooltip } from '@/shared/components/ui'
 import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
 import PluginSectionNav from '@/features/plugins/PluginSectionNav'
@@ -34,8 +34,10 @@ import {
   usePluginToggle,
   useDiscoveredPlugins,
 } from '@/features/plugins/hooks'
+import { isBuiltinPlugin, isUninstallablePlugin } from '@/features/plugins/pluginTypes'
 import { pluginsAPI } from '@/shared/api/api'
 import { useToast } from '@/shared/components/Toast'
+import { useI18nStore } from '@/i18n'
 import styles from './PluginsPage.module.css'
 
 const MAX_PLUGIN_UPLOAD_SIZE = 50 * 1024 * 1024
@@ -44,6 +46,23 @@ const ALLOWED_PLUGIN_MIME_TYPES = new Set([
   'application/x-zip-compressed',
   'multipart/x-zip',
 ])
+
+/** 从 API 错误对象中提取可读消息 —— 兼容 detail 与 error 两种字段 */
+function getPluginErrorMessage(error: unknown, fallback: string): string {
+  const err = error as { response?: { data?: { detail?: unknown; error?: unknown } } }
+  const detail = err?.response?.data?.detail
+  const errorField = err?.response?.data?.error
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+  if (typeof errorField === 'string' && errorField.trim()) {
+    return errorField
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+  return fallback
+}
 
 /** 插件分类对应的色板配置 */
 interface PluginColorScheme {
@@ -157,8 +176,273 @@ function getPluginCategoryLabel(plugin: Plugin): string {
   return '通用'
 }
 
+function getPluginDescription(plugin: Plugin): string {
+  const direct = plugin.description
+  if (typeof direct === 'string' && direct.trim()) {
+    return direct
+  }
+  const config = plugin.config
+  if (config && typeof config === 'object' && !Array.isArray(config)) {
+    const configDescription = (config as { description?: unknown }).description
+    if (typeof configDescription === 'string') {
+      return configDescription
+    }
+  }
+  return ''
+}
+
+function getPluginAuthor(plugin: Plugin): string {
+  const author = plugin.author
+  if (typeof author === 'string' && author.trim()) {
+    return author
+  }
+  const config = plugin.config
+  if (config && typeof config === 'object' && !Array.isArray(config)) {
+    const configAuthor = (config as { author?: unknown }).author
+    if (typeof configAuthor === 'string' && configAuthor.trim()) {
+      return configAuthor
+    }
+  }
+  return '未知'
+}
+
+/** PluginCard 组件 Props —— 单个插件卡片所需的全部状态与回调 */
+interface PluginCardProps {
+  plugin: Plugin
+  /** 是否受保护（内置不可卸载），决定按钮禁用状态 */
+  isProtected: boolean
+  /** 是否被选中（批量操作） */
+  isSelected: boolean
+  /** 简介是否展开 */
+  isExpanded: boolean
+  /** 调试面板是否激活 */
+  isDebugActive: boolean
+  /** 待授权权限数 */
+  permissionMissingCount: number
+  /** 状态切换中 */
+  toggling: boolean
+  /** 删除中 */
+  deleting: boolean
+  /** 选中状态变更 */
+  onSelectChange: (checked: boolean) => void
+  /** 切换简介展开 */
+  onToggleDescription: () => void
+  /** 切换调试面板 */
+  onToggleDebug: () => void
+  /** 打开权限弹窗 */
+  onOpenPermission: () => void
+  /** 切换启用/禁用 */
+  onToggle: () => void
+  /** 卸载插件 */
+  onUninstall: () => void
+  /** 跳转配置页 */
+  onNavigateConfig: () => void
+}
+
+/**
+ * PluginCard —— 单个插件卡片，使用 React.memo 优化列表渲染性能。
+ *
+ * 当 isProtected 为 true（内置插件）时，禁用卸载/禁用按钮并显示 Tooltip 提示，
+ * 仅保留"设置"（查看配置）按钮可用。
+ */
+const PluginCard = React.memo(function PluginCard(props: PluginCardProps): React.ReactElement {
+  const {
+    plugin,
+    isProtected,
+    isSelected,
+    isExpanded,
+    isDebugActive,
+    permissionMissingCount,
+    toggling,
+    deleting,
+    onSelectChange,
+    onToggleDescription,
+    onToggleDebug,
+    onOpenPermission,
+    onToggle,
+    onUninstall,
+    onNavigateConfig,
+  } = props
+  const { t } = useI18nStore()
+
+  const description = getPluginDescription(plugin)
+  const author = getPluginAuthor(plugin)
+  const colorScheme = getPluginColorScheme(plugin)
+  const categoryLabel = getPluginCategoryLabel(plugin)
+
+  const cannotDisableText = t('plugins.builtin.cannotDisable')
+
+  /** 包裹受保护按钮：禁用态 + Tooltip 提示 */
+  const renderProtectedAction = (
+    button: React.ReactNode,
+    tooltipText: string,
+  ): React.ReactNode => {
+    if (!isProtected) {
+      return button
+    }
+    return (
+      <Tooltip content={tooltipText} position="top">
+        {button}
+      </Tooltip>
+    )
+  }
+
+  return (
+    <div className={`${styles['plugin-card']} ${isProtected ? styles['builtin-card'] : ''}`}>
+      {/* 顶部色条 —— 按分类着色 */}
+      <div className={styles['card-color-bar']} style={{ background: colorScheme.bar }} />
+      <div className={styles['card-body']}>
+        {/* 卡片头部 —— 图标 + 名称 + 版本 + 分类 + 状态徽章 */}
+        <div className={styles['card-header']}>
+          <div className={styles['card-header-left']}>
+            {/* 内置插件不渲染复选框（不可批量删除） */}
+            {!isProtected && (
+              <label className={styles['card-checkbox']}>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={(e) => onSelectChange(e.target.checked)}
+                />
+              </label>
+            )}
+            <div
+              className={styles['plugin-icon-box']}
+              style={{ background: colorScheme.iconBg, color: colorScheme.iconColor }}
+            >
+              {React.createElement(getPluginIcon(plugin.name), { size: 20 })}
+            </div>
+            <div>
+              <div className={styles['plugin-name-row']}>
+                <span className={styles['plugin-name']}>{plugin.name}</span>
+                <span className={styles['version-badge']}>v{plugin.version || '1.0.0'}</span>
+                {isProtected && (
+                  <Tooltip content={t('plugins.builtin.shieldTooltip')} position="top">
+                    <span className={styles['builtin-shield-badge']}>
+                      <Shield size={11} />
+                    </span>
+                  </Tooltip>
+                )}
+              </div>
+              <span
+                className={styles['category-badge']}
+                style={{ background: colorScheme.badgeBg, color: colorScheme.badgeText }}
+              >
+                {categoryLabel}
+              </span>
+            </div>
+          </div>
+          <div className={styles['card-header-right']}>
+            <StatusBadge
+              status={plugin.enabled ? 'active' : 'inactive'}
+              label={plugin.enabled ? '已启用' : '已停用'}
+            />
+          </div>
+        </div>
+
+        {/* 作者信息 —— 小字辅助说明 */}
+        <div className={styles['plugin-author']}>
+          作者：{author}
+        </div>
+
+        {/* 卡片描述 */}
+        <p className={styles['card-description']}>
+          {isExpanded ? (description || '暂无简介') : (description.slice(0, 80) || '暂无简介')}
+          {description.length > 80 && (
+            <button
+              className={styles['description-toggle']}
+              onClick={onToggleDescription}
+            >
+              {isExpanded ? '收起简介' : '查看简介'}
+            </button>
+          )}
+        </p>
+
+        {/* 权限待授权提示 */}
+        {permissionMissingCount > 0 && (
+          <div className={styles['permission-hint']}>
+            <Shield size={12} />
+            待授权 {permissionMissingCount} 项权限
+          </div>
+        )}
+
+        {/* 卡片底部操作区 —— 设置/调试/权限/启用或禁用/卸载 */}
+        <div className={styles['card-footer']}>
+          <button
+            className={`${styles['action-btn']} ${styles['action-btn-neutral']}`}
+            onClick={onNavigateConfig}
+          >
+            <SettingsIcon size={14} />
+            设置
+          </button>
+          <button
+            className={`${styles['action-btn']} ${styles['action-btn-neutral']}`}
+            onClick={onToggleDebug}
+          >
+            <Bug size={14} />
+            {isDebugActive ? '收起调试' : '调试'}
+          </button>
+          <button
+            className={`${styles['action-btn']} ${styles['action-btn-neutral']}`}
+            onClick={onOpenPermission}
+          >
+            <Shield size={14} />
+            权限
+          </button>
+          {plugin.enabled ? (
+            renderProtectedAction(
+              <button
+                className={`${styles['action-btn']} ${styles['action-btn-warning']}`}
+                onClick={onToggle}
+                disabled={isProtected || toggling}
+                aria-label={isProtected ? cannotDisableText : undefined}
+                aria-disabled={isProtected}
+              >
+                <Pause size={14} />
+                禁用
+              </button>,
+              cannotDisableText,
+            )
+          ) : (
+            renderProtectedAction(
+              <button
+                className={`${styles['action-btn']} ${styles['action-btn-success']}`}
+                onClick={onToggle}
+                disabled={isProtected || toggling}
+                aria-label={isProtected ? cannotDisableText : undefined}
+                aria-disabled={isProtected}
+              >
+                <Play size={14} />
+                启用
+              </button>,
+              cannotDisableText,
+            )
+          )}
+          {!isProtected && (
+            <button
+              className={`${styles['action-btn']} ${styles['action-btn-danger']}`}
+              onClick={onUninstall}
+              disabled={deleting}
+            >
+              <Trash2 size={14} />
+              卸载
+            </button>
+          )}
+        </div>
+
+        {/* 调试面板 */}
+        {isDebugActive && (
+          <div className={styles['debug-panel']}>
+            <PluginDebugPanel pluginId={plugin.id} pluginName={plugin.name} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
 function PluginsPage() {
   const navigate = useNavigate()
+  const { t } = useI18nStore()
   const { plugins, loading, error: listError, retry: retryLoadPlugins, refresh: refreshPlugins } = usePluginList()
   const {
     loading: importing,
@@ -221,6 +505,13 @@ function PluginsPage() {
       )
     })
   }, [plugins, searchKeyword])
+
+  /** 按来源分组：用户插件与系统内置插件分开渲染 */
+  const groupedPlugins = useMemo(() => {
+    const userPlugins = filteredPlugins.filter((p) => !isBuiltinPlugin(p))
+    const builtinPlugins = filteredPlugins.filter((p) => isBuiltinPlugin(p))
+    return { userPlugins, builtinPlugins }
+  }, [filteredPlugins])
 
   /** 统计概览数据 */
   const stats = useMemo(() => {
@@ -297,6 +588,11 @@ function PluginsPage() {
   }, [selectedPlugin, revokePermissions, refreshPluginPermissions])
 
   const handleToggle = useCallback(async (plugin: Plugin) => {
+    // 内置插件前端拦截，不发起请求
+    if (isUninstallablePlugin(plugin)) {
+      addToast(t('plugins.builtin.cannotDisable'), 'warning')
+      return
+    }
     try {
       if (!plugin.enabled) {
         const status = await refreshPluginPermissions(plugin)
@@ -308,22 +604,29 @@ function PluginsPage() {
 
       await toggle(plugin.id)
       await refreshPlugins()
-    } catch {
-      addToast('插件状态切换失败', 'error')
+    } catch (error) {
+      // 后端返回 403 时显示具体错误信息
+      addToast(getPluginErrorMessage(error, '插件状态切换失败'), 'error')
     }
-  }, [refreshPluginPermissions, openPermissionModal, toggle, refreshPlugins, addToast])
+  }, [refreshPluginPermissions, openPermissionModal, toggle, refreshPlugins, addToast, t])
 
-  const handleUninstall = useCallback(async (id: string) => {
+  const handleUninstall = useCallback(async (plugin: Plugin) => {
+    // 内置插件前端拦截
+    if (isUninstallablePlugin(plugin)) {
+      addToast(t('plugins.builtin.cannotUninstall'), 'warning')
+      return
+    }
     if (!confirm('确定要卸载这个插件吗？')) return
     try {
-      await deleteOne(id)
-      setSelectedIds((prev) => prev.filter((item) => item !== id))
+      await deleteOne(plugin.id)
+      setSelectedIds((prev) => prev.filter((item) => item !== plugin.id))
       await refreshPlugins()
       addToast('插件删除成功', 'success')
-    } catch {
-      addToast('插件删除失败', 'error')
+    } catch (error) {
+      // 后端返回 403 时显示具体错误信息（如"内置插件不可卸载"）
+      addToast(getPluginErrorMessage(error, '插件删除失败'), 'error')
     }
-  }, [deleteOne, refreshPlugins, addToast])
+  }, [deleteOne, refreshPlugins, addToast, t])
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -369,12 +672,13 @@ function PluginsPage() {
   }, [remoteUrl, importFromUrl, refreshPlugins, addToast])
 
   const handleToggleSelectAll = useCallback((checked: boolean) => {
+    // 仅选中用户插件（内置插件不可删除，不参与批量选择）
     if (checked) {
-      setSelectedIds(filteredPlugins.map((plugin) => plugin.id))
+      setSelectedIds(groupedPlugins.userPlugins.map((plugin) => plugin.id))
       return
     }
     setSelectedIds([])
-  }, [filteredPlugins])
+  }, [groupedPlugins.userPlugins])
 
   const handleToggleSelectOne = useCallback((pluginId: string, checked: boolean) => {
     if (checked) {
@@ -441,8 +745,8 @@ function PluginsPage() {
     navigate(`/plugins/config/${pluginId}`)
   }, [navigate])
 
-  const handleUninstallPlugin = useCallback((pluginId: string) => {
-    handleUninstall(pluginId)
+  const handleUninstallPlugin = useCallback((plugin: Plugin) => {
+    handleUninstall(plugin)
   }, [handleUninstall])
 
   const handleInstallLocalPlugin = useCallback((pluginName: string, pluginVersion: string) => {
@@ -455,7 +759,9 @@ function PluginsPage() {
     setPermissionMessage('')
   }, [])
 
-  const allFilteredSelected = filteredPlugins.length > 0 && filteredPlugins.every((item) => selectedIds.includes(item.id))
+  /** 全选状态仅针对用户插件 */
+  const allUserSelected = groupedPlugins.userPlugins.length > 0
+    && groupedPlugins.userPlugins.every((item) => selectedIds.includes(item.id))
 
   if (loading) {
     return (
@@ -470,6 +776,33 @@ function PluginsPage() {
   }
 
   const selectedPermissionStatus = selectedPlugin ? permissionStatusMap[selectedPlugin.id] : undefined
+
+  /** 渲染单个插件卡片 */
+  const renderPluginCard = (plugin: Plugin): React.ReactNode => {
+    const permissionStatus = permissionStatusMap[plugin.id]
+    const missingCount = permissionStatus?.missing_permissions.length || 0
+    const isProtected = isUninstallablePlugin(plugin)
+    return (
+      <PluginCard
+        key={plugin.id}
+        plugin={plugin}
+        isProtected={isProtected}
+        isSelected={selectedIds.includes(plugin.id)}
+        isExpanded={!!expandedDescriptions[plugin.id]}
+        isDebugActive={debugPluginId === plugin.id}
+        permissionMissingCount={missingCount}
+        toggling={toggling}
+        deleting={deleting}
+        onSelectChange={(checked) => handleToggleSelectOne(plugin.id, checked)}
+        onToggleDescription={() => handleToggleDescription(plugin.id)}
+        onToggleDebug={() => handleToggleDebug(plugin.id)}
+        onOpenPermission={() => handleOpenPermission(plugin)}
+        onToggle={() => handleTogglePlugin(plugin)}
+        onUninstall={() => handleUninstallPlugin(plugin)}
+        onNavigateConfig={() => handleNavigateConfig(plugin.id)}
+      />
+    )
+  }
 
   return (
     <PageLayout
@@ -551,7 +884,7 @@ function PluginsPage() {
         <label className={styles['select-all']}>
           <input
             type="checkbox"
-            checked={allFilteredSelected}
+            checked={allUserSelected}
             onChange={(e) => handleToggleSelectAll(e.target.checked)}
           />
           全选当前结果
@@ -589,9 +922,10 @@ function PluginsPage() {
         </div>
       )}
 
-      {/* 插件卡片网格 */}
-      <div className={styles['plugins-grid']}>
-        {filteredPlugins.length === 0 ? (
+      {/* 插件卡片分区 —— 用户插件 + 系统内置插件 */}
+      {groupedPlugins.userPlugins.length === 0 && groupedPlugins.builtinPlugins.length === 0 ? (
+        /* 全局空状态：没有任何插件或搜索无结果 */
+        <div className={styles['plugins-grid']}>
           <div className={styles['empty-state']}>
             <p>{plugins.length === 0 ? '还没有安装任何插件' : '没有匹配的插件'}</p>
             <button
@@ -603,152 +937,48 @@ function PluginsPage() {
               {importing ? '导入中...' : '安装插件'}
             </button>
           </div>
-        ) : (
-          filteredPlugins.map((plugin) => {
-            const permissionStatus = permissionStatusMap[plugin.id]
-            const missingCount = permissionStatus?.missing_permissions.length || 0
-            const description = getPluginDescription(plugin)
-            const author = getPluginAuthor(plugin)
-            const expanded = !!expandedDescriptions[plugin.id]
-            const colorScheme = getPluginColorScheme(plugin)
-            const Icon = getPluginIcon(plugin.name)
-            const categoryLabel = getPluginCategoryLabel(plugin)
-            const isBuiltin = plugin.category === 'builtin'
-
-            return (
-              <div key={plugin.id} className={styles['plugin-card']}>
-                {/* 顶部色条 —— 按分类着色 */}
-                <div className={styles['card-color-bar']} style={{ background: colorScheme.bar }} />
-                <div className={styles['card-body']}>
-                  {/* 卡片头部 —— 图标 + 名称 + 版本 + 分类 + 状态徽章 */}
-                  <div className={styles['card-header']}>
-                    <div className={styles['card-header-left']}>
-                      <label className={styles['card-checkbox']}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(plugin.id)}
-                          onChange={(e) => handleToggleSelectOne(plugin.id, e.target.checked)}
-                        />
-                      </label>
-                      <div
-                        className={styles['plugin-icon-box']}
-                        style={{ background: colorScheme.iconBg, color: colorScheme.iconColor }}
-                      >
-                        <Icon size={20} />
-                      </div>
-                      <div>
-                        <div className={styles['plugin-name-row']}>
-                          <span className={styles['plugin-name']}>{plugin.name}</span>
-                          <span className={styles['version-badge']}>v{plugin.version || '1.0.0'}</span>
-                        </div>
-                        <span
-                          className={styles['category-badge']}
-                          style={{ background: colorScheme.badgeBg, color: colorScheme.badgeText }}
-                        >
-                          {categoryLabel}
-                        </span>
-                      </div>
-                    </div>
-                    <div className={styles['card-header-right']}>
-                      <StatusBadge
-                        status={plugin.enabled ? 'active' : 'inactive'}
-                        label={plugin.enabled ? '已启用' : '已停用'}
-                      />
-                    </div>
-                  </div>
-
-                  {/* 作者信息 —— 小字辅助说明 */}
-                  <div className={styles['plugin-author']}>
-                    作者：{author}
-                  </div>
-
-                  {/* 卡片描述 */}
-                  <p className={styles['card-description']}>
-                    {expanded ? (description || '暂无简介') : (description.slice(0, 80) || '暂无简介')}
-                    {description.length > 80 && (
-                      <button
-                        className={styles['description-toggle']}
-                        onClick={() => handleToggleDescription(plugin.id)}
-                      >
-                        {expanded ? '收起简介' : '查看简介'}
-                      </button>
-                    )}
-                  </p>
-
-                  {/* 权限待授权提示 */}
-                  {missingCount > 0 && (
-                    <div className={styles['permission-hint']}>
-                      <Shield size={12} />
-                      待授权 {missingCount} 项权限
-                    </div>
-                  )}
-
-                  {/* 卡片底部操作区 —— 设置/调试/权限/启用或禁用/卸载 */}
-                  <div className={styles['card-footer']}>
-                    <button
-                      className={`${styles['action-btn']} ${styles['action-btn-neutral']}`}
-                      onClick={() => handleNavigateConfig(plugin.id)}
-                    >
-                      <SettingsIcon size={14} />
-                      设置
-                    </button>
-                    <button
-                      className={`${styles['action-btn']} ${styles['action-btn-neutral']}`}
-                      onClick={() => handleToggleDebug(plugin.id)}
-                    >
-                      <Bug size={14} />
-                      {debugPluginId === plugin.id ? '收起调试' : '调试'}
-                    </button>
-                    <button
-                      className={`${styles['action-btn']} ${styles['action-btn-neutral']}`}
-                      onClick={() => handleOpenPermission(plugin)}
-                    >
-                      <Shield size={14} />
-                      权限
-                    </button>
-                    {plugin.enabled ? (
-                      <button
-                        className={`${styles['action-btn']} ${styles['action-btn-warning']}`}
-                        onClick={() => handleTogglePlugin(plugin)}
-                        disabled={toggling}
-                      >
-                        <Pause size={14} />
-                        禁用
-                      </button>
-                    ) : (
-                      <button
-                        className={`${styles['action-btn']} ${styles['action-btn-success']}`}
-                        onClick={() => handleTogglePlugin(plugin)}
-                        disabled={toggling}
-                      >
-                        <Play size={14} />
-                        启用
-                      </button>
-                    )}
-                    {!isBuiltin && (
-                      <button
-                        className={`${styles['action-btn']} ${styles['action-btn-danger']}`}
-                        onClick={() => handleUninstallPlugin(plugin.id)}
-                        disabled={deleting}
-                      >
-                        <Trash2 size={14} />
-                        卸载
-                      </button>
-                    )}
-                  </div>
-
-                  {/* 调试面板 */}
-                  {debugPluginId === plugin.id && (
-                    <div className={styles['debug-panel']}>
-                      <PluginDebugPanel pluginId={plugin.id} pluginName={plugin.name} />
-                    </div>
-                  )}
-                </div>
+        </div>
+      ) : (
+        <>
+          {/* 用户插件分区 */}
+          <section className={styles['plugin-section']}>
+            <div className={styles['section-header']}>
+              <h2 className={styles['section-title']}>{t('plugins.section.user')}</h2>
+              <span className={styles['count-badge']}>{groupedPlugins.userPlugins.length}</span>
+            </div>
+            {groupedPlugins.userPlugins.length === 0 ? (
+              <div className={styles['empty-state']}>
+                <p>{t('plugins.section.userEmpty')}</p>
               </div>
-            )
-          })
-        )}
-      </div>
+            ) : (
+              <div className={styles['plugins-grid']}>
+                {groupedPlugins.userPlugins.map(renderPluginCard)}
+              </div>
+            )}
+          </section>
+
+          {/* 系统内置插件分区 —— 仅在有内置插件时渲染 */}
+          {groupedPlugins.builtinPlugins.length > 0 && (
+            <section className={`${styles['plugin-section']} ${styles['builtin-section']}`}>
+              <div className={styles['section-header']}>
+                <div className={styles['section-title-row']}>
+                  <Shield size={18} className={styles['builtin-shield-icon']} />
+                  <h2 className={styles['section-title']}>{t('plugins.section.builtin')}</h2>
+                  <span className={`${styles['count-badge']} ${styles['builtin-badge']}`}>
+                    {groupedPlugins.builtinPlugins.length}
+                  </span>
+                </div>
+                <p className={styles['section-description']}>
+                  {t('plugins.section.builtin.description')}
+                </p>
+              </div>
+              <div className={styles['plugins-grid']}>
+                {groupedPlugins.builtinPlugins.map(renderPluginCard)}
+              </div>
+            </section>
+          )}
+        </>
+      )}
 
       {/* 本地可用插件区域 */}
       <div className={styles['local-plugins-section']}>
@@ -891,36 +1121,6 @@ function PluginsPage() {
       <ToastContainer />
     </PageLayout>
   )
-}
-
-function getPluginDescription(plugin: Plugin): string {
-  const direct = plugin.description
-  if (typeof direct === 'string' && direct.trim()) {
-    return direct
-  }
-  const config = plugin.config
-  if (config && typeof config === 'object' && !Array.isArray(config)) {
-    const configDescription = (config as { description?: unknown }).description
-    if (typeof configDescription === 'string') {
-      return configDescription
-    }
-  }
-  return ''
-}
-
-function getPluginAuthor(plugin: Plugin): string {
-  const author = plugin.author
-  if (typeof author === 'string' && author.trim()) {
-    return author
-  }
-  const config = plugin.config
-  if (config && typeof config === 'object' && !Array.isArray(config)) {
-    const configAuthor = (config as { author?: unknown }).author
-    if (typeof configAuthor === 'string' && configAuthor.trim()) {
-      return configAuthor
-    }
-  }
-  return '未知'
 }
 
 export default PluginsPage

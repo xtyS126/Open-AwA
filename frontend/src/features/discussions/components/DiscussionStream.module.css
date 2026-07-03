@@ -1,0 +1,201 @@
+/* DiscussionStream 样式 */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px);
+  background: var(--color-bg-secondary, #f9fafb);
+  border: 1px solid var(--color-border-subtle, #e5e7eb);
+  border-radius: var(--radius-md, 8px);
+  max-height: 360px;
+  min-height: 120px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding-bottom: var(--space-2, 8px);
+  border-bottom: 1px solid var(--color-border-subtle, #e5e7eb);
+}
+
+.statusIndicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusText {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary, #6b7280);
+  font-weight: var(--font-medium, 500);
+}
+
+/* 状态颜色 */
+.status_connecting {
+  background: var(--color-warning-strong, #d97706);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.status_connected {
+  background: var(--color-success-strong, #059669);
+}
+
+.status_disconnected {
+  background: var(--color-text-tertiary, #9ca3af);
+}
+
+.status_reconnecting {
+  background: var(--color-warning-strong, #d97706);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.entries {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-1, 4px) 0;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: var(--text-sm, 13px);
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: var(--space-1, 4px) var(--space-2, 8px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  background: var(--color-bg, #ffffff);
+  border-radius: var(--radius-sm, 6px);
+  border-left: 3px solid var(--color-border, #d1d5db);
+  font-size: var(--text-sm, 13px);
+}
+
+.roleIcon {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.roleLabel {
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-text, #111827);
+}
+
+.content {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  color: var(--color-text-secondary, #6b7280);
+  font-size: var(--text-sm, 13px);
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.time {
+  grid-column: 4;
+  grid-row: 1;
+  font-size: var(--text-xs, 11px);
+  color: var(--color-text-tertiary, #9ca3af);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 角色颜色（左边框） */
+.roleCritic {
+  border-left-color: var(--color-primary, #4f46e5);
+}
+
+.roleValidator {
+  border-left-color: var(--color-info-strong, #0284c7);
+}
+
+.roleApprover {
+  border-left-color: var(--color-success-strong, #059669);
+}
+
+/* 投票决策样式 */
+.voteDecision {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-semibold, 600);
+  padding: 2px 8px;
+  border-radius: var(--radius-full, 999px);
+  text-align: center;
+  justify-self: start;
+}
+
+.vote_approve {
+  color: var(--color-success-strong, #059669);
+  background: var(--color-success-bg, rgba(16, 185, 129, 0.1));
+}
+
+.vote_reject {
+  color: var(--color-error-strong, #dc2626);
+  background: var(--color-error-bg, rgba(239, 68, 68, 0.1));
+}
+
+.vote_abstain {
+  color: var(--color-warning-strong, #d97706);
+  background: var(--color-warning-bg, rgba(245, 158, 11, 0.1));
+}
+
+/* 状态变更条目 */
+.statusChange {
+  border-left-color: var(--color-primary, #4f46e5);
+  background: var(--color-primary-softest-bg, rgba(79, 70, 229, 0.05));
+}
+
+.statusChange .content {
+  color: var(--color-primary, #4f46e5);
+  font-weight: var(--font-medium, 500);
+}
+
+/* 错误条目 */
+.errorEntry {
+  border-left-color: var(--color-error-strong, #dc2626);
+  background: var(--color-error-bg, rgba(239, 68, 68, 0.05));
+}
+
+.errorEntry .content {
+  color: var(--color-error-strong, #dc2626);
+}
+
+/* 黑暗模式适配 */
+:global(.dark) .container {
+  background: var(--color-bg-secondary, #111827);
+  border-color: var(--color-border-subtle, #374151);
+}
+
+:global(.dark) .entry {
+  background: var(--color-bg, #1f2937);
+}
+
+:global(.dark) .roleLabel,
+:global(.dark) .entry {
+  color: var(--color-text, #f9fafb);
+}
+
+:global(.dark) .content {
+  color: var(--color-text-secondary, #9ca3af);
+}

@@ -42,6 +42,14 @@ const RECONNECT_BASE_DELAY = 1000
 const MAX_RECONNECT_DELAY = 30000
 
 /**
+ * 检测当前 document.cookie 中是否包含 access_token 键。
+ * 用于判断是否可使用 Cookie 认证建立 SSE 连接，避免将 API Key 暴露在 URL 中。
+ */
+function hasCookieCredential(): boolean {
+  return document.cookie.split(';').some((c) => c.trim().startsWith('access_token='))
+}
+
+/**
  * 权限请求实时推送 Hook。
  * 当 sessionId 有效时自动建立 SSE 连接，监听后端推送的权限请求。
  * 组件卸载或 sessionId 变化时自动断开并重连。
@@ -76,7 +84,10 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
     }
 
     const apiKey = getCachedApiKey()
-    if (!apiKey) {
+    const hasCookie = hasCookieCredential()
+
+    // 无 Cookie 且无 API Key 时无法建立 SSE 连接
+    if (!hasCookie && !apiKey) {
       appLogger.warning({
         event: 'permission_sse_no_api_key',
         module: 'usePermissionRequest',
@@ -90,9 +101,26 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
     const connect = () => {
       if (cancelled) return
 
-      // 通过 query parameter 传递 API Key（EventSource 不支持自定义 Header）
-      const url = `${API_BASE_URL}/security/permissions/stream?api_key=${encodeURIComponent(apiKey)}`
-      const eventSource = new EventSource(url)
+      const baseUrl = `${API_BASE_URL}/security/permissions/stream`
+      let eventSource: EventSource
+
+      if (hasCookie) {
+        // 优先使用 Cookie 认证，URL 不携带 api_key，避免凭据泄露到日志/Referer
+        eventSource = new EventSource(baseUrl, { withCredentials: true })
+      } else if (apiKey) {
+        // 无 Cookie 时降级使用 query parameter 传递 API Key（EventSource 不支持自定义 Header）
+        appLogger.warning({
+          event: 'permission_sse_fallback_to_query_param',
+          module: 'usePermissionRequest',
+          message: '降级使用 query parameter 传递 API Key，存在日志泄露风险',
+        })
+        const url = `${baseUrl}?api_key=${encodeURIComponent(apiKey)}`
+        eventSource = new EventSource(url)
+      } else {
+        // 已在 useEffect 入口拦截，理论上不会到达
+        return
+      }
+
       eventSourceRef.current = eventSource
 
       eventSource.onopen = () => {

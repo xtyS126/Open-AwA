@@ -1,0 +1,375 @@
+/* 搜索配置 Tab 样式 —— 单列布局，小屏自适应 */
+
+.container {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text, #1f2937);
+}
+
+.subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* 顶部错误提示条 */
+.errorBanner {
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* 顶部信息提示条 */
+.infoBanner {
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background-color: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+/* 加载占位 */
+.loading {
+  padding: 1.5rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+/* 表单字段 */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.helperText {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Provider 单选按钮组 */
+.providerGroup {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.providerOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.providerOption:hover:not(:disabled) {
+  border-color: #3b82f6;
+  background-color: #f9fafb;
+}
+
+.providerOption:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.providerOptionSelected {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.providerRadio {
+  margin-top: 0.125rem;
+  flex-shrink: 0;
+  accent-color: #3b82f6;
+  width: 1rem;
+  height: 1rem;
+  cursor: inherit;
+}
+
+.providerContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.providerTitle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.providerDesc {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* 输入框 */
+.inputRow {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  color: #111827;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.input:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.inputInvalid {
+  border-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.inputInvalid:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+/* 显示/隐藏密码按钮 */
+.toggleButton {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background-color: #ffffff;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+}
+
+.toggleButton:hover:not(:disabled) {
+  background-color: #f9fafb;
+}
+
+.toggleButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* API Key 已设置徽章 */
+.apiKeyBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.apiKeyBadgeSet {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.apiKeyBadgeNotSet {
+  background-color: #f3f4f6;
+  color: #6b7280;
+}
+
+/* allow_private_network 开关行 */
+.toggleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #fde68a;
+  border-radius: 0.5rem;
+  background-color: #fffbeb;
+}
+
+.toggleRowContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.toggleRowLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #92400e;
+}
+
+.toggleRowHelp {
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+/* 操作按钮 */
+.actions {
+  display: flex;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+/* 测试结果展示 */
+.testResult {
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.testResultSuccess {
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.testResultFailure {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.testResultHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.testResultTitle {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.testResultMeta {
+  font-size: 0.75rem;
+  color: #4b5563;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.testResultMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* 样本结果列表 */
+.sampleList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sampleItem {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  background-color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.sampleItemTitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #111827;
+  word-break: break-word;
+}
+
+.sampleItemUrl {
+  font-size: 0.75rem;
+  color: #2563eb;
+  word-break: break-all;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.sampleItemSnippet {
+  font-size: 0.75rem;
+  color: #6b7280;
+  word-break: break-word;
+}
+
+/* 响应式：小屏单列 */
+@media (max-width: 640px) {
+  .container {
+    max-width: 100%;
+  }
+
+  .providerGroup {
+    grid-template-columns: 1fr;
+  }
+
+  .inputRow {
+    flex-direction: column;
+  }
+
+  .toggleButton {
+    justify-content: center;
+  }
+}

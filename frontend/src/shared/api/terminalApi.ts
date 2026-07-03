@@ -44,3 +44,79 @@ export async function listSessions(): Promise<{ ok: boolean; sessions: TerminalS
   const { data } = await api.get(BASE + '/sessions')
   return data
 }
+
+// ===== PTY 持久化终端会话 =====
+
+/** PTY 终端会话信息 */
+export interface PTYSessionInfo {
+  session_id: string
+  cwd: string
+  active: boolean
+  shell?: string
+  cols?: number
+  rows?: number
+}
+
+/** PTY 会话创建请求参数 */
+export interface PTYCreateRequest {
+  /** 子进程工作目录（不传使用后端默认） */
+  cwd?: string
+  /** 初始列数，默认 80 */
+  cols?: number
+  /** 初始行数，默认 24 */
+  rows?: number
+  /** 自定义 PTY 启动命令（如 ['bash']），不传使用后端平台默认 */
+  command?: string[]
+}
+
+/** PTY 会话创建响应 */
+export interface PTYCreateResponse {
+  ok: boolean
+  session_id?: string
+  cwd?: string
+  cols?: number
+  rows?: number
+  shell?: string
+  error?: string
+}
+
+/** PTY 屏幕快照 */
+export interface PTYSnapshot {
+  ok: boolean
+  grid: string[][]
+  cols: number
+  rows: number
+}
+
+/**
+ * 创建 PTY 持久化终端会话。
+ * 与普通 TerminalSession 不同，PTY 会话长期持有交互式 shell 进程，
+ * 支持断线重连与屏幕恢复。
+ */
+export async function createPtySession(params: PTYCreateRequest = {}): Promise<PTYCreateResponse> {
+  const { data } = await api.post(BASE + '/sessions/pty', {
+    cwd: params.cwd,
+    cols: params.cols ?? 80,
+    rows: params.rows ?? 24,
+    command: params.command,
+  })
+  return data
+}
+
+/**
+ * 关闭 PTY 终端会话。
+ * 同时终止底层 PTY 子进程并清理服务端状态。
+ */
+export async function closePtySession(sessionId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data } = await api.delete(`${BASE}/sessions/pty/${sessionId}`)
+  return data
+}
+
+/**
+ * 获取 PTY 会话的当前屏幕快照。
+ * 返回 grid 二维数组与尺寸，用于断线重连时恢复显示。
+ */
+export async function getPtySnapshot(sessionId: string): Promise<PTYSnapshot> {
+  const { data } = await api.get(`${BASE}/sessions/pty/${sessionId}/snapshot`)
+  return data
+}

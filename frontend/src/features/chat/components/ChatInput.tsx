@@ -260,6 +260,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
           onKeyPress={handleKeyPress}
           onPaste={handlePaste}
           rows={1}
+          maxLength={32000}
         />
         {streamingAssistantId ? (
           <button
@@ -280,6 +281,9 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
           </button>
         )}
       </div>
+      <span className={styles['char-count']}>
+        {input.length}/32000
+      </span>
     </div>
   )
 })
