@@ -70,9 +70,8 @@ export function CreateProviderModal({
     return null
   }
 
-  // 按 source 分组：推荐供应商（pricing_data）和已配置供应商（database）
-  const recommendedProviders = catalogProviders.filter(p => p.source === 'pricing_data')
-  const configuredProviders = catalogProviders.filter(p => p.source === 'database')
+  // 所有供应商统一展示，均可选择：仅用于选择供应商标识，允许重复创建多个配置
+  const sortedProviders = [...catalogProviders].sort((a, b) => a.id.localeCompare(b.id))
 
   return (
     <div className={styles['provider-modal-overlay']} onClick={onClose}>
@@ -117,24 +116,11 @@ export function CreateProviderModal({
               }}
             >
               <option value="">{catalogLoading ? '加载中...' : '请选择供应商'}</option>
-              {recommendedProviders.length > 0 && (
-                <optgroup label="推荐供应商">
-                  {recommendedProviders.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.id} — {p.name}{p.model_count ? ` (${p.model_count} 个模型)` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {configuredProviders.length > 0 && (
-                <optgroup label="已配置供应商">
-                  {configuredProviders.map(p => (
-                    <option key={p.id} value={p.id} disabled>
-                      {p.id} — {p.name} (已配置)
-                    </option>
-                  ))}
-                </optgroup>
-              )}
+              {sortedProviders.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.id} — {p.name}{p.model_count ? ` (${p.model_count} 个模型)` : ''}
+                </option>
+              ))}
               <option value="__custom__">自定义...</option>
             </select>
             {addProviderForm.is_custom && (

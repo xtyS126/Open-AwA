@@ -98,6 +98,10 @@ export interface UseProviderFormReturn {
   // API Key 显示/隐藏状态
   showApiKey: boolean
   setShowApiKey: React.Dispatch<React.SetStateAction<boolean>>
+  /** 明文 API Key（点击"显示"时主动从后端拉取，区别于脱敏的 masked_api_key） */
+  plainApiKey: string | null
+  /** 切换显示/隐藏：首次显示时拉取明文密钥 */
+  onToggleShowApiKey: () => void
 
   // 模型导入/删除状态
   selectedForDeletion: string[]
@@ -181,6 +185,8 @@ export function useProviderForm({
     masked_api_key: null
   })
   const [showApiKey, setShowApiKey] = useState(false)
+  // 明文 API Key：点击"显示"时主动从后端拉取，避免默认暴露完整密钥
+  const [plainApiKey, setPlainApiKey] = useState<string | null>(null)
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [loadingApiProviders, setLoadingApiProviders] = useState(false)
   const [loadingProviderDetail, setLoadingProviderDetail] = useState(false)
@@ -354,6 +360,8 @@ export function useProviderForm({
       })
       setSelectedProviderId(providerId)
       setShowApiKey(false)
+      // 切换供应商时清空明文密钥缓存，避免展示上一个供应商的密钥
+      setPlainApiKey(null)
 
       // 并行获取脱敏 API Key 和供应商模型列表，减少串行等待时间
       const [maskedApiKey] = await Promise.all([
@@ -585,6 +593,32 @@ export function useProviderForm({
     }
   }, [providerForm, selectedForDeletion, showNotification, invalidateRemoteModelCache, invalidateProviderDetailsCache, invalidateTabCache, loadModelsData, loadApiProvidersData])
 
+  /**
+   * 切换 API Key 显示/隐藏。
+   * 首次从隐藏切换到显示时，主动从后端拉取明文密钥，
+   * 区别于默认展示的脱敏版本（masked_api_key）。
+   * 拉取失败时回退为脱敏展示，不阻断用户操作。
+   */
+  const handleToggleShowApiKey = useCallback(async () => {
+    setShowApiKey(prev => {
+      const next = !prev
+      // 仅在切换到"显示"且尚未拉取明文时触发请求
+      if (next && plainApiKey === null && providerForm.has_api_key && providerForm.provider) {
+        // 触发即忘：不阻塞 UI 切换，失败时保持脱敏展示
+        modelsAPI.getPlainApiKey(providerForm.provider)
+          .then(res => {
+            if (res.data.api_key) {
+              setPlainApiKey(res.data.api_key)
+            }
+          })
+          .catch(() => {
+            // 拉取失败时静默回退到脱敏展示
+          })
+      }
+      return next
+    })
+  }, [plainApiKey, providerForm.has_api_key, providerForm.provider])
+
   /** 打开创建供应商模态框 */
   const handleOpenCreateProviderModal = useCallback(() => {
     setAddProviderForm(createInitialAddProviderForm())
@@ -774,6 +808,8 @@ export function useProviderForm({
       }
       
       setShowApiKey(false)
+      // 保存后密钥已变更，清空明文缓存避免展示过期值
+      setPlainApiKey(null)
       await loadApiProvidersData(providerForm.provider)
     } catch (error: unknown) {
       // 处理 409 冲突：配置已存在时尝试更新
@@ -914,6 +950,8 @@ export function useProviderForm({
     // API Key 显示/隐藏状态
     showApiKey,
     setShowApiKey,
+    plainApiKey,
+    onToggleShowApiKey: handleToggleShowApiKey,
 
     // 模型导入/删除状态
     selectedForDeletion,

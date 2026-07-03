@@ -58,6 +58,8 @@ interface ApiSettingsProps {
   deletingProvider: boolean
   /** 是否显示 API Key */
   showApiKey: boolean
+  /** 明文 API Key（点击"显示"时从后端拉取，null 表示尚未拉取） */
+  plainApiKey: string | null
   /** 切换 API Key 显示/隐藏 */
   onToggleShowApiKey: () => void
   /** 所有模型配置 */
@@ -120,6 +122,7 @@ function ApiSettings({
   saving,
   deletingProvider,
   showApiKey,
+  plainApiKey,
   onToggleShowApiKey,
   configurations,
   expandedModelConfigs,
@@ -344,14 +347,15 @@ function ApiSettings({
                       [!] 密钥已失效，请重新录入
                     </div>
                   )}
-                  {showApiKey && providerForm.masked_api_key && (
+                  {showApiKey && (plainApiKey || providerForm.masked_api_key) && (
                     <div style={{
                       marginTop: '4px',
                       fontSize: '12px',
                       color: '#6b7280',
                       fontFamily: 'monospace',
+                      wordBreak: 'break-all',
                     }}>
-                      当前密钥: {providerForm.masked_api_key}
+                      当前密钥: {plainApiKey || providerForm.masked_api_key}
                     </div>
                   )}
                   {connectivityResult && (

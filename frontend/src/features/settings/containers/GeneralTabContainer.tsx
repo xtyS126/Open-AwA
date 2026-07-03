@@ -228,12 +228,20 @@ export function GeneralTabContainer() {
 
       setModelOptions(nextOptions)
 
-      if (!globalSelectedModel) {
+      // 校验当前选中模型是否仍在新加载的模型列表中
+      // 场景：数据库重置后 localStorage 仍保留旧模型名（如 deepseek-v4-flash），
+      // 但该模型已不在后端 model_configurations 表中，需自动切换到有效模型
+      const isCurrentModelValid = globalSelectedModel &&
+        nextOptions.some((opt) => opt.id === globalSelectedModel)
+
+      if (!globalSelectedModel || !isCurrentModelValid) {
         if (configurations.length > 0) {
+          // 优先使用后端标记为 is_default 的配置
           const defaultConfig = configurations.find((config) => config.is_default) || configurations[0]
           const defaultModelName = defaultConfig.selected_models?.[0] || defaultConfig.model
           setGlobalSelectedModel(`${defaultConfig.provider}:${defaultModelName}`)
         } else if (nextOptions.length > 0) {
+          // 回退到第一个可用模型
           setGlobalSelectedModel(nextOptions[0].id)
         }
       }

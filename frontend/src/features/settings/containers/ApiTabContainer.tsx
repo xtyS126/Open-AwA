@@ -95,7 +95,8 @@ export function ApiTabContainer() {
           saving={providerFormState.saving}
           deletingProvider={providerFormState.deletingProvider}
           showApiKey={providerFormState.showApiKey}
-          onToggleShowApiKey={() => providerFormState.setShowApiKey(prev => !prev)}
+          plainApiKey={providerFormState.plainApiKey}
+          onToggleShowApiKey={providerFormState.onToggleShowApiKey}
           configurations={configurations}
           expandedModelConfigs={modelConfigState.expandedModelConfigs}
           modelEditParams={modelConfigState.modelEditParams}

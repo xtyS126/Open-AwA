@@ -3,9 +3,17 @@
  *
  * 负责 selectedModel、modelOptions、modelLoading、modelError 状态管理。
  * 选中推理模型时会跨域调用 preferenceStore 自动开启思考模式。
+ *
+ * selectedModel 的来源优先级：
+ *   1. 后端 /user/preferences.selectedModel（由 loadServerPreferences 写入 localStorage）
+ *   2. 浏览器 localStorage.chat_selected_model（离线回退）
+ *   3. 后端 model_configurations 中 is_default=true 的模型（由 GeneralTabContainer 自动选择）
+ *
+ * 当后端模型列表变化（如数据库重置）导致 selectedModel 失效时，
+ * setModelOptions 会自动清空失效的 selectedModel，触发上层重新选择默认模型。
  */
 import { create } from 'zustand'
-import { safeGetItem } from '@/shared/utils/safeStorage'
+import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
 import { persistSelectedModel, type PreferenceMutationOptions } from '@/shared/store/chatStoreEffects'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 
@@ -43,7 +51,7 @@ function isReasonerModel(model: string): boolean {
   )
 }
 
-export const useModelStore = create<ModelState>((set) => ({
+export const useModelStore = create<ModelState>((set, get) => ({
   selectedModel: safeGetItem('chat_selected_model', ''),
   modelOptions: [],
   modelLoading: false,
@@ -60,7 +68,27 @@ export const useModelStore = create<ModelState>((set) => ({
     }
   },
 
-  setModelOptions: (options) => set({ modelOptions: options }),
+  /**
+   * 设置模型选项列表，并校验当前 selectedModel 是否仍在新列表中。
+   * 场景：数据库重置后 localStorage 仍保留旧模型名（如 deepseek-v4-flash），
+   * 但该模型已不在后端 model_configurations 表中。
+   * 此时清空 selectedModel 并删除 localStorage，让上层（GeneralTabContainer）自动选择默认模型。
+   */
+  setModelOptions: (options) => {
+    const currentModel = get().selectedModel
+    // 仅当本地有选中模型且新选项列表非空时校验
+    // 新选项为空表示加载失败或无可用模型，保留旧值避免误清空
+    if (currentModel && options.length > 0) {
+      const isStillValid = options.some((opt) => opt.id === currentModel)
+      if (!isStillValid) {
+        // 当前模型已失效：清空 state 和 localStorage，触发上层重新选择默认模型
+        set({ modelOptions: options, selectedModel: '' })
+        safeSetItem('chat_selected_model', '')
+        return
+      }
+    }
+    set({ modelOptions: options })
+  },
 
   setModelLoading: (loading) => set({ modelLoading: loading }),
 

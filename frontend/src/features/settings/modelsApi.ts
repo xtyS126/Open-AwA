@@ -308,6 +308,10 @@ export const modelsAPI = {
   getMaskedApiKey: (provider: string) =>
     api.get<{ masked_api_key: string | null; has_api_key: boolean }>(`/billing/credentials/${provider}/masked-key`),
 
+  /** 获取明文 API Key（仅供前端"显示"按钮主动调用） */
+  getPlainApiKey: (provider: string) =>
+    api.get<{ api_key: string | null; has_api_key: boolean; api_key_status: string }>(`/billing/credentials/${provider}/plain-key`),
+
   /** 测试供应商连通性 */
   testProviderConnectivity: (provider: string, apiKey: string, baseUrl?: string) =>
     api.post<ConnectivityTestResult>('/system/connectivity-test', {

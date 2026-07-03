@@ -1353,6 +1353,56 @@ async def get_provider_masked_api_key(
     }
 
 
+@router.get("/credentials/{provider}/plain-key")
+async def get_provider_plain_api_key(
+    provider: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    获取指定 Provider 的明文 API Key。
+    仅供已认证用户在前端点击"显示"按钮时主动调用，
+    用于查看完整密钥（区别于 masked-key 端点的脱敏展示）。
+    """
+    from config.security import decrypt_secret_value
+
+    pricing_manager = PricingManager(db)
+    provider_id = pricing_manager.normalize_provider(provider)
+    cred = pricing_manager.get_provider_credential(provider_id)
+
+    # 未配置凭据或无 API Key 时返回空值
+    if not cred or not cred.api_key:
+        return {
+            "api_key": None,
+            "has_api_key": False,
+            "api_key_status": "missing",
+        }
+
+    raw_key = cred.api_key or ""
+    if raw_key.startswith("enc:"):
+        # 旧算法密文已失效，不尝试解密，引导用户重新录入
+        return {
+            "api_key": None,
+            "has_api_key": False,
+            "api_key_status": "stale",
+        }
+
+    # 解密 API Key
+    decrypted_key = decrypt_secret_value(cred.api_key)
+    if not decrypted_key:
+        return {
+            "api_key": None,
+            "has_api_key": False,
+            "api_key_status": "stale",
+        }
+
+    return {
+        "api_key": decrypted_key,
+        "has_api_key": True,
+        "api_key_status": "active",
+    }
+
+
 @router.put("/providers/{provider}/selected-models")
 async def update_provider_selected_models(
     provider: str,
