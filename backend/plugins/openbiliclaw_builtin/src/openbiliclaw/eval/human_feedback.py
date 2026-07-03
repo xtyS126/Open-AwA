@@ -220,14 +220,14 @@ async def run_optimization_cycle(
         passed, test_output = optimizer.validate_with_tests()
         if not passed:
             optimizer.rollback()
-            print(f"  ❌ 测试失败，已回滚: {test_output[:100]}")
+            print(f"  [X] 测试失败，已回滚: {test_output[:100]}")
             return {"optimized": False, "reason": "test_failed", "summary": summary}
-        print("  ✅ 测试通过")
+        print("  [OK] 测试通过")
     else:
         print("  仅修改 prompt 模板，跳过 pytest")
 
     optimizer.commit()
-    print(f"\n  ✅ 修改已提交 ({applied_count} 处)")
+    print(f"\n  [OK] 修改已提交 ({applied_count} 处)")
 
     if run_logger:
         opt_step.save_json(

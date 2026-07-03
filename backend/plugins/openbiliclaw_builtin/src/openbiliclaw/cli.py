@@ -34,7 +34,7 @@ def _force_utf8_stdout_on_windows() -> None:
     """Reconfigure stdout/stderr to UTF-8 on Windows.
 
     Why: simplified-Chinese Windows defaults the console to GBK (cp936).
-    Any emoji in our CLI output (e.g. ``⏱`` in the init banner, ``🦀``
+    Any emoji in our CLI output (e.g. ``[TIME]`` in the init banner, ``[CRAB]``
     in the typer help text) raises UnicodeEncodeError as soon as the
     output stream tries to encode it. Users see the program crash with
     no useful message.
@@ -65,7 +65,7 @@ _force_utf8_stdout_on_windows()
 
 app = typer.Typer(
     name="openbiliclaw",
-    help="🦀 OpenBiliClaw — 你的 B 站专属 AI 朋友",
+    help="[CRAB] OpenBiliClaw — 你的 B 站专属 AI 朋友",
     add_completion=False,
 )
 auth_app = typer.Typer(help="B 站认证命令")
@@ -368,7 +368,7 @@ async def _run_with_progress(
         with _suppress(asyncio.CancelledError, BaseException):
             await ticker_task
     elapsed = int(_time.monotonic() - start)
-    console.print(f"  [green]✓[/green] {label} 用时 {elapsed}s")
+    console.print(f"  [green][OK][/green] {label} 用时 {elapsed}s")
     return result
 
 
@@ -1083,7 +1083,7 @@ _OPENAI_COMPAT_PRESETS: tuple[tuple[str, dict[str, str]], ...] = (
     (
         "relay",
         {
-            "label": "★ 中转站 / OneAPI / 公司团队 LLM 网关 (大多数人选这个)",
+            "label": "[ICON] 中转站 / OneAPI / 公司团队 LLM 网关 (大多数人选这个)",
             "description": (
                 "中转站 = 第三方代理 OpenAI / Claude 的二级商家(国内付人民币用海外模型)。"
                 "OneAPI / 团队 LLM 网关 = 公司自建的多模型聚合 + 计费 + 限流网关。"
@@ -1480,12 +1480,12 @@ _SUPPORTED_PROVIDERS: tuple[str, ...] = (
 _LLM_MENU: tuple[tuple[str, str, str], ...] = (
     (
         "deepseek",
-        "DeepSeek 官方 ★默认推荐",
+        "DeepSeek 官方 [ICON]默认推荐",
         "默认 deepseek-v4-flash (V4)。¥0.001/千 token 几乎免费,国内可直连",
     ),
     (
         "openai-compat",
-        "★ 第二推荐 — 中转站 / OpenAI 协议兼容服务",
+        "[ICON] 第二推荐 — 中转站 / OpenAI 协议兼容服务",
         "买了中转站 Key 选这个。也覆盖 Kimi / 通义 / 智谱 / Yi / MiniMax 官方 / Azure / vLLM",
     ),
     (
@@ -1617,7 +1617,7 @@ def _prompt_openai_compat() -> tuple[str, str, str, str]:
     if preset.get("signup_url"):
         console.print(f"[dim]  申请 Key: [cyan]{preset['signup_url']}[/cyan][/dim]")
     if preset.get("domain_alt"):
-        console.print(f"[dim]  💡 {preset['domain_alt']}[/dim]")
+        console.print(f"[dim]  [TIP] {preset['domain_alt']}[/dim]")
     console.print()
 
     base_url_default = preset["base_url"]
@@ -1668,11 +1668,11 @@ def _prompt_openai_compat() -> tuple[str, str, str, str]:
             "(免费 / 离线 / 不影响主 LLM)。回车跳过即可。[/dim]"
         )
     elif preset.get("embedding_alt"):
-        console.print(f"\n[dim]💡 embedding 提示: {preset['embedding_alt']}[/dim]")
+        console.print(f"\n[dim][TIP] embedding 提示: {preset['embedding_alt']}[/dim]")
 
     # Final confirm: show the canonical triplet so the user catches typos.
     console.print(
-        f"\n[bold green]✓ 即将写入 config.toml:[/bold green]\n"
+        f"\n[bold green][OK] 即将写入 config.toml:[/bold green]\n"
         f"  [llm.openai].base_url = [cyan]{base_url}[/cyan]\n"
         f"  [llm.openai].model    = [cyan]{model}[/cyan]"
     )
@@ -1793,7 +1793,7 @@ def _interactive_embedding_setup(default_provider: str, *, auto_if_ready: bool =
     options = (
         (
             "1",
-            "本地 Ollama bge-m3 ★默认推荐",
+            "本地 Ollama bge-m3 [ICON]默认推荐",
             "免费 / 离线 / 不消耗主 LLM 配额(自动装 Ollama + 拉 568MB 模型)",
         ),
         (
@@ -3847,15 +3847,15 @@ def logs_prune(
                     )
                 actually_freed += size
             except OSError as exc:
-                console.print(f"[red]✗ truncate {path}: {exc}[/red]")
+                console.print(f"[red][X] truncate {path}: {exc}[/red]")
         elif action.startswith("delete"):
             try:
                 path.unlink()
                 actually_freed += size
             except OSError as exc:
-                console.print(f"[red]✗ unlink {path}: {exc}[/red]")
+                console.print(f"[red][X] unlink {path}: {exc}[/red]")
     freed_mb = actually_freed / (1024 * 1024)
-    console.print(f"\n[bold green]✓ Applied — actually freed {freed_mb:.1f} MB[/bold green]")
+    console.print(f"\n[bold green][OK] Applied — actually freed {freed_mb:.1f} MB[/bold green]")
 
 
 @app.command()
@@ -3882,7 +3882,7 @@ def start(
     if cfg.api.auth.enabled:
         _print_status_panel(
             "info",
-            "🔒 访问控制",
+            "[LOCK] 访问控制",
             "局域网/远程访问已启用密码登录（本机访问免登录）。",
         )
         if cfg.api.auth.trust_loopback and not cfg.api.auth.trusted_proxies:
@@ -4324,7 +4324,7 @@ def _ask_xhs_inclusion() -> bool:
         return False
 
     console.print()
-    console.print("[bold]🌸 小红书数据接入(可选)[/bold]")
+    console.print("[bold][BLOOM] 小红书数据接入(可选)[/bold]")
     console.print(
         "把你的小红书[bold cyan]收藏 / 点赞[/bold cyan]混进画像,"
         "系统能读懂你跨平台的口味——\n"
@@ -4359,15 +4359,15 @@ def _ask_xhs_inclusion() -> bool:
     console.print()
     console.print("[bold]准备小红书接入[/bold]")
     console.print("请确认以下三件事都做了:")
-    console.print("  [cyan]☐[/cyan] 装好了 OpenBiliClaw 浏览器扩展")
+    console.print("  [cyan][ ][/cyan] 装好了 OpenBiliClaw 浏览器扩展")
     console.print(
-        "  [cyan]☐[/cyan] 浏览器目前是打开的且是当前 [bold]活跃窗口[/bold]"
+        "  [cyan][ ][/cyan] 浏览器目前是打开的且是当前 [bold]活跃窗口[/bold]"
         "(扩展需要前台 tab 才能触发小红书的瀑布流懒加载)"
     )
-    console.print("  [cyan]☐[/cyan] 已经登录了 https://www.xiaohongshu.com")
+    console.print("  [cyan][ ][/cyan] 已经登录了 https://www.xiaohongshu.com")
     console.print()
     console.print(
-        "[bold yellow]⚠[/bold yellow]  接下来扩展会[bold]在你的浏览器里自动打开"
+        "[bold yellow][!][/bold yellow]  接下来扩展会[bold]在你的浏览器里自动打开"
         "一个新 tab[/bold]并切到那个 tab(会抢一次焦点),进到你的小红书 profile 页"
         "向下滚动加载收藏/点赞。整个过程 10-30 秒。"
     )
@@ -4411,7 +4411,7 @@ def _ask_dy_inclusion() -> bool:
         return False
 
     console.print()
-    console.print("[bold]🎵 抖音数据接入(可选)[/bold]")
+    console.print("[bold][MUSIC] 抖音数据接入(可选)[/bold]")
     console.print(
         "把你的抖音[bold cyan]发布 / 收藏 / 点赞 / 关注[/bold cyan]混进画像,"
         "系统能读懂你跨平台的口味——\n"
@@ -4439,15 +4439,15 @@ def _ask_dy_inclusion() -> bool:
     console.print()
     console.print("[bold]准备抖音接入[/bold]")
     console.print("请确认以下三件事都做了:")
-    console.print("  [cyan]☐[/cyan] 装好了 OpenBiliClaw 浏览器扩展")
+    console.print("  [cyan][ ][/cyan] 装好了 OpenBiliClaw 浏览器扩展")
     console.print(
-        "  [cyan]☐[/cyan] 浏览器目前是打开的且是当前 [bold]活跃窗口[/bold]"
+        "  [cyan][ ][/cyan] 浏览器目前是打开的且是当前 [bold]活跃窗口[/bold]"
         "(扩展需要前台 tab 才能让抖音的虚拟列表分页加载)"
     )
-    console.print("  [cyan]☐[/cyan] 已经登录了 https://www.douyin.com")
+    console.print("  [cyan][ ][/cyan] 已经登录了 https://www.douyin.com")
     console.print()
     console.print(
-        "[bold yellow]⚠[/bold yellow]  接下来扩展会[bold]在你的浏览器里自动打开"
+        "[bold yellow][!][/bold yellow]  接下来扩展会[bold]在你的浏览器里自动打开"
         "一个新 tab[/bold]并切到那个 tab(会抢一次焦点),依次访问 4 个 profile sub-tab"
         "(发布 / 收藏 / 点赞 / 关注)向下滚动加载。整个过程 30-90 秒。"
     )
@@ -4515,15 +4515,15 @@ def _ask_yt_inclusion() -> bool:
     console.print()
     console.print("[bold]准备 YouTube 接入[/bold]")
     console.print("请确认以下三件事都做了:")
-    console.print("  [cyan]☐[/cyan] 装好了 OpenBiliClaw 浏览器扩展")
+    console.print("  [cyan][ ][/cyan] 装好了 OpenBiliClaw 浏览器扩展")
     console.print(
-        "  [cyan]☐[/cyan] 浏览器目前是打开的且是当前 [bold]活跃窗口[/bold]"
+        "  [cyan][ ][/cyan] 浏览器目前是打开的且是当前 [bold]活跃窗口[/bold]"
         "(扩展需要前台 tab 才能滚动加载 YouTube 历史/订阅/点赞列表)"
     )
-    console.print("  [cyan]☐[/cyan] 已经登录了 https://www.youtube.com")
+    console.print("  [cyan][ ][/cyan] 已经登录了 https://www.youtube.com")
     console.print()
     console.print(
-        "[bold yellow]⚠[/bold yellow]  接下来扩展会[bold]在你的浏览器里自动打开"
+        "[bold yellow][!][/bold yellow]  接下来扩展会[bold]在你的浏览器里自动打开"
         "一个新 tab[/bold]并切到那个 tab(会抢一次焦点),依次访问 3 个页面"
         "(观看历史 / 订阅频道 / 点赞列表)向下滚动加载。整个过程 30-90 秒。"
     )
@@ -4635,7 +4635,7 @@ def _ask_network_binding() -> bool:
         return True
 
     console.print()
-    console.print("[bold]📱 移动端访问[/bold]")
+    console.print("[bold][MOBILE] 移动端访问[/bold]")
     console.print(
         "OpenBiliClaw 自带移动端 Web（[bold cyan]/m/[/bold cyan]），同一局域网的手机扫码即可打开。"
     )
@@ -4670,7 +4670,7 @@ def _maybe_setup_password_in_init(*, allow_lan: bool) -> None:
     if not allow_lan or not _is_interactive_terminal():
         return
     console.print()
-    console.print("[bold]🔒 访问密码（可选）[/bold]")
+    console.print("[bold][LOCK] 访问密码（可选）[/bold]")
     console.print(
         "为局域网/远程设备访问设置登录密码？[bold]本机访问始终免登录[/bold]，"
         "只有手机和其他电脑需要输入密码。"
@@ -5715,7 +5715,7 @@ def init(
         else "拉取所选平台数据（B 站已跳过）"
     )
     console.print(
-        "[bold yellow]⏱  这一步首次运行预计需要 2–5 分钟，"
+        "[bold yellow][TIME]  这一步首次运行预计需要 2–5 分钟，"
         "请保持网络畅通别中断。[/bold yellow]\n"
         "  四个阶段会依次跑：\n"
         f"    1/4  {stage1_label}\n"
@@ -5916,26 +5916,26 @@ def init(
     yt_subs_count = int(yt_scope_counts.get("yt_subscriptions", 0))
     yt_likes_count = int(yt_scope_counts.get("yt_likes", 0))
     summary_rows: list[tuple[str, str]] = [
-        ("📺 B 站观看历史", f"{len(history)} 条"),
-        ("📺 B 站收藏夹", f"{len(favorites_data)} 条"),
-        ("📺 B 站关注 UP", f"{len(following_data)} 人"),
-        ("🌐 B 站 入库事件", f"{bilibili_events} 条"),
-        ("📕 小红书 收藏(saved)", f"{xhs_saved} 条"),
-        ("📕 小红书 点赞(liked)", f"{xhs_liked} 条"),
-        ("📕 小红书 浏览记录", f"{xhs_history} 条"),
-        ("🌐 小红书 入库事件", f"{len(xhs_events)} 条"),
-        ("🎵 抖音 发布", f"{dy_post} 条"),
-        ("🎵 抖音 收藏", f"{dy_collect} 个"),
-        ("🎵 抖音 点赞", f"{dy_like} 个"),
-        ("🎵 抖音 关注", f"{dy_follow} 人"),
-        ("🌐 抖音 入库事件", f"{len(dy_events)} 条"),
+        ("[TV] B 站观看历史", f"{len(history)} 条"),
+        ("[TV] B 站收藏夹", f"{len(favorites_data)} 条"),
+        ("[TV] B 站关注 UP", f"{len(following_data)} 人"),
+        ("[WEB] B 站 入库事件", f"{bilibili_events} 条"),
+        ("[BOOK] 小红书 收藏(saved)", f"{xhs_saved} 条"),
+        ("[BOOK] 小红书 点赞(liked)", f"{xhs_liked} 条"),
+        ("[BOOK] 小红书 浏览记录", f"{xhs_history} 条"),
+        ("[WEB] 小红书 入库事件", f"{len(xhs_events)} 条"),
+        ("[MUSIC] 抖音 发布", f"{dy_post} 条"),
+        ("[MUSIC] 抖音 收藏", f"{dy_collect} 个"),
+        ("[MUSIC] 抖音 点赞", f"{dy_like} 个"),
+        ("[MUSIC] 抖音 关注", f"{dy_follow} 人"),
+        ("[WEB] 抖音 入库事件", f"{len(dy_events)} 条"),
         ("▶ YouTube 观看历史", f"{yt_history_count} 条"),
         ("▶ YouTube 订阅频道", f"{yt_subs_count} 个"),
         ("▶ YouTube 点赞", f"{yt_likes_count} 个"),
-        ("🌐 YouTube 入库事件", f"{len(yt_events)} 条"),
-        ("📊 画像建模总事件", f"{len(events)} 条"),
-        ("✅ 灵魂画像", "已生成"),
-        ("🔍 首轮发现内容", f"{discovered_count} 条"),
+        ("[WEB] YouTube 入库事件", f"{len(yt_events)} 条"),
+        ("[STAT] 画像建模总事件", f"{len(events)} 条"),
+        ("[OK] 灵魂画像", "已生成"),
+        ("[SEARCH] 首轮发现内容", f"{discovered_count} 条"),
     ]
     _print_key_value_table("初始化摘要", summary_rows)
 
@@ -6040,7 +6040,7 @@ def _print_init_cost_summary(since_id: int) -> None:
         )
     console.print(summary_table)
     console.print(
-        "[dim]💡 想看历史累积花费跑 `openbiliclaw cost` (默认 7 天) / "
+        "[dim][TIP] 想看历史累积花费跑 `openbiliclaw cost` (默认 7 天) / "
         "`openbiliclaw cost --by caller --days 30` 看 30 天按模块拆分。"
         "cache 列里红色 (<30%) 的 caller 说明 prompt 前缀不稳,可以 audit 一下。[/dim]"
     )
@@ -6339,7 +6339,7 @@ def profile_consolidate(
         migrator = CategoryMigrator(memory=memory, llm_service=llm_service)
         migration_report = _asyncio.run(migrator.run(dry_run=not apply))
         for err in migration_report.errors:
-            console.print(f"[yellow]  ⚠ {err}[/yellow]")
+            console.print(f"[yellow]  [!] {err}[/yellow]")
         console.print(
             f"  现存分类: {len(migration_report.histogram)} 个，"
             f"标签 {sum(migration_report.histogram.values())} 条"
@@ -6350,7 +6350,7 @@ def profile_consolidate(
         ):
             console.print(f"  {old}({migration_report.histogram.get(old, 0)}) → [bold]{new}[/bold]")
         if migration_report.mapping:
-            suffix = "  [yellow]⚠ 超过 10%[/yellow]" if migration_report.other_ratio > 0.10 else ""
+            suffix = "  [yellow][!] 超过 10%[/yellow]" if migration_report.other_ratio > 0.10 else ""
             console.print(f"\n  「其他」占比: {migration_report.other_ratio:.1%}{suffix}")
         if not apply and migration_report.mapping:
             console.print("\n  [dim]满意的话用 --apply 真正写入。[/dim]")
@@ -6373,7 +6373,7 @@ def profile_consolidate(
 
     if report.errors:
         for err in report.errors:
-            console.print(f"[yellow]  ⚠ {err}[/yellow]")
+            console.print(f"[yellow]  [!] {err}[/yellow]")
     if report.likes_before > report.likes_target_upper:
         console.print(
             f"  [cyan]likes 动态聚类阈值:[/cyan] cosine ≥ {report.like_similarity_threshold:.2f}"
@@ -7136,7 +7136,7 @@ def import_youtube(
     result = parse_takeout(takeout_path)
 
     for warning in result.warnings:
-        console.print(f"  [yellow]⚠ {warning}[/yellow]")
+        console.print(f"  [yellow][!] {warning}[/yellow]")
 
     stats = result.stats
     console.print(
@@ -7167,7 +7167,7 @@ def import_youtube(
             await memory.propagate_event(event)
 
     asyncio.run(_propagate())
-    console.print("  [green]✓ 记忆层写入完成[/green]")
+    console.print("  [green][OK] 记忆层写入完成[/green]")
 
     _print_section_title("2/2 更新偏好画像")
     console.print(
@@ -7183,10 +7183,10 @@ def import_youtube(
             eta_seconds=90,
         )
     )
-    console.print("  [green]✓ 偏好画像已更新[/green]")
+    console.print("  [green][OK] 偏好画像已更新[/green]")
 
     console.print(
-        "\n[bold green]✓ YouTube Takeout 导入完成。[/bold green]\n"
+        "\n[bold green][OK] YouTube Takeout 导入完成。[/bold green]\n"
         "  运行 [cyan]openbiliclaw profile[/cyan] 查看更新后的用户画像。"
     )
 

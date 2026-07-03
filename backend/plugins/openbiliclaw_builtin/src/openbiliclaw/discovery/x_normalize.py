@@ -34,9 +34,9 @@ from openbiliclaw.discovery.engine import DiscoveredContent
 _TITLE_MAX_LEN = 140
 
 # Leading thread markers a self-thread head commonly uses: "1/", "1/7",
-# "1.", "(1/n)", or the 🧵 emoji anywhere in the first line.
+# "1.", "(1/n)", or the [THREAD] emoji anywhere in the first line.
 _THREAD_MARKER_RE = re.compile(r"^\s*\(?\s*1\s*[/.)]")
-_THREAD_EMOJI = "\U0001f9f5"  # 🧵
+_THREAD_EMOJI = "\U0001f9f5"  # [THREAD] emoji 用于文本匹配
 
 # Hashtags: "#word" with unicode letters/digits/underscore, no leading digit-only.
 _HASHTAG_RE = re.compile(r"#(\w*[^\W\d_]\w*)", re.UNICODE)

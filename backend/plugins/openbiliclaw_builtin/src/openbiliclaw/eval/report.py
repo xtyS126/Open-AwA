@@ -30,7 +30,7 @@ def render_training_summary(result: dict[str, Any]) -> str:
         if len(changed) > 40:
             changed = changed[:37] + "..."
         explore = h.get("action", "Yes" if h.get("exploration") else "No")
-        accepted = "✓" if h.get("accepted") else "✗"
+        accepted = "[OK]" if h.get("accepted") else "[X]"
         val_mean = h.get("val_mean", h.get("train_mean", 0))
         lines.append(
             f"{h['epoch']:>5}  {h['train_mean']:>6.3f}  {val_mean:>6.3f}"
@@ -89,7 +89,7 @@ def render_eval_report(report: dict[str, Any]) -> str:
         lines.append(f"  [{ls['layer']}] score: {ls['score']:.3f}")
         for fs in ls.get("field_scores", []):
             severity = fs.get("severity", "")
-            icon = {"correct": "✅", "partial": "⚠️", "wrong": "❌", "missing": "💀"}.get(
+            icon = {"correct": "[OK]", "partial": "[!]", "wrong": "[X]", "missing": "[SKULL]"}.get(
                 severity, "?"
             )
             dev = fs.get("deviation", "")
@@ -123,7 +123,7 @@ def render_speculation_report(report: dict[str, Any]) -> str:
     )
 
     for ss in report.get("speculation_scores", []):
-        icon = "✅" if ss.get("overall", 0) >= 0.7 else "⚠️" if ss.get("overall", 0) >= 0.4 else "❌"
+        icon = "[OK]" if ss.get("overall", 0) >= 0.7 else "[!]" if ss.get("overall", 0) >= 0.4 else "[X]"
         lines.append(f"\n  {icon} {ss.get('domain', '?')} ({ss.get('overall', 0):.2f})")
         lines.append(
             f"    合理={ss.get('plausibility', 0):.2f} "
@@ -144,7 +144,7 @@ def render_speculation_training_summary(result: dict[str, Any]) -> str:
     lines.append("─" * 60)
 
     for h in result.get("history", []):
-        accepted = "✓" if h.get("accepted") else "✗"
+        accepted = "[OK]" if h.get("accepted") else "[X]"
         action = h.get("action", "?")
         lines.append(
             f"{h.get('epoch', 0):>5}  {h.get('train_mean', 0):>6.3f}  "

@@ -267,7 +267,7 @@ async def collect_json(
             if text:
                 logger.warning("%sRaw response (first 500 chars): %s", tag, text[:500])
             if attempt < max_retries:
-                prompt = f"{prompt}\n\n⚠️ 上一次回复 JSON 解析失败（{exc}），请返回纯 JSON 对象。"
+                prompt = f"{prompt}\n\n[!] 上一次回复 JSON 解析失败（{exc}），请返回纯 JSON 对象。"
         except Exception as exc:
             elapsed = _time.monotonic() - t0
             last_error = exc
@@ -647,7 +647,7 @@ async def run_optimizer_agent(
         "</pipeline_architecture>\n\n"
         "每次最多修改 2 处。修改必须是精确的 diff 级别（old_text → new_text）。\n"
         "对 pipeline 代码的修改必须保持函数签名不变、不引入新依赖。\n\n"
-        "⚠️ 关键输出要求：\n"
+        "[!] 关键输出要求：\n"
         "1. old_text 和 new_text 只包含需要修改的最小片段（3-10 行），"
         "不要复制整个函数或整段 schema\n"
         "2. old_text 必须是文件中能精确匹配到的原文（包括缩进和换行）\n"
@@ -673,7 +673,7 @@ async def run_optimizer_agent(
                     "原则：最小化修改，不破坏函数签名和导入，每次只改 1-2 处。\n"
                     "如果偏差根因在 pipeline 代码（如字段未同步、更新逻辑缺失），"
                     "优先修改代码而非 prompt。\n\n"
-                    "⚠️ 输出格式硬性要求：\n"
+                    "[!] 输出格式硬性要求：\n"
                     "- 你的最后一条消息必须是且仅是一个 ```json 代码块\n"
                     "- 不要在 JSON 前后添加任何解释文字\n"
                     "- old_text/new_text 只取最小必要片段（3-10 行），不要复制大段代码\n"
@@ -712,7 +712,7 @@ async def run_optimizer_agent(
         return await collect_json(
             prompt=(
                 "以下是优化专家的分析结果，请提取其中的代码修改方案为 JSON。\n\n"
-                "⚠️ 关键要求：\n"
+                "[!] 关键要求：\n"
                 "- old_text 和 new_text 只取最小片段（3-10 行），不要复制整段代码\n"
                 "- 如果分析中没有明确的 old_text → new_text 修改，返回空 changes\n"
                 "- summary 用一句话概括分析结论\n\n"
@@ -821,7 +821,7 @@ async def run_discovery_optimizer_agent(
         "原则：最小化修改，不破坏函数签名和导入，每次只改 1-2 处。\n"
         "如果偏差根因在策略代码（如过滤逻辑、topic_key 分配），优先修改代码而非 prompt。\n"
         "对代码的修改必须通过 pytest 验证。\n\n"
-        "⚠️ 关键输出要求：\n"
+        "[!] 关键输出要求：\n"
         "1. old_text 和 new_text 只包含需要修改的最小片段（3-10 行），不要复制整个函数\n"
         "2. old_text 必须是文件中能精确匹配到的原文（包括缩进和换行）\n"
         "3. 你的最后一条消息必须且只能包含一个 ```json 代码块\n\n"
@@ -850,7 +850,7 @@ async def run_discovery_optimizer_agent(
                     "原则：最小化修改，不破坏函数签名和导入，每次只改 1-2 处。\n"
                     "如果偏差根因在策略代码（如过滤逻辑、topic_key 分配），"
                     "优先修改代码而非 prompt。\n\n"
-                    "⚠️ 输出格式硬性要求：\n"
+                    "[!] 输出格式硬性要求：\n"
                     "- 你的最后一条消息必须是且仅是一个 ```json 代码块\n"
                     "- 不要在 JSON 前后添加任何解释文字\n"
                     "- old_text/new_text 只取最小必要片段（3-10 行），不要复制大段代码\n"

@@ -78,7 +78,7 @@ _QUICK_EXIT_MAX_SECONDS = 5
 _EXPLICIT_POSITIVE_EVENT_TYPES = frozenset({"like", "coin", "favorite", "comment"})
 
 # Feedback metadata vocabulary — set on `feedback` events emitted by the
-# extension's "👍 / 👎" UI and the recommendation feedback endpoint.
+# extension's "thumbs_up / thumbs_down" UI and the recommendation feedback endpoint.
 _POSITIVE_FEEDBACK_TYPES = frozenset({"like"})
 _NEUTRAL_FEEDBACK_TYPES = frozenset({"comment"})
 _POSITIVE_REACTIONS = frozenset({"thumbs_up"})

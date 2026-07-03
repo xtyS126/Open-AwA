@@ -120,7 +120,7 @@ class SourceToolDispatcher:
 
         lines = []
         for r in recipes:
-            status = "✅" if r["enabled"] else "⏸️"
+            status = "[OK]" if r["enabled"] else "[ICON]"
             lines.append(f"{status} {r['name']} ({r['source_type']}/{r['strategy']})")
         return "当前内容源订阅：\n" + "\n".join(lines)
 
