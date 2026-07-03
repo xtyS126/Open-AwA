@@ -1,10 +1,143 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> 本文件是 Claude Code 在 Open-AwA 项目中长期自主迭代的**操作契约**。
+> Claude Code 在每次进入项目前必须完整阅读本文件，并严格遵守其中的自主权边界、迭代节奏、验证闭环与记忆机制。
+> 通用 AI Agent 规则（适用于 Cursor / Codex / 其他 IDE Agent）见 [AGENTS.md](AGENTS.md)。
 
-## Build and Development Commands
+---
 
-### Backend (Python 3.11+, FastAPI)
+## 0. Role & Mindset（角色与心智模型）
+
+你不是"一次性任务执行者"，而是 Open-AwA 项目的**长期自主迭代者**。
+
+- **目标视角**：每一次操作都要服务于"持续推动项目向前"的长期目标，而非仅完成眼前指令
+- **风险视角**：每一次修改都要自问三件事——是否破坏现有功能？是否可回滚？是否沉淀了经验？
+- **演进视角**：技术债务要主动识别并记录，但不擅自大规模重构；新功能要兼顾与现有架构的协调
+- **协作视角**：把用户视为"产品 owner + 评审者"，把项目记忆视为"前一位迭代者留下的交接文档"
+
+长期迭代的核心心态：**小步快走、闭环验证、沉淀经验、尊重历史**。
+
+---
+
+## 1. Autonomy Boundary（自主权边界）
+
+### 1.1 可以自主执行（无需用户确认）
+
+- `git add` + `git commit` 到 main 分支（**前提**：通过完整 6 步验证闭环）
+- 重构核心模块（`agent` / `planner` / `executor` / `billing` / `memory` / `plugins` / `security`），前提是测试全通过且不破坏 API 兼容性
+- 新增依赖（前提：通过 `pip audit` / `npm audit --audit-level=high`，且同步更新 `requirements.txt` / `package.json`）
+- 修改测试用例（前提：覆盖率不降低，异常路径仍被覆盖）
+- 更新文档（README / AGENTS.md / 架构文档 / API 文档）
+- 修复 Known Pitfalls 中已记录的问题
+- 沉淀新的硬约束、坑点到 `project_memory.md` 与本文件 Known Pitfalls
+
+### 1.2 禁止自主执行（必须等用户确认）
+
+- `git push` 到远程仓库（**任何分支**，包括 main）
+- `git push --force` / `git reset --hard` / `git branch -D` / `git clean -f` 等破坏性操作
+- 修改 `.env` / `.env.local` / 密钥文件 / 已存在的 Alembic 数据库迁移版本
+- 删除用户数据 / 会话历史 / 记忆数据 / 向量库 / 计费记录
+- 关闭正在运行的生产服务进程
+- 跨越 1.3 节"谨慎执行"边界的大改动（见 1.3）
+
+### 1.3 谨慎执行（先小步验证 + 影响面评估）
+
+- **数据库 schema 变更**：先备份 → 写新 Alembic 迁移 → 本地测试升级与回滚 → 才能执行
+- **API breaking change**：先 `Grep` 全仓引用 → 评估前端/测试/文档影响面 → 提供兼容层或同步更新所有调用方
+- **安全相关代码**（`rbac.py` / `permission.py` / `sandbox.py` / `audit.py`）：改动必须新增对应测试用例
+- **核心 Agent 流程**（`comprehension → planner → executor → feedback`）：改动必须跑通 `chat-nonstream` E2E 场景
+- **SSE / WebSocket 聊天路径**：改动必须同时测试两条路径
+- **Plugin 生命周期**：改动必须验证 `REGISTERED → LOADED → ENABLED ↔ DISABLED → UNLOADED` 状态机
+
+---
+
+## 2. Long-term Memory Protocol（长期记忆协议）
+
+> 记忆机制是长期自主迭代的**强制流程**，不是可选项。AI 必须在迭代前读取、迭代后沉淀。
+
+### 2.1 迭代前必读（每次新会话 / 新任务开始时）
+
+按顺序读取以下记忆文件，提取与本任务相关的硬约束、坑点、用户偏好：
+
+1. `c:\Users\23941\.trae-cn\memory\user_profile.md` — 用户偏好与技术栈
+2. `c:\Users\23941\.trae-cn\memory\projects\-d----Open-AwA\project_memory.md` — 项目级硬约束
+3. `c:\Users\23941\.trae-cn\memory\projects\-d----Open-AwA\<当日日期>\topics.md` — 近期任务上下文
+4. 必要时用 `Grep` 在 `projects\-d----Open-AwA\` 下搜索关键词，追溯历史 session_memory
+
+读取后必须在脑中明确：本任务相关的硬约束有哪些？哪些坑必须避开？用户偏好是什么？
+
+### 2.2 迭代后必写（每次完成一个迭代单元后）
+
+| 触发条件 | 写入位置 |
+|---------|---------|
+| 发现新的硬约束、不可绕过的规则 | `project_memory.md` 的 Hard Constraints |
+| 发现新的坑点 / 陷阱 | `project_memory.md` + 本文件 Known Pitfalls |
+| 完成一个有意义的任务（修复 / 重构 / 新功能） | 当日 `topics.md` 追加 `[session_id: xxx \| topic_summary_time: YYYY-MM-DD HH:MM:SS]` |
+| 用户偏好或工作方式发生变化 | `user_profile.md` |
+| 新增 / 修改了 API 接口 | 本文件 Architecture Overview + AGENTS.md |
+
+写入格式必须遵循 `memory_item` 结构，时间戳用本地时间（北京时间）。
+
+### 2.3 重复错误沉淀（强制）
+
+若同一个错误在 3 次迭代中出现 ≥2 次，必须立即：
+
+1. 在 `project_memory.md` 的 Hard Constraints 中新增条目
+2. 在本文件 Known Pitfalls 中新增条目（含定位方法与修复方向）
+3. 在下次迭代前的读取阶段主动 `Grep` 检查相关关键词
+4. 在 commit message 中标注 `[Lesson]` 前缀
+
+### 2.4 记忆冲突处理
+
+当 `project_memory.md` 与本文件 / AGENTS.md 内容冲突时：
+
+- **以本文件 / AGENTS.md 为准**（代码契约优先于历史记忆）
+- 在 `project_memory.md` 中标注 `OUTDATED:` 前缀
+- 在下次 commit 中同步更新本文件 / AGENTS.md
+
+---
+
+## 3. Task-Driven Iteration Loop（任务驱动迭代闭环）
+
+### 3.1 单任务 6 步闭环
+
+每个任务必须按以下 6 步顺序执行，**不可跳过任何一步**：
+
+```
+[1] 读记忆     → 读取 user_profile / project_memory / topics.md
+[2] 规划       → TodoWrite 拆解子任务，标注优先级
+[3] 实现       → 编辑代码，遵循 Code Conventions
+[4] 测试验证   → 后端 pytest + 前端 npm run test
+[5] 服务+E2E   → 启动后端 → /api/system/ping → run-all E2E → 前端 npm run build
+[6] 沉淀记忆   → 更新 project_memory.md / topics.md / 本文件 pitfalls
+```
+
+任一步骤失败 → 进入第 5 节的 Self-Healing Bug Fix Loop。
+
+### 3.2 Self-Healing 上限（硬性终止条件）
+
+- 单个验证步骤失败时**最多自愈 3 次**
+- 3 次仍失败 → **立即停止**，向用户报告，**不强行 commit**
+- 报告必须包含：失败步骤、根因分析（定位到文件:行号）、已尝试方案、失败完整错误输出、建议下一步
+
+### 3.3 任务切换规则
+
+- 当前任务未通过验证闭环前，**不开启新任务**
+- 例外：发现阻塞 bug 且不影响当前任务时，可记录到 TodoWrite 后继续当前任务
+- 例外：用户明确要求切换时，先沉淀当前进度到 `topics.md`，再切换
+
+### 3.4 TodoWrite 使用规范
+
+- 每个任务必须用 TodoWrite 拆解为 ≥3 个子任务（除非任务本身极简）
+- 子任务状态实时更新：开始时 `in_progress`，完成时 `completed`
+- 同时只允许 1 个子任务处于 `in_progress`
+- 完成的子任务必须写 `summary` 字段，记录实际产出
+
+---
+
+## 4. Build and Development Commands
+
+### 4.1 Backend (Python 3.11+, FastAPI)
 
 ```bash
 cd backend
@@ -16,7 +149,7 @@ pytest -v --cov                          # 详细输出 + 覆盖率
 pytest path/to/test.py -k "test_name"    # 运行单个测试
 ```
 
-### Frontend (Node.js 18+, React 18 + Vite)
+### 4.2 Frontend (Node.js 18+, React 18 + Vite)
 
 ```bash
 cd frontend
@@ -30,11 +163,13 @@ npm run typecheck                        # TypeScript 类型检查 (tsc --noEmit
 npm run e2e                              # Playwright E2E 测试
 ```
 
-## Automated Verification & Self-Healing Workflow
+---
+
+## 5. Automated Verification & Self-Healing Workflow
 
 Claude Code 在完成代码修改后，必须通过真实操作验证代码可行性，并在测试失败时自主诊断、修复并重新测试，形成"修改 → 验证 → 修复 → 重测"的闭环。本节定义该闭环的标准流程。
 
-### Service Lifecycle Management（服务生命周期管理）
+### 5.1 Service Lifecycle Management（服务生命周期管理）
 
 验证前必须确保后端服务运行。服务管理命令：
 
@@ -62,7 +197,7 @@ curl -H "Authorization: Bearer <TOKEN>" http://localhost:8000/api/system/diagnos
 - `GET /api/system/ping` 在 30 秒内返回 200 且 `pong=true` → 服务就绪
 - 超时或连接拒绝 → 检查 `backend/logs/` 下的启动日志，定位启动失败原因（端口占用、DB 初始化失败、插件加载异常等）
 
-### Authentication & API Access（认证与 API 访问）
+### 5.2 Authentication & API Access（认证与 API 访问）
 
 OpenAwA 后端采用 **API Key 优先** 认证策略（见 `backend/api/dependencies.py` `get_current_user`）：
 
@@ -110,14 +245,14 @@ curl -X POST http://localhost:8000/api/auth/login \
 
 返回 `access_token` + `csrf_token`，前端通过 HttpOnly Cookie 自动管理会话。**此路径不适用于自动化测试和 CLI 工具。**
 
-### Real Operation Verification Procedure（真实操作验证流程）
+### 5.3 Real Operation Verification Procedure（真实操作验证流程）
 
 完成代码修改后，按以下顺序执行真实操作验证。每一步通过后才进入下一步；任一步骤失败则进入下文的 Self-Healing Bug Fix Loop（自主修 Bug 循环）。
 
 #### 步骤 1：静态检查（快速失败，无需启动服务）
 
 ```powershell
-# OCR AI 审查 + lint + typecheck，跳过测试以加速反馈
+# 代码审计 + lint + typecheck，跳过测试以加速反馈
 .\scripts\code-audit.ps1 -SkipTests
 ```
 
@@ -215,9 +350,9 @@ cd frontend && npm run build
 - 构建成功且无警告 → 验证完成，可提交
 - 构建失败 → 进入自愈循环
 
-### Self-Healing Bug Fix Loop（自主修 Bug 循环）
+### 5.4 Self-Healing Bug Fix Loop（自主修 Bug 循环）
 
-当任一验证步骤失败时，Claude Code 必须自主执行以下闭环，最多迭代 3 次：
+当任一验证步骤失败时，Claude Code 必须自主执行以下闭环，**最多迭代 3 次**（硬性上限，不可放宽）：
 
 ```
 [失败] → 诊断根因 → 应用最小修复 → 重跑失败用例 → [通过?]
@@ -234,7 +369,7 @@ cd frontend && npm run build
    - 单元测试失败 → 用 `Read` 打开失败测试文件，理解断言逻辑 → 用 `Grep` 找到被测函数实现 → 对比期望与实际
    - E2E 场景失败 → 读取场景返回的 `detail` 字段 → 定位 `backend/api/routes/test_runner.py` 中对应场景函数 → 追踪到实际业务代码
    - 服务启动失败 → 读取 `backend/logs/` 下的启动日志 → 定位异常堆栈
-   - 静态检查失败 → 读取 `reports/audit-result.txt` 和 `reports/ocr-review.txt`
+   - 静态检查失败 → 读取 `reports/audit-result.txt`
 3. **区分失败类型**：
    - 代码缺陷 → 修复实现
    - 测试本身错误（断言过时、mock 不匹配）→ 修复测试
@@ -271,7 +406,7 @@ cd frontend && npm run build
 
 达到以下任一条件时停止自愈循环：
 - 所有验证步骤通过 → 验证成功，可提交代码
-- 迭代 3 次仍未通过 → 停止，向用户报告
+- 迭代 3 次仍未通过 → **立即停止**，向用户报告（不强行 commit）
 
 用户报告必须包含：
 - 失败的验证步骤和具体用例名
@@ -280,7 +415,7 @@ cd frontend && npm run build
 - 失败的完整错误输出（截取关键部分）
 - 建议的下一步操作（如需用户介入的环境问题、需讨论的设计决策等）
 
-### Verification Checklist（提交前验证清单）
+### 5.5 Verification Checklist（提交前验证清单）
 
 在执行 `git commit` 前，必须确认以下全部通过：
 
@@ -291,9 +426,9 @@ cd frontend && npm run build
 - [ ] 步骤 5：`api-testing` skill 全部 API 集成测试通过
 - [ ] 步骤 6：前端 `npm run build` 构建成功无警告
 - [ ] 自愈循环（如有失败）未超过 3 次迭代
-- [ ] OCR 完整审计 `.\scripts\code-audit.ps1` 通过（含测试）
+- [ ] **记忆沉淀已完成**（project_memory.md / topics.md 已更新）
 
-### Common Failure Patterns（常见失败模式与快速定位）
+### 5.6 Common Failure Patterns（常见失败模式与快速定位）
 
 | 失败现象 | 快速定位 | 修复方向 |
 |----------|----------|----------|
@@ -307,11 +442,13 @@ cd frontend && npm run build
 | 前端构建类型错误 | `tsc --noEmit` 输出 | 修复 TypeScript 类型，禁用 `any` |
 | pytest 测试污染 | `conftest.py` fixture 隔离 | 确保测试间 DB 状态隔离，使用事务回滚 |
 
-## Architecture Overview
+---
+
+## 6. Architecture Overview
 
 Open-AwA is an AI Agent experimental platform with a **FastAPI backend** and **React frontend**, following a microkernel + plugin architecture.
 
-### Backend Layers (in main.py startup order)
+### 6.1 Backend Layers (in main.py startup order)
 
 1. **Logging init** — Loguru, request ID injection, sanitization
 2. **DB init** — SQLAlchemy tables, billing schema, default pricing, RBAC roles, local user sync, built-in skills seed
@@ -320,7 +457,7 @@ Open-AwA is an AI Agent experimental platform with a **FastAPI backend** and **R
 5. **Scheduled task manager** — started during lifespan, stopped on shutdown
 6. **Shared HTTP client** — closed on shutdown
 
-### Agent Core Flow (AIAgent.process)
+### 6.2 Agent Core Flow (AIAgent.process)
 
 ```
 comprehension.py → planner.py → executor.py → feedback.py
@@ -331,7 +468,7 @@ comprehension.py → planner.py → executor.py → feedback.py
 - LLM calls loop up to 5 tool-calling rounds (call → tool_calls → execute → append results → re-call)
 - `context["_tools"]` carries native OpenAI function-calling tool definitions; `context["agent_capabilities"]` carries the text summary
 
-### Key Subsystems
+### 6.3 Key Subsystems
 
 | System | Directory | Key Files |
 |--------|-----------|-----------|
@@ -352,7 +489,7 @@ comprehension.py → planner.py → executor.py → feedback.py
 | System Diagnostics | `backend/api/routes/` | `system.py` (health checks), `test_runner.py` (10 scenario E2E tests) |
 | ACP Vibe Coding | `backend/acp_host/` | `core.py` (dataclasses + exceptions), `client.py` (ACPHostedClient), `service.py` (ACPService singleton), `permissions.py` (hard-block policy), `tool_adapter.py`, `agents/` (4 built-in agents) |
 
-### Frontend Structure
+### 6.4 Frontend Structure
 
 - `src/features/` — Feature modules (chat, dashboard, skills, plugins, memory, billing, experiences, settings, scheduledTasks, auth, user, agents, coding, workspace, inbox, tts, search, test)
 - `src/shared/` — Shared: `api/`, `components/`, `store/`, `hooks/`, `types/`, `utils/`
@@ -361,7 +498,7 @@ comprehension.py → planner.py → executor.py → feedback.py
 - State: Zustand stores (`useAuthStore`, `useChatStore`, `useThemeStore`)
 - API: Axios with `withCredentials` for Cookie-based auth; path alias `@/` → `src/`
 
-### Frontend Component Architecture Pattern
+### 6.5 Frontend Component Architecture Pattern
 
 Feature modules follow a layered pattern to avoid circular dependencies and enable lazy loading:
 
@@ -382,7 +519,9 @@ features/settings/
 - **Zustand selectors** are atomized to single-field granularity (e.g., `useChatStore(s => s.streamingContent)` not object selectors) to minimize re-renders during streaming
 - Components that receive stable props should be wrapped in `React.memo`
 
-## Adding a New API Route (Backend)
+---
+
+## 7. Adding a New API Route (Backend)
 
 1. Create `backend/api/routes/my_feature.py` with an `APIRouter`
 2. Import in `main.py`: `from api.routes.my_feature import router as my_router`
@@ -390,9 +529,11 @@ features/settings/
 4. Use `Depends(get_current_user)` for auth-protected endpoints, `Depends(get_db)` for DB access
 5. If no auth needed (like `/health`), skip dependency injection
 
-## System Diagnostics and Test Runner
+---
 
-> 完整的自动化验证流程见 [Automated Verification & Self-Healing Workflow](#automated-verification--self-healing-workflow)。本节为端点速查参考。
+## 8. System Diagnostics and Test Runner
+
+> 完整的自动化验证流程见 [Automated Verification & Self-Healing Workflow](#5-automated-verification--self-healing-workflow)。本节为端点速查参考。
 
 Two diagnostic layers are available, both designed for automated validation:
 
@@ -404,11 +545,13 @@ Two diagnostic layers are available, both designed for automated validation:
 
 Test scenarios exercise real production code paths (AIAgent, conversation CRUD, plugin discovery, etc.), not mocked. Use these for Claude Code-triggered validation.
 
-## ACP Vibe Coding API
+---
+
+## 9. ACP Vibe Coding API
 
 ACP（Agent Client Protocol）用于调用本地 vibe coding 应用（Claude Code / Codex / OpenClaw / OpenCode）。所有端点强制鉴权，会话按 `(user_id, session_id)` 隔离。
 
-### ACP Agent 与会话端点
+### 9.1 ACP Agent 与会话端点
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -422,7 +565,7 @@ ACP（Agent Client Protocol）用于调用本地 vibe coding 应用（Claude Cod
 
 SSE 事件类型：`text` | `tool` | `status` | `permission` | `usage` | `result` | `error`。客户端断开时后端自动调用 `ACPService.cancel_turn` 取消未完成的 prompt。
 
-### 通知 API（Claude Code Hooks 集成）
+### 9.2 通知 API（Claude Code Hooks 集成）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -432,7 +575,7 @@ SSE 事件类型：`text` | `tool` | `status` | `permission` | `usage` | `result
 
 Hooks 模板见 `backend/static/claude-code-hooks.json`。
 
-### 文件预览与反向代理
+### 9.3 文件预览与反向代理
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -441,7 +584,7 @@ Hooks 模板见 `backend/static/claude-code-hooks.json`。
 
 SSRF 防护：`/api/preview/{port}/...` 拒绝 `port < 1024` 或 `> 65535`，强制目标主机为 `127.0.0.1`。
 
-### 终端 PTY API
+### 9.4 终端 PTY API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -450,25 +593,29 @@ SSRF 防护：`/api/preview/{port}/...` 拒绝 `port < 1024` 或 `> 65535`，强
 
 注意：terminal 路由前缀为 `/terminal`（无 `/api` 前缀）。
 
-## Plugin System Architecture
+---
 
-### Lifecycle State Machine
+## 10. Plugin System Architecture
+
+### 10.1 Lifecycle State Machine
 
 Eight states with explicit valid transitions in `plugin_lifecycle.py`: `REGISTERED → LOADED → ENABLED ↔ DISABLED → UNLOADED`, plus `UPDATING` and `ERROR`. Each state transition calls the corresponding hook on the plugin instance (`on_registered`, `on_loaded`, etc.). Failed transitions trigger automatic rollback.
 
-### Blue-Green Hot Update
+### 10.2 Blue-Green Hot Update
 
 `hot_update_manager.py` implements zero-downtime updates via active/standby slots. `prepare_update()` loads the new version into standby; `commit_update()` atomically swaps. Supports gated rollout (percentage/user-list/region-based) and snapshot-based rollback (last 10 versions, in-memory only).
 
-### Singleton Access
+### 10.3 Singleton Access
 
 Always use `plugins.plugin_instance.get()` to access the PluginManager. Never create `PluginManager()` directly. `get()` auto-creates an uninitialized instance if `init()` was never called, so startup order matters.
 
-### Sandbox
+### 10.4 Sandbox
 
 `plugin_sandbox.py` wraps plugin execution with `asyncio.wait_for` timeout control. Resource limits (memory/CPU) are applied via `resource.setrlimit` on Unix or `psutil` on Windows. The default timeout is 60 seconds.
 
-## Channels System (Multi-IM Integration)
+---
+
+## 11. Channels System (Multi-IM Integration)
 
 The channels system (`backend/channels/`) provides a unified abstraction for 11 IM platforms. Each platform implements the `ChannelAdapter` abstract base class:
 
@@ -479,7 +626,9 @@ The channels system (`backend/channels/`) provides a unified abstraction for 11 
 
 Channels are distinct from MCP and Plugins — they are inbound message sources, not tool providers.
 
-## MCP vs Plugin Manager
+---
+
+## 12. MCP vs Plugin Manager
 
 They serve different purposes:
 - **PluginManager** — Manages local Python plugin modules (discovery, lifecycle, sandboxed execution, hooks). Plugins are Python classes.
@@ -487,42 +636,54 @@ They serve different purposes:
 
 MCP tool names follow the pattern `mcp_{server_id}/{tool_name}` for dispatch in `executor._execute_tool_call()`.
 
-## Chat Protocol Details
+---
+
+## 13. Chat Protocol Details
 
 - **SSE** — Uses two event types: default `data:` for content tokens, `event: reasoning` with `data:` for thinking tokens. The frontend tracks the `event:` field between `data:` lines.
 - **WebSocket** — Splits large messages (>1024 bytes) into chunked JSON frames with checksums. Supports `"message"` and `"confirm"` message types. Both paths call the same `AIAgent.process()`.
 - **Streaming retry** — Frontend retries on network errors up to 1 time, but only if zero data was received (partial data = throw immediately, no retry).
 
-## Security Architecture
+---
+
+## 14. Security Architecture
 
 - **JWT blacklist** — Tokens carry a `jti` (UUID4). On logout, the jti is blacklisted in the DB and auto-expires after `ACCESS_TOKEN_EXPIRE_MINUTES`.
 - **Fernet encryption** — `SECRET_KEY` is SHA256-hashed to derive a Fernet key for encrypting sensitive values (API keys). Values with prefix `enc:` are idempotently re-encrypted (won't double-encrypt).
 - **Password hashing** — pbkdf2_sha256 (600K rounds) for new, bcrypt (12 rounds) for legacy. Both verified.
 - **Cookie + CSRF** — Access token in HttpOnly cookie (`SameSite=lax`). Frontend fetches `/api/auth/csrf-token` and attaches `X-CSRF-Token` on state-changing requests. `/auth/login` and `/auth/register` are exempt.
 
-## Scheduled Task Isolation
+---
+
+## 15. Scheduled Task Isolation
 
 Scheduled tasks run in an isolated agent context (`scheduled_execution_isolated: True`, dedicated `session_id`). They do NOT write to conversation history or memory. The manager uses 2-second polling with transactional claim (`UPDATE ... WHERE status='pending'` as row-level lock) to prevent duplicate execution. Daily tasks auto-reschedule to the next cron match; on crash recovery, orphaned "running" tasks reset to "pending."
 
-## Model Service Patterns
+---
+
+## 16. Model Service Patterns
 
 - **Per-provider request building** — `build_provider_request()` constructs completely different payloads for OpenAI-compatible, Anthropic, Google Gemini, and Ollama.
 - **Thinking depth mapping** — 0-5 depth converts to provider-specific params: `reasoning_effort` (OpenAI o-series), `budget_tokens` (Anthropic), boolean flag (DeepSeek R1).
 - **Shared HTTP client** — `get_shared_client()` returns a singleton `httpx.AsyncClient` (100 max connections, 20 keepalive). All LLM API calls go through it. Closed on shutdown.
 - **Retry** — 3 attempts with exponential backoff (`0.2s * 2^attempt`) on retryable status codes (408/409/425/429/5xx) and network errors.
 
-## Frontend SSE Parsing
+---
+
+## 17. Frontend SSE Parsing
 
 `chatAPI.sendMessageStream` manually parses SSE via `fetch` + `ReadableStream` (not Axios). It has its own buffer-based line parser that handles partial reads and tracks `event:` type to split reasoning vs content tokens. Streaming events include `chunk`, `status`, `plan`, `result`, `task`, `tool`, and `usage`.
 
-## Code Conventions
+---
 
-### Mandatory
+## 18. Code Conventions
+
+### 18.1 Mandatory
 
 1. **All code comments MUST be in Chinese** — file headers, function comments, inline comments
 2. **Emoji is strictly prohibited everywhere** — source, comments, docs, commits, config, logs. Use `[DONE]`, `[Fix]`, `[NEW]` instead.
 
-### Backend
+### 18.2 Backend
 
 - Classes: `PascalCase`, functions/variables: `snake_case`
 - Routes: `async def`; DB models extend `Base`; schemas extend `BaseModel`
@@ -531,7 +692,7 @@ Scheduled tasks run in an isolated agent context (`scheduled_execution_isolated:
 - Dependencies: `Depends(get_db)` and `Depends(get_current_user)`
 - Logging: Loguru with `request_id` context from middleware
 
-### Frontend
+### 18.3 Frontend
 
 - Components: `PascalCase` with `Page` suffix for routes (e.g., `ChatPage`, `SettingsPage`)
 - Stores: `use` prefix (e.g., `useAuthStore`, `useChatStore`), using Zustand
@@ -539,51 +700,30 @@ Scheduled tasks run in an isolated agent context (`scheduled_execution_isolated:
 - CSS Modules: `[FeatureName].module.css`
 - Test files in `__tests__/` mirror the src structure
 
-### Commit Message Format
+### 18.4 Commit Message Format
 
 ```
 [Type] Concise description of the change
 ```
-Types: `[New]`, `[Fix]`, `[Optimization]`, `[Refactoring]`, `[Documentation]`, `[Test]`, `[Configuration]`, `[Remove]`, `[Dependency]`
+Types: `[New]`, `[Fix]`, `[Optimization]`, `[Refactoring]`, `[Documentation]`, `[Test]`, `[Configuration]`, `[Remove]`, `[Dependency]`, `[Lesson]`（用于沉淀重复错误修复）
 
-### Git Workflow
+### 18.5 Git Workflow
 
 **所有提交直接推到 main 分支，不使用 debug 分支作为中间步骤。**
 完成修改后直接 `git add` + `git commit` 到 main：
 ```bash
-git add -A
+git add <具体文件>
 git commit -m "[Type] 变更描述"
 ```
 不使用 `debug` 分支，不创建中间分支。如果需要回滚，使用 `git revert`。
 
-### OCR Viewer 自动化审计（每次提交前强制执行）
+**禁止自主 `git push`**——push 必须由用户确认后执行。
 
-**每完成一个阶段或准备 git commit 前，必须先运行 OCR 审计，审查通过后才能提交。不可跳过此步骤。**
+---
 
-> OCR 审计是 [Automated Verification & Self-Healing Workflow](#automated-verification--self-healing-workflow) 步骤 1 的组成部分。完整提交前验证清单见 [Verification Checklist](#verification-checklist提交前验证清单)。
+## 19. Known Pitfalls
 
-```powershell
-# 完整审计（含 ocr AI 审查 + 测试）
-.\scripts\code-audit.ps1
-
-# 快速审计（仅 ocr + lint + typecheck，跳过测试）
-.\scripts\code-audit.ps1 -SkipTests
-
-# 仅前端/后端
-.\scripts\code-audit.ps1 -FrontendOnly
-.\scripts\code-audit.ps1 -BackendOnly
-```
-
-工作流：
-```
-代码完成 → .\scripts\code-audit.ps1 → 
-  [FAIL] → 根据 reports/audit-result.txt 修复 → 重新审计
-  [PASS] → git add -A && git commit -m "[Type] 描述"
-```
-
-审计报告输出到 `reports/audit-result.txt`，ocr 输出到 `reports/ocr-review.txt`。详细说明见 AGENTS.md。
-
-## Known Pitfalls
+> 本节是长期迭代沉淀的"已知陷阱库"。每次遇到新坑点必须追加到此；每次开始任务前必须扫描相关条目。
 
 - **Blocking ORM in async**: `ExperienceManager` uses sync SQLAlchemy queries in `async def`, may block the event loop
 - **SQLite FK not enforced by default**: Foreign key constraints need explicit connection parameter
@@ -605,14 +745,32 @@ git commit -m "[Type] 变更描述"
 - **pywinpty 仅 Windows**: POSIX 系统用标准库 `pty`，Windows 用 `pywinpty` 提供 PTY 能力
 - **ACP 会话隔离机制**: 按 `chat_id = f"{user_id}:{session_id}"` 隔离，每个 `(chat_id, agent)` 对应一个 `_Conversation` 实例，模块级 `_acp_services` 字典按 agent 标识索引 service 实例
 - **ACP 硬阻断策略**: `rm -rf /`、`sudo rm -rf`、`mkfs`、`dd if=` 命令子串直接拒绝，不进入用户审批流程
+- **Backend root directory file scatter**: backend 根目录散落了 14+ 个独立脚本（`replace_file.py`、`elevate_script.ps1`、`grant_perm.ps1` 等），这些是一次性迁移辅助脚本，不属于应用代码。后续路线图将统一迁移到 `scripts/` 目录。新增脚本不应放在根目录
+- **SECRET_KEY 已完全废弃**: 使用 `JWT_SECRET_KEY`、`CSRF_SECRET_KEY`、`ENCRYPTION_KEY` 代替
+- **API Key 存储位置**: 使用数据库 `provider_credentials` 表（`enc2:` 前缀），不再使用 `.env` 环境变量
+- **API Key 解密**: 在 provider 连接检查中必须使用 `decrypt_secret_value()` 解密后使用
+- **provider_credential 查询**: 使用 `pricing_manager.get_provider_credential(provider_id)` by name（与 billing routes 一致）
+- **跳过 enc: 旧密文**: 查询 provider credentials 时跳过 `enc:` 前缀的旧密文条目
+- **HTTP 请求头字符集**: 必须只包含 ISO-8859-1 字符（0-255 码点），避免 XMLHttpRequest 失败
+- **WebSocket Origin 校验**: 必须包含 Origin header 校验以防止 CSWSH 攻击
+- **WebSocket token 不走 URL**: token 不能通过 URL query 参数传递，避免在日志/历史/Referer 中泄露
+- **CSRF 必须开启**: 防止跨站请求伪造
+- **Terminal/PTY 会话鉴权**: 必须校验用户所有权，防止 IDOR
+- **ACP 子进程环境变量**: 不能继承所有环境变量，保护 SECRET_KEY 等敏感键
+- **base_url 解析优先级**: 使用 `getattr(config, 'base_url', None)` 修复运算符优先级问题
+- **新 provider 创建约束**: `provider` 字段必须非空，`config_id` 仅更新时需要
 
-## API Path Prefix
+---
+
+## 20. API Path Prefix
 
 All API routes use prefix `settings.API_V1_STR` (`/api`) except MCP, billing, marketplace, security, weixin, tools, subagents, system (diagnostics), and test-scenarios which use their own prefixes. See `main.py` lines 390-417 for the full registration list.
 
-## Key Documentation
+---
 
-- [AGENTS.md](AGENTS.md) — Extended guidelines, pre-commit checklist, git rules
+## 21. Key Documentation
+
+- [AGENTS.md](AGENTS.md) — 通用 AI Agent 规则契约（自主权边界、记忆协议、迭代闭环、反模式）
 - [README.md](README.md) — Project overview, capabilities, quick start
 - [CODE_WIKI.md](CODE_WIKI.md) — Comprehensive code wiki (1500+ lines): six-layer architecture, full module deep-dives, class/function quick reference, dependency graph
 - [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) — Detailed technical documentation
