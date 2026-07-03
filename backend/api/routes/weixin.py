@@ -1097,6 +1097,31 @@ async def _ws_authenticate(token: str) -> Optional[str]:
         db.close()
 
 
+def _validate_ws_origin(origin: Optional[str]) -> bool:
+    """
+    校验 WebSocket 握手 Origin 头，防御 CSWSH（Cross-Site WebSocket Hijacking）攻击。
+
+    攻击场景：恶意页面在用户浏览器中发起 WebSocket 连接，浏览器会自动携带 Cookie。
+    若服务端不校验 Origin，恶意页面可冒充用户建立 WebSocket 通道。
+    本服务采用 query 参数 token 鉴权，但仍校验 Origin 作为深度防御：
+    若 Origin 不在白名单内（或为空），拒绝握手。
+    """
+    if not origin:
+        # 缺失 Origin 头的连接（如非浏览器客户端）按需放行：
+        # 这里选择拒绝，强制浏览器来源符合白名单；非浏览器客户端可显式注入白名单 Origin
+        return False
+    # 复用 CORS 白名单：与 HTTP 同源策略保持一致
+    from main import ALLOWED_ORIGINS
+    if origin in ALLOWED_ORIGINS:
+        return True
+    # 局域网跨域访问（ALLOW_LAN_ACCESS=true 时允许）
+    import re as _re
+    from main import ALLOW_LAN_ORIGIN_REGEX
+    if ALLOW_LAN_ORIGIN_REGEX and _re.match(ALLOW_LAN_ORIGIN_REGEX, origin):
+        return True
+    return False
+
+
 @router.websocket("/ws")
 async def weixin_ws_endpoint(
     websocket: WebSocket,
@@ -1119,6 +1144,13 @@ async def weixin_ws_endpoint(
         "timestamp": "..."
     }
     """
+    # CSWSH 防护：握手前校验 Origin，禁止跨站 WebSocket 连接
+    request_origin = websocket.headers.get("origin")
+    if not _validate_ws_origin(request_origin):
+        # 握手阶段未 accept，直接 close 不会被浏览器看到，但能阻断恶意连接
+        await websocket.close(code=4003, reason="Origin not allowed")
+        return
+
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return

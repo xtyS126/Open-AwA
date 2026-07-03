@@ -5,7 +5,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'node:path'
 import log from 'electron-log'
-import { createMainWindow, getMainWindow } from './window'
+import { createMainWindow, getMainWindow, installSecurityHeaders } from './window'
 import { registerAllIpcHandlers } from './ipc'
 import { setupMenu } from './menu'
 import { setupTray, destroyTray } from './tray'
@@ -48,6 +48,9 @@ if (!gotTheLock) {
   })
 
   app.whenReady().then(() => {
+    // 在创建任何 BrowserWindow 之前，先为默认 session 注入安全响应头（CSP 等）
+    installSecurityHeaders()
+
     // 注册所有 IPC 处理器
     registerAllIpcHandlers()
 

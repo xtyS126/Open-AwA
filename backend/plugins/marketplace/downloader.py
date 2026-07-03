@@ -2,11 +2,13 @@
 插件市场远端下载器。
 
 负责从远端仓库下载插件包，执行 SHA256 校验，并安全解压到目标目录。
-遵循后端规范：超时控制、路径穿越防护、文件大小限制。
+遵循后端规范：超时控制、路径穿越防护、文件大小限制、SSRF 防护。
 """
 import hashlib
+import ipaddress
 import os
 import shutil
+import socket
 import zipfile
 from pathlib import Path
 from typing import Optional, Tuple
@@ -21,7 +23,28 @@ DOWNLOAD_TIMEOUT_SECONDS = 60
 DOWNLOAD_CHUNK_SIZE = 8192
 
 # 允许的下载协议白名单
-ALLOWED_DOWNLOAD_SCHEMES = {"https", "http"}
+ALLOWED_DOWNLOAD_SCHEMES = {"https"}
+
+# SSRF 防护：禁止解析到私有/内部网段的域名
+# 包含：回环、私有、链路本地、未分配、组播、保留地址
+_BLOCKED_NETWORKS = (
+    ipaddress.ip_network("0.0.0.0/8"),          # 当前网络
+    ipaddress.ip_network("10.0.0.0/8"),         # 私有
+    ipaddress.ip_network("127.0.0.0/8"),        # 回环
+    ipaddress.ip_network("169.254.0.0/16"),     # 链路本地（含云元数据 169.254.169.254）
+    ipaddress.ip_network("172.16.0.0/12"),      # 私有
+    ipaddress.ip_network("192.0.0.0/24"),       # IETF 协议分配
+    ipaddress.ip_network("192.0.2.0/24"),       # TEST-NET-1
+    ipaddress.ip_network("192.168.0.0/16"),     # 私有
+    ipaddress.ip_network("198.18.0.0/15"),      # 网络基准测试
+    ipaddress.ip_network("198.51.100.0/24"),    # TEST-NET-2
+    ipaddress.ip_network("203.0.113.0/24"),     # TEST-NET-3
+    ipaddress.ip_network("224.0.0.0/4"),        # 组播
+    ipaddress.ip_network("240.0.0.0/4"),        # 保留
+    ipaddress.ip_network("::1/128"),            # IPv6 回环
+    ipaddress.ip_network("fc00::/7"),           # IPv6 唯一本地
+    ipaddress.ip_network("fe80::/10"),          # IPv6 链路本地
+)
 
 
 class DownloadError(Exception):
@@ -40,13 +63,66 @@ class DownloadSecurityError(DownloadError):
     """下载源或内容安全违规异常。"""
 
 
+def _is_blocked_ip(ip: str) -> bool:
+    """检查 IP 是否属于被拦截的私网/内部网段。"""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True  # 非 IP 格式（理论上不会进到这里），保守拦截
+    for network in _BLOCKED_NETWORKS:
+        if addr in network:
+            return True
+    return False
+
+
 def _validate_download_url(url: str) -> None:
-    """校验下载 URL 的合法性与安全性。"""
+    """
+    校验下载 URL 的合法性与安全性。
+
+    SSRF 防护策略：
+    1. 仅允许 HTTPS 协议（防止明文中间人篡改插件包）
+    2. 必须有域名
+    3. 解析域名所有 A/AAAA 记录，若任一解析到私网/回环/链路本地/保留地址则拒绝
+       （防止攻击者控制 DNS 指向内部服务，如 169.254.169.254 云元数据）
+    4. 拒绝直接以 IP 形式访问的私网地址
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ALLOWED_DOWNLOAD_SCHEMES:
-        raise DownloadSecurityError(f"不允许的下载协议: {parsed.scheme}")
+        raise DownloadSecurityError(f"不允许的下载协议: {parsed.scheme}（仅允许 https）")
     if not parsed.netloc:
         raise DownloadSecurityError("下载 URL 缺少域名")
+
+    hostname = parsed.hostname or ""
+    if not hostname:
+        raise DownloadSecurityError("下载 URL 缺少主机名")
+
+    # 若 hostname 本身就是 IP，直接校验
+    try:
+        ipaddress.ip_address(hostname)
+        if _is_blocked_ip(hostname):
+            raise DownloadSecurityError(f"下载 URL 指向被拦截的 IP 地址: {hostname}")
+        return
+    except ValueError:
+        pass  # 不是 IP，按域名处理
+
+    # 解析域名所有 A/AAAA 记录，任一为私网则拒绝
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise DownloadSecurityError(f"下载 URL 域名解析失败: {hostname} ({exc})") from exc
+
+    if not infos:
+        raise DownloadSecurityError(f"下载 URL 域名无可用解析: {hostname}")
+
+    for info in infos:
+        ip = info[4][0]
+        # IPv6 地址可能带 zone id（如 fe80::1%eth0），剥离后再校验
+        if "%" in ip:
+            ip = ip.split("%", 1)[0]
+        if _is_blocked_ip(ip):
+            raise DownloadSecurityError(
+                f"下载 URL 域名 {hostname} 解析到被拦截的内部地址 {ip}（SSRF 防护）"
+            )
 
 
 def _validate_zip_member(member_path: str, target_dir: Path) -> Path:

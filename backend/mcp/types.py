@@ -89,6 +89,9 @@ class MCPServerConfig(BaseModel):
     env: Optional[Dict[str, str]] = Field(default_factory=dict, description="环境变量")
     transport_type: TransportType = Field(default=TransportType.STDIO, description="传输类型")
     url: Optional[str] = Field(None, description="SSE 模式下的远程服务器地址")
+    # 安全：归属用户 ID，用于多用户隔离，防止 IDOR 跨用户访问他人 MCP Server
+    # 旧配置文件可能缺少此字段，向后兼容默认为 None（路由层会拒绝 None 与具体 ID 的混用）
+    owner_user_id: Optional[str] = Field(None, description="归属用户 ID，用于多用户隔离")
 
 
 class MCPToolCallRequest(BaseModel):

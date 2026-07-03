@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,14 +34,67 @@ from acp_host import get_acp_service
 from acp_host.core import ACPConfigurationError, ACPSessionError
 from acp_host.agents import discover_agents, is_agent_available
 from api.dependencies import get_current_user
+from config.settings import settings
 from db.models import User
 
 
 router = APIRouter(prefix="/api/acp", tags=["acp"])
 
 
-# 允许作为 cwd 的根目录白名单（与 terminal.py 保持一致：当前工作目录及其下级子目录）
-_ALLOWED_WORKSPACE_ROOTS: List[str] = [os.path.abspath(os.getcwd())]
+def _resolve_allowed_workdirs() -> List[str]:
+    """从 settings.ACP_ALLOWED_WORKDIRS 解析允许的工作目录白名单。
+
+    安全策略：
+    1. 不再使用动态的 os.getcwd() 作为白名单，避免任意用户指定任意路径作为子进程 cwd
+    2. 默认锚定到 backend/workspace 目录（项目相对路径解析为绝对路径）
+    3. 自动创建不存在的白名单根目录，避免首次启动时校验失败
+    4. 配置项支持逗号分隔的多个绝对路径
+
+    Returns:
+        归一化为绝对路径的白名单列表。
+    """
+    # backend 目录绝对路径，作为相对路径配置项的锚点
+    backend_dir = Path(__file__).resolve().parents[2]
+
+    raw_value = (settings.ACP_ALLOWED_WORKDIRS or "").strip()
+    if not raw_value:
+        # 默认白名单：backend/workspace 目录
+        default_dirs = [str(backend_dir / "workspace")]
+    else:
+        # 配置项按逗号分隔，过滤空字符串
+        default_dirs = [p.strip() for p in raw_value.split(",") if p.strip()]
+
+    # 归一化为绝对路径并去重，保留插入顺序
+    resolved: List[str] = []
+    seen: set[str] = set()
+    for candidate in default_dirs:
+        try:
+            abs_path = str(Path(candidate).resolve())
+        except (OSError, ValueError) as exc:
+            logger.warning(f"ACP_ALLOWED_WORKDIRS 配置项解析失败: {candidate}, 错误: {exc}")
+            continue
+        if abs_path in seen:
+            continue
+        seen.add(abs_path)
+        resolved.append(abs_path)
+
+    if not resolved:
+        # 兜底：所有配置项均无效时使用 backend/workspace
+        resolved.append(str(backend_dir / "workspace"))
+
+    # 自动创建不存在的白名单根目录，避免首次启动校验失败
+    for workdir in resolved:
+        try:
+            Path(workdir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning(f"ACP 工作目录创建失败: {workdir}, 错误: {exc}")
+
+    return resolved
+
+
+# 允许作为 cwd 的根目录白名单（基于 settings.ACP_ALLOWED_WORKDIRS 配置，默认 backend/workspace）
+# 不再使用动态的 os.getcwd()，避免任意用户指定任意路径作为子进程工作目录
+_ALLOWED_WORKSPACE_ROOTS: List[str] = _resolve_allowed_workdirs()
 
 
 # 会话元数据：以 (user_id, session_id) 为键
@@ -109,7 +161,10 @@ def _add_acp_session(user_id: str, session_id: str, meta: Dict[str, Any]) -> Non
 def _validate_cwd(cwd: Optional[str]) -> str:
     """校验 cwd 路径必须位于允许的工作区根目录内。
 
-    复制自 terminal.py 的 _validate_cwd 实现，避免跨路由模块导入副作用。
+    安全策略：
+    1. cwd 为空时返回白名单首个根目录（不再使用动态 os.getcwd()）
+    2. 严格使用 Path.resolve() + relative_to() 校验，防止符号链接与路径穿越绕过
+    3. 不在白名单内则抛 HTTPException(400)，阻止子进程访问受保护文件
 
     Args:
         cwd: 用户传入的工作目录参数。
@@ -121,7 +176,8 @@ def _validate_cwd(cwd: Optional[str]) -> str:
         HTTPException: 400 当 cwd 为空字符串、路径无效或越权时。
     """
     if not cwd:
-        return os.getcwd()
+        # 默认使用白名单首个根目录，避免依赖动态 os.getcwd()
+        return _ALLOWED_WORKSPACE_ROOTS[0]
 
     cwd_str = cwd.strip()
     if not cwd_str:
@@ -135,13 +191,14 @@ def _validate_cwd(cwd: Optional[str]) -> str:
 
     for root in _ALLOWED_WORKSPACE_ROOTS:
         try:
+            # 严格校验：使用 relative_to 确保 cwd_path 是 root 的下级子目录
             cwd_path.relative_to(Path(root).resolve())
             return str(cwd_path)
         except ValueError:
             continue
 
     logger.warning(f"cwd 路径越权: {cwd_str} 不在允许的工作区内")
-    raise HTTPException(status_code=400, detail="cwd 路径不在允许的工作区内")
+    raise HTTPException(status_code=400, detail="工作目录不在允许列表内")
 
 
 # ==================== 请求/响应 Schema ====================

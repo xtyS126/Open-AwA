@@ -4,6 +4,13 @@
  * 导入顺序：tokens.css → global.css → 各组件 CSS 模块
  */
 
+/*
+ * SEC-15: Google Fonts 通过 CSS @import 引入，配合 CSP 限制（style-src 'self' 'unsafe-inline' https://fonts.googleapis.com；
+ * font-src 'self' https://fonts.gstatic.com）减少 CDN 投毒面。
+ * 长期方案应改为自托管 woff2 字体文件并加 SRI 校验，避免任何外部 CDN 依赖。
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
   /* ============================================================
    * 颜色体系 — 语义色板（从 global.css 抽取集中管理）

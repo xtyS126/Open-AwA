@@ -113,22 +113,27 @@ def _resolve_allow_origin_regex() -> Optional[str]:
     当环境变量 ALLOW_LAN_ACCESS=true 时，返回匹配私有网段 IP 的正则表达式，
     使局域网内设备（手机/平板/桌面等）可通过本机 IP 访问后端服务，实现多端互通。
 
-    匹配范围：
-      - localhost / 127.0.0.1
-      - 10.0.0.0/8
-      - 172.16.0.0/12
-      - 192.168.0.0/16
-    支持 http/https 协议与任意端口。
+    安全策略（SEC-21）：
+      CORS 同时启用 allow_credentials=True 时，宽松的 LAN 正则会放大
+      DNS rebinding 与同网段恶意站点攻击的风险，因此正则仅匹配常见的
+      家庭/办公网段，避免覆盖整个 RFC 1918 私有地址空间。
+
+    匹配范围（收紧后）：
+      - localhost / 127.0.0.1：本地回环，用于开发与 HMR
+      - 192.168.0.0/24、192.168.1.0/24：常见家庭路由器默认网段
+    不再覆盖 10.0.0.0/8、172.16.0.0/12 与完整 192.168.0.0/16，
+    如需访问其他网段，请通过 ALLOWED_ORIGINS 显式配置具体 origin。
+    支持 http/https 协议与任意端口，格式严格为 http(s)://host(:port)。
     未开启时返回 None，仅依赖显式白名单 ALLOWED_ORIGINS。
     """
     if os.getenv("ALLOW_LAN_ACCESS", "").lower() != "true":
         return None
+    # 仅允许本地回环与最常见的家庭网段，避免与 allow_credentials=True 组合
+    # 时形成跨域凭据泄露面；其他网段需通过 ALLOWED_ORIGINS 显式白名单
     return (
         r"^https?://("
         r"localhost|127\.0\.0\.1|"
-        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
-        r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
-        r"192\.168\.\d{1,3}\.\d{1,3}"
+        r"192\.168\.(0|1)\.\d{1,3}"
         r")(:\d+)?$"
     )
 
@@ -911,21 +916,17 @@ async def csrf_protection_middleware(request: Request, call_next):
         return await call_next(request)
 
     # 对 Bearer token 认证的请求进行 CSRF 豁免判断：
-    # 仅对 API Key Bearer token 豁免 CSRF 验证（API Key 不依赖 Cookie，无 CSRF 攻击面）。
-    # JWT Bearer token 请求必须携带 X-CSRF-Token，因为 JWT 可能通过 Cookie 传递，存在 CSRF 风险。
+    # 安全策略：仅当请求未携带任何 Cookie 时才豁免 CSRF 校验。
+    # 原因：CSRF 攻击依赖浏览器自动携带 Cookie，若请求无 Cookie，则 CSRF 无攻击面。
+    # 不再尝试通过格式检测区分 JWT / API Key（旧的 JWT 格式检测可被构造绕过，
+    # 例如构造 3 段含非 base64 字符的 Bearer token 即可被判定为 "API Key" 而绕过 CSRF）。
+    # 若请求同时携带 Cookie（可能存在基于 Cookie 的会话），即使有 Bearer header 也继续校验 CSRF。
     auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        bearer_token = auth_header[7:].strip()
-        # JWT 格式：三段 base64 用 "." 连接（header.payload.signature）
-        # API Key 格式：任意字符串，不符合 JWT 格式
-        is_jwt = bearer_token.count(".") == 2 and all(
-            part.replace("-", "").replace("_", "").isalnum()
-            for part in bearer_token.split(".")
-        )
-        if not is_jwt:
-            # 非 JWT 格式的 Bearer token 视为 API Key，豁免 CSRF 验证
-            return await call_next(request)
-        # JWT Bearer token 不豁免，继续执行 CSRF 校验
+    has_cookie = bool(request.headers.get("cookie", ""))
+    if auth_header.startswith("Bearer ") and not has_cookie:
+        # 纯 Bearer 认证（无 Cookie），CSRF 无攻击面，豁免校验
+        return await call_next(request)
+    # 其余情况（无 Authorization、或同时携带 Cookie）继续走下面的 CSRF 校验流程
 
     if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
         header_token = request.headers.get(_CSRF_HEADER_NAME, "")
@@ -1101,19 +1102,12 @@ app.add_middleware(
 )
 
 # Content-Security-Policy 中间件 — 添加安全头防止 XSS 和数据注入攻击
-@app.middleware("http")
-async def _add_csp_header(request: Request, call_next):
-    """
-    为所有响应添加 Content-Security-Policy 头。
-    CSP 作为 XSS 攻击的第二道防线，在默认 React 转义基础上提供额外保护。
-    script-src 禁止 unsafe-inline，通过 Trusted Types + nonce 方案防御 XSS。
-    style-src 在调试模式下保留 unsafe-inline 以兼容 React 热更新样式注入。
-    """
-    response = await call_next(request)
-    # 调试模式下 React 开发服务器需要内联样式注入；脚本内联始终禁止
+# 预生成 CSP 字符串缓存，避免每个请求重新拼接字符串（性能优化）
+def _build_csp_header() -> str:
+    """根据 DEBUG_MODE 构建 CSP 头字符串，启动时调用一次缓存。"""
     _debug = os.getenv("DEBUG_MODE", "").lower() == "true"
     style_src = "'self' 'unsafe-inline' https://fonts.googleapis.com" if _debug else "'self' https://fonts.googleapis.com"
-    response.headers["Content-Security-Policy"] = (
+    return (
         "default-src 'self'; "
         f"script-src 'self'; "
         f"style-src {style_src}; "
@@ -1127,6 +1121,23 @@ async def _add_csp_header(request: Request, call_next):
         "base-uri 'self'; "
         "form-action 'self'"
     )
+
+
+_CSP_HEADER_VALUE = _build_csp_header()
+
+
+@app.middleware("http")
+async def _add_csp_header(request: Request, call_next):
+    """
+    为所有响应添加 Content-Security-Policy 头。
+    CSP 作为 XSS 攻击的第二道防线，在默认 React 转义基础上提供额外保护。
+    script-src 禁止 unsafe-inline，通过 Trusted Types + nonce 方案防御 XSS。
+    style-src 在调试模式下保留 unsafe-inline 以兼容 React 热更新样式注入。
+
+    性能：CSP 字符串在启动时预生成并缓存，避免每个请求重复拼接。
+    """
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP_HEADER_VALUE
     return response
 
 # Rate Limiting 配置
@@ -1241,11 +1252,59 @@ app.include_router(search_config.router)  # [NEW] Task 9: 搜索配置路由
 # 构建 messages，无需在 lifespan 中显式注册内置角色 Agent。
 # Orchestrator 单例由 api/routes/discussions.py 的 _get_orchestrator() 懒加载初始化。
 
-# 挂载用户头像静态文件目录
+# 用户头像静态文件目录
+# 安全：原使用 StaticFiles 挂载允许任意访问 /api/user/avatar/<任意文件名>，
+# 攻击者可枚举其他用户头像文件名（{user_id}_{timestamp}.ext）下载他人头像。
+# 改为自定义认证路由，校验文件名归属后才返回内容。
 from pathlib import Path as FsPath
 _avatars_dir = FsPath("uploads/avatars")
 _avatars_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/api/user/avatar", StaticFiles(directory=str(_avatars_dir)), name="user_avatar")
+
+
+@app.get("/api/user/avatar/{filename}")
+async def serve_user_avatar(
+    filename: str,
+    current_user=Depends(get_current_user),
+):
+    """
+    安全：返回当前用户自己的头像文件。
+    - 校验 filename 必须以 "{current_user.id}_" 开头，防止跨用户读取他人头像
+    - 路径穿越防护：解析后必须仍在 _avatars_dir 内
+    - 仅返回 jpg/png 图片文件
+    """
+    from fastapi.responses import FileResponse, JSONResponse
+
+    # 文件名基础校验：不允许路径分隔符、空字节等
+    if not filename or "/" in filename or "\\" in filename or "\x00" in filename:
+        return JSONResponse({"detail": "非法文件名"}, status_code=400)
+
+    # 归属校验：文件名必须以 "{current_user.id}_" 开头
+    expected_prefix = f"{current_user.id}_"
+    if not filename.startswith(expected_prefix):
+        # 越权访问他人头像，统一返回 404 避免泄露存在性
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    # 后缀白名单
+    lower_name = filename.lower()
+    if not (lower_name.endswith(".jpg") or lower_name.endswith(".jpeg") or lower_name.endswith(".png")):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    # 路径穿越防护：解析后必须仍在 _avatars_dir 内
+    target_path = (_avatars_dir / filename).resolve()
+    try:
+        target_path.relative_to(_avatars_dir.resolve())
+    except ValueError:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    if not target_path.is_file():
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    # 根据扩展名确定 MIME
+    if lower_name.endswith(".png"):
+        media_type = "image/png"
+    else:
+        media_type = "image/jpeg"
+    return FileResponse(str(target_path), media_type=media_type)
 
 # ---- 前端静态文件服务（生产模式）----
 _project_root = FsPath(__file__).resolve().parent.parent
@@ -1318,14 +1377,19 @@ async def metrics(current_user = Depends(get_current_user)):
 
 
 @app.get("/api/endpoints")
-async def list_endpoints(request: Request):
+async def list_endpoints(request: Request, current_user=Depends(get_current_user)):
     """
     服务发现端点，返回后端所有可用服务入口清单。
 
     供多端客户端（Web/移动端/桌面端）在连接前动态获取服务拓扑，
     包括 WebSocket、SSE、REST 端点路径与特性开关。
-    无需认证，便于客户端在建立会话前完成服务发现。
+    安全：完整服务拓扑会暴露内部 API 结构，攻击者可据此规划针对性攻击，
+    因此仅允许已认证的管理员用户访问，普通用户无法获取该清单。
     """
+    # 仅管理员可查看完整 API 拓扑，防止未授权用户枚举服务入口
+    if current_user.role != "admin":
+        raise FastAPIHTTPException(status_code=403, detail="仅管理员可查看 API 拓扑")
+
     scheme = request.url.scheme
     host = request.url.netloc
     ws_scheme = "wss" if scheme == "https" else "ws"

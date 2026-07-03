@@ -1,11 +1,64 @@
 /**
  * 窗口创建与管理
  */
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, session } from 'electron'
 import path from 'node:path'
 import log from 'electron-log'
 import { IPC_CHANNELS } from '../shared/ipc-channels'
 import { getWindowBounds, setWindowBounds, getIsMaximized, setIsMaximized } from '../shared/config-store'
+
+/**
+ * 为默认 session 注入 Content-Security-Policy 等安全响应头。
+ *
+ * 安全策略：
+ * - default-src 'self'：默认仅允许同源资源
+ * - script-src 'self'：禁止内联脚本与外部脚本，防御 XSS
+ * - style-src 'self' 'unsafe-inline'：允许内联样式（React/Vite 需要）
+ * - connect-src：限制可连接的源，包含本地后端与 HMR
+ * - object-src 'none'：禁止 Flash/Plugin
+ * - base-uri 'self'：禁止 <base> 标签劫持
+ *
+ * 该方法在 app ready 后、窗口创建前调用一次，对所有 BrowserWindow 生效。
+ */
+export function installSecurityHeaders(): void {
+  // 生产模式 CSP（最严格）：禁用 unsafe-inline、禁用外部连接（除本地后端）
+  const isDev = !!process.env.OPENAWA_FRONTEND_URL
+  const styleSrc = isDev
+    ? "'self' 'unsafe-inline' https://fonts.googleapis.com"
+    : "'self' https://fonts.googleapis.com"
+  const connectSrc = isDev
+    ? "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*"
+    : "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*"
+
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self'`,
+    `style-src ${styleSrc}`,
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https:",
+    `connect-src ${connectSrc}`,
+    "frame-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ')
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+        'X-Content-Type-Options': ['nosniff'],
+        'X-Frame-Options': ['SAMEORIGIN'],
+        'Referrer-Policy': ['strict-origin-when-cross-origin'],
+      },
+    })
+  })
+
+  // 禁用 Webview（防止任意 webview 标签打开外部内容）
+  // 已通过 webPreferences 关闭 webviewTag，这里再次确保
+  log.info('安全响应头已注入（CSP/X-Content-Type-Options/X-Frame-Options）')
+}
 
 /** 主窗口引用 */
 let mainWindow: BrowserWindow | null = null
@@ -106,7 +159,47 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // 安全加固：显式启用 webSecurity（同源策略）、禁用 insecure content
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      // 禁用 webview 标签（防止任意嵌入外部页面）
+      webviewTag: false,
     },
+  })
+
+  // 导航防护：仅允许同源导航，拒绝跳转到外部 URL
+  // 防止恶意页面通过 window.location 或 <a target="_blank"> 将用户引导至钓鱼站点
+  win.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = win.webContents.getURL()
+    try {
+      const current = new URL(currentUrl)
+      const target = new URL(url)
+      // 仅允许同源导航
+      if (target.origin !== current.origin) {
+        event.preventDefault()
+        log.warning(`阻止导航到外部 URL: ${url}`)
+      }
+    } catch {
+      event.preventDefault()
+      log.warning(`阻止非法 URL 导航: ${url}`)
+    }
+  })
+
+  // 外部链接默认在系统浏览器打开，而不是在应用窗口内导航
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const currentUrl = win.webContents.getURL()
+    try {
+      const current = new URL(currentUrl)
+      const target = new URL(url)
+      if (target.origin !== current.origin) {
+        // 外部链接：交给系统浏览器
+        require('electron').shell.openExternal(url)
+        return { action: 'deny' }
+      }
+    } catch {
+      return { action: 'deny' }
+    }
+    return { action: 'allow' }
   })
 
   // 最大化状态恢复

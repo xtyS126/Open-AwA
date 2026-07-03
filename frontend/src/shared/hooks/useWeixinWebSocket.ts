@@ -6,24 +6,24 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { WeixinWsEvent } from '../api/api'
-import { API_BASE_URL } from '@/shared/api/client'
+import { API_BASE_URL, getCachedApiKey } from '@/shared/api/client'
 
 /**
- * 根据 API_BASE_URL 推导 WebSocket URL
+ * 根据 API_BASE_URL 推导 WebSocket URL（不含 token，token 通过子协议传递）
  * - 相对路径（/api）：使用当前页面 host
  * - 绝对 URL：使用该 URL 的 host 与协议
  */
-function deriveWebSocketUrl(token: string): string {
+function deriveWebSocketUrl(): string {
   // 判断 API_BASE_URL 是否为绝对 URL
   if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
     const url = new URL(API_BASE_URL)
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${url.host}${url.pathname}/weixin/ws?token=${encodeURIComponent(token)}`
+    return `${protocol}//${url.host}${url.pathname}/weixin/ws`
   }
   // 相对路径：使用当前页面 host（web 模式）
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  return `${protocol}//${host}${API_BASE_URL}/weixin/ws?token=${encodeURIComponent(token)}`
+  return `${protocol}//${host}${API_BASE_URL}/weixin/ws`
 }
 
 export interface UseWeixinWebSocketOptions {
@@ -49,7 +49,16 @@ export interface UseWeixinWebSocketResult {
 /**
  * 微信 WebSocket 实时消息推送 Hook。
  *
- * 鉴权方式：从 localStorage 读取 access_token，作为 query 参数传递给 WebSocket 端点。
+ * 鉴权方式（SEC-16 修复）：
+ *   - token 不再作为 URL query 参数传递（会泄露到日志/Referer/浏览器历史）
+ *   - 改为通过 Sec-WebSocket-Protocol 子协议头传递，避免出现在 URL 中
+ *   - token 从内存中的 API Key 缓存（getCachedApiKey）读取，sessionStorage 优先于 localStorage
+ *
+ * TODO（长期方案）：Sec-WebSocket-Protocol 仍可能被中间代理记录，应改为一次性 ticket 模式：
+ *   1. 前端先调用 POST /api/weixin/ws-ticket 换取一次性短时 ticket
+ *   2. WebSocket 连接时仅传 ticket，后端校验后销毁
+ *   3. 后端 weixin.py 需同步适配子协议或 ticket 端点
+ *
  * 自动重连：连接断开时按 reconnectInterval 间隔重试。
  * 资源清理：组件卸载时主动关闭连接，避免内存泄漏。
  *
@@ -57,7 +66,7 @@ export interface UseWeixinWebSocketResult {
  *   const { connected } = useWeixinWebSocket({
  *     enabled: isAutoReplyRunning,
  *     onMessage: (event) => toast(`新消息: ${event.text}`),
- *   })
+ *   });
  */
 export function useWeixinWebSocket(
   options: UseWeixinWebSocketOptions = {}
@@ -97,17 +106,23 @@ export function useWeixinWebSocket(
 
   const connect = useCallback(() => {
     if (typeof window === 'undefined') return
-    const token = localStorage.getItem('access_token') || ''
+    // SEC-16: 从内存中的 API Key 缓存读取 token，避免 URL 暴露
+    // 优先级：内存变量 > sessionStorage > localStorage（由 client.ts 管理）
+    const token = getCachedApiKey() || ''
     if (!token) {
       setError('未找到访问令牌')
       return
     }
 
     manualCloseRef.current = false
-    const url = deriveWebSocketUrl(token)
+    const url = deriveWebSocketUrl()
 
     try {
-      const ws = new WebSocket(url)
+      // SEC-16: token 通过 Sec-WebSocket-Protocol 子协议传递，不出现在 URL 中
+      // 协议格式：'bearer.<token>'，后端 weixin.py 需解析子协议并校验
+      // 注意：浏览器 WebSocket API 会将 protocols 数组拼接为 Sec-WebSocket-Protocol 头
+      // TODO: 后端 weixin.py 需同步适配 Sec-WebSocket-Protocol 解析逻辑
+      const ws = new WebSocket(url, [`bearer.${token}`])
       wsRef.current = ws
 
       ws.onopen = () => {

@@ -213,6 +213,36 @@ BLOCKED_PATTERNS = [
     _CHAIN_RISKY_SUFFIX,   # 串联到危险命令（如 curl|bash, wget && 执行等）
     r'\\x[0-9a-fA-F]{2}', # 十六进制编码绕过
     r'base64\s.*-d',       # base64 解码绕过
+    # === SEC-20 增强：解释器内联执行绕过防护 ===
+    # 安全策略：黑名单基于命令名完整匹配，可被解释器 -c/-e/-i 等参数绕过，
+    # 因此对解释器内联执行模式单独拦截，避免 python -c 'os.system("rm -rf /")' 等攻击
+    # Python 内联代码执行：python/python3 + -c/-i 后跟任意代码（-i 可单独出现在行尾）
+    r'\bpython[0-9]?\s+(-c|-i)\b',
+    # Python 模块方式执行危险模块：python -m <危险模块>
+    r'\bpython[0-9]?\s+-m\s+(subprocess|pty|code|codeop|pdb|IPython|shutil)',
+    # Node.js 内联代码执行：node + -e/--eval/-p/--print 后跟任意代码
+    r'\bnode\s+(-e|--eval|-p|--print)\s',
+    # Node.js 通过 -r/--require 加载 child_process 模块
+    r'\bnode\s+(-r|--require)\s+\S*child_process',
+    # 任意 shell + -c 组合执行内联命令（bash -c, sh -c, zsh -c, dash -c, /bin/sh -c 等）
+    r'(^|[\s/])(bash|sh|zsh|dash|ksh|csh|tcsh)\s+-c\b',
+    # === SEC-20 增强：危险调用 API 模式 ===
+    # 直接调用执行任意命令的系统接口，通常出现在解释器内联代码中
+    r'\beval\s',                # shell eval 命令（执行字符串作为命令）
+    r'\bexec\s*\(',             # Python/JS exec() 调用
+    r'\bsubprocess\.',          # Python subprocess 模块引用
+    r'\bos\.system\s*\(',       # Python os.system() 调用
+    r'\bos\.popen\s*\(',        # Python os.popen() 调用
+    r'\bos\.exec\w*\s*\(',      # Python os.exec* 系列调用
+    r'\bchild_process\b',       # Node.js child_process 模块引用
+    r"require\s*\(\s*['\"]child_process['\"]\s*\)",  # Node.js require('child_process')
+    r'\bspawn\s*\(',            # Node.js spawn() 调用
+    r'\bexecSync\s*\(',         # Node.js execSync() 调用
+    r'\bexecFile\s*\(',         # Node.js execFile() 调用
+    # === SEC-20 增强：环境变量绕过防护 ===
+    # 通过 $IFS、${...} 等环境变量构造绕过黑名单的命令
+    r'\$IFS',                   # IFS 变量绕过空格过滤
+    r'\$\(\s*\{',               # $({ 命令替换变体
 ]
 
 

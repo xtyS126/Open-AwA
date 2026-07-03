@@ -3,6 +3,7 @@
  * 提供语音合成、声音复刻、音色库等功能的前端 API 调用。
  */
 import api from '@/shared/api/api'
+import { getCachedApiKey } from '@/shared/api/client'
 
 export interface TTSRequest {
   text: string
@@ -69,7 +70,10 @@ export const ttsApi = {
     onError: (error: string) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const token = document.cookie.match(/access_token=([^;]+)/)?.[1] || ''
+    // SEC-17: token 从内存中的 API Key 缓存读取，不再从 document.cookie 读取
+    // 安全考虑：document.cookie 可被 XSS 脚本窃取，内存变量仅运行时存在
+    // 优先级：内存变量 > sessionStorage > localStorage（由 client.ts 管理）
+    const token = getCachedApiKey() || ''
     const response = await fetch(`/api${API_BASE}/synthesize/stream`, {
       method: 'POST',
       headers: {

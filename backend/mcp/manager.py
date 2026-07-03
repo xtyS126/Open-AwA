@@ -61,17 +61,26 @@ class MCPManager:
         # 启动时尝试从持久化配置恢复
         self._restore_from_persistent_config()
 
-    def add_server(self, config: MCPServerConfig, server_id: Optional[str] = None) -> str:
+    def add_server(
+        self,
+        config: MCPServerConfig,
+        server_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+    ) -> str:
         """
         添加 MCP Server 配置并持久化。
         使用 memoize 连接模式创建客户端（key = server_id + config JSON 哈希）。
 
         :param config: 服务器配置
         :param server_id: 可选的自定义 ID，未指定则自动生成
+        :param owner_user_id: 归属用户 ID，用于多用户隔离；非 None 时写入 config.owner_user_id
         :return: 分配的 server_id
         """
         if server_id is None:
             server_id = str(uuid.uuid4())
+        # 安全：将 owner_user_id 绑定到 config，持久化时一同写入文件
+        if owner_user_id is not None:
+            config = config.model_copy(update={"owner_user_id": owner_user_id})
         # 通过 memoize 函数创建客户端，相同 config 在 TTL 内复用同一实例
         cache_key = _make_connection_key(server_id, config)
         config_json = json.dumps(config.model_dump(), sort_keys=True)
@@ -82,9 +91,32 @@ class MCPManager:
         # 持久化到配置文件
         self._config_store.set_server(server_id, config.model_dump())
         logger.bind(module="mcp.manager", event="server_added").info(
-            f"添加 MCP Server: {config.name} (ID: {server_id})"
+            f"添加 MCP Server: {config.name} (ID: {server_id}, owner_user_id={owner_user_id})"
         )
         return server_id
+
+    def get_server_owner(self, server_id: str) -> Optional[str]:
+        """
+        安全：获取指定 MCP Server 的归属用户 ID。
+        用于路由层做 IDOR 校验，确保用户只能操作自己的 Server。
+        :return: 归属用户 ID；不存在返回 None；旧配置无 owner_user_id 字段也返回 None
+        """
+        with self._lock:
+            config = self._configs.get(server_id)
+        if config is None:
+            return None
+        return config.owner_user_id
+
+    def list_servers_for_user(self, user_id: str) -> List[str]:
+        """
+        安全：列出指定用户拥有的所有 server_id。
+        旧配置（owner_user_id=None）不计入任何用户，仅管理员可清理（暂不开放）。
+        """
+        with self._lock:
+            return [
+                sid for sid, cfg in self._configs.items()
+                if cfg.owner_user_id == user_id
+            ]
 
     def remove_server(self, server_id: str) -> None:
         """

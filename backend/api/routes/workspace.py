@@ -1,6 +1,10 @@
 """
 工作区管理 API 路由。
 提供多智能体工作区的 CRUD 和配置管理接口。
+
+安全说明：
+- 所有端点强制注入 current_user，校验工作区归属
+- 不允许跨用户操作工作区（IDOR 防护）
 """
 from typing import Optional
 
@@ -8,11 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from api.dependencies import get_current_user
 from core.workspace.manager import WorkspaceManager
 from core.soul_state import SoulStateManager
-from db.models import get_db
+from db.models import User, get_db
 
-router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
+router = APIRouter(
+    prefix="/api/workspaces",
+    tags=["workspaces"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ---- Request/Response Schemas ----

@@ -167,6 +167,11 @@ class Settings(BaseSettings):
     # 受信代理 IP/CIDR 列表，用逗号分隔。仅来自这些代理的 X-Forwarded-For / X-Real-IP 头会被信任。
     # 默认信任本地回环和私有地址段（适用于单机部署和 Docker 网络）。
     TRUSTED_PROXIES: str = "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+    # ACP/Terminal 子进程允许的工作目录白名单（逗号分隔的绝对路径）。
+    # 安全策略：避免任意用户指定任意路径作为子进程 cwd，从而访问受保护文件。
+    # 默认锚定到 backend/workspace 目录；可在 .env 通过 ACP_ALLOWED_WORKDIRS=path1,path2 覆盖。
+    ACP_ALLOWED_WORKDIRS: str = ""
     
     LOG_LEVEL: str = "INFO"
     LOG_SERIALIZE: bool = True
@@ -247,29 +252,38 @@ class Settings(BaseSettings):
 
         if is_production_environment(environment):
             # 生产环境：三个密钥各自独立校验，互不影响
+            # 安全策略：默认 fail-fast，拒绝使用自动生成的不稳定密钥启动生产服务。
+            # 原因：自动生成的一次性密钥在重启后失效，会导致所有已签发 JWT/CSRF token 失效、
+            # 已加密的 API Key 无法解密，且掩盖了运维未配置密钥的严重事故。
+            # 若需紧急启动（如临时回滚），显式设置 ALLOW_AUTO_GENERATED_SECRETS=true。
+            allow_auto = os.getenv("ALLOW_AUTO_GENERATED_SECRETS", "").lower() == "true"
+            missing_keys: list[str] = []
             if not self.JWT_SECRET_KEY or len(self.JWT_SECRET_KEY) < 32:
-                object.__setattr__(self, "JWT_SECRET_KEY", secrets.token_urlsafe(64))
-                logger.critical(
-                    "生产环境未显式配置 JWT_SECRET_KEY 或密钥过短，已生成一次性随机密钥。"
-                    "该密钥重启后失效，已签发的 JWT token 将全部失效。"
-                    "请尽快显式设置 JWT_SECRET_KEY 环境变量（长度 >= 32）。"
-                )
+                missing_keys.append("JWT_SECRET_KEY")
             if not self.CSRF_SECRET_KEY or len(self.CSRF_SECRET_KEY) < 32:
-                object.__setattr__(self, "CSRF_SECRET_KEY", secrets.token_urlsafe(64))
-                logger.critical(
-                    "生产环境未显式配置 CSRF_SECRET_KEY 或密钥过短，已生成一次性随机密钥。"
-                    "该密钥重启后失效，已签发的 CSRF token 将全部失效。"
-                    "请尽快显式设置 CSRF_SECRET_KEY 环境变量（长度 >= 32）。"
-                )
+                missing_keys.append("CSRF_SECRET_KEY")
             if not self.ENCRYPTION_KEY or len(self.ENCRYPTION_KEY) < 32:
-                # 延迟导入避免模块加载阶段对 cryptography 的强依赖
-                from cryptography.fernet import Fernet
-                object.__setattr__(self, "ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
-                logger.critical(
-                    "生产环境未显式配置 ENCRYPTION_KEY 或密钥过短，已生成一次性随机密钥。"
-                    "该密钥重启后失效，已加密的 API Key 将无法解密。"
-                    "请尽快显式设置 ENCRYPTION_KEY 环境变量（base64-urlsafe 32 字节）。"
+                missing_keys.append("ENCRYPTION_KEY")
+
+            if missing_keys:
+                msg = (
+                    f"生产环境缺少或长度不足（< 32）的密钥: {', '.join(missing_keys)}。"
+                    "请显式设置对应环境变量。如需紧急启动，可设置 ALLOW_AUTO_GENERATED_SECRETS=true "
+                    "（不推荐，重启后所有 token 与加密数据将失效）。"
                 )
+                if allow_auto:
+                    logger.critical(msg + " 已检测到 ALLOW_AUTO_GENERATED_SECRETS=true，将生成一次性随机密钥启动。")
+                    # 延迟导入避免模块加载阶段对 cryptography 的强依赖
+                    from cryptography.fernet import Fernet
+                    if "JWT_SECRET_KEY" in missing_keys:
+                        object.__setattr__(self, "JWT_SECRET_KEY", secrets.token_urlsafe(64))
+                    if "CSRF_SECRET_KEY" in missing_keys:
+                        object.__setattr__(self, "CSRF_SECRET_KEY", secrets.token_urlsafe(64))
+                    if "ENCRYPTION_KEY" in missing_keys:
+                        object.__setattr__(self, "ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+                else:
+                    # 默认拒绝启动，强制运维显式配置密钥
+                    raise RuntimeError(msg)
         else:
             # 开发环境：保证服务可启动，使用可预测默认值便于联调
             if not self.JWT_SECRET_KEY:

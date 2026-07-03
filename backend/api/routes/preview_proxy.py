@@ -4,21 +4,35 @@
 
 将前端本地开发服务器（如 Vite 5173、Next 3000）的响应透传给客户端，
 便于在统一域名下访问预览页面。仅允许代理到 127.0.0.1，避免 SSRF 风险。
+
+安全控制：
+1. 强制认证（Depends(get_current_user)），防止未认证 SSRF
+2. 端口白名单：仅允许已知本地开发服务器端口，禁止代理到后端自身（8000）和数据库等内部服务
+3. 仅在非生产环境启用，生产环境直接 404
 """
 
 from __future__ import annotations
 
+import os
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-router = APIRouter(prefix="/api/preview", tags=["preview"])
+from api.dependencies import get_current_user
+from config.settings import is_production_environment, settings
 
-# 允许的端口范围（避免代理到特权端口或非法端口）
-_MIN_PORT = 1024
-_MAX_PORT = 65535
+router = APIRouter(
+    prefix="/api/preview",
+    tags=["preview"],
+    dependencies=[Depends(get_current_user)],
+)
+
+# 允许代理的本地开发服务器端口白名单（防止 SSRF 探测内部服务）
+# 5173: Vite 默认端口；3000: Next.js 默认端口；4173: Vite preview 端口
+_ALLOWED_PREVIEW_PORTS = frozenset({5173, 4173, 3000, 8080})
 
 # 固定目标主机，禁止用户传入
 _TARGET_HOST = "127.0.0.1"
@@ -37,13 +51,19 @@ _HOP_BY_HOP_HEADERS = frozenset(
     }
 )
 
+# 生产环境禁用预览代理（防止公网部署被滥用为 SSRF 跳板）
+if is_production_environment(settings.ENVIRONMENT):
+    _PREVIEW_ENABLED = False
+else:
+    _PREVIEW_ENABLED = os.getenv("ENABLE_PREVIEW_PROXY", "true").lower() == "true"
+
 
 def _validate_port(port: int) -> None:
-    """校验端口范围，防止代理到特权端口或非法端口。"""
-    if port < _MIN_PORT or port > _MAX_PORT:
+    """校验端口必须在白名单内，防止代理到非预期内部服务（SSRF 防护）。"""
+    if port not in _ALLOWED_PREVIEW_PORTS:
         raise HTTPException(
             status_code=400,
-            detail=f"port must be between {_MIN_PORT} and {_MAX_PORT}, got {port}",
+            detail=f"preview proxy only allows ports {sorted(_ALLOWED_PREVIEW_PORTS)}, got {port}",
         )
 
 
@@ -71,10 +91,16 @@ async def proxy_to_local(
     """
     反向代理到本地开发服务器 http://127.0.0.1:{port}/{path}。
 
-    - port 必须在 1024-65535 范围内
+    - 需要认证（router 级 Depends 已强制）
+    - port 必须在白名单内（5173/4173/3000/8080）
+    - 生产环境直接 404
     - 目标主机固定为 127.0.0.1，不接受用户传入
     - 透传响应状态码、headers、body
     """
+    # 生产环境完全禁用预览代理
+    if not _PREVIEW_ENABLED:
+        raise HTTPException(status_code=404, detail="preview proxy disabled in production")
+
     _validate_port(port)
 
     target_url = _build_target_url(port, path, request.url.query)

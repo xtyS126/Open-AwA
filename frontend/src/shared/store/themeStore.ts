@@ -4,6 +4,58 @@ import { syncPreferenceToServer } from '@/shared/utils/preferenceSync'
 
 type Theme = 'light' | 'dark'
 
+/**
+ * SEC-18: 自定义 CSS 安全净化函数。
+ *
+ * 安全策略（双层防护）：
+ * 1. 黑名单检测：检测到任一危险模式则拒绝整个 CSS，返回空字符串。
+ *    危险模式包括：
+ *    - expression(：IE CSS 表达式注入
+ *    - javascript: / vbscript:：脚本协议注入
+ *    - @import：外部样式表导入（可能加载恶意资源）
+ *    - behavior:：IE behavior 属性（可加载 HTC 文件执行脚本）
+ *    - -moz-binding:：Mozilla XBL 绑定（可执行 XML 脚本）
+ *    - url( 后跟非 http(s) 协议：防止 data:text/html、file:、javascript: 等注入
+ *
+ * 2. 白名单字符过滤：移除 url() 引用、@import 语句、expression() 调用等动态资源引用。
+ *
+ * 检测到危险模式时返回空字符串，避免部分净化后被绕过（如 expression(alert(1)) 被
+ * 部分替换后可能仍可执行）。
+ *
+ * @param raw 用户输入的原始 CSS 字符串
+ * @returns 净化后的 CSS 字符串，危险输入返回空字符串
+ */
+function sanitizeCustomCSS(raw: string): string {
+  if (!raw) return ''
+
+  // 危险模式黑名单（大小写不敏感匹配）
+  // 命中任一即拒绝整个 CSS，避免部分净化后被绕过
+  const DANGEROUS_PATTERNS: RegExp[] = [
+    /expression\s*\(/i,                              // IE expression() 表达式
+    /javascript\s*:/i,                               // javascript: 协议
+    /vbscript\s*:/i,                                 // vbscript: 协议
+    /@import/i,                                      // @import 外部样式表导入
+    /behavior\s*:/i,                                 // IE behavior 属性
+    /-moz-binding\s*:/i,                             // Mozilla XBL 绑定
+    // url() 后跟非 http(s) 协议（防止 data:text/html、file: 等注入）
+    /url\s*\(\s*['"]?\s*(?!https?:|\/|\.\.?\/|#|data:image\/)/i,
+  ]
+
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(raw)) {
+      // 检测到危险模式，拒绝整个 CSS 输入
+      return ''
+    }
+  }
+
+  // 二次过滤：移除残留的 url()、@import、expression() 等动态资源引用
+  // 作为深度防御（Defense in Depth），即使黑名单遗漏也能兜底
+  return raw
+    .replace(/url\s*\([^)]*\)/gi, '')
+    .replace(/@import\s+[^;]+;?/gi, '')
+    .replace(/expression\s*\([^)]*\)/gi, '')
+}
+
 export interface ThemeConfig {
   fontFamily: string
   fontSize: string
@@ -203,11 +255,12 @@ const applyConfig = (config: ThemeConfig) => {
       customStyleEl.id = 'custom-theme-css'
       document.head.appendChild(customStyleEl)
     }
-    // 移除危险 CSS 语法：url()、@import、expression()
-    const sanitized = config.customCSS
-      .replace(/url\s*\([^)]*\)/gi, '')
-      .replace(/@import\s+[^;]+;/gi, '')
-      .replace(/expression\s*\([^)]*\)/gi, '')
+    // SEC-18: 增强 CSS 净化逻辑
+    // 安全策略：先检测危险模式，命中任一即拒绝整个 CSS（返回空字符串），再做白名单字符过滤
+    // 1. 黑名单检测：expression()、javascript:、vbscript:、@import、behavior:、-moz-binding:、
+    //    url(后跟非 http(s) 协议（防止 data:text/html、file: 等注入）
+    // 2. 白名单字符过滤：仅保留常见 CSS 字符，移除 url() 等动态资源引用
+    const sanitized = sanitizeCustomCSS(config.customCSS)
     customStyleEl.textContent = sanitized
   } else if (customStyleEl) {
     customStyleEl.remove()

@@ -3,11 +3,12 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
+import time
 from datetime import datetime, timezone
 import json
-from typing import Optional
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -23,6 +24,14 @@ from db.models import User
 
 
 router = APIRouter(prefix="/logs", tags=["System Logs"])
+
+
+# 客户端错误上报速率限制：基于内存计数器实现，每 IP 每分钟最多上报次数
+# 注：未认证端点暴露给匿名用户，必须限制速率以防止磁盘耗尽 DoS
+_CLIENT_ERROR_RATE_LIMIT = 30
+_CLIENT_ERROR_WINDOW_SECONDS = 60
+# IP -> 该 IP 在窗口期内的时间戳列表
+_client_error_timestamps: Dict[str, List[float]] = {}
 
 
 @router.get("")
@@ -192,18 +201,20 @@ async def download_log_file(
 
 class ClientErrorReport(BaseModel):
     """前端错误上报数据模型"""
-    level: str = "error"
-    message: str
-    source: str = ""
-    stack: str = ""
-    url: str = ""
-    user_agent: str = ""
-    timestamp: str = ""
+    # SEC-19: 所有字符串字段必须限制最大长度，防止未认证用户注入超长字符串导致磁盘耗尽
+    level: str = Field(default="error", max_length=20)
+    message: str = Field(..., max_length=5000)
+    source: str = Field(default="", max_length=500)
+    stack: str = Field(default="", max_length=20000)
+    url: str = Field(default="", max_length=2000)
+    user_agent: str = Field(default="", max_length=500)
+    timestamp: str = Field(default="", max_length=100)
     extra: dict = Field(default_factory=dict)
 
 
 @router.post("/client-errors")
 async def report_client_error(
+    request: Request,
     report: ClientErrorReport,
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -212,6 +223,30 @@ async def report_client_error(
     使前端的 console.error 级别错误也能在后端日志中查看和分析。
     未登录用户也可上报错误，user_id 为 None。
     """
+    # SEC-19: 基于 client IP 的速率限制，防止未认证用户高频上报导致磁盘耗尽
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window = _CLIENT_ERROR_WINDOW_SECONDS
+    timestamps = _client_error_timestamps.get(client_ip, [])
+    # 清理超出时间窗口的过期时间戳
+    timestamps = [ts for ts in timestamps if now - ts < window]
+    if len(timestamps) >= _CLIENT_ERROR_RATE_LIMIT:
+        logger.bind(
+            event="client_error_rate_limited",
+            module="logs",
+            client_ip=client_ip,
+        ).warning(f"客户端错误上报被速率限制: {client_ip}")
+        raise HTTPException(status_code=429, detail="错误上报过于频繁，请稍后再试")
+    timestamps.append(now)
+    _client_error_timestamps[client_ip] = timestamps
+
+    # SEC-19: 限制 extra 字段序列化后字节数，防止超大字典导致日志膨胀
+    extra_bytes = len(
+        json.dumps(report.extra, ensure_ascii=False, default=str).encode("utf-8")
+    )
+    if extra_bytes > 10000:
+        raise HTTPException(status_code=413, detail="extra 字段过大")
+
     level_name = str(report.level or "ERROR").strip().upper() or "ERROR"
     if level_name not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         level_name = "ERROR"

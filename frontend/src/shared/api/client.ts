@@ -11,7 +11,7 @@
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { appLogger, generateRequestId, setCurrentRequestId } from '@/shared/utils/logger'
-import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
+import { safeGetItem, safeSetItem, safeSessionGetItem, safeSessionSetItem } from '@/shared/utils/safeStorage'
 
 export type RetriableApiRequest = InternalAxiosRequestConfig & {
   _apiKeyRetried?: boolean
@@ -20,6 +20,29 @@ export type RetriableApiRequest = InternalAxiosRequestConfig & {
 
 // 替换原有的：const API_BASE_URL = '/api'
 const BACKEND_URL_STORAGE_KEY = 'openawa_backend_url'
+
+/**
+ * 校验后端 URL 是否为合法的 http(s) URL，防止 XSS 利用 setBackendUrl
+ * 将所有 API 请求（含 Authorization header）劫持到恶意服务器。
+ *
+ * 安全策略：
+ * 1. 必须是 http: 或 https: 协议
+ * 2. 必须有 host
+ * 3. 默认相对路径 '/api' 放行（走 Vite proxy 或同源反向代理）
+ * 4. 拒绝 javascript: / data: / file: 等危险协议
+ */
+function isValidBackendUrl(url: string): boolean {
+  // 默认相对路径放行（同源代理）
+  if (url === '/api' || url === '') {
+    return true
+  }
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 /**
  * 动态解析后端 baseURL
@@ -33,7 +56,7 @@ function resolveBaseURL(): string {
   // 优先级 2：用户在设置页配置的远程后端
   if (typeof window !== 'undefined') {
     const stored = window.localStorage.getItem(BACKEND_URL_STORAGE_KEY)
-    if (stored) {
+    if (stored && isValidBackendUrl(stored)) {
       return stored
     }
   }
@@ -46,35 +69,57 @@ export const API_BASE_URL = resolveBaseURL()
 /**
  * 设置后端 URL 并持久化到 localStorage
  * 同步更新 axios 实例 baseURL，运行时立即生效
+ *
+ * 安全：校验 URL 必须为 http(s) 协议，防止 XSS 将请求劫持到恶意源
  */
 export function setBackendUrl(url: string): void {
-  const normalizedUrl = url.trim() || '/api'
-  api.defaults.baseURL = normalizedUrl
+  const trimmed = url.trim() || '/api'
+  if (!isValidBackendUrl(trimmed)) {
+    appLogger.error({
+      event: 'invalid_backend_url_rejected',
+      module: 'api',
+      status: 'failure',
+      message: '拒绝设置非法后端 URL（必须为 http/https 协议或相对路径 /api）',
+      extra: { url: trimmed },
+    })
+    return
+  }
+  api.defaults.baseURL = trimmed
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, normalizedUrl)
+    window.localStorage.setItem(BACKEND_URL_STORAGE_KEY, trimmed)
   }
 }
 
 const API_KEY_STORAGE_KEY = 'openawa_api_key'
 
-// 模块级内存变量，作为 API Key 的主要运行时存储
-// （AVOID localStorage 到内存的读取路径，仅在验证成功后持久化）
-let _inMemoryApiKey = safeGetItem(API_KEY_STORAGE_KEY, '')
+/**
+ * API Key 存储策略：
+ * 优先使用 sessionStorage（页面关闭后自动清除），降低 XSS 窃取后的持久化风险。
+ * 若 sessionStorage 不可用（如旧版浏览器或隐私模式），降级到 localStorage。
+ *
+ * 安全考虑：
+ * - sessionStorage 仅在当前标签页存活，关闭即清除，缩小了 XSS 攻击的窗口期
+ * - 跨标签页登录需重新输入，是安全/UX 的折中
+ * - 内存变量 _inMemoryApiKey 是运行时主要读取路径，避免每个请求访问 Storage
+ */
+let _inMemoryApiKey = safeSessionGetItem(API_KEY_STORAGE_KEY, '') || safeGetItem(API_KEY_STORAGE_KEY, '')
 
-/** 获取当前有效的 API Key（优先内存，降级 localStorage） */
+/** 获取当前有效的 API Key（优先内存，降级 sessionStorage/localStorage） */
 export const getCachedApiKey = (): string => {
   if (_inMemoryApiKey) {
     return _inMemoryApiKey
   }
-  // 降级：从 localStorage 恢复（仅页面首次加载时触发）
-  _inMemoryApiKey = safeGetItem(API_KEY_STORAGE_KEY, '')
+  // 降级：从 sessionStorage 恢复，再降级到 localStorage（仅页面首次加载时触发）
+  _inMemoryApiKey = safeSessionGetItem(API_KEY_STORAGE_KEY, '') || safeGetItem(API_KEY_STORAGE_KEY, '')
   return _inMemoryApiKey
 }
 
-/** 将 API Key 持久化到 localStorage 并更新内存缓存（仅在验证成功后调用） */
+/** 将 API Key 持久化到 sessionStorage 并更新内存缓存（仅在验证成功后调用） */
 export const persistApiKey = (key: string): void => {
   _inMemoryApiKey = key
-  safeSetItem(API_KEY_STORAGE_KEY, key)
+  // 优先写入 sessionStorage；同时清理 localStorage 中的旧值避免残留
+  safeSessionSetItem(API_KEY_STORAGE_KEY, key)
+  safeSetItem(API_KEY_STORAGE_KEY, '')
 }
 
 /** 临时设置 API Key 到内存（用于验证，验证成功后再调用 persistApiKey 持久化） */
@@ -85,6 +130,7 @@ export const setTempApiKey = (key: string): void => {
 /** 清除所有存储中的 API Key */
 export const clearCachedApiKey = (): void => {
   _inMemoryApiKey = ''
+  safeSessionSetItem(API_KEY_STORAGE_KEY, '')
   safeSetItem(API_KEY_STORAGE_KEY, '')
 }
 
