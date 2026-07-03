@@ -26,29 +26,41 @@ interface ChatMessageProps {
   onUndo?: (operationId: string) => Promise<void>
 }
 
-type GroupedSegment = 
+type GroupedSegment =
   | { kind: 'thought_group', id: string, segments: AssistantThoughtSegmentData[] }
   | AssistantReplySegment
 
 function groupAssistantSegments(segments: AssistantMessageSegment[]): GroupedSegment[] {
-  // 将所有 thought 段合并到一个分组置于顶部，reply 段按原顺序排在后面
-  // 避免思维链与回复交替穿插，提升可读性
-  const thoughtSegments: AssistantThoughtSegmentData[] = []
-  const replySegments: AssistantReplySegment[] = []
+  // 按时间顺序交织显示：连续的 thought 段合并为一个分组，reply 段独立显示
+  // 实现 思维链1 → 回复1 → 调用 → 思维链2 → 回复2 的自然顺序
+  const result: GroupedSegment[] = []
+  let currentThoughtBatch: AssistantThoughtSegmentData[] = []
 
   for (const segment of segments) {
     if (segment.kind === 'thought') {
-      thoughtSegments.push(segment)
+      currentThoughtBatch.push(segment)
     } else {
-      replySegments.push(segment)
+      // 遇到 reply 段：先 flush 已累积的 thought 分组
+      if (currentThoughtBatch.length > 0) {
+        result.push({
+          kind: 'thought_group',
+          id: `group-${currentThoughtBatch[0].id}`,
+          segments: currentThoughtBatch,
+        })
+        currentThoughtBatch = []
+      }
+      result.push(segment)
     }
   }
 
-  const result: GroupedSegment[] = []
-  if (thoughtSegments.length > 0) {
-    result.push({ kind: 'thought_group', id: `group-${thoughtSegments[0].id}`, segments: thoughtSegments })
+  // 末尾可能仍有未 flush 的 thought 段（如以思维链结束的情况）
+  if (currentThoughtBatch.length > 0) {
+    result.push({
+      kind: 'thought_group',
+      id: `group-${currentThoughtBatch[0].id}`,
+      segments: currentThoughtBatch,
+    })
   }
-  result.push(...replySegments)
 
   return result
 }
