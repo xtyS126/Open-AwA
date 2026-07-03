@@ -116,11 +116,14 @@ def _build_safe_env(agent_env: dict[str, str]) -> dict[str, str]:
     return safe_env
 
 
-def _kill_process_tree(pid: int) -> None:
-    """递归 kill 进程树（跨平台）。
+def _kill_process_tree_sync(pid: int) -> None:
+    """递归 kill 进程树（跨平台，同步实现）。
 
     优先使用 psutil 遍历子进程并 kill；psutil 不可用时回退到 POSIX 的
     os.kill(SIGTERM) 或 Windows 的 taskkill 命令。pid 不存在或已退出时静默返回。
+
+    PERF-08: 此函数使用 psutil 递归遍历进程树，可能阻塞事件循环数百毫秒。
+    异步上下文应调用 _kill_process_tree 异步包装版本。
 
     Args:
         pid: 待 kill 的根进程 ID。
@@ -157,6 +160,19 @@ def _kill_process_tree(pid: int) -> None:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, OSError):
             pass
+
+
+async def _kill_process_tree(pid: int) -> None:
+    """递归 kill 进程树的异步包装。
+
+    PERF-08: psutil 递归遍历进程树是同步操作，可能阻塞事件循环数百毫秒。
+    通过 asyncio.to_thread 将同步实现卸载到线程池，避免阻塞事件循环。
+    同步上下文（如 atexit 回调）应直接调用 _kill_process_tree_sync。
+
+    Args:
+        pid: 待 kill 的根进程 ID。
+    """
+    await asyncio.to_thread(_kill_process_tree_sync, pid)
 
 
 @dataclass
@@ -733,7 +749,8 @@ class ACPService:
                 pass
         finally:
             # [Fix #4615] 直接二进制启动的子进程需 kill 整个进程树防止泄露
-            _kill_process_tree(conversation.process.pid)
+            # PERF-08: 使用异步包装避免 psutil 同步遍历阻塞事件循环
+            await _kill_process_tree(conversation.process.pid)
             await conversation.exit_stack.aclose()
 
     @staticmethod

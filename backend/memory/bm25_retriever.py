@@ -20,6 +20,8 @@ class BM25Retriever:
         self._documents: dict[str, str] = {}  # doc_id -> content
         self._doc_lengths: dict[str, int] = {}
         self._avg_doc_length: float = 0.0
+        # 维护文档长度累计和，O(1) 计算平均文档长度，避免每次索引全量求和（原 O(N²) → O(N)）
+        self._total_doc_length_sum: int = 0
         self._term_freqs: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))  # term -> doc_id -> freq
         self._doc_freqs: dict[str, int] = defaultdict(int)  # term -> document count
         self._total_docs: int = 0
@@ -27,11 +29,21 @@ class BM25Retriever:
     def index_document(self, doc_id: str, content: str):
         """
         索引单个文档。
+
+        性能优化：使用增量变量 _total_doc_length_sum 维护文档长度累计和，
+        O(1) 计算 _avg_doc_length，避免每次索引都全量求和导致 O(N²) 退化。
         """
+        # 若 doc_id 已存在，先移除旧文档以保持索引一致性
+        if doc_id in self._documents:
+            self.remove_document(doc_id)
+
         tokens = self._tokenize(content)
+        doc_len = len(tokens)
         self._documents[doc_id] = content
-        self._doc_lengths[doc_id] = len(tokens)
+        self._doc_lengths[doc_id] = doc_len
         self._total_docs += 1
+        # 增量维护总文档长度，O(1)
+        self._total_doc_length_sum += doc_len
 
         seen_terms = set()
         for token in tokens:
@@ -40,7 +52,8 @@ class BM25Retriever:
         for token in seen_terms:
             self._doc_freqs[token] += 1
 
-        self._avg_doc_length = sum(self._doc_lengths.values()) / self._total_docs if self._total_docs > 0 else 0
+        # O(1) 计算平均文档长度
+        self._avg_doc_length = self._total_doc_length_sum / self._total_docs if self._total_docs > 0 else 0
 
     def remove_document(self, doc_id: str):
         """
@@ -52,9 +65,13 @@ class BM25Retriever:
         for token in set(tokens):
             self._term_freqs[token].pop(doc_id, None)
             self._doc_freqs[token] = max(0, self._doc_freqs.get(token, 1) - 1)
-        self._doc_lengths.pop(doc_id, None)
+        # 增量减少总文档长度，O(1)
+        old_len = self._doc_lengths.pop(doc_id, 0)
+        self._total_doc_length_sum = max(0, self._total_doc_length_sum - old_len)
         self._documents.pop(doc_id, None)
         self._total_docs -= 1
+        # 重新计算平均文档长度，O(1)
+        self._avg_doc_length = self._total_doc_length_sum / self._total_docs if self._total_docs > 0 else 0
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
         """
@@ -118,6 +135,7 @@ class BM25Retriever:
         self._documents.clear()
         self._doc_lengths.clear()
         self._avg_doc_length = 0.0
+        self._total_doc_length_sum = 0
         self._term_freqs.clear()
         self._doc_freqs.clear()
         self._total_docs = 0

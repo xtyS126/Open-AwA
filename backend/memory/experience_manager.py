@@ -543,103 +543,144 @@ class ExperienceManager:
         批量归档低质量经验记录（置信度 < 0.2 且已被充分使用）。
         每次调用最多处理 batch_limit 条，避免全量加载导致 OOM。
         调用方可多次调用直至返回 0，表示已无更多待归档记录。
+
+        性能：通过 asyncio.to_thread 包装同步 DB 操作，避免阻塞事件循环。
         """
-        low_quality = self.db.query(ExperienceMemory).filter(
-            and_(
-                ExperienceMemory.confidence < 0.2,
-                ExperienceMemory.usage_count > 20
-            )
-        ).limit(batch_limit).all()
-        
-        archived_count = 0
-        for exp in low_quality:
-            metadata = json.loads(exp.experience_metadata or '{}')
-            metadata['archived'] = True
-            metadata['archived_at'] = datetime.now(timezone.utc).isoformat()
-            exp.experience_metadata = json.dumps(metadata)
-            archived_count += 1
-        
-        self.db.commit()
-        
-        logger.info(f"Archived {archived_count} low-quality experiences")
-        return archived_count
-    
+        return await asyncio.to_thread(self._archive_low_quality_experiences_sync, batch_limit)
+
+    def _archive_low_quality_experiences_sync(self, batch_limit: int = 500) -> int:
+        """同步实现：批量归档低质量经验记录。使用独立会话避免线程安全问题。"""
+        db = self._new_session()
+        try:
+            low_quality = db.query(ExperienceMemory).filter(
+                and_(
+                    ExperienceMemory.confidence < 0.2,
+                    ExperienceMemory.usage_count > 20
+                )
+            ).limit(batch_limit).all()
+
+            archived_count = 0
+            for exp in low_quality:
+                metadata = json.loads(exp.experience_metadata or '{}')
+                metadata['archived'] = True
+                metadata['archived_at'] = datetime.now(timezone.utc).isoformat()
+                exp.experience_metadata = json.dumps(metadata)
+                archived_count += 1
+
+            db.commit()
+            logger.info(f"Archived {archived_count} low-quality experiences")
+            return archived_count
+        finally:
+            db.close()
+
     async def mark_for_review(self, experience_id: int) -> bool:
         """
         处理mark、for、review相关逻辑，并为调用方返回对应结果。
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+
+        性能：通过 asyncio.to_thread 包装同步 DB 操作，避免阻塞事件循环。
         """
-        experience = await self.get_experience_by_id(experience_id)
-        if not experience:
-            return False
-        
-        metadata = json.loads(experience.experience_metadata or '{}')
-        metadata['needs_review'] = True
-        metadata['marked_at'] = datetime.now(timezone.utc).isoformat()
-        experience.experience_metadata = json.dumps(metadata)
-        
-        self.db.commit()
-        
-        return True
-    
+        return await asyncio.to_thread(self._mark_for_review_sync, experience_id)
+
+    def _mark_for_review_sync(self, experience_id: int) -> bool:
+        """同步实现：标记经验为待审核。使用独立会话避免线程安全问题。"""
+        db = self._new_session()
+        try:
+            experience = db.query(ExperienceMemory).filter(
+                ExperienceMemory.id == experience_id
+            ).first()
+            if not experience:
+                return False
+
+            metadata = json.loads(experience.experience_metadata or '{}')
+            metadata['needs_review'] = True
+            metadata['marked_at'] = datetime.now(timezone.utc).isoformat()
+            experience.experience_metadata = json.dumps(metadata)
+
+            db.commit()
+            return True
+        finally:
+            db.close()
+
     async def get_experience_stats(self) -> Dict[str, Any]:
         """
         获取experience、stats相关数据或当前状态。
         调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+
+        性能：通过 asyncio.to_thread 包装同步 DB 操作，避免阻塞事件循环。
         """
-        total = self.db.query(ExperienceMemory).count()
+        return await asyncio.to_thread(self._get_experience_stats_sync)
 
-        experience_types = ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
-        type_counts = {t: 0 for t in experience_types}
-        type_count_results = self.db.query(
-            ExperienceMemory.experience_type,
-            func.count(ExperienceMemory.id)
-        ).filter(
-            ExperienceMemory.experience_type.in_(experience_types)
-        ).group_by(ExperienceMemory.experience_type).all()
-        type_counts.update(dict(type_count_results))
+    def _get_experience_stats_sync(self) -> Dict[str, Any]:
+        """同步实现：聚合统计经验数据。使用独立会话避免线程安全问题。"""
+        db = self._new_session()
+        try:
+            total = db.query(ExperienceMemory).count()
 
-        # 使用 SQL 聚合查询替代全量加载 + Python sum，避免大量经验数据导致 OOM。
-        agg = (
-            self.db.query(
-                func.coalesce(func.avg(ExperienceMemory.confidence), 0.0).label("avg_confidence"),
-                func.coalesce(func.sum(ExperienceMemory.usage_count), 0).label("total_usage"),
-                func.coalesce(func.sum(ExperienceMemory.success_count), 0).label("total_success"),
-            ).first()
-        )
-        avg_confidence = agg.avg_confidence or 0.0
-        total_usage = agg.total_usage or 0
-        total_success = agg.total_success or 0
-        avg_success_rate = total_success / total_usage if total_usage > 0 else 0
+            experience_types = ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
+            type_counts = {t: 0 for t in experience_types}
+            type_count_results = db.query(
+                ExperienceMemory.experience_type,
+                func.count(ExperienceMemory.id)
+            ).filter(
+                ExperienceMemory.experience_type.in_(experience_types)
+            ).group_by(ExperienceMemory.experience_type).all()
+            type_counts.update(dict(type_count_results))
 
-        top_experiences = self.db.query(ExperienceMemory).order_by(
-            desc(ExperienceMemory.usage_count)
-        ).limit(5).all()
+            # 使用 SQL 聚合查询替代全量加载 + Python sum，避免大量经验数据导致 OOM。
+            agg = (
+                db.query(
+                    func.coalesce(func.avg(ExperienceMemory.confidence), 0.0).label("avg_confidence"),
+                    func.coalesce(func.sum(ExperienceMemory.usage_count), 0).label("total_usage"),
+                    func.coalesce(func.sum(ExperienceMemory.success_count), 0).label("total_success"),
+                ).first()
+            )
+            avg_confidence = agg.avg_confidence or 0.0
+            total_usage = agg.total_usage or 0
+            total_success = agg.total_success or 0
+            avg_success_rate = total_success / total_usage if total_usage > 0 else 0
 
-        return {
-            'total_experiences': total,
-            'type_distribution': type_counts,
-            'avg_confidence': round(avg_confidence, 2),
-            'avg_success_rate': round(avg_success_rate, 2),
-            'total_usage': total_usage,
-            'total_success': total_success,
-            'top_experiences': [
-                {'id': e.id, 'title': e.title, 'usage_count': e.usage_count}
-                for e in top_experiences
-            ]
-        }
-    
+            top_experiences = db.query(ExperienceMemory).order_by(
+                desc(ExperienceMemory.usage_count)
+            ).limit(5).all()
+
+            return {
+                'total_experiences': total,
+                'type_distribution': type_counts,
+                'avg_confidence': round(avg_confidence, 2),
+                'avg_success_rate': round(avg_success_rate, 2),
+                'total_usage': total_usage,
+                'total_success': total_success,
+                'top_experiences': [
+                    {'id': e.id, 'title': e.title, 'usage_count': e.usage_count}
+                    for e in top_experiences
+                ]
+            }
+        finally:
+            db.close()
+
     async def delete_experience(self, experience_id: int) -> bool:
         """
         删除experience相关对象或持久化记录。
         实现中通常还会同时处理资源释放、状态回收或关联数据清理。
+
+        性能：通过 asyncio.to_thread 包装同步 DB 操作，避免阻塞事件循环。
         """
-        experience = await self.get_experience_by_id(experience_id)
-        if not experience:
-            return False
-        
-        self.db.delete(experience)
-        self.db.commit()
-        
-        logger.info(f"Deleted experience: {experience_id}")
-        return True
+        return await asyncio.to_thread(self._delete_experience_sync, experience_id)
+
+    def _delete_experience_sync(self, experience_id: int) -> bool:
+        """同步实现：删除经验记录。使用独立会话避免线程安全问题。"""
+        db = self._new_session()
+        try:
+            experience = db.query(ExperienceMemory).filter(
+                ExperienceMemory.id == experience_id
+            ).first()
+            if not experience:
+                return False
+
+            db.delete(experience)
+            db.commit()
+            logger.info(f"Deleted experience: {experience_id}")
+            return True
+        finally:
+            db.close()

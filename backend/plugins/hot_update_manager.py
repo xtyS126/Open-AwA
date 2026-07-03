@@ -124,6 +124,10 @@ class RollbackManager:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         self._snapshots: Dict[str, List[Dict[str, Any]]] = {}
+        # PERF-07: 使用 threading.Lock 而非 asyncio.Lock，因为：
+        # 1. RollbackManager 可能被同步代码（如插件加载流程）和异步代码同时调用
+        # 2. 持锁时间极短（仅字典读写与 deepcopy，纳秒~微秒级），不会长时间阻塞事件循环
+        # 3. 改用 asyncio.Lock 会破坏同步调用路径，引入 await 污染所有调用方
         self._lock = threading.Lock()
 
     def save_snapshot(
@@ -234,6 +238,12 @@ class HotUpdateManager:
         阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
         """
         self._slots: Dict[str, Dict[str, Any]] = {}
+        # PERF-07: 使用 threading.Lock 而非 asyncio.Lock，因为：
+        # 1. HotUpdateManager 的 register_initial/resolve_instance/get_status 等方法
+        #    同时被同步代码（PluginManager 加载流程）和异步代码（FastAPI 路由）调用
+        # 2. 持锁时间极短（仅字典读写与 slot 创建，纳秒~微秒级），不阻塞事件循环
+        # 3. 改用 asyncio.Lock 会要求所有调用方变为 async，破坏同步调用路径
+        # 4. prepare_update 中 loader() 调用在锁外执行，不持锁等待 IO
         self._lock = threading.Lock()
         self.rollback_manager = rollback_manager or RollbackManager()
 

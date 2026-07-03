@@ -465,6 +465,34 @@ class MemoryManager:
     async def update_memory_access(self, memory_id: int) -> None:
         await asyncio.to_thread(self._update_memory_access_sync, memory_id)
 
+    def _batch_update_memory_access_sync(self, memory_ids: List[int]) -> None:
+        """
+        批量更新记忆访问记录，单次会话完成全部更新。
+
+        PERF-10: 将 N 次独立的 DB 加载+更新+提交合并为 1 次批量操作，
+        显著减少数据库往返次数（从 N 次降为 1 次）。
+        同时同步 working_memory 与 vector_store 运行时层。
+        """
+        if not memory_ids:
+            return
+        now = datetime.now(timezone.utc)
+        with self.session_factory() as db:
+            memories = (
+                db.query(LongTermMemory)
+                .filter(LongTermMemory.id.in_(memory_ids))
+                .all()
+            )
+            for memory in memories:
+                memory.access_count += 1
+                memory.last_access = now
+                memory.confidence = self._calculate_confidence(memory)
+                memory.quality_score = self._calculate_quality_score(memory)
+            db.commit()
+            # 提交后同步运行时层（working_memory + vector_store），无需额外 DB 查询
+            for memory in memories:
+                db.refresh(memory)
+                self._sync_runtime_layers(memory)
+
     def _search_memories_sync(
         self,
         query: str,
@@ -567,8 +595,12 @@ class MemoryManager:
             reverse=True,
         )
         ranked_memories = [memory for _, memory in combined[:limit]]
-        for memory in ranked_memories:
-            await self.update_memory_access(memory.id)
+        # PERF-10: 批量更新访问记录，将 N 次 DB 调用合并为 1 次批量 UPDATE
+        if ranked_memories:
+            await asyncio.to_thread(
+                self._batch_update_memory_access_sync,
+                [m.id for m in ranked_memories],
+            )
         return ranked_memories
 
     async def auto_search_memories(

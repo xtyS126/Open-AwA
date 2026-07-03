@@ -1,9 +1,14 @@
 """
 后端接口路由模块，负责接收请求、校验输入并协调业务层返回统一响应。
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
+
+性能说明：仅做同步 DB 操作的路由使用 def（非 async def），FastAPI 会自动将其放入
+线程池执行，避免阻塞事件循环。涉及 await 异步调用的路由保持 async def，
+但其内部同步 DB 写入通过 asyncio.to_thread 包装。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any
 from datetime import datetime, timezone
@@ -14,6 +19,7 @@ from api.schemas import (
     ExperienceExtractionRequest
 )
 from memory.experience_manager import ExperienceManager
+import asyncio
 import json
 
 router = APIRouter(prefix="/experiences", tags=["Experience"])
@@ -28,7 +34,7 @@ def get_experience_manager(db: Session = Depends(get_db)) -> ExperienceManager:
 
 
 @router.get("", response_model=List[ExperienceResponse])
-async def get_experiences(
+def get_experiences(
     experience_type: Optional[str] = Query(None, description="经验类型筛选"),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="最低置信度"),
     source_task: Optional[str] = Query(None, description="来源任务筛选"),
@@ -72,7 +78,7 @@ async def get_experiences(
 
 
 @router.get("/{experience_id}", response_model=ExperienceResponse)
-async def get_experience(
+def get_experience(
     experience_id: int,
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
@@ -85,14 +91,14 @@ async def get_experience(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
     ).first()
-    
+
     if not experience:
         raise HTTPException(status_code=404, detail="经验不存在")
-    
+
     experience.usage_count += 1
     experience.last_access = datetime.now(timezone.utc)
     manager.db.commit()
-    
+
     return experience
 
 
@@ -102,7 +108,7 @@ async def get_experience(
     summary="创建经验",
     description="手动创建一条新的经验记录。"
 )
-async def create_experience(
+def create_experience(
     experience_data: ExperienceCreate,
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
@@ -121,11 +127,11 @@ async def create_experience(
         experience_metadata=json.dumps(experience_data.metadata or {}),
         user_id=current_user.id
     )
-    
+
     manager.db.add(experience)
     manager.db.commit()
     manager.db.refresh(experience)
-    
+
     return experience
 
 
@@ -135,7 +141,7 @@ async def create_experience(
     summary="更新经验",
     description="修改指定经验记录的内容、类型、置信度等字段。"
 )
-async def update_experience(
+def update_experience(
     experience_id: int,
     experience_data: ExperienceUpdate,
     manager: ExperienceManager = Depends(get_experience_manager),
@@ -149,15 +155,15 @@ async def update_experience(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
     ).first()
-    
+
     if not experience:
         raise HTTPException(status_code=404, detail="经验不存在")
-    
+
     update_data = experience_data.dict(exclude_unset=True)
     if 'metadata' in update_data and update_data['metadata']:
         update_data['experience_metadata'] = json.dumps(update_data['metadata'])
         del update_data['metadata']
-    
+
     # 白名单限制可更新字段，防止通过 setattr 修改内部属性
     ALLOWED_UPDATE_FIELDS = {
         "title", "content", "confidence", "trigger_conditions",
@@ -167,15 +173,15 @@ async def update_experience(
     for key, value in update_data.items():
         if key in ALLOWED_UPDATE_FIELDS:
             setattr(experience, key, value)
-    
+
     manager.db.commit()
     manager.db.refresh(experience)
-    
+
     return experience
 
 
 @router.delete("/{experience_id}")
-async def delete_experience(
+def delete_experience(
     experience_id: int,
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
@@ -188,13 +194,13 @@ async def delete_experience(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
     ).first()
-    
+
     if not experience:
         raise HTTPException(status_code=404, detail="经验不存在")
-    
+
     manager.db.delete(experience)
     manager.db.commit()
-    
+
     return {"message": "经验已删除"}
 
 
@@ -207,6 +213,8 @@ async def extract_experience(
     """
     处理extract、experience相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+
+    性能：异步调用 extractor；同步 DB 写入通过 asyncio.to_thread 包装避免阻塞事件循环。
     """
     from skills.experience_extractor import ExperienceExtractor
 
@@ -231,7 +239,7 @@ async def extract_experience(
         user_id=current_user.id
     )
     manager.db.add(log)
-    
+
     # 恢复双写机制：将提取的经验同时保存到数据库主表
     try:
         await manager.add_experience(
@@ -248,7 +256,8 @@ async def extract_experience(
         import logging
         logging.getLogger(__name__).error(f"Failed to save extracted experience to DB: {e}")
 
-    manager.db.commit()
+    # 同步 DB commit 放入线程池执行，避免阻塞事件循环
+    await asyncio.to_thread(manager.db.commit)
 
     return {
         "status": "extracted",
@@ -285,9 +294,9 @@ async def search_experiences(
         min_confidence=min_confidence,
         limit=limit
     )
-    
+
     experiences = [e for e in experiences if e.user_id == current_user.id]
-    
+
     return {
         "count": len(experiences),
         "experiences": [
@@ -308,31 +317,52 @@ async def search_experiences(
     summary="获取经验统计",
     description="返回当前用户经验库的数量、类型分布和平均指标。"
 )
-async def get_experience_stats(
+def get_experience_stats(
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
 ):
     """
     获取experience、stats相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+
+    性能：直接 def 路由，FastAPI 自动放入线程池执行同步 DB 操作。
+    使用 SQL 聚合查询替代全量加载 + Python sum，避免大量经验数据导致 OOM。
     """
-    user_experiences = manager.db.query(ExperienceMemory).filter(
+    base_query = manager.db.query(ExperienceMemory).filter(
         ExperienceMemory.user_id == current_user.id
-    ).all()
-    
-    user_stats: dict[str, Any] = {
-        'total_experiences': len(user_experiences),
-        'type_distribution': {},
-        'avg_confidence': sum(e.confidence for e in user_experiences) / len(user_experiences) if user_experiences else 0,
-        'avg_success_rate': sum(e.success_count for e in user_experiences) / max(1, sum(e.usage_count for e in user_experiences))
+    )
+
+    total = base_query.count()
+
+    experience_types = ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']
+    type_count_results = manager.db.query(
+        ExperienceMemory.experience_type,
+        sa_func.count(ExperienceMemory.id)
+    ).filter(
+        ExperienceMemory.user_id == current_user.id,
+        ExperienceMemory.experience_type.in_(experience_types)
+    ).group_by(ExperienceMemory.experience_type).all()
+    type_distribution = {t: 0 for t in experience_types}
+    type_distribution.update(dict(type_count_results))
+
+    agg = (
+        manager.db.query(
+            sa_func.coalesce(sa_func.avg(ExperienceMemory.confidence), 0.0).label("avg_confidence"),
+            sa_func.coalesce(sa_func.sum(ExperienceMemory.usage_count), 0).label("total_usage"),
+            sa_func.coalesce(sa_func.sum(ExperienceMemory.success_count), 0).label("total_success"),
+        ).filter(ExperienceMemory.user_id == current_user.id).first()
+    )
+    avg_confidence = agg.avg_confidence or 0.0
+    total_usage = agg.total_usage or 0
+    total_success = agg.total_success or 0
+    avg_success_rate = total_success / total_usage if total_usage > 0 else 0
+
+    return {
+        'total_experiences': total,
+        'type_distribution': type_distribution,
+        'avg_confidence': round(avg_confidence, 2),
+        'avg_success_rate': round(avg_success_rate, 2),
     }
-    
-    for exp_type in ['strategy', 'method', 'error_pattern', 'tool_usage', 'context_handling']:
-        user_stats['type_distribution'][exp_type] = len([
-            e for e in user_experiences if e.experience_type == exp_type
-        ])
-    
-    return user_stats
 
 
 @router.get(
@@ -340,7 +370,7 @@ async def get_experience_stats(
     summary="获取经验提取日志",
     description="分页返回经验提取过程产生的日志记录。"
 )
-async def get_extraction_logs(
+def get_extraction_logs(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user: User = Depends(get_current_user),
@@ -351,13 +381,13 @@ async def get_extraction_logs(
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
     """
     offset = (page - 1) * limit
-    
+
     logs = db.query(ExperienceExtractionLog).filter(
         ExperienceExtractionLog.user_id == current_user.id
     ).order_by(
         ExperienceExtractionLog.created_at.desc()
     ).offset(offset).limit(limit).all()
-    
+
     return {
         "logs": [
             {
@@ -375,7 +405,7 @@ async def get_extraction_logs(
 
 
 @router.put("/{experience_id}/review")
-async def review_experience(
+def review_experience(
     experience_id: int,
     approved: bool = Query(..., description="是否批准"),
     manager: ExperienceManager = Depends(get_experience_manager),
@@ -389,23 +419,23 @@ async def review_experience(
         ExperienceMemory.id == experience_id,
         ExperienceMemory.user_id == current_user.id
     ).first()
-    
+
     if not experience:
         raise HTTPException(status_code=404, detail="经验不存在")
-    
+
     metadata = json.loads(experience.experience_metadata or '{}')
     metadata['reviewed'] = True
     metadata['approved'] = approved
     metadata['reviewed_at'] = datetime.now(timezone.utc).isoformat()
     experience.experience_metadata = json.dumps(metadata)
-    
+
     if approved:
         experience.confidence = min(1.0, experience.confidence + 0.1)
     else:
         experience.confidence = max(0.0, experience.confidence - 0.2)
-    
+
     manager.db.commit()
-    
+
     return {
         "message": f"经验已{'批准' if approved else '拒绝'}",
         "new_confidence": experience.confidence

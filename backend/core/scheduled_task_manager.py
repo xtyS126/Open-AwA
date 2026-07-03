@@ -432,10 +432,12 @@ class ScheduledTaskManager:
                 from api.routes.inbox import add_task_result_notification
                 title = task_title or scheduled_task.get("title", "未命名任务")
                 summary = (resp_text or "")[:200]
+                # 必须传入 user_id 以正确归属消息，否则收件箱会忽略该通知（IDOR 防护）
                 add_task_result_notification(
                     task_name=title,
                     success=True,
                     summary=summary,
+                    user_id=scheduled_task.get("user_id"),
                 )
             except Exception:
                 pass  # 收件箱推送失败不影响主流程
@@ -482,10 +484,18 @@ class ScheduledTaskManager:
         根据 cron 表达式计算下一次执行时间。
         支持完整 5 字段格式：分 时 日 月 星期
         支持 */N 步长、逗号分隔多值、范围等语法。
-        最多向前查找 31 天。
+
+        PERF-09: 使用逐分钟遍历查找下一次匹配时间。
+        限制最大迭代次数为一年（525600 分钟），超过则返回 None。
+        计算耗时超过 100ms 时记录 warning 日志。
+
+        未来优化方向：引入 croniter 库实现 O(1) 级别的下次时间计算，
+        替代当前的逐分钟遍历方案。croniter 基于日历算法直接推算下一匹配，
+        无需逐分钟试探，对长周期 cron 表达式（如年度任务）性能提升显著。
         """
         if not cron_expression:
             return None
+        import time as _time
         from datetime import timedelta
         parts = cron_expression.strip().split()
         if len(parts) != 5:
@@ -506,8 +516,12 @@ class ScheduledTaskManager:
         now = datetime.now(timezone.utc)
         check = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
-        max_days = 31
-        for _ in range(max_days * 24 * 60):  # 逐分钟遍历
+        # PERF-09: 最大迭代上限为一年的分钟数，防止极端 cron 表达式导致无限遍历
+        MAX_CRON_ITERATIONS = 525600  # 365 * 24 * 60
+        PERF_WARN_THRESHOLD_MS = 100  # 计算耗时超过 100ms 记录 warning
+
+        _start_ts = _time.monotonic()
+        for i in range(MAX_CRON_ITERATIONS):
             # Python weekday(): 0=周一 → cron: 0=周日，需要 +1 取模转换
             weekday = (check.weekday() + 1) % 7
             if (check.minute in target_minutes and
@@ -516,9 +530,33 @@ class ScheduledTaskManager:
                 check.month in target_months and
                 weekday in target_weekdays and
                 check > now):
+                _elapsed_ms = (_time.monotonic() - _start_ts) * 1000
+                if _elapsed_ms > PERF_WARN_THRESHOLD_MS:
+                    logger.bind(
+                        event="cron_calc_slow",
+                        module="scheduled_tasks",
+                        cron_expression=cron_expression,
+                        elapsed_ms=round(_elapsed_ms, 2),
+                        iterations=i + 1,
+                    ).warning(
+                        f"cron 下次执行时间计算耗时 {_elapsed_ms:.1f}ms "
+                        f"(表达式: {cron_expression}, 迭代 {i + 1} 次)"
+                    )
                 return check
             check += timedelta(minutes=1)
 
+        # 超过最大迭代次数仍未找到匹配，返回 None 并记录 warning
+        _elapsed_ms = (_time.monotonic() - _start_ts) * 1000
+        logger.bind(
+            event="cron_calc_exhausted",
+            module="scheduled_tasks",
+            cron_expression=cron_expression,
+            max_iterations=MAX_CRON_ITERATIONS,
+            elapsed_ms=round(_elapsed_ms, 2),
+        ).warning(
+            f"cron 表达式 '{cron_expression}' 在 {MAX_CRON_ITERATIONS} 次迭代内"
+            f"未找到匹配时间，可能为无效表达式或周期超过一年"
+        )
         return None
 
     async def _mark_task_failed(

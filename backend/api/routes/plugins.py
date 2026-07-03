@@ -286,7 +286,7 @@ def _ensure_plugin_discovered(plugin_name: str) -> None:
     summary="获取插件列表",
     description="返回数据库中已登记的插件记录列表，并附带运行时状态信息。支持 limit/offset 分页。"
 )
-async def get_plugins(
+def get_plugins(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
     limit: int = Query(100, ge=1, le=500, description="返回数量上限"),
@@ -310,7 +310,7 @@ async def get_plugins(
     summary="发现可用插件",
     description="扫描插件目录，返回文件系统中发现的所有插件元数据（不依赖数据库）。"
 )
-async def discover_plugins(
+def discover_plugins(
     current_user=Depends(get_current_user)
 ):
     """
@@ -339,7 +339,7 @@ async def discover_plugins(
     summary="获取插件详情",
     description="根据插件 ID 返回对应插件的详细信息。"
 )
-async def get_plugin(
+def get_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -355,7 +355,7 @@ async def get_plugin(
 
 
 @router.post("", response_model=PluginResponse)
-async def install_plugin(
+def install_plugin(
     plugin: PluginCreate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
@@ -405,7 +405,10 @@ async def uninstall_plugin(
     """
     卸载插件：从运行时卸载并删除数据库记录。
     """
-    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    # PERF-05: 同步 DB 查询通过 to_thread 卸载到线程池，避免阻塞事件循环
+    plugin = await asyncio.to_thread(
+        db.query(Plugin).filter(Plugin.id == plugin_id).first
+    )
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
 
@@ -440,9 +443,13 @@ async def uninstall_plugin(
         except Exception as exc:
             logger.warning(f"插件 '{plugin.name}' 运行时卸载失败: {exc}")
 
-    db.delete(plugin)
-    db.commit()
-    
+    # PERF-05: 同步 DB 删除与提交通过 to_thread 卸载到线程池
+    def _delete_and_commit() -> None:
+        db.delete(plugin)
+        db.commit()
+
+    await asyncio.to_thread(_delete_and_commit)
+
     return {"message": "Plugin uninstalled successfully"}
 
 
@@ -459,7 +466,10 @@ async def toggle_plugin(
     """
     切换插件启用/禁用状态，并同步加载或卸载运行时实例。
     """
-    plugin = db.query(Plugin).filter(Plugin.id == plugin_id).first()
+    # PERF-05: 同步 DB 查询通过 to_thread 卸载到线程池，避免阻塞事件循环
+    plugin = await asyncio.to_thread(
+        db.query(Plugin).filter(Plugin.id == plugin_id).first
+    )
     if not plugin:
         raise HTTPException(status_code=404, detail="Plugin not found")
 
@@ -485,8 +495,12 @@ async def toggle_plugin(
             logger.warning(f"审计日志写入失败: {audit_exc}")
         raise HTTPException(status_code=403, detail="内置插件不可卸载或禁用")
 
-    plugin.enabled = not plugin.enabled
-    db.commit()
+    # PERF-05: 同步 DB 状态切换与提交通过 to_thread 卸载到线程池
+    def _toggle_and_commit() -> None:
+        plugin.enabled = not plugin.enabled
+        db.commit()
+
+    await asyncio.to_thread(_toggle_and_commit)
 
     # 同步运行时状态
     pm = _get_plugin_manager()
@@ -518,7 +532,7 @@ async def toggle_plugin(
     summary="更新插件",
     description="更新插件名称、版本、配置或启用状态。"
 )
-async def update_plugin(
+def update_plugin(
     plugin_id: str,
     plugin_update: PluginUpdate,
     db: Session = Depends(get_db),
@@ -554,7 +568,7 @@ async def update_plugin(
     summary="获取插件配置 schema",
     description="读取插件目录中的 schema.json、config.json 与数据库配置，返回动态表单所需数据。",
 )
-async def get_plugin_config_schema(
+def get_plugin_config_schema(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -596,7 +610,7 @@ async def get_plugin_config_schema(
     summary="保存插件配置",
     description="保存插件配置到数据库并持久化到插件目录 config.json。",
 )
-async def save_plugin_config(
+def save_plugin_config(
     plugin_id: str,
     payload: PluginConfigSaveRequest = Body(default_factory=PluginConfigSaveRequest),
     db: Session = Depends(get_db),
@@ -614,7 +628,7 @@ async def save_plugin_config(
     summary="重置插件配置为默认值",
     description="按 schema 默认值重置配置并写入 config.json。",
 )
-async def reset_plugin_config(
+def reset_plugin_config(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
@@ -636,7 +650,7 @@ async def reset_plugin_config(
     summary="导出插件配置",
     description="返回当前生效配置，供前端导出为 JSON 文件。",
 )
-async def export_plugin_config(
+def export_plugin_config(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -711,7 +725,7 @@ def _persist_and_sync_permissions(
 
 
 @router.post("/{plugin_id}/permissions/authorize", response_model=PluginPermissionUpdateResponse)
-async def authorize_plugin_permissions(
+def authorize_plugin_permissions(
     plugin_id: str,
     payload: PluginPermissionUpdateRequest,
     db: Session = Depends(get_db),
@@ -746,7 +760,7 @@ async def authorize_plugin_permissions(
     summary="撤销插件权限",
     description="撤销指定插件的部分或全部已授予权限，变更会持久化到数据库。"
 )
-async def revoke_plugin_permissions(
+def revoke_plugin_permissions(
     plugin_id: str,
     payload: PluginPermissionUpdateRequest,
     db: Session = Depends(get_db),
@@ -776,7 +790,7 @@ async def revoke_plugin_permissions(
 
 
 @router.get("/{plugin_id}/permissions", response_model=PluginPermissionStatus)
-async def get_plugin_permissions(
+def get_plugin_permissions(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -857,7 +871,7 @@ async def execute_plugin(
 
 
 @router.get("/{plugin_id}/tools", response_model=PluginToolsResponse)
-async def get_plugin_tools(
+def get_plugin_tools(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -894,7 +908,7 @@ async def get_plugin_tools(
 
 
 @router.post("/validate", response_model=PluginValidationResult)
-async def validate_plugin(
+def validate_plugin(
     validation_request: PluginValidationRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -996,7 +1010,7 @@ async def upload_plugin(
     temp_dir = None
     moved_dirs = []
     try:
-        plugin_manager = PluginManager()
+        # PERF-04: 使用单例而非直接 PluginManager() 构造，避免重复初始化
         plugins_dir = _get_plugin_manager().plugins_dir
         
         # 先解压到临时目录进行校验
@@ -1093,7 +1107,8 @@ async def import_plugin_from_url(
         raise HTTPException(status_code=400, detail="source_url is required")
 
     try:
-        plugin_manager_instance = PluginManager()
+        # PERF-04: 使用单例而非直接 PluginManager() 构造，避免重复初始化
+        plugin_manager_instance = _get_plugin_manager()
         discovered = await asyncio.to_thread(
             plugin_manager_instance.register_plugin_from_url,
             source_url=source_url,
@@ -1178,7 +1193,7 @@ async def import_plugin_from_url(
 
 
 @router.post("/{plugin_id}/hot-update", response_model=HotUpdateResponse)
-async def hot_update_plugin(
+def hot_update_plugin(
     plugin_id: str,
     payload: HotUpdateRequest,
     db: Session = Depends(get_db),
@@ -1229,7 +1244,7 @@ async def hot_update_plugin(
     summary="回滚插件",
     description="将指定插件回滚到之前的稳定版本。"
 )
-async def rollback_plugin(
+def rollback_plugin(
     plugin_id: str,
     payload: RollbackRequest,
     db: Session = Depends(get_db),
@@ -1267,7 +1282,7 @@ _log_manager = LogManager()
 
 
 @router.get("/{plugin_id}/logs", response_model=PluginLogsResponse)
-async def get_plugin_logs(
+def get_plugin_logs(
     plugin_id: str,
     level: Optional[str] = Query(None, description="按级别过滤: DEBUG/INFO/WARNING/ERROR/CRITICAL"),
     limit: int = Query(100, ge=1, le=500),
@@ -1301,7 +1316,7 @@ async def get_plugin_logs(
     summary="更新插件日志级别",
     description="修改指定插件的日志输出级别。"
 )
-async def update_plugin_log_level(
+def update_plugin_log_level(
     plugin_id: str,
     payload: PluginLogLevelUpdate,
     db: Session = Depends(get_db),
