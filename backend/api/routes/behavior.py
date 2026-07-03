@@ -29,26 +29,22 @@ async def get_behavior_stats(
     import json
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
     
+    # 性能优化：将 3 次独立 COUNT 查询合并为 1 次 GROUP BY 查询
+    # 原实现 3 次往返 DB 各扫一遍索引，合并后单次扫描完成
+    count_rows = db.query(
+        BehaviorLog.action_type,
+        func.count(BehaviorLog.id)
+    ).filter(
+        BehaviorLog.user_id == current_user.id,
+        BehaviorLog.timestamp >= start_date,
+        BehaviorLog.action_type.in_(["llm_call", "tool_usage", "error"])
+    ).group_by(BehaviorLog.action_type).all()
+    counts = {row[0]: row[1] for row in count_rows}
+
     # 所有查询添加用户ID过滤，防止跨用户数据泄露
-    total_interactions = db.query(func.count(BehaviorLog.id)).filter(
-        BehaviorLog.user_id == current_user.id,
-        BehaviorLog.timestamp >= start_date,
-        BehaviorLog.action_type == "llm_call"
-    ).scalar() or 0
-    
-    # 使用COUNT查询代替加载全部记录到内存，提升性能
-    total_tools_used = db.query(func.count(BehaviorLog.id)).filter(
-        BehaviorLog.user_id == current_user.id,
-        BehaviorLog.timestamp >= start_date,
-        BehaviorLog.action_type == "tool_usage"
-    ).scalar() or 0
-    
-    # 错误总数使用COUNT查询
-    total_errors = db.query(func.count(BehaviorLog.id)).filter(
-        BehaviorLog.user_id == current_user.id,
-        BehaviorLog.timestamp >= start_date,
-        BehaviorLog.action_type == "error"
-    ).scalar() or 0
+    total_interactions = counts.get("llm_call", 0)
+    total_tools_used = counts.get("tool_usage", 0)
+    total_errors = counts.get("error", 0)
     
     # 工具使用分布统计 — 使用 SQL GROUP BY 替代 Python 循环分组
     tool_rows = db.query(

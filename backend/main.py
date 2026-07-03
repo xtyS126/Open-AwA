@@ -4,6 +4,7 @@
 """
 
 from contextlib import asynccontextmanager
+import asyncio
 import errno
 import inspect
 import os
@@ -265,7 +266,8 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
 
     # 检查至少有一个模型供应商配置了有效凭据
     with profiler.step("provider_credential_check"):
-        _check_model_provider_availability()
+        # 同步函数包装为 to_thread，避免阻塞事件循环（影响健康检查并发响应）
+        await asyncio.to_thread(_check_model_provider_availability)
 
     # API Key 初始化（未设置时自动生成并持久化到 .env.local）
     with profiler.step("api_key_init"):
@@ -360,7 +362,8 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
             from core.role_engine import RoleEngine
             _preset_db = SessionLocal()
             try:
-                added = RoleEngine.ensure_presets_in_db(_preset_db)
+                # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
+                added = await asyncio.to_thread(RoleEngine.ensure_presets_in_db, _preset_db)
                 if added > 0:
                     logger.bind(event="preset_roles_initialized", module="startup").info(f"初始化 {added} 个预设角色")
             finally:
@@ -376,14 +379,15 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         db = SessionLocal()
         try:
             pricing_manager = PricingManager(db)
-            pricing_manager.ensure_configuration_schema()
-            count = pricing_manager.initialize_default_pricing()
+            # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
+            await asyncio.to_thread(pricing_manager.ensure_configuration_schema)
+            count = await asyncio.to_thread(pricing_manager.initialize_default_pricing)
             if count > 0:
                 logger.bind(event="pricing_initialized", module="main", count=count).info("initialized model pricing entries")
-            config_count = pricing_manager.initialize_default_configurations()
+            config_count = await asyncio.to_thread(pricing_manager.initialize_default_configurations)
             if config_count > 0:
                 logger.bind(event="configurations_initialized", module="main", count=config_count).info("initialized default model configurations")
-            removed = pricing_manager.remove_legacy_default_configurations()
+            removed = await asyncio.to_thread(pricing_manager.remove_legacy_default_configurations)
             if removed > 0:
                 logger.bind(event="legacy_pricing_removed", module="main", removed=removed).info("removed legacy default model configurations")
         finally:
@@ -402,7 +406,8 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
         db = SessionLocal()
         try:
             rbac = RBACManager(db)
-            rbac.ensure_built_in_roles()
+            # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
+            await asyncio.to_thread(rbac.ensure_built_in_roles)
         finally:
             db.close()
 
@@ -410,7 +415,8 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
     with profiler.step("owner_user_init"):
         db = SessionLocal()
         try:
-            owner = ensure_owner_user(db)
+            # 同步 DB 调用包装为 to_thread，避免阻塞事件循环
+            owner = await asyncio.to_thread(ensure_owner_user, db)
             # 确保 owner 拥有 admin 角色
             rbac = RBACManager(db)
             await rbac.set_user_role(owner.id, "admin")
@@ -430,14 +436,19 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
 
     with profiler.step("marketplace_discover"):
         from plugins.marketplace.registry import marketplace_registry
-        marketplace_registry.discover_from_plugins_dir(db_session_factory=SessionLocal)
+        # 同步磁盘 I/O + DB 查询包装为 to_thread，避免阻塞事件循环
+        await asyncio.to_thread(
+            marketplace_registry.discover_from_plugins_dir,
+            db_session_factory=SessionLocal
+        )
 
     with profiler.step("plugin_discover"):
         from plugins.plugin_manager import PluginManager
         from plugins import plugin_instance
         plugin_instance.init(PluginManager(db_session_factory=SessionLocal))
         pm = plugin_instance.get()
-        pm.discover_plugins()
+        # 同步磁盘扫描包装为 to_thread
+        await asyncio.to_thread(pm.discover_plugins)
 
     if os.getenv("SKIP_INIT_DB"):
         return
@@ -545,7 +556,8 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
             for p in enabled_plugins:
                 if p.name in pm.plugin_metadata:
                     try:
-                        pm.load_plugin(p.name)
+                        # 同步插件加载（importlib + 初始化）包装为 to_thread，避免阻塞事件循环
+                        await asyncio.to_thread(pm.load_plugin, p.name)
                         logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(
                             f"plugin loaded: {p.name}"
                         )
@@ -608,10 +620,13 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
         from api.services.weixin_auto_reply import get_auto_reply_manager
         db = SessionLocal()
         try:
-            bindings = db.query(WeixinBinding).filter(
-                WeixinBinding.binding_status == "bound",
-                WeixinBinding.auto_start_reply == True
-            ).all()
+            # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
+            def _query_bindings():
+                return db.query(WeixinBinding).filter(
+                    WeixinBinding.binding_status == "bound",
+                    WeixinBinding.auto_start_reply == True
+                ).all()
+            bindings = await asyncio.to_thread(_query_bindings)
             if bindings:
                 manager = get_auto_reply_manager()
                 for binding in bindings:

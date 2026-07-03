@@ -1064,7 +1064,11 @@ class PricingManager:
         }
 
         # 3. 批量加载所有 provider 的 credential 和 configuration，消除循环内 N+1 查询
+        # 性能优化：pricing_data 一次性加载复用，避免在循环内重复读取 JSON 文件（原 N+1 磁盘 I/O）
         result = []
+        pricing_providers_cache: Dict[str, Dict] = {}
+        if include_pricing_data:
+            pricing_providers_cache = self._load_pricing_data_providers()
 
         if db_provider_ids:
             all_creds = self.db.query(ProviderCredential).filter(
@@ -1124,8 +1128,7 @@ class PricingManager:
 
                 # 合并 pricing_data 中的模型列表（补充信息）
                 if include_pricing_data:
-                    pricing_providers = self._load_pricing_data_providers()
-                    pd_entry = pricing_providers.get(provider_id)
+                    pd_entry = pricing_providers_cache.get(provider_id)
                     if pd_entry:
                         entry["models"] = pd_entry["models"]
                         entry["model_count"] = len(pd_entry["models"])
@@ -1140,9 +1143,8 @@ class PricingManager:
 
         # 4. 合并 pricing_data.json 中未在数据库中配置的供应商
         if include_pricing_data:
-            pricing_providers = self._load_pricing_data_providers()
             db_provider_set = set(db_provider_ids)
-            for provider_id, pd_entry in pricing_providers.items():
+            for provider_id, pd_entry in pricing_providers_cache.items():
                 if provider_id in db_provider_set:
                     continue  # 数据库已有，跳过
                 result.append({
