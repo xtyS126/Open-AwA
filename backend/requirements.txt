@@ -1,11 +1,17 @@
-fastapi~=0.109.1
+# FastAPI 升级至 0.115.0+ 修复多个 CVE（DEP-03）
+# 包含 Starlette 路径遍历、DoS 等安全修复
+fastapi>=0.115.0,<0.120.0
+# Starlette 显式约束下限，确保包含 0.40.0 起的安全修复（DEP-03）
+starlette>=0.40.0,<0.42.0
 uvicorn[standard]==0.27.0
 sqlalchemy==2.0.25
 pydantic>=2.6.0,<3.0.0
 pydantic-settings>=2.1.0,<3.0.0
-python-jose[cryptography]~=3.4.0
+# python-jose 升级至 3.4.2+ 修复算法混淆漏洞 CVE-2024-33664（DEP-01）
+python-jose[cryptography]>=3.4.2,<4.0.0
 passlib[bcrypt]==1.7.4
-python-multipart~=0.0.22
+# python-multipart 升级至 0.0.30+ 修复 ReDoS 漏洞 CVE-2024-24762（DEP-02）
+python-multipart>=0.0.30,<1.0.0
 websockets==12.0
 loguru==0.7.2
 pyyaml==6.0.1
