@@ -25,7 +25,6 @@ import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import { StatusBadge, Tooltip } from '@/shared/components/ui'
 import { Plugin } from '@/features/dashboard/dashboard'
 import PluginDebugPanel from '@/features/plugins/PluginDebugPanel'
-import PluginSectionNav from '@/features/plugins/PluginSectionNav'
 import {
   usePluginDelete,
   usePluginImport,
@@ -767,7 +766,6 @@ function PluginsPage() {
     return (
       <PageLayout
         title="插件管理"
-        secondarySidebar={<PluginSectionNav />}
         className={styles['plugins-page']}
       >
         <div className={styles['loading']}>加载中...</div>
@@ -807,7 +805,6 @@ function PluginsPage() {
   return (
     <PageLayout
       title="插件管理"
-      secondarySidebar={<PluginSectionNav />}
       className={styles['plugins-page']}
       actions={
         <>

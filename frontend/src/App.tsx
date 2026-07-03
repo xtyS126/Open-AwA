@@ -111,7 +111,6 @@ function AppRoutes() {
                 <Route path="config/:pluginId" element={<ErrorBoundary name="PluginConfig"><PluginConfigPage /></ErrorBoundary>} />
                 <Route path="marketplace" element={<ErrorBoundary name="Marketplace"><MarketplacePage /></ErrorBoundary>} />
               </Route>
-              <Route path="/marketplace" element={<Navigate to="/plugins/marketplace" replace />} />
               <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
               <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
               <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />

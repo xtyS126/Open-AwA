@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import ConfirmDialog from '@/shared/components/ConfirmDialog/ConfirmDialog'
 import { useToast } from '@/shared/components/Toast'
-import PluginSectionNav from '@/features/plugins/PluginSectionNav'
 import { usePluginConfigActions, usePluginConfigSchema, usePluginList } from '@/features/plugins/hooks'
 import { modelsAPI } from '@/features/settings/modelsApi'
 import styles from './PluginConfigPage.module.css'
@@ -46,7 +45,7 @@ function PluginConfigPage() {
   const { pluginId } = useParams<{ pluginId: string }>()
   const navigate = useNavigate()
   const { plugins, loading: pluginListLoading } = usePluginList()
-  const activePluginId = pluginId && pluginId !== 'default' ? pluginId : null
+  const activePluginId = pluginId && pluginId !== 'default' && plugins.some((item) => item.id === pluginId) ? pluginId : null
   const {
     schemaPayload,
     loading: schemaLoading,
@@ -82,10 +81,7 @@ function PluginConfigPage() {
     if (!plugins.length) {
       return
     }
-    if (!pluginId || pluginId === 'default' || !plugins.some((item) => item.id === pluginId)) {
-      navigate(`/plugins/config/${plugins[0].id}`, { replace: true })
-    }
-  }, [pluginListLoading, plugins, pluginId, navigate])
+  }, [pluginListLoading, plugins])
 
   useEffect(() => {
     if (!schemaPayload) {
@@ -218,10 +214,16 @@ function PluginConfigPage() {
   return (
     <PageLayout
       title="插件配置"
-      secondarySidebar={<PluginSectionNav />}
       className={styles['plugin-config-page']}
       actions={
         <div className={styles['header-actions']}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => navigate('/plugins/manage')}
+            style={{ marginRight: 8 }}
+          >
+            ← 返回
+          </button>
           <select
             value={pluginId || ''}
             onChange={(event) => navigate(`/plugins/config/${event.target.value}`)}
@@ -245,70 +247,92 @@ function PluginConfigPage() {
         </div>
       </div>
 
-      {(schemaError || actionError) && (
+      {!activePluginId && !pluginListLoading && plugins.length > 0 && (
         <div className={styles['empty-state']}>
-          <span>{schemaError || actionError}</span>
-          <button
-            className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-            onClick={() => {
-              if (schemaError) {
-                retryLoadSchema()
-                return
-              }
-              if (actionError) {
-                retryConfigAction()
-              }
-            }}
-          >
-            重试
+          <p>请从插件管理页面选择一个插件进行配置</p>
+          <button className="btn btn-primary" onClick={() => navigate('/plugins/manage')}>
+            返回插件管理
           </button>
         </div>
       )}
 
-      <div className={styles['toolbox']}>
-        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => setConfirmAction('reset')} disabled={actionLoading || schemaLoading}>
-          重置默认
-        </button>
-        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => setConfirmAction('export')} disabled={actionLoading || schemaLoading}>
-          导出配置
-        </button>
-        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={handleOpenImport} disabled={actionLoading || schemaLoading}>
-          导入配置
-        </button>
-        <button
-          className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`}
-          onClick={handleRollbackImport}
-          disabled={actionLoading || !rollbackSnapshot}
-        >
-          回滚到导入前
-        </button>
-        <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={handleImportFileSelected} />
-      </div>
-
-      {schemaLoading ? (
-        <div className={styles['loading']}>配置加载中...</div>
-      ) : (
-        <div className={styles['form-grid']}>
-          {Object.entries(properties).map(([fieldKey, fieldSchema]) => (
-            <label key={fieldKey} className={styles['field-card']}>
-              <span className={styles['field-label']}>
-                {fieldSchema.title || fieldKey}
-                {isFieldRequired(schema, fieldKey) ? <em className={styles['required']}>*</em> : null}
-              </span>
-              <span className={styles['field-desc']}>{fieldSchema.description || ''}</span>
-              {renderFieldControl({
-                fieldKey,
-                fieldSchema,
-                value: formValues[fieldKey],
-                onChange: (value) => handleFieldChange(fieldKey, fieldSchema, value),
-              })}
-              {errors[fieldKey] ? <span className={styles['field-error']}>{errors[fieldKey]}</span> : null}
-            </label>
-          ))}
-          {Object.keys(properties).length === 0 ? (
-            <div className={styles['empty-state']}>当前插件未声明可编辑配置项</div>
-          ) : null}
+      {!activePluginId && !pluginListLoading && plugins.length === 0 && (
+        <div className={styles['empty-state']}>
+          <p>暂无已安装的插件</p>
+          <button className="btn btn-primary" onClick={() => navigate('/plugins/marketplace')}>
+            去市场看看
+          </button>
         </div>
+      )}
+
+      {activePluginId && (
+        <>
+          {(schemaError || actionError) && (
+            <div className={styles['empty-state']}>
+              <span>{schemaError || actionError}</span>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (schemaError) {
+                    retryLoadSchema()
+                    return
+                  }
+                  if (actionError) {
+                    retryConfigAction()
+                  }
+                }}
+              >
+                重试
+              </button>
+            </div>
+          )}
+
+          <div className={styles['toolbox']}>
+            <button className="btn btn-secondary" onClick={() => setConfirmAction('reset')} disabled={actionLoading || schemaLoading}>
+              重置默认
+            </button>
+            <button className="btn btn-secondary" onClick={() => setConfirmAction('export')} disabled={actionLoading || schemaLoading}>
+              导出配置
+            </button>
+            <button className="btn btn-secondary" onClick={handleOpenImport} disabled={actionLoading || schemaLoading}>
+              导入配置
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={handleRollbackImport}
+              disabled={actionLoading || !rollbackSnapshot}
+            >
+              回滚到导入前
+            </button>
+            <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={handleImportFileSelected} />
+          </div>
+
+          {schemaLoading ? (
+            <div className={styles['loading']}>配置加载中...</div>
+          ) : (
+            <div className={styles['form-grid']}>
+              {Object.entries(properties).map(([fieldKey, fieldSchema]) => (
+                <label key={fieldKey} className={styles['field-card']}>
+                  <span className={styles['field-label']}>
+                    {fieldSchema.title || fieldKey}
+                    {isFieldRequired(schema, fieldKey) ? <em className={styles['required']}>*</em> : null}
+                  </span>
+                  <span className={styles['field-desc']}>{fieldSchema.description || ''}</span>
+                  {renderFieldControl({
+                    fieldKey,
+                    fieldSchema,
+                    value: formValues[fieldKey],
+                    onChange: (value) => handleFieldChange(fieldKey, fieldSchema, value),
+                  })}
+                  {errors[fieldKey] ? <span className={styles['field-error']}>{errors[fieldKey]}</span> : null}
+                </label>
+              ))}
+              {Object.keys(properties).length === 0 ? (
+                <div className={styles['empty-state']}>当前插件未声明可编辑配置项</div>
+              ) : null}
+            </div>
+          )}
+        </>
       )}
 
       <ConfirmDialog

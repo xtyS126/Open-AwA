@@ -3,9 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
-import PluginSectionNav from '@/features/plugins/PluginSectionNav'
 import {
   getPlugins,
   searchPlugins,
@@ -42,8 +40,6 @@ function renderStars(score: number): string {
 }
 
 function MarketplacePage() {
-  const navigate = useNavigate()
-
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -176,13 +172,7 @@ function MarketplacePage() {
   return (
     <PageLayout
       title="插件市场"
-      secondarySidebar={<PluginSectionNav />}
       className={styles['marketplace-page']}
-      actions={
-        <button className={`btn ${styles['btn-secondary'] || 'btn-secondary'}`} onClick={() => navigate('/plugins/manage')}>
-          返回插件管理
-        </button>
-      }
     >
       {/* 搜索栏 */}
       <div className={styles['search-bar']}>

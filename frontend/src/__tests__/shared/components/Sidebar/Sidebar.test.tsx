@@ -42,7 +42,8 @@ describe('Sidebar', () => {
     )
 
     expect(screen.getByRole('link', { name: '定时任务' })).toHaveAttribute('href', '/scheduled-tasks')
-    expect(screen.getByRole('link', { name: '插件' })).toHaveAttribute('href', '/plugins/manage')
+    expect(screen.getByRole('link', { name: '插件管理' })).toHaveAttribute('href', '/plugins/manage')
+    expect(screen.getByRole('link', { name: '插件市场' })).toHaveAttribute('href', '/plugins/marketplace')
   })
 
   it('任意插件子路由都应高亮同一个插件入口', () => {
@@ -52,7 +53,9 @@ describe('Sidebar', () => {
       </MemoryRouter>
     )
 
-    const pluginLink = screen.getByRole('link', { name: '插件' })
+    const pluginLink = screen.getByRole('link', { name: '插件管理' })
     expect(pluginLink.className).toMatch(/active/)
+    const marketLink = screen.getByRole('link', { name: '插件市场' })
+    expect(marketLink.className).not.toMatch(/active/)
   })
 })

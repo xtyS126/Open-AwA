@@ -97,9 +97,6 @@ describe('MarketplacePage', () => {
     await waitFor(() => {
       expect(getPlugins).toHaveBeenLastCalledWith({ category: 'tool', page: 1, page_size: 12 })
     })
-
-    fireEvent.click(screen.getByText('返回插件管理'))
-    expect(mockNavigate).toHaveBeenCalledWith('/plugins/manage')
   })
 
   it('应支持搜索并展示搜索结果', async () => {
