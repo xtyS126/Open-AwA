@@ -95,6 +95,25 @@ def validate_parameters_against_schema(
     return None
 
 
+def _handle_audit_task_result(task: asyncio.Task) -> None:
+    """
+    检查审计日志后台任务的执行结果。
+    审计日志是安全合规关键证据，不能 fire-and-forget 后丢失。
+    对取消和异常情况记录告警日志，避免静默失败。
+    """
+    try:
+        if task.cancelled():
+            logger.warning("[审计日志] 任务被取消")
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning(f"[审计日志] 任务执行失败: {exc}")
+            return
+        task.result()
+    except Exception as e:
+        logger.warning(f"[审计日志] 任务结果检查异常: {e}")
+
+
 class ExecutionLayer:
     """
     封装与ExecutionLayer相关的核心逻辑与运行状态。
@@ -1725,8 +1744,9 @@ class ExecutionLayer:
                     denial = await am.check_all(func_name, func_args)
                     if denial:
                         # 记录审计日志（fire-and-forget，不阻塞工具拒绝返回）
+                        # 添加 done_callback 防止审计证据静默丢失
                         session_id = str(context.get("session_id", "") or "")
-                        asyncio.create_task(am.record_audit(
+                        audit_task = asyncio.create_task(am.record_audit(
                             session_id=session_id,
                             action=func_name,
                             params=func_args,
@@ -1734,6 +1754,7 @@ class ExecutionLayer:
                             denied_by=denial.get("denied_by", "unknown"),
                             error=denial.get("error"),
                         ))
+                        audit_task.add_done_callback(_handle_audit_task_result)
                         return denial
                     # 文件写入/删除操作：自动创建检查点
                     if func_name in ("builtin_write_file", "builtin_delete_file", "write_file", "delete_file"):
@@ -1744,13 +1765,15 @@ class ExecutionLayer:
                             if cp_id:
                                 logger.debug(f"[自主模式] 文件操作前检查点已创建: {cp_id}")
                     # 记录允许执行的审计日志（fire-and-forget，不阻塞工具执行）
+                    # 添加 done_callback 防止审计证据静默丢失
                     session_id = str(context.get("session_id", "") or "")
-                    asyncio.create_task(am.record_audit(
+                    audit_task = asyncio.create_task(am.record_audit(
                         session_id=session_id,
                         action=func_name,
                         params=func_args,
                         decision="allowed",
                     ))
+                    audit_task.add_done_callback(_handle_audit_task_result)
         except ImportError:
             logger.warning("[自主模式] 安全检查模块导入失败，自主模式安全校验已跳过")
         except (TypeError, ValueError, KeyError) as exc:

@@ -3,30 +3,32 @@
 这一部分直接关联成本核算、调用统计以及运维观测。
 """
 
+# 标准库
 import asyncio
 import json
-
-from cachetools import TTLCache
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Set
-from fastapi import Body
 from datetime import datetime
-from loguru import logger
+from typing import Dict, List, Optional, Set
 
-from db.models import get_db, ConversationRecord
+# 第三方库
+from cachetools import TTLCache
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from loguru import logger
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+# 项目内部
 from api.dependencies import get_current_user
-from billing.tracker import UsageTracker
-from billing.pricing_manager import PricingManager
-from billing.models import ModelConfiguration, ProviderCredential
 from billing.budget_manager import BudgetManager
+from billing.models import ModelConfiguration, ProviderCredential
+from billing.pricing_manager import PricingManager
 from billing.reporter import BillingReporter
+from billing.tracker import UsageTracker
 from config.config_loader import config_loader
 from config.logging import REQUEST_ID_HEADER
+from core.litellm_adapter import litellm_list_models
 from core.metrics import record_model_service_metric
 from core.model_service import build_standard_error
-from core.litellm_adapter import litellm_list_models
-from pydantic import BaseModel
+from db.models import ConversationRecord, get_db
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 

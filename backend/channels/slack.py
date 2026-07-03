@@ -110,13 +110,13 @@ class SlackAdapter(ChannelAdapter):
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "✓ 批准"},
+                        "text": {"type": "plain_text", "text": "[OK] 批准"},
                         "style": "primary",
                         "value": f"approve_{tool_name}",
                     },
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "✗ 拒绝"},
+                        "text": {"type": "plain_text", "text": "[X] 拒绝"},
                         "style": "danger",
                         "value": f"reject_{tool_name}",
                     },

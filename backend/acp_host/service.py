@@ -21,9 +21,12 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
+
+from loguru import logger
 
 try:
     import psutil  # type: ignore[import-untyped]
@@ -735,8 +738,12 @@ class ACPService:
                 conversation.prompt_task.cancel()
                 try:
                     await conversation.prompt_task
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # 取消任务自身抛异常被记录，便于诊断子进程清理问题
+                    logger.debug(
+                        "ACP prompt_task 取消时抛出异常（通常可忽略）",
+                        exc_info=exc,
+                    )
             # [Fix #4615] node wrapper 启动的子进程需要主动 close_session
             try:
                 await asyncio.wait_for(
@@ -745,8 +752,12 @@ class ACPService:
                     ),
                     timeout=5.0,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # close_session 失败可能掩盖子进程泄露，记录日志便于排查
+                logger.warning(
+                    "ACP close_session 失败，将强制 kill 进程树",
+                    exc_info=exc,
+                )
         finally:
             # [Fix #4615] 直接二进制启动的子进程需 kill 整个进程树防止泄露
             # PERF-08: 使用异步包装避免 psutil 同步遍历阻塞事件循环
@@ -779,7 +790,9 @@ class ACPService:
 
 
 # 模块级单例服务注册表：按 agent_id 索引 ACPService 实例
+# 并发安全：使用 threading.Lock 保护 check-then-set，防止并发注册导致旧 service 资源泄露
 _acp_services: dict[str, ACPService] = {}
+_acp_services_lock = threading.Lock()
 
 
 def get_acp_service(agent_id: Optional[str] = None) -> Optional[ACPService]:
@@ -793,7 +806,8 @@ def get_acp_service(agent_id: Optional[str] = None) -> Optional[ACPService]:
     """
     if agent_id is None:
         return None
-    return _acp_services.get(agent_id)
+    with _acp_services_lock:
+        return _acp_services.get(agent_id)
 
 
 def init_acp_service(agent_id: str, config: ACPConfig) -> ACPService:
@@ -809,8 +823,11 @@ def init_acp_service(agent_id: str, config: ACPConfig) -> ACPService:
     Returns:
         新创建并注册的 ACPService 实例。
     """
-    previous_service = _acp_services.get(agent_id)
-    _acp_services[agent_id] = ACPService(config=config)
+    # 加锁保护 check-then-set，防止并发注册丢失 previous_service 引用导致资源泄露
+    with _acp_services_lock:
+        previous_service = _acp_services.get(agent_id)
+        new_service = ACPService(config=config)
+        _acp_services[agent_id] = new_service
     if previous_service is not None:
         try:
             loop = asyncio.get_running_loop()
@@ -824,7 +841,7 @@ def init_acp_service(agent_id: str, config: ACPConfig) -> ACPService:
                 loop.create_task(previous_service.close_all_sessions())
             else:
                 loop.run_until_complete(previous_service.close_all_sessions())
-    return _acp_services[agent_id]
+    return new_service
 
 
 def close_acp_service(agent_id: str) -> None:
@@ -836,7 +853,8 @@ def close_acp_service(agent_id: str) -> None:
     Args:
         agent_id: Agent 标识。
     """
-    previous_service = _acp_services.pop(agent_id, None)
+    with _acp_services_lock:
+        previous_service = _acp_services.pop(agent_id, None)
     if previous_service is None:
         return
     try:
@@ -859,8 +877,9 @@ def _shutdown_acp_services() -> None:
     进程退出时遍历 _acp_services 中所有 service 并并发关闭其会话。
     若当前无运行中的事件循环，则新建临时 loop 执行清理。
     """
-    services = list(_acp_services.values())
-    _acp_services.clear()
+    with _acp_services_lock:
+        services = list(_acp_services.values())
+        _acp_services.clear()
     if not services:
         return
     try:
@@ -879,8 +898,9 @@ def _shutdown_acp_services() -> None:
             ),
         )
         loop.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        # atexit 期间 stderr 仍可用，记录异常避免进程退出阶段问题完全不可见
+        sys.stderr.write(f"[ACP shutdown] atexit 关闭服务失败: {exc}\n")
 
 
 atexit.register(_shutdown_acp_services)

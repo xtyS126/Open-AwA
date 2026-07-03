@@ -172,8 +172,8 @@ async def download_log_file(
     """
     下载指定的日志文件。文件名仅允许合法字符，防止路径穿越攻击。
     """
-    import os
     import re
+    from pathlib import Path
 
     from config.settings import settings
 
@@ -181,19 +181,20 @@ async def download_log_file(
     if not re.match(r'^[\w\-\.]+$', filename):
         raise HTTPException(status_code=400, detail="文件名包含非法字符")
 
-    log_dir = settings.LOG_DIR
-    file_path = os.path.join(log_dir, filename)
-    # 确保路径不会逃逸出日志目录
-    real_log_dir = os.path.realpath(log_dir)
-    real_file_path = os.path.realpath(file_path)
-    if not real_file_path.startswith(real_log_dir):
+    # 路径穿越防护：使用 Path.resolve() + relative_to() 严格校验
+    # 不使用 startswith()，避免前缀匹配绕过（如 /var/log/app-evil 绕过 /var/log/app）
+    log_dir = Path(settings.LOG_DIR).resolve()
+    file_path = (log_dir / filename).resolve()
+    try:
+        file_path.relative_to(log_dir)
+    except ValueError:
         raise HTTPException(status_code=400, detail="非法文件路径")
 
-    if not os.path.isfile(real_file_path):
+    if not file_path.is_file():
         raise HTTPException(status_code=404, detail="日志文件不存在")
 
     return FileResponse(
-        real_file_path,
+        str(file_path),
         filename=filename,
         media_type="application/octet-stream",
     )

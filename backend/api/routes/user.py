@@ -5,6 +5,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import os
+import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
@@ -25,10 +26,27 @@ ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png"}
 MAX_AVATAR_SIZE = 1 * 1024 * 1024  # 1MB
 AVATAR_UPLOAD_DIR = Path("uploads/avatars")
 
+# 图片文件头 magic bytes（防止伪造 Content-Type 上传非图片内容）
+_AVATAR_MAGIC_BYTES = {
+    "image/jpeg": (b"\xff\xd8\xff",),  # JPEG 文件头
+    "image/png": (b"\x89PNG\r\n\x1a\n",),  # PNG 文件头
+}
+
 
 def _ensure_upload_dir() -> None:
     """确保头像上传目录存在。"""
     AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _validate_avatar_magic_bytes(data: bytes, content_type: str) -> bool:
+    """
+    校验文件头 magic bytes 是否与声明的 content_type 匹配。
+    防止攻击者上传伪装成图片的脚本或 SVG 内容。
+    """
+    expected = _AVATAR_MAGIC_BYTES.get(content_type)
+    if not expected:
+        return False
+    return any(data.startswith(magic) for magic in expected)
 
 
 # --- 请求模型 ---
@@ -146,10 +164,21 @@ async def upload_avatar(
     if len(file_data) > MAX_AVATAR_SIZE:
         raise HTTPException(status_code=400, detail="头像图片大小不能超过 1MB")
 
-    # 保存文件
+    # 校验文件头 magic bytes，防止伪造 Content-Type 上传非图片内容
+    if not _validate_avatar_magic_bytes(file_data, content_type):
+        logger.bind(
+            event="avatar_magic_bytes_mismatch",
+            module="user",
+            user_id=current_user.id,
+            content_type=content_type,
+            size=len(file_data),
+        ).warning("avatar upload rejected: magic bytes mismatch")
+        raise HTTPException(status_code=400, detail="文件内容与声明的类型不匹配")
+
+    # 保存文件：文件名保留 {user_id}_ 前缀用于归属校验，UUID 部分避免泄露上传时间
     _ensure_upload_dir()
     ext = ".png" if "png" in content_type else ".jpg"
-    file_name = f"{current_user.id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}{ext}"
+    file_name = f"{current_user.id}_{uuid.uuid4().hex}{ext}"
     file_path = AVATAR_UPLOAD_DIR / file_name
     file_path.write_bytes(file_data)
 

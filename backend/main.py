@@ -1112,7 +1112,9 @@ def _build_csp_header() -> str:
         f"script-src 'self'; "
         f"style-src {style_src}; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data: blob: https:; "
+        # img-src 收敛：移除 https: 通配，仅允许同源 + data:（base64 内联）+ blob:（运行时生成）
+        # 外部图片需经后端代理走域名白名单，避免任意 HTTPS 站点加载引入追踪/XSS 攻击面
+        "img-src 'self' data: blob:; "
         # 仅允许同源与本地回环 WebSocket，禁止页面连接任意 ws/wss 源
         # 保留 ws://localhost:* 与 ws://127.0.0.1:* 用于 Vite HMR 与本地 PTY/预览服务
         "connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*; "

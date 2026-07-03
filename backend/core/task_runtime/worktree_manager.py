@@ -201,7 +201,12 @@ class WorktreeManager:
             )
             stdout, _ = await process.communicate()
             return self._parse_worktree_list(stdout.decode("utf-8", errors="replace"))
-        except Exception:
+        except Exception as exc:
+            # 记录日志而非静默吞异常，便于排查 worktree 列表查询失败问题
+            logger.bind(
+                module="task_runtime",
+                error=str(exc),
+            ).warning("列出 git worktrees 失败，返回空列表")
             return []
 
     async def run_in_worktree(
@@ -261,7 +266,12 @@ class WorktreeManager:
             stdout, _ = await process.communicate()
             branch = stdout.decode("utf-8", errors="replace").strip()
             return branch or "main"
-        except Exception:
+        except Exception as exc:
+            # 记录日志而非静默吞异常，便于排查分支探测失败问题
+            logger.bind(
+                module="task_runtime",
+                error=str(exc),
+            ).debug("获取当前 git 分支失败，回退为 main")
             return "main"
 
     async def _prune_worktrees(self) -> None:
@@ -275,8 +285,12 @@ class WorktreeManager:
                 cwd=str(self._base_dir),
             )
             await process.communicate()
-        except Exception:
-            pass
+        except Exception as exc:
+            # 记录日志而非静默吞异常，便于排查 worktree 清理失败问题
+            logger.bind(
+                module="task_runtime",
+                error=str(exc),
+            ).debug("git worktree prune 失败（通常可忽略）")
 
     async def _copy_worktree_includes(self, worktree_path: str):
         """

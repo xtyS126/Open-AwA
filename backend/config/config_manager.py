@@ -290,7 +290,9 @@ class ConfigManager:
         try:
             import yaml
             data = yaml.safe_load(frontmatter_match.group(1)) or {}
-        except Exception:
+        except Exception as exc:
+            # 记录日志而非静默吞异常，便于排查 frontmatter 解析失败问题
+            logger.warning(f"解析 Markdown frontmatter 失败: {exc}")
             return None
 
         if not isinstance(data, dict):

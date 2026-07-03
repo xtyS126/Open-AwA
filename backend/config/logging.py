@@ -217,8 +217,12 @@ def _patch_record(record: Dict[str, Any], service_name: str) -> None:
             try:
                 tb_lines = traceback.format_exception(exc_type, exc_value, exc_tb)
                 log_event["traceback"] = "".join(tb_lines)
-            except Exception:
-                pass
+            except Exception as fmt_exc:
+                # 日志系统自身异常应 fallback 到 stderr，不能用 pass 静默自身故障
+                import sys
+                sys.stderr.write(
+                    f"[logging] traceback 格式化失败: {fmt_exc}\n"
+                )
 
     # 从 extra 中提取结构化错误字段
     for err_field in ("error_type", "error_message", "error_code", "status_code"):

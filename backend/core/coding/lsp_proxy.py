@@ -381,7 +381,10 @@ class LSPProxy:
                     continue
                 except asyncio.CancelledError:
                     break
-        except Exception:
-            pass
+        except Exception as exc:
+            # LSP 协议解析异常应记录，便于诊断语言服务器通信故障
+            logger.bind(event="lsp_reader_error", language=language).warning(
+                "LSP 读取循环异常退出", exc_info=exc
+            )
         finally:
             logger.bind(event="lsp_reader_stopped", language=language).info("LSP 读取循环已结束")

@@ -3,6 +3,7 @@
 同时提供 LLM Registry（注册中心）、任务路由配置和用量统计接口。
 """
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from typing import Optional
@@ -276,7 +277,9 @@ async def get_providers_latency_summary(
 
 # 任务路由规则存储（模块级，服务重启后重置）
 # 格式：{task_type: [{"provider": "...", "model": "...", "priority": 1}, ...]}
+# 并发安全：使用 asyncio.Lock 保护并发写入，防止多请求并发更新读到中间状态
 _task_routing_rules: dict = {}
+_task_routing_rules_lock = asyncio.Lock()
 
 
 class LLMRoutingRuleRequest(BaseModel):
@@ -346,7 +349,9 @@ async def update_llm_routing(
     """
     # 按 priority 排序规则列表
     sorted_rules = sorted(request.rules, key=lambda r: r.get("priority", 99))
-    _task_routing_rules[request.task_type] = sorted_rules
+    # 加锁保护并发写入，防止多请求同时更新不同 task_type 时读到中间状态
+    async with _task_routing_rules_lock:
+        _task_routing_rules[request.task_type] = sorted_rules
     logger.bind(
         event="llm_routing_updated",
         module="models",

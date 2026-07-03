@@ -59,20 +59,22 @@ class ExperienceFileSaveResponse(BaseModel):
     size: int
 
 
-def _get_memory_skill_dir() -> Path:
+def _get_memory_skill_dir(user_id: int) -> Path:
     """
-    处理get、memory、skill、dir相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    返回指定用户的经验文件目录。
+    安全：按 user_id 隔离存储，防止跨用户读写他人经验文件（IDOR 修复）。
     """
-    memory_skill_dir = Path(__file__).resolve().parents[3] / "memory_skill"
+    memory_skill_dir = Path(__file__).resolve().parents[3] / "memory_skill" / str(user_id)
     memory_skill_dir.mkdir(parents=True, exist_ok=True)
     return memory_skill_dir
 
 
-def _resolve_safe_markdown_path(file_name: str) -> Path:
+def _resolve_safe_markdown_path(file_name: str, user_id: int) -> Path:
     """
-    处理resolve、safe、markdown、path相关逻辑，并为调用方返回对应结果。
-    阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
+    解析并校验经验文件路径，确保：
+    1. 文件名不包含路径分隔符（防路径穿越）
+    2. 扩展名为 .md 或 .markdown
+    3. 解析后路径必须仍在当前用户的专属目录内
     """
     if not file_name:
         raise HTTPException(status_code=400, detail="文件名不能为空")
@@ -84,7 +86,7 @@ def _resolve_safe_markdown_path(file_name: str) -> Path:
     if extension not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="仅允许 .md 或 .markdown 文件")
 
-    base_dir = _get_memory_skill_dir().resolve()
+    base_dir = _get_memory_skill_dir(user_id).resolve()
     target = (base_dir / file_name).resolve()
     if base_dir != target.parent:
         raise HTTPException(status_code=400, detail="非法文件路径")
@@ -122,10 +124,10 @@ def _extract_summary(content: str) -> str:
 @router.get("", response_model=List[ExperienceFileSummary])
 async def list_experience_files(current_user=Depends(get_current_user)):
     """
-    列出experience、files相关内容，便于调用方查看、筛选或批量处理。
-    返回结果通常会被页面展示、审计流程或后续操作复用。
+    列出当前用户专属的经验文件。
+    安全：仅返回当前用户目录下的文件，按 user_id 隔离。
     """
-    base_dir = _get_memory_skill_dir()
+    base_dir = _get_memory_skill_dir(current_user.id)
     results: list[ExperienceFileSummary] = []
 
     for file_path in base_dir.iterdir():
@@ -154,10 +156,10 @@ async def list_experience_files(current_user=Depends(get_current_user)):
 @router.get("/{file_name}", response_model=ExperienceFileDetail)
 async def get_experience_file_detail(file_name: str, current_user=Depends(get_current_user)):
     """
-    获取experience、file、detail相关数据或当前状态。
-    调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
+    获取当前用户专属的经验文件详情。
+    安全：仅允许访问当前用户目录下的文件。
     """
-    file_path = _resolve_safe_markdown_path(file_name)
+    file_path = _resolve_safe_markdown_path(file_name, current_user.id)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="经验文件不存在")
 
@@ -177,10 +179,10 @@ async def get_experience_file_detail(file_name: str, current_user=Depends(get_cu
 @router.put("/{file_name}", response_model=ExperienceFileSaveResponse)
 async def save_experience_file(file_name: str, payload: ExperienceFileSaveRequest, current_user=Depends(get_current_user)):
     """
-    保存experience、file相关数据到持久化存储。
-    实现过程往往伴随序列化、写入、事务提交或异常回滚等步骤。
+    保存当前用户专属的经验文件。
+    安全：仅允许写入当前用户目录下的文件。
     """
-    file_path = _resolve_safe_markdown_path(file_name)
+    file_path = _resolve_safe_markdown_path(file_name, current_user.id)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="经验文件不存在")
 

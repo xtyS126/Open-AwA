@@ -73,7 +73,14 @@ def _get_owner_from_settings() -> Optional[User]:
         with SessionLocal() as db:
             owner_id = get_owner_id_sync(db)
             return db.query(User).filter(User.id == owner_id).first()
-    except Exception:
+    except ImportError:
+        logger.warning("core.owner 模块不可用，API Key 认证降级")
+        return None
+    except Exception as exc:
+        # API Key 认证关键路径：异常被吞掉会导致认证降级且无日志可追溯
+        logger.bind(event="owner_resolution_failed", module="auth").warning(
+            "加载 owner 用户失败，API Key 认证降级", exc_info=exc
+        )
         return None
 
 
