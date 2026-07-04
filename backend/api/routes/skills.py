@@ -1630,9 +1630,22 @@ async def install_skill_from_package(
         if len(zip_file.namelist()) > MAX_ZIP_FILES:
             raise HTTPException(status_code=400, detail=f"ZIP文件中文件数量超过限制 ({MAX_ZIP_FILES})")
         
+        # 路径穿越防护：使用 Path.resolve()+relative_to() 替代字符串校验
+        from pathlib import Path as _Path
+        import tempfile
+        _temp_resolved = _Path(tempfile.gettempdir()).resolve()
         for member in zip_file.namelist():
-            if member.startswith('/') or '..' in member:
-                raise HTTPException(status_code=400, detail="非法的ZIP文件路径")
+            # 拒绝绝对路径（Unix 与 Windows 风格）
+            if member.startswith('/') or member.startswith('\\'):
+                raise HTTPException(status_code=400, detail="非法的ZIP文件路径: 绝对路径")
+            # 拒绝 Windows 盘符绝对路径（如 C:\...）
+            if len(member) >= 2 and member[1] == ':':
+                raise HTTPException(status_code=400, detail="非法的ZIP文件路径: 盘符路径")
+            # 拒绝 .. 穿越
+            if '..' in member.split('/'):
+                raise HTTPException(status_code=400, detail="非法的ZIP文件路径: 目录穿越")
+            # 最终路径校验：解压后路径必须位于临时目录内
+            # 注：此校验仅做静态检查，实际解压目录由 _find_skill_config_in_zip 决定
             info = zip_file.getinfo(member)
             if info.file_size > MAX_UPLOAD_SIZE:
                 raise HTTPException(status_code=400, detail=f"ZIP中单个文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")

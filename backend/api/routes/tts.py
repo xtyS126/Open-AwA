@@ -349,9 +349,14 @@ async def get_speaker_info(
 # ---- 健康检查端点 ----
 
 @router.get("/health")
-async def tts_health():
+async def tts_health(
+    current_user: User = Depends(get_current_user),
+):
     """
     豆包 TTS 服务连通性检查。
+
+    需要认证：返回的 resource_id 等配置信息对未认证用户不应暴露，
+    防止匿名探测服务配置状态。
     """
     service = _get_tts_service()
     configured = service.is_configured

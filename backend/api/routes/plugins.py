@@ -1021,16 +1021,31 @@ async def upload_plugin(
             if len(all_members) > MAX_ZIP_FILES:
                 raise HTTPException(status_code=400, detail=f"ZIP file contains too many files ({len(all_members)} > {MAX_ZIP_FILES})")
             total_size = 0
+            # 路径穿越防护：使用 Path.resolve()+relative_to() 替代字符串校验
+            from pathlib import Path as _Path
+            _temp_resolved = _Path(temp_dir).resolve()
             for member in all_members:
-                if member.startswith('/') or '..' in member:
-                    raise HTTPException(status_code=400, detail="Invalid zip file structure")
+                # 拒绝绝对路径（Unix 与 Windows 风格）
+                if member.startswith('/') or member.startswith('\\'):
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: absolute path")
+                # 拒绝 Windows 盘符绝对路径（如 C:\...）
+                if len(member) >= 2 and member[1] == ':':
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: drive letter path")
+                # 拒绝 .. 穿越
+                if '..' in member.split('/'):
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: directory traversal")
+                # 最终路径校验：解压后路径必须位于 temp_dir 内
+                try:
+                    (_temp_resolved / member).resolve().relative_to(_temp_resolved)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid zip file structure: path escape")
                 info = z.getinfo(member)
                 total_size += info.file_size
                 if info.file_size > MAX_UPLOAD_SIZE:
                     raise HTTPException(status_code=400, detail=f"Individual file in ZIP exceeds size limit ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
             if total_size > MAX_ZIP_EXTRACTION_SIZE:
                 raise HTTPException(status_code=400, detail=f"Total extraction size exceeds limit ({MAX_ZIP_EXTRACTION_SIZE // (1024*1024)}MB)")
-            
+
             z.extractall(temp_dir)
         
         # 在临时目录中发现插件

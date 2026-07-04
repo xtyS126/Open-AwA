@@ -51,7 +51,13 @@ class PTYSession:
             raise ValueError("command 不能为空")
         self.command: List[str] = list(command)
         self.cwd: str = cwd or os.getcwd()
-        self.env: Dict[str, str] = dict(env) if env else dict(os.environ)
+        # 安全防护：过滤敏感环境变量，防止用户通过 printenv/env/echo $VAR 读取密钥
+        # env 参数为 None 时使用过滤后的父进程环境；显式 env 视为可信覆盖
+        if env is not None:
+            self.env: Dict[str, str] = dict(env)
+        else:
+            from core.terminal.env_sanitizer import build_safe_env
+            self.env = build_safe_env()
         self.cols: int = max(1, cols)
         self.rows: int = max(1, rows)
 

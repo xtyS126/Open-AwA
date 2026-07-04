@@ -437,7 +437,12 @@ class ACPService:
                 await conversation.conn.cancel(
                     session_id=conversation.acp_session_id,
                 )
-            except Exception:
+            except Exception as exc:
+                logger.bind(
+                    event="acp_cancel_failed",
+                    chat_id=chat_id,
+                    agent=agent,
+                ).warning(f"ACP cancel 调用失败：{exc}", exc_info=exc)
                 return False
 
             try:
@@ -451,7 +456,12 @@ class ACPService:
                 continue
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as exc:
+                logger.bind(
+                    event="acp_cancel_wait_failed",
+                    chat_id=chat_id,
+                    agent=agent,
+                ).warning(f"ACP cancel 等待 prompt_task 时发生未预期异常：{exc}", exc_info=exc)
                 break
             else:
                 break

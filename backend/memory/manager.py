@@ -134,17 +134,24 @@ class MemoryManager:
             last_access=last_access.isoformat(),
         )
 
-    def _evaluate_memory_in_session(self, db, memory: LongTermMemory) -> Dict[str, Any]:
+    def _evaluate_memory_in_session(self, db, memory: LongTermMemory, commit: bool = True) -> Dict[str, Any]:
         """
         在调用方提供的 db 会话中原位评估记忆质量，不自行创建会话。
         要求 memory 对象已挂在该 db 会话上，确保 commit 有效。
+
+        Args:
+            db: 数据库会话
+            memory: 记忆 ORM 对象
+            commit: 是否在评估后立即提交。批量循环调用时传 False，由调用方统一 commit
+                    避免每条记忆一次 commit 造成的性能损耗（原 N 次 commit → 1 次）
         """
         reference_time = datetime.now(timezone.utc)
         memory.confidence = self._calculate_confidence(memory, reference_time=reference_time)
         memory.quality_score = self._calculate_quality_score(memory, reference_time=reference_time)
         if memory.archive_status != "archived" and self._should_archive(memory, reference_time=reference_time):
             memory.archive_status = "archived"
-        db.commit()
+        if commit:
+            db.commit()
         self._sync_runtime_layers(memory)
         return {
             "memory_id": memory.id,
@@ -426,9 +433,11 @@ class MemoryManager:
                 .limit(limit)
                 .all()
             )
+            # 批量评估时禁用单次 commit，循环结束后统一提交一次（原 N 次 commit → 1 次）
             for memory in memories:
-                self._evaluate_memory_in_session(db, memory)
+                self._evaluate_memory_in_session(db, memory, commit=False)
                 db.expunge(memory)
+            db.commit()
             return memories
 
     async def get_long_term_memories(
@@ -762,7 +771,10 @@ class MemoryManager:
                 if memory_id is not None:
                     query = query.filter(LongTermMemory.id == memory_id)
                 memories = query.order_by(LongTermMemory.last_access.asc()).limit(limit).all()
-                return [self._evaluate_memory_in_session(db, m) for m in memories]
+                # 批量评估时禁用单次 commit，循环结束后统一提交一次（原 N 次 commit → 1 次）
+                results = [self._evaluate_memory_in_session(db, m, commit=False) for m in memories]
+                db.commit()
+                return results
         return await asyncio.to_thread(_do)
 
     async def get_memory_stats(self, user_id: Optional[str] = None, workspace_id: str = "default") -> Dict[str, Any]:

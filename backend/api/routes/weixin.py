@@ -672,7 +672,8 @@ async def list_weixin_conversations(
             .limit(limit * 50)
             .all()
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[weixin] 查询微信会话列表失败，降级返回空列表：{exc}", exc_info=exc)
         return []
 
     # 按 session_id 聚合
@@ -767,7 +768,8 @@ async def get_cross_channel_context(
             .limit(limit * 20)
             .all()
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[weixin] 查询微信记忆失败，降级为空列表：{exc}", exc_info=exc)
         weixin_memories = []
 
     weixin_sessions: Dict[str, Dict[str, Any]] = {}
@@ -1066,8 +1068,9 @@ async def send_multimedia(
         if temp_file_path:
             try:
                 os.remove(temp_file_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                # 临时文件清理失败不应影响主流程，但需记录便于排查磁盘问题
+                logger.debug(f"[weixin] 临时文件清理失败：{temp_file_path}, error={exc}")
 
 
 # ──────────────────────────────────────────────
@@ -1091,7 +1094,9 @@ async def _ws_authenticate(token: str) -> Optional[str]:
         if user is None or user.role == "disabled":
             return None
         return str(user.id)
-    except Exception:
+    except Exception as exc:
+        # 用户查找失败可能由 DB 异常引起，记录日志便于排查
+        logger.warning(f"[weixin] 通过用户名解析用户 ID 失败，username={username}: {exc}", exc_info=exc)
         return None
     finally:
         db.close()

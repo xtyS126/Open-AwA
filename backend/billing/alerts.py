@@ -343,7 +343,10 @@ class CostOptimizationService:
             all_models = pricing.list_models()
             idle = [m for m in all_models if m not in active_models]
             return idle[:5]  # 最多返回 5 个
-        except Exception:
+        except Exception as exc:
+            # PricingManager 不可用或 list_models 失败时静默降级为空列表，
+            # 但必须记录日志便于后续排查定价配置异常
+            logger.warning(f"检测闲置模型失败，降级返回空列表：{exc}", exc_info=exc)
             return []
 
     def _identify_expensive_models(

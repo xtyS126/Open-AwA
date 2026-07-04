@@ -2,6 +2,7 @@
 系统诊断路由 - 提供各子系统健康检查与状态查询，供测试任务使用。
 """
 
+import asyncio
 import ipaddress
 import os
 import sys
@@ -176,12 +177,18 @@ async def system_diagnostics(
     """
     系统综合诊断端点，逐一检查各子系统状态并返回统一报告。
     供前端测试页面和自动化测试任务使用。
+
+    性能：所有 _check_* 函数都是同步阻塞操作（DB 查询、文件遍历、子进程等），
+    通过 asyncio.to_thread 并行执行避免阻塞事件循环，整体延迟近似于最慢的一个检查。
     """
-    db_status = _check_database()
-    plugins_status = _check_plugins()
-    skills_status = _check_skills()
-    mcp_status = _check_mcp()
-    env_info = _check_environment()
+    # 各检查函数为同步实现，统一通过 asyncio.to_thread 包装避免阻塞事件循环
+    db_status, plugins_status, skills_status, mcp_status, env_info = await asyncio.gather(
+        asyncio.to_thread(_check_database),
+        asyncio.to_thread(_check_plugins),
+        asyncio.to_thread(_check_skills),
+        asyncio.to_thread(_check_mcp),
+        asyncio.to_thread(_check_environment),
+    )
 
     checks: List[Dict[str, Any]] = [
         {"name": "server", "label": "服务器基础健康", "ok": True, "detail": None},

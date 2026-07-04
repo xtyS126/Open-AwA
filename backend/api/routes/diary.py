@@ -3,6 +3,7 @@
 提供日记生成、列表和读取端点，供前端或命令行调用。
 """
 
+import asyncio
 import os
 import re
 from typing import Any, Optional
@@ -78,8 +79,9 @@ async def generate_diary(
     # 计算逻辑日范围
     logical_date, range_start, range_end = get_logical_day()
 
-    # 收集对话素材
-    materials = collect_diary_materials(
+    # 收集对话素材（同步 DB 查询包装为 to_thread，避免阻塞事件循环）
+    materials = await asyncio.to_thread(
+        collect_diary_materials,
         db=db,
         range_start=range_start,
         range_end=range_end,
@@ -98,8 +100,8 @@ async def generate_diary(
             logical_date=logical_date,
         )
 
-    # 获取人格描述（读取 SOUL.md）
-    personality = _load_soul_content()
+    # 获取人格描述（读取 SOUL.md，同步文件 I/O 包装为 to_thread）
+    personality = await asyncio.to_thread(_load_soul_content)
 
     # 获取用户名和 Agent 名
     user_name = current_user.username or current_user.nickname or "用户"
@@ -124,10 +126,10 @@ async def generate_diary(
         ).error(f"日记生成失败: {e}")
         raise HTTPException(status_code=500, detail="日记生成失败，请稍后重试")
 
-    # 确定工作目录并保存日记
+    # 确定工作目录并保存日记（同步文件 I/O 包装为 to_thread）
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
     diary_dir = resolve_diary_dir(workspace_dir)
-    result = save_diary(diary_dir, logical_date, content)
+    result = await asyncio.to_thread(save_diary, diary_dir, logical_date, content)
 
     logger.bind(
         event="diary_generated",
@@ -155,7 +157,8 @@ async def list_diary_entries(current_user: User = Depends(get_current_user)):
     列出当前用户的所有已生成日记文件。
     """
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
-    diaries = list_diaries(workspace_dir)
+    # 同步文件 I/O 包装为 to_thread，避免阻塞事件循环
+    diaries = await asyncio.to_thread(list_diaries, workspace_dir)
     return DiaryListResponse(
         success=True,
         diaries=diaries,
@@ -185,7 +188,8 @@ async def get_diary(date: str, current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="日期无效，请提供真实存在的日期")
 
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
-    content = read_diary(workspace_dir, date)
+    # 同步文件 I/O 包装为 to_thread，避免阻塞事件循环
+    content = await asyncio.to_thread(read_diary, workspace_dir, date)
     if content is None:
         raise HTTPException(status_code=404, detail=f"没有找到 {date} 的日记")
     return DiaryReadResponse(

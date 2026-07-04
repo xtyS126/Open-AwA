@@ -274,12 +274,14 @@ async def _startup_infrastructure(profiler: StartupProfiler) -> None:
         _ensure_api_key()
 
 
-async def _scan_legacy_encrypted_keys(db_session) -> None:
+def _scan_legacy_encrypted_keys_sync(db_session) -> None:
     """启动时扫描 provider_credentials 和 model_configurations 两表中的 enc: 旧密文，记录 WARNING 日志。
 
     旧算法密文(enc:)在密钥拆分后已无法解密，需提示用户重新录入。
     扫描失败时仅记录 ERROR 日志，不阻塞服务启动（解密路径已对 enc: 旧密文做兜底失效处理）。
     不自动清空数据库中的旧密文，保留数据以便用户在设置页查看后重新录入。
+
+    本函数为同步实现，调用方需通过 asyncio.to_thread 包装以避免阻塞事件循环。
     """
     from sqlalchemy import text
 
@@ -339,7 +341,8 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
 
     with profiler.step("db_init"):
         try:
-            init_db()
+            # 包装为异步线程任务，避免同步 DDL 操作阻塞事件循环
+            await asyncio.to_thread(init_db)
             logger.bind(event="db_initialized", module="main").info("database initialized")
         except Exception as exc:
             # 针对 SQLite 常见的 readonly/locked 错误给出明确诊断提示
@@ -397,7 +400,8 @@ async def _startup_data_init(profiler: StartupProfiler) -> None:
     with profiler.step("legacy_encrypted_keys_scan"):
         db = SessionLocal()
         try:
-            await _scan_legacy_encrypted_keys(db)
+            # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
+            await asyncio.to_thread(_scan_legacy_encrypted_keys_sync, db)
         finally:
             db.close()
 
@@ -456,153 +460,175 @@ async def _startup_plugin_system(profiler: StartupProfiler) -> None:
     with profiler.step("plugin_load_enabled"):
         from db.models import Plugin as PluginModel, Skill
         import uuid
-        db = SessionLocal()
-        try:
-            # 迁移：删除已由 system-tools 插件接管的内置技能记录
-            # 批量查询避免循环内单条查询（N+1 问题）
-            skills_to_remove = ["file_manager", "terminal_executor"]
-            old_skills = db.query(Skill).filter(Skill.name.in_(skills_to_remove)).all()
-            for old_skill in old_skills:
-                db.delete(old_skill)
-                logger.bind(event="skill_migrated", module="main", skill=old_skill.name).info(
-                    f"已迁移内置技能 {old_skill.name} 至 system-tools 插件"
-                )
-            db.commit()
 
-            # 注册 system-tools 系统内置插件（如不存在）
-            existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
-            if not existing_plugin:
-                new_plugin = PluginModel(
-                    id=str(uuid.uuid4()),
-                    name="system-tools",
-                    version="1.0.0",
-                    enabled=True,
-                    config={},
-                    category="builtin",
-                    author="Open-AwA Team",
-                    source="builtin",
-                    dependencies=[],
-                )
-                db.add(new_plugin)
-                db.commit()
-                logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
-                    "已注册系统内置插件 system-tools"
-                )
+        def _seed_builtin_plugins_sync() -> None:
+            """
+            同步执行内置插件种子迁移。
 
-            # 注册 openbiliclaw-builtin 系统内置插件（如不存在）
-            # 该插件声明 is_uninstallable=True，禁止通过 API 卸载或禁用
-            existing_openbiliclaw = db.query(PluginModel).filter(
-                PluginModel.name == "openbiliclaw-builtin"
-            ).first()
-            if not existing_openbiliclaw:
-                new_openbiliclaw = PluginModel(
-                    id=str(uuid.uuid4()),
-                    name="openbiliclaw-builtin",
-                    version="0.3.147",
-                    enabled=True,
-                    config={},
-                    category="builtin",
-                    author="OpenBiliClaw Team",
-                    source="builtin",
-                    is_uninstallable=True,
-                    dependencies=[],
-                )
-                db.add(new_openbiliclaw)
+            将原 inline 的 DB 操作抽取为函数，便于用 asyncio.to_thread 包装，
+            避免在 async 启动函数中阻塞事件循环。
+            """
+            db = SessionLocal()
+            try:
+                # 迁移：删除已由 system-tools 插件接管的内置技能记录
+                skills_to_remove = ["file_manager", "terminal_executor"]
+                old_skills = db.query(Skill).filter(Skill.name.in_(skills_to_remove)).all()
+                for old_skill in old_skills:
+                    db.delete(old_skill)
+                    logger.bind(event="skill_migrated", module="main", skill=old_skill.name).info(
+                        f"已迁移内置技能 {old_skill.name} 至 system-tools 插件"
+                    )
                 db.commit()
-                logger.bind(
-                    event="builtin_plugin_seeded",
-                    module="main",
-                    plugin="openbiliclaw-builtin",
-                ).info("已注册系统内置插件 openbiliclaw-builtin")
 
-            # 注册 user-profile-builtin 系统内置插件（如不存在）
-            # 该插件封装 ProfileExtractor/ProfileLifecycle/ProfileInjector，
-            # 暴露画像提取/摘要/刷新/清理 4 个工具供 Agent 调用
-            existing_user_profile = db.query(PluginModel).filter(
-                PluginModel.name == "user-profile-builtin"
-            ).first()
-            if not existing_user_profile:
-                new_user_profile = PluginModel(
-                    id=str(uuid.uuid4()),
-                    name="user-profile-builtin",
-                    version="1.0.0",
-                    enabled=True,
-                    config={},
-                    category="builtin",
-                    author="Open-AwA Team",
-                    source="builtin",
-                    is_uninstallable=False,
-                    dependencies=[],
-                )
-                db.add(new_user_profile)
-                db.commit()
-                logger.bind(
-                    event="builtin_plugin_seeded",
-                    module="main",
-                    plugin="user-profile-builtin",
-                ).info("已注册系统内置插件 user-profile-builtin")
-        except Exception as exc:
-            logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
-            db.rollback()
-        finally:
-            db.close()
+                # 注册 system-tools 系统内置插件（如不存在）
+                existing_plugin = db.query(PluginModel).filter(PluginModel.name == "system-tools").first()
+                if not existing_plugin:
+                    new_plugin = PluginModel(
+                        id=str(uuid.uuid4()),
+                        name="system-tools",
+                        version="1.0.0",
+                        enabled=True,
+                        config={},
+                        category="builtin",
+                        author="Open-AwA Team",
+                        source="builtin",
+                        dependencies=[],
+                    )
+                    db.add(new_plugin)
+                    db.commit()
+                    logger.bind(event="builtin_plugin_seeded", module="main", plugin="system-tools").info(
+                        "已注册系统内置插件 system-tools"
+                    )
+
+                # 注册 openbiliclaw-builtin 系统内置插件（如不存在）
+                existing_openbiliclaw = db.query(PluginModel).filter(
+                    PluginModel.name == "openbiliclaw-builtin"
+                ).first()
+                if not existing_openbiliclaw:
+                    new_openbiliclaw = PluginModel(
+                        id=str(uuid.uuid4()),
+                        name="openbiliclaw-builtin",
+                        version="0.3.147",
+                        enabled=True,
+                        config={},
+                        category="builtin",
+                        author="OpenBiliClaw Team",
+                        source="builtin",
+                        is_uninstallable=True,
+                        dependencies=[],
+                    )
+                    db.add(new_openbiliclaw)
+                    db.commit()
+                    logger.bind(
+                        event="builtin_plugin_seeded",
+                        module="main",
+                        plugin="openbiliclaw-builtin",
+                    ).info("已注册系统内置插件 openbiliclaw-builtin")
+
+                # 注册 user-profile-builtin 系统内置插件（如不存在）
+                existing_user_profile = db.query(PluginModel).filter(
+                    PluginModel.name == "user-profile-builtin"
+                ).first()
+                if not existing_user_profile:
+                    new_user_profile = PluginModel(
+                        id=str(uuid.uuid4()),
+                        name="user-profile-builtin",
+                        version="1.0.0",
+                        enabled=True,
+                        config={},
+                        category="builtin",
+                        author="Open-AwA Team",
+                        source="builtin",
+                        is_uninstallable=False,
+                        dependencies=[],
+                    )
+                    db.add(new_user_profile)
+                    db.commit()
+                    logger.bind(
+                        event="builtin_plugin_seeded",
+                        module="main",
+                        plugin="user-profile-builtin",
+                    ).info("已注册系统内置插件 user-profile-builtin")
+            except Exception as exc:
+                logger.bind(event="builtin_plugin_seed_error", module="main").warning(f"内置插件注册失败: {exc}")
+                db.rollback()
+            finally:
+                db.close()
+
+        # 用 asyncio.to_thread 包装，避免同步 DB 操作阻塞事件循环
+        await asyncio.to_thread(_seed_builtin_plugins_sync)
 
         pm = plugin_instance.get()
         # 导入内置插件依赖缺失异常，用于在加载循环中单独捕获
         from plugins.openbiliclaw_builtin.plugin import BuiltinPluginDependencyError
-        db = SessionLocal()
-        try:
-            enabled_plugins = db.query(PluginModel).filter(PluginModel.enabled == True).all()
-            for p in enabled_plugins:
-                if p.name in pm.plugin_metadata:
-                    try:
-                        # 同步插件加载（importlib + 初始化）包装为 to_thread，避免阻塞事件循环
-                        await asyncio.to_thread(pm.load_plugin, p.name)
-                        logger.bind(event="plugin_loaded", module="main", plugin=p.name).info(
-                            f"plugin loaded: {p.name}"
-                        )
-                        # 内置插件不需要权限审批，跳过 restore_plugin_permissions
-                        if p.source == "builtin":
-                            # 检查内置插件是否以 loaded_with_warnings 状态加载
-                            loaded_instance = pm.loaded_plugins.get(p.name)
-                            if loaded_instance is not None and hasattr(
-                                loaded_instance, "get_dependency_warnings"
-                            ):
-                                warnings_list = loaded_instance.get_dependency_warnings()
-                                if warnings_list:
-                                    logger.bind(
-                                        event="plugin_loaded_with_warnings",
-                                        module="main",
-                                        plugin=p.name,
-                                        warning_count=len(warnings_list),
-                                    ).info(
-                                        f"内置插件 {p.name} 以 loaded_with_warnings 状态加载，"
-                                        f"warnings={len(warnings_list)}"
-                                    )
-                        else:
-                            granted = p.granted_permissions or []
-                            if granted:
-                                pm.restore_plugin_permissions(p.name, granted)
-                    except BuiltinPluginDependencyError as dep_exc:
-                        # 内置插件依赖缺失：仅记录 WARNING，不阻塞启动
-                        logger.bind(
-                            event="builtin_plugin_dependency_missing",
-                            module="main",
-                            plugin=p.name,
-                            missing_packages=dep_exc.missing_packages,
-                        ).warning(
-                            f"内置插件 {p.name} 依赖缺失，跳过加载: "
-                            f"missing_packages={dep_exc.missing_packages}"
-                        )
-                    except Exception as exc:
-                        logger.bind(event="plugin_load_error", module="main", plugin=p.name).warning(
-                            f"plugin load failed: {exc}"
-                        )
-            logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info(
-                "plugin system initialized"
-            )
-        finally:
-            db.close()
+
+        def _load_enabled_plugins_sync() -> list[dict]:
+            """同步查询已启用插件列表，预提取字段以避免 session 关闭后 ORM 实例 detach。"""
+            db = SessionLocal()
+            try:
+                rows = db.query(PluginModel).filter(PluginModel.enabled == True).all()
+                return [
+                    {
+                        "name": p.name,
+                        "source": p.source or "",
+                        "granted_permissions": list(p.granted_permissions or []),
+                    }
+                    for p in rows
+                ]
+            finally:
+                db.close()
+
+        # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
+        enabled_plugins_data = await asyncio.to_thread(_load_enabled_plugins_sync)
+        for p_data in enabled_plugins_data:
+            p_name = p_data["name"]
+            if p_name in pm.plugin_metadata:
+                try:
+                    # 同步插件加载（importlib + 初始化）包装为 to_thread，避免阻塞事件循环
+                    await asyncio.to_thread(pm.load_plugin, p_name)
+                    logger.bind(event="plugin_loaded", module="main", plugin=p_name).info(
+                        f"plugin loaded: {p_name}"
+                    )
+                    # 内置插件不需要权限审批，跳过 restore_plugin_permissions
+                    if p_data["source"] == "builtin":
+                        # 检查内置插件是否以 loaded_with_warnings 状态加载
+                        loaded_instance = pm.loaded_plugins.get(p_name)
+                        if loaded_instance is not None and hasattr(
+                            loaded_instance, "get_dependency_warnings"
+                        ):
+                            warnings_list = loaded_instance.get_dependency_warnings()
+                            if warnings_list:
+                                logger.bind(
+                                    event="plugin_loaded_with_warnings",
+                                    module="main",
+                                    plugin=p_name,
+                                    warning_count=len(warnings_list),
+                                ).info(
+                                    f"内置插件 {p_name} 以 loaded_with_warnings 状态加载，"
+                                    f"warnings={len(warnings_list)}"
+                                )
+                    else:
+                        granted = p_data["granted_permissions"]
+                        if granted:
+                            pm.restore_plugin_permissions(p_name, granted)
+                except BuiltinPluginDependencyError as dep_exc:
+                    # 内置插件依赖缺失：仅记录 WARNING，不阻塞启动
+                    logger.bind(
+                        event="builtin_plugin_dependency_missing",
+                        module="main",
+                        plugin=p_name,
+                        missing_packages=dep_exc.missing_packages,
+                    ).warning(
+                        f"内置插件 {p_name} 依赖缺失，跳过加载: "
+                        f"missing_packages={dep_exc.missing_packages}"
+                    )
+                except Exception as exc:
+                    logger.bind(event="plugin_load_error", module="main", plugin=p_name).warning(
+                        f"plugin load failed: {exc}"
+                    )
+        logger.bind(event="plugins_initialized", module="main", count=len(pm.loaded_plugins)).info(
+            "plugin system initialized"
+        )
 
 
 async def _startup_background_tasks(profiler: StartupProfiler) -> None:

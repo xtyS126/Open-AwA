@@ -338,7 +338,9 @@ class TerminalSession:
         self.owner_user_id: Optional[str] = owner_user_id
         self.process: Optional[asyncio.subprocess.Process] = None
         self.active = True
-        self.env = os.environ.copy()
+        # 安全防护：过滤敏感环境变量，防止用户通过 printenv/env/echo 读取密钥
+        from core.terminal.env_sanitizer import build_safe_env
+        self.env = build_safe_env()
 
     async def execute(self, command: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
         """执行命令并返回输出。"""

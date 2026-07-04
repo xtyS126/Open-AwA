@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, func as _func
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -375,6 +375,70 @@ def _build_vote_summary(
     return summary
 
 
+def _build_vote_summaries_batch(
+    db: Session, discussion_ids: list[str]
+) -> dict[str, VoteSummaryResponse]:
+    """
+    批量构建多个讨论任务的投票摘要，避免 N+1 查询。
+
+    通过 SQL 子查询一次性获取所有任务各角色的最新投票（round 最大），
+    替代原来对每个任务调用 _build_vote_summary 的 3 次查询模式。
+
+    Args:
+        db: 数据库会话
+        discussion_ids: 讨论任务 ID 列表
+
+    Returns:
+        dict: {discussion_id: VoteSummaryResponse}，未命中任务返回空 summary
+    """
+    if not discussion_ids:
+        return {}
+
+    role_field_map = {
+        DiscussionRole.CRITIC.value: "critic",
+        DiscussionRole.VALIDATOR.value: "validator",
+        DiscussionRole.APPROVER.value: "approver",
+    }
+
+    # 子查询：每个 (discussion_id, role) 的最大 round
+    subq = (
+        db.query(
+            DiscussionVote.discussion_id.label("did"),
+            DiscussionVote.role.label("r"),
+            _func.max(DiscussionVote.round).label("max_round"),
+        )
+        .filter(DiscussionVote.discussion_id.in_(discussion_ids))
+        .group_by(DiscussionVote.discussion_id, DiscussionVote.role)
+        .subquery()
+    )
+
+    # 关联原表取完整记录（join 条件：同 discussion_id + role + round=最大round）
+    votes = (
+        db.query(DiscussionVote)
+        .join(
+            subq,
+            (DiscussionVote.discussion_id == subq.c.did)
+            & (DiscussionVote.role == subq.c.r)
+            & (DiscussionVote.round == subq.c.max_round),
+        )
+        .all()
+    )
+
+    # 按 discussion_id 分组装填 summary
+    result: dict[str, VoteSummaryResponse] = {
+        did: VoteSummaryResponse() for did in discussion_ids
+    }
+    for vote in votes:
+        summary = result.get(vote.discussion_id)
+        if summary is None:
+            continue
+        field_name = role_field_map.get(vote.role)
+        # 同 (discussion_id, role, max_round) 可能有多条，仅取第一条
+        if field_name and getattr(summary, field_name) is None:
+            setattr(summary, field_name, _vote_to_response(vote))
+    return result
+
+
 def _task_to_detail_response(
     db: Session, task: DiscussionTask
 ) -> DiscussionTaskResponse:
@@ -411,9 +475,17 @@ def _task_to_detail_response(
 
 
 def _task_to_list_item(
-    db: Session, task: DiscussionTask
+    db: Session, task: DiscussionTask, vote_summary: Optional[VoteSummaryResponse] = None
 ) -> DiscussionListItemResponse:
-    """将 DiscussionTask ORM 对象转为列表项响应模型。"""
+    """将 DiscussionTask ORM 对象转为列表项响应模型。
+
+    Args:
+        db: 数据库会话（仅在 vote_summary 未提供时用于查询）
+        task: 讨论任务 ORM 对象
+        vote_summary: 预计算的投票摘要，提供时跳过 DB 查询避免 N+1
+    """
+    if vote_summary is None:
+        vote_summary = _build_vote_summary(db, task.id)
     return DiscussionListItemResponse(
         id=task.id,
         title=task.title,
@@ -421,7 +493,7 @@ def _task_to_list_item(
         round=task.round,
         max_rounds=task.max_rounds,
         created_at=task.created_at,
-        vote_summary=_build_vote_summary(db, task.id),
+        vote_summary=vote_summary,
     )
 
 
@@ -568,7 +640,12 @@ async def list_discussions(
         .all()
     )
 
-    items = [_task_to_list_item(db, task) for task in tasks]
+    # 批量预计算所有任务的投票摘要，避免 N+1 查询（原 3 次查询/任务 → 2 次查询/列表）
+    if tasks:
+        vote_summaries = _build_vote_summaries_batch(db, [t.id for t in tasks])
+        items = [_task_to_list_item(db, task, vote_summaries.get(task.id)) for task in tasks]
+    else:
+        items = []
 
     logger.bind(
         event="discussion_list",

@@ -3,6 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
@@ -121,13 +122,9 @@ def _extract_summary(content: str) -> str:
     return ""
 
 
-@router.get("", response_model=List[ExperienceFileSummary])
-async def list_experience_files(current_user=Depends(get_current_user)):
-    """
-    列出当前用户专属的经验文件。
-    安全：仅返回当前用户目录下的文件，按 user_id 隔离。
-    """
-    base_dir = _get_memory_skill_dir(current_user.id)
+def _list_experience_files_sync(user_id: int) -> list[ExperienceFileSummary]:
+    """同步列出用户经验文件，供 to_thread 包装调用。"""
+    base_dir = _get_memory_skill_dir(user_id)
     results: list[ExperienceFileSummary] = []
 
     for file_path in base_dir.iterdir():
@@ -153,13 +150,19 @@ async def list_experience_files(current_user=Depends(get_current_user)):
     return results
 
 
-@router.get("/{file_name}", response_model=ExperienceFileDetail)
-async def get_experience_file_detail(file_name: str, current_user=Depends(get_current_user)):
+@router.get("", response_model=List[ExperienceFileSummary])
+async def list_experience_files(current_user=Depends(get_current_user)):
     """
-    获取当前用户专属的经验文件详情。
-    安全：仅允许访问当前用户目录下的文件。
+    列出当前用户专属的经验文件。
+    安全：仅返回当前用户目录下的文件，按 user_id 隔离。
     """
-    file_path = _resolve_safe_markdown_path(file_name, current_user.id)
+    # 同步文件 I/O 包装为 to_thread，避免阻塞事件循环
+    return await asyncio.to_thread(_list_experience_files_sync, current_user.id)
+
+
+def _read_experience_file_sync(file_name: str, user_id: int) -> ExperienceFileDetail:
+    """同步读取经验文件详情，供 to_thread 包装调用。"""
+    file_path = _resolve_safe_markdown_path(file_name, user_id)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="经验文件不存在")
 
@@ -176,17 +179,23 @@ async def get_experience_file_detail(file_name: str, current_user=Depends(get_cu
     )
 
 
-@router.put("/{file_name}", response_model=ExperienceFileSaveResponse)
-async def save_experience_file(file_name: str, payload: ExperienceFileSaveRequest, current_user=Depends(get_current_user)):
+@router.get("/{file_name}", response_model=ExperienceFileDetail)
+async def get_experience_file_detail(file_name: str, current_user=Depends(get_current_user)):
     """
-    保存当前用户专属的经验文件。
-    安全：仅允许写入当前用户目录下的文件。
+    获取当前用户专属的经验文件详情。
+    安全：仅允许访问当前用户目录下的文件。
     """
-    file_path = _resolve_safe_markdown_path(file_name, current_user.id)
+    # 同步文件 I/O 包装为 to_thread，避免阻塞事件循环
+    return await asyncio.to_thread(_read_experience_file_sync, file_name, current_user.id)
+
+
+def _write_experience_file_sync(file_name: str, content: str, user_id: int) -> ExperienceFileSaveResponse:
+    """同步写入经验文件，供 to_thread 包装调用。"""
+    file_path = _resolve_safe_markdown_path(file_name, user_id)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="经验文件不存在")
 
-    file_path.write_text(payload.content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8")
     stat = file_path.stat()
     updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
 
@@ -194,4 +203,16 @@ async def save_experience_file(file_name: str, payload: ExperienceFileSaveReques
         file_name=file_path.name,
         updated_at=updated_at,
         size=stat.st_size,
+    )
+
+
+@router.put("/{file_name}", response_model=ExperienceFileSaveResponse)
+async def save_experience_file(file_name: str, payload: ExperienceFileSaveRequest, current_user=Depends(get_current_user)):
+    """
+    保存当前用户专属的经验文件。
+    安全：仅允许写入当前用户目录下的文件。
+    """
+    # 同步文件 I/O 包装为 to_thread，避免阻塞事件循环
+    return await asyncio.to_thread(
+        _write_experience_file_sync, file_name, payload.content, current_user.id
     )

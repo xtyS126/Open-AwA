@@ -195,7 +195,11 @@ def _extract_retry_after(exc: Exception) -> Optional[float]:
         try:
             dt = parsedate_to_datetime(str(raw))
             return max(0.0, (dt - datetime.now(dt.tzinfo or timezone.utc)).total_seconds())
-        except Exception:
+        except Exception as exc:
+            # Retry-After 头部格式不规范，记录 debug 级别日志便于排查
+            logger.bind(module="litellm_adapter", event="retry_after_parse_failed").debug(
+                f"无法解析 Retry-After 头部: {raw!r}, error={exc}"
+            )
             return None
 
 
@@ -1097,7 +1101,15 @@ async def _discover_ollama_models_via_litellm(
             "provider": "ollama",
             "request_id": request_id,
         }
-    except Exception:
+    except Exception as exc:
+        # Ollama 连接异常时降级返回空模型列表，但必须记录日志便于排查
+        # 此处保持 ok=True 是为了让上层 UI 不把网络异常显示为"配置错误"
+        logger.bind(
+            module="litellm_adapter",
+            event="ollama_list_models_failed",
+            provider="ollama",
+            request_id=request_id,
+        ).warning(f"Ollama 列出模型失败，降级返回空列表：{exc}", exc_info=exc)
         return {
             "ok": True,
             "models": [],

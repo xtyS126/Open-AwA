@@ -3,6 +3,7 @@
 所有权限检查逻辑集中在此模块管理，确保权限控制的一致性。
 """
 
+import asyncio
 import json
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -77,6 +78,11 @@ class RBACManager:
         Returns:
             角色名称字符串。
         """
+        # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
+        return await asyncio.to_thread(self._get_user_role_sync, user_id)
+
+    def _get_user_role_sync(self, user_id: str) -> str:
+        """get_user_role 的同步实现。"""
         user_role = (
             self.db.query(UserRole)
             .filter(UserRole.user_id == user_id)
@@ -98,6 +104,11 @@ class RBACManager:
         Returns:
             设置成功返回 True，角色不存在返回 False。
         """
+        # 同步 DB 写入包装为 to_thread，避免阻塞事件循环
+        return await asyncio.to_thread(self._set_user_role_sync, user_id, role)
+
+    def _set_user_role_sync(self, user_id: str, role: str) -> bool:
+        """set_user_role 的同步实现。"""
         # 校验角色是否存在
         role_exists = self.db.query(Role).filter(Role.name == role).first()
         if not role_exists:
@@ -137,8 +148,13 @@ class RBACManager:
         Returns:
             True 表示拥有权限，False 表示没有。
         """
-        role_name = await self.get_user_role(user_id)
-        permissions = await self.get_role_permissions(role_name)
+        # 整个权限检查链路（含 DB 查询）包装为 to_thread，避免多次线程切换
+        return await asyncio.to_thread(self._check_permission_sync, user_id, permission)
+
+    def _check_permission_sync(self, user_id: str, permission: str) -> bool:
+        """check_permission 的同步实现，内部直接调用同步方法避免线程切换开销。"""
+        role_name = self._get_user_role_sync(user_id)
+        permissions = self._get_role_permissions_sync(role_name)
 
         # 通配符权限表示拥有所有权限
         if "*" in permissions:
@@ -195,6 +211,11 @@ class RBACManager:
         Returns:
             权限标识列表。
         """
+        # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
+        return await asyncio.to_thread(self._get_role_permissions_sync, role)
+
+    def _get_role_permissions_sync(self, role: str) -> list[str]:
+        """get_role_permissions 的同步实现。"""
         role_record = self.db.query(Role).filter(Role.name == role).first()
         if not role_record:
             logger.warning(f"角色不存在: {role}")
@@ -213,6 +234,11 @@ class RBACManager:
         Returns:
             角色信息字典列表，每项包含 name、display_name、permissions。
         """
+        # 同步 DB 查询包装为 to_thread，避免阻塞事件循环
+        return await asyncio.to_thread(self._list_roles_sync)
+
+    def _list_roles_sync(self) -> list[dict]:
+        """list_roles 的同步实现。"""
         roles = self.db.query(Role).all()
         result = []
         for role in roles:

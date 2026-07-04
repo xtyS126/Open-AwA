@@ -374,12 +374,21 @@ async def get_audit_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取审计日志列表，支持分页和多维度筛选。"""
+    """获取审计日志列表，支持分页和多维度筛选。
+
+    权限隔离：非管理员仅能查询自身审计日志，传入 user_id 参数会被强制覆盖为当前用户 ID，
+    防止跨用户审计日志泄露（IDOR 修复）。
+    """
+    # 权限隔离：非管理员强制仅查自身日志
+    effective_user_id = user_id
+    if current_user.role != "admin":
+        effective_user_id = str(current_user.id)
+
     query = db.query(AuditLog)
 
     # 条件筛选
-    if user_id:
-        query = query.filter(AuditLog.user_id == user_id)
+    if effective_user_id:
+        query = query.filter(AuditLog.user_id == effective_user_id)
     if action:
         query = query.filter(AuditLog.action.contains(action))
     if result:
@@ -422,7 +431,12 @@ async def export_audit_logs(
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
 ):
-    """导出审计日志为 JSONL 格式（仅管理员可操作）。"""
+    """
+    导出审计日志为 JSONL 格式（仅管理员可操作）。
+
+    内存保护：使用 yield_per 流式分批加载，避免一次性 .all() 把全量日志读入内存导致 OOM。
+    同时对未带时间范围的导出施加硬上限（默认 100000 条），防止恶意全量导出。
+    """
     query = db.query(AuditLog)
 
     if user_id:
@@ -433,30 +447,48 @@ async def export_audit_logs(
         try:
             start_dt = datetime.fromisoformat(start_time)
             query = query.filter(AuditLog.created_at >= start_dt)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.bind(event="audit_export_invalid_start_time").warning(
+                "审计日志导出：start_time 格式无效，已忽略该筛选条件", exc_info=exc
+            )
     if end_time:
         try:
             end_dt = datetime.fromisoformat(end_time)
             query = query.filter(AuditLog.created_at <= end_dt)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.bind(event="audit_export_invalid_end_time").warning(
+                "审计日志导出：end_time 格式无效，已忽略该筛选条件", exc_info=exc
+            )
 
-    logs = query.order_by(AuditLog.created_at.desc()).all()
+    # 硬上限：防止无界查询拖垮内存；管理员应配合时间范围筛选使用
+    EXPORT_HARD_LIMIT = 100000
+    query = query.order_by(AuditLog.created_at.desc()).limit(EXPORT_HARD_LIMIT)
+
+    # yield_per 让 SQLAlchemy 以游标流式分批加载，避免 .all() 一次性物化全部记录
+    stream = query.yield_per(1000)
 
     def generate_jsonl():
-        for log in logs:
-            entry = {
-                "id": log.id,
-                "user_id": log.user_id,
-                "action": log.action,
-                "resource": log.resource,
-                "result": log.result,
-                "details": log.details,
-                "ip_address": log.ip_address,
-                "created_at": log.created_at.isoformat() if log.created_at else None,
-            }
-            yield json.dumps(entry, ensure_ascii=False) + "\n"
+        try:
+            for log in stream:
+                entry = {
+                    "id": log.id,
+                    "user_id": log.user_id,
+                    "action": log.action,
+                    "resource": log.resource,
+                    "result": log.result,
+                    "details": log.details,
+                    "ip_address": log.ip_address,
+                    "created_at": log.created_at.isoformat() if log.created_at else None,
+                }
+                yield json.dumps(entry, ensure_ascii=False) + "\n"
+        except GeneratorExit:
+            # 客户端提前断开连接，正常退出
+            raise
+        except Exception as exc:
+            logger.bind(event="audit_export_stream_error").error(
+                "审计日志导出流式生成异常", exc_info=exc
+            )
+            raise
 
     return StreamingResponse(
         generate_jsonl(),
@@ -468,9 +500,14 @@ async def export_audit_logs(
 @router.get("/audit-logs/stats")
 async def get_audit_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(get_current_admin_user),
 ):
-    """获取审计日志统计信息，包括按操作类型分组计数与成功率。"""
+    """
+    获取审计日志统计信息（仅管理员可操作）。
+
+    包含全局视角的按操作类型分组计数、成功率与最活跃用户 Top5，
+    会暴露其他用户的活动模式，非管理员不得访问，防止 IDOR 类信息泄露。
+    """
     total = db.query(func.count(AuditLog.id)).scalar() or 0
     success_count = (
         db.query(func.count(AuditLog.id))

@@ -373,10 +373,14 @@ SCENARIO_RUNNERS: Dict[str, Callable] = {
 # ---- API 端点 ----
 
 @router.get("")
-async def list_scenarios():
+async def list_scenarios(
+    current_user: User = Depends(get_current_user),
+):
     """
     列出所有可用测试场景及其描述。
     供Claude Code等工具了解可用的测试场景。
+
+    需要认证：场景元数据暴露了系统支持的测试能力，匿名探测不应获得此信息。
     """
     scenarios = []
     for name, info in SCENARIO_DEFINITIONS.items():

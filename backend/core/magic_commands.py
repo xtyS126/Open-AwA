@@ -168,7 +168,11 @@ class MagicCommandRegistry:
                     if isinstance(result, dict) and result.get("ok"):
                         return result.get("response", "") or ""
                     return ""
-                except Exception:
+                except Exception as exc:
+                    # 压缩过程 LLM 调用失败时降级返回空字符串，记录 debug 便于排查
+                    logger.bind(module="magic_commands", event="compaction_llm_call_failed").debug(
+                        f"压缩对话上下文时 LLM 调用失败，降级返回空字符串：{exc}", exc_info=exc
+                    )
                     return ""
                 finally:
                     llm_db.close()
@@ -354,8 +358,11 @@ class MagicCommandRegistry:
                 temperature=0.7,
             )
             content = llm_response.get("content", "") if isinstance(llm_response, dict) else str(llm_response)
-        except Exception:
+        except Exception as exc:
             # LLM 不可用时使用启发式生成
+            logger.bind(module="magic_commands", event="skill_generation_llm_failed").debug(
+                f"LLM 生成技能配置失败，降级使用启发式生成：{exc}", exc_info=exc
+            )
             skill_name = "custom_skill"
             instructions = f"# 技能说明\n基于对话生成的技能。\n\n## 对话摘要\n{conversation_text[:500]}"
             content = json.dumps({
@@ -478,7 +485,11 @@ class MagicCommandRegistry:
                 temperature=0.5,
             )
             content = llm_response.get("content", "") if isinstance(llm_response, dict) else str(llm_response)
-        except Exception:
+        except Exception as exc:
+            # LLM 不可用时降级返回占位计划，记录 debug 便于排查
+            logger.bind(module="magic_commands", event="plan_generation_llm_failed").debug(
+                f"LLM 生成计划失败，降级返回占位计划：{exc}", exc_info=exc
+            )
             return {
                 "action": "make_plan",
                 "success": True,

@@ -14,7 +14,7 @@ from loguru import logger
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user, get_db
+from api.dependencies import get_current_admin_user, get_db
 from db.models import (
     ConversationData,
     ToolCallData,
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/data", tags=["data"])
 @router.get("/stats")
 async def get_stats(
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(get_current_admin_user),
 ):
     """数据统计概览。"""
     conversation_count = db.query(func.count(ConversationData.id)).scalar() or 0
@@ -73,7 +73,7 @@ async def list_conversations(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(get_current_admin_user),
 ):
     """对话记录查询。"""
     query = db.query(ConversationData)
@@ -118,7 +118,7 @@ async def list_tool_calls(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(get_current_admin_user),
 ):
     """工具调用日志查询。"""
     query = db.query(ToolCallData)
@@ -158,7 +158,7 @@ async def list_execution_traces(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(get_current_admin_user),
 ):
     """执行轨迹查询。"""
     query = db.query(ExecutionTrace)
@@ -198,7 +198,7 @@ async def list_feedback(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(get_current_admin_user),
 ):
     """用户反馈查询。"""
     query = db.query(UserFeedback)
@@ -238,7 +238,7 @@ async def export_data(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(get_current_admin_user),
 ):
     """数据导出。"""
     if data_type == "conversations":
