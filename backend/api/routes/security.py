@@ -802,22 +802,31 @@ async def reply_to_permission(
 
 @router.get("/permissions/saved", response_model=SavedPermissionsListResponse)
 async def get_saved_permissions(
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(50, ge=1, le=200, description="每页数量，最大 200"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    获取当前用户已保存的持久化权限规则列表。
+    获取当前用户已保存的持久化权限规则列表（分页）。
+
+    长期使用可能累积大量历史规则，全量返回存在内存与传输压力，因此强制分页。
+    默认按 created_at desc 排序，page_size 上限 200 防止滥用。
     """
     user_id = str(current_user.id)
+    base_query = db.query(PermissionSaved).filter(PermissionSaved.created_by == user_id)
+    total = base_query.count()
     permissions = (
-        db.query(PermissionSaved)
-        .filter(PermissionSaved.created_by == user_id)
-        .order_by(PermissionSaved.created_at.desc())
+        base_query.order_by(PermissionSaved.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     return SavedPermissionsListResponse(
         permissions=[SavedPermissionResponse.model_validate(p) for p in permissions],
-        total=len(permissions),
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 

@@ -59,8 +59,9 @@ async def execute(
         file_size = path.stat().st_size
         if file_size > MAX_FILE_SIZE:
             return {"success": False, "error": f"文件过大 ({file_size} bytes)"}
-    except OSError:
-        pass
+    except OSError as exc:
+        # stat 失败时跳过大小检查，继续尝试读取内容，记录 debug 便于排查
+        logger.debug(f"[file_reader] 文件 stat 失败，跳过大小检查: {path}, error={exc}")
 
     try:
         content = path.read_text(encoding=encoding, errors="replace")

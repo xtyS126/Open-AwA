@@ -262,6 +262,7 @@ class VoiceCloneManager:
             if sample_rate > 0 and channels > 0 and bits_per_sample > 0:
                 bytes_per_second = sample_rate * channels * (bits_per_sample // 8)
                 return data_size / bytes_per_second if bytes_per_second > 0 else 0.0
-        except Exception:
-            pass
+        except Exception as exc:
+            # WAV 头部格式异常时降级为 0.0，记录 debug 便于排查音频格式问题
+            logger.debug(f"[voice_clone] WAV 音频时长计算失败，降级为 0.0: {exc}")
         return 0.0

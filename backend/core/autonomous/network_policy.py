@@ -127,8 +127,9 @@ class NetworkPolicyChecker:
             parsed = urlparse(url_or_host)
             if parsed.hostname:
                 host = parsed.hostname
-        except Exception:
-            pass  # 不是 URL，直接当主机名处理
+        except Exception as exc:
+            # urlparse 失败时回退为当作主机名处理，记录 debug 便于排查
+            logger.debug(f"[network_policy] URL 解析失败，按主机名处理: {url_or_host!r}, error={exc}")
 
         # 云元数据端点始终拒绝
         if host in _ALWAYS_BLOCKED_HOSTS:

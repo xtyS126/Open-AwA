@@ -518,8 +518,9 @@ class ClaudeCodeAdapter:
                 fpath = Path(root) / fname
                 try:
                     snapshot[str(fpath)] = fpath.stat().st_mtime
-                except OSError:
-                    pass
+                except OSError as exc:
+                    # 文件可能在遍历过程中被删除，跳过即可，记录 debug 便于排查
+                    logger.debug(f"[claude_code] 文件 stat 失败，跳过: {fpath}, error={exc}")
         return snapshot
 
     def _diff_snapshots(

@@ -186,8 +186,9 @@ class MCPConfigStore:
             )
             for old_snapshot in snapshots[_MAX_SNAPSHOTS:]:
                 os.remove(os.path.join(self._snapshot_dir, old_snapshot))
-        except OSError:
-            pass
+        except OSError as exc:
+            # 旧快照清理失败不应影响配置保存主流程，记录 debug 便于排查
+            logger.debug(f"[mcp_config_store] 旧配置快照清理失败: {exc}")
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
         """列出所有可用的配置快照。"""

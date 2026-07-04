@@ -67,7 +67,9 @@ def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
         if isinstance(payload, dict):
             return payload
         return None
-    except Exception:
+    except Exception as exc:
+        # JSON 文件读取/解析失败时降级为 None，记录 debug 便于排查插件配置加载问题
+        logger.debug(f"[plugins] JSON 文件读取失败: {path}, error={exc}")
         return None
 
 

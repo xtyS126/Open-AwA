@@ -286,10 +286,12 @@ def _cleanup_stale_pid_logs(log_dir: str, retention_days: int = 7) -> int:
                 try:
                     os.remove(fpath)
                     cleaned += 1
-                except OSError:
-                    pass
-    except OSError:
-        pass
+                except OSError as exc:
+                    # 日志文件删除失败不应影响主流程，记录 debug 便于排查磁盘问题
+                    logger.debug(f"[logging] 过期日志文件删除失败: {fpath}, error={exc}")
+    except OSError as exc:
+        # 日志目录遍历失败不应影响主流程，记录 debug 便于排查
+        logger.debug(f"[logging] 日志目录遍历失败: {log_dir}, error={exc}")
     return cleaned
 
 

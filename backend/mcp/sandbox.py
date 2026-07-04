@@ -101,8 +101,9 @@ def _apply_linux_resource_limits(limits: SandboxLimits) -> None:
     try:
         # 创建独立的进程组，方便后续统一 kill
         os.setpgrp()
-    except OSError:
-        pass
+    except OSError as exc:
+        # 某些平台（如 Windows）不支持 setpgrp，忽略即可，记录 debug 便于排查
+        logger.debug(f"[mcp_sandbox] setpgrp 失败，跳过进程组创建: {exc}")
 
     if _resource_module is None:
         return  # Windows 不支持 resource 模块

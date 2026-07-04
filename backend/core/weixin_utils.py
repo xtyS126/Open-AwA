@@ -9,6 +9,8 @@ import json
 from typing import Any, Dict, FrozenSet, Optional
 from urllib.parse import urlparse
 
+from loguru import logger
+
 # 微信二维码图片代理允许的域名白名单，防止 SSRF 攻击
 WEIXIN_QR_ALLOWED_DOMAINS: FrozenSet[str] = frozenset({
     "wx.qq.com",
@@ -88,7 +90,9 @@ def deserialize_skill_config(config_value: Any) -> Dict[str, Any]:
     try:
         import yaml
         loaded = yaml.safe_load(text)
-    except Exception:
+    except Exception as exc:
+        # YAML 解析失败时降级为空字典，记录 debug 便于排查配置格式异常
+        logger.debug(f"[weixin_utils] YAML 解析失败，降级为空字典: {exc}")
         return {}
     if isinstance(loaded, dict):
         return loaded

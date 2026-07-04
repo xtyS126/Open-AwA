@@ -1312,3 +1312,5 @@ class SavedPermissionsListResponse(BaseModel):
     """已保存权限列表响应模型"""
     permissions: list[SavedPermissionResponse] = Field(default_factory=list, description="权限列表")
     total: int = Field(default=0, description="总数")
+    page: int = Field(default=1, description="当前页码")
+    page_size: int = Field(default=50, description="每页数量")

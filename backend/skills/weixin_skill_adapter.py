@@ -814,8 +814,9 @@ class WeixinSkillAdapter:
             if raw.startswith("{") or raw.startswith("["):
                 try:
                     return json.loads(raw)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # JSON 解析失败时降级为 raw_text，记录 debug 便于排查响应格式异常
+                    logger.debug(f"[weixin _api_post] 响应 JSON 解析失败，降级为 raw_text: {exc}")
             return {"raw_text": raw}
         except WeixinAdapterError:
             raise
@@ -878,8 +879,9 @@ class WeixinSkillAdapter:
             if raw.startswith("{") or raw.startswith("["):
                 try:
                     return json.loads(raw)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # JSON 解析失败时降级为 raw_text，记录 debug 便于排查响应格式异常
+                    logger.debug(f"[weixin _api_get] 响应 JSON 解析失败，降级为 raw_text: {exc}")
             return {"raw_text": raw}
         except WeixinAdapterError:
             raise
@@ -1225,21 +1227,24 @@ class WeixinSkillAdapter:
                     last_error = exc
                     try:
                         os.remove(temp_file_path)
-                    except (FileNotFoundError, PermissionError):
-                        pass
+                    except (FileNotFoundError, PermissionError) as cleanup_exc:
+                        # 临时文件清理失败不影响主流程，记录 debug 便于排查
+                        logger.debug(f"[weixin] 临时文件清理失败: {temp_file_path}, error={cleanup_exc}")
                     # 最后一次重试失败时，尝试直接写入目标文件（绕过 rename 权限问题）
                     if delay_seconds == _STATE_FILE_WRITE_RETRY_DELAYS[-1]:
                         try:
                             with open(file_path, "w", encoding="utf-8") as fh:
                                 fh.write(payload)
                             return
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            # 直接写入也失败时记录 warning，最终由 last_error 抛出
+                            logger.warning(f"[weixin] 状态文件直接写入失败: {file_path}, error={exc}", exc_info=exc)
                 except Exception:
                     try:
                         os.remove(temp_file_path)
-                    except (FileNotFoundError, PermissionError):
-                        pass
+                    except (FileNotFoundError, PermissionError) as cleanup_exc:
+                        # 临时文件清理失败不影响主流程，记录 debug 便于排查
+                        logger.debug(f"[weixin] 临时文件清理失败: {temp_file_path}, error={cleanup_exc}")
                     raise
 
         if last_error is not None:

@@ -148,8 +148,9 @@ class PTYSession:
         # 设置初始终端尺寸
         try:
             self._winpty_proc.set_size(self.cols, self.rows)
-        except Exception:
-            pass  # 部分版本可能不支持，忽略
+        except Exception as exc:
+            # 部分版本可能不支持 set_size，忽略即可，记录 debug 便于排查
+            logger.debug(f"[pty_session] winpty set_size 不支持或失败: {exc}")
 
     async def _reader_loop(self) -> None:
         """读取协程：从 PTY 读取数据并写入 VT 屏幕，并调用输出回调。"""
@@ -405,8 +406,9 @@ class PTYSession:
         if self._master_fd is not None:
             try:
                 os.close(self._master_fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                # fd 已关闭或无效时忽略，记录 debug 便于排查
+                logger.debug(f"[pty_session] 关闭 master_fd 失败: {exc}")
 
     async def _close_winpty(self) -> None:
         """Windows 平台关闭 pywinpty。"""

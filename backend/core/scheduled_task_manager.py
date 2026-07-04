@@ -439,8 +439,9 @@ class ScheduledTaskManager:
                     summary=summary,
                     user_id=scheduled_task.get("user_id"),
                 )
-            except Exception:
-                pass  # 收件箱推送失败不影响主流程
+            except Exception as exc:
+                # 收件箱推送失败不影响主流程，但需记录便于排查通知系统异常
+                logger.warning(f"[scheduled_task] 收件箱推送失败，task_id={scheduled_task.get('id')}: {exc}", exc_info=exc)
 
     @staticmethod
     def _parse_cron_field(field: str, min_val: int, max_val: int) -> set:

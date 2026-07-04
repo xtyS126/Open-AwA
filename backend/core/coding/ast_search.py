@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
+
 
 class ASTSearchService:
     """
@@ -165,7 +167,9 @@ class ASTSearchService:
             tree = ast.parse(source, filename=str(file_path))
             self._py_ast_cache[key] = tree
             return tree
-        except Exception:
+        except Exception as exc:
+            # 语法错误的文件无法 AST 解析，降级为 None，记录 debug 便于排查
+            logger.debug(f"[ast_search] AST 解析失败，跳过缓存: {file_path}, error={exc}")
             return None
 
     def clear_cache(self):

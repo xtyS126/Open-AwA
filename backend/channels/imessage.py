@@ -166,8 +166,9 @@ class IMessageAdapter(ChannelAdapter):
                     try:
                         ts = int(row["date"]) / 1_000_000_000 + 978307200
                         date_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # 时间戳格式异常时降级为空字符串，记录 debug 便于排查
+                        logger.debug(f"[imessage] 消息时间戳解析失败: {row.get('date')!r}, error={exc}")
 
                 yield ChannelMessage(
                     channel=ChannelType.IMESSAGE,

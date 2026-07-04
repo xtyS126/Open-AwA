@@ -238,8 +238,9 @@ class CheckpointStore:
             # 清理可能残留的临时文件
             try:
                 tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                # 临时文件清理失败不应影响主流程，记录 debug 便于排查
+                logger.debug(f"[checkpoint] 临时文件清理失败: {tmp}, error={exc}")
             return None
 
     def restore(self, checkpoint_id: str) -> Optional[Dict[str, Any]]:
@@ -396,8 +397,9 @@ class CheckpointStore:
                 try:
                     file_path.unlink()
                     cleaned += 1
-                except OSError:
-                    pass
+                except OSError as exc:
+                    # 过期检查点删除失败不应影响清理主流程，记录 debug 便于排查
+                    logger.debug(f"[checkpoint] 过期检查点删除失败: {file_path}, error={exc}")
 
         if cleaned > 0:
             logger.info(f"检查点清理完成，移除 {cleaned} 个过期检查点（保留 {retention_days} 天）")

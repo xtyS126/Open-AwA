@@ -106,8 +106,9 @@ async def execute(
                     "index_file": str(_INDEX_FILE),
                     "index_size": _INDEX_FILE.stat().st_size,
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                # 索引文件损坏或不可读时降级为"未构建"，记录 debug 便于排查
+                logger.debug(f"[qa_source_index] 读取索引文件失败，降级为未构建: {exc}", exc_info=exc)
         return {"success": True, "index_exists": False, "note": "索引尚未构建"}
 
     elif action == "clear":
@@ -153,8 +154,9 @@ def _build_index(target_dir: Path) -> dict[str, dict]:
                     for node in ast.walk(tree):
                         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                             names.append(node.name)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # 语法错误的文件无法 AST 解析，降级为空名称列表
+                    logger.debug(f"[qa_source_index] AST 解析失败，跳过名称提取: {file_path}, error={exc}")
 
             # 提取关键词
             keywords = [m.group(1) for m in keyword_pattern.finditer(content)][:20]

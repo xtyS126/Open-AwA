@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
+
 
 # 常见忽略目录
 DEFAULT_IGNORE_DIRS = {
@@ -73,8 +75,9 @@ class FileTreeService:
             size = full_path.stat().st_size
             if size > max_size:
                 return {"error": f"文件过大 ({size} bytes)，限制 {max_size} bytes"}
-        except OSError:
-            pass
+        except OSError as exc:
+            # stat 失败时跳过大小检查，继续尝试读取内容，记录 debug 便于排查
+            logger.debug(f"[file_tree] 文件 stat 失败，跳过大小检查: {full_path}, error={exc}")
 
         try:
             content = full_path.read_text(encoding="utf-8", errors="replace")

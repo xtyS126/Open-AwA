@@ -118,7 +118,9 @@ class CommandDefinition:
         """
         try:
             content = Path(filepath).read_text(encoding="utf-8")
-        except Exception:
+        except Exception as exc:
+            # 文件读取失败时降级为 None，记录 debug 便于排查命令定义加载问题
+            logger.debug(f"[command_executor] 命令定义文件读取失败: {filepath}, error={exc}")
             return None
 
         # 解析 frontmatter
