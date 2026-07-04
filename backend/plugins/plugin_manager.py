@@ -1734,6 +1734,9 @@ class PluginManager:
                 return None
 
             module = importlib.util.module_from_spec(spec)
+            # 注册到 sys.modules，确保 @dataclass 等装饰器能通过 cls.__module__ 找到模块字典
+            # （Python 3.11+ dataclasses._is_type 会调用 sys.modules.get(cls.__module__).__dict__）
+            sys.modules[module_name] = module
             with self._plugin_scan_import_context(plugin_path):
                 spec.loader.exec_module(module)
 
@@ -1796,7 +1799,6 @@ class PluginManager:
                 }
 
                 return metadata
-
         except (ModuleNotFoundError, ImportError) as e:
             logger.bind(
                 event="plugin_scan_import_skipped",
@@ -1816,6 +1818,9 @@ class PluginManager:
                 error_type=type(e).__name__,
             ).error(f"Error scanning plugin file {plugin_path}: {e}")
             return None
+        finally:
+            # 清理 sys.modules，避免扫描期临时模块残留
+            sys.modules.pop(module_name, None)
 
     def load_plugin(self, plugin_name: str) -> bool:
         """
