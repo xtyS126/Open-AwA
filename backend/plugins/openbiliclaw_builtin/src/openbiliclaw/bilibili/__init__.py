@@ -1,4 +1,4 @@
-"""Bilibili package — API and browser access layer."""
+"""Bilibili 包 —— API 与浏览器访问层。"""
 
 from .api import (
     BilibiliAPIClient,

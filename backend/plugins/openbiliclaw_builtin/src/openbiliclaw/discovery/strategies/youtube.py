@@ -1,18 +1,18 @@
-"""YouTube discovery strategies.
+"""YouTube 发现策略。
 
-Three strategies backed by the ``YtScraperClient`` (scrapetube + yt-dlp):
+三个策略由 ``YtScraperClient`` (scrapetube + yt-dlp) 支持:
 
 YoutubeSearchStrategy
-    LLM generates keywords from the soul profile → keyword search via
-    scrapetube → LLM evaluates candidates.
+    LLM 从 soul profile 生成关键词 → 通过
+    scrapetube 关键词搜索 → LLM 评估候选。
 
 YoutubeTrendingStrategy
-    Fetches the YouTube trending feed (yt-dlp flat-extract) for the
-    configured region → LLM evaluates against soul profile.
+    抓取配置地区的 YouTube trending feed (yt-dlp flat-extract)
+    → LLM 对照 soul profile 评估。
 
 YoutubeChannelStrategy
-    Reads subscribed YouTube channels from the user's stored follow events
-    → fetches recent uploads via scrapetube → LLM evaluates.
+    从用户存储的 follow 事件读取订阅的 YouTube 频道
+    → 通过 scrapetube 抓取最近上传 → LLM 评估。
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ _QUERIES_SYSTEM_PROMPT = """\
 
 
 def _extract_llm_json_payload(raw: object) -> object:
-    """Return a JSON-like payload from either raw provider JSON or LLMResponse."""
+    """从原始 provider JSON 或 LLMResponse 返回类 JSON 载荷。"""
     content = getattr(raw, "content", None)
     if isinstance(content, str):
         raw = content
@@ -74,7 +74,7 @@ def _extract_llm_json_payload(raw: object) -> object:
 
 @dataclass
 class YoutubeSearchStrategy(DiscoveryStrategy):
-    """Discover YouTube content by LLM-generated keyword search."""
+    """通过 LLM 生成的关键词搜索发现 YouTube 内容。"""
 
     client: YtScraperClient
     llm_service: SupportsStructuredTask
@@ -114,8 +114,8 @@ class YoutubeSearchStrategy(DiscoveryStrategy):
 
         seen: set[str] = set()
         candidates: list[DiscoveredContent] = []
-        # ``raw_batches[i]`` corresponds to ``queries[i]`` (gather preserves
-        # order) → the producing query (and its P1.8 keyword id) is recoverable.
+        # ``raw_batches[i]`` 对应 ``queries[i]`` (gather 保持
+        # 顺序) → 产出的 query (及其 P1.8 keyword id) 可恢复。
         for query, batch in zip(queries, raw_batches, strict=True):
             if isinstance(batch, BaseException):
                 logger.warning("yt_search batch failed: %s", batch)
@@ -140,7 +140,7 @@ class YoutubeSearchStrategy(DiscoveryStrategy):
 
     @staticmethod
     def _dedupe_queries(queries: list[str]) -> list[str]:
-        """Strip + dedupe caller-injected queries (unified planner injection)."""
+        """strip + 去重调用方注入的 query (统一 planner 注入)。"""
         deduped: list[str] = []
         seen: set[str] = set()
         for item in queries:
@@ -176,7 +176,7 @@ class YoutubeSearchStrategy(DiscoveryStrategy):
         except Exception as exc:
             logger.warning("yt_search: query generation failed, falling back to interests: %s", exc)
 
-        # Fallback: use interest names directly
+        # 回退: 直接使用 interest 名
         return [
             str(interest.name).strip()
             for interest in profile.preferences.interests
@@ -210,7 +210,7 @@ class YoutubeSearchStrategy(DiscoveryStrategy):
 
 @dataclass
 class YoutubeTrendingStrategy(DiscoveryStrategy):
-    """Discover YouTube content from the trending feed."""
+    """从 trending feed 发现 YouTube 内容。"""
 
     client: YtScraperClient
     llm_service: SupportsStructuredTask
@@ -278,11 +278,11 @@ class SupportsYtFollowQuery(Protocol):
 
 @dataclass
 class YoutubeChannelStrategy(DiscoveryStrategy):
-    """Discover recent uploads from YouTube channels the user subscribes to.
+    """从用户订阅的 YouTube 频道发现最近上传。
 
-    Channel IDs are read at discover() time from stored follow events
-    (event_type='follow', source_platform='youtube') so the list stays
-    fresh without requiring a restart.
+    Channel ID 在 discover() 时从存储的 follow 事件
+    (event_type='follow', source_platform='youtube') 读取,使列表保持
+    新鲜而无需重启。
     """
 
     client: YtScraperClient
@@ -352,7 +352,7 @@ class YoutubeChannelStrategy(DiscoveryStrategy):
         return results
 
     def _subscribed_channel_ids(self) -> list[str]:
-        """Read YouTube channel references from stored follow events."""
+        """从存储的 follow 事件读取 YouTube channel 引用。"""
         import json as _json
 
         channel_refs: list[str] = []
@@ -363,7 +363,7 @@ class YoutubeChannelStrategy(DiscoveryStrategy):
             return []
 
         for ev in events:
-            # metadata is a JSON string in DB rows; may already be a dict
+            # metadata 在 DB 行里是 JSON 字符串;可能已是 dict
             meta = ev.get("metadata") or {}
             if isinstance(meta, str):
                 try:

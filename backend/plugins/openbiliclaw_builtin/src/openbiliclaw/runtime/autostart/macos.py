@@ -1,4 +1,4 @@
-"""macOS LaunchAgent autostart manager."""
+"""macOS LaunchAgent 自启管理器。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class MacOSLaunchAgentManager:
-    """Manage the user LaunchAgent plist for OpenBiliClaw."""
+    """管理 OpenBiliClaw 的用户级 LaunchAgent plist。"""
 
     mechanism = "launchd"
     label = "com.openbiliclaw.daemon"

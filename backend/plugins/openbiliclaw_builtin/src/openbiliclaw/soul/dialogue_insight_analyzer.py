@@ -1,4 +1,4 @@
-"""Structured extraction of dialogue-derived insight candidates."""
+"""对话衍生洞察候选的结构化提取。"""
 
 from __future__ import annotations
 
@@ -32,12 +32,12 @@ class SupportsCoreMemoryTask(Protocol):
 
 
 class DialogueInsightAnalysisError(Exception):
-    """Raised when dialogue insight extraction fails or returns invalid data."""
+    """当对话洞察提取失败或返回无效数据时抛出。"""
 
 
 @dataclass
 class DialogueInsightAnalyzer:
-    """Extract structured insight candidates from chat turns."""
+    """从聊天轮次中提取结构化的洞察候选。"""
 
     registry: SupportsCoreMemoryTask
 
@@ -54,7 +54,7 @@ class DialogueInsightAnalyzer:
         assistant_reply: str,
         core_memory: dict[str, object],
     ) -> list[dict[str, object]]:
-        """Extract candidate insights from a single chat exchange."""
+        """从单次聊天交互中提取候选洞察。"""
         messages = build_dialogue_insight_prompt(
             user_message=user_message,
             assistant_reply=assistant_reply,

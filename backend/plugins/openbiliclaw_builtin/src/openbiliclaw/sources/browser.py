@@ -1,17 +1,16 @@
-"""Generic browser automation layer for multi-source content fetching.
+"""多源内容抓取的通用浏览器自动化层。
 
-Two interchangeable backends:
+两个可互换的后端：
 
-``cdp_url`` set (recommended)
-    Connect to a pre-launched Chrome via Playwright ``connect_over_cdp``.
-    The user opens Chrome once with ``--remote-debugging-port=9222``,
-    logs into the target platforms, and leaves it running. Every adapter
-    call then reuses that logged-in session — which is the only way
-    sources like Xiaohongshu actually work without getting rate-limited.
+设置了 ``cdp_url``（推荐）
+    通过 Playwright ``connect_over_cdp`` 连接到预先启动的 Chrome。
+    用户使用 ``--remote-debugging-port=9222`` 启动一次 Chrome，
+    登录目标平台并保持运行。每次适配器调用都复用该登录态 ——
+    这是小红书等源在不被限流的前提下正常工作的唯一方式。
 
-``cdp_url`` empty (fallback)
-    Wrap the existing agent-browser CLI. No login state — fine for
-    simple anonymous pages, blocked on most real sources.
+``cdp_url`` 为空（兜底）
+    封装既有的 agent-browser CLI。无登录态 ——
+    适用于简单的匿名页面，但大部分真实源会受阻。
 """
 
 from __future__ import annotations
@@ -23,11 +22,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# JS evaluated in-page. Returns both the visible body text AND every
-# clickable anchor as {text, href}. The LLM extractor works on the
-# inner text only, but callers use the anchor list to backfill the
-# ``content_url`` field — innerText alone drops all hrefs, which means
-# extracted items otherwise have no way to link back to source.
+# 在页面内执行的 JS。同时返回可见 body 文本和所有可点击锚点
+# （格式为 {text, href}）。LLM 抽取器仅处理内部文本，
+# 但调用方使用锚点列表回填 ``content_url`` 字段 ——
+# innerText 单独使用会丢失所有 href，否则被抽取的条目
+# 无法回链到源。
 _PAGE_SNAPSHOT_SCRIPT = """\
 () => {
   const text = (document.body && document.body.innerText) || '';
@@ -48,12 +47,11 @@ _PAGE_SNAPSHOT_SCRIPT = """\
 
 @dataclass
 class PageSnapshot:
-    """Page content + anchor metadata captured in a single round trip.
+    """单次往返中抓取的页面内容与锚点元数据。
 
-    ``text`` mirrors ``document.body.innerText`` (what LLM extractors chew
-    on). ``anchors`` preserves the ``(visible_text, href)`` pairs that
-    innerText throws away — callers use these to rebuild URLs for items
-    the extractor surfaces.
+    ``text`` 镜像 ``document.body.innerText``（LLM 抽取器处理对象）。
+    ``anchors`` 保留 innerText 丢弃的 ``(visible_text, href)`` 对 ——
+    调用方使用它们为抽取器输出的条目重建 URL。
     """
 
     text: str
@@ -61,10 +59,10 @@ class PageSnapshot:
 
 
 def _async_playwright() -> Any:
-    """Lazily import ``playwright.async_api.async_playwright``.
+    """懒加载 ``playwright.async_api.async_playwright``。
 
-    Kept as a module-level function so tests can monkey-patch it
-    without touching the optional playwright dependency.
+    作为模块级函数保留，便于测试在不触碰可选 playwright 依赖的情况下
+    对其进行 monkey-patch。
     """
     try:
         async_playwright = import_module("playwright.async_api").async_playwright
@@ -78,14 +76,14 @@ def _async_playwright() -> Any:
 
 
 class BrowserManager:
-    """Manages browser sessions for non-Bilibili content sources.
+    """管理非 Bilibili 内容源的浏览器会话。
 
     Args:
-        executable: agent-browser executable path (fallback backend only).
-        headed: whether to launch agent-browser headed (fallback backend only).
-        cdp_url: CDP WebSocket/HTTP endpoint of a pre-launched Chrome.
-            Example: ``http://127.0.0.1:9222``. When set, this backend
-            takes precedence over agent-browser.
+        executable: agent-browser 可执行文件路径（仅兜底后端使用）。
+        headed: 是否以有头模式启动 agent-browser（仅兜底后端使用）。
+        cdp_url: 预先启动 Chrome 的 CDP WebSocket/HTTP 端点。
+            例如：``http://127.0.0.1:9222``。设置后该后端优先级
+            高于 agent-browser。
     """
 
     def __init__(
@@ -109,11 +107,11 @@ class BrowserManager:
 
     @property
     def is_available(self) -> bool:
-        """Whether the chosen backend can be invoked.
+        """所选后端是否可调用。
 
-        For the CDP backend, availability is determined lazily at call time
-        (connection may still fail if the Chrome instance is not running);
-        for the agent-browser backend we delegate to its own check.
+        对于 CDP 后端，可用性在调用时懒判断
+        （若 Chrome 实例未运行，连接仍可能失败）；
+        对于 agent-browser 后端，委托给其自身的检查。
         """
         if self._cdp_url:
             return True
@@ -121,14 +119,14 @@ class BrowserManager:
 
     @property
     def backend(self) -> str:
-        """Backend identifier: ``"cdp"`` or ``"agent-browser"``."""
+        """后端标识：``"cdp"`` 或 ``"agent-browser"``。"""
         return "cdp" if self._cdp_url else "agent-browser"
 
     async def get_page_snapshot(self, url: str) -> PageSnapshot:
-        """Navigate to ``url`` and return text + anchors.
+        """导航至 ``url`` 并返回文本与锚点。
 
-        The CDP backend captures both in one JS evaluate; the agent-browser
-        fallback only exposes text, so ``anchors`` is returned empty.
+        CDP 后端在单次 JS evaluate 中同时抓取两者；agent-browser
+        兜底仅暴露文本，因此 ``anchors`` 返回空。
         """
         if self._cdp_url:
             return await self._get_page_snapshot_cdp(url)
@@ -137,23 +135,23 @@ class BrowserManager:
         return PageSnapshot(text=text, anchors=[])
 
     async def get_page_text(self, url: str) -> str:
-        """Navigate to ``url`` and return visible page text only.
+        """导航至 ``url`` 并仅返回可见页面文本。
 
-        Thin wrapper over :meth:`get_page_snapshot` for callers that
-        don't need anchor data.
+    对 :meth:`get_page_snapshot` 的薄封装，供不需要锚点数据的
+    调用方使用。
         """
         snapshot = await self.get_page_snapshot(url)
         return snapshot.text
 
     async def close(self) -> None:
-        """Close the fallback backend; CDP backend detaches per-call."""
+        """关闭兜底后端；CDP 后端按调用逐次分离。"""
         if self._cdp_url:
             return
         if self._browser is not None:
             await self._browser.close()
 
     async def _get_page_snapshot_cdp(self, url: str) -> PageSnapshot:
-        """Connect to the running Chrome via CDP, navigate, return snapshot."""
+        """通过 CDP 连接到运行中的 Chrome，导航并返回快照。"""
         async with _async_playwright() as pw:
             browser = await pw.chromium.connect_over_cdp(self._cdp_url)
             try:
@@ -164,8 +162,8 @@ class BrowserManager:
                     try:
                         await page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
-                        # Many SPA feeds never go idle — DOMContentLoaded is enough
-                        # to give the JS extractor something to chew on.
+                        # 许多 SPA 信息流永远不会进入 idle 状态 ——
+                        # DOMContentLoaded 足以为 JS 抽取器提供可处理内容。
                         logger.debug("networkidle timeout for %s; proceeding", url)
                     raw = await page.evaluate(_PAGE_SNAPSHOT_SCRIPT)
                 finally:
@@ -174,8 +172,8 @@ class BrowserManager:
                     except Exception:
                         logger.debug("failed to close CDP page", exc_info=True)
             finally:
-                # ``close()`` on a CDP-connected browser only detaches — it
-                # does NOT terminate the host Chrome.
+                # 对 CDP 连接的浏览器调用 ``close()`` 仅分离连接 ——
+                # 不会终止宿主 Chrome。
                 try:
                     await browser.close()
                 except Exception:

@@ -1,7 +1,7 @@
-"""PersonaGenerator — generate diverse simulated user profiles as ground truth.
+"""PersonaGenerator — 生成多样化的模拟用户画像作为 ground truth。
 
-Uses LLM to create realistic, self-consistent OnionProfile instances
-that cover diverse personality types, interest patterns, and life stages.
+使用 LLM 创建真实、自洽的 OnionProfile 实例，
+覆盖多样的人格类型、兴趣模式和生活阶段。
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from openbiliclaw.soul.profile import OnionProfile
 
 logger = logging.getLogger(__name__)
 
-# Persona diversity dimensions for mini-batch sampling
+# 用于 mini-batch 采样的人格多样性维度
 PERSONA_DIMENSIONS: dict[str, list[str]] = {
     "mbti": ["INTJ", "ENFP", "ISTP", "ESFJ", "INFJ", "ENTP", "ISFP", "ESTJ"],
     "interest_breadth": ["specialist", "generalist"],
@@ -29,7 +29,7 @@ PERSONA_DIMENSIONS: dict[str, list[str]] = {
 
 
 def _sample_constraints(count: int) -> list[dict[str, str]]:
-    """Sample diverse constraint combinations for a mini-batch."""
+    """为 mini-batch 采样多样化的约束组合。"""
     all_combos: list[dict[str, str]] = []
     for mbti in PERSONA_DIMENSIONS["mbti"]:
         for breadth in PERSONA_DIMENSIONS["interest_breadth"]:
@@ -48,7 +48,7 @@ def _sample_constraints(count: int) -> list[dict[str, str]]:
 
 
 def build_persona_prompt(constraints: dict[str, str]) -> list[dict[str, str]]:
-    """Build LLM prompt for generating a simulated user persona."""
+    """构建用于生成模拟用户画像的 LLM prompt。"""
     system = """<task>
 你是一个用户画像生成器。请根据给定的约束条件，生成一个虚构但合理、自洽的 B 站用户画像。
 画像必须像一个真实的人——兴趣之间有关联，性格和行为模式一致，生活阶段和深层需求自洽。
@@ -117,11 +117,11 @@ def build_persona_prompt(constraints: dict[str, str]) -> list[dict[str, str]]:
 
 
 class PersonaGenerator:
-    """Generate diverse simulated user profiles for evaluation.
+    """生成多样化的模拟用户画像用于评估。
 
-    Supports two backends:
-    - Claude Agent SDK (default): uses `run_persona_agent()` from `agents.py`
-    - Direct LLM: pass an `llm` instance for unit testing or non-SDK environments
+    支持两种后端：
+    - Claude Agent SDK（默认）：使用 `agents.py` 中的 `run_persona_agent()`
+    - 直接 LLM：传入 `llm` 实例用于单元测试或非 SDK 环境
     """
 
     def __init__(self, llm: Any = None, *, use_agent_sdk: bool = True) -> None:
@@ -133,7 +133,7 @@ class PersonaGenerator:
         *,
         constraints: dict[str, str] | None = None,
     ) -> OnionProfile:
-        """Generate a single ground truth OnionProfile."""
+        """生成单个 ground truth OnionProfile。"""
         if constraints is None:
             constraints = _sample_constraints(1)[0]
 
@@ -142,7 +142,7 @@ class PersonaGenerator:
 
             return await run_persona_agent(constraints)
 
-        # Fallback: direct LLM call
+        # 兜底方案：直接调用 LLM
         messages = build_persona_prompt(constraints)
         response: LLMResponse = await self._llm.complete(
             messages,
@@ -153,7 +153,7 @@ class PersonaGenerator:
         return self._parse_response(response.content, constraints)
 
     async def generate_batch(self, count: int) -> list[OnionProfile]:
-        """Generate a diverse mini-batch of personas."""
+        """生成一个多样化的 mini-batch 人格。"""
         constraint_list = _sample_constraints(count)
         personas: list[OnionProfile] = []
         for constraints in constraint_list:
@@ -169,7 +169,7 @@ class PersonaGenerator:
         content: str,
         constraints: dict[str, str],
     ) -> OnionProfile:
-        """Parse LLM response into OnionProfile."""
+        """将 LLM 响应解析为 OnionProfile。"""
         text = content.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -180,6 +180,6 @@ class PersonaGenerator:
             msg = "Persona generation response must be a JSON object"
             raise ValueError(msg)
 
-        # Set persona_id from constraints
+        # 从约束设置 persona_id
         profile = OnionProfile.from_dict(data)
         return profile

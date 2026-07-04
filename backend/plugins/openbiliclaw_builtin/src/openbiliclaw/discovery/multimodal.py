@@ -1,4 +1,4 @@
-"""Cover-image preparation for multimodal discovery evaluation."""
+"""多模态发现评估的封面图像准备。"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PreparedCoverImage:
-    """A compressed cover image ready for an image-capable LLM message."""
+    """已压缩、可用于支持图像的 LLM 消息的封面图。"""
 
     content_id: str
     data_url: str
@@ -69,7 +69,7 @@ async def prepare_cover_image_input(
     quality: int,
     timeout_seconds: int,
 ) -> PreparedCoverImage | None:
-    """Fetch, resize, JPEG-compress, and base64-encode one cover image."""
+    """抓取、缩放、JPEG 压缩并 base64 编码一张封面图。"""
     url = (cover_url or "").strip()
     cid = (content_id or "").strip()
     if not url or not cid:
@@ -103,7 +103,7 @@ async def prepare_cover_image_inputs(
     quality: int,
     timeout_seconds: int,
 ) -> list[PreparedCoverImage]:
-    """Prepare every available cover image in a batch."""
+    """批量准备所有可用的封面图。"""
     tasks = [
         prepare_cover_image_input(
             content_id=str(content.content_id or content.bvid or ""),

@@ -1,6 +1,6 @@
-"""OpenAI-compatible LLM provider.
+"""OpenAI 兼容 LLM provider。
 
-Supports OpenAI API and any compatible APIs (e.g. DeepSeek, local vLLM).
+支持 OpenAI API 以及任意兼容 API（如 DeepSeek、本地 vLLM）。
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 
 def _generic_json_schema_response_format() -> dict[str, Any]:
-    """OpenAI structured-output shape for arbitrary JSON object tasks."""
+    """用于任意 JSON 对象任务的 OpenAI 结构化输出形状。"""
     return {
         "type": "json_schema",
         "json_schema": {
@@ -56,12 +56,12 @@ def _generic_json_schema_response_format() -> dict[str, Any]:
 
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI and compatible API provider."""
+    """OpenAI 及兼容 API provider。"""
 
-    # OpenAI's API has a working embeddings endpoint
-    # (text-embedding-3-small / -large). Subclasses pointing at backends
-    # that don't expose embeddings (DeepSeek, OpenRouter, etc.) override
-    # this back to False — see DeepSeekProvider / OpenRouterProvider.
+    # OpenAI 的 API 有可用的 embeddings 端点
+    # （text-embedding-3-small / -large）。指向不暴露 embeddings 的
+    # 后端（DeepSeek、OpenRouter 等）的子类会将此改回 False —— 见
+    # DeepSeekProvider / OpenRouterProvider。
     supports_embedding = True
 
     _MAX_RETRIES = 3
@@ -104,9 +104,9 @@ class OpenAIProvider(LLMProvider):
         reasoning_effort: str | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        # ``reasoning_effort`` is consumed by ``DeepSeekProvider``; the
-        # base OpenAI provider accepts it for signature compatibility
-        # but doesn't act on it (vanilla GPT-4o has no thinking knob).
+        # ``reasoning_effort`` 由 ``DeepSeekProvider`` 消费；基础 OpenAI
+        # provider 为保持签名兼容性接受它，但不对其做处理
+        # （原版 GPT-4o 没有思考开关）。
         del reasoning_effort
         effective_model = (model or "").strip() or self._model
         kwargs: dict[str, Any] = {
@@ -129,8 +129,8 @@ class OpenAIProvider(LLMProvider):
         try:
             response = await self._request_with_retry(**kwargs)
         except LLMProviderError as exc:
-            # Retry at most once: after replacement kwargs["response_format"]
-            # is no longer json_object, so _uses_json_object returns False.
+            # 至多重试一次：替换后 kwargs["response_format"] 不再是
+            # json_object，所以 _uses_json_object 返回 False。
             if (
                 json_mode
                 and self._uses_json_object(kwargs.get("response_format"))
@@ -147,10 +147,10 @@ class OpenAIProvider(LLMProvider):
         choice = response.choices[0]
         content = choice.message.content or ""
         if not content.strip():
-            # Some OpenAI-compatible backends return HTTP 200 and report
-            # completion_tokens > 0, yet ``message.content`` is empty when
-            # ``response_format`` is set. Retry once without the constraint;
-            # the prompt itself already asks for JSON.
+            # 某些 OpenAI 兼容后端在设置了 ``response_format`` 时返回
+            # HTTP 200 并报告 completion_tokens > 0，但
+            # ``message.content`` 为空。去掉约束重试一次；prompt 本身
+            # 已要求 JSON。
             if json_mode and "response_format" in kwargs:
                 logger.warning(
                     "%s returned empty content with response_format=%s; "
@@ -172,20 +172,19 @@ class OpenAIProvider(LLMProvider):
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
             }
-            # Normalize cache fields across the OpenAI-protocol family.
-            # OpenAI exposes `prompt_tokens_details.cached_tokens` since
-            # GPT-4o; DeepSeek injects `prompt_cache_hit_tokens` /
-            # `prompt_cache_miss_tokens` on the same usage object;
-            # Kimi / 通义 / 中转站 vary. We probe known fields and
-            # surface whichever the backend sent under the universal
-            # ``cached_input_tokens`` key. Downstream pricing /
-            # observability code reads only this normalized field.
+            # 在 OpenAI 协议家族中归一化缓存字段。
+            # OpenAI 自 GPT-4o 起暴露 `prompt_tokens_details.cached_tokens`；
+            # DeepSeek 在同一 usage 对象上注入 `prompt_cache_hit_tokens` /
+            # `prompt_cache_miss_tokens`；Kimi / 通义 / 中转站各异。
+            # 我们探测已知字段，把后端发送的那个挂到通用的
+            # ``cached_input_tokens`` 键下。下游计费 / 可观测性代码
+            # 只读此归一化字段。
             cached = 0
             details = getattr(response.usage, "prompt_tokens_details", None)
             if details is not None:
                 cached = int(getattr(details, "cached_tokens", 0) or 0)
             if not cached:
-                # DeepSeek explicit fields
+                # DeepSeek 的显式字段
                 cached = int(getattr(response.usage, "prompt_cache_hit_tokens", 0) or 0)
             if cached:
                 usage["cached_input_tokens"] = cached
@@ -199,7 +198,7 @@ class OpenAIProvider(LLMProvider):
         )
 
     async def _request_with_retry(self, **kwargs: Any) -> Any:
-        """Send a request with bounded retry for transient failures."""
+        """发送请求，对瞬时失败进行有界重试。"""
         last_error: Exception | None = None
 
         for attempt in range(1, self._MAX_RETRIES + 1):
@@ -247,7 +246,7 @@ class OpenAIProvider(LLMProvider):
         return False
 
     def _map_error(self, exc: Exception) -> LLMProviderError:
-        """Map provider or network exceptions into shared provider errors."""
+        """将 provider 或网络异常映射为共享的 provider 错误。"""
         if isinstance(exc, LLMProviderError):
             return exc
         if isinstance(exc, TimeoutError):
@@ -295,7 +294,7 @@ class OpenAIProvider(LLMProvider):
 
     @staticmethod
     def _provider_error_body_excerpt(exc: Exception) -> str:
-        """Extract a compact provider response body from SDK exceptions."""
+        """从 SDK 异常中抽取紧凑的 provider 响应体。"""
 
         candidates: list[object] = []
         body = getattr(exc, "body", None)
@@ -323,23 +322,23 @@ class OpenAIProvider(LLMProvider):
         return ""
 
     def _is_retryable(self, exc: LLMProviderError) -> bool:
-        """Whether a mapped exception should be retried."""
+        """判断映射后的异常是否应重试。"""
         if isinstance(exc, LLMRateLimitError):
             return False
         return isinstance(exc, (LLMProviderError, LLMTimeoutError))
 
     def _json_response_format(self) -> dict[str, Any] | None:
         if self._is_lm_studio():
-            # LM Studio's OpenAI-compat layer loses ``message.content``
-            # with both ``json_object`` and ``json_schema`` response
-            # formats (HTTP 200, completion_tokens > 0, but content is
-            # empty). Skip ``response_format`` entirely; the prompt
-            # already asks for JSON so the model still produces it.
+            # LM Studio 的 OpenAI 兼容层在 ``json_object`` 和
+            # ``json_schema`` 两种 response_format 下都会丢失
+            # ``message.content``（HTTP 200、completion_tokens > 0，
+            # 但 content 为空）。完全跳过 ``response_format``；
+            # prompt 已要求 JSON，模型仍会产出。
             return None
         return {"type": "json_object"}
 
     def _is_lm_studio(self) -> bool:
-        """Detect LM Studio by URL heuristics (name or default port)."""
+        """通过 URL 启发式检测 LM Studio（名称或默认端口）。"""
         raw_base_url = self.base_url.strip()
         if not raw_base_url:
             return False
@@ -364,18 +363,16 @@ class OpenAIProvider(LLMProvider):
 
     @staticmethod
     def _json_object_response_format_rejected(exc: LLMProviderError) -> bool:
-        # The field path "response_format.type" is lowercase in all known
-        # OpenAI-protocol implementations, so .lower() + literal match is safe.
+        # 字段路径 "response_format.type" 在所有已知的 OpenAI 协议实现中
+        # 都是小写，因此 .lower() + 字面量匹配是安全的。
         message = str(exc).lower()
         return "response_format.type" in message and "json_schema" in message and "text" in message
 
     async def embed(self, text: str, *, model: str = "text-embedding-3-small") -> list[float]:
-        """Get text embedding via OpenAI's ``/v1/embeddings`` endpoint.
+        """通过 OpenAI 的 ``/v1/embeddings`` 端点获取文本嵌入。
 
-        Returns an empty list on failure so callers can degrade
-        gracefully (the embedding service treats empty vectors as
-        "no embedding"). This matches the contract Gemini/Ollama
-        providers already follow.
+        失败时返回空列表，以便调用方优雅降级（嵌入服务将空向量视为
+        "无嵌入"）。这与 Gemini/Ollama provider 已遵循的契约一致。
         """
         try:
             kwargs: dict[str, Any] = {"model": model, "input": text}
@@ -401,27 +398,24 @@ class OpenAIProvider(LLMProvider):
         return self._provider_name == "openai"
 
     def _extra_headers(self) -> dict[str, str]:
-        """Return optional provider-specific request headers."""
+        """返回可选的 provider 专属请求头。"""
         return {}
 
     def _extra_body(self) -> dict[str, Any]:
-        """Return optional provider-specific request body fields.
+        """返回可选的 provider 专属请求体字段。
 
-        Used for non-standard keys like DeepSeek's ``thinking`` and
-        ``reasoning_effort``. Keys returned here are passed verbatim via
-        ``extra_body`` of the OpenAI SDK.
+        用于 DeepSeek 的 ``thinking`` 和 ``reasoning_effort`` 等非标准
+        键。此处返回的键会通过 OpenAI SDK 的 ``extra_body`` 原样传递。
         """
         return {}
 
 
-# DeepSeek's ``max_tokens`` caps thinking + response combined. With
-# ``reasoning_effort="max"`` the thinking stream alone can burn tens of
-# thousands of tokens before any ``content`` is emitted, which causes the
-# response to end with ``content=""`` and our provider to raise
-# LLMResponseError. These floors ensure callers that passed a small
-# ``max_tokens`` (our codebase default is 4096) still leave enough
-# headroom for the reasoning phase to finish. DeepSeek's documented
-# ceiling is 64K.
+# DeepSeek 的 ``max_tokens`` 同时限制思考 + 响应。在
+# ``reasoning_effort="max"`` 下，仅思考流就可能烧掉数万 token 才输出
+# 任何 ``content``，导致响应以 ``content=""`` 结束，我们的 provider
+# 抛出 LLMResponseError。这些下限确保传入较小 ``max_tokens`` 的调用方
+# （我们代码库默认 4096）仍为推理阶段留出足够余量完成。DeepSeek 文档
+# 上限是 64K。
 _DEEPSEEK_THINKING_MAX_TOKENS_FLOOR = {
     "max": 32768,
     "high": 16384,
@@ -429,20 +423,18 @@ _DEEPSEEK_THINKING_MAX_TOKENS_FLOOR = {
 
 
 class DeepSeekProvider(OpenAIProvider):
-    """DeepSeek provider (OpenAI-compatible API).
+    """DeepSeek provider（OpenAI 兼容 API）。
 
-    Supports the v4 ``thinking`` mode via ``reasoning_effort``. When
-    ``reasoning_effort`` is set (``"high"`` or ``"max"``), requests are
-    sent with ``thinking={"type": "enabled"}`` and the requested effort
-    level as top-level body fields (the DeepSeek API accepts both
-    schemas).
+    通过 ``reasoning_effort`` 支持 v4 ``thinking`` 模式。当设置了
+    ``reasoning_effort``（``"high"`` 或 ``"max"``）时，请求会带上
+    ``thinking={"type": "enabled"}`` 以及所请求的 effort 级别作为顶层
+    body 字段（DeepSeek API 接受两种 schema）。
     """
 
-    # DeepSeek's API does not expose an embeddings endpoint. The
-    # inherited ``embed()`` would 404 at call time, which used to
-    # silently break the recommendation pipeline for DeepSeek users
-    # who never ran ``setup-embedding``. Marking it False makes
-    # ``build_embedding_service`` fall back to ollama / gemini.
+    # DeepSeek 的 API 不暴露 embeddings 端点。继承的 ``embed()`` 会在
+    # 调用时 404，这曾经悄然让从未运行 ``setup-embedding`` 的
+    # DeepSeek 用户的推荐管线崩溃。标记为 False 使
+    # ``build_embedding_service`` 回退到 ollama / gemini。
     supports_embedding = False
 
     def __init__(
@@ -472,16 +464,15 @@ class DeepSeekProvider(OpenAIProvider):
         reasoning_effort: str | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        # v0.3.51+: per-call ``reasoning_effort`` override. ``None`` =
-        # use provider default (configured in config.toml). Empty
-        # string = explicitly disable thinking for this call (used by
-        # structured tasks like discovery's eval_batch — observed in
-        # 2026-05-05 logs as 8-16 min/batch with reasoning, expected
-        # ~30s without).
+        # v0.3.51+: 单次调用的 ``reasoning_effort`` 覆盖。``None`` =
+        # 使用 provider 默认（在 config.toml 中配置）。空字符串 =
+        # 为此次调用显式禁用思考（用于 discovery 的 eval_batch 等
+        # 结构化任务 —— 2026-05-05 日志观察到开启推理时 8-16 分钟/批，
+        # 预期不开启时约 30 秒）。
         previous_effort = self._reasoning_effort
         applied_effort = reasoning_effort if reasoning_effort is not None else previous_effort
-        # Temporarily mutate the instance attribute so ``_extra_body``
-        # and the empty-content retry path see the per-call value.
+        # 临时修改实例属性，以便 ``_extra_body`` 和空内容重试路径
+        # 看到的是单次调用的值。
         self._reasoning_effort = applied_effort
         try:
             effort = applied_effort
@@ -513,10 +504,9 @@ class DeepSeekProvider(OpenAIProvider):
                         json_mode=json_mode,
                         model=model,
                     )
-                # Max-effort reasoning occasionally burns through the entire
-                # output budget before the model emits any ``content``. Retry
-                # once with thinking disabled so structured pipelines get a
-                # usable response instead of hard-failing.
+                # 最大 effort 推理偶尔会在模型输出任何 ``content`` 之前
+                # 烧光整个输出预算。禁用思考重试一次，让结构化管线得到
+                # 可用响应而不是硬失败。
                 logger.warning(
                     "deepseek: empty content with reasoning_effort=%s; "
                     "retrying with thinking disabled",

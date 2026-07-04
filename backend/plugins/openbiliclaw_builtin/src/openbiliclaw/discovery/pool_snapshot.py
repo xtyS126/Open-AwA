@@ -1,4 +1,4 @@
-"""Pool distribution snapshot helpers for discovery planning."""
+"""发现规划的池分布快照辅助函数。"""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def build_pool_distribution_snapshot(
     pool_target_count: int,
     source_targets: dict[str, int],
 ) -> PoolDistributionSnapshot:
-    """Build a compact pool coverage summary for later discovery prompts."""
+    """为后续发现 prompt 构建紧凑的池覆盖摘要。"""
     target_count = max(0, int(pool_target_count))
     clean_source_targets = {
         str(source).strip(): max(0, int(target))
@@ -100,12 +100,12 @@ def build_cold_start_pool_snapshot(
     pool_target_count: int,
     source_targets: dict[str, int] | None = None,
 ) -> PoolDistributionSnapshot | None:
-    """Build synthetic diversity hints for the first discovery wave.
+    """为第一波发现构建合成的多样性提示。
 
-    With an empty pool there is no real saturation history yet, but the top
-    profile interests can still over-dominate every strategy. Treat the
-    strongest interests as soft avoid topics and the next interests/domains as
-    preferred axes so prompts and reranking start broad.
+    池为空时还没有真正的饱和度历史,但 top
+    profile interests 仍可能主导每一个策略。把最强的
+    interests 当作软回避主题,把次级 interests/domains 当作
+    偏好轴,这样 prompt 和 reranking 一开始就更宽。
     """
 
     from openbiliclaw.discovery.strategies._utils import build_profile_summary

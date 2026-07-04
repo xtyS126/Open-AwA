@@ -1,4 +1,4 @@
-"""Continuous refresh controller for the local API runtime."""
+"""本地 API runtime 的持续刷新控制器。"""
 
 from __future__ import annotations
 
@@ -42,12 +42,12 @@ _DEFAULT_CANDIDATE_EVAL_BATCH_SIZE = 45
 _DISCOVERY_REPLENISH_LOW_WATERMARK_RATIO = 0.90
 _BILIBILI_EXPENSIVE_DISCOVERY_GAP_RATIO = 0.20
 _BILIBILI_EXPENSIVE_DISCOVERY_MIN_GAP = 20
-# How often the cover-image disk cache is pruned of consumed + unsaved covers.
-# The bulk one-shot prune runs at API startup; this is the steady-state sweep.
+# 封面图磁盘缓存被清理（已消费 + 未保存封面）的频率。
+# 批量一次性清理在 API 启动时运行；这是稳态扫描。
 _IMAGE_CACHE_CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60
-# Discovery-time cover prefetch: cache covers while their CDN token is still fresh
-# (XHS signed URLs expire fast). Runs often, scans recent discoveries newest-first,
-# and is bounded per tick so it never floods a CDN.
+# Discovery 时封面预取：在 CDN token 仍新鲜时缓存封面
+# （XHS 签名 URL 快速过期）。频繁运行，按最新优先扫描最近发现，
+# 且每 tick 有界因此永不淹没 CDN。
 _COVER_PREFETCH_INTERVAL_SECONDS = 60
 _COVER_PREFETCH_RECENT_HOURS = 12
 _COVER_PREFETCH_SCAN = 300
@@ -61,7 +61,7 @@ _PROBE_CHALLENGE_MODES = {"lateral", "bridge", "wildcard"}
 
 
 def _call_accepts_limit(fn: Any) -> bool:
-    """Return whether a producer callable accepts a ``limit=`` keyword."""
+    """返回一个 producer callable 是否接受 ``limit=`` 关键字参数。"""
     try:
         signature = inspect.signature(fn)
     except (TypeError, ValueError):
@@ -72,7 +72,7 @@ def _call_accepts_limit(fn: Any) -> bool:
 
 
 def _call_accepts_strategy_limits(fn: Any) -> bool:
-    """Return whether a discovery callable accepts ``strategy_limits=``."""
+    """返回一个 discovery callable 是否接受 ``strategy_limits=``。"""
     try:
         signature = inspect.signature(fn)
     except (TypeError, ValueError):
@@ -83,7 +83,7 @@ def _call_accepts_strategy_limits(fn: Any) -> bool:
 
 
 def _call_accepts_pool_snapshot(fn: Any) -> bool:
-    """Return whether a discovery callable accepts ``pool_snapshot=``."""
+    """返回一个 discovery callable 是否接受 ``pool_snapshot=``。"""
     try:
         signature = inspect.signature(fn)
     except (TypeError, ValueError):
@@ -94,11 +94,11 @@ def _call_accepts_pool_snapshot(fn: Any) -> bool:
 
 
 def _call_accepts_keywords(fn: Any) -> bool:
-    """Return whether a discovery callable accepts a ``keywords=`` keyword.
+    """返回一个 discovery callable 是否接受 ``keywords=`` 关键字参数。
 
-    Used for the direct-engine B站 search fallback path so the unified keyword
-    planner's injected words are only forwarded to engines/stubs that declare
-    the kwarg — stubs without it stay byte-compatible (flag-off / tests).
+    用于 direct-engine B 站 search 回退路径，使统一 keyword
+    planner 注入的词仅转发给声明了该 kwarg 的 engine/stub ——
+    未声明它的 stub 保持字节兼容（flag 关闭 / 测试）。
     """
     try:
         signature = inspect.signature(fn)
@@ -110,11 +110,11 @@ def _call_accepts_keywords(fn: Any) -> bool:
 
 
 def _call_accepts_keyword_ids(fn: Any) -> bool:
-    """Return whether a discovery callable accepts a ``keyword_ids=`` keyword.
+    """返回一个 discovery callable 是否接受 ``keyword_ids=`` 关键字参数。
 
-    P1.8 parallel of :func:`_call_accepts_keywords` for the direct-engine B站
-    search fallback so the keyword→id provenance map is only forwarded to
-    engines that declare it; stubs without it stay byte-compatible.
+    :func:`_call_accepts_keywords` 的 P1.8 并行版本，用于 direct-engine
+    B 站 search 回退，使 keyword→id 溯源 map 仅转发给声明了它的 engine；
+    未声明它的 stub 保持字节兼容。
     """
     try:
         signature = inspect.signature(fn)
@@ -126,7 +126,7 @@ def _call_accepts_keyword_ids(fn: Any) -> bool:
 
 
 def _string_state_map(value: object) -> dict[str, str]:
-    """Normalize a JSON object field into a string-to-string map."""
+    """将一个 JSON 对象字段规范化为 string-to-string map。"""
     if not isinstance(value, dict):
         return {}
     return {str(key): str(item) for key, item in value.items()}
@@ -210,14 +210,14 @@ class SupportsEventDatabase(Protocol):
 class SupportsProfileEngine(Protocol):
     async def get_profile(self) -> Any: ...
 
-    # Effective disliked topics (AI dislikes + flat preference dislikes with
-    # user overrides applied). Used by the proactive-delight hard filter so a
-    # manually added dislike filters and a manually removed one does not.
+    # 有效 disliked topics（AI dislikes + 平铺 preference dislikes，已应用
+    # user override）。被 proactive-delight 硬过滤器使用，使手动添加的
+    # dislike 生效过滤，手动移除的不生效。
     def get_effective_disliked_topics(self) -> list[str]: ...
 
-    # Optional: the soul engine exposes a ProfileUpdatePipeline that the
-    # refresh loop ticks periodically. The attribute may be missing on
-    # older test doubles, so callers should `getattr(..., "pipeline", None)`.
+    # 可选：soul engine 暴露一个 ProfileUpdatePipeline，refresh loop
+    # 周期性 tick。该属性在较老的 test double 上可能缺失，因此调用方应
+    # `getattr(..., "pipeline", None)`。
     @property
     def pipeline(self) -> Any: ...
 
@@ -255,8 +255,8 @@ class SupportsRecommendationEngine(Protocol):
     async def prewarm_pool_mmr_embeddings(self, *, limit: int = 200) -> int: ...
 
 
-# Staged strategy plan for guided-init pool backfill (gui-init spec §5d).
-# Mirrors cli._INIT_DISCOVERY_PLAN; B2 consolidates the CLI to reuse this.
+# guided-init 池回填的分阶段 strategy plan（gui-init spec §5d）。
+# 镜像 cli._INIT_DISCOVERY_PLAN；B2 整合 CLI 复用此 plan。
 _INIT_DISCOVERY_PLAN: list[list[str]] = [
     ["search", "trending", "related_chain", "explore"],
 ]
@@ -264,7 +264,7 @@ _INIT_DISCOVERY_PLAN: list[list[str]] = [
 
 @dataclass
 class ContinuousRefreshController:
-    """Keep discovery cache and recommendations fresh during API runtime."""
+    """在 API runtime 期间保持 discovery 缓存和推荐新鲜。"""
 
     memory_manager: SupportsRuntimeState
     database: SupportsEventDatabase
@@ -281,10 +281,10 @@ class ContinuousRefreshController:
     zhihu_producer: Any | None = None
     scheduler_config: Any = field(default_factory=SchedulerConfig)
     presence: PresenceTracker = field(default_factory=PresenceTracker)
-    # gui-init D1: optional init-aware gate. When it returns True (a guided init
-    # is active) ALL background loops pause so they don't race init's explicit
-    # analyze/build. ``run_init_backfill`` bypasses this (it never calls
-    # ``_llm_work_allowed``), so init's own discovery is not self-blocked.
+    # gui-init D1：可选的 init 感知门控。当它返回 True（一个 guided init
+    # 处于活动状态）时，所有后台 loop 暂停以免与 init 的显式
+    # analyze/build 竞争。``run_init_backfill`` 绕过此门控（它从不调用
+    # ``_llm_work_allowed``），因此 init 自身的 discovery 不会被自身阻塞。
     init_active_check: Callable[[], bool] | None = None
     signal_event_threshold: int = 6
     event_refresh_minutes: int = 0
@@ -293,49 +293,43 @@ class ContinuousRefreshController:
     notification_cooldown_hours: int = 2
     delight_cooldown_hours: int = 4
     check_interval_seconds: int = 60
-    # Proactive probe-push loop runs much less frequently than the main
-    # refresh loop.  Probes aren't streaming content — once the active
-    # set has been delivered, the only reason to push again is when a
-    # slot rotates (user feedback / TTL).  10 min is enough to surface
-    # newly generated probes without hammering the user.
-    # Pre-2026-05-04 default was 600s (10 min). At that cadence new
-    # delights took up to 10 minutes to surface in the popup, plus the
-    # proactive_push only emits ONE candidate per tick. 120s is a much
-    # tighter fallback while keeping chrome-notification cooldowns
-    # intact (those have their own dedup window). The primary push path
-    # is still the immediate ``delight.refreshed`` event emitted at the
-    # end of ``_run_refresh_plan`` once new candidates are scored — this
-    # interval is a safety net for the case where a refresh-less window
-    # produces delights via some other path (manual rescore, init).
+    # Proactive probe-push loop 运行频率比主 refresh loop 低得多。
+    # Probe 不是流式内容 —— 一旦 active set 已交付，再次 push 的唯一
+    # 理由是 slot 轮换（用户反馈 / TTL）。10 min 足以浮现新生成的
+    # probe 而不会轰炸用户。
+    # 2026-05-04 之前默认是 600s（10 min）。在那个节奏下新 delight
+    # 需要长达 10 分钟才能在弹窗浮现，加上 proactive_push 每 tick
+    # 仅发送一个候选。120s 是一个更紧的回退，同时保持 chrome-notification
+    # 冷却不变（它们有自己的去重窗口）。主要 push 路径仍然是在
+    # ``_run_refresh_plan`` 结束时一旦新候选评分完成就立即发送的
+    # ``delight.refreshed`` 事件 —— 此 interval 是无 refresh 窗口通过
+    # 其他路径（手动 rescore、init）产生 delight 时的安全网。
     proactive_push_interval_seconds: int = 120
-    # Soul pipeline tick runs every minute to drain buffers, but the
-    # speculator inside the pipeline doesn't need that cadence — its
-    # gating happens upstream now in pipeline.tick().  Kept explicit so
-    # we can tune in tests.
+    # Soul pipeline tick 每分钟运行以排空 buffer，但 pipeline 内的
+    # speculator 不需要那个节奏 —— 它的门控现在上游在 pipeline.tick()
+    # 中处理。保留显式以便测试中可调。
     discovery_limit: int = 30
     pool_target_count: int = 300
     pool_source_shares: dict[str, int] = field(
         default_factory=lambda: dict(_DEFAULT_PLATFORM_SOURCE_SHARES)
     )
-    # v0.3.63+: optional registry so detached tasks (manual-refresh
-    # background work, per-strategy precompute fire-and-forget) can be
-    # cancelled by ``RuntimeContext.rebuild_from_config`` before the
-    # next runtime starts. ``_track_task`` uses bare ``create_task``
-    # when this is ``None`` so existing tests that build the controller
-    # directly without injecting a registry keep working.
+    # v0.3.63+：可选注册表，使 detached 任务（manual-refresh 后台工作、
+    # per-strategy precompute fire-and-forget）可被
+    # ``RuntimeContext.rebuild_from_config`` 在下一个 runtime 启动前
+    # 取消。``_track_task`` 在此为 ``None`` 时使用裸 ``create_task``，
+    # 使直接构建 controller 而不注入注册表的现有测试继续工作。
     task_registry: BackgroundTaskRegistry | None = None
-    # P1.6: unified keyword planner (deficit-pulled merged keyword generation).
-    # Constructed as its own object in ``api/runtime_context.py`` because the
-    # controller holds no ``llm_service``. Its loop is launched by
-    # ``run_forever``; with the feature flag off (default) the loop is a pure
-    # no-op, so wiring it in is zero behavior change. ``None`` (the default,
-    # used by tests that build the controller directly) means the planner loop
-    # returns immediately.
+    # P1.6：统一 keyword planner（deficit-pulled 合并 keyword 生成）。
+    # 在 ``api/runtime_context.py`` 中作为独立对象构造，因为 controller
+    # 不持有 ``llm_service``。其 loop 由 ``run_forever`` 启动；feature
+    # flag 关闭时（默认）loop 是纯 no-op，因此接入它是零行为变更。
+    # ``None``（默认，由直接构建 controller 的测试使用）意味着 planner
+    # loop 立即返回。
     keyword_planner: Any | None = None
-    # P1.7: unified keyword planner FETCH coordinator. Drives the B站 search
-    # inline-admit lifecycle (claim → inject as ``queries`` → used / failed) when
-    # the flag is on. Constructed in ``api/runtime_context.py``; ``None`` (tests
-    # / flag off) → the B站 search keeps its legacy self-generating path.
+    # P1.7：统一 keyword planner FETCH 协调器。在 flag 开启时驱动 B 站
+    # search inline-admit 生命周期（claim → 注入为 ``queries`` →
+    # used / failed）。在 ``api/runtime_context.py`` 中构造；``None``
+    # （测试 / flag 关闭）→ B 站 search 保持其 legacy 自生成路径。
     keyword_fetch: Any | None = None
     _manual_refresh_task: asyncio.Task[None] | None = None
     _discovery_drain_lock: asyncio.Lock = field(
@@ -343,46 +337,42 @@ class ContinuousRefreshController:
         init=False,
         repr=False,
     )
-    # v0.3.62+ global "skip-if-busy" gate. Direct refresh execution is
-    # intentionally centralized: periodic ticks call ``refresh_if_needed``;
-    # user/manual replenishment calls ``force_refresh``. Event/feedback/init
-    # paths only queue a reason and wait for the unified scheduler.
-    # Without this lock, a slow periodic tick (10+ minutes when WBI
-    # rate-limits) can run concurrently with manual refresh + per-event
-    # opportunistic refresh, amplifying load on Bilibili and causing
-    # SQLite write contention. Acquired with ``async with`` inside
-    # ``refresh_if_needed``; if already held, the new caller exits
-    # immediately with ``{"skipped": True, ...}`` rather than queueing.
+    # v0.3.62+ 全局 "skip-if-busy" 门控。直接 refresh 执行被有意集中化：
+    # 周期性 tick 调用 ``refresh_if_needed``；用户/手动补货调用
+    # ``force_refresh``。Event/feedback/init 路径仅 queue 一个 reason
+    # 并等待统一调度器。
+    # 没有这个锁，一个慢的周期性 tick（WBI 速率限制下 10+ 分钟）可能
+    # 与手动 refresh + per-event 机会性 refresh 并发运行，放大对 Bilibili
+    # 的负载并导致 SQLite 写竞争。在 ``refresh_if_needed`` 内通过
+    # ``async with`` 获取；如果已被持有，新调用方立即以
+    # ``{"skipped": True, ...}`` 退出而非排队。
     _refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
     _manual_refresh_state: str = "idle"
     _manual_refresh_message: str = ""
     _manual_refresh_started_at: str = ""
     _manual_refresh_finished_at: str = ""
     _pending_replenishment_reasons: set[str] = field(default_factory=set, init=False)
-    # Last-tick fingerprint of pool maintenance state, used to demote
-    # the per-minute "reactivated=N" / "trim dropped=N top=X" log lines
-    # to DEBUG when nothing actually changed since the previous tick.
-    # INFO fires only when the count or top-group rotates.
+    # 上次 tick 的 pool maintenance 状态指纹，用于将每分钟的
+    # "reactivated=N" / "trim dropped=N top=X" 日志行降级到 DEBUG
+    # 当自上次 tick 以来没有实际变化时。INFO 仅在计数或 top-group
+    # 轮换时触发。
     _last_pool_maintenance_fingerprint: tuple[int, int, str] = (-1, -1, "")
     _warned_pool_count_fallbacks: set[str] = field(default_factory=set, init=False)
-    # Last pool_available count emitted via the runtime event stream so
-    # popup-side ``mergeRuntimeStatusEvent`` only re-renders when the
-    # number actually changes — see ``_publish_pool_status_if_changed``.
+    # 上次通过 runtime 事件流发送的 pool_available 计数，使弹窗侧的
+    # ``mergeRuntimeStatusEvent`` 仅在数字实际变化时才重新渲染 ——
+    # 见 ``_publish_pool_status_if_changed``。
     _last_published_pool_count: int = -1
-    # Flips false→true when soul profile is first detected. Used by
-    # ``_loop_refresh`` to fire a one-shot ``classify_pool_backlog``
-    # the moment init's analyze_events finishes — otherwise items
-    # ingested during the ~7-minute init window sit un-classified
-    # until the next natural refresh tick (and recommendation summary
-    # would print fallback ``topic_group="title[:N]"`` until then).
+    # soul profile 首次检测到时从 false 翻转为 true。被 ``_loop_refresh``
+    # 用于在 init 的 analyze_events 完成那一刻触发一次性的
+    # ``classify_pool_backlog`` —— 否则在约 7 分钟 init 窗口期间摄入
+    # 的项会一直未分类直到下一个自然 refresh tick（而 recommendation
+    # summary 会打印回退的 ``topic_group="title[:N]"`` 直到那时）。
     _profile_ready_observed: bool = False
-    # v0.3.61+: skip the first ``refresh_if_needed`` invocation after
-    # daemon start to give Bilibili a 30s cool-down window. Init's
-    # synchronous chunk (history fetch + favorites + following) hits
-    # the WBI search backend hard in the first ~10s; firing discovery
-    # search queries immediately afterwards routinely triggers
-    # v_voucher storm. One refresh tick of grace = much fewer
-    # exhausted retries on the first half-hour.
+    # v0.3.61+：daemon 启动后跳过第一次 ``refresh_if_needed`` 调用，
+    # 给 Bilibili 一个 30s 冷却窗口。Init 的同步块（history 获取 +
+    # favorites + following）在前 ~10s 内重击 WBI search 后端；
+    # 紧接着触发 discovery search 查询会例行触发 v_voucher 风暴。
+    # 一次 refresh tick 的宽限 = 头半小时内大幅减少耗尽重试。
     _init_grace_consumed: bool = False
     _last_llm_gate_allowed: bool = field(default=True, init=False)
 
@@ -397,10 +387,10 @@ class ContinuousRefreshController:
     ]
 
     def _llm_work_allowed(self) -> bool:
-        """Return whether daemon-owned background LLM / embedding work can run."""
-        # Pause every background loop while a guided init is active (gui-init
-        # D1) — the continuous refresh / soul-pipeline / producer ticks all gate
-        # on this, so init's explicit analyze/build/backfill runs uncontended.
+        """返回 daemon 拥有的后台 LLM / embedding 工作是否可以运行。"""
+        # guided init 活动时暂停所有后台 loop（gui-init D1）——
+        # continuous refresh / soul-pipeline / producer tick 都门控于此，
+        # 因此 init 的显式 analyze/build/backfill 无竞争运行。
         if self.init_active_check is not None:
             try:
                 if self.init_active_check():
@@ -417,7 +407,7 @@ class ContinuousRefreshController:
         return allowed
 
     def _xhs_self_nickname(self) -> str:
-        """Return the persisted XHS self nickname for pool guards."""
+        """返回持久化的 XHS self 昵称用于 pool 守卫。"""
         try:
             state = self.memory_manager.load_discovery_runtime_state()
         except Exception:
@@ -428,7 +418,7 @@ class ContinuousRefreshController:
         return str(info.get("nickname", "") or "").strip()
 
     def _pool_readiness_counts(self) -> dict[str, int]:
-        """Return normalized pool readiness counts for status payloads."""
+        """为 status payload 返回规范化的 pool readiness 计数。"""
         nickname = self._xhs_self_nickname()
         try:
             readiness = self.database.count_pool_readiness(xhs_self_nickname=nickname)
@@ -461,7 +451,7 @@ class ContinuousRefreshController:
         }
 
     def get_runtime_status(self) -> dict[str, object]:
-        """Build a lightweight runtime summary for popup or diagnostics."""
+        """为弹窗或诊断构建轻量级 runtime 摘要。"""
         state = self.memory_manager.load_discovery_runtime_state()
         refresh_values = [
             str(state.get("last_event_refresh_at", "")),
@@ -499,22 +489,19 @@ class ContinuousRefreshController:
         }
 
     async def refresh_if_needed(self) -> dict[str, object]:
-        """Refresh discovery candidates when thresholds are met.
+        """当阈值满足时刷新 discovery 候选。
 
-        Runtime replenishment now has one deciding path: the periodic scheduler
-        calls this method, while event / feedback / init hooks only queue a
-        reason through ``request_replenishment``. A module-level
-        ``_refresh_lock`` (an ``asyncio.Lock``) is checked at the very top: if
-        another refresh is already in progress, this call returns
-        ``{"skipped": True, "reason": "another refresh holds lock"}``
-        immediately rather than queueing. The remaining body runs inside
-        ``async with self._refresh_lock:``, so the lock is released even on
-        exception paths.
+        Runtime 补货现在有一个决策路径：周期性调度器调用此方法，
+        而 event / feedback / init hook 仅通过 ``request_replenishment``
+        queue 一个 reason。一个模块级 ``_refresh_lock``（一个
+        ``asyncio.Lock``）在最顶部检查：如果另一个 refresh 已在进行中，
+        此调用立即返回 ``{"skipped": True, "reason": "another refresh holds lock"}``
+        而非排队。剩余主体在 ``async with self._refresh_lock:`` 内运行，
+        因此即使异常路径锁也被释放。
 
-        Internal helpers (``_run_refresh_plan``, ``force_refresh``)
-        intentionally do NOT acquire this lock — only the public
-        ``refresh_if_needed`` entry does, so callers reaching it from
-        different paths can't double-acquire.
+        内部 helper（``_run_refresh_plan``、``force_refresh``）有意不
+        获取此锁 —— 仅公共 ``refresh_if_needed`` 入口获取，因此从不同
+        路径到达它的调用方不会双重获取。
         """
         if not self._llm_work_allowed():
             return {"refreshed": False, "strategies": [], "reason": "llm_paused"}
@@ -559,14 +546,13 @@ class ContinuousRefreshController:
         *,
         fully_parallel: bool = True,
     ) -> int:
-        """Backfill the initial discovery pool for guided init.
+        """为 guided init 回填初始 discovery 池。
 
-        Holds ``_refresh_lock`` so it serializes with continuous refresh and
-        never races it on ``content_cache`` (gui-init spec §5d). Mirrors the
-        CLI's staged ``_INIT_DISCOVERY_PLAN`` backfill, but against this
-        controller's live ``discovery_engine``/``database``. Cooperative
-        cancel: ``async with`` releases the lock on ``CancelledError``.
-        Returns the total number of items discovered.
+        持有 ``_refresh_lock`` 使其与 continuous refresh 串行化并永不
+        与其在 ``content_cache`` 上竞争（gui-init spec §5d）。镜像 CLI
+        的分阶段 ``_INIT_DISCOVERY_PLAN`` 回填，但针对此 controller 的
+        实时 ``discovery_engine``/``database``。协作式取消：``async with``
+        在 ``CancelledError`` 时释放锁。返回发现的项总数。
         """
         discovered_count = 0
         async with self._refresh_lock:
@@ -614,21 +600,19 @@ class ContinuousRefreshController:
             return None
 
     async def force_refresh(self) -> dict[str, object]:
-        """Run a full refresh immediately, bypassing runtime thresholds.
+        """立即运行完整 refresh，绕过 runtime 阈值。
 
-        Runs all 4 Bilibili strategies in a single discover() call so they
-        execute concurrently via asyncio.gather, maximizing pool diversity. The pool
-        target still applies as a hard cap — if the pool is already full, no
-        discovery runs and overflow is trimmed.
+        在单次 discover() 调用中运行全部 4 个 Bilibili strategy，使它们
+        通过 asyncio.gather 并发执行，最大化池多样性。池 target 仍作为
+        硬上限应用 —— 如果池已满，不运行 discovery 并修剪溢出。
 
-        v0.3.62+: also acquires ``_refresh_lock`` so manual refresh
-        (which calls ``force_refresh`` rather than ``refresh_if_needed``)
-        respects the global skip-if-busy gate. Without this, periodic
-        + manual / pool-low refresh used to run through different code paths,
-        amplifying Bilibili API load and SQLite write contention.
-        Skip semantics match ``refresh_if_needed``: return immediately
-        with ``{"refreshed": False, "reason": "another refresh holds lock"}``
-        instead of queueing.
+        v0.3.62+：也获取 ``_refresh_lock`` 使手动 refresh（调用
+        ``force_refresh`` 而非 ``refresh_if_needed``）尊重全局
+        skip-if-busy 门控。没有这个，周期性 + 手动 / pool-low refresh
+        过去通过不同代码路径运行，放大 Bilibili API 负载和 SQLite 写
+        竞争。Skip 语义匹配 ``refresh_if_needed``：立即返回
+        ``{"refreshed": False, "reason": "another refresh holds lock"}``
+        而非排队。
         """
         if self._refresh_lock.locked():
             logger.debug("force_refresh skipped: another refresh in flight")
@@ -670,19 +654,18 @@ class ContinuousRefreshController:
         return _result(refresh_result)
 
     def _enforce_pool_cap(self) -> bool:
-        """Run pool maintenance and report whether frontend availability is at target.
+        """运行池维护并报告前端可用性是否达到 target。
 
-        ``pool_target_count`` is a frontend-visible availability floor, not the
-        raw material cap. Raw rows may exceed it until ``_raw_material_ceiling``.
+        ``pool_target_count`` 是前端可见的可用性下限，不是 raw 素材
+        cap。Raw 行可能超过它直到 ``_raw_material_ceiling``。
         """
         source_targets = self._source_target_counts()
         raw_source_targets = self._raw_source_target_counts()
 
-        # Cross-source topic_group quota runs every tick, not just inside
-        # _run_refresh_plan: when pool sits at cap, refresh exits before
-        # discover, so the in-plan trim would never fire and pre-existing
-        # topic concentration would persist indefinitely. This call is a
-        # cheap SQL group-by + UPDATE, safe to run unconditionally.
+        # 跨源 topic_group 配额每个 tick 运行，不仅在 _run_refresh_plan
+        # 内：当池在 cap 时，refresh 在 discover 前退出，因此 plan 内的
+        # trim 永不触发，预先存在的 topic 集中将无限持续。此调用是
+        # 廉价的 SQL group-by + UPDATE，无条件运行是安全的。
         try:
             self.database.trim_topic_group_overflow(
                 max_per_group=max(3, self.pool_target_count // 10),
@@ -699,12 +682,10 @@ class ContinuousRefreshController:
                     raw_source_share_quotas=raw_source_targets,
                 )
                 if reactivated > 0:
-                    # Demote to DEBUG when the count is identical to the
-                    # previous tick — pool sitting in steady-state with
-                    # the same N items reactivating each minute is noise,
-                    # not signal. INFO fires only when N changes (real
-                    # state transition: pool drained to refill, or new
-                    # source surge).
+                    # 当计数与上次 tick 相同时降级到 DEBUG —— 池处于
+                    # 稳态，每分钟相同的 N 个项 reactivating 是噪声，
+                    # 不是信号。INFO 仅在 N 变化时触发（真实状态转换：
+                    # 池排空以重新填充，或新源激增）。
                     last_reactivated = self._last_pool_maintenance_fingerprint[1]
                     log_fn = logger.info if reactivated != last_reactivated else logger.debug
                     log_fn(
@@ -780,7 +761,7 @@ class ContinuousRefreshController:
         return pool_available >= self.pool_target_count
 
     async def trigger_manual_refresh(self, *, reason: str = "manual") -> dict[str, object]:
-        """Schedule one background manual refresh without blocking the caller."""
+        """调度一个后台手动 refresh 而不阻塞调用方。"""
         normalized_reason = self._normalize_replenishment_reason(reason)
         if not self._is_initialized():
             return {"accepted": False, "state": "idle", "reason": "not_initialized"}
@@ -803,14 +784,13 @@ class ContinuousRefreshController:
         name: str,
         coro: Any,
     ) -> asyncio.Task[Any]:
-        """Spawn a detached task, routing through the registry when available.
+        """Spawn 一个 detached 任务，可用时通过注册表路由。
 
-        v0.3.63+: when ``self.task_registry`` is wired (by
-        ``RuntimeContext`` at startup), the task is registered so that
-        ``rebuild_from_config``'s ``cancel_all`` can cancel it before
-        the new runtime starts. Tests that construct the controller
-        directly (no registry) fall back to bare
-        ``asyncio.create_task`` for backward compat.
+        v0.3.63+：当 ``self.task_registry`` 被接入时（由
+        ``RuntimeContext`` 在启动时），任务被注册以便
+        ``rebuild_from_config`` 的 ``cancel_all`` 可在新 runtime 启动前
+        取消它。直接构造 controller（无注册表）的测试回退到裸
+        ``asyncio.create_task`` 以保持向后兼容。
         """
         registry = self.task_registry
         if registry is not None:
@@ -831,7 +811,7 @@ class ContinuousRefreshController:
         return next_state
 
     def get_pending_notification(self) -> dict[str, object] | None:
-        """Return one recommendation candidate for browser notification."""
+        """返回一个浏览器通知的推荐候选。"""
         state = self.memory_manager.load_discovery_runtime_state()
         last_notification_at = self._parse_iso_datetime(str(state.get("last_notification_at", "")))
         if last_notification_at is not None and self._now() - last_notification_at < timedelta(
@@ -849,7 +829,7 @@ class ContinuousRefreshController:
         }
 
     def mark_notification_sent(self, bvid: str) -> None:
-        """Persist notification delivery markers."""
+        """持久化通知送达标记。"""
         self.database.mark_notification_sent(bvid)
         now = self._now().isoformat()
         self._update_discovery_runtime_state(
@@ -857,11 +837,11 @@ class ContinuousRefreshController:
         )
 
     def get_pending_delight(self) -> dict[str, object] | None:
-        """Return one proactive delight candidate for browser notification.
+        """返回一个 proactive delight 候选用于浏览器通知。
 
-        Honors the user's ``disliked_topics`` (from the preference layer)
-        as a hard filter — a video whose title contains a disliked topic
-        phrase is skipped even if its delight_score otherwise qualifies.
+        尊重用户的 ``disliked_topics``（来自 preference 层）作为硬
+        过滤器 —— 标题包含 disliked topic 短语的视频即使其
+        delight_score 否则合格也会被跳过。
         """
         state = self.memory_manager.load_discovery_runtime_state()
         last_delight_at = self._parse_iso_datetime(
@@ -872,9 +852,8 @@ class ContinuousRefreshController:
         ):
             return None
 
-        # Pull a small batch and filter disliked topics in Python — there
-        # are typically only a handful of high-score candidates and a
-        # very short disliked list, so the overhead is negligible.
+        # 拉取小批量并在 Python 中过滤 disliked topic —— 通常只有
+        # 少数高分数候选且 disliked list 很短，因此开销可忽略。
         candidates = self.database.get_delight_candidates(
             min_delight_score=DEFAULT_DELIGHT_THRESHOLD,
             limit=20,
@@ -906,14 +885,14 @@ class ContinuousRefreshController:
         }
 
     def _load_disliked_topic_phrases(self) -> list[str]:
-        """Return lowercased *effective* disliked-topic substrings.
+        """返回小写的 *有效* disliked-topic 子串。
 
-        Sourced from the soul engine's ``get_effective_disliked_topics`` —
-        AI dislikes ∪ flat preference dislikes, with user overrides applied
-        (base-then-overlay), so a manually added dislike filters here and a
-        manually removed one does not. Phrases are case-insensitive substring
-        matches against title + tags. Falls back to the raw preference layer
-        for older soul-engine doubles lacking the method.
+        从 soul engine 的 ``get_effective_disliked_topics`` 获取 ——
+        AI dislikes ∪ 平铺 preference dislikes，已应用 user override
+        （base-then-overlay），因此手动添加的 dislike 在此处过滤，
+        手动移除的不过滤。短语是针对 title + tags 的不区分大小写子串
+        匹配。对缺乏该方法的较老 soul-engine double 回退到原始
+        preference 层。
         """
         getter = getattr(self.soul_engine, "get_effective_disliked_topics", None)
         if callable(getter):
@@ -934,7 +913,7 @@ class ContinuousRefreshController:
         return [str(item).strip().lower() for item in raw if str(item).strip()]
 
     def mark_delight_sent(self, bvid: str) -> None:
-        """Persist delight notification delivery markers."""
+        """持久化 delight 通知送达标记。"""
         self.database.mark_delight_notified(bvid)
         now = self._now().isoformat()
         self._update_discovery_runtime_state(
@@ -942,7 +921,7 @@ class ContinuousRefreshController:
         )
 
     async def prepare_delight_candidates(self) -> int:
-        """Warm ready-to-push delight candidates even when no refresh runs."""
+        """即使没有 refresh 运行也预热 ready-to-push delight 候选。"""
         if not self._is_initialized():
             return 0
         profile = await self.soul_engine.get_profile()
@@ -977,11 +956,10 @@ class ContinuousRefreshController:
         reason: str,
         force: bool = False,
     ) -> dict[str, object]:
-        """Single public ingress for replenishment requests.
+        """补货请求的单一公共入口。
 
-        Non-force requests only record why the next scheduler pass should
-        re-check the pool. Force requests are reserved for explicit user actions
-        or UI paths that just consumed the visible pool.
+        Non-force 请求仅记录为何下次调度器 pass 应重新检查池。Force
+        请求保留给显式用户操作或刚消耗可见池的 UI 路径。
         """
         normalized = self._normalize_replenishment_reason(reason)
         if force:
@@ -995,15 +973,14 @@ class ContinuousRefreshController:
         }
 
     async def _safe_precompute_pool_copy(self, *, profile: Any) -> int:
-        """Run ``precompute_pool_copy`` swallowing any exception.
+        """运行 ``precompute_pool_copy``，吞掉任何异常。
 
-        v0.3.47+ uses this from per-strategy fire-and-forget tasks in
-        ``_run_refresh_plan``. The lock inside the engine queues
-        concurrent calls so two strategies don't double-spend LLM
-        tokens; this wrapper exists so a single failed expression
-        batch doesn't take down the whole refresh round (caller does
-        ``return_exceptions=True`` on the gather, but a logged warning
-        from one place is cleaner than scattering try/except).
+        v0.3.47+ 从 ``_run_refresh_plan`` 中的 per-strategy
+        fire-and-forget 任务使用此方法。engine 内的锁将并发调用排队，
+        使两个 strategy 不会双重花费 LLM token；此 wrapper 存在以使
+        单个失败的 expression 批次不会拖垮整个 refresh 轮次（调用方
+        对 gather 执行 ``return_exceptions=True``，但从一个地方记录
+        warning 比散布 try/except 更干净）。
         """
         try:
             return await self.recommendation_engine.precompute_pool_copy(
@@ -1015,7 +992,7 @@ class ContinuousRefreshController:
             return 0
 
     async def _safe_prewarm_pool_mmr_embeddings(self) -> int:
-        """Warm MMR embeddings without blocking refresh completion."""
+        """预热 MMR embedding 而不阻塞 refresh 完成。"""
         try:
             return int(await self.recommendation_engine.prewarm_pool_mmr_embeddings())
         except Exception:
@@ -1023,7 +1000,7 @@ class ContinuousRefreshController:
             return 0
 
     async def _safe_prewarm_supergroup_embeddings(self) -> int:
-        """Warm topic-supergroup embeddings without blocking refresh completion."""
+        """预热 topic-supergroup embedding 而不阻塞 refresh 完成。"""
         try:
             return int(await self.recommendation_engine.prewarm_supergroup_embeddings())
         except Exception:
@@ -1031,37 +1008,36 @@ class ContinuousRefreshController:
             return 0
 
     async def run_forever(self) -> None:
-        """Launch all background tasks as independent concurrent loops.
+        """将所有后台任务作为独立并发 loop 启动。
 
-        Each task runs on its own timer so a slow discovery refresh
-        (10+ minutes when B站 API challenges every request) never
-        blocks proactive notifications, soul pipeline ticks, or XHS
-        keyword production.
+        每个任务在自己的 timer 上运行，使一个慢的 discovery refresh
+        （B 站 API 每个请求挑战时 10+ 分钟）永不阻塞 proactive
+        notification、soul pipeline tick 或 XHS keyword 生产。
 
-        Architecture::
+        架构::
 
-            ┌─ _loop_refresh()           60s   LLM-heavy, may take minutes
-            ├─ _loop_pool_precompute()   60s   v0.3.60+ — drain pool_expression
-            ├─ _loop_candidate_eval()    60s   drain pending raw candidates
-            ├─ _loop_soul_pipeline()     60s   profile updates, speculator
-            ├─ _loop_bilibili_producer() 60s   Bili extension search fallback under cooldown
-            ├─ _loop_xhs_producer()      60s   xhs keyword generation
-            ├─ _loop_douyin_producer()   60s   Douyin discovery when under quota
-            ├─ _loop_youtube_producer()  60s   YouTube discovery when under quota
-            ├─ _loop_x_producer()        60s   X (Twitter) discovery when under quota
-            ├─ _loop_zhihu_producer()    60s   Zhihu discovery when under quota
+            ┌─ _loop_refresh()           60s   LLM 重量级，可能耗时数分钟
+            ├─ _loop_pool_precompute()   60s   v0.3.60+ — 排空 pool_expression
+            ├─ _loop_candidate_eval()    60s   排空 pending raw 候选
+            ├─ _loop_soul_pipeline()     60s   profile 更新、speculator
+            ├─ _loop_bilibili_producer() 60s   冷却下 Bili 扩展 search 回退
+            ├─ _loop_xhs_producer()      60s   xhs keyword 生成
+            ├─ _loop_douyin_producer()   60s   配额下 Douyin discovery
+            ├─ _loop_youtube_producer()  60s   配额下 YouTube discovery
+            ├─ _loop_x_producer()        60s   配额下 X (Twitter) discovery
+            ├─ _loop_zhihu_producer()    60s   配额下 Zhihu discovery
             ├─ _loop_proactive_push()    60s   delight + interest probe
-            ├─ _loop_keyword_planner()  120s   P1.6 — merged keyword generation (flag-gated)
-            ├─ _loop_image_cache_cleanup() 6h  prune consumed+unsaved covers
-            └─ _loop_cover_prefetch()    60s   cache fresh-token covers (XHS)
+            ├─ _loop_keyword_planner()  120s   P1.6 — 合并 keyword 生成（flag 门控）
+            ├─ _loop_image_cache_cleanup() 6h  清理已消费+未保存封面
+            └─ _loop_cover_prefetch()    60s   缓存 fresh-token 封面（XHS）
         """
         if self._llm_work_allowed():
             with suppress(Exception):
                 await self.prepare_delight_candidates()
         self._warn_on_stranded_source_shares()
-        # P1.6: give the keyword planner the controller's deficit / catalyst
-        # 口径 so it shares the exact in-flight + raw-headroom accounting that
-        # drives pool replenishment (it never recounts visible pool rows).
+        # P1.6：给 keyword planner controller 的 deficit / catalyst 口径，
+        # 使其共享驱动池补货的确切 in-flight + raw-headroom 核算
+        # （它从不重新计数可见池行）。
         if self.keyword_planner is not None:
             with suppress(Exception):
                 self.keyword_planner.bind_deficit_source(self)
@@ -1093,15 +1069,14 @@ class ContinuousRefreshController:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _loop_refresh(self) -> None:
-        """Discovery refresh — fills the candidate pool."""
+        """Discovery refresh —— 填充候选池。"""
         while True:
-            # v0.3.61+: 30s init grace period. The very first refresh
-            # tick after daemon start lands while Bilibili's WBI
-            # rate-limit bucket is still saturated from init's history
-            # / favorites / following burst — firing discovery search
-            # immediately produces ~50% v_voucher exhaustion. Skipping
-            # the first refresh_if_needed gives the IP a single tick
-            # to cool down before discovery starts hammering it.
+            # v0.3.61+：30s init 宽限期。daemon 启动后第一个 refresh
+            # tick 落在 Bilibili 的 WBI 速率限制桶仍被 init 的
+            # history / favorites / following 突发饱和之时 —— 立即触发
+            # discovery search 产生约 50% v_voucher 耗尽。跳过第一次
+            # refresh_if_needed 给 IP 一个 tick 冷却，再让 discovery
+            # 开始重击。
             if not self._init_grace_consumed:
                 self._init_grace_consumed = True
                 logger.info(
@@ -1119,21 +1094,19 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_pool_precompute(self) -> None:
-        """v0.3.60+: drain pool_expression / pool_topic_label independently.
+        """v0.3.60+：独立排空 pool_expression / pool_topic_label。
 
-        v0.3.59 added ``_drain_pool_precompute_backlog`` to ``_loop_refresh``
-        but placed it AFTER ``await self.refresh_if_needed()``. Production
-        debugging on 2026-05-05 (PID 32644 daemon, started 22:35:12) found
-        runtime stuck at ``manual_refresh_state="running"`` because B 站
-        v_voucher rate limit kept refresh_if_needed pending for many
-        minutes — the drain queued behind it never executed, even with
-        184 fresh items in pool waiting for expression copy.
+        v0.3.59 将 ``_drain_pool_precompute_backlog`` 添加到 ``_loop_refresh``
+        但放在了 ``await self.refresh_if_needed()`` 之后。2026-05-05 的
+        生产调试（PID 32644 daemon，22:35:12 启动）发现 runtime 卡在
+        ``manual_refresh_state="running"``，因为 B 站 v_voucher 速率
+        限制使 refresh_if_needed pending 数分钟 —— 排在其后的 drain 永不
+        执行，即使有 184 个新项在池中等待 expression 拷贝。
 
-        Splitting the drain into its own loop matches the ``run_forever``
-        contract every other ticker honours: a slow refresh must NEVER
-        block independent maintenance work. Engine's ``_precompute_lock``
-        still dedupes against per-strategy fire-and-forget tasks queued
-        by ``_run_refresh_plan`` so no LLM token double-spend.
+        将 drain 拆分到自己的 loop 匹配 ``run_forever`` 契约（每个其他
+        ticker 遵守）：慢的 refresh 必须永不阻塞独立维护工作。Engine 的
+        ``_precompute_lock`` 仍然对 ``_run_refresh_plan`` 排队的
+        per-strategy fire-and-forget 任务去重，因此无 LLM token 双重花费。
         """
         while True:
             if not self._llm_work_allowed():
@@ -1144,7 +1117,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_candidate_eval(self) -> None:
-        """Drain pending discovery-candidate raw rows independently of refresh plans."""
+        """独立于 refresh plan 排空 pending discovery-candidate raw 行。"""
         while True:
             if not self._llm_work_allowed():
                 logger.debug("candidate eval drain skipped: reason=llm_paused")
@@ -1157,13 +1130,12 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _drain_pool_precompute_backlog(self) -> None:
-        """v0.3.59+: independent precompute drain.
+        """v0.3.59+：独立 precompute drain。
 
-        Fires ``precompute_pool_copy`` once per refresh-loop tick (60s)
-        if the soul profile is ready. The engine's ``_precompute_lock``
-        de-dupes against per-strategy fire-and-forget tasks queued by
-        ``_run_refresh_plan`` so back-to-back triggers don't double-spend
-        LLM tokens.
+        如果 soul profile 已就绪，每个 refresh-loop tick（60s）触发一次
+        ``precompute_pool_copy``。engine 的 ``_precompute_lock`` 对
+        ``_run_refresh_plan`` 排队的 per-strategy fire-and-forget 任务
+        去重，使背对背触发不会双重花费 LLM token。
         """
         engine = self.recommendation_engine
         if engine is None:
@@ -1200,7 +1172,7 @@ class ContinuousRefreshController:
         *,
         before_pool_count: int,
     ) -> None:
-        """Report candidates that became usable during the standalone drain."""
+        """报告独立 drain 期间变为可用的候选。"""
         try:
             after_pool_counts = self._pool_readiness_counts()
             after_pool_count = int(after_pool_counts["available"])
@@ -1237,15 +1209,14 @@ class ContinuousRefreshController:
         )
 
     async def _on_profile_ready_if_first_time(self) -> None:
-        """One-shot hook fired the tick after soul profile first appears.
+        """soul profile 首次出现后那个 tick 触发的一次性 hook。
 
-        Drains the un-classified pool backlog that piled up during init's
-        analyze_events window. Without this, items entering the pool
-        before profile-ready (XHS bootstrap notes, B站 history fetches)
-        sit with empty ``topic_group`` / ``style_key`` until the next
-        natural refresh tick — and the recommendation summary log shows
-        fallback ``topic_group=title[:N]`` (the ugly "屎屎/165/三花"
-        debug we saw on 2026-05-05).
+        排空在 init 的 analyze_events 窗口期间堆积的未分类池 backlog。
+        没有这个，profile-ready 之前进入池的项（XHS bootstrap 笔记、
+        B 站 history 获取）会一直带着空的 ``topic_group`` /
+        ``style_key`` 直到下一个自然 refresh tick —— 而 recommendation
+        summary 日志会显示回退的 ``topic_group=title[:N]``（我们在
+        2026-05-05 看到的丑陋 "屎屎/165/三花" debug）。
         """
         if not self._llm_work_allowed():
             return
@@ -1261,8 +1232,8 @@ class ContinuousRefreshController:
         try:
             profile = await self.soul_engine.get_profile()
         except Exception:
-            # Race: _is_initialized was true but get_profile raised.
-            # Reset the flag so the next tick retries cleanly.
+            # Race：_is_initialized 为 true 但 get_profile 抛出。
+            # 重置 flag 使下次 tick 干净重试。
             self._profile_ready_observed = False
             return
         logger.info(
@@ -1274,7 +1245,7 @@ class ContinuousRefreshController:
             logger.exception("profile-ready classify_pool_backlog failed")
 
     async def _loop_soul_pipeline(self) -> None:
-        """Soul profile pipeline — buffer flushes, speculator, cognition."""
+        """Soul profile pipeline —— buffer 刷新、speculator、cognition。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1284,7 +1255,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_xhs_producer(self) -> None:
-        """XHS keyword production — Soul-driven search task generation."""
+        """XHS keyword 生产 —— Soul 驱动的 search 任务生成。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1294,7 +1265,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_bilibili_producer(self) -> None:
-        """Bilibili extension fallback — only enqueues while API search cools down."""
+        """Bilibili 扩展兜底 —— 仅在 API 搜索冷却期间入队。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1304,7 +1275,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_douyin_producer(self) -> None:
-        """Douyin production — plugin/direct discovery when Douyin is below quota."""
+        """抖音生产 —— 抖音低于配额时的插件/直连发现。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1314,7 +1285,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_youtube_producer(self) -> None:
-        """YouTube production — backend-direct discovery when YouTube is below quota."""
+        """YouTube 生产 —— YouTube 低于配额时的后端直连发现。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1324,7 +1295,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_x_producer(self) -> None:
-        """X (Twitter) production — server-side cookie-replay discovery when under quota."""
+        """X (Twitter) 生产 —— 低于配额时的服务端 cookie 重放发现。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1334,7 +1305,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_zhihu_producer(self) -> None:
-        """Zhihu production — plugin-backed discovery when under quota."""
+        """知乎生产 —— 低于配额时的插件支撑发现。"""
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.check_interval_seconds)
@@ -1344,15 +1315,14 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.check_interval_seconds)
 
     async def _loop_keyword_planner(self) -> None:
-        """P1.6: deficit-pulled merged keyword generation (flag-gated).
+        """P1.6: 缺口拉动的合并关键词生成（功能开关控制）。
 
-        Owns its own poll cadence (``planner_poll_seconds``) so a slow merged
-        LLM call never blocks the 60s producer / refresh loops. The controller
-        drives the planner per tick (rather than awaiting ``planner.run()``) so
-        it can apply the same ``_llm_work_allowed`` gate every other LLM loop
-        honours — pausing planning while a guided init runs or the extension is
-        away. When ``keyword_planner`` is ``None`` (tests building the
-        controller directly) or the feature flag is off, this is a no-op.
+        拥有独立的轮询节奏（``planner_poll_seconds``），避免慢的合并
+        LLM 调用阻塞 60 秒的 producer / refresh 循环。控制器按 tick 驱动
+        planner（而不是 await ``planner.run()``），从而可以应用其它 LLM
+        循环都遵循的同一道 ``_llm_work_allowed`` 门控 —— 在 guided init
+        运行或扩展离线时暂停规划。当 ``keyword_planner`` 为 ``None``
+        （测试中直接构造控制器）或功能开关关闭时，本方法为空操作。
         """
         planner = self.keyword_planner
         if planner is None:
@@ -1372,30 +1342,27 @@ class ContinuousRefreshController:
             await asyncio.sleep(poll_seconds)
 
     async def _loop_proactive_push(self) -> None:
-        """Delight + interest probe push — lightweight, never blocks.
+        """Delight + interest probe 推送 —— 轻量，绝不阻塞。
 
-        Runs on a longer cadence than the main refresh loop because
-        probes/delight are not streaming content — once the active set
-        has been delivered, additional pushes within minutes only
-        contribute notification fatigue.
+        运行节奏比主 refresh 循环更慢，因为 probes/delight 不是流式内容 ——
+        一旦活跃集合已投递，几分钟内重复推送只会增加通知疲劳。
         """
         while True:
             if not self._llm_work_allowed():
                 await asyncio.sleep(self.proactive_push_interval_seconds)
                 continue
-            # Score un-scored pool items even when the discovery refresh
-            # tick early-exits (pool_at_cap or below_threshold). Without
-            # this, a steady-state pool that sits at cap silently starves
-            # delight scoring — observed 2026-05-04: scoring last ran on
-            # daemon startup at 03:15 and stopped for 9.5 hours because
-            # _run_refresh_plan never reached the precompute_pool_copy
-            # branch. ``prepare_delight_candidates`` calls precompute_pool_copy
-            # with limit=0, which still runs precompute_delight_scores on
-            # the up-to-50 un-scored items (relevance >= 0.55).
+            # 即使 discovery refresh tick 提前退出（pool_at_cap 或
+            # below_threshold），也要对池中未评分项打分。没有这步的话，
+            # 稳态停在容量上限的池会静默饿死 delight 评分 —— 2026-05-04
+            # 观察：评分最后运行于守护进程启动时 03:15，随后停滞 9.5 小时，
+            # 因为 _run_refresh_plan 始终没进到 precompute_pool_copy 分支。
+            # ``prepare_delight_candidates`` 以 limit=0 调用
+            # precompute_pool_copy，仍会对至多 50 条未评分项
+            # （relevance >= 0.55）执行 precompute_delight_scores。
             with suppress(Exception):
                 await self.prepare_delight_candidates()
-            # Snapshot delight count BEFORE prepare so we can detect a
-            # net new above-threshold delight (popup re-fetch trigger).
+            # 在 prepare 之前快照 delight 数量，以便检测到净新增的
+            # 超阈值 delight（popup 重新拉取触发条件）。
             delight_count_before = self._safe_count_delight_candidates()
             with suppress(Exception):
                 await self._publish_delight_if_available()
@@ -1421,14 +1388,13 @@ class ContinuousRefreshController:
             await asyncio.sleep(self.proactive_push_interval_seconds)
 
     async def _loop_image_cache_cleanup(self) -> None:
-        """Periodically prune the cover-image disk cache.
+        """周期性清理封面图磁盘缓存。
 
-        Evicts cached covers of consumed, unsaved content (the user has seen and
-        passed on them, and they are not in favorites / watch-later). Covers of
-        saved or still-pending content are kept, and un-refetchable covers (XHS
-        rotating-token URLs) are protected — the cached copy is their only durable
-        source once the upstream token expires. The bulk first pass runs at API
-        startup; this is the steady-state sweep.
+        驱逐已消费、未保存内容（用户看过且放过、且不在收藏 / 稍后再看里）的
+        缓存封面。已保存或仍待处理内容的封面会被保留；不可重取的封面
+        （XHS 轮换 token URL）受保护 —— 一旦上游 token 过期，缓存副本就是
+        它们唯一持久可用的来源。批量首遍扫描在 API 启动时执行；本循环是
+        稳态扫除。
         """
         while True:
             await asyncio.sleep(_IMAGE_CACHE_CLEANUP_INTERVAL_SECONDS)
@@ -1454,13 +1420,12 @@ class ContinuousRefreshController:
         scan: int = _COVER_PREFETCH_SCAN,
         max_fetch: int = _COVER_PREFETCH_MAX_FETCH,
     ) -> int:
-        """Cache covers for recently discovered, still-servable content.
+        """为最近发现、仍可服务的内容缓存封面。
 
-        Fixes the «封面 502» failure mode: cover images were previously fetched only
-        when a card was displayed, by which point a short-lived XHS signed token had
-        often expired. Prefetching right after discovery saves the image while the
-        token is fresh. Un-refetchable (XHS rotating-token) covers are tried first
-        since re-fetchable ones (Bilibili etc.) never expire. Best-effort and bounded.
+        修复 «封面 502» 故障模式：封面图此前只在卡片展示时才拉取，而那时
+        短命的 XHS 签名 token 往往已过期。发现后立即预取可在 token 仍新鲜时
+        保存图片。不可重取的（XHS 轮换 token）封面优先尝试，因为可重取的
+        （Bilibili 等）封面永不过期。尽力而为且有上界。
         """
         candidates = self.database.iter_servable_cover_urls(
             recent_hours=_COVER_PREFETCH_RECENT_HOURS,
@@ -1474,7 +1439,7 @@ class ContinuousRefreshController:
         return fetched
 
     async def _loop_cover_prefetch(self) -> None:
-        """Periodically cache discovered covers while their CDN token is fresh."""
+        """在 CDN token 仍新鲜时周期性缓存已发现的封面。"""
         while True:
             try:
                 cached = await self._prefetch_uncached_covers()
@@ -1486,7 +1451,7 @@ class ContinuousRefreshController:
             await asyncio.sleep(_COVER_PREFETCH_INTERVAL_SECONDS)
 
     async def _tick_xhs_producer(self) -> None:
-        """Invoke the xhs search task producer if one is configured."""
+        """若配置了 xhs search 任务 producer，则调用它。"""
         producer = self.xhs_producer
         if producer is None:
             return
@@ -1503,7 +1468,7 @@ class ContinuousRefreshController:
             await produce_fn()
 
     async def _tick_bilibili_producer(self) -> None:
-        """Invoke the Bili extension fallback producer if Bilibili is under quota."""
+        """若 Bilibili 低于配额，则调用 Bili 扩展兜底 producer。"""
         producer = self.bilibili_producer
         if producer is None:
             return
@@ -1522,7 +1487,7 @@ class ContinuousRefreshController:
             await produce_fn()
 
     async def _tick_douyin_producer(self) -> None:
-        """Invoke the Douyin discovery producer if Douyin is under quota."""
+        """若抖音低于配额，则调用抖音发现 producer。"""
         producer = self.douyin_producer
         if producer is None:
             return
@@ -1541,7 +1506,7 @@ class ContinuousRefreshController:
             await produce_fn()
 
     async def _tick_youtube_producer(self) -> None:
-        """Invoke the YouTube discovery producer if YouTube is under quota."""
+        """若 YouTube 低于配额，则调用 YouTube 发现 producer。"""
         producer = self.youtube_producer
         if producer is None:
             return
@@ -1560,7 +1525,7 @@ class ContinuousRefreshController:
             await produce_fn()
 
     async def _tick_x_producer(self) -> None:
-        """Invoke the X (Twitter) discovery producer if X is under quota."""
+        """若 X 低于配额，则调用 X (Twitter) 发现 producer。"""
         producer = self.x_producer
         if producer is None:
             return
@@ -1579,7 +1544,7 @@ class ContinuousRefreshController:
             await produce_fn()
 
     async def _tick_zhihu_producer(self) -> None:
-        """Invoke the Zhihu discovery producer if Zhihu is under quota."""
+        """若知乎低于配额，则调用知乎发现 producer。"""
         producer = self.zhihu_producer
         if producer is None:
             return
@@ -1598,10 +1563,9 @@ class ContinuousRefreshController:
             await produce_fn()
 
     async def _tick_soul_pipeline(self) -> None:
-        """Invoke ProfileUpdatePipeline.tick() if the soul engine exposes one.
+        """若 soul engine 暴露了 ProfileUpdatePipeline.tick()，则调用它。
 
-        Splitting this into a helper makes it cheap to call from tests
-        and from a manual single-iteration loop runner.
+        拆成独立的辅助方法，便于在测试和手动单次循环 runner 中廉价调用。
         """
         pipeline = getattr(self.soul_engine, "pipeline", None)
         if pipeline is None:
@@ -1635,10 +1599,9 @@ class ContinuousRefreshController:
             source_plan = self._build_source_replenishment_plan()
             if source_plan:
                 return source_plan
-            # When Bilibili is already at its platform quota, the missing
-            # capacity belongs to enabled non-Bilibili platform producers.
-            # Running the Bilibili fallback here would immediately violate
-            # the configured pool-source ratio.
+            # 当 Bilibili 已达其平台配额时，缺失的容量属于已启用的
+            # 非 Bilibili 平台 producer。此处再跑 Bilibili 兜底会立即
+            # 违反配置的 pool-source 比例。
             self._log_empty_refresh_plan_diagnostics(pool_available=pool_available)
             return []
 
@@ -1723,15 +1686,15 @@ class ContinuousRefreshController:
         )
 
     async def refresh_after_event_ingest(self) -> dict[str, object]:
-        """Compatibility shim: event ingest marks demand, scheduler refreshes later."""
+        """兼容垫片：事件入库只是标记需求，调度器稍后再 refresh。"""
         return self._queue_replenishment_reason("event_ingest")
 
     async def refresh_after_feedback(self) -> dict[str, object]:
-        """Compatibility shim: feedback marks demand, scheduler refreshes later."""
+        """兼容垫片：反馈只是标记需求，调度器稍后再 refresh。"""
         return self._queue_replenishment_reason("feedback")
 
     async def refresh_after_init(self) -> dict[str, object]:
-        """Compatibility shim: init completion should kick replenishment now."""
+        """兼容垫片：init 完成应立即触发补货。"""
         return await self.request_replenishment(reason="init_completed", force=True)
 
     async def drain_discovery_candidates_once(
@@ -1740,7 +1703,7 @@ class ContinuousRefreshController:
         batch_size: int | None = None,
         reason: str = "manual",
     ) -> dict[str, int]:
-        """Drain one pending discovery-candidate batch through the shared evaluator."""
+        """通过共享 evaluator 排空一批待处理的 discovery-candidate。"""
 
         return await self._drain_discovery_candidates_and_precompute(
             reason=reason,
@@ -1756,7 +1719,7 @@ class ContinuousRefreshController:
         profile: Any | None = None,
         precompute: bool = True,
     ) -> dict[str, int]:
-        """Drain one pending raw-candidate batch and optionally precompute it."""
+        """排空一批待处理的 raw-candidate，并可选地对其进行 precompute。"""
 
         pipeline = self.discovery_candidate_pipeline
         if pipeline is None:
@@ -1887,14 +1850,14 @@ class ContinuousRefreshController:
         pipeline_discovered_count = 0
         flattened_strategies: list[str] = []
         replenished_topics: list[str] = []
-        # v0.3.47+: per-strategy expression precompute tasks. Each strategy's
-        # `discover()` blocks on a slow LLM eval batch (8-16 minutes
-        # observed in production). Without this, popup copy precompute was
-        # gated until ALL strategies finished — i.e. ~30 min of latency
-        # for fresh items. Now: as soon as a strategy yields content we
-        # kick a precompute task; ``self._precompute_lock`` inside
-        # ``RecommendationEngine`` serialises them so two tasks don't
-        # double-spend LLM tokens on the same un-precomputed candidates.
+        # v0.3.47+: 每策略 expression precompute 任务。每个策略的
+        # `discover()` 会阻塞在一个慢的 LLM eval 批次上（生产环境观测
+        # 8-16 分钟）。没有这步的话，popup 文案 precompute 必须等
+        # 所有策略都跑完才开始 —— 也就是新鲜内容要 ~30 分钟延迟。
+        # 现在：只要某个策略产出内容就立刻发起 precompute 任务；
+        # ``RecommendationEngine`` 内部的 ``self._precompute_lock``
+        # 会串行化它们，避免两个任务对同一批未 precompute 的候选
+        # 重复花费 LLM token。
         precompute_tasks: list[asyncio.Task[Any]] = []
 
         await self._publish_event(
@@ -1943,14 +1906,13 @@ class ContinuousRefreshController:
             except Exception:
                 logger.exception("Failed to build pool distribution snapshot")
                 pool_snapshot = None
-            # Unified keyword planner fetch path (P1.7, flag-gated). B站 search is
-            # inline-admit: this plan iteration fetches + drains (admits) in the
-            # same call. When the flag is on and this entry includes ``search``,
-            # claim words from the store and inject them as ``keywords`` (the
-            # engine maps them onto the search strategy's ``queries`` param); on
-            # a successful admit mark them ``used``, on an empty/failed iteration
-            # mark them ``failed``. Non-search sub-strategies in the same entry
-            # are unaffected (they never receive the injected words).
+            # 统一 keyword planner 取词路径（P1.7，功能开关控制）。B站 search
+            # 是 inline-admit：本次 plan 迭代在同一次调用内完成 fetch + drain
+            # （admit）。当开关打开且本条目包含 ``search`` 时，从 store 中
+            # claim 词并作为 ``keywords`` 注入（engine 会把它们映射到 search
+            # 策略的 ``queries`` 参数）；admit 成功则标记为 ``used``，空 / 失败
+            # 迭代则标记为 ``failed``。同一条目里的非 search 子策略不受影响
+            # （它们永远不会收到注入的词）。
             claimed_search: list[Any] = []
             coordinator = self.keyword_fetch
             if (
@@ -1963,9 +1925,9 @@ class ContinuousRefreshController:
             injected_keywords = (
                 [item.keyword for item in claimed_search] if claimed_search else None
             )
-            # P1.8 yield provenance: ``query → keyword id`` for the claimed words
-            # so each produced candidate carries ``source_keyword_id`` for
-            # admit-time yield backfill. Empty / None on the flag-off path.
+            # P1.8 yield provenance：被 claim 词的 ``query → keyword id`` 映射，
+            # 让每条产出的候选都带上 ``source_keyword_id``，供 admit 时回填
+            # yield。开关关闭路径下为空 / None。
             injected_keyword_ids = (
                 {item.keyword: int(item.id) for item in claimed_search} if claimed_search else None
             )
@@ -2038,9 +2000,9 @@ class ContinuousRefreshController:
                 raise
             finally:
                 if claimed_search and coordinator is not None and not iteration_failed:
-                    # Inline-admit terminal: words that drove a fetch producing
-                    # candidates are ``used``; an empty fetch marks them ``failed``
-                    # (retry). yield backfill is P1.8, decoupled from ``used``.
+                    # Inline-admit 终态：驱动了一次产出候选的 fetch 的词标为
+                    # ``used``；空 fetch 则标为 ``failed``（重试）。yield 回填
+                    # 属于 P1.8，与 ``used`` 解耦。
                     if discovered_count > 0:
                         coordinator.mark_used(claimed_search)
                     else:
@@ -2050,9 +2012,9 @@ class ContinuousRefreshController:
 
             if admitted_count > 0:
                 replenished_topics.extend(self._extract_topics(topic_items))
-                # Fire expression precompute now (in parallel with the next
-                # strategy's discovery LLM call). The lock inside the engine
-                # queues this if a previous task is still running.
+                # 立即触发 expression precompute（与下一个策略的 discovery
+                # LLM 调用并行）。engine 内部的锁会在前一个任务仍在运行时
+                # 把这次排队。
                 precompute_tasks.append(
                     self._track_task(
                         "precompute_pool_copy",
@@ -2062,38 +2024,34 @@ class ContinuousRefreshController:
 
         if flattened_strategies:
             self.database.trim_explore_cluster_overflow(max_per_cluster=3)
-            # Cap each topic_group at ~10% of pool target so a single hot
-            # topic (e.g. 人工智能 from related_chain) can't accumulate
-            # hundreds of fresh candidates across rounds and starve other
-            # sources/topics. Floor at 3 to keep small pools usable.
+            # 把每个 topic_group 上限设为池目标的约 10%，避免单个热门
+            # topic（如 related_chain 来的"人工智能"）在多轮里堆积数百条
+            # 新候选并饿死其它来源 / topic。下限 3 保证小池仍可用。
             self.database.trim_topic_group_overflow(
                 max_per_group=max(3, self.pool_target_count // 10),
             )
             self.database.evict_stale_pool_items(max_age_days=14)
-            # Snapshot delight count BEFORE precompute so we can detect
-            # net new above-threshold delights and push a refresh event
-            # to the popup (no per-item chrome notification — popup
-            # re-fetches /api/delight/pending-batch when this fires).
+            # 在 precompute 之前快照 delight 数量，以便检测到净新增的
+            # 超阈值 delight 并向 popup 推送 refresh 事件（不做逐项
+            # chrome 通知 —— popup 在事件触发时重新拉取
+            # /api/delight/pending-batch）。
             delight_count_before = self._safe_count_delight_candidates()
-            # v0.3.47+: drain the per-strategy precompute tasks fired
-            # eagerly above. They have already been running in parallel
-            # with discovery's later strategies, so this awaits whatever
-            # is still pending instead of starting from scratch. If the
-            # discovery loop produced nothing precompute-eligible (e.g.
-            # all rejected at eval), fall back to one synchronous call so
-            # any earlier-cycle backlog still gets cleared.
+            # v0.3.47+: 排空上面提前发起的每策略 precompute 任务。它们
+            # 早已与后续策略的 discovery 并行运行，因此这里只是 await
+            # 仍挂起的部分，而不是从头开始。如果 discovery 循环没产出
+            # 任何可 precompute 的内容（例如全部在 eval 阶段被拒），
+            # 则回退为一次同步调用，保证更早周期的 backlog 仍能被清掉。
             if precompute_tasks:
                 await asyncio.gather(*precompute_tasks, return_exceptions=True)
             else:
                 await self._safe_precompute_pool_copy(profile=profile)
-            # Pre-warm supergroup-merge embeddings so the popup's "换一批"
-            # hot path always hits the L1/L2 cache. New labels added by
-            # this refresh round get warmed before the user clicks.
-            # Warm embedding-derived caches in the background. They are
-            # latency optimizations for later serve() calls, not
-            # requirements for this refresh result to become visible.
-            # Keeping them off the refresh lock prevents slow local
-            # embedding backends from leaving the popup stuck at "正在补货".
+            # 预热 supergroup-merge embeddings，让 popup 的"换一批"热路径
+            # 始终命中 L1/L2 缓存。本轮 refresh 新增的标签会在用户点击前
+            # 被预热。
+            # 在后台预热 embedding 派生缓存。它们是对后续 serve() 调用
+            # 的延迟优化，并非本轮 refresh 结果可见的前提条件。让它们
+            # 脱离 refresh 锁，可避免慢的本地 embedding 后端把 popup
+            # 卡在"正在补货"。
             self._track_task(
                 "prewarm_supergroup_embeddings",
                 self._safe_prewarm_supergroup_embeddings(),
@@ -2121,19 +2079,15 @@ class ContinuousRefreshController:
             await self._publish_delight_if_available()
             await self._publish_probe_if_available()
 
-            # v0.3.66+: enforce the absolute pool cap at the end of every
-            # refresh plan. The earlier trim_topic_group_overflow /
-            # trim_explore_cluster_overflow / evict_stale calls only bound
-            # per-axis concentration (topic, cluster, age) — none of them
-            # cap the total count. Long-running discovery cycles (10-30
-            # min for the LLM eval batch) also block the periodic
-            # _enforce_pool_cap tick in run_forever, so the popup
-            # routinely saw pool_available_count drift well past
-            # pool_target_count (e.g. 668 with target=600 in production).
-            # _enforce_pool_cap also runs reactivate_under_quota and
-            # source-share-aware trim, so this is the right place to land
-            # the freshly-discovered items into their final shape before
-            # the popup re-fetches.
+            # v0.3.66+: 在每个 refresh plan 结束时强制执行池绝对上限。更早
+            # 的 trim_topic_group_overflow / trim_explore_cluster_overflow /
+            # evict_stale 调用只限制单轴集中度（topic、cluster、age）—— 它们
+            # 都不限制总数。长跑的 discovery 周期（LLM eval 批次 10-30 分钟）
+            # 还会阻塞 run_forever 中周期性的 _enforce_pool_cap tick，导致
+            # popup 经常看到 pool_available_count 远超 pool_target_count
+            # （例如生产环境 target=600 时出现 668）。_enforce_pool_cap 还会
+            # 运行 reactivate_under_quota 和感知 source-share 的 trim，因此
+            # 这里是把刚发现的候选落定到最终形态、供 popup 重新拉取的正确位置。
             try:
                 self._enforce_pool_cap()
             except Exception:
@@ -2187,17 +2141,15 @@ class ContinuousRefreshController:
         }
 
     async def _publish_pool_status_if_changed(self) -> None:
-        """Emit a ``pool_status`` runtime event when the pool count rotates.
+        """当池计数发生变化时发出 ``pool_status`` runtime 事件。
 
-        Pool count changes most often via ``enforce_pool_cap`` reactivating
-        suppressed items or trimming overflow — a path that doesn't go
-        through the end-of-refresh ``refresh.pool_updated`` event. Without
-        this hook, the popup's pool-count UI only refreshes when a full
-        refresh wave completes; now it stays in sync within seconds of any
-        pool-state change.
+        池计数最常通过 ``enforce_pool_cap`` 重新激活被压制项或修剪溢出来
+        变更 —— 这条路径不会走 refresh 结束时的 ``refresh.pool_updated``
+        事件。没有这个钩子，popup 的池计数 UI 只在一次完整 refresh 波次
+        完成时才会刷新；现在它能在任意 pool 状态变化后数秒内保持同步。
 
-        Only emits when the count is different from the last emit, so
-        steady-state ticks don't spam the WebSocket stream.
+        仅在计数与上次发出值不同时才发出，避免稳态 tick 刷屏 WebSocket
+        流。
         """
         try:
             pool_counts = self._pool_readiness_counts()
@@ -2216,9 +2168,8 @@ class ContinuousRefreshController:
         )
 
     def _safe_count_delight_candidates(self) -> int:
-        """Best-effort count of pending delight candidates (returns 0 on any
-        error so the caller can do delta-based comparison without crashing
-        the refresh tick)."""
+        """尽力统计待处理 delight 候选数量（任意错误都返回 0，让调用方可以
+        做基于增量的比较而不会拖垮 refresh tick）。"""
         from openbiliclaw.recommendation.delight import DEFAULT_DELIGHT_THRESHOLD
 
         try:
@@ -2236,7 +2187,7 @@ class ContinuousRefreshController:
         return False
 
     async def _publish_delight_if_available(self) -> None:
-        """Check for a pending delight candidate and push it via WebSocket."""
+        """检查是否有待处理的 delight 候选，并通过 WebSocket 推送。"""
         candidate = self.get_pending_delight()
         if candidate is None:
             return
@@ -2256,17 +2207,17 @@ class ContinuousRefreshController:
             }
         )
 
-    _PROBE_COOLDOWN_HOURS = 4  # Don't re-push the same domain within this window
+    _PROBE_COOLDOWN_HOURS = 4  # 在此窗口内不重复推送同一 domain
 
     async def _publish_interest_probe_if_available(self) -> bool:
-        """Push the top speculative-interest hypothesis via WebSocket.
+        """通过 WebSocket 推送最靠前的 speculative-interest 假设。
 
-        Fires an ``interest.probe`` event when the speculator has an active
-        hypothesis that the agent should ask the user to confirm.
+        当 speculator 持有一个 active 假设、需要 agent 让用户确认时，
+        触发 ``interest.probe`` 事件。
 
-        De-duplication: each domain is pushed at most once per cooldown
-        window (``_PROBE_COOLDOWN_HOURS``).  Already-probed domains are
-        tracked in ``discovery_runtime_state["probed_domains"]``.
+        去重：每个 domain 在一个冷却窗口（``_PROBE_COOLDOWN_HOURS``）内
+        最多推送一次。已 probe 过的 domain 记录在
+        ``discovery_runtime_state["probed_domains"]`` 中。
         """
         speculator = getattr(self.soul_engine, "_speculator", None)
         get_active = getattr(speculator, "get_active_speculations", None)
@@ -2280,12 +2231,12 @@ class ContinuousRefreshController:
         if not specs:
             return False
 
-        # Load probe history from runtime state
+        # 从 runtime state 加载 probe 历史
         state = self.memory_manager.load_discovery_runtime_state()
         probed: dict[str, str] = state.get("probed_domains", {})  # type: ignore[assignment]
         probed_axes: dict[str, str] = state.get("probed_axes", {})  # type: ignore[assignment]
         probed_distance_bands: dict[str, str] = state.get("probed_distance_bands", {})  # type: ignore[assignment]
-        # Purge expired entries
+        # 清理过期条目
         now = self._now()
         cutoff = (now - timedelta(hours=self._PROBE_COOLDOWN_HOURS)).isoformat()
         probed = {d: t for d, t in probed.items() if t > cutoff}
@@ -2300,7 +2251,7 @@ class ContinuousRefreshController:
             feedback_history=state.get("probe_feedback_history", []),
         )
         if top is None:
-            return False  # All active specs were probed recently
+            return False  # 所有 active specs 最近都已被 probe
 
         domain = str(getattr(top, "domain", "")).strip()
         if not domain:
@@ -2351,7 +2302,7 @@ class ContinuousRefreshController:
             logger.debug("interest probe skipped: no runtime-stream subscriber")
             return False
 
-        # Record this probe only after it has reached at least one runtime stream.
+        # 只有在至少到达一个 runtime stream 之后才记录这次 probe。
         delivered_at = now.isoformat()
 
         def _record_probe(runtime_state: dict[str, object]) -> None:
@@ -2370,7 +2321,7 @@ class ContinuousRefreshController:
         return True
 
     async def _publish_avoidance_probe_if_available(self) -> bool:
-        """Push the top speculative-avoidance hypothesis via WebSocket."""
+        """通过 WebSocket 推送最靠前的 speculative-avoidance 假设。"""
         speculator = getattr(self.soul_engine, "_avoidance_speculator", None)
         get_active = getattr(speculator, "get_active_avoidances", None)
         if not callable(get_active):
@@ -2458,7 +2409,7 @@ class ContinuousRefreshController:
         return True
 
     async def _publish_probe_if_available(self) -> bool:
-        """Publish at most one proactive probe, alternating interest and avoidance."""
+        """至多发布一条主动 probe，interest 与 avoidance 交替。"""
         state = self.memory_manager.load_discovery_runtime_state()
         last_kind = str(state.get("last_probe_kind", "")).strip().lower()
         order = (
@@ -2513,8 +2464,7 @@ class ContinuousRefreshController:
             if requested <= 0:
                 continue
             if source == "bilibili":
-                # Bilibili is a platform quota now, but its implementation
-                # still fans out through four established strategy names.
+                # Bilibili 现在是平台配额，但其实现仍扇出到四个既定策略名。
                 plan.append((list(_BILIBILI_DISCOVERY_SOURCES), requested))
         return plan
 
@@ -2545,17 +2495,17 @@ class ContinuousRefreshController:
         return self._source_requested_count(source_family)
 
     # ── keyword planner deficit / catalyst口径 (P1.6) ─────────────────────
-    # The unified keyword planner reuses these so its "real deficit" shares the
-    # exact available-pool deficit口径 that drives pool replenishment, instead of
-    # naively counting visible pool rows. Raw headroom still caps normal request
-    # size, but cannot turn an under-target available pool into "no deficit".
+    # 统一 keyword planner 复用这些方法，使其"真实 deficit"共享驱动池补货
+    # 的同一道 available-pool deficit 口径，而不是简单地数可见池行数。
+    # 原料余量仍会限制正常请求大小，但不能把低于目标的 available 池
+    # 判定为"无 deficit"。
 
     def keyword_planner_real_deficit(self, platform: str) -> int:
-        """Real search deficit for one platform.
+        """单个平台的真实 search deficit。
 
-        Wraps ``_source_requested_count`` — the same口径 used by
-        ``_build_source_replenishment_plan``. ``> 0`` means the platform
-        genuinely needs more search supply.
+        包装 ``_source_requested_count`` —— 即
+        ``_build_source_replenishment_plan`` 使用的同一口径。``> 0`` 表示
+        该平台确实需要更多 search 供给。
         """
         try:
             return int(self._source_requested_count(str(platform).strip()))
@@ -2564,12 +2514,12 @@ class ContinuousRefreshController:
             return 0
 
     def keyword_planner_bilibili_catalyst(self) -> bool:
-        """B站's extra catalyst: pool-below-target OR ≥ signal-event threshold.
+        """B站的额外 catalyst：池低于目标 OR 信号事件数 ≥ 阈值。
 
-        Mirrors ``_build_refresh_plan`` — B站 search regenerates keywords when
-        the pool is below target (its four strategies fire together) or when
-        ≥ ``signal_event_threshold`` signal events have queued (profile may have
-        just drifted), even if its keyword cache is not below the low watermark.
+        镜像 ``_build_refresh_plan`` —— 当池低于目标（其四个策略会一起触发）
+        或累计 ≥ ``signal_event_threshold`` 个信号事件（profile 可能刚刚漂移）
+        时，即使 B站的 keyword 缓存还没低于低水位，B站 search 也会重新
+        生成关键词。
         """
         try:
             pool_available = self.database.count_pool_candidates(
@@ -2626,12 +2576,10 @@ class ContinuousRefreshController:
             return 0
         if raw_headroom > 0:
             return min(requested_by_available, raw_headroom)
-        # Raw ceiling is a trimming guard, not a hard stop for replenishment.
-        # A pool can have enough raw material but still be far below the
-        # frontend-servable target because existing rows are blocked by topic
-        # windows, linkability, copied text/category readiness, or recommendation
-        # history. In that state, returning 0 strands pending keywords and leaves
-        # the scheduler alive but unable to search.
+        # 原料上限是修剪护栏，不是补货的硬停止。一个池可能原料充足，
+        # 但仍远低于前端可服务的目标，因为已有行被 topic 窗口、可链接性、
+        # 复制文本 / 分类就绪度或推荐历史挡住。在这种状态下返回 0 会
+        # 把待处理关键词卡死，让调度器活着却无法发起搜索。
         return requested_by_available
 
     def _count_pool_available_candidates_by_source(self) -> dict[str, int]:
@@ -2671,14 +2619,13 @@ class ContinuousRefreshController:
         return int(source_counts.get(source_family, 0))
 
     def _warn_on_stranded_source_shares(self) -> None:
-        """Warn once at startup if any configured share has no producer.
+        """启动时若任一配置了份额的来源没有对应 producer，则警告一次。
 
-        ``runtime.source_policy.effective_pool_source_shares`` already strips
-        sources whose ``enabled`` flag is False, so a stranded share here
-        means the user kept the source on but the matching producer is
-        not wired (missing build_*_producer, scheduler.enabled=False, …).
-        Without this warning the pool sits below ``pool_target_count``
-        forever and the missing slack is invisible.
+        ``runtime.source_policy.effective_pool_source_shares`` 已经剔除
+        ``enabled`` 标志为 False 的来源，因此此处出现搁浅份额意味着用户
+        保留了来源开关但未接上对应 producer（缺 build_*_producer、
+        scheduler.enabled=False 等）。没有这个警告，池会永远停在
+        ``pool_target_count`` 以下，而缺失的余量不可见。
         """
         shares = self._normalized_pool_source_shares()
         targets = self._source_target_counts()
@@ -2687,7 +2634,7 @@ class ContinuousRefreshController:
             if target <= 0:
                 continue
             if source == "bilibili":
-                continue  # always served by the four discovery strategies
+                continue  # 始终由四个 discovery 策略服务
             if source == "xiaohongshu" and self.xhs_producer is None:
                 stranded.append("xiaohongshu")
             elif source == "douyin" and self.douyin_producer is None:
@@ -2706,7 +2653,7 @@ class ContinuousRefreshController:
                 "twitter",
                 "zhihu",
             }:
-                # Unknown source family with an explicit share.
+                # 未知来源族却带显式份额。
                 stranded.append(source)
         if stranded:
             logger.warning(
@@ -2746,33 +2693,26 @@ class ContinuousRefreshController:
         current_pool_count: int,
         pool_below_target: bool,
     ) -> int:
-        """Decide how many candidates a grouped discovery call should target.
+        """决定一次分组 discovery 调用应瞄准多少候选。
 
-        v0.3.24+ pool-aware sizing. Pre-fix this enforced an absolute
-        floor of ``discovery_limit`` (30) per grouped call, even when the
-        pool was 595/600 and only needed 5 more items. With 4 strategies
-        × 30 = 120 candidates LLM-evaluated per refresh — and the
-        suppress-pass keeping only ~20 — that meant ~80% of LLM
-        evaluation cost went to candidates that were immediately
-        suppressed. The fix sizes each strategy's limit to the smaller
-        of total pool gap and requested source gap (with 1.5x oversample
-        for items below score threshold and a floor of 5 to keep
-        grouped call productive on tiny gaps), capped by ``discovery_limit``
-        so a sudden post-init replenish doesn't turn into a single huge
-        wave.
+        v0.3.24+ 池感知 sizing。修复前每次分组调用强制 ``discovery_limit``
+        (30) 的绝对下限，即使池在 595/600 只差 5 条也照办。4 个策略 × 30
+        = 120 条候选要 LLM eval —— 而 suppress 阶段只留 ~20 条 —— 意味着
+        ~80% 的 LLM eval 成本花在被立即压制的候选上。修复后每个策略的
+        limit 取池总缺口与请求来源缺口的较小者（对低于评分阈值的项 1.5x
+        超采样，下限 5 保证小缺口下分组调用仍可产出），并用
+        ``discovery_limit`` 设上限，避免 init 后的突发补货变成一波单次巨浪。
         """
         if pool_below_target:
             total_gap = max(0, self.pool_target_count - current_pool_count)
             requested_gap = max(1, int(requested_limit))
             gap = min(total_gap, requested_gap)
-            # The 2-phase plan dispatches strategies in groups; per-
-            # strategy target is roughly gap // (typical strategy count
-            # per phase = 2), with a 1.5x oversample for threshold
-            # filtering. Floor at 5 so a strategy that only finds 2
-            # interesting items doesn't starve the pool entirely.
+            # 2-phase plan 按组派发策略；每策略目标约为
+            # gap // (每阶段典型策略数 = 2)，并 1.5x 超采样以应对阈值过滤。
+            # 下限 5，避免只找到 2 条感兴趣项的策略把池彻底饿死。
             per_strategy_target = max(5, gap * 3 // 4)
-            # Cap at discovery_limit to preserve original behaviour
-            # when the gap is huge (e.g. fresh init, just-trimmed pool).
+            # 用 discovery_limit 设上限，在缺口巨大时（如刚 init、刚修剪的池）
+            # 保留原行为。
             effective_limit = min(self.discovery_limit, per_strategy_target)
             min_eval_batch = self._candidate_eval_batch_floor()
             if min_eval_batch > 1:
@@ -2815,7 +2755,7 @@ class ContinuousRefreshController:
         current_pool_count: int,
         pool_below_target: bool,
     ) -> dict[str, int] | None:
-        """Split a grouped Bilibili refresh budget across its strategies."""
+        """把一次分组 Bilibili refresh 预算切分到各策略。"""
         if not pool_below_target or len(strategies) <= 1:
             return None
         if not all(strategy in _BILIBILI_DISCOVERY_SOURCES for strategy in strategies):

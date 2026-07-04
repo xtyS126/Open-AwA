@@ -1,4 +1,4 @@
-"""Profile renderer — Markdown rendering and dual-file sync for OnionProfile."""
+"""画像渲染器 —— OnionProfile 的 Markdown 渲染与双文件同步。"""
 
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 def render_profile_markdown(profile: OnionProfile) -> str:
-    """Render an OnionProfile as human-readable Chinese markdown."""
+    """把 OnionProfile 渲染为可读的中文 markdown。"""
     sections: list[str] = []
 
     sections.append("# 用户画像")
 
-    # Core layer
+    # 核心层
     core_lines: list[str] = ["## 核心层 Core"]
     if profile.core.core_traits:
         core_lines.append("\n### 人格特质")
@@ -42,7 +42,7 @@ def render_profile_markdown(profile: OnionProfile) -> str:
             core_lines.append(f"- 推断来源: {', '.join(profile.core.mbti.inferred_from)}")
     sections.append("\n".join(core_lines))
 
-    # Values layer
+    # 价值层
     values_lines: list[str] = ["## 价值层 Values"]
     if profile.values_layer.values:
         values_lines.append("\n### 价值观")
@@ -54,7 +54,7 @@ def render_profile_markdown(profile: OnionProfile) -> str:
             values_lines.append(f"- {d}")
     sections.append("\n".join(values_lines))
 
-    # Interest layer
+    # 兴趣层
     interest_lines: list[str] = ["## 兴趣层 Interest"]
     if profile.interest.likes:
         interest_lines.append("\n### 喜好")
@@ -74,7 +74,7 @@ def render_profile_markdown(profile: OnionProfile) -> str:
             interest_lines.append(f"- {user}")
     sections.append("\n".join(interest_lines))
 
-    # Role layer
+    # 角色层
     role_lines: list[str] = ["## 角色层 Role"]
     if profile.role.life_stage:
         role_lines.append(f"- 生活阶段: {profile.role.life_stage}")
@@ -82,7 +82,7 @@ def render_profile_markdown(profile: OnionProfile) -> str:
         role_lines.append(f"- 当前状态: {profile.role.current_phase}")
     sections.append("\n".join(role_lines))
 
-    # Surface layer
+    # 表层
     surface_lines: list[str] = ["## 表层 Surface"]
     if profile.surface.cognitive_style:
         surface_lines.append("\n### 认知风格")
@@ -107,12 +107,12 @@ def render_profile_markdown(profile: OnionProfile) -> str:
     surface_lines.append(f"- 探索开放度: {profile.surface.exploration_openness:.2f}")
     sections.append("\n".join(surface_lines))
 
-    # Cross-layer narrative
+    # 跨层叙事
     if profile.personality_portrait:
         sections.append(f"---\n\n## 综合叙事\n\n{profile.personality_portrait}")
 
-    # Awareness & Insights
-    # Both windows are chronological oldest→newest; render the newest 5.
+    # 觉察与洞察
+    # 两个窗口均按时间从旧到新排列；只渲染最新的 5 条。
     if profile.recent_awareness:
         awareness_lines = ["## 近期观察"]
         for note in profile.recent_awareness[-5:]:
@@ -136,7 +136,7 @@ def render_changelog_entry(
     trigger: str = "",
     evidence: str = "",
 ) -> str:
-    """Render a single changelog entry as markdown."""
+    """把单条变更日志渲染为 markdown。"""
     lines = [f"### {timestamp}"]
     for change in changes:
         lines.append(f"- [{layer}] {change}")
@@ -148,7 +148,7 @@ def render_changelog_entry(
 
 
 def sync_profile_files(profile: OnionProfile, data_dir: Path) -> None:
-    """Write soul_profile.json and soul_profile.md as a dual-write pair."""
+    """以双写方式写出 soul_profile.json 和 soul_profile.md。"""
     memory_dir = data_dir / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
 
@@ -167,7 +167,7 @@ def sync_profile_files(profile: OnionProfile, data_dir: Path) -> None:
 
 
 def append_changelog(entry: str, data_dir: Path) -> None:
-    """Append a changelog entry to soul_changelog.md."""
+    """把一条变更日志追加到 soul_changelog.md。"""
     memory_dir = data_dir / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     changelog_path = memory_dir / "soul_changelog.md"

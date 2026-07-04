@@ -1,31 +1,30 @@
-"""Google Takeout parser for YouTube watch history, subscriptions, and likes.
+"""用于 YouTube 观看历史、订阅和点赞的 Google Takeout 解析器。
 
-Supports both extracted directories and zip archives.  The parser is
-intentionally lenient: missing files are silently skipped so a partial
-Takeout export still yields whatever data is present.
+同时支持已解压目录和 zip 归档。解析器刻意宽松：缺失文件被静默跳过，
+这样部分 Takeout 导出仍能产出存在的数据。
 
-Takeout directory layout (JSON format selected at export time):
+Takeout 目录布局（导出时选择 JSON 格式）：
 
     Takeout/
       YouTube and YouTube Music/
         history/
           watch-history.json
-          search-history.json   (ignored — searches are weak signals)
+          search-history.json   （忽略 —— 搜索是弱信号）
         subscriptions/
           subscriptions.csv
         playlists/
-          Liked videos.csv      (title varies by locale)
+          Liked videos.csv      （标题随 locale 而变）
 
-HTML format (the default when no format is chosen):
+HTML 格式（未选择格式时的默认）：
 
     Takeout/
       YouTube and YouTube Music/
         history/
           watch-history.html
 
-Each file is optional.  The returned event list uses the unified
-``build_event`` contract so it can be fed directly into
-``SoulEngine.analyze_events`` and ``MemoryManager.propagate_event``.
+每个文件都是可选的。返回的事件列表使用统一的 ``build_event`` 契约，
+可直接喂给 ``SoulEngine.analyze_events`` 和
+``MemoryManager.propagate_event``。
 """
 
 from __future__ import annotations
@@ -44,15 +43,15 @@ from openbiliclaw.sources.event_format import SOURCE_YOUTUBE, build_event
 
 logger = logging.getLogger(__name__)
 
-# Signal strength mirrors xhs convention: subscriptions ≈ favorites (high
-# intent), likes ≈ xhs-liked (moderate), watch history ≈ xhs-history (low).
+# 信号强度对齐 xhs 约定：subscriptions ≈ favorites（高意向）、
+# likes ≈ xhs-liked（中等）、watch history ≈ xhs-history（低）。
 _SIGNAL_STRENGTH: dict[str, float] = {
     "follow": 1.0,
     "like": 0.85,
     "view": 0.35,
 }
 
-# Candidate filenames for the liked-videos playlist (locale-dependent).
+# 点赞视频播放列表的候选文件名（随 locale 而变）。
 _LIKED_VIDEOS_NAMES = frozenset(
     [
         "liked videos.csv",
@@ -61,13 +60,13 @@ _LIKED_VIDEOS_NAMES = frozenset(
     ]
 )
 
-# Regex to extract a video ID from a YouTube watch URL.
+# 从 YouTube watch URL 提取视频 ID 的正则。
 _VIDEO_ID_RE = re.compile(r"[?&]v=([A-Za-z0-9_-]{11})")
 
 
 @dataclass
 class TakeoutStats:
-    """Summary counts returned alongside the parsed events."""
+    """随解析事件一起返回的汇总计数。"""
 
     watch_history: int = 0
     subscriptions: int = 0
@@ -86,19 +85,19 @@ class TakeoutParseResult:
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# 公共入口
 # ---------------------------------------------------------------------------
 
 
 def parse_takeout(path: str | Path) -> TakeoutParseResult:
-    """Parse a Google Takeout export and return unified events.
+    """解析 Google Takeout 导出并返回统一事件。
 
-    *path* may point to:
-    - A ``.zip`` file (the raw download from Google Takeout).
-    - A directory produced by extracting that zip.
-    - The inner ``YouTube and YouTube Music`` subdirectory directly.
+    *path* 可指向：
+    - ``.zip`` 文件（Google Takeout 的原始下载）。
+    - 解压该 zip 后得到的目录。
+    - 内层 ``YouTube and YouTube Music`` 子目录本身。
 
-    Returns a :class:`TakeoutParseResult` with the event list and stats.
+    返回带事件列表和统计的 :class:`TakeoutParseResult`。
     """
     path = Path(path)
     if path.suffix.lower() == ".zip":
@@ -109,7 +108,7 @@ def parse_takeout(path: str | Path) -> TakeoutParseResult:
 
 
 # ---------------------------------------------------------------------------
-# Zip vs directory dispatch
+# Zip 与目录分派
 # ---------------------------------------------------------------------------
 
 
@@ -145,11 +144,10 @@ def _parse_zip(zip_path: Path) -> TakeoutParseResult:
         result.warnings.append(f"Invalid zip file: {exc}")
     return result
 
-
 def _parse_dir(root: Path) -> TakeoutParseResult:
     result = TakeoutParseResult()
 
-    # Accept both the outer Takeout dir and the inner YouTube subdir.
+    # 同时接受外层 Takeout 目录和内层 YouTube 子目录。
     yt_dir = _find_yt_subdir(root)
 
     history_dir = yt_dir / "history"
@@ -180,7 +178,7 @@ def _parse_dir(root: Path) -> TakeoutParseResult:
 
 
 # ---------------------------------------------------------------------------
-# watch-history.json  (JSON format selected in Takeout settings)
+# watch-history.json  （Takeout 设置中选择 JSON 格式）
 # ---------------------------------------------------------------------------
 
 
@@ -197,15 +195,15 @@ def _parse_watch_json(text: str, result: TakeoutParseResult) -> None:
     for record in records:
         if not isinstance(record, dict):
             continue
-        # Skip non-YouTube records (e.g. YouTube Music has header "YouTube Music")
+        # 跳过非 YouTube 记录（如 YouTube Music header 为 "YouTube Music"）
         header = str(record.get("header", "")).strip()
         if header and header.lower() not in {"youtube", ""}:
             continue
-        # Skip ads and auto-plays that were never really watched.
+        # 跳过广告和从未真正观看的自动播放。
         title_raw = str(record.get("title", "")).strip()
         if title_raw.startswith("Watched a video that has been removed") or not title_raw:
             continue
-        # Strip "Watched " prefix Google adds in the title field.
+        # 去掉 Google 加在 title 字段里的 "Watched " 前缀。
         title = re.sub(r"^Watched\s+", "", title_raw, count=1)
 
         url = str(record.get("titleUrl", "")).strip()
@@ -238,11 +236,11 @@ def _parse_watch_json(text: str, result: TakeoutParseResult) -> None:
 
 
 # ---------------------------------------------------------------------------
-# watch-history.html  (default HTML format)
+# watch-history.html  （默认 HTML 格式）
 # ---------------------------------------------------------------------------
 
-# Minimal HTML parser — avoids the html.parser quirks with Takeout's encoding.
-# Each watch entry looks like:
+# 最小 HTML 解析器 —— 避免 html.parser 处理 Takeout 编码时的怪异行为。
+# 每条观看记录长这样：
 #
 #   <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
 #     <a href="https://www.youtube.com/watch?v=...">Title</a>
@@ -252,8 +250,8 @@ def _parse_watch_json(text: str, result: TakeoutParseResult) -> None:
 #     Jan 1, 2024, 12:00:00 PM UTC
 #   </div>
 #
-# We extract href + inner text pairs from <a> tags and use positional
-# heuristics: first link = video, second link (if channel URL) = channel.
+# 我们从 <a> 标签里提取 href + 内文本对，并用位置启发：第一个链接 = 视频，
+# 第二个链接（若是频道 URL）= 频道。
 
 _CONTENT_CELL_RE = re.compile(
     r'<div[^>]+class="[^"]*content-cell[^"]*"[^>]*>(.*?)</div>',
@@ -307,10 +305,8 @@ def _parse_watch_html(text: str, result: TakeoutParseResult) -> None:
 # ---------------------------------------------------------------------------
 # subscriptions.csv
 # ---------------------------------------------------------------------------
-# Columns: Channel ID, Channel URL, Channel Title
-# (may have a header row — detected by checking if the first value looks
-# like a channel ID, i.e. starts with "UC").
-
+# 列：Channel ID, Channel URL, Channel Title
+# （可能有表头行 —— 通过检查第一个值是否像频道 ID（即以 "UC" 开头）来判断）
 
 def _parse_subscriptions_csv(text: str, result: TakeoutParseResult) -> None:
     reader = csv.reader(io.StringIO(text))
@@ -341,12 +337,12 @@ def _parse_subscriptions_csv(text: str, result: TakeoutParseResult) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Liked videos CSV
+# 点赞视频 CSV
 # ---------------------------------------------------------------------------
-# Columns vary by locale/version but typically:
-#   Video ID, Video URL, [Video Title]   (older)
-#   Video ID, Video URL, Video Title, ...  (newer, title in col 2 or 3)
-# First ~4 lines are metadata comments (starting with #), skip them.
+# 列随 locale/版本变化，但通常是：
+#   Video ID, Video URL, [Video Title]   （旧版）
+#   Video ID, Video URL, Video Title, ...  （新版，标题在第 2 或第 3 列）
+# 前 ~4 行是元数据注释（以 # 开头），跳过它们。
 
 
 def _parse_liked_csv(text: str, result: TakeoutParseResult) -> None:
@@ -360,7 +356,7 @@ def _parse_liked_csv(text: str, result: TakeoutParseResult) -> None:
             continue
         if not header_skipped:
             header_skipped = True
-            # If the first column looks like a header label, skip.
+            # 如果第一列看起来像表头标签，跳过。
             if row[0].strip().lower() in {"video id", "videoid"}:
                 continue
         video_id = row[0].strip() if len(row) > 0 else ""
@@ -386,7 +382,7 @@ def _parse_liked_csv(text: str, result: TakeoutParseResult) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
@@ -396,10 +392,10 @@ def _extract_video_id(url: str) -> str:
 
 
 def _find_yt_subdir(root: Path) -> Path:
-    """Return the YouTube data directory inside a Takeout root.
+    """返回 Takeout 根目录下的 YouTube 数据目录。
 
-    Handles three layouts:
-    - root IS the YouTube dir (contains 'history/' directly)
+    处理三种布局：
+    - root 本身就是 YouTube 目录（直接含 'history/'）
     - root/Takeout/YouTube and YouTube Music/
     - root/YouTube and YouTube Music/
     """
@@ -421,7 +417,7 @@ def _find_dir_liked(playlists_dir: Path) -> Path | None:
 
 
 def _find_zip_entry(names_lower: dict[str, str], suffix: str) -> str | None:
-    """Find the first zip entry whose lowercased name ends with *suffix*."""
+    """找到小写名以 *suffix* 结尾的第一个 zip 条目。"""
     for lower, original in names_lower.items():
         if lower.endswith(suffix.lower()):
             return original

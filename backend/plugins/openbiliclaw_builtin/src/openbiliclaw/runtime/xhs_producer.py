@@ -1,14 +1,13 @@
-"""Soul-driven xhs search task producer.
+"""Soul 驱动的 xhs 搜索任务 producer。
 
-Runs on the same loop as the continuous refresh controller. Once per
-throttle window (default 4h) it:
-  1. Reads the current SoulProfile
-  2. Asks an LLM to rewrite interest tags into xhs-flavored keywords
-  3. Enqueues one ``search`` task per keyword into ``XhsTaskQueue``
+在与持续刷新控制器相同的循环上运行。每个节流窗口（默认 4h）一次，
+它会：
+  1. 读取当前的 SoulProfile
+  2. 请求 LLM 将兴趣标签改写为 xhs 风格的关键词
+  3. 为每个关键词入队一个 ``search`` 任务到 ``XhsTaskQueue``
 
-The extension's background dispatcher polls the queue, opens each
-search page in a hidden tab, and reports results back — closing the
-Soul → Discovery loop for xiaohongshu.
+扩展的后台 dispatcher 轮询队列，在隐藏标签页中打开每个
+搜索页，并回报结果 —— 从而闭环 xiaohongshu 的 Soul → Discovery 链路。
 """
 
 from __future__ import annotations
@@ -30,13 +29,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class XhsTaskProducer:
-    """Enqueues xhs search tasks from the SoulProfile on a throttle.
+    """在节流条件下从 SoulProfile 入队 xhs 搜索任务。
 
-    The producer respects two limits:
-    - ``daily_budget`` — enforced by ``XhsTaskQueue.enqueue`` per type;
-      ``0`` disables the daily cap
-    - ``min_interval_hours`` — enforced here by inspecting the newest
-      task's ``created_at`` before running
+    producer 遵守两个限制：
+    - ``daily_budget`` —— 由 ``XhsTaskQueue.enqueue`` 按类型强制执行；
+      ``0`` 表示禁用每日上限
+    - ``min_interval_hours`` —— 由此处通过检查最新任务的
+      ``created_at`` 来强制执行
     """
 
     task_queue: XhsTaskQueue
@@ -44,20 +43,19 @@ class XhsTaskProducer:
     llm_service: LLMService
     enabled: bool = True
     daily_budget: int = 0
-    # Unified keyword planner fetch coordinator (P1.7). When wired AND the flag
-    # is on, the producer claims words from the keyword store, enqueues one xhs
-    # search task per word carrying its ``source_keyword_id``, and marks the word
-    # ``executing`` (NOT ``used`` — XHS is truly async; the task-result handler
-    # marks the terminal ``used`` / ``failed``). Budget rejection on enqueue
-    # (``ok=False``) rolls the word back to ``pending``. ``None`` (default / flag
-    # off) → legacy self-generated, lifecycle-free enqueue.
+    # 统一关键词规划器 fetch coordinator (P1.7)。当已接入且开关
+    # 打开时，producer 从关键词 store 中 claim 词，为每个词入队一个
+    # xhs 搜索任务并携带其 ``source_keyword_id``，然后将词标记为
+    # ``executing``（NOT ``used`` —— XHS 是真正的异步；任务结果处理器
+    # 标记终态 ``used`` / ``failed``）。入队时预算拒绝
+    # （``ok=False``）将词回滚到 ``pending``。``None``（默认 / 开关
+    # 关闭）→ 传统自生成、无生命周期的入队。
     keyword_fetch: Any | None = None
-    # v0.3.53+: lowered 4 → 1. Production logs (2026-05-05) showed
-    # the producer firing only once per 43-minute session because the
-    # 4-hour throttle is way too long for pool freshness — XHS pool
-    # was effectively static while user kept reshuffling. 1-hour
-    # cadence with daily_budget=30 caps at 24/30 enqueues per day,
-    # leaves 6 head room for manual / refresh-tick triggers.
+    # v0.3.53+: 从 4 降到 1。生产日志 (2026-05-05) 显示
+    # producer 在 43 分钟的会话中只触发了一次，因为
+    # 4 小时节流对池新鲜度而言太长 —— 当用户持续 reshuffle 时
+    # XHS 池实际上是静态的。1 小时节拍 + daily_budget=30
+    # 每天最多入队 24/30，留 6 个余量给手动 / refresh-tick 触发。
     min_interval_hours: int = 1
     keywords_per_cycle: int = 5
     _last_skip_reason: str = field(default="", init=False)
@@ -68,20 +66,19 @@ class XhsTaskProducer:
         limit: int | None = None,
         keywords: list[str] | None = None,
     ) -> dict[str, object]:
-        """Run one producer cycle if enough time has passed.
+        """如果已过足够时间则运行一个 producer 周期。
 
-        Returns a summary dict for diagnostics. When the producer is
-        disabled, throttled, or has nothing useful to enqueue, the result
-        carries ``enqueued: 0`` and a ``reason`` string — callers should
-        treat it as a no-op.
+        返回用于诊断的摘要 dict。当 producer 被禁用、节流，
+        或没有可入队的有用内容时，结果携带 ``enqueued: 0`` 和一个
+        ``reason`` 字符串 —— 调用方应将其视为 no-op。
 
         Args:
-            limit: Optional cap on the number of keywords generated this cycle.
-            keywords: Optional caller-supplied keywords (unified keyword planner
-                injection point). When provided (non-None), they are enqueued
-                directly and the internal ``generate_xhs_keywords`` LLM call is
-                skipped. When ``None``, the producer generates its own keywords
-                from the profile as before.
+            limit: 对本周期生成的关键词数量的可选上限。
+            keywords: 调用方提供的可选关键词（统一关键词规划器
+                注入点）。当提供（非 None）时，它们被直接入队，
+                内部的 ``generate_xhs_keywords`` LLM 调用被跳过。
+                当为 ``None`` 时，producer 像以前一样从 profile
+                生成自己的关键词。
         """
         if not self.enabled:
             return self._skip("disabled")
@@ -94,12 +91,12 @@ class XhsTaskProducer:
             max(1, int(limit or self.keywords_per_cycle)),
         )
 
-        # Unified keyword planner fetch path (P1.7, flag-gated). Takes priority
-        # over both external injection and self-generation: claim words from the
-        # store, enqueue each as a task carrying its ``source_keyword_id``, and
-        # mark it ``executing`` (XHS is truly async — terminal ``used`` /
-        # ``failed`` is the task-result handler's job). The deficit gate is
-        # upstream; the distinct floor is ``min_interval`` / ``_is_due`` above.
+        # 统一关键词规划器 fetch 路径 (P1.7，开关受控)。优先级高于
+        # 外部注入和自生成：从 store claim 词，将每个作为携带其
+        # ``source_keyword_id`` 的任务入队，并将其标记为
+        # ``executing``（XHS 是真正的异步 —— 终态 ``used`` /
+        # ``failed`` 是任务结果处理器的工作）。缺口门控在上游；
+        # 区分下限是上面的 ``min_interval`` / ``_is_due``。
         coordinator = self.keyword_fetch
         if (
             keywords is None
@@ -108,8 +105,8 @@ class XhsTaskProducer:
         ):
             claimed = coordinator.claim(_PLATFORM_XIAOHONGSHU, keyword_count)
             if not claimed:
-                # Flag on but the store has no claimable pending words → skip
-                # this cycle (the planner will refill).
+                # 开关打开但 store 没有 claimable 的 pending 词 → 跳过
+                # 本周期（planner 会重新填充）。
                 return self._skip("no_keywords")
             return self._enqueue_claimed_keywords(claimed)
 
@@ -121,8 +118,8 @@ class XhsTaskProducer:
 
         is_ready_fn = getattr(self.soul_engine, "is_profile_ready", None)
         if callable(is_ready_fn) and not is_ready_fn():
-            # Init's first ~7 minutes — every minute the producer ticks
-            # would otherwise WARN. Silent skip; we'll retry next tick.
+            # Init 的前 ~7 分钟 —— producer 每分钟 tick
+            # 否则会 WARN。静默跳过；下个 tick 重试。
             logger.debug("xhs producer: soul profile not ready yet")
             return self._skip("no_profile")
         try:
@@ -144,7 +141,7 @@ class XhsTaskProducer:
         return self._enqueue_keywords(resolved_keywords)
 
     def _enqueue_keywords(self, keywords: list[str]) -> dict[str, object]:
-        """Enqueue one ``search`` task per keyword, stopping when budget is hit."""
+        """为每个关键词入队一个 ``search`` 任务，命中预算上限时停止。"""
 
         enqueued = 0
         for keyword in keywords:
@@ -156,7 +153,7 @@ class XhsTaskProducer:
             if ok:
                 enqueued += 1
             else:
-                break  # budget exhausted — stop early
+                break  # 预算耗尽 —— 提前停止
         logger.info(
             "xhs producer enqueued %d/%d search tasks",
             enqueued,
@@ -165,16 +162,14 @@ class XhsTaskProducer:
         return {"enqueued": enqueued, "attempted": len(keywords), "reason": "ok"}
 
     def _enqueue_claimed_keywords(self, claimed: list[Any]) -> dict[str, object]:
-        """Enqueue one task per claimed word (carrying its ``source_keyword_id``).
+        """为每个 claimed 词入队一个任务（携带其 ``source_keyword_id``）。
 
-        XHS is truly async: enqueuing only hands the search to the extension, so
-        each enqueued word is marked ``executing`` — NOT ``used`` (the terminal
-        is the task-result handler's job). A word whose enqueue is refused by
-        budget (``enqueue_with_id`` returns ``None``) is rolled back to
-        ``pending`` rather than burned; enqueueing stops early at the budget
-        wall. ``source_keyword_id`` is the lifecycle correlation that the
-        task-result handler reads back to mark the terminal (P1.8 extends it
-        onto candidates for yield).
+        XHS 是真正的异步：入队只是把搜索交给扩展，因此每个入队的词
+        被标记为 ``executing`` —— NOT ``used``（终态是任务结果处理器
+        的工作）。一个被预算拒绝的词（``enqueue_with_id`` 返回
+        ``None``）被回滚到 ``pending`` 而不是被消耗；入队在预算墙处
+        提前停止。``source_keyword_id`` 是任务结果处理器回读以标记
+        终态的生命周期关联（P1.8 将其扩展到候选以进行 yield）。
         """
         coordinator = self.keyword_fetch
         enqueued = 0
@@ -189,12 +184,12 @@ class XhsTaskProducer:
                 if coordinator is not None:
                     coordinator.mark_executing(item)
             else:
-                # Budget exhausted: roll this word (and every still-unclaimed
-                # one after it) back to pending so none are burned.
+                # 预算耗尽：将该词（以及其后每个未 claimed 的词）
+                # 回滚到 pending，确保没有词被消耗。
                 if coordinator is not None:
                     coordinator.rollback(item)
                 break
-        # Roll back any words we never reached (the loop broke at the budget wall).
+        # 回滚任何我们没到达的词（循环在预算墙处中断）。
         if coordinator is not None and enqueued < len(claimed):
             for item in claimed[enqueued + 1 :]:
                 coordinator.rollback(item)
@@ -206,7 +201,7 @@ class XhsTaskProducer:
         return {"enqueued": enqueued, "attempted": len(claimed), "reason": "ok"}
 
     def _is_due(self) -> bool:
-        """Return False if the newest search task was enqueued recently."""
+        """如果最新的搜索任务最近刚入队则返回 False。"""
         if self.min_interval_hours <= 0:
             return True
         row = self.task_queue._db.conn.execute(
@@ -222,13 +217,13 @@ class XhsTaskProducer:
         return datetime.now(UTC) - last >= timedelta(hours=self.min_interval_hours)
 
     def _skip(self, reason: str) -> dict[str, object]:
-        # v0.3.53+: log skip reason on transition (not every minute) so
-        # operators can grep for why the producer isn't firing without
-        # drowning the log in identical-reason WARNINGs. Reasons:
-        #   disabled       — explicitly turned off in config
-        #   throttled      — last enqueue within ``min_interval_hours``
-        #   no_profile     — soul profile not built yet (init window)
-        #   no_keywords    — LLM keyword generation returned 0 items
+        # v0.3.53+: 在状态转换时记录 skip 原因（不是每分钟），以便
+        # 运维可以 grep producer 为何不触发，而不会让日志淹没在
+        # 相同 reason 的 WARNING 中。原因：
+        #   disabled       —— 在配置中显式关闭
+        #   throttled      —— 最后一次入队在 ``min_interval_hours`` 内
+        #   no_profile     —— soul profile 尚未构建（init 窗口）
+        #   no_keywords    —— LLM 关键词生成返回 0 项
         if reason != self._last_skip_reason:
             logger.info("xhs producer skip: reason=%s", reason)
         self._last_skip_reason = reason
@@ -236,7 +231,7 @@ class XhsTaskProducer:
 
 
 def _dedupe_keywords(keywords: list[str]) -> list[str]:
-    """Strip + dedupe caller-injected keywords (unified planner injection)."""
+    """对调用方注入的关键词进行 strip + 去重（统一 planner 注入）。"""
     seen: set[str] = set()
     out: list[str] = []
     for item in keywords:
@@ -249,7 +244,7 @@ def _dedupe_keywords(keywords: list[str]) -> list[str]:
 
 
 def _parse_sqlite_timestamp(value: str) -> datetime | None:
-    """Parse SQLite CURRENT_TIMESTAMP (``YYYY-MM-DD HH:MM:SS``) as UTC."""
+    """将 SQLite CURRENT_TIMESTAMP (``YYYY-MM-DD HH:MM:SS``) 解析为 UTC。"""
     if not value:
         return None
     try:

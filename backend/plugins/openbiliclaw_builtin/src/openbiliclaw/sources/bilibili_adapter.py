@@ -1,4 +1,4 @@
-"""Bilibili source adapter — wraps the four existing discovery strategies."""
+"""Bilibili 源适配器 —— 封装既有的四种发现策略。"""
 
 from __future__ import annotations
 
@@ -14,11 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class BilibiliAdapter:
-    """Adapter that delegates to the existing Bilibili discovery strategies.
+    """委托给既有 Bilibili 发现策略的适配器。
 
-    This is a thin wrapper that makes the legacy strategy-based pipeline
-    accessible through the unified :class:`SourceAdapter` interface without
-    rewriting any strategy logic.
+    这是一个薄封装，使基于策略的遗留流水线可以通过统一的
+    :class:`SourceAdapter` 接口访问，无需重写任何策略逻辑。
     """
 
     def __init__(
@@ -39,7 +38,7 @@ class BilibiliAdapter:
         if explore is not None:
             self._strategies["explore"] = explore
 
-    # ── SourceAdapter protocol ──────────────────────────────────────
+    # ── SourceAdapter 协议 ──────────────────────────────────────
 
     @property
     def source_type(self) -> str:
@@ -51,7 +50,7 @@ class BilibiliAdapter:
         profile: SoulProfile,
         limit: int = 20,
     ) -> list[DiscoveredContent]:
-        """Delegate to the strategy named by ``recipe.strategy``."""
+        """委托给由 ``recipe.strategy`` 指定的策略。"""
         strategy = self._strategies.get(recipe.strategy)
         if strategy is None:
             logger.warning(
@@ -63,7 +62,7 @@ class BilibiliAdapter:
 
         items = await strategy.discover(profile, limit=limit)
 
-        # Ensure multi-source fields are populated for every item
+        # 确保每条数据的多源字段均已填充
         for item in items:
             if not item.source_platform:
                 item.source_platform = "bilibili"
@@ -76,9 +75,9 @@ class BilibiliAdapter:
 
         return items
 
-    # ── Convenience helpers ─────────────────────────────────────────
+    # ── 便捷辅助方法 ─────────────────────────────────────────
 
     @property
     def available_strategies(self) -> list[str]:
-        """Strategy names this adapter can handle."""
+        """本适配器可处理的策略名称。"""
         return list(self._strategies)

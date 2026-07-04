@@ -1,7 +1,7 @@
-"""Persisted X (Twitter) cookie helpers for server-side cookie-replay discovery.
+"""X (Twitter) 持久化 Cookie 辅助工具，用于服务端 Cookie 回放式发现。
 
-Mirrors :mod:`openbiliclaw.sources.douyin_auth`: the browser extension keeps
-``data/x_cookie.json`` fresh; secrets never land in config.toml.
+与 :mod:`openbiliclaw.sources.douyin_auth` 对应：浏览器扩展保持
+``data/x_cookie.json`` 最新；密钥永不写入 config.toml。
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Server-side cookie replay needs BOTH the session token (auth_token) and the
-# CSRF token (ct0) — twitter-cli 401s immediately without either.
+# 服务端 Cookie 回放同时需要会话令牌（auth_token）和 CSRF 令牌（ct0）——
+# 缺少任意一个，twitter-cli 会立即返回 401。
 X_REQUIRED_COOKIE_NAMES = ("auth_token", "ct0")
 
 _X_COOKIE_FILENAME = "x_cookie.json"
 
 
 class XCookieManager:
-    """Store the user's X (Twitter) Cookie header outside config.toml."""
+    """将用户的 X (Twitter) Cookie 头存储在 config.toml 之外。"""
 
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
@@ -52,11 +52,11 @@ class XCookieManager:
 
 
 def resolve_x_cookie(*, data_dir: Path, cookie_env: str = "OPENBILICLAW_X_COOKIE") -> str:
-    """Resolve the X (Twitter) Cookie header for server-side discovery.
+    """为服务端发现解析 X (Twitter) Cookie 头。
 
-    The environment variable is the explicit override for debugging, while the
-    browser extension keeps ``data/x_cookie.json`` fresh for normal use. Env
-    always wins over the persisted file (mirrors ``resolve_douyin_cookie``).
+    环境变量是调试用的显式覆盖，而浏览器扩展为日常使用保持
+    ``data/x_cookie.json`` 最新。环境变量始终优先于持久化文件
+    （与 ``resolve_douyin_cookie`` 一致）。
     """
     env_cookie = os.environ.get(cookie_env, "").strip()
     if env_cookie:

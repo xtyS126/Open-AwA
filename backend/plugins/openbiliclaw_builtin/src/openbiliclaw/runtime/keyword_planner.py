@@ -1,40 +1,33 @@
-"""Unified keyword planner — deficit-pulled merged keyword generation (P1.6).
+"""统一关键词规划器 —— 缺口拉动的合并关键词生成（P1.6）。
 
-The planner is the generation half of the Discover double-buffered
-backpressure model (design spec §5.2). It runs as its own background object
-(constructed in ``api/runtime_context.py``, launched by the refresh
-controller's ``run_forever``) and, when the
-``[discovery].unified_keyword_planner_enabled`` flag is on, periodically:
+规划器是 Discover 双缓冲反压模型的生成半边（设计规范 §5.2）。它作为
+独立后台对象运行（在 ``api/runtime_context.py`` 中构造，由刷新控制器
+的 ``run_forever`` 启动），当 ``[discovery].unified_keyword_planner_enabled``
+开关打开时，周期性地：
 
-1. Finds the ``due`` platforms — those whose keyword cache (``pending`` rows
-   for the current ``profile_kw_digest``) is below ``kw_cache_low`` **and**
-   that have a real search deficit (the controller's existing pool-replenish
-   口径, including raw-material headroom + in-flight rows — NOT just visible
-   pool rows). B站 additionally enters ``due`` on its existing catalysts
-   (pool-below-target or ≥ ``signal_event_threshold`` pending signal events),
-   even when its cache is not below low.
-2. For every due platform, expires any stale-digest ``pending`` rows, then
-   builds one merged ``<platforms>`` block and issues a **single** structured
-   LLM call covering all due platforms. Parsed keywords are inserted as
-   ``pending`` per platform under the current digest.
-3. Decline vs failure (P2.2). When the merged call **succeeds**, a platform the
-   model explicitly returned an empty list ``[]`` for is an **intentional
-   decline** (its supply advantage doesn't fit the user) — it is skipped this
-   cycle with NO interest-name fallback (it stays at its current pending and is
-   re-offered next cycle if still due). A platform the model **omits** still
-   falls back. When the merged call **fails entirely** (raised / no usable
-   response), ALL due platforms fall back to deterministic interest names.
-4. Rotation polish (P2.3). ``claim_keywords`` is FIFO (oldest pending first), so
-   generated words rotate fairly. After a generation cycle, a non-declined due
-   platform whose pending is still below ``kw_cache_low`` is conservatively
-   topped up from its oldest ``used`` words via ``recycle_oldest_used`` (no
-   extra LLM call) so variety keeps flowing; a declined platform is left alone.
-   The sparse-profile recycle (generation + fallback produced nothing new)
-   stays as the deeper safety valve.
+1. 找出 ``due`` 平台——其关键词缓存（当前 ``profile_kw_digest`` 下的
+   ``pending`` 行）低于 ``kw_cache_low`` **且** 真实存在搜索缺口（控制
+   器既有的内容池补货口径，含原料余量 + 在途行——不只是可见池行）。
+   B 站额外在既有催化剂触发时进入 ``due``（池低于目标 或
+   ``signal_event_threshold`` 待处理信号事件），即使其缓存不低于 low。
+2. 对每个 due 平台，过期 stale-digest 的 ``pending`` 行，然后构造一个
+   合并的 ``<platforms>`` 块，发起 **一次** 结构化 LLM 调用覆盖所有
+   due 平台。解析出的关键词按平台以 ``pending`` 形式插入当前 digest。
+3. 拒绝 vs 失败（P2.2）。当合并调用 **成功** 时，模型对某平台显式返回
+   空列表 ``[]`` 视为 **主动拒绝**（其供给优势与用户不匹配）——本轮
+   跳过且不使用兴趣名回退（保持当前 pending，若下次仍 due 再重新
+   提供）。模型 **省略** 的平台仍走回退。当合并调用 **整体失败**
+   （抛错 / 无可用响应）时，所有 due 平台回退到确定性兴趣名。
+4. 轮换润色（P2.3）。``claim_keywords`` 是 FIFO（最老的 pending 优
+   先），所以生成的词会被公平轮换。一轮生成后，未拒绝的 due 平台若
+   pending 仍低于 ``kw_cache_low``，保守地从其最老的 ``used`` 词通过
+   ``recycle_oldest_used`` 顶上（无额外 LLM 调用），让多样性持续流
+   动；被拒绝的平台则不动。稀疏画像回收（生成 + 回退都没产生新词）
+   仍作为更深层的安全阀保留。
 
-It never fetches — fetch (claim → search) is P1.7. Single-flight is enforced
-through the DB-level planner lock, whose write transaction is released
-**before** the LLM call so a slow provider never blocks other writers.
+它从不抓取——抓取（claim → search）属于 P1.7。单次并发通过 DB 级
+规划器锁强制，其写事务在 LLM 调用 **之前** 释放，避免慢 provider
+阻塞其他写者。
 """
 
 from __future__ import annotations
@@ -70,9 +63,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Canonical long-form platform identifiers. These match the keys the keyword
-# store, pool-source shares, and the merged prompt builder all expect — short
-# codes (xhs/dy/yt/bili) are NOT used here.
+# 规范的长形平台标识。这些与关键词存储、pool-source 份额、合并 prompt
+# 构建器所期望的键一致——这里不用短码（xhs/dy/yt/bili）。
 _PLANNER_PLATFORMS: tuple[str, ...] = (
     "bilibili",
     "xiaohongshu",
@@ -81,60 +73,54 @@ _PLANNER_PLATFORMS: tuple[str, ...] = (
     "twitter",
 )
 _BILIBILI = "bilibili"
-# The planner reclaims in-flight rows that leaked past the claim lease before
-# each generation pass. ``executing`` rows belong to genuinely async (XHS)
-# tasks, so give them a much wider timeout than a plain claim lease.
+# 规划器在每轮生成之前回收泄漏出 claim 租约的在途行。``executing`` 行
+# 属于真正的异步（XHS）任务，所以给它们的超时比普通 claim 租约宽得多。
 _EXECUTING_TIMEOUT_MULTIPLIER = 6
-# P3.2 dynamic cache high-water: a platform's generation target may grow up to
-# this multiple of the static ``kw_cache_high`` when its observed yield is low
-# (lots of duplicate hits → need more words to fill the same deficit). Below
-# ``_DYNAMIC_MIN_SAMPLES`` used keywords the yield estimate is too noisy → fall
-# back to the static high.
+# P3.2 动态缓存高水位：当某平台观测 yield 较低（大量重复命中 → 需要
+# 更多词才能填同样的缺口）时，其生成目标可放大到此倍数的静态
+# ``kw_cache_high``。当已使用关键词少于 ``_DYNAMIC_MIN_SAMPLES`` 时
+# yield 估计噪声太大 → 回退到静态 high。
 _DYNAMIC_HIGH_CAP_MULT = 3
 _DYNAMIC_MIN_SAMPLES = 10
-# P3.1 per-platform topic saturation: a platform with fewer than this many of
-# its own fresh pooled rows falls back to the global avoid (too little data to
-# judge); above the floor, a topic is "saturated for a platform" once its count
-# reaches max(_MIN, platform_total // _DIV) of that platform's own pool.
+# P3.1 各平台话题饱和度：某平台自身的 fresh 池化行少于该数时回退到
+# 全局 avoid（数据太少无法判断）；超过底线后，某话题计数达到
+# max(_MIN, platform_total // _DIV) 时视为"对该平台已饱和"。
 _PER_PLATFORM_AVOID_FLOOR = 10
 _PER_PLATFORM_AVOID_MIN_THRESHOLD = 5
 _PER_PLATFORM_AVOID_DIVISOR = 5
-# P3.3 data-driven supply advantage: the top topic_groups a platform has
-# actually admitted (non-disliked, all-time) ride along as a per-call hint that
-# complements the static <supply_advantage> table. A platform needs at least
-# _FLOOR admitted rows before the signal is trusted (else cold start → static
-# table alone); a topic needs max(_MIN, total // _DIV) admits to count as a
-# strength, and at most _TOP are surfaced. The platform's current avoid set is
-# subtracted so a topic is never both "lean in" and "avoid".
+# P3.3 数据驱动的供给优势：某平台实际准入（未踩踩、全时段）的
+# topic_groups 排名前列者，作为 per-call 提示跟随，补充静态
+# <supply_advantage> 表。平台至少需要 _FLOOR 条准入行后该信号才被
+# 信任（否则冷启动 → 仅静态表）；某话题需要
+# max(_MIN, total // _DIV) 条准入才算优势，最多呈现 _TOP 条。会减去
+# 该平台当前的 avoid 集合，使某话题不会同时是"倾斜投入"和"回避"。
 _PER_PLATFORM_SUPPLY_FLOOR = 10
 _PER_PLATFORM_SUPPLY_MIN_THRESHOLD = 3
 _PER_PLATFORM_SUPPLY_DIVISOR = 10
 _PER_PLATFORM_SUPPLY_TOP = 8
-# Merged-generation token budget. The merged call is the largest-output call in
-# the system (every due platform × up to gen_batch keywords in one JSON), so a
-# fixed max_tokens can truncate the trailing platforms — they then fall onto the
-# interest-name fallback. Size max_tokens from the actual per-cycle ask (sum of
-# the gen_batch-capped needs) with a generous per-keyword budget (Chinese phrase
-# + JSON quoting). Over-provisioning is effectively free: max_tokens is a ceiling
-# billed on real output, not a charge. Never drop below the prior 4096 default.
+# 合并生成的 token 预算。合并调用是系统中输出最大的调用（每个 due
+# 平台 × 最多 gen_batch 个关键词，落在同一个 JSON 中），固定 max_tokens
+# 可能截断尾部平台——它们会落到兴趣名回退。这里按每轮实际请求量
+# （gen_batch 封顶后的 needs 之和）配额 max_tokens，并给每个词留出宽裕
+# 预算（中文短语 + JSON 引号开销）。超额配额几乎是免费的：max_tokens
+# 是按真实输出计费的上限，不是固定费用。绝不低于此前的 4096 默认值。
 _MERGED_TOKENS_PER_KEYWORD = 48
 _MERGED_JSON_OVERHEAD_TOKENS = 1024
 _MERGED_MIN_MAX_TOKENS = 4096
 
 
 def _as_str_list(value: object) -> list[str]:
-    """Coerce a loosely-typed JSON value into a clean ``list[str]``."""
+    """把松散类型的 JSON 值整理成干净的 ``list[str]``。"""
     if not isinstance(value, (list, tuple)):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
 
 
 class KeywordDeficitSource(Protocol):
-    """The deficit口径 the planner reuses (satisfied by the refresh controller).
+    """规划器复用的缺口口径（由刷新控制器实现）。
 
-    The planner deliberately does NOT recompute the pool deficit itself — it
-    asks the controller, so it shares the exact same in-flight / raw-headroom
-    accounting that drives ``_build_source_replenishment_plan``.
+    规划器刻意不重新计算池缺口——它询问控制器，以共享驱动
+    ``_build_source_replenishment_plan`` 的同一份在途 / 原料余量核算。
     """
 
     def keyword_planner_real_deficit(self, platform: str) -> int: ...
@@ -147,12 +133,11 @@ class _SoulEngineLike(Protocol):
 
 
 class KeywordPlanner:
-    """Deficit-pulled merged keyword generator (design spec §5.2).
+    """缺口拉动的合并关键词生成器（设计规范 §5.2）。
 
-    Holds its own ``llm_service`` + ``database`` + ``config`` (the controller
-    has no LLM field). The deficit source is injected after construction via
-    :meth:`bind_deficit_source` because the controller is built after the
-    planner.
+    自持 ``llm_service`` + ``database`` + ``config``（控制器没有 LLM
+    字段）。缺口来源在构造后通过 :meth:`bind_deficit_source` 注入，
+    因为控制器比规划器晚构建。
     """
 
     def __init__(
@@ -175,18 +160,17 @@ class KeywordPlanner:
         self._deficit_source: KeywordDeficitSource | None = None
         self._pool_target_count = pool_target_count
         self._signal_event_threshold = signal_event_threshold
-        # Unique-per-process lock owner so the CAS single-flight lock can tell
-        # this planner instance apart from a stale crashed one.
+        # 进程内唯一的锁 owner，使 CAS 单次并发锁能区分本规划器实例与
+        # 陈旧的崩溃实例。
         self._owner = owner or f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
-        # In-process single-flight: the DB planner lock is re-entrant for the
-        # same ``owner`` (so a crashed-then-restarted planner can retake it), so
-        # it does NOT stop two overlapping ``run_once`` calls on the SAME
-        # instance from double-generating. This lock does — cross-process /
-        # cross-instance contention is still handled by the DB lock below.
+        # 进程内单次并发：DB 规划器锁对同一 ``owner`` 可重入（崩溃后
+        # 重启的规划器可重新获取），所以它阻止不了同一实例上两次重叠
+        # 的 ``run_once`` 调用各自生成。本锁负责此事——跨进程 / 跨实例
+        # 冲突仍由下方 DB 锁处理。
         self._inflight_lock = asyncio.Lock()
-        # P1.9 per-cycle observability ledger: the most recent
-        # ``{platform: {"generated": n, "yield": y}}`` snapshot emitted by a
-        # generation pass. Empty until the first pass that generates anything.
+        # P1.9 每轮可观测性台账：最近一次生成轮次产出的
+        # ``{platform: {"generated": n, "yield": y}}`` 快照。在第一次
+        # 实际生成之前为空。
         self.last_cycle_ledger: dict[str, dict[str, int]] = {}
         self._profile_prompt_cache = PromptLayerRenderCache()
         self._generation_cache: dict[
@@ -194,21 +178,21 @@ class KeywordPlanner:
             tuple[float, dict[str, list[str]], set[str]],
         ] = {}
 
-    # ── wiring ──────────────────────────────────────────────────────────
+    # ── 装配 ────────────────────────────────────────────────────────────
 
     def bind_deficit_source(self, source: KeywordDeficitSource) -> None:
-        """Inject the controller as the shared pool-deficit / catalyst口径."""
+        """把控制器作为共享的池缺口 / 催化剂口径注入。"""
         self._deficit_source = source
 
     def bind_soul_engine(self, soul_engine: _SoulEngineLike) -> None:
-        """Inject the soul engine (the planner always reads the live profile)."""
+        """注入 soul 引擎（规划器始终读取实时画像）。"""
         self._soul_engine = soul_engine
 
     @property
     def owner(self) -> str:
         return self._owner
 
-    # ── config helpers ──────────────────────────────────────────────────
+    # ── 配置助手 ────────────────────────────────────────────────────────
 
     @property
     def _discovery(self) -> DiscoveryConfig:
@@ -228,14 +212,14 @@ class KeywordPlanner:
         scheduler = getattr(self._config, "scheduler", None)
         return int(getattr(scheduler, "pool_target_count", 300))
 
-    # ── loop ────────────────────────────────────────────────────────────
+    # ── 循环 ────────────────────────────────────────────────────────────
 
     async def run(self) -> None:
-        """Poll loop: reclaim leases + run one planning pass each interval.
+        """轮询循环：回收租约 + 每个间隔跑一轮规划。
 
-        When the feature flag is OFF this is a pure no-op (it still sleeps so
-        ``run_forever``'s gather keeps a live task, but it never touches the
-        store or the LLM) — guaranteeing zero behavior change pre-cutover.
+        当功能开关关闭时为纯 no-op（仍会 sleep，使 ``run_forever`` 的
+        gather 保持任务存活，但绝不触碰存储或 LLM）——保证切换前行为
+        零变化。
         """
         poll_seconds = self.poll_seconds
         while True:
@@ -266,22 +250,22 @@ class KeywordPlanner:
             logger.info("keyword planner reclaimed %d leased keyword(s) to pending", reclaimed)
 
     def _retire_min_age_minutes(self) -> float:
-        """Age floor before a 0-yield ``used`` word may be retired.
+        """0-yield ``used`` 词可被淘汰前的年龄底线。
 
-        Must comfortably exceed the worst-case admit latency so a freshly-used
-        word whose yield is still pending (fetch-only X/YT, async XHS — marked
-        ``used`` at handoff, credited only once the shared pipeline admits) is
-        not retired prematurely. Reuse the (much wider) ``executing`` timeout so
-        even an in-flight XHS task's eventual admit lands before retirement.
+        必须宽裕地超过最差准入延迟，使刚 used、yield 仍待定的词
+        （仅抓取的 X/YT、异步 XHS —— 在交接时标记为 ``used``，仅当共享
+        管线准入后才计入 yield）不会被过早淘汰。复用（更宽的）
+        ``executing`` 超时，确保在途 XHS 任务的最终准入也在淘汰之前
+        完成。
         """
         claim_lease_minutes = float(self._discovery.claim_lease_minutes)
         return max(60.0, claim_lease_minutes * _EXECUTING_TIMEOUT_MULTIPLIER)
 
     def retire_zero_yield(self) -> int:
-        """Retire barren ``used`` words across all planner platforms (P1.8).
+        """淘汰所有规划器平台下空 yield 的 ``used`` 词（P1.8）。
 
-        Best-effort; a retire failure on one platform never aborts the pass.
-        Returns the total number of rows retired (for observability / tests).
+        尽力而为；某平台淘汰失败不会终止整轮。返回被淘汰的总行数
+        （用于可观测性 / 测试）。
         """
         retire = getattr(self._db, "retire_zero_yield_keywords", None)
         if not callable(retire):
@@ -297,26 +281,25 @@ class KeywordPlanner:
             logger.info("keyword planner retired %d zero-yield keyword(s)", total)
         return total
 
-    # ── one planning pass ───────────────────────────────────────────────
+    # ── 单轮规划 ───────────────────────────────────────────────────────
 
     async def run_once(self) -> dict[str, int]:
-        """Run a single deficit-pulled merged-generation pass.
+        """跑一次缺口拉动的合并生成轮次。
 
-        Returns a per-platform ``{platform: inserted}`` ledger (empty when
-        nothing was due or the flag is off) for observability / tests.
+        返回 per-platform ``{platform: inserted}`` 台账（无 due 或开关
+        关闭时为空），供可观测性 / 测试使用。
         """
         if not self.enabled:
             return {}
 
-        # P1.8: retire demonstrably-barren search words (``used`` with yield 0
-        # past a conservative age floor) every pass. Cheap single UPDATE, runs
-        # before the due short-circuit so it fires even when nothing is due, and
-        # decoupled from generation/fetch. The age floor protects freshly-used
-        # words still pending their async (X / YT / XHS) admit.
+        # P1.8：每轮淘汰明显空 barren 的搜索词（``used`` 且 yield 为 0，
+        # 超过保守年龄底线）。廉价单条 UPDATE，在 due 短路之前运行，
+        # 即使无 due 也会触发；与生成 / 抓取解耦。年龄底线保护刚 used
+        # 仍在等待异步（X / YT / XHS）准入的词。
         self.retire_zero_yield()
 
-        # In-process single-flight: a second overlapping pass on this instance
-        # bails immediately (the DB lock is re-entrant for our own owner).
+        # 进程内单次并发：本实例上第二次重叠轮次立即退出（DB 锁对自身
+        # owner 可重入）。
         if self._inflight_lock.locked():
             logger.debug("keyword planner pass skipped: a pass is already in flight")
             return {}
@@ -333,15 +316,15 @@ class KeywordPlanner:
         if not due:
             return {}
 
-        # Flush stale-digest pending for every due platform up front so the
-        # cache count below low / the merged need both reflect the live digest.
+        # 提前把每个 due 平台的 stale-digest pending 过期掉，使下方低于
+        # low 的缓存计数与合并请求量都基于当前 digest。
         for platform in due:
             try:
                 self._db.expire_pending_by_digest(platform, digest)
             except Exception:
                 logger.exception("expire_pending_by_digest failed for %s", platform)
 
-        # Single-flight: short CAS lock, released BEFORE the LLM call.
+        # 单次并发：短 CAS 锁，在 LLM 调用之前释放。
         lease_seconds = max(1.0, float(self._discovery.claim_lease_minutes) * 60.0)
         if not self._acquire_lock(lease_seconds):
             logger.debug("keyword planner pass skipped: another owner holds the lock")
@@ -370,14 +353,13 @@ class KeywordPlanner:
         for platform in due:
             current_pending = self._count_pending(platform, digest)
             need = max(0, self._target_high(platform) - current_pending)
-            # Never ask the model for more than we keep this cycle: the parse caps
-            # each platform at gen_batch, so asking for the full (possibly dynamic,
-            # up to high × _DYNAMIC_HIGH_CAP_MULT) gap only bloats the merged JSON
-            # and pushes the trailing platforms toward truncation. Cap the ask.
+            # 不要向模型请求超过本轮保留量：解析时每个平台以 gen_batch
+            # 封顶，请求完整（可能动态、最高 high × _DYNAMIC_HIGH_CAP_MULT）
+            # 缺口只会让合并 JSON 膨胀，并把尾部平台推向截断。封顶请求。
             shown_need = min(need, gen_batch)
             if shown_need <= 0:
-                # No gap to fill (or gen_batch disabled). The B站 catalyst can mark
-                # a platform due while its cache is already full — skip it.
+                # 没有缺口要填（或 gen_batch 被禁用）。B 站催化剂可能在
+                # 缓存已满时仍把某平台标记为 due —— 跳过。
                 continue
             needs[platform] = need
             total_ask += shown_need
@@ -398,11 +380,10 @@ class KeywordPlanner:
 
         generated: dict[str, list[str]] = {}
         present: set[str] = set()
-        # ``call_failed`` distinguishes "the merged LLM call raised / returned
-        # nothing usable" (→ fall back for ALL due platforms) from "the call
-        # succeeded but platform X returned an explicit empty list" (→ X
-        # declined, skip it without a fallback). It stays False when there was
-        # nothing to call (``blocks`` empty) — no failure, just nothing to do.
+        # ``call_failed`` 区分"合并 LLM 调用抛错 / 没返回可用内容"
+        # （→ 所有 due 平台回退）与"调用成功但平台 X 显式返回空列表"
+        # （→ X 拒绝，跳过且不回退）。当 ``blocks`` 为空即没什么可调用
+        # 时保持 False —— 不是失败，只是没事做。
         call_failed = False
         if blocks:
             target_platforms = [str(block["platform"]) for block in blocks]
@@ -411,10 +392,9 @@ class KeywordPlanner:
             if cached is not None:
                 generated, present = cached
             else:
-                # Budget the merged call's max_tokens from the actual ask (sum of the
-                # gen_batch-capped needs) so the trailing platforms in the JSON are
-                # never truncated onto the interest-name fallback. Scales with
-                # platform count and gen_batch; floored at the prior 4096 default.
+                # 按实际请求量（gen_batch 封顶后的 needs 之和）为合并调用
+                # 的 max_tokens 配额，使 JSON 尾部平台不会被截断到兴趣名
+                # 回退。随平台数与 gen_batch 缩放；保底为此前 4096 默认值。
                 merged_max_tokens = max(
                     _MERGED_MIN_MAX_TOKENS,
                     total_ask * _MERGED_TOKENS_PER_KEYWORD + _MERGED_JSON_OVERHEAD_TOKENS,
@@ -460,24 +440,21 @@ class KeywordPlanner:
 
         low = int(self._discovery.kw_cache_low)
         ledger: dict[str, int] = {}
-        # Only platforms with a real need (need > 0) generate / insert. A
-        # platform marked due purely by the B站 catalyst whose cache is already
-        # at high (need == 0) was dropped from ``blocks`` above and must NOT
-        # receive a fallback insert.
+        # 只有真实有缺口（need > 0）的平台才生成 / 插入。仅因 B 站催化剂
+        # 标记为 due、缓存已达 high（need == 0）的平台已在上方的
+        # ``blocks`` 中被丢弃，绝不应收到回退插入。
         for platform in needs:
             words = generated.get(platform, [])
             declined = False
             if not words:
                 if not call_failed and platform in present:
-                    # P2.2 decline: the merged call succeeded and the model
-                    # explicitly returned [] for this platform → intentional
-                    # decline (interests don't fit its supply advantage). Skip:
-                    # NO fallback, NO recycle. It keeps its current pending and
-                    # is re-offered next cycle if still due.
+                    # P2.2 拒绝：合并调用成功且模型对该平台显式返回 []
+                    # → 主动拒绝（兴趣与其供给优势不匹配）。跳过：不回退、
+                    # 不回收。保持当前 pending，若下次仍 due 再重新提供。
                     declined = True
                 else:
-                    # Call failed entirely, or the model omitted this platform →
-                    # deterministic interest-name fallback (P1.3 mirror).
+                    # 调用整体失败，或模型省略了该平台 → 确定性兴趣名
+                    # 回退（P1.3 镜像）。
                     cap = max(0, int(self._discovery.gen_batch))
                     words = self._interest_fallback(profile, cap)
 
@@ -487,16 +464,14 @@ class KeywordPlanner:
 
             inserted = self._insert(platform, words, digest)
             if inserted <= 0:
-                # Sparse profile: generation + fallback produced nothing new
-                # for a due platform → recycle its oldest used keywords so the
-                # cache does not starve.
+                # 稀疏画像：生成 + 回退对某 due 平台都没产生新词 → 回收
+                # 其最老的已用关键词，避免缓存饿死。
                 inserted += self._recycle(platform, needs[platform], digest)
             else:
-                # P2.3 recycle-on-shortfall: the platform produced SOME new
-                # words but its pending is still below the low watermark → top
-                # it up from its oldest used words (no extra LLM call) so
-                # variety keeps flowing. Conservative: only the remaining gap to
-                # low, and never for a declined platform (handled above).
+                # P2.3 不足时回收：平台产生了 *一些* 新词但 pending 仍
+                # 低于 low 水位 → 从其最老的 used 词顶上（无额外 LLM
+                # 调用）让多样性持续流动。保守：只补到 low 的剩余缺口，
+                # 且对已拒绝平台（已在上面处理）不执行。
                 shortfall = low - self._count_pending(platform, digest)
                 if shortfall > 0:
                     inserted += self._recycle(platform, shortfall, digest)
@@ -560,25 +535,24 @@ class KeywordPlanner:
             set(present),
         )
 
-    # ── per-cycle observability ledger (P1.9) ───────────────────────────
+    # ── 每轮可观测性台账（P1.9） ───────────────────────────────────────
 
     def _emit_cycle_ledger(
         self, generated: dict[str, int], digest: str
     ) -> dict[str, dict[str, int]]:
-        """Record + log the per-platform production/yield ledger for this cycle.
+        """记录 + 日志本轮 per-platform 的产出 / yield 台账。
 
-        The merged generation is a **single** ``discovery.keyword_planner`` LLM
-        response (P1.6), so token cost can NOT be apportioned per platform — the
-        cost ledger keeps one caller. To still give operators per-platform
-        visibility this structured line surfaces, for every platform generated
-        this cycle, how many keywords it produced (``generated``) plus the
-        platform's cumulative admit-credited ``yield`` (cheap ``SUM(yield_count)``
-        via :meth:`Database.keyword_yield_total`, when available). It does NOT
-        fake token-level platform attribution.
+        合并生成是 **一次** ``discovery.keyword_planner`` LLM 响应
+        （P1.6），所以 token 成本 *无法* 按平台分摊——成本台账保留单一
+        caller。为仍给运维 per-platform 可见性，这条结构化日志对每个本
+        轮生成的平台呈现：它产出了多少关键词（``generated``）以及该
+        平台累计准入计入的 ``yield``（通过
+        :meth:`Database.keyword_yield_total` 廉价 ``SUM(yield_count)``，
+        可用时）。它 *不* 伪造 token 级别的平台归因。
 
-        Stored on :attr:`last_cycle_ledger` (for observability / tests) and
-        emitted as one ``logger.info`` structured line. Returns the structured
-        ``{platform: {"generated": n, "yield": y}}`` dict.
+        存于 :attr:`last_cycle_ledger`（供可观测性 / 测试）并以一条
+        ``logger.info`` 结构化行输出。返回结构化的
+        ``{platform: {"generated": n, "yield": y}}`` dict。
         """
         structured: dict[str, dict[str, int]] = {}
         for platform, count in generated.items():
@@ -599,7 +573,7 @@ class KeywordPlanner:
         return structured
 
     def _yield_total(self, platform: str) -> int:
-        """Cumulative admit-credited yield for a platform (0 if unavailable)."""
+        """某平台累计准入计入的 yield（不可用时为 0）。"""
         getter = getattr(self._db, "keyword_yield_total", None)
         if not callable(getter):
             return 0
@@ -609,7 +583,7 @@ class KeywordPlanner:
             logger.debug("keyword_yield_total lookup failed for %s", platform, exc_info=True)
             return 0
 
-    # ── due computation ─────────────────────────────────────────────────
+    # ── due 计算 ───────────────────────────────────────────────────────
 
     def _due_platforms(self, digest: str) -> list[str]:
         low = int(self._discovery.kw_cache_low)
@@ -644,7 +618,7 @@ class KeywordPlanner:
             logger.exception("keyword planner bilibili catalyst lookup failed")
             return False
 
-    # ── store + snapshot helpers ────────────────────────────────────────
+    # ── 存储 + 快照助手 ────────────────────────────────────────────────
 
     def _count_pending(self, platform: str, digest: str) -> int:
         try:
@@ -686,16 +660,14 @@ class KeywordPlanner:
             return 0
 
     def _avoid_hints(self, profile: SoulProfile | None = None) -> dict[str, dict[str, object]]:
-        """Per-platform topic avoid + global style/franchise avoid (P3.1).
+        """各平台的话题 avoid + 全局的风格 / 番剧 avoid（P3.1）。
 
-        P1/P2 fed every platform the GLOBAL avoid, which over-avoids — a topic
-        saturated on B站 may be absent on 小红书. P3.1 gives each platform its
-        OWN saturated topics (relative to that platform's own pool); styles and
-        franchises stay global (coarser, less platform-specific). A platform
-        with too little of its own pool falls back to the global topic avoid.
-        Empty-pool cold start falls back to profile-derived soft diversity hints
-        so every platform's first keyword batch does not collapse onto the same
-        top-weighted interest.
+        P1/P2 给每个平台喂的是 GLOBAL avoid，过度回避——在 B 站饱和的
+        话题可能在小红书上根本没出现。P3.1 给每个平台自己的饱和话题
+        （相对该平台自己的池）；风格和番剧保持全局（更粗，平台特异性
+        弱）。某平台自身池数据太少时回退到全局话题 avoid。空池冷启动
+        回退到画像派生的软多样性提示，使每个平台第一批关键词不会塌
+        缩到同一个最高权重的兴趣上。
         """
         hints: dict[str, object] = {}
         try:
@@ -756,15 +728,14 @@ class KeywordPlanner:
     def _supply_hints(
         self, avoid_by_platform: dict[str, dict[str, object]]
     ) -> dict[str, list[str]]:
-        """Per-platform data-driven supply-advantage topics (P3.3).
+        """各平台数据驱动的供给优势话题（P3.3）。
 
-        The static ``<supply_advantage>`` table in the system prompt gives
-        platform priors; this augments it with THIS user's actual admit
-        history — the ``topic_group``s each platform has most delivered into the
-        cache. The platform's current avoid set is subtracted so a topic is
-        never both "lean in" and "avoid" (a saturated-now strength stays only in
-        avoid this cycle). Empty until a platform has admitted
-        ``_PER_PLATFORM_SUPPLY_FLOOR`` rows (cold start → static table only).
+        system prompt 中的静态 ``<supply_advantage>`` 表给出平台先验；
+        这部分用 *本用户* 实际的准入历史做补充——各平台最常把哪些
+        ``topic_group`` 投入到缓存。会减去该平台当前的 avoid 集合，
+        使某话题不会同时是"倾斜投入"和"回避"（饱和-当下变 strength
+        的，本轮只留在 avoid）。在平台准入行数达到
+        ``_PER_PLATFORM_SUPPLY_FLOOR`` 之前为空（冷启动 → 仅静态表）。
         """
         admitted: dict[str, dict[str, int]] = {}
         getter = getattr(self._db, "get_admitted_topic_counts_by_platform", None)
@@ -794,15 +765,14 @@ class KeywordPlanner:
         return result
 
     def _target_high(self, platform: str) -> int:
-        """P3.2 dynamic cache high-water for a platform.
+        """P3.2 某平台的动态缓存高水位。
 
-        Sizes the pending target from the live search deficit ÷ the platform's
-        observed average yield-per-keyword, so a low-yield platform (lots of
-        duplicate hits) generates MORE words to fill the same gap and a
-        high-yield one fewer. Falls back to the static ``kw_cache_high`` on cold
-        start (too little yield history), when there is no deficit source, or
-        when the deficit is non-positive. Clamped to ``[low+fetch_batch ..
-        kw_cache_high × _DYNAMIC_HIGH_CAP_MULT]`` so the cache stays functional.
+        按实时搜索缺口 ÷ 平台观测平均每词 yield 来设定 pending 目标，
+        使低 yield 平台（重复命中多）生成 *更多* 词以填补同样缺口，
+        高 yield 平台则更少。冷启动（yield 历史太少）、无缺口来源或
+        缺口非正时回退到静态 ``kw_cache_high``。夹在
+        ``[low+fetch_batch .. kw_cache_high × _DYNAMIC_HIGH_CAP_MULT]``
+        区间内，使缓存仍能正常工作。
         """
         static_high = max(1, int(self._discovery.kw_cache_high))
         source = self._deficit_source
@@ -823,11 +793,11 @@ class KeywordPlanner:
         return max(floor, min(target, cap))
 
     def _avg_yield(self, platform: str) -> float:
-        """Observed yield-per-keyword (total yield ÷ used keywords) for a platform.
+        """某平台观测的每词 yield（总 yield ÷ used 关键词数）。
 
-        Returns 0.0 (→ caller uses the static high) until at least
-        ``_DYNAMIC_MIN_SAMPLES`` used keywords exist, so the cold-start estimate
-        isn't driven by one or two noisy samples.
+        在 used 关键词少于 ``_DYNAMIC_MIN_SAMPLES`` 之前返回 0.0
+        （→ 调用方使用静态 high），避免冷启动估计被一两个噪声样本
+        主导。
         """
         used = 0
         getter = getattr(self._db, "used_keyword_count", None)
@@ -857,12 +827,12 @@ class KeywordPlanner:
                 logger.exception("keyword planner source-target lookup failed")
         return {}
 
-    # ── lock ────────────────────────────────────────────────────────────
+    # ── 锁 ──────────────────────────────────────────────────────────────
 
     def _acquire_lock(self, lease_seconds: float) -> bool:
         acquire = getattr(self._db, "acquire_planner_lock", None)
         if not callable(acquire):
-            # No lock support → behave single-process (still safe in tests).
+            # 不支持锁 → 按单进程处理（测试中仍安全）。
             return True
         try:
             return bool(acquire(self._owner, lease_seconds))
@@ -879,7 +849,7 @@ class KeywordPlanner:
         except Exception:
             logger.exception("release_planner_lock failed")
 
-    # ── profile + fallback ──────────────────────────────────────────────
+    # ── 画像 + 回退 ─────────────────────────────────────────────────────
 
     async def _load_profile(self) -> SoulProfile | None:
         if self._soul_engine is None:
@@ -893,7 +863,7 @@ class KeywordPlanner:
 
     @staticmethod
     def _interest_fallback(profile: SoulProfile, count: int) -> list[str]:
-        """Deterministic weight-ranked interest names (mirrors P1.3 XHS/X)."""
+        """按权重排序的确定性兴趣名（镜像 P1.3 XHS/X）。"""
         if count <= 0:
             return []
         ranked = sorted(

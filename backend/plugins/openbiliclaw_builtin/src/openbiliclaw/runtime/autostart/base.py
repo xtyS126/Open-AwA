@@ -1,4 +1,4 @@
-"""Common contracts for boot autostart managers."""
+"""开机自启管理器的通用契约。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class LaunchSpec:
-    """Resolved backend launch command for an OS autostart entry."""
+    """操作系统自启项所用的、解析后的后端启动命令。"""
 
     argv: list[str]
     working_dir: Path
@@ -22,7 +22,7 @@ class LaunchSpec:
 
 @dataclass(frozen=True)
 class AutostartStatus:
-    """Current autostart support and registration state."""
+    """当前的自启支持情况与注册状态。"""
 
     supported: bool
     registered: bool
@@ -33,15 +33,15 @@ class AutostartStatus:
 
 
 class AutostartManager(Protocol):
-    """Per-platform user-scope autostart manager."""
+    """按平台区分的用户级自启管理器。"""
 
     mechanism: str
 
     def register(self, config: Config) -> None:
-        """Register the backend to start on the next user login."""
+        """注册后端在用户下次登录时启动。"""
 
     def unregister(self) -> None:
-        """Remove the user-scope autostart registration."""
+        """移除用户级的自启注册。"""
 
     def is_registered(self) -> bool:
-        """Return whether the platform entry currently exists."""
+        """返回平台自启项当前是否已存在。"""

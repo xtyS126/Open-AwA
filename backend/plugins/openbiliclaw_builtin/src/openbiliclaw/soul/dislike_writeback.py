@@ -1,4 +1,4 @@
-"""Shared disliked-topic writeback and candidate-pool purge helpers."""
+"""共享的厌恶话题回写与候选池清除辅助函数。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def merge_new_dislikes_into_preference(
     memory: MemoryManager,
     topics: Sequence[str],
 ) -> tuple[list[str], list[str]]:
-    """Idempotently add disliked topics to the flat preference layer."""
+    """幂等地把厌恶话题添加到扁平 preference 层。"""
     preference_layer = memory.get_layer("preference")
     existing = _stable_strings(
         [
@@ -57,7 +57,7 @@ async def purge_pool_for_new_dislikes(
     newly_added: Sequence[str],
     all_dislikes: Sequence[str],
 ) -> list[str]:
-    """Run the existing fast and semantic pool-purge path for new dislikes."""
+    """为新厌恶话题运行既有的快速 + 语义化候选池清除路径。"""
     topics = _stable_strings(newly_added)
     all_topics = _stable_strings(all_dislikes)
     if not topics:
@@ -116,7 +116,7 @@ async def apply_new_dislikes(
     llm_service: Any | None,
     topics: Sequence[str],
 ) -> list[str]:
-    """Add disliked topics, sync profile files, and purge matching pool content."""
+    """添加厌恶话题，同步画像文件，并清除匹配的候选池内容。"""
     added, all_dislikes = merge_new_dislikes_into_preference(memory=memory, topics=topics)
     if not added:
         return []
@@ -131,7 +131,7 @@ async def apply_new_dislikes(
     profile.populate_from_flat_preference(preference_layer.data)
     soul_layer.data.clear()
     soul_layer.data.update(profile.to_dict())
-    # Persist the canonical layer first; then sync derived profile files.
+    # 先持久化规范层；再同步派生的画像文件。
     soul_layer.save()
     memory.sync_profile_files(profile)
 
@@ -148,7 +148,7 @@ async def apply_new_dislikes(
 
 
 def topics_for_confirmed_avoidance(avoidance: Any) -> list[str]:
-    """Return conservative writeback topics for a confirmed avoidance."""
+    """为一个已确认的回避返回保守的回写话题。"""
     specifics = [
         str(getattr(item, "name", item)).strip()
         for item in getattr(avoidance, "specifics", []) or []

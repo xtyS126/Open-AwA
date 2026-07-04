@@ -1,4 +1,4 @@
-"""Protocol-neutral request and response DTOs for OpenClaw integration."""
+"""OpenClaw 集成的协议无关请求/响应 DTO。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ _VALID_AVOIDANCE_RESPONSES = {"confirm", "reject", "chat"}
 
 @dataclass(slots=True)
 class ProfileResponse:
-    """Trimmed profile summary exposed to OpenClaw."""
+    """暴露给 OpenClaw 的精简画像摘要。"""
 
     initialized: bool
     personality_portrait: str = ""
@@ -23,7 +23,7 @@ class ProfileResponse:
 
 @dataclass(slots=True)
 class RecommendationItem:
-    """One recommendation item exposed to OpenClaw."""
+    """暴露给 OpenClaw 的单条推荐项。"""
 
     recommendation_id: int
     bvid: str
@@ -37,14 +37,14 @@ class RecommendationItem:
 
 @dataclass(slots=True)
 class RecommendationResponse:
-    """Recommendation result returned to OpenClaw."""
+    """返回给 OpenClaw 的推荐结果。"""
 
     items: list[RecommendationItem] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class FeedbackRequest:
-    """Normalized feedback payload received from OpenClaw."""
+    """从 OpenClaw 接收的规范化反馈载荷。"""
 
     recommendation_id: int
     feedback_type: str
@@ -63,7 +63,7 @@ class FeedbackRequest:
 
 @dataclass(slots=True)
 class FeedbackResponse:
-    """Feedback acceptance result returned to OpenClaw."""
+    """返回给 OpenClaw 的反馈受理结果。"""
 
     ok: bool
     recommendation_id: int
@@ -72,7 +72,7 @@ class FeedbackResponse:
 
 @dataclass(slots=True)
 class RuntimeStatusResponse:
-    """Trimmed runtime status summary exposed to OpenClaw."""
+    """暴露给 OpenClaw 的精简运行时状态摘要。"""
 
     initialized: bool
     recommendation_count: int
@@ -88,7 +88,7 @@ class RuntimeStatusResponse:
 
 @dataclass(slots=True)
 class SyncAccountResponse:
-    """Account sync summary returned to OpenClaw."""
+    """返回给 OpenClaw 的账号同步摘要。"""
 
     synced: bool
     new_event_count: int
@@ -97,7 +97,7 @@ class SyncAccountResponse:
 
 @dataclass(slots=True)
 class DelightItem:
-    """One proactive delight recommendation exposed to OpenClaw."""
+    """暴露给 OpenClaw 的单条主动惊喜推荐。"""
 
     bvid: str
     title: str = ""
@@ -109,14 +109,14 @@ class DelightItem:
 
 @dataclass(slots=True)
 class DelightResponse:
-    """Proactive delight recommendation result returned to OpenClaw."""
+    """返回给 OpenClaw 的主动惊喜推荐结果。"""
 
     item: DelightItem | None = None
 
 
 @dataclass(slots=True)
 class ChatRequest:
-    """Normalized chat payload received from OpenClaw."""
+    """从 OpenClaw 接收的规范化对话载荷。"""
 
     message: str
     session: str = "openclaw"
@@ -130,7 +130,7 @@ class ChatRequest:
 
 @dataclass(slots=True)
 class ChatResponse:
-    """Socratic dialogue reply returned to OpenClaw."""
+    """返回给 OpenClaw 的苏格拉底式对话回复。"""
 
     reply: str
     session: str = "openclaw"
@@ -138,11 +138,11 @@ class ChatResponse:
 
 @dataclass(slots=True)
 class InterestProbeItem:
-    """One speculative interest hypothesis the agent wants the user to confirm.
+    """agent 想让用户确认的单个推测性兴趣假设。
 
-    ``question`` is a ready-to-ask prompt OpenClaw can pose to the user as-is;
+    ``question`` 是 OpenClaw 可以原样抛给用户的现成提示；
     ``domain`` / ``category`` / ``reason`` / ``confidence`` / ``specifics``
-    expose the raw hypothesis so the agent can rephrase if it prefers.
+    暴露原始假设数据，以便 agent 在偏好时可以重新表述。
     """
 
     domain: str
@@ -158,14 +158,14 @@ class InterestProbeItem:
 
 @dataclass(slots=True)
 class InterestProbeResponse:
-    """Next interest-confirmation probe returned to OpenClaw."""
+    """返回给 OpenClaw 的下一个兴趣确认探测。"""
 
     probe: InterestProbeItem | None = None
 
 
 @dataclass(slots=True)
 class AvoidanceProbeItem:
-    """One speculative avoidance hypothesis the agent wants the user to confirm."""
+    """agent 想让用户确认的单个推测性避雷假设。"""
 
     domain: str
     reason: str = ""
@@ -181,14 +181,14 @@ class AvoidanceProbeItem:
 
 @dataclass(slots=True)
 class AvoidanceProbeResponse:
-    """Next avoidance-confirmation probe returned to OpenClaw."""
+    """返回给 OpenClaw 的下一个避雷确认探测。"""
 
     probe: AvoidanceProbeItem | None = None
 
 
 @dataclass(slots=True)
 class AvoidanceProbeFeedbackRequest:
-    """User response to a speculative avoidance probe."""
+    """用户对推测性避雷探测的回复。"""
 
     domain: str
     response: str
@@ -207,7 +207,7 @@ class AvoidanceProbeFeedbackRequest:
 
 @dataclass(slots=True)
 class AvoidanceProbeFeedbackResponse:
-    """Result of recording user feedback for a speculative avoidance probe."""
+    """记录用户对推测性避雷探测反馈的结果。"""
 
     ok: bool
     action: str

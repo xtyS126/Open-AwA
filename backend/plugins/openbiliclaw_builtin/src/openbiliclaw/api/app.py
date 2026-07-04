@@ -1,4 +1,4 @@
-"""FastAPI app for the browser-extension backend."""
+"""浏览器扩展后端的 FastAPI app。"""
 
 from __future__ import annotations
 
@@ -251,7 +251,7 @@ class _ExtensionE2ERunState:
 
 
 def _default_route_ip() -> str | None:
-    """Return the IPv4 address selected for outbound traffic, if usable."""
+    """返回为出站流量选择的 IPv4 地址（若可用）。"""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(0.1)
@@ -263,7 +263,7 @@ def _default_route_ip() -> str | None:
 
 
 def _interface_ipv4_candidates() -> list[str]:
-    """Best-effort local IPv4 enumeration without extra dependencies."""
+    """Best-effort 枚举本机 IPv4，无需额外依赖。"""
     commands: list[list[str]]
     if os.name == "nt":
         commands = [["ipconfig"]]
@@ -329,11 +329,11 @@ def _usable_lan_candidate(ip: str) -> tuple[bool, bool]:
 
 
 def _detect_lan_ip() -> str | None:
-    """Return a likely phone-reachable LAN IPv4 address.
+    """返回一个手机可能可达的 LAN IPv4 地址。
 
-    UDP default-route detection can return VPN/TUN addresses such as
-    198.18.0.1 on macOS. Prefer RFC1918 interface addresses and only use
-    the default-route result when it is not a benchmark / loopback address.
+    UDP default-route 检测在 macOS 上可能返回 VPN/TUN 地址，如
+    198.18.0.1。优先使用 RFC1918 接口地址，仅当默认路由结果不是
+    benchmark / loopback 地址时才使用它。
     """
     candidates = _interface_ipv4_candidates()
     route_ip = _default_route_ip()
@@ -399,7 +399,7 @@ def _validate_llm_buildable(cfg: Any, base_issues: list[Any]) -> list[Any]:
 
 
 def _count_events_by_source_platform(database: Any) -> dict[str, int]:
-    """Count stored behavior events by normalized source platform."""
+    """按归一化 source platform 统计已存储的 behavior event 数。"""
 
     counter = {source: 0 for source in _SOURCE_SHARE_ORDER}
     if hasattr(database, "count_events_by_source_platform"):
@@ -441,15 +441,13 @@ def _count_events_by_source_platform(database: Any) -> dict[str, int]:
 
 
 def _select_init_platforms(enabled: set[str], selected: set[str] | None) -> set[str]:
-    """Effective platform sources for a guided-init run.
+    """guided-init 运行时实际生效的 platform sources。
 
-    ``enabled`` is the config-enabled set; ``selected`` is the extension's
-    per-run checkbox choice (``None`` when no selection was sent — CLI / legacy
-    clients — meaning "use everything enabled"). A sent selection is an
-    explicit local opt-in for those sources, not just a filter over old config.
-    Bilibili flows through here like every other source (v0.3.118+): legacy
-    clients keep their config-enabled behaviour, but deselecting it skips the
-    B站 fetch.
+    ``enabled`` 是 config 启用的集合；``selected`` 是扩展每次运行的复选框
+    选择（未发送选择时为 ``None`` —— CLI / legacy 客户端 —— 表示"使用所有
+    已启用的"）。已发送的选择是针对这些 source 的显式本地 opt-in，不仅是
+    对旧 config 的过滤。Bilibili 与其他 source 一样流经这里（v0.3.118+）：
+    legacy 客户端保持其 config 启用行为，但取消勾选会跳过 B 站 fetch。
     """
     if selected is None:
         return {
@@ -769,7 +767,7 @@ def _fallback_recommendation_click_url(
     content_id: str,
     bvid: str,
 ) -> str:
-    """Build a canonical click URL when the recommendation row lacks one."""
+    """当 recommendation 行缺少 click URL 时构建一个规范的 click URL。"""
     item_id = (content_id or bvid).strip()
     if not item_id:
         return ""
@@ -800,16 +798,15 @@ def _probe_metadata_for_payload(item: object) -> tuple[str, bool]:
 def _cap_keeping_user_added(
     items: list[Any], added: list[str], limit: int, key: Any = None
 ) -> list[Any]:
-    """Truncate a merged AI⊕override list for the summary view without ever
-    dropping a user-added entry.
+    """为 summary view 截断合并后的 AI⊕override 列表，且绝不丢弃用户添加项。
 
-    The effective profile appends user edits after the AI-inferred items, so a
-    plain ``items[:limit]`` slice silently hides anything the user added past
-    the cap — it then shows in edit mode (un-truncated `edit-state`) but not in
-    the read-only view, which reads like "my edit didn't take". User edits are
-    intentional and few, so they ride past the cap; only AI-inferred items are
-    subject to it. ``key`` extracts the comparable string (identity for plain
-    string lists, ``lambda d: d.domain`` for interest domains).
+    生效的 profile 把用户编辑附加在 AI 推断项之后，因此单纯的
+    ``items[:limit]`` 切片会静默隐藏用户超过 cap 之外添加的任何内容 ——
+    这些项随后会在编辑模式（未截断的 `edit-state`）下显示，但不会出现在
+    只读视图中，看起来就像"我的编辑没生效"。用户编辑是有意的且数量不多，
+    因此它们越过 cap 保留；只有 AI 推断项受 cap 限制。``key`` 提取可比较
+    字符串（对纯字符串列表是 identity，对兴趣 domain 是
+    ``lambda d: d.domain``）。
     """
     keyfn = key if key is not None else (lambda x: str(x))
     items = list(items)
@@ -834,18 +831,17 @@ def _cap_by_franchise(
     *,
     max_per_franchise: int = 2,
 ) -> list[dict[str, Any]]:
-    """Drop later duplicates of the same ``franchise_key`` from a list.
+    """从列表中丢弃同一 ``franchise_key`` 较靠后的重复项。
 
-    ``franchise_key`` is the LLM-tagged IP / series column (set during
-    content evaluation, see ``llm/prompts.py`` and
-    ``discovery/engine.py``). Empty franchise = general-interest content
-    (科普 / 美食 / 通用资讯…) and passes through with no constraint —
-    only matched IPs are subject to the cap.
+    ``franchise_key`` 是 LLM 打标的 IP / series 列（在内容评估期间设置，
+    见 ``llm/prompts.py`` 和 ``discovery/engine.py``）。空 franchise =
+    一般兴趣内容（科普 / 美食 / 通用资讯…），不受约束直接通过 —— 只有
+    匹配到的 IP 才受 cap 限制。
 
-    Why not in SQL: the recommendation pipeline orders by
-    ``created_at DESC`` and we want a stable preserve-newest-N filter
-    that's clearly testable. SQL window functions could do it, but the
-    in-Python pass is cheap (≤ 40 rows) and easy to audit.
+    为何不放在 SQL：recommendation pipeline 按
+    ``created_at DESC`` 排序，我们想要一个稳定、可清晰测试的
+    preserve-newest-N 过滤器。SQL 窗口函数可以做到，但 in-Python 处理
+    廉价（≤ 40 行）且易于审计。
     """
     if max_per_franchise <= 0:
         return list(rows)
@@ -886,7 +882,7 @@ def _normalize_cognition_update(item: dict[str, object]) -> CognitionUpdateSumma
 
 
 def _image_cache_lookup(url: str) -> tuple[Path, str] | None:
-    """Return (path, content_type) if a cached copy exists."""
+    """若存在缓存副本则返回 (path, content_type)。"""
     key = _image_cache_key(url)
     cache_dir = _image_cache_dir()
     for candidate in cache_dir.glob(f"{key}.*"):
@@ -925,7 +921,7 @@ def create_app(
     account_sync_service: Any | None = None,
     auto_update_service: Any | None = None,
 ) -> FastAPI:
-    """Create the local backend API app."""
+    """创建本地后端 API app。"""
     from openbiliclaw.api.runtime_context import (
         RuntimeContext,
         build_degraded_runtime_context,
@@ -1075,14 +1071,13 @@ def create_app(
 
     @app.post("/api/auth/admin")
     async def auth_admin(request: Request) -> JSONResponse:
-        """Local-only enable/disable + set/change of the password gate.
+        """仅限本地的 password gate 启用/禁用 + 设置/修改。
 
-        Lives here (not in register_auth_routes) so it shares ``PUT /api/config``'s
-        ``_CONFIG_SAVE_LOCK`` + snapshot/rollback — its full-file ``save_config``
-        must not race with a concurrent settings save (review r1#3). Callable only
-        by a trusted-local client (extension / local UI / CLI), never a remote
-        session ("change the lock only from inside the house"); applied live (no
-        restart); refused when env-managed.
+        放在这里（而不是 register_auth_routes 中），以便共享 ``PUT /api/config``
+        的 ``_CONFIG_SAVE_LOCK`` + snapshot/rollback —— 它的全文件
+        ``save_config`` 不能与并发的 settings 保存竞争（review r1#3）。只能由
+        trusted-local 客户端（扩展 / 本地 UI / CLI）调用，绝不能由远程 session
+        调用（"只能从屋内改锁"）；实时生效（无需重启）；env-managed 时拒绝。
         """
         import secrets as _secrets
 
@@ -1274,10 +1269,10 @@ def create_app(
         return JSONResponse(status_code=503, content=_degraded_body())
 
     def _init_active_now() -> bool:
-        """Defensive ``init_active`` check usable from any handler/middleware.
+        """防御性的 ``init_active`` 检查，可在任意 handler/middleware 中使用。
 
-        Returns False (never raises) when the coordinator/DB is a test stub or
-        unavailable, so gating logic degrades to "not active" instead of 500.
+        当 coordinator/DB 是测试 stub 或不可用时返回 False（绝不抛出），
+        这样门控逻辑会降级为"not active"，而不是返回 500。
         """
         coord = getattr(ctx, "init_coordinator", None)
         if coord is None:
@@ -1288,9 +1283,9 @@ def create_app(
             return False
 
     def _init_owns_task(task_id: str) -> bool:
-        """Whether ``task_id`` is a bootstrap task enqueued by the active init
-        run (so its task-result is init's own data, not a stale/steady-state
-        completion). Defensive — never raises."""
+        """判断 ``task_id`` 是否为活动 init 运行所入队的 bootstrap 任务
+        （这样其 task-result 就是 init 自己的数据，而不是 stale/steady-state
+        的完成）。防御性 —— 绝不抛出。"""
         coord = getattr(ctx, "init_coordinator", None)
         if coord is None or not task_id:
             return False
@@ -1300,9 +1295,9 @@ def create_app(
             return False
 
     def _init_owned_ids_filter() -> set[str] | None:
-        """``next-task`` filter: during an active init, restrict the dispatcher
-        to init-owned bootstrap task ids (so a stale pending task can't be
-        claimed and starve the run's collectors); None = no restriction."""
+        """``next-task`` 过滤器：在 init 活动期间，将 dispatcher 限制为
+        init 自己入队的 bootstrap task id（避免 stale pending task 被领取
+        而饿死本次运行的 collector）；None 表示不限制。"""
         if not _init_active_now():
             return None
         coord = getattr(ctx, "init_coordinator", None)
@@ -1374,12 +1369,11 @@ def create_app(
             feedback_batch_scheduler.schedule()
 
     async def _ingest_profile_update_events(events: list[dict[str, Any]]) -> int:
-        """Feed events into the profile-update pipeline when ready.
+        """就绪时把 events 喂入 profile-update pipeline。
 
-        Init handles first-run analysis explicitly via ``analyze_events`` +
-        ``build_initial_profile``. After a profile exists, ordinary browser
-        events and extension task results should also affect the incremental
-        update buffers instead of only being persisted to event memory.
+        Init 通过 ``analyze_events`` + ``build_initial_profile`` 显式处理
+        首次运行分析。在 profile 存在之后，普通的浏览器事件和扩展任务结果
+        也应影响增量 update buffer，而不仅仅是被持久化到 event memory。
         """
         if not events or ctx.soul_engine is None:
             return 0
@@ -1470,12 +1464,11 @@ def create_app(
         *,
         max_event_id: int,
     ) -> int:
-        """Feed discovery-pending event rows that predate the current request.
+        """喂入早于当前请求的 discovery-pending event 行。
 
-        Older versions only used ``pending_signal_events`` as a discovery
-        refresh watermark. If such rows already exist on disk, this backfill
-        lets the next successful ordinary event ingest catch them up without
-        advancing the discovery cursor itself.
+        旧版本仅把 ``pending_signal_events`` 用作 discovery 刷新水位线。
+        如果磁盘上已存在这样的行，这次回填让下一次成功的普通事件 ingest
+        能补上它们，而不会推进 discovery cursor 本身。
         """
         if max_event_id <= 0:
             return 0
@@ -1491,7 +1484,7 @@ def create_app(
         *,
         max_event_id: int,
     ) -> int:
-        """Feed discovery-pending profile events while holding the backfill claim lock."""
+        """在持有 backfill claim 锁的情况下喂入 discovery-pending profile 事件。"""
         load_state = getattr(ctx.memory_manager, "load_discovery_runtime_state", None)
         update_state = getattr(ctx.memory_manager, "update_discovery_runtime_state", None)
         if not callable(load_state) or not callable(update_state):
@@ -1564,7 +1557,7 @@ def create_app(
         items: list[dict[str, Any]],
         key_func: Callable[[dict[str, Any]], str],
     ) -> tuple[list[dict[str, Any]], dict[int, str]]:
-        """Filter bootstrap items that already propagated from an older task."""
+        """过滤已从更早任务传播过的 bootstrap 项。"""
         from openbiliclaw.sources.bootstrap_state import (
             as_string_list,
             source_bootstrap_state_key,
@@ -1586,7 +1579,7 @@ def create_app(
         return fresh, fresh_keys_by_index
 
     def _mark_source_bootstrap_keys(source: str, keys: list[str]) -> None:
-        """Persist bootstrap keys that already entered the source event path."""
+        """持久化已经进入 source event 路径的 bootstrap keys。"""
         if not keys:
             return
         from datetime import UTC, datetime
@@ -1768,21 +1761,20 @@ def create_app(
     _embedding_ready_lock = asyncio.Lock()
 
     async def _health_embedding_ready() -> bool:
-        """Whether the embedding service can *currently* produce a vector.
+        """embedding service 是否*当前*能产出向量。
 
-        This is a live signal, not a build-time one. A service object that
-        was constructed at startup but whose provider now 404s (``bge-m3``
-        never pulled, Ollama stopped) reports ``False`` here, so the popup's
-        "semantic dedup off" banner reflects reality instead of going green
-        while every embed silently fails. Conversely, once a previously
-        broken provider is fixed the banner clears within the cache TTL.
+        这是一个实时信号，不是构建时信号。在启动时构造的 service 对象，
+        如果其 provider 现在 404（``bge-m3`` 未拉取、Ollama 已停止），
+        在此返回 ``False``，使 popup 的"semantic dedup off"横幅反映真实情况，
+        而不是在每个 embed 都静默失败时还显示绿色。反之，一旦先前损坏的
+        provider 被修复，横幅会在缓存 TTL 内清除。
 
-        Layers:
-          - no service object (provider not configured) -> ``False``;
-          - service without a ``probe()`` (legacy/stub) -> build-only ``True``;
-          - otherwise a cache-bypassing ``probe()``, result cached for
-            ``_EMBEDDING_READY_TTL_SECONDS`` and single-flighted so concurrent
-            polls share one provider round-trip.
+        分层：
+          - 无 service 对象（provider 未配置） -> ``False``；
+          - service 没有 ``probe()``（legacy/stub） -> 仅基于 build 的 ``True``；
+          - 否则做一次绕过缓存的 ``probe()``，结果缓存
+            ``_EMBEDDING_READY_TTL_SECONDS``，并 single-flight，使并发轮询
+            共享一次 provider 往返。
         """
         nonlocal _embedding_ready_value, _embedding_ready_checked_at
 
@@ -1830,7 +1822,7 @@ def create_app(
             return ready
 
     def _embedding_required_for_init() -> bool:
-        """Whether guided init must wait for a configured embedding provider."""
+        """guided init 是否必须等待已配置的 embedding provider。"""
         cfg = getattr(ctx, "config", None)
         emb = getattr(getattr(cfg, "llm", None), "embedding", None)
         provider = str(getattr(emb, "provider", "") or "").strip()
@@ -1838,13 +1830,12 @@ def create_app(
 
     @app.get("/api/ping")
     async def ping() -> JSONResponse:
-        """Pure liveness probe: no DB, no provider round-trips.
+        """纯 liveness 探针：无 DB、无 provider 往返。
 
-        ``/api/health`` is a READINESS endpoint — its embedding probe can
-        take seconds when the cache is cold (Ollama model reload), which
-        made the extension's connection badge sit on "未连接" after opening
-        the panel. UI liveness indicators should hit this instead and keep
-        ``/api/health`` for profile/embedding state.
+        ``/api/health`` 是一个 READINESS 端点 —— 它的 embedding 探针在
+        缓存冷启动时可能耗时数秒（Ollama 模型重载），导致扩展的连接徽章在
+        打开面板后停留在"未连接"。UI liveness 指示器应改用此端点，
+        把 ``/api/health`` 留给 profile/embedding 状态。
         """
         return JSONResponse({"status": "ok", "service": "openbiliclaw-api"})
 
@@ -1876,10 +1867,10 @@ def create_app(
 
     @app.get("/api/init-status", response_model=InitStatusOut)
     async def init_status(request: Request) -> InitStatusOut:
-        """Authoritative guided-init status + pre-init checklist (gui-init §3).
+        """权威的 guided-init 状态 + pre-init 检查清单（gui-init §3）。
 
-        Remote-readable (mirrors autostart-status): a non-local caller still
-        sees the state but ``can_manage`` is False. Degraded-mode readable.
+        远程可读（与 autostart-status 一致）：非本地调用方仍能查看状态，
+        但 ``can_manage`` 为 False。支持降级模式读取。
         """
         from openbiliclaw.docker_runtime import is_running_in_container
 
@@ -1959,8 +1950,8 @@ def create_app(
         )
 
     def _init_runtime_supported() -> tuple[bool, str]:
-        """Cheap guard: GUI init needs a writable host runtime (gui-init §5b,
-        review R2 A-7). Docker uses the headless auto-init path instead."""
+        """廉价守卫：GUI init 需要可写的 host runtime（gui-init §5b，
+        review R2 A-7）。Docker 改用 headless auto-init 路径。"""
         from openbiliclaw.docker_runtime import is_running_in_container
 
         if is_running_in_container():
@@ -1975,12 +1966,11 @@ def create_app(
         return True, ""
 
     async def _persist_guided_init_source_opt_in(effective_sources: set[str]) -> None:
-        """Best-effort: checked guided-init sources become enabled settings.
+        """Best-effort：勾选的 guided-init source 会变为启用的 settings。
 
-        The run itself uses ``effective_sources`` directly, so a config write
-        failure must not block initialization. Persisting keeps the setup page,
-        popup, and later background discovery aligned with the user's explicit
-        checkbox choice.
+        运行本身直接使用 ``effective_sources``，因此 config 写入失败不得
+        阻塞初始化。持久化使 setup 页、popup 及后续后台 discovery 与用户
+        显式的复选框选择保持一致。
         """
 
         cfg = getattr(ctx, "config", None)
@@ -2028,16 +2018,15 @@ def create_app(
     async def _run_guided_init_wrapper(
         run_id: str, selected_sources: set[str] | None = None
     ) -> None:
-        """Sole status/event writer for an API-launched guided init (gui-init
-        §5f). Drives the shared ``run_guided_init`` through the coordinator and
-        persists the terminal state here — completed / failed / cancelled —
-        never via a side path. Imported lazily to avoid an import cycle with
-        the CLI module that owns the shared pipeline.
+        """API 启动的 guided init 的唯一 status/event 写入者（gui-init
+        §5f）。通过 coordinator 驱动共享的 ``run_guided_init``，并在此持久化
+        终态 —— completed / failed / cancelled —— 绝不经旁路。惰性 import
+        以避免与拥有共享 pipeline 的 CLI 模块产生 import cycle。
 
-        ``selected_sources`` is the extension's per-run platform choice. When
-        present, it is an explicit local opt-in for those sources (see
-        :func:`_select_init_platforms`). ``None`` keeps the legacy behaviour of
-        using everything enabled.
+        ``selected_sources`` 是扩展每次运行的 platform 选择。存在时，它是
+        针对这些 source 的显式本地 opt-in（见
+        :func:`_select_init_platforms`）。``None`` 保留 legacy 行为：使用所有
+        已启用的 source。
         """
         from openbiliclaw.cli import (
             _INIT_BILIBILI_FAVORITE_LIMIT,
@@ -2103,11 +2092,11 @@ def create_app(
 
     @app.post("/api/init")
     async def start_guided_init(request: Request) -> JSONResponse:
-        """Launch guided init in the background (local-only; gui-init §2/§5b).
+        """在后台启动 guided init（仅本地；gui-init §2/§5b）。
 
-        Cheap rejections run BEFORE reserving the run so a rejected request
-        never leaves a stuck ``starting`` row (review R2 A-2). The single-flight
-        guard is the DB reservation inside ``try_start``.
+        廉价拒绝在预留 run 之前执行，这样被拒绝的请求永远不会留下卡住的
+        ``starting`` 行（review R2 A-2）。single-flight 守卫是
+        ``try_start`` 内部的 DB 预留。
         """
         if not _get_auth_gate().is_trusted_local(request):
             return JSONResponse({"error": "local_only"}, status_code=403)
@@ -2179,7 +2168,7 @@ def create_app(
 
     @app.post("/api/init/cancel")
     async def cancel_guided_init(request: Request) -> JSONResponse:
-        """Cooperatively cancel the in-flight guided init (local-only)."""
+        """协作式取消 in-flight 的 guided init（仅本地）。"""
         if not _get_auth_gate().is_trusted_local(request):
             return JSONResponse({"error": "local_only"}, status_code=403)
         coord = ctx.init_coordinator
@@ -2195,15 +2184,14 @@ def create_app(
     async def image_proxy(
         url: str = Query(..., description="URL-encoded image URL to proxy"),
     ) -> Response | FileResponse:
-        """Proxy whitelisted remote cover images through the local backend.
+        """通过本地后端代理白名单内的远程封面图。
 
-        Cache-first: a cached copy IS the image for that URL (the URL identifies
-        it), so serve it immediately instead of paying a ~2s upstream round-trip
-        on every load. The old code re-fetched on the success path and only read
-        the cache when the upstream failed, so covers stayed slow even when
-        cached. On a miss, fetch via ``image_cache.fetch_cover_bytes`` (whitelist
-        / redirect / size validation), cache it, and serve. ``X-Image-Cache``
-        reports hit/miss; slow misses are logged for diagnosis.
+        Cache-first：缓存的副本就是该 URL 对应的图片（URL 即标识），因此
+        直接服务它，而不是每次加载都付 ~2s 上游往返。旧代码在成功路径上
+        重新 fetch，仅在上游失败时读缓存，因此即使已缓存封面仍很慢。未命中
+        时，通过 ``image_cache.fetch_cover_bytes``（白名单 / 重定向 / 大小
+        校验）拉取，缓存后服务。``X-Image-Cache`` 报告 hit/miss；慢 miss
+        会被记录用于诊断。
         """
         if cached := _image_cache_response(url):
             return cached
@@ -2236,28 +2224,24 @@ def create_app(
     async def sync_bilibili_cookie(
         payload: BilibiliCookieIn,
     ) -> BilibiliCookieResponse | JSONResponse:
-        """Receive a Bilibili cookie from the browser extension and persist
-        it server-side so the backend can call B 站 API as the user.
+        """接收来自浏览器扩展的 Bilibili cookie 并服务端持久化，
+        使后端可以以用户身份调用 B 站 API。
 
-        Replaces the manual "F12 → Network → copy cookie → paste into
-        wizard" flow. The extension already runs on bilibili.com and has
-        the ``cookies`` Chrome permission, so it's the natural place to
-        get a fresh, valid cookie. We auto-sync on first install and
-        whenever ``chrome.cookies.onChanged`` fires.
+        替代手动的"F12 → Network → 复制 cookie → 粘贴到向导"流程。
+        扩展本身已在 bilibili.com 上运行并拥有 ``cookies`` Chrome 权限，
+        因此它是获取新鲜有效 cookie 的天然位置。我们在首次安装时以及
+        ``chrome.cookies.onChanged`` 触发时自动同步。
 
-        Persistence: writes to ``data/bilibili_cookie.json`` (the runtime
-        cookie source) AND ``config.toml [bilibili].cookie`` (kept in sync
-        as a mirror for ``config-show``). Then rebuilds the runtime
-        BilibiliAPIClient via the same ``rebuild_from_config`` path that
-        the config-update endpoint uses, so any in-flight handlers see
-        the new cookie on their next call.
+        持久化：写入 ``data/bilibili_cookie.json``（运行时 cookie 源）
+        以及 ``config.toml [bilibili].cookie``（作为 ``config-show`` 的
+        镜像保持同步）。然后通过 config-update 端点使用的同一
+        ``rebuild_from_config`` 路径重建运行时 BilibiliAPIClient，
+        使任何 in-flight handler 在下次调用时看到新 cookie。
 
-        Security: the backend is bound to 127.0.0.1 by default, so this
-        endpoint is only reachable from the user's own machine. CORS
-        already accepts ``*`` (set when the app is built); no auth token
-        is needed for an API that lives behind a localhost-only listener.
-        Users who flip ``--host 0.0.0.0`` should put their own auth
-        layer in front of the backend.
+        安全：后端默认绑定到 127.0.0.1，因此此端点只能从用户自己的机器
+        访问。CORS 已接受 ``*``（在 app 构建时设置）；这种位于 localhost-only
+        listener 之后的 API 不需要 auth token。如果用户切换到
+        ``--host 0.0.0.0``，应自行在后端之前加一层 auth。
         """
         from openbiliclaw.bilibili.auth import AuthManager
         from openbiliclaw.config import (
@@ -2404,13 +2388,12 @@ def create_app(
 
     @app.post("/api/sources/dy/cookie", response_model=DouyinCookieResponse)
     async def sync_douyin_cookie(payload: DouyinCookieIn) -> DouyinCookieResponse:
-        """Receive a Douyin cookie from the browser extension.
+        """接收来自浏览器扩展的 Douyin cookie。
 
-        Unlike Bilibili, Douyin direct-cookie discovery currently has no
-        stable nav endpoint that cleanly distinguishes "logged out" from
-        "soft anti-bot returned HTTP 200 with empty data". We therefore
-        persist the browser-provided Cookie header as-is and let discovery
-        smoke surface whether search / hot / feed calls return content.
+        与 Bilibili 不同，Douyin direct-cookie discovery 目前没有稳定的
+        nav 端点能清晰区分"已登出"与"软 anti-bot 返回 HTTP 200 + 空数据"。
+        因此我们原样持久化浏览器提供的 Cookie header，由 discovery smoke
+        来暴露 search / hot / feed 调用是否真的返回内容。
         """
         from openbiliclaw.sources.douyin_auth import DouyinCookieManager
         from openbiliclaw.sources.douyin_direct import parse_cookie_header
@@ -2447,13 +2430,12 @@ def create_app(
 
     @app.post("/api/sources/x/cookie", response_model=XCookieResponse)
     async def sync_x_cookie(payload: XCookieIn) -> XCookieResponse:
-        """Receive an X (Twitter) cookie from the browser extension.
+        """接收来自浏览器扩展的 X (Twitter) cookie。
 
-        The browser extension already gates on ``auth_token`` + ``ct0`` before
-        posting, but we persist whatever header arrives and recompute
-        ``has_cookie`` server-side so the env-override path and the file stay
-        consistent. ``has_cookie`` is true only when BOTH required cookies are
-        present — twitter-cli 401s without either.
+        浏览器扩展在 POST 之前已基于 ``auth_token`` + ``ct0`` 做了门控，
+        但我们仍然持久化收到的 header，并在服务端重新计算 ``has_cookie``，
+        使 env-override 路径与文件保持一致。``has_cookie`` 仅当两个必需
+        cookie 都存在时才为 True —— 缺任何一个 twitter-cli 都会 401。
         """
         from openbiliclaw.sources.douyin_direct import parse_cookie_header
 
@@ -2506,13 +2488,12 @@ def create_app(
 
     @app.post("/api/init-completed")
     async def init_completed() -> dict[str, object]:
-        """Notify the running server that ``openbiliclaw init`` has finished.
+        """通知运行中的服务端 ``openbiliclaw init`` 已完成。
 
-        Called by the CLI at the end of a successful init.  The handler
-        broadcasts an ``init_completed`` event via WebSocket so the
-        browser extension can immediately re-fetch profile, recommendations
-        and activity data.  It also starts a replenishment refresh so the
-        discovery pool is picked up without waiting for the next scheduler tick.
+        在成功的 init 结束时由 CLI 调用。该 handler 通过 WebSocket 广播
+        ``init_completed`` 事件，使浏览器扩展可以立即重新拉取 profile、
+        recommendations 和 activity 数据。它还会启动一次 replenishment
+        refresh，使 discovery pool 被立即拾取，无需等待下一次 scheduler tick。
         """
         # Broadcast to extension
         with suppress(Exception):
@@ -3048,11 +3029,10 @@ def create_app(
 
     @app.get("/api/profile/edit-state")
     async def profile_edit_state() -> dict[str, object]:
-        """Full (un-truncated) editable profile + overrides + drift.
+        """完整（未截断）可编辑的 profile + overrides + drift。
 
-        The edit UI must use this rather than ``/api/profile-summary`` — the
-        latter truncates lists for display, so it cannot reach e.g. the 13th
-        interest or 9th UP.
+        编辑 UI 必须使用此端点而非 ``/api/profile-summary`` —— 后者会为
+        展示截断列表，因此无法触及例如第 13 个 interest 或第 9 个 UP。
         """
         from openbiliclaw.soul.overrides import build_edit_state
 
@@ -3065,11 +3045,11 @@ def create_app(
 
     @app.post("/api/profile/edit")
     async def profile_edit(payload: ProfileEditIn) -> dict[str, object]:
-        """Apply one deterministic user edit to the profile overlay.
+        """对 profile overlay 应用一次确定性的用户编辑。
 
-        Returns the fresh edit-state inline so the client re-renders without
-        a second round-trip. Embedding / LLM services for the dislike pool
-        purge are resolved inside ``apply_user_edit`` from the soul engine.
+        内联返回最新的 edit-state，使客户端无需第二次往返即可重新渲染。
+        dislike pool purge 所需的 embedding / LLM service 在
+        ``apply_user_edit`` 内部从 soul engine 解析。
         """
         from openbiliclaw.soul.overrides import ProfileEditError, build_edit_state
 
@@ -3447,18 +3427,17 @@ def create_app(
         )
 
     async def _classify_new_pool_items() -> None:
-        """Legacy recovery for content_cache rows that lack content features.
+        """对缺少 content features 的 content_cache 行做 legacy 恢复。
 
-        Normal source ingest writes ``discovery_candidates`` and lets the
-        shared discovery-candidate pipeline evaluate/admit content before it
-        reaches ``content_cache``.  This helper remains for old databases or
-        explicit repair paths where rows are already cached but still missing
-        ``style_key``, ``topic_group``, and ``relevance_score``.
+        正常的 source ingest 会写入 ``discovery_candidates``，由共享的
+        discovery-candidate pipeline 在内容进入 ``content_cache`` 之前评估
+        /admit。此 helper 为旧数据库或显式修复路径保留 —— 这些行已缓存但
+        仍缺少 ``style_key``、``topic_group`` 和 ``relevance_score``。
 
-        Silent skip when soul profile hasn't been built yet (init's first
-        ~7 minutes). Otherwise events ingested before profile-ready would
-        log ERROR-level traces for every batch — the legitimate retry is
-        the next-tick + the profile-ready hook in ``SoulEngine``.
+        soul profile 尚未构建（init 的前 ~7 分钟）时静默跳过。否则在
+        profile-ready 之前 ingest 的事件会对每个 batch 记录 ERROR 级别
+        trace —— 合理的重试是 next-tick + ``SoulEngine`` 中的
+        profile-ready hook。
         """
         if ctx.recommendation_engine is None or ctx.soul_engine is None:
             return
@@ -3475,7 +3454,7 @@ def create_app(
             logger.exception("Background pool classification failed")
 
     async def _drain_discovery_candidates_once() -> None:
-        """Best-effort drain for newly enqueued source candidates."""
+        """Best-effort 排空新入队的 source candidates。"""
 
         drain = getattr(ctx.runtime_controller, "drain_discovery_candidates_once", None)
         if not callable(drain):
@@ -3486,7 +3465,7 @@ def create_app(
             logger.exception("Background discovery candidate drain failed")
 
     def _pool_available_count() -> int | None:
-        """Return the best available servable-pool count for hot-path guards."""
+        """返回 hot-path 守卫可用的最佳 servable-pool 计数。"""
         get_runtime_status = getattr(ctx.runtime_controller, "get_runtime_status", None)
         if callable(get_runtime_status):
             with suppress(Exception):
@@ -3508,7 +3487,7 @@ def create_app(
         return None
 
     def _runtime_pool_status_payload() -> dict[str, object]:
-        """Return frontend runtime fields needed to resync pool status."""
+        """返回前端重新同步 pool 状态所需的 runtime 字段。"""
         status: dict[str, object] = {}
         get_runtime_status = getattr(ctx.runtime_controller, "get_runtime_status", None)
         if callable(get_runtime_status):
@@ -3565,7 +3544,7 @@ def create_app(
         return payload
 
     async def _publish_pool_status_snapshot(message: str = "推荐池已同步") -> None:
-        """Broadcast pool counts after recommendation endpoints consume inventory."""
+        """在 recommendation 端点消费 inventory 之后广播 pool 计数。"""
         event_hub = getattr(ctx, "event_hub", None) or getattr(
             ctx.runtime_controller, "event_hub", None
         )
@@ -3625,7 +3604,7 @@ def create_app(
         return None
 
     async def _trigger_replenishment_if_needed(*, force: bool = False) -> None:
-        """Fire a background Discovery refresh when the pool runs low."""
+        """当 pool 偏低时触发后台 Discovery 刷新。"""
         if not force:
             curator = getattr(ctx.recommendation_engine, "_curator", None)
             if curator is None or not hasattr(curator, "needs_replenishment"):
@@ -3864,18 +3843,14 @@ def create_app(
 
     @app.post("/api/delight/trigger")
     async def trigger_delight(payload: dict[str, Any] | None = None) -> Any:
-        """Manually push N distinct delight candidates via WebSocket.
+        """通过 WebSocket 手动推送 N 个不同的 delight 候选。
 
-        Body: ``{"count": 3}``. For testing the queue UI: pulls the top N
-        un-notified candidates from the pool and publishes a
-        ``delight.candidate`` event for each one in succession, **without**
-        marking any as notified. That way you can re-trigger the same
-        batch repeatedly while iterating on the popup-side queue, and
-        the popup's own ``/api/delight/pending`` calls still see them
-        afterwards.
+        Body：``{"count": 3}``。用于测试队列 UI：从 pool 中拉取前 N 个未通知
+        候选，并依次为每个发布一个 ``delight.candidate`` 事件，**不**将任何
+        一个标记为已通知。这样可以在迭代 popup 端队列时反复触发同一 batch，
+        且 popup 自己的 ``/api/delight/pending`` 调用之后仍能看到它们。
 
-        Cooldown is cleared at the end so the proactive-push loop
-        isn't gated.
+        最后会清除 cooldown，使 proactive-push 循环不被门控。
         """
         count = 1
         if isinstance(payload, dict):
@@ -3932,21 +3907,18 @@ def create_app(
 
     @app.get("/api/delight/pending-batch")
     async def pending_delight_batch(limit: int | None = None) -> dict[str, Any]:
-        """Return un-notified delight candidates.
+        """返回未通知的 delight 候选。
 
-        When ``limit`` is omitted the shared
-        ``scheduler.delight_queue_limit`` setting decides the queue size.
-        Unlike ``/api/delight/pending`` this ignores the 4-hour
-        notification cooldown — it's intended for the popup to
-        re-hydrate the full queue on init, not for active push gating.
-        Honors ``disliked_topics`` substring filter same as the singular
-        endpoint.
+        当 ``limit`` 缺省时，由共享的
+        ``scheduler.delight_queue_limit`` 设置决定队列大小。与
+        ``/api/delight/pending`` 不同，此端点忽略 4 小时通知 cooldown ——
+        它供 popup 在 init 时重新水合整个队列，而非用于主动推送门控。
+        与单数版本端点一样遵守 ``disliked_topics`` 子串过滤。
 
-        ``include_liked=True``: a liked delight keeps its queue slot across
-        re-hydration (popup reopen / delight.refreshed) instead of silently
-        vanishing — positive feedback keeps the card visible until the user
-        dismisses it. Such rows come back with ``state="liked"`` so clients
-        render the already-liked treatment.
+        ``include_liked=True``：已 like 的 delight 在重新水合（popup 重开
+        / delight.refreshed）时保留其队列槽位，而不是静默消失 —— 正向反馈
+        让卡片保持可见，直到用户关闭它。这样的行以 ``state="liked"`` 返回，
+        使客户端渲染"已 like"的样式。
         """
         from openbiliclaw.recommendation.delight import DEFAULT_DELIGHT_THRESHOLD
 
@@ -4004,16 +3976,15 @@ def create_app(
 
     @app.post("/api/delight/respond")
     async def respond_to_delight(payload: dict[str, Any]) -> Any:
-        """User responds to a delight (surprise) recommendation.
+        """用户对一个 delight（惊喜）recommendation 的回应。
 
-        Body:
+        Body：
         ``{ "bvid": "...", "title": "...", "response": "view"|"like"|"dislike"|"chat",
-        "message": "..." }``. ``like`` / ``chat`` update learning signals and keep
-        the delight in the queue; ``view`` keeps the card visible in-session but
-        marks the candidate read (same semantics as the recommendation pool's
-        ``shown`` flag — a browsed surprise doesn't reappear on the next queue
-        re-hydration); ``dismiss`` and ``dislike`` consume the candidate
-        immediately.
+        "message": "..." }``。``like`` / ``chat`` 更新学习信号并将 delight
+        保留在队列中；``view`` 在会话内保持卡片可见，但把候选标记为已读
+        （语义与 recommendation pool 的 ``shown`` 标志相同 —— 浏览过的惊喜
+        不会在下一次队列重新水合时再次出现）；``dismiss`` 和 ``dislike``
+        立即消费候选。
         """
         from fastapi.responses import JSONResponse
 
@@ -4211,7 +4182,7 @@ def create_app(
         source: str = "interest_probe",
         detail: str = "",
     ) -> None:
-        """Write a cognition update so probe feedback shows in '阿b最近记住了什么'."""
+        """写入一条 cognition update，使探针反馈显示在"阿b最近记住了什么"中。"""
         from datetime import datetime
 
         try:
@@ -4230,7 +4201,7 @@ def create_app(
             logger.exception("Failed to record probe cognition update")
 
     async def _publish_probe_event(event_type: str, message: str, domain: str) -> None:
-        """Push a probe result event via WebSocket."""
+        """通过 WebSocket 推送一个 probe 结果事件。"""
         event_hub = getattr(ctx.runtime_controller, "event_hub", None)
         publish = getattr(event_hub, "publish", None)
         if callable(publish):
@@ -4250,7 +4221,7 @@ def create_app(
         include_category: bool = False,
         include_source_mode: bool = False,
     ) -> dict[str, object]:
-        """Read active probe metadata before confirm/reject mutates state."""
+        """在 confirm/reject 改变状态之前读取活动的 probe metadata。"""
         from openbiliclaw.soul.speculator import build_probe_axis
 
         if not callable(get_active):
@@ -4298,7 +4269,7 @@ def create_app(
         speculator: Any,
         domain: str,
     ) -> dict[str, object]:
-        """Read active interest probe metadata before state mutation."""
+        """在状态改变之前读取活动的 interest probe metadata。"""
         return _probe_metadata_from_active_item(
             getattr(speculator, "get_active_speculations", None),
             domain,
@@ -4309,7 +4280,7 @@ def create_app(
         speculator: Any,
         domain: str,
     ) -> dict[str, object]:
-        """Read active avoidance probe metadata before state mutation."""
+        """在状态改变之前读取活动的 avoidance probe metadata。"""
         return _probe_metadata_from_active_item(
             getattr(speculator, "get_active_avoidances", None),
             domain,
@@ -4329,7 +4300,7 @@ def create_app(
         metadata_fn: Any | None = None,
         metadata: dict[str, object] | None = None,
     ) -> None:
-        """Persist explicit user feedback for future probe novelty checks."""
+        """持久化显式用户反馈，用于未来的 probe 新颖性检查。"""
         from openbiliclaw.soul.speculator import append_probe_feedback_history
 
         memory_manager = getattr(ctx, "memory_manager", None)
@@ -4380,7 +4351,7 @@ def create_app(
         ai_reply: str,
         domain: str,
     ) -> str:
-        """Judge the user's probe chat as a 4-way confirmation signal."""
+        """将用户的 probe chat 判定为四向确认信号。"""
         sentiment, _classifier = await _classify_probe_sentiment(
             user_message,
             ai_reply,
@@ -4393,7 +4364,7 @@ def create_app(
         ai_reply: str,
         domain: str,
     ) -> tuple[str, str]:
-        """Return ``(classification, classifier)`` for probe chat feedback."""
+        """返回 probe chat feedback 的 ``(classification, classifier)``。"""
         llm_result = await _llm_judge_sentiment(user_message, ai_reply, domain)
         if llm_result in {"strong_positive", "weak_positive", "negative"}:
             return llm_result, "llm"
@@ -4403,7 +4374,7 @@ def create_app(
         return "neutral", "neutral_default"
 
     def _keyword_judge_sentiment(user_message: str) -> str:
-        """Fallback keyword-based sentiment detection."""
+        """基于关键词的兜底情感检测。"""
         msg = user_message.lower()
         negative_terms = {
             "不喜欢",
@@ -4439,7 +4410,7 @@ def create_app(
         ai_reply: str,
         domain: str,
     ) -> str:
-        """LLM-based sentiment judgment for probe chat."""
+        """基于 LLM 的 probe chat 情感判断。"""
         if ctx.recommendation_engine is None:
             return "neutral"
         llm = getattr(ctx.recommendation_engine, "_llm", None)
@@ -4850,10 +4821,10 @@ def create_app(
 
     @app.post("/api/interest-probes/trigger")
     async def trigger_interest_probe() -> dict[str, Any]:
-        """Manually trigger an interest probe push via WebSocket.
+        """通过 WebSocket 手动触发兴趣 probe 推送。
 
-        Useful when ``run_forever`` is blocked by a long refresh cycle
-        and the probe wouldn't fire on its own for several minutes.
+        当 ``run_forever`` 被长刷新周期阻塞、probe 自身几分钟内
+        不会触发时使用此接口。
         """
         controller = ctx.runtime_controller
         if controller is None:
@@ -4866,10 +4837,10 @@ def create_app(
 
     @app.get("/api/interest-probes/pending")
     async def pending_interest_probes() -> dict[str, Any]:
-        """Return active speculative interests that the user hasn't responded to.
+        """返回用户尚未响应的活跃推测兴趣。
 
-        The mobile web UI polls this on page load / bell-click so probes
-        survive page refreshes (unlike WebSocket-only delivery).
+        移动端 Web UI 在页面加载/铃铛点击时轮询此接口，
+        以保证 probe 在页面刷新后仍然存在（区别于仅靠 WebSocket 投递）。
         """
         try:
             from openbiliclaw.soul.speculator import load_speculative_state
@@ -4895,13 +4866,13 @@ def create_app(
 
     @app.post("/api/interest-probes/respond")
     async def respond_to_interest_probe(payload: dict[str, Any]) -> Any:
-        """User responds to a speculated interest probe.
+        """用户对推测的兴趣 probe 进行响应。
 
         Body: { "domain": "...", "response": "confirm" | "reject" | "chat", "message": "..." }
 
-        - confirm: Force-promote the speculation
-        - reject: Move to cooldown (30 days)
-        - chat: Forward to dialogue engine with probe context, return reply
+        - confirm：强制提升该推测
+        - reject：进入冷却（30 天）
+        - chat：转发至对话引擎并附带 probe 上下文，返回回复
         """
         domain = str(payload.get("domain", "")).strip()
         response_type = str(payload.get("response", "")).strip().lower()
@@ -5128,7 +5099,7 @@ def create_app(
 
     @app.post("/api/avoidance-probes/trigger")
     async def trigger_avoidance_probe() -> dict[str, Any]:
-        """Manually trigger an avoidance probe push via WebSocket."""
+        """通过 WebSocket 手动触发 avoidance probe 推送。"""
         controller = ctx.runtime_controller
         if controller is None:
             raise HTTPException(status_code=503, detail="Runtime controller not available")
@@ -5140,7 +5111,7 @@ def create_app(
 
     @app.get("/api/avoidance-probes/pending")
     async def pending_avoidance_probes() -> dict[str, Any]:
-        """Return active speculative avoidances awaiting user response."""
+        """返回等待用户响应的活跃推测回避项。"""
         try:
             from openbiliclaw.soul.avoidance_speculator import load_avoidance_state
 
@@ -5170,7 +5141,7 @@ def create_app(
 
     @app.post("/api/avoidance-probes/respond")
     async def respond_to_avoidance_probe(payload: dict[str, Any]) -> Any:
-        """User responds to a speculated avoidance probe."""
+        """用户对推测的 avoidance probe 进行响应。"""
         domain = str(payload.get("domain", "")).strip()
         response_type = str(payload.get("response", "")).strip().lower()
 
@@ -5449,15 +5420,14 @@ def create_app(
     async def recommendation_click(
         payload: RecommendationClickIn,
     ) -> RecommendationClickResponse:
-        """Ingest a recommendation click-through as a strong profile signal.
+        """将推荐点击事件作为强画像信号入库。
 
-        The click is evidence that the user actively chose to watch a
-        recommended video. It is treated as a strong signal that bypasses
-        the pipeline's min_signals gate and updates Interest + Surface
-        immediately. If the recommendation_id resolves to a stored card,
-        its metadata (title, topic, up_name) is pulled from the database
-        so the payload reaches the pipeline even when the extension sends
-        only a bare BV id.
+        点击行为表明用户主动选择观看某个推荐视频，
+        这被视为强信号，可绕过 pipeline 的 min_signals 门控，
+        立即更新 Interest + Surface。
+        若 recommendation_id 能解析到已存储的卡片，
+        则从数据库拉取其元数据（title、topic、up_name），
+        这样即使扩展只发送了裸 BV id，payload 也能进入 pipeline。
         """
         from openbiliclaw.soul.pipeline import signal_from_recommendation_click
 
@@ -5590,13 +5560,12 @@ def create_app(
 
     @app.post("/api/insights/feedback", response_model=InsightFeedbackResponse)
     async def insight_feedback(payload: InsightFeedbackIn) -> InsightFeedbackResponse:
-        """Calibrate an insight hypothesis from a user confirm/reject.
+        """根据用户的确认/拒绝校准 insight 假设。
 
-        The popup's insight cards surface ``active_insights`` (hypothesis +
-        confidence). This endpoint routes a confirm/reject back into
-        ``SoulEngine.update_from_feedback`` so the hypothesis is validated and
-        re-weighted (confirm → confidence ≥0.75; reject → ≤0.35), closing the
-        loop that was previously implemented but unwired.
+        弹窗的 insight 卡片展示 ``active_insights``（假设 + 置信度）。
+        本接口将 confirm/reject 路由回 ``SoulEngine.update_from_feedback``，
+        对假设进行校验并重新加权（confirm → 置信度 ≥0.75；reject → ≤0.35），
+        从而闭环此前已实现但未接通的链路。
         """
         signal = payload.signal.strip().lower()
         if signal not in {"confirm", "like", "support", "reject", "dislike", "deny"}:
@@ -5623,13 +5592,13 @@ def create_app(
 
     @app.get("/api/sources")
     def list_sources() -> dict[str, Any]:
-        """Return all source recipes."""
+        """返回所有 source recipe。"""
         recipes = ctx.database.get_all_recipes()
         return {"items": recipes}
 
     @app.post("/api/sources", status_code=201)
     def create_source(payload: dict[str, Any]) -> dict[str, Any]:
-        """Create a new source recipe."""
+        """创建一个新的 source recipe。"""
         import uuid
 
         recipe_id = payload.get("id") or str(uuid.uuid4())
@@ -5658,7 +5627,7 @@ def create_app(
 
     @app.put("/api/sources/{recipe_id}")
     def update_source(recipe_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Update fields of an existing source recipe."""
+        """更新现有 source recipe 的字段。"""
         updated = ctx.database.update_recipe(recipe_id, **payload)
         if not updated:
             from fastapi import HTTPException
@@ -5668,8 +5637,8 @@ def create_app(
 
     @app.delete("/api/sources/{recipe_id}")
     def delete_source(recipe_id: str) -> dict[str, Any]:
-        """Delete a source recipe (system recipes cannot be deleted)."""
-        # Check if it's a system recipe
+        """删除一个 source recipe（系统 recipe 不可删除）。"""
+        # 检查是否为系统 recipe
         all_recipes = ctx.database.get_all_recipes()
         target = next((r for r in all_recipes if r["id"] == recipe_id), None)
         if target and target.get("created_by") == "system":
@@ -5710,7 +5679,7 @@ def create_app(
         query: str = "",
         source_keyword_id: int | None = None,
     ) -> int:
-        """Enqueue extension-collected Bilibili search videos for evaluation."""
+        """将扩展采集的 Bilibili 搜索视频入队以供评估。"""
 
         from openbiliclaw.discovery.candidate_pool import discovered_content_to_candidate_write
         from openbiliclaw.discovery.engine import DiscoveredContent
@@ -5801,21 +5770,20 @@ def create_app(
             mark(keyword_id)
 
     def _pick_best_xhs_url(database: Any, note_id: str, incoming: str) -> str:
-        """Return the most share-worthy URL for a xhs note.
+        """返回 xhs note 最值得分享的 URL。
 
-        xhs search-result pages don't render ``xsec_token`` into ``<a href>``
-        (React SPA keeps the token in props, not DOM), but explore-feed
-        cards do. When the same note arrives both ways, prefer the URL
-        that carries a token — without it, outbound links can silently
-        dead-end at an xhs login wall.
+        xhs 搜索结果页不会把 ``xsec_token`` 渲染到 ``<a href>`` 中
+        （React SPA 将 token 保留在 props 而非 DOM 中），
+        但 explore-feed 卡片会渲染。当同一 note 通过两种渠道到达时，
+        优先选用带 token 的 URL —— 否则外链可能在 xhs 登录墙处
+        静默失效。
 
-        Order of preference:
-        1. ``incoming`` URL if it already has ``xsec_token=``
-        2. Any prior ``xhs_observed_urls`` row for this note with a token
-        3. Existing ``content_cache.content_url`` if it has a token
-        4. Fall back to ``incoming`` (bare URL — still works for the
-           logged-in user on the xhs domain, just not guaranteed for
-           share/outbound traffic)
+        优先级顺序：
+        1. ``incoming`` URL 若已带 ``xsec_token=``
+        2. 该 note 在 ``xhs_observed_urls`` 中任一带 token 的历史记录
+        3. 现有 ``content_cache.content_url`` 若带 token
+        4. 回退到 ``incoming``（裸 URL —— 在 xhs 域内对已登录用户
+           仍可用，但不保证用于分享/外链流量）
         """
         if "xsec_token=" in incoming:
             return incoming
@@ -5854,13 +5822,12 @@ def create_app(
         return incoming
 
     def _backfill_xhs_tokens(database: Any, urls: list[str]) -> int:
-        """Upgrade cached xhs rows whose content_url lacks xsec_token.
+        """升级 content_url 缺失 xsec_token 的已缓存 xhs 行。
 
-        The extension often observes the same note twice — once from a
-        search result page (no token in ``<a href>``) and once from an
-        explore-feed card (token present). When a tokenized URL arrives
-        later, rewrite the previously-cached bare URL so share links
-        don't dead-end at xhs's login wall.
+        扩展经常观测到同一 note 两次 —— 一次来自搜索结果页
+        （``<a href>`` 中无 token），一次来自 explore-feed 卡片
+        （带 token）。当带 token 的 URL 后续到达时，重写此前缓存的
+        裸 URL，避免分享链接在 xhs 登录墙处失效。
         """
         from urllib.parse import urlparse
 
@@ -5914,10 +5881,10 @@ def create_app(
     # and consults it on every ingest path.
 
     def _normalize_self_info(raw: Any) -> dict[str, str] | None:
-        """Validate + normalize a self_info-shaped dict.
+        """校验并归一化 self_info 形态的 dict。
 
-        Returns ``{"user_id": ..., "nickname": ...}`` if either field is
-        non-empty, otherwise ``None``.
+        若任一字段非空则返回 ``{"user_id": ..., "nickname": ...}``，
+        否则返回 ``None``。
         """
         if not isinstance(raw, dict):
             return None
@@ -5928,14 +5895,14 @@ def create_app(
         return {"user_id": user_id, "nickname": nickname}
 
     def _extract_self_info_from_payload(payload: Any) -> dict[str, str] | None:
-        """Pull self_info from any XHS ingest payload.
+        """从任意 XHS ingest payload 中提取 self_info。
 
-        v0.3.57+: extension v0.3.10 sends self_info at the **payload top
-        level** for every ingest path (passive ``observed-urls``, search /
-        creator ``task-result``, bootstrap_profile ``task-result``). The
-        legacy bootstrap-only nested location
-        ``debug.xhs_bootstrap.steps[*].self_info`` (v0.3.48 / extension
-        v0.3.9) is kept as fallback for older extensions.
+        v0.3.57+：扩展 v0.3.10 对每条 ingest 路径
+        （被动 ``observed-urls``、搜索 / 创作者 ``task-result``、
+        bootstrap_profile ``task-result``）均在 **payload 顶层**
+        发送 self_info。早期的 bootstrap 专用嵌套位置
+        ``debug.xhs_bootstrap.steps[*].self_info``
+        （v0.3.48 / 扩展 v0.3.9）作为旧版本扩展的兜底保留。
         """
         if not isinstance(payload, dict):
             return None
@@ -5962,7 +5929,7 @@ def create_app(
         return None
 
     def _persist_xhs_self_info(self_info: dict[str, str]) -> None:
-        """Save self info into discovery_runtime_state if not already there."""
+        """将 self info 保存到 discovery_runtime_state（若尚未存在）。"""
         memory_manager = getattr(ctx.runtime_controller, "memory_manager", None)
         if memory_manager is None:
             return
@@ -5998,7 +5965,7 @@ def create_app(
             logger.exception("Failed to persist xhs self_info")
 
     def _load_xhs_self_info() -> dict[str, str]:
-        """Load self info from runtime state (returns empty dict on miss)."""
+        """从 runtime state 加载 self info（缺失时返回空 dict）。"""
         memory_manager = getattr(ctx.runtime_controller, "memory_manager", None)
         if memory_manager is None:
             return {}
@@ -6015,11 +5982,11 @@ def create_app(
         return {}
 
     def _is_self_authored_note(note: dict[str, Any], self_info: dict[str, str]) -> bool:
-        """Check whether a note's author matches the logged-in user.
+        """检查 note 的作者是否与登录用户一致。
 
-        Both user_id and nickname can match — XHS sometimes only ships
-        nickname in note metadata (no author user_id), other times both.
-        Treat the match as case-insensitive on the trimmed values.
+        user_id 与 nickname 均可匹配 —— XHS 有时只在 note 元数据中
+        提供 nickname（无 author user_id），有时两者均提供。
+        匹配基于去除空白后的值并忽略大小写。
         """
         if not self_info:
             return False
@@ -6035,16 +6002,14 @@ def create_app(
         database: Any,
         self_info: dict[str, str],
     ) -> int:
-        """Mark every pool row authored by ``self_info.nickname`` as suppressed.
+        """将所有由 ``self_info.nickname`` 创作的 pool 行标记为已压制。
 
-        v0.3.57+: cleans up content_cache rows that entered before the
-        per-path self_info filter was wired in. Idempotent — already-
-        suppressed rows are not flipped further. Returns the number of
-        rows actually changed in this call.
+        v0.3.57+：清理在 per-path self_info 过滤器接通前进入
+        content_cache 的行。幂等 —— 已压制的行不会被再次翻转。
+        返回本次调用实际变更的行数。
 
-        ``up_name`` is the column populated by ``_cache_xhs_notes`` from
-        the note's ``author`` field, so the comparison mirrors the
-        runtime filter exactly.
+        ``up_name`` 是 ``_cache_xhs_notes`` 根据 note 的 ``author``
+        字段填充的列，因此比较方式与运行时过滤器完全一致。
         """
         if not self_info or not hasattr(database, "conn"):
             return 0
@@ -6077,19 +6042,18 @@ def create_app(
         *,
         source_keyword_id: int | None = None,
     ) -> int:
-        """Enqueue xhs note metadata from the extension into discovery_candidates.
+        """将扩展采集的 xhs note 元数据入队到 discovery_candidates。
 
-        ``self_info`` (v0.3.48+) lets the caller pass the just-extracted
-        login fingerprint from the same request — avoids a round-trip
-        through ``discovery_runtime_state`` and works against test
-        stubs that haven't implemented the runtime-state API.  When
-        ``None``, falls back to the persisted state.
+        ``self_info``（v0.3.48+）允许调用方传入从同一请求中刚提取出的
+        登录指纹 —— 避免一次 ``discovery_runtime_state`` 往返，
+        并兼容尚未实现 runtime-state API 的测试桩。当为
+        ``None`` 时回退到已持久化的状态。
 
-        ``source_keyword_id`` (P1.8) is the ``discovery_keywords.id`` carried on
-        the originating xhs *search* task payload. XHS is truly async, so the id
-        cannot be stamped at search time — it rides the task and is threaded onto
-        each ingested candidate here so admission can backfill the keyword's
-        yield. ``None`` for passive / observed / non-planner ingests.
+        ``source_keyword_id``（P1.8）是承载在原始 xhs *search* 任务
+        payload 上的 ``discovery_keywords.id``。XHS 是真正的异步流程，
+        该 id 无法在搜索时打标 —— 它随任务流转，并在此处串接到每条
+        被摄入的 candidate 上，以便 admission 回填该 keyword 的产出。
+        对于被动 / observed / 非 planner 的摄入为 ``None``。
         """
         from urllib.parse import urlparse
 
@@ -6181,14 +6145,13 @@ def create_app(
 
     @app.post("/api/sources/xhs/observed-urls")
     async def ingest_xhs_observed_urls(payload: dict[str, Any]) -> dict[str, Any]:
-        """Accept xhs note URLs + optional metadata the extension collected.
+        """接收扩展采集的 xhs note URL 及可选元数据。
 
         Body: ``{ "urls": [...], "notes": [{url, title, author, cover_url}], "page_type": "..." }``
 
-        When ``notes`` is present, metadata is normalized into
-        ``discovery_candidates``.  The shared discovery-candidate drain then
-        evaluates and admits accepted notes through the same path as other
-        platforms.
+        当 ``notes`` 存在时，元数据会被归一化进
+        ``discovery_candidates``。随后共享的 discovery-candidate 排空流程
+        会通过与其他平台相同的路径评估并接纳合格的 note。
         """
         from fastapi import HTTPException
 
@@ -6245,14 +6208,13 @@ def create_app(
 
     @app.post("/api/sources/xhs/tokens")
     def ingest_xhs_tokens(payload: dict[str, Any]) -> dict[str, Any]:
-        """Ingest ``(note_id, xsec_token)`` pairs harvested by the MAIN-
-        world fetch sniffer inside ``dist/main/xhs-token-sniffer.js``.
+        """摄入由 ``dist/main/xhs-token-sniffer.js`` 中 MAIN-world
+        fetch sniffer 抓取的 ``(note_id, xsec_token)`` 对。
 
-        We rebuild the full tokenized URL from each pair and feed it
-        through ``_backfill_xhs_tokens`` so previously-cached bare URLs
-        (the typical search-page-sourced ones) get upgraded in place.
-        Without this, clicking an xhs recommendation trips xhs's 300031
-        access-denied gating because the stored URL lacks xsec_token.
+        我们根据每个对重建完整的带 token URL，并通过
+        ``_backfill_xhs_tokens`` 处理，从而就地升级此前缓存的裸 URL
+        （典型来源是搜索页）。若不处理，点击 xhs 推荐时会触发
+        xhs 的 300031 访问拒绝门控，因为存储的 URL 缺失 xsec_token。
         """
         raw = payload.get("pairs", [])
         if not isinstance(raw, list) or not raw:
@@ -6286,7 +6248,7 @@ def create_app(
 
     @app.get("/api/sources/bili/next-task")
     def bili_next_task(response: Any = None) -> Any:
-        """Claim and return the oldest runnable Bilibili extension task."""
+        """领取并返回最早可运行的 Bilibili 扩展任务。"""
         from starlette.responses import Response
 
         if _bili_task_queue is None:
@@ -6306,7 +6268,7 @@ def create_app(
 
     @app.post("/api/sources/bili/task-result")
     async def bili_task_result(payload: dict[str, Any]) -> dict[str, Any]:
-        """Accept Bilibili extension search results and enqueue candidates."""
+        """接收 Bilibili 扩展搜索结果并入队 candidate。"""
 
         task_id = str(payload.get("task_id", "") or "").strip()
         status = str(payload.get("status", "") or "").strip()
@@ -6362,7 +6324,7 @@ def create_app(
 
     @app.post("/api/sources/bili/kick")
     async def bili_task_kick() -> dict[str, Any]:
-        """Broadcast `bili_task_available` over runtime-stream."""
+        """通过 runtime-stream 广播 `bili_task_available`。"""
         publish = getattr(getattr(ctx, "event_hub", None), "publish", None)
         if callable(publish):
             with suppress(Exception):
@@ -6388,7 +6350,7 @@ def create_app(
 
     @app.get("/api/sources/xhs/next-task")
     def xhs_next_task(response: Any = None) -> Any:
-        """Claim and return the oldest runnable xhs task, or 204 if none."""
+        """领取并返回最早可运行的 xhs 任务，若无则返回 204。"""
         from starlette.responses import Response
 
         # 204 No Content responses MUST NOT carry a body (RFC 7230).
@@ -6414,7 +6376,7 @@ def create_app(
 
     @app.post("/api/sources/xhs/task-result")
     async def xhs_task_result(payload: dict[str, Any]) -> dict[str, Any]:
-        """Accept a task result from the extension dispatcher."""
+        """接收来自扩展 dispatcher 的任务结果。"""
         task_id = payload.get("task_id", "")
         status = payload.get("status", "")
         urls = payload.get("urls", [])
@@ -6553,14 +6515,14 @@ def create_app(
 
     @app.get("/api/sources/xhs/creators")
     def xhs_list_creators() -> dict[str, Any]:
-        """List all xhs creator subscriptions."""
+        """列出所有 xhs 创作者订阅。"""
         if _xhs_creator_store is None:
             return {"items": []}
         return {"items": _xhs_creator_store.list_all()}
 
     @app.post("/api/sources/xhs/creators", status_code=201)
     def xhs_add_creator(payload: dict[str, Any]) -> dict[str, Any]:
-        """Add an xhs creator subscription."""
+        """新增一条 xhs 创作者订阅。"""
         from fastapi import HTTPException
 
         creator_id = payload.get("creator_id", "")
@@ -6580,7 +6542,7 @@ def create_app(
 
     @app.delete("/api/sources/xhs/creators/{sub_id}")
     def xhs_delete_creator(sub_id: int) -> dict[str, Any]:
-        """Delete an xhs creator subscription."""
+        """删除一条 xhs 创作者订阅。"""
         from fastapi import HTTPException
 
         if _xhs_creator_store is None:
@@ -6603,14 +6565,14 @@ def create_app(
 
     @app.get("/api/sources/x/creators")
     def x_list_creators() -> dict[str, Any]:
-        """List all X account subscriptions."""
+        """列出所有 X 账号订阅。"""
         if _x_creator_store is None:
             return {"items": []}
         return {"items": _x_creator_store.list_all()}
 
     @app.post("/api/sources/x/creators", status_code=201)
     def x_add_creator(payload: dict[str, Any]) -> dict[str, Any]:
-        """Add an X account subscription (idempotent; leading @ stripped)."""
+        """新增 X 账号订阅（幂等；前导 @ 会被去除）。"""
         from fastapi import HTTPException
 
         handle = normalize_handle(str(payload.get("handle", "")))
@@ -6624,7 +6586,7 @@ def create_app(
 
     @app.delete("/api/sources/x/creators/{sub_id}")
     def x_delete_creator(sub_id: int) -> dict[str, Any]:
-        """Delete an X account subscription."""
+        """删除一条 X 账号订阅。"""
         from fastapi import HTTPException
 
         if _x_creator_store is None:
@@ -6640,7 +6602,7 @@ def create_app(
 
     @app.get("/api/sources/x/status", response_model=XStatusResponse)
     def x_source_status() -> XStatusResponse:
-        """Return the current X source health (ok / cookie / rate-limit / block)."""
+        """返回当前 X source 健康状态（ok / cookie / rate-limit / block）。"""
         if not hasattr(ctx.database, "conn"):
             return XStatusResponse()
         from openbiliclaw.storage.x_health import XSourceHealthStore
@@ -6673,14 +6635,13 @@ def create_app(
 
     @app.get("/api/sources/status", response_model=SourcesStatusResponse)
     def sources_status() -> SourcesStatusResponse:
-        """Unified per-source login / cookie readiness for the settings pages.
+        """为设置页面提供的统一 per-source 登录 / cookie 就绪状态。
 
-        Local-only: each source's state is derived from config cookie fields,
-        the Douyin cookie file/env, the count of token-bearing 小红书 cache
-        rows, and the X health store — no outbound platform requests. See
-        :class:`SourcesStatusResponse`. ``ready`` means a credential is present
-        and structurally valid (not live-validated); only X reports a真正
-        live-validated ``ok``.
+        仅本地查询：各 source 的状态由 config cookie 字段、
+        Douyin cookie 文件/env、带 token 的小红书缓存行数以及
+        X health store 派生 —— 不发起任何对外平台请求。参见
+        :class:`SourcesStatusResponse`。``ready`` 表示凭据存在且结构合法
+        （未做实时校验）；只有 X 会回报实时校验过的 ``ok``。
         """
         from openbiliclaw.config import load_config
 
@@ -6979,7 +6940,7 @@ def create_app(
 
     @app.get("/api/sources/credentials", response_model=SourcesCredentialsResponse)
     def sources_credentials(reveal_keys: bool = False) -> SourcesCredentialsResponse:
-        """Return current local Cookie / token snapshots for source settings pages."""
+        """返回 source 设置页面所用的当前本地 Cookie / token 快照。"""
         from openbiliclaw.bilibili.auth import resolve_runtime_cookie
         from openbiliclaw.config import load_config
         from openbiliclaw.sources.douyin_auth import resolve_douyin_cookie
@@ -7048,7 +7009,7 @@ def create_app(
 
     @app.get("/api/sources/dy/next-task")
     def dy_next_task(response: Any = None) -> Any:
-        """Return the oldest pending dy task, or 204 if none."""
+        """返回最早的待处理 dy 任务，若无则返回 204。"""
         from starlette.responses import Response
 
         if _dy_task_queue is None:
@@ -7068,14 +7029,14 @@ def create_app(
 
     @app.post("/api/sources/dy/task-result")
     async def dy_task_result(payload: dict[str, Any]) -> dict[str, Any]:
-        """Accept a Douyin task result from the extension dispatcher.
+        """接收来自扩展 dispatcher 的 Douyin 任务结果。
 
-        Status semantics mirror XHS (``ok`` = final, ``partial`` = keep
-        pending, ``failed`` = mark failed) but the result schema uses
-        ``videos`` instead of ``notes`` and propagation goes through
-        ``dy_bootstrap_videos_to_events``. No self-author filtering yet
-        (Douyin has its own posts in ``dy_post`` scope which we treat as
-        a weak ``view`` signal — they're meant to count as input).
+        状态语义与 XHS 对齐（``ok`` = 终态、``partial`` = 保持
+        pending、``failed`` = 标记失败），但结果 schema 使用
+        ``videos`` 而非 ``notes``，且传播走
+        ``dy_bootstrap_videos_to_events``。暂未做 self-author 过滤
+        （抖音的自发内容在 ``dy_post`` scope 中，我们将其视为弱
+        ``view`` 信号 —— 它们本应计入输入）。
         """
         task_id = payload.get("task_id", "")
         status = payload.get("status", "")
@@ -7170,9 +7131,9 @@ def create_app(
 
     @app.post("/api/sources/xhs/kick")
     async def xhs_task_kick() -> dict[str, Any]:
-        """Broadcast `xhs_task_available` so any subscribed extension
-        service-worker triggers an immediate poll. Idempotent and best
-        effort — failures here never affect task state."""
+        """广播 `xhs_task_available`，让任意订阅了该事件的扩展
+        service-worker 立即触发一次轮询。幂等且尽力而为 ——
+        此处的失败不会影响任务状态。"""
         publish = getattr(getattr(ctx, "event_hub", None), "publish", None)
         if callable(publish):
             with suppress(Exception):
@@ -7181,8 +7142,8 @@ def create_app(
 
     @app.post("/api/sources/dy/kick")
     async def dy_task_kick() -> dict[str, Any]:
-        """Broadcast `dy_task_available` over runtime-stream. See
-        xhs_task_kick docstring for rationale."""
+        """通过 runtime-stream 广播 `dy_task_available`。
+        设计原因参见 xhs_task_kick 的 docstring。"""
         publish = getattr(getattr(ctx, "event_hub", None), "publish", None)
         if callable(publish):
             with suppress(Exception):
@@ -7208,7 +7169,7 @@ def create_app(
 
     @app.get("/api/sources/zhihu/next-task")
     def zhihu_next_task(response: Any = None) -> Any:
-        """Return the oldest pending Zhihu task, or 204 if none."""
+        """返回最早的待处理 Zhihu 任务，若无则返回 204。"""
         from starlette.responses import Response
 
         if _zhihu_task_queue is None:
@@ -7228,12 +7189,12 @@ def create_app(
 
     @app.post("/api/sources/zhihu/task-result")
     async def zhihu_task_result(payload: dict[str, Any]) -> dict[str, Any]:
-        """Accept a Zhihu task result from the extension dispatcher.
+        """接收来自扩展 dispatcher 的 Zhihu 任务结果。
 
-        Plain ``fetch-zhihu`` smoke tasks only record the task payload. Tasks
-        explicitly marked ``profile_update`` also propagate bootstrap events to
-        memory and, once a profile exists, into the incremental profile-update
-        pipeline.
+        普通的 ``fetch-zhihu`` smoke 任务只记录任务 payload。
+        显式标记为 ``profile_update`` 的任务还会将 bootstrap 事件
+        传播到 memory，并在 profile 已存在时进入增量 profile-update
+        pipeline。
         """
         task_id = str(payload.get("task_id", "") or "").strip()
         status = str(payload.get("status", "") or "").strip()
@@ -7304,7 +7265,7 @@ def create_app(
 
     @app.post("/api/sources/zhihu/kick")
     async def zhihu_task_kick() -> dict[str, Any]:
-        """Broadcast `zhihu_task_available` over runtime-stream."""
+        """通过 runtime-stream 广播 `zhihu_task_available`。"""
         publish = getattr(getattr(ctx, "event_hub", None), "publish", None)
         if callable(publish):
             with suppress(Exception):
@@ -7317,7 +7278,7 @@ def create_app(
 
     @app.get("/api/sources/yt/next-task")
     def yt_next_task(response: Any = None) -> Any:
-        """Return the oldest pending YouTube task, or 204 if none."""
+        """返回最早的待处理 YouTube 任务，若无则返回 204。"""
         from starlette.responses import Response
 
         if _yt_task_queue is None:
@@ -7337,7 +7298,7 @@ def create_app(
 
     @app.post("/api/sources/yt/task-result")
     async def yt_task_result(payload: dict[str, Any]) -> dict[str, Any]:
-        """Accept a YouTube task result from the extension dispatcher."""
+        """接收来自扩展 dispatcher 的 YouTube 任务结果。"""
         task_id = payload.get("task_id", "")
         status = payload.get("status", "")
         items = [v for v in payload.get("items", []) if isinstance(v, dict)]
@@ -7399,7 +7360,7 @@ def create_app(
 
     @app.post("/api/sources/yt/kick")
     async def yt_task_kick() -> dict[str, Any]:
-        """Broadcast `yt_task_available` over runtime-stream."""
+        """通过 runtime-stream 广播 `yt_task_available`。"""
         publish = getattr(getattr(ctx, "event_hub", None), "publish", None)
         if callable(publish):
             with suppress(Exception):
@@ -7411,7 +7372,7 @@ def create_app(
         request: Request,
         payload: ExtensionE2ERunIn,
     ) -> ExtensionE2ERunOut:
-        """Local-only control plane for extension E2E simulation runs."""
+        """扩展 E2E 模拟运行的本地专用控制面。"""
         if not _get_auth_gate().is_trusted_local(request):
             raise HTTPException(status_code=403, detail="local_only")
 
@@ -7496,7 +7457,7 @@ def create_app(
         request: Request,
         payload: ExtensionE2EResultIn,
     ) -> dict[str, object]:
-        """Accept a signed callback from the extension E2E runner."""
+        """接收来自扩展 E2E runner 的带签名回调。"""
         if not _get_auth_gate().is_trusted_local(request):
             raise HTTPException(status_code=403, detail="local_only")
 
@@ -7513,12 +7474,11 @@ def create_app(
 
     @app.post("/api/extension/reload")
     async def extension_reload() -> dict[str, Any]:
-        """Dev-only: broadcast `extension_reload` so the connected
-        service-worker calls chrome.runtime.reload() — picks up the
-        latest /dist bundle without the user clicking the reload icon
-        in chrome://extensions.
+        """仅用于开发：广播 `extension_reload`，让已连接的
+        service-worker 调用 chrome.runtime.reload() —— 无需用户在
+        chrome://extensions 中点击重载图标即可加载最新的 /dist 产物。
 
-        Best-effort — silent when no event-hub is wired."""
+        尽力而为 —— 未接通 event-hub 时静默无操作。"""
         publish = getattr(getattr(ctx, "event_hub", None), "publish", None)
         if callable(publish):
             with suppress(Exception):
@@ -7762,7 +7722,7 @@ def create_app(
         degraded: bool = False,
         degraded_reason: str = "",
     ) -> ConfigResponse:
-        """Convert a Config dataclass to a ConfigResponse, optionally masking API keys."""
+        """将 Config dataclass 转换为 ConfigResponse，可选地对 API key 做掩码。"""
 
         def _mask(key: str) -> str:
             if not mask_keys or not key:
@@ -7999,7 +7959,7 @@ def create_app(
 
     @app.get("/api/config", response_model=ConfigResponse)
     def get_config(reveal_keys: bool = False) -> ConfigResponse:
-        """Return the current configuration (API keys masked by default)."""
+        """返回当前配置（默认对 API key 做掩码处理）。"""
         from openbiliclaw.config import (
             _collect_config_issues,
             load_config,
@@ -8030,7 +7990,7 @@ def create_app(
         return [str(item).strip() for item in value if str(item).strip()]
 
     def _apply_llm_update(cfg: Any, llm_data: object) -> None:
-        """Apply the LLM subset of a config update to an in-memory config."""
+        """将配置更新中的 LLM 子集应用到内存中的 config。"""
         if not isinstance(llm_data, dict):
             return
         from openbiliclaw.config import _normalize_llm_concurrency, _normalize_llm_timeout
@@ -8244,7 +8204,7 @@ def create_app(
 
     @app.post("/api/config/probe-service", response_model=ConfigServiceProbeResponse)
     async def probe_config_service(payload: ConfigServiceProbeIn) -> ConfigServiceProbeResponse:
-        """Probe submitted LLM / embedding settings without saving config.toml."""
+        """探测提交的 LLM / embedding 设置，但不写入 config.toml。"""
         from copy import deepcopy
 
         from openbiliclaw.config import load_config
@@ -8260,11 +8220,10 @@ def create_app(
 
     @app.put("/api/config", response_model=ConfigUpdateResponse)
     async def update_config(payload: ConfigUpdateIn) -> ConfigUpdateResponse | JSONResponse:
-        """Update configuration, persist to config.toml, and hot-reload runtime.
+        """更新配置、持久化到 config.toml，并热重载运行时。
 
-        Only the fields included in the request body are modified.
-        After persisting, the backend attempts to rebuild all swappable
-        runtime components so the new settings take effect immediately.
+        仅修改请求体中包含的字段。持久化之后，后端会尝试重建所有
+        可热替换的运行时组件，使新设置立即生效。
         """
         from openbiliclaw.config import (
             _DEFAULT_ADMISSION_MIN_SCORE,
@@ -8842,7 +8801,7 @@ def create_app(
     def _build_source_share_suggestion_response(
         payload: SourceShareSuggestionIn | None = None,
     ) -> SourceShareSuggestionResponse:
-        """Suggest pool source shares from observed platform event counts."""
+        """根据观测到的平台事件计数推荐 pool source 份额。"""
         from openbiliclaw.config import load_config
         from openbiliclaw.runtime.source_policy import (
             source_enabled_map,
@@ -8875,7 +8834,7 @@ def create_app(
         response_model=SourceShareSuggestionResponse,
     )
     def source_share_suggestion() -> SourceShareSuggestionResponse:
-        """Suggest pool source shares from saved config switches."""
+        """根据已保存的 config 开关推荐 pool source 份额。"""
         return _build_source_share_suggestion_response()
 
     @app.post(
@@ -8885,7 +8844,7 @@ def create_app(
     def source_share_suggestion_for_form(
         payload: SourceShareSuggestionIn,
     ) -> SourceShareSuggestionResponse:
-        """Suggest pool source shares from unsaved settings form state."""
+        """根据未保存的设置表单状态推荐 pool source 份额。"""
         return _build_source_share_suggestion_response(payload)
 
     # v0.3.57+: one-shot purge of self-authored xhs pool rows that

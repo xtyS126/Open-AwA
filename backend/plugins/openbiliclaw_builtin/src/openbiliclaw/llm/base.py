@@ -1,7 +1,6 @@
-"""LLM base interfaces and provider registry.
+"""LLM 基础接口与 provider 注册表。
 
-Defines the abstract LLM provider interface and a registry for
-dynamically selecting and switching between providers.
+定义抽象的 LLM provider 接口，以及用于动态选择和切换 provider 的注册表。
 """
 
 from __future__ import annotations
@@ -18,40 +17,40 @@ LLM_CONNECTIVITY_PROBE_MAX_TOKENS = 1024
 
 
 class LLMProviderError(Exception):
-    """Base exception for provider request failures."""
+    """provider 请求失败的基类异常。"""
 
 
 class LLMRateLimitError(LLMProviderError):
-    """Raised when a provider rate-limits a request."""
+    """当 provider 对请求进行限流时抛出。"""
 
 
 class LLMTimeoutError(LLMProviderError):
-    """Raised when a provider request times out."""
+    """当 provider 请求超时时抛出。"""
 
 
 class LLMResponseError(LLMProviderError):
-    """Raised when a provider returns an invalid or empty response."""
+    """当 provider 返回无效或空响应时抛出。"""
 
 
 class LLMFallbackError(LLMProviderError):
-    """Raised when all candidate providers fail."""
+    """当所有候选 provider 都失败时抛出。"""
 
 
 @dataclass
 class LLMResponse:
-    """Standardized response from any LLM provider."""
+    """任意 LLM provider 的标准化响应。"""
 
     content: str = ""
     model: str = ""
     provider: str = ""
-    usage: dict[str, int] | None = None  # token counts
-    raw: Any = None  # Raw provider response
-    tool_calls: list[dict[str, Any]] | None = None  # Phase 4: function calling
+    usage: dict[str, int] | None = None  # token 计数
+    raw: Any = None  # provider 原始响应
+    tool_calls: list[dict[str, Any]] | None = None  # Phase 4: 函数调用
 
 
 @dataclass
 class HealthCheckResult:
-    """Availability result for one provider."""
+    """单个 provider 的可用性结果。"""
 
     available: bool
     is_default: bool = False
@@ -59,25 +58,22 @@ class HealthCheckResult:
 
 
 class LLMProvider(ABC):
-    """Abstract base class for LLM providers.
+    """LLM provider 的抽象基类。
 
-    All providers must implement a unified interface so the agent
-    can switch between them transparently.
+    所有 provider 必须实现统一接口，以便 agent 可以透明地在它们之间切换。
     """
 
-    # Subclasses set True if they implement an ``async embed()`` method
-    # backed by a working embeddings endpoint. Used by
-    # ``build_embedding_service`` to pick a fallback when the user's
-    # primary provider has no embedding API (e.g. Anthropic Claude,
-    # DeepSeek). ``hasattr(provider, "embed")`` is unreliable because
-    # subclassing OpenAIProvider auto-inherits ``embed`` even for
-    # vendors whose backend doesn't actually expose it.
+    # 子类若实现了基于可用 embeddings 端点的 ``async embed()`` 方法，
+    # 则需将其设置为 True。``build_embedding_service`` 会用此标志在用户主
+    # provider 没有嵌入 API（如 Anthropic Claude、DeepSeek）时挑选回退
+    # provider。``hasattr(provider, "embed")`` 不可靠，因为继承
+    # OpenAIProvider 会自动继承 ``embed``，即便厂商后端并未真正暴露该接口。
     supports_embedding: bool = False
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """Provider name identifier."""
+        """provider 名称标识符。"""
         ...
 
     @abstractmethod
@@ -91,40 +87,36 @@ class LLMProvider(ABC):
         reasoning_effort: str | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        """Send a chat completion request.
+        """发送聊天补全请求。
 
         Args:
-            messages: Chat messages in OpenAI format [{role, content}].
-            temperature: Sampling temperature.
-            max_tokens: Maximum tokens in response.
-            json_mode: Whether to request structured JSON output.
-            reasoning_effort: Per-call override for the provider's
-                ``reasoning_effort`` setting (currently honoured by
-                DeepSeek; ignored by other providers). ``None`` means
-                "use the provider's configured default";
-                ``""`` means "explicitly disable thinking for this
-                call" (used by structured tasks like discovery's
-                ``_evaluate_batch`` that don't benefit from reasoning).
-            model: Optional per-call model override. Empty/whitespace
-                values fall back to the provider's configured default
-                without mutating provider state.
+            messages: OpenAI 格式的聊天消息 [{role, content}]。
+            temperature: 采样温度。
+            max_tokens: 响应的最大 token 数。
+            json_mode: 是否请求结构化 JSON 输出。
+            reasoning_effort: 对 provider 的 ``reasoning_effort`` 设置进行
+                单次调用覆盖（目前仅 DeepSeek 支持；其他 provider 忽略）。
+                ``None`` 表示"使用 provider 的配置默认值"；
+                ``""`` 表示"为此次调用显式禁用思考"（用于 discovery 的
+                ``_evaluate_batch`` 等不会从推理中受益的结构化任务）。
+            model: 可选的单次调用模型覆盖。空值或空白值会回退到 provider
+                的配置默认值，且不会修改 provider 状态。
 
         Returns:
-            Standardized LLMResponse.
+            标准化的 LLMResponse。
         """
         ...
 
     async def health_check(self) -> bool:
-        """Check if the provider is accessible.
+        """检查 provider 是否可访问。
 
         Returns:
-            True if the provider is available.
+            provider 可用时返回 True。
         """
         try:
-            # Reasoning-first OpenAI-compatible backends may spend the
-            # initial output budget on reasoning before emitting content.
-            # Keep the connectivity probe small, but not so tiny that those
-            # providers get truncated before they can return visible content.
+            # 优先推理的 OpenAI 兼容后端可能会先把输出预算花在推理上，
+            # 然后才输出可见内容。连通性探测要小，但不能小到让这些
+            # provider 在返回可见内容之前就被截断。
             resp = await self.complete(
                 [{"role": "user", "content": "hi"}],
                 max_tokens=LLM_CONNECTIVITY_PROBE_MAX_TOKENS,
@@ -136,9 +128,9 @@ class LLMProvider(ABC):
 
 
 class LLMRegistry:
-    """Registry for LLM providers.
+    """LLM provider 注册表。
 
-    Supports dynamic registration and selection of providers.
+    支持 provider 的动态注册与选择。
     """
 
     _RATE_LIMIT_COOLDOWN_SECONDS = 60.0
@@ -149,9 +141,8 @@ class LLMRegistry:
         self._rate_limited_until: dict[str, float] = {}
         self.fallback_enabled: bool = False
         self.fallback_provider: str = ""
-        # Names of providers that should NOT appear in the chat-completion
-        # fallback chain — typically an Ollama instance registered solely
-        # for embedding (see register(..., chat_capable=False)).
+        # 不应出现在聊天补全回退链中的 provider 名称 —— 通常是仅为嵌入而
+        # 注册的 Ollama 实例（见 register(..., chat_capable=False)）。
         self._chat_disabled: set[str] = set()
 
     def register(
@@ -161,27 +152,21 @@ class LLMRegistry:
         default: bool = False,
         chat_capable: bool = True,
     ) -> None:
-        """Register a provider.
+        """注册一个 provider。
 
         Args:
-            provider: LLM provider instance.
-            default: Whether to set as default provider.
-            chat_capable: When False, the provider is registered for
-                non-chat use (typically Ollama for embedding-only) and
-                will NOT appear in the chat-completion fallback chain.
-                Default True for backward compat — every other call site
-                wants chat capability.
+            provider: LLM provider 实例。
+            default: 是否设为默认 provider。
+            chat_capable: 为 False 时，该 provider 仅供非聊天用途（通常是
+                仅用于嵌入的 Ollama），不会出现在聊天补全回退链中。
+                默认 True 以保持向后兼容 —— 其他所有调用方都需要聊天能力。
 
-                Why this matters: if the user only set
-                ``[llm.embedding] provider = "ollama"`` and never
-                configured ``[llm.ollama] model``, the embedding service
-                still needs Ollama to be in the registry — but the
-                model on disk is ``bge-m3``, which can't serve
-                ``/api/chat`` requests. Without this flag, when the
-                primary cloud provider hits a transient error, the
-                fallback chain happily picks Ollama, gets a 404 from
-                ``/api/chat``, and the user sees
-                ``All providers failed (openai, ollama)``.
+                为何重要：若用户只设置了 ``[llm.embedding] provider = "ollama"``
+                而从未配置 ``[llm.ollama] model``，嵌入服务仍需要 Ollama
+                留在注册表中 —— 但磁盘上的模型是 ``bge-m3``，无法服务
+                ``/api/chat`` 请求。没有此标志时，当主云 provider 出现瞬时
+                错误，回退链会欣然选择 Ollama，从 ``/api/chat`` 收到 404，
+                用户就会看到 ``All providers failed (openai, ollama)``。
         """
         self._providers[provider.name] = provider
         if not chat_capable:
@@ -198,16 +183,16 @@ class LLMRegistry:
         )
 
     def get(self, name: str | None = None) -> LLMProvider:
-        """Get a provider by name, or the default.
+        """按名称获取 provider，或返回默认 provider。
 
         Args:
-            name: Provider name. If None, returns the default.
+            name: provider 名称。若为 None，则返回默认 provider。
 
         Returns:
-            LLM provider instance.
+            LLM provider 实例。
 
         Raises:
-            KeyError: If the provider is not registered.
+            KeyError: 若 provider 未注册。
         """
         target = name or self._default
         if target not in self._providers:
@@ -217,16 +202,16 @@ class LLMRegistry:
 
     @property
     def available_providers(self) -> list[str]:
-        """List of registered provider names."""
+        """已注册的 provider 名称列表。"""
         return list(self._providers.keys())
 
     @property
     def default_provider(self) -> str:
-        """Name of the default provider."""
+        """默认 provider 的名称。"""
         return self._default
 
     def is_chat_capable(self, name: str) -> bool:
-        """Return whether *name* is registered for chat completions."""
+        """返回 *name* 是否已注册为可进行聊天补全。"""
         target = name.strip().lower()
         return bool(target and target in self._providers and target not in self._chat_disabled)
 
@@ -239,7 +224,7 @@ class LLMRegistry:
         json_mode: bool = False,
         reasoning_effort: str | None = None,
     ) -> LLMResponse:
-        """Execute a completion request with sequential provider fallback."""
+        """执行补全请求，按顺序回退 provider。"""
         last_error: Exception | None = None
         attempted: list[str] = []
 
@@ -290,11 +275,10 @@ class LLMRegistry:
         reasoning_effort: str | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        """Execute a completion against one exact chat-capable provider.
+        """针对某个确切的、具备聊天能力的 provider 执行补全。
 
-        Unlike ``complete()``, this method intentionally has no fallback
-        chain. It is used for explicit per-module overrides where
-        falling back to a different provider would violate user intent.
+        与 ``complete()`` 不同，此方法故意不设回退链。它用于显式的按模块
+        覆盖场景，回退到其他 provider 会违反用户意图。
         """
         target = provider_name.strip().lower()
         if not self.is_chat_capable(target):
@@ -325,7 +309,7 @@ class LLMRegistry:
             raise
 
     async def health_check_all(self) -> dict[str, HealthCheckResult]:
-        """Run health checks for all registered providers."""
+        """对所有已注册 provider 运行健康检查。"""
         results: dict[str, HealthCheckResult] = {}
         for provider_name in self.available_providers:
             provider = self.get(provider_name)
@@ -345,20 +329,18 @@ class LLMRegistry:
         return results
 
     def _fallback_order(self) -> list[str]:
-        """Return the sequential CHAT-fallback provider order.
+        """返回按顺序的聊天回退 provider 顺序。
 
-        Skips providers registered with ``chat_capable=False`` (the
-        embedding-only Ollama case). The default provider is honored
-        whenever it's chat-capable. A fallback provider is included only
-        when ``fallback_provider`` names a registered chat provider; no
-        automatic provider walk is performed.
+        跳过以 ``chat_capable=False`` 注册的 provider（仅用于嵌入的 Ollama
+        场景）。只要默认 provider 具备聊天能力就予以保留。只有当
+        ``fallback_provider`` 指向一个已注册的聊天 provider 时才纳入回退；
+        不进行自动 provider 遍历。
         """
         chat_pool = [name for name in self.available_providers if name not in self._chat_disabled]
         if not chat_pool:
-            # Edge case: every provider is embedding-only. Surface the
-            # problem rather than silently doing nothing — complete()
-            # will raise LLMFallbackError("No provider was available
-            # to process the request.").
+            # 边界情况：所有 provider 都仅用于嵌入。暴露问题而不是
+            # 静默地什么也不做 —— complete() 会抛出
+            # LLMFallbackError("No provider was available to process the request.")。
             return []
         if self._default and self._default in chat_pool:
             ordered = [

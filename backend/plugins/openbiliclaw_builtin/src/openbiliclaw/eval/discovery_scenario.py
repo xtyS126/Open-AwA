@@ -1,7 +1,7 @@
-"""Discovery evaluation scenario — mock Bilibili universe for offline eval.
+"""发现系统评估场景——用于离线评估的模拟 B 站宇宙。
 
-Generates a simulated content universe per persona, including mock search results,
-ranking pools, related video graphs, and behavioral event history.
+为每个人格生成一个模拟内容宇宙，包括模拟搜索结果、
+排行池、相关视频图、以及行为事件历史。
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# 数据结构
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class DiscoveryScenario:
-    """A simulated Bilibili content universe for one persona."""
+    """单个人格的模拟 B 站内容宇宙。"""
 
     persona_id: str = ""
     content_pool: list[dict[str, object]] = field(default_factory=list)
@@ -46,15 +46,15 @@ class DiscoveryScenario:
 
 
 # ---------------------------------------------------------------------------
-# Mock clients implementing strategy protocols
+# 实现策略协议的模拟客户端
 # ---------------------------------------------------------------------------
 
 
 class MockBilibiliClient:
-    """Mock Bilibili API client backed by a DiscoveryScenario.
+    """基于 DiscoveryScenario 的模拟 B 站 API 客户端。
 
-    Satisfies SupportsSearchClient, SupportsRankingClient, and
-    SupportsRelatedClient protocols from strategies.py.
+    满足 strategies.py 中的 SupportsSearchClient、SupportsRankingClient
+    和 SupportsRelatedClient 协议。
     """
 
     def __init__(self, scenario: DiscoveryScenario) -> None:
@@ -70,20 +70,20 @@ class MockBilibiliClient:
         page_size: int = 20,
         order: str = "totalrank",
     ) -> list[dict[str, object]]:
-        """Fuzzy keyword match against the content pool."""
+        """对内容池进行模糊关键词匹配。"""
         tokens = _tokenize(keyword)
         if not tokens:
             return []
 
-        # Use pre-built index first
+        # 先使用预构建的索引
         indexed_bvids: set[str] = set()
         for token in tokens:
             for index_key, bvids in self._scenario.mock_search_index.items():
                 if token in _tokenize(index_key):
                     indexed_bvids.update(bvids)
 
-        # Also do fuzzy matching on titles/tags/description
-        # Use both token-set matching AND substring matching for Chinese text
+        # 同时对标题/标签/描述进行模糊匹配
+        # 对中文文本同时使用 token 集合匹配和子串匹配
         scored: list[tuple[float, dict[str, object]]] = []
         for item in self._scenario.content_pool:
             bvid = str(item.get("bvid", ""))
@@ -100,9 +100,9 @@ class MockBilibiliClient:
             desc_tokens = _tokenize(desc)
             all_tokens = title_tokens | tag_tokens | desc_tokens
 
-            # Token-level match (exact token equality)
+            # Token 级匹配（精确 token 相等）
             token_hits = sum(1 for t in tokens if t in all_tokens)
-            # Substring match (handles Chinese where tokenization is imprecise)
+            # 子串匹配（处理中文分词不精确的情况）
             substr_hits = sum(1 for t in tokens if len(t) >= 2 and t in haystack)
             hit_count = max(token_hits, substr_hits)
 
@@ -119,7 +119,7 @@ class MockBilibiliClient:
         return [item for _, item in scored[start:end]]
 
     async def get_ranking(self, rid: int = 0) -> list[dict[str, object]]:
-        """Return mock ranking pool for the given rid."""
+        """返回指定 rid 的模拟排行池。"""
         bvids = self._scenario.mock_ranking_pools.get(rid, [])
         results: list[dict[str, object]] = []
         for bvid in bvids:
@@ -129,7 +129,7 @@ class MockBilibiliClient:
         return results
 
     async def get_related_videos(self, bvid: str) -> list[dict[str, object]]:
-        """Return mock related videos for a given bvid."""
+        """返回指定 bvid 的模拟相关视频。"""
         related_bvids = self._scenario.mock_related_graph.get(bvid, [])
         results: list[dict[str, object]] = []
         for related_bvid in related_bvids:
@@ -140,7 +140,7 @@ class MockBilibiliClient:
 
 
 class MockMemoryManager:
-    """Mock MemoryManager providing synthetic event history for seed selection."""
+    """提供合成事件历史的模拟 MemoryManager，用于种子选择。"""
 
     def __init__(self, scenario: DiscoveryScenario) -> None:
         self._scenario = scenario
@@ -161,7 +161,7 @@ class MockMemoryManager:
 
 
 # ---------------------------------------------------------------------------
-# LLM protocol for scenario generation
+# 场景生成的 LLM 协议
 # ---------------------------------------------------------------------------
 
 
@@ -179,7 +179,7 @@ class SupportsStructuredTask(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Scenario generator
+# 场景生成器
 # ---------------------------------------------------------------------------
 
 
@@ -221,13 +221,13 @@ metadata: {bvid, up_name, duration, progress}
 
 
 class ScenarioGenerator:
-    """Generates mock content universes for discovery evaluation."""
+    """为发现系统评估生成模拟内容宇宙。"""
 
     def __init__(self, llm_service: SupportsStructuredTask) -> None:
         self._llm = llm_service
 
     async def generate(self, persona: OnionProfile) -> DiscoveryScenario:
-        """Generate a complete DiscoveryScenario for the given persona."""
+        """为指定人格生成完整的 DiscoveryScenario。"""
         persona_text = _persona_summary(persona)
 
         try:
@@ -261,7 +261,7 @@ class ScenarioGenerator:
         if not isinstance(content_pool, list):
             content_pool = []
 
-        # Normalize content pool
+        # 规范化内容池
         normalized_pool: list[dict[str, object]] = []
         for item in content_pool:
             if not isinstance(item, dict) or not item.get("bvid"):
@@ -293,7 +293,7 @@ class ScenarioGenerator:
                 }
             )
 
-        # Relevance labels
+        # 相关性标签
         raw_labels = data.get("relevance_labels", {})
         labels: dict[str, float] = {}
         if isinstance(raw_labels, dict):
@@ -301,7 +301,7 @@ class ScenarioGenerator:
                 with suppress(ValueError, TypeError):
                     labels[str(bvid)] = max(0.0, min(1.0, float(score)))
 
-        # Related graph
+        # 相关图
         raw_graph = data.get("related_graph", {})
         related_graph: dict[str, list[str]] = {}
         if isinstance(raw_graph, dict):
@@ -309,7 +309,7 @@ class ScenarioGenerator:
                 if isinstance(related, list):
                     related_graph[str(bvid)] = [str(r) for r in related]
 
-        # Ranking pools — parse then enforce topic diversity
+        # 排行池——解析后强制 topic 多样性
         raw_rankings = data.get("ranking_pools", {})
         ranking_pools: dict[int, list[str]] = {}
         if isinstance(raw_rankings, dict):
@@ -321,7 +321,7 @@ class ScenarioGenerator:
                 if isinstance(bvids, list):
                     ranking_pools[rid] = [str(b) for b in bvids]
 
-        # Post-process: diversify ranking pools so no single topic dominates
+        # 后处理：分散排行池，避免单个 topic 主导
         bvid_to_item = {str(item.get("bvid", "")): item for item in normalized_pool}
         ranking_pools = self._diversify_ranking_pools(
             ranking_pools,
@@ -329,7 +329,7 @@ class ScenarioGenerator:
             normalized_pool,
         )
 
-        # Build search index from titles and tags
+        # 从标题和标签构建搜索索引
         search_index: dict[str, list[str]] = {}
         for item in normalized_pool:
             bvid = str(item["bvid"])
@@ -342,7 +342,7 @@ class ScenarioGenerator:
             for key in index_keys:
                 search_index.setdefault(key, []).append(bvid)
 
-        # Events
+        # 事件
         raw_events = data.get("events", [])
         events: list[dict[str, object]] = []
         if isinstance(raw_events, list):
@@ -368,11 +368,11 @@ class ScenarioGenerator:
         bvid_to_item: dict[str, dict[str, object]],
         all_items: list[dict[str, object]],
     ) -> dict[int, list[str]]:
-        """Post-process ranking pools to ensure topic diversity.
+        """后处理排行池以确保 topic 多样性。
 
-        For each rid, limits any single topic to at most 2 entries,
-        then backfills from the full content pool to reach target size.
-        For rid=0 (global), ensures at least 4 distinct topic groups.
+        对每个 rid，限制单个 topic 最多 2 条，
+        然后从完整内容池回填以达到目标大小。
+        对 rid=0（全局），确保至少有 4 个不同的 topic 分组。
         """
 
         def _topic_of(bvid: str) -> str:
@@ -388,7 +388,7 @@ class ScenarioGenerator:
             target_size = max(len(bvids), 8 if rid == 0 else 4)
             max_per_topic = 2
 
-            # Pass 1: select diverse subset
+            # 第一轮：选择多样化子集
             selected: list[str] = []
             topic_counts: dict[str, int] = {}
             deferred: list[str] = []
@@ -400,10 +400,10 @@ class ScenarioGenerator:
                 selected.append(bvid)
                 topic_counts[topic] = topic_counts.get(topic, 0) + 1
 
-            # Pass 2: backfill from full pool if under target
+            # 第二轮：若不足目标则从完整池回填
             if len(selected) < target_size:
                 local_used = set(selected) | set(deferred)
-                # Prefer items matching this rid
+                # 优先选择匹配此 rid 的条目
                 candidates: list[str] = []
                 for item in all_items:
                     bvid = str(item.get("bvid", ""))
@@ -423,16 +423,16 @@ class ScenarioGenerator:
                     if len(selected) >= target_size:
                         break
 
-            # Pass 3: if still short, add from deferred
+            # 第三轮：若仍不足，则从延迟列表中添加
             for bvid in deferred:
                 if len(selected) >= target_size:
                     break
                 if bvid not in selected:
                     selected.append(bvid)
 
-            # For rid=0, verify minimum topic diversity
+            # 对 rid=0，验证最小 topic 多样性
             if rid == 0 and len(set(topic_counts.keys())) < 4:
-                # Force-add items from under-represented topics
+                # 强制添加来自欠代表 topic 的条目
                 selected_bvids = set(selected)
                 for item in all_items:
                     bvid = str(item.get("bvid", ""))
@@ -448,9 +448,9 @@ class ScenarioGenerator:
 
             result[rid] = selected
 
-        # Ensure rid=0 exists with broad coverage
+        # 确保 rid=0 存在且覆盖广泛
         if 0 not in result:
-            # Build from scratch: round-robin across all rids
+            # 从零构建：在所有 rid 间轮询
             global_pool: list[str] = []
             used: set[str] = set()
             for rid_bvids in ranking_pools.values():
@@ -458,7 +458,7 @@ class ScenarioGenerator:
                     if bvid not in used:
                         global_pool.append(bvid)
                         used.add(bvid)
-            # Fill from all items
+            # 从所有条目中填充
             for item in all_items:
                 bvid = str(item.get("bvid", ""))
                 if bvid not in used:
@@ -472,12 +472,12 @@ class ScenarioGenerator:
 
 
 # ---------------------------------------------------------------------------
-# Scenario pool (disk cache)
+# 场景池（磁盘缓存）
 # ---------------------------------------------------------------------------
 
 
 class ScenarioPool:
-    """Cache generated scenarios to disk to avoid expensive regeneration."""
+    """将生成的场景缓存到磁盘，避免昂贵的重复生成。"""
 
     def __init__(self, cache_dir: str | Path = "data/eval/scenario_pool") -> None:
         self._dir = Path(cache_dir)
@@ -526,12 +526,12 @@ class ScenarioPool:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _tokenize(text: str) -> set[str]:
-    """Simple tokenization: split on whitespace and punctuation, lowercase."""
+    """简单分词：按空白和标点切分，转小写。"""
     cleaned = re.sub(
         r"[，。！？、：；\u201c\u201d\u2018\u2019（）【】\s]+", " ", text.lower().strip()
     )
@@ -580,7 +580,7 @@ def _int_value(value: object, default: int = 0) -> int:
 
 
 def _persona_summary(persona: Any) -> str:
-    """Extract compact text from persona for scenario generation prompt."""
+    """从人格中提取紧凑文本，用于场景生成 prompt。"""
     parts: list[str] = []
     portrait = getattr(persona, "personality_portrait", "")
     if portrait:
@@ -611,7 +611,7 @@ def _persona_summary(persona: Any) -> str:
         openness = getattr(prefs, "exploration_openness", 0.5)
         parts.append(f"探索开放度: {openness}")
     else:
-        # OnionProfile path
+        # OnionProfile 路径
         interest = getattr(persona, "interest", None)
         if interest is not None:
             likes = getattr(interest, "likes", [])
@@ -622,7 +622,7 @@ def _persona_summary(persona: Any) -> str:
 
 
 def _persona_signature(persona: Any) -> str:
-    """Generate a stable hash-based signature for the persona."""
+    """为人格生成稳定的基于哈希的签名。"""
     key_parts: list[str] = []
     traits = getattr(persona, "core_traits", [])
     key_parts.extend(str(t) for t in traits[:3])
@@ -636,8 +636,8 @@ def _persona_signature(persona: Any) -> str:
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
-    """Extract JSON from LLM response text with multiple fallback strategies."""
-    # Strategy 1: code block
+    """使用多种回退策略从 LLM 响应文本中提取 JSON。"""
+    # 策略 1：代码块
     match = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
     if match:
         try:
@@ -646,14 +646,14 @@ def _extract_json(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             pass
 
-    # Strategy 2: full text
+    # 策略 2：整段文本
     try:
         parsed = json.loads(text.strip())
         return parsed if isinstance(parsed, dict) else None
     except json.JSONDecodeError:
         pass
 
-    # Strategy 3: find first { to last }
+    # 策略 3：从第一个 { 到最后一个 }
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace >= 0 and last_brace > first_brace:

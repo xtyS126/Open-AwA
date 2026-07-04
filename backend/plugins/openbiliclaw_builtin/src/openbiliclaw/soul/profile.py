@@ -1,6 +1,6 @@
-"""User profile data models.
+"""用户画像数据模型。
 
-Defines the structured representation of user understanding at each layer.
+定义每一层用户理解的结构化表示。
 """
 
 from __future__ import annotations
@@ -14,45 +14,45 @@ if TYPE_CHECKING:
 
 @dataclass
 class InterestTag:
-    """A weighted interest tag with time decay."""
+    """带时间衰减的加权兴趣标签。"""
 
     name: str
-    category: str  # Top-level category (e.g., "科技", "游戏")
+    category: str  # 顶层类别（如 "科技"、"游戏"）
     weight: float = 1.0  # 0.0 - 1.0
     first_seen: datetime | None = None
     last_seen: datetime | None = None
-    source: str = ""  # How this tag was inferred
+    source: str = ""  # 该标签的推断来源
 
 
 @dataclass
 class StylePreference:
-    """Content style preferences."""
+    """内容风格偏好。"""
 
     preferred_duration: str = ""  # "short" | "medium" | "long"
     preferred_pace: str = ""  # "fast" | "moderate" | "slow"
-    quality_sensitivity: float = 0.5  # How much production quality matters
-    humor_preference: float = 0.5  # Preference for humorous content
-    depth_preference: float = 0.5  # Preference for in-depth analysis
+    quality_sensitivity: float = 0.5  # 制作质量的重要程度
+    humor_preference: float = 0.5  # 对幽默内容的偏好
+    depth_preference: float = 0.5  # 对深度分析的偏好
 
 
 @dataclass
 class ContextMode:
-    """Contextual usage patterns."""
+    """情境化使用模式。"""
 
-    weekday_patterns: str = ""  # Description of weekday usage
-    weekend_patterns: str = ""  # Description of weekend usage
-    time_of_day_patterns: str = ""  # Morning vs night preferences
+    weekday_patterns: str = ""  # 工作日使用情况描述
+    weekend_patterns: str = ""  # 周末使用情况描述
+    time_of_day_patterns: str = ""  # 早晨 vs 夜晚偏好
     session_type: str = ""  # "browsing" | "deep_dive" | "background"
 
 
 @dataclass
 class PreferenceLayer:
-    """Preference Layer — structured preferences extracted from behavior."""
+    """偏好层 —— 从行为中抽取的结构化偏好。"""
 
     interests: list[InterestTag] = field(default_factory=list)
     style: StylePreference = field(default_factory=StylePreference)
     context: ContextMode = field(default_factory=ContextMode)
-    exploration_openness: float = 0.5  # How open to new domains (0-1)
+    exploration_openness: float = 0.5  # 对新领域的开放度（0-1）
     disliked_topics: list[str] = field(default_factory=list)
     favorite_up_users: list[str] = field(default_factory=list)
     source_platform_mix: dict[str, float] = field(default_factory=dict)
@@ -60,69 +60,66 @@ class PreferenceLayer:
 
 @dataclass
 class AwarenessNote:
-    """A single awareness observation."""
+    """单条觉察观察。"""
 
     date: str = ""
-    observation: str = ""  # What was observed
-    trend: str = ""  # What trend this suggests
-    emotion_guess: str = ""  # Guessed emotional state
+    observation: str = ""  # 观察到的内容
+    trend: str = ""  # 暗示的趋势
+    emotion_guess: str = ""  # 猜测的情绪状态
 
 
 @dataclass
 class InsightHypothesis:
-    """An insight or hypothesis about the user."""
+    """关于用户的一条洞察或假设。"""
 
-    hypothesis: str = ""  # The insight itself
-    evidence: list[str] = field(default_factory=list)  # Supporting observations
+    hypothesis: str = ""  # 洞察本身
+    evidence: list[str] = field(default_factory=list)  # 支撑观察
     confidence: float = 0.5  # 0.0 - 1.0
-    validated: bool = False  # Has this been confirmed?
+    validated: bool = False  # 是否已被确认
     created_at: str = ""
 
 
 @dataclass
 class SoulProfile:
-    """Soul Layer — the deepest understanding of who the user is.
+    """灵魂层 —— 对"用户是谁"的最深层理解。
 
-    This is the natural language personality portrait that the agent
-    maintains, written as if by a close friend who truly understands
-    this person.
+    这是 agent 维护的自然语言人格画像，写得像一位真正懂这个人的
+    挚友。
     """
 
-    # Soul layer — the personality portrait
-    personality_portrait: str = ""  # Long-form natural language description
+    # 灵魂层 —— 人格画像
+    personality_portrait: str = ""  # 长文自然语言描述
     core_traits: list[str] = field(default_factory=list)
     cognitive_style: list[str] = field(default_factory=list)
     motivational_drivers: list[str] = field(default_factory=list)
     current_phase: str = ""
     values: list[str] = field(default_factory=list)
-    life_stage: str = ""  # Current life stage/situation
-    deep_needs: list[str] = field(default_factory=list)  # Unmet psychological needs
+    life_stage: str = ""  # 当前生活阶段 / 处境
+    deep_needs: list[str] = field(default_factory=list)  # 未被满足的心理需求
 
-    # Embedded preference summary (for LLM context)
+    # 内嵌的偏好摘要（用于 LLM 上下文）
     preferences: PreferenceLayer = field(default_factory=PreferenceLayer)
 
-    # Recent awareness notes
+    # 近期觉察笔记
     recent_awareness: list[AwarenessNote] = field(default_factory=list)
 
-    # Active insights / hypotheses
+    # 活跃洞察 / 假设
     active_insights: list[InsightHypothesis] = field(default_factory=list)
 
-    # Metadata
+    # 元数据
     created_at: str = ""
     updated_at: str = ""
     version: int = 0
 
     def to_llm_context(self, *, include_portrait: bool = True) -> str:
-        """Generate a natural language summary for LLM context.
+        """生成用于 LLM 上下文的自然语言摘要。
 
-        Returns a rich description that can be injected into LLM prompts
-        to give the agent full understanding of the user.
+        返回一段丰富描述，可注入 LLM prompt 让 agent 完整理解用户。
 
-        Set ``include_portrait=False`` to omit the free-form
-        ``personality_portrait`` narrative — production prompts that consume
-        the structured fields keep it out (see the prompt-input unification),
-        while eval/persona rendering keeps the default so the portrait stays
-        part of the persona ground truth.
+        传入 ``include_portrait=False`` 可省略自由形式的
+        ``personality_portrait`` 叙事 —— 消费结构化字段的生产 prompt
+        会把它排除（见 prompt-input 统一化），而 eval / 人设渲染保留
+        默认值，使画像仍属于人设 ground truth 的一部分。
         """
         parts = []
 
@@ -152,7 +149,7 @@ class SoulProfile:
 
         if self.recent_awareness:
             notes = "\n".join(
-                # Newest notes live at the tail of the chronological window.
+                # 最新的笔记位于时间窗口的尾部。
                 f"- [{n.date}] {n.observation}"
                 for n in self.recent_awareness[-5:]
             )
@@ -166,7 +163,7 @@ class SoulProfile:
         return "\n\n".join(parts) if parts else "（尚未建立用户画像）"
 
     def to_dict(self) -> dict[str, object]:
-        """Serialize the soul profile into JSON-friendly dictionaries."""
+        """把灵魂画像序列化为 JSON 友好的字典。"""
         return {
             "personality_portrait": self.personality_portrait,
             "core_traits": self.core_traits,
@@ -186,7 +183,7 @@ class SoulProfile:
 
     @classmethod
     def from_dict(cls, raw_data: dict[str, object]) -> SoulProfile:
-        """Build a SoulProfile from persisted JSON data."""
+        """从持久化的 JSON 数据构建 SoulProfile。"""
         return cls(
             personality_portrait=str(raw_data.get("personality_portrait", "")),
             core_traits=_as_str_list(raw_data.get("core_traits")),
@@ -214,7 +211,7 @@ class SoulProfile:
 
 
 def preference_layer_to_dict(layer: PreferenceLayer) -> dict[str, object]:
-    """Serialize a preference layer into JSON-friendly dictionaries."""
+    """把偏好层序列化为 JSON 友好的字典。"""
     return {
         "interests": [interest_tag_to_dict(item) for item in layer.interests],
         "style": style_preference_to_dict(layer.style),
@@ -227,7 +224,7 @@ def preference_layer_to_dict(layer: PreferenceLayer) -> dict[str, object]:
 
 
 def preference_layer_from_dict(raw_value: object) -> PreferenceLayer:
-    """Build a preference layer from persisted JSON data."""
+    """从持久化的 JSON 数据构建偏好层。"""
     data = raw_value if isinstance(raw_value, dict) else {}
     raw_mix = data.get("source_platform_mix")
     mix: dict[str, float] = {}
@@ -252,7 +249,7 @@ def preference_layer_from_dict(raw_value: object) -> PreferenceLayer:
 
 
 def interest_tag_to_dict(tag: InterestTag) -> dict[str, object]:
-    """Serialize an interest tag."""
+    """序列化一个兴趣标签。"""
     return {
         "name": tag.name,
         "category": tag.category,
@@ -264,7 +261,7 @@ def interest_tag_to_dict(tag: InterestTag) -> dict[str, object]:
 
 
 def interest_tag_from_dict(raw_data: dict[str, object]) -> InterestTag:
-    """Build an interest tag from persisted JSON data."""
+    """从持久化的 JSON 数据构建兴趣标签。"""
     return InterestTag(
         name=str(raw_data.get("name", "")),
         category=str(raw_data.get("category", "")),
@@ -407,13 +404,13 @@ def _format_source_mix_line(mix: dict[str, float]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Onion Model — five-layer personality profile
+# Onion 模型 —— 五层人格画像
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class MBTIDimension:
-    """A single MBTI dimension with pole and strength."""
+    """单个 MBTI 维度，含极点与强度。"""
 
     pole: str = ""  # "E"|"I", "S"|"N", "T"|"F", "J"|"P"
     strength: float = 0.5  # 0.0 - 1.0
@@ -421,9 +418,9 @@ class MBTIDimension:
 
 @dataclass
 class MBTI:
-    """MBTI personality type with dimensional strengths."""
+    """带维度强度的 MBTI 人格类型。"""
 
-    type: str = ""  # e.g. "INTJ"
+    type: str = ""  # 例如 "INTJ"
     dimensions: dict[str, MBTIDimension] = field(default_factory=dict)
     confidence: float = 0.0
     inferred_from: list[str] = field(default_factory=list)
@@ -431,7 +428,7 @@ class MBTI:
 
 @dataclass
 class CoreLayer:
-    """Innermost layer — stable personality traits and deep needs."""
+    """最内层 —— 稳定的人格特质与深层需求。"""
 
     core_traits: list[str] = field(default_factory=list)
     deep_needs: list[str] = field(default_factory=list)
@@ -440,7 +437,7 @@ class CoreLayer:
 
 @dataclass
 class ValuesLayer:
-    """Values and motivational drivers."""
+    """价值观与动机驱动。"""
 
     values: list[str] = field(default_factory=list)
     motivational_drivers: list[str] = field(default_factory=list)
@@ -448,7 +445,7 @@ class ValuesLayer:
 
 @dataclass
 class InterestSpecific:
-    """A narrow interest within a broad domain."""
+    """大领域下的一个窄兴趣。"""
 
     name: str = ""
     weight: float = 0.5
@@ -456,7 +453,7 @@ class InterestSpecific:
 
 @dataclass
 class InterestDomain:
-    """A broad interest domain containing narrow specifics."""
+    """包含若干窄兴趣的大领域。"""
 
     domain: str = ""
     weight: float = 0.5
@@ -468,7 +465,7 @@ class InterestDomain:
 
 @dataclass
 class InterestLayer:
-    """Likes, dislikes (tree-shaped), and favorite creators."""
+    """喜好、厌恶（树形）和常看 UP 主。"""
 
     likes: list[InterestDomain] = field(default_factory=list)
     dislikes: list[InterestDomain] = field(default_factory=list)
@@ -477,7 +474,7 @@ class InterestLayer:
 
 @dataclass
 class RoleLayer:
-    """Life stage and current phase."""
+    """生活阶段与当前状态。"""
 
     life_stage: str = ""
     current_phase: str = ""
@@ -485,7 +482,7 @@ class RoleLayer:
 
 @dataclass
 class SurfaceLayer:
-    """Outermost layer — observable cognitive style and content preferences."""
+    """最外层 —— 可观察的认知风格与内容偏好。"""
 
     cognitive_style: list[str] = field(default_factory=list)
     style: StylePreference = field(default_factory=StylePreference)
@@ -495,9 +492,9 @@ class SurfaceLayer:
 
 @dataclass
 class OnionProfile:
-    """Five-layer onion model personality profile.
+    """五层 onion 模型人格画像。
 
-    Layers (inner to outer): Core → Values → Interest → Role → Surface.
+    层次（从内到外）：Core → Values → Interest → Role → Surface。
     """
 
     core: CoreLayer = field(default_factory=CoreLayer)
@@ -511,15 +508,15 @@ class OnionProfile:
     recent_awareness: list[AwarenessNote] = field(default_factory=list)
     active_insights: list[InsightHypothesis] = field(default_factory=list)
 
-    # Normalized {platform: share} computed from observed events. Downstream
-    # prompts read this to know whether the user is single- or multi-source.
+    # 从观测事件计算的归一化 {platform: share}。下游 prompt 读取它
+    # 来判断用户是单源还是多源。
     source_platform_mix: dict[str, float] = field(default_factory=dict)
 
     created_at: str = ""
     updated_at: str = ""
     version: int = 2
 
-    # -- Backward-compatible shim properties ----------------------------------
+    # -- 向后兼容的 shim 属性 ----------------------------------
 
     @property
     def core_traits(self) -> list[str]:
@@ -551,10 +548,10 @@ class OnionProfile:
 
     @property
     def preferences(self) -> PreferenceLayer:
-        """Synthesize a flat PreferenceLayer from onion layers."""
+        """从 onion 各层合成一份扁平的 PreferenceLayer。"""
         flat_interests: list[InterestTag] = []
         for dom in self.interest.likes:
-            # Always include the domain itself as a top-level interest
+            # 始终把领域本身作为顶层兴趣纳入
             flat_interests.append(
                 InterestTag(name=dom.domain, category=dom.domain, weight=dom.weight)
             )
@@ -577,12 +574,12 @@ class OnionProfile:
             source_platform_mix=dict(self.source_platform_mix),
         )
 
-    # -- Mutation helpers ------------------------------------------------------
+    # -- 修改辅助方法 ------------------------------------------------------
 
     def populate_from_flat_preference(self, preference_data: dict[str, object]) -> None:
-        """Update interest and surface layers from a flat preference dict."""
+        """从扁平 preference 字典更新兴趣层与表层。"""
         pref = preference_layer_from_dict(preference_data)
-        # Build interest tree from flat tags
+        # 从扁平标签构建兴趣树
         domain_map: dict[str, InterestDomain] = {}
         for tag in pref.interests:
             key = tag.category or tag.name
@@ -608,7 +605,7 @@ class OnionProfile:
         if pref.source_platform_mix:
             self.source_platform_mix = dict(pref.source_platform_mix)
 
-    # -- Serialization --------------------------------------------------------
+    # -- 序列化 --------------------------------------------------------
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -655,8 +652,8 @@ class OnionProfile:
 
     @classmethod
     def from_legacy(cls, soul: SoulProfile) -> OnionProfile:
-        """Migrate a flat SoulProfile into the onion structure."""
-        # Group flat InterestTags into tree by category
+        """把扁平 SoulProfile 迁移到 onion 结构。"""
+        # 按 category 把扁平 InterestTag 分组成树
         domain_map: dict[str, InterestDomain] = {}
         for tag in soul.preferences.interests:
             key = tag.category or tag.name
@@ -680,7 +677,7 @@ class OnionProfile:
             InterestDomain(domain=topic, weight=0.9) for topic in soul.preferences.disliked_topics
         ]
 
-        # Extract MBTI if the builder attached raw data
+        # 如果 builder 附带了原始 MBTI 数据则抽取出来
         raw_mbti = getattr(soul, "_raw_mbti", None)
         mbti = _mbti_from_dict(raw_mbti) if raw_mbti else MBTI()
 
@@ -748,7 +745,7 @@ class OnionProfile:
             mix_line = _format_source_mix_line(self.source_platform_mix)
             if mix_line:
                 parts.append(f"## 来源分布\n{mix_line}")
-        # Speculative interests (set externally via attach_speculations)
+        # 猜测兴趣（通过 attach_speculations 外部设置）
         speculations = getattr(self, "_active_speculations", None)
         if speculations:
             spec_lines = [
@@ -765,7 +762,7 @@ class OnionProfile:
             parts.append(f"## 当前洞察\n{insights_text}")
         if self.recent_awareness:
             notes = "\n".join(
-                # Newest notes live at the tail of the chronological window.
+                # 最新的笔记位于时间窗口的尾部。
                 f"- [{n.date}] {n.observation}"
                 for n in self.recent_awareness[-5:]
             )
@@ -773,7 +770,7 @@ class OnionProfile:
         return "\n\n".join(parts) if parts else "（尚未建立用户画像）"
 
 
-# -- Onion layer serialization helpers ----------------------------------------
+# -- Onion 各层序列化辅助函数 ----------------------------------------
 
 
 def _mbti_dimension_to_dict(dim: MBTIDimension) -> dict[str, object]:

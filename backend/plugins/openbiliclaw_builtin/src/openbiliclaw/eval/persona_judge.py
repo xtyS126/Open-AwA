@@ -1,8 +1,7 @@
-"""PersonaJudge — virtual persona evaluates speculative interests.
+"""PersonaJudge — 虚拟人格评估推测兴趣。
 
-Uses Claude Agent SDK to role-play as a virtual persona and judge whether
-each speculative interest genuinely resonates. Returns per-speculation
-resonance scores that feed into the SpeculationEvaluator.
+使用 Claude Agent SDK 角色扮演虚拟人格，判断每个推测兴趣是否真正引起共鸣。
+返回每个推测的共鸣分数，供 SpeculationEvaluator 使用。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ResonanceVerdict:
-    """A virtual persona's judgment on one speculative interest."""
+    """虚拟人格对单个推测兴趣的判断。"""
 
     domain: str
     would_click: bool = False
@@ -27,7 +26,7 @@ class ResonanceVerdict:
 
 @dataclass(frozen=True)
 class PersonaJudgment:
-    """Complete judgment from one virtual persona on a batch of speculations."""
+    """一个虚拟人格对一批推测的完整判断。"""
 
     persona_summary: str = ""
     verdicts: tuple[ResonanceVerdict, ...] = ()
@@ -40,19 +39,18 @@ async def judge_speculations(
     speculations: list[dict[str, str]],
     max_retries: int = 2,
 ) -> PersonaJudgment:
-    """Have a virtual persona judge a batch of speculative interests.
+    """让虚拟人格评判一批推测兴趣。
 
-    The Claude Agent SDK acts AS the persona (not as an evaluator looking
-    at the persona from outside). The persona answers naturally whether
-    each direction genuinely appeals to them.
+    Claude Agent SDK 作为人格本身（而不是从外部观察人格的评估者）。
+    人格自然地回答每个方向是否真正吸引自己。
 
     Args:
-        persona_context: Full persona description (to_llm_context output).
-        speculations: List of {"domain", "reason"} dicts to judge.
-        max_retries: SDK call retry count.
+        persona_context: 完整人格描述（to_llm_context 输出）。
+        speculations: 待评判的 {"domain", "reason"} dict 列表。
+        max_retries: SDK 调用重试次数。
 
     Returns:
-        PersonaJudgment with per-speculation verdicts.
+        包含每个推测判断的 PersonaJudgment。
     """
     if not speculations:
         return PersonaJudgment(persona_summary=persona_context[:100])
@@ -130,8 +128,8 @@ def _parse_verdicts(
     raw_verdicts: list[Any],
     speculations: list[dict[str, str]],
 ) -> list[ResonanceVerdict]:
-    """Parse and align verdicts with speculation list."""
-    # Build domain lookup for alignment
+    """解析判断并与推测列表对齐。"""
+    # 构建 domain 查找表以便对齐
     spec_domains = [s.get("domain", "") for s in speculations]
     verdict_map: dict[str, ResonanceVerdict] = {}
 
@@ -153,13 +151,13 @@ def _parse_verdicts(
             reasoning=str(item.get("reasoning", ""))[:200],
         )
 
-    # Align with input order, filling gaps
+    # 按输入顺序对齐，填补空缺
     result: list[ResonanceVerdict] = []
     for domain in spec_domains:
         if domain in verdict_map:
             result.append(verdict_map[domain])
         else:
-            # Try fuzzy match (domain might be slightly rephrased)
+            # 尝试模糊匹配（domain 可能被略微改写）
             matched = _fuzzy_match_verdict(domain, verdict_map)
             if matched is not None:
                 result.append(matched)
@@ -178,7 +176,7 @@ def _fuzzy_match_verdict(
     target: str,
     verdict_map: dict[str, ResonanceVerdict],
 ) -> ResonanceVerdict | None:
-    """Try to match a domain name against verdict keys with fuzzy logic."""
+    """用模糊逻辑将 domain 名称匹配到 verdict 键。"""
     target_lower = target.lower()
     for key, verdict in verdict_map.items():
         key_lower = key.lower()

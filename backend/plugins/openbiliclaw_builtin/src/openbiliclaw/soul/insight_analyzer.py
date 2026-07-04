@@ -1,4 +1,4 @@
-"""Insight-layer generation from awareness and preference context."""
+"""从 awareness 和 preference 上下文生成 insight 层。"""
 
 from __future__ import annotations
 
@@ -38,12 +38,12 @@ class SupportsCoreMemoryTask(Protocol):
 
 
 class InsightGenerationError(Exception):
-    """Raised when insight generation fails or returns invalid data."""
+    """当洞察生成失败或返回无效数据时抛出。"""
 
 
 @dataclass
 class InsightAnalyzer:
-    """Generate and merge structured insight hypotheses."""
+    """生成并合并结构化的洞察假设。"""
 
     registry: SupportsCoreMemoryTask
 
@@ -87,7 +87,7 @@ class InsightAnalyzer:
         existing: list[InsightHypothesis],
         incoming: list[InsightHypothesis],
     ) -> list[InsightHypothesis]:
-        """Merge hypotheses by normalized hypothesis text."""
+        """按归一化的假设文本合并假设。"""
         merged = {self._normalize_text(item.hypothesis): item for item in existing}
         for item in incoming:
             key = self._normalize_text(item.hypothesis)
@@ -160,10 +160,10 @@ class InsightAnalyzer:
 
     @staticmethod
     def _hypothesis_to_context_dict(item: InsightHypothesis) -> dict[str, object]:
-        """Compact view of an existing hypothesis for the prompt's context block.
+        """用于 prompt 上下文块的现有假设的紧凑视图。
 
-        Only the fields the LLM needs to avoid restating / to refine an
-        existing hypothesis — keeps the incremental prompt cheap.
+        只含 LLM 避免重述 / 精化已有假设所需的字段 —— 让增量
+        prompt 保持廉价。
         """
         return {
             "hypothesis": item.hypothesis,

@@ -1,9 +1,8 @@
-"""Zhihu bootstrap event-conversion helpers.
+"""知乎 bootstrap 事件转换辅助函数。
 
-Python-side entry point for Zhihu signals captured by the browser extension:
-recent reads, personal activity likes/favorites, and collection contents.
-This path is intentionally fetch-only: the API handler records task results,
-and the CLI prints converted events without triggering profile generation.
+浏览器扩展采集的知乎信号的 Python 侧入口：最近阅读、个人动态
+点赞/收藏、收藏夹内容。此路径刻意只做读取：API 处理器记录任务结果，
+CLI 打印转换后的事件但不触发画像生成。
 """
 
 from __future__ import annotations
@@ -77,7 +76,7 @@ def _event_type_for_item(item: dict[str, Any]) -> tuple[str | None, str]:
 
 
 def zhihu_bootstrap_items_to_events(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert extension-collected Zhihu bootstrap items into unified events."""
+    """将扩展采集的知乎 bootstrap 条目转换为统一事件。"""
     from openbiliclaw.sources.event_format import SOURCE_ZHIHU, build_event
 
     events: list[dict[str, Any]] = []
@@ -152,7 +151,7 @@ def _item_key(item: dict[str, Any]) -> str:
 
 
 def zhihu_bootstrap_item_key(item: dict[str, Any]) -> str:
-    """Return the stable cross-task identity key for one Zhihu bootstrap item."""
+    """返回单条知乎 bootstrap 条目的稳定跨任务身份键。"""
     return _item_key(item)
 
 
@@ -161,12 +160,11 @@ def zhihu_discovery_items_to_contents(
     *,
     source_keyword_ids: dict[str, int] | None = None,
 ) -> list[Any]:
-    """Convert extension-collected Zhihu discovery rows into discovered content.
+    """将扩展采集的知乎发现行转换为已发现内容。
 
-    The browser extension returns a lightweight, API-shape-independent row. This
-    function is the backend boundary that turns those rows into
-    :class:`DiscoveredContent` for the shared candidate pool. Bootstrap scopes
-    are intentionally ignored here; they only become user behavior events.
+    浏览器扩展返回轻量的、与 API 形状无关的行。此函数是后端边界，
+    将这些行转换为 :class:`DiscoveredContent` 加入共享候选池。Bootstrap
+    scope 在此被刻意忽略；它们只成为用户行为事件。
     """
     from openbiliclaw.discovery.engine import DiscoveredContent
 
@@ -243,12 +241,12 @@ def _optional_int(value: Any) -> int | None:
 
 
 def recent_zhihu_creator_urls(db: Database, *, limit: int = 10) -> list[str]:
-    """Return recent Zhihu author URLs from completed task results."""
+    """从已完成的任务结果中返回最近的知乎作者 URL。"""
     return _recent_zhihu_item_values(db, key="author_url", limit=limit)
 
 
 def recent_zhihu_related_urls(db: Database, *, limit: int = 10) -> list[str]:
-    """Return recent Zhihu content URLs suitable for related expansion."""
+    """返回适合相关扩展的最近知乎内容 URL。"""
     return _recent_zhihu_item_values(db, key="url", limit=limit)
 
 
@@ -357,7 +355,7 @@ def _merge_zhihu_result_payload(
 
 
 class ZhihuTaskQueue:
-    """Manages the zhihu_tasks SQLite table."""
+    """管理 zhihu_tasks SQLite 表。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db

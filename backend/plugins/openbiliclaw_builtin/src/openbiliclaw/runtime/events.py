@@ -1,4 +1,4 @@
-"""Runtime event broadcasting for popup live status updates."""
+"""用于弹窗实时状态更新的运行时事件广播。"""
 
 from __future__ import annotations
 
@@ -10,26 +10,26 @@ from typing import Any
 
 @dataclass
 class RuntimeEventHub:
-    """Broadcast lightweight runtime events to interested subscribers."""
+    """向感兴趣的订阅者广播轻量级运行时事件。"""
 
     _subscribers: set[asyncio.Queue[dict[str, Any]]] = field(default_factory=set)
 
     async def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
-        """Register one subscriber queue."""
+        """注册一个订阅者队列。"""
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._subscribers.add(queue)
         return queue
 
     async def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        """Remove one subscriber queue."""
+        """移除一个订阅者队列。"""
         self._subscribers.discard(queue)
 
     async def publish(self, event: dict[str, Any]) -> bool:
-        """Fan out one event to all current subscribers.
+        """将一个事件扇出给所有当前订阅者。
 
-        Returns ``True`` when at least one subscriber queue accepted the
-        event.  Callers that need delivery-sensitive side effects can avoid
-        marking one-shot events as consumed when no runtime stream is open.
+        当至少一个订阅者队列接受了事件时返回 ``True``。
+        需要根据投递结果决定副作用的调用方，在没有运行时流打开时
+        可避免把一次性事件标记为已消费。
         """
         delivered = False
         for queue in list(self._subscribers):

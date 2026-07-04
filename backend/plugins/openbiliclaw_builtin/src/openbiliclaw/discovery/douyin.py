@@ -1,8 +1,7 @@
-"""Reusable Douyin discovery orchestration.
+"""可复用的抖音发现编排逻辑。
 
-This module keeps Douyin direct-cookie discovery usable from CLI,
-runtime producers, tests, and future API endpoints without duplicating
-strategy construction in each caller.
+本模块让抖音 direct-cookie 发现在 CLI、运行时生产者、测试以及
+未来的 API 端点中都能使用，而无需在每个调用方重复构造策略。
 """
 
 from __future__ import annotations
@@ -23,29 +22,29 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class DouyinDiscoveryOptions:
-    """Options for one Douyin direct discovery run."""
+    """一次抖音 direct 发现运行的选项。"""
 
     limit: int = 30
     sources: tuple[str, ...] = ("search", "hot", "feed")
     keywords: tuple[str, ...] = ()
-    # P1.8 yield provenance: ``keyword text → discovery_keywords.id`` for the
-    # claimed search words in ``keywords``. Empty for legacy / non-planner runs;
-    # search candidates produced by a mapped keyword carry its id for backfill.
+    # P1.8 yield provenance: ``keyword text → discovery_keywords.id`` 映射，
+    # 用于 ``keywords`` 中已认领的搜索词。旧版本 / 非 planner 运行时为空；
+    # 由已映射 keyword 产生的搜索候选会带上其 id 用于回填。
     keyword_ids: dict[str, int] = field(default_factory=dict)
     creator_sec_uids: tuple[str, ...] = ()
     cache: bool = True
     evaluate: bool = True
     per_source_limit: int = 20
     keywords_per_run: int = 5
-    # Unified keyword planner fetch path (P1.7): make the plugin-search client
-    # raise ``DouyinBudgetExhausted`` on budget exhaustion so a claimed keyword
-    # rolls back instead of being burned. Off → legacy behavior unchanged.
+    # 统一 keyword planner 拉取路径 (P1.7): 让 plugin-search client
+    # 在预算耗尽时抛出 ``DouyinBudgetExhausted``，这样已认领的 keyword
+    # 会回滚而不是被烧掉。关闭 → 旧行为不变。
     raise_on_budget: bool = False
 
 
 @dataclass(frozen=True)
 class DouyinDiscoveryResult:
-    """Result summary for a Douyin discovery run."""
+    """一次抖音发现运行的结果摘要。"""
 
     items: list[DiscoveredContent]
     cached: bool
@@ -53,7 +52,7 @@ class DouyinDiscoveryResult:
 
 
 class DouyinDiscoveryService:
-    """Run Douyin direct discovery through a reusable service boundary."""
+    """通过可复用的服务边界运行抖音 direct 发现。"""
 
     def __init__(
         self,
@@ -75,7 +74,7 @@ class DouyinDiscoveryService:
         profile: SoulProfile,
         options: DouyinDiscoveryOptions | None = None,
     ) -> DouyinDiscoveryResult:
-        """Run one Douyin discovery cycle."""
+        """运行一次抖音发现周期。"""
         opts = options or DouyinDiscoveryOptions()
         limit = max(1, opts.limit)
         strategy = self._build_strategy(opts)
@@ -126,7 +125,7 @@ class DouyinDiscoveryService:
 
 
 def split_csv_values(values: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
-    """Split repeated CLI/env values that may contain comma-separated entries."""
+    """拆分可能包含逗号分隔条目的重复 CLI/env 值。"""
     if not values:
         return ()
     seen: set[str] = set()

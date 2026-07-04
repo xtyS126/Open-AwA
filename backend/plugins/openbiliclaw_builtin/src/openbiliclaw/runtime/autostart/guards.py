@@ -1,4 +1,4 @@
-"""Guards shared by autostart API, CLI, and start-time self-heal."""
+"""autostart API、CLI 与启动期自愈逻辑共用的护栏。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _env_is_set(key: str) -> bool:
 
 
 def active_env_managed_inputs(config: Config) -> list[str]:
-    """Return active env keys that a login-session autostart entry would lose."""
+    """返回登录会话自启项会丢失的、当前生效的环境变量键。"""
     managed: set[str] = set()
     for key in os.environ:
         if key.startswith("OPENBILICLAW_") and key != _PROJECT_ROOT_ENV and _env_is_set(key):
@@ -37,5 +37,5 @@ def active_env_managed_inputs(config: Config) -> list[str]:
 
 
 def autostart_shadowed(intended: bool) -> bool:
-    """Return whether effective config disagrees with a just-written intent."""
+    """返回生效配置是否与刚写入的意图不一致。"""
     return load_config().autostart.enabled != intended

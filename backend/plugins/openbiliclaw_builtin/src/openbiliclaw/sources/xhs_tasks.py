@@ -1,12 +1,11 @@
-"""xhs task queue and creator subscription storage.
+"""xhs 任务队列和创作者订阅存储。
 
-The task queue bridges the backend's Soul-driven scheduler to the
-extension's background dispatcher. The backend enqueues search/creator
-tasks; the extension polls for pending tasks, opens a tab, collects
-URLs, and posts the result back.
+任务队列在后端的 Soul 驱动调度器和扩展的后台调度器之间架起桥梁。
+后端入队搜索/创作者任务；扩展轮询待处理任务，打开一个标签页，
+收集 URL，并把结果回传。
 
-Creator subscriptions track xhs creators the user wants to follow —
-a nightly scheduler enqueues one creator task per subscription.
+创作者订阅跟踪用户想要关注的 xhs 创作者 ——
+一个夜间调度器会为每个订阅入队一个创作者任务。
 """
 
 from __future__ import annotations
@@ -53,7 +52,7 @@ def _note_key(note: dict[str, Any]) -> str:
 
 
 def xhs_bootstrap_note_key(note: dict[str, Any]) -> str:
-    """Return the stable cross-task identity key for one bootstrap note."""
+    """返回单条 bootstrap 笔记的稳定跨任务身份键。"""
     return _note_key(note)
 
 
@@ -131,13 +130,13 @@ def _merge_result_payload(
 
 
 def xhs_bootstrap_notes_to_events(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert extension-collected Xiaohongshu bootstrap notes into events.
+    """将扩展采集的小红书 bootstrap 笔记转换为事件。
 
-    v0.3.22+ routes through ``event_format.build_event`` so the resulting
-    dict is shape-identical to B站 / future-source events. The scope-aware
-    natural-language ``context`` (preserving "小红书收藏" / "小红书点赞" /
-    "小红书浏览记录" wording) is built explicitly here because the scope
-    label carries more nuance than the generic event_type alone.
+    v0.3.22+ 通过 ``event_format.build_event`` 路由，使结果字典与
+    B 站 / 未来内容源的事件形状完全一致。这里显式构建了感知 scope 的
+    自然语言 ``context``（保留"小红书收藏" / "小红书点赞" /
+    "小红书浏览记录"的措辞），因为 scope 标签比单独的通用 event_type
+    携带更多细微含义。
     """
     from openbiliclaw.sources.event_format import SOURCE_XIAOHONGSHU, build_event
 
@@ -157,10 +156,10 @@ def xhs_bootstrap_notes_to_events(notes: list[dict[str, Any]]) -> list[dict[str,
 
         author = str(note.get("author", "")).strip()
         label = XHS_BOOTSTRAP_SCOPE_LABELS[scope]
-        # Custom context — scope label ("收藏" / "点赞" / "浏览记录") is
-        # more informative than the generic event_format default
-        # ("收藏了" / "点赞了" / "看了"), and the prior wording was
-        # already what tests / prompts grew up reading.
+        # 自定义 context —— scope 标签（"收藏" / "点赞" / "浏览记录"）比
+        # 通用的 event_format 默认值（"收藏了" / "点赞了" / "看了"）
+        # 更有信息量，而且之前的措辞正是测试 / prompt 一路成长起来所
+        # 阅读的内容。
         context = f"小红书{label}：{title or url}"
         if author:
             context = f"{context} 作者：{author}"
@@ -186,7 +185,7 @@ def xhs_bootstrap_notes_to_events(notes: list[dict[str, Any]]) -> list[dict[str,
 
 
 class XhsTaskQueue:
-    """Manages the xhs_tasks table."""
+    """管理 xhs_tasks 表。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -222,9 +221,9 @@ class XhsTaskQueue:
         *,
         daily_budget: int = 100,
     ) -> bool:
-        """Enqueue a task if the daily budget for this type allows it.
+        """如果此类型的每日预算允许，则入队一个任务。
 
-        Returns True if enqueued, False if budget exhausted.
+        入队成功返回 True，预算耗尽返回 False。
         """
         return (
             self.enqueue_with_id(
@@ -242,10 +241,10 @@ class XhsTaskQueue:
         *,
         daily_budget: int = 100,
     ) -> str | None:
-        """Enqueue a task and return its id, or None when budget is exhausted.
+        """入队一个任务并返回其 id，预算耗尽时返回 None。
 
-        ``daily_budget <= 0`` disables the per-day cap; runtime producers are
-        then controlled by source deficits and their per-run throttles.
+        ``daily_budget <= 0`` 禁用每日上限；此时运行时生产者由内容源
+        缺口和各自的单次运行限流控制。
         """
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         if daily_budget > 0:
@@ -274,20 +273,18 @@ class XhsTaskQueue:
         return task_id
 
     def next_pending(self, only_ids: set[str] | None = None) -> dict[str, Any] | None:
-        """Claim and return the oldest runnable task, or None.
+        """认领并返回最旧的可用任务，或 None。
 
-        The extension can be installed in multiple browser profiles, and
-        MV3 service workers can restart mid-task. Marking the task
-        ``in_progress`` as it is handed out prevents a foreground
-        bootstrap task from being opened repeatedly while one extension
-        instance is already working on it. Stale in-progress tasks are
-        eligible again after 15 minutes so a crashed extension does not
-        permanently wedge the queue.
+        扩展可能安装在多个浏览器配置文件中，MV3 service worker 可能
+        在任务执行中途重启。在任务下发时将其标记为 ``in_progress`` 可以
+        防止一个前台 bootstrap 任务在一个扩展实例已经在处理它时被
+        反复打开。过期的 in_progress 任务在 15 分钟后重新变为可用，
+        这样崩溃的扩展不会永久卡住队列。
         """
         stale_before = (datetime.now(UTC) - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
-        # ``only_ids`` restricts which tasks may be claimed (gui-init: during an
-        # active init the dispatcher is only handed init-owned bootstrap tasks,
-        # so a stale pending task can't starve the run). None = no restriction.
+        # ``only_ids`` 限制可被认领的任务（gui-init：在活跃初始化期间，
+        # 调度器只会下发 init 拥有的 bootstrap 任务，这样过期的 pending
+        # 任务不会饿死本次运行）。None = 无限制。
         where = "(status = 'pending' OR (status = 'in_progress' AND claimed_at <= ?))"
         params: list[Any] = [stale_before]
         if only_ids is not None:
@@ -329,7 +326,7 @@ class XhsTaskQueue:
         recent_hours: float,
         statuses: tuple[str, ...] | None = None,
     ) -> dict[str, Any] | None:
-        """Return a recent task of this type for idempotent enqueue paths."""
+        """返回此类型的最近一个任务，用于幂等入队路径。"""
         if recent_hours <= 0:
             return None
         selected_statuses = statuses or _RECENT_TASK_STATUSES
@@ -358,7 +355,7 @@ class XhsTaskQueue:
         return dict(row) if row is not None else None
 
     def get(self, task_id: str) -> dict[str, Any] | None:
-        """Return a task by id, or None."""
+        """按 id 返回一个任务，或 None。"""
         row = self._db.conn.execute(
             "SELECT * FROM xhs_tasks WHERE id = ?",
             (task_id,),
@@ -376,7 +373,7 @@ class XhsTaskQueue:
         scope_counts: dict[str, Any] | None = None,
         debug: dict[str, Any] | None = None,
     ) -> None:
-        """Mark a task as completed with optional result payload details."""
+        """将任务标记为已完成，可选附带结果载荷详情。"""
         result_payload: dict[str, Any] = {"urls": urls or []}
         if notes is not None:
             result_payload["notes"] = notes
@@ -402,9 +399,9 @@ class XhsTaskQueue:
         debug: dict[str, Any] | None = None,
         complete: bool = False,
     ) -> list[dict[str, Any]]:
-        """Merge a partial/final result payload and optionally mark complete.
+        """合并部分/最终结果载荷，并可选地标记完成。
 
-        Returns only notes that were newly added by this merge.
+        仅返回本次合并新增的笔记。
         """
         row = self.get(task_id)
         current: dict[str, Any] = {}
@@ -445,7 +442,7 @@ class XhsTaskQueue:
         error: str = "",
         debug: dict[str, Any] | None = None,
     ) -> None:
-        """Mark a task as failed."""
+        """将任务标记为失败。"""
         result_payload: dict[str, Any] = {"error": error}
         if debug is not None:
             result_payload["debug"] = debug
@@ -459,7 +456,7 @@ class XhsTaskQueue:
 
 
 class XhsCreatorStore:
-    """Manages xhs_creator_subscriptions table."""
+    """管理 xhs_creator_subscriptions 表。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -483,7 +480,7 @@ class XhsCreatorStore:
         creator_url: str,
         display_name: str,
     ) -> None:
-        """Add a subscription (ignore if duplicate creator_id)."""
+        """添加订阅（重复 creator_id 时忽略）。"""
         self._db.conn.execute(
             "INSERT OR IGNORE INTO xhs_creator_subscriptions "
             "(creator_id, creator_url, display_name) VALUES (?, ?, ?)",
@@ -492,14 +489,14 @@ class XhsCreatorStore:
         self._db.conn.commit()
 
     def list_all(self) -> list[dict[str, Any]]:
-        """Return all subscriptions."""
+        """返回所有订阅。"""
         rows = self._db.conn.execute(
             "SELECT * FROM xhs_creator_subscriptions ORDER BY added_at"
         ).fetchall()
         return [dict(r) for r in rows]
 
     def delete(self, sub_id: int) -> bool:
-        """Delete a subscription by primary key. Returns True if deleted."""
+        """按主键删除订阅。如果删除了则返回 True。"""
         cursor = self._db.conn.execute(
             "DELETE FROM xhs_creator_subscriptions WHERE id = ?",
             (sub_id,),
@@ -508,7 +505,7 @@ class XhsCreatorStore:
         return cursor.rowcount > 0
 
     def due_for_fetch(self, *, hours: int = 24) -> list[dict[str, Any]]:
-        """Return subscriptions whose last_fetched_at is older than ``hours`` ago."""
+        """返回 ``last_fetched_at`` 早于 ``hours`` 小时前的订阅。"""
         rows = self._db.conn.execute(
             "SELECT * FROM xhs_creator_subscriptions "
             "WHERE last_fetched_at IS NULL "
@@ -518,7 +515,7 @@ class XhsCreatorStore:
         return [dict(r) for r in rows]
 
     def mark_fetched(self, sub_id: int) -> None:
-        """Update last_fetched_at to now."""
+        """将 last_fetched_at 更新为当前时间。"""
         self._db.conn.execute(
             "UPDATE xhs_creator_subscriptions SET last_fetched_at = CURRENT_TIMESTAMP WHERE id = ?",
             (sub_id,),

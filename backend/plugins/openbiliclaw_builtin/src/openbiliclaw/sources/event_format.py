@@ -1,55 +1,51 @@
-"""Unified cross-source event format for soul-pipeline consumption.
+"""供 soul 流水线消费的统一跨源事件格式。
 
-Every source adapter — Bilibili, Xiaohongshu, generic Web, future
-platforms — emits events through ``build_event()``. The resulting
-dict has a stable shape so downstream consumers (preference analyzer,
-awareness analyzer, profile builder, memory layer) see one unified
-contract regardless of where the signal came from.
+每个源适配器 —— Bilibili、小红书、通用 Web、未来平台 ——
+都通过 ``build_event()`` 发出事件。返回的 dict 形状稳定，
+使下游消费者（偏好分析器、感知分析器、画像构建器、记忆层）
+看到一份统一契约，无论信号来自何处。
 
-Why this exists
----------------
+为何存在
+--------
 
-Pre-v0.3.22 each producer hand-built its own event dict inline:
-- B站 history → ``{event_type, title, url, metadata: {bvid, author}}``
-- B站 收藏    → ``{event_type, title, metadata: {folder, upper}}``
-- B站 关注    → ``{event_type, title, metadata: {up_name, sign}}``
-- 小红书      → ``{event_type, title, url, context, metadata: {source_platform, ...}}``
+v0.3.22 之前，每个生产者都内联手写自己的事件 dict：
+- B 站历史 → ``{event_type, title, url, metadata: {bvid, author}}``
+- B 站收藏 → ``{event_type, title, metadata: {folder, upper}}``
+- B 站关注 → ``{event_type, title, metadata: {up_name, sign}}``
+- 小红书   → ``{event_type, title, url, context, metadata: {source_platform, ...}}``
 
-Three problems:
+存在三个问题：
 
-1. Only Xiaohongshu populated the natural-language ``context`` field.
-   Everything else dropped into the LLM prompt as a raw JSON blob, so
-   the analyzer couldn't form a single readable description without
-   schema-aware logic.
-2. ``source_platform`` was only present on Xiaohongshu events;
-   ``compute_source_platform_mix`` had to assume "missing = bilibili"
-   which won't generalize to future sources.
-3. Author / creator naming was scattered: ``author`` / ``up_name`` /
-   ``upper`` / ``author_name`` — every consumer had to fall through a
-   list.
+1. 只有小红书填充了自然语言 ``context`` 字段。其他都作为原始 JSON
+   blob 塞进 LLM 提示词，分析器在缺乏 schema 感知逻辑的情况下
+   无法形成单一可读描述。
+2. ``source_platform`` 仅出现在小红书事件中；
+   ``compute_source_platform_mix`` 只能假设"缺失 = bilibili"，
+   无法推广到未来源。
+3. 作者 / 创作者命名散乱：``author`` / ``up_name`` / ``upper`` /
+   ``author_name`` —— 每个消费者都要遍历一长串列表。
 
-The unified contract
---------------------
+统一契约
+--------
 
 ```python
 {
     "event_type": str,         # "view" | "favorite" | "like" | "follow" | "dislike" | ...
     "title": str,
-    "url": str,                 # optional, may be empty
-    "context": str,             # natural-language sentence; primary input for LLM
+    "url": str,                 # 可选，可为空
+    "context": str,             # 自然语言句子；LLM 的主要输入
     "metadata": {
         "source_platform": str,  # "bilibili" | "xiaohongshu" | "web" | ...
-        "author": str,           # canonical creator/author name; empty when not applicable
-        ...                      # source-specific extras (bvid / note_id / folder / ...)
+        "author": str,           # 规范的创作者/作者名；不适用时为空
+        ...                      # 源特有附加字段（bvid / note_id / folder / ...）
     },
 }
 ```
 
-The ``context`` string is what matters for LLM prompts. It reads like
-a Chinese sentence: who did what, on which platform, with which content,
-optionally noting the author. Code that filters / weights events should
-look at structured fields (``event_type`` / ``metadata.source_platform``);
-the LLM consumes ``context``.
+``context`` 字符串是 LLM 提示词的关键。它读起来像一句中文：
+谁在哪个平台对哪条内容做了什么，可选地标注作者。过滤 / 加权
+事件的代码应查看结构化字段（``event_type`` / ``metadata.source_platform``）；
+LLM 消费 ``context``。
 """
 
 from __future__ import annotations
@@ -61,46 +57,43 @@ logger = logging.getLogger(__name__)
 
 SatisfactionCategory = Literal["positive", "neutral", "negative", "unknown"]
 
-# Dwell thresholds for satisfaction inference on click events.
+# 点击事件满意度推断的停留阈值。
 #
-# - meaningful_dwell: at least 15s AND at least 30% of the video duration.
-#   Below either bound the watch was probably exploratory, not engaged.
-# - quick_exit: under 5s. Almost always a clickbait-baited tab close.
+# - meaningful_dwell：至少 15 秒且至少为视频时长的 30%。
+#   低于任一阈值时观看多半是探索性而非投入的。
+# - quick_exit：5 秒以内。几乎总是被标题党诱骗后的关闭。
 #
-# Tuned conservatively: the goal is to feed the preference layer only
-# the events we are highly confident reflect real interest, while still
-# letting genuinely short clips count if the user watched the bulk of them.
+# 保守调校：目标是仅将我们高度确信反映真实兴趣的事件
+# 输入偏好层，同时仍让真正短小的片段在用户观看了大部分时算数。
 _MEANINGFUL_DWELL_MIN_SECONDS = 15
 _MEANINGFUL_DWELL_MIN_RATIO = 0.3
 _QUICK_EXIT_MAX_SECONDS = 5
 
-# Explicit engagement event types (no dwell needed to read intent).
+# 显式互动事件类型（无需停留即可读出意图）。
 _EXPLICIT_POSITIVE_EVENT_TYPES = frozenset({"like", "coin", "favorite", "comment"})
 
-# Feedback metadata vocabulary — set on `feedback` events emitted by the
-# extension's "thumbs_up / thumbs_down" UI and the recommendation feedback endpoint.
+# 反馈元数据词汇表 —— 用于扩展 "thumbs_up / thumbs_down" UI
+# 与推荐反馈端点发出的 `feedback` 事件。
 _POSITIVE_FEEDBACK_TYPES = frozenset({"like"})
 _NEUTRAL_FEEDBACK_TYPES = frozenset({"comment"})
 _POSITIVE_REACTIONS = frozenset({"thumbs_up"})
 _NEGATIVE_FEEDBACK_TYPES = frozenset({"dislike"})
 _NEGATIVE_REACTIONS = frozenset({"thumbs_down"})
 
-# Events that record passive browse — useful for context but never a
-# direct signal of like / dislike.
+# 记录被动浏览的事件 —— 对上下文有用，但绝不是
+# 直接的喜欢 / 不喜欢信号。
 _PASSIVE_BROWSE_EVENT_TYPES = frozenset({"snapshot", "scroll", "hover", "search"})
 
 
 def classify_event_satisfaction(event: dict[str, Any]) -> tuple[SatisfactionCategory, str]:
-    """Return ``(category, reason)`` describing whether the user enjoyed this event.
+    """返回 ``(category, reason)``，描述用户在该事件中是否享受。
 
-    Pure, deterministic, audit-friendly. Never raises — a malformed
-    payload returns ``("unknown", "fallback")`` so the persistence path
-    can always store *something* without a classification step crashing
-    the request.
+    纯函数、确定性、便于审计。永不抛出 —— 畸形 payload 返回
+    ``("unknown", "fallback")``，使持久化路径总能存储*某物*，
+    而不会因分类步骤崩溃请求。
 
-    The reason string is a short stable identifier (snake_case) suitable
-    for storage and observability dashboards; see the design doc for the
-    full list of values.
+    reason 字符串是简短的稳定标识符（snake_case），适合存储与
+    可观测性看板使用；完整取值列表见设计文档。
     """
     try:
         event_type = str(event.get("event_type") or event.get("type") or "").strip()
@@ -109,10 +102,9 @@ def classify_event_satisfaction(event: dict[str, Any]) -> tuple[SatisfactionCate
         logger.debug("classify_event_satisfaction: malformed event payload", exc_info=True)
         return ("unknown", "fallback")
 
-    # A non-None, non-dict metadata is a contract violation (the rest of
-    # the pipeline assumes dict-shaped metadata). Treat it as unreadable
-    # rather than silently coercing to {} and emitting `missing_dwell`,
-    # which would suggest the payload was well-formed but lacked dwell.
+    # 非 None 且非 dict 的 metadata 违反契约（流水线其余部分假设
+    # dict 形状的 metadata）。将其视为不可读，而非静默强制转换为 {}
+    # 并发出 `missing_dwell`，那会暗示 payload 完整但缺少停留数据。
     if metadata_raw is None:
         metadata: dict[str, Any] = {}
     elif isinstance(metadata_raw, dict):
@@ -151,7 +143,7 @@ def _classify_click_dwell(
     event: dict[str, Any],
     metadata: dict[str, Any],
 ) -> tuple[SatisfactionCategory, str]:
-    """Inner helper for click events — split out so the main rule table reads cleanly."""
+    """点击事件的内部辅助 —— 单独抽出以使主规则表读起来更清晰。"""
     watch_seconds = _read_dwell_field(event, metadata, "watch_seconds")
     if watch_seconds is None:
         return ("unknown", "missing_dwell")
@@ -161,7 +153,7 @@ def _classify_click_dwell(
 
     duration = _read_dwell_field(event, metadata, "video_duration_seconds")
     if duration is None:
-        # Legacy extension events use the `duration` key instead.
+        # 遗留扩展事件使用 `duration` 键。
         duration = _read_dwell_field(event, metadata, "duration")
 
     meets_seconds = watch_seconds >= _MEANINGFUL_DWELL_MIN_SECONDS
@@ -182,10 +174,10 @@ def _read_dwell_field(
     metadata: dict[str, Any],
     key: str,
 ) -> float | None:
-    """Read a numeric field from either the top-level event or its metadata.
+    """从顶层事件或其 metadata 读取数值字段。
 
-    Returns ``None`` if the field is absent or the stored value cannot
-    be coerced to a float (e.g. ``"unknown"`` strings from older payloads).
+    字段缺失或存储值无法转为 float（例如旧 payload 中的
+    ``"unknown"`` 字符串）时返回 ``None``。
     """
     raw = event.get(key)
     if raw is None:
@@ -198,7 +190,7 @@ def _read_dwell_field(
         return None
 
 
-# Source platform constants — kept stable for analyzer mix calculations.
+# 源平台常量 —— 为分析器混合度计算保持稳定。
 SOURCE_BILIBILI = "bilibili"
 SOURCE_XIAOHONGSHU = "xiaohongshu"
 SOURCE_DOUYIN = "douyin"
@@ -207,8 +199,8 @@ SOURCE_YOUTUBE = "youtube"
 SOURCE_TWITTER = "twitter"
 SOURCE_ZHIHU = "zhihu"
 
-# Human-readable platform labels used to render the context string.
-# Keys must match the source_platform values stored in event metadata.
+# 用于渲染 context 字符串的可读平台标签。
+# 键必须与事件 metadata 中存储的 source_platform 值一致。
 _PLATFORM_LABELS: dict[str, str] = {
     SOURCE_BILIBILI: "B 站",
     SOURCE_XIAOHONGSHU: "小红书",
@@ -219,9 +211,9 @@ _PLATFORM_LABELS: dict[str, str] = {
     SOURCE_ZHIHU: "知乎",
 }
 
-# Action verbs per event_type. Designed so the rendered sentence reads
-# naturally as "在<platform>上<verb>了《<title>》" — Chinese doesn't need
-# articles, so this stays compact.
+# 各 event_type 的动作动词。设计使渲染出的句子自然读作
+# "在<platform>上<verb>了《<title>》" —— 中文无需冠词，
+# 因此可保持简洁。
 _EVENT_TYPE_LABELS: dict[str, str] = {
     "view": "看了",
     "favorite": "收藏了",
@@ -257,11 +249,11 @@ def default_signal_strength_for_event(
     event_type: str,
     metadata: dict[str, Any] | None = None,
 ) -> float | None:
-    """Return a cross-source fallback evidence strength for an event.
+    """返回事件的跨源兜底证据强度。
 
-    Platform adapters may pass a more precise ``metadata.signal_strength``.
-    This fallback only fills missing values; it describes evidence strength,
-    not sentiment polarity or the final interest weight.
+    平台适配器可传入更精确的 ``metadata.signal_strength``。
+    此兜底仅填充缺失值；它描述证据强度，
+    而非情感极性或最终兴趣权重。
     """
     normalized_event_type = event_type.strip().lower()
     metadata = metadata or {}
@@ -290,7 +282,7 @@ def format_event_context(
     author: str = "",
     extra: str = "",
 ) -> str:
-    """Render a single-sentence Chinese description of an event.
+    """渲染单句中文事件描述。
 
     Examples
     --------
@@ -318,8 +310,8 @@ def format_event_context(
     ... )
     '在 B 站关注了《历史实验室》(签名:专注于讲透中国近代史)'
 
-    The output is intentionally terse — LLM prompts pack many of these
-    end-to-end, so verbose phrasing wastes context window.
+    输出有意简短 —— LLM 提示词将许多这样的句子首尾拼接，
+    冗长措辞会浪费上下文窗口。
     """
     platform_label = _PLATFORM_LABELS.get(source_platform, source_platform or "")
     action_label = _EVENT_TYPE_LABELS.get(event_type, "记录了")
@@ -350,44 +342,40 @@ def build_event(
     context: str = "",
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Construct a unified event dict.
+    """构造统一事件 dict。
 
     Parameters
     ----------
     event_type
-        Canonical action type. See ``_EVENT_TYPE_LABELS`` for the
-        recognised set; unknown values fall through to the literal
-        string in the rendered context.
+        标准动作类型。识别集合见 ``_EVENT_TYPE_LABELS``；
+        未知值在渲染 context 时退化为字面字符串。
     source_platform
-        One of the ``SOURCE_*`` constants. Tagged into ``metadata``
-        so analyzers' source-mix code can find it.
+        ``SOURCE_*`` 常量之一。被标记入 ``metadata``，
+        以便分析器的源混合度代码可找到它。
     title
-        Content title (video / note / page name). Used in both the
-        structured field and the natural-language context.
+        内容标题（视频 / 笔记 / 页面名）。同时用于结构化字段
+        与自然语言 context。
     url
-        Optional canonical URL. Stored at top level so memory-layer
-        dedup logic can match across events without having to look
-        into metadata.
+        可选的标准 URL。存于顶层，使记忆层去重逻辑可跨事件
+        匹配而无需深入 metadata。
     author
-        Canonical creator name. Stored in ``metadata.author``;
-        producers should pass it here regardless of platform-native
-        naming (``up_name`` / ``upper`` / ``nickname``) to keep the
-        consumer side schema-free.
+        规范的创作者名。存入 ``metadata.author``；
+        生产者应在此传入，无论平台原生命名（``up_name`` /
+        ``upper`` / ``nickname``）为何，以保持消费侧 schema 无关。
     context
-        Pre-formatted natural-language sentence. If empty,
-        ``format_event_context`` builds one from the structured fields.
-        Producers that have richer context (e.g. xhs scope, B站 fold
-        membership) can override.
+        预格式化的自然语言句子。为空时由 ``format_event_context``
+        基于结构化字段构建。拥有更丰富 context 的生产者
+        （如小红书 scope、B 站收藏夹成员）可覆盖。
     metadata
-        Source-specific extras. ``source_platform`` is auto-populated
-        from the parameter; explicit ``metadata.source_platform`` wins.
-        ``author`` is also synced when not already present.
+        源特有附加字段。``source_platform`` 由参数自动填充；
+        显式传入的 ``metadata.source_platform`` 优先。
+        ``author`` 在未存在时也会同步。
 
     Returns
     -------
     dict
-        The unified event ready for ``MemoryManager.propagate_event``,
-        ``SoulEngine.analyze_events``, etc.
+        已就绪供 ``MemoryManager.propagate_event``、
+        ``SoulEngine.analyze_events`` 等使用的统一事件。
     """
     final_metadata: dict[str, Any] = dict(metadata) if metadata else {}
     final_metadata.setdefault("source_platform", source_platform)
@@ -398,8 +386,8 @@ def build_event(
         if signal_strength is not None:
             final_metadata["signal_strength"] = signal_strength
 
-    # Reuse the author from metadata if the caller didn't pass one
-    # explicitly — handles producers that set author only inside metadata.
+    # 若调用方未显式传入 author，则复用 metadata 中的 author ——
+    # 处理仅在 metadata 内设置 author 的生产者。
     effective_author = author or str(final_metadata.get("author", "") or "")
 
     if not context:

@@ -1,4 +1,4 @@
-"""Docker runtime helpers for optional host proxy bootstrap."""
+"""可选的宿主机代理引导的 Docker runtime 辅助工具。"""
 
 from __future__ import annotations
 
@@ -34,22 +34,21 @@ def bootstrap_runtime_root(
     template_path: Path,
     env: MutableMapping[str, str] | None = None,
 ) -> None:
-    """Create the isolated runtime root with config/data/logs when missing.
+    """缺失时创建带 config/data/logs 的隔离 runtime 根目录。
 
-    When ``OPENBILICLAW_SEED_OLLAMA_DEFAULTS`` is set in ``env`` (the
-    Docker compose file ships it on by default), the freshly-created
-    config gets two values pre-filled so the bundled Ollama sidecar
-    works out of the box:
+    当 ``env`` 中设置了 ``OPENBILICLAW_SEED_OLLAMA_DEFAULTS``（Docker
+    compose 文件默认开启），新创建的 config 会预填两个值，使内置
+    Ollama sidecar 开箱即用：
 
       * ``[llm.ollama] base_url`` → ``OPENBILICLAW_OLLAMA_BASE_URL``
-        (default ``http://ollama:11434/v1`` — the compose service name)
+        （默认 ``http://ollama:11434/v1`` —— compose 服务名）
       * ``[llm.embedding] provider`` → ``ollama``
       * ``[llm.embedding] model`` → ``OPENBILICLAW_EMBEDDING_MODEL``
-        (default ``bge-m3``)
+        （默认 ``bge-m3``）
       * ``[llm.embedding] base_url`` → ``OPENBILICLAW_OLLAMA_BASE_URL``
 
-    An existing ``config.toml`` is never overwritten — users who already
-    set up their own embedding stack keep their choices.
+    已存在的 ``config.toml`` 绝不会被覆盖——已经搭建了自己 embedding
+    栈的用户会保留他们的选择。
     """
     runtime_root.mkdir(parents=True, exist_ok=True)
     (runtime_root / "data").mkdir(parents=True, exist_ok=True)
@@ -75,12 +74,11 @@ def _seed_ollama_defaults(
     ollama_base_url: str,
     embedding_model: str,
 ) -> None:
-    """Patch ``base_url`` under [llm.ollama] and provider/model under
-    [llm.embedding] in a freshly-copied template config.
+    """在新复制的模板 config 中修改 [llm.ollama] 下的 ``base_url`` 以及
+    [llm.embedding] 下的 provider/model。
 
-    Line-based editor: the config template only uses single-line string
-    values for the fields we touch, so a small in-place edit is enough
-    and we avoid pulling in a TOML writer dependency just for this.
+    基于行的编辑器：config 模板对我们涉及的字段仅使用单行字符串
+    值，因此一次小型原地编辑足矣，避免仅为此时引入 TOML 写入依赖。
     """
     text = config_path.read_text(encoding="utf-8")
     text = _set_toml_string(text, "llm.ollama", "base_url", ollama_base_url)
@@ -91,11 +89,10 @@ def _seed_ollama_defaults(
 
 
 def _set_toml_string(content: str, section: str, key: str, value: str) -> str:
-    """Replace ``key = "..."`` under ``[section]`` with ``key = "<value>"``.
+    """将 ``[section]`` 下的 ``key = "..."`` 替换为 ``key = "<value>"``。
 
-    Appends both the section header and the key/value pair when missing,
-    so the helper is idempotent on partial templates. Ignores commented
-    lines and inline tables.
+    缺失时同时追加 section 头和 key/value 对，因此该辅助函数在
+    部分模板上幂等。忽略注释行和内联表。
     """
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     new_line = f'{key} = "{escaped}"'
@@ -117,7 +114,7 @@ def _set_toml_string(content: str, section: str, key: str, value: str) -> str:
             trailing_newline = "\n" if content.endswith("\n") else ""
             return "\n".join(lines) + trailing_newline
 
-    # Section/key didn't exist: append a fresh block at the end.
+    # Section/key 不存在：在末尾追加一个新块。
     suffix: list[str] = []
     if not content.endswith("\n"):
         suffix.append("")
@@ -127,7 +124,7 @@ def _set_toml_string(content: str, section: str, key: str, value: str) -> str:
 
 
 def can_connect(host: str, port: int, timeout: float) -> bool:
-    """Return whether a TCP endpoint is reachable."""
+    """返回 TCP 端点是否可达。"""
     with socket.create_connection((host, port), timeout=timeout):
         return True
 
@@ -140,7 +137,7 @@ def resolve_optional_proxy_env(
     proxy_port: int = _DEFAULT_PROXY_PORT,
     timeout: float = _DEFAULT_PROXY_TIMEOUT,
 ) -> dict[str, str]:
-    """Return proxy env updates when a host-side Clash proxy is reachable."""
+    """当宿主机侧 Clash 代理可达时返回代理 env 更新。"""
     if any(str(env.get(key, "")).strip() for key in _PROXY_KEYS):
         return {}
 
@@ -162,7 +159,7 @@ def resolve_optional_proxy_env(
 
 
 def _merge_no_proxy(current: str) -> str:
-    """Merge required local bypass hosts into no_proxy."""
+    """将所需的本地旁路主机合并进 no_proxy。"""
     entries = [item.strip() for item in current.split(",") if item.strip()]
     for entry in _DEFAULT_NO_PROXY_ENTRIES:
         if entry not in entries:
@@ -171,20 +168,18 @@ def _merge_no_proxy(current: str) -> str:
 
 
 def is_running_in_container(env: MutableMapping[str, str] | None = None) -> bool:
-    """Return whether this process is running inside a container runtime.
+    """返回当前进程是否在容器 runtime 中运行。
 
-    The host-proxy auto-detection below is only safe inside a container,
-    where ``host.docker.internal`` really does point to the host and is
-    the only route to the internet.  On a native macOS developer
-    machine Docker Desktop still resolves that name — so without this
-    gate the bootstrapper routes every outbound request through the
-    host's Clash proxy, which breaks Bilibili calls (and anything else
-    that doesn't tolerate Clash's routing).
+    下方的主机代理自动检测仅在容器内安全——
+    容器内 ``host.docker.internal`` 确实指向宿主机且是通往互联网的
+    唯一路径。在原生 macOS 开发机上，Docker Desktop 仍会解析该名称——
+    因此若没有此门禁，引导器会把每个出站请求路由到宿主机的
+    Clash 代理，破坏 Bilibili 调用（以及任何不容忍 Clash 路由的请求）。
     """
     resolved_env = env if env is not None else os.environ
     if str(resolved_env.get("OPENBILICLAW_IN_CONTAINER", "")).strip():
         return True
-    # Docker writes /.dockerenv; Podman writes /run/.containerenv.
+    # Docker 写入 /.dockerenv；Podman 写入 /run/.containerenv。
     return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
 
@@ -194,7 +189,7 @@ def bootstrap_runtime_environment(
     can_connect: Callable[[str, int, float], bool] = can_connect,
     in_container: Callable[[MutableMapping[str, str]], bool] = is_running_in_container,
 ) -> None:
-    """Bootstrap the isolated runtime root and optional proxy env in-place."""
+    """原地引导隔离 runtime 根目录和可选代理 env。"""
     runtime_root = Path(env.get("OPENBILICLAW_PROJECT_ROOT", _DEFAULT_RUNTIME_ROOT))
     template_path = Path(env.get("OPENBILICLAW_CONFIG_TEMPLATE", _DEFAULT_TEMPLATE_PATH))
     bootstrap_runtime_root(
@@ -204,7 +199,7 @@ def bootstrap_runtime_environment(
     )
     env.setdefault("OPENBILICLAW_PROJECT_ROOT", str(runtime_root))
 
-    # Proxy auto-detection is ONLY safe inside container runtimes.
+    # 代理自动检测仅在容器 runtime 内安全。
     if not in_container(env):
         return
 
@@ -223,7 +218,7 @@ def bootstrap_runtime_environment(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Bootstrap optional proxy settings, then exec the target command."""
+    """引导可选代理设置，然后 exec 目标命令。"""
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
         raise SystemExit("usage: python -m openbiliclaw.docker_runtime <command> [args...]")

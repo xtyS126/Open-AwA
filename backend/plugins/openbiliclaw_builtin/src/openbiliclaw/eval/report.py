@@ -1,7 +1,7 @@
-"""Report generation for evaluation results.
+"""评估结果的报告生成。
 
-Renders training curves, deviation summaries, and optimization logs
-for both human review and automated processing.
+渲染训练曲线、偏差摘要和优化日志，
+既供人工审阅，也供自动化处理使用。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def render_training_summary(result: dict[str, Any]) -> str:
-    """Render optimization result as a human-readable table."""
+    """将优化结果渲染为人类可读的表格。"""
     lines: list[str] = []
     lines.append("═══ 训练报告 ═══")
     lines.append("")
@@ -44,7 +44,7 @@ def render_training_summary(result: dict[str, Any]) -> str:
     lines.append(f"Stop reason: {result.get('stop_reason', 'unknown')}")
     lines.append(f"Epochs run: {result.get('epochs_run', 0)}")
 
-    # Final attributions
+    # 最终归因
     attrs = result.get("final_attributions", [])
     if attrs:
         lines.append("")
@@ -56,7 +56,7 @@ def render_training_summary(result: dict[str, Any]) -> str:
 
 
 def save_training_curve(result: dict[str, Any], data_dir: Path) -> Path:
-    """Save training curve data as JSON for visualization."""
+    """将训练曲线数据保存为 JSON 以便可视化。"""
     eval_dir = data_dir / "eval"
     eval_dir.mkdir(parents=True, exist_ok=True)
     path = eval_dir / "training_curve.json"
@@ -80,7 +80,7 @@ def save_training_curve(result: dict[str, Any], data_dir: Path) -> Path:
 
 
 def render_eval_report(report: dict[str, Any]) -> str:
-    """Render a single EvalReport as human-readable text."""
+    """将单个 EvalReport 渲染为人类可读文本。"""
     lines: list[str] = []
     lines.append(f"═══ 评估报告 (score: {report.get('overall_score', 0):.3f}) ═══")
     lines.append("")
@@ -108,7 +108,7 @@ def render_eval_report(report: dict[str, Any]) -> str:
 
 
 def render_speculation_report(report: dict[str, Any]) -> str:
-    """Render a SpeculationEvalReport as human-readable text."""
+    """将 SpeculationEvalReport 渲染为人类可读文本。"""
     lines: list[str] = []
     lines.append(f"═══ 推测兴趣评估 (score: {report.get('overall_score', 0):.3f}) ═══")
     lines.append("")
@@ -136,7 +136,7 @@ def render_speculation_report(report: dict[str, Any]) -> str:
 
 
 def render_speculation_training_summary(result: dict[str, Any]) -> str:
-    """Render speculation auto-optimize result as a summary table."""
+    """将推测兴趣自动优化结果渲染为摘要表格。"""
     lines: list[str] = []
     lines.append("═══ 推测兴趣优化报告 ═══")
     lines.append("")

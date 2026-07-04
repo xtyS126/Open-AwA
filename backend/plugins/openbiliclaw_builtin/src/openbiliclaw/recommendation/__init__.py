@@ -1,1 +1,1 @@
-"""Recommendation package — recommendation ranking and expression."""
+"""推荐包 —— 推荐排序与表达。"""

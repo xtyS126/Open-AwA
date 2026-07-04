@@ -1,12 +1,12 @@
-"""Style classification rules for discovered content.
+"""发现内容的 style 分类规则。
 
-Defines token-based rules mapping content titles/descriptions to style keys.
-Style keys are used downstream for diversity control in the candidate pool.
+定义基于 token 的规则,将内容标题/描述映射到 style key。
+style key 在下游用于候选池的多样性控制。
 """
 
 from __future__ import annotations
 
-# Ordered list of (style_key, token_tuple) — first match wins.
+# 有序列表 (style_key, token_tuple) — 第一个匹配的规则胜出。
 STYLE_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("quick_scan", ("突发", "最新", "局势", "发布", "快讯", "回应", "三分钟看懂")),
     ("decision_support", ("购买前", "盘点", "测评", "对比", "推荐", "排行", "top", "年度")),
@@ -68,9 +68,9 @@ STYLE_RULES: list[tuple[str, tuple[str, ...]]] = [
     ),
 ]
 
-# Fallback rules when no token matches — keyed by source_strategy.
-# Note: explore intentionally has no fallback to avoid collapsing all
-# cross-domain results into the same style bucket (hurts diversity).
+# 没有 token 匹配时的回退规则 — 以 source_strategy 为键。
+# 注意: explore 故意没有回退,以避免把所有跨域结果折叠到同一个
+# style 桶里(会损害多样性)。
 SOURCE_FALLBACKS: dict[str, str] = {
     "trending": "quick_scan",
 }
@@ -85,7 +85,7 @@ def infer_style_key(
     reason: str = "",
     source_strategy: str = "",
 ) -> str:
-    """Infer a style_key from content text using rule-based token matching."""
+    """使用基于规则的 token 匹配从内容文本推断 style_key。"""
     text = " ".join([title, description, reason]).lower()
 
     for style_key, tokens in STYLE_RULES:

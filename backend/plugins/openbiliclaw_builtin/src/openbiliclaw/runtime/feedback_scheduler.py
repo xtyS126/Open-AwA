@@ -1,4 +1,4 @@
-"""Debounced scheduling for expensive feedback batch learning."""
+"""对昂贵的反馈批量学习做防抖调度。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FeedbackBatchScheduler:
-    """Coalesce bursts of recommendation feedback into one batch refresh."""
+    """把推荐反馈的爆发合并成一次批量刷新。"""
 
     soul_engine: Any
     debounce_seconds: float = 5.0
@@ -22,7 +22,7 @@ class FeedbackBatchScheduler:
     _task: asyncio.Task[None] | None = field(default=None, init=False)
 
     def schedule(self) -> None:
-        """Request a feedback batch pass after the debounce window."""
+        """在防抖窗口之后请求一次反馈批处理。"""
         if self._closed:
             return
         self._dirty = True
@@ -30,10 +30,10 @@ class FeedbackBatchScheduler:
             self._task = asyncio.create_task(self._run())
 
     async def drain(self) -> None:
-        """Wait for the currently scheduled pass, if any.
+        """等待当前已调度的一轮（如有）。
 
-        Intended for tests and graceful shutdown. It does not create work by
-        itself; callers should invoke :meth:`schedule` first.
+        主要用于测试和优雅关闭。它本身不会创建工作；调用方应先
+        调用 :meth:`schedule`。
         """
         task = self._task
         if task is None:
@@ -41,7 +41,7 @@ class FeedbackBatchScheduler:
         await task
 
     async def close(self) -> None:
-        """Cancel any pending scheduled work."""
+        """取消所有挂起的已调度工作。"""
         self._closed = True
         task = self._task
         if task is None or task.done():

@@ -1,9 +1,8 @@
-"""SpeculationEvaluator — multi-dimension scoring of speculative interest quality.
+"""SpeculationEvaluator — 推测兴趣质量的多维评分。
 
-Evaluates speculations across 7 dimensions: plausibility, novelty,
-specificity, confirmation rate, no-hallucination, diversity, and
-persona resonance. Supports automated (LLM + persona judge),
-simulated-event, and human-feedback evaluation modes.
+跨 7 个维度评估推测：合理性、新颖性、具体性、
+确认率、非幻觉、多样性和人格共鸣。支持自动化（LLM + persona judge）、
+模拟事件和人工反馈三种评估模式。
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Dimension weights for overall score
+# 总分的维度权重
 _DIM_WEIGHTS: dict[str, float] = {
     "plausibility": 0.20,
     "novelty": 0.15,
@@ -34,20 +33,20 @@ _DIM_WEIGHTS: dict[str, float] = {
     "persona_resonance": 0.15,
 }
 
-# All dimensions map to the same prompt (only LLM-controlled variable)
+# 所有维度都映射到同一个 prompt（唯一的 LLM 可控变量）
 SPECULATION_FIELD_TO_PARAM: dict[str, str] = {
     k: "speculation_generation_prompt" for k in _DIM_WEIGHTS
 }
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# 数据结构
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class SpeculationScore:
-    """Score for a single speculation."""
+    """单个推测的评分。"""
 
     domain: str = ""
     plausibility: float = 0.0
@@ -61,7 +60,7 @@ class SpeculationScore:
 
 @dataclass
 class SpeculationEvalReport:
-    """Complete evaluation report for one speculation generation run."""
+    """一次推测生成运行的完整评估报告。"""
 
     speculation_scores: list[SpeculationScore] = field(default_factory=list)
     confirmation_rate: float = 0.0
@@ -108,7 +107,7 @@ class SpeculationEvalReport:
 
 
 # ---------------------------------------------------------------------------
-# Scoring helpers
+# 评分辅助函数
 # ---------------------------------------------------------------------------
 
 
@@ -116,13 +115,13 @@ def _no_hallucination_score(
     domain: str,
     confirmed_domains: list[str],
 ) -> float:
-    """Check if speculation restates an existing confirmed interest. 0.0 = hallucination."""
+    """检查推测是否复述了已有确认兴趣。0.0 = 幻觉。"""
     domain_lower = domain.lower()
     for confirmed in confirmed_domains:
         confirmed_lower = confirmed.lower()
         if domain_lower in confirmed_lower or confirmed_lower in domain_lower:
             return 0.0
-    # Token overlap check
+    # token 重叠检查
     from openbiliclaw.soul.speculator import _tokenize
 
     domain_tokens = _tokenize(domain)
@@ -136,20 +135,20 @@ def _no_hallucination_score(
 
 
 def _confirmation_rate_score(rate: float) -> float:
-    """Score confirmation rate. Target is 0.3-0.7; penalize both extremes."""
+    """对确认率评分。目标是 0.3-0.7；两端都惩罚。"""
     return max(0.0, 1.0 - 2.0 * abs(rate - 0.5))
 
 
 def _score_diversity(speculations: list[SpeculativeInterest]) -> float:
-    """Score how dispersed the speculations are across different categories.
+    """评估推测在不同类别间的分散程度。
 
-    Combines category entropy (how spread across categories) with
-    pairwise domain distance (how different the domain names are).
+    将类别熵（在类别间的分布）与
+    两两 domain 距离（domain 名称的差异程度）结合。
     """
     if len(speculations) <= 1:
         return 1.0
 
-    # 1. Category entropy (unique categories → higher score)
+    # 1. 类别熵（唯一类别数越多 → 分数越高）
     categories = [s.category.strip().lower() for s in speculations if s.category.strip()]
     if categories:
         cat_counts: dict[str, int] = {}
@@ -162,7 +161,7 @@ def _score_diversity(speculations: list[SpeculativeInterest]) -> float:
     else:
         cat_score = 0.0
 
-    # 2. Pairwise domain distance (character-level overlap for Chinese)
+    # 2. 两两 domain 距离（针对中文的字符级重叠）
     domains = [s.domain for s in speculations]
     pair_scores: list[float] = []
     for i in range(len(domains)):
@@ -175,19 +174,19 @@ def _score_diversity(speculations: list[SpeculativeInterest]) -> float:
 
 
 def _domain_distance(a: str, b: str) -> float:
-    """Character-level distance between two domain names. 0=identical, 1=no overlap."""
+    """两个 domain 名称之间的字符级距离。0=相同，1=无重叠。"""
     a_lower = re.sub(r"\s+", "", a.lower())
     b_lower = re.sub(r"\s+", "", b.lower())
     if not a_lower or not b_lower:
         return 1.0
     if a_lower == b_lower:
         return 0.0
-    # Substring containment
+    # 子串包含
     if a_lower in b_lower or b_lower in a_lower:
         shorter = min(len(a_lower), len(b_lower))
         longer = max(len(a_lower), len(b_lower))
         return min(1.0, (longer - shorter) / max(longer, 1) * 1.5)
-    # Character set overlap (works for Chinese without word segmentation)
+    # 字符集重叠（中文无需分词即可工作）
     chars_a = set(a_lower)
     chars_b = set(b_lower)
     overlap = len(chars_a & chars_b) / max(len(chars_a | chars_b), 1)
@@ -199,7 +198,7 @@ async def _llm_eval_speculation(
     spec_reason: str,
     profile_context: str,
 ) -> dict[str, float]:
-    """Use LLM to score plausibility, novelty, and specificity."""
+    """使用 LLM 对合理性、新颖性、具体性评分。"""
     try:
         from openbiliclaw.eval.agents import collect_json
 
@@ -244,7 +243,7 @@ async def _llm_eval_speculation(
 
 
 class SpeculationEvaluator:
-    """Evaluate speculative interest generation quality."""
+    """评估推测兴趣生成质量。"""
 
     def __init__(self, *, dim_weights: dict[str, float] | None = None) -> None:
         self._weights = dim_weights or dict(_DIM_WEIGHTS)
@@ -256,25 +255,25 @@ class SpeculationEvaluator:
         confirmation_results: dict[str, bool] | None = None,
         persona_judgment: PersonaJudgment | None = None,
     ) -> SpeculationEvalReport:
-        """Full automated evaluation of speculations against a profile.
+        """对推测相对于画像进行全面自动化评估。
 
         Args:
-            speculations: Generated speculative interests to evaluate.
-            profile: The persona profile used for generation.
-            confirmation_results: Optional domain → promoted mapping from
-                simulated event observation.
-            persona_judgment: Optional PersonaJudgment from persona_judge.
-                When provided, per-speculation resonance scores are used.
-                When absent, persona_resonance defaults to 0.5.
+            speculations: 待评估的生成推测兴趣。
+            profile: 用于生成的人格画像。
+            confirmation_results: 可选的 domain → promoted 映射，
+                来自模拟事件观察。
+            persona_judgment: 可选的 PersonaJudgment（来自 persona_judge）。
+                提供时使用每个推测的共鸣分数。
+                未提供时 persona_resonance 默认为 0.5。
         """
         if not speculations:
             return SpeculationEvalReport(timestamp=datetime.now().isoformat())
 
-        # Collect confirmed interest domains for hallucination check
+        # 收集已确认兴趣的 domain 用于幻觉检查
         confirmed_domains = [d.domain for d in profile.interest.likes]
         profile_ctx = profile.to_llm_context()
 
-        # Build resonance lookup from persona judgment
+        # 从人格判断构建共鸣查找表
         resonance_map: dict[str, float] = {}
         if persona_judgment is not None:
             for verdict in persona_judgment.verdicts:
@@ -282,15 +281,15 @@ class SpeculationEvaluator:
 
         scores: list[SpeculationScore] = []
         for spec in speculations:
-            # LLM scoring for plausibility/novelty/specificity
+            # LLM 对合理性/新颖性/具体性评分
             llm_scores = await _llm_eval_speculation(
                 spec.domain,
                 spec.reason,
                 profile_ctx,
             )
-            # Algorithmic no-hallucination check
+            # 算法化的非幻觉检查
             nh = _no_hallucination_score(spec.domain, confirmed_domains)
-            # Persona resonance
+            # 人格共鸣
             resonance = resonance_map.get(spec.domain, 0.5)
 
             per_spec_overall = (
@@ -312,18 +311,18 @@ class SpeculationEvaluator:
                 )
             )
 
-        # Confirmation rate
-        conf_rate = 0.5  # default if no simulation data
+        # 确认率
+        conf_rate = 0.5  # 无模拟数据时的默认值
         if confirmation_results:
             total = len(confirmation_results)
             promoted = sum(1 for v in confirmation_results.values() if v)
             conf_rate = promoted / total if total > 0 else 0.5
         conf_rate_score = _confirmation_rate_score(conf_rate)
 
-        # Diversity (algorithmic)
+        # 多样性（算法化）
         diversity = _score_diversity(speculations)
 
-        # Means
+        # 均值
         n = len(scores)
         mean_p = sum(s.plausibility for s in scores) / n
         mean_n = sum(s.novelty for s in scores) / n
@@ -341,7 +340,7 @@ class SpeculationEvaluator:
             + self._weights["persona_resonance"] * mean_pr
         )
 
-        # Worst dimensions
+        # 最差维度
         dim_scores: list[tuple[str, float]] = [
             ("plausibility", mean_p),
             ("novelty", mean_n),
@@ -382,9 +381,9 @@ class SpeculationEvaluator:
         speculations: list[SpeculativeInterest],
         human_feedback: dict[str, dict[str, float]],
     ) -> SpeculationEvalReport:
-        """Build report from human per-speculation feedback.
+        """根据人工逐推测反馈构建报告。
 
-        human_feedback format:
+        human_feedback 格式：
         {
             "博弈论科普": {"plausibility": 0.8, "novelty": 0.6, "specificity": 0.9},
             ...
@@ -406,7 +405,7 @@ class SpeculationEvaluator:
                     plausibility=p,
                     novelty=n,
                     specificity=s,
-                    no_hallucination=1.0,  # human review assumed no hallucination
+                    no_hallucination=1.0,  # 人工审阅默认无幻觉
                     persona_resonance=pr,
                     overall=round(per_overall, 4),
                     details=str(fb.get("note", "")),

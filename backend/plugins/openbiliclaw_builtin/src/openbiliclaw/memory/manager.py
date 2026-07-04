@@ -1,7 +1,6 @@
-"""Memory Manager — coordinates the multi-layer networked memory system.
+"""Memory Manager —— 协调多层网络化记忆系统。
 
-Manages the five memory layers and four memory types, handling
-cross-layer updates, bidirectional corrections, and self-editing.
+管理五层记忆与四种记忆类型，处理跨层更新、双向修正与自我编辑。
 """
 
 from __future__ import annotations
@@ -53,7 +52,7 @@ _DISCOVERY_RUNTIME_TIMESTAMP_MAP_KEYS = (
 
 
 class MemoryLayer:
-    """Base class for a single memory layer."""
+    """单个记忆层的基类。"""
 
     def __init__(self, name: str, storage_path: Path) -> None:
         self.name = name
@@ -62,13 +61,13 @@ class MemoryLayer:
         self._loaded_mtime: float | None = None
 
     def load(self) -> None:
-        """Load layer data from disk.
+        """从磁盘加载层数据。
 
-        Always reads as UTF-8. Without ``encoding="utf-8"`` Python uses
-        the platform's locale encoding — which is GBK on Chinese
-        Windows installs — and our JSON files contain Chinese profile
-        text + emoji that GBK can't decode, raising UnicodeDecodeError
-        on first /api/activity-feed or /api/delight/pending-batch hit.
+        始终以 UTF-8 读取。如果不设 ``encoding="utf-8"``，Python 会用平台
+        locale 编码 —— 中文 Windows 安装上是 GBK —— 而我们的 JSON 文件含
+        中文画像文本和 emoji，GBK 解不开，第一次访问
+        /api/activity-feed 或 /api/delight/pending-batch 就会抛
+        UnicodeDecodeError。
         """
         if self.storage_path.exists():
             with open(self.storage_path, encoding="utf-8") as f:
@@ -77,7 +76,7 @@ class MemoryLayer:
             logger.debug("Loaded %s layer from %s", self.name, self.storage_path)
 
     def _reload_if_stale(self) -> None:
-        """Reload from disk if the file was modified by another process."""
+        """如果文件被其他进程修改过，从磁盘重新加载。"""
         if not self.storage_path.exists():
             return
         try:
@@ -89,12 +88,11 @@ class MemoryLayer:
             self.load()
 
     def save(self) -> None:
-        """Persist layer data to disk.
+        """把层数据持久化到磁盘。
 
-        Always writes as UTF-8. ``ensure_ascii=False`` lets us emit
-        Chinese / emoji content directly, but the file handle has to be
-        opened in UTF-8 explicitly — otherwise GBK Windows hosts crash
-        on the first non-ASCII write.
+        始终以 UTF-8 写入。``ensure_ascii=False`` 让我们直接输出中文 / emoji
+        内容，但文件句柄必须显式以 UTF-8 打开 —— 否则 GBK Windows 主机在
+        第一次非 ASCII 写入时会崩溃。
         """
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.storage_path, "w", encoding="utf-8") as f:
@@ -108,28 +106,27 @@ class MemoryLayer:
         return self._data
 
     def update(self, key: str, value: Any) -> None:
-        """Update a specific key in the layer."""
+        """更新层中的某个键。"""
         self._data[key] = value
 
 
 class MemoryManager:
-    """Manages the five-layer networked memory architecture.
+    """管理五层网络化记忆架构。
 
-    Layers (bottom to top):
-      1. Event Layer    — raw behavioral facts
-      2. Preference Layer — extracted preferences
-      3. Awareness Layer  — daily observations and trends
-      4. Insight Layer    — motivational analysis and hypotheses
-      5. Soul Layer       — personality portrait
+    层（自底向上）：
+      1. Event Layer    —— 原始行为事实
+      2. Preference Layer —— 抽取出的偏好
+      3. Awareness Layer  —— 每日观察与趋势
+      4. Insight Layer    —— 动机分析与假设
+      5. Soul Layer       —— 人格画像
 
-    Memory types:
-      - Core Memory     — always in agent context (Soul + Preference summary)
-      - Episodic Memory  — specific interaction episodes
-      - Semantic Memory  — factual knowledge about the user
-      - Working Memory   — current session context (in-memory only)
+    记忆类型：
+      - Core Memory     —— 始终在 agent 上下文中（Soul + Preference 摘要）
+      - Episodic Memory  —— 具体的交互片段
+      - Semantic Memory  —— 关于用户的事实知识
+      - Working Memory   —— 当前会话上下文（仅内存中）
 
-    Interactions are bidirectional: new events flow up, and top-level
-    understanding flows down to guide interpretation.
+    交互是双向的：新事件向上流动，顶层理解向下流动以指导解读。
     """
 
     def __init__(self, data_dir: Path, *, database: Database | None = None) -> None:
@@ -143,30 +140,30 @@ class MemoryManager:
         self._insight_candidates_path = data_dir / "memory" / "insight_candidates.json"
         self._cognition_updates_path = data_dir / "memory" / "cognition_updates.json"
         self._profile_overrides_path = data_dir / "memory" / "profile_overrides.json"
-        self._working_memory: dict[str, Any] = {}  # Session-only
-        # Optional callback that fires after the soul layer is saved or
-        # ``sync_profile_files`` runs. The runtime context wires this to
-        # ``event_hub.publish({"type": "profile_updated"})`` so the
-        # popup picks up profile changes regardless of which code path
-        # ran the update (init, cognition cycle, manual rebuild, …).
+        self._working_memory: dict[str, Any] = {}  # 仅会话
+        # 可选回调，在 soul 层保存或 ``sync_profile_files`` 运行后触发。
+        # runtime_context 把它接到
+        # ``event_hub.publish({"type": "profile_updated"})``，这样无论哪条
+        # 代码路径跑的更新（init、认知周期、手动重建……），popup 都能拿到
+        # 画像变更。
         self._profile_change_callback: Any = None
 
-        # Initialize the five layers
+        # 初始化五层
         layer_names = ["event", "preference", "awareness", "insight", "soul"]
         for name in layer_names:
             layer_path = data_dir / "memory" / f"{name}.json"
             self._layers[name] = MemoryLayer(name, layer_path)
 
     def set_profile_change_callback(self, callback: Any) -> None:
-        """Register a callback fired after the soul layer is persisted.
+        """注册在 soul 层持久化后触发的回调。
 
-        The callback may be sync or async (a coroutine function); the
-        publisher schedules it via the running loop when present.
+        回调可以是同步或异步（协程函数）；publisher 在存在运行中 loop 时
+        通过它调度。
         """
         self._profile_change_callback = callback
 
     def _notify_profile_changed(self) -> None:
-        """Best-effort dispatch of the registered profile-change callback."""
+        """尽力分发已注册的画像变更回调。"""
         cb = self._profile_change_callback
         if cb is None:
             return
@@ -175,8 +172,8 @@ class MemoryManager:
         try:
             result = cb()
             if _asyncio.iscoroutine(result):
-                # If we're already inside a running loop, schedule it;
-                # otherwise drop silently — the soul write still landed.
+                # 如果已在运行中的 loop 内，调度它；否则静默丢弃 ——
+                # soul 写入已经落地。
                 try:
                     loop = _asyncio.get_running_loop()
                 except RuntimeError:
@@ -186,7 +183,7 @@ class MemoryManager:
             logger.debug("profile-change callback raised", exc_info=True)
 
     def initialize(self) -> None:
-        """Load all layers from disk."""
+        """从磁盘加载所有层。"""
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._database.initialize()
         for layer in self._layers.values():
@@ -194,19 +191,18 @@ class MemoryManager:
         logger.info("Memory manager initialized with %d layers.", len(self._layers))
 
     def save_all(self) -> None:
-        """Persist all layers to disk."""
+        """把所有层持久化到磁盘。"""
         for layer in self._layers.values():
             layer.save()
         self._notify_profile_changed()
 
     def sync_profile_files(self, profile: object) -> None:
-        """Write soul_profile.json + soul_profile.md, rendering the EFFECTIVE
-        profile (AI profile ⊕ user overrides).
+        """写入 soul_profile.json + soul_profile.md，渲染 EFFECTIVE 画像
+        （AI 画像 ⊕ 用户覆盖）。
 
-        Callers pass the raw AI profile (rebuild, init, dialogue ingestion).
-        We apply the user overrides here so the human-readable mirror reflects
-        manual edits even right after a regeneration — without this, the
-        mirror would show the raw AI profile and silently drop user edits.
+        调用方传入原始 AI 画像（重建、init、对话吸收）。我们在这里应用
+        用户覆盖，这样人类可读镜像即使紧接重生后也能反映手动编辑 ——
+        否则镜像会显示原始 AI 画像并静默丢弃用户编辑。
         """
         from openbiliclaw.soul.overrides import apply_overrides
         from openbiliclaw.soul.profile import OnionProfile
@@ -220,20 +216,19 @@ class MemoryManager:
         if onion is not None:
             effective = apply_overrides(onion, self.load_profile_overrides())
             sync_profile_files(effective, self._data_dir)
-        # ``sync_profile_files`` is the canonical "profile is now
-        # current on disk" point — every code path that updates the
-        # profile (init, cognition cycle, manual rebuild, dialogue
-        # insight ingestion) ends here. Notify so the popup refetches.
+        # ``sync_profile_files`` 是规范的"画像现已落盘"点 —— 每条更新画像
+        # 的代码路径（init、认知周期、手动重建、对话洞察吸收）都终结于此。
+        # 通知让 popup 重新拉取。
         self._notify_profile_changed()
 
     def append_changelog(self, entry: str) -> None:
-        """Append a changelog entry to soul_changelog.md."""
+        """向 soul_changelog.md 追加一条变更日志。"""
         from openbiliclaw.soul.profile_renderer import append_changelog
 
         append_changelog(entry, self._data_dir)
 
     def load_feedback_state(self) -> dict[str, object]:
-        """Load feedback-processing cursor state from disk."""
+        """从磁盘加载反馈处理游标状态。"""
         default_state = {
             "last_processed_feedback_event_id": 0,
             "last_feedback_reanalyzed_at": "",
@@ -252,7 +247,7 @@ class MemoryManager:
         }
 
     def save_feedback_state(self, state: dict[str, object]) -> None:
-        """Persist feedback-processing cursor state to disk."""
+        """把反馈处理游标状态持久化到磁盘。"""
         self._feedback_state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "last_processed_feedback_event_id": self._to_int(
@@ -264,7 +259,7 @@ class MemoryManager:
             json.dump(payload, file, ensure_ascii=False, indent=2)
 
     def load_account_sync_state(self) -> dict[str, object]:
-        """Load account-side sync cursor state from disk."""
+        """从磁盘加载账号侧同步游标状态。"""
         default_state = {
             "last_history_view_at": 0,
             "last_history_bvid": "",
@@ -301,7 +296,7 @@ class MemoryManager:
         }
 
     def save_account_sync_state(self, state: dict[str, object]) -> None:
-        """Persist account-side sync cursor state to disk."""
+        """把账号侧同步游标状态持久化到磁盘。"""
         self._account_sync_state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "last_history_view_at": self._to_int(state.get("last_history_view_at", 0)),
@@ -322,7 +317,7 @@ class MemoryManager:
             json.dump(payload, file, ensure_ascii=False, indent=2)
 
     def load_source_bootstrap_state(self) -> dict[str, object]:
-        """Load cross-task bootstrap dedupe state for extension sources."""
+        """从磁盘加载扩展源的跨任务 bootstrap 去重状态。"""
         from openbiliclaw.sources.bootstrap_state import (
             default_source_bootstrap_state,
             normalize_source_bootstrap_state,
@@ -335,7 +330,7 @@ class MemoryManager:
         return normalize_source_bootstrap_state(loaded)
 
     def save_source_bootstrap_state(self, state: dict[str, object]) -> None:
-        """Persist cross-task bootstrap dedupe state for extension sources."""
+        """把扩展源的跨任务 bootstrap 去重状态持久化到磁盘。"""
         from openbiliclaw.sources.bootstrap_state import normalize_source_bootstrap_state
 
         self._source_bootstrap_state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -365,7 +360,7 @@ class MemoryManager:
         }
 
     def _normalize_discovery_runtime_state(self, loaded: object) -> dict[str, object]:
-        """Normalize runtime state while preserving extension fields."""
+        """规范化运行时状态，同时保留扩展字段。"""
         if not isinstance(loaded, dict):
             return self._default_discovery_runtime_state()
         state: dict[str, object] = dict(loaded)
@@ -405,7 +400,7 @@ class MemoryManager:
         return state
 
     def load_discovery_runtime_state(self) -> dict[str, object]:
-        """Load continuous-discovery runtime state from disk."""
+        """从磁盘加载持续发现运行时状态。"""
         if not self._discovery_runtime_state_path.exists():
             return self._default_discovery_runtime_state()
         with open(self._discovery_runtime_state_path, encoding="utf-8") as file:
@@ -413,7 +408,7 @@ class MemoryManager:
         return self._normalize_discovery_runtime_state(loaded)
 
     def save_discovery_runtime_state(self, state: dict[str, object]) -> None:
-        """Persist continuous-discovery runtime state to disk."""
+        """把持续发现运行时状态持久化到磁盘。"""
         incoming = self._normalize_discovery_runtime_state(state)
 
         def _merge(latest: dict[str, object]) -> dict[str, object]:
@@ -425,7 +420,7 @@ class MemoryManager:
         self,
         mutator: Callable[[dict[str, object]], dict[str, object] | None],
     ) -> dict[str, object]:
-        """Atomically update continuous-discovery runtime state from latest disk data."""
+        """基于最新磁盘数据原子更新持续发现运行时状态。"""
         from openbiliclaw.memory.json_state import update_json_state
 
         def _mutate(state: dict[str, object]) -> dict[str, object]:
@@ -516,7 +511,7 @@ class MemoryManager:
         return self._as_dict_list(raw.get("entries", []))
 
     def load_insight_candidates(self) -> list[dict[str, object]]:
-        """Load dialogue-derived insight candidates from disk."""
+        """从磁盘加载对话派生的 insight 候选。"""
         if not self._insight_candidates_path.exists():
             return []
         with open(self._insight_candidates_path, encoding="utf-8") as file:
@@ -526,13 +521,13 @@ class MemoryManager:
         return [item for item in loaded if isinstance(item, dict)]
 
     def save_insight_candidates(self, candidates: list[dict[str, object]]) -> None:
-        """Persist dialogue-derived insight candidates to disk."""
+        """把对话派生的 insight 候选持久化到磁盘。"""
         self._insight_candidates_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._insight_candidates_path, "w", encoding="utf-8") as file:
             json.dump(candidates, file, ensure_ascii=False, indent=2)
 
     def load_cognition_updates(self) -> list[dict[str, object]]:
-        """Load cognition updates generated from preference/profile shifts."""
+        """加载由偏好/画像变更产生的认知更新。"""
         if not self._cognition_updates_path.exists():
             return []
         with open(self._cognition_updates_path, encoding="utf-8") as file:
@@ -542,17 +537,16 @@ class MemoryManager:
         return [item for item in loaded if isinstance(item, dict)]
 
     def save_cognition_updates(self, updates: list[dict[str, object]]) -> None:
-        """Persist cognition updates generated from preference/profile shifts."""
+        """持久化由偏好/画像变更产生的认知更新。"""
         self._cognition_updates_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._cognition_updates_path, "w", encoding="utf-8") as file:
             json.dump(updates, file, ensure_ascii=False, indent=2)
 
     def load_profile_overrides(self) -> ProfileOverrides:
-        """Load user-authored profile overrides from disk.
+        """从磁盘加载用户编写的画像覆盖。
 
-        Returns an empty ``ProfileOverrides`` when the file is missing or
-        unreadable, so the effective profile equals the AI profile until the
-        user makes their first edit (backward-compatible).
+        文件缺失或不可读时返回空 ``ProfileOverrides``，这样在用户做出第一次
+        编辑前有效画像等于 AI 画像（向后兼容）。
         """
         from openbiliclaw.soul.overrides import ProfileOverrides
 
@@ -562,19 +556,17 @@ class MemoryManager:
             with open(self._profile_overrides_path, encoding="utf-8") as file:
                 loaded = json.load(file)
         except (OSError, ValueError) as exc:
-            # ValueError covers json.JSONDecodeError. A corrupt overrides file
-            # must not degrade the whole profile to initialized=false — drop the
-            # overrides and keep serving the AI profile.
+            # ValueError 涵盖 json.JSONDecodeError。损坏的覆盖文件不能把整
+            # 个画像降级到 initialized=false —— 丢弃覆盖，继续服务 AI 画像。
             logger.warning("profile_overrides.json unreadable, ignoring overrides: %s", exc)
             return ProfileOverrides()
         return ProfileOverrides.from_dict(loaded)
 
     def save_profile_overrides(self, overrides: ProfileOverrides) -> None:
-        """Persist user-authored profile overrides and notify listeners.
+        """持久化用户编写的画像覆盖并通知监听者。
 
-        Notifying here means an edit lands on both surfaces (popup + web)
-        via the same ``profile_updated`` channel used by every other
-        profile-mutating path.
+        在这里通知意味着一次编辑会通过其他所有画像变更路径使用的同一个
+        ``profile_updated`` 通道同时落在两个面（popup + web）。
         """
         self._profile_overrides_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._profile_overrides_path, "w", encoding="utf-8") as file:
@@ -582,25 +574,25 @@ class MemoryManager:
         self._notify_profile_changed()
 
     def get_layer(self, name: str) -> MemoryLayer:
-        """Get a specific memory layer by name."""
+        """按名称获取特定记忆层。"""
         if name not in self._layers:
             raise KeyError(f"Unknown memory layer: {name}")
         return self._layers[name]
 
-    # --- Core Memory (always in context) ---
+    # --- Core Memory（始终在上下文中） ---
 
     def get_core_memory(self) -> dict[str, Any]:
-        """Get core memory for LLM context injection.
+        """获取用于注入 LLM 上下文的 core memory。
 
-        Core memory includes the Soul layer and a summary of the Preference layer.
-        This is always provided to the LLM as part of the system prompt.
+        Core memory 包含 Soul 层和 Preference 层的摘要。它始终作为
+        system prompt 的一部分提供给 LLM。
         """
         soul = self._layers["soul"].data
         preference = self._layers["preference"].data
         awareness = self._layers["awareness"].data.get("notes", [])
         insights = self._layers["insight"].data.get("hypotheses", [])
 
-        # Support both onion format (nested "core" key) and legacy flat format
+        # 同时支持 onion 格式（嵌套 "core" 键）和遗留扁平格式
         is_onion = "core" in soul and isinstance(soul.get("core"), dict)
         if is_onion:
             core_data = soul.get("core", {})
@@ -619,7 +611,7 @@ class MemoryManager:
                     values_data.get("motivational_drivers", [])
                 ),
             }
-            # Flatten interest tree for preference summary
+            # 扁平化兴趣树以生成偏好摘要
             flat_interests: list[dict[str, object]] = []
             for dom in self._as_dict_list(interest_data.get("likes", [])):
                 for spec in self._as_dict_list(dom.get("specifics", [])):
@@ -674,7 +666,7 @@ class MemoryManager:
         }
 
     def render_core_memory_prompt(self) -> str:
-        """Render core memory into stable prompt text."""
+        """把 core memory 渲染为稳定的 prompt 文本。"""
         core_memory = self.get_core_memory()
         soul = core_memory["soul_summary"]
         preference_summary = core_memory["preference_summary"]
@@ -803,30 +795,30 @@ class MemoryManager:
             reverse=True,
         )[:5]
 
-    # --- Working Memory (session-only) ---
+    # --- Working Memory（仅会话） ---
 
     def set_working(self, key: str, value: Any) -> None:
-        """Set a value in working memory (session only, not persisted)."""
+        """在 working memory 中设置值（仅会话，不持久化）。"""
         self._working_memory[key] = value
 
     def get_working(self, key: str, default: Any = None) -> Any:
-        """Get a value from working memory."""
+        """从 working memory 获取值。"""
         return self._working_memory.get(key, default)
 
     def clear_working(self) -> None:
-        """Clear all working memory."""
+        """清空所有 working memory。"""
         self._working_memory.clear()
 
-    # --- Cross-layer operations ---
+    # --- 跨层操作 ---
 
     async def propagate_event(self, event: dict[str, Any]) -> None:
-        """Propagate a new event upward through the memory layers.
+        """把新事件沿记忆层向上传播。
 
-        This is the main entry point for new behavioral data. The event
-        is stored in the Event layer and may trigger updates in higher layers.
+        这是新行为数据的主入口。事件存入 Event 层，可能触发更高层的
+        更新。
 
         Args:
-            event: Behavioral event data.
+            event: 行为事件数据。
         """
         event_type = str(event.get("event_type") or event.get("type") or "").strip()
         if event_type not in _EVENT_TYPES:
@@ -845,17 +837,16 @@ class MemoryManager:
             event_type,
             url=event.get("url", ""),
             title=event.get("title", ""),
-            # v0.3.23+: ``context`` is a natural-language string from
-            # ``event_format.build_event()``. Default to empty string
-            # (was ``{}`` in v0.3.22 and earlier) so insert_event's
-            # smart encoder stores raw text instead of double-quoting
-            # the empty dict literal.
+            # v0.3.23+: ``context`` 是来自 ``event_format.build_event()`` 的
+            # 自然语言字符串。默认空字符串（v0.3.22 及更早是 ``{}``），让
+            # insert_event 的智能编码器存原始文本，而不是给空 dict 字面量
+            # 加双重引号。
             context=event.get("context", ""),
             metadata=metadata,
         )
-        # TODO: Check if preference layer needs updating
-        # TODO: Check if this triggers awareness observations
-        # TODO: Check for significant events that bypass to soul layer
+        # TODO: 检查 preference 层是否需要更新
+        # TODO: 检查是否触发 awareness 观察
+        # TODO: 检查是否绕过到 soul 层的重大事件
         logger.debug("Event propagated: %s", event_type)
 
     def query_events(
@@ -869,7 +860,7 @@ class MemoryManager:
         satisfaction_modes: frozenset[str] | None = None,
         after_event_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Query persisted events from the SQLite-backed event layer."""
+        """从 SQLite 支持的 event 层查询持久化事件。"""
         return self._database.query_events(
             event_types=event_types,
             start_time=start_time,
@@ -886,7 +877,7 @@ class MemoryManager:
         after_event_id: int,
         event_types: list[str],
     ) -> list[dict[str, Any]]:
-        """Query events newer than a cursor in ascending id order."""
+        """按 id 升序查询比游标更新的事件。"""
         return self._database.query_events_since(
             after_event_id=after_event_id,
             event_types=event_types,
@@ -898,17 +889,17 @@ class MemoryManager:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> dict[str, int]:
-        """Return grouped event counts for the given time range."""
+        """返回给定时间范围内分组的事件计数。"""
         return self._database.count_events_by_type(
             start_time=start_time,
             end_time=end_time,
         )
 
     async def top_down_reinterpret(self) -> None:
-        """Use top-level understanding to reinterpret lower layers.
+        """用顶层理解重新解读下层。
 
-        Soul-level personality understanding can change how we interpret
-        behavioral patterns at the preference and awareness layers.
+        Soul 级别人格理解能改变我们解读 preference 与 awareness 层行为
+        模式的方式。
         """
-        # TODO: Implement top-down reinterpretation
+        # TODO: 实现自上而下重新解读
         logger.debug("Top-down reinterpretation triggered.")

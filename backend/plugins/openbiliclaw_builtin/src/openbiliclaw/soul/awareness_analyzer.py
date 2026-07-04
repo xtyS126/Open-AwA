@@ -1,4 +1,4 @@
-"""Awareness-layer generation from recent behavior."""
+"""从近期行为生成认知层。"""
 
 from __future__ import annotations
 
@@ -30,18 +30,16 @@ _AWARENESS_WRAPPED_ARRAY_KEYS = (
     "data",
     "output",
     "list",
-    "array",
-    # MiMo / reasoning-model variants seen in the wild (v0.3.x resilience pass).
+    # MiMo / 推理模型在实际场景中出现的变体（v0.3.x 健壮性补丁）。
     "observations",
     "recent_observations",
     "latest",
     "latest_observations",
 )
 
-# The full schema of a single awareness note, used by `_looks_like_single_note`
-# below. The runtime check only requires `observation` (the only field whose
-# absence makes the note worthless); the other keys are recovered with sensible
-# defaults in `_build_note`.
+# 单条认知笔记的完整 schema，供下方 `_looks_like_single_note` 使用。
+# 运行时检查只要求 `observation`（这是唯一缺失后让笔记失去意义的字段）；
+# 其他键在 `_build_note` 中以合理默认值补齐。
 _NOTE_SHAPE_KEYS = frozenset({"date", "observation", "trend", "emotion_guess"})
 
 
@@ -60,12 +58,12 @@ class SupportsCoreMemoryTask(Protocol):
 
 
 class AwarenessGenerationError(Exception):
-    """Raised when awareness generation fails or returns invalid data."""
+    """当认知生成失败或返回无效数据时抛出。"""
 
 
 @dataclass
 class AwarenessAnalyzer:
-    """Generate structured recent-awareness notes from events."""
+    """从事件生成结构化的近期认知笔记。"""
 
     registry: SupportsCoreMemoryTask
 
@@ -105,7 +103,7 @@ class AwarenessAnalyzer:
         existing: list[AwarenessNote],
         incoming: list[AwarenessNote],
     ) -> list[AwarenessNote]:
-        """Merge awareness notes while deduplicating same-day observations."""
+        """合并认知笔记，同时去重同一天的观察。"""
         merged = list(existing)
         seen = {(note.date, self._normalize_text(note.observation)) for note in existing}
         for note in incoming:
@@ -146,10 +144,9 @@ class AwarenessAnalyzer:
 
     @staticmethod
     def _looks_like_single_note(value: object) -> bool:
-        # Only `observation` is load-bearing — `date`, `trend`, `emotion_guess`
-        # are recovered with defaults by `_build_note`. Reasoning models that
-        # return a bare singular note dict (no array wrapper) are still
-        # recoverable as long as `observation` is present.
+        # 只有 `observation` 是关键字段 —— `date`、`trend`、`emotion_guess`
+        # 在 `_build_note` 中以默认值补齐。返回单个裸笔记字典（无数组包装）的
+        # 推理模型只要 `observation` 存在仍可恢复。
         return isinstance(value, dict) and "observation" in value
 
     @staticmethod

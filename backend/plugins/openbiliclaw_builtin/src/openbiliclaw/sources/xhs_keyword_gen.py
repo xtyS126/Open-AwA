@@ -1,8 +1,8 @@
-"""LLM-based xiaohongshu-style keyword generator.
+"""基于 LLM 的小红书风格关键词生成器。
 
-Rewrites SoulProfile interest tags into xhs-flavored search queries —
-concrete, lifestyle-oriented, long-tail — so the extension's background
-dispatcher can search xhs in a way that matches how real users browse.
+将 SoulProfile 的兴趣标签改写为小红书风格的搜索查询 ——
+具体、生活化、长尾 —— 这样扩展的后台调度器就能以符合真实用户浏览
+方式的方式搜索小红书。
 """
 
 from __future__ import annotations
@@ -36,14 +36,13 @@ _SYSTEM_PROMPT = """你是小红书内容策略师。给你一个用户的兴趣
 
 
 def _build_user_prompt(profile: SoulProfile | OnionProfile, count: int) -> str:
-    # Same canonical structured profile every other discovery prompt sees
-    # (B站 / YouTube / X query-gen, all-platform evaluation) — no divergent
-    # representation. Lazy import keeps sources/ off discovery/ at module load.
-    # Deterministic dump keeps the prompt-cache prefix stable.
+    # 与其他所有发现 prompt（B 站 / YouTube / X query-gen、全平台评估）看到的
+    # 相同规范化结构化画像 —— 没有分叉的表示。惰性导入让 sources/ 在模块
+    # 加载时不依赖 discovery/。确定性 dump 保持 prompt-cache 前缀稳定。
     from openbiliclaw.discovery.strategies._utils import build_profile_summary
 
-    # build_profile_summary is annotated for SoulProfile but supports OnionProfile
-    # too (back-compat properties); the producer hands us either.
+    # build_profile_summary 为 SoulProfile 标注类型，但也支持 OnionProfile
+    # （向后兼容属性）；生产者向我们传入其中任意一种。
     summary = build_profile_summary(cast("SoulProfile", profile))
     return (
         "<profile_summary>\n"
@@ -60,12 +59,11 @@ async def generate_xhs_keywords(
     *,
     count: int = 5,
 ) -> list[str]:
-    """Generate up to ``count`` xhs-style search keywords from *profile*.
+    """从 *profile* 生成最多 ``count`` 个小红书风格搜索关键词。
 
-    Falls back to the profile's interest names (deterministic) when the LLM is
-    unavailable / fails / returns nothing usable, so the unified keyword planner
-    (and the legacy path) never loses xhs to a transient LLM failure. Returns an
-    empty list only when the profile has no usable interests.
+    当 LLM 不可用/失败/未返回可用结果时，回退到画像的兴趣名称（确定性），
+    这样统一关键词规划器（以及遗留路径）就不会因瞬态 LLM 故障而丢失小红书。
+    仅当画像没有可用兴趣时才返回空列表。
     """
     if not profile.preferences.interests:
         return []
@@ -78,7 +76,7 @@ async def _llm_xhs_keywords(
     profile: SoulProfile | OnionProfile,
     count: int,
 ) -> list[str]:
-    """The LLM attempt; returns ``[]`` on any failure so the caller can fall back."""
+    """LLM 尝试；任何失败时返回 ``[]`` 以便调用方可以回退。"""
     try:
         complete_structured = llm_service.complete_structured_task
         response = await complete_structured(
@@ -121,7 +119,7 @@ async def _llm_xhs_keywords(
 
 
 def _interest_name_fallback(profile: SoulProfile | OnionProfile, count: int) -> list[str]:
-    """Deterministic interest-name keywords (mirrors B站/YouTube/抖音 fallback)."""
+    """确定性的兴趣名称关键词（镜像 B 站/YouTube/抖音 的回退逻辑）。"""
     ranked = sorted(
         profile.preferences.interests, key=lambda tag: float(tag.weight or 0.0), reverse=True
     )

@@ -1,4 +1,4 @@
-"""Runtime Bilibili extension-search fallback producer."""
+"""运行时 Bilibili 扩展搜索兜底 producer。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ async def generate_bili_search_keywords(
     *,
     count: int = 5,
 ) -> list[str]:
-    """Generate Bilibili search queries for extension fallback tasks."""
+    """为扩展兜底任务生成 Bilibili 搜索查询。"""
 
     try:
         messages = build_search_queries_prompt(profile_summary=build_profile_summary(profile))
@@ -56,7 +56,7 @@ async def generate_bili_search_keywords(
 
 @dataclass
 class BilibiliExtensionSearchProducer:
-    """Enqueue Bilibili search tasks when API search is degraded."""
+    """当 API 搜索降级时，将 Bilibili 搜索任务入队。"""
 
     task_queue: BiliTaskQueue
     soul_engine: Any
@@ -80,7 +80,7 @@ class BilibiliExtensionSearchProducer:
         limit: int | None = None,
         keywords: list[str] | None = None,
     ) -> dict[str, object]:
-        """Run one fallback cycle if Bilibili API search needs DOM help."""
+        """当 Bilibili API 搜索需要 DOM 协助时，运行一次兜底循环。"""
 
         if not self.enabled:
             return self._skip("disabled")

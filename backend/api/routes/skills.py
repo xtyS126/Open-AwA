@@ -1732,7 +1732,19 @@ async def install_skill_from_package(
         
         return {
             "message": f"技能 '{new_skill.name}' 安装成功",
-            "skill": new_skill
+            "skill": {
+                "id": new_skill.id,
+                "name": new_skill.name,
+                "version": new_skill.version,
+                "description": new_skill.description,
+                "config": new_skill.config,
+                "category": new_skill.category,
+                "tags": new_skill.tags,
+                "dependencies": new_skill.dependencies,
+                "author": new_skill.author,
+                "enabled": new_skill.enabled,
+                "installed_at": new_skill.installed_at.isoformat() if new_skill.installed_at else None,
+            }
         }
         
     except zipfile.BadZipFile:

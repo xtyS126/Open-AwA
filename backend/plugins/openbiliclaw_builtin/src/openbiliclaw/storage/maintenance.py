@@ -1,4 +1,4 @@
-"""SQLite maintenance helpers for integrity checks, backups, and repair."""
+"""SQLite 维护工具：完整性检查、备份与修复。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class RepairResult:
 
 
 def check_database_integrity(db_path: Path) -> IntegrityReport:
-    """Return whether a SQLite database passes integrity check."""
+    """返回 SQLite 数据库是否通过完整性检查。"""
     connection = sqlite3.connect(str(db_path))
     try:
         row = connection.execute("PRAGMA integrity_check").fetchone()
@@ -65,7 +65,7 @@ def create_database_backup(
     *,
     timestamp: str | None = None,
 ) -> BackupResult:
-    """Create a timestamped cold backup for the database and optional WAL."""
+    """为数据库及可选的 WAL 创建带时间戳的冷备份。"""
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = timestamp or _timestamp_now()
     backup_db = backup_dir / f"{_backup_base_name(db_path, stamp)}.db"
@@ -87,7 +87,7 @@ def rotate_database_backups(
     keep_weekly: int = _RETENTION_WEEKS,
     now: datetime | None = None,
 ) -> None:
-    """Keep recent daily backups and one backup for each recent week."""
+    """保留最近的每日备份，以及最近每周各一份备份。"""
     if not backup_dir.exists():
         return
 
@@ -131,7 +131,7 @@ def repair_database(
     integrity_error: str | None = None,
     recovered_sql: str | None = None,
 ) -> RepairResult:
-    """Repair a damaged database into a fresh file and replace atomically."""
+    """把损坏的数据库修复到新文件并原子替换。"""
     active_holders = list(holders) if holders is not None else list_database_holders(db_path)
     if active_holders:
         return RepairResult(
@@ -212,7 +212,7 @@ def repair_database(
 
 
 def list_database_holders(db_path: Path) -> list[str]:
-    """Return processes currently holding the database or WAL file."""
+    """返回当前持有数据库或 WAL 文件的进程。"""
     wal_path = db_path.with_name(f"{db_path.name}-wal")
     targets = [str(db_path)]
     if wal_path.exists():
@@ -242,7 +242,7 @@ def list_database_holders(db_path: Path) -> list[str]:
 
 
 def recover_database_sql(db_path: Path) -> str | None:
-    """Try to recover SQL statements from a damaged SQLite database."""
+    """尝试从损坏的 SQLite 数据库中恢复 SQL 语句。"""
     try:
         result = subprocess.run(
             ["sqlite3", str(db_path), ".recover"],
@@ -265,7 +265,7 @@ def maybe_create_scheduled_backup(
     now: datetime | None = None,
     minimum_interval: timedelta = _DEFAULT_BACKUP_INTERVAL,
 ) -> BackupResult | None:
-    """Create a cold backup when enough time has elapsed and DB is healthy."""
+    """当经过足够时间且数据库健康时创建冷备份。"""
     report = check_database_integrity(db_path)
     if not report.healthy:
         return None
@@ -283,7 +283,7 @@ def maybe_create_scheduled_backup(
 
 
 def latest_backup_timestamp(backup_dir: Path) -> datetime | None:
-    """Return the newest timestamp among stored backups."""
+    """返回已存备份中最新的时间戳。"""
     if not backup_dir.exists():
         return None
     stamps = [

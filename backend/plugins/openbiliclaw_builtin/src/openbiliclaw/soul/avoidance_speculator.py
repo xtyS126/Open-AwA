@@ -1,4 +1,4 @@
-"""Speculative avoidance lifecycle for proactive dislike-boundary exploration."""
+"""针对主动式厌恶边界探索的投机回避生命周期。"""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ def _avoidance_source_topic_keys(
 
 @dataclass
 class SpeculativeAvoidanceSpecific:
-    """A narrow avoided content pattern within a speculative avoidance domain."""
+    """投机回避域内一条窄化的回避内容模式。"""
 
     name: str = ""
     confirmation_count: int = 0
@@ -134,7 +134,7 @@ class SpeculativeAvoidanceSpecific:
 
 @dataclass
 class SpeculativeAvoidance:
-    """A speculated avoidance direction awaiting confirmation."""
+    """一个等待确认的投机回避方向。"""
 
     domain: str = ""
     reason: str = ""
@@ -198,7 +198,7 @@ class SpeculativeAvoidance:
 
 @dataclass
 class AvoidanceCooldownEntry:
-    """A denied or expired avoidance candidate suppressed until cooldown ends."""
+    """被拒绝或过期的回避候选，在冷却结束前被压制。"""
 
     domain: str = ""
     source_mode: str = ""
@@ -225,7 +225,7 @@ class AvoidanceCooldownEntry:
 
 @dataclass
 class AvoidanceState:
-    """Container for all speculative avoidance lifecycle state."""
+    """所有投机回避生命周期状态的容器。"""
 
     active: list[SpeculativeAvoidance] = field(default_factory=list)
     cooldown: list[AvoidanceCooldownEntry] = field(default_factory=list)
@@ -263,7 +263,7 @@ class AvoidanceState:
 
 @dataclass
 class AvoidanceTickResult:
-    """Summary of one avoidance speculator tick."""
+    """一次回避投机器 tick 的摘要。"""
 
     generated: list[SpeculativeAvoidance] = field(default_factory=list)
     promoted: list[SpeculativeAvoidance] = field(default_factory=list)
@@ -273,7 +273,7 @@ class AvoidanceTickResult:
 
 @dataclass
 class AvoidanceNoveltyGuard:
-    """Local duplicate guard for speculative avoidance probes."""
+    """投机回避探针的本地去重守卫。"""
 
     exact_terms: set[str] = field(default_factory=set)
     fuzzy_terms: set[str] = field(default_factory=set)
@@ -373,7 +373,7 @@ class AvoidanceNoveltyGuard:
         source_mode: str = "",
         source_signal: str = "",
     ) -> None:
-        """Add an accepted avoidance candidate to this in-memory guard."""
+        """将一个已接受的回避候选加入此内存去重守卫。"""
         for value in [domain, *(specifics or [])]:
             text = str(value or "").strip()
             normalized = _normalize_probe_term(text)
@@ -419,7 +419,7 @@ class AvoidanceNoveltyGuard:
 
 
 def load_avoidance_state(data_dir: Path) -> AvoidanceState:
-    """Load avoidance state from disk."""
+    """从磁盘加载回避状态。"""
     path = data_dir / "memory" / "avoidance_state.json"
     if not path.exists():
         return AvoidanceState()
@@ -434,7 +434,7 @@ def load_avoidance_state(data_dir: Path) -> AvoidanceState:
 
 
 def save_avoidance_state(data_dir: Path, state: AvoidanceState) -> None:
-    """Persist avoidance state to disk."""
+    """将回避状态持久化到磁盘。"""
     update_avoidance_state(data_dir, lambda _state: state)
 
 
@@ -442,7 +442,7 @@ def update_avoidance_state(
     data_dir: Path,
     mutator: Callable[[AvoidanceState], AvoidanceState | None],
 ) -> AvoidanceState:
-    """Atomically update speculative avoidance state from latest disk data."""
+    """基于最新磁盘数据原子地更新投机回避状态。"""
     from openbiliclaw.memory.json_state import update_json_state
 
     path = data_dir / "memory" / "avoidance_state.json"
@@ -465,7 +465,7 @@ def update_avoidance_state(
 def promote_ready_avoidances(
     state: AvoidanceState,
 ) -> tuple[list[SpeculativeAvoidance], AvoidanceState]:
-    """Extract avoidance candidates that are ready for external writeback."""
+    """提取已准备好对外回写的回避候选。"""
     promoted: list[SpeculativeAvoidance] = []
     remaining: list[SpeculativeAvoidance] = []
     for item in state.active:
@@ -487,7 +487,7 @@ def expire_stale_avoidances(
     now: datetime,
     cooldown_days: int = 7,
 ) -> tuple[list[SpeculativeAvoidance], AvoidanceState]:
-    """Expire stale active avoidance candidates and add cooldown entries."""
+    """让陈旧的活跃回避候选过期并添加冷却条目。"""
     rejected: list[SpeculativeAvoidance] = []
     remaining: list[SpeculativeAvoidance] = []
     for item in state.active:
@@ -561,25 +561,24 @@ def _compute_source_mode_quota(
     slots: int,
     count: int,
 ) -> dict[str, int]:
-    """Compute how many of each source_mode the LLM should generate.
+    """计算 LLM 应为每种 source_mode 生成多少条候选。
 
-    The goal: spread the ``count`` candidates across all 3 source_modes,
-    biasing toward modes that are under-represented in the current active set.
-    Modes already at ``AVOIDANCE_SOURCE_MODE_ACTIVE_LIMIT`` get 0.
+    目标：将 ``count`` 条候选均摊到 3 种 source_mode 上，
+    偏向当前活跃集合中占比偏低的 mode。
+    已达 ``AVOIDANCE_SOURCE_MODE_ACTIVE_LIMIT`` 的 mode 配额为 0。
     """
     current = _source_mode_counts([item for item in active if item.status == "active"])
-    # Remaining capacity per mode before hitting the per-mode cap
+    # 每个 mode 在触顶前的剩余容量
     remaining: dict[str, int] = {}
     for mode in _ALL_SOURCE_MODES:
         remaining[mode] = max(0, AVOIDANCE_SOURCE_MODE_ACTIVE_LIMIT - current.get(mode, 0))
 
     total_remaining = sum(remaining.values())
     if total_remaining == 0:
-        # All modes saturated — ask for 1 each anyway so quality gate can pick
+        # 所有 mode 都已饱和 —— 仍然各请求 1 条以便质量门挑选
         return {mode: 1 for mode in _ALL_SOURCE_MODES}
 
-    # Distribute count proportionally to remaining capacity, minimum 1 per
-    # mode that still has capacity
+    # 按剩余容量比例分配 count，每个仍有容量的 mode 至少 1 条
     quota: dict[str, int] = {}
     for mode in _ALL_SOURCE_MODES:
         if remaining[mode] <= 0:
@@ -594,7 +593,7 @@ def compact_redundant_active_avoidances(
     now: datetime,
     cooldown_days: int = 7,
 ) -> tuple[list[SpeculativeAvoidance], AvoidanceState]:
-    """Remove redundant active avoidance probes before they keep occupying slots."""
+    """在冗余的活跃回避探针持续占用槽位之前移除它们。"""
     active = [item for item in state.active if item.status == "active"]
     if len(active) < 2:
         return [], state
@@ -725,7 +724,7 @@ def observe_avoidance_events(
     events: list[dict[str, Any]],
     state: AvoidanceState,
 ) -> tuple[AvoidanceState, int]:
-    """Observe explicit negative evidence against active avoidance candidates."""
+    """观察针对活跃回避候选的显式负面证据。"""
     match_count = 0
     for event in events:
         if not isinstance(event, dict) or not _is_explicit_negative_event(event):
@@ -772,7 +771,7 @@ def choose_next_avoidance_candidate(
     probed_axes: set[str] | None = None,
     feedback_history: object | None = None,
 ) -> Any | None:
-    """Choose the next avoidance probe to surface."""
+    """选择下一个要呈现的回避探针。"""
     recent_domains = probed_domains or set()
     recent_axes = probed_axes or set()
     denied_domains = _denied_avoidance_domains(feedback_history)
@@ -823,7 +822,7 @@ def choose_next_avoidance_candidate(
 
 
 def _parse_avoidance_generation_response(content: str) -> list[dict[str, Any]]:
-    """Extract avoidance candidates from an LLM response."""
+    """从 LLM 响应中提取回避候选。"""
     data = parse_llm_json_tolerant(content)
     if isinstance(data, dict):
         avoidances = data.get("avoidances", [])
@@ -836,7 +835,7 @@ def _parse_avoidance_generation_response(content: str) -> list[dict[str, Any]]:
 
 
 class AvoidanceSpeculator:
-    """IO boundary for speculative avoidance lifecycle state."""
+    """投机回避生命周期状态的 IO 边界。"""
 
     def __init__(
         self,
@@ -947,7 +946,7 @@ class AvoidanceSpeculator:
         return [item for item in state.active if item.status == "active"]
 
     def user_confirm_avoidance(self, domain: str) -> SpeculativeAvoidance | None:
-        """User explicitly confirmed an avoidance; remove it from active state."""
+        """用户显式确认了一条回避；将其从活跃状态中移除。"""
         confirmed: SpeculativeAvoidance | None = None
 
         def _mutate(state: AvoidanceState) -> None:
@@ -968,7 +967,7 @@ class AvoidanceSpeculator:
         return confirmed
 
     def user_reject_avoidance(self, domain: str, cooldown_days: int = 30) -> bool:
-        """User rejected an avoidance hypothesis; move it to cooldown."""
+        """用户拒绝了一条回避假设；将其移入冷却。"""
         found = False
         now = datetime.now()
 

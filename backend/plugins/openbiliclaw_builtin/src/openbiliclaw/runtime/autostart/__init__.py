@@ -1,4 +1,4 @@
-"""User-scope boot autostart registration."""
+"""用户级开机自启注册。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def _unsupported_reason() -> str:
 
 
 def get_manager() -> AutostartManager | None:
-    """Return the current platform manager, or ``None`` when unsupported."""
+    """返回当前平台的管理器；不支持时返回 ``None``。"""
     if docker_runtime.is_running_in_container():
         return None
 
@@ -39,12 +39,12 @@ def get_manager() -> AutostartManager | None:
 
 
 def is_supported() -> bool:
-    """Return whether the current runtime can manage user autostart."""
+    """返回当前运行时是否支持管理用户自启。"""
     return get_manager() is not None
 
 
 def register(config: object) -> None:
-    """Register the current platform autostart entry."""
+    """注册当前平台的自启项。"""
     manager = get_manager()
     if manager is None:
         raise RuntimeError(_unsupported_reason())
@@ -52,7 +52,7 @@ def register(config: object) -> None:
 
 
 def unregister() -> None:
-    """Remove the current platform autostart entry."""
+    """移除当前平台的自启项。"""
     manager = get_manager()
     if manager is None:
         raise RuntimeError(_unsupported_reason())
@@ -60,7 +60,7 @@ def unregister() -> None:
 
 
 def status() -> AutostartStatus:
-    """Return current platform autostart status."""
+    """返回当前平台的自启状态。"""
     manager = get_manager()
     if manager is None:
         return AutostartStatus(

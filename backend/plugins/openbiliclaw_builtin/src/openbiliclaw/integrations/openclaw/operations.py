@@ -1,4 +1,4 @@
-"""Business operations exposed by the OpenClaw adapter."""
+"""OpenClaw 适配器对外暴露的业务操作。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class SupportsOpenClawServices(Protocol):
-    """Dependency bundle required by the OpenClaw adapter."""
+    """OpenClaw 适配器所需的依赖集合。"""
 
     soul_engine: Any
     memory_manager: Any
@@ -54,7 +54,7 @@ class SupportsOpenClawServices(Protocol):
 
 @dataclass(slots=True)
 class OpenClawAdapter:
-    """Stable adapter interface consumed by the OpenClaw integration layer."""
+    """OpenClaw 集成层消费的稳定适配器接口。"""
 
     services: SupportsOpenClawServices
     refresh_timeout_seconds: float = 45.0
@@ -90,7 +90,7 @@ class OpenClawAdapter:
             return 0.0
 
     async def sync_account(self) -> SyncAccountResponse:
-        """Run one account sync and normalize the result."""
+        """执行一次账号同步并规范化结果。"""
         try:
             result = await self.services.account_sync_service.sync_now()
         except Exception as exc:  # pragma: no cover - defensive adapter boundary
@@ -102,7 +102,7 @@ class OpenClawAdapter:
         )
 
     async def get_profile(self) -> ProfileResponse:
-        """Return a trimmed profile summary."""
+        """返回精简后的画像摘要。"""
         try:
             profile = await self.services.soul_engine.get_profile()
         except Exception as exc:  # pragma: no cover - defensive adapter boundary
@@ -125,7 +125,7 @@ class OpenClawAdapter:
         limit: int = 5,
         refresh_if_needed: bool = False,
     ) -> RecommendationResponse:
-        """Generate recommendations for OpenClaw consumption."""
+        """生成供 OpenClaw 消费的推荐。"""
         try:
             profile = await self.services.soul_engine.get_profile()
             rows: list[dict[str, object]] | None = None
@@ -193,7 +193,7 @@ class OpenClawAdapter:
         )
 
     async def submit_feedback(self, request: FeedbackRequest) -> FeedbackResponse:
-        """Persist recommendation feedback and trigger downstream learning hooks."""
+        """持久化推荐反馈并触发下游学习钩子。"""
         try:
             recommendation = self.services.database.get_recommendation_by_id(
                 request.recommendation_id
@@ -249,7 +249,7 @@ class OpenClawAdapter:
         )
 
     async def get_delight(self) -> DelightResponse:
-        """Return the current best proactive delight candidate, if any."""
+        """返回当前最佳的主动惊喜候选（如果有）。"""
         try:
             get_pending_delight = getattr(
                 self.services.runtime_controller,
@@ -275,12 +275,12 @@ class OpenClawAdapter:
             raise AdapterOperationError("Failed to get delight candidate.") from exc
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
-        """Run one Socratic dialogue turn and return the agent's reply.
+        """执行一轮苏格拉底式对话并返回 agent 的回复。
 
-        The agent's reply already flows back into the soul engine through
-        ``SocraticDialogue``'s internal ``learn_from_dialogue`` hook, so the
-        caller does not need to persist anything separately — the user's
-        answer becomes signal the next time the profile is rebuilt.
+        agent 的回复已经通过 ``SocraticDialogue`` 内部的
+        ``learn_from_dialogue`` 钩子回流到 soul engine，所以调用方
+        无需单独持久化任何东西 —— 用户的回答会在下次画像重建时
+        成为信号。
         """
         try:
             from openbiliclaw.soul.dialogue import SocraticDialogue
@@ -304,12 +304,11 @@ class OpenClawAdapter:
         return ChatResponse(reply=str(reply), session=request.session)
 
     async def get_next_probe(self) -> InterestProbeResponse:
-        """Return the next speculative-interest hypothesis to ask the user about.
+        """返回下一个要询问用户的推测性兴趣假设。
 
-        Picks the active speculation with the lowest confirmation_count (i.e.
-        the hypothesis that still needs the most validation). Returns ``None``
-        when the speculator has no active candidates — which means the agent
-        currently has no pending interest question to ask.
+        选取 confirmation_count 最低（即最需要验证）的活跃推测。
+        当 speculator 没有活跃候选时返回 ``None`` —— 这表示 agent
+        当前没有待问的兴趣问题。
         """
         try:
             soul_engine = self.services.soul_engine
@@ -384,7 +383,7 @@ class OpenClawAdapter:
         axes_key: str = "probed_axes",
         probe_modes_key: str | None = "probed_distance_bands",
     ) -> None:
-        """Persist OpenClaw probe selection so repeated calls avoid repeats."""
+        """持久化 OpenClaw 探测选择，使重复调用避免重复。"""
         update_runtime_state = getattr(
             self.services.memory_manager,
             "update_discovery_runtime_state",
@@ -435,7 +434,7 @@ class OpenClawAdapter:
         reason: str,
         specifics: list[str],
     ) -> str:
-        """Template a ready-to-ask probe question from a speculation."""
+        """从推测生成一个可直接提问的探测问题模板。"""
         specific_hint = ""
         if specifics:
             specific_hint = "（比如：" + "、".join(specifics[:3]) + "）"
@@ -447,7 +446,7 @@ class OpenClawAdapter:
         return f"我感觉你可能对【{domain}】{specific_hint}有潜在兴趣，这个方向你自己认不认？"
 
     async def get_next_avoidance_probe(self) -> AvoidanceProbeResponse:
-        """Return the next speculative-avoidance hypothesis to ask about."""
+        """返回下一个要询问的推测性避雷假设。"""
         try:
             soul_engine = self.services.soul_engine
             speculator = getattr(soul_engine, "_avoidance_speculator", None)
@@ -520,7 +519,7 @@ class OpenClawAdapter:
         self,
         request: AvoidanceProbeFeedbackRequest,
     ) -> AvoidanceProbeFeedbackResponse:
-        """Record user feedback for a speculative avoidance probe."""
+        """记录用户对推测性避雷探测的反馈。"""
         try:
             speculator = getattr(self.services.soul_engine, "_avoidance_speculator", None)
             if request.response == "confirm":
@@ -580,7 +579,7 @@ class OpenClawAdapter:
         reason: str,
         specifics: list[str],
     ) -> str:
-        """Template a ready-to-ask avoidance probe question."""
+        """从推测生成一个可直接提问的避雷探测问题模板。"""
         specific_hint = ""
         if specifics:
             specific_hint = "（比如：" + "、".join(specifics[:3]) + "）"
@@ -589,7 +588,7 @@ class OpenClawAdapter:
         return f"我感觉【{domain}】{specific_hint}可能不是你想看的方向，这个判断准吗？"
 
     async def get_runtime_status(self) -> RuntimeStatusResponse:
-        """Return the merged runtime and account sync summary."""
+        """返回合并后的运行时与账号同步摘要。"""
         try:
             runtime_status: dict[str, object] = {}
             get_runtime_status = getattr(

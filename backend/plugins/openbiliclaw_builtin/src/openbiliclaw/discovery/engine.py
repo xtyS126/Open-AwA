@@ -1,7 +1,7 @@
-"""Content Discovery Engine.
+"""内容发现引擎。
 
-Coordinates multiple discovery strategies to find content
-that matches the user's soul profile.
+协调多个发现策略，找到与用户 soul profile
+匹配的内容。
 """
 
 from __future__ import annotations
@@ -59,17 +59,17 @@ _NEGATIVE_EXAMPLES_UNSET = object()
 
 
 def discovery_raw_candidate_mode_enabled() -> bool:
-    """Return whether the current coroutine should fetch without LLM evaluation."""
+    """返回当前协程是否应该跳过 LLM 评估直接拉取。"""
 
     return bool(_RAW_CANDIDATE_MODE.get())
 
 
 def compact_evaluation_profile_summary(profile_summary: dict[str, object]) -> dict[str, object]:
-    """Return a smaller profile summary for high-volume candidate evaluation.
+    """返回更小的 profile 摘要，用于大批量候选评估。
 
-    Discovery evaluation pays the full profile prompt on every batch. Keep the
-    highest-signal interests plus the newest awareness/insight windows, while
-    preserving hard negatives such as ``disliked_topics`` unchanged.
+    发现评估会为每个批次付出完整的 profile prompt 成本。保留信号最强的
+    兴趣以及最新的 awareness/insight 窗口，同时保留
+    ``disliked_topics`` 等硬性负样本不变。
     """
 
     compacted = dict(profile_summary)
@@ -103,7 +103,7 @@ def compact_evaluation_profile_summary(profile_summary: dict[str, object]) -> di
 def evaluation_profile_prompt_layers(
     profile_summary: dict[str, object],
 ) -> list[tuple[str, dict[str, object]]]:
-    """Split eval profile prompt input from most stable to most volatile."""
+    """将评估 profile 的 prompt 输入从最稳定到最易变进行分层。"""
     return profile_prompt_layers(profile_summary)
 
 
@@ -168,27 +168,24 @@ def _compact_active_insights(value: object) -> list[object]:
 
 @dataclass
 class DiscoveryConcurrencyController:
-    """Shared bounded concurrency for external discovery dependencies."""
+    """用于发现外部依赖的共享有界并发控制。"""
 
     bilibili_request_concurrency: int = 2
-    # Cap on simultaneous discovery LLM calls. Sized so a typical init
-    # discover (4 strategies × ~8 batches each = ~32 batches) fans out
-    # in a single wave rather than queueing behind the cap. Each batch
-    # is a max-thinking deepseek call (~60-100s); without enough
-    # concurrency we'd spend the full P4 budget waiting on the
-    # semaphore (observed 17 min wall on 40 batches at concurrency=8,
-    # of which only ~100s was actual LLM compute per batch).
-    # deepseek has no effective RPM cap at our request sizes, so the
-    # only practical limits are the local event loop overhead and the
-    # ``chat_active`` yield (which still works to give interactive
-    # dialogue priority).
+    # 同时进行的发现 LLM 调用上限。规模设置使得一次典型的初始化
+    # 发现 (4 策略 × ~8 批次 = ~32 批次) 能在一波内展开，
+    # 而不是排在 cap 后面。每批是一次 max-thinking deepseek 调用
+    # (~60-100s)；如果没有足够的并发，我们会把整个 P4 预算
+    # 花在等信号量上 (在 40 批次 concurrency=8 时观测到 17 分钟
+    # wall 时间，其中每批只有 ~100s 是实际 LLM 计算)。
+    # deepseek 在我们的请求大小下没有有效的 RPM 上限，所以
+    # 实际的限制只有本地事件循环开销和 ``chat_active`` 让步
+    # (仍然能让交互式对话优先)。
     llm_evaluation_concurrency: int = 32
     search_budget_total: int = 30
-    """Total bilibili search API calls allowed per discovery run.
+    """每次发现运行允许的 B站 搜索 API 调用总数。
 
-    The budget is split evenly among strategies that use search
-    (search, explore, related_chain) to prevent any single strategy
-    from exhausting the IP-level rate limit.
+    预算在使用搜索的策略 (search、explore、related_chain) 之间
+    平均分配，以防止任何单一策略耗尽 IP 层级的速率限制。
     """
     _search_strategy_count: int = field(init=False, default=3, repr=False)
     _loop: asyncio.AbstractEventLoop | None = field(init=False, default=None, repr=False)
@@ -197,11 +194,11 @@ class DiscoveryConcurrencyController:
 
     @property
     def search_budget_per_strategy(self) -> int:
-        """Per-strategy share of the search API budget."""
+        """搜索 API 预算的每策略份额。"""
         return max(1, self.search_budget_total // max(1, self._search_strategy_count))
 
     def _ensure_loop_bound(self) -> None:
-        """Recreate semaphores when the controller is used from a new event loop."""
+        """当 controller 在新的事件循环中使用时重建信号量。"""
         loop = asyncio.get_running_loop()
         if self._loop is loop:
             return
@@ -210,7 +207,7 @@ class DiscoveryConcurrencyController:
         self._llm_semaphore = asyncio.Semaphore(max(1, self.llm_evaluation_concurrency))
 
     async def run_bilibili(self, awaitable: Awaitable[_T]) -> _T:
-        """Run one Bilibili-facing awaitable within the request limit."""
+        """在请求限制内运行一个面向 B站 的 awaitable。"""
         self._ensure_loop_bound()
         assert self._bilibili_semaphore is not None
         async with self._bilibili_semaphore:
@@ -218,23 +215,21 @@ class DiscoveryConcurrencyController:
 
     chat_active: bool = False
     llm_throttle_seconds: float = 0.0
-    """Minimum delay between consecutive discovery LLM calls.
+    """连续发现 LLM 调用之间的最小延迟。
 
-    Kept at 0 for deepseek, which has no effective RPM cap at our
-    request sizes. Raise above 0 when fronting a provider with a
-    strict RPM ceiling (e.g. Gemini free tier at 15 RPM). The
-    ``chat_active`` flag already yields the lane when a dialogue is
-    in progress, so the throttle is no longer needed for chat
-    protection on deepseek.
+    对于 deepseek 保持在 0，因为它在我们的请求大小下没有
+    有效的 RPM 上限。当对接有严格 RPM 上限的 provider 时
+    (例如 Gemini 免费层 15 RPM)，应提升到 0 以上。
+    ``chat_active`` 标志已经在对话进行时让出通道，所以
+    在 deepseek 上不再需要节流来保护对话。
     """
 
     async def run_llm(self, awaitable: Awaitable[_T]) -> _T:
-        """Run one LLM-facing awaitable within the evaluation limit.
+        """在评估限制内运行一个面向 LLM 的 awaitable。
 
-        When ``chat_active`` is True (a user dialogue is in progress),
-        discovery LLM calls yield until the dialogue finishes.  This
-        prevents discovery from saturating the LLM API's RPM quota and
-        starving interactive chat requests.
+        当 ``chat_active`` 为 True (用户对话进行中) 时，
+        发现 LLM 调用会让步直到对话完成。这能防止发现
+        占满 LLM API 的 RPM 配额并饿死交互式 chat 请求。
         """
         while self.chat_active:
             await asyncio.sleep(0.5)
@@ -242,7 +237,7 @@ class DiscoveryConcurrencyController:
         assert self._llm_semaphore is not None
         async with self._llm_semaphore:
             result = await awaitable
-            # Throttle: space out discovery LLM calls to avoid RPM exhaustion
+            # 节流：间隔发现 LLM 调用以避免 RPM 耗尽
             if self.llm_throttle_seconds > 0:
                 await asyncio.sleep(self.llm_throttle_seconds)
             return result
@@ -264,7 +259,7 @@ class SupportsStructuredTask(Protocol):
 
 
 class SupportsNegativeExemplarStore(Protocol):
-    """Storage surface needed by negative-anchor cache invalidation."""
+    """负锚点缓存失效所需的存储接口。"""
 
     def get_latest_event_id(self) -> int | None: ...
 
@@ -277,7 +272,7 @@ class SupportsNegativeExemplarStore(Protocol):
 
 
 def llm_eval_candidate_limit(limit: int) -> int:
-    """Return the pre-LLM candidate window for a requested result limit."""
+    """返回请求结果限制对应的 LLM 前候选窗口大小。"""
     safe_limit = max(1, int(limit))
     return min(
         _EVALUATE_BATCH_HARD_CAP_DEFAULT,
@@ -291,7 +286,7 @@ def trim_candidates_for_llm(
     limit: int,
     source_context: str,
 ) -> list[_T]:
-    """Keep a bounded pre-LLM candidate window while preserving upstream order."""
+    """保留有界的 LLM 前候选窗口，同时保留上游顺序。"""
     eval_limit = llm_eval_candidate_limit(limit)
     if len(candidates) <= eval_limit:
         return list(candidates)
@@ -306,7 +301,7 @@ def trim_candidates_for_llm(
 
 
 def _parse_batch_evaluation_payload(raw: str) -> list[dict[str, Any]] | None:
-    """Extract the scored result array from a provider response."""
+    """从 provider 响应中提取已打分的结果数组。"""
     payload = extract_llm_json_list(
         raw,
         wrapper_keys=("results", "items", "evaluations", "scores", "data"),
@@ -334,7 +329,7 @@ def _parse_batch_evaluation_payload(raw: str) -> list[dict[str, Any]] | None:
 
 
 def _content_result_keys(content: DiscoveredContent) -> set[str]:
-    """Stable keys that may identify a content item in batched LLM results."""
+    """在批量 LLM 结果中可能用于标识内容条目的稳定 key。"""
     return {
         key
         for key in {
@@ -391,7 +386,7 @@ def _batch_results_by_content_key(
     payload: list[dict[str, Any]],
     batch: list[DiscoveredContent],
 ) -> dict[str, dict[str, Any]] | None:
-    """Return payload entries keyed by content ID when the LLM supplied IDs."""
+    """当 LLM 提供 ID 时，返回按 content ID 索引的 payload 条目。"""
     valid_keys: set[str] = set()
     for content in batch:
         valid_keys.update(_content_result_keys(content))
@@ -412,14 +407,14 @@ def _batch_results_by_content_key(
 
 @dataclass
 class DiscoveredContent:
-    """A piece of content discovered by the engine."""
+    """由引擎发现的一条内容。"""
 
-    bvid: str = ""  # Bilibili video ID (legacy; prefer content_id for new code)
+    bvid: str = ""  # Bilibili 视频 ID (旧字段；新代码请优先用 content_id)
     title: str = ""
-    up_name: str = ""  # UP主 name (legacy; prefer author_name for new code)
+    up_name: str = ""  # UP主名称 (旧字段；新代码请优先用 author_name)
     up_mid: int = 0  # UP主 ID
     cover_url: str = ""
-    duration: int = 0  # seconds
+    duration: int = 0  # 秒
     view_count: int = 0
     like_count: int = 0
     favorite_count: int = 0
@@ -432,41 +427,39 @@ class DiscoveredContent:
     bookmark_count: int = 0
     tags: list[str] = field(default_factory=list)
     topic_key: str = ""
-    topic_group: str = ""  # Coarse semantic category (e.g. "强化学习") for diversity
+    topic_group: str = ""  # 粗粒度语义类别 (例如 "强化学习")，用于多样性
     style_key: str = ""
-    # Franchise / IP / series key tagged by the LLM at evaluation time
-    # (e.g. "原神", "崩坏:星穹铁道", "ChatGPT", "塞尔达传说"). Empty
-    # for general-interest content. Lets the curator down-rank items
-    # in the same IP after a single dislike, and lets the
-    # ``/api/recommendations`` endpoint cap how many same-franchise
-    # items appear in a single response window. Better than the
-    # heuristic title-substring approach (which v0.3.17 briefly tried)
-    # because the LLM already saw title + description + topic and can
-    # infer the IP correctly even when the title is bilingual or coded
-    # ("提瓦特摄影" → 原神, "宝可梦" → 精灵宝可梦, etc.).
+    # 在评估时由 LLM 标注的 Franchise / IP / 系列 key
+    # (例如 "原神"、"崩坏:星穹铁道"、"ChatGPT"、"塞尔达传说")。
+    # 普适兴趣内容为空。让 curator 在一次 dislike 后降权同一 IP
+    # 的条目，并让 ``/api/recommendations`` 端点限制单个响应窗口
+    # 中同 franchise 条目的数量。比启发式的标题子串方法更好
+    # (v0.3.17 曾短暂尝试过)，因为 LLM 已经看到标题 + 描述 + topic，
+    # 即使标题是双语或编码过的也能正确推断 IP
+    # ("提瓦特摄影" → 原神, "宝可梦" → 精灵宝可梦, 等等)。
     franchise_key: str = ""
     description: str = ""
-    source_strategy: str = ""  # Which strategy found this
-    relevance_score: float = 0.0  # 0.0 - 1.0 (based on user soul)
-    relevance_reason: str = ""  # Why this is relevant to the user
-    pool_expression: str = ""  # Precomputed recommendation copy for fast popup paths
-    pool_topic_label: str = ""  # Precomputed personalized topic label for fast popup paths
-    candidate_tier: str = "primary"  # Primary discovery vs backfill supply
-    discovered_at: str = ""  # Cache timestamp for recency-aware ranking
-    last_scored_at: str = ""  # Last relevance scoring timestamp
+    source_strategy: str = ""  # 哪个策略发现了这条内容
+    relevance_score: float = 0.0  # 0.0 - 1.0 (基于用户 soul)
+    relevance_reason: str = ""  # 为什么这条内容与用户相关
+    pool_expression: str = ""  # 预计算的推荐文案，用于快速弹窗路径
+    pool_topic_label: str = ""  # 预计算的个性化 topic 标签，用于快速弹窗路径
+    candidate_tier: str = "primary"  # 主发现 vs 补给 backfill
+    discovered_at: str = ""  # 缓存时间戳，用于感知时效性的排序
+    last_scored_at: str = ""  # 最后一次相关性打分时间戳
 
-    # ── Multi-source fields (Phase 0) ───────────────────────────────
-    content_id: str = ""  # Universal content ID; equals bvid for Bilibili content
-    content_url: str = ""  # Direct clickable URL
+    # ── 多来源字段 (Phase 0) ───────────────────────────────
+    content_id: str = ""  # 通用 content ID；对 Bilibili 内容等于 bvid
+    content_url: str = ""  # 直接可点击的 URL
     source_platform: str = ""  # "bilibili" | "xiaohongshu" | "web" | ...
-    author_name: str = ""  # Universal author name; equals up_name for Bilibili
-    score_threshold: float = 0.0  # Strategy-specific admission floor for raw candidates
-    body_text: str = ""  # tweet/thread full text; empty for video sources
-    content_type: str = "video"  # shape: "video" | "note" | "tweet" | "thread"
-    # P1.8 yield provenance: the ``discovery_keywords.id`` of the search word
-    # that produced this item (unified keyword planner). ``None`` for every
-    # non-search / legacy / flag-off path — the admit-time yield backfill is a
-    # no-op then, so attribution stays opt-in and byte-compatible.
+    author_name: str = ""  # 通用作者名；对 Bilibili 等于 up_name
+    score_threshold: float = 0.0  # 策略特定的原始候选准入下限
+    body_text: str = ""  # tweet/thread 全文；视频来源为空
+    content_type: str = "video"  # 形态: "video" | "note" | "tweet" | "thread"
+    # P1.8 yield provenance: 产生此条目的搜索词的 ``discovery_keywords.id``
+    # (统一 keyword planner)。对于所有非搜索 / 旧版本 / flag 关闭路径
+    # 为 ``None`` —— 此时 admit 时 yield 回填是 no-op，所以归因保持
+    # 可选且字节兼容。
     source_keyword_id: int | None = None
 
     def __post_init__(self) -> None:
@@ -480,11 +473,11 @@ class DiscoveredContent:
             self.content_url = f"https://www.bilibili.com/video/{self.bvid}"
 
     def to_cache_kwargs(self) -> dict[str, object]:
-        """Build the kwargs dict for ``Database.cache_content()``.
+        """构建 ``Database.cache_content()`` 的 kwargs 字典。
 
-        Single source of truth for the DiscoveredContent → content_cache
-        field mapping.  Used by discovery's ``_cache_results`` and the
-        recommendation engine's ``classify_pool_backlog`` persist loop.
+        DiscoveredContent → content_cache 字段映射的单一真相来源。
+        被发现的 ``_cache_results`` 和推荐引擎的
+        ``classify_pool_backlog`` 持久化循环使用。
         """
         return {
             "title": self.title,
@@ -522,66 +515,64 @@ class DiscoveredContent:
         }
 
 
-# v0.3.50+: per-batch franchise cap for ``_evaluate_batch``. The LLM
-# correctly identifies when a batch has many same-IP items (the prompt
-# mandates batch-wide franchise consistency), but pre-v0.3.50 we kept
-# them all and let serve()'s diversifier sort it out — by which point
-# the pool was already franchise-skewed. Cap=4 lets a series have a
-# small foothold in each refresh round but stops a single ``related_chain``
-# excursion from dumping 13 items of the same UP into one batch.
+# v0.3.50+: ``_evaluate_batch`` 的每批次 franchise 上限。LLM
+# 能正确识别一个批次中是否有大量同 IP 条目 (prompt 强制要求
+# 批次内 franchise 一致性)，但 v0.3.50 之前我们全保留并让
+# serve() 的多样化器去处理 —— 而到那时 pool 已经 franchise
+# 倾斜了。Cap=4 让一个系列在每轮刷新中能有小幅立足点，但
+# 阻止单次 ``related_chain`` 探索把同一 UP 的 13 条内容
+# 倒进一个批次。
 _BATCH_FRANCHISE_CAP: int = 4
 
-# v0.3.51+: per-batch style cap. Mirrors the franchise cap above —
-# without it, a single eval_batch easily had 9-12 items of the same
-# style (mood_release / story_immersion / social_chat / hands_on all
-# observed at 30-40% concentration in production). 8/30 = ~27% which
-# still lets a dominant style breathe but blocks single-style
-# domination of the pool.
+# v0.3.51+: 每批次 style 上限。镜像上面的 franchise 上限 ——
+# 没有它，单个 eval_batch 轻易就有 9-12 条同 style 内容
+# (mood_release / story_immersion / social_chat / hands_on
+# 在生产中都观测到 30-40% 浓度)。8/30 = ~27% 仍能让主导
+# style 喘息，但阻止单一 style 称霸 pool。
 _BATCH_STYLE_CAP: int = 8
 
-# v0.3.50+: pool-wide franchise quota for ``_cache_results``. Once a
-# franchise has this many items in the pool, new same-franchise items
-# are skipped before they can compete for serve() slots. Sized at ~1.5%
-# of the default pool target (600), so 9-10 items is enough breathing
-# room for a series the user actively follows but not enough to skew
-# the whole pool's tone.
+# v0.3.50+: ``_cache_results`` 的 pool 级 franchise 配额。一旦
+# 一个 franchise 在 pool 中已有这么多条目，新的同 franchise
+# 条目会在它们竞争 serve() 槽位前被跳过。规模约为默认 pool
+# 目标 (600) 的 ~1.5%，所以 9-10 条对用户主动追的系列来说
+# 是足够的呼吸空间，但不足以扭曲整个 pool 的调性。
 _POOL_FRANCHISE_QUOTA: int = 10
 
-# v0.3.50+: per-UP cap inside a single related_chain depth round.
-# Without this, related_chain following a single seed could fan out
-# into 13+ items of the same UP (张雪机车 was the production trigger).
+# v0.3.50+: 单次 related_chain 深度轮次内的每 UP 上限。
+# 没有它，related_chain 跟随单个种子可能扇出同一 UP 的
+# 13+ 条 (张雪机车 是生产触发案例)。
 _RELATED_CHAIN_PER_UP_CAP: int = 3
 
 
 class DiscoveryStrategy(ABC):
-    """Base class for content discovery strategies."""
+    """内容发现策略的基类。"""
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """Strategy name."""
+        """策略名。"""
         ...
 
     @abstractmethod
     async def discover(self, profile: SoulProfile, limit: int = 20) -> list[DiscoveredContent]:
-        """Execute the discovery strategy.
+        """执行发现策略。
 
         Args:
-            profile: Current user soul profile for relevance guidance.
-            limit: Maximum number of items to return.
+            profile: 当前用户 soul profile，用于相关性引导。
+            limit: 最多返回的条目数。
 
         Returns:
-            List of discovered content items.
+            发现的内容条目列表。
         """
         ...
 
     def create_backfill_strategy(self) -> DiscoveryStrategy | None:
-        """Return an expanded/relaxed variant for supply backfill if supported."""
+        """如果支持，返回一个扩展/放宽的补给变体。"""
         return None
 
 
 def _strategy_declares_param(fn: Any, name: str) -> bool:
-    """Return whether a strategy discover callable declares an explicit ``name`` param."""
+    """返回策略 discover 可调用对象是否显式声明了 ``name`` 参数。"""
     try:
         signature = inspect.signature(fn)
     except (TypeError, ValueError):
@@ -590,7 +581,7 @@ def _strategy_declares_param(fn: Any, name: str) -> bool:
 
 
 def _strategy_accepts_kwarg(fn: Any, name: str) -> bool:
-    """Return whether a strategy discover callable accepts a keyword ``name``."""
+    """返回策略 discover 可调用对象是否接受关键字 ``name``。"""
     try:
         signature = inspect.signature(fn)
     except (TypeError, ValueError):
@@ -601,18 +592,18 @@ def _strategy_accepts_kwarg(fn: Any, name: str) -> bool:
 
 
 def _injected_keyword_kwarg(fn: Any) -> str | None:
-    """Return the kwarg name to forward unified-planner injected words under.
+    """返回统一 planner 注入词应该转发到的 kwarg 名称。
 
-    The real search sub-strategies (B站 ``SearchStrategy``, ``XSearchStrategy``,
-    ``YoutubeSearchStrategy``) all read an explicit ``queries`` parameter — NOT
-    ``keywords`` — so the engine must forward injected words under whatever name
-    the strategy actually declares, or the injection is a silent no-op (the word
-    is claimed + marked ``used`` while the search never sees it). Preference:
+    真正的搜索子策略 (B站 ``SearchStrategy``、``XSearchStrategy``、
+    ``YoutubeSearchStrategy``) 都读取一个显式的 ``queries`` 参数 ——
+    而不是 ``keywords`` —— 所以引擎必须按策略实际声明的名字
+    转发注入词，否则注入是静默 no-op (词被认领 + 标记 ``used``
+    但搜索从未看到它)。优先顺序：
 
-    1. an explicit ``queries`` param (every real search strategy),
-    2. an explicit ``keywords`` param (older/alternate signatures + fakes),
-    3. ``keywords`` when the callable only declares ``**kwargs`` (legacy contract),
-    4. ``None`` → the strategy takes no injected words (non-search sub-strategies).
+    1. 显式 ``queries`` 参数 (每个真正的搜索策略),
+    2. 显式 ``keywords`` 参数 (旧/备用签名 + fake),
+    3. 可调用对象只声明 ``**kwargs`` 时用 ``keywords`` (旧契约),
+    4. ``None`` → 策略不接受注入词 (非搜索子策略)。
     """
     if _strategy_declares_param(fn, "queries"):
         return "queries"
@@ -624,18 +615,18 @@ def _injected_keyword_kwarg(fn: Any) -> str | None:
 
 
 def _strategy_accepts_pool_snapshot(fn: Any) -> bool:
-    """Return whether a strategy discover callable accepts ``pool_snapshot=``."""
+    """返回策略 discover 可调用对象是否接受 ``pool_snapshot=``。"""
     return _strategy_accepts_kwarg(fn, "pool_snapshot")
 
 
 def _strategy_accepts_keyword_ids(fn: Any) -> bool:
-    """Return whether a strategy discover callable declares ``keyword_ids=``.
+    """返回策略 discover 可调用对象是否声明了 ``keyword_ids=``。
 
-    P1.8 yield provenance: search sub-strategies that opt in declare an explicit
-    ``keyword_ids`` parameter (a ``keyword text → discovery_keywords.id`` map)
-    and stamp each produced item's ``source_keyword_id`` inside their per-keyword
-    loop. We forward the map ONLY to callables that declare it explicitly — never
-    via ``**kwargs`` — so non-search strategies + fakes stay byte-identical.
+    P1.8 yield provenance: 选择加入的搜索子策略声明一个显式
+    ``keyword_ids`` 参数 (一个 ``keyword text → discovery_keywords.id`` 映射)
+    并在其每关键词循环中为每条产出的条目打上 ``source_keyword_id``。
+    我们只把映射转发给显式声明它的可调用对象 —— 绝不通过
+    ``**kwargs`` —— 这样非搜索策略 + fake 保持字节一致。
     """
     return _strategy_declares_param(fn, "keyword_ids")
 
@@ -653,32 +644,31 @@ async def _call_strategy_discover(
     kwargs: dict[str, Any] = {"limit": limit}
     if _strategy_accepts_pool_snapshot(discover_fn):
         kwargs["pool_snapshot"] = pool_snapshot
-    # Only forward injected keywords when the caller supplied them AND the
-    # strategy actually accepts them — under the name the strategy declares
-    # (real search strategies read ``queries``, not ``keywords``). Non-search
-    # sub-strategies declare neither, so they are left byte-identical.
+    # 只有当调用方提供了关键词且策略实际接受时才转发注入词 ——
+    # 用策略声明的名字 (真正的搜索策略读 ``queries``，不是 ``keywords``)。
+    # 非搜索子策略两者都不声明，所以它们保持字节一致。
     if keywords is not None:
         inject_kwarg = _injected_keyword_kwarg(discover_fn)
         if inject_kwarg is not None:
             kwargs[inject_kwarg] = keywords
-    # P1.8: forward the parallel keyword→id map for yield attribution, but only
-    # to a strategy that explicitly opted in (declares ``keyword_ids``). Flag-off
-    # / non-injected callers pass ``None`` → never forwarded → no stamping.
+    # P1.8: 转发并行的 keyword→id 映射用于 yield 归因，但只转发给
+    # 显式选择加入 (声明 ``keyword_ids``) 的策略。flag 关闭 /
+    # 未注入的调用方传 ``None`` → 永不转发 → 不会打标。
     if keyword_ids and _strategy_accepts_keyword_ids(discover_fn):
         kwargs["keyword_ids"] = keyword_ids
     return cast("list[DiscoveredContent]", await discover_fn(profile, **kwargs))
 
 
 class ContentDiscoveryEngine:
-    """Orchestrates multiple discovery strategies.
+    """编排多个发现策略。
 
-    Available strategies:
-    - Search: keyword-based search from user interests
-    - Related: follow related recommendation chains
-    - Trending: scan trending/ranking content
-    - Comments: mine recommendations from comment sections
-    - UPTrack: track followed/discovered UP主
-    - Explore: cross-domain surprise discovery
+    可用策略:
+    - Search: 基于关键词的搜索，关键词来自用户兴趣
+    - Related: 跟随相关推荐链
+    - Trending: 扫描 trending/排行内容
+    - Comments: 从评论区挖掘推荐
+    - UPTrack: 追踪关注/发现的 UP主
+    - Explore: 跨域惊喜发现
     """
 
     def __init__(
@@ -718,9 +708,9 @@ class ContentDiscoveryEngine:
         self.multimodal_unavailable_reason = ""
         self._eval_cache: dict[str, tuple[float, str, str, str, str]] = {}
         self._evaluation_profile_prompt_cache = PromptLayerRenderCache()
-        # v0.3.x negative-anchors cache: (timestamp, latest_event_id,
-        # exemplars). Refreshes when either the latest event id changes
-        # (new negative classified) or 5 minutes have elapsed.
+        # v0.3.x 负锚点缓存: (timestamp, latest_event_id,
+        # exemplars)。当 latest event id 变化 (新负样本被分类)
+        # 或 5 分钟过去时刷新。
         self._negative_exemplars_cache: tuple[float, int | None, list[dict[str, object]]] | None = (
             None
         )
@@ -773,17 +763,16 @@ class ContentDiscoveryEngine:
         return max(1, min(16, configured))
 
     def register_strategy(self, strategy: DiscoveryStrategy) -> None:
-        """Register a discovery strategy."""
+        """注册一个发现策略。"""
         self._strategies = [item for item in self._strategies if item.name != strategy.name]
         self._strategies.append(strategy)
         logger.info("Registered discovery strategy: %s", strategy.name)
 
     def register_adapter(self, adapter: Any) -> None:
-        """Register a :class:`SourceAdapter` for multi-source discovery.
+        """注册一个 :class:`SourceAdapter` 用于多源发现。
 
-        The adapter is stored in ``_adapter_registry`` keyed by its
-        ``source_type``.  Phase 2+ will use this during recipe-driven
-        discovery cycles.
+        adapter 按 ``source_type`` 存入 ``_adapter_registry``。
+        Phase 2+ 会在 recipe 驱动的发现周期中使用它。
         """
         if not hasattr(self, "_adapter_registry"):
             from openbiliclaw.sources.registry import AdapterRegistry
@@ -793,7 +782,7 @@ class ContentDiscoveryEngine:
 
     @property
     def adapter_registry(self) -> Any:
-        """Return the adapter registry, creating it lazily if needed."""
+        """返回 adapter 注册表，按需懒创建。"""
         if not hasattr(self, "_adapter_registry"):
             from openbiliclaw.sources.registry import AdapterRegistry
 
@@ -812,38 +801,37 @@ class ContentDiscoveryEngine:
         keywords: list[str] | None = None,
         keyword_ids: dict[str, int] | None = None,
     ) -> list[DiscoveredContent]:
-        """Run discovery with selected (or all) strategies.
+        """用选定 (或全部) 策略运行发现。
 
         Args:
-            profile: User soul profile for relevance evaluation.
-            strategies: Optional list of strategy names to run.
-                       If None, runs all registered strategies.
-            fully_parallel: When True, skip the default two-phase split
-                (search-first then others) and run every strategy in a
-                single ``asyncio.gather``. Rate limiting still holds —
-                ``bilibili_request_concurrency`` caps simultaneous HTTP
-                requests and ``search_budget_total`` caps total search
-                calls — so this only sacrifices the 2s cool-down between
-                phases. Use for latency-critical flows (init bootstrap).
-            strategy_limits: Optional per-strategy run limits. The final
-                ``limit`` still caps returned/cached results; this only
-                prevents a grouped refresh from giving every strategy the
-                full platform deficit.
-            pool_snapshot: Optional current pool distribution summary for
-                strategies that can use pool-aware discovery guidance.
-            keywords: Optional caller-supplied search keywords forwarded to
-                search sub-strategies that accept a ``keywords`` kwarg (the
-                unified keyword planner injection point). Non-search strategies
-                never declare the kwarg, so they are unaffected. When ``None``,
-                strategies generate their own keywords as before.
-            keyword_ids: Optional ``keyword text → discovery_keywords.id`` map
-                (P1.8 yield provenance) forwarded alongside ``keywords`` to
-                search sub-strategies that declare a ``keyword_ids`` kwarg, so
-                each produced item is stamped with the id of the word that
-                produced it. ``None`` keeps the path attribution-free.
+            profile: 用户 soul profile，用于相关性评估。
+            strategies: 可选的要运行的策略名列表。
+                       如果为 None，运行所有已注册策略。
+            fully_parallel: 为 True 时跳过默认的两阶段拆分
+                (先搜索再其他)，把每个策略放进单个
+                ``asyncio.gather`` 中运行。速率限制仍然生效 ——
+                ``bilibili_request_concurrency`` 限制同时 HTTP
+                请求，``search_budget_total`` 限制总搜索调用 ——
+                所以这只牺牲两阶段之间 2s 冷却。用于延迟敏感
+                流程 (init bootstrap)。
+            strategy_limits: 可选的每策略运行限制。最终的
+                ``limit`` 仍限制返回/缓存结果数；这只是防止
+                分组刷新给每个策略完整的平台缺口。
+            pool_snapshot: 可选的当前 pool 分布摘要，供
+                能使用 pool 感知发现指导的策略使用。
+            keywords: 可选的调用方提供的搜索关键词，转发给
+                接受 ``keywords`` kwarg 的搜索子策略 (统一
+                keyword planner 注入点)。非搜索策略从不声明
+                该 kwarg，所以不受影响。为 ``None`` 时，
+                策略按之前一样自己生成关键词。
+            keyword_ids: 可选的 ``keyword text → discovery_keywords.id``
+                映射 (P1.8 yield provenance)，与 ``keywords`` 一起
+                转发给声明 ``keyword_ids`` kwarg 的搜索子策略，这样
+                每条产出的条目都打上产生它的词的 id。``None``
+                保持路径无归因。
 
         Returns:
-            Combined, deduplicated, and scored list of discovered content.
+            合并、去重、打分后的发现内容列表。
         """
         active = self._strategies
         if strategies:
@@ -863,7 +851,7 @@ class ContentDiscoveryEngine:
             keywords=keywords,
             keyword_ids=keyword_ids,
         )
-        # Normalize topic_group using embeddings before dedup
+        # 在去重前用 embedding 归一化 topic_group
         merged_primary = self._merge_and_rank(primary_results)
         await self._normalize_topic_groups(merged_primary)
         await self._normalize_topic_keys(merged_primary)
@@ -906,7 +894,7 @@ class ContentDiscoveryEngine:
         keywords: list[str] | None = None,
         keyword_ids: dict[str, int] | None = None,
     ) -> list[DiscoveredContent]:
-        """Fetch raw candidates without LLM evaluation or content_cache writes."""
+        """拉取原始候选，不做 LLM 评估或 content_cache 写入。"""
 
         active = self._strategies
         if strategies:
@@ -957,23 +945,23 @@ class ContentDiscoveryEngine:
         self,
         results: list[DiscoveredContent],
     ) -> None:
-        """Assign topic_group to items that lack one via embedding similarity.
+        """通过 embedding 相似度给缺少 topic_group 的条目赋值。
 
-        Items that already have a topic_group are trusted as-is — they were
-        set by LLM evaluation or strategy-level inference and are already
-        coarse labels.  Re-merging short Chinese labels via embedding produces
-        false positives (e.g. "国际史实" → "人工智能" at threshold 0.82)
-        because short text embeddings are deceptively close in cosine space.
+        已有 topic_group 的条目按原样信任 —— 它们由 LLM 评估
+        或策略级推断设置，已经是粗粒度标签。用 embedding 重新
+        合并短中文标签会产生误报 (例如在阈值 0.82 时
+        "国际史实" → "人工智能")，因为短文本 embedding 在
+        余弦空间里欺骗性地接近。
 
-        This method only operates on items WITHOUT a topic_group, attempting
-        to assign them to an existing cluster from items that do have one.
+        本方法只处理没有 topic_group 的条目，尝试把它们分配到
+        来自有 topic_group 条目的现有簇中。
         """
         if self._embedding_service is None or not results:
             return
 
         from openbiliclaw.llm.embedding import cosine_similarity
 
-        # Build cluster centroids from items that already have a topic_group
+        # 从已有 topic_group 的条目构建簇质心
         clusters: dict[str, list[float]] = {}
         for item in results:
             group = (item.topic_group or "").strip().lower()
@@ -986,8 +974,8 @@ class ContentDiscoveryEngine:
         if not clusters:
             return
 
-        # Only try to assign topic_group to items that don't have one
-        # Use a stricter threshold for short-label merging
+        # 只给没有 topic_group 的条目尝试赋值
+        # 对短标签合并使用更严格的阈值
         threshold = min(0.92, self._embedding_service.similarity_threshold + 0.10)
         for item in results:
             if (item.topic_group or "").strip():
@@ -1020,23 +1008,23 @@ class ContentDiscoveryEngine:
         self,
         results: list[DiscoveredContent],
     ) -> None:
-        """Normalize topic_keys across strategies via embedding-based clustering.
+        """通过 embedding 聚类归一化跨策略的 topic_keys。
 
-        Different strategies produce topic_keys at different granularities:
-        - search: fine-grained LLM phrases ("moba经济曲线动态博弈")
-        - trending/related_chain: B站 tname categories ("网络游戏")
-        - explore: domain labels ("精密机械钟表修复与微观结构")
+        不同策略产生不同粒度的 topic_keys:
+        - search: 细粒度 LLM 短语 ("moba经济曲线动态博弈")
+        - trending/related_chain: B站 tname 类别 ("网络游戏")
+        - explore: 域标签 ("精密机械钟表修复与微观结构")
 
-        This method clusters semantically similar keys and reassigns them
-        to a canonical representative, so downstream diversity logic in
-        _compress_topic_repeats correctly recognizes same-topic items.
+        本方法将语义相似的 key 聚类并重新分配到规范代表，
+        这样 _compress_topic_repeats 中的下游多样性逻辑能
+        正确识别同 topic 条目。
         """
         if self._embedding_service is None or not results:
             return
 
         from openbiliclaw.llm.embedding import cosine_similarity
 
-        # Step 1: Collect unique topic_keys and embed them
+        # 第 1 步: 收集唯一 topic_keys 并 embedding
         unique_keys: list[str] = []
         seen: set[str] = set()
         for item in results:
@@ -1048,7 +1036,7 @@ class ContentDiscoveryEngine:
         if len(unique_keys) <= 1:
             return
 
-        # Embed all unique keys
+        # 对所有唯一 key 做 embedding
         key_vectors: dict[str, list[float]] = {}
         for key in unique_keys:
             vec = await self._embedding_service.embed(key)
@@ -1058,7 +1046,7 @@ class ContentDiscoveryEngine:
         if len(key_vectors) <= 1:
             return
 
-        # Step 2: Greedy agglomerative clustering
+        # 第 2 步: 贪心凝聚聚类
         threshold = self._embedding_service.similarity_threshold  # ~0.82
         clusters: list[tuple[str, list[str]]] = []
 
@@ -1079,7 +1067,7 @@ class ContentDiscoveryEngine:
             else:
                 clusters.append((key, [key]))
 
-        # Step 3: For each cluster, pick canonical label (medium-length preferred)
+        # 第 3 步: 为每个簇选规范标签 (优先中等长度)
         canonical_map: dict[str, str] = {}  # original_key → canonical_key
         for _canonical, members in clusters:
             if len(members) <= 1:
@@ -1098,7 +1086,7 @@ class ContentDiscoveryEngine:
         if not canonical_map:
             return
 
-        # Step 4: Reassign topic_key on items
+        # 第 4 步: 在条目上重新赋值 topic_key
         for item in results:
             key = (item.topic_key or "").strip().lower()
             canonical_key = canonical_map.get(key)
@@ -1113,10 +1101,10 @@ class ContentDiscoveryEngine:
 
     @staticmethod
     def _label_quality_score(label: str) -> float:
-        """Score a topic label for use as canonical representative.
+        """为用作规范代表的 topic 标签打分。
 
-        Prefers medium-length labels (4-8 chars) that are descriptive
-        but not overly specific.
+        优先中等长度 (4-8 字符) 的标签 —— 描述性足够
+        但不过于具体。
         """
         length = len(label)
         if length <= 2:
@@ -1136,24 +1124,24 @@ class ContentDiscoveryEngine:
         *,
         source_context: str = "",
     ) -> float:
-        """Evaluate how relevant a piece of content is for the user.
+        """评估一条内容对用户的相关性。
 
-        The core evaluation is based on the user's Soul — their deep personality
-        and interests — not just surface-level metrics.
+        核心评估基于用户的 Soul —— 他们的深层人格和兴趣 ——
+        而不是表面指标。
 
         Args:
-            content: Content to evaluate.
-            profile: User's soul profile.
-            source_context: Discovery context hint for calibrating evaluation,
-                e.g. "search_query: 纪录片 原理" or "explore_domain: 城市建筑叙事".
+            content: 要评估的内容。
+            profile: 用户的 soul profile。
+            source_context: 发现上下文提示，用于校准评估，
+                例如 "search_query: 纪录片 原理" 或 "explore_domain: 城市建筑叙事"。
 
         Returns:
-            Relevance score (0.0 - 1.0).
+            相关性得分 (0.0 - 1.0)。
         """
         if self._llm_service is None:
             return 0.0
 
-        # Check eval cache (same content identity in same profile → same score)
+        # 检查评估缓存 (相同内容身份 + 相同 profile → 相同得分)
         cache_key = f"{self._content_identity(content)}:{id(profile)}"
         cached = self._eval_cache.get(cache_key)
         if cached is not None:
@@ -1169,8 +1157,8 @@ class ContentDiscoveryEngine:
                 content.franchise_key = franchise_key
             return score
 
-        # Embedding pre-filter: skip LLM call for content with very low
-        # similarity to any user interest (saves API cost)
+        # embedding 预过滤: 对与任何用户兴趣相似度极低的内容跳过 LLM 调用
+        # (节省 API 成本)
         if self._embedding_service is not None and profile.preferences.interests:
             from openbiliclaw.llm.embedding import cosine_similarity
 
@@ -1184,8 +1172,8 @@ class ContentDiscoveryEngine:
                         sim = cosine_similarity(content_vec, interest_vec)
                         if sim > max_sim:
                             max_sim = sim
-                # Very low similarity to all interests AND not from explore strategy
-                # (explore is intentionally cross-domain, so don't pre-filter it)
+                # 与所有兴趣相似度都很低 且 不是来自 explore 策略
+                # (explore 故意跨域，所以不过滤它)
                 if max_sim < 0.3 and content.source_strategy != "explore":
                     content.relevance_score = round(max_sim * 0.5, 4)
                     content.relevance_reason = "embedding 预过滤: 与所有兴趣相似度极低"
@@ -1262,26 +1250,22 @@ class ContentDiscoveryEngine:
         )
         return score
 
-    # Safety cap applied at the evaluator level regardless of caller.
-    # Strategies that over-fetch (related_chain depth-2 fanout, explore
-    # with expanded budget, etc.) would otherwise dump 400+ items into a
-    # single discover run. 30 keeps each strategy's evaluation bounded
-    # to a single LLM call when ``batch_size`` matches the cap (v0.3.25+
-    # default — see below). Truncation is top-of-list (natural ranking
-    # from strategies), and a WARNING is emitted so we see when
-    # strategies hit the cap.
+    # 在评估器层级施加的安全上限，与调用方无关。
+    # 过度拉取的策略 (related_chain 深度 2 扇出、explore 扩大预算等)
+    # 否则会把 400+ 条倒进单次发现运行。30 让每个策略的评估
+    # 在 ``batch_size`` 与上限匹配时限于单次 LLM 调用 (v0.3.25+
+    # 默认 —— 见下)。截断是列表顶部 (策略的自然排序)，
+    # 并发出 WARNING 以便看到策略触及上限。
     #
-    # v0.3.52+: cap raised 30 → 90 to evaluate ~3× more candidates per
-    # discovery round. Production logs (2026-05-05) routinely truncated
-    # 300-480 candidates down to 30 — 90% data wasted. The 30/batch
-    # constant stays so each individual LLM call is the same size,
-    # but ``_run_batch`` already gathers multiple batches in parallel
-    # via ``asyncio.gather``, so the new cap means 3 parallel LLM
-    # batches of 30 items each. Concurrency is bounded by
-    # ``llm_evaluation_concurrency`` so we don't blow up provider
-    # rate limits. Combined with v0.3.51's reasoning-disabled batches
-    # (~30s each), three parallel batches finish in roughly the same
-    # wall time as one used to take.
+    # v0.3.52+: 上限从 30 提到 90，每轮发现评估 ~3× 候选。
+    # 生产日志 (2026-05-05) 经常把 300-480 候选截到 30 ——
+    # 90% 数据浪费。30/批的常量保持不变，所以每次 LLM 调用
+    # 大小相同，但 ``_run_batch`` 已经通过 ``asyncio.gather``
+    # 并行收集多个批次，所以新上限意味着 3 个并行的 30 条
+    # LLM 批次。并发受 ``llm_evaluation_concurrency`` 限制，
+    # 不会打爆 provider 速率限制。配合 v0.3.51 的禁用
+    # reasoning 批次 (每批 ~30s)，三个并行批次完成时间大致
+    # 和以前一个批次相同。
     _EVALUATE_BATCH_HARD_CAP = _EVALUATE_BATCH_HARD_CAP_DEFAULT
 
     async def evaluate_content_batch(
@@ -1292,18 +1276,17 @@ class ContentDiscoveryEngine:
         source_context: str = "",
         batch_size: int = _DEFAULT_EVAL_BATCH_SIZE,
     ) -> list[float]:
-        """Evaluate multiple content items with batched LLM calls.
+        """用批量 LLM 调用评估多条内容。
 
-        Groups items into batches of ``batch_size`` and sends one LLM
-        call per batch instead of one per item.  Falls back to single
-        evaluation for items that fail in a batch.
+        把条目按 ``batch_size`` 分组，每批发一次 LLM 调用，
+        而不是每条一次。批次中失败的条目回退到单条评估。
 
-        The default text batch size is 45, with a hard cap of 90 and two
-        worker slots by default. This keeps multimodal evaluation on its
-        smaller image-aware batch size while letting long-context text
-        models amortize the fixed profile/system prompt across more items.
+        默认文本批次大小是 45，硬上限 90，默认两个 worker 槽。
+        这让多模态评估保持较小的图像感知批次大小，同时让
+        长上下文文本模型在更多条目上摊销固定的 profile/system
+        prompt 成本。
 
-        Returns scores in the same order as ``contents``.
+        返回得分顺序与 ``contents`` 一致。
         """
         if self._llm_service is None or not contents:
             return [0.0] * len(contents)
@@ -1344,11 +1327,10 @@ class ContentDiscoveryEngine:
         eval_indices = [index for index, _content in eval_pairs]
         eval_contents = [content for _index, content in eval_pairs]
 
-        # Split into cached vs uncached. Batch eval consumes recent negative
-        # exemplars, so the in-memory score cache is versioned by the actual
-        # prompt-visible negative examples digest. A new unrelated event may
-        # move the event-log waterline, but it should not evict exact eval
-        # results when the negative anchors fed to the model did not change.
+        # 拆分缓存 vs 未缓存。批量评估会消费最近的负样本，
+        # 所以内存中的得分缓存按实际 prompt 可见的负样本摘要
+        # 版本化。一个新的不相关 event 可能移动 event-log 水位线，
+        # 但当喂给模型的负锚点没变时不应驱逐精确评估结果。
         negative_examples = self._get_negative_exemplars()
         if not negative_examples:
             negative_examples = None
@@ -1363,10 +1345,9 @@ class ContentDiscoveryEngine:
             )
             cached = self._eval_cache.get(cache_key)
             if cached is not None:
-                # Cache tuple grew in v0.3.18 to carry franchise_key.
-                # Tolerate the legacy 4-tuple shape so an in-flight
-                # process holding pre-upgrade entries doesn't crash on
-                # the next eval call.
+                # 缓存元组在 v0.3.18 中增长以携带 franchise_key。
+                # 容忍旧的 4 元组形状，这样在升级前持有旧条目的
+                # 进行中进程不会在下一次 eval 调用时崩溃。
                 if len(cached) == 5:
                     score, reason, topic_group, style_key, franchise_key = cached
                 else:
@@ -1408,11 +1389,10 @@ class ContentDiscoveryEngine:
             len(eval_contents) - len(uncached_indices),
         )
 
-        # Run multiple LLM batches concurrently, but keep this task's
-        # own fanout bounded. The shared ``run_llm`` wrapper remains the
-        # global provider-facing cap across all discovery work; this local
-        # worker cap prevents one large eval job from creating unbounded
-        # child tasks or occupying every global LLM slot.
+        # 并发运行多个 LLM 批次，但保持本任务的扇出有界。
+        # 共享的 ``run_llm`` 包装器仍是所有发现工作的全局
+        # provider 面向上限；这个本地 worker 上限防止一个
+        # 大评估作业创建无界子任务或占用每个全局 LLM 槽。
         async def _run_batch(
             batch_idx: int,
             batch_indices: list[int],
@@ -1427,9 +1407,9 @@ class ContentDiscoveryEngine:
             )
             elapsed = time.monotonic() - t0
             kept = sum(1 for s in batch_scores if s > 0)
-            # v0.3.31+: diversity snapshot of the kept items so we can
-            # see whether discovery is feeding the pool with variety or
-            # 30 candidates that all collapse to the same topic_group.
+            # v0.3.31+: 保留条目的多样性快照，以便我们能看到
+            # 发现是给 pool 喂多样内容，还是 30 个候选全部
+            # 塌缩到同一个 topic_group。
             kept_items = [batch_contents[i] for i, s in enumerate(batch_scores) if s > 0]
             topics: Counter[str] = Counter(
                 (getattr(c, "topic_group", "") or "untagged").strip().lower() for c in kept_items
@@ -1440,7 +1420,7 @@ class ContentDiscoveryEngine:
             franchises: Counter[str] = Counter(
                 (getattr(c, "franchise_key", "") or "").strip().lower() for c in kept_items
             )
-            del franchises[""]  # don't count non-franchise items
+            del franchises[""]  # 不计非 franchise 条目
             top_topic = topics.most_common(1)[0] if topics else ("", 0)
             top_franchise = franchises.most_common(1)[0] if franchises else ("", 0)
             logger.info(
@@ -1495,8 +1475,8 @@ class ContentDiscoveryEngine:
             for idx, batch_score in zip(batch_indices, batch_scores, strict=True):
                 scores[eval_indices[idx]] = batch_score
 
-        # Pad for any items dropped by the hard cap above so callers
-        # that ``zip(candidates, scores, strict=True)`` still line up.
+        # 为上面硬上限丢弃的条目补齐，这样调用方
+        # ``zip(candidates, scores, strict=True)`` 仍能对齐。
         if len(scores) < original_len:
             scores = scores + [0.0] * (original_len - len(scores))
 
@@ -1541,7 +1521,7 @@ class ContentDiscoveryEngine:
         return keys
 
     def _negative_exemplar_revision(self) -> int | None:
-        """Return the event-log revision used for negative-aware eval cache keys."""
+        """返回用于负样本感知 eval 缓存 key 的 event-log 修订号。"""
         database = cast(
             "SupportsNegativeExemplarStore | None",
             getattr(self, "_database", None),
@@ -1558,16 +1538,15 @@ class ContentDiscoveryEngine:
         return int(latest_id)
 
     def _get_negative_exemplars(self) -> list[dict[str, object]] | None:
-        """Return recent negative exemplars, refreshing the cache when stale.
+        """返回最近的负样本，过期时刷新缓存。
 
-        Cache key: (latest_event_id, time bucket). 5-minute TTL keeps the
-        I/O flat across batches; latest-event-id invalidation picks up
-        fresh negatives as soon as the user records one. Storage failures
-        return None so the eval-batch always runs.
+        缓存 key: (latest_event_id, 时间桶)。5 分钟 TTL 让 I/O 在批次间
+        保持平稳；latest-event-id 失效在用户记录新负样本时立即拾取。
+        存储失败返回 None，所以 eval-batch 总能运行。
         """
-        # Defensive getattr: some test fixtures construct the engine via
-        # ``__new__`` and skip ``__init__`` entirely, so `_database` and
-        # `_negative_exemplars_cache` may not exist as attributes.
+        # 防御性 getattr: 一些测试夹具通过 ``__new__`` 构造引擎并完全
+        # 跳过 ``__init__``，所以 `_database` 和 `_negative_exemplars_cache`
+        # 可能不作为属性存在。
         database = cast(
             "SupportsNegativeExemplarStore | None",
             getattr(self, "_database", None),
@@ -1598,7 +1577,7 @@ class ContentDiscoveryEngine:
         return exemplars
 
     def _evaluation_profile_digest(self, profile: SoulProfile) -> str:
-        """Digest the full structured profile shape visible to batch evaluation."""
+        """对批量评估可见的完整结构化 profile 形状做摘要。"""
 
         return stable_json_digest(self._evaluation_profile_summary(profile))
 
@@ -1607,7 +1586,7 @@ class ContentDiscoveryEngine:
         return build_profile_summary(profile)
 
     def _evaluation_profile_prompt_cache_obj(self) -> PromptLayerRenderCache:
-        """Return eval profile prompt cache, creating it for lightweight tests."""
+        """返回评估 profile 的 prompt 缓存，为轻量测试创建。"""
 
         cache = getattr(self, "_evaluation_profile_prompt_cache", None)
         if not isinstance(cache, PromptLayerRenderCache):
@@ -1616,7 +1595,7 @@ class ContentDiscoveryEngine:
         return cache
 
     def evaluation_profile_prompt_cache_stats(self) -> dict[str, dict[str, Any]]:
-        """Return eval profile prompt-layer cache stats."""
+        """返回评估 profile 的 prompt-layer 缓存统计。"""
 
         return self._evaluation_profile_prompt_cache_obj().stats()
 
@@ -1645,7 +1624,7 @@ class ContentDiscoveryEngine:
         source_context: str = "",
         negative_examples: object = _NEGATIVE_EXAMPLES_UNSET,
     ) -> list[float]:
-        """Send one LLM call for a batch of items."""
+        """为一批条目发送一次 LLM 调用。"""
         from openbiliclaw.discovery.candidate_pool import resolve_content_type
         from openbiliclaw.llm.prompts import build_batch_content_evaluation_prompt
 
@@ -1714,8 +1693,8 @@ class ContentDiscoveryEngine:
         )
         if negative_examples is _NEGATIVE_EXAMPLES_UNSET:
             negative_examples = self._get_negative_exemplars()
-        # Treat empty list as "no examples" so the user-message stays
-        # byte-identical to the no-examples shape on cold-start users.
+        # 把空列表当作"无样本"，这样冷启动用户的 user-message 保持
+        # 与无样本形状字节一致。
         if not negative_examples:
             negative_examples = None
         negative_examples_for_prompt = cast("list[dict[str, object]] | None", negative_examples)
@@ -1755,12 +1734,12 @@ class ContentDiscoveryEngine:
                 kwargs = {
                     "system_instruction": messages[0]["content"],
                     "user_input": messages[1]["content"],
-                    # v0.3.51+: explicitly disable provider thinking. This
-                    # task is structured scoring (return JSON array), not
-                    # reasoning — production logs showed 8-16 min/batch
-                    # with reasoning enabled, dropping to ~30s without.
-                    # 16384 max_tokens is plenty for the 1500-3000 token
-                    # output a 30-item JSON array now needs.
+                    # v0.3.51+: 显式禁用 provider thinking。这个
+                    # 任务是结构化打分 (返回 JSON 数组)，不是推理 ——
+                    # 生产日志显示开启 reasoning 时 8-16 分钟/批，
+                    # 关闭后降到 ~30s。16384 max_tokens 对 30 条
+                    # JSON 数组现在需要的 1500-3000 token 输出
+                    # 绰绰有余。
                     "max_tokens": 16384,
                     "reasoning_effort": "",
                     "caller": "discovery.evaluate_batch",
@@ -1791,7 +1770,7 @@ class ContentDiscoveryEngine:
                 type(exc).__name__,
                 exc,
             )
-            # Fallback: evaluate individually
+            # 回退：逐条评估
             return [
                 await self.evaluate_content(c, profile, source_context=source_context)
                 for c in batch
@@ -1859,14 +1838,13 @@ class ContentDiscoveryEngine:
             )
             results.append(score)
 
-        # v0.3.50+: intra-batch franchise cap. The LLM dutifully fills
-        # franchise_key for IP/series content (per the prompt's batch-
-        # consistency rule), but we used to keep all 30 items even when
-        # ≥10 of them shared a franchise — observed in production:
-        # 张雪机车×13 / 风犬少年的天空×7 / 咲间妮娜×7 in single batches.
-        # Cap at ``_BATCH_FRANCHISE_CAP`` per batch: keep the highest-
-        # scoring N items per franchise, zero the rest. Empty franchise
-        # is exempt (most generic content has no IP signal).
+        # v0.3.50+: 批次内 franchise 上限。LLM 会尽职地为 IP/系列
+        # 内容填 franchise_key (按 prompt 的批次一致性规则)，但我们
+        # 以前即使 ≥10 条共享一个 franchise 也保留全部 30 条 ——
+        # 生产中观测到: 张雪机车×13 / 风犬少年的天空×7 / 咲间妮娜×7
+        # 在单个批次中。按 ``_BATCH_FRANCHISE_CAP`` 每批上限: 每个
+        # franchise 保留得分最高的 N 条，其余置零。空 franchise 豁免
+        # (大多数通用内容没有 IP 信号)。
         cap = _BATCH_FRANCHISE_CAP
         if cap > 0 and batch:
             buckets: dict[str, list[int]] = {}
@@ -1881,7 +1859,7 @@ class ContentDiscoveryEngine:
             for _key, indices in buckets.items():
                 if len(indices) <= cap:
                     continue
-                # Keep top ``cap`` by score, drop the rest.
+                # 按得分保留前 ``cap`` 条，丢弃其余。
                 indices.sort(key=lambda idx: results[idx], reverse=True)
                 for idx in indices[cap:]:
                     results[idx] = 0.0
@@ -1895,14 +1873,13 @@ class ContentDiscoveryEngine:
                     ", ".join(f"{k}×{len(v)}" for k, v in buckets.items() if len(v) > cap),
                 )
 
-        # v0.3.51+: same-style cap (mirrors v0.3.50 franchise cap).
-        # Production logs (2026-05-05) showed single-style concentration
-        # 7-12/30 in many eval batches (mood_release×10,
-        # story_immersion×11, social_chat×11, hands_on×10). Pool inherits this skew
-        # because eval_batch keeps all 30 — diversifier at serve time
-        # can't unbias a pool that's already 30%+ same-style.
-        # Cap=8 (27% of a 30-batch) lets a style have a small foothold
-        # but stops single-style domination of the round.
+        # v0.3.51+: 同 style 上限 (镜像 v0.3.50 franchise 上限)。
+        # 生产日志 (2026-05-05) 显示许多 eval 批次中单 style 浓度
+        # 7-12/30 (mood_release×10、story_immersion×11、social_chat×11、
+        # hands_on×10)。pool 继承这种倾斜，因为 eval_batch 保留全部
+        # 30 条 —— serve 时的多样化器无法修正已经 30%+ 同 style 的
+        # pool。Cap=8 (30 批的 27%) 让一个 style 有小立足点但阻止
+        # 单 style 称霸本轮。
         style_cap = _BATCH_STYLE_CAP
         if style_cap > 0 and batch:
             style_buckets: dict[str, list[int]] = {}
@@ -1989,10 +1966,10 @@ class ContentDiscoveryEngine:
             return []
 
         if fully_parallel:
-            # One shot: every strategy runs in a single gather. We rely
-            # on ``bilibili_request_concurrency`` + ``search_budget_total``
-            # to bound IP-level pressure; the default phase split is
-            # safer but adds ~search_wall_time before others start.
+            # 一次性: 每个策略在单个 gather 中运行。我们依赖
+            # ``bilibili_request_concurrency`` + ``search_budget_total``
+            # 限制 IP 层压力；默认的阶段拆分更安全但会在其他策略
+            # 启动前增加 ~search_wall_time。
             names = [s.name for s, _ in run_entries]
             logger.info("discover start (fully_parallel): strategies=%s limit=%d", names, limit)
             t0 = time.monotonic()
@@ -2032,17 +2009,16 @@ class ContentDiscoveryEngine:
                 len(results),
             )
         else:
-            # Split strategies into two phases to avoid B站 IP-level
-            # search rate-limiting. Search runs first (Phase 1) with a
-            # dedicated cookie-free client so it gets clean quota.
-            # Other strategies (explore, related_chain) also call the
-            # search API, so each strategy's calls are capped by the
-            # per-strategy search budget in
-            # ``DiscoveryConcurrencyController``.
+            # 把策略拆成两阶段以避免 B站 IP 层搜索速率限制。搜索
+            # 先跑 (Phase 1)，用专用的无 cookie client，这样它能
+            # 拿到干净的配额。其他策略 (explore、related_chain)
+            # 也会调搜索 API，所以每个策略的调用都被
+            # ``DiscoveryConcurrencyController`` 中的每策略搜索预算
+            # 限制。
             search_entries = [(s, run_limit) for s, run_limit in run_entries if s.name == "search"]
             other_entries = [(s, run_limit) for s, run_limit in run_entries if s.name != "search"]
 
-            # Phase 1: run search strategy first to get clean IP quota
+            # Phase 1: 先跑 search 策略以拿到干净的 IP 配额
             if search_entries:
                 tasks = [
                     _call_strategy_discover(
@@ -2060,11 +2036,11 @@ class ContentDiscoveryEngine:
                     self._collect_strategy_results([s for s, _ in search_entries], gathered)
                 )
 
-            # Brief cooldown between phases to let IP-level rate limit recover
+            # 阶段之间的短暂冷却，让 IP 层速率限制恢复
             if search_entries and other_entries:
                 await asyncio.sleep(2.0)
 
-            # Phase 2: run remaining strategies concurrently
+            # Phase 2: 并发运行剩余策略
             if other_entries:
                 tasks = [
                     _call_strategy_discover(
@@ -2128,12 +2104,11 @@ class ContentDiscoveryEngine:
                 continue
             items: list[DiscoveredContent] = outcome
             results.extend(items)
-            # v0.3.31+: per-strategy raw diversity snapshot. Items at
-            # this point are pre-LLM-evaluation (topic_group / style_key
-            # not set yet), so we report what's observable: title-level
-            # uniqueness, up_name spread, and platform mix. Catches
-            # "search returned 13 items but they're all from the same UP
-            # / all same title prefix" pathologies.
+            # v0.3.31+: 每策略原始多样性快照。此处的条目是
+            # LLM 评估前的 (topic_group / style_key 尚未设置)，
+            # 所以我们报告可观察的: 标题级唯一性、up_name 分布、
+            # 平台组合。能捕捉 "search 返回 13 条但都来自同一 UP
+            # / 全部相同标题前缀" 这类病态。
             ups: Counter[str] = Counter((c.up_name or "").strip().lower() for c in items)
             del ups[""]
             unique_titles = len({c.title.strip() for c in items if c.title})
@@ -2370,14 +2345,14 @@ class ContentDiscoveryEngine:
         }
         unique_source_target = min(limit, len(unique_sources))
 
-        # Step 0: reserve minimum slots per source strategy.
-        # Without a floor, high-scoring sources (related_chain) monopolize all
-        # slots via the score-sorted selection, leaving low-scoring but novel
-        # sources (search, explore) with zero representation.
+        # 第 0 步: 为每个 source 策略预留最少槽位。
+        # 没有下限的话，高分来源 (related_chain) 会通过得分排序
+        # 选择垄断所有槽位，让低分但新颖的来源 (search、explore)
+        # 零代表。
         n_sources = max(1, len(unique_sources))
         per_source_floor = max(1, limit // n_sources) if unique_sources else 0
-        # Hard ceiling: no single source takes more than ~35% of results,
-        # even if it has unlimited topic diversity (e.g. trending).
+        # 硬上限: 单一来源不超过 ~35% 结果，即使它有无限的 topic
+        # 多样性 (例如 trending)。
         per_source_ceiling = max(per_source_floor + 1, limit * 35 // 100)
         reserved, unreserved = ContentDiscoveryEngine._reserve_per_source(
             results,
@@ -2385,9 +2360,9 @@ class ContentDiscoveryEngine:
             unique_sources=unique_sources,
         )
 
-        # Step 1: select diverse subset from unreserved pool.
-        # Pass reserved items' topics/sources so _select_diverse knows what
-        # has already been committed.
+        # 第 1 步: 从未预留池中选多样子集。
+        # 传入预留条目的 topics/sources，让 _select_diverse 知道
+        # 已经承诺了什么。
         remaining_limit = limit - len(reserved)
         reserved_topics = {ContentDiscoveryEngine._topic_bucket(i) for i in reserved} - {""}
         reserved_sources = {
@@ -2403,7 +2378,7 @@ class ContentDiscoveryEngine:
             initial_seen_sources=reserved_sources,
         )
 
-        # Combine reserved + selected
+        # 合并 reserved + selected
         combined = list(reserved)
         reserved_keys = {ContentDiscoveryEngine._content_identity(item) for item in reserved}
         for item in selected:
@@ -2412,7 +2387,7 @@ class ContentDiscoveryEngine:
         if len(combined) >= limit:
             return combined[:limit]
 
-        # Step 2: backfill from overflow with relaxed constraints
+        # 第 2 步: 从 overflow 回填，放宽约束
         combined = ContentDiscoveryEngine._backfill_from_overflow(
             combined,
             overflow,
@@ -2430,11 +2405,11 @@ class ContentDiscoveryEngine:
         per_source_floor: int,
         unique_sources: set[str],
     ) -> tuple[list[DiscoveredContent], list[DiscoveredContent]]:
-        """Reserve the best items from each source to guarantee representation.
+        """为每个来源预留最佳条目以保证代表。
 
-        Returns (reserved, unreserved) where reserved contains at most
-        *per_source_floor* items per source (the highest-scored ones),
-        and unreserved contains everything else.
+        返回 (reserved, unreserved)，其中 reserved 包含每个来源最多
+        *per_source_floor* 条 (得分最高的那些)，unreserved 包含
+        其余全部。
         """
         if per_source_floor <= 0:
             return [], list(results)
@@ -2447,13 +2422,13 @@ class ContentDiscoveryEngine:
 
         reserved: list[DiscoveredContent] = []
         reserved_keys: set[str] = set()
-        # Track topics across ALL sources to avoid reserving duplicate topics
+        # 跨所有来源跟踪 topics，避免预留重复 topics
         global_seen_topics: set[str] = set()
         source_counts: dict[str, int] = {s: 0 for s in unique_sources}
 
-        # Round-robin: iterate by score across all sources, reserving items
-        # until each source reaches its floor.  Skip items whose topic is
-        # already reserved (from any source) to maximise topic diversity.
+        # 轮询: 跨所有来源按得分迭代，预留条目直到每个来源达到其
+        # 下限。跳过 topic 已经被预留 (来自任何来源) 的条目以最大化
+        # topic 多样性。
         for item in results:
             source = ContentDiscoveryEngine._normalize_topic_token(item.source_strategy)
             if source not in source_counts or source_counts[source] >= per_source_floor:
@@ -2485,7 +2460,7 @@ class ContentDiscoveryEngine:
         initial_seen_topics: set[str] | None = None,
         initial_seen_sources: set[str] | None = None,
     ) -> tuple[list[DiscoveredContent], list[DiscoveredContent]]:
-        """Select a diverse subset, deferring duplicates to overflow."""
+        """选多样子集，把重复推迟到 overflow。"""
         selected: list[DiscoveredContent] = []
         overflow: list[DiscoveredContent] = []
         seen_topics: set[str] = set(initial_seen_topics or ())
@@ -2512,8 +2487,8 @@ class ContentDiscoveryEngine:
             if source and source_counts.get(source, 0) >= per_source_cap:
                 overflow.append(item)
                 continue
-            # Prioritize source representation: defer items from already-seen
-            # sources until all unique sources have at least one entry.
+            # 优先来源代表: 推迟来自已见来源的条目，直到所有唯一来源
+            # 至少有一条。
             if (
                 not is_new_source
                 and source
@@ -2546,17 +2521,17 @@ class ContentDiscoveryEngine:
         per_source_cap: int,
         per_source_ceiling: int = 0,
     ) -> list[DiscoveredContent]:
-        """Fill remaining slots from overflow with relaxed topic constraint.
+        """从 overflow 填充剩余槽位，放宽 topic 约束。
 
-        Enforces a per-topic-group cap so that no single topic_group
-        dominates the final result set (max ~20% of limit), and a
-        per-source ceiling so that no single source exceeds ~35%.
+        强制每 topic-group 上限，这样没有单一 topic_group 称霸
+        最终结果集 (最多 ~limit 的 20%)，以及每来源上限，这样
+        没有单一来源超过 ~35%。
         """
-        # Per-topic cap: no single topic_group takes more than ~20% of results.
-        # For small limits (≤5) this is 1, preserving strict topic dedup.
+        # 每 topic 上限: 单一 topic_group 不超过 ~20% 结果。
+        # 对小 limit (≤5) 这是 1，保留严格 topic 去重。
         per_topic_cap = max(1, limit // 5)
-        # Hard source ceiling: even with infinite topic diversity, a single
-        # source cannot take more than this many slots in total.
+        # 硬来源上限: 即使有无限 topic 多样性，单一来源总共也
+        # 不能超过这么多槽位。
         source_ceiling = (
             per_source_ceiling
             if per_source_ceiling > 0
@@ -2577,7 +2552,7 @@ class ContentDiscoveryEngine:
             if source:
                 source_counts[source] = source_counts.get(source, 0) + 1
 
-        # Pass 1: allow new or under-cap topics from overflow
+        # Pass 1: 允许 overflow 中新或未达上限的 topic
         remaining: list[DiscoveredContent] = []
         for item in overflow:
             if len(selected) >= limit:
@@ -2602,7 +2577,7 @@ class ContentDiscoveryEngine:
             if source:
                 source_counts[source] = source_counts.get(source, 0) + 1
 
-        # Pass 2: fill remaining with soft caps (topic ≤30%, source ≤ ceiling)
+        # Pass 2: 用软上限填充剩余 (topic ≤30%, source ≤ 上限)
         max_per_topic = max(per_topic_cap + 1, limit * 3 // 10)
         leftover: list[DiscoveredContent] = []
         for item in remaining:
@@ -2622,7 +2597,7 @@ class ContentDiscoveryEngine:
             if source:
                 source_counts[source] = source_counts.get(source, 0) + 1
 
-        # Pass 3: truly unconditional fill if still short
+        # Pass 3: 仍不足则无条件填充
         for item in leftover:
             if len(selected) >= limit:
                 break
@@ -2632,7 +2607,7 @@ class ContentDiscoveryEngine:
 
     @staticmethod
     def _topic_bucket(item: DiscoveredContent) -> str:
-        """Use topic_group (coarse) for diversity bucketing, fall back to topic_key."""
+        """用 topic_group (粗粒度) 做多样性分桶，回退到 topic_key。"""
         if item.topic_group.strip():
             return ContentDiscoveryEngine._normalize_topic_token(item.topic_group)
         if item.topic_key.strip():
@@ -2700,7 +2675,7 @@ class ContentDiscoveryEngine:
         return int(row["count"] if isinstance(row, dict) else row[0])
 
     def cache_evaluated_results(self, results: list[DiscoveredContent]) -> int:
-        """Persist evaluated discovery results and return newly cached row count."""
+        """持久化已评估的发现结果，返回新增缓存行数。"""
 
         if self._database is None or not results:
             return 0
@@ -2710,13 +2685,13 @@ class ContentDiscoveryEngine:
         return max(0, after - before)
 
     async def normalize_evaluated_results(self, results: list[DiscoveredContent]) -> None:
-        """Apply discovery topic normalization before evaluated candidates are cached."""
+        """在已评估候选缓存前应用发现 topic 归一化。"""
 
         await self._normalize_topic_groups(results)
         await self._normalize_topic_keys(results)
 
     def cache_admission_block_reason(self, item: DiscoveredContent) -> str:
-        """Return why an evaluated item should not be written to ``content_cache``."""
+        """返回一个已评估条目不应写入 ``content_cache`` 的原因。"""
 
         if self._database is None:
             return ""
@@ -2742,18 +2717,17 @@ class ContentDiscoveryEngine:
         if self._database is None or not results:
             return
 
-        # v0.3.50+: pool-wide franchise quota. Without this, multiple
-        # discovery rounds can each pass the per-batch cap (4 张雪机车
-        # in batch 1, 4 in batch 2, ...) and the pool ends up with 30+
-        # items of the same franchise — diversifier at serve time
-        # cannot rescue a pool that's already franchise-skewed.
+        # v0.3.50+: pool 级 franchise 配额。没有它，多轮发现都能
+        # 通过每批上限 (批 1 中 4 条张雪机车，批 2 中 4 条，...)，
+        # pool 最终有 30+ 同 franchise 条目 —— serve 时的多样化器
+        # 无法挽救已经 franchise 倾斜的 pool。
         existing_franchise_counts: dict[str, int] = {}
         if _POOL_FRANCHISE_QUOTA > 0:
             try:
                 existing_franchise_counts = self._database.count_pool_by_franchise()
             except Exception:
-                # Old DB or test stub without the helper — skip the
-                # quota check rather than fail caching entirely.
+                # 旧 DB 或没有 helper 的测试 stub —— 跳过配额检查，
+                # 而不是让整个缓存失败。
                 logger.debug("count_pool_by_franchise unavailable", exc_info=True)
                 existing_franchise_counts = {}
 
@@ -2782,13 +2756,13 @@ class ContentDiscoveryEngine:
                     round_franchise_counts[franchise_key] = (
                         round_franchise_counts.get(franchise_key, 0) + 1
                     )
-                # P1.8 yield backfill — the ONE admission convergence. Every
-                # admitted pool item (inline-admit B站/抖音 here, and the shared
-                # candidate-pipeline X/YT/XHS/抖音 path which also funnels through
-                # ``cache_evaluated_results`` → ``_cache_results``) credits the
-                # keyword that produced it, idempotent on (keyword, content).
-                # Skipped (viewed / franchise-quota) items never reach here, so
-                # they correctly accrue no yield.
+                # P1.8 yield 回填 —— 唯一的 admit 汇聚点。每个
+                # 入池条目 (此处的内联 admit B站/抖音，以及同样
+                # 经过 ``cache_evaluated_results`` → ``_cache_results``
+                # 的共享 candidate-pipeline X/YT/XHS/抖音 路径)
+                # 都归功于产生它的 keyword，对 (keyword, content)
+                # 幂等。被跳过 (viewed / franchise-quota) 的条目
+                # 永不走到这里，所以它们正确地不累计 yield。
                 self._backfill_keyword_yield(item)
             except Exception:
                 logger.exception("Failed to cache discovered content: %s", item.bvid)
@@ -2807,28 +2781,27 @@ class ContentDiscoveryEngine:
                 ", ".join(f"{k}×{v}" for k, v in skipped_franchise.items()),
             )
 
-        # v0.3.45+: warm the recommendation MMR embedding cache while we
-        # still hold these items in memory. Without this hook, the first
-        # ``serve()`` after a discovery run pays ~150ms × N for serial
-        # API calls — the warm path is L2 SQLite so subsequent reshuffles
-        # are <1s. Fired in a detached task so we don't block discovery
-        # finalization on a slow embedding provider.
+        # v0.3.45+: 在内存中还持有这些条目时预热推荐 MMR embedding
+        # 缓存。没有这个 hook，发现运行后第一次 ``serve()`` 要为
+        # 串行 API 调用支付 ~150ms × N —— 预热路径是 L2 SQLite，
+        # 所以后续重排 <1s。在 detached task 中触发，这样我们
+        # 不会因为慢的 embedding provider 阻塞发现收尾。
         if persisted and self._embedding_service is not None:
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                # _cache_results is sometimes called from sync test paths;
-                # fall through silently rather than raise.
+                # _cache_results 有时从同步测试路径调用；
+                # 静默返回而不是抛错。
                 return
             loop.create_task(self._warm_mmr_embeddings(persisted))
 
     def _backfill_keyword_yield(self, item: DiscoveredContent) -> None:
-        """Credit one admitted item to its producing keyword (P1.8), if any.
+        """把一个入池条目归功于产生它的 keyword (P1.8)，如有。
 
-        No-op when the item carries no ``source_keyword_id`` (every non-search /
-        legacy / flag-off item) or when the database does not expose the yield
-        DAO (old stubs). Best-effort: a yield-ledger failure must never abort an
-        otherwise-successful pool admission.
+        当条目不带 ``source_keyword_id`` (每个非搜索 / 旧版本 /
+        flag 关闭条目) 或数据库不暴露 yield DAO (旧 stub) 时
+        为 no-op。尽力而为: yield 账本失败绝不能中止原本成功的
+        pool 入池。
         """
         keyword_id = item.source_keyword_id
         if keyword_id is None:
@@ -2848,10 +2821,10 @@ class ContentDiscoveryEngine:
         self,
         items: list[DiscoveredContent],
     ) -> None:
-        """Pre-warm the MMR embedding cache for newly-cached items.
+        """为新缓存的条目预热 MMR embedding 缓存。
 
-        Mirrors ``RecommendationEngine._mmr_embedding_text`` so the cache
-        keys line up byte-for-byte. Best-effort — never raises.
+        镜像 ``RecommendationEngine._mmr_embedding_text``，这样
+        缓存 key 逐字节对齐。尽力而为 —— 永不抛错。
         """
         if self._embedding_service is None or not items:
             return

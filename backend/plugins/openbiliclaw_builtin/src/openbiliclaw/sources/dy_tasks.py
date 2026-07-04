@@ -1,17 +1,14 @@
-"""Douyin (douyin.com) bootstrap event-conversion helpers.
+"""抖音（douyin.com）引导事件转换辅助函数。
 
-This module is the Python-side entry point for Douyin signals captured by
-the browser extension. It is **deliberately independent** of
-``xhs_tasks.py`` — no imports cross between them, the per-platform
-constants are defined here, and the ``DyTaskQueue`` class (added in a
-later task) will own its own SQLite table. The only intentional shared
-layer is ``event_format.py``: Douyin events emit ``event_type`` values
-from the canonical vocabulary so soul-engine can analyze cross-source
-events uniformly.
+本模块是浏览器扩展捕获的抖音信号的 Python 侧入口。
+它**有意独立于** ``xhs_tasks.py`` —— 两者之间无任何 import 交叉，
+各平台常量在本模块内定义，``DyTaskQueue`` 类（在后续任务中添加）
+将拥有自己的 SQLite 表。唯一有意共享的层是 ``event_format.py``：
+抖音事件按标准词汇表发出 ``event_type``，以便 soul-engine 跨源
+统一分析事件。
 
-See ``docs/plans/2026-05-06-douyin-bootstrap-import-design.md`` for the
-architecture rationale and the open-source prior-art notes that
-informed the URL / endpoint catalog used elsewhere in the dy_ tree.
+架构设计动机及 dy_ 子树所用 URL / 端点目录的开源先例说明，
+参见 ``docs/plans/2026-05-06-douyin-bootstrap-import-design.md``。
 """
 
 from __future__ import annotations
@@ -30,20 +27,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _RECENT_TASK_STATUSES = ("pending", "in_progress", "completed", "failed")
 
-# Map each Douyin bootstrap scope to its canonical event_type. Scopes
-# are the ones the extension's MAIN-world fetch-tap can observe in a
-# logged-in user's tab; see design doc §Scope.
+# 将每个抖音引导 scope 映射至其标准 event_type。这些 scope 是
+# 扩展 MAIN-world 的 fetch-tap 在登录用户标签页中可观察到的；
+# 参见设计文档 §Scope。
 DY_BOOTSTRAP_SCOPE_EVENT_TYPES: dict[str, str] = {
-    "dy_post": "view",  # user posted it — weak taste signal but is one
-    "dy_collect": "favorite",  # 收藏夹: most deliberate
+    "dy_post": "view",  # 用户发布 —— 弱口味信号，但仍是信号
+    "dy_collect": "favorite",  # 收藏夹：最刻意的行为
     "dy_like": "like",  # 喜欢过 tab
-    "dy_follow": "follow",  # 关注列表 — interest in a creator's catalog
+    "dy_follow": "follow",  # 关注列表 —— 对创作者作品的兴趣
 }
 
-# Per-scope signal strength fed into the preference layer. Numbers
-# match the design doc; collect ranks highest because it's the most
-# deliberate save-for-later action; post ranks lowest because the user
-# being the author doesn't strongly indicate consumption preference.
+# 各 scope 的信号强度，输入偏好层。数值与设计文档一致；
+# collect 排名最高，因其是最刻意的"留待后看"动作；
+# post 排名最低，因为用户作为作者并不能强烈表明消费偏好。
 DY_BOOTSTRAP_SIGNAL_STRENGTH: dict[str, float] = {
     "dy_post": 0.4,
     "dy_collect": 1.0,
@@ -51,9 +47,8 @@ DY_BOOTSTRAP_SIGNAL_STRENGTH: dict[str, float] = {
     "dy_follow": 0.6,
 }
 
-# Human-readable scope labels used in the natural-language context the
-# preference / awareness LLM prompts read. Action verbs come from the
-# event taxonomy; this label adds the "在抖音上" framing.
+# 可读的 scope 标签，用于偏好 / 感知 LLM 提示词读取的自然语言上下文。
+# 动作动词来自事件分类法；此标签补充"在抖音上"的框架。
 DY_BOOTSTRAP_SCOPE_LABELS: dict[str, str] = {
     "dy_post": "发布",
     "dy_collect": "收藏",
@@ -67,15 +62,14 @@ _DISCOVERY_CREATOR_SCOPE_PRIORITY = ("dy_follow", "dy_collect", "dy_like", "dy_p
 def dy_bootstrap_videos_to_events(
     videos: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Convert extension-collected Douyin bootstrap items into events.
+    """将扩展收集的抖音引导条目转换为事件。
 
-    Routes through ``event_format.build_event`` so the resulting dict is
-    shape-identical to B站 / 小红书 events. Items missing both ``title``
-    and ``url`` are dropped; items with an unknown scope are dropped.
+    通过 ``event_format.build_event`` 路由，使返回的 dict 与 B 站 / 小红书
+    事件形状一致。同时缺少 ``title`` 与 ``url`` 的条目将被丢弃；
+    scope 未知的条目将被丢弃。
 
-    For ``dy_follow`` scope, ``creator_sec_uid`` (rather than
-    ``aweme_id``) is the natural identity key, so we propagate that
-    instead under the same metadata field name.
+    对于 ``dy_follow`` scope，``creator_sec_uid``（而非 ``aweme_id``）
+    是天然的身份键，因此我们在同一 metadata 字段名下传递它。
     """
     from openbiliclaw.sources.event_format import SOURCE_DOUYIN, build_event
 
@@ -95,19 +89,18 @@ def dy_bootstrap_videos_to_events(
 
         author = str(item.get("author", "")).strip()
         label = DY_BOOTSTRAP_SCOPE_LABELS[scope]
-        # Custom context — scope label is more precise than the generic
-        # event_type verb. Mirrors the wording style preference / soul
-        # prompts already grew up reading from the XHS path.
+        # 自定义 context —— scope 标签比通用 event_type 动词更精确。
+        # 措辞风格镜像偏好 / soul 提示词从小红书路径中已读到的方式。
         context = f"抖音{label}：{title or url}"
         if author:
             context = f"{context} 作者：{author}"
 
-        # Identity key differs by scope.
+        # 身份键随 scope 不同。
         identity_key = "creator_sec_uid" if scope == "dy_follow" else "aweme_id"
         identity_value = str(item.get(identity_key, "")).strip()
 
-        # scope_short strips the "dy_" prefix so import_source reads
-        # "dy_bootstrap_collect" rather than "dy_bootstrap_dy_collect".
+        # scope_short 去除 "dy_" 前缀，使 import_source 读到的
+        # 是 "dy_bootstrap_collect" 而非 "dy_bootstrap_dy_collect"。
         scope_short = scope.removeprefix("dy_") if scope.startswith("dy_") else scope
 
         metadata: dict[str, Any] = {
@@ -133,8 +126,8 @@ def dy_bootstrap_videos_to_events(
 
 
 def _video_key(video: dict[str, Any]) -> str:
-    """Identity key for dedup. Includes scope so the same aweme_id can
-    legitimately appear in two scopes (e.g. user posted AND collected)."""
+    """用于去重的身份键。包含 scope，使同一 aweme_id 可合法地
+    出现在两个 scope 中（例如用户既发布又收藏）。"""
     scope = str(video.get("scope", "")).strip()
     aweme_id = str(video.get("aweme_id", "")).strip()
     creator_sec_uid = str(video.get("creator_sec_uid", "")).strip()
@@ -145,7 +138,7 @@ def _video_key(video: dict[str, Any]) -> str:
 
 
 def dy_bootstrap_video_key(video: dict[str, Any]) -> str:
-    """Return the stable cross-task identity key for one bootstrap video."""
+    """返回单条引导视频的跨任务稳定身份键。"""
     return _video_key(video)
 
 
@@ -156,15 +149,14 @@ def _merge_dy_result_payload(
     scope_counts: dict[str, Any] | None = None,
     debug: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Merge a partial result into the current row.
+    """将部分结果合并入当前行。
 
-    Returns the merged payload + the list of videos newly added by this
-    merge (caller propagates only those to the soul pipeline so the
-    same item never causes two events).
+    返回合并后的 payload 及本次合并新增的视频列表
+    （调用方仅将这些传递至 soul 流水线，避免同一项产生两次事件）。
 
-    Independent of xhs_tasks._merge_result_payload — Douyin uses
-    aweme_id (not note_id) and the natural scope-counts logic differs
-    once dy_history may join later.
+    独立于 xhs_tasks._merge_result_payload —— 抖音使用 aweme_id
+    （而非 note_id），且一旦后续 dy_history 可能加入，
+    天然的 scope 计数逻辑也会有所不同。
     """
     merged_videos: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -203,7 +195,7 @@ def _merge_dy_result_payload(
                 merged_counts[scope] = max(current_count, count)
             else:
                 merged_counts[scope] = count
-    # Backfill counts from observed videos if the executor didn't send them.
+    # 若执行器未发送计数，则从已观察的视频中回填。
     for video in merged_videos:
         scope = str(video.get("scope", "")).strip()
         if scope and scope not in merged_counts:
@@ -230,12 +222,11 @@ def recent_dy_creator_sec_uids(
     limit: int = 20,
     task_limit: int = 5,
 ) -> tuple[str, ...]:
-    """Return creator sec_uid seeds from recent completed Douyin bootstrap tasks.
+    """从近期完成的抖音引导任务中返回创作者 sec_uid 种子。
 
-    Direct search / hot can soft-return HTTP 200 with empty lists. Creator
-    timelines are currently the most reliable direct-cookie discovery
-    surface, so discovery can use authors seen in recent bootstrap signals
-    as a fallback seed list.
+    直连搜索 / 热搜可能软返回 HTTP 200 但列表为空。创作者时间线
+    目前是直连 Cookie 发现中最可靠的接口，因此发现机制可将近期
+    引导信号中出现的作者作为兜底种子列表。
     """
     if limit <= 0 or task_limit <= 0:
         return ()
@@ -294,13 +285,11 @@ def recent_dy_creator_sec_uids(
 
 
 class DyTaskQueue:
-    """Manages the dy_tasks table.
+    """管理 dy_tasks 表。
 
-    Independent of XhsTaskQueue. Schema mirrors xhs_tasks because the
-    underlying state machine is the same (pending → completed/failed),
-    but the table is separate so daily-budget exhaustion on one
-    platform never blocks the other, and so future per-platform
-    columns can be added without conflict.
+    独立于 XhsTaskQueue。Schema 镜像 xhs_tasks，因为底层状态机
+    相同（pending → completed/failed），但表分开，使一个平台的
+    日预算耗尽不会阻塞另一个平台，并便于未来按平台添加列而不冲突。
     """
 
     def __init__(self, db: Database) -> None:
@@ -336,9 +325,9 @@ class DyTaskQueue:
         *,
         daily_budget: int = 100,
     ) -> bool:
-        """Enqueue a task if today's budget for this type allows it.
+        """若当日该类型的预算允许，则入队一个任务。
 
-        Returns True on enqueue, False on budget exhausted.
+        入队返回 True，预算耗尽返回 False。
         """
         return self.enqueue_with_id(task_type, payload, daily_budget=daily_budget) is not None
 
@@ -349,10 +338,10 @@ class DyTaskQueue:
         *,
         daily_budget: int = 100,
     ) -> str | None:
-        """Enqueue a task and return its id, or None when budget exhausted.
+        """入队一个任务并返回其 id，预算耗尽时返回 None。
 
-        ``daily_budget <= 0`` disables the per-day cap; runtime producers are
-        then controlled by source deficits and their per-run throttles.
+        ``daily_budget <= 0`` 禁用按天上限；运行时生产者
+        随后由源缺口及其按运行节流控制。
         """
         count_today = self._budgeted_count_today(task_type) if daily_budget > 0 else 0
 
@@ -374,7 +363,7 @@ class DyTaskQueue:
         return task_id
 
     def _budgeted_count_today(self, task_type: str) -> int:
-        """Count today's tasks that should consume the per-type daily budget."""
+        """统计今日应消耗该类型每日预算的任务数。"""
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         rows = self._db.conn.execute(
             """
@@ -396,8 +385,8 @@ class DyTaskQueue:
 
     def next_pending(self, only_ids: set[str] | None = None) -> dict[str, Any] | None:
         stale_before = (datetime.now(UTC) - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
-        # ``only_ids`` restricts which tasks may be claimed (gui-init: during an
-        # active init only init-owned bootstrap tasks are handed out). None = all.
+        # ``only_ids`` 限制可认领的任务（gui-init：活动 init 期间仅派发
+        # init 自有的引导任务）。None 表示全部。
         where = "(status = 'pending' OR (status = 'in_progress' AND claimed_at <= ?))"
         params: list[Any] = [stale_before]
         if only_ids is not None:
@@ -439,7 +428,7 @@ class DyTaskQueue:
         recent_hours: float,
         statuses: tuple[str, ...] | None = None,
     ) -> dict[str, Any] | None:
-        """Return a recent task of this type for idempotent enqueue paths."""
+        """返回该类型的近期任务，用于幂等入队路径。"""
         if recent_hours <= 0:
             return None
         selected_statuses = statuses or _RECENT_TASK_STATUSES
@@ -474,7 +463,7 @@ class DyTaskQueue:
         older_than_seconds: float,
         error: str = "stale_pending",
     ) -> int:
-        """Fail pending tasks of selected types older than the given age."""
+        """将所选类型中超过指定时长的 pending 任务标记为失败。"""
         normalized_types = tuple(str(t).strip() for t in task_types if str(t).strip())
         if not normalized_types:
             return 0
@@ -513,11 +502,11 @@ class DyTaskQueue:
         debug: dict[str, Any] | None = None,
         complete: bool = False,
     ) -> list[dict[str, Any]]:
-        """Merge a partial/final result and optionally mark complete.
+        """合并部分/最终结果，并可选标记完成。
 
-        Returns only the videos newly added by this merge so the caller
-        can propagate exactly those to the soul pipeline (avoids
-        duplicate events when the executor re-sends overlapping batches).
+        仅返回本次合并新增的视频，以便调用方将这些精确条目
+        传递至 soul 流水线（避免执行器重复发送重叠批次时
+        产生重复事件）。
         """
         row = self.get(task_id)
         current: dict[str, Any] = {}

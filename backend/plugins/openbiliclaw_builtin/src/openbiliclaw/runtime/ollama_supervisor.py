@@ -1,4 +1,4 @@
-"""Shared helpers for supervising a local Ollama daemon."""
+"""监督本地 Ollama 守护进程的共享助手。"""
 
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ _DEFAULT_OLLAMA_KEEP_ALIVE = "24h"
 
 console = Console()
 
-# Handle to an ``ollama serve`` daemon THIS process started (None if Ollama was
-# already running and we merely adopted it, or if we never started one). Lets
-# ``stop_managed_ollama`` shut down only what we spawned on exit, leaving an
-# externally-managed Ollama (official app / user daemon) untouched.
+# 由 *本进程* 启动的 ``ollama serve`` 守护进程句柄（若 Ollama 已经在
+# 运行而我们只是收养它，或我们从未启动过，则为 None）。让
+# ``stop_managed_ollama`` 在退出时仅关闭我们自身拉起的进程，对外部
+# 管理的 Ollama（官方应用 / 用户守护进程）保持不动。
 _managed_proc: subprocess.Popen[bytes] | None = None
 
 
@@ -39,7 +39,7 @@ def _embedding_wants_ollama(config: Config) -> bool:
 
 
 def ollama_required(config: Config) -> bool:
-    """Return whether chat or embedding routing may call Ollama."""
+    """返回 chat 或 embedding 路由是否会调用 Ollama。"""
     return _ollama_is_chat_capable(config) or _embedding_wants_ollama(config)
 
 
@@ -55,12 +55,11 @@ def _strip_openai_v1_suffix(url: str) -> str:
         path = path[: -len("/v1")]
     return urlunparse((parsed.scheme, parsed.netloc, path.rstrip("/"), "", "", "")).rstrip("/")
 
-
 def effective_ollama_endpoint(config: Config) -> str:
-    """Return the daemon root endpoint used for Ollama health probes.
+    """返回用于 Ollama 健康探测的守护进程根端点。
 
-    Chat and embedding providers use OpenAI-compatible ``/v1`` URLs in config, but
-    Ollama's health API lives at daemon root ``/api/version``.
+    Chat 和 embedding provider 在配置里使用 OpenAI 兼容的 ``/v1``
+    URL，而 Ollama 的健康 API 位于守护进程根 ``/api/version``。
     """
     if _ollama_is_chat_capable(config):
         base_url = config.llm.ollama.base_url.strip() or f"{_DEFAULT_OLLAMA_ENDPOINT}/v1"
@@ -76,7 +75,7 @@ def effective_ollama_endpoint(config: Config) -> str:
 
 
 def is_loopback(url: str) -> bool:
-    """Return whether a URL points at the local machine."""
+    """返回某 URL 是否指向本机。"""
     parsed = urlparse(url)
     host = (parsed.hostname or "").strip().lower()
     if host == "localhost":
@@ -88,10 +87,10 @@ def is_loopback(url: str) -> bool:
 
 
 def _ollama_is_running(host: str = _DEFAULT_OLLAMA_ENDPOINT) -> bool:
-    """Probe Ollama's HTTP API; return True only on a healthy 200 response."""
+    """探测 Ollama 的 HTTP API；仅在返回健康的 200 时返回 True。"""
     try:
-        # trust_env=False — a localhost Ollama probe must not be hijacked by
-        # HTTP_PROXY env (e.g. 127.0.0.1:7897 VPN client).
+        # trust_env=False —— 对 localhost Ollama 的探测绝不能被
+        # HTTP_PROXY 环境变量劫持（例如 127.0.0.1:7897 的 VPN 客户端）。
         with httpx.Client(timeout=2.0, trust_env=False) as client:
             response = client.get(f"{host.rstrip('/')}/api/version")
             return response.status_code == 200
@@ -100,7 +99,7 @@ def _ollama_is_running(host: str = _DEFAULT_OLLAMA_ENDPOINT) -> bool:
 
 
 def _ollama_start_serve_background() -> bool:
-    """Start ``ollama serve`` detached, waiting up to 15s for health."""
+    """后台启动 ``ollama serve``，最多等 15 秒确认健康。"""
     import shutil
     import subprocess
     import time
@@ -116,11 +115,11 @@ def _ollama_start_serve_background() -> bool:
         env = os.environ.copy()
         env.setdefault("OLLAMA_KEEP_ALIVE", _DEFAULT_OLLAMA_KEEP_ALIVE)
         if os.name == "nt":
-            # CREATE_NO_WINDOW (not DETACHED_PROCESS): give `ollama serve` a
-            # hidden console that its child `ollama runner` inherits, so neither
-            # flashes a window. DETACHED_PROCESS leaves the runner with no console
-            # to inherit, so it allocates its own *visible* conhost — the window
-            # flashing users saw on the packaged tray app.
+            # CREATE_NO_WINDOW（不是 DETACHED_PROCESS）：给 `ollama serve`
+            # 一个隐藏控制台，让它的子进程 `ollama runner` 继承，使两者
+            # 都不弹窗。DETACHED_PROCESS 会让 runner 没有可继承的控制台，
+            # 只能自己分配一个 *可见的* conhost —— 用户在打包托盘应用上
+            # 看到的窗口闪烁就是这么来的。
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(
                 subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200
             )
@@ -145,8 +144,8 @@ def _ollama_start_serve_background() -> bool:
         console.print(f"[red]启动 ollama serve 失败: {exc}[/red]")
         return False
 
-    # Remember the daemon WE started so it can be cleanly stopped on exit (and
-    # its model runner / llama-server child with it) instead of being orphaned.
+    # 记住 *我们* 启动的守护进程，便于退出时干净停止（连同其模型
+    # runner / llama-server 子进程），而不是成为孤儿。
     global _managed_proc
     _managed_proc = proc
 
@@ -158,14 +157,13 @@ def _ollama_start_serve_background() -> bool:
 
 
 def stop_managed_ollama() -> bool:
-    """Stop the ``ollama serve`` daemon this process started, if any.
+    """停止由本进程启动的 ``ollama serve`` 守护进程（如有）。
 
-    Only touches a daemon we spawned in :func:`_ollama_start_serve_background`;
-    an Ollama that was already running when we started (official app / a daemon
-    the user manages) is left alone. Kills the whole process tree so the model
-    runner (``llama-server`` / ``ollama runner``) goes down with the parent
-    rather than lingering as a resource-leaking orphan. Returns True when a
-    managed daemon was actually stopped.
+    仅触碰我们在 :func:`_ollama_start_serve_background` 中拉起的守护
+    进程；启动时已经在跑的 Ollama（官方应用 / 用户管理的守护进程）
+    不动。Kill 整个进程树，使模型 runner（``llama-server`` /
+    ``ollama runner``）随父进程一起退出，而不是作为泄露资源的孤儿
+    残留。当确实停止了被托管的守护进程时返回 True。
     """
     global _managed_proc
     proc = _managed_proc
@@ -178,21 +176,21 @@ def stop_managed_ollama() -> bool:
 
     try:
         if os.name == "nt":
-            # terminate() reaches only `ollama serve`; the model runner is a
-            # child process, so use taskkill /T to take down the whole tree.
+            # terminate() 只能到达 `ollama serve`；模型 runner 是子进程，
+            # 所以用 taskkill /T 把整棵树带走。
             subprocess.run(  # noqa: S603
                 ["taskkill", "/PID", str(proc.pid), "/T", "/F"],  # noqa: S607
                 capture_output=True,
                 check=False,
             )
         else:
-            # Started with start_new_session=True → it leads its own process
-            # group; signal the group so the runner children stop too.
+            # 启动时用了 start_new_session=True → 它有自己的进程组；
+            # 给整组发信号让 runner 子进程也一起停。
             with suppress(ProcessLookupError, PermissionError):
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         with suppress(Exception):
             proc.wait(timeout=5)
         return True
-    except Exception as exc:  # noqa: BLE001 — best-effort shutdown, never raise on exit
+    except Exception as exc:  # noqa: BLE001 — 尽力而为的关闭，退出时绝不抛
         console.print(f"[yellow]停止托管 ollama 失败: {exc}[/yellow]")
         return False

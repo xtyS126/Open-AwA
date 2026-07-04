@@ -1,4 +1,4 @@
-"""Windows HKCU Run autostart manager."""
+"""Windows HKCU Run 自启管理器。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _script_from_run_value(value: str) -> Path | None:
 
 
 class WindowsRunManager:
-    """Manage OpenBiliClaw in HKCU Run using a pythonw ``.pyw`` launcher."""
+    """通过 pythonw ``.pyw`` 启动器在 HKCU Run 中管理 OpenBiliClaw。"""
 
     mechanism = "windows_run"
 

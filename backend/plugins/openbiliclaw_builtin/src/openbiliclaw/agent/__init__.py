@@ -1,1 +1,1 @@
-"""Agent package — orchestration and skill system."""
+"""Agent 包 —— 编排与技能系统。"""

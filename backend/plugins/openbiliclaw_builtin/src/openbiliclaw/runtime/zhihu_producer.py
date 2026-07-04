@@ -1,9 +1,8 @@
-"""Runtime Zhihu discovery producer.
+"""Runtime Zhihu 发现 producer。
 
-Zhihu discovery is plugin-backed because the useful APIs rely on the user's
-logged-in browser session. The producer enqueues search tasks into
-``zhihu_tasks``, wakes the extension, waits for the task terminal result, and
-hands raw candidates to the shared discovery candidate pool.
+Zhihu 发现是插件驱动的，因为可用的 API 依赖用户登录的浏览器会话。
+producer 将搜索任务入队到 ``zhihu_tasks``，唤醒扩展，等待任务终态结果，
+并将原始候选移交给共享的 discovery 候选池。
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ ZHIHU_SOURCE_STRATEGIES = {
 
 @dataclass
 class ZhihuDiscoveryProducer:
-    """Throttle and invoke Zhihu plugin-backed discovery."""
+    """对 Zhihu 插件驱动的发现进行节流和调用。"""
 
     task_queue: Any
     soul_engine: Any
@@ -65,7 +64,7 @@ class ZhihuDiscoveryProducer:
     _last_skip_reason: str = field(default="", init=False)
 
     async def produce_if_due(self, *, limit: int | None = None) -> dict[str, object]:
-        """Run one Zhihu discovery cycle if enabled, due, and under quota."""
+        """如果已启用、到期且在配额内，则运行一个 Zhihu 发现周期。"""
         if not self.enabled:
             return self._skip("disabled")
         if not self._is_due():
@@ -349,7 +348,7 @@ def build_zhihu_discovery_producer(
     keyword_fetch: Any | None = None,
     kick: Any | None = None,
 ) -> ZhihuDiscoveryProducer | None:
-    """Build the runtime Zhihu producer if Zhihu discovery is enabled."""
+    """如果 Zhihu 发现已启用则构建 runtime Zhihu producer。"""
     zh_cfg = getattr(getattr(config, "sources", None), "zhihu", None)
     if zh_cfg is None or not bool(getattr(zh_cfg, "enabled", False)):
         return None
@@ -383,7 +382,7 @@ def build_zhihu_discovery_producer(
 
 
 def kick_zhihu_task_dispatcher() -> None:
-    """Best-effort wake-up for the extension dispatcher."""
+    """对扩展 dispatcher 的尽力唤醒。"""
     req = request.Request(
         "http://127.0.0.1:8420/api/sources/zhihu/kick",
         method="POST",

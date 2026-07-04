@@ -1,8 +1,7 @@
-"""Generic web source adapter — fetches and extracts content from any web page.
+"""通用 Web 内容源适配器 —— 从任意网页获取并提取内容。
 
-Uses a browser backend (Playwright CDP or agent-browser) to load pages
-and an LLM to extract structured content. Works for any platform that
-doesn't have a dedicated API adapter.
+使用浏览器后端（Playwright CDP 或 agent-browser）加载页面，
+并用 LLM 提取结构化内容。适用于任何没有专用 API 适配器的平台。
 """
 
 from __future__ import annotations
@@ -23,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 class WebSourceAdapter:
-    """Generic web content adapter using browser + LLM extraction.
+    """使用浏览器 + LLM 提取的通用 Web 内容适配器。
 
-    Recipe config keys:
-        url_template: URL pattern, may contain ``{query}`` placeholder.
-        query: Search query (substituted into url_template).
-        url: Direct URL to fetch (used when url_template is not set).
+    Recipe 配置键：
+        url_template: URL 模式，可包含 ``{query}`` 占位符。
+        query: 搜索查询（替换到 url_template 中）。
+        url: 直接获取的 URL（未设置 url_template 时使用）。
     """
 
     def __init__(
@@ -54,7 +53,7 @@ class WebSourceAdapter:
         profile: SoulProfile,
         limit: int = 20,
     ) -> list[DiscoveredContent]:
-        """Fetch content from a web page defined by the recipe."""
+        """从 recipe 定义的网页获取内容。"""
         url = self._build_url(recipe)
         if not url:
             logger.warning("WebSourceAdapter: no URL for recipe %s", recipe.id)
@@ -89,7 +88,7 @@ class WebSourceAdapter:
             base_url=url,
         )
 
-        # Apply recipe source_type and URL/ID backfill from captured anchors.
+        # 应用 recipe 的 source_type，并从捕获的锚点回填 URL/ID。
         for item in items:
             if not item.source_platform:
                 item.source_platform = recipe.source_type
@@ -106,7 +105,7 @@ class WebSourceAdapter:
 
     @staticmethod
     def _build_url(recipe: SourceRecipe) -> str:
-        """Build the target URL from recipe config."""
+        """根据 recipe 配置构建目标 URL。"""
         config = recipe.config or {}
         url_template = str(config.get("url_template", "") or "")
         query = str(config.get("query", "") or "")
@@ -125,20 +124,19 @@ def _match_anchor_by_title(
     anchors: list[tuple[str, str]],
     title: str,
 ) -> str:
-    """Return the href of the anchor whose text best matches ``title``.
+    """返回文本与 ``title`` 最佳匹配的锚点的 href。
 
-    Matching is deliberately simple: case-insensitive substring either way
-    (anchor text contains the title, or the title contains the anchor
-    text). For cards on xiaohongshu / v2ex / zhihu this is sufficient —
-    the anchor's visible text IS the card title.
+    匹配刻意简单：大小写不敏感的子串匹配（任一方向包含即可）。
+    对于小红书 / v2ex / 知乎的卡片来说这已经足够 —— 锚点的可见
+    文本就是卡片标题。
     """
     if not title or not anchors:
         return ""
     needle = title.strip().lower()
     if not needle:
         return ""
-    # Prefer exact-substring hits first, then partial overlap, so a card
-    # whose full title is a prefix of a longer anchor still wins.
+    # 优先精确子串命中，然后是部分重叠，这样标题是某个更长锚点
+    # 前缀的卡片仍能胜出。
     best_exact = ""
     best_partial = ""
     for text, href in anchors:
@@ -153,11 +151,11 @@ def _match_anchor_by_title(
 
 
 def _extract_content_id(url: str) -> str:
-    """Pull the last non-empty path segment out of ``url``.
+    """从 ``url`` 中提取最后一个非空路径段。
 
-    Works for xiaohongshu (``/explore/{note_id}``, ``/discovery/item/{id}``),
-    v2ex (``/t/{topic_id}``), zhihu (``/question/{id}``), etc. Returns ""
-    when no usable segment is found — callers should keep the original ID.
+    适用于小红书（``/explore/{note_id}``、``/discovery/item/{id}``）、
+    v2ex（``/t/{topic_id}``）、知乎（``/question/{id}``）等。未找到
+    可用段时返回 "" —— 调用方应保留原始 ID。
     """
     if not url:
         return ""

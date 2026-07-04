@@ -1,7 +1,7 @@
-"""ProfileEvaluator — per-layer, per-field scoring of predicted vs expected profiles.
+"""ProfileEvaluator — 按层按字段对预测画像与期望画像进行评分。
 
-Shared evaluation core used by both human-in-the-loop (Mode 1) and
-fully automated (Mode 2) self-iteration loops.
+人工参与（模式 1）和全自动（模式 2）自迭代循环
+共用的评估核心。
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Layer weights for overall score computation
+# 总分计算的层权重
 _LAYER_WEIGHTS: dict[str, float] = {
     "core": 0.25,
     "values": 0.15,
@@ -26,7 +26,7 @@ _LAYER_WEIGHTS: dict[str, float] = {
     "portrait": 0.10,
 }
 
-# Field → param attribution mapping (used by optimizer)
+# 字段 → 参数归因映射（优化器使用）
 FIELD_TO_PARAM: dict[str, str] = {
     "core.core_traits": "soul_profile_prompt",
     "core.deep_needs": "soul_profile_prompt",
@@ -45,7 +45,7 @@ FIELD_TO_PARAM: dict[str, str] = {
     "portrait": "soul_profile_prompt",
 }
 
-# Field → pipeline code attribution (used by expanded optimizer)
+# 字段 → pipeline 代码归因（扩展优化器使用）
 FIELD_TO_PIPELINE: dict[str, str] = {
     "interest.dislikes": "soul/layer_updaters.py:_update_interest",
     "interest.favorite_up_users": "soul/layer_updaters.py:_update_interest",
@@ -61,13 +61,13 @@ FIELD_TO_PIPELINE: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# 数据结构
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class FieldScore:
-    """Score for a single field comparison."""
+    """单个字段比较的评分。"""
 
     layer: str
     field: str
@@ -80,7 +80,7 @@ class FieldScore:
 
 @dataclass
 class LayerScore:
-    """Aggregate score for one onion layer."""
+    """单个洋葱层的聚合评分。"""
 
     layer: str
     score: float
@@ -89,7 +89,7 @@ class LayerScore:
 
 @dataclass
 class EvalReport:
-    """Complete evaluation report for one predicted profile."""
+    """单个预测画像的完整评估报告。"""
 
     layer_scores: list[LayerScore] = field(default_factory=list)
     overall_score: float = 0.0
@@ -129,10 +129,10 @@ class EvalReport:
 
 
 # ---------------------------------------------------------------------------
-# Scoring functions (per field type)
+# 评分函数（按字段类型）
 # ---------------------------------------------------------------------------
 
-# Cache for LLM scoring results within one evaluation run
+# 单次评估运行中 LLM 评分结果的缓存
 _llm_score_cache: dict[str, tuple[float, str]] = {}
 
 
@@ -142,7 +142,7 @@ async def _llm_semantic_score(
     predicted: object,
     instruction: str,
 ) -> tuple[float, str]:
-    """Use Claude Agent SDK to score semantic similarity between two values."""
+    """使用 Claude Agent SDK 对两个值的语义相似度进行评分。"""
     cache_key = f"{field_name}:{expected}:{predicted}"
     if cache_key in _llm_score_cache:
         return _llm_score_cache[cache_key]
@@ -189,7 +189,7 @@ def _score_string_list_fallback(
     expected: list[str],
     predicted: list[str],
 ) -> tuple[float, str]:
-    """Fallback: score two string lists using F1 of set overlap."""
+    """回退策略：使用集合重叠的 F1 对两个字符串列表评分。"""
     if not expected and not predicted:
         return 1.0, ""
     if not expected:
@@ -218,7 +218,7 @@ def _score_string_fallback(
     expected: str,
     predicted: str,
 ) -> tuple[float, str]:
-    """Fallback: score two strings without LLM."""
+    """回退策略：不使用 LLM 对两个字符串评分。"""
     if not expected and not predicted:
         return 1.0, ""
     if not expected or not predicted:
@@ -231,7 +231,7 @@ def _score_string_fallback(
 
 
 def _score_float(expected: float, predicted: float) -> tuple[float, str]:
-    """Score two floats. Score = 1 - abs(diff), clamped to [0, 1]."""
+    """对两个浮点数评分。得分 = 1 - abs(差值)，限制在 [0, 1]。"""
     diff = abs(expected - predicted)
     score = max(0.0, 1.0 - diff)
     if diff < 0.05:
@@ -240,7 +240,7 @@ def _score_float(expected: float, predicted: float) -> tuple[float, str]:
 
 
 def _score_mbti_type(expected: str, predicted: str) -> tuple[float, str]:
-    """Score MBTI type by letter match ratio."""
+    """按字母匹配比例对 MBTI 类型评分。"""
     if not expected and not predicted:
         return 1.0, ""
     if not expected or not predicted:
@@ -261,7 +261,7 @@ def _score_mbti_dimensions(
     expected: dict[str, Any],
     predicted: dict[str, Any],
 ) -> tuple[float, str]:
-    """Score MBTI dimensions by per-dimension MAE."""
+    """按每个维度的 MAE 对 MBTI 维度评分。"""
     if not expected and not predicted:
         return 1.0, ""
     if not expected or not predicted:
@@ -299,7 +299,7 @@ def _score_interest_tree(
     expected: list[dict[str, Any]],
     predicted: list[dict[str, Any]],
 ) -> tuple[float, str]:
-    """Score interest tree by domain recall, specifics recall, and weight MAE."""
+    """按领域召回率、子项召回率和权重 MAE 对兴趣树评分。"""
     if not expected and not predicted:
         return 1.0, ""
     if not expected:
@@ -307,14 +307,14 @@ def _score_interest_tree(
     if not predicted:
         return 0.0, f"期望 {len(expected)} 个领域，但预测为空"
 
-    # Domain-level recall
+    # 领域级召回率
     exp_domains = {d.get("domain", ""): d for d in expected if isinstance(d, dict)}
     pred_domains = {d.get("domain", ""): d for d in predicted if isinstance(d, dict)}
 
     matched_domains = set(exp_domains.keys()) & set(pred_domains.keys())
     domain_recall = len(matched_domains) / len(exp_domains) if exp_domains else 1.0
 
-    # Specifics recall within matched domains
+    # 匹配领域内的子项召回率
     specifics_scores: list[float] = []
     weight_diffs: list[float] = []
     missing_parts: list[str] = []
@@ -326,12 +326,12 @@ def _score_interest_tree(
         exp_d = exp_domains[domain_name]
         pred_d = pred_domains[domain_name]
 
-        # Weight comparison
+        # 权重比较
         exp_w = float(exp_d.get("weight", 0.5) or 0.5)
         pred_w = float(pred_d.get("weight", 0.5) or 0.5)
         weight_diffs.append(abs(exp_w - pred_w))
 
-        # Specifics comparison
+        # 子项比较
         exp_specs = {
             s.get("name", ""): s for s in (exp_d.get("specifics") or []) if isinstance(s, dict)
         }
@@ -348,7 +348,7 @@ def _score_interest_tree(
     weight_score = max(0.0, 1.0 - (sum(weight_diffs) / len(weight_diffs))) if weight_diffs else 1.0
     specifics_score = sum(specifics_scores) / len(specifics_scores) if specifics_scores else 1.0
 
-    # Weighted combination: domain recall 40%, specifics 40%, weight accuracy 20%
+    # 加权组合：领域召回率 40%，子项 40%，权重准确度 20%
     score = domain_recall * 0.4 + specifics_score * 0.4 + weight_score * 0.2
     return score, "; ".join(missing_parts)
 
@@ -369,7 +369,7 @@ def _severity(score: float) -> str:
 
 
 class ProfileEvaluator:
-    """Evaluate predicted OnionProfile against expected ground truth."""
+    """将预测的 OnionProfile 与期望基准真实进行对比评估。"""
 
     def __init__(
         self,
@@ -377,7 +377,7 @@ class ProfileEvaluator:
         llm: Any = None,
         layer_weights: dict[str, float] | None = None,
     ) -> None:
-        self._llm = llm  # For semantic similarity scoring (portrait, strings)
+        self._llm = llm  # 用于语义相似度评分（portrait、字符串）
         self._layer_weights = layer_weights or dict(_LAYER_WEIGHTS)
 
     async def evaluate(
@@ -385,13 +385,13 @@ class ProfileEvaluator:
         expected: OnionProfile,
         predicted: OnionProfile,
     ) -> EvalReport:
-        """Full evaluation: compare all layers and fields."""
-        # Clear LLM score cache for each evaluation run
+        """完整评估：比较所有层和字段。"""
+        # 每次评估运行前清空 LLM 评分缓存
         _llm_score_cache.clear()
 
         layer_scores: list[LayerScore] = []
 
-        # Core layer
+        # 核心层
         core_fields = await self._eval_core(expected, predicted)
         layer_scores.append(
             LayerScore(
@@ -401,7 +401,7 @@ class ProfileEvaluator:
             )
         )
 
-        # Values layer
+        # 价值观层
         values_fields = await self._eval_values(expected, predicted)
         layer_scores.append(
             LayerScore(
@@ -411,7 +411,7 @@ class ProfileEvaluator:
             )
         )
 
-        # Interest layer
+        # 兴趣层
         interest_fields = self._eval_interest(expected, predicted)
         layer_scores.append(
             LayerScore(
@@ -421,7 +421,7 @@ class ProfileEvaluator:
             )
         )
 
-        # Role layer
+        # 角色层
         role_fields = await self._eval_role(expected, predicted)
         layer_scores.append(
             LayerScore(
@@ -431,7 +431,7 @@ class ProfileEvaluator:
             )
         )
 
-        # Surface layer
+        # 表层
         surface_fields = await self._eval_surface(expected, predicted)
         layer_scores.append(
             LayerScore(
@@ -441,7 +441,7 @@ class ProfileEvaluator:
             )
         )
 
-        # Portrait
+        # 综合叙事
         portrait_fields = await self._eval_portrait(expected, predicted)
         layer_scores.append(
             LayerScore(
@@ -451,14 +451,14 @@ class ProfileEvaluator:
             )
         )
 
-        # Weighted overall score
+        # 加权总分
         overall = sum(ls.score * self._layer_weights.get(ls.layer, 0.1) for ls in layer_scores)
 
-        # Worst fields (lowest scores)
+        # 最差字段（最低分）
         all_fields = [f for ls in layer_scores for f in ls.field_scores]
         worst = sorted(all_fields, key=lambda f: f.score)[:5]
 
-        # Attributions
+        # 归因
         attributions = [
             f"{f.layer}.{f.field} (score={f.score:.2f}): {f.deviation}"
             f" → {FIELD_TO_PARAM.get(f'{f.layer}.{f.field}', 'unknown')}"
@@ -480,9 +480,9 @@ class ProfileEvaluator:
         predicted: OnionProfile,
         human_feedback: dict[str, object],
     ) -> EvalReport:
-        """Build EvalReport from human per-field feedback.
+        """根据人工按字段反馈构建 EvalReport。
 
-        human_feedback format:
+        human_feedback 格式：
         {
             "core.core_traits": {"score": 0.7, "actual": ["理性", "好奇"], "note": "不太挑剔"},
             "core.mbti.type": {"score": 0.0, "actual": "INTP"},
@@ -509,7 +509,7 @@ class ProfileEvaluator:
                 )
             )
 
-        # Group by layer
+        # 按层分组
         layer_map: dict[str, list[FieldScore]] = {}
         for f in all_fields:
             layer_map.setdefault(f.layer, []).append(f)
@@ -536,12 +536,12 @@ class ProfileEvaluator:
             timestamp=datetime.now().isoformat(),
         )
 
-    # -- Per-layer evaluation methods -----------------------------------------
+    # -- 各层评估方法 ---------------------------------------------------------
 
     async def _eval_core(self, exp: OnionProfile, pred: OnionProfile) -> list[FieldScore]:
         fields: list[FieldScore] = []
 
-        # core_traits — LLM semantic matching
+        # core_traits — LLM 语义匹配
         s, d = await _llm_semantic_score(
             "core_traits",
             exp.core.core_traits,
@@ -562,7 +562,7 @@ class ProfileEvaluator:
             )
         )
 
-        # deep_needs — LLM semantic matching
+        # deep_needs — LLM 语义匹配
         s, d = await _llm_semantic_score(
             "deep_needs",
             exp.core.deep_needs,
@@ -576,7 +576,7 @@ class ProfileEvaluator:
             )
         )
 
-        # mbti.type — exact match (no LLM needed)
+        # mbti.type — 精确匹配（无需 LLM）
         s, d = _score_mbti_type(exp.core.mbti.type, pred.core.mbti.type)
         fields.append(
             FieldScore(
@@ -584,7 +584,7 @@ class ProfileEvaluator:
             )
         )
 
-        # mbti.dimensions — numeric (no LLM needed)
+        # mbti.dimensions — 数值（无需 LLM）
         from openbiliclaw.soul.profile import _mbti_to_dict
 
         exp_dims_raw = _mbti_to_dict(exp.core.mbti).get("dimensions", {})
@@ -648,21 +648,21 @@ class ProfileEvaluator:
         exp_dict = _interest_layer_to_dict(exp.interest)
         pred_dict = _interest_layer_to_dict(pred.interest)
 
-        # likes tree — structural matching (no LLM needed)
+        # likes 树——结构化匹配（无需 LLM）
         s, d = _score_interest_tree(
             _interest_tree(exp_dict.get("likes")),
             _interest_tree(pred_dict.get("likes")),
         )
         fields.append(FieldScore("interest", "likes", s, None, None, d, _severity(s)))
 
-        # dislikes tree
+        # dislikes 树
         s, d = _score_interest_tree(
             _interest_tree(exp_dict.get("dislikes")),
             _interest_tree(pred_dict.get("dislikes")),
         )
         fields.append(FieldScore("interest", "dislikes", s, None, None, d, _severity(s)))
 
-        # favorite_up_users — exact match is fine for UP主 names
+        # favorite_up_users — UP主名称用精确匹配即可
         s, d = _score_string_list_fallback(
             exp.interest.favorite_up_users,
             pred.interest.favorite_up_users,
@@ -720,7 +720,7 @@ class ProfileEvaluator:
     async def _eval_surface(self, exp: OnionProfile, pred: OnionProfile) -> list[FieldScore]:
         fields: list[FieldScore] = []
 
-        # cognitive_style — LLM semantic matching
+        # cognitive_style — LLM 语义匹配
         s, d = await _llm_semantic_score(
             "cognitive_style",
             exp.surface.cognitive_style,
@@ -774,7 +774,7 @@ class ProfileEvaluator:
         return fields
 
     async def _eval_portrait(self, exp: OnionProfile, pred: OnionProfile) -> list[FieldScore]:
-        """Evaluate portrait using LLM semantic comparison."""
+        """使用 LLM 语义比较评估综合叙事。"""
         s, d = await _llm_semantic_score(
             "personality_portrait",
             exp.personality_portrait[:500],

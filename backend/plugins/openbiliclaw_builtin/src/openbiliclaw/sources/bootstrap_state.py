@@ -1,4 +1,4 @@
-"""Shared state helpers for extension bootstrap source deduplication."""
+"""扩展引导源去重共享状态辅助函数。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ SOURCE_BOOTSTRAP_STATE_KEYS: dict[str, str] = {
 
 
 def default_source_bootstrap_state() -> dict[str, object]:
-    """Return the persisted-source bootstrap dedupe state shape."""
+    """返回持久化源引导去重状态的结构。"""
     return {
         "xhs_seen_note_keys": [],
         "dy_seen_video_keys": [],
@@ -28,7 +28,7 @@ def default_source_bootstrap_state() -> dict[str, object]:
 
 
 def source_bootstrap_state_key(source: str) -> str:
-    """Return the state-list key for a short or platform source name."""
+    """根据源的短名或平台名返回其状态列表键。"""
     normalized = str(source).strip().lower()
     try:
         return SOURCE_BOOTSTRAP_STATE_KEYS[normalized]
@@ -37,7 +37,7 @@ def source_bootstrap_state_key(source: str) -> str:
 
 
 def as_string_list(value: Any) -> list[str]:
-    """Normalize a persisted list-like value into non-empty strings."""
+    """将持久化的类列表值规范化为非空字符串列表。"""
     if not isinstance(value, list):
         return []
     result: list[str] = []
@@ -52,7 +52,7 @@ def as_string_list(value: Any) -> list[str]:
 
 
 def normalize_source_bootstrap_state(loaded: Any) -> dict[str, object]:
-    """Coerce arbitrary JSON into the stable source-bootstrap state shape."""
+    """将任意 JSON 强制转换为稳定的源引导状态结构。"""
     default = default_source_bootstrap_state()
     if not isinstance(loaded, dict):
         return default

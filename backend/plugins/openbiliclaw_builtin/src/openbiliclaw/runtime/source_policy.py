@@ -1,4 +1,4 @@
-"""Shared discovery source switch and pool-share policy."""
+"""共享发现源开关与池份额策略。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ DEFAULT_POOL_SOURCE_SHARES = {
 
 
 def source_enabled_map(config: Any) -> dict[str, bool]:
-    """Return enabled state for pool-accounted discovery sources."""
+    """返回池计费发现源的启用状态。"""
 
     sources_cfg = getattr(config, "sources", None)
     enabled: dict[str, bool] = {}
@@ -38,7 +38,7 @@ def source_enabled_map(config: Any) -> dict[str, bool]:
 
 
 def effective_pool_source_shares(config: Any) -> dict[str, int]:
-    """Return configured source shares after disabled sources are removed."""
+    """返回移除禁用源后的已配置源份额。"""
 
     scheduler = getattr(config, "scheduler", None)
     raw_shares = getattr(scheduler, "pool_source_shares", None)
@@ -53,11 +53,10 @@ def suggest_pool_source_shares(
     enabled_sources: Mapping[str, bool] | None = None,
     configured_shares: Mapping[str, int] | None = None,
 ) -> dict[str, int]:
-    """Suggest integer pool shares from observed platform event counts.
+    """从观测到的平台事件计数建议整数池份额。
 
-    Counts are square-root damped and scaled around the core Bilibili
-    default. This keeps large imports from dominating while still giving
-    active optional platforms visible quota.
+    计数经过平方根阻尼，并围绕核心 Bilibili 默认值进行缩放。这样既
+    防止大规模导入占据主导，又能让活跃的可选平台获得可见的配额。
     """
 
     enabled = _normalize_enabled_sources(enabled_sources)

@@ -1,8 +1,8 @@
-"""Discovery-specific prompt optimizer configuration.
+"""发现系统特定的 prompt 优化器配置。
 
-Defines the parameter registry, modifiable files whitelist, and
-field-to-param mapping for the content discovery pipeline.
-Reuses the core PromptOptimizer from optimizer.py.
+定义参数注册表、可修改文件白名单、
+以及内容发现 pipeline 的字段到参数映射。
+复用 optimizer.py 中的核心 PromptOptimizer。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 _SRC = "src/openbiliclaw"
 
-# Files the discovery optimizer is allowed to modify.
+# 发现系统优化器允许修改的文件。
 DISCOVERY_MODIFIABLE_FILES: list[str] = [
     f"{_SRC}/llm/prompts.py",
     f"{_SRC}/discovery/strategies/search.py",
@@ -62,8 +62,8 @@ DISCOVERY_PROMPT_PARAMS: list[PromptParam] = [
     ),
 ]
 
-# No continuous params — thresholds and strategy code are not auto-optimized.
-# Only prompt templates in prompts.py are subject to automatic optimization.
+# 无连续参数——阈值和策略代码不自动优化。
+# 只有 prompts.py 中的 prompt 模板会自动优化。
 DISCOVERY_CONTINUOUS_PARAMS: list[ContinuousParam] = []
 
 
@@ -73,7 +73,7 @@ def create_discovery_optimizer(
     llm: Any = None,
     use_agent_sdk: bool = True,
 ) -> PromptOptimizer:
-    """Create a PromptOptimizer configured for the discovery pipeline."""
+    """创建配置为发现 pipeline 的 PromptOptimizer。"""
     return PromptOptimizer(
         llm=llm,
         use_agent_sdk=use_agent_sdk,
@@ -88,11 +88,11 @@ def create_discovery_optimizer(
 def dimension_scores_to_field_scores(
     worst_dims: list[DimensionScore],
 ) -> list[Any]:
-    """Convert DimensionScore list to FieldScore-compatible objects for the optimizer.
+    """将 DimensionScore 列表转换为优化器兼容的 FieldScore 对象。
 
-    The PromptOptimizer.exploit() expects objects with .layer, .field, .score,
-    .deviation attributes. We bridge DimensionScore (dimension="strategy.dim")
-    into that shape.
+    PromptOptimizer.exploit() 期望具有 .layer、.field、.score、
+    .deviation 属性的对象。我们将 DimensionScore（dimension="strategy.dim"）
+    转换为该结构。
     """
     from openbiliclaw.eval.evaluator import FieldScore
 

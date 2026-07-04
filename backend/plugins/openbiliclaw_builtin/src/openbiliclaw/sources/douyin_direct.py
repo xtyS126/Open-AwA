@@ -1,4 +1,4 @@
-"""Direct-cookie Douyin discovery client and normalization helpers."""
+"""直连 Cookie 抖音发现客户端及规范化辅助函数。"""
 
 from __future__ import annotations
 
@@ -20,15 +20,15 @@ _DEFAULT_USER_AGENT = (
 
 
 class DouyinDirectError(RuntimeError):
-    """Base error for direct-cookie Douyin discovery."""
+    """直连 Cookie 抖音发现的基类错误。"""
 
 
 class DouyinDirectAuthError(DouyinDirectError):
-    """Raised when direct-cookie mode has no usable cookie."""
+    """直连 Cookie 模式没有可用 Cookie 时抛出。"""
 
 
 class DouyinDirectSignatureError(DouyinDirectError):
-    """Raised when URL signing fails."""
+    """URL 签名失败时抛出。"""
 
 
 class UrlSigner(Protocol):
@@ -38,7 +38,7 @@ class UrlSigner(Protocol):
 
 
 def parse_cookie_header(cookie: str) -> dict[str, str]:
-    """Parse a browser Cookie header into name/value pairs."""
+    """将浏览器 Cookie 头解析为名称/值对。"""
     pairs: dict[str, str] = {}
     for part in cookie.split(";"):
         if "=" not in part:
@@ -57,7 +57,7 @@ def normalize_aweme_item(
     *,
     source_strategy: str,
 ) -> DiscoveredContent | None:
-    """Map one Douyin aweme JSON object into ``DiscoveredContent``."""
+    """将一个抖音 aweme JSON 对象映射为 ``DiscoveredContent``。"""
     aweme_id = str(item.get("aweme_id", "") or "").strip()
     if not aweme_id:
         return None
@@ -103,10 +103,9 @@ def normalize_aweme_item(
 
 
 class DouyinDirectClient:
-    """Small direct-cookie Douyin Web API client.
+    """轻量直连 Cookie 抖音 Web API 客户端。
 
-    The client intentionally covers only discovery surfaces. It is not a
-    downloader and does not persist cookies.
+    该客户端仅覆盖发现接口，并非下载器，也不会持久化 Cookie。
     """
 
     BASE_URL = "https://www.douyin.com"
@@ -140,7 +139,7 @@ class DouyinDirectClient:
             await self._http.aclose()
 
     async def search_aweme(self, keyword: str, *, limit: int = 30) -> list[dict[str, Any]]:
-        """Fetch Douyin video search results for *keyword*."""
+        """获取 *keyword* 的抖音视频搜索结果。"""
         if not keyword.strip() or limit <= 0:
             return []
 
@@ -171,7 +170,7 @@ class DouyinDirectClient:
         return _dedupe_awemes(collected)[:limit]
 
     async def get_hot_board(self, *, limit: int = 30) -> list[dict[str, Any]]:
-        """Fetch aweme entries attached to Douyin hot-search board rows."""
+        """获取抖音热搜榜行所附带的 aweme 条目。"""
         if limit <= 0:
             return []
         data = await self._request_json(
@@ -184,7 +183,7 @@ class DouyinDirectClient:
         return _dedupe_awemes(_extract_hot_awemes(data))[:limit]
 
     async def get_hot_terms(self, *, limit: int = 30) -> list[dict[str, Any]]:
-        """Fetch Douyin hot-search rows with ``sentence_id`` for /hot routing."""
+        """获取带 ``sentence_id`` 的抖音热搜行，供 /hot 路由使用。"""
         if limit <= 0:
             return []
         data = await self._request_json(
@@ -197,7 +196,7 @@ class DouyinDirectClient:
         return _extract_hot_terms(data)[:limit]
 
     async def get_creator_posts(self, sec_uid: str, *, limit: int = 30) -> list[dict[str, Any]]:
-        """Fetch recent posts from a creator's ``sec_uid``."""
+        """获取某创作者 ``sec_uid`` 的近期作品。"""
         sec_uid = sec_uid.strip()
         if not sec_uid or limit <= 0:
             return []
@@ -229,11 +228,10 @@ class DouyinDirectClient:
         return _dedupe_awemes(collected)[:limit]
 
     async def get_recommend_feed(self, *, limit: int = 30) -> list[dict[str, Any]]:
-        """Fetch the Douyin home recommendation feed via direct-cookie mode.
+        """通过直连 Cookie 模式获取抖音首页推荐信息流。
 
-        The browser-plugin path is preferred for this source because the
-        endpoint is sensitive to page session state. This fallback keeps
-        the client protocol complete for diagnostics.
+        该源优先使用浏览器插件路径，因为该端点对页面会话状态敏感。
+        此兜底仅为完整客户端协议保留，便于诊断。
         """
         if limit <= 0:
             return []
@@ -268,7 +266,7 @@ class DouyinDirectClient:
         unsigned = f"{self.BASE_URL}{path}?{urlencode(query)}"
         try:
             url = self._signer.sign(unsigned)
-        except Exception as exc:  # pragma: no cover - defensive seam for live signer drift
+        except Exception as exc:  # pragma: no cover - 防御性缝隙，应对实时签名器漂移
             raise DouyinDirectSignatureError("Failed to sign Douyin request URL.") from exc
 
         try:

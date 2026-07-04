@@ -1,6 +1,6 @@
-"""CLI interface for OpenBiliClaw.
+"""OpenBiliClaw 的命令行接口。
 
-Provides the command-line entry point using Typer.
+使用 Typer 提供命令行入口。
 """
 
 from __future__ import annotations
@@ -31,25 +31,24 @@ from openbiliclaw.soul.preference_analyzer import DEFAULT_PREFERENCE_EVENT_CHUNK
 
 
 def _force_utf8_stdout_on_windows() -> None:
-    """Reconfigure stdout/stderr to UTF-8 on Windows.
+    """将 stdout/stderr 在 Windows 上重新配置为 UTF-8。
 
-    Why: simplified-Chinese Windows defaults the console to GBK (cp936).
-    Any emoji in our CLI output (e.g. ``[TIME]`` in the init banner, ``[CRAB]``
-    in the typer help text) raises UnicodeEncodeError as soon as the
-    output stream tries to encode it. Users see the program crash with
-    no useful message.
+    原因：简体中文 Windows 默认将控制台编码设为 GBK (cp936)。
+    CLI 输出中的任何 emoji（如初始化横幅里的 ``[TIME]``、typer 帮助
+    文本里的 ``[CRAB]``）一旦输出流尝试编码就会抛出
+    UnicodeEncodeError，用户会看到程序崩溃却没有任何有用信息。
 
-    Fix: force sys.stdout / sys.stderr into UTF-8 mode at import time,
-    with ``errors='replace'`` as a final safety net so a stray
-    untranslatable byte degrades to '?' instead of crashing the run.
-    Idempotent + a no-op on POSIX (``reconfigure`` is a Python 3.7+
-    method on TextIOWrapper that just rewires the codec).
+    修复：在 import 时强制将 sys.stdout / sys.stderr 切换为 UTF-8 模式，
+    并以 ``errors='replace'`` 作为最后的安全网，让偶尔出现的
+    不可翻译字节降级为 '?' 而不是让整个运行崩溃。
+    该操作幂等，在 POSIX 上为 no-op（``reconfigure`` 是 Python 3.7+
+    TextIOWrapper 上的方法，只是重新接线编解码器）。
     """
     if os.name != "nt":
         return
-    # PYTHONUTF8=1 is the cleanest fix but only takes effect at process
-    # start, not at module import — set it for any child processes we
-    # spawn (subprocess calls inside the CLI inherit this).
+    # PYTHONUTF8=1 是最干净的修复方式，但只在进程启动时生效，
+    # 不在模块 import 时生效——为我们 spawn 的任何子进程设置它
+    # （CLI 内部的 subprocess 调用会继承该设置）。
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     for stream_name in ("stdout", "stderr"):
@@ -146,7 +145,7 @@ _CODEX_LOGIN_LOGOUT_OPTION = typer.Option(
 
 
 def _bootstrap_container_runtime() -> None:
-    """Bootstrap runtime root and optional proxy env inside Docker-like runtimes."""
+    """在 Docker 类运行时中引导运行时根目录与可选的代理环境变量。"""
     if not (
         os.environ.get("OPENBILICLAW_PROJECT_ROOT")
         or os.environ.get("OPENBILICLAW_CONFIG_TEMPLATE")
@@ -159,31 +158,31 @@ def _bootstrap_container_runtime() -> None:
 
 
 _RUNTIME_COMPONENTS: dict[str, Any] = {}
-# Initial discover runs all four strategies in a single stage so the
-# discovery engine's built-in concurrency kicks in: phase 1 runs
-# ``search`` alone against a cookie-free client to avoid the IP-level
-# search throttle, then phase 2 fans out ``trending``, ``related_chain``
-# and ``explore`` concurrently via asyncio.gather. Wall time compresses
-# from ``∑strategy`` to roughly ``search + max(trending, related, explore)``.
+# 初始 discover 在单个阶段内运行全部四种策略，以便触发
+# discovery 引擎内置的并发：phase 1 单独对无 cookie 客户端运行
+# ``search`` 以避开 IP 级搜索限流，随后 phase 2 通过
+# asyncio.gather 并发扇出 ``trending``、``related_chain``
+# 和 ``explore``。墙钟时间从 ``∑strategy`` 压缩到约等于
+# ``search + max(trending, related, explore)``。
 #
-# Rate-limiting is already bounded by ``DiscoveryConcurrencyController``:
-# ``search_budget_total=30`` splits across the three search-using
-# strategies, and ``bilibili_request_concurrency=2`` caps simultaneous
-# HTTP requests regardless of how many strategies run in parallel.
+# 限流已经被 ``DiscoveryConcurrencyController`` 约束：
+# ``search_budget_total=30`` 在三种使用 search 的策略间分配，
+# ``bilibili_request_concurrency=2`` 无论并行多少策略都
+# 限制同时进行的 HTTP 请求数。
 _INIT_DISCOVERY_PLAN = [
     ["search", "trending", "related_chain", "explore"],
 ]
-# Initial pool target. Kept small so the discover phase finishes in
-# one or two LLM-eval waves and ``_run_backfill`` doesn't trigger. The
-# background refresh loop tops the pool up to
-# ``scheduler.pool_target_count`` (300 by default) over the following hour, so a
-# tiny init pool only delays diversity, never reduces it.
+# 初始池目标值。保持小以便 discover 阶段在一到两轮
+# LLM 评估波内完成，且不会触发 ``_run_backfill``。
+# 后台刷新循环会在接下来一小时内把池补到
+# ``scheduler.pool_target_count``（默认 300），因此
+# 一个小的 init 池只会延迟多样性，绝不会减少多样性。
 _INIT_POOL_TARGET_COUNT = 15
 _INIT_BILIBILI_HISTORY_LIMIT = 500
 _INIT_BILIBILI_FAVORITE_LIMIT = 500
 _INIT_BILIBILI_FOLLOW_LIMIT = 100
-# X (Twitter): the user's own Likes + Bookmarks, fetched server-side via
-# twitter-cli (no extension task). Both are strong explicit-preference signals.
+# X (Twitter)：用户自己的 Likes + Bookmarks，通过 twitter-cli
+# 在服务端拉取（无需扩展任务）。两者都是强显式偏好信号。
 _INIT_X_LIKES_LIMIT = 200
 _INIT_X_BOOKMARKS_LIMIT = 200
 _INIT_BOOTSTRAP_MAX_ITEMS_PER_SCOPE = 300
@@ -205,13 +204,13 @@ if TYPE_CHECKING:
 
 
 def _print_page_title(title: str, subtitle: str = "") -> None:
-    """Render a consistent page title."""
+    """渲染一致的页面标题。"""
     body = title if not subtitle else f"{title}\n[dim]{subtitle}[/dim]"
     console.print(Panel.fit(body, border_style="cyan"))
 
 
 def _print_status_panel(kind: str, title: str, body: str) -> None:
-    """Render a status panel with consistent visual semantics."""
+    """渲染具有统一视觉语义的状态面板。"""
     styles = {
         "success": "green",
         "warning": "yellow",
@@ -223,7 +222,7 @@ def _print_status_panel(kind: str, title: str, body: str) -> None:
 
 
 def _print_key_value_table(title: str, rows: list[tuple[str, str]]) -> None:
-    """Render a key-value table for status-like commands."""
+    """为状态类命令渲染键值表。"""
     table = Table(title=title, show_header=False, box=None, pad_edge=False)
     table.add_column("key", style="bold cyan", no_wrap=True)
     table.add_column("value")
@@ -239,7 +238,7 @@ def _format_pause_on_disconnect_status(*, enabled: bool, grace_seconds: int) -> 
 
 
 def _warn_if_pause_on_disconnect_requires_presence() -> None:
-    """Print a startup warning when background work depends on extension presence."""
+    """当后台任务依赖扩展存在时打印启动告警。"""
     try:
         from openbiliclaw.config import load_config
 
@@ -317,12 +316,12 @@ def _self_heal_autostart_registration(cfg: Any) -> None:
 
 
 def _print_section_title(title: str) -> None:
-    """Render a consistent section title."""
+    """渲染一致的章节标题。"""
     console.print(f"[bold cyan]{title}[/bold cyan]")
 
 
 def _print_placeholder(feature: str, next_step: str = "") -> None:
-    """Render a consistent placeholder panel for unfinished commands."""
+    """为未完成的命令渲染统一的占位面板。"""
     body = "功能开发中"
     if next_step:
         body = f"{body}\n[dim]下一步：{next_step}[/dim]"
@@ -337,15 +336,14 @@ async def _run_with_progress(
     eta_seconds: int,
     tick_seconds: int = 20,
 ) -> Any:
-    """Run a coroutine while printing periodic progress updates.
+    """运行一个协程并周期性打印进度更新。
 
-    Init's LLM-heavy phases (analyze_events, build_initial_profile,
-    discover) each take 1-5 minutes of mostly-silent waiting on
-    deepseek thinking. Without a heartbeat the user can't tell
-    whether the process is alive or stuck. This helper prints one
-    "started, ETA Xs" line, ticks every ``tick_seconds`` with
-    elapsed/ETA while the work runs, and prints a final completion
-    line with actual wall time.
+    init 的 LLM 密集阶段（analyze_events、build_initial_profile、
+    discover）每个都要 1-5 分钟在 deepseek thinking 上静默等待。
+    没有心跳用户就无法判断进程是活着还是卡住了。该助手会打印
+    一行"已启动，预计 X 秒"，在工作运行期间每 ``tick_seconds``
+    秒按 已用/预计 节拍打印一次，最后用实际墙钟时间打印一行
+    完成提示。
     """
     import time as _time
     from contextlib import suppress as _suppress
@@ -373,7 +371,7 @@ async def _run_with_progress(
 
 
 def _print_recommendation_card(item: Any, index: int) -> None:
-    """Render one recommendation in a card-like format."""
+    """以卡片样式渲染单条推荐。"""
     rows = [
         ("标题", item.content.title or "（暂无）"),
         ("UP 主", item.content.up_name or "（未知）"),
@@ -390,7 +388,7 @@ def _print_recommendation_card(item: Any, index: int) -> None:
 
 
 def _print_discovered_content_preview(item: Any, index: int) -> None:
-    """Render one discovered content preview row."""
+    """渲染单条发现内容预览行。"""
     _print_key_value_table(
         f"发现 {index}",
         [
@@ -403,12 +401,11 @@ def _print_discovered_content_preview(item: Any, index: int) -> None:
 
 
 def _initialize_logging(log_level_override: str | None = None) -> None:
-    """Load config and initialize the logging system.
+    """加载配置并初始化日志系统。
 
-    Skips the on-startup unmanaged-logs sweep when invoked via the
-    ``logs-prune`` command — that command's whole purpose is letting
-    the user inspect / control cleanup, so triggering automatic sweep
-    inside the callback would defeat the dry-run contract.
+    当通过 ``logs-prune`` 命令调用时跳过启动时的非托管日志清理——
+    该命令的全部意义就是让用户检查/控制清理，所以在回调内
+    触发自动清理会破坏 dry-run 契约。
     """
     import sys
 
@@ -425,7 +422,7 @@ def _initialize_logging(log_level_override: str | None = None) -> None:
 
 
 def _build_registry() -> Any:
-    """Build the configured LLM registry."""
+    """构建已配置的 LLM registry。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.llm import build_llm_registry
 
@@ -433,7 +430,7 @@ def _build_registry() -> Any:
 
 
 def _build_auth_manager() -> Any:
-    """Build the configured Bilibili auth manager."""
+    """构建已配置的 Bilibili auth 管理器。"""
     from openbiliclaw.bilibili.auth import AuthManager
     from openbiliclaw.config import load_config
 
@@ -441,7 +438,7 @@ def _build_auth_manager() -> Any:
 
 
 def _build_browser() -> Any:
-    """Build the configured Bilibili browser integration."""
+    """构建已配置的 Bilibili 浏览器集成。"""
     from openbiliclaw.bilibili.auth import resolve_runtime_cookie
     from openbiliclaw.bilibili.browser import BilibiliBrowser
     from openbiliclaw.config import load_config
@@ -458,7 +455,7 @@ def _build_browser() -> Any:
 
 
 def _build_bilibili_client() -> Any:
-    """Build the configured Bilibili API client."""
+    """构建已配置的 Bilibili API 客户端。"""
     from openbiliclaw.bilibili.api import BilibiliAPIClient
     from openbiliclaw.bilibili.auth import resolve_runtime_cookie
     from openbiliclaw.config import load_config
@@ -473,7 +470,7 @@ def _build_bilibili_client() -> Any:
 
 
 def _build_soul_engine() -> Any:
-    """Build the configured soul engine with initialized memory storage."""
+    """构建已配置的 soul 引擎并初始化记忆存储。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.llm.service import module_overrides_from_config
     from openbiliclaw.soul.engine import SoulEngine
@@ -531,7 +528,7 @@ def _build_soul_engine() -> Any:
 
 
 def _build_recommendation_engine() -> Any:
-    """Build the recommendation engine with core-memory-aware LLM access."""
+    """构建带核心记忆感知 LLM 访问的推荐引擎。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.llm.service import LLMService, module_overrides_from_config
     from openbiliclaw.recommendation.engine import (
@@ -569,14 +566,14 @@ def _build_recommendation_engine() -> Any:
 
 
 def _build_dialogue(soul_engine: Any) -> Any:
-    """Build the Socratic dialogue helper for interactive chat."""
+    """构建用于交互式聊天的 Socratic 对话助手。"""
     from openbiliclaw.soul.dialogue import SocraticDialogue
 
     return SocraticDialogue(llm=_build_registry(), soul_engine=soul_engine, session="cli")
 
 
 def _run_api_server(*, host: str = "127.0.0.1", port: int = 8420) -> None:
-    """Run the local FastAPI service used by the browser extension."""
+    """运行浏览器扩展使用的本地 FastAPI 服务。"""
     import uvicorn
 
     from openbiliclaw.api.app import create_app
@@ -601,7 +598,7 @@ def _run_api_server(*, host: str = "127.0.0.1", port: int = 8420) -> None:
 
 
 def _build_memory_manager() -> Any:
-    """Build the initialized memory manager for event writes."""
+    """构建已初始化的、用于事件写入的 memory 管理器。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.memory.manager import MemoryManager
 
@@ -617,7 +614,7 @@ def _build_memory_manager() -> Any:
 
 
 def _build_discovery_engine() -> Any:
-    """Build the discovery engine with currently implemented strategies."""
+    """构建带当前已实现策略的 discovery 引擎。"""
     from openbiliclaw.discovery.engine import (
         ContentDiscoveryEngine,
         DiscoveryConcurrencyController,
@@ -646,12 +643,12 @@ def _build_discovery_engine() -> Any:
     )
     concurrency = DiscoveryConcurrencyController(
         bilibili_request_concurrency=2,
-        # Inherit dataclass default (currently 32) — sized so an init
-        # discover's ~32 batches all fan out in a single wave instead
-        # of queueing behind a tight cap. See engine.py for rationale.
+        # 继承 dataclass 默认值（当前为 32）——大小恰好让一次 init
+        # discover 的约 32 个批次全部并发扇出，而不是排队在紧 cap 后面。
+        # 详见 engine.py 中的设计依据。
     )
 
-    # Build embedding service from config (optional)
+    # 根据配置构建 embedding 服务（可选）
     from openbiliclaw.llm.registry import build_embedding_service
 
     embedding_service = build_embedding_service(cfg, registry)
@@ -711,7 +708,7 @@ def _build_discovery_engine() -> Any:
 
 
 def _get_runtime_database() -> Any:
-    """Build or return the shared runtime database instance."""
+    """构建或返回共享的运行时数据库实例。"""
     cached = _RUNTIME_COMPONENTS.get("database")
     if cached is not None:
         return cached
@@ -727,11 +724,11 @@ def _get_runtime_database() -> Any:
 
 
 def _build_usage_recorder() -> Any:
-    """Build or return the shared LLM usage recorder (cost ledger sink).
+    """构建或返回共享的 LLM usage 记录器（cost ledger sink）。
 
-    CLI commands construct their own ``LLMService`` / ``SoulEngine``
-    instead of going through ``runtime_context``, so without this every
-    CLI-run LLM call was invisible in ``openbiliclaw cost``.
+    CLI 命令会自行构造 ``LLMService`` / ``SoulEngine``，
+    而不是走 ``runtime_context``，因此没有这个记录器的话
+    每次 CLI 运行的 LLM 调用都会在 ``openbiliclaw cost`` 中不可见。
     """
     cached = _RUNTIME_COMPONENTS.get("usage_recorder")
     if cached is not None:
@@ -790,11 +787,11 @@ def _run_db_repair() -> Any:
 
 
 def _history_item_to_event(item: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a Bilibili history item into a unified event-layer payload.
+    """将 Bilibili 历史记录项归一化为统一的事件层 payload。
 
-    Routes through ``build_event()`` (v0.3.22+) so the resulting dict
-    has the same shape as Xiaohongshu / future-source events, with a
-    natural-language ``context`` the LLM analyzer can consume directly.
+    经由 ``build_event()``（v0.3.22+）流转，使产出的 dict 与
+    小红书 / 未来数据源事件保持相同 shape，并带 LLM analyzer 可直接
+    消费的自然语言 ``context``。
     """
     from openbiliclaw.sources.event_format import SOURCE_BILIBILI, build_event
 
@@ -819,14 +816,14 @@ def _history_item_to_event(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _x_tweet_to_event(tweet: dict[str, Any], *, event_type: str) -> dict[str, Any] | None:
-    """Normalize a twitter-cli ``tweet_to_dict`` into a unified preference event.
+    """将 twitter-cli 的 ``tweet_to_dict`` 归一化为统一偏好事件。
 
-    Mirrors ``_history_item_to_event``: routes through ``build_event()`` so X
-    likes / bookmarks share the same event shape as B站 favorites and feed the
-    soul analyzer identically. ``event_type`` is ``"like"`` (X likes) or
-    ``"favorite"`` (X bookmarks) — both are explicit-positive signals. Returns
-    ``None`` for tombstones (no ``id``). The canonical URL matches the discovery
-    side (``x_normalize``): ``https://x.com/<handle>/status/<id>``.
+    镜像 ``_history_item_to_event``：经由 ``build_event()`` 流转，
+    使 X 的点赞 / 收藏与 B 站收藏共享相同事件 shape，并同样喂给
+    soul analyzer。``event_type`` 取 ``"like"``（X 点赞）或
+    ``"favorite"``（X 收藏）——两者都是显式正向信号。
+    对墓碑推文（无 ``id``）返回 ``None``。规范 URL 与 discovery 侧
+    （``x_normalize``）一致：``https://x.com/<handle>/status/<id>``。
     """
     from openbiliclaw.sources.event_format import SOURCE_TWITTER, build_event
 
@@ -865,14 +862,14 @@ def _x_tweet_to_event(tweet: dict[str, Any], *, event_type: str) -> dict[str, An
 
 @app.callback()
 def main(log_level: str | None = typer.Option(None, "--log-level")) -> None:
-    """Global CLI options."""
+    """全局 CLI 选项。"""
     _APP_CONTEXT["log_level"] = log_level
     _bootstrap_container_runtime()
     _initialize_logging(log_level_override=log_level)
 
 
 def _print_config_guidance(messages: list[str]) -> None:
-    """Render config hints in a consistent way."""
+    """以一致的方式渲染配置提示。"""
     if not messages:
         return
     console.print("[bold yellow]配置提示[/bold yellow]")
@@ -881,7 +878,7 @@ def _print_config_guidance(messages: list[str]) -> None:
 
 
 def _print_auth_status(status: Any) -> None:
-    """Render auth status consistently."""
+    """一致地渲染认证状态。"""
     state_label = "已认证" if status.authenticated else "未认证"
     _print_page_title("认证概览", "B站认证状态")
     rows = [
@@ -898,7 +895,7 @@ def _print_auth_status(status: Any) -> None:
 
 
 def _print_browser_status(browser: Any) -> None:
-    """Render browser installation status."""
+    """渲染浏览器安装状态。"""
     availability = "已安装" if browser.is_available else "未安装"
     _print_page_title("浏览器集成状态", "agent-browser 状态")
     _print_key_value_table(
@@ -911,21 +908,21 @@ def _print_browser_status(browser: Any) -> None:
 
 
 def _require_runtime_config() -> None:
-    """Exit with a clear message when runtime config is incomplete."""
+    """运行时配置不完整时以清晰消息退出。"""
     error = _load_runtime_config_error()
     if error is not None:
         raise typer.Exit(code=1)
 
 
 def _print_runtime_config_error(error: str, hints: list[str] | None = None) -> None:
-    """Render runtime config errors consistently."""
+    """一致地渲染运行时配置错误。"""
     console.print("[bold red]配置错误[/bold red]")
     _print_config_guidance(hints or [])
     console.print(f"  {error}")
 
 
 def _load_runtime_config_error(*, render: bool = True) -> str | None:
-    """Return a user-facing runtime config error and optionally print guidance."""
+    """返回面向用户的运行时配置错误，并可选地打印指引。"""
     from openbiliclaw.config import (
         ConfigError,
         load_config_with_diagnostics,
@@ -946,7 +943,7 @@ def _load_runtime_config_error(*, render: bool = True) -> str | None:
 
 
 def _is_interactive_terminal() -> bool:
-    """Return whether the current process is attached to an interactive TTY."""
+    """返回当前进程是否连接到交互式 TTY。"""
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
@@ -957,12 +954,11 @@ def _save_runtime_provider_config(
     base_url: str = "",
     model: str = "",
 ) -> None:
-    """Persist the selected provider's full config triple to ``config.toml``.
+    """将所选 provider 的完整配置三元组持久化到 ``config.toml``。
 
-    Writes ``default_provider`` plus the per-provider ``[llm.<name>]``
-    block. ``api_key`` / ``base_url`` / ``model`` are only written when
-    non-empty (so existing saved values aren't blown away when the
-    wizard's user accepts a default by leaving the prompt blank).
+    写入 ``default_provider`` 以及每个 provider 的 ``[llm.<name>]``
+    块。``api_key`` / ``base_url`` / ``model`` 仅在非空时写入
+    （这样向导中用户接受默认值、留空提示时不会覆盖已保存的值）。
     """
     from openbiliclaw.config import load_config_with_diagnostics, save_config
 
@@ -981,29 +977,28 @@ def _save_runtime_provider_config(
     save_config(config, diagnostics.config_path)
 
 
-# Default base_url + chat model per provider. The user can always override
-# both in the wizard; these are just the "I picked X, what should the
-# defaults look like?" answers.
-# Last refreshed 2026-05. When a provider rolls a new flagship,
-# update the model field here AND the matching ``_LLM_MENU`` /
-# ``_PROVIDER_MODEL_HINT`` entries.
+# 每个 provider 的默认 base_url + chat 模型。用户总可以在向导里
+# 覆盖二者；这里只是"我选了 X，默认应该是什么样？"的答案。
+# 最近刷新 2026-05。当某 provider 推出新旗舰时，
+# 同步更新此处的 model 字段以及对应的 ``_LLM_MENU`` /
+# ``_PROVIDER_MODEL_HINT`` 条目。
 _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
-    # OpenAI: gpt-4o-mini retired from ChatGPT in Feb 2026; gpt-5-nano
-    # is the cheapest current-gen ($0.05 / $0.40 per 1M).
+    # OpenAI：gpt-4o-mini 已于 2026 年 2 月从 ChatGPT 退役；
+    # gpt-5-nano 是当前最便宜的代际（$0.05 / $0.40 每 1M）。
     "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-5-nano"},
-    # Claude: Sonnet 4.6 is the current main-line Sonnet (1M context).
-    # Opus 4.7 is top-tier; Haiku 4.5 is the budget option.
+    # Claude：Sonnet 4.6 是当前主流 Sonnet（1M 上下文）。
+    # Opus 4.7 是顶配；Haiku 4.5 是经济款。
     "claude": {"base_url": "", "model": "claude-sonnet-4-6"},
-    # Gemini: 2.5-flash is the stable budget default (3-flash is preview;
-    # 3.1-pro is reasoning flagship).
+    # Gemini：2.5-flash 是稳定的默认经济款（3-flash 是预览版；
+    # 3.1-pro 是推理旗舰）。
     "gemini": {"base_url": "", "model": "gemini-2.5-flash"},
-    # DeepSeek: V4 family. deepseek-chat / deepseek-reasoner deprecate
-    # 2026-07-24.
+    # DeepSeek：V4 系列。deepseek-chat / deepseek-reasoner
+    # 于 2026-07-24 弃用。
     "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
-    # Ollama: project is Chinese-primary; qwen2.5:7b handles Chinese
-    # noticeably better than llama3 at the same size.
+    # Ollama：项目以中文为主；qwen2.5:7b 处理中文明显优于
+    # 同尺寸的 llama3。
     "ollama": {"base_url": "http://localhost:11434/v1", "model": "qwen2.5:7b"},
-    # OpenRouter: route to OpenAI's cheapest current-gen by default.
+    # OpenRouter：默认路由到 OpenAI 最便宜的当前代际。
     "openrouter": {"base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-5-nano"},
 }
 
@@ -1018,10 +1013,10 @@ _PROVIDER_HINTS: dict[str, str] = {
 }
 
 
-# One-liner shown right before the model prompt so the user knows
-# what's actually on offer, instead of confirming an opaque string.
-# Lists current main-line model names per provider — refresh when
-# a provider deprecates / renames a model.
+# 在模型提示之前显示的一行简介，让用户知道实际可选项，
+# 而不是确认一个不透明的字符串。
+# 列出每个 provider 的当前主流模型名——当某 provider 弃用 /
+# 重命名模型时刷新。
 _PROVIDER_MODEL_HINT: dict[str, str] = {
     "deepseek": (
         "可选模型: deepseek-v4-flash (默认 / 便宜) / deepseek-v4-pro (更强)。"
@@ -1055,30 +1050,25 @@ _PROVIDER_MODEL_HINT: dict[str, str] = {
 }
 
 
-# Sub-menu shown when user picks "OpenAI 协议兼容自建网关" from
-# _LLM_MENU. Order = menu order. Each entry pre-fills base_url so the
-# user doesn't have to copy from a doc; default_model is a sensible
-# starting point but the prompt still lets them change it. ``hint``
-# is a one-liner shown right above the model prompt listing real
-# main-line models for that service.
+# 子菜单：当用户在 _LLM_MENU 中选 "OpenAI 协议兼容自建网关" 时显示。
+# 顺序 = 菜单顺序。每条都预填了 base_url，省得用户去文档里翻找；
+# default_model 是合理起点，但提示仍允许用户修改。``hint``
+# 是一行简介，显示在模型提示正上方，列出该服务当前真实的主流模型。
 #
-# When adding a new compat-protocol vendor:
-# 1. Verify they speak true OpenAI Chat Completions protocol (Bearer
-#    auth + ``/v1/chat/completions`` shape). Many "OpenAI compatible"
-#    APIs subtly differ on tools / streaming / function_call format —
-#    try a smoke call before listing here.
-# 2. Pick a representative low-cost default_model so users get a
-#    cheap experience by default; advanced users can switch in
-#    Phase 2.
+# 新增 compat-protocol 厂商时：
+# 1. 验证它真正使用 OpenAI Chat Completions 协议（Bearer
+#    auth + ``/v1/chat/completions`` shape）。很多 "OpenAI 兼容"
+#    API 在 tools / streaming / function_call 格式上略有出入——
+#    上架前先做一次 smoke call。
+# 2. 选一个有代表性的低价 default_model，让用户默认获得便宜体验；
+#    高级用户可在 Phase 2 切换。
 #
-# Order rationale (2026-05): the OpenAI-protocol-compat menu's *primary*
-# real-world purpose is to plumb in 中转站 / OneAPI / 团队 LLM 网关 keys
-# — the user has already bought access from a relay vendor and just
-# wants OpenBiliClaw to talk to it. That's why ``relay`` is the
-# default (#1). Native Chinese vendor APIs (Kimi / MiniMax / Qwen / GLM
-# / Yi) follow because some users do go straight to the vendor; Azure
-# and self-hosted are infrastructure-flavor variants for企业 / 玩家;
-# ``custom`` is the manual escape hatch.
+# 顺序依据（2026-05）：OpenAI 协议兼容菜单的真实主要用途是接入
+# 中转站 / OneAPI / 团队 LLM 网关 key——用户已经从某中转商买好访问权，
+# 只是想让 OpenBiliClaw 跟它对话。这就是 ``relay`` 是默认（#1）的原因。
+# 国产厂商原生 API（Kimi / MiniMax / Qwen / GLM / Yi）紧随其后，因为
+# 部分用户确实直接用厂商 API；Azure 和自建是企业 / 玩家向变体；
+# ``custom`` 是手动逃生口。
 _OPENAI_COMPAT_PRESETS: tuple[tuple[str, dict[str, str]], ...] = (
     (
         "relay",
@@ -1283,7 +1273,7 @@ _OPENAI_COMPAT_PRESETS: tuple[tuple[str, dict[str, str]], ...] = (
 
 
 def _ollama_has_model(model: str, host: str = "http://localhost:11434") -> bool:
-    """Return True if Ollama already has the named model pulled."""
+    """如果 Ollama 已经拉取过该模型则返回 True。"""
     import httpx
 
     try:
@@ -1293,7 +1283,7 @@ def _ollama_has_model(model: str, host: str = "http://localhost:11434") -> bool:
             tags = response.json().get("models", [])
             for tag in tags:
                 name = str(tag.get("name", "")).strip()
-                # Match "bge-m3", "bge-m3:latest", etc.
+                # 匹配 "bge-m3"、"bge-m3:latest" 等。
                 if name == model or name.startswith(f"{model}:"):
                     return True
     except Exception:
@@ -1302,7 +1292,7 @@ def _ollama_has_model(model: str, host: str = "http://localhost:11434") -> bool:
 
 
 def _ollama_pull_model(model: str, host: str = "http://localhost:11434") -> bool:
-    """Stream a model pull from Ollama; print progress to console."""
+    """从 Ollama 流式拉取模型，并将进度打印到控制台。"""
     import httpx
 
     try:
@@ -1337,13 +1327,12 @@ def _ollama_pull_model(model: str, host: str = "http://localhost:11434") -> bool
 
 
 def _ollama_install_if_missing() -> bool:
-    """If Ollama isn't installed, offer to auto-install via package mgr.
+    """若未安装 Ollama，则提示通过包管理器自动安装。
 
-    Returns True iff the binary is available after this call. The user
-    can decline (we then return False — caller should fall back to
-    asking them to install manually). Mirrors agent_bootstrap.py's
-    install_ollama, but with an interactive consent prompt because
-    invoking package managers is a side-effect users should approve.
+    当本调用结束后二进制可用时返回 True。用户可拒绝
+    （此时返回 False——调用方应回退为要求用户手动安装）。
+    镜像 agent_bootstrap.py 的 install_ollama，但带交互式同意提示，
+    因为调用包管理器是用户应当批准的副作用。
     """
     import shutil
     import subprocess
@@ -1393,7 +1382,7 @@ def _ollama_install_if_missing() -> bool:
             check=False,
         )
     else:
-        # Linux: piped curl | sh — needs sudo for systemd registration.
+        # Linux：通过 curl | sh 管道安装——systemd 注册需要 sudo。
         subprocess.run(
             "curl -fsSL https://ollama.com/install.sh | sh",
             shell=True,
@@ -1416,13 +1405,12 @@ def _save_embedding_config(
     base_url: str = "",
     api_key: str = "",
 ) -> None:
-    """Persist the embedding provider/model selection to config.toml.
+    """将 embedding provider/model 选择持久化到 config.toml。
 
-    For OpenAI-compatible providers the wizard may collect a custom
-    ``base_url`` / ``api_key`` (e.g. a self-hosted vLLM gateway running
-    bge-m3 over the OpenAI protocol). These are written into
-    ``[llm.embedding]`` because embedding is independent from chat
-    provider configuration.
+    对于 OpenAI 兼容 provider，向导可能收集自定义 ``base_url`` /
+    ``api_key``（例如一个通过 OpenAI 协议运行 bge-m3 的自托管 vLLM
+    网关）。它们被写入 ``[llm.embedding]``，因为 embedding 与 chat
+    provider 配置相互独立。
     """
     from openbiliclaw.config import load_config_with_diagnostics, save_config
 
@@ -1439,12 +1427,12 @@ def _save_embedding_config(
 
 
 def _save_module_overrides(overrides: dict[str, dict[str, str]]) -> None:
-    """Persist per-module LLM overrides to config.toml.
+    """将每模块 LLM 覆盖持久化到 config.toml。
 
-    ``overrides`` maps module name (``soul`` / ``discovery`` /
-    ``recommendation`` / ``evaluation``) to a dict with optional
-    ``provider`` and ``model`` keys. Empty values are written as empty
-    strings, which the loader treats as "use global default".
+    ``overrides`` 把模块名（``soul`` / ``discovery`` /
+    ``recommendation`` / ``evaluation``）映射到一个含可选
+    ``provider`` 与 ``model`` 键的 dict。空值以空字符串写入，
+    加载器会把空字符串视为"使用全局默认"。
     """
     from openbiliclaw.config import load_config_with_diagnostics, save_config
 
@@ -1470,13 +1458,13 @@ _SUPPORTED_PROVIDERS: tuple[str, ...] = (
 )
 
 
-# Numbered menu shown in Phase 1. Order matters (v0.3.20+):
-# DeepSeek first as the default zero-friction recommendation
-# (¥0.001/千 token); OpenAI / Gemini / Claude / OpenRouter for users who
-# already have those keys; Ollama as the offline-only fallback (slow CPU
-# inference, real hardware floor); "OpenAI 协议兼容自建网关" demoted to
-# the final "(高级)" entry so 普通用户 don't pick it by mistake — most
-# people who think they want it actually want option 2 (OpenAI 官方).
+# Phase 1 显示的编号菜单。顺序有含义（v0.3.20+）：
+# DeepSeek 排第一作为零摩擦默认推荐（¥0.001/千 token）；
+# OpenAI / Gemini / Claude / OpenRouter 给已有这些 key 的用户；
+# Ollama 作为纯离线兜底（CPU 推理慢，硬件门槛真实存在）；
+# "OpenAI 协议兼容自建网关" 降级为最后的 "(高级)" 条目，
+# 防止普通用户误选——大多数以为自己需要它的人其实需要的是
+# 第 2 项（OpenAI 官方）。
 _LLM_MENU: tuple[tuple[str, str, str], ...] = (
     (
         "deepseek",
@@ -1517,7 +1505,7 @@ _LLM_MENU: tuple[tuple[str, str, str], ...] = (
 
 
 def _print_provider_table() -> None:
-    """Render the provider menu — DeepSeek default, 协议兼容 second (v0.3.27+)."""
+    """渲染 provider 菜单 —— DeepSeek 为默认,协议兼容其次(v0.3.27+)。"""
     console.print("[bold]OpenBiliClaw 需要一个语言模型来理解你的兴趣、写推荐文案。[/bold]")
     console.print("请选一个 LLM 服务：\n")
     table = Table(show_lines=False, show_header=True)
@@ -1534,10 +1522,10 @@ def _print_provider_table() -> None:
 
 
 def _resolve_menu_choice(raw: str) -> str | None:
-    """Map a Phase 1 menu input to the canonical choice key.
+    """把 Phase 1 菜单输入映射到规范 choice key。
 
-    Accepts either the index (1..N) or the canonical name typed directly,
-    e.g. "ollama" or "openai-compat". Returns None on unknown input.
+    接受序号（1..N）或直接键入的规范名（如 "ollama" 或
+    "openai-compat"）。未知输入返回 None。
     """
     raw = raw.strip().lower()
     if raw.isdigit():
@@ -1558,26 +1546,22 @@ def _resolve_menu_choice(raw: str) -> str | None:
 
 
 def _prompt_openai_compat() -> tuple[str, str, str, str]:
-    """openai-compat sub-flow — preset menu → intro → base_url → key → model → embedding hint.
+    """openai-compat 子流程 —— 预设菜单 → 简介 → base_url → key → model → embedding 提示。
 
-    All compat-protocol services write to the ``[llm.openai]`` section
-    (the ``openai_provider.OpenAIProvider`` class is the universal
-    Bearer-auth + ``/v1/chat/completions`` client). The sub-menu's job
-    is to remove the four pain points普通用户 hit when self-configuring:
+    所有 compat-protocol 服务都写入 ``[llm.openai]`` 段
+    （``openai_provider.OpenAIProvider`` 类是通用的 Bearer-auth +
+    ``/v1/chat/completions`` 客户端）。子菜单的作用是消除普通用户自配时
+    踩到的四个痛点：
 
-    1. **Where to register** — every preset surfaces ``signup_url``
-       above the API Key prompt so the user can ``cmd-click`` it.
-    2. **What this thing actually is** — ``description`` runs as a one-
-       paragraph intro after preset selection, framing the strengths /
-       sweet spot of the service so the user knows what they signed up
-       for.
-    3. **Base URL format** — auto-filled from the preset; the user just
-       confirms.
-    4. **No embedding endpoint** — Kimi / MiniMax / Yi / self-hosted
-       don't ship embeddings, so we pre-warn the user that Phase 3
-       will fall back to local Ollama bge-m3. For Qwen / GLM / Azure /
-       relay (who DO have embeddings), we call out the advanced option
-       to point Phase 3 at the same base_url.
+    1. **去哪注册** —— 每个预设都在 API Key 提示上方显示
+       ``signup_url``，用户可 ``cmd-click`` 打开。
+    2. **这玩意到底是啥** —— 选完预设后 ``description`` 作为一段简介
+       展示，框定该服务的强项与适用场景，让用户知道选了什么。
+    3. **Base URL 格式** —— 由预设自动填好；用户确认即可。
+    4. **没有 embedding 端点** —— Kimi / MiniMax / Yi / 自建都不提供
+       embedding，因此我们提前告知 Phase 3 会回退到本地 Ollama bge-m3。
+       对 Qwen / GLM / Azure / 中转站（确实有 embedding）则提示
+       Phase 3 的高级选项可指向同一个 base_url。
     """
     console.print(
         "\n[bold]配置 OpenAI 协议兼容服务[/bold]\n"
@@ -1610,7 +1594,7 @@ def _prompt_openai_compat() -> tuple[str, str, str, str]:
         choice_index = 0
     preset_key, preset = _OPENAI_COMPAT_PRESETS[choice_index]
 
-    # Per-preset intro: what is this service, and where to register.
+    # 每个预设的简介：这个服务是什么、去哪注册。
     console.print(f"\n[bold]→ 已选: {preset['label']}[/bold]")
     if preset.get("description"):
         console.print(f"[dim]  {preset['description']}[/dim]")
@@ -1657,9 +1641,9 @@ def _prompt_openai_compat() -> tuple[str, str, str, str]:
     else:
         model = typer.prompt("模型名 (必填,见上面的提示)").strip()
 
-    # Embedding heads-up — most compat-protocol vendors don't ship a
-    # /v1/embeddings endpoint. Pre-warn before the user gets to Phase 3
-    # so they don't think the wizard is broken when it auto-falls back.
+    # Embedding 提醒 —— 大多数 compat-protocol 厂商不提供
+    # /v1/embeddings 端点。在用户进入 Phase 3 之前预先告警，
+    # 以免自动回退时用户以为向导坏了。
     has_embed = preset.get("supports_embedding", "false") == "true"
     if not has_embed:
         console.print(
@@ -1670,7 +1654,7 @@ def _prompt_openai_compat() -> tuple[str, str, str, str]:
     elif preset.get("embedding_alt"):
         console.print(f"\n[dim][TIP] embedding 提示: {preset['embedding_alt']}[/dim]")
 
-    # Final confirm: show the canonical triplet so the user catches typos.
+    # 最终确认：展示规范三元组以便用户察觉错别字。
     console.print(
         f"\n[bold green][OK] 即将写入 config.toml:[/bold green]\n"
         f"  [llm.openai].base_url = [cyan]{base_url}[/cyan]\n"
@@ -1680,13 +1664,12 @@ def _prompt_openai_compat() -> tuple[str, str, str, str]:
 
 
 def _prompt_provider_triplet(menu_choice: str) -> tuple[str, str, str, str]:
-    """Phase 2 — collect (provider, base_url, api_key, model) for the choice.
+    """Phase 2 —— 为所选 choice 收集 (provider, base_url, api_key, model)。
 
-    ``menu_choice`` is the value from ``_LLM_MENU`` (e.g. ``"ollama"`` or
-    ``"openai-compat"``). For ``openai-compat`` we still write to the
-    ``[llm.openai]`` section but force the user to give us a Base URL —
-    that's the single field that distinguishes "I'll use OpenAI the
-    company" from "I have my own gateway that speaks the OpenAI API."
+    ``menu_choice`` 是来自 ``_LLM_MENU`` 的值（如 ``"ollama"`` 或
+    ``"openai-compat"``）。对于 ``openai-compat`` 我们仍写入
+    ``[llm.openai]`` 段，但强制用户提供 Base URL——这一字段区分了
+    "我要用 OpenAI 公司服务" 与 "我有自建网关、用 OpenAI 协议"。
     """
     if menu_choice == "openai-compat":
         return _prompt_openai_compat()
@@ -1702,16 +1685,16 @@ def _prompt_provider_triplet(menu_choice: str) -> tuple[str, str, str, str]:
             "[dim]我会自动帮你装/启动/拉模型，无需 API Key。第一次拉模型可能要"
             "几分钟（取决于网速）。[/dim]"
         )
-        # Phase 1: ensure binary exists (install if missing, with consent).
+        # Phase 1：确保二进制存在（缺失则在用户同意下安装）。
         if not _ollama_install_if_missing():
             return provider, default_base_url, "", default_model
 
-        # Phase 2: ensure daemon is up.
+        # Phase 2：确保守护进程已启动。
         if not _ollama_start_serve_background():
             console.print("[red]Ollama 已装好但服务没起来。请手动跑 `ollama serve` 后重试。[/red]")
             return provider, default_base_url, "", default_model
 
-        # Phase 3: ask which model and pull if missing.
+        # Phase 3：询问用哪个模型，缺失则拉取。
         ollama_hint = _PROVIDER_MODEL_HINT.get("ollama")
         if ollama_hint:
             console.print(f"[dim]  {ollama_hint}[/dim]")
@@ -1733,7 +1716,7 @@ def _prompt_provider_triplet(menu_choice: str) -> tuple[str, str, str, str]:
             console.print(f"[green]模型 {model} 已就绪。[/green]")
         return provider, default_base_url, "", model
 
-    # Cloud providers: ask for key (mandatory), let model fall to default.
+    # 云端 provider：询问 key（必填），模型回落到默认。
     console.print(f"\n[bold]配置 {_PROVIDER_HINTS.get(provider, provider)}[/bold]")
     api_key = typer.prompt(
         "API Key",
@@ -1742,10 +1725,9 @@ def _prompt_provider_triplet(menu_choice: str) -> tuple[str, str, str, str]:
         default="",
         show_default=False,
     ).strip()
-    # Surface the per-provider model menu before asking, so the user
-    # consciously confirms the default rather than just hitting Enter
-    # on an opaque string. Particularly important for DeepSeek where
-    # deepseek-chat / deepseek-reasoner are deprecating 2026-07-24.
+    # 在询问前展示每个 provider 的模型菜单，让用户主动确认默认值，
+    # 而不是对着不透明字符串按回车。对 DeepSeek 尤其重要——
+    # deepseek-chat / deepseek-reasoner 将于 2026-07-24 弃用。
     model_hint = _PROVIDER_MODEL_HINT.get(provider)
     if model_hint:
         console.print(f"[dim]  {model_hint}[/dim]")
@@ -1761,20 +1743,18 @@ def _prompt_provider_triplet(menu_choice: str) -> tuple[str, str, str, str]:
 
 
 def _interactive_embedding_setup(default_provider: str, *, auto_if_ready: bool = False) -> None:
-    """Phase 3 — embedding service (v0.3.20+ "有默认值的取舍提问").
+    """Phase 3 —— embedding 服务（v0.3.20+ "有默认值的取舍提问"）。
 
-    Default = 1 (本地 Ollama bge-m3). Mirrors the question shape used by
-    docs/agent-install.md: each option carries a tradeoff explanation,
-    "不确定就回 1". Two advanced branches (custom OpenAI-compatible
-    endpoint / pin a different provider) are kept but de-emphasized so
-    普通用户 don't get derailed.
+    默认 = 1（本地 Ollama bge-m3）。镜像 docs/agent-install.md 中的
+    提问形式：每个选项都附 tradeoff 说明，"不确定就回 1"。两条
+    高级分支（自定义 OpenAI 兼容端点 / 固定不同 provider）保留但
+    弱化展示，以免普通用户被打乱节奏。
 
-    ``auto_if_ready`` (v0.3.95+): when a local Ollama is already running
-    and serving bge-m3, skip the menu entirely and just wire it up. This
-    closes the "confirmed Ollama for chat but embedding stayed disabled"
-    gap that silently degrades dedup. Only ``init`` passes this — the
-    explicit ``setup-embedding`` command keeps the full menu so users can
-    deliberately switch providers.
+    ``auto_if_ready``（v0.3.95+）：当本地 Ollama 已运行且服务着
+    bge-m3 时，跳过菜单直接接线启用。这堵上了"已为 chat 确认 Ollama
+    但 embedding 仍处于禁用"导致 dedup 静默降级的缺口。只有 ``init``
+    会传这个标志——显式的 ``setup-embedding`` 命令保留完整菜单，
+    让用户能刻意切换 provider。
     """
     if auto_if_ready and _ollama_is_running() and _ollama_has_model("bge-m3"):
         _save_embedding_config(provider="ollama", model="bge-m3")
@@ -1829,9 +1809,9 @@ def _interactive_embedding_setup(default_provider: str, *, auto_if_ready: bool =
         return
 
     if choice in {"1", "ollama", ""}:
-        # Auto-install + start + pull. Same flow as Phase 1's Ollama
-        # branch — share the helpers so the user doesn't have to learn
-        # different setups for chat vs embedding.
+        # 自动安装 + 启动 + 拉取。流程与 Phase 1 的 Ollama 分支
+        # 一致——共享这些助手，让用户不必为 chat 与 embedding
+        # 学两套安装步骤。
         if not _ollama_install_if_missing():
             console.print("[yellow]Ollama 装机失败,未启用本地 embedding。[/yellow]")
             return
@@ -1965,7 +1945,7 @@ def _interactive_embedding_setup(default_provider: str, *, auto_if_ready: bool =
 
 
 def _interactive_module_overrides(default_provider: str) -> None:
-    """Phase 4 — optional per-module LLM overrides (advanced, skippable)."""
+    """Phase 4 —— 可选的 per-module LLM 覆盖(高级,可跳过)。"""
     if not typer.confirm(
         "（高级，可跳过）是否为单个模块单独指定 provider/model？\n"
         "  典型场景：发现/评估走便宜模型，灵魂画像走高质量模型。",
@@ -2010,14 +1990,14 @@ def _interactive_module_overrides(default_provider: str) -> None:
 
 
 def _interactive_runtime_config_setup() -> None:
-    """Guide the user through missing LLM config before init.
+    """在 init 之前引导用户补齐缺失的 LLM 配置。
 
-    Four-phase flow:
-      1) Pick LLM service (Ollama-first menu; OpenAI-compat is its own entry,
-         not buried inside ``openai``).
-      2) Provide the fields that option actually needs.
-      3) Choose how embeddings are served (separate question, not bundled).
-      4) Optional per-module overrides (advanced, default skip).
+    四阶段流程：
+      1) 选 LLM 服务（Ollama 优先菜单；OpenAI-compat 是独立条目，
+         不埋在 ``openai`` 里）。
+      2) 提供该选项实际需要的字段。
+      3) 选择 embedding 服务方式（独立提问，不打包）。
+      4) 可选的每模块覆盖（高级，默认跳过）。
     """
     _print_page_title("初始化前配置引导", "选 LLM、配 Embedding、填 B 站 Cookie")
     _print_provider_table()
@@ -2061,13 +2041,12 @@ def _interactive_runtime_config_setup() -> None:
 
 
 def _interactive_auth_setup(auth_manager: Any) -> Any:
-    """Guide the user through Bilibili auth before init.
+    """在 init 之前引导用户完成 B 站认证。
 
-    Two paths since v0.3.12:
-      A. Install the browser extension and let it auto-sync the cookie
-         via ``POST /api/bilibili/cookie`` (recommended — zero F12).
-      B. Paste the cookie manually right here (fallback for users who
-         won't install the extension).
+    自 v0.3.12 起有两条路径：
+      A. 安装浏览器扩展，让它通过 ``POST /api/bilibili/cookie``
+         自动同步 cookie（推荐——零 F12）。
+      B. 在这里手动粘贴 cookie（针对不愿装扩展的用户兜底）。
     """
     _print_page_title("初始化前认证引导", "补齐 B 站认证")
     console.print(
@@ -2114,7 +2093,7 @@ def _interactive_auth_setup(auth_manager: Any) -> Any:
 
 
 def _prepare_init_runtime() -> Any:
-    """Ensure runtime config and auth are ready before init proceeds."""
+    """在 init 推进之前确保运行时配置与认证已就绪。"""
     error = _load_runtime_config_error(render=False)
     if error is not None:
         if not _is_interactive_terminal():
@@ -2143,7 +2122,7 @@ async def _run_init_discovery_backfill_async(
     target_pool_count: int = 100,
     label_suffix: str = "",
 ) -> int:
-    """Backfill the initial discovery pool in stages until the target is reached."""
+    """分阶段补货初始 discovery 池，直到达到目标数量。"""
     from openbiliclaw.discovery.pool_snapshot import build_cold_start_pool_snapshot
 
     database = _get_runtime_database()
@@ -2176,8 +2155,8 @@ async def _run_init_discovery_backfill_async(
                 profile,
                 strategies=strategies,
                 limit=request_limit,
-                # Init is latency-critical — skip the default search-first
-                # phase split and let every strategy share the gather.
+                # Init 对延迟敏感——跳过默认的 search-first
+                # phase 切分，让每个策略共享 gather。
                 fully_parallel=True,
                 pool_snapshot=pool_snapshot,
             ),
@@ -2195,17 +2174,16 @@ async def _run_init_discovery_backfill_async(
 
 
 def _build_draft_profile_for_discover(memory: Any) -> Any:
-    """Build a preference-only ``OnionProfile`` so discover can start
-    in parallel with ``build_initial_profile`` (P3).
+    """构建仅含偏好的 ``OnionProfile``，使 discover 能与
+    ``build_initial_profile`` 并行启动（P3）。
 
-    The full profile builder runs an LLM synthesis call over history +
-    preference + awareness + insights to produce
-    ``personality_portrait``, ``deep_needs``, ``core_traits`` etc. —
-    fields that *colour* discover's evaluation prompt but aren't
-    load-bearing for relevance scoring (interests + style +
-    favorite_up_users carry the signal). Letting discover use a
-    preference-only draft while the real profile builds in the
-    background overlaps two phases that previously serialised.
+    完整画像构建器会跑一次 LLM synthesis 调用，遍历 history +
+    preference + awareness + insights 来产出
+    ``personality_portrait``、``deep_needs``、``core_traits`` 等
+    字段——这些字段会"上色" discover 的评估提示，但对相关性打分
+    并非承重字段（信号由 interests + style +
+    favorite_up_users 承载）。让 discover 用仅含偏好的草稿、
+    同时在后台构建真画像，使原本串行的两个阶段得以重叠。
     """
     from openbiliclaw.soul.profile import OnionProfile
 
@@ -2260,17 +2238,16 @@ def _zhihu_bootstrap_dedupe_hours() -> float:
 
 
 def _enqueue_xhs_bootstrap_task(*, force: bool = False, kick: bool = True) -> str | None:
-    """Fire-and-forget enqueue of the bootstrap_profile task.
+    """以 fire-and-forget 方式入队 bootstrap_profile 任务。
 
-    Returns the task_id if enqueue succeeded, ``None`` otherwise (DB
-    unavailable, daily budget exhausted, etc.). Doesn't wait — the
-    extension picks the task off the queue and runs it in parallel
-    with the rest of init.
+    入队成功则返回 task_id,否则返回 ``None``(DB 不可用、
+    日预算耗尽等)。不等待 —— 扩展会从队列中取走任务,
+    与 init 的其余步骤并行执行。
 
-    Defaults: ``max_scroll_rounds=15`` and ``max_items_per_scope=300``.
-    Both can be overridden via env vars
-    ``OPENBILICLAW_XHS_BOOTSTRAP_SCROLL_ROUNDS`` and
-    ``OPENBILICLAW_XHS_BOOTSTRAP_MAX_ITEMS``.
+    默认值:``max_scroll_rounds=15`` 与 ``max_items_per_scope=300``。
+    两者都可以通过环境变量
+    ``OPENBILICLAW_XHS_BOOTSTRAP_SCROLL_ROUNDS`` 和
+    ``OPENBILICLAW_XHS_BOOTSTRAP_MAX_ITEMS`` 覆盖。
     """
     from openbiliclaw.sources.xhs_tasks import XhsTaskQueue
 
@@ -2325,26 +2302,25 @@ def _enqueue_xhs_bootstrap_task(*, force: bool = False, kick: bool = True) -> st
     if not task_id:
         console.print("  [yellow]小红书初始化信号未导入: 今日任务预算已用完。[/yellow]")
         return None
-    # Wake the extension dispatcher immediately via the runtime-stream
-    # WebSocket instead of waiting up to 60s for the next chrome.alarms
-    # tick. The kick is best-effort — if the daemon's API isn't running
-    # the existing alarm-based poll still picks up the task on next fire.
-    # ``kick=False`` lets the guided-init pipeline register task ownership
-    # with the coordinator *before* waking the extension (avoids a
-    # register-after-kick race where an owned result is treated as foreign).
+    # 立即通过 runtime-stream WebSocket 唤醒扩展 dispatcher，
+    # 而不是等下一次 chrome.alarms tick（最多 60s）。kick 是
+    # best-effort——若守护进程的 API 未运行，现有的 alarm 轮询
+    # 仍会在下次触发时拿到任务。
+    # ``kick=False`` 让 guided-init 流水线先在 coordinator 注册任务
+    # 所有权 *再* 唤醒扩展（避免 register-after-kick 竞态：owned
+    # 结果被当作外来结果处理）。
     if kick:
         _kick_task_dispatcher("xhs")
     return task_id
 
 
 def _kick_task_dispatcher(source: str) -> None:
-    """Fire-and-forget POST to the daemon's task-kick endpoint.
+    """对守护进程的 task-kick 端点发起 fire-and-forget POST。
 
-    The daemon broadcasts ``<source>_task_available`` over the
-    runtime-stream WebSocket, which the extension's service-worker
-    handles by triggering an immediate poll on the matching dispatcher.
-    Failures are silent: if the daemon isn't running the existing
-    chrome.alarms 60s poll fallback still picks the task up.
+    守护进程通过 runtime-stream WebSocket 广播
+    ``<source>_task_available``，扩展的 service-worker 收到后会
+    立即触发对应 dispatcher 的轮询。失败静默：若守护进程未运行，
+    现有的 chrome.alarms 60s 轮询兜底仍会拾起任务。
     """
     if source not in {"xhs", "dy", "yt", "zhihu"}:
         return
@@ -2353,9 +2329,8 @@ def _kick_task_dispatcher(source: str) -> None:
 
     url = f"http://127.0.0.1:8420/api/sources/{source}/kick"
     req = urllib.request.Request(url, method="POST", data=b"")
-    # Short timeout — kick is best-effort. Daemon-not-running /
-    # network blip / connection-refused all degrade silently to the
-    # 60s alarm fallback.
+    # 短超时——kick 是 best-effort。守护进程未运行 /
+    # 网络抖动 / 连接被拒都静默降级到 60s alarm 兜底。
     with suppress(urllib.error.URLError, TimeoutError, OSError):
         urllib.request.urlopen(req, timeout=1.0).close()
 
@@ -2365,18 +2340,18 @@ def _collect_xhs_bootstrap_events(
     *,
     max_wait_seconds: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for and harvest a previously-enqueued bootstrap_profile task.
+    """等待并收割之前入队的 bootstrap_profile 任务。
 
-    Returns ``(events, scope_counts, status_label)`` where
-    ``status_label`` is one of:
-      - ``"ok"``         — task completed with notes
-      - ``"empty"``      — task completed but extension returned 0 notes
-      - ``"timeout"``    — wait window expired, task still pending / in-progress
-      - ``"failed"``     — extension or backend reported error
-      - ``"skipped"``    — no task_id (DB unavailable / budget exhausted)
+    返回 ``(events, scope_counts, status_label)``，``status_label``
+    取以下值之一：
+      - ``"ok"``         —— 任务完成且有 notes
+      - ``"empty"``      —— 任务完成但扩展返回 0 条 notes
+      - ``"timeout"``    —— 等待窗口到期，任务仍 pending / in-progress
+      - ``"failed"``     —— 扩展或后端报错
+      - ``"skipped"``    —— 无 task_id（DB 不可用 / 预算耗尽）
 
-    The wait deadline starts NOW; callers that enqueued the task earlier
-    in the init flow benefit from the parallel-execution head start.
+    等待截止从 NOW 开始计算；在 init 流程中较早入队任务的调用方
+    可享受并行执行的领先时间。
     """
     import json
     import time
@@ -2450,12 +2425,11 @@ def _collect_xhs_bootstrap_events(
 
 
 def _import_xhs_bootstrap_events() -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Backwards-compatible single-shot wrapper used by tests.
+    """向后兼容的单发包装器，供测试使用。
 
-    For the live ``init`` flow we use the split enqueue/collect API
-    above so xhs data collection runs in parallel with B站 fetches
-    instead of serialising for a fixed wait. This wrapper preserves
-    the old test contract.
+    真实的 ``init`` 流程使用上面拆分的 enqueue/collect API，
+    让 xhs 数据采集与 B 站拉取并行进行，而不是串行等待固定时长。
+    该包装器保留旧的测试契约。
     """
     task_id = _enqueue_xhs_bootstrap_task()
     events, counts, _status = _collect_xhs_bootstrap_events(task_id)
@@ -2463,19 +2437,18 @@ def _import_xhs_bootstrap_events() -> tuple[list[dict[str, Any]], dict[str, int]
 
 
 def _enqueue_dy_bootstrap_task(*, kick: bool = True) -> str | None:
-    """Fire-and-forget enqueue of the Douyin bootstrap_profile task.
+    """fire-and-forget 入队 Douyin bootstrap_profile 任务。
 
-    Mirror of ``_enqueue_xhs_bootstrap_task`` for the Douyin pipeline.
-    No code shared between the two — separate ``DyTaskQueue`` table,
-    separate env vars, separate user-visible messages. Soul-engine
-    consumes the resulting events through the unified
-    ``event_format.build_event`` contract, so the cross-source
-    analysis remains uniform downstream.
+    镜像 ``_enqueue_xhs_bootstrap_task``，用于 Douyin 流水线。
+    两者不共享代码——``DyTaskQueue`` 表独立、env 变量独立、
+    面向用户的消息独立。soul-engine 通过统一的
+    ``event_format.build_event`` 契约消费产出事件，因此跨源
+    分析在下游保持一致。
 
-    Defaults: ``max_scroll_rounds=15`` and ``max_items_per_scope=300``.
-    Both can be overridden via env vars
-    ``OPENBILICLAW_DY_BOOTSTRAP_SCROLL_ROUNDS`` and
-    ``OPENBILICLAW_DY_BOOTSTRAP_MAX_ITEMS``.
+    默认值：``max_scroll_rounds=15``、``max_items_per_scope=300``。
+    两者均可通过环境变量覆盖。
+    ``OPENBILICLAW_DY_BOOTSTRAP_SCROLL_ROUNDS`` 与
+    ``OPENBILICLAW_DY_BOOTSTRAP_MAX_ITEMS``。
     """
     from openbiliclaw.sources.dy_tasks import DyTaskQueue
 
@@ -2541,18 +2514,17 @@ def _collect_dy_bootstrap_events(
     *,
     max_wait_seconds: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for and harvest a previously-enqueued Douyin bootstrap task.
+    """等待并收割之前入队的 Douyin bootstrap 任务。
 
-    Returns ``(events, scope_counts, status_label)`` where
-    ``status_label`` is one of:
-      - ``"ok"``         — task completed with videos
-      - ``"empty"``      — task completed but extension returned 0 videos
-        (typical when the user is not logged in to douyin.com — the
-        soft anti-bot returns HTTP 200 + empty body, see design-doc
-        Risk #7)
-      - ``"timeout"``    — wait window expired, task still pending
-      - ``"failed"``     — extension or backend reported error
-      - ``"skipped"``    — no task_id (DB unavailable / budget exhausted)
+    返回 ``(events, scope_counts, status_label)``，``status_label``
+    取以下值之一：
+      - ``"ok"``         —— 任务完成且有 videos
+      - ``"empty"``      —— 任务完成但扩展返回 0 条 videos
+        （典型发生在用户未登录 douyin.com 时——软反爬返回
+        HTTP 200 + 空 body，详见 design-doc Risk #7）
+      - ``"timeout"``    —— 等待窗口到期，任务仍 pending
+      - ``"failed"``     —— 扩展或后端报错
+      - ``"skipped"``    —— 无 task_id（DB 不可用 / 预算耗尽）
     """
     import json
     import time
@@ -2613,9 +2585,9 @@ def _collect_dy_bootstrap_events(
             with suppress(Exception):
                 scope_counts[key] = int(raw_counts.get(key, 0) or 0)
     if not any(scope_counts.values()):
-        # Fall back to per-event count: dy_bootstrap_videos_to_events
-        # tags each event's metadata.import_source as
-        # "dy_bootstrap_<scope_short>" (post / collect / like / follow).
+        # 回退到逐事件计数：dy_bootstrap_videos_to_events
+        # 把每个事件的 metadata.import_source 标记为
+        # "dy_bootstrap_<scope_short>"（post / collect / like / follow）。
         for event in events:
             metadata = event.get("metadata", {})
             if not isinstance(metadata, dict):
@@ -2630,12 +2602,12 @@ def _collect_dy_bootstrap_events(
 
 
 def _enqueue_yt_bootstrap_task(*, kick: bool = True) -> str | None:
-    """Enqueue a YouTube bootstrap_profile task for the browser extension.
+    """为浏览器扩展入队 YouTube bootstrap_profile 任务。
 
-    Defaults: ``max_scroll_rounds=10`` and ``max_items_per_scope=300``.
-    Both can be overridden via env vars
-    ``OPENBILICLAW_YT_BOOTSTRAP_SCROLL_ROUNDS`` and
-    ``OPENBILICLAW_YT_BOOTSTRAP_MAX_ITEMS``.
+    默认值：``max_scroll_rounds=10``、``max_items_per_scope=300``。
+    两者均可通过环境变量覆盖：
+    ``OPENBILICLAW_YT_BOOTSTRAP_SCROLL_ROUNDS`` 与
+    ``OPENBILICLAW_YT_BOOTSTRAP_MAX_ITEMS``。
     """
     from openbiliclaw.sources.yt_tasks import YtTaskQueue
 
@@ -2701,11 +2673,11 @@ def _collect_yt_bootstrap_events(
     *,
     max_wait_seconds: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for and harvest a previously-enqueued YouTube bootstrap task.
+    """等待并收割之前入队的 YouTube bootstrap 任务。
 
-    Returns ``(events, scope_counts, status_label)`` where
-    ``status_label`` is one of ``"ok"``, ``"empty"``, ``"timeout"``,
-    ``"failed"``, or ``"skipped"``.
+    返回 ``(events, scope_counts, status_label)``，``status_label``
+    取 ``"ok"``、``"empty"``、``"timeout"``、``"failed"`` 或
+    ``"skipped"`` 之一。
     """
     import json
     import time
@@ -2786,10 +2758,10 @@ def _enqueue_zhihu_bootstrap_task(
     kick: bool = True,
     profile_update: bool = False,
 ) -> str | None:
-    """Enqueue a Zhihu bootstrap_events task for the browser extension.
+    """为浏览器扩展入队 Zhihu bootstrap_events 任务。
 
-    The extension executes same-origin Zhihu session fetches in the logged-in
-    browser. This command is fetch-only; it does not trigger profile generation.
+    扩展在已登录的浏览器里执行 same-origin 知乎会话拉取。
+    本命令只做 fetch；不触发画像生成。
     """
     from openbiliclaw.sources.zhihu_tasks import ZhihuTaskQueue
 
@@ -2864,7 +2836,7 @@ def _collect_zhihu_bootstrap_events(
     *,
     max_wait_seconds: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for and harvest a previously-enqueued Zhihu bootstrap task."""
+    """等待并收割之前入队的 Zhihu bootstrap 任务。"""
     import json
     import time
 
@@ -3010,7 +2982,7 @@ def _load_existing_event_keys(memory: Any, *, limit: int) -> set[tuple[str, str,
 
 
 def _write_events_to_memory(events: list[dict[str, Any]], *, source: str = "") -> tuple[int, int]:
-    """Persist collected source events to memory with a lightweight duplicate guard."""
+    """将采集到的源事件持久化到 memory，并带轻量去重保护。"""
     if not events:
         return 0, 0
 
@@ -3042,7 +3014,7 @@ def _enqueue_zhihu_search_task(
     *,
     max_items_per_keyword: int = 20,
 ) -> str | None:
-    """Enqueue a Zhihu plugin search task for the browser extension."""
+    """为浏览器扩展入队 Zhihu 插件搜索任务。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.sources.zhihu_tasks import ZhihuTaskQueue
 
@@ -3097,7 +3069,7 @@ def _collect_zhihu_search_results(
     *,
     max_wait_seconds: float,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for a plugin search task and return raw Zhihu candidates."""
+    """等待 plugin 搜索任务并返回原始 Zhihu 候选。"""
     import json
     import time
 
@@ -3173,7 +3145,7 @@ def _enqueue_zhihu_discovery_task(
     *,
     daily_budget_key: str,
 ) -> str | None:
-    """Enqueue a non-search Zhihu plugin discovery task."""
+    """入队非搜索类的 Zhihu 插件 discovery 任务。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.sources.zhihu_tasks import ZhihuTaskQueue
 
@@ -3209,7 +3181,7 @@ def _collect_zhihu_discovery_results(
     *,
     max_wait_seconds: float,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for a plugin Zhihu discovery task and return raw candidates."""
+    """等待 Zhihu 插件 discovery 任务并返回原始候选。"""
     import json
     import time
 
@@ -3276,7 +3248,7 @@ def _collect_zhihu_discovery_results(
 
 
 def _enqueue_zhihu_discovery_candidates(items: list[dict[str, Any]]) -> tuple[int, list[Any]]:
-    """Convert Zhihu search result rows and enqueue them into discovery_candidates."""
+    """将 Zhihu 搜索结果行转换并入队到 discovery_candidates。"""
     from openbiliclaw.discovery.candidate_pool import discovered_content_to_candidate_write
     from openbiliclaw.sources.zhihu_tasks import zhihu_discovery_items_to_contents
 
@@ -3297,7 +3269,7 @@ def _enqueue_dy_search_task(
     *,
     max_items_per_keyword: int = 20,
 ) -> str | None:
-    """Enqueue a Douyin plugin search task for the browser extension."""
+    """为浏览器扩展入队 Douyin 插件搜索任务。"""
     from openbiliclaw.sources.dy_tasks import DyTaskQueue
 
     normalized_keywords = []
@@ -3345,7 +3317,7 @@ def _collect_dy_search_results(
     *,
     max_wait_seconds: float,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    """Wait for a plugin search task and return raw Douyin video candidates."""
+    """等待插件搜索任务并返回原始 Douyin 视频候选。"""
     import json
     import time
 
@@ -3396,11 +3368,11 @@ def _collect_dy_search_results(
 
 
 def _dy_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Douyin bootstrap events into profile-builder history rows.
+    """将 Douyin bootstrap 事件转换为 profile-builder history 行。
 
-    Mirror of ``_xhs_events_to_history_items`` — preserves the
-    natural-language ``context`` and tags ``source_platform=douyin``
-    so cross-source analysis remains uniform.
+    镜像 ``_xhs_events_to_history_items`` —— 保留自然语言
+    ``context`` 并打 ``source_platform=douyin`` 标签，
+    以保证跨源分析一致。
     """
     rows: list[dict[str, Any]] = []
     for event in events:
@@ -3422,14 +3394,12 @@ def _dy_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, 
 
 
 def _xhs_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert XHS bootstrap events into profile-builder history rows.
+    """将 XHS bootstrap 事件转换为 profile-builder history 行。
 
-    Preserves the natural-language ``context`` field from the source
-    event so downstream consumers that opt into context-aware
-    summarisation can use it. Profile_builder's current
-    ``_summarize_history`` doesn't read ``context``, but keeping it
-    intact means the data flows uniformly across sources without
-    blocking future analyzer enhancements.
+    保留源事件中的自然语言 ``context`` 字段，以便下游选择
+    context-aware 摘要的消费者使用。当前 profile_builder 的
+    ``_summarize_history`` 不读 ``context``，但保持其完整流转
+    让数据在跨源时一致，且不阻碍未来 analyzer 增强。
     """
     rows: list[dict[str, Any]] = []
     for event in events:
@@ -3442,9 +3412,8 @@ def _xhs_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str,
                 "url": str(event.get("url", "")).strip(),
                 "author": str(metadata.get("author", "")).strip(),
                 "event_type": str(event.get("event_type", "")).strip(),
-                # v0.3.22+: preserve natural-language context so the
-                # history list carries the same single-source-of-truth
-                # description as the underlying event.
+                # v0.3.22+：保留自然语言 context，让 history 列表
+                # 与底层事件保持同一份 single-source-of-truth 描述。
                 "context": str(event.get("context", "")).strip(),
                 "metadata": metadata,
                 "source_platform": "xiaohongshu",
@@ -3454,10 +3423,10 @@ def _xhs_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str,
 
 
 def _yt_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert YouTube bootstrap events into profile-builder history rows.
+    """将 YouTube bootstrap 事件转换为 profile-builder history 行。
 
-    Mirror of ``_xhs_events_to_history_items`` — preserves natural-language
-    ``context`` and tags ``source_platform=youtube`` for cross-source analysis.
+    镜像 ``_xhs_events_to_history_items`` —— 保留自然语言
+    ``context`` 并打 ``source_platform=youtube`` 标签以维持跨源分析一致。
     """
     rows: list[dict[str, Any]] = []
     for event in events:
@@ -3479,11 +3448,11 @@ def _yt_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, 
 
 
 def _x_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert X (Twitter) init events into profile-builder history rows.
+    """将 X (Twitter) init 事件转换为 profile-builder history 行。
 
-    Mirror of ``_xhs_events_to_history_items`` — preserves natural-language
-    ``context`` and tags ``source_platform=twitter``. Keeps the profile
-    builder fed when X is the only (or one of few) selected init sources.
+    镜像 ``_xhs_events_to_history_items`` —— 保留自然语言
+    ``context`` 并打 ``source_platform=twitter`` 标签。当 X 是
+    选中（且为数不多）的 init 源之一时，让 profile builder 仍能取到数据。
     """
     rows: list[dict[str, Any]] = []
     for event in events:
@@ -3505,7 +3474,7 @@ def _x_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, A
 
 
 def _zhihu_events_to_history_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Zhihu bootstrap events into profile-builder history rows."""
+    """将 Zhihu bootstrap 事件转换为 profile-builder history 行。"""
     rows: list[dict[str, Any]] = []
     for event in events:
         metadata = event.get("metadata", {})
@@ -3776,9 +3745,9 @@ def logs_prune(
             continue
         actions.append(("keep", f"{path.name}  [{tag}]", st.st_size))
 
-    # Aggregate-budget pass: simulate evicting oldest unmanaged 'keep' rows
+    # 总预算扫描：模拟驱逐最旧的未托管 'keep' 行
     if aggregate_budget_mb > 0 and total > budget_bytes:
-        # Re-sort the not-yet-doomed unmanaged ones by mtime
+        # 把尚未被裁掉的未托管行按 mtime 重新排序
         unmanaged_keep: list[tuple[Path, float, int, int]] = []
         for i, (action, label, size) in enumerate(actions):
             if action != "keep" or "[managed]" in label:
@@ -3830,7 +3799,7 @@ def logs_prune(
         console.print("\n[yellow]这是 dry-run。加上 --apply 才会真的改文件。[/yellow]")
         return
 
-    # Apply
+    # 应用
     import time as _time2
 
     actually_freed = 0
@@ -3900,7 +3869,7 @@ def start(
 
 
 def _bump_auth_epoch(cfg: Any) -> bool:
-    """Bump the revocation epoch in the runtime DB (immediate logout-all)."""
+    """在运行时 DB 中提升 revocation epoch（立即 logout-all）。"""
     from openbiliclaw.storage.database import Database
 
     db = Database(cfg.data_path / "openbiliclaw.db")
@@ -3916,13 +3885,13 @@ def _bump_auth_epoch(cfg: Any) -> bool:
 
 
 def _rebase_auth_fingerprint(cfg: Any) -> None:
-    """Re-store the password fingerprint under cfg's CURRENT signing secret.
+    """在 cfg 当前签名 secret 之下重新存储密码指纹。
 
-    Called after ``--rotate-secret`` so the next startup reconcile sees the
-    fingerprint it would itself compute (under the new secret) and does NOT
-    perform a redundant epoch bump on top of the one we already did. Best-effort:
-    if the DB is unwritable we simply leave the stale fingerprint, which only
-    costs one harmless extra reconcile bump on restart. See ``set_password_fingerprint``.
+    在 ``--rotate-secret`` 之后调用，让下一次启动 reconcile 时
+    看到的就是它自己（用新 secret）会算出来的指纹，从而不会在
+    我们已经 bump 之上再做一次冗余 epoch bump。Best-effort：
+    若 DB 不可写，我们就保留旧指纹，代价仅是重启时多一次
+    无害的 reconcile bump。见 ``set_password_fingerprint``。
     """
     from openbiliclaw.auth_core import password_fingerprint
     from openbiliclaw.config import get_auth_plain_password
@@ -3941,7 +3910,7 @@ def _rebase_auth_fingerprint(cfg: Any) -> None:
         db.initialize()
         db.set_password_fingerprint(fingerprint)
     except Exception:
-        # Best-effort: a stale fingerprint only costs one harmless reconcile bump.
+        # Best-effort：旧指纹只带来一次无害的 reconcile bump。
         pass
     finally:
         with suppress(Exception):
@@ -4153,7 +4122,7 @@ def set_password(
     cfg = load_config()
 
     if logout_all:
-        # DB-only revocation — always effective, independent of env/config source.
+        # 仅在 DB 中吊销 —— 始终生效,与 env/config 来源无关。
         ok = _bump_auth_epoch(cfg)
         _print_status_panel(
             "success" if ok else "error",
@@ -4166,15 +4135,16 @@ def set_password(
             raise typer.Exit(code=1)
         return
 
-    # Config-writing paths below all call save_config(cfg), which writes the WHOLE
-    # [api.auth] block. cfg came from load_config(), where env vars take precedence
-    # over config.toml — so ANY auth env override would be (a) re-applied on restart
-    # (the file edit silently lost) and (b) baked into config.toml as a literal,
-    # leaving a stale value behind once the env var is later removed (this could
-    # quietly shift the trust boundary / session lifetime). Refuse loudly on the
-    # full override surface — not just the password — and tell the user to manage
-    # via env instead (review r3#2). `--logout-all` returned above, so it stays
-    # usable for an emergency revoke even while env-managed.
+    # 下面的写配置路径都会调用 save_config(cfg),它会写入整个
+    # [api.auth] 块。cfg 来自 load_config(),其中环境变量优先级
+    # 高于 config.toml —— 因此任何 auth 环境变量覆盖都会
+    # (a) 在重启时被重新应用(文件编辑被静默丢失),并且
+    # (b) 被原样写入 config.toml,一旦环境变量后续被移除,
+    # 就会留下一个过期值(这可能悄然改变 trust boundary /
+    # session lifetime)。在完整的 override 表面上都要明确拒绝
+    # —— 不仅仅是 password —— 并告诉用户去管理
+    # 改为通过 env 管理(review r3#2)。`--logout-all` 已在上面 return,因此
+    # 即使在 env 管理期间也仍可用于紧急吊销。
     from openbiliclaw.config import API_AUTH_ENV_VARS
 
     _auth_env = [name for name in API_AUTH_ENV_VARS if (os.environ.get(name) or "").strip()]
@@ -4188,9 +4158,9 @@ def set_password(
         )
         raise typer.Exit(code=1)
 
-    # config.local.toml is merged OVER config.toml (local wins). If it pins any of
-    # the credential fields set-password writes, our config.toml edit silently
-    # reverts on restart — refuse loudly rather than report a false success (r9).
+    # config.local.toml 会合并覆盖 config.toml（local 优先）。若它固定了
+    # set-password 写入的任何凭据字段，我们对 config.toml 的修改会在
+    # 重启时被静默回滚——大声拒绝而非报虚假成功（r9）。
     from openbiliclaw.config import config_local_auth_keys
 
     _local_keys = sorted(
@@ -4224,8 +4194,8 @@ def set_password(
                 "请重启后端使其生效，或修复 data 目录后重试。",
             )
             raise typer.Exit(code=1)
-        # Re-base the stored fingerprint under the NEW secret so the next restart's
-        # reconcile doesn't perform a redundant epoch bump on top of this one.
+        # 在新 secret 下重新落库指纹，让下次重启的 reconcile 不会
+        # 在我们已经做过的 bump 之上再补一次冗余 epoch bump。
         _rebase_auth_fingerprint(cfg)
         _print_status_panel(
             "success",
@@ -4254,10 +4224,9 @@ def set_password(
     if not cfg.api.auth.session_secret.strip():
         cfg.api.auth.session_secret = _secrets.token_urlsafe(32)
     save_config(cfg)
-    # Revoke all existing sessions immediately (read live from SQLite by any
-    # running backend) so a compromised-password rotation does not leave old
-    # cookies valid until the next restart. The NEW password itself only takes
-    # effect once the backend reloads its config, hence the restart notice.
+    # 立即吊销所有现有会话（由任何运行中的后端从 SQLite 实时读取），
+    # 以便密码轮换后不会让旧 cookie 一直有效到下次重启。新密码本身
+    # 要等后端重新加载配置才生效，因此才有那条重启提示。
     revoked = _bump_auth_epoch(cfg)
     if not revoked:
         _print_status_panel(
@@ -4307,15 +4276,15 @@ def db_repair() -> None:
 
 
 def _ask_xhs_inclusion() -> bool:
-    """Decide whether to enqueue the xhs bootstrap task on this init.
+    """决定本次 init 是否要入队 xhs bootstrap 任务。
 
-    Resolution order (first match wins):
-      1. ``OPENBILICLAW_NO_XHS=1`` env var → False, silent
-      2. Non-interactive terminal (CI / piped stdin) → False, silent.
-      3. Interactive terminal → ask the user with default N, then
-         (if Y) walk them through a prep checklist.
+    解析顺序(第一个匹配的获胜):
+      1. ``OPENBILICLAW_NO_XHS=1`` 环境变量 → False,静默
+      2. 非交互式终端(CI / 管道 stdin)→ False,静默。
+      3. 交互式终端 → 用默认值 N 询问用户,然后
+         (若 Y)引导他们过一遍 prep checklist。
 
-    Returns True iff the caller should proceed with xhs bootstrap.
+    当调用方应继续执行 xhs bootstrap 时返回 True。
     """
     if os.environ.get("OPENBILICLAW_NO_XHS", "").strip() == "1":
         console.print("[dim]  跳过小红书数据接入(OPENBILICLAW_NO_XHS=1)。[/dim]")
@@ -4351,11 +4320,10 @@ def _ask_xhs_inclusion() -> bool:
         console.print("[dim]  已选择跳过,本次 init 不会请求扩展。[/dim]")
         return False
 
-    # User said yes — walk them through the prep checklist before
-    # we hit the extension. The bootstrap task has a 30-60s timeout
-    # built-in, so if they say "ready" but actually aren't, the
-    # collect step degrades gracefully (status="empty"/"timeout") and
-    # init still completes on B站 data alone.
+    # 用户答 yes —— 在调用扩展前先走一遍准备清单。
+    # bootstrap 任务内置 30-60s 超时，所以即便用户说"好了"但实际没好，
+    # collect 步骤会优雅降级（status="empty"/"timeout"），init 仍能
+    # 仅靠 B 站数据完成。
     console.print()
     console.print("[bold]准备小红书接入[/bold]")
     console.print("请确认以下三件事都做了:")
@@ -4391,18 +4359,16 @@ def _ask_xhs_inclusion() -> bool:
 
 
 def _ask_dy_inclusion() -> bool:
-    """Decide whether to enqueue the Douyin bootstrap task on this init.
+    """决定是否在本次 init 中入队 Douyin bootstrap 任务。
 
-    Resolution order (first match wins):
-      1. ``OPENBILICLAW_NO_DOUYIN=1`` env var → False, silent
-      2. Non-interactive terminal (CI / piped stdin) → **False**, silent.
-         Conservative default because Douyin hits more-aggressive risk-control
-         if the user isn't actually logged in, and the soft anti-bot returns
-         HTTP 200 + empty body (design-doc Risk #7) which we can only
-         detect after the bootstrap runs. Better to require explicit
-         opt-in for Douyin than auto-fire it on every CI run.
-      3. Interactive terminal → ask the user with default N, then
-         (if Y) walk them through a prep checklist.
+    解析顺序（首个命中即生效）：
+      1. ``OPENBILICLAW_NO_DOUYIN=1`` 环境变量 → False，静默
+      2. 非交互式终端（CI / piped stdin） → **False**，静默。
+         保守默认。因为抖音风控更激进，若用户实际未登录，
+         软反爬会返回 HTTP 200 + 空 body（design-doc Risk #7），
+         只有 bootstrap 跑完才能识别。对 Douyin 而言显式 opt-in
+         比每次 CI 都自动触发更稳妥。
+      3. 交互式终端 → 询问用户，默认 N；若答 Y 则走一遍准备清单。
     """
     if os.environ.get("OPENBILICLAW_NO_DOUYIN", "").strip() == "1":
         console.print("[dim]  跳过抖音数据接入(OPENBILICLAW_NO_DOUYIN=1)。[/dim]")
@@ -4471,14 +4437,13 @@ def _ask_dy_inclusion() -> bool:
 
 
 def _ask_yt_inclusion() -> bool:
-    """Decide whether to enqueue the YouTube bootstrap task on this init.
+    """决定是否在本次 init 中入队 YouTube bootstrap 任务。
 
-    Resolution order (first match wins):
-      1. ``OPENBILICLAW_NO_YOUTUBE=1`` env var → False, silent
-      2. Non-interactive terminal (CI / piped stdin) → **False**, silent.
-         Conservative default — YouTube requires browser login and focus.
-      3. Interactive terminal → ask the user with default N, then
-         (if Y) walk them through a prep checklist.
+    解析顺序（首个命中即生效）：
+      1. ``OPENBILICLAW_NO_YOUTUBE=1`` 环境变量 → False，静默
+      2. 非交互式终端（CI / piped stdin） → **False**，静默。
+         保守默认——YouTube 需要浏览器登录与焦点。
+      3. 交互式终端 → 询问用户，默认 N；若答 Y 则走一遍准备清单。
     """
     if os.environ.get("OPENBILICLAW_NO_YOUTUBE", "").strip() == "1":
         console.print("[dim]  跳过 YouTube 数据接入(OPENBILICLAW_NO_YOUTUBE=1)。[/dim]")
@@ -4547,15 +4512,15 @@ def _ask_yt_inclusion() -> bool:
 
 
 def _ask_x_inclusion() -> bool:
-    """Decide whether to enable the X (Twitter) discovery source on this init.
+    """决定是否在本次 init 中启用 X (Twitter) discovery 源。
 
-    Unlike xhs/douyin/youtube, X has no extension bootstrap task — discovery is
-    server-side cookie replay. So this only flips ``[sources.twitter].enabled``;
-    the actual fetch runs later via the backend producer once x.com cookies are
-    synced. Resolution order (first match wins):
-      1. ``OPENBILICLAW_NO_X=1`` env var → False, silent.
-      2. Non-interactive terminal (CI / piped stdin) → **False**, silent.
-      3. Interactive terminal → ask the user with default N (opt-in).
+    与 xhs/douyin/youtube 不同，X 没有扩展 bootstrap 任务——discovery
+    通过服务端 cookie replay 进行。所以这里只是翻转
+    ``[sources.twitter].enabled``；真正的拉取会在 x.com cookie 同步后
+    由后端 producer 执行。解析顺序（首个命中即生效）：
+      1. ``OPENBILICLAW_NO_X=1`` 环境变量 → False，静默。
+      2. 非交互式终端（CI / piped stdin） → **False**，静默。
+      3. 交互式终端 → 询问用户，默认 N（opt-in）。
     """
     if os.environ.get("OPENBILICLAW_NO_X", "").strip() == "1":
         console.print("[dim]  跳过 X 数据接入(OPENBILICLAW_NO_X=1)。[/dim]")
@@ -4594,7 +4559,7 @@ def _ask_x_inclusion() -> bool:
 
 
 def _ask_zhihu_inclusion() -> bool:
-    """Decide whether to enqueue the Zhihu bootstrap task on this init."""
+    """决定是否在本次 init 中入队 Zhihu bootstrap 任务。"""
     if os.environ.get("OPENBILICLAW_NO_ZHIHU", "").strip() == "1":
         console.print("[dim]  跳过知乎数据接入(OPENBILICLAW_NO_ZHIHU=1)。[/dim]")
         return False
@@ -4625,11 +4590,10 @@ def _ask_zhihu_inclusion() -> bool:
 
 
 def _ask_network_binding() -> bool:
-    """Ask whether the backend should listen on all interfaces (0.0.0.0).
+    """询问后端是否应监听所有网卡（0.0.0.0）。
 
-    Returns True if the user confirms all-interface binding, False for
-    localhost-only.  Non-interactive terminals default to True (the new
-    default keeps mobile web accessible).
+    用户确认全网卡监听返回 True；仅本机返回 False。
+    非交互式终端默认 True（新默认保留移动端 Web 可访问）。
     """
     if not _is_interactive_terminal():
         return True
@@ -4652,7 +4616,7 @@ def _ask_network_binding() -> bool:
 
 
 def _persist_api_host_choice(*, allow_lan: bool) -> None:
-    """Persist the user's network binding choice to config.toml."""
+    """将用户的网卡绑定选择持久化到 config.toml。"""
     try:
         from openbiliclaw.config import load_config, save_config
 
@@ -4666,7 +4630,7 @@ def _persist_api_host_choice(*, allow_lan: bool) -> None:
 
 
 def _maybe_setup_password_in_init(*, allow_lan: bool) -> None:
-    """Offer to set a LAN access password during init (only when LAN is enabled)."""
+    """在 init 期间询问是否设置局域网访问密码（仅在启用局域网时）。"""
     if not allow_lan or not _is_interactive_terminal():
         return
     console.print()
@@ -4711,7 +4675,7 @@ def _persist_init_source_enabled_flags(
     include_x: bool = False,
     include_zhihu: bool = False,
 ) -> None:
-    """Persist init source choices so background discovery obeys them."""
+    """持久化 init 的数据源选择，以便后台 discovery 遵循它们。"""
 
     try:
         from openbiliclaw.config import load_config, save_config
@@ -4745,7 +4709,7 @@ def _persist_init_source_enabled_flags(
         if changed:
             save_config(cfg)
     except Exception:
-        # Persisting init choices is best-effort; init should continue.
+        # 持久化 init 选择是 best-effort；init 应继续推进。
         return
 
 
@@ -4755,7 +4719,7 @@ def _select_init_source_shares(
     enabled_sources: Mapping[str, bool],
     configured_shares: Mapping[str, int],
 ) -> dict[str, int]:
-    """Return source shares selected during interactive init."""
+    """返回交互式 init 期间选定的数据源份额。"""
 
     from openbiliclaw.runtime.source_policy import (
         SOURCE_ORDER,
@@ -4793,7 +4757,7 @@ def _select_init_source_shares(
 
 
 def _maybe_update_init_source_shares(event_counts: Mapping[str, int]) -> None:
-    """Ask the user to accept/update source shares after init event collection."""
+    """在 init 事件采集后，请用户接受 / 调整数据源份额。"""
 
     try:
         from openbiliclaw.config import load_config, save_config
@@ -4883,10 +4847,10 @@ def _format_source_shares(shares: Mapping[str, int]) -> str:
 
 
 def _normalize_init_bilibili_limit(value: int | None, *, default: int) -> int:
-    """Normalize user-facing init signal limits.
+    """归一化面向用户的 init 信号上限。
 
-    Callers own the meaning of 0: history treats it as "fetch all",
-    while favorite/follow keep the existing "skip this signal" meaning.
+    0 的含义由调用方决定：history 视 0 为"拉全部"，
+    favorite / follow 沿用既有的"跳过该信号"语义。
     """
     if value is None:
         return default
@@ -4899,7 +4863,7 @@ def _ask_init_bilibili_limits(
     favorite_limit: int | None,
     follow_limit: int | None,
 ) -> tuple[int, int, int]:
-    """Ask interactive users to confirm Bilibili init signal caps."""
+    """请交互式用户确认 Bilibili init 信号上限。"""
     history = _normalize_init_bilibili_limit(
         history_limit,
         default=_INIT_BILIBILI_HISTORY_LIMIT,
@@ -4953,8 +4917,8 @@ def _ask_init_bilibili_limits(
 
 @dataclass
 class InitResult:
-    """Outcome of :func:`run_guided_init`, consumed by the CLI summary
-    and (gui-init) the API init endpoint."""
+    """:func:`run_guided_init` 的结果，由 CLI 汇总以及
+    （gui-init）API init 端点消费。"""
 
     history: list[dict[str, Any]]
     favorites_data: list[dict[str, Any]]
@@ -4980,11 +4944,11 @@ class InitResult:
 
 
 class GuidedInitError(Exception):
-    """Hard failure raised inside :func:`run_guided_init`.
+    """:func:`run_guided_init` 内部抛出的硬失败。
 
-    ``reason`` is a stable machine code (``empty_history`` /
-    ``profile_failed``) the API maps onto ``InitCoordinator.fail`` and
-    the CLI maps onto a status panel + non-zero exit.
+    ``reason`` 是稳定的机器码（``empty_history`` /
+    ``profile_failed``），API 把它映射到 ``InitCoordinator.fail``，
+    CLI 把它映射到状态面板 + 非零退出码。
     """
 
     def __init__(self, reason: str, message: str) -> None:
@@ -5000,12 +4964,12 @@ async def _fetch_bilibili_init_data(
     favorite_limit: int,
     follow_limit: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Fetch B站 history / favorites / following in one event loop.
+    """在单个事件循环内拉取 B 站 history / favorites / following。
 
-    Extracted from the old ``init`` closure so the CLI and the API
-    guided-init paths share a single B站 fetch (gui-init spec §1).
-    Favorites/following limits are resolved by the caller; history uses
-    ``_INIT_BILIBILI_HISTORY_LIMIT`` unless a caller passes an override.
+    从旧的 ``init`` 闭包中抽出，使 CLI 与 API guided-init 路径
+    共享同一段 B 站拉取（gui-init spec §1）。Favorites / following
+    上限由调用方解析；history 默认 ``_INIT_BILIBILI_HISTORY_LIMIT``，
+    调用方可传入覆盖值。
     """
     hist = await client.get_user_history(max_items=history_limit)
 
@@ -5071,15 +5035,14 @@ async def _fetch_x_init_data(
     likes_limit: int,
     bookmarks_limit: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Fetch the user's own X likes + bookmarks for init preference backfill.
+    """拉取用户自己的 X 点赞 + 收藏，用于 init 偏好回填。
 
-    X is server-side cookie replay (no extension bootstrap task), so — like
-    B站 — we fetch directly here. Resolves the synced ``x.com`` cookie via the
-    same path the discovery producer uses; if it's absent (user enabled X but
-    hasn't logged in / the extension hasn't synced yet) we skip cleanly. All
-    fetches are best-effort: a missing / expired cookie or a rate-limit must
-    never hard-fail ``init``. Returns ``(likes, bookmarks)`` as
-    ``tweet_to_dict`` dicts.
+    X 走服务端 cookie replay（无扩展 bootstrap 任务），所以——
+    跟 B 站一样——直接在这里拉取。通过 discovery producer 用的
+    同一路径解析已同步的 ``x.com`` cookie；若不存在（用户启用了 X
+    但未登录 / 扩展尚未同步），干净跳过。所有拉取都是 best-effort：
+    缺失 / 过期 cookie 或限流绝不硬失败 ``init``。
+    返回 ``(likes, bookmarks)``，均为 ``tweet_to_dict`` dict。
     """
     from openbiliclaw.config import load_config
 
@@ -5134,27 +5097,27 @@ async def run_guided_init(
     coordinator: Any = None,
     run_id: str | None = None,
 ) -> InitResult:
-    """Shared async init pipeline (gui-init spec §1).
+    """共享的异步 init 流程(gui-init spec §1)。
 
-    Runs the four init stages in one event loop so neither the CLI
-    (``asyncio.run(run_guided_init(...))``) nor the API (``await
-    run_guided_init(...)`` on the server loop) nests event loops:
+    在同一个事件循环中运行四个 init 阶段,这样 CLI
+    (``asyncio.run(run_guided_init(...))``)和 API
+    (在 server loop 上的 ``await run_guided_init(...)``)都不会嵌套事件循环:
 
-      1. fetch B站 + collect cross-platform bootstrap signals → propagate
-      2. analyze preferences
-      3/4. build soul profile ‖ backfill discovery pool (parallel)
+      1. 拉取 B 站 + 收集跨平台 bootstrap 信号 → 传播
+      2. 分析偏好
+      3/4. 构建 soul profile ‖ backfill discovery pool(并行)
 
-    Bilibili is optional like every other source (``include_bili``); at
-    least one selected source must yield signals or stage 1 raises
-    ``GuidedInitError("empty_signals")``. ``client`` may be ``None`` when
-    ``include_bili`` is False.
+    Bilibili 与其他来源一样是可选的(``include_bili``);至少
+    要有一个选中的来源产生信号,否则 stage 1 会抛出
+    ``GuidedInitError("empty_signals")``。当 ``include_bili`` 为
+    False 时,``client`` 可以为 ``None``。
 
-    ``discover_backfill`` is the one genuinely path-specific step: the CLI
-    injects :func:`_run_init_discovery_backfill_async` (one-shot engine);
-    the API injects ``controller.run_init_backfill`` (holds the refresh
-    lock). When ``coordinator``/``run_id`` are supplied, stage transitions
-    and enqueued bootstrap task ids are reported for live GUI progress;
-    run lifecycle (mark_running / complete / fail) stays with the caller.
+    ``discover_backfill`` 是唯一真正与路径相关的步骤:CLI
+    注入 :func:`_run_init_discovery_backfill_async`(一次性 engine);
+    API 注入 ``controller.run_init_backfill``(持有 refresh
+    lock)。当提供 ``coordinator``/``run_id`` 时,会汇报阶段
+    转换和入队的 bootstrap task id,用于 live GUI 进度;
+    run 的生命周期(mark_running / complete / fail)仍由调用方负责。
     """
 
     async def _stage_started(n: int) -> None:
@@ -5172,14 +5135,13 @@ async def run_guided_init(
     async def _enqueue_register_kick(
         enqueue_fn: Callable[..., str | None], source: str
     ) -> str | None:
-        """Enqueue a bootstrap task off-loop, then wake the extension.
+        """在事件循环之外入队 bootstrap 任务,然后唤醒扩展。
 
-        On the API path (coordinator set) the dispatcher kick is deferred until
-        AFTER the task id is registered as init-owned, so a fast extension can't
-        post the result before ownership is recorded (which would make the
-        task-result handler treat init's own data as foreign and skip memory
-        propagation). The CLI path keeps the helper's built-in kick and has no
-        ownership to register.
+        在 API 路径(已设置 coordinator)上,dispatcher kick 会延迟到
+        task id 注册为 init-owned 之后才执行,避免快速的扩展在
+        ownership 记录之前就提交结果(那会让 task-result 处理器
+        把 init 自己的数据当成外部数据而跳过 memory 传播)。
+        CLI 路径保留 helper 内置的 kick,且没有 ownership 需要注册。
         """
         if coordinator is not None:
             task_id = await asyncio.to_thread(lambda: enqueue_fn(kick=False))
@@ -5189,11 +5151,11 @@ async def run_guided_init(
             return task_id
         return await asyncio.to_thread(enqueue_fn)
 
-    # Enqueue the XHS bootstrap task FIRST so the browser extension can
-    # run it in parallel with the slow B站 history/favs/follows fetches
-    # below (~10–30s). XHS is HTTP-only on B站's side so there's no
-    # browser-tab focus conflict; Douyin/YouTube are enqueued LATER,
-    # serialised, to avoid two active-tab focus grabs racing.
+    # 先入队 XHS bootstrap 任务,让浏览器扩展可以与下面缓慢的
+    # B 站 历史/收藏/关注 拉取(~10–30s)并行执行。
+    # XHS 在 B 站侧只走 HTTP,因此没有浏览器标签页焦点冲突;
+    # Douyin/YouTube 之后再入队,串行执行,避免两个 active-tab
+    # 焦点抢占相互竞争。
     xhs_task_id = (
         (await _enqueue_register_kick(_enqueue_xhs_bootstrap_task, "xhs")) if include_xhs else None
     )
@@ -5223,10 +5185,10 @@ async def run_guided_init(
     else:
         console.print("  [dim]未选择 B 站来源,跳过 B 站历史 / 收藏 / 关注拉取。[/dim]")
 
-    # Bootstrap collectors poll a DB task queue with a blocking sleep —
-    # run them in a worker thread (Database is check_same_thread=False) so
-    # the API event loop isn't frozen for the collect window. CLI output /
-    # ordering is unchanged (it's sequential here regardless).
+    # Bootstrap 收集器通过带阻塞 sleep 的 DB 任务队列轮询 ——
+    # 在 worker 线程中运行(Database 已配置 check_same_thread=False),
+    # 避免 API 事件循环在 collect 窗口期内被冻结。
+    # CLI 输出 / 顺序保持不变(此处本就是顺序执行的)。
     xhs_events, xhs_scope_counts, xhs_status = await asyncio.to_thread(
         _collect_xhs_bootstrap_events, xhs_task_id
     )
@@ -5250,8 +5212,8 @@ async def run_guided_init(
     elif xhs_status == "failed":
         console.print("  [yellow]小红书任务失败 —— 检查扩展日志,或重试 init。[/yellow]")
 
-    # Now (XHS done) enqueue Douyin. Serialised so the two browser-
-    # focus-grabbing dispatchers don't race for the same active tab.
+    # 现在(XHS 完成)入队 Douyin。串行执行,避免两个浏览器
+    # 焦点抢占型 dispatcher 争抢同一个 active tab。
     dy_task_id = (
         (await _enqueue_register_kick(_enqueue_dy_bootstrap_task, "dy")) if include_dy else None
     )
@@ -5284,9 +5246,9 @@ async def run_guided_init(
     elif dy_status == "failed":
         console.print("  [yellow]抖音任务失败 —— 检查扩展日志,或重试 init。[/yellow]")
 
-    # YouTube is enqueued AFTER Douyin completes — same serialisation
-    # rationale as XHS→Douyin: each dispatcher opens a foreground tab and
-    # grabs focus; running two at once causes tab-focus races.
+    # YouTube 在 Douyin 完成之后再入队 —— 串行化的理由与
+    # XHS→Douyin 相同:每个 dispatcher 都会打开前台标签页并
+    # 抢占焦点;同时运行两个会引发 tab-focus 竞争。
     yt_task_id = (
         (await _enqueue_register_kick(_enqueue_yt_bootstrap_task, "yt")) if include_yt else None
     )
@@ -5317,8 +5279,8 @@ async def run_guided_init(
     elif yt_status == "failed":
         console.print("  [yellow]YouTube 任务失败 —— 检查扩展日志,或重试 init。[/yellow]")
 
-    # Zhihu is also plugin-backed and uses the browser's logged-in zhihu.com
-    # session. Keep it serial with the other tab-driving sources.
+    # Zhihu 同样由插件支持,使用浏览器中已登录的 zhihu.com
+    # 会话。与其他驱动标签页的来源保持串行执行。
     zhihu_task_id = (
         (await _enqueue_register_kick(_enqueue_zhihu_bootstrap_task, "zhihu"))
         if include_zhihu
@@ -5372,8 +5334,8 @@ async def run_guided_init(
                 f" / 收藏 [green]{len(x_bookmarks_data)}[/green] 条"
             )
 
-    # Build events from all data sources via the unified event_format
-    # builder so B站 / 小红书 / future-source events share one shape.
+    # 通过统一的 event_format 构建器把所有数据源构建为 events,
+    # 让 B 站 / 小红书 / 未来新增来源的 events 共享同一种结构。
     from openbiliclaw.sources.event_format import SOURCE_BILIBILI, build_event
 
     events = [_history_item_to_event(item) for item in history]
@@ -5411,11 +5373,11 @@ async def run_guided_init(
             )
         )
     bilibili_event_count = len(events)
-    # X likes/bookmarks are direct-fetched here (no extension task handler to
-    # propagate them), so — like B站 — they must be persisted in this run.
-    # Appended before the events_to_persist snapshot below; the cross-platform
-    # (xhs/dy/yt) extends happen after the snapshot since those are persisted by
-    # their task-result handler instead.
+    # X 的 likes/bookmarks 在此处直接拉取(没有扩展任务 handler 来
+    # 传播它们),因此 —— 像 B 站一样 —— 必须在本次运行中持久化。
+    # 在下面 events_to_persist 快照之前追加;跨平台(xhs/dy/yt)
+    # 的 extend 发生在快照之后,因为它们由各自的 task-result handler
+    # 持久化。
     x_likes_events = [
         ev for tw in x_likes_data if (ev := _x_tweet_to_event(tw, event_type="like")) is not None
     ]
@@ -5427,32 +5389,32 @@ async def run_guided_init(
     events.extend(x_likes_events)
     events.extend(x_bookmark_events)
     x_event_count = len(x_likes_events) + len(x_bookmark_events)
-    # Persist B站 + X events to memory here. Cross-platform (xhs/dy/yt) events
-    # are propagated by the task-result handler — which, during init, only
-    # propagates init-OWNED results and reuses its bootstrap-key dedupe (so a
-    # force re-init within the task-reuse window doesn't double-insert). They
-    # still feed *this* run's analyze/profile via the collected ``events`` list
-    # below; memory persistence is owned by the handler on both CLI and API
-    # paths (gui-init review §5e).
+    # 在此把 B 站 + X events 持久化到 memory。跨平台(xhs/dy/yt)events
+    # 由 task-result handler 传播 —— 在 init 期间,handler 只传播
+    # init-OWNED 的结果,并复用其 bootstrap-key 去重(因此在 task-reuse
+    # 窗口内强制 re-init 不会重复插入)。它们仍然会通过下面收集到的
+    # ``events`` 列表喂给 *本次* 运行的 analyze/profile;memory 持久化
+    # 在 CLI 和 API 两条路径上都由 handler 拥有(gui-init review §5e)。
     events_to_persist = list(events)
     events_to_persist.extend(zhihu_events)
     events.extend(xhs_events)
     events.extend(dy_events)
     events.extend(yt_events)
     events.extend(zhihu_events)
-    # With bilibili now optional, the floor is "at least one selected source
-    # produced signals" — an all-empty run can't build a meaningful profile.
+    # 由于 bilibili 现在是可选的,下限条件变为"至少一个选中的来源
+    # 产生了信号" —— 全空的 run 无法构建有意义的 profile。
     if not events:
         raise GuidedInitError(
             "empty_signals",
             "所选数据来源没有拉到任何行为信号，无法生成初始画像。"
             "请确认对应平台已在浏览器登录（或扩展已连接）后重试 init。",
         )
-    # Source-share tuning does an unlocked load_config/save_config. That's
-    # fine for the CLI (single-process, no live runtime), but on the API path
-    # it would mutate config.toml outside _CONFIG_SAVE_LOCK / rebuild_from_config
-    # and race a live backend — so only the CLI (coordinator is None) does it
-    # (gui-init review §5e). The API keeps default shares for the first run.
+    # Source-share 调优执行未加锁的 load_config/save_config。对
+    # CLI(单进程、无 live runtime)来说没问题,但在 API 路径上
+    # 会在 _CONFIG_SAVE_LOCK / rebuild_from_config 之外修改
+    # config.toml,与 live backend 竞争 —— 因此只有 CLI
+    # (coordinator 为 None)执行此操作(gui-init review §5e)。
+    # API 在首次运行时保留默认 shares。
     if coordinator is None:
         _maybe_update_init_source_shares(
             {
@@ -5472,8 +5434,8 @@ async def run_guided_init(
     await _stage_started(2)
     _print_section_title("2/4 分析偏好")
     console.print(f"  总信号量: [green]{len(events)}[/green] 条事件")
-    # Chunk the event list so bootstrap does bounded batch processing
-    # instead of serialising one max-thinking call over hundreds of events.
+    # 把 event list 分块,让 bootstrap 做有限批次的处理,
+    # 而不是对数百条 events 做一次 max-thinking 调用。
     await _run_with_progress(
         soul_engine.analyze_events(
             events,
@@ -5519,15 +5481,15 @@ async def run_guided_init(
         combined_history.extend(_yt_events_to_history_items(yt_events))
     if zhihu_events:
         combined_history.extend(_zhihu_events_to_history_items(zhihu_events))
-    # X likes/bookmarks previously only fed the analyze stage; feeding the
-    # profile builder too keeps cross-source flow uniform AND guarantees a
-    # non-empty profile input when X is the only selected source.
+    # X 的 likes/bookmarks 之前只喂给 analyze 阶段;同时喂给
+    # profile builder 既能保持跨来源流程统一,也能保证当 X 是
+    # 唯一选中来源时 profile 输入非空。
     if x_likes_events or x_bookmark_events:
         combined_history.extend(_x_events_to_history_items(x_likes_events + x_bookmark_events))
 
-    # Discover starts on a preference-only draft so trending / search /
-    # related_chain / explore can score candidates while the LLM
-    # synthesizes the rich personality_portrait / deep_needs fields.
+    # Discover 在仅含偏好的 draft profile 上启动,这样 trending /
+    # search / related_chain / explore 可以在 LLM 合成丰富的
+    # personality_portrait / deep_needs 字段时同时给候选打分。
     draft_profile = _build_draft_profile_for_discover(memory)
 
     profile_task = asyncio.create_task(
@@ -5548,9 +5510,9 @@ async def run_guided_init(
     discovered_count = 0
     discover_exc: BaseException | None = None
     try:
-        # Profile is load-bearing. CancelledError is deliberately NOT caught —
-        # it propagates (and the finally tears down the sibling) so the wrapper
-        # records `cancelled`, never `completed`.
+        # Profile 是关键路径。CancelledError 故意不被捕获 ——
+        # 让它向上传播(并由 finally 拆除兄弟任务),使 wrapper
+        # 记录为 `cancelled`,绝不会是 `completed`。
         try:
             profile_data = await profile_task
         except Exception as exc:
@@ -5560,8 +5522,8 @@ async def run_guided_init(
             ) from exc
         await _stage_done(3)
 
-        # Discover is best-effort: a normal failure leaves a partial pool the
-        # user can still start with. Cancellation propagates (not caught).
+        # Discover 是 best-effort:正常失败后会留下一个部分结果池,
+        # 用户仍可基于此开始使用。Cancellation 向上传播(不捕获)。
         try:
             discovered_count = await discover_task
         except Exception as exc:
@@ -5573,10 +5535,10 @@ async def run_guided_init(
             reason="discovery_partial" if discover_exc is not None else None,
         )
     finally:
-        # Guarantee neither parallel task outlives this scope on ANY exit path —
-        # including a CancelledError raised at an await *between* the stages
-        # (e.g. _stage_done(3)'s event publish). An orphaned run_init_backfill
-        # would otherwise keep holding _refresh_lock. Cancel then drain both.
+        # 保证在任何退出路径上,两个并行任务都不会超出本作用域存活 ——
+        # 包括在阶段之间(例如 _stage_done(3) 的事件发布)的 await 处
+        # 抛出的 CancelledError。否则孤立的 run_init_backfill 会一直
+        # 占着 _refresh_lock。先 cancel 再 drain 两个任务。
         for _parallel_task in (profile_task, discover_task):
             if not _parallel_task.done():
                 _parallel_task.cancel()
@@ -5688,18 +5650,18 @@ def init(
     """首次运行：拉取历史、生成画像并补足首轮发现池."""
     _prepare_init_runtime()
 
-    # Snapshot the highest llm_usage row id seen at start so the
-    # post-init cost summary can scope to "this init only" rather
-    # than the user's lifetime ledger. Wrapped in try/except —
-    # billing is best-effort and must not block init startup.
+    # 在启动时快照当前最大的 llm_usage row id,这样 init 后的
+    # cost summary 就能限定为"仅本次 init"而不是用户的终生
+    # 账单。包裹在 try/except 中 —— billing 是 best-effort,
+    # 不能阻塞 init 启动。
     init_start_usage_id: int | None = None
     try:
         init_start_usage_id = _get_runtime_database().max_llm_usage_id()
     except Exception:
         init_start_usage_id = None
 
-    # B站 is optional like every other source (v0.3.118+): --no-bilibili or
-    # OPENBILICLAW_NO_BILIBILI=1 skips it, as long as ≥1 source remains.
+    # B 站 与其他来源一样是可选的(v0.3.118+):--no-bilibili 或
+    # OPENBILICLAW_NO_BILIBILI=1 会跳过它,只要至少还剩 ≥1 个来源。
     include_bili = not (
         no_bilibili or os.environ.get("OPENBILICLAW_NO_BILIBILI", "").strip() == "1"
     )
@@ -5751,13 +5713,12 @@ def init(
         resolved_bilibili_favorite_limit = 0
         resolved_bilibili_follow_limit = 0
 
-    # v0.3.27+: ask the user whether to include xhs data, with a prep
-    # checklist when they opt in. Defaults stay off unless the user
-    # explicitly enables XHS:
-    #   --no-xhs          forces skip
-    #   --yes-xhs         skips the y/n + checklist (scripted opt-in)
-    #   OPENBILICLAW_NO_XHS=1   env var skip
-    # Default (interactive, no flags): prompt with default N.
+    # v0.3.27+:询问用户是否接入 xhs 数据,选择接入时展示一份
+    # prep checklist。默认保持关闭,除非用户显式启用 XHS:
+    #   --no-xhs          强制跳过
+    #   --yes-xhs         跳过 y/n + checklist(脚本化 opt-in)
+    #   OPENBILICLAW_NO_XHS=1   环境变量跳过
+    # 默认(交互式、无 flag):带默认值 N 进行 prompt。
     if no_xhs:
         include_xhs = False
         console.print("[dim]  跳过小红书数据接入(命令行 --no-xhs)。[/dim]")
@@ -5766,8 +5727,8 @@ def init(
     else:
         include_xhs = _ask_xhs_inclusion()
 
-    # Same resolution order for the Douyin opt-in. Default is
-    # off-in-non-interactive (see _ask_dy_inclusion docstring).
+    # Douyin opt-in 用相同的解析顺序。默认在非交互模式下
+    # 关闭(见 _ask_dy_inclusion docstring)。
     if no_douyin:
         include_dy = False
         console.print("[dim]  跳过抖音数据接入(命令行 --no-douyin)。[/dim]")
@@ -5892,18 +5853,18 @@ def init(
         "初始化摘要",
     )
 
-    # v0.3.58+: explicit per-platform breakdown so the user (and the
-    # AI agent driving the install) can see exactly what signals fed
-    # the soul profile. Previously the summary just said "小红书事件 N"
-    # which dropped to 0 when bootstrap_profile was async-pending —
-    # now we surface scope-level counts (saved / liked / xhs_history)
-    # AND the bilibili history / favorites / following breakdown,
-    # plus a total. xhs_scope_counts is set whether the task succeeded
-    # or returned empty, so this also surfaces "0 / 0 / 0" cases that
-    # suggest the user wasn't logged into XHS.
-    # Use the pipeline's snapshot, not a subtraction over ``events`` — the
-    # event list also carries X likes/bookmarks, which the old subtraction
-    # silently lumped into the B站 row (glaring once B站 itself is optional).
+    # v0.3.58+:按平台显式拆分,让用户(以及驱动安装的
+    # AI agent)能清楚看到是什么信号喂给了 soul profile。
+    # 之前 summary 只写"小红书事件 N",在 bootstrap_profile
+    # 处于 async-pending 时会跌到 0 —— 现在展示 scope-level
+    # 计数(saved / liked / xhs_history)以及 bilibili 的
+    # history / favorites / following 拆分,再加一个总数。
+    # xhs_scope_counts 不论任务成功还是返回空都会被设置,
+    # 因此也能暴露"0 / 0 / 0"的情况,提示用户未登录 XHS。
+    # 用 pipeline 的快照,而不是对 ``events`` 做减法 ——
+    # event 列表里也带有 X 的 likes/bookmarks,旧的减法
+    # 会把它们默默并入 B 站 行(在 B 站 本身变可选后,这点
+    # 就特别刺眼)。
     bilibili_events = result.bilibili_event_count
     xhs_saved = int(xhs_scope_counts.get("saved", 0))
     xhs_liked = int(xhs_scope_counts.get("liked", 0))
@@ -5939,8 +5900,8 @@ def init(
     ]
     _print_key_value_table("初始化摘要", summary_rows)
 
-    # If the XHS task didn't get any data, surface the likely cause
-    # so the user knows whether to re-run with the extension installed.
+    # 如果 XHS 任务没拿到任何数据,展示可能的原因,
+    # 让用户知道是否需要装好扩展后重跑。
     if (xhs_saved + xhs_liked + xhs_history) == 0 and xhs_status != "skipped":
         console.print(
             "[dim]ℹ️  小红书 0 条信号入库。最常见原因:扩展未装 / 浏览器没登录 "
@@ -5970,19 +5931,19 @@ def init(
             + "。后续 daemon 会持续从这些来源增量补充。[/dim]"
         )
 
-    # Phase E (v0.3.28+): print cost breakdown for THIS init only,
-    # scoped by the row-id snapshot taken before any LLM call ran.
-    # Lets users immediately see "init 这次花了 ¥X,其中 X% 在 discovery
-    # 评估" rather than having to manually run `openbiliclaw cost`.
+    # Phase E (v0.3.28+):仅打印 *本次* init 的 cost 拆分,
+    # 范围由任何 LLM 调用之前快照的 row-id 限定。
+    # 让用户立刻看到"init 这次花了 ¥X,其中 X% 在 discovery
+    # 评估",而不必手动跑 `openbiliclaw cost`。
     if init_start_usage_id is not None:
         _print_init_cost_summary(init_start_usage_id)
 
-    # Notify the running API server so the extension refreshes immediately.
+    # 通知正在运行的 API server,让扩展立即刷新。
     _notify_running_server_init_completed()
 
 
 def _print_init_cost_summary(since_id: int) -> None:
-    """Print this-init-only LLM cost breakdown by caller."""
+    """按 caller 打印 *仅本次 init* 的 LLM cost 拆分。"""
     try:
         db = _get_runtime_database()
         snapshot = db.query_llm_usage_since_id(since_id=since_id)
@@ -6050,9 +6011,9 @@ def _notify_running_server_init_completed(
     *,
     base_url: str = "http://127.0.0.1:8420",
 ) -> None:
-    """POST to the running API server to announce init completion.
+    """POST 到正在运行的 API server,通知 init 已完成。
 
-    Best-effort: silently ignored when the server is not running.
+    尽力而为:server 未运行时静默忽略。
     """
     import urllib.request
 
@@ -6062,7 +6023,7 @@ def _notify_running_server_init_completed(
         with urllib.request.urlopen(req, timeout=3):
             console.print("[dim]已通知后端服务，插件将自动刷新。[/dim]")
     except Exception:
-        # Server not running — nothing to notify, and that's fine.
+        # Server 未运行 —— 没什么可通知的,这没问题。
         pass
 
 
@@ -6194,17 +6155,17 @@ def _run_single_source_bootstrap(
     wait_seconds: float,
     summary_renderer: Callable[[dict[str, int], str, int], None],
 ) -> None:
-    """Shared core for ``fetch-douyin`` / ``fetch-xhs`` standalone commands.
+    """``fetch-douyin`` / ``fetch-xhs`` 独立命令的共享核心。
 
-    Pure pull pipeline — enqueue → kick → wait for completion →
-    render scope_counts. Does NOT touch B站 auth, does NOT propagate
-    events to memory. The daemon's
-    ``/api/sources/{xhs,dy}/task-result`` handler ALREADY propagates
-    incoming events to memory when it receives partials, so a CLI-side
-    propagate would double-write. Init still runs the soul pipeline
-    (preference / awareness / soul) on top — this command is the
-    isolated 'just verify the extension can pull data' rung beneath
-    that, useful for testing one platform at a time.
+    纯拉取流程 —— enqueue → kick → 等待完成 →
+    渲染 scope_counts。不会触碰 B 站 auth,也不会把
+    events 传播到 memory。daemon 的
+    ``/api/sources/{xhs,dy}/task-result`` handler 在收到
+    partials 时已经把 incoming events 传播到 memory,
+    因此 CLI 侧再 propagate 会重复写入。Init 仍会在其上
+    跑 soul pipeline(preference / awareness / soul)——
+    本命令是它下方孤立的"只验证扩展能否拉数据"那一层,
+    适合一次只测试一个平台。
     """
     _print_page_title(f"{source_label} 数据拉取", "扩展任务 → 后端入库")
     console.print(
@@ -7318,8 +7279,8 @@ def profile() -> None:
     _print_page_title("用户画像概览", "当前稳定画像")
 
     # -- 人格描述 ------------------------------------------------------------
-    # Split by Chinese sentence terminators so Rich wraps at sentence boundaries
-    # instead of mid-word CJK cell breaks. Each sentence starts on its own line.
+    # 按中文句子终止符切分,让 Rich 在句子边界处换行,
+    # 而不是在 CJK cell 中间断开。每个句子单独起一行。
     portrait_raw = profile_data.personality_portrait or "（暂无）"
     sentences = [s.strip() for s in re.split(r"(?<=[。！？])", portrait_raw) if s.strip()]
     portrait_body = "\n".join(sentences) if sentences else portrait_raw
@@ -7407,7 +7368,7 @@ _BILIBILI_STRATEGY_NAMES = ("search", "trending", "explore", "related_chain")
 
 
 def _normalize_strategy_names(raw: list[str] | None) -> list[str]:
-    """Split comma-separated values and validate strategy names."""
+    """拆分逗号分隔的值并校验 strategy 名称。"""
     if not raw:
         return []
     names: list[str] = []
@@ -7420,7 +7381,7 @@ def _normalize_strategy_names(raw: list[str] | None) -> list[str]:
     if unknown:
         allowed = ", ".join(_BILIBILI_STRATEGY_NAMES)
         raise typer.BadParameter(f"未知的 Bilibili 策略：{', '.join(unknown)}。可选：{allowed}")
-    # Preserve first-seen order, drop duplicates.
+    # 保留首次出现的顺序,丢弃重复项。
     seen: set[str] = set()
     deduped: list[str] = []
     for name in names:
@@ -7431,7 +7392,7 @@ def _normalize_strategy_names(raw: list[str] | None) -> list[str]:
 
 
 def _run_xhs_discovery(*, force: bool) -> None:
-    """Trigger one Soul-driven xhs keyword production cycle."""
+    """触发一次 Soul 驱动的 xhs 关键词生产循环。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.llm.service import LLMService, module_overrides_from_config
     from openbiliclaw.runtime.xhs_producer import XhsTaskProducer
@@ -7564,7 +7525,7 @@ def _run_douyin_discovery(
     cache: bool = True,
     evaluate: bool = True,
 ) -> None:
-    """Run one direct-cookie Douyin discovery cycle."""
+    """运行一次基于 direct-cookie 的 Douyin discovery 循环。"""
     import openbiliclaw.config as config_module
     from openbiliclaw.discovery.douyin import (
         DouyinDiscoveryOptions,
@@ -7710,7 +7671,7 @@ def _build_discovery_candidate_pipeline(
     database: Any,
     discovery_engine: Any,
 ) -> Any:
-    """Build the shared raw-candidate evaluator for manual producer runs."""
+    """构建共享的 raw-candidate evaluator,用于手动 producer 运行。"""
     from openbiliclaw.discovery.candidate_pipeline import DiscoveryCandidatePipeline
 
     discovery_cfg = getattr(config, "discovery", None)
@@ -7728,7 +7689,7 @@ def _build_discovery_candidate_pipeline(
 
 
 def _run_zhihu_discovery(*, limit: int) -> None:
-    """Run one formal Zhihu discovery cycle through the runtime producer."""
+    """通过 runtime producer 运行一次正式的 Zhihu discovery 循环。"""
     from openbiliclaw.config import load_config
     from openbiliclaw.runtime.keyword_fetch import KeywordFetchCoordinator
     from openbiliclaw.runtime.zhihu_producer import build_zhihu_discovery_producer
@@ -8041,7 +8002,7 @@ def delight() -> None:
     database = _get_runtime_database()
     recommendation_engine = _build_recommendation_engine()
 
-    # Score un-scored items first
+    # 先给未打分的条目打分
     asyncio.run(
         recommendation_engine.precompute_delight_scores(
             profile=profile,
@@ -8080,7 +8041,7 @@ def delight() -> None:
         ],
     )
 
-    # Mark as notified so it won't be pushed again
+    # 标记为已通知,避免再次推送
     database.mark_delight_notified(bvid)
     console.print(f"  [dim]已标记 {bvid} 为已通知，不会重复推送。[/dim]")
 
@@ -8163,7 +8124,7 @@ def probe() -> None:
     else:
         ok = speculator.user_confirm_speculation(domain)
         if ok:
-            # Trigger promotion
+            # 触发 promotion
             memory = getattr(soul_engine, "_memory", None)
             load_runtime_state = getattr(memory, "load_discovery_runtime_state", None)
 

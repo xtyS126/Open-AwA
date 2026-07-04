@@ -1,4 +1,4 @@
-"""Build a compact popup activity feed from existing runtime signals."""
+"""基于已有运行时信号构建紧凑的弹窗活动流。"""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def _parse_timestamp(value: object) -> datetime:
 
 @dataclass(slots=True)
 class ActivityFeedBuilder:
-    """Aggregate recent user-visible runtime changes for popup display."""
+    """聚合最近对用户可见的运行时变更，供弹窗展示。"""
 
     database: SupportsRecommendations
 
@@ -76,9 +76,8 @@ class ActivityFeedBuilder:
 
         items.sort(key=lambda item: _parse_timestamp(item.get("created_at", "")), reverse=True)
 
-        # Cursor pagination by timestamp. ``before`` is an ISO datetime
-        # string emitted as ``next_cursor`` in the prior page; we keep
-        # only items strictly older than it.
+        # 按时间戳做游标分页。``before`` 是上一页 ``next_cursor`` 输出
+        # 的 ISO 时间字符串；这里只保留比它更早的条目。
         if before:
             cutoff = _parse_timestamp(before)
             items = [it for it in items if _parse_timestamp(it.get("created_at", "")) < cutoff]

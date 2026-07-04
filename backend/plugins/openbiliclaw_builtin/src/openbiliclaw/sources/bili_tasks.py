@@ -1,9 +1,9 @@
-"""Bilibili extension-search task queue.
+"""Bilibili 扩展搜索任务队列。
 
-This queue is intentionally separate from ``xhs_tasks`` / ``dy_tasks`` even
-though the state machine is the same. A Bilibili search task is a fallback for
-when the backend WBI search API is cooling down; the browser extension executes
-the real rendered search page and posts video metadata back here.
+本队列与 ``xhs_tasks`` / ``dy_tasks`` 有意分离，
+尽管状态机相同。Bilibili 搜索任务作为后端 WBI 搜索 API 冷却期
+的兜底方案：浏览器扩展执行真实的渲染搜索页面，
+并将视频元数据回传至此。
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ _RECENT_TASK_STATUSES = ("pending", "in_progress", "completed", "failed")
 
 
 def bili_search_video_key(video: dict[str, Any]) -> str:
-    """Return the stable identity key for one Bilibili search result."""
+    """返回单条 Bilibili 搜索结果的稳定标识键。"""
 
     for key in ("bvid", "content_id", "url", "content_url", "title"):
         value = str(video.get(key, "") or "").strip()
@@ -75,7 +75,7 @@ def _merge_bili_result_payload(
 
 
 class BiliTaskQueue:
-    """Manages the ``bili_tasks`` table."""
+    """管理 ``bili_tasks`` 表。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -105,7 +105,7 @@ class BiliTaskQueue:
         *,
         daily_budget: int = 100,
     ) -> bool:
-        """Enqueue a task if today's budget for this type allows it."""
+        """若当日该类型的预算允许，则入队一个任务。"""
 
         return self.enqueue_with_id(task_type, payload, daily_budget=daily_budget) is not None
 
@@ -116,7 +116,7 @@ class BiliTaskQueue:
         *,
         daily_budget: int = 100,
     ) -> str | None:
-        """Enqueue a task and return its id, or ``None`` when budget is exhausted."""
+        """入队一个任务并返回其 id，预算耗尽时返回 ``None``。"""
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         if daily_budget > 0:
@@ -145,7 +145,7 @@ class BiliTaskQueue:
         return task_id
 
     def next_pending(self) -> dict[str, Any] | None:
-        """Claim and return the oldest runnable task, or ``None``."""
+        """认领并返回最早的可运行任务，无则返回 ``None``。"""
 
         stale_before = (datetime.now(UTC) - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
         conn = self._db.open_connection()
@@ -187,7 +187,7 @@ class BiliTaskQueue:
         recent_hours: float,
         statuses: tuple[str, ...] | None = None,
     ) -> dict[str, Any] | None:
-        """Return a recent task of this type for idempotent enqueue paths."""
+        """返回该类型的近期任务，用于幂等入队路径。"""
 
         if recent_hours <= 0:
             return None
@@ -217,7 +217,7 @@ class BiliTaskQueue:
         return dict(row) if row is not None else None
 
     def get(self, task_id: str) -> dict[str, Any] | None:
-        """Return a task by id, or ``None``."""
+        """按 id 返回任务，无则返回 ``None``。"""
 
         row = self._db.conn.execute(
             "SELECT * FROM bili_tasks WHERE id = ?",
@@ -233,7 +233,7 @@ class BiliTaskQueue:
         debug: dict[str, Any] | None = None,
         complete: bool = False,
     ) -> list[dict[str, Any]]:
-        """Merge a partial/final result and optionally mark the task complete."""
+        """合并部分/最终结果，并可选地将任务标记为完成。"""
 
         row = self.get(task_id)
         current: dict[str, Any] = {}
@@ -268,7 +268,7 @@ class BiliTaskQueue:
         error: str = "",
         debug: dict[str, Any] | None = None,
     ) -> None:
-        """Mark a task as failed."""
+        """将任务标记为失败。"""
 
         result_payload: dict[str, Any] = {"error": error}
         if debug is not None:
@@ -282,7 +282,7 @@ class BiliTaskQueue:
 
 
 def source_keyword_id_from_bili_task(payload_json: str | None) -> int | None:
-    """Read ``source_keyword_id`` off a Bili task payload, or ``None``."""
+    """从 Bili 任务 payload 中读取 ``source_keyword_id``，无则返回 ``None``。"""
 
     if not payload_json:
         return None

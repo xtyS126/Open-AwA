@@ -1,30 +1,27 @@
-"""X (Twitter) source health state machine (spec §7).
+"""X (Twitter) 源健康状态机（spec §7）。
 
-Discovery for X is server-side cookie replay; a stale cookie, a block, or a
-rate-limit costs a real round-trip against the user's main account. To avoid
-re-hitting x.com after a known failure, the producer persists the source's
-last health state and a per-code backoff window here, then reads it back at
-the top of every cycle.
+X 的 discovery 是服务端 cookie 重放；一个失效的 cookie、一次封禁，或
+一次限流都会让用户主账号付出真实的往返代价。为避免在已知失败后重复
+访问 x.com，producer 在这里持久化源最近一次的健康状态以及按状态码
+区分的退避窗口，然后在每个周期开始时读回。
 
-States:
+状态：
 
-    ``ok``             — last call succeeded; fetch freely
-    ``missing_cookie`` — no usable ``auth_token`` / ``ct0`` yet
-    ``expired_cookie`` — HTTP 401: cookie expired, wait for re-login
-    ``blocked``        — HTTP 403: account/endpoint forbidden, wait for re-login
-    ``rate_limited``   — HTTP 429: back off until ``cooldown_until``
+    ``ok``             — 最近一次调用成功，可自由抓取
+    ``missing_cookie`` — 暂无可用 ``auth_token`` / ``ct0``
+    ``expired_cookie`` — HTTP 401：cookie 失效，等待重新登录
+    ``blocked``        — HTTP 403：账号/端点被禁，等待重新登录
+    ``rate_limited``   — HTTP 429：退避至 ``cooldown_until``
 
-401 / 403 require the user to log back in on x.com (the extension re-syncs the
-cookie), so the source stays "not ready" until a later success flips it back
-to ``ok``. 429 sets a timed cooldown and recovers on its own.
+401 / 403 要求用户在 x.com 重新登录（扩展会重新同步 cookie），因此源
+保持"未就绪"，直到后续某次成功把它翻回 ``ok``。429 设置一个定时冷却，
+到点自动恢复。
 
-For-You is the highest-visibility (and riskiest) fetch, so it auto-pauses
-after ``feed_pause_after`` consecutive For-You failures; any For-You success
-lifts the pause.
+For-You 是最高可见度（也是风险最高）的抓取，因此在连续失败
+``feed_pause_after`` 次后自动暂停；任何一次 For-You 成功都会解除暂停。
 
-State lives in a one-row ``x_source_health`` table so it survives restarts.
-This module mirrors the lightweight, self-contained storage style of
-``sources.x_tasks.XCreatorStore``.
+状态存放在单行 ``x_source_health`` 表中，可跨重启保留。本模块的风格
+与 ``sources.x_tasks.XCreatorStore`` 一致：轻量、自包含。
 """
 
 from __future__ import annotations
@@ -52,20 +49,19 @@ EXPIRED_COOKIE = "expired_cookie"
 BLOCKED = "blocked"
 RATE_LIMITED = "rate_limited"
 
-# States that require the user to re-login on x.com before discovery can
-# resume — there is no timed recovery, only a later success flips them back.
+# 需要用户在 x.com 重新登录后 discovery 才能继续的状态 —— 没有定时恢复
+# 机制，只有后续某次成功才能把它们翻回 ok。
 _RELOGIN_STATES = frozenset({MISSING_COOKIE, EXPIRED_COOKIE, BLOCKED})
 
-# The singleton key (single-user model — one X account).
+# 单例 key（单用户模型 —— 一个 X 账号）。
 _ROW_KEY = "x"
 
 
 def health_state_for_error(exc: BaseException) -> str:
-    """Map a typed :class:`XClientError` onto a discrete health state.
+    """把类型化的 :class:`XClientError` 映射到离散的健康状态。
 
-    Falls back to :data:`RATE_LIMITED` for an unknown ``XClientError`` (a
-    transient back-off is safer than treating it as healthy) and to
-    :data:`OK` for anything that is not an X error at all.
+    对未知的 ``XClientError`` 回退到 :data:`RATE_LIMITED`（短暂退避比
+    当作健康更安全），对完全不是 X 错误的异常回退到 :data:`OK`。
     """
     if isinstance(exc, XMissingCookieError):
         return MISSING_COOKIE
@@ -97,7 +93,7 @@ def _parse_iso(value: str) -> datetime | None:
 
 
 class XSourceHealthStore:
-    """Persisted X source health + per-code backoff."""
+    """持久化的 X 源健康状态 + 按状态码区分的退避。"""
 
     def __init__(
         self,
@@ -132,10 +128,10 @@ class XSourceHealthStore:
         )
         self._db.conn.commit()
 
-    # ── reads ────────────────────────────────────────────────────────
+    # ── 读 ─────────────────────────────────────────────────────────
 
     def get(self) -> dict[str, Any]:
-        """Return the current health row as a JSON-friendly dict."""
+        """以 JSON 友好的 dict 形式返回当前健康行。"""
         row = self._db.conn.execute(
             "SELECT * FROM x_source_health WHERE key = ?",
             (_ROW_KEY,),
@@ -160,11 +156,11 @@ class XSourceHealthStore:
         }
 
     def is_ready(self) -> bool:
-        """Return True when the source may fetch right now.
+        """源现在是否可以发起抓取时返回 True。
 
-        ``ok`` is always ready. ``rate_limited`` becomes ready once its
-        cooldown window has elapsed. Re-login states (``missing_cookie`` /
-        ``expired_cookie`` / ``blocked``) stay not-ready until a later success.
+        ``ok`` 总是就绪。``rate_limited`` 在冷却窗口过后变回就绪。
+        需要重新登录的状态（``missing_cookie`` / ``expired_cookie`` /
+        ``blocked``）保持未就绪，直到后续某次成功。
         """
         health = self.get()
         state = health["state"]
@@ -180,16 +176,16 @@ class XSourceHealthStore:
         return True
 
     def feed_allowed(self) -> bool:
-        """Return True when For-You is not auto-paused."""
+        """For-You 未被自动暂停时返回 True。"""
         return not self.get()["feed_paused"]
 
-    # ── writes ───────────────────────────────────────────────────────
+    # ── 写 ─────────────────────────────────────────────────────────
 
     def record_success(self, *, strategy: str = "") -> None:
-        """Reset to ``ok`` after a successful fetch.
+        """成功抓取后重置为 ``ok``。
 
-        Any success clears the global failure counter and cooldown. A
-        For-You success additionally lifts the For-You auto-pause.
+        任何一次成功都会清掉全局失败计数和冷却。For-You 成功还会额外
+        解除 For-You 自动暂停。
         """
         feed_clear = self._is_feed(strategy)
         self._db.conn.execute(
@@ -209,18 +205,17 @@ class XSourceHealthStore:
         self._db.conn.commit()
 
     def clear_relogin_block(self) -> bool:
-        """Clear a re-login block after a fresh valid cookie is synced.
+        """在新的有效 cookie 同步后清除重新登录阻塞。
 
-        Re-login states (``missing_cookie`` / ``expired_cookie`` / ``blocked``)
-        have no timed recovery: :meth:`is_ready` parks the producer, so it can
-        never earn the "later success" that would reset them. A new browser
-        cookie *is* that external re-login signal, so reset to ``ok`` here —
-        otherwise discovery stays dead-locked even after the user re-logs in.
+        需要重新登录的状态（``missing_cookie`` / ``expired_cookie`` /
+        ``blocked``）没有定时恢复机制：:meth:`is_ready` 会让 producer
+        停摆，因此永远赚不到能重置它们的"后续成功"。新的浏览器 cookie
+        *就是* 这个外部重新登录信号，所以这里重置为 ``ok`` —— 否则即使
+        用户重新登录后 discovery 也会一直死锁。
 
-        Leaves ``rate_limited`` untouched (its cooldown is time-based, not a
-        cookie problem). Also lifts any For-You auto-pause, since the failures
-        that tripped it were attributable to the same expired session. Returns
-        True when a block was actually cleared.
+        不动 ``rate_limited``（它的冷却是基于时间的，不是 cookie 问题）。
+        同时解除任何 For-You 自动暂停，因为触发暂停的失败都归因于同一
+        个失效会话。当确实清除了阻塞时返回 True。
         """
         if self.get()["state"] not in _RELOGIN_STATES:
             return False
@@ -242,7 +237,7 @@ class XSourceHealthStore:
         return True
 
     def record_error(self, exc: BaseException, *, strategy: str = "") -> str:
-        """Map an error to a health state, persist it, and return the state."""
+        """把错误映射到健康状态，持久化后返回该状态。"""
         state = health_state_for_error(exc)
         cooldown_until = ""
         if state == RATE_LIMITED:
@@ -251,7 +246,7 @@ class XSourceHealthStore:
             ).isoformat()
         is_feed = self._is_feed(strategy)
         current = self.get()
-        # feed_failures is an internal counter (not surfaced by get()).
+        # feed_failures 是内部计数器（不通过 get() 暴露）。
         raw = self._db.conn.execute(
             "SELECT feed_failures FROM x_source_health WHERE key = ?",
             (_ROW_KEY,),
@@ -287,7 +282,7 @@ class XSourceHealthStore:
         return state
 
     def set_cooldown_until(self, value: str) -> None:
-        """Override the cooldown timestamp (test seam / manual recovery)."""
+        """覆盖冷却时间戳（测试切面 / 手动恢复）。"""
         self._db.conn.execute(
             "UPDATE x_source_health SET cooldown_until = ?, updated_at = CURRENT_TIMESTAMP "
             "WHERE key = ?",

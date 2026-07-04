@@ -1,4 +1,4 @@
-"""Small helpers for stable, layered prompt rendering."""
+"""用于稳定、分层 prompt 渲染的小工具。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ _PROFILE_RECENT_KEYS = (
 
 
 def stable_json_digest(value: object) -> str:
-    """Return a deterministic short digest for prompt-visible values."""
+    """返回 prompt 可见值的确定性短摘要。"""
 
     try:
         text = json.dumps(
@@ -52,7 +52,7 @@ def stable_json_digest(value: object) -> str:
 def profile_prompt_layers(
     profile_summary: dict[str, object],
 ) -> list[tuple[str, dict[str, object]]]:
-    """Split a profile summary into prompt layers from stable to volatile."""
+    """将 profile 摘要按从稳定到易变的顺序切分为 prompt 层。"""
 
     consumed: set[str] = set()
 
@@ -86,18 +86,17 @@ class _LayerEntry:
 
 
 class PromptLayerRenderCache:
-    """Render JSON prompt blocks and reuse unchanged layers.
+    """渲染 JSON prompt 块并复用未变更的层。
 
-    The cache stores one latest rendered block per layer name. Callers still
-    compute the layer payload from the current source of truth; the digest
-    decides whether the rendered prompt text can be reused or must be updated.
+    缓存为每个层名存储最近一次渲染的块。调用方仍从当前真相源计算层
+    载荷；摘要决定已渲染的 prompt 文本可以复用还是必须更新。
     """
 
     def __init__(self) -> None:
         self._entries: dict[str, _LayerEntry] = {}
 
     def render_json_layer(self, name: str, payload: object) -> str:
-        """Return ``<name>`` JSON block text, reusing unchanged layer text."""
+        """返回 ``<name>`` JSON 块文本，复用未变更的层文本。"""
 
         digest = stable_json_digest(payload)
         entry = self._entries.get(name)
@@ -128,18 +127,18 @@ class PromptLayerRenderCache:
         return text
 
     def render_json_layers(self, layers: Sequence[tuple[str, object]]) -> list[str]:
-        """Render multiple JSON layers in the given order."""
+        """按给定顺序渲染多个 JSON 层。"""
 
         return [self.render_json_layer(name, payload) for name, payload in layers]
 
     def layer_digest(self, name: str) -> str:
-        """Return the current digest for one layer, or an empty string."""
+        """返回某层当前的摘要，若不存在则返回空字符串。"""
 
         entry = self._entries.get(name)
         return entry.digest if entry is not None else ""
 
     def stats(self) -> dict[str, dict[str, Any]]:
-        """Return lightweight cache stats for diagnostics and tests."""
+        """返回轻量级缓存统计，用于诊断和测试。"""
 
         return {
             name: {

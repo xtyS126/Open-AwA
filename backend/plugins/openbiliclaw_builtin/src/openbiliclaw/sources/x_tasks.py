@@ -1,11 +1,10 @@
-"""X (Twitter) account subscription storage.
+"""X (Twitter) 账号订阅存储。
 
-Account subscriptions track X handles the user wants discovery to follow.
-Unlike XHS there is NO extension round-trip: the X producer (server-side)
-fetches each subscription via ``XCreatorStrategy`` using harvested cookies.
-This module only owns the ``x_creator_subscriptions`` table + CRUD; it
-mirrors ``xhs_tasks.XhsCreatorStore`` (table shape, idempotent insert,
-``last_fetched_at`` scheduling helpers).
+账号订阅跟踪用户希望发现流程关注的 X handle。与 XHS 不同，这里没有
+扩展往返：X 生产者（服务端）使用采集到的 Cookie 通过
+``XCreatorStrategy`` 拉取每个订阅。本模块只负责 ``x_creator_subscriptions``
+表 + CRUD；它镜像 ``xhs_tasks.XhsCreatorStore``（表结构、幂等插入、
+``last_fetched_at`` 调度辅助方法）。
 """
 
 from __future__ import annotations
@@ -20,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_handle(handle: str) -> str:
-    """Normalize an X handle: strip whitespace and a single leading ``@``."""
+    """规范化 X handle：去除空白字符和单个前导 ``@``。"""
     return handle.strip().lstrip("@").strip()
 
 
 class XCreatorStore:
-    """Manages the ``x_creator_subscriptions`` table."""
+    """管理 ``x_creator_subscriptions`` 表。"""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -42,7 +41,7 @@ class XCreatorStore:
         """)
 
     def add(self, handle: str) -> None:
-        """Add a subscription (idempotent on the normalized handle)."""
+        """添加订阅（对规范化的 handle 幂等）。"""
         normalized = normalize_handle(handle)
         self._db.conn.execute(
             "INSERT OR IGNORE INTO x_creator_subscriptions (handle) VALUES (?)",
@@ -51,14 +50,14 @@ class XCreatorStore:
         self._db.conn.commit()
 
     def list_all(self) -> list[dict[str, Any]]:
-        """Return all subscriptions, oldest first."""
+        """返回所有订阅，按添加时间最早优先。"""
         rows = self._db.conn.execute(
             "SELECT * FROM x_creator_subscriptions ORDER BY added_at"
         ).fetchall()
         return [dict(r) for r in rows]
 
     def delete(self, sub_id: int) -> bool:
-        """Delete a subscription by primary key. Returns True if a row was removed."""
+        """按主键删除订阅。如果删除了行则返回 True。"""
         cursor = self._db.conn.execute(
             "DELETE FROM x_creator_subscriptions WHERE id = ?",
             (sub_id,),
@@ -67,7 +66,7 @@ class XCreatorStore:
         return cursor.rowcount > 0
 
     def due_for_fetch(self, *, hours: int = 24) -> list[dict[str, Any]]:
-        """Return subscriptions whose ``last_fetched_at`` is older than ``hours`` ago."""
+        """返回 ``last_fetched_at`` 早于 ``hours`` 小时前的订阅。"""
         rows = self._db.conn.execute(
             "SELECT * FROM x_creator_subscriptions "
             "WHERE last_fetched_at IS NULL "
@@ -77,7 +76,7 @@ class XCreatorStore:
         return [dict(r) for r in rows]
 
     def mark_fetched(self, sub_id: int) -> None:
-        """Update ``last_fetched_at`` to now."""
+        """将 ``last_fetched_at`` 更新为当前时间。"""
         self._db.conn.execute(
             "UPDATE x_creator_subscriptions SET last_fetched_at = CURRENT_TIMESTAMP WHERE id = ?",
             (sub_id,),

@@ -1,4 +1,4 @@
-"""Closed category vocabulary for the first level of the interest tree."""
+"""兴趣树第一层的封闭类别词表。"""
 
 from __future__ import annotations
 
@@ -27,9 +27,8 @@ CATEGORY_VOCAB: tuple[str, ...] = (
 )
 FALLBACK_CATEGORY = "其他"
 
-# Category resolution is semantic routing, not duplicate detection. Keep the
-# threshold below the consolidator's near-duplicate threshold, but fall back
-# instead of force-fitting unrelated labels.
+# 类别解析是语义路由，不是去重。阈值要低于 consolidator 的近似重复
+# 阈值，但遇到不相关的 label 时应回退，而不是强行套用。
 _NN_SIMILARITY_THRESHOLD = 0.55
 
 
@@ -41,7 +40,7 @@ _vocab_vectors: dict[str, list[float]] = {}
 
 
 async def resolve_category(raw: str, embed: SupportsEmbed | None = None) -> str:
-    """Resolve an arbitrary category string into ``CATEGORY_VOCAB``."""
+    """把任意类别字符串解析到 ``CATEGORY_VOCAB`` 中的某一项。"""
     name = str(raw or "").strip()
     if name in CATEGORY_VOCAB:
         return name

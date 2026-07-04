@@ -1,19 +1,18 @@
-"""Standard-library-only primitives for the LAN password gate.
+"""局域网密码门禁的标准库原语。
 
-This module is deliberately dependency-free (only Python stdlib) so it can be
-imported by both ``config.py`` (which must stay low-level to avoid an import
-cycle with ``openbiliclaw.api``) and the FastAPI glue in ``api/auth.py``.
+本模块刻意保持零依赖（仅使用 Python 标准库），以便同时被 ``config.py``（必须保持
+低层级以避免与 ``openbiliclaw.api`` 产生导入循环）和 ``api/auth.py`` 中的 FastAPI
+胶水代码导入。
 
-It implements, per ``docs/plans/2026-05-30-web-password-auth-design.md``:
+依据 ``docs/plans/2026-05-30-web-password-auth-design.md`` 实现：
 
-* scrypt password hashing / constant-time verification (§4.5)
-* HMAC-signed stateless session tokens carrying ``iat`` / ``ep`` / optional
-  ``exp`` (§4.4)
-* a stable password fingerprint derived from credential material, **never** the
-  salted hash (§4.7, v7 fix)
-* reverse-proxy-aware real-client-IP resolution (§4.1/§6) and a single
-  ``effective_origin`` / ``same_origin`` contract reused by CSRF, WebSocket,
-  bearer-mode and ``Secure`` cookie decisions (§4.9)
+* scrypt 密码哈希 / 恒定时间校验（§4.5）
+* HMAC 签名的无状态会话令牌，携带 ``iat`` / ``ep`` / 可选的
+  ``exp``（§4.4）
+* 基于凭据材料派生的稳定密码指纹，**绝不**使用加盐哈希（§4.7，v7 修复）
+* 感知反向代理的真实客户端 IP 解析（§4.1/§6），以及一个统一的
+  ``effective_origin`` / ``same_origin`` 契约，被 CSRF、WebSocket、
+  bearer 模式和 ``Secure`` cookie 决策复用（§4.9）
 """
 
 from __future__ import annotations
@@ -41,7 +40,7 @@ _SCRYPT_MAXMEM = 64 * 1024 * 1024
 _TOKEN_VERSION = 1
 
 
-# ── base64url helpers ───────────────────────────────────────────────────────
+# ── base64url 辅助函数 ───────────────────────────────────────────────────────
 
 
 def _b64u_encode(raw: bytes) -> str:
@@ -53,15 +52,15 @@ def _b64u_decode(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + pad)
 
 
-# ── password hashing (scrypt) ───────────────────────────────────────────────
+# ── 密码哈希（scrypt） ───────────────────────────────────────────────────────
 
 
 def hash_password(plain: str) -> str:
-    """Hash a password with scrypt + random salt.
+    """使用 scrypt + 随机盐对密码进行哈希。
 
-    Returns ``scrypt$<n>$<r>$<p>$<b64salt>$<b64dk>``. The salt is random, so the
-    same plaintext yields a different string each call — callers MUST NOT derive
-    a stability fingerprint from this value (see :func:`password_fingerprint`).
+    返回 ``scrypt$<n>$<r>$<p>$<b64salt>$<b64dk>``。盐是随机的，因此
+    同样的明文每次调用都会产生不同的字符串——调用方绝不能从该值派生
+    稳定性指纹（参见 :func:`password_fingerprint`）。
     """
     import os
 
@@ -79,7 +78,7 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, stored: str) -> bool:
-    """Constant-time verify ``plain`` against a stored scrypt string."""
+    """以恒定时间校验 ``plain`` 是否匹配已存储的 scrypt 字符串。"""
     try:
         scheme, n_s, r_s, p_s, salt_s, dk_s = stored.split("$")
     except ValueError:
@@ -107,16 +106,15 @@ def verify_password(plain: str, stored: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
-# ── password fingerprint (stable across restarts; §4.7 v7) ──────────────────
+# ── 密码指纹（跨重启稳定；§4.7 v7） ──────────────────────────────────────────
 
 
 def password_fingerprint(session_secret: str, *, plain: str | None, password_hash: str) -> str:
-    """Stable fingerprint of the *credential*, used to detect password changes.
+    """*凭据*的稳定指纹，用于检测密码变更。
 
-    Crucially this is computed from the plaintext (when available) or the
-    user-supplied hash string — **not** from a freshly salted scrypt hash —
-    so an unchanged password produces the same fingerprint on every restart and
-    never falsely revokes sessions (review r6 fix).
+    关键点：该指纹由明文（若可用）或用户提供的哈希字符串计算而来——
+    **而非**新加盐的 scrypt 哈希——因此未变更的密码在每次重启时
+    产生相同指纹，绝不会错误地吊销会话（评审 r6 修复）。
     """
     material = "pw:" + plain if plain else "ph:" + password_hash
     digest = hmac.new(
@@ -125,7 +123,7 @@ def password_fingerprint(session_secret: str, *, plain: str | None, password_has
     return _b64u_encode(digest)
 
 
-# ── stateless signed session tokens (§4.4) ──────────────────────────────────
+# ── 无状态签名会话令牌（§4.4） ──────────────────────────────────────────────
 
 
 def _sign(secret: str, payload_b64: str) -> str:
@@ -140,7 +138,7 @@ def sign_token(
     ttl_hours: int = 0,
     now: int | None = None,
 ) -> str:
-    """Mint a signed token. ``ttl_hours <= 0`` → no ``exp`` (never expires)."""
+    """生成签名令牌。``ttl_hours <= 0`` → 无 ``exp``（永不过期）。"""
     issued = int(time.time()) if now is None else now
     payload: dict[str, int] = {"v": _TOKEN_VERSION, "iat": issued, "ep": epoch}
     if ttl_hours > 0:
@@ -152,7 +150,7 @@ def sign_token(
 
 
 def token_expires_at(token: str) -> int | None:
-    """Return the ``exp`` of a (already trusted) token, or ``None``."""
+    """返回（已信任）令牌的 ``exp``，若不存在则返回 ``None``。"""
     try:
         payload_b64 = token.split(".", 1)[0]
         payload = json.loads(_b64u_decode(payload_b64))
@@ -169,7 +167,7 @@ def verify_token(
     current_epoch: int,
     now: int | None = None,
 ) -> bool:
-    """Verify signature, expiry and revocation epoch in constant time on the MAC."""
+    """在 MAC 上以恒定时间校验签名、过期时间和吊销纪元。"""
     if not token or not secret:
         return False
     try:
@@ -192,18 +190,18 @@ def verify_token(
     return not (not isinstance(ep, int) or ep < current_epoch)
 
 
-# ── IP / proxy handling (§4.1, §6) ──────────────────────────────────────────
+# ── IP / 代理处理（§4.1, §6） ──────────────────────────────────────────────
 
 _LOOPBACK = frozenset({"127.0.0.1", "::1"})
 _FORWARD_HEADERS = ("x-forwarded-for", "x-real-ip", "forwarded")
 
 
 def is_loopback_host(host: str | None) -> bool:
-    """Whether a Host/host value is a canonical loopback name.
+    """判断 Host/host 值是否为规范的回环名。
 
-    Used to gate the loopback bypass against DNS rebinding: an attacker page on
-    ``http://evil.example:8420`` rebound to 127.0.0.1 would otherwise look
-    "same-origin" to the local backend. Only ``localhost`` / loopback IPs qualify.
+    用于针对 DNS 重绑定攻击保护回环旁路：攻击者页面
+    ``http://evil.example:8420`` 重绑定到 127.0.0.1，否则对本地后端
+    看起来会"同源"。仅 ``localhost`` / 回环 IP 符合条件。
     """
     if not host:
         return False
@@ -219,13 +217,13 @@ def is_loopback_host(host: str | None) -> bool:
 
 
 def norm_ip(value: str | None) -> str | None:
-    """Normalize an IP literal (strip brackets/port/zone); ``None`` if invalid."""
+    """规范化 IP 字面量（去除方括号/端口/区域标识）；非法则返回 ``None``。"""
     if value is None:
         return None
     text = value.strip()
     if not text:
         return None
-    # [::1]:port  or  [::1]
+    # [::1]:port  或  [::1]
     if text.startswith("["):
         end = text.find("]")
         if end == -1:
@@ -234,7 +232,7 @@ def norm_ip(value: str | None) -> str | None:
     elif text.count(":") == 1:
         # ipv4:port
         text = text.split(":", 1)[0]
-    if "%" in text:  # IPv6 zone id
+    if "%" in text:  # IPv6 区域标识
         text = text.split("%", 1)[0]
     try:
         return str(ipaddress.ip_address(text))
@@ -258,29 +256,29 @@ def resolve_client_ip(
     has_forward_header: bool,
     trusted_proxies: Iterable[str],
 ) -> tuple[str | None, bool]:
-    """Resolve the real client IP, fail-closed.
+    """解析真实客户端 IP，失败时安全收敛。
 
-    Returns ``(client_ip, trustworthy_local)``. ``trustworthy_local`` is only
-    ``True`` when the request genuinely originates from the local host (directly,
-    or via a configured trusted proxy that reports a loopback client).
+    返回 ``(client_ip, trustworthy_local)``。仅当请求确实源自本地主机
+    （直接或通过已配置的、报告回环客户端的可信代理）时，
+    ``trustworthy_local`` 才为 ``True``。
     """
     peer_n = norm_ip(peer)
     if not has_forward_header:
         return peer_n, True
     trusted = _trusted_set(trusted_proxies)
     if peer_n is None or peer_n not in trusted:
-        # forwarded header from a non-trusted peer → treat as remote
+        # 来自非可信 peer 的 forwarded 头 → 视为远程
         return peer_n, False
     chain: list[str] = []
     for value in xff_values:
         for part in value.split(","):
             normalized = norm_ip(part)
             if normalized is None:
-                return peer_n, False  # malformed → fail closed, do not raise
+                return peer_n, False  # 格式错误 → 安全收敛，不抛异常
             chain.append(normalized)
     if not chain:
         return peer_n, False
-    # right-to-left: skip trusted hops, first untrusted is the real client
+    # 从右至左：跳过可信跳，第一个不可信的就是真实客户端
     real: str | None = None
     for ip in reversed(chain):
         if ip in trusted:
@@ -296,7 +294,7 @@ def is_trusted_local(client_ip: str | None, trustworthy_local: bool) -> bool:
     return trustworthy_local and client_ip is not None and client_ip in _LOOPBACK
 
 
-# ── origin / scheme normalization (§4.9) ────────────────────────────────────
+# ── origin / scheme 规范化（§4.9） ────────────────────────────────────────────
 
 _DEFAULT_PORT = {"http": 80, "https": 443, "ws": 80, "wss": 443}
 
@@ -330,7 +328,7 @@ def _split_host_port(host: str | None, scheme: str) -> tuple[str, int] | None:
 
 
 def _http_scheme(scheme: str) -> str:
-    # collapse ws/wss to http/https for same-origin comparison
+    # 将 ws/wss 收敛为 http/https 以便同源比较
     s = scheme.lower()
     if s in ("ws", "http"):
         return "http"
@@ -348,12 +346,11 @@ def effective_scheme_host(
     peer: str,
     trusted_proxies: Iterable[str],
 ) -> tuple[str, str, int] | None:
-    """Compute the externally-effective ``(scheme, host, port)``.
+    """计算外部生效的 ``(scheme, host, port)``。
 
-    Forwarded scheme/host are honoured **only** when the direct peer is a
-    configured trusted proxy (consistent with §4.1), so a spoofed
-    ``X-Forwarded-Proto`` from an untrusted client cannot influence ``Secure``
-    or same-origin decisions.
+    仅当直连 peer 是已配置的可信代理时（与 §4.1 一致），才采纳 forwarded 的
+    scheme/host，因此来自不可信客户端的伪造 ``X-Forwarded-Proto`` 无法
+    影响 ``Secure`` 或同源决策。
     """
     peer_n = norm_ip(peer)
     trusted = _trusted_set(trusted_proxies)
@@ -369,7 +366,7 @@ def effective_scheme_host(
 
 
 def parse_origin(origin: str | None) -> tuple[str, str, int] | None:
-    """Parse an ``Origin`` header into ``(scheme, host, port)``; ``None`` if absent/opaque."""
+    """将 ``Origin`` 头解析为 ``(scheme, host, port)``；不存在/opaque 则返回 ``None``。"""
     if not origin:
         return None
     text = origin.strip()
@@ -385,14 +382,14 @@ def parse_origin(origin: str | None) -> tuple[str, str, int] | None:
 def same_origin(
     origin: tuple[str, str, int] | None, effective: tuple[str, str, int] | None
 ) -> bool:
-    """True only when a concrete Origin matches the effective scheme+host+port."""
+    """仅当具体的 Origin 与生效的 scheme+host+port 完全匹配时返回 True。"""
     if origin is None or effective is None:
         return False
     return origin == effective
 
 
 def origin_string(parts: tuple[str, str, int] | None) -> str | None:
-    """Render ``(scheme, host, port)`` as ``scheme://host[:port]`` (default port elided)."""
+    """将 ``(scheme, host, port)`` 渲染为 ``scheme://host[:port]``（默认端口省略）。"""
     if parts is None:
         return None
     scheme, host, port = parts
@@ -403,7 +400,7 @@ def origin_string(parts: tuple[str, str, int] | None) -> str | None:
 
 
 def origin_allowed_for_bearer(origin: str | None, allowed: Iterable[str]) -> bool:
-    """Whether a request Origin is in the bearer allow-list (normalized compare)."""
+    """判断请求 Origin 是否在 bearer 允许列表中（规范化后比较）。"""
     parsed = parse_origin(origin)
     if parsed is None:
         return False

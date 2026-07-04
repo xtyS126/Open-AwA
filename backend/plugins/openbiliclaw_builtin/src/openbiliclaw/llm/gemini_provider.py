@@ -1,4 +1,4 @@
-"""Gemini Developer API provider built on the official google-genai SDK."""
+"""基于官方 google-genai SDK 构建的 Gemini Developer API provider。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ try:
     from google import genai as _genai
     from google.genai import errors as _errors
     from google.genai import types as _types
-except ModuleNotFoundError:  # pragma: no cover - exercised via integration behavior
+except ModuleNotFoundError:  # pragma: no cover - 通过集成行为覆盖
     genai = None
     errors = None
     types = None
@@ -33,7 +33,7 @@ else:
 
 
 def gemini_sdk_available() -> bool:
-    """Return whether the optional google-genai dependency is installed."""
+    """返回可选依赖 google-genai 是否已安装。"""
     return genai is not None and types is not None
 
 
@@ -44,7 +44,7 @@ def _raise_missing_sdk() -> NoReturn:
 
 
 class GeminiProvider(LLMProvider):
-    """Gemini provider using the official Gemini Developer API client."""
+    """使用官方 Gemini Developer API 客户端的 Gemini provider。"""
 
     supports_embedding = True
 
@@ -79,27 +79,25 @@ class GeminiProvider(LLMProvider):
 
     @staticmethod
     def _is_reasoning_first_model(model: str) -> bool:
-        """Whether the model belongs to the reasoning-first family that
-        REJECTS ``thinking_budget=0``.
+        """判断模型是否属于会拒绝 ``thinking_budget=0`` 的推理优先家族。
 
-        Background: the ``thinking_budget=0`` hack is a 2.5-flash cost
-        optimisation — it tells Gemini "don't spend tokens thinking".
-        Gemini 3.x Pro / 3.x Flash and 2.5-pro are reasoning-first
-        models; Google rejects ``thinking_budget=0`` on them with
-        ``400 INVALID_ARGUMENT`` ("Thinking budget X is invalid for
-        model Y"). Symptom: the first call may sneak through, but
-        json_mode call sites (discovery / soul structured tasks) all
-        400 immediately.
+        背景：``thinking_budget=0`` 这个 hack 是 2.5-flash 的成本优化 ——
+        它告诉 Gemini "不要花 token 思考"。Gemini 3.x Pro / 3.x Flash
+        和 2.5-pro 是推理优先模型；Google 会对它们拒绝
+        ``thinking_budget=0``，返回 ``400 INVALID_ARGUMENT``
+        （"Thinking budget X is invalid for model Y"）。症状：第一次
+        调用可能侥幸通过，但 json_mode 调用点（discovery / soul 结构化
+        任务）会立即全部 400。
 
-        The check is intentionally name-based (no SDK call): preview /
-        GA / dated revisions all share the same family prefix.
+        此检查刻意基于名称（不调用 SDK）：preview / GA / 带日期修订版
+        共享相同家族前缀。
         """
         m = model.lower()
         # Gemini 3.x: 3-pro / 3-flash / 3.1-pro / 3.1-flash-lite-preview / ...
         if m.startswith("gemini-3"):
             return True
-        # 2.5-pro is reasoning-first too; 2.5-flash is the only 2.5
-        # variant that legitimately accepts thinking_budget=0.
+        # 2.5-pro 也是推理优先；2.5-flash 是唯一合法接受
+        # thinking_budget=0 的 2.5 变体。
         return m.startswith("gemini-2.5-pro")
 
     @property
@@ -116,16 +114,16 @@ class GeminiProvider(LLMProvider):
         reasoning_effort: str | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        # ``reasoning_effort`` is DeepSeek-specific. Gemini has its own
-        # ``thinking_config`` that's already auto-disabled in JSON mode.
-        # Accept the kwarg for signature compatibility but no-op here.
+        # ``reasoning_effort`` 是 DeepSeek 专有。Gemini 有自己的
+        # ``thinking_config``，且在 JSON 模式下已自动禁用。为保持
+        # 签名兼容性接受此参数，但此处不做任何处理。
         del reasoning_effort
         if types is None:
             _raise_missing_sdk()
         effective_model = (model or "").strip() or self._model
-        # ``thinking_budget=0`` is a 2.5-flash cost saver. Reasoning-first
-        # models (3.x family, 2.5-pro) reject it with 400 INVALID_ARGUMENT
-        # — see _is_reasoning_first_model. Skip the hack on those.
+        # ``thinking_budget=0`` 是 2.5-flash 的成本节省。推理优先模型
+        # （3.x 家族、2.5-pro）会以 400 INVALID_ARGUMENT 拒绝它 ——
+        # 见 _is_reasoning_first_model。在这些模型上跳过此 hack。
         thinking_config = None
         if json_mode and not self._is_reasoning_first_model(effective_model):
             thinking_config = types.ThinkingConfig(thinking_budget=0)
@@ -153,9 +151,9 @@ class GeminiProvider(LLMProvider):
                 "completion_tokens": response.usage_metadata.candidates_token_count or 0,
                 "total_tokens": response.usage_metadata.total_token_count or 0,
             }
-            # Gemini exposes cached_content_token_count when a previously
-            # uploaded explicit cache (Context Caching API) was used.
-            # Normalize under the universal ``cached_input_tokens`` key.
+            # 当使用先前上传的显式缓存（Context Caching API）时，
+            # Gemini 会暴露 cached_content_token_count。在通用的
+            # ``cached_input_tokens`` 键下做归一化。
             cached = int(getattr(response.usage_metadata, "cached_content_token_count", 0) or 0)
             if cached:
                 usage["cached_input_tokens"] = cached
@@ -207,14 +205,14 @@ class GeminiProvider(LLMProvider):
         return isinstance(exc, (LLMProviderError, LLMTimeoutError))
 
     async def embed(self, text: str, *, model: str = "gemini-embedding-001") -> list[float]:
-        """Get text embedding using Gemini's embedding model.
+        """使用 Gemini 的嵌入模型获取文本嵌入。
 
         Args:
-            text: Text to embed.
-            model: Embedding model name (default: text-embedding-004).
+            text: 待嵌入的文本。
+            model: 嵌入模型名称（默认：text-embedding-004）。
 
         Returns:
-            Embedding vector (768-dim for text-embedding-004).
+            嵌入向量（text-embedding-004 为 768 维）。
         """
         if types is None:
             _raise_missing_sdk()

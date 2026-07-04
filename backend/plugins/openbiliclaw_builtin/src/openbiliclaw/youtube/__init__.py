@@ -1,1 +1,1 @@
-"""YouTube integration — Google Takeout cold-start import."""
+"""YouTube 集成 —— Google Takeout 冷启动导入。"""

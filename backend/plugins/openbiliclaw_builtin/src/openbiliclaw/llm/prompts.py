@@ -1,4 +1,4 @@
-"""Prompt builders for LLM-backed tasks."""
+"""LLM 任务的 prompt 构造器。"""
 
 from __future__ import annotations
 
@@ -19,17 +19,17 @@ _PLATFORM_DISPLAY_NAMES: dict[str, str] = {
 
 
 def _platform_content_label(source_platform: str) -> str:
-    """Return platform-specific content label for prompts."""
+    """返回用于 prompt 的平台特定内容标签。"""
     return "B 站内容" if source_platform == "bilibili" else "内容"
 
 
 def _platform_friend_label(source_platform: str) -> str:
-    """Return platform-specific friend label for prompts."""
+    """返回用于 prompt 的平台特定朋友称谓。"""
     return "老B友" if source_platform == "bilibili" else "朋友"
 
 
 def _platform_display_name(source_platform: str) -> str:
-    """Return a human-readable platform name ("B 站" / "小红书")."""
+    """返回可读的平台名称（"B 站" / "小红书"）。"""
     return _PLATFORM_DISPLAY_NAMES.get(source_platform, "内容")
 
 
@@ -37,7 +37,7 @@ def _profile_prompt_blocks(
     profile_summary: dict[str, object],
     profile_blocks: list[str] | None = None,
 ) -> list[str]:
-    """Return profile prompt blocks, preferring caller-rendered layers."""
+    """返回 profile prompt 块，优先使用调用方渲染的层。"""
 
     if profile_blocks:
         return list(profile_blocks)
@@ -49,11 +49,10 @@ def _profile_prompt_blocks(
 
 
 def _friend_label_from_mix(source_platform_mix: dict[str, float] | None) -> str:
-    """Pick a friend label that fits the user's observed source mix.
+    """根据用户观察到的来源混合挑选合适的朋友称谓。
 
-    None / empty → bilibili default (back-compat). Single-source uses that
-    platform's label. Multi-source collapses to a platform-neutral "熟人"
-    so the prompt doesn't lean on one platform's in-group slang.
+    None / 空 → bilibili 默认值（back-compat）。单源使用该平台的标签。
+    多源则退化为平台中性的"熟人"，避免 prompt 偏向某一站的圈内黑话。
     """
     if not source_platform_mix:
         return "老B友"
@@ -63,7 +62,7 @@ def _friend_label_from_mix(source_platform_mix: dict[str, float] | None) -> str:
 
 
 def _tone_context_line(source_platform_mix: dict[str, float] | None) -> str:
-    """First line of the tone block — describes which platforms to sound native on."""
+    """语气块的第一行 —— 描述应在哪些平台听起来地道。"""
     if not source_platform_mix:
         return "请保持“老B友”基调：懂 B 站语境，像熟人聊天，不像客服。"
     if len(source_platform_mix) == 1:
@@ -86,7 +85,7 @@ def _render_tone_profile(
     tone_profile: ToneProfile | None,
     source_platform_mix: dict[str, float] | None = None,
 ) -> str:
-    """Render tone profile guidance for prompt builders."""
+    """为 prompt 构造器渲染语气画像指引。"""
     tone = tone_profile or {
         "density": "balanced",
         "warmth": "warm",
@@ -149,16 +148,14 @@ def build_socratic_dialogue_prompt(
     history: list[dict[str, str]],
     source_platform_mix: dict[str, float] | None = None,
 ) -> list[dict[str, str]]:
-    """Build chat messages for Socratic dialogue generation.
+    """为苏格拉底式对话生成构造 chat messages。
 
-    Note (v0.3.28+ cache analysis): unlike content-evaluation builders,
-    this one's system prompt does include per-user state (friend label,
-    tone, core memory). That looks like cache poisoning at first glance,
-    but OpenBiliClaw is single-user — per-user state is stable across
-    calls for the same install, so the cache still fires on repeated
-    dialogue turns. Multi-user deployments would want to refactor this
-    further, but for the current single-user model leaving the system
-    prompt user-specific is the simpler and equally-effective approach.
+    注（v0.3.28+ 缓存分析）：与内容评估构造器不同，这里的 system prompt
+    确实包含按用户而异的状态（朋友称谓、语气、core memory）。乍看像是
+    cache 中毒，但 OpenBiliClaw 是单用户应用 —— 同一安装下按用户的状态
+    在多次调用间是稳定的，因此缓存仍会在重复对话轮次中命中。多用户部署
+    需要进一步重构此处的 system prompt，但对当前单用户模型来说，让
+    system prompt 按用户定制是更简单且同样有效的做法。
     """
     friend_label = _friend_label_from_mix(source_platform_mix)
     system_prompt = "\n\n".join(
@@ -180,7 +177,7 @@ def build_socratic_dialogue_prompt(
 
 
 def render_preference_summary(preference_summary: dict[str, object]) -> str:
-    """Render preference summary into stable text."""
+    """将偏好摘要渲染为稳定文本。"""
     if not preference_summary:
         return "（暂无偏好摘要）"
     return json.dumps(preference_summary, ensure_ascii=False, indent=2)
@@ -267,7 +264,7 @@ def build_preference_analysis_prompt(
     events: list[dict[str, object]],
     existing_preference: dict[str, object],
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for extracting user preferences from events."""
+    """构造从事件中提取用户偏好的结构化 prompt。"""
     system_prompt = _PREFERENCE_ANALYSIS_SYSTEM_PROMPT
     user_prompt = "\n\n".join(
         [
@@ -294,7 +291,7 @@ def build_soul_profile_prompt(
     tone_profile: ToneProfile | None,
     source_platform_mix: dict[str, float] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a cache-friendly prompt for initial soul-profile generation."""
+    """为初始 soul-profile 生成构造缓存友好的 prompt。"""
     system_prompt = """
 <task>
 你要生成一份人格画像。你是用户的老朋友,正坐在 ta 对面,直接跟 ta 说"你是这样一个人"。
@@ -473,7 +470,7 @@ def build_role_delta_prompt(
     current_phase: str,
     evidence: list[str],
 ) -> list[dict[str, str]]:
-    """Build a delta prompt for updating the role layer."""
+    """为更新 role 层构造 delta prompt。"""
     system_prompt = """
 <task>
 你要判断用户最近的行为证据是否表明其生活阶段或当前状态发生了变化。
@@ -526,7 +523,7 @@ def build_values_delta_prompt(
     current_drivers: list[str],
     evidence: list[str],
 ) -> list[dict[str, str]]:
-    """Build a delta prompt for updating the values layer."""
+    """为更新 values 层构造 delta prompt。"""
     system_prompt = """
 <task>
 你要判断用户最近的行为证据是否表明其价值观或动机驱动发生了变化。
@@ -580,7 +577,7 @@ def build_core_delta_prompt(
     current_mbti: dict[str, object],
     evidence: list[str],
 ) -> list[dict[str, str]]:
-    """Build a delta prompt for updating the core layer."""
+    """为更新 core 层构造 delta prompt。"""
     system_prompt = """
 <task>
 你要判断用户最近的行为证据是否表明其核心人格特质、深层需求或 MBTI 需要微调。
@@ -666,7 +663,7 @@ def build_awareness_prompt(
     preference_summary: dict[str, object],
     soul_profile: dict[str, object],
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for recent awareness-note generation."""
+    """为近期觉察笔记生成构造结构化 prompt。"""
     user_prompt = "\n\n".join(
         [
             "<soul_profile>",
@@ -693,13 +690,11 @@ def build_insight_prompt(
     soul_profile: dict[str, object],
     existing_hypotheses: list[dict[str, object]] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for insight-hypothesis generation.
+    """为洞察假设生成构造结构化 prompt。
 
-    ``existing_hypotheses`` (optional) is the set of currently-active
-    hypotheses passed as read-only context so an incremental run — which
-    only sees *new* awareness notes — can refine or avoid restating them
-    instead of regenerating from the full awareness history every time.
-    See rules 5 / 6 below.
+    ``existing_hypotheses``（可选）是当前活跃的假设集合，作为只读上下文
+    传入，让增量运行（只看*新*觉察笔记）能够精炼或避免重述它们，而不是
+    每次都从完整觉察历史重新生成。见下面规则 5 / 6。
     """
     system_prompt = """
 <task>
@@ -752,7 +747,7 @@ def build_search_queries_prompt(
     profile_summary: dict[str, object],
     pool_hints: dict[str, object] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for search query generation."""
+    """为搜索 query 生成构造结构化 prompt。"""
     system_prompt = """
 <task>
 你要为 B 站内容发现生成一组可搜索的关键词组合。
@@ -870,7 +865,7 @@ def build_dialogue_insight_prompt(
     assistant_reply: str,
     core_memory: dict[str, object],
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for extracting candidate insights from dialogue."""
+    """为从对话中提取候选洞察构造结构化 prompt。"""
     system_prompt = """
 <task>
 你要从一轮用户对话中提取少量高价值的候选理解，用于后续长期画像更新。
@@ -924,7 +919,7 @@ def build_trending_rids_prompt(
     *,
     profile_summary: dict[str, object],
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for selecting relevant Bilibili ranking rids."""
+    """为挑选相关 B 站排行榜 rid 构造结构化 prompt。"""
     system_prompt = """
 <task>
 你要从用户画像中推断最值得关注的 B 站排行榜分区 rid。
@@ -959,9 +954,9 @@ def build_trending_rids_prompt(
     ]
 
 
-# 100% static system prompt for single-item content evaluation.
-# All variables (source_context, source_platform, profile, content)
-# go in user_prompt — see ``build_content_evaluation_prompt``.
+# 单条内容评估的 100% 静态 system prompt。
+# 所有变量（source_context、source_platform、profile、content）都放在
+# user_prompt —— 见 ``build_content_evaluation_prompt``。
 _SINGLE_CONTENT_EVALUATION_SYSTEM_PROMPT = (
     "<task>\n"
     "你要评估一个候选内容与一个用户画像的匹配度。下面 user 消息会给出 "
@@ -1018,17 +1013,17 @@ def build_content_evaluation_prompt(
     source_context: str = "",
     source_platform: str = "bilibili",
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for single-item content relevance evaluation.
+    """为单条内容相关性评估构造结构化 prompt。
 
     Args:
-        profile_summary: User profile summary.
-        content_summary: Content metadata.
-        source_context: Discovery context hint (e.g. search / trending / explore).
-        source_platform: Platform identifier for dynamic prompt wording.
+        profile_summary: 用户画像摘要。
+        content_summary: 内容元数据。
+        source_context: 发现路径提示（如 search / trending / explore）。
+        source_platform: 用于动态 prompt 措辞的平台标识符。
 
-    v0.3.28+ cache-friendly: ``system_prompt`` is the module-level
-    constant ``_SINGLE_CONTENT_EVALUATION_SYSTEM_PROMPT`` (100% static).
-    All variables live in ``user_prompt``.
+    v0.3.28+ 缓存友好：``system_prompt`` 是模块级常量
+    ``_SINGLE_CONTENT_EVALUATION_SYSTEM_PROMPT``（100% 静态）。所有变量都放在
+    ``user_prompt`` 中。
     """
     user_prompt = "\n\n".join(
         [
@@ -1057,12 +1052,11 @@ def build_content_evaluation_prompt(
     ]
 
 
-# Module-level constant: 100% static system prompt for batch content
-# evaluation. This is what gets cached across all calls, so it MUST NOT
-# include any per-call variables (source platform, discovery context,
-# profile data — all of those go in user_prompt). Provider-side prompt
-# cache (DeepSeek 90% / OpenAI 50% / Claude 90% / Gemini 75% off) only
-# fires when the prefix is byte-identical across calls.
+# 模块级常量：批量内容评估的 100% 静态 system prompt。这是所有调用间
+# 会被缓存的内容，因此 MUST NOT 包含任何按调用而异的变量（source platform、
+# discovery context、profile data —— 这些都放在 user_prompt）。Provider 侧
+# prompt cache（DeepSeek 9 折 / OpenAI 5 折 / Claude 9 折 / Gemini 7.5 折）
+# 仅在 prefix 在调用间逐字节相同时才会触发。
 _BATCH_CONTENT_EVALUATION_SYSTEM_PROMPT = (
     "<task>\n"
     "你要批量评估多个候选内容与一个用户画像的匹配度。"
@@ -1166,28 +1160,25 @@ def build_batch_content_evaluation_prompt(
     source_platform: str = "bilibili",
     negative_examples: list[dict[str, object]] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a prompt that evaluates multiple content items in one LLM call.
+    """构造在一次 LLM 调用中评估多个内容项的 prompt。
 
-    Same rules as single evaluation, but processes a batch and returns
-    a JSON array of results keyed by item index.
+    与单条评估规则相同，但处理一个 batch，返回按 item 索引为键的 JSON
+    数组结果。
 
-    v0.3.28+ cache-friendly: ``system_prompt`` is the module-level
-    constant ``_BATCH_CONTENT_EVALUATION_SYSTEM_PROMPT`` — 100% static
-    across all calls, so the entire instruction block is cache-eligible.
-    v0.3.x+ eval callers may pass pre-rendered ``profile_blocks`` ordered
-    from stable core profile to volatile recent context; unchanged layers are
-    reused by the caller's render cache and keep the provider-visible prefix
-    byte-stable. The fallback path still serializes ``profile_summary`` as one
-    block for older call sites.
+    v0.3.28+ 缓存友好：``system_prompt`` 是模块级常量
+    ``_BATCH_CONTENT_EVALUATION_SYSTEM_PROMPT`` —— 在所有调用间 100% 静态，
+    因此整个指令块都是可缓存对象。
+    v0.3.x+ 评估调用方可传入预渲染的 ``profile_blocks``，按从稳定 core profile
+    到易变 recent context 的顺序排列；未变更的层会被调用方的 render cache
+    复用，保持 provider 可见 prefix 逐字节稳定。fallback 路径仍将
+    ``profile_summary`` 序列化为单个块，供较老的调用点使用。
 
-    v0.3.x: optional ``negative_examples`` block sits between
-    ``<source_context>`` and ``<content_batch>``, carrying recent
-    quick-exit / explicit-negative titles for the model to pattern-match
-    against. When ``None`` or empty the block is omitted entirely so the
-    user-message bytes are identical to the no-examples path (cache
-    prefix unchanged for cold-start users). System prompt picks up two
-    permanent rules about how to consume the block (rules 10 + 11) and
-    stays call-invariant after that one-time template change.
+    v0.3.x：可选的 ``negative_examples`` 块位于 ``<source_context>`` 和
+    ``<content_batch>`` 之间，承载近期 quick-exit / explicit-negative 标题，
+    供模型做模式匹配。当为 ``None`` 或空时整块被省略，使 user-message 字节
+    与无示例路径一致（冷启动用户的缓存 prefix 不变）。System prompt 内置
+    两条关于如何消费该块的永久规则（规则 10 + 11），在那次一次性模板变更
+    后保持调用不变性。
     """
     user_blocks: list[str] = (
         list(profile_blocks)
@@ -1245,8 +1236,8 @@ def build_batch_content_evaluation_prompt(
     ]
 
 
-# 100% static system prompt for single-item recommendation expression.
-# Platform / tone / persona variables live in user_prompt prefix.
+# 单条推荐表达的 100% 静态 system prompt。
+# 平台 / 语气 / 人格变量放在 user_prompt 前缀。
 _RECOMMENDATION_EXPRESSION_SYSTEM_PROMPT = """
 <task>
 你要像一个真正懂这个人的朋友一样,给出一段推荐这条候选内容的话。下面 user 消息会给出
@@ -1300,14 +1291,13 @@ def build_recommendation_expression_prompt(
     tone_profile: ToneProfile | None,
     source_platform: str = "bilibili",
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for friend-style recommendation expression.
+    """为朋友式推荐表达构造结构化 prompt。
 
-    v0.3.28+ cache-friendly: ``system_prompt`` is the module-level
-    constant ``_RECOMMENDATION_EXPRESSION_SYSTEM_PROMPT`` (100% static).
-    Platform label / tone profile / profile / content all live in
-    ``user_prompt``. Callers may pass pre-rendered layered profile blocks,
-    which are placed before platform / tone / content so the provider cache
-    can reuse the stable profile prefix across platform and copy changes.
+    v0.3.28+ 缓存友好：``system_prompt`` 是模块级常量
+    ``_RECOMMENDATION_EXPRESSION_SYSTEM_PROMPT``（100% 静态）。平台标签 /
+    语气画像 / profile / content 都放在 ``user_prompt`` 中。调用方可传入
+    预渲染的分层 profile 块，放在 platform / tone / content 之前，让
+    provider cache 能在 platform 和文案变更间复用稳定的 profile prefix。
     """
     user_blocks = [
         *_profile_prompt_blocks(profile_summary, profile_blocks),
@@ -1333,7 +1323,7 @@ def build_recommendation_expression_prompt(
     ]
 
 
-# 100% static system prompt for batch recommendation expression.
+# 批量推荐表达的 100% 静态 system prompt。
 _BATCH_EXPRESSION_SYSTEM_PROMPT = (
     "<task>\n"
     "你要像一个真正懂这个人的朋友一样,为多条候选内容各写一段推荐话。"
@@ -1377,10 +1367,10 @@ def build_batch_expression_prompt(
     tone_profile: ToneProfile | None,
     source_platform: str = "bilibili",
 ) -> list[dict[str, str]]:
-    """Build a prompt that generates expressions for multiple items in one call.
+    """构造一次调用为多个 item 生成表达 的 prompt。
 
-    v0.3.28+ cache-friendly: ``system_prompt`` is the module-level
-    constant ``_BATCH_EXPRESSION_SYSTEM_PROMPT`` (100% static).
+    v0.3.28+ 缓存友好：``system_prompt`` 是模块级常量
+    ``_BATCH_EXPRESSION_SYSTEM_PROMPT``（100% 静态）。
     """
     user_blocks = [
         *_profile_prompt_blocks(profile_summary, profile_blocks),
@@ -1406,7 +1396,7 @@ def build_batch_expression_prompt(
     ]
 
 
-# 100% static system prompt for delight-reason generation.
+# delight-reason 生成的 100% 静态 system prompt。
 _DELIGHT_REASON_SYSTEM_PROMPT = (
     "<task>\n"
     "你要为一条「主动惊喜推荐」写一段解释,说明为什么这条内容可能会让这个人意外地喜欢。\n"
@@ -1483,17 +1473,16 @@ def build_delight_score_batch_prompt(
     profile_blocks: list[str] | None = None,
     content_batch: list[dict[str, object]],
 ) -> list[dict[str, str]]:
-    """Build a prompt for batch-scoring delight candidates via LLM.
+    """通过 LLM 为 delight 候选批量打分构造 prompt。
 
-    Replaces the embedding-cosine pipeline (likes_alignment / deep_need /
-    insight / dislike) which biased toward "similar" rather than
-    "surprising". A single batched call returns score + rationale + hook
-    per candidate, eliminating the secondary delight_reason call.
+    取代 embedding-cosine 流水线（likes_alignment / deep_need /
+    insight / dislike），后者倾向"相似"而非"惊喜"。一次批量调用即
+    返回每个候选的 score + rationale + hook，省去了二次 delight_reason
+    调用。
 
-    System prompt is fully static (cache-friendly per CLAUDE.md
-    convention). User payload contains the per-call profile summary and
-    the candidate batch, both serialized with sort_keys for deterministic
-    cache prefixes.
+    system prompt 完全静态（按 CLAUDE.md 约定缓存友好）。user payload
+    包含按调用而异的 profile summary 和候选 batch，两者都用 sort_keys
+    序列化以保证确定性 cache prefix。
     """
     user_blocks = [
         *_profile_prompt_blocks(profile_summary, profile_blocks),
@@ -1522,14 +1511,13 @@ def build_delight_reason_prompt(
     tone_profile: ToneProfile | None,
     source_platform: str = "bilibili",
 ) -> list[dict[str, str]]:
-    """Build a prompt for generating a delight reason explanation.
+    """为生成 delight reason 解释构造 prompt。
 
-    The output should feel like a friend saying "I know you don't usually
-    watch this kind of thing, but I genuinely think this one would hit
-    different for you because..."
+    输出应该像朋友说"我知道你不常看这类，但我真心觉得这条对你来说会有
+    不一样的感觉，因为……"
 
-    v0.3.28+ cache-friendly: ``system_prompt`` is the module-level
-    constant ``_DELIGHT_REASON_SYSTEM_PROMPT`` (100% static).
+    v0.3.28+ 缓存友好：``system_prompt`` 是模块级常量
+    ``_DELIGHT_REASON_SYSTEM_PROMPT``（100% 静态）。
     """
     user_blocks = [
         *_profile_prompt_blocks(profile_summary, profile_blocks),
@@ -1563,17 +1551,15 @@ def build_explore_domains_prompt(
     profile_summary: dict[str, object],
     covered_topic_groups: list[str] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a structured prompt for cross-domain exploration ideas.
+    """为跨域探索方向构造结构化 prompt。
 
-    ``covered_topic_groups`` (v0.3.31+) lists topic_group labels that
-    are already well-represented in the user's active recommendation
-    pool. The LLM uses this as a "blind-spot guide" — it MUST avoid
-    proposing domains whose evaluator-visible topic_group would land
-    on any of these. Without this, explore tended to keep re-proposing
-    well-covered areas (e.g. "AI 编程"、"认知科学"), and 30 candidate
-    items would collapse into 8 distinct topic_groups instead of
-    ~25-30. Passing the empty list / None falls back to the original
-    open-ended exploration prompt.
+    ``covered_topic_groups``（v0.3.31+）列出用户当前活跃推荐池中已经
+    充分覆盖的 topic_group 标签。LLM 把它当作"盲区指引" —— MUST 避免提
+    出其 evaluator 可见 topic_group 会落在其中任何一个的 domain。没有
+    这个信息时，explore 倾向于反复提议已被充分覆盖的领域（例如
+    "AI 编程"、"认知科学"），30 个候选 item 会塌缩成 8 个不同的
+    topic_group 而非 ~25-30。传入空 list / None 则回退到原始开放式
+    探索 prompt。
     """
     system_prompt = """
 <task>
@@ -1645,18 +1631,15 @@ def build_explore_domains_prompt(
         json.dumps(profile_summary, ensure_ascii=False, indent=2),
         "</profile_summary>",
     ]
-    # v0.3.31+: covered_topic_groups tells the LLM which topic_group
-    # labels are already over-represented in the active pool. Combined
-    # with the system-side rule "avoid covered_topic_groups", this
-    # forces explore to actually explore — not re-propose 认知科学 /
-    # AI编程 / 体育预测 each cycle when they're already in the pool.
+    # v0.3.31+：covered_topic_groups 告诉 LLM 哪些 topic_group 标签在活跃池中
+    # 已经过度代表。配合 system 侧规则"避开 covered_topic_groups"，强制
+    # explore 真正去探索 —— 而非每轮都重复提议已经在池中的认知科学 /
+    # AI编程 / 体育预测。
     if covered_topic_groups:
-        # Deduplicate + cap to top 12. Initially tried 30 + a hard
-        # "禁止" tone in the system rule; observed DeepSeek returning
-        # empty content on ~50% of explore cycles when the constraint
-        # set got that tight. Top 12 is enough avoidance signal for
-        # the highest-saturation topics while leaving the model room
-        # to maneuver.
+        # 去重 + 截断到前 12 个。最初尝试过 30 个 + system 规则中用硬
+        # "禁止" 语气；观察到 DeepSeek 在约束集合收紧到那种程度时约
+        # 50% 的 explore 周期返回空内容。前 12 个对最高饱和度主题来说
+        # 已是足够的避让信号，同时给模型留出腾挪空间。
         seen: set[str] = set()
         unique_covered: list[str] = []
         for label in covered_topic_groups:
@@ -1695,7 +1678,7 @@ def build_speculation_generation_prompt(
     count: int = 5,
     probe_mode_request: str | None = None,
 ) -> list[dict[str, str]]:
-    """Build a prompt for generating speculative interest directions."""
+    """为生成猜测兴趣方向构造 prompt。"""
     system_prompt = (
         "<task>\n"
         "你像一个懂 ta 的朋友。看 ta 平时在看什么、玩什么，\n"
@@ -1805,12 +1788,11 @@ def build_speculation_generation_prompt(
         "</specifics_rules>"
     )
 
-    # Two semantically different exclude lists:
-    # - existing_speculations + cooldown_domains: hard exclude (don't dive in)
-    # - confirmed_domains (user's actual likes): the user's MAIN AXES.
-    #   These should NOT block the LLM from drilling into them; instead
-    #   they're the most relevant exploration territory.  We tell the LLM
-    #   these are core axes to drill INTO, not to avoid.
+    # 两个语义不同的排除列表：
+    # - existing_speculations + cooldown_domains：硬排除（不要再深入）
+    # - confirmed_domains（用户实际 likes）：用户的主轴。这些不应阻止
+    #   LLM 深入；它们才是最相关的探索领地。我们告诉 LLM 这些是核心
+    #   主轴，要钻进去，而不是要避开。
     hard_exclude_list = sorted(set(existing_speculations + cooldown_domains))
     main_axes_list = sorted(set(confirmed_domains))
     hard_exclude_text = (
@@ -1911,7 +1893,7 @@ def build_avoidance_generation_prompt(
     count: int = 5,
     source_mode_quota: dict[str, int] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a prompt for generating speculative avoidance directions."""
+    """为生成猜测避雷方向构造 prompt。"""
     payload: dict[str, object] = {
         "profile_summary": profile_summary,
         "existing_avoidances": existing_avoidances,
@@ -2006,13 +1988,12 @@ def build_profile_consolidation_prompt(
     likes_clusters: list[dict[str, object]],
     dislikes_clusters: list[dict[str, object]],
 ) -> list[dict[str, str]]:
-    """Build the prompt for LLM-judged consolidation of like/dislike topics.
+    """为 LLM 裁决的 likes/dislikes 主题合并构造 prompt。
 
-    Each cluster dict carries ``cluster_id`` and ``members`` (list of dicts
-    with name + weight + category metadata for likes, plain strings for dislikes).
-    System prompt is fully static (cache-friendly per CLAUDE.md convention);
-    all per-call data lives in the user message with deterministic
-    serialization.
+    每个 cluster dict 携带 ``cluster_id`` 和 ``members``（likes 是带
+    name + weight + category 元数据的 dict 列表，dislikes 是纯字符串列表）。
+    system prompt 完全静态（按 CLAUDE.md 约定缓存友好）；所有按调用而异
+    的数据都放在 user message 中，使用确定性序列化。
     """
     user_prompt = "\n\n".join(
         [
@@ -2055,18 +2036,16 @@ _CATEGORY_MAPPING_SYSTEM_PROMPT = (
 )
 
 
-# Module-level constant: 100% static system prompt for the MERGED, multi-
-# platform search-keyword generator (Discover backpressure refactor P1.4).
-# This single call subsumes the five per-platform keyword builders (B站
-# search / 小红书 / 抖音 / YouTube / X) so the profile is sent ONCE and the
-# provider-side prompt cache fires on the byte-identical prefix. Per
-# CLAUDE.md "LLM Prompt-Cache Convention": NOTHING per-call lives here —
-# the profile, the due-platform set, each platform's need count, recent
-# keywords, and avoid_* hints ALL live in the user message (<profile_summary>
-# + <platforms>). The <supply_advantage> block below (P2) is STATIC per
-# platform (it describes where each platform structurally has good content,
-# never anything about *this* user), so it belongs in the system constant and
-# the call-invariance test still holds.
+# 模块级常量：合并后的多平台搜索关键词生成器的 100% 静态 system prompt
+# （Discover backpressure refactor P1.4）。这一次调用取代了原本五个按平台
+# 的关键词构造器（B 站搜索 / 小红书 / 抖音 / YouTube / X），让 profile
+# 只发送一次，provider 侧 prompt cache 在逐字节相同的 prefix 上触发。
+# 按 CLAUDE.md "LLM Prompt-Cache Convention"：此处不放任何按调用而异的
+# 内容 —— profile、due-platform 集合、每个平台的 need 数、近期关键词、
+# avoid_* 提示都放在 user message 中（<profile_summary> + <platforms>）。
+# 下面的 <supply_advantage> 块（P2）按平台是静态的（它描述每个平台结构性
+# 擅长什么内容，与*this*用户无关），因此属于 system 常量，调用不变性测试
+# 仍然成立。
 _MERGED_KEYWORDS_SYSTEM_PROMPT = (
     "<task>\n"
     "你要为多个平台的内容发现一次性生成搜索关键词。\n"
@@ -2147,7 +2126,7 @@ def build_category_mapping_prompt(
     *,
     categories: list[dict[str, object]],
 ) -> list[dict[str, str]]:
-    """Build a cache-friendly prompt for mapping categories to the fixed vocab."""
+    """为将分类映射到固定词表构造缓存友好的 prompt。"""
     from openbiliclaw.soul.taxonomy import CATEGORY_VOCAB
 
     payload = {
@@ -2179,28 +2158,27 @@ def build_merged_keywords_prompt(
     profile_blocks: list[str] | None = None,
     platform_blocks: list[dict[str, object]],
 ) -> list[dict[str, str]]:
-    """Build the merged, multi-platform search-keyword generation prompt.
+    """构造合并后的多平台搜索关键词生成 prompt。
 
-    Subsumes the five legacy per-platform keyword builders into ONE LLM call
-    (Discover backpressure refactor, design spec §7.1 / §7.2): the profile is
-    serialized once and every due platform rides along in a single ``<platforms>``
-    block, so the provider prompt cache fires on the stable prefix.
+    把原本五个按平台的关键词构造器合并为一次 LLM 调用（Discover
+    backpressure refactor，设计规格 §7.1 / §7.2）：profile 序列化一次，
+    每个到期平台都附在单个 ``<platforms>`` 块中，让 provider prompt cache
+    在稳定 prefix 上触发。
 
     Args:
-        profile_summary: The canonical ``build_profile_summary`` dict, sent once.
-        platform_blocks: One dict per due platform, each carrying
-            ``platform`` plus ``need`` / ``recent_keywords`` /
-            ``avoid_topics`` / ``avoid_styles`` / ``avoid_franchises`` /
-            ``prefer_axes`` / ``cold_start``. Only the platforms passed in
-            appear in the prompt (and may appear in the output). The ``avoid_*``
-            and ``prefer_axes`` fields come from
-            ``PoolDistributionSnapshot.to_prompt_hints()``.
+        profile_summary: 标准的 ``build_profile_summary`` dict，发送一次。
+        platform_blocks: 每个到期平台一个 dict，携带 ``platform`` 加上
+            ``need`` / ``recent_keywords`` / ``avoid_topics`` /
+            ``avoid_styles`` / ``avoid_franchises`` / ``prefer_axes`` /
+            ``cold_start``。只有传入的平台会出现在 prompt 中（也可能
+            出现在输出中）。``avoid_*`` 和 ``prefer_axes`` 字段来自
+            ``PoolDistributionSnapshot.to_prompt_hints()``。
 
-    Cache-friendly per CLAUDE.md: ``system_prompt`` is the module-level constant
-    ``_MERGED_KEYWORDS_SYSTEM_PROMPT`` (100% static). All per-call data lives in
-    ``user_prompt``, ordered most-stable (profile) → most-variable (this batch's
-    due platforms), each serialized with ``ensure_ascii=False, indent=2,
-    sort_keys=True``.
+    按 CLAUDE.md 缓存友好：``system_prompt`` 是模块级常量
+    ``_MERGED_KEYWORDS_SYSTEM_PROMPT``（100% 静态）。所有按调用而异的数据
+    放在 ``user_prompt`` 中，按从最稳定（profile）到最易变（本批到期平台）
+    的顺序排列，每个都用 ``ensure_ascii=False, indent=2, sort_keys=True``
+    序列化。
     """
     user_blocks = [
         *_profile_prompt_blocks(profile_summary, profile_blocks),
@@ -2226,22 +2204,22 @@ def parse_merged_keywords(
     *,
     per_platform_cap: int,
 ) -> dict[str, list[str]]:
-    """Parse the merged keyword-generation response into per-platform lists.
+    """将合并的关键词生成响应解析为按平台的列表。
 
-    Tolerant counterpart to :func:`build_merged_keywords_prompt`. Reuses
-    ``parse_llm_json_tolerant`` so truncated / fenced JSON still salvages.
-    Never raises — a missing, non-list, or garbage value for any requested
-    platform yields an empty list for that platform.
+    :func:`build_merged_keywords_prompt` 的容错对应函数。复用
+    ``parse_llm_json_tolerant`` 让截断 / 围栏 JSON 仍能抢救。永不抛
+    异常 —— 任何被请求平台的值缺失、非 list 或垃圾值都为该平台返回空
+    列表。
 
     Args:
-        content: The raw LLM response text.
-        platforms: The platforms to extract (typically the same set passed to
-            the builder). The returned dict has exactly these keys.
-        per_platform_cap: Maximum keywords kept per platform after dedup.
+        content: 原始 LLM 响应文本。
+        platforms: 要提取的平台（通常与传给构造器的集合相同）。返回的
+            dict 有恰好这些 key。
+        per_platform_cap: 去重后每个平台保留的最大关键词数。
 
     Returns:
-        ``{platform: [keyword, ...]}`` for every platform in ``platforms``,
-        each list deduped (order-preserving) and capped at ``per_platform_cap``.
+        对 ``platforms`` 中每个平台返回 ``{platform: [keyword, ...]}``，
+        每个列表去重（保序）并截断到 ``per_platform_cap``。
     """
     keywords, _present = parse_merged_keywords_with_presence(
         content, platforms, per_platform_cap=per_platform_cap
@@ -2255,25 +2233,23 @@ def parse_merged_keywords_with_presence(
     *,
     per_platform_cap: int,
 ) -> tuple[dict[str, list[str]], set[str]]:
-    """Like :func:`parse_merged_keywords` but also report decline vs omission.
+    """类似 :func:`parse_merged_keywords`，但同时报告弃权 vs 遗漏。
 
-    The planner (P2.2) must tell an **intentional decline** — the model
-    addressed the platform and returned an explicit empty list ``[]`` (the
-    user's interests don't fit that platform's supply advantage, see system
-    prompt rule 8) — apart from an **omission** (the platform key is absent /
-    non-list garbage, the model never answered for it). The first must NOT
-    trigger the interest-name fallback (skip the platform this cycle); the
-    second still falls back.
+    planner（P2.2）必须区分**主动弃权** —— 模型回应了该平台并返回显式
+    空列表 ``[]``（用户兴趣不符合该平台的供给优势，见 system prompt
+    规则 8）—— 与**遗漏**（平台 key 缺失 / 非 list 垃圾值，模型从未
+    回答它）。前者 MUST NOT 触发兴趣名 fallback（本轮跳过该平台）；后者
+    仍走 fallback。
 
-    A platform counts as "present" when the parsed payload is a dict and that
-    platform's value is a JSON list (``[]`` included). A non-list value
-    (``"x"`` / ``42`` / missing) is NOT present → omission → fallback. With
-    ``per_platform_cap <= 0`` nothing is parsed and no platform is present.
+    当解析出的 payload 是 dict 且该平台的值是 JSON list（包括 ``[]``）
+    时，该平台算"present"。非 list 值（``"x"`` / ``42`` / 缺失）不算
+    present → 遗漏 → fallback。当 ``per_platform_cap <= 0`` 时不解析
+    任何内容，也没有平台是 present。
 
     Returns:
-        ``(keywords_by_platform, present_platforms)`` where ``keywords`` has a
-        key for every requested platform (deduped, capped) and
-        ``present_platforms`` is the subset whose value was an explicit list.
+        ``(keywords_by_platform, present_platforms)``，其中 ``keywords``
+        对每个被请求平台都有一个 key（去重、截断），``present_platforms``
+        是值确实为显式 list 的子集。
     """
     result: dict[str, list[str]] = {platform: [] for platform in platforms}
     present: set[str] = set()
@@ -2288,7 +2264,7 @@ def parse_merged_keywords_with_presence(
         raw = payload.get(platform)
         if not isinstance(raw, list):
             continue
-        # An explicit list (even empty) means the model addressed this platform.
+        # 显式 list（即使为空）表示模型回应了该平台。
         present.add(platform)
         seen: set[str] = set()
         keywords: list[str] = []

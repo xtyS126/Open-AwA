@@ -1,8 +1,8 @@
-"""DiscoveryEvaluator — multi-dimension quality scoring for discovery strategies.
+"""DiscoveryEvaluator — 发现策略的多维质量评分。
 
-Evaluates discovered content along 7 quality dimensions per strategy,
-plus cross-strategy diversity. Supports both automated (LLM-as-judge)
-and human-in-the-loop evaluation modes.
+按 7 个质量维度评估每个策略发现的内容，
+以及跨策略多样性。支持自动（LLM-as-judge）
+和人工参与两种评估模式。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Prompt attribution: dimension → responsible prompt
+# Prompt 归因：维度 → 负责的 prompt
 # ---------------------------------------------------------------------------
 
 DISCOVERY_FIELD_TO_PARAM: dict[str, str] = {
@@ -49,7 +49,7 @@ DISCOVERY_FIELD_TO_PARAM: dict[str, str] = {
     "explore.novelty": "explore_domains_prompt",
     "explore.relevance": "content_evaluation_prompt",
     "explore.explanation_quality": "content_evaluation_prompt",
-    # Cross-strategy
+    # 跨策略
     "cross.diversity": "explore_domains_prompt",
 }
 
@@ -62,7 +62,7 @@ DISCOVERY_FIELD_TO_PIPELINE: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Dimension weights
+# 维度权重
 # ---------------------------------------------------------------------------
 
 _DEFAULT_DIM_WEIGHTS: dict[str, float] = {
@@ -76,9 +76,9 @@ _DEFAULT_DIM_WEIGHTS: dict[str, float] = {
     "filter_precision": 0.08,
 }
 
-# Per-strategy dimension weight overrides.
-# Explore prioritizes novelty over echo-chamber control (exploring IS the mission).
-# Trending's echo-chamber score is structural (ranking data is concentrated), so lower its weight.
+# 各策略的维度权重覆盖。
+# Explore 优先考虑新颖性而非信息茧房控制（探索就是其使命）。
+# Trending 的信息茧房得分是结构性的（排行数据高度集中），因此降低其权重。
 _STRATEGY_DIM_OVERRIDES: dict[str, dict[str, float]] = {
     "explore": {
         "relevance": 0.20,
@@ -106,7 +106,7 @@ _DEFAULT_STRATEGY_WEIGHTS: dict[str, float] = {
     "explore": 0.25,
 }
 
-# Which dimensions apply to which strategies
+# 各维度适用的策略
 _STRATEGY_DIMENSIONS: dict[str, list[str]] = {
     "search": [
         "relevance",
@@ -138,13 +138,13 @@ _STRATEGY_DIMENSIONS: dict[str, list[str]] = {
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# 数据结构
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class DimensionScore:
-    """Score for a single quality dimension."""
+    """单个质量维度的评分。"""
 
     dimension: str
     score: float = 0.0
@@ -154,7 +154,7 @@ class DimensionScore:
 
 @dataclass
 class StrategyEvalReport:
-    """Evaluation report for one discovery strategy."""
+    """单个发现策略的评估报告。"""
 
     strategy_name: str
     dimension_scores: list[DimensionScore] = field(default_factory=list)
@@ -166,7 +166,7 @@ class StrategyEvalReport:
 
 @dataclass
 class DiscoveryEvalReport:
-    """Complete discovery evaluation report across all strategies."""
+    """跨所有策略的完整发现评估报告。"""
 
     strategy_reports: dict[str, StrategyEvalReport] = field(default_factory=dict)
     cross_strategy_scores: list[DimensionScore] = field(default_factory=list)
@@ -178,7 +178,7 @@ class DiscoveryEvalReport:
 
 
 # ---------------------------------------------------------------------------
-# LLM protocol
+# LLM 协议
 # ---------------------------------------------------------------------------
 
 
@@ -196,12 +196,12 @@ class SupportsStructuredTask(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Evaluator
+# 评估器
 # ---------------------------------------------------------------------------
 
 
 class DiscoveryEvaluator:
-    """Multi-dimension quality evaluator for content discovery strategies."""
+    """内容发现策略的多维质量评估器。"""
 
     def __init__(
         self,
@@ -221,7 +221,7 @@ class DiscoveryEvaluator:
         persona: OnionProfile,
         intermediates: dict[str, object] | None = None,
     ) -> StrategyEvalReport:
-        """Evaluate a single strategy's output."""
+        """评估单个策略的输出。"""
         applicable_dims = _STRATEGY_DIMENSIONS.get(strategy_name, list(self._dim_weights))
         intermediates = intermediates or {}
 
@@ -236,7 +236,7 @@ class DiscoveryEvaluator:
             )
             scores.append(score)
 
-        # Use strategy-specific weight overrides if available
+        # 如有策略特定的权重覆盖，则使用
         dim_weights = _STRATEGY_DIM_OVERRIDES.get(strategy_name, self._dim_weights)
         total_weight = sum(
             dim_weights.get(s.dimension, self._dim_weights.get(s.dimension, 0.0)) for s in scores
@@ -274,7 +274,7 @@ class DiscoveryEvaluator:
         persona: OnionProfile,
         intermediates: dict[str, dict[str, object]] | None = None,
     ) -> DiscoveryEvalReport:
-        """Evaluate all strategies and produce a combined report."""
+        """评估所有策略并生成综合报告。"""
         intermediates = intermediates or {}
         reports: dict[str, StrategyEvalReport] = {}
 
@@ -286,7 +286,7 @@ class DiscoveryEvaluator:
                 intermediates=intermediates.get(name),
             )
 
-        # Cross-strategy diversity
+        # 跨策略多样性
         all_items: list[DiscoveredContent] = []
         for items in strategy_results.values():
             all_items.extend(items)
@@ -299,7 +299,7 @@ class DiscoveryEvaluator:
             )
         ]
 
-        # Weighted overall
+        # 加权总分
         total_weight = 0.0
         weighted_sum = 0.0
         for name, report in reports.items():
@@ -313,7 +313,7 @@ class DiscoveryEvaluator:
 
         overall = weighted_sum / total_weight if total_weight > 0 else 0.0
 
-        # Collect worst dimensions across all strategies
+        # 收集所有策略中最差的维度
         all_dims: list[DimensionScore] = []
         for report in reports.values():
             for dim in report.dimension_scores:
@@ -348,9 +348,9 @@ class DiscoveryEvaluator:
         strategy_results: dict[str, list[DiscoveredContent]],
         human_feedback: dict[str, dict[str, object]],
     ) -> DiscoveryEvalReport:
-        """Build a DiscoveryEvalReport from human per-dimension feedback.
+        """根据人工按维度反馈构建 DiscoveryEvalReport。
 
-        human_feedback format:
+        human_feedback 格式：
         {
             "search.relevance": {"score": 0.7, "note": "Too many gaming results"},
             "search.query_quality": {"score": 0.5, "note": "Queries too generic"},
@@ -402,7 +402,7 @@ class DiscoveryEvaluator:
                 ],
             )
 
-        # Cross-strategy score from human feedback
+        # 从人工反馈得到的跨策略得分
         cross_entry = human_feedback.get("cross.diversity", {})
         cross_raw_score = cross_entry.get("score") if isinstance(cross_entry, dict) else None
         cross_score = _clamp(
@@ -454,7 +454,7 @@ class DiscoveryEvaluator:
         )
 
     # ------------------------------------------------------------------
-    # Dimension scoring dispatch
+    # 维度评分分发
     # ------------------------------------------------------------------
 
     async def _score_dimension(
@@ -499,7 +499,7 @@ class DiscoveryEvaluator:
         )
 
     # ------------------------------------------------------------------
-    # LLM-judge scoring functions
+    # LLM-judge 评分函数
     # ------------------------------------------------------------------
 
     async def _score_relevance(
@@ -604,12 +604,12 @@ class DiscoveryEvaluator:
 
 
 # ---------------------------------------------------------------------------
-# Algorithmic scoring functions (zero LLM cost)
+# 算法评分函数（零 LLM 成本）
 # ---------------------------------------------------------------------------
 
 
 def _score_diversity(results: list[Any]) -> float:
-    """Shannon entropy over topic_key + style_key, normalized to [0, 1]."""
+    """基于 topic_key + style_key 的香农熵，归一化到 [0, 1]。"""
     if len(results) <= 1:
         return 0.0
 
@@ -628,14 +628,14 @@ def _score_diversity(results: list[Any]) -> float:
 
 
 def _score_novelty(results: list[Any], persona: Any) -> float:
-    """Fraction of results whose topic is NOT in persona's top interests."""
+    """topic 不在 persona 顶部兴趣中的结果所占比例。"""
     if not results:
         return 0.0
 
     known_topics: set[str] = set()
     prefs = getattr(persona, "preferences", None)
     if prefs is None:
-        # OnionProfile: try interest layer
+        # OnionProfile：尝试兴趣层
         interest = getattr(persona, "interest", None)
         if interest is not None:
             likes = getattr(interest, "likes", [])
@@ -666,14 +666,14 @@ def _score_novelty(results: list[Any], persona: Any) -> float:
 
 
 def _score_no_echo_chamber(results: list[Any]) -> float:
-    """Penalize if results are concentrated in too few topics."""
+    """当结果集中在过少 topic 时进行惩罚。"""
     if len(results) <= 1:
         return 1.0
 
     topics: list[str] = []
     for item in results:
-        # Prefer topic_group (coarse, LLM-assigned, embedding-normalized)
-        # over topic_key (raw query string, per-query not per-result)
+        # 优先使用 topic_group（粗粒度、LLM 分配、embedding 归一化）
+        # 而非 topic_key（原始查询字符串、按查询而非按结果）
         topic = (
             getattr(item, "topic_group", "").strip()
             or getattr(item, "topic_key", "").strip()
@@ -688,7 +688,7 @@ def _score_no_echo_chamber(results: list[Any]) -> float:
     most_common_fraction = counts.most_common(1)[0][1] / len(topics)
     unique_ratio = len(counts) / len(topics)
 
-    # Penalize if dominant topic > 60%
+    # 当主导 topic > 60% 时进行惩罚
     if most_common_fraction > 0.6:
         return _clamp(0.3 * unique_ratio)
 
@@ -696,7 +696,7 @@ def _score_no_echo_chamber(results: list[Any]) -> float:
 
 
 def _score_explanation_quality(results: list[Any]) -> float:
-    """Score based on whether results have non-empty, substantive relevance_reason."""
+    """根据结果是否具有非空、实质性的 relevance_reason 进行评分。"""
     if not results:
         return 0.0
 
@@ -710,7 +710,7 @@ def _score_explanation_quality(results: list[Any]) -> float:
 
 
 def _fallback_relevance(results: list[Any]) -> float:
-    """Fallback relevance from pre-existing relevance_score values."""
+    """从已有的 relevance_score 值回退得到相关性得分。"""
     if not results:
         return 0.0
     scores = [getattr(item, "relevance_score", 0.0) or 0.0 for item in results]
@@ -721,13 +721,12 @@ def _score_filter_precision(
     results: list[Any],
     ground_truth: object,
 ) -> float:
-    """Compare evaluate_content scores against scenario ground truth labels.
+    """将 evaluate_content 得分与场景真实标签进行对比。
 
-    Measures whether the LLM evaluation prompt correctly separates
-    relevant from irrelevant content. Uses a 0.5 threshold on both
-    predicted and ground truth to compute precision and recall.
+    衡量 LLM 评估 prompt 是否正确区分相关和不相关内容。
+    在预测和真实标签上都使用 0.5 阈值计算精确率和召回率。
 
-    Returns F1 score, or 0.5 if no ground truth is available.
+    返回 F1 分数；若无真实标签可用则返回 0.5。
     """
     if not isinstance(ground_truth, dict) or not results:
         return 0.5
@@ -763,12 +762,12 @@ def _score_filter_precision(
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
 def _persona_context(persona: Any) -> str:
-    """Extract a compact text summary from OnionProfile or SoulProfile."""
+    """从 OnionProfile 或 SoulProfile 中提取紧凑文本摘要。"""
     if hasattr(persona, "to_llm_context"):
         ctx = persona.to_llm_context()
         if isinstance(ctx, str) and ctx:

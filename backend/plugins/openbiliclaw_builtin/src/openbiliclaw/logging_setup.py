@@ -1,4 +1,4 @@
-"""Central logging initialization for OpenBiliClaw."""
+"""OpenBiliClaw 的集中式日志初始化。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ _NOISY_LOGGERS = ("httpx", "httpcore", "openai", "openai._base_client")
 
 
 def _coerce_level(level_name: str) -> int:
-    """Convert a level name to a logging level."""
+    """将级别名转换为 logging 级别。"""
     level = logging.getLevelName(level_name.upper())
     if isinstance(level, int):
         return level
@@ -27,19 +27,19 @@ def _coerce_level(level_name: str) -> int:
 
 
 def _build_file_handler(
-    log_file: object,  # Path, but typed loose to avoid import
+    log_file: object,  # Path，但类型放宽以避免 import
     *,
     max_file_size_mb: int,
     backup_count: int,
     level: int,
 ) -> logging.Handler:
-    """Return a rotating file handler when rotation is enabled, else a plain one.
+    """启用轮转时返回轮转文件 handler，否则返回普通 handler。
 
-    Rotation triggers when the active file reaches ``max_file_size_mb`` MB; at
-    that point ``RotatingFileHandler`` moves it to ``<name>.1`` (older backups
-    shift to ``.2``, ``.3``, ...) and older-than-``backup_count`` copies are
-    deleted. Setting ``backup_count=1`` caps total disk usage at roughly
-    ``2 * max_file_size_mb`` MB.
+    当活动文件达到 ``max_file_size_mb`` MB 时触发轮转；此时
+    ``RotatingFileHandler`` 将其重命名为 ``<name>.1``（更旧的备份
+    顺移至 ``.2``、``.3``……），并删除早于 ``backup_count`` 的副本。
+    设置 ``backup_count=1`` 可将总磁盘占用封顶在约
+    ``2 * max_file_size_mb`` MB。
     """
     from pathlib import Path
 
@@ -66,12 +66,11 @@ def _build_file_handler(
 
 
 def _enforce_size_budget_once(log_file: object, max_file_size_mb: int) -> None:
-    """Truncate an oversized log on startup so we don't resume 7 GB files.
+    """启动时截断过大的日志，避免恢复 7 GB 的文件。
 
-    ``RotatingFileHandler`` only rotates on *new* writes, so an already-oversized
-    file keeps growing until the next rollover boundary. On startup we proactively
-    rotate once if the existing file is already over budget — this is the
-    "清理超过 1G 的历史日志" behavior the user asked for.
+    ``RotatingFileHandler`` 仅在*新写入*时轮转，因此已超大的文件
+    会持续增长直到下一个轮转边界。启动时若现有文件已超预算，我们会
+    主动轮转一次——这正是用户要求的"清理超过 1G 的历史日志"行为。
     """
     from pathlib import Path
 
@@ -90,16 +89,16 @@ def _enforce_size_budget_once(log_file: object, max_file_size_mb: int) -> None:
     if size <= max_file_size_mb * 1024 * 1024:
         return
 
-    # Preserve at most one "before cleanup" snapshot so debugging is still
-    # possible, then delete further backups. Matches RotatingFileHandler naming
-    # (<name>.1 is the freshest backup).
+    # 仅保留最多一个"清理前"快照以便仍可调试，
+    # 然后删除更多备份。命名与 RotatingFileHandler 一致
+    # （<name>.1 是最新备份）。
     snapshot = log_path.with_name(log_path.name + ".1")
     try:
         if snapshot.exists():
             snapshot.unlink()
         log_path.rename(snapshot)
     except OSError:
-        # Fall back to truncation if rename fails (e.g. cross-device).
+        # 重命名失败（如跨设备）时回退为截断。
         try:
             log_path.unlink()
         except OSError:
@@ -107,12 +106,11 @@ def _enforce_size_budget_once(log_file: object, max_file_size_mb: int) -> None:
 
 
 def _is_managed_log(path: Path, managed_filename: str) -> bool:
-    """True iff ``path`` is the rotation-managed file or one of its backups.
+    """当且仅当 ``path`` 是受轮转管理的文件或其备份之一时返回 True。
 
-    Managed = ``<filename>`` exactly OR ``<filename>.N`` where N is digits.
-    Anything else (e.g. ``backend-restart.log``, ``init-run.log``) is
-    unmanaged — created by external scripts or one-off tools, so we treat
-    it under the unmanaged-cleanup policy.
+    受管 = 完全等于 ``<filename>`` 或 ``<filename>.N``（N 为数字）。
+    其他文件（如 ``backend-restart.log``、``init-run.log``）是
+    非受管的——由外部脚本或一次性工具创建，因此按非受管清理策略处理。
     """
     name = path.name
     if name == managed_filename:
@@ -132,26 +130,24 @@ def _sweep_unmanaged_logs(
     unmanaged_truncate_mb: int,
     unmanaged_max_age_days: int,
 ) -> None:
-    """Cleanup ``logs/`` files we don't control via RotatingFileHandler.
+    """清理不受 RotatingFileHandler 管控的 ``logs/`` 文件。
 
-    Three policies, applied in order:
+    三条策略，按顺序执行：
 
-    1. **Truncate huge unmanaged files** — if any ``*.log`` file (not the
-       managed one) exceeds ``unmanaged_truncate_mb`` MB, truncate it to
-       0 bytes. Catches things like ``backend-restart.log`` (script
-       stdout redirect), ``openbiliclaw-restart.log``, etc. Truncation
-       (not deletion) so live tail-ers don't lose their fd.
-    2. **Delete stale unmanaged files** — anything older than
-       ``unmanaged_max_age_days`` days gets removed entirely. Old
-       one-shot logs from past install / debug sessions.
-    3. **Cap aggregate dir size** — total bytes in ``logs/`` (managed +
-       unmanaged) summed up. If over ``aggregate_budget_mb`` MB, delete
-       oldest unmanaged files until under budget. Managed files are
-       kept regardless (RotatingFileHandler is in charge of those).
+    1. **截断巨大的非受管文件** —— 若任一 ``*.log`` 文件（非受管文件）
+       超过 ``unmanaged_truncate_mb`` MB，截断为 0 字节。捕获
+       ``backend-restart.log``（脚本 stdout 重定向）、
+       ``openbiliclaw-restart.log`` 等。采用截断（而非删除）以使
+       实时 tail 不会丢失 fd。
+    2. **删除陈旧非受管文件** —— 早于 ``unmanaged_max_age_days`` 天的
+       文件整体删除。针对过往安装 / 调试会话的旧一次性日志。
+    3. **封顶目录总大小** —— 汇总 ``logs/`` 中所有文件（受管 +
+       非受管）的总字节数。若超过 ``aggregate_budget_mb`` MB，
+       按从旧到新删除非受管文件直到回到预算内。受管文件始终保留
+       （由 RotatingFileHandler 负责管理）。
 
-    Each delete / truncate emits an INFO log so users see what got
-    cleaned. All errors are swallowed — startup must not abort because
-    of cleanup hiccups.
+    每次删除 / 截断都会输出 INFO 日志，以便用户看到清理内容。
+    所有错误都被吞掉——启动绝不应因清理小问题而中止。
     """
     if not log_dir.exists() or not log_dir.is_dir():
         return
@@ -164,7 +160,7 @@ def _sweep_unmanaged_logs(
     now = time.time()
     age_cutoff = now - unmanaged_max_age_days * 86400 if unmanaged_max_age_days > 0 else 0.0
 
-    # Pass 1: truncate huge unmanaged files
+    # 第一遍：截断巨大的非受管文件
     truncate_bytes = unmanaged_truncate_mb * 1024 * 1024
     for path, st in entries:
         if _is_managed_log(path, managed_filename):
@@ -186,7 +182,7 @@ def _sweep_unmanaged_logs(
             except OSError as exc:
                 logger.debug("Failed to truncate %s: %s", path, exc)
 
-    # Pass 2: delete stale unmanaged files (re-stat after truncate)
+    # 第二遍：删除陈旧非受管文件（截断后重新 stat）
     if unmanaged_max_age_days > 0:
         for path in [p for p, _ in entries]:
             if _is_managed_log(path, managed_filename):
@@ -206,7 +202,7 @@ def _sweep_unmanaged_logs(
                 except OSError as exc:
                     logger.debug("Failed to unlink %s: %s", path, exc)
 
-    # Pass 3: enforce aggregate budget by removing oldest unmanaged files
+    # 第三遍：通过删除最旧的非受管文件来强制总量预算
     if aggregate_budget_mb <= 0:
         return
     budget_bytes = aggregate_budget_mb * 1024 * 1024
@@ -217,7 +213,7 @@ def _sweep_unmanaged_logs(
     total = sum(st.st_size for _, st in current_entries)
     if total <= budget_bytes:
         return
-    # Sort unmanaged by mtime ASC (oldest first) and trim until in budget
+    # 按 mtime 升序排列非受管文件（最旧在前）并裁剪至预算内
     unmanaged = sorted(
         [(p, st) for p, st in current_entries if not _is_managed_log(p, managed_filename)],
         key=lambda item: item[1].st_mtime,
@@ -244,12 +240,11 @@ def configure_logging(
     *,
     sweep_unmanaged: bool = True,
 ) -> None:
-    """Configure root logging for console and file output.
+    """为控制台和文件输出配置根日志。
 
-    ``sweep_unmanaged=False`` skips the v0.3.30+ ``logs/`` directory
-    cleanup pass — used by the ``logs-prune`` CLI command which runs
-    its own dry-run-aware cleanup and shouldn't be ambushed by the
-    auto-sweep inside the global Typer callback.
+    ``sweep_unmanaged=False`` 跳过 v0.3.30+ 的 ``logs/`` 目录清理
+    遍历——供 ``logs-prune`` CLI 命令使用，它运行自己的、感知
+    dry-run 的清理，不应被全局 Typer callback 内的自动遍历干扰。
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
@@ -269,9 +264,9 @@ def configure_logging(
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     _enforce_size_budget_once(log_file, config.logging.max_file_size_mb)
-    # v0.3.30+: also sweep unmanaged files in the same logs dir.
-    # Catches stdout-redirect logs from start scripts, stale one-off
-    # bootstrap logs, and the aggregate-size budget.
+    # v0.3.30+：同时清理同一 logs 目录下的非受管文件。
+    # 捕获 start 脚本的 stdout 重定向日志、陈旧一次性
+    # bootstrap 日志以及总量大小预算。
     if sweep_unmanaged:
         _sweep_unmanaged_logs(
             config.logging.directory_path,

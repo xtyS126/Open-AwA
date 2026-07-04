@@ -1,4 +1,4 @@
-"""Adaptive tone profile helpers for bilibili-style phrasing."""
+"""bilibili 风格措辞的自适应语气画像辅助函数。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ Directness = Literal["soft", "balanced", "direct"]
 
 
 class ToneProfile(TypedDict):
-    """Shared tone profile used across recommendation, profile, and chat prompts."""
+    """在推荐、画像、聊天 prompt 之间共享的语气画像。"""
 
     density: Density
     warmth: Warmth
@@ -40,7 +40,7 @@ def build_tone_profile(
     preference_summary: Mapping[str, object] | None,
     recent_feedback: list[dict[str, object]] | None,
 ) -> ToneProfile:
-    """Infer a lightweight tone profile from user understanding."""
+    """从用户理解中推断一份轻量的语气画像。"""
     tone: ToneProfile = {
         "density": "balanced",
         "warmth": "warm",

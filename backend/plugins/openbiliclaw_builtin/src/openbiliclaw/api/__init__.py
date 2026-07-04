@@ -1,4 +1,4 @@
-"""HTTP API surface for browser-extension integration."""
+"""用于浏览器扩展集成的 HTTP API 表面。"""
 
 from .app import create_app
 

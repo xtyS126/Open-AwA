@@ -1,1 +1,1 @@
-"""Storage package — database and persistence layer."""
+"""Storage 包 —— 数据库与持久化层。"""

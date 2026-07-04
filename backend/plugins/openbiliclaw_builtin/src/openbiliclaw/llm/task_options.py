@@ -1,4 +1,4 @@
-"""Helpers for optional structured LLM task parameters."""
+"""LLM 结构化任务可选参数的辅助工具。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 
 def call_accepts_keyword(fn: Any, name: str) -> bool:
-    """Return whether a callable accepts a keyword argument."""
+    """判断一个 callable 是否接受某个关键字参数。"""
 
     try:
         signature = inspect.signature(fn)
@@ -20,7 +20,7 @@ def call_accepts_keyword(fn: Any, name: str) -> bool:
 
 
 def without_core_memory_kwargs(fn: Any) -> dict[str, Any]:
-    """Return kwargs that disable extra core-memory injection when supported."""
+    """在支持时返回关闭额外 core-memory 注入的 kwargs。"""
 
     if call_accepts_keyword(fn, "inject_core_memory"):
         return {"inject_core_memory": False}

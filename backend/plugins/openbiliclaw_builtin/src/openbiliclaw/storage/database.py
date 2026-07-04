@@ -1,7 +1,6 @@
-"""SQLite database management.
+"""SQLite 数据库管理。
 
-Provides async-compatible SQLite operations for event logs,
-content cache, and recommendation history.
+提供事件日志、内容缓存和推荐历史的 async 兼容 SQLite 操作。
 """
 
 from __future__ import annotations
@@ -21,18 +20,14 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
-# v0.3.62+: retry budget tightened from 5×100ms (worst-case 500ms
-# blocking the asyncio event loop on lock contention) to 8×20ms
-# (worst-case 160ms). Same total absolute timeout floor (~160-500ms)
-# is preserved by raising attempt count; per-attempt sleep is short
-# enough that even if it fires inside an async context the event-loop
-# stutter is below human-perception thresholds. Most writes succeed
-# on the first try anyway — this only matters under heavy concurrent
-# write load (refresh tick + ingest + classify all hammering pool
-# rows simultaneously). A future rewrite can move to asyncio.to_thread
-# for true non-blocking DB I/O, but that's a larger refactor (every
-# caller must become async) — for now this constant tweak is the
-# pragmatic middle ground.
+# v0.3.62+：重试预算从 5×100ms（最坏情况 500ms 阻塞 asyncio 事件循环的
+# 锁竞争）收紧到 8×20ms（最坏情况 160ms）。通过增加尝试次数保留了
+# 相同的绝对超时下限（~160-500ms）；单次睡眠足够短，即使在 async
+# 上下文中触发，事件循环卡顿也低于人类感知阈值。大多数写入第一次
+# 就成功 —— 这只在重度并发写入负载下才有意义（刷新 tick + ingest +
+# classify 同时猛砸 pool 行）。未来重写可以改用 asyncio.to_thread 做
+# 真正的非阻塞 DB I/O，但那是更大的重构（每个调用方都得变 async）
+# —— 现在这个常量微调是务实的折中方案。
 _LOCK_RETRY_ATTEMPTS = 8
 _LOCK_RETRY_SLEEP_SECONDS = 0.02
 _BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]+)")
@@ -63,16 +58,15 @@ def _chunks(values: Sequence[str], size: int) -> list[list[str]]:
     return [list(values[index : index + chunk_size]) for index in range(0, len(values), chunk_size)]
 
 
-# Mirrors recommendation.delight.DEFAULT_DELIGHT_THRESHOLD. Storage stays a
-# leaf module (no openbiliclaw imports), so the value is duplicated here and
-# pinned by tests/test_delight_scorer.py::test_delight_claim_threshold_in_sync.
+# 与 recommendation.delight.DEFAULT_DELIGHT_THRESHOLD 对齐。Storage 保持为
+# 叶子模块（不 import openbiliclaw），因此值在这里重复一份，并由
+# tests/test_delight_scorer.py::test_delight_claim_threshold_in_sync 钉住。
 _DELIGHT_CLAIM_MIN_SCORE = 0.70
 _DEFAULT_ADMISSION_MIN_SCORE = 0.60
 
-# Rows claimed by the surprise (delight) channel: already delivered as a
-# delight, or currently delight-eligible (the pending-queue predicate). The
-# regular feed's servable gate excludes them so the same content never shows
-# up in both the recommendation list and the surprise tray.
+# 被惊喜（delight）通道占用的行：已作为 delight 投递，或当前符合
+# delight 条件（pending-queue 谓词）。常规 feed 的可服务门排除它们，
+# 这样同一内容不会同时出现在推荐列表和惊喜托盘中。
 _DELIGHT_CLAIM_GUARD_SQL = f"""
                   AND NOT (
                     COALESCE(delight_notified, 0) = 1
@@ -131,7 +125,7 @@ _EXPLORE_HIGH_RISK_CLUSTERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
-# Schema version for migrations
+# 迁移用的 schema 版本
 _SCHEMA_VERSION = 2
 
 _SCHEMA_SQL = """
@@ -323,7 +317,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_provider ON llm_usage(provider, model);
 
 
 def _pool_source_family(source: object, source_platform: object = "") -> str:
-    """Return the source family key used by pool share accounting."""
+    """返回 pool 份额核算使用的 source family key。"""
     platform = str(source_platform or "").strip().lower()
     raw_source = str(source or "").strip()
     source_key = raw_source.lower()
@@ -343,7 +337,7 @@ def _pool_source_family(source: object, source_platform: object = "") -> str:
 
 
 def _normalize_source_platform_key(source_platform: object) -> str:
-    """Return the canonical source key used in cross-source content IDs."""
+    """返回跨源 content ID 中使用的规范 source key。"""
     raw = str(source_platform or "").strip().lower()
     if raw in {_XHS_SOURCE_FAMILY, "xhs"}:
         return _XHS_SOURCE_FAMILY
@@ -359,7 +353,7 @@ def _normalize_source_platform_key(source_platform: object) -> str:
 
 
 def _normalize_style_key_for_storage(value: object) -> str:
-    """Canonicalize known style_key values while preserving unknown legacy rows."""
+    """规范化已知 style_key 值，同时保留未知的遗留行。"""
     token = re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
     if not token:
         return ""
@@ -371,17 +365,17 @@ def _is_linkable_pool_source(
     source_platform: object,
     content_url: object,
 ) -> bool:
-    """Return False for xhs rows that cannot be opened from recommendations."""
+    """对无法从推荐中打开的 xhs 行返回 False。"""
     if _pool_source_family(source, source_platform) != _XHS_SOURCE_FAMILY:
         return True
     return "xsec_token=" in str(content_url or "")
 
 
 def _xhs_self_author_guard_sql(table_alias: str = "content_cache") -> str:
-    """Return a SQL AND clause that excludes self-authored XHS rows.
+    """返回一个排除自己发布的 XHS 行的 SQL AND 子句。
 
-    The clause takes 3 positional ``?`` parameters (all the same nickname
-    string). When the nickname is empty the clause is a no-op.
+    子句接受 3 个位置 ``?`` 参数（都是同一个昵称字符串）。昵称为空时
+    子句是 no-op。
     """
     prefix = f"{table_alias}." if table_alias else ""
     return (
@@ -397,7 +391,7 @@ def _xhs_self_author_guard_sql(table_alias: str = "content_cache") -> str:
 
 
 def _xhs_self_author_guard_params(xhs_self_nickname: str | None) -> tuple[str, str, str]:
-    """Return the 3 bind values for ``_xhs_self_author_guard_sql``."""
+    """返回 ``_xhs_self_author_guard_sql`` 的 3 个绑定值。"""
     nickname = str(xhs_self_nickname or "").strip()
     return (nickname, nickname, nickname)
 
@@ -417,9 +411,9 @@ def _normalize_admission_min_score(value: object) -> float:
 
 
 class Database:
-    """Lightweight SQLite wrapper for OpenBiliClaw.
+    """OpenBiliClaw 的轻量 SQLite 封装。
 
-    Manages the event log, content cache, and recommendation history.
+    管理事件日志、内容缓存和推荐历史。
     """
 
     def __init__(self, db_path: str | Path) -> None:
@@ -428,11 +422,11 @@ class Database:
         self._admission_min_score = _DEFAULT_ADMISSION_MIN_SCORE
 
     def set_admission_min_score(self, value: object) -> None:
-        """Set the unified recommendation-pool admission floor."""
+        """设置统一的推荐池准入下限。"""
         self._admission_min_score = _normalize_admission_min_score(value)
 
     def initialize(self) -> None:
-        """Initialize the database and run migrations if needed."""
+        """初始化数据库并在需要时运行迁移。"""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path), timeout=30.0, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -463,7 +457,7 @@ class Database:
         self.suppress_low_score_pool_items()
         self.suppress_low_confidence_recommendations()
 
-        # Set schema version
+        # 设置 schema 版本
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
             (_SCHEMA_VERSION,),
@@ -481,12 +475,10 @@ class Database:
         return _normalize_admission_min_score(self._admission_min_score)
 
     def open_connection(self) -> sqlite3.Connection:
-        """Open a short-lived connection to the initialized database.
+        """打开一个到已初始化数据库的短生命周期连接。
 
-        Use this for explicit transactions that may run from FastAPI's
-        threadpool. A separate connection lets SQLite serialize writers
-        with ``busy_timeout`` instead of nesting transactions on the
-        process-wide connection.
+        用于可能从 FastAPI 线程池运行的显式事务。单独的连接让 SQLite
+        通过 ``busy_timeout`` 串行化写入，而不是在进程级连接上嵌套事务。
         """
         if self._conn is None:
             raise RuntimeError("Database not initialized. Call initialize() first.")
@@ -496,12 +488,11 @@ class Database:
         return conn
 
     def _ensure_fresh_read(self) -> None:
-        """Close any implicit transaction so the next SELECT sees the latest WAL state.
+        """关闭任何隐式事务，使下一次 SELECT 能看到最新 WAL 状态。
 
-        When a CLI command (a separate process) writes to the same database,
-        this server process may still hold a stale read snapshot inside an
-        implicit transaction.  Committing closes that transaction so the next
-        query starts a new one against the current WAL head.
+        当 CLI 命令（独立进程）写入同一数据库时，本服务进程可能仍在
+        隐式事务中持有过期的读快照。提交会关闭该事务，使下一次查询
+        针对当前 WAL head 启动新事务。
         """
         if self.conn.in_transaction:
             self.conn.commit()
@@ -511,7 +502,7 @@ class Database:
         sql: str,
         params: tuple[Any, ...] | list[Any] = (),
     ) -> sqlite3.Cursor:
-        """Execute a write with short retry on transient SQLite locks."""
+        """执行写入，对瞬态 SQLite 锁做短重试。"""
         attempts = _LOCK_RETRY_ATTEMPTS
         while True:
             try:
@@ -535,7 +526,7 @@ class Database:
         sql: str,
         seq_of_params: Sequence[tuple[Any, ...] | list[Any]],
     ) -> sqlite3.Cursor:
-        """Batch-execute a write with the same transient-lock retry as ``_execute_write``."""
+        """批量执行写入，带与 ``_execute_write`` 相同的瞬态锁重试。"""
         attempts = _LOCK_RETRY_ATTEMPTS
         while True:
             try:
@@ -555,23 +546,22 @@ class Database:
                 time.sleep(_LOCK_RETRY_SLEEP_SECONDS)
 
     def insert_event(self, event_type: str, **kwargs: Any) -> int:
-        """Insert a behavioral event.
+        """插入一条行为事件。
 
-        v0.3.23+: ``context`` is now a natural-language string (from
-        ``event_format.build_event()``). It's stored as raw text — no
-        outer JSON wrapping — so consumers reading via SELECT get back
-        the same string they put in. Pre-v0.3.22 callers that passed
-        dict-shaped context still work: dicts / lists / other non-string
-        values are JSON-encoded for storage so older code paths don't
-        suddenly lose data.
+        v0.3.23+：``context`` 现在是自然语言字符串（来自
+        ``event_format.build_event()``）。以原始文本存储 —— 没有
+        外层 JSON 包装 —— 这样通过 SELECT 读取的消费者拿回的就是
+        存进去的同一个字符串。v0.3.22 之前传入 dict 形式 context 的
+        调用方仍然可用：dict / list / 其他非字符串值会被 JSON 编码后
+        存储，旧代码路径不会突然丢数据。
 
         Args:
-            event_type: Type of event.
-            **kwargs: Additional event fields. ``context`` may be str,
-                dict, list, or None.
+            event_type: 事件类型。
+            **kwargs: 额外的事件字段。``context`` 可以是 str、dict、
+                list 或 None。
 
         Returns:
-            Inserted row ID.
+            插入行的 ID。
         """
         import json
 
@@ -583,15 +573,15 @@ class Database:
         elif raw_context is None:
             context_text = ""
         else:
-            # Legacy dict / list payload — JSON-encode for storage.
+            # 遗留 dict / list 载荷 —— JSON 编码后存储。
             context_text = json.dumps(raw_context, ensure_ascii=False)
 
         metadata_payload = kwargs.get("metadata", {})
 
-        # Single classification owner. Reconstruct the event dict shape
-        # the classifier expects (event_type + url + title + metadata).
-        # API ingest may set dwell fields at the top level as well; pass
-        # those through so the click rules read either location.
+        # 单一分类 owner。重建分类器期望的 event dict 形状
+        # （event_type + url + title + metadata）。
+        # API ingest 可能也会在顶层设置 dwell 字段；把这些透传过去，
+        # 这样点击规则可以读取任一位置。
         classifier_event: dict[str, Any] = {
             "event_type": event_type,
             "url": kwargs.get("url", ""),
@@ -621,13 +611,13 @@ class Database:
         return cursor.lastrowid or 0
 
     def get_recent_events(self, limit: int = 100) -> list[dict[str, Any]]:
-        """Get recent events.
+        """获取最近的事件。
 
         Args:
-            limit: Maximum number of events.
+            limit: 最大事件数。
 
         Returns:
-            List of event dicts.
+            event dict 列表。
         """
         cursor = self.conn.execute(
             "SELECT * FROM events ORDER BY created_at DESC LIMIT ?", (limit,)
@@ -635,7 +625,7 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     # ------------------------------------------------------------------
-    # Durable popup chat turns
+    # 持久化的 popup chat 轮次
     # ------------------------------------------------------------------
 
     def create_chat_turn(
@@ -648,7 +638,7 @@ class Database:
         subject_id: str = "",
         subject_title: str = "",
     ) -> dict[str, Any]:
-        """Create a pending popup chat turn if it does not already exist."""
+        """创建一个 pending 状态的 popup chat 轮次（若尚不存在）。"""
         self._execute_write(
             """
             INSERT OR IGNORE INTO chat_turns (
@@ -671,7 +661,7 @@ class Database:
         return row
 
     def complete_chat_turn(self, turn_id: str, *, reply: str) -> None:
-        """Mark a pending popup chat turn as completed."""
+        """把 pending 的 popup chat 轮次标记为 completed。"""
         self._execute_write(
             """
             UPDATE chat_turns
@@ -685,7 +675,7 @@ class Database:
         )
 
     def fail_chat_turn(self, turn_id: str, *, error: str, reply: str = "") -> None:
-        """Mark a popup chat turn as failed while preserving visible copy."""
+        """把 popup chat 轮次标记为 failed，同时保留可见文案。"""
         self._execute_write(
             """
             UPDATE chat_turns
@@ -699,7 +689,7 @@ class Database:
         )
 
     def get_chat_turn(self, turn_id: str) -> dict[str, Any] | None:
-        """Return one durable popup chat turn by id."""
+        """按 id 返回一条持久化的 popup chat 轮次。"""
         self._ensure_fresh_read()
         cursor = self.conn.execute(
             """
@@ -720,7 +710,7 @@ class Database:
         scope: str = "",
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """Return recent popup chat turns in display order."""
+        """按展示顺序返回最近的 popup chat 轮次。"""
         self._ensure_fresh_read()
         clauses = ["session = ?"]
         params: list[Any] = [session or "popup"]
@@ -747,7 +737,7 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     # ------------------------------------------------------------------
-    # LLM usage ledger
+    # LLM usage 账本
     # ------------------------------------------------------------------
 
     def insert_llm_usage(
@@ -762,13 +752,12 @@ class Database:
         success: bool = True,
         cached_input_tokens: int = 0,
     ) -> int:
-        """Append one LLM-call usage record.
+        """追加一条 LLM 调用的 usage 记录。
 
-        ``cached_input_tokens`` (v0.3.28+) is the portion of
-        ``prompt_tokens`` served from provider-side prompt cache —
-        always ``<= prompt_tokens``. 0 means no cache use. Used by
-        ``cost --by caller`` to compute hit rates and by
-        ``estimate_cost`` to discount cached tokens correctly.
+        ``cached_input_tokens``（v0.3.28+）是 ``prompt_tokens`` 中由
+        provider 端 prompt cache 服务的部分 —— 始终 ``<= prompt_tokens``。
+        0 表示未使用缓存。供 ``cost --by caller`` 计算命中率，并供
+        ``estimate_cost`` 正确折扣缓存 token。
         """
         total = max(0, prompt_tokens) + max(0, completion_tokens)
         cursor = self._execute_write(
@@ -796,11 +785,11 @@ class Database:
         *,
         days: int = 7,
     ) -> list[dict[str, Any]]:
-        """Return per-day aggregates for the last ``days`` days.
+        """返回最近 ``days`` 天的按天聚合。
 
-        Each row: {day, calls, prompt_tokens, completion_tokens,
-        total_tokens, cost_cny}. Days with zero usage are omitted —
-        the CLI fills gaps for display.
+        每行：{day, calls, prompt_tokens, completion_tokens,
+        total_tokens, cost_cny}。零用量的天会被省略 —— CLI 会补齐
+        显示用的空缺。
         """
         cursor = self.conn.execute(
             """
@@ -824,7 +813,7 @@ class Database:
         *,
         days: int = 7,
     ) -> list[dict[str, Any]]:
-        """Return per-(provider, model) totals over the last ``days`` days."""
+        """返回最近 ``days`` 天按 (provider, model) 的汇总。"""
         cursor = self.conn.execute(
             """
             SELECT provider,
@@ -847,17 +836,16 @@ class Database:
         *,
         days: int = 7,
     ) -> list[dict[str, Any]]:
-        """Return per-caller totals over the last ``days`` days.
+        """返回最近 ``days`` 天按 caller 的汇总。
 
-        ``caller`` is a free-form string the LLM service tags into each
-        row (e.g. ``discovery.evaluate`` / ``recommendation.write`` /
-        ``soul.profile``). Untagged calls land under ``""`` which the
-        CLI renders as ``(untagged)``. Result is sorted by cost so the
-        first row is the most expensive caller.
+        ``caller`` 是 LLM 服务打在每行上的自由格式字符串（如
+        ``discovery.evaluate`` / ``recommendation.write`` /
+        ``soul.profile``）。未打标签的调用落在 ``""`` 下，CLI 把它
+        渲染为 ``(untagged)``。结果按成本排序，第一行就是最贵的 caller。
 
-        v0.3.28+ also returns ``cached_input_tokens`` so the CLI can
-        compute and surface per-caller cache hit rates — a low rate
-        (< 30%) signals prompt-prefix instability worth investigating.
+        v0.3.28+ 还返回 ``cached_input_tokens``，CLI 据此计算并展示
+        各 caller 的缓存命中率 —— 低命中率（< 30%）意味着 prompt
+        前缀不稳定，值得排查。
         """
         cursor = self.conn.execute(
             """
@@ -877,7 +865,7 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def query_llm_usage_total(self, *, days: int = 7) -> dict[str, Any]:
-        """Return a single-row total for the last ``days`` days."""
+        """返回最近 ``days`` 天的单行汇总。"""
         cursor = self.conn.execute(
             """
             SELECT COUNT(*) AS calls,
@@ -906,24 +894,22 @@ class Database:
         )
 
     def max_llm_usage_id(self) -> int:
-        """Return the highest currently-stored ``llm_usage.id`` (0 if empty).
+        """返回当前已存储的最大 ``llm_usage.id``（空表返回 0）。
 
-        Used as a checkpoint for "what's been billed since this point"
-        queries — the init / discovery cycle wrappers snapshot it on
-        entry and pass it to ``query_llm_usage_since_id`` on exit to
-        scope the cost summary to that single phase.
+        用作"自此点之后计费了多少"查询的检查点 —— init / discovery
+        周期封装在入口快照它，出口传给 ``query_llm_usage_since_id``
+        以把成本摘要限定在单个阶段。
         """
         cursor = self.conn.execute("SELECT COALESCE(MAX(id), 0) AS m FROM llm_usage")
         row = cursor.fetchone()
         return int(row["m"]) if row else 0
 
     def query_llm_usage_since_id(self, *, since_id: int) -> dict[str, Any]:
-        """Return per-caller breakdown + totals for rows ``id > since_id``.
+        """返回 ``id > since_id`` 行的按 caller 明细 + 汇总。
 
-        Output: ``{"total": {calls, prompt_tokens, completion_tokens,
-        cost_cny}, "by_caller": [{caller, calls, ...}, ...]}``. Bound
-        to a single phase by passing ``max_llm_usage_id()`` taken at
-        the phase entry.
+        输出：``{"total": {calls, prompt_tokens, completion_tokens,
+        cost_cny}, "by_caller": [{caller, calls, ...}, ...]}``。通过
+        传入阶段入口取的 ``max_llm_usage_id()`` 来限定到单个阶段。
         """
         total_cursor = self.conn.execute(
             """
@@ -981,16 +967,14 @@ class Database:
         satisfaction_modes: frozenset[str] | None = None,
         after_event_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Query events with optional filters.
+        """带可选过滤条件查询事件。
 
-        ``satisfaction_modes`` filters by ``inferred_satisfaction``. When
-        the set includes ``"unknown"``, rows with a NULL classification
-        (pre-migration legacy rows) are also returned.
+        ``satisfaction_modes`` 按 ``inferred_satisfaction`` 过滤。当集合
+        包含 ``"unknown"`` 时，分类为 NULL 的行（迁移前遗留行）也会返回。
 
-        ``after_event_id`` restricts to rows with ``id`` strictly greater
-        than the given watermark — used by the cognition cycle to read only
-        events not yet folded into awareness. Result order is unchanged
-        (newest-first); callers that need chronological order reverse it.
+        ``after_event_id`` 限定 ``id`` 严格大于给定 watermark 的行 ——
+        供 cognition 周期读取尚未折叠进 awareness 的事件。结果顺序不变
+        （最新优先）；需要时间序的调用方自行反转。
         """
         sql = "SELECT * FROM events"
         clauses: list[str] = []
@@ -1030,7 +1014,7 @@ class Database:
             if mode_clauses:
                 clauses.append("(" + " OR ".join(mode_clauses) + ")")
             else:
-                # Empty modes set explicitly requested → match nothing.
+                # 显式请求空 modes 集 → 不匹配任何行。
                 clauses.append("1 = 0")
 
         if clauses:
@@ -1047,7 +1031,7 @@ class Database:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> dict[str, int]:
-        """Count events grouped by event type."""
+        """按事件类型分组计数。"""
         sql = "SELECT event_type, COUNT(*) AS count FROM events"
         clauses: list[str] = []
         params: list[Any] = []
@@ -1068,11 +1052,11 @@ class Database:
         return {str(row["event_type"]): int(row["count"]) for row in cursor.fetchall()}
 
     def cache_content(self, bvid: str, **kwargs: Any) -> None:
-        """Cache discovered content.
+        """缓存已发现的内容。
 
         Args:
-            bvid: Video BV ID.
-            **kwargs: Content fields.
+            bvid: 视频 BV ID。
+            **kwargs: 内容字段。
         """
         import json
 
@@ -1274,11 +1258,10 @@ class Database:
 
     @staticmethod
     def _coerce_source_keyword_id(value: Any) -> int | None:
-        """Normalize a ``source_keyword_id`` kwarg to ``int`` or ``None``.
+        """把 ``source_keyword_id`` kwarg 规范化为 ``int`` 或 ``None``。
 
-        Tolerates the field being absent / blank / non-numeric so any caller
-        that has not been threaded through the P1.8 provenance path stays a
-        plain NULL write (no behavior change vs. the pre-P1.8 schema).
+        容忍字段缺失 / 空白 / 非数字，这样未走 P1.8 provenance 路径的
+        调用方仍写普通 NULL（与 P1.8 前的 schema 行为一致）。
         """
         if value is None:
             return None
@@ -1312,11 +1295,10 @@ class Database:
         *,
         max_pending_per_source: int | None = None,
     ) -> int:
-        """Insert raw discovery candidates into the pending evaluation queue.
+        """把原始 discovery 候选插入待评估队列。
 
-        Existing ``candidate_key`` rows are treated as rediscovery signals: the
-        row is not duplicated, but ``last_seen_at`` is refreshed so active
-        sources do not look stale.
+        已存在的 ``candidate_key`` 行被视为重新发现信号：不复制行，但
+        刷新 ``last_seen_at``，使活跃 source 不会显得陈旧。
         """
 
         inserted = 0
@@ -1441,11 +1423,10 @@ class Database:
         source_platform: str,
         max_pending: int,
     ) -> int:
-        """Drop oldest candidate rows for one source over a queue cap.
+        """当某 source 超过队列上限时丢弃最旧的候选行。
 
-        In-flight ``evaluating`` rows are never deleted. Terminal rows are
-        trimmed before pending/evaluated rows so active raw material is kept
-        whenever possible.
+        进行中的 ``evaluating`` 行永不会被删除。终态行先于 pending/
+        evaluated 行被裁剪，尽可能保留活跃原料。
         """
 
         source = str(source_platform or "").strip()
@@ -1500,7 +1481,7 @@ class Database:
         *,
         max_age_minutes: int = 30,
     ) -> int:
-        """Release evaluator claims left behind by a crashed process."""
+        """释放崩溃进程遗留的评估者 claim。"""
 
         minutes = max(1, int(max_age_minutes))
         cursor = self._execute_write(
@@ -1518,14 +1499,14 @@ class Database:
         return int(cursor.rowcount)
 
     def claim_discovery_candidates_for_eval(self, *, limit: int) -> list[dict[str, Any]]:
-        """Claim a mixed-source batch of pending candidates for evaluation."""
+        """claim 一批混合 source 的 pending 候选用于评估。"""
 
         claim_limit = max(0, int(limit))
         if claim_limit <= 0:
             return []
         self._ensure_fresh_read()
-        # Peek a bounded window and round-robin in Python so one noisy source
-        # cannot monopolize a mixed evaluator batch.
+        # 窥探一个有界窗口并在 Python 中轮询，防止一个噪声 source 独占
+        # 混合评估批次。
         cursor = self.conn.execute(
             """
             SELECT *
@@ -1596,7 +1577,7 @@ class Database:
         *,
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Return evaluated candidates still waiting for content-cache admission."""
+        """返回已评估但仍待 content-cache 准入的候选。"""
 
         admission_limit = max(0, int(limit))
         if admission_limit <= 0:
@@ -1618,7 +1599,7 @@ class Database:
         self,
         evaluations: Sequence[Mapping[str, Any]],
     ) -> int:
-        """Persist evaluator output back onto claimed candidate rows."""
+        """把评估者输出持久化回已 claim 的候选行。"""
 
         updated = 0
         for evaluation in evaluations:
@@ -1671,7 +1652,7 @@ class Database:
         max_batch_attempts: int = 50,
         increment_attempts: bool = True,
     ) -> int:
-        """Release claimed candidates after a transient evaluator failure."""
+        """在瞬态评估失败后释放已 claim 的候选。"""
 
         ids = [int(candidate_id) for candidate_id in candidate_ids if int(candidate_id) > 0]
         if not ids:
@@ -1737,7 +1718,7 @@ class Database:
         return int(cursor.rowcount)
 
     def mark_discovery_candidate_cached(self, candidate_id: int) -> None:
-        """Mark an evaluated candidate as successfully inserted into content_cache."""
+        """把已评估候选标记为已成功插入 content_cache。"""
 
         self._execute_write(
             """
@@ -1760,7 +1741,7 @@ class Database:
         status: str,
         reason: str = "",
     ) -> None:
-        """Mark a candidate as rejected before it enters content_cache."""
+        """把候选标记为在进入 content_cache 前被拒绝。"""
 
         self._execute_write(
             """
@@ -1775,7 +1756,7 @@ class Database:
         )
 
     def count_discovery_candidates_by_status(self) -> dict[str, int]:
-        """Return candidate queue counts grouped by lifecycle status."""
+        """按生命周期状态分组返回候选队列计数。"""
 
         self._ensure_fresh_read()
         cursor = self.conn.execute(
@@ -1789,7 +1770,7 @@ class Database:
         return {str(row["status"]): int(row["count"]) for row in cursor.fetchall()}
 
     def get_existing_discovery_candidate_keys(self, candidate_keys: Sequence[str]) -> set[str]:
-        """Return candidate keys already present in the raw evaluation queue."""
+        """返回已存在于原始评估队列中的候选 key。"""
 
         clean = _unique_clean_strings(candidate_keys)
         if not clean:
@@ -1810,7 +1791,7 @@ class Database:
         return existing
 
     def get_existing_content_cache_ids(self, content_ids: Sequence[str]) -> set[str]:
-        """Return BVID/content ids that already exist in the evaluated content cache."""
+        """返回已存在于 evaluated content cache 中的 BVID/content id。"""
 
         clean = _unique_clean_strings(content_ids)
         if not clean:
@@ -1838,7 +1819,7 @@ class Database:
         return existing
 
     def count_discovery_candidates_by_source_status(self) -> dict[str, dict[str, int]]:
-        """Return candidate queue counts grouped by source and lifecycle status."""
+        """返回按 source 与 lifecycle status 分组的候选队列计数。"""
 
         self._ensure_fresh_read()
         cursor = self.conn.execute(
@@ -1857,7 +1838,7 @@ class Database:
         return counts
 
     def count_discovery_pending_raw_material_by_source(self) -> dict[str, int]:
-        """Return not-yet-cached raw candidate counts grouped by source."""
+        """返回按 source 分组、尚未缓存的 raw candidate 计数。"""
 
         self._ensure_fresh_read()
         cursor = self.conn.execute(
@@ -1884,7 +1865,7 @@ class Database:
         return int(row["count"] if row else 0)
 
     def get_cached_content(self, limit: int = 100) -> list[dict[str, Any]]:
-        """Get cached discovered content ordered by basic quality signals."""
+        """按基础质量信号排序返回已缓存的 discovered content。"""
         cursor = self.conn.execute(
             """
             SELECT *
@@ -1902,7 +1883,7 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def get_unrecommended_content(self, limit: int = 100) -> list[dict[str, Any]]:
-        """Get cached content that has not been recommended yet."""
+        """返回尚未被推荐过的已缓存 content。"""
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
             """
@@ -1933,7 +1914,7 @@ class Database:
         return self._balance_pool_rows(rows, limit=limit)
 
     def suppress_low_score_pool_items(self, min_score: float | None = None) -> int:
-        """Suppress cached pool rows below the unified admission floor."""
+        """把低于统一准入下限的已缓存 pool 行标记为 suppressed。"""
         threshold = (
             self._pool_admission_min_score()
             if min_score is None
@@ -1951,7 +1932,7 @@ class Database:
         return int(cursor.rowcount or 0)
 
     def suppress_low_confidence_recommendations(self, min_score: float | None = None) -> int:
-        """Mark old low-confidence recommendation rows as suppressed."""
+        """把旧的低置信度 recommendation 行标记为 suppressed。"""
         threshold = (
             self._pool_admission_min_score()
             if min_score is None
@@ -1975,37 +1956,31 @@ class Database:
         max_per_topic_group: int = 3,
         xhs_self_nickname: str = "",
     ) -> list[dict[str, Any]]:
-        """Get fresh recommendation candidates directly from the discovery pool.
+        """从 discovery pool 直接获取新鲜的 recommendation 候选。
 
-        ``max_per_topic_group`` caps how many items from any single
-        ``topic_group`` enter the relevance-ordered head. Without this
-        cap, a 600-item pool that contains 270 distinct topic_groups still
-        produces a top-50 shortlist concentrated in ~10 head groups,
-        because high-relevance candidates cluster around the user's
-        primary interests; long-tail groups (197 with a single item each
-        in the typical pool) never reach the candidate window. Cap of 3
-        lets obvious favourites keep a strong presence while opening
-        room for ~40+ different groups in the candidate window. Pass
-        ``max_per_topic_group=0`` to restore the legacy unrestricted
-        ordering for callers that need it (e.g. health checks).
+        ``max_per_topic_group`` 限制任意单个 ``topic_group`` 进入
+        relevance 排序头部的项数。没有这个上限时，一个含 270 个不同
+        topic_group 的 600 项 pool 仍会产生集中在 ~10 个头部 group 的
+        top-50 短名单，因为高 relevance 候选会聚集在用户的主要兴趣
+        周围；长尾 group（典型 pool 中 197 个只有一项）永远进不了候选
+        窗口。上限为 3 让明显的偏好仍保持强存在感，同时为候选窗口中
+        ~40+ 个不同 group 腾出空间。传 ``max_per_topic_group=0`` 可为
+        需要的 caller（如健康检查）恢复旧的、无限制排序。
 
-        Rows claimed by the surprise (delight) channel are excluded via
-        ``_DELIGHT_CLAIM_GUARD_SQL`` — a delight that was delivered or is
-        currently queue-eligible must never be duplicated by the regular
-        feed. ``count_pool_candidates`` applies the same guard so the
-        "还有 N 条" display stays in sync with what serve() can load.
+        被惊喜（delight）通道占用的行通过 ``_DELIGHT_CLAIM_GUARD_SQL``
+        排除 —— 已投递或当前符合 queue 条件的 delight 绝不能被常规
+        feed 重复。``count_pool_candidates`` 应用同样的 guard，这样
+        "还有 N 条"显示与 serve() 能加载的保持同步。
 
         Notes:
-            xhs rows without ``xsec_token`` in their ``content_url`` are
-            excluded. Bare xhs URLs get rejected by xhs with error 300031
-            when shared outbound, so surfacing them in recommendations
-            would just mint dead links. Tokens get backfilled by the
-            MAIN-world sniffer as the user browses xhs; bare rows become
-            eligible again once ``_backfill_xhs_tokens`` upgrades them.
+            ``content_url`` 中没有 ``xsec_token`` 的 xhs 行被排除。
+            裸 xhs URL 在外部分享时会被 xhs 以错误 300031 拒绝，因此
+            在 recommendation 中暴露它们只会产生死链。token 由
+            MAIN-world sniffer 在用户浏览 xhs 时回填；裸行在
+            ``_backfill_xhs_tokens`` 升级它们后会重新变得可用。
         """
         self._ensure_fresh_read()
-        # Over-fetch widely so the per-group filter still leaves headroom
-        # for the downstream balance pass.
+        # 大范围预取，使分组过滤后仍为下游平衡 pass 留出余量。
         fetch_limit = max(limit * 8, 80)
         min_score = self._pool_admission_min_score()
         guard_sql = _xhs_self_author_guard_sql()
@@ -2043,8 +2018,8 @@ class Database:
             """
             params: tuple[Any, ...] = (min_score, *guard_params, fetch_limit)
         else:
-            # Per-group rank via window function: keep the top-N classified
-            # items of each topic_group, then order the remainder by relevance.
+            # 通过窗口函数按组排名：保留每个 topic_group 的 top-N 已分类
+            # 项，然后按 relevance 排序剩余部分。
             sql = f"""
                 WITH ranked AS (
                     SELECT *,
@@ -2099,20 +2074,18 @@ class Database:
     def count_pool_candidates(
         self, *, max_per_topic_group: int = 3, xhs_self_nickname: str = ""
     ) -> int:
-        """Return how many fresh candidates are immediately available for reshuffle.
+        """返回立即可用于 reshuffle 的新鲜候选数量。
 
-        v0.3.57+: matches ``get_pool_candidates`` precompute gate — rows
-        without ``pool_expression`` / ``pool_topic_label`` are excluded so
-        the popup's "还有 N 条" never overstates what serve() can actually
-        return.
+        v0.3.57+：与 ``get_pool_candidates`` 的 precompute 门对齐 ——
+        没有 ``pool_expression`` / ``pool_topic_label`` 的行被排除，这样
+        popup 的"还有 N 条"永远不会夸大 serve() 实际能返回的数量。
 
-        v0.3.66+: also requires ``style_key`` / ``topic_group`` — content
-        must be classified before it can be served, regardless of source
-        platform.
+        v0.3.66+：还要求 ``style_key`` / ``topic_group`` —— content 必须
+        先被分类才能被 serve，与 source platform 无关。
 
-        v0.3.91+: applies the same ``max_per_topic_group`` window as
-        ``get_pool_candidates`` so concentrated topic groups don't inflate
-        the displayed count beyond what ``serve()`` can actually load.
+        v0.3.91+：应用与 ``get_pool_candidates`` 相同的
+        ``max_per_topic_group`` 窗口，这样集中的 topic group 不会把显示
+        数量膨胀到 ``serve()`` 实际能加载的之外。
         """
         return len(
             self._load_available_pool_candidate_rows(
@@ -2124,11 +2097,10 @@ class Database:
     def _load_available_pool_candidate_rows(
         self, *, max_per_topic_group: int = 3, xhs_self_nickname: str = ""
     ) -> list[dict[str, Any]]:
-        """Load rows counted by the frontend-visible pool availability gate.
+        """加载由前端可见的 pool 可用性门计数的行。
 
-        Applies ``_DELIGHT_CLAIM_GUARD_SQL`` like ``get_pool_candidates`` so
-        the availability count never includes surprise-channel rows serve()
-        would refuse to load.
+        像 ``get_pool_candidates`` 一样应用 ``_DELIGHT_CLAIM_GUARD_SQL``，
+        这样可用性计数永远不会包含 serve() 会拒绝加载的惊喜通道行。
         """
         self._ensure_fresh_read()
         min_score = self._pool_admission_min_score()
@@ -2220,7 +2192,7 @@ class Database:
     def count_pool_available_candidates_by_source(
         self, *, max_per_topic_group: int = 3, xhs_self_nickname: str = ""
     ) -> dict[str, int]:
-        """Return frontend-visible pool availability grouped by source family."""
+        """返回按 source family 分组、前端可见的 pool 可用性。"""
         rows = self._load_available_pool_candidate_rows(
             max_per_topic_group=max_per_topic_group,
             xhs_self_nickname=xhs_self_nickname,
@@ -2232,7 +2204,7 @@ class Database:
         return dict(counts)
 
     def _load_pool_raw_material_rows(self) -> list[dict[str, Any]]:
-        """Load raw fresh material rows governed by the raw ceiling."""
+        """加载受 raw ceiling 约束的 raw fresh material 行。"""
         self._ensure_fresh_read()
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
@@ -2270,16 +2242,16 @@ class Database:
         return rows
 
     def count_pool_raw_material_candidates(self) -> int:
-        """Return raw fresh material count used for raw-ceiling headroom."""
+        """返回用于 raw-ceiling headroom 的 raw fresh material 计数。"""
         return (
             len(self._load_pool_raw_material_rows()) + self._count_pending_discovery_raw_material()
         )
 
     def count_pool_raw_material_by_source(self) -> dict[str, int]:
-        """Return raw fresh material grouped by source family.
+        """返回按 source family 分组的 raw fresh material。
 
-        Unlike ``count_pool_candidates_by_source()``, this intentionally counts
-        pending/unopenable rows such as XHS notes waiting for ``xsec_token``.
+        与 ``count_pool_candidates_by_source()`` 不同，这里有意计数
+        pending/unopenable 行，如等待 ``xsec_token`` 的 XHS 笔记。
         """
         counts: dict[str, int] = defaultdict(int)
         for row in self._load_pool_raw_material_rows():
@@ -2299,11 +2271,11 @@ class Database:
         return dict(counts)
 
     def count_pool_readiness(self, *, xhs_self_nickname: str = "") -> dict[str, int]:
-        """Return pool inventory split by immediately servable and pending rows.
+        """返回按立即可服务行与 pending 行拆分的 pool 库存。
 
-        ``available`` is the public "可换" count. ``raw`` is broad fresh
-        material before readiness gates. ``pending`` is counted independently:
-        recently viewed rows are unavailable, but they are not pending.
+        ``available`` 是公开的"可换"计数。``raw`` 是 readiness 门之前的
+        宽泛 fresh material。``pending`` 独立计数：最近查看过的行是
+        unavailable，但不算 pending。
         """
         self._ensure_fresh_read()
         min_score = self._pool_admission_min_score()
@@ -2386,7 +2358,7 @@ class Database:
         }
 
     def count_pool_candidates_by_source(self) -> dict[str, int]:
-        """Return fresh pool counts grouped by discovery source family."""
+        """返回按 discovery source family 分组的新鲜 pool 计数。"""
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
             """
@@ -2421,7 +2393,7 @@ class Database:
         return dict(counts)
 
     def get_pool_distribution_counts(self) -> dict[str, dict[str, int]]:
-        """Return fresh pool counts grouped by topic, style, and franchise."""
+        """返回按 topic、style 与 franchise 分组的新鲜 pool 计数。"""
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
             """
@@ -2464,12 +2436,13 @@ class Database:
         return {axis: dict(axis_counts) for axis, axis_counts in counts.items()}
 
     def get_pool_topic_counts_by_platform(self) -> dict[str, dict[str, int]]:
-        """Per-platform ``topic_group`` counts of fresh servable pool rows (P3.1).
+        """按平台分组的 fresh servable pool 行 ``topic_group`` 计数（P3.1）。
 
-        Same servable filter as :meth:`get_pool_distribution_counts`, but keyed by
-        ``source_platform`` → ``{platform: {topic_group: count}}`` so the keyword
-        planner can avoid topics saturated *on that platform* instead of pool-wide
-        (a topic piled up on B站 may be absent on 小红书). Returns ``{}`` on error.
+        与 :meth:`get_pool_distribution_counts` 使用相同的 servable 过滤，
+        但以 ``source_platform`` → ``{platform: {topic_group: count}}`` 为
+        key，这样 keyword planner 可以避免 *该平台* 已饱和的 topic，而不是
+        pool 范围内的（B 站堆积的 topic 在小红书可能很稀缺）。出错返回
+        ``{}``。
         """
         try:
             min_score = self._pool_admission_min_score()
@@ -2511,16 +2484,14 @@ class Database:
         return {platform: dict(topics) for platform, topics in counts.items()}
 
     def get_admitted_topic_counts_by_platform(self) -> dict[str, dict[str, int]]:
-        """Per-platform ``topic_group`` counts of ALL admitted content (P3.3).
+        """按平台分组的所有 admitted content 的 ``topic_group`` 计数（P3.3）。
 
-        Where :meth:`get_pool_topic_counts_by_platform` counts the *current
-        servable pool* (a saturation signal — too much right now), this counts
-        every non-disliked, linkable row that ever made it into the cache from
-        each platform, served or not — a *supply-advantage* signal: which topics
-        each platform has actually delivered for this user. The keyword planner
-        feeds the top topics back as a data-driven complement to the static
-        ``<supply_advantage>`` table (after subtracting the platform's current
-        avoid set). Returns ``{}`` on error.
+        :meth:`get_pool_topic_counts_by_platform` 计数的是 *当前 servable
+        pool*（饱和信号 —— 现在太多了），而这里计数的是每个平台曾经写入
+        cache 的每一个非 dislike、可链接的行（无论是否 serve 过）—— 一个
+        *supply-advantage* 信号：每个平台实际为该用户交付过哪些 topic。
+        keyword planner 把 top topics 作为静态 ``<supply_advantage>`` 表的
+        数据驱动补充回填（减去该平台当前的 avoid 集合）。出错返回 ``{}``。
         """
         try:
             min_score = self._pool_admission_min_score()
@@ -2551,25 +2522,23 @@ class Database:
         return {platform: dict(topics) for platform, topics in counts.items()}
 
     def canonicalize_topic_groups(self, canonical_map: dict[str, str]) -> int:
-        """Rewrite ``content_cache.topic_group`` to canonical form per map.
+        """按 map 把 ``content_cache.topic_group`` 重写为规范形式。
 
-        v0.3.56+: ``canonical_map`` is built by
-        ``RecommendationEngine.prewarm_supergroup_embeddings`` and maps
-        normalized (lowered + stripped) topic_group → canonical form.
-        Without applying it to the database rows, the merge only fires
-        at serve time and downstream analytics (``get_topic_group_samples``,
-        per-topic counts in popup status) see the un-merged labels.
+        v0.3.56+：``canonical_map`` 由
+        ``RecommendationEngine.prewarm_supergroup_embeddings`` 构造，映射
+        规范化（小写 + 去空白）后的 topic_group → 规范形式。不应用到
+        数据库行的话，合并只会在 serve 时触发，下游分析
+        （``get_topic_group_samples``、popup status 中的按 topic 计数）
+        看到的都是未合并的 label。
 
-        Returns the number of rows actually updated. Empty input or all-
-        identity mappings short-circuit to 0.
+        返回实际更新的行数。空输入或全 identity 映射短路返回 0。
         """
         if not canonical_map:
             return 0
-        # Bulk update: one statement per (src → dst) pair. Pure SQL,
-        # no row-level fetch. WAL-friendly because we batch in a single
-        # transaction. Only rewrites rows whose lowercased+trimmed
-        # topic_group exactly matches the source key — case-preserving
-        # storage stays intact for non-matching rows.
+        # 批量更新：每个 (src → dst) 对一条语句。纯 SQL，无行级
+        # fetch。单事务批量，对 WAL 友好。只重写 lowercased+trimmed
+        # topic_group 精确匹配 source key 的行 —— 非匹配行保留大小写
+        # 原样存储。
         total = 0
         for src, dst in canonical_map.items():
             if src == dst or not src or not dst:
@@ -2587,13 +2556,12 @@ class Database:
         return total
 
     def count_pool_by_franchise(self) -> dict[str, int]:
-        """Return ``{franchise_key_lower: count}`` for fresh pool items.
+        """返回 fresh pool 项的 ``{franchise_key_lower: count}``。
 
-        Used by discovery's pool-wide franchise quota check (v0.3.50+)
-        so a franchise that already has many items in the pool can't
-        keep accumulating across discovery rounds. Empty franchise_key
-        is excluded — most generic content has no IP signal and the
-        quota is only meaningful for series / IP / UP-driven groups.
+        供 discovery 的 pool 范围 franchise 配额检查（v0.3.50+）使用，
+        这样一个已在 pool 中有很多项的 franchise 就不会在多个 discovery
+        周期中持续堆积。空 franchise_key 被排除 —— 大多数通用 content 没有
+        IP 信号，配额只对 series / IP / UP 驱动的 group 有意义。
         """
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
@@ -2612,11 +2580,10 @@ class Database:
         return {str(row["fk"]): int(row["n"]) for row in cursor.fetchall() if row["fk"]}
 
     def get_distinct_topic_groups(self) -> list[str]:
-        """Return distinct non-empty ``topic_group`` values in the fresh pool.
+        """返回 fresh pool 中非空的 distinct ``topic_group`` 值。
 
-        Used by recommendation pre-warming so the embedding cache is hot
-        before the popup hits ``serve()``. Cheap GROUP BY on a small
-        column with no JOIN.
+        供 recommendation 预热使用，使 embedding cache 在 popup 命中
+        ``serve()`` 之前就热起来。在无 JOIN 的小列上做廉价的 GROUP BY。
         """
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
@@ -2637,14 +2604,12 @@ class Database:
         limit: int = 30,
         min_count: int = 2,
     ) -> list[str]:
-        """Return the top ``limit`` topic_group names currently in active pool.
+        """返回当前 active pool 中 top ``limit`` 个 topic_group 名。
 
-        Used by ExploreStrategy to know which topics the pool already
-        covers, so the LLM that generates explore domains can avoid
-        re-proposing those (the v0.3.31 explore-blind-spot pattern).
-        Filters to groups with at least ``min_count`` members so a
-        single one-off item doesn't block exploration of an actually-
-        empty area. Result is sorted by group size DESC.
+        供 ExploreStrategy 用于了解 pool 已覆盖哪些 topic，让生成 explore
+        domain 的 LLM 可以避免重复提议它们（v0.3.31 explore 盲点模式）。
+        过滤掉成员少于 ``min_count`` 的 group，这样单个一次性 item 不会
+        阻塞对实际空区域的探索。结果按 group size DESC 排序。
         """
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
@@ -2672,20 +2637,18 @@ class Database:
         samples_per_group: int = 5,
         top_n_groups: int = 60,
     ) -> list[tuple[str, list[str]]]:
-        """For each fresh-pool ``topic_group``, return up to N sample titles.
+        """为每个 fresh-pool ``topic_group`` 返回最多 N 个样本标题。
 
-        Returns the top ``top_n_groups`` groups by member count (tie-break
-        on highest in-group ``relevance_score``). Long-tail micro-topics
-        (1-2 items) almost never show up together in a single 40-candidate
-        recommendation batch, so investing API budget to merge-map them
-        adds latency without affecting visible diversity.
+        返回按成员数排名的 top ``top_n_groups`` 个 group（同分以组内
+        最高 ``relevance_score`` 决胜）。长尾 micro-topic（1-2 项）几乎
+        永远不会在单个 40 候选 recommendation 批次中一起出现，因此投入
+        API 预算对它们做 merge-map 只会增加延迟，不影响可见的多样性。
 
-        Used by the recommendation prewarmer to build an accurate
-        supergroup-merge map: short Chinese labels (``赛博朋克``,
-        ``动漫`` …) are catastrophically ambiguous in embedding space
-        when embedded standalone — they need title-context disambiguation.
-        Sample titles are picked top-by-``relevance_score`` within each
-        group, so the input is reasonably stable while the pool is steady.
+        供 recommendation prewarmer 用于构建准确的 supergroup-merge
+        map：短的中文 label（``赛博朋克``、``动漫`` ……）在 embedding
+        空间中单独嵌入时灾难性模糊 —— 它们需要 title-context 消歧。
+        样本标题在每个 group 内按 ``relevance_score`` 取 top，因此
+        输入在 pool 稳定时相当稳定。
         """
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
@@ -2715,7 +2678,7 @@ class Database:
             if len(by_group[group]) < samples_per_group:
                 by_group[group].append(title)
 
-        # Rank groups by member count desc, score desc, label asc (stable).
+        # 按成员数降序、分数降序、标签升序排名（稳定排序）。
         ranked = sorted(
             by_group.keys(),
             key=lambda g: (-group_count[g], -group_max_score.get(g, 0.0), g),
@@ -2723,7 +2686,7 @@ class Database:
         return [(group, by_group[group]) for group in ranked[:top_n_groups]]
 
     def trim_explore_cluster_overflow(self, *, max_per_cluster: int = 3) -> int:
-        """Suppress excess fresh explore items from high-risk topic clusters."""
+        """把高风险 topic cluster 中多余的 fresh explore 项标记为 suppressed。"""
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
             """
@@ -2774,25 +2737,21 @@ class Database:
         return len(clean_bvids)
 
     def trim_topic_group_overflow(self, *, max_per_group: int) -> int:
-        """Suppress fresh items where any single ``topic_group`` exceeds *max_per_group*.
+        """把任意单个 ``topic_group`` 超过 *max_per_group* 的 fresh 项标记为 suppressed。
 
-        Generalises the source-and-keyword-specific
-        :meth:`trim_explore_cluster_overflow` to a cross-source, dynamic cap on
-        every populated ``topic_group`` value. Without this, a single topic
-        (e.g. ``人工智能``) can accumulate hundreds of fresh candidates as
-        related_chain/search/explore each keep returning the same coarse group
-        across rounds — m118's per-call ``_compress_topic_repeats`` doesn't
-        compose across rounds, and the explore-only cluster cap doesn't see
-        related_chain or search.
+        把 source 与 keyword 特定的 :meth:`trim_explore_cluster_overflow`
+        推广为对每个有值的 ``topic_group`` 的跨 source 动态上限。没有这层，
+        单个 topic（如 ``人工智能``）会随着 related_chain/search/explore
+        在多个周期中持续返回同一个粗粒度 group 而累积数百个 fresh 候选 ——
+        m118 的 per-call ``_compress_topic_repeats`` 不会跨周期组合，而
+        explore-only 的 cluster cap 看不到 related_chain 或 search。
 
-        Items with empty ``topic_group`` are ignored. Within an over-cap
-        group, the highest-scored / most-recently-scored items are kept;
-        the rest get ``pool_status='suppressed'``.
+        ``topic_group`` 为空的项被忽略。在超上限的 group 内，分数最高 /
+        最近打分的项被保留；其余被设为 ``pool_status='suppressed'``。
 
-        v0.3.31+: emits an INFO log when something gets dropped, naming
-        the over-flowing groups + how many items each lost. Without this,
-        the function ran silently — operators couldn't tell whether the
-        diversity machinery was actually cutting anything or sleeping.
+        v0.3.31+：丢弃项时发一条 INFO 日志，点名溢出的 group 及每个 group
+        丢了多少项。没有这层时函数是静默运行的 —— 运维无法判断多样性
+        机制是否真的在裁剪，还是在睡觉。
         """
         if max_per_group <= 0:
             return 0
@@ -2824,7 +2783,7 @@ class Database:
             grouped[group].append(row)
 
         overflow_bvids: list[str] = []
-        # v0.3.31+: track per-group drop counts for the INFO log
+        # v0.3.31+：为 INFO 日志追踪按组丢弃计数
         drops_per_group: dict[str, int] = {}
         for group_name, items in grouped.items():
             if len(items) <= max_per_group:
@@ -2855,12 +2814,11 @@ class Database:
             clean_bvids,
         )
 
-        # Top 10 most-trimmed groups so the log line stays readable.
-        # Demoted to DEBUG: this runs once per minute from the refresh
-        # tick. When the pool is steady-state and a single group
-        # consistently sits ~8 items over the cap, the same line gets
-        # logged 1440x per day at INFO. Caller can lift to INFO when
-        # the trim shape actually changes (see refresh.enforce_pool_cap).
+        # 裁剪最多的 top 10 组，保持日志行可读。
+        # 降级到 DEBUG：这每分钟由刷新 tick 运行一次。当 pool 处于
+        # 稳态且某个组持续超 cap ~8 项时，同一行在 INFO 级别每天会
+        # 被记 1440 次。调用方可以在裁剪形态确实变化时升回 INFO
+        # （见 refresh.enforce_pool_cap）。
         top = sorted(drops_per_group.items(), key=lambda kv: -kv[1])[:10]
         logger.debug(
             "[diversity] trim_topic_group_overflow: cap=%d, dropped=%d items "
@@ -2878,22 +2836,20 @@ class Database:
         target: int,
         source_share_quotas: dict[str, int] | None = None,
     ) -> int:
-        """Suppress overflow fresh items so the pool does not exceed *target*.
+        """把溢出的 fresh 项标记为 suppressed，使 pool 不超过 *target*。
 
-        Ranking (what we keep): higher ``relevance_score`` > newer
-        ``last_scored_at`` > non-``explore`` source > stable ``bvid``. Items
-        already surfaced as recommendations are excluded from the count — the
-        recommendation side treats the pool as a queue, so consumed rows are
-        never trimmed here.
+        排序（保留哪些）：更高 ``relevance_score`` > 更新
+        ``last_scored_at`` > 非 ``explore`` source > 稳定 ``bvid``。已
+        surface 为 recommendation 的项不计入 —— recommendation 侧把 pool
+        当作队列，已消费的行不会在这里被裁剪。
 
-        When ``source_share_quotas`` is provided, the trim respects per-source-family
-        share targets: items from source families already at or above their quota
-        get suppressed *before* lower-scored items from under-quota sources.
-        Without this, score-only trim systematically axes low-relevance
-        sources (trending, explore) when high-relevance sources (search,
-        related_chain) overflow — defeating the per-source diversity goal.
-        Xiaohongshu extension channels (task/search/explore/profile) are
-        collapsed under the single ``xiaohongshu`` family.
+        当提供 ``source_share_quotas`` 时，裁剪会尊重按 source family
+        的份额目标：已达或超过配额的 source family 中的项会 *先于* 未达
+        配额 source 中的低分项被 suppressed。没有这层，仅按分数裁剪会
+        在高 relevance source（search、related_chain）溢出时系统性砍掉
+        低 relevance source（trending、explore）—— 破坏 per-source 多样
+        性目标。小红书扩展通道（task/search/explore/profile）合并到单一
+        ``xiaohongshu`` family 下。
         """
         if target <= 0:
             return 0
@@ -2908,17 +2864,17 @@ class Database:
         )
 
         if source_share_quotas:
-            # Three-tier protection so under-quota sources stay fully intact:
-            #   protected: items from sources whose total ≤ quota, OR top-N
-            #              items from sources whose total > quota (where N=quota)
-            #   negotiable_tracked: bottom (total-quota) items from over-quota
-            #              tracked sources
-            #   negotiable_untracked: items from sources without a declared
-            #              share — eligible to be cut before touching protected.
-            # Order for the final keep walk: protected → negotiable_untracked
-            # → negotiable_tracked.  This ensures trending (under quota) stays
-            # 100% protected even when sum of in_quota > target due to
-            # untracked sources eating slots.
+            # 三层保护，使配额未满的 source 保持完整：
+            #   protected：source 总数 ≤ 配额的项，或 source 总数 > 配额
+            #              时的 top-N 项（N=配额）
+            #   negotiable_tracked：超配额 tracked source 的底部
+            #              （总数-配额）项
+            #   negotiable_untracked：没有声明份额的 source 的项 ——
+            #              在碰 protected 之前先裁这些。
+            # 最终保留遍历顺序：protected → negotiable_untracked
+            # → negotiable_tracked。确保 trending（未达配额）即使因
+            # untracked source 占了名额导致 in_quota 总和 > target，
+            # 也保持 100% protected。
             counts_per_source: dict[str, int] = defaultdict(int)
             for row in rows:
                 source_family = _pool_source_family(
@@ -2941,10 +2897,10 @@ class Database:
                     negotiable_untracked.append(row)
                     continue
                 if counts_per_source[source_family] <= quota:
-                    # entire source under quota — every item protected
+                    # 整个 source 未达配额 —— 每项都受保护
                     protected.append(row)
                 else:
-                    # over quota: top `quota` items protected, rest negotiable
+                    # 超配额：top `quota` 项受保护，其余可协商
                     if seen[source_family] < quota:
                         protected.append(row)
                         seen[source_family] += 1
@@ -2967,9 +2923,8 @@ class Database:
             """,
             clean_bvids,
         )
-        # v0.3.31+: log per-source breakdown so operators see whether the
-        # quota guard is biting (e.g. "explore overflowing 80%" → fix the
-        # discovery cycle, not the recommender).
+        # v0.3.31+：记录按 source 的明细，让运维看到配额守卫是否在生效
+        # （如"explore 溢出 80%"→ 修 discovery 周期，而不是推荐器）。
         per_source: dict[str, int] = defaultdict(int)
         for row in overflow_rows:
             family = _pool_source_family(
@@ -2991,12 +2946,11 @@ class Database:
         return len(clean_bvids)
 
     def trim_pool_source_overflow(self, *, source_share_quotas: dict[str, int]) -> int:
-        """Suppress fresh rows that exceed platform-family pool quotas.
+        """把超过 platform-family pool 配额的 fresh 行标记为 suppressed。
 
-        ``trim_pool_to_target_count`` caps the total pool size. This pass caps
-        each tracked platform family independently, so an over-filled family
-        cannot occupy capacity reserved for another source while the total pool
-        is still below target.
+        ``trim_pool_to_target_count`` 限制 pool 的总大小。这一 pass 独立地
+        限制每个被追踪的 platform family，这样一个过满的 family 不能在
+        总 pool 仍低于 target 时占用为另一个 source 预留的容量。
         """
         clean_quotas: dict[str, int] = {}
         for source_family, quota in source_share_quotas.items():
@@ -3062,13 +3016,12 @@ class Database:
         source_share_quotas: dict[str, int],
         raw_source_share_quotas: dict[str, int] | None = None,
     ) -> int:
-        """Move suppressed candidates back to fresh for under-quota source families.
+        """把未达配额的 source family 中 suppressed 候选移回 fresh。
 
-        This is a source-balance repair pass for pools that are already full but
-        uneven. It only reactivates rows that are otherwise eligible for the
-        recommendation pool. Reactivation is driven by frontend-available
-        deficits, but bounded by raw-material headroom so pending rows already
-        occupying a source's raw ceiling do not trigger more fresh inventory.
+        这是一个针对已满但不均衡 pool 的 source-balance 修复 pass。它只
+        重新激活其他方面符合 recommendation pool 条件的行。重新激活由
+        前端可见的缺口驱动，但受 raw-material headroom 限制，这样已占用
+        某 source raw ceiling 的 pending 行不会触发更多 fresh 库存。
         """
         if target <= 0 or not source_share_quotas:
             return 0
@@ -3152,17 +3105,16 @@ class Database:
 
     @staticmethod
     def _balance_pool_rows(rows: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
-        """Round-robin sample from a relevance-ordered pool, balanced by content topic.
+        """从 relevance 排序的 pool 中按 content topic 平衡做轮询采样。
 
-        Buckets by ``topic_group`` (with fallback to ``topic_key`` then a
-        sentinel) so that one dominant topic in the relevance head can't
-        crowd out the candidate window. Source/platform are intentionally
-        ignored — content-side features drive richness, not provenance.
+        按 ``topic_group`` 分桶（回退到 ``topic_key``，再回退到一个哨兵
+        值），这样 relevance 头部中一个占主导的 topic 不会挤掉候选窗口。
+        Source/platform 被有意忽略 —— content 侧特征驱动丰富度，而不是
+        来源。
 
-        The round-robin always runs (even when ``len(rows) <= limit``) so
-        that the returned ordering is balanced for downstream callers
-        that may sub-select; otherwise the SQL ordering can place several
-        items of the same topic back-to-back at the top.
+        轮询总是执行（即使 ``len(rows) <= limit``），这样返回的顺序对
+        可能做子选择的下游 caller 也是平衡的；否则 SQL 排序可能把同一
+        topic 的多项排在顶部相邻位置。
         """
         if limit <= 0 or len(rows) <= 1:
             return rows[:limit]
@@ -3195,7 +3147,7 @@ class Database:
         return balanced[:limit]
 
     def get_recent_viewed_bvids(self, limit: int = 2000) -> set[str]:
-        """Return recently viewed BVIDs from view events."""
+        """从 view 事件中返回最近被查看过的 BVID。"""
         cursor = self.conn.execute(
             """
             SELECT url, metadata
@@ -3214,10 +3166,10 @@ class Database:
         return viewed_bvids
 
     def get_recent_viewed_content_keys(self, limit: int = 2000) -> set[str]:
-        """Return recently viewed content identities across supported sources.
+        """返回跨受支持 source 的最近被查看 content identity。
 
-        Keys are source-aware (``source_platform:content_id``) and include
-        raw BVIDs for legacy Bilibili callers.
+        key 是 source-aware（``source_platform:content_id``），并包含
+        legacy Bilibili caller 使用的裸 BVID。
         """
         cursor = self.conn.execute(
             """
@@ -3263,11 +3215,11 @@ class Database:
             return 0.0
 
     def _pool_trim_keep_key(self, row: dict[str, Any]) -> tuple[int, int, float, float, int, str]:
-        """Sort fresh raw material from most worth keeping to least.
+        """把 fresh raw material 按最值得保留到最不值得保留排序。
 
-        Raw-ceiling trims include pending rows, so servability has to outrank
-        relevance: never keep an unopenable row over an openable one from the
-        same trim candidate set just because the pending row has a higher score.
+        Raw-ceiling 裁剪包含 pending 行，因此 servability 必须排在
+        relevance 之前：绝不能因为一个 pending 行分数更高，就保留它
+        而不是同一裁剪候选集中可打开的行。
         """
         linkable = _is_linkable_pool_source(
             row.get("source"),
@@ -3288,7 +3240,7 @@ class Database:
         )
 
     def mark_pool_items_shown(self, bvids: list[str]) -> None:
-        """Mark discovery-pool items as already shown in recommendations."""
+        """把 discovery-pool 项标记为已在 recommendation 中展示过。"""
         clean_bvids = [item for item in bvids if item]
         if not clean_bvids:
             return
@@ -3304,7 +3256,7 @@ class Database:
         )
 
     def evict_stale_pool_items(self, *, max_age_days: int = 14) -> int:
-        """Mark pool items older than *max_age_days* as stale."""
+        """把超过 *max_age_days* 的 pool 项标记为 stale。"""
         cursor = self._execute_write(
             """
             UPDATE content_cache
@@ -3320,32 +3272,30 @@ class Database:
         return cursor.rowcount
 
     def purge_pool_by_disliked_topics(self, topics: list[str]) -> int:
-        """Mark fresh pool candidates matching new dislikes as purged.
+        """把匹配新 dislike 的 fresh pool 候选标记为 purged。
 
-        Matching strategy (all case-sensitive at the SQLite layer — Chinese
-        text makes case folding moot and ASCII matching still works):
-          1. Exact match on ``topic_key``, ``topic_group``, or ``pool_topic_label``
-          2. Substring match on ``title`` or ``pool_topic_label``
-             (catches "鬼畜合集" when the dislike is "鬼畜")
+        匹配策略（在 SQLite 层全部大小写敏感 —— 中文文本使大小写折叠
+        无意义，ASCII 匹配仍然有效）：
+          1. ``topic_key``、``topic_group`` 或 ``pool_topic_label`` 精确匹配
+          2. ``title`` 或 ``pool_topic_label`` 子串匹配
+             （当 dislike 是"鬼畜"时能匹配到"鬼畜合集"）
 
-        Only candidates in ``pool_status = 'fresh'`` are affected — historical
-        rows (``shown``, ``feedbacked``, ``stale``) are preserved for audit.
-        Already-recommended items are skipped so the recommendation history
-        remains intact.
+        只有 ``pool_status = 'fresh'`` 的候选受影响 —— 历史行
+        （``shown``、``feedbacked``、``stale``）保留以供审计。已推荐项
+        被跳过，使 recommendation 历史保持完整。
 
         Args:
-            topics: Newly added disliked topics (stripped, non-empty strings).
+            topics：新添加的 dislike topic（已 strip、非空字符串）。
 
         Returns:
-            Number of rows transitioned to ``pool_status = 'purged_by_dislike'``.
+            转换为 ``pool_status = 'purged_by_dislike'`` 的行数。
         """
         clean = [t.strip() for t in topics if t and t.strip()]
         if not clean:
             return 0
 
-        # Build the match clause dynamically. Use parameterized queries
-        # throughout — topic values may contain SQL metacharacters that must
-        # not be interpolated into the query string.
+        # 动态构建匹配子句。全程使用参数化查询 —— topic 值可能包含
+        # SQL 元字符，绝不能插值到查询字符串中。
         exact_placeholders = ", ".join("?" for _ in clean)
         like_conditions = " OR ".join("title LIKE ? OR pool_topic_label LIKE ?" for _ in clean)
 
@@ -3382,10 +3332,10 @@ class Database:
         *,
         limit: int = 500,
     ) -> list[dict[str, Any]]:
-        """Return fresh, not-yet-recommended pool candidates for a semantic scan.
+        """返回用于语义扫描的 fresh、尚未被推荐的 pool 候选。
 
-        Returns only the fields needed for embedding-based matching:
-        bvid, title, topic_key, topic_group, pool_topic_label.
+        只返回 embedding 匹配所需的字段：
+        bvid、title、topic_key、topic_group、pool_topic_label。
         """
         cursor = self.conn.execute(
             """
@@ -3403,7 +3353,7 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def mark_pool_items_purged_by_dislike(self, bvids: list[str]) -> int:
-        """Mark specified bvids as purged_by_dislike (only if currently fresh)."""
+        """把指定 bvid 标记为 purged_by_dislike（仅当前为 fresh 时）。"""
         clean = [b.strip() for b in bvids if b and b.strip()]
         if not clean:
             return 0
@@ -3422,17 +3372,15 @@ class Database:
     def get_pool_candidates_needing_evaluation(
         self, limit: int = 20, *, xhs_self_nickname: str = ""
     ) -> list[dict[str, Any]]:
-        """Return fresh pool candidates that lack LLM content classification.
+        """返回缺少 LLM content 分类的 fresh pool 候选。
 
-        Targets items with empty ``style_key`` AND empty ``topic_group`` —
-        typically content from non-bilibili sources (e.g. xiaohongshu) that
-        was inserted directly into ``content_cache`` without passing through
-        the discovery engine's ``evaluate_content`` pipeline.
+        针对 ``style_key`` 与 ``topic_group`` 均为空的项 —— 通常是来自
+        非 bilibili source（如 xiaohongshu）、未经 discovery 引擎
+        ``evaluate_content`` 流程直接写入 ``content_cache`` 的 content。
 
-        These items need LLM evaluation to receive ``style_key``,
-        ``topic_group``, and ``relevance_score`` so the diversity mechanism
-        in ``_select_diversified_batch`` can treat them equally alongside
-        bilibili content.
+        这些项需要 LLM 评估以获得 ``style_key``、``topic_group`` 和
+        ``relevance_score``，这样 ``_select_diversified_batch`` 中的
+        多样性机制才能把它们与 bilibili content 同等对待。
         """
         guard_sql = _xhs_self_author_guard_sql()
         guard_params = _xhs_self_author_guard_params(xhs_self_nickname)
@@ -3469,12 +3417,12 @@ class Database:
     def get_pool_candidates_needing_copy(
         self, limit: int = 20, *, xhs_self_nickname: str = ""
     ) -> list[dict[str, Any]]:
-        """Return fresh pool candidates missing precomputed popup copy.
+        """返回缺少预计算 popup copy 的 fresh pool 候选。
 
-        v0.3.66+: requires ``style_key`` / ``topic_group`` — content must
-        be classified before expression generation.  This prevents
-        unclassified items (e.g. raw XHS notes) from getting an expression
-        and leaking through the serve gate without proper relevance scoring.
+        v0.3.66+：要求 ``style_key`` / ``topic_group`` —— content 必须
+        先被分类才能生成 expression。这防止未分类项（如 raw XHS 笔记）
+        获得 expression 并在没有正确 relevance 打分的情况下泄漏通过
+        serve 门。
         """
         min_score = self._pool_admission_min_score()
         guard_sql = _xhs_self_author_guard_sql()
@@ -3523,7 +3471,7 @@ class Database:
         expression: str,
         topic_label: str,
     ) -> None:
-        """Persist precomputed popup copy for one pooled candidate."""
+        """持久化单个 pooled 候选的预计算 popup copy。"""
         self._execute_write(
             """
             UPDATE content_cache
@@ -3535,7 +3483,7 @@ class Database:
         )
 
     def get_latest_event_id(self) -> int:
-        """Return the latest event primary key."""
+        """返回最新 event 的主键。"""
         cursor = self.conn.execute("SELECT COALESCE(MAX(id), 0) AS latest_id FROM events")
         row = cursor.fetchone()
         return int(row["latest_id"]) if row is not None else 0
@@ -3546,7 +3494,7 @@ class Database:
         after_event_id: int,
         event_types: list[str],
     ) -> list[dict[str, Any]]:
-        """Query events newer than a given id for selected event types."""
+        """查询比给定 id 新的、选定 event 类型的事件。"""
         if not event_types:
             return []
         placeholders = ", ".join("?" for _ in event_types)
@@ -3570,7 +3518,7 @@ class Database:
         topic: str = "",
         presented: int = 0,
     ) -> int:
-        """Insert a recommendation history record."""
+        """插入一条 recommendation 历史记录。"""
         cursor = self._execute_write(
             """
             INSERT INTO recommendations (bvid, expression, topic, confidence, presented)
@@ -3584,12 +3532,11 @@ class Database:
         self,
         items: list[dict[str, Any]],
     ) -> list[int]:
-        """Insert N recommendation rows in one transaction; return row IDs in order.
+        """在单个事务中插入 N 条 recommendation 行；按顺序返回 row ID。
 
-        Single fsync replaces N (was 200-300ms each under discovery write
-        contention → ~3s for the popup's 10-item batch). Returns
-        ``lastrowid`` per item, computed from the auto-increment delta
-        since this connection's last id.
+        用一次 fsync 替代 N 次（discovery 写入竞争下原本每次 200-300ms
+        → popup 10 项批次 ~3s）。按项返回 ``lastrowid``，从该连接上一次
+        id 起的 auto-increment 增量计算。
         """
         return self.batch_insert_recommendations_and_mark_shown(items, [])
 
@@ -3598,17 +3545,15 @@ class Database:
         items: list[dict[str, Any]],
         shown_bvids: list[str],
     ) -> list[int]:
-        """Insert recommendations + mark pool items shown in **one transaction**.
+        """在 **单个事务** 中插入 recommendation 并把 pool 项标记为 shown。
 
-        v0.3.45+: serve() used to fire two separate writes (insert recs,
-        then UPDATE content_cache.pool_status='shown') and pay two
-        fsyncs. Under refresh-tick write contention this stretched the
-        tail to ~1s. One BEGIN IMMEDIATE / COMMIT pair gives the same
-        atomic semantics with a single fsync, and the rare lost-write
-        case (insert succeeds, mark fails) is now structurally
-        impossible — both succeed or both rollback together.
+        v0.3.45+：serve() 以前会发两次独立写入（插入 recs，再 UPDATE
+        content_cache.pool_status='shown'）并付两次 fsync。在 refresh-tick
+        写入竞争下这会把尾部延迟拉到 ~1s。一对 BEGIN IMMEDIATE / COMMIT
+        用单次 fsync 提供相同的原子语义，且少见的 lost-write 情况（插入
+        成功、标记失败）现在在结构上不可能 —— 两者一起成功或一起回滚。
 
-        Returns ``lastrowid`` per item, in the same order as ``items``.
+        按 ``items`` 顺序返回每项的 ``lastrowid``。
         """
         if not items and not shown_bvids:
             return []
@@ -3659,13 +3604,13 @@ class Database:
                 time.sleep(_LOCK_RETRY_SLEEP_SECONDS)
 
     def get_recent_recommendation_signals(self, *, limit: int = 30) -> list[dict[str, Any]]:
-        """Return recent recommendations with topic/source for scoring context.
+        """返回带 topic/source 的近期 recommendation，供打分上下文使用。
 
-        Includes both ``topic_key`` (fine, e.g. ``"洛克王国"``) and
-        ``topic_group`` (coarse, e.g. ``"游戏"``) so the curator can fatigue
-        on both axes. Without ``topic_group``, sibling fine-grained keys
-        like ``动漫杂谈`` / ``动漫补番`` / ``动漫解说`` are independent and
-        per-key fatigue never fires across them.
+        同时包含 ``topic_key``（细，如 ``"洛克王国"``）与 ``topic_group``
+        （粗，如 ``"游戏"``），让 curator 能在两条轴上做疲劳。没有
+        ``topic_group`` 时，``动漫杂谈`` / ``动漫补番`` / ``动漫解说``
+        这样的同源细粒度 key 是相互独立的，按 key 的疲劳永远不会跨它们
+        触发。
         """
         cursor = self.conn.execute(
             """
@@ -3687,7 +3632,7 @@ class Database:
         *,
         since: datetime,
     ) -> list[dict[str, Any]]:
-        """Return recommendation topic/source rows shown since a timestamp."""
+        """返回自给定时间戳以来展示过的 recommendation topic/source 行。"""
         self._ensure_fresh_read()
         since_text = since.isoformat(sep=" ")
         cursor = self.conn.execute(
@@ -3711,14 +3656,12 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def get_feedback_signals(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        """Return recent feedback with UP/topic/franchise info for score
-        adjustment.
+        """返回带 UP/topic/franchise 信息的近期 feedback，用于分数调整。
 
-        ``franchise_key`` is the LLM-tagged IP / series column (added in
-        v0.3.18). Disliking one 原神 video used to only block its exact
-        bvid; now the curator collects ``franchise_key`` across recent
-        dislikes and down-ranks any candidate whose own ``franchise_key``
-        matches — without relying on title-string heuristics.
+        ``franchise_key`` 是 LLM 打标的 IP / series 列（v0.3.18 加入）。
+        dislike 一个原神视频以前只会屏蔽其精确 bvid；现在 curator 会跨
+        近期 dislike 收集 ``franchise_key``，并下调任何自身
+        ``franchise_key`` 匹配的候选 —— 不依赖标题字符串启发式。
         """
         cursor = self.conn.execute(
             """
@@ -3743,18 +3686,17 @@ class Database:
         *,
         exclude_processed: bool = False,
     ) -> list[dict[str, Any]]:
-        """Get recommendation history ordered by newest first.
+        """按最新优先返回 recommendation 历史。
 
-        xhs rows whose cached ``content_url`` is missing ``xsec_token``
-        are filtered out — clicking them hits xhs's 300031 login wall.
+        缓存 ``content_url`` 中缺少 ``xsec_token`` 的 xhs 行被过滤掉
+        —— 点击它们会撞上 xhs 的 300031 登录墙。
 
-        When *exclude_processed* is True, rows that have already been
-        acted upon (liked / disliked / dismissed / commented) are
-        omitted so the API only returns actionable items.
+        当 *exclude_processed* 为 True 时，已被处理过（liked / disliked /
+        dismissed / commented）的行被省略，使 API 只返回可操作项。
 
-        ``franchise_key`` (v0.3.18) is exposed so /api/recommendations
-        can apply a final per-IP cap before returning to the client —
-        otherwise five 原神 / 提瓦特 items can land in one popup view.
+        ``franchise_key`` (v0.3.18) 被暴露，使 /api/recommendations 在
+        返回 client 之前能应用最终的 per-IP 上限 —— 否则一个 popup 视图
+        中可能落下五个原神 / 提瓦特项。
         """
         self._ensure_fresh_read()
         min_score = self._pool_admission_min_score()
@@ -3793,14 +3735,14 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def count_recommendations(self) -> int:
-        """Return the total number of stored recommendations."""
+        """返回已存储的 recommendation 总数。"""
         self._ensure_fresh_read()
         cursor = self.conn.execute("SELECT COUNT(*) AS count FROM recommendations")
         row = cursor.fetchone()
         return int(row["count"]) if row is not None else 0
 
     def count_unread_recommendations(self) -> int:
-        """Return the number of unpresented recommendations."""
+        """返回未展示的 recommendation 数量。"""
         self._ensure_fresh_read()
         cursor = self.conn.execute(
             "SELECT COUNT(*) AS count FROM recommendations WHERE presented = 0"
@@ -3813,7 +3755,7 @@ class Database:
         *,
         min_confidence: float = 0.82,
     ) -> dict[str, Any] | None:
-        """Return one recommendation worth notifying the user about."""
+        """返回一条值得通知用户的 recommendation。"""
         cursor = self.conn.execute(
             """
             SELECT
@@ -3843,7 +3785,7 @@ class Database:
         return dict(row)
 
     def mark_notification_sent(self, bvid: str) -> None:
-        """Mark one cached item as already notified."""
+        """把一个 cached 项标记为已通知。"""
         self._execute_write(
             """
             UPDATE content_cache
@@ -3861,7 +3803,7 @@ class Database:
         expression: str,
         topic: str,
     ) -> None:
-        """Update the generated expression fields of a recommendation."""
+        """更新 recommendation 的生成 expression 字段。"""
         self._execute_write(
             """
             UPDATE recommendations
@@ -3872,7 +3814,7 @@ class Database:
         )
 
     def get_recommendation_by_id(self, recommendation_id: int) -> dict[str, Any] | None:
-        """Return a single recommendation row by primary key."""
+        """按主键返回单条 recommendation 行。"""
         self._ensure_fresh_read()
         cursor = self.conn.execute(
             """
@@ -3905,7 +3847,7 @@ class Database:
         feedback_type: str,
         feedback_note: str = "",
     ) -> None:
-        """Update the current feedback state of a recommendation."""
+        """更新 recommendation 的当前 feedback 状态。"""
         self._execute_write(
             """
             UPDATE recommendations
@@ -3933,7 +3875,7 @@ class Database:
         )
 
     def mark_recommendations_presented(self, recommendation_ids: list[int]) -> None:
-        """Mark recommendations as presented and set their presented timestamp."""
+        """把 recommendation 标记为已展示，并设置其 presented 时间戳。"""
         if not recommendation_ids:
             return
         placeholders = ", ".join("?" for _ in recommendation_ids)
@@ -3948,13 +3890,13 @@ class Database:
         )
 
     def close(self) -> None:
-        """Close the database connection."""
+        """关闭数据库连接。"""
         if self._conn:
             self._conn.close()
             self._conn = None
 
     def _ensure_llm_usage_cache_columns(self) -> None:
-        """Backfill v0.3.28+ prompt-cache columns on existing llm_usage tables."""
+        """为已存在的 llm_usage 表回填 v0.3.28+ prompt-cache 列。"""
         existing_columns = {
             str(row["name"]) for row in self.conn.execute("PRAGMA table_info(llm_usage)").fetchall()
         }
@@ -3967,10 +3909,10 @@ class Database:
             self.conn.execute(f"ALTER TABLE llm_usage ADD COLUMN {column_name} {column_type}")
 
     def _ensure_event_satisfaction_columns(self) -> None:
-        """Backfill v0.3.x event-satisfaction columns for pre-migration DBs.
+        """为迁移前的数据库回填 v0.3.x event-satisfaction 列。
 
-        Existing rows keep ``NULL`` in both columns; consumers treat NULL
-        as ``unknown`` so the upgrade is non-blocking.
+        已存在的行在两列上保持 ``NULL``；消费方将 NULL 视作 ``unknown``，
+        因此升级是非阻塞的。
         """
         existing_columns = {
             str(row["name"]) for row in self.conn.execute("PRAGMA table_info(events)").fetchall()
@@ -3985,7 +3927,7 @@ class Database:
             self.conn.execute(f"ALTER TABLE events ADD COLUMN {column_name} {column_type}")
 
     def _ensure_recommendation_feedback_columns(self) -> None:
-        """Backfill recommendation feedback columns for existing databases."""
+        """为已存在的数据库回填 recommendation feedback 列。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(recommendations)").fetchall()
@@ -4001,7 +3943,7 @@ class Database:
             self.conn.execute(f"ALTER TABLE recommendations ADD COLUMN {column_name} {column_type}")
 
     def _ensure_content_cache_runtime_columns(self) -> None:
-        """Backfill content-cache runtime columns for continuous refresh."""
+        """为持续刷新回填 content-cache 运行时列。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(content_cache)").fetchall()
@@ -4021,7 +3963,7 @@ class Database:
             self.conn.execute(f"ALTER TABLE content_cache ADD COLUMN {column_name} {column_type}")
 
     def _ensure_content_cache_relevance_columns(self) -> None:
-        """Backfill relevance fields for existing content-cache rows."""
+        """为已存在的 content-cache 行回填 relevance 字段。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(content_cache)").fetchall()
@@ -4037,7 +3979,7 @@ class Database:
             self.conn.execute(f"ALTER TABLE content_cache ADD COLUMN {column_name} {column_type}")
 
     def _ensure_content_cache_topic_columns(self) -> None:
-        """Backfill topic bucketing fields for existing content-cache rows."""
+        """为已存在的 content-cache 行回填 topic 分桶字段。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(content_cache)").fetchall()
@@ -4049,16 +3991,14 @@ class Database:
         if "style_key" not in existing_columns:
             self.conn.execute("ALTER TABLE content_cache ADD COLUMN style_key TEXT DEFAULT ''")
         if "franchise_key" not in existing_columns:
-            # v0.3.18: LLM-tagged IP / franchise / series. Empty string for
-            # general-interest content; non-empty rows let the curator
-            # propagate dislikes within an IP and let
-            # /api/recommendations cap how many same-franchise items
-            # appear in a single response window — without relying on
-            # any title-string heuristic or hardcoded alias list.
+            # v0.3.18：LLM 打标的 IP / franchise / series。一般兴趣内容
+            # 为空字符串；非空行让 curator 在同一 IP 内传播 dislike，并让
+            # /api/recommendations 限制单个响应窗口中同 franchise 项的
+            # 数量 —— 不依赖任何标题字符串启发式或硬编码别名表。
             self.conn.execute("ALTER TABLE content_cache ADD COLUMN franchise_key TEXT DEFAULT ''")
 
     def _ensure_content_cache_pool_copy_columns(self) -> None:
-        """Backfill precomputed pool-copy fields for existing databases."""
+        """为已存在的数据库回填预计算 pool-copy 字段。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(content_cache)").fetchall()
@@ -4073,7 +4013,7 @@ class Database:
             self.conn.execute(f"ALTER TABLE content_cache ADD COLUMN {column_name} {column_type}")
 
     def _ensure_content_cache_delight_columns(self) -> None:
-        """Backfill proactive delight scoring fields for existing databases."""
+        """为已存在的数据库回填 proactive delight scoring 字段。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(content_cache)").fetchall()
@@ -4091,7 +4031,7 @@ class Database:
             self.conn.execute(f"ALTER TABLE content_cache ADD COLUMN {column_name} {column_type}")
 
     def _ensure_content_cache_multisource_columns(self) -> None:
-        """Add multi-source content identity fields for existing databases."""
+        """为已存在的数据库新增多源内容身份字段。"""
         existing_columns = {
             str(row["name"])
             for row in self.conn.execute("PRAGMA table_info(content_cache)").fetchall()
@@ -4111,8 +4051,8 @@ class Database:
             "reply_count": "INTEGER DEFAULT 0",
             "retweet_count": "INTEGER DEFAULT 0",
             "bookmark_count": "INTEGER DEFAULT 0",
-            # P1.8 yield provenance: the discovery_keywords.id that produced this
-            # row (NULL for legacy / non-search / flag-off). Nullable, additive.
+            # P1.8 yield provenance：产出该行的 discovery_keywords.id
+            # （legacy / 非搜索 / flag 关闭时为 NULL）。可空，叠加式。
             "source_keyword_id": "INTEGER",
         }
         added = False
@@ -4125,7 +4065,7 @@ class Database:
             self.conn.execute("UPDATE content_cache SET content_id = bvid WHERE content_id = ''")
 
     def _ensure_discovery_candidate_columns(self) -> None:
-        """Backfill discovery-candidate lifecycle columns for existing databases."""
+        """为已存在的数据库回填 discovery-candidate 生命周期列。"""
 
         existing_columns = {
             str(row["name"])
@@ -4144,7 +4084,7 @@ class Database:
             "reply_count": "INTEGER NOT NULL DEFAULT 0",
             "retweet_count": "INTEGER NOT NULL DEFAULT 0",
             "bookmark_count": "INTEGER NOT NULL DEFAULT 0",
-            # P1.8 yield provenance: nullable, additive (existing rows stay NULL).
+            # P1.8 yield provenance：可空，叠加式（已存在行保持 NULL）。
             "source_keyword_id": "INTEGER",
         }
         for column_name, column_type in required_columns.items():
@@ -4155,7 +4095,7 @@ class Database:
             )
 
     def _normalize_legacy_style_keys(self) -> None:
-        """Rewrite known legacy content-form style keys to viewing-mode keys."""
+        """将已知的 legacy content-form style 键改写为 viewing-mode 键。"""
 
         targets = (
             ("content_cache", "style_key"),
@@ -4175,7 +4115,7 @@ class Database:
                 )
 
     def _ensure_recommendation_read_indexes(self) -> None:
-        """Create indexes used by recommendation and activity-feed reads."""
+        """创建被推荐和 activity-feed 读路径使用的索引。"""
         self.conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_recommendations_created_id
                 ON recommendations (created_at DESC, id DESC);
@@ -4184,7 +4124,7 @@ class Database:
         """)
 
     def _ensure_source_recipes_table(self) -> None:
-        """Create the source_recipes table if it does not exist."""
+        """若 source_recipes 表不存在则创建。"""
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS source_recipes (
                 id            TEXT PRIMARY KEY,
@@ -4201,7 +4141,7 @@ class Database:
         """)
 
     def _ensure_xhs_observed_urls_table(self) -> None:
-        """Create the xhs_observed_urls table if it does not exist."""
+        """若 xhs_observed_urls 表不存在则创建。"""
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS xhs_observed_urls (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4215,7 +4155,7 @@ class Database:
         """)
 
     def _ensure_chat_turns_table(self) -> None:
-        """Create durable popup chat-turn storage for existing databases."""
+        """为已存在的数据库创建持久化的 popup chat-turn 存储。"""
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS chat_turns (
                 turn_id       TEXT PRIMARY KEY,
@@ -4237,7 +4177,7 @@ class Database:
         """)
 
     def _ensure_watch_later_table(self) -> None:
-        """Create the watch_later bookmarks table for existing databases."""
+        """为已存在的数据库创建 watch_later 收藏表。"""
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS watch_later (
                 bvid     TEXT PRIMARY KEY,
@@ -4249,27 +4189,24 @@ class Database:
         """)
 
     def _ensure_discovery_keywords_table(self) -> None:
-        """Create the unified search-keyword store + planner single-flight lock.
+        """创建统一的 search-keyword 存储 + planner single-flight 锁。
 
-        ``discovery_keywords`` is the generation-side cache/history/yield
-        ledger for the unified keyword planner (Discover backpressure
-        refactor, P1). It carries the same atomic-claim + lease-reclaim
-        semantics as the ``xhs_tasks`` / ``dy_tasks`` execution queues
-        (``BEGIN IMMEDIATE`` claim, ``pending → claimed`` transition,
-        ``claimed_at`` lease), but tracks *which words to search* rather
-        than *which tabs to open*.
+        ``discovery_keywords`` 是统一 keyword planner（Discover backpressure
+        重构，P1）的生成侧缓存/历史/yield 账本。它承载与
+        ``xhs_tasks`` / ``dy_tasks`` 执行队列相同的原子 claim + lease-reclaim
+        语义（``BEGIN IMMEDIATE`` claim、``pending → claimed`` 转换、
+        ``claimed_at`` lease），但跟踪的是*要搜索哪些词*，而不是*要打开
+        哪些 tab*。
 
-        The uniqueness constraint is **partial** — it only covers the
-        in-flight states (``pending`` / ``claimed`` / ``executing``) so a
-        word that has already been ``used`` (or ``expired``) does not block
-        the planner from re-generating the same word on a later cycle once
-        it has rolled out of the dedup window.
+        唯一性约束是**部分索引** —— 仅覆盖 in-flight 状态
+        （``pending`` / ``claimed`` / ``executing``），因此已经 ``used``
+        （或 ``expired``）的词不会阻止 planner 在后续周期中重新生成同一个
+        词（一旦它已滚出 dedup 窗口）。
 
-        ``discovery_planner_lock`` is a tiny CAS row used to single-flight
-        the planner across loops / restarts. It is held only for *short*
-        transactions (acquire → commit → run LLM unlocked → reacquire to
-        write), never across the LLM call, so it cannot block other
-        SQLite writers.
+        ``discovery_planner_lock`` 是一个小的 CAS 行，用于跨 loop / 重启
+        对 planner 做 single-flight。它只在*短*事务中持有
+        （acquire → commit → 不持锁运行 LLM → 写结果时再 reacquire），
+        绝不跨 LLM 调用持有，因此它不会阻塞其他 SQLite 写入者。
         """
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS discovery_keywords (
@@ -4316,16 +4253,16 @@ class Database:
             );
         """)
 
-    # ── Discovery keyword store (unified search-keyword planner) ──
+    # ── Discovery keyword 存储（统一 search-keyword planner）──
     #
-    # Status machine:
-    #   pending → claimed → (inline:    used / failed)
-    #                     → (async: executing → used / failed)
-    #   any in-flight state → pending (lease reclaim / budget rollback)
-    #   pending (stale digest) → expired
-    # ``used`` only ever lands at the terminal (never at enqueue time); the
-    # word stays "in flight" until its fetch actually completes. yield_count
-    # is backfilled later (P1.8) at admission time; P1.1 only stores the column.
+    # 状态机：
+    #   pending → claimed → (inline：used / failed)
+    #                     → (async：executing → used / failed)
+    #   任意 in-flight 状态 → pending（lease 回收 / 预算回滚）
+    #   pending（digest 过期）→ expired
+    # ``used`` 只会落在终态（绝不在 enqueue 时写入）；这个 word 在其
+    # fetch 真正完成之前一直是"in flight"。yield_count 在 P1.8 阶段于
+    # admit time 回填；P1.1 只存储这一列。
 
     def insert_pending_keywords(
         self,
@@ -4333,16 +4270,15 @@ class Database:
         keywords: Sequence[str],
         profile_kw_digest: str,
     ) -> int:
-        """Batch-insert ``pending`` keywords, ignoring in-flight duplicates.
+        """批量插入 ``pending`` 关键词，忽略 in-flight 重复。
 
-        The partial unique index ``uq_discovery_keywords_inflight`` means a
-        word already ``pending`` / ``claimed`` / ``executing`` for the same
-        ``(platform, profile_kw_digest)`` is silently skipped (``OR IGNORE``);
-        a word that is only present as ``used`` / ``expired`` history does
-        **not** conflict, so the same word can be regenerated. Blank /
-        duplicate words within ``keywords`` are de-duplicated up front.
+        部分唯一索引 ``uq_discovery_keywords_inflight`` 意味着对同一
+        ``(platform, profile_kw_digest)`` 已经 ``pending`` / ``claimed``
+        / ``executing`` 的词会被静默跳过（``OR IGNORE``）；仅以
+        ``used`` / ``expired`` 历史形式存在的词**不**冲突，因此同一个词
+        可以被重新生成。``keywords`` 内部的空白/重复词会先被去重。
 
-        Returns the number of rows actually inserted.
+        返回实际插入的行数。
         """
         platform_key = platform.strip()
         digest = profile_kw_digest.strip()
@@ -4368,7 +4304,7 @@ class Database:
         return self.conn.total_changes - before
 
     def count_pending_keywords(self, platform: str, profile_kw_digest: str) -> int:
-        """Return how many ``pending`` keywords exist for this digest."""
+        """返回此 digest 下存在多少个 ``pending`` 关键词。"""
         self._ensure_fresh_read()
         row = self.conn.execute(
             """
@@ -4381,14 +4317,13 @@ class Database:
         return int(row["n"]) if row is not None else 0
 
     def claim_keywords(self, platform: str, n: int) -> list[dict[str, Any]]:
-        """Atomically claim up to ``n`` ``pending`` keywords for a platform.
+        """原子地为某个平台 claim 最多 ``n`` 个 ``pending`` 关键词。
 
-        Uses a short-lived connection + ``BEGIN IMMEDIATE`` so two concurrent
-        callers serialize and never receive overlapping rows: the second
-        writer blocks until the first commits, after which the just-claimed
-        rows are no longer ``pending`` and cannot be re-selected. Mirrors the
-        ``xhs_tasks`` / ``dy_tasks`` ``next_pending`` claim, generalized to a
-        batch. Returns the claimed rows (``status='claimed'``), oldest first.
+        使用短生命周期的连接 + ``BEGIN IMMEDIATE``，使两个并发调用方串行化
+        且永远不会收到重叠的行：第二个写入者会阻塞直到第一个提交，之后刚被
+        claim 的行不再是 ``pending``，无法被重新选中。镜像
+        ``xhs_tasks`` / ``dy_tasks`` 的 ``next_pending`` claim，并泛化到
+        批量场景。返回被 claim 的行（``status='claimed'``），最旧的在前。
         """
         claim_n = max(0, int(n))
         if claim_n <= 0:
@@ -4439,7 +4374,7 @@ class Database:
         return [dict(row) for row in claimed]
 
     def mark_keyword_executing(self, keyword_id: int) -> None:
-        """Move a ``claimed`` keyword to ``executing`` (async fetch enqueued)."""
+        """将一个 ``claimed`` 关键词移动到 ``executing``（async fetch 已入队）。"""
         self._execute_write(
             """
             UPDATE discovery_keywords
@@ -4450,7 +4385,7 @@ class Database:
         )
 
     def mark_keyword_used(self, keyword_id: int) -> None:
-        """Mark a keyword ``used`` (terminal — its fetch has completed)."""
+        """将一个关键词标记为 ``used``（终态 —— 其 fetch 已完成）。"""
         self._execute_write(
             """
             UPDATE discovery_keywords
@@ -4461,10 +4396,10 @@ class Database:
         )
 
     def mark_keyword_failed(self, keyword_id: int) -> int:
-        """Mark a keyword ``failed`` and bump ``attempts``.
+        """将一个关键词标记为 ``failed`` 并递增 ``attempts``。
 
-        Returns the new ``attempts`` count so the caller can decide whether
-        to retry (re-pend) or treat the word as terminally failed.
+        返回新的 ``attempts`` 计数，调用方据此决定是重试（重新 pending）
+        还是把该词视作终态失败。
         """
         self._execute_write(
             """
@@ -4482,12 +4417,12 @@ class Database:
         return int(row["attempts"]) if row is not None else 0
 
     def rollback_keyword_to_pending(self, keyword_id: int) -> None:
-        """Return a ``claimed`` keyword to ``pending`` (budget-rejection rollback).
+        """将一个 ``claimed`` 关键词退回为 ``pending``（预算拒绝回滚）。
 
-        Used when a claim succeeded but the downstream enqueue was rejected
-        (e.g. daily budget exhausted) so no fetch ever ran — the word must go
-        back into the pool rather than be burned. Only ``claimed`` rolls back;
-        ``executing`` rows already have an in-flight task and are left alone.
+        当 claim 成功但下游 enqueue 被拒绝（例如日预算耗尽）时使用，此时
+        没有任何 fetch 真正运行 —— 该词必须回到池中而不是被烧掉。只有
+        ``claimed`` 会回滚；``executing`` 行已经有一个 in-flight 任务，不
+        会被处理。
         """
         self._execute_write(
             """
@@ -4503,14 +4438,12 @@ class Database:
         claim_lease_minutes: float,
         executing_timeout_minutes: float,
     ) -> int:
-        """Reclaim leaked in-flight keywords back to ``pending``.
+        """回收泄漏的 in-flight 关键词回到 ``pending``。
 
-        ``claimed`` rows whose ``claimed_at`` is older than
-        ``claim_lease_minutes`` (a loop crashed between claim and fetch) and
-        ``executing`` rows whose ``executing_at`` is older than
-        ``executing_timeout_minutes`` (an async task never reported back) are
-        returned to ``pending`` so the word is not lost. Returns the number
-        of rows reclaimed.
+        ``claimed_at`` 早于 ``claim_lease_minutes`` 的 ``claimed`` 行
+        （loop 在 claim 与 fetch 之间崩溃）以及 ``executing_at`` 早于
+        ``executing_timeout_minutes`` 的 ``executing`` 行（async 任务从未回报）
+        会被退回为 ``pending``，避免该词丢失。返回被回收的行数。
         """
         from datetime import UTC, datetime, timedelta
 
@@ -4538,12 +4471,12 @@ class Database:
         window_size: int,
         window_hours: float,
     ) -> list[str]:
-        """Return recent in-flight + used keywords for dedup, newest first.
+        """返回最近的 in-flight + used 关键词用于 dedup，最新的在前。
 
-        Includes ``claimed`` / ``executing`` (in-flight, so the planner does
-        not regenerate a word a fetch is about to consume) and ``used``
-        (recently searched) within the rolling window. Capped at
-        ``window_size`` and bounded to the last ``window_hours``.
+        包含 ``claimed`` / ``executing``（in-flight，这样 planner 不会
+        重新生成一个 fetch 即将消费的词）以及滚动窗口内的 ``used``
+        （最近搜索过）。上限为 ``window_size``，且限定在最近 ``window_hours``
+        之内。
         """
         from datetime import UTC, datetime, timedelta
 
@@ -4574,15 +4507,13 @@ class Database:
         n: int,
         profile_kw_digest: str,
     ) -> int:
-        """Recycle the oldest ``used`` keywords back to ``pending``.
+        """回收最旧的 ``used`` 关键词到 ``pending``。
 
-        Sparse-profile safety valve: when generation can only produce words
-        already in history, the planner recycles the least-recently-used words
-        so the cache does not starve. Recycled rows are re-stamped with the
-        current ``profile_kw_digest`` and become ``pending`` again. Rows that
-        would collide with an existing in-flight row (same word already
-        pending/claimed/executing for this digest) are skipped to respect the
-        partial unique index. Returns the number of rows recycled.
+        Sparse-profile 安全阀：当生成只能产出已在历史中的词时，planner
+        回收最久未使用的词，避免缓存饿死。被回收的行会被重新打上当前
+        ``profile_kw_digest`` 并再次变为 ``pending``。会与已存在的 in-flight
+        行冲突的行（同一词已为该 digest 处于 pending/claimed/executing）会
+        被跳过，以尊重部分唯一索引。返回被回收的行数。
         """
         recycle_n = max(0, int(n))
         if recycle_n <= 0:
@@ -4642,13 +4573,12 @@ class Database:
         return recycled
 
     def expire_pending_by_digest(self, platform: str, current_digest: str) -> int:
-        """Expire ``pending`` keywords generated under a stale profile digest.
+        """让基于过期 profile digest 生成的 ``pending`` 关键词失效。
 
-        When the profile changes the planner expires any ``pending`` word from
-        an older digest so the next generation uses the fresh profile.
-        ``used`` / ``claimed`` / ``executing`` rows are left untouched
-        (dedup history + in-flight work are preserved). Returns the count
-        expired.
+        当 profile 变化时，planner 会让任何来自旧 digest 的 ``pending`` 词
+        失效，使下一次生成使用新的 profile。``used`` / ``claimed`` /
+        ``executing`` 行保持不变（dedup 历史 + in-flight 工作会被保留）。
+        返回被失效的计数。
         """
         cursor = self._execute_write(
             """
@@ -4666,11 +4596,10 @@ class Database:
         *,
         platform: str | None = None,
     ) -> int:
-        """Delete archived (``used`` / ``expired`` / ``failed``) rows past retention.
+        """删除超过保留期的已归档（``used`` / ``expired`` / ``failed``）行。
 
-        Cleanup for rows that have left the dedup window and are no longer
-        needed for yield accounting. Only terminal-archive states are purged;
-        in-flight rows are never deleted. Returns the number of rows removed.
+        清理已经离开 dedup 窗口、不再需要用于 yield 核算的行。只有终态归档
+        状态会被清除；in-flight 行永远不会被删除。返回被移除的行数。
         """
         from datetime import UTC, datetime, timedelta
 
@@ -4693,22 +4622,21 @@ class Database:
         )
         return int(cursor.rowcount or 0)
 
-    # ── Discovery keyword yield (P1.8 admit-time backfill) ───────
+    # ── Discovery keyword yield（P1.8 admit-time 回填）───────────
 
     def increment_keyword_yield(self, keyword_id: int, content_id: str) -> bool:
-        """Idempotently credit one admitted content to the keyword that produced it.
+        """幂等地把一个 admitted content 计入产出它的 keyword。
 
-        Called at admission (the single ``_cache_results`` convergence) for every
-        pool item whose ``source_keyword_id`` is set. Idempotency is keyed on
-        ``(keyword_id, content_id)`` via the ``discovery_keyword_yield`` ledger:
-        the ledger ``INSERT OR IGNORE`` only fires once per distinct produced
-        content, so a retried / partial / out-of-order admit of the same item
-        does **not** double-count. ``yield_count`` is bumped only on a genuinely
-        new ledger row. Decoupled from ``used`` (P1.7) — a word can be ``used``
-        and still accrue yield later.
+        在 admission 时（唯一的 ``_cache_results`` 汇合点）为每个
+        ``source_keyword_id`` 已设置的 pool 项调用。幂等性以
+        ``(keyword_id, content_id)`` 为 key 通过 ``discovery_keyword_yield``
+        账本实现：账本的 ``INSERT OR IGNORE`` 对每个不同的产出 content 只
+        触发一次，因此对同一项的重试 / 部分 / 乱序 admit **不会**重复计数。
+        ``yield_count`` 仅在真正新写入账本行时才递增。与 ``used`` (P1.7)
+        解耦 —— 一个 word 可以已经是 ``used`` 但仍能在后续累计 yield。
 
-        Returns True if this call recorded a new yield (counter bumped), False
-        if it was a duplicate / invalid no-op.
+        本次调用记录了新 yield（计数器递增）返回 True，重复 / 无效的 no-op
+        返回 False。
         """
         kid = int(keyword_id)
         cid = str(content_id or "").strip()
@@ -4723,8 +4651,8 @@ class Database:
             (kid, cid),
         )
         if self.conn.total_changes == before:
-            # Ledger row already existed → this (keyword, content) was already
-            # credited. Do not touch the counter.
+            # 账本行已存在 → 这个 (keyword, content) 已经计过 credit。
+            # 不要动计数器。
             return False
         self._execute_write(
             "UPDATE discovery_keywords SET yield_count = yield_count + 1 WHERE id = ?",
@@ -4733,7 +4661,7 @@ class Database:
         return True
 
     def keyword_yield_count(self, keyword_id: int) -> int:
-        """Return the stored ``yield_count`` for a keyword (0 if unknown)."""
+        """返回某个 keyword 存储的 ``yield_count``（未知则返回 0）。"""
         self._ensure_fresh_read()
         row = self.conn.execute(
             "SELECT yield_count FROM discovery_keywords WHERE id = ?",
@@ -4742,17 +4670,16 @@ class Database:
         return int(row["yield_count"]) if row is not None else 0
 
     def keyword_yield_total(self, platform: str) -> int:
-        """Return the platform-wide sum of ``yield_count`` across all keywords.
+        """返回某平台所有 keyword 的 ``yield_count`` 之和。
 
-        Cheap single aggregate (the ``(platform, status, …)`` index already
-        covers the scan) used only for the planner's per-cycle observability
-        ledger (P1.9): the merged LLM call is one ``discovery.keyword_planner``
-        caller (token cost can't be split per platform), so the ledger surfaces
-        per-platform keyword *production* (generated) + cumulative *yield* so
-        operators can still see which platform's search words actually land
-        content. Counts every row's stored ``yield_count`` (used / expired
-        history included) — it is a running production total, not a live-pool
-        gauge. Returns 0 on any error so it never breaks a generation pass.
+        廉价的单次聚合（``(platform, status, …)`` 索引已覆盖该扫描），
+        仅用于 planner 的每周期可观测性账本 (P1.9)：合并后的 LLM 调用是
+        单个 ``discovery.keyword_planner`` caller（token 成本无法按平台
+        拆分），因此账本暴露按平台的 keyword *production*（生成）+
+        累计 *yield*，让运维仍能看到哪个平台的搜索词真正落到了 content。
+        统计每一行存储的 ``yield_count``（含 used / expired 历史）——
+        这是一个累计生产总量，不是 live-pool 计量。任何错误都返回 0，
+        这样它永远不会打断 generation pass。
         """
         try:
             self._ensure_fresh_read()
@@ -4767,11 +4694,11 @@ class Database:
         return int(row["total"]) if row is not None else 0
 
     def used_keyword_count(self, platform: str) -> int:
-        """Count ``used`` keywords for a platform (P3.2 dynamic-cap denominator).
+        """统计某平台的 ``used`` 关键词数（P3.2 dynamic-cap 分母）。
 
-        Paired with :meth:`keyword_yield_total` to derive the platform's observed
-        average yield-per-keyword (total yield / used count). Cheap single
-        aggregate; returns 0 on any error so it never breaks a generation pass.
+        与 :meth:`keyword_yield_total` 配对，用于推导平台观测到的平均
+        yield-per-keyword（总 yield / used 计数）。廉价的单次聚合；任何错误
+        都返回 0，因此它永远不会打断 generation pass。
         """
         try:
             self._ensure_fresh_read()
@@ -4791,19 +4718,18 @@ class Database:
         *,
         min_age_minutes: float = 60.0,
     ) -> int:
-        """Retire ``used`` words that have produced nothing, conservatively.
+        """保守地退休那些未产出任何内容的 ``used`` 词。
 
-        A word that has been ``used`` for at least ``min_age_minutes`` and still
-        has ``yield_count == 0`` is moved to ``expired`` so the recycler does not
-        keep re-pending a search term that demonstrably never lands content.
+        一个已经被 ``used`` 至少 ``min_age_minutes`` 分钟且仍然
+        ``yield_count == 0`` 的词会被移到 ``expired``，这样回收器就不会
+        持续重新 pending 一个明显永远落不到内容上的搜索词。
 
-        The age floor is the safety valve against retiring a *freshly* used word
-        whose admit is still pending: inline-admit credits yield synchronously,
-        but fetch-only (X / YouTube) and async (XHS) words are marked ``used`` at
-        handoff and only accrue yield once the shared pipeline admits — minutes
-        later. ``min_age_minutes`` must comfortably exceed that admit latency.
-        Only ``used`` rows are touched; in-flight / pending / already-expired
-        rows are left alone. Returns the number of rows retired.
+        年龄下限是安全阀，避免退休一个*刚刚*被 used 的词，其 admit 仍可能
+        pending：inline-admit 会同步计入 yield，但 fetch-only（X / YouTube）
+        和 async（XHS）的词在 handoff 时被标记为 ``used``，只有当共享 pipeline
+        admit 时（几分钟后）才会累计 yield。``min_age_minutes`` 必须明显超过
+        该 admit 延迟。只动 ``used`` 行；in-flight / pending / 已 expired 的
+        行不动。返回被退休的行数。
         """
         from datetime import UTC, datetime, timedelta
 
@@ -4824,18 +4750,17 @@ class Database:
         )
         return int(cursor.rowcount or 0)
 
-    # ── Discovery keyword planner single-flight lock ─────────────
+    # ── Discovery keyword planner single-flight 锁 ─────────────
 
     def acquire_planner_lock(self, owner: str, lease_seconds: float) -> bool:
-        """Try to acquire the planner single-flight lock via CAS.
+        """尝试通过 CAS 获取 planner single-flight 锁。
 
-        ``BEGIN IMMEDIATE`` serializes the check-and-set: the lock is granted
-        if it is unheld, already owned by ``owner``, or its ``locked_until``
-        has elapsed (the previous holder crashed). On success ``locked_until``
-        is extended by ``lease_seconds`` and the row's ``owner`` is set.
-        **Short transaction only** — acquire, commit, then run the LLM call
-        *without* holding any DB lock; reacquire/``renew`` to write results.
-        Returns True if the lock is now held by ``owner``.
+        ``BEGIN IMMEDIATE`` 把 check-and-set 串行化：当锁未被持有、已由
+        ``owner`` 持有、或其 ``locked_until`` 已过期（上一持有者崩溃）时
+        授予锁。成功时 ``locked_until`` 延长 ``lease_seconds``，并设置行的
+        ``owner``。**只做短事务** —— acquire、commit，然后在不持有任何
+        DB 锁的情况下运行 LLM 调用；写结果时再 reacquire/``renew``。
+        锁现在由 ``owner`` 持有则返回 True。
         """
         from datetime import UTC, datetime, timedelta
 
@@ -4864,7 +4789,7 @@ class Database:
             held_by = str(row["owner"] or "")
             locked_until = str(row["locked_until"] or "")
             if held_by and held_by != owner and locked_until > now_text:
-                # Still validly held by someone else.
+                # 仍被其他人有效持有。
                 conn.commit()
                 return False
             conn.execute(
@@ -4885,10 +4810,9 @@ class Database:
         return True
 
     def renew_planner_lock(self, owner: str, lease_seconds: float) -> bool:
-        """Extend the planner lock lease if still owned by ``owner``.
+        """若 planner 锁仍由 ``owner`` 持有则延长其租约。
 
-        Returns True if the lease was extended, False if the lock has been
-        taken over by another owner in the meantime.
+        租约延长成功返回 True，期间锁已被其他 owner 取走则返回 False。
         """
         from datetime import UTC, datetime, timedelta
 
@@ -4906,10 +4830,10 @@ class Database:
         return int(cursor.rowcount or 0) > 0
 
     def release_planner_lock(self, owner: str) -> bool:
-        """Release the planner lock if still owned by ``owner``.
+        """若 planner 锁仍由 ``owner`` 持有则释放。
 
-        Clears the owner and expires ``locked_until`` so the next acquirer
-        can take it immediately. Returns True if a row was released.
+        清除 owner 并使 ``locked_until`` 过期，使下一个 acquirer 可以立即
+        取得锁。如果释放了某行则返回 True。
         """
         from datetime import UTC, datetime
 
@@ -4927,7 +4851,7 @@ class Database:
     # ── Watch-later CRUD ─────────────────────────────────────────
 
     def add_to_watch_later(self, bvid: str, note: str = "") -> bool:
-        """Bookmark a video. Returns True if newly inserted, False if updated."""
+        """收藏一个视频。新插入返回 True，已存在并更新返回 False。"""
         self._execute_write(
             """
             INSERT INTO watch_later (bvid, note)
@@ -4941,7 +4865,7 @@ class Database:
         return self.conn.total_changes > 0
 
     def remove_from_watch_later(self, bvid: str) -> bool:
-        """Remove a bookmark. Returns True if a row was deleted."""
+        """移除一个收藏。删除了行返回 True。"""
         self._execute_write(
             "DELETE FROM watch_later WHERE bvid = ?",
             (bvid.strip(),),
@@ -4949,7 +4873,7 @@ class Database:
         return self.conn.total_changes > 0
 
     def is_in_watch_later(self, bvid: str) -> bool:
-        """Check whether a video is bookmarked."""
+        """检查视频是否已被收藏。"""
         row = self.conn.execute(
             "SELECT 1 FROM watch_later WHERE bvid = ?",
             (bvid.strip(),),
@@ -4957,12 +4881,12 @@ class Database:
         return row is not None
 
     def count_watch_later(self) -> int:
-        """Return total number of bookmarked videos."""
+        """返回已收藏视频总数。"""
         row = self.conn.execute("SELECT COUNT(*) FROM watch_later").fetchone()
         return int(row[0]) if row else 0
 
     def list_watch_later(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-        """Return bookmarked videos with content_cache metadata, newest first."""
+        """返回带 content_cache 元数据的收藏视频，按最新优先。"""
         cursor = self.conn.execute(
             """
             SELECT
@@ -4984,11 +4908,11 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def _ensure_favorites_table(self) -> None:
-        """Create the favorites (收藏夹) table for existing databases.
+        """为已存在的数据库创建 favorites（收藏夹）表。
 
-        Favorites are a permanent, curated keep — distinct from the
-        ephemeral ``watch_later`` queue. The two tables are independent so
-        a video can be in one, both, or neither.
+        Favorites 是一个永久的、curated 的保留区 —— 与临时的
+        ``watch_later`` 队列区分。两张表相互独立，一个视频可以只在
+        其中一张、两张都有、或都不在。
         """
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS favorites (
@@ -5000,15 +4924,15 @@ class Database:
                 ON favorites(added_at DESC);
         """)
 
-    # ── Auth state (password gate revocation epoch) ──────────────
+    # ── Auth state（password gate 撤销 epoch）──────────────────
 
     def _ensure_auth_state_table(self) -> None:
-        """Create the auth_state key/value table.
+        """创建 auth_state key/value 表。
 
-        Holds the global revocation epoch (``auth_epoch``) and the password
-        fingerprint, kept out of ``config.toml`` so that revocation is a
-        cross-process atomic counter rather than a whole-file rewrite. See
-        ``docs/plans/2026-05-30-web-password-auth-design.md`` §4.7.
+        存放全局撤销 epoch（``auth_epoch``）和 password fingerprint，
+        与 ``config.toml`` 分离，这样撤销是一个跨进程的原子计数器，
+        而不是整文件重写。见
+        ``docs/plans/2026-05-30-web-password-auth-design.md`` §4.7。
         """
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS auth_state (
@@ -5018,13 +4942,12 @@ class Database:
         """)
 
     def _ensure_init_runs_table(self) -> None:
-        """Create the init_runs table backing guided (GUI) initialization.
+        """创建支撑 guided（GUI）初始化的 init_runs 表。
 
-        One row per guided-init run; the latest row is the authoritative
-        progress source for ``GET /api/init-status`` (docs/specs/gui-init.md
-        §5a). State survives restarts so a crashed / hot-reloaded run is
-        reconciled to ``failed`` on boot rather than leaving a stuck
-        ``running`` flag.
+        每次 guided-init 运行对应一行；最新一行是 ``GET /api/init-status``
+        （docs/specs/gui-init.md §5a）的权威进度来源。状态跨重启保留，
+        这样崩溃 / 热重载的运行在启动时会被修正为 ``failed``，而不是
+        留下一个卡住的 ``running`` 标志。
         """
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS init_runs (
@@ -5043,10 +4966,10 @@ class Database:
         """)
 
     def get_latest_init_run(self) -> dict[str, Any] | None:
-        """Return the most recent init run as a dict, or None if none exist.
+        """返回最近一次 init run 的 dict，不存在则返回 None。
 
-        Reads fresh WAL state so a run written by the background task / another
-        process is visible immediately.
+        读取最新的 WAL 状态，这样后台任务 / 另一个进程写入的 run 能
+        立刻可见。
         """
         self._ensure_fresh_read()
         row = self.conn.execute(
@@ -5055,12 +4978,12 @@ class Database:
         return dict(row) if row is not None else None
 
     def try_reserve_init_starting(self, run_id: str) -> bool:
-        """Atomically reserve a new init run in ``starting`` state.
+        """原子地把一个新的 init run 预留为 ``starting`` 状态。
 
-        Single-flight via ``BEGIN IMMEDIATE`` CAS (like ``bump_auth_epoch``):
-        succeeds only when no run is currently ``starting``/``running``.
-        Returns False when an init is already active, so concurrent
-        ``POST /api/init`` callers cannot double-start (spec §5b TOCTOU).
+        通过 ``BEGIN IMMEDIATE`` CAS 实现单飞（与 ``bump_auth_epoch``
+        类似）：仅当没有 run 当前处于 ``starting``/``running`` 时才成功。
+        init 已在运行时返回 False，这样并发的 ``POST /api/init`` 调用方
+        不会重复启动（spec §5b TOCTOU）。
         """
         conn = self.open_connection()
         try:
@@ -5087,10 +5010,10 @@ class Database:
             conn.close()
 
     def update_init_run(self, run_id: str, **fields: Any) -> None:
-        """Update mutable columns of an init run (the single status writer).
+        """更新 init run 的可变列（唯一的 status 写入点）。
 
-        Only whitelisted columns are accepted and ``updated_at`` is always
-        bumped; unknown keys raise so a typo cannot silently no-op.
+        只接受白名单中的列，且 ``updated_at`` 总会被刷新；未知 key 会
+        抛异常，这样拼写错误不会静默 no-op。
         """
         allowed = {
             "status",
@@ -5114,10 +5037,10 @@ class Database:
         )
 
     def reconcile_init_runs_on_boot(self) -> int:
-        """Fail any run left ``starting``/``running`` by a crash/restart.
+        """把任何因崩溃/重启而残留为 ``starting``/``running`` 的 run 标记为 failed。
 
-        No init task survives a process restart, so a persisted active status
-        is necessarily stale. Returns the number of rows reconciled (spec §5a).
+        没有任何 init 任务能在进程重启后存活，因此持久化的 active 状态
+        一定是过期的。返回被修正的行数（spec §5a）。
         """
         cursor = self._execute_write(
             """
@@ -5130,11 +5053,11 @@ class Database:
         return cursor.rowcount
 
     def get_auth_epoch(self) -> int:
-        """Return the current revocation epoch. Reads fresh WAL state.
+        """返回当前撤销 epoch。读取最新 WAL 状态。
 
-        A missing row means "never bumped" → 0. A present-but-corrupt value
-        RAISES (never silently 0) so the auth gate fails closed instead of
-        resurrecting tokens minted before a prior revocation. See §4.7.
+        缺失行表示"从未 bump 过" → 0。存在但值损坏时抛异常（绝不静默
+        返回 0），这样 auth gate 会 fail closed，而不是把上一次撤销
+        之前签发的 token 复活。见 §4.7。
         """
         self._ensure_fresh_read()
         row = self.conn.execute("SELECT value FROM auth_state WHERE key = 'auth_epoch'").fetchone()
@@ -5146,16 +5069,16 @@ class Database:
             raise ValueError(f"corrupt auth_epoch value: {row[0]!r}") from exc
 
     def bump_auth_epoch(self) -> int:
-        """Atomically increment and return the revocation epoch.
+        """原子地递增并返回撤销 epoch。
 
-        Uses a short-lived connection with ``BEGIN IMMEDIATE`` so concurrent
-        bumps (or another process) cannot lose an increment.
+        使用短生命周期连接配合 ``BEGIN IMMEDIATE``，这样并发的 bump
+        （或另一个进程）不会丢失递增。
         """
         conn = self.open_connection()
         try:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT value FROM auth_state WHERE key = 'auth_epoch'").fetchone()
-            # Missing → 0; corrupt → raise (never reset a damaged epoch downward).
+            # 缺失 → 0；损坏 → 抛异常（绝不把受损的 epoch 向下重置）。
             current = 0 if row is None else int(row[0])
             new_value = current + 1
             conn.execute(
@@ -5171,13 +5094,13 @@ class Database:
             conn.close()
 
     def reconcile_password_fingerprint(self, fingerprint: str) -> bool:
-        """Detect a password change and bump the epoch if needed.
+        """检测 password 变更并在需要时 bump epoch。
 
-        Compares ``fingerprint`` (derived from stable credential material, see
-        ``auth_core.password_fingerprint``) against the stored value, inside a
-        single ``BEGIN IMMEDIATE`` transaction (CAS). Returns ``True`` when the
-        epoch was bumped. First enable (no prior fingerprint) records it WITHOUT
-        bumping. See §4.7.
+        在单个 ``BEGIN IMMEDIATE`` 事务（CAS）内把 ``fingerprint``（从
+        稳定 credential material 派生，见
+        ``auth_core.password_fingerprint``）与存储值比较。epoch 被 bump
+        时返回 ``True``。首次启用（无先前 fingerprint）只记录值、不 bump。
+        见 §4.7。
         """
         conn = self.open_connection()
         try:
@@ -5197,7 +5120,7 @@ class Database:
                 epoch_row = conn.execute(
                     "SELECT value FROM auth_state WHERE key = 'auth_epoch'"
                 ).fetchone()
-                # Missing → 0; corrupt → raise (the caller fails closed).
+                # 缺失 → 0；损坏 → 抛异常（caller 会 fail closed）。
                 current = 0 if epoch_row is None else int(epoch_row[0])
                 conn.execute(
                     "INSERT OR REPLACE INTO auth_state (key, value) VALUES ('auth_epoch', ?)",
@@ -5215,10 +5138,10 @@ class Database:
             conn.close()
 
     def set_password_fingerprint(self, fingerprint: str) -> None:
-        """Overwrite the stored fingerprint without touching the epoch.
+        """覆盖存储的 fingerprint，但不触碰 epoch。
 
-        Used after ``--rotate-secret`` re-bases the fingerprint under a new
-        signing secret, so the next reconcile does not double-bump.
+        在 ``--rotate-secret`` 于新签名 secret 下重置 fingerprint 后使用，
+        这样下一次 reconcile 不会重复 bump。
         """
         self._execute_write(
             "INSERT OR REPLACE INTO auth_state (key, value) VALUES ('password_fingerprint', ?)",
@@ -5226,28 +5149,27 @@ class Database:
         )
 
     def revoke_and_set_fingerprint(self, fingerprint: str | None, *, force_bump: bool) -> None:
-        """Atomically (single ``BEGIN IMMEDIATE``) set the fingerprint, bumping the
-        epoch when the credential changed or ``force_bump`` is set.
+        """原子地（单个 ``BEGIN IMMEDIATE``）设置 fingerprint，并在 credential
+        变更或 ``force_bump`` 为真时 bump epoch。
 
-        Used by the local admin endpoint so a password change's revocation
-        (epoch bump) and fingerprint update commit together — never a half state
-        where the new password is live but old sessions survive (review r1#2).
+        供本地 admin endpoint 使用，使 password 变更的撤销（epoch bump）与
+        fingerprint 更新一起提交 —— 绝不会出现新 password 已生效但旧 session
+        仍存活的半状态（review r1#2）。
 
-        The bump decision is made INSIDE the transaction by comparing ``fingerprint``
-        to the stored one (CAS), mirroring ``reconcile_password_fingerprint``: a
-        first-ever set (no stored fingerprint) never bumps, but any *change* from an
-        existing fingerprint always does — even when the caller's ``force_bump`` is
-        false. This catches an effective credential change the caller can't see in
-        its request, e.g. admin hot-publishing a ``password_hash`` that drifted on
-        disk via an out-of-band ``set-password`` (review r4#2). ``force_bump`` adds a
-        revoke for enabled on/off toggles, which carry no fingerprint change.
+        bump 决策在事务内部通过把 ``fingerprint`` 与存储值比较（CAS）做出，
+        与 ``reconcile_password_fingerprint`` 一致：首次设置（无存储
+        fingerprint）从不 bump，但从已存在 fingerprint 出发的任何 *变更*
+        都会 bump —— 即使 caller 的 ``force_bump`` 为 false。这样可以捕获
+        caller 在其请求中看不到的有效 credential 变更，例如 admin 通过
+        带外 ``set-password`` 热发布一个在磁盘上漂移的 ``password_hash``
+        （review r4#2）。``force_bump`` 为 enabled on/off 切换补上一个
+        revoke（这类切换不携带 fingerprint 变更）。
 
-        Raises on a corrupt epoch (caller fails closed). The caller persists the new
-        config FIRST (rolling it back if this raises) and publishes to the live gate
-        only AFTER this commits, so a failure here leaves the durable DB state
-        untouched and the persisted/live auth on the old password; a crash between
-        the config write and this call is healed by the startup fingerprint
-        reconcile (review r2#1).
+        epoch 损坏时抛异常（caller fail closed）。caller 先持久化新 config
+        （若此处抛异常则回滚），并仅在此处 commit 之后才发布到 live gate，
+        因此这里的失败会让持久化 DB 状态保持不变，持久化/live 的 auth 仍
+        使用旧 password；config 写入与本调用之间崩溃的情况由启动时的
+        fingerprint reconcile 自愈（review r2#1）。
         """
         conn = self.open_connection()
         try:
@@ -5281,7 +5203,7 @@ class Database:
     # ── Favorites CRUD ───────────────────────────────────────────
 
     def add_to_favorites(self, bvid: str, note: str = "") -> bool:
-        """Save a video to favorites. Returns True if newly inserted."""
+        """把视频保存到 favorites。新插入返回 True。"""
         self._execute_write(
             """
             INSERT INTO favorites (bvid, note)
@@ -5295,7 +5217,7 @@ class Database:
         return self.conn.total_changes > 0
 
     def remove_from_favorites(self, bvid: str) -> bool:
-        """Remove a favorite. Returns True if a row was deleted."""
+        """移除一个 favorite。删除了行返回 True。"""
         self._execute_write(
             "DELETE FROM favorites WHERE bvid = ?",
             (bvid.strip(),),
@@ -5303,7 +5225,7 @@ class Database:
         return self.conn.total_changes > 0
 
     def is_in_favorites(self, bvid: str) -> bool:
-        """Check whether a video is favorited."""
+        """检查视频是否已被收藏到 favorites。"""
         row = self.conn.execute(
             "SELECT 1 FROM favorites WHERE bvid = ?",
             (bvid.strip(),),
@@ -5311,12 +5233,12 @@ class Database:
         return row is not None
 
     def count_favorites(self) -> int:
-        """Return total number of favorited videos."""
+        """返回已收藏到 favorites 的视频总数。"""
         row = self.conn.execute("SELECT COUNT(*) FROM favorites").fetchone()
         return int(row[0]) if row else 0
 
     def list_favorites(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-        """Return favorited videos with content_cache metadata, newest first."""
+        """返回带 content_cache 元数据的 favorites 视频，按最新优先。"""
         cursor = self.conn.execute(
             """
             SELECT
@@ -5338,12 +5260,12 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def iter_cover_lifecycle(self) -> list[tuple[str, str, bool]]:
-        """Return ``(cover_url, pool_status, is_saved)`` for every cached-cover candidate.
+        """返回每个缓存封面候选的 ``(cover_url, pool_status, is_saved)``。
 
-        ``is_saved`` is True when the bvid is in favorites or watch_later. Consumed
-        by the image-cache cleanup (:mod:`openbiliclaw.runtime.image_cache`) to decide
-        which cached cover files are safe to evict: covers of saved or still-pending
-        content are kept; covers of consumed, unsaved content are eligible for removal.
+        ``is_saved`` 为 True 表示该 bvid 在 favorites 或 watch_later 中。被
+        image-cache 清理（:mod:`openbiliclaw.runtime.image_cache`）消费，用于
+        决定哪些缓存的封面文件可以安全驱逐：已保存或仍 pending 内容的封面会被
+        保留；已消费且未保存内容的封面可被移除。
         """
         cursor = self.conn.execute(
             """
@@ -5363,14 +5285,14 @@ class Database:
         ]
 
     def iter_servable_cover_urls(self, *, recent_hours: int = 12, limit: int = 300) -> list[str]:
-        """Recent, still-servable cover URLs (newest first) for discovery-time prefetch.
+        """返回最近且仍可服务的封面 URL（最新优先），用于 discovery 时预取。
 
-        Returns covers of content that may still be shown — ``pool_status`` in
-        ``fresh / shown / suppressed``, or saved (favorites / watch_later) — limited
-        to the last ``recent_hours`` of discoveries and ordered newest-first, so the
-        prefetch sweep (:mod:`openbiliclaw.runtime.image_cache`) caches the freshest
-        CDN tokens (notably XHS) before they expire. The recency window also keeps the
-        sweep from endlessly retrying old content whose signed token is already dead.
+        返回可能仍会被展示的内容封面 —— ``pool_status`` 为
+        ``fresh / shown / suppressed``，或已被保存（favorites / watch_later）
+        —— 限定为最近 ``recent_hours`` 内的发现，并按最新优先排序，使预取
+        扫描（:mod:`openbiliclaw.runtime.image_cache`）在 freshest CDN token
+        （尤其是 XHS）过期前缓存它们。recency 窗口还避免扫描不断重试签名
+        token 已失效的旧内容。
         """
         cursor = self.conn.execute(
             """
@@ -5395,10 +5317,10 @@ class Database:
     # ── XHS observed URL ingest ───────────────────────────────────
 
     def save_xhs_observed_urls(self, urls: list[str], page_type: str) -> int:
-        """Insert observed xhs URLs, skipping duplicates. Returns count inserted."""
+        """插入观察到的 xhs URL，跳过重复项。返回插入条数。"""
         inserted = 0
         for url in urls:
-            # Skip if we've already seen this URL
+            # 跳过已见过的 URL
             existing = self.conn.execute(
                 "SELECT 1 FROM xhs_observed_urls WHERE url = ?", (url,)
             ).fetchone()
@@ -5414,7 +5336,7 @@ class Database:
     # ── Source recipe CRUD ──────────────────────────────────────────
 
     def save_source_recipe(self, recipe: dict[str, Any]) -> None:
-        """Insert or update a source recipe."""
+        """插入或更新一条 source recipe。"""
         import json as _json
 
         self._execute_write(
@@ -5443,13 +5365,13 @@ class Database:
         )
 
     def get_all_recipes(self) -> list[dict[str, Any]]:
-        """Return all source recipes."""
+        """返回所有 source recipes。"""
         self._ensure_fresh_read()
         rows = self.conn.execute("SELECT * FROM source_recipes ORDER BY created_at").fetchall()
         return [self._row_to_recipe(row) for row in rows]
 
     def get_enabled_recipes(self) -> list[dict[str, Any]]:
-        """Return only enabled source recipes."""
+        """只返回已启用的 source recipes。"""
         self._ensure_fresh_read()
         rows = self.conn.execute(
             "SELECT * FROM source_recipes WHERE enabled = 1 ORDER BY created_at"
@@ -5457,7 +5379,7 @@ class Database:
         return [self._row_to_recipe(row) for row in rows]
 
     def update_recipe(self, recipe_id: str, **fields: Any) -> bool:
-        """Update specific fields of a recipe. Returns True if a row was updated."""
+        """更新 recipe 的指定字段。有行被更新返回 True。"""
         import json as _json
 
         allowed = {"name", "strategy", "config", "target_share", "enabled", "last_fetched_at"}
@@ -5478,7 +5400,7 @@ class Database:
         return cursor.rowcount > 0
 
     def delete_recipe(self, recipe_id: str) -> bool:
-        """Delete a recipe by id. Returns True if a row was deleted."""
+        """按 id 删除一个 recipe。如果删除了某行则返回 True。"""
         cursor = self._execute_write(
             "DELETE FROM source_recipes WHERE id = ?",
             (recipe_id,),
@@ -5513,12 +5435,11 @@ class Database:
         min_delight_score: float = 0.85,
         limit: int = 1,
     ) -> dict[str, Any] | None:
-        """Return one un-notified pool item with the highest delight_score.
+        """返回一个未通知的、``delight_score`` 最高的 pool 项。
 
-        Backwards-compatible: ``limit=1`` returns a single dict (or None);
-        callers that want multiple candidates (for example to filter
-        disliked topics in Python) should call
-        ``get_delight_candidates`` instead.
+        向后兼容：``limit=1`` 返回单个 dict（或 None）；想要多个候选
+        （例如在 Python 中过滤 disliked topics）的调用方应改调
+        ``get_delight_candidates``。
         """
         rows = self.get_delight_candidates(
             min_delight_score=min_delight_score,
@@ -5533,23 +5454,20 @@ class Database:
         limit: int = 20,
         include_liked: bool = False,
     ) -> list[dict[str, Any]]:
-        """Return up to ``limit`` un-notified delight candidates ordered by score.
+        """返回最多 ``limit`` 个按分数排序的未通知 delight 候选。
 
-        Restricts to ``pool_status IN ('fresh', 'shown')`` —  ``suppressed``
-        items have been trimmed out of the active pool by topic-group cap
-        or source-share quota and shouldn't reappear as delights. Without
-        this guard, popup re-hydration would pull historical delight
-        scores baked under earlier (looser) calibrations from the
-        suppressed graveyard and surface 20 stale "surprises" on every
-        extension reload (observed 2026-05-04: 562 suppressed items
-        carried delight metadata vs 2 in fresh).
+        限定 ``pool_status IN ('fresh', 'shown')`` —— ``suppressed`` 项已
+        被 topic-group cap 或 source-share quota 从活动池中裁掉，不应该再
+        作为 delight 重新出现。没有这个守卫，popup re-hydration 会从
+        suppressed 墓地中拉出在早期（更宽松的）校准下烘焙的历史 delight
+        分数，并在每次扩展重载时浮现 20 个陈旧的"惊喜"（2026-05-04 观测到：
+        562 个 suppressed 项携带 delight 元数据，而 fresh 中只有 2 个）。
 
-        ``include_liked`` keeps ``feedback_type='like'`` rows in the result.
-        Queue re-hydration (``/api/delight/pending-batch``) passes True so a
-        liked delight stays visible until the user explicitly dismisses it —
-        positive feedback must not remove the card (v0.3.63 contract). New
-        delivery paths (WS push, counts, CLI) keep the default False so an
-        already-liked item is never re-pushed as a fresh surprise.
+        ``include_liked`` 让 ``feedback_type='like'`` 行保留在结果中。
+        Queue re-hydration（``/api/delight/pending-batch``）传 True，这样
+        已 like 的 delight 在用户显式关闭之前保持可见 —— 正向反馈不能移除
+        卡片（v0.3.63 契约）。新交付路径（WS 推送、counts、CLI）保持默认
+        False，使已经 like 的项绝不会被作为新的 surprise 重新推送。
         """
         feedback_clause = (
             "COALESCE(feedback_type, '') IN ('', 'like')"
@@ -5576,7 +5494,7 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def mark_delight_notified(self, bvid: str) -> None:
-        """Mark one content item as delight-notified."""
+        """将一个内容项标记为 delight-notified。"""
         self._execute_write(
             """
             UPDATE content_cache
@@ -5595,7 +5513,7 @@ class Database:
         delight_reason: str,
         delight_hook: str = "",
     ) -> None:
-        """Persist the computed delight score and explanation for a pool item."""
+        """持久化某个 pool 项计算出的 delight 分数与解释。"""
         self._execute_write(
             """
             UPDATE content_cache
@@ -5612,7 +5530,7 @@ class Database:
         *,
         min_delight_score: float = 0.85,
     ) -> int:
-        """Return the number of un-notified delight candidates."""
+        """返回未通知的 delight 候选数量。"""
         min_score = self._pool_admission_min_score()
         cursor = self.conn.execute(
             """
@@ -5639,19 +5557,18 @@ class Database:
         min_relevance_score: float = 0.55,
         xhs_self_nickname: str = "",
     ) -> list[dict[str, Any]]:
-        """Return pool candidates that still need delight evaluation or copy.
+        """返回仍需要 delight 评估或 copy 的 pool 候选。
 
-        Two-stage retrieval: ``relevance_score >= min_relevance_score``
-        is the cheap pre-filter (the discovery LLM already judged user-
-        content fit during ``evaluate_batch``), then the caller runs the
-        expensive LLM delight scorer only on this shortlist.
+        两阶段检索：``relevance_score >= min_relevance_score`` 是廉价的
+        预过滤（discovery LLM 已在 ``evaluate_batch`` 期间评判过用户-内容
+        契合度），然后调用方只对这个 shortlist 运行昂贵的 LLM delight
+        scorer。
 
-        Default 0.55 is calibrated to the discovery rubric:
-          0.6+ strong fit, 0.5-0.6 moderate, <0.5 weak fit.
-        Items below ``min_relevance_score`` skip delight scoring
-        entirely — they're not going to delight anyone they don't
-        already half-fit, and burning LLM calls on weak-fit items just
-        wastes budget.
+        默认 0.55 是基于 discovery rubric 校准的：
+          0.6+ 强契合，0.5-0.6 中等，<0.5 弱契合。
+        低于 ``min_relevance_score`` 的项完全跳过 delight 评分 —— 它们
+        不会 delight 任何它们本就一半不契合的人，在弱契合项上烧 LLM 调用
+        只是浪费预算。
         """
         guard_sql = _xhs_self_author_guard_sql()
         guard_params = _xhs_self_author_guard_params(xhs_self_nickname)

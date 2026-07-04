@@ -1,4 +1,4 @@
-"""Shared utilities and protocols for discovery strategies."""
+"""发现策略的共享工具和协议。"""
 
 from __future__ import annotations
 
@@ -16,16 +16,15 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T")
 
-# Profile-summary truncation caps. Lists are weight-sorted before
-# truncation so the strongest interests survive the cut, not whichever
-# happened to be listed first.
+# Profile-summary 截断上限。列表在截断前按 weight 排序,
+# 使最强的 interest 保留下来,而非恰好列在前面的那些。
 _INTEREST_DOMAIN_CAP = 128
 _SPECIFICS_PER_DOMAIN = 30
 _INTEREST_TAG_CAP = 256
-# Matches _DISLIKED_TOPICS_STORE_CAP so avoid-topics are NEVER cut from
-# prompts: the store predates the recency-ordered union (v0.3.121), so
-# legacy entries sit in alphabetical order and any cut below the store
-# cap would drop topics by codepoint, not by relevance.
+# 与 _DISLIKED_TOPICS_STORE_CAP 保持一致,使 avoid-topics 永远
+# 不被从 prompt 中切掉: store 早于 recency-ordered union (v0.3.121),
+# 所以遗留条目按字母顺序排列,任何低于 store cap 的切掉都会按 codepoint
+# 而非按 relevance 丢掉 topics。
 _DISLIKED_TOPICS_CAP = 128
 _QUERY_PROFILE_LIST_CAP = 8
 _QUERY_INTEREST_DOMAIN_CAP = 16
@@ -64,7 +63,7 @@ async def _gather_bounded(
     *,
     runner: Callable[[Awaitable[_T]], Awaitable[_T]] | None = None,
 ) -> list[object]:
-    """Gather awaitables, optionally routing them through a bounded runner."""
+    """收集 awaitable,可选地通过有界 runner 路由它们。"""
     if runner is None:
         return cast(
             "list[object]",
@@ -95,7 +94,7 @@ class SupportsSearchClient(Protocol):
 
 
 def search_cooldown_remaining(client: object) -> float:
-    """Return process/client search cooldown seconds when the client exposes it."""
+    """当 client 暴露该方法时,返回 process/client 的 search cooldown 秒数。"""
     remaining = getattr(client, "search_cooldown_remaining", None)
     if not callable(remaining):
         return 0.0
@@ -138,17 +137,17 @@ class SupportsRelatedClient(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Shared helper functions (extracted from SearchStrategy static methods)
+# 共享辅助函数 (从 SearchStrategy 静态方法中提取)
 # ---------------------------------------------------------------------------
 
 
 def clean_text(value: str) -> str:
-    """Strip HTML tags from *value*."""
+    """从 *value* 中去除 HTML 标签。"""
     return re.sub(r"<[^>]+>", "", value).strip()
 
 
 def to_int(raw_value: object) -> int:
-    """Best-effort conversion of *raw_value* to ``int``."""
+    """将 *raw_value* 尽力转换为 ``int``。"""
     if isinstance(raw_value, bool):
         return int(raw_value)
     if isinstance(raw_value, int):
@@ -163,7 +162,7 @@ def to_int(raw_value: object) -> int:
 
 
 def parse_duration(raw_value: object) -> int:
-    """Parse a duration value (int seconds or ``HH:MM:SS`` / ``MM:SS`` string)."""
+    """解析时长值 (int 秒数或 ``HH:MM:SS`` / ``MM:SS`` 字符串)。"""
     if isinstance(raw_value, int):
         return raw_value
     if isinstance(raw_value, str) and ":" in raw_value:
@@ -178,12 +177,12 @@ def parse_duration(raw_value: object) -> int:
 
 
 def normalize_match_text(value: str) -> str:
-    """Collapse whitespace and lowercase for fuzzy matching."""
+    """折叠空白并小写化,用于模糊匹配。"""
     return re.sub(r"\s+", "", value).strip().lower()
 
 
 def _format_profile_timestamp(value: object) -> str:
-    """Serialize a profile timestamp-like value for JSON prompt summaries."""
+    """为 JSON prompt summary 序列化 profile 类时间戳值。"""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -218,7 +217,7 @@ def _coerce_profile_str_list(value: object, limit: int = 5) -> list[str]:
 
 
 def _likes_by_weight(profile: OnionProfile) -> list[InterestDomain]:
-    """Interest domains sorted by weight (desc), blanks dropped."""
+    """按 weight 降序排列的 interest domain,空值已丢弃。"""
     return sorted(
         (dom for dom in profile.interest.likes if dom.domain.strip()),
         key=lambda dom: dom.weight,
@@ -232,17 +231,17 @@ def _entry_weight(entry: dict[str, object]) -> float:
 
 
 def _extract_interest_domains(profile: SoulProfile) -> list[dict[str, object]]:
-    """Extract domain-level (一级) interest hierarchy from profile.
+    """从 profile 提取 domain 级别 (一级) 的 interest 层次结构。
 
-    Returns a list like:
+    返回类似如下的列表:
     [{"domain": "AI/ML", "weight": 0.9, "specifics": ["强化学习", "ppo算法"]}, ...]
 
-    This gives LLM prompts visibility into both broad domains AND
-    specific sub-interests, enabling queries at different granularity.
+    这让 LLM prompt 既能看到宽泛的 domain 也能看到具体的子 interest,
+    使 query 能在不同粒度上生成。
     """
     from openbiliclaw.soul.profile import OnionProfile
 
-    # OnionProfile has the tree structure directly
+    # OnionProfile 直接具有树结构
     if isinstance(profile, OnionProfile):
         return [
             {
@@ -256,7 +255,7 @@ def _extract_interest_domains(profile: SoulProfile) -> list[dict[str, object]]:
             for dom in _likes_by_weight(profile)[:_INTEREST_DOMAIN_CAP]
         ]
 
-    # Flat SoulProfile: reconstruct domains from category grouping
+    # 平坦的 SoulProfile: 从 category 分组重建 domain
     ranked_tags = sorted(profile.preferences.interests, key=lambda tag: tag.weight, reverse=True)
     domain_map: dict[str, dict[str, object]] = {}
     for tag in ranked_tags[:_INTEREST_TAG_CAP]:
@@ -290,15 +289,15 @@ def _extract_interest_domains(profile: SoulProfile) -> list[dict[str, object]]:
 
 
 def _extract_interest_tags(profile: SoulProfile) -> list[dict[str, object]]:
-    """Extract flat interest tags with provenance metadata."""
+    """提取带 provenance 元数据的平坦 interest tag。"""
     from openbiliclaw.soul.profile import OnionProfile
 
     if isinstance(profile, OnionProfile):
         ranked = _likes_by_weight(profile)
         interests: list[dict[str, object]] = []
         seen_names: set[str] = set()
-        # Domain tags first: every ranked domain keeps tag-level exposure
-        # even when higher-weight domains carry many specifics.
+        # 先放 domain tag: 每个排名的 domain 保留 tag 级别的曝光,
+        # 即使更高 weight 的 domain 带了很多 specifics。
         for dom in ranked:
             if len(interests) >= _INTEREST_TAG_CAP:
                 break
@@ -313,13 +312,12 @@ def _extract_interest_tags(profile: SoulProfile) -> list[dict[str, object]]:
                 }
             )
             seen_names.add(dom.domain)
-        # Remaining slots: specifics ranked by their OWN weight across all
-        # domains. A per-domain quota here let umbrella domains (200+
-        # specifics on real profiles) hide 0.8-weight tags behind their
-        # top-5 while 0.4-weight tags from tiny domains got in. Per-domain
-        # exposure is already guaranteed by the domain tags above and the
-        # interest_domains section, so the flat list can be purely
-        # weight-ranked.
+        # 剩余槽位: specifics 按它们在所有 domain 之间自己的 weight 排序。
+        # 这里若设 per-domain 配额会让 umbrella domain (真实 profile 上
+        # 有 200+ specifics) 把 0.8-weight tag 藏在其 top-5 后面,而来自
+        # 小 domain 的 0.4-weight tag 反而进来了。Per-domain 曝光已由
+        # 上面的 domain tag 和 interest_domains 段保证,所以平坦列表可
+        # 以纯粹按 weight 排序。
         all_specifics = sorted(
             ((spec, dom) for dom in ranked for spec in dom.specifics if spec.name.strip()),
             key=lambda pair: pair[0].weight,
@@ -362,7 +360,7 @@ def _extract_interest_tags(profile: SoulProfile) -> list[dict[str, object]]:
 
 
 def _summarize_mbti(profile: SoulProfile) -> dict[str, object] | None:
-    """Return compact MBTI context when available."""
+    """可用时返回紧凑的 MBTI 上下文。"""
     from openbiliclaw.soul.profile import OnionProfile
 
     if isinstance(profile, OnionProfile):
@@ -408,8 +406,8 @@ def _summarize_mbti(profile: SoulProfile) -> dict[str, object] | None:
 
 def _summarize_recent_awareness(profile: SoulProfile) -> list[dict[str, str]]:
     notes: list[dict[str, str]] = []
-    # The window is chronological oldest→newest, so the newest notes live
-    # at the tail — [:5] would feed the LLM the *stalest* observations.
+    # 窗口是按时间最早→最新排列,所以最新的 note 在尾部 —
+    # [:5] 会喂给 LLM *最旧* 的 observation。
     for note in profile.recent_awareness[-30:]:
         item = {
             "date": note.date,
@@ -424,7 +422,7 @@ def _summarize_recent_awareness(profile: SoulProfile) -> list[dict[str, str]]:
 
 def _summarize_active_insights(profile: SoulProfile) -> list[dict[str, object]]:
     insights: list[dict[str, object]] = []
-    # Chronological window: newest insights are at the tail.
+    # 按时间窗口: 最新的 insight 在尾部。
     for insight in profile.active_insights[-30:]:
         item: dict[str, object] = {
             "hypothesis": insight.hypothesis,
@@ -444,22 +442,21 @@ def build_profile_summary(
     *,
     interests: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """Build the canonical structured profile input shared by every prompt.
+    """构建每个 prompt 共享的规范结构化 profile 输入。
 
-    This is the single profile representation fed to the LLM across all
-    source-platform content calls — discovery (search / trending / explore /
-    evaluation) and recommendation (evaluation / expression / reason) alike.
+    这是喂给 LLM 的单一 profile 表示,适用于所有源平台内容调用 —
+    discovery (search / trending / explore / evaluation) 和
+    recommendation (evaluation / expression / reason) 都一样。
 
-    The free-form ``personality_portrait`` narrative is deliberately excluded:
-    the structured fields below already carry the same signal, and the prose
-    summary only duplicated it (and biased query/expression generation with its
-    decorative metaphors). The portrait is still generated and shown in the
-    profile UI — it just no longer enters any LLM prompt.
+    自由形式的 ``personality_portrait`` 叙述被刻意排除: 下面的结构化
+    字段已携带相同信号,而 prose summary 只是在重复它 (并用其装饰性
+    比喻偏置 query/expression 生成)。portrait 仍会生成并显示在
+    profile UI 中 — 只是不再进入任何 LLM prompt。
 
-    Includes both domain-level (一级) and specific (二级) interests so that
-    discovery prompts can generate queries at different granularity levels.
-    Pass ``interests`` to override the default weight-ranked tag list (e.g.
-    recommendation's embedding-selected, content-relevant interests).
+    同时包含 domain 级别 (一级) 和 specific (二级) interest,使
+    discovery prompt 能在不同粒度级别上生成 query。传入 ``interests``
+    以覆盖默认的按 weight 排序的 tag 列表 (例如 recommendation 的
+    embedding-selected、content-relevant interest)。
     """
     interest_domains = _extract_interest_domains(profile)
     summary: dict[str, object] = {
@@ -471,11 +468,11 @@ def build_profile_summary(
         "life_stage": profile.life_stage,
         "interest_domains": interest_domains,
         "interests": interests if interests is not None else _extract_interest_tags(profile),
-        # favorite_up_users is intentionally excluded from the LLM-facing
-        # profile output: "常看某创作者" ≠ "对该创作者内容类型感兴趣", and it
-        # only invited the model to back-derive interests from creator names.
-        # The user's UP list still lives in /api/profile-summary (their own
-        # view) and seeds related_chain directly — just not here.
+        # favorite_up_users 被有意从 LLM 可见的 profile 输出中排除:
+        # "常看某创作者" ≠ "对该创作者内容类型感兴趣",且只会诱导模型
+        # 从创作者名反推 interest。用户的 UP 列表仍存在于
+        # /api/profile-summary (他们自己的视图) 并直接 seed
+        # related_chain — 只是不在这里。
         "disliked_topics": profile.preferences.disliked_topics[:_DISLIKED_TOPICS_CAP],
         "deep_needs": profile.deep_needs[:30],
         "style": {
@@ -499,7 +496,7 @@ def build_profile_summary(
     mbti = _summarize_mbti(profile)
     if mbti:
         summary["mbti"] = mbti
-    # Include active speculative interests if available
+    # 可用时包含活跃的 speculative interest
     speculations = getattr(profile, "_active_speculations", None)
     if speculations:
         summary["speculative_interests"] = [
@@ -542,13 +539,12 @@ def _compact_query_interest_domains(value: object) -> list[dict[str, object]]:
 def cached_embedding_lookup(
     embedding_service: object | None,
 ) -> Callable[[str], list[float]] | None:
-    """Return a safe cache-only embedding lookup for prompt shaping.
+    """为 prompt shaping 返回安全的 cache-only embedding 查找。
 
-    Query-generation prompts must not trigger fresh embedding API calls; that
-    would move cost from chat completion to embedding and add latency to every
-    planner/search cycle. ``lookup_cached`` keeps this helper opportunistic:
-    use semantic diversity when cache is warm, otherwise preserve the old
-    deterministic order.
+    Query-generation prompt 不得触发新的 embedding API 调用;那会把
+    成本从 chat completion 转移到 embedding 并给每个 planner/search
+    周期增加延迟。``lookup_cached`` 让此 helper 保持 opportunistic:
+    cache 温时用语义多样性,否则保留旧的确定性顺序。
     """
     lookup = getattr(embedding_service, "lookup_cached", None)
     if not callable(lookup):
@@ -882,13 +878,13 @@ def build_query_generation_profile_summary(
     *,
     embedding_lookup: Callable[[str], list[float] | None] | None = None,
 ) -> dict[str, object]:
-    """Build compact, stable profile context for discovery query generation.
+    """为 discovery query 生成构建紧凑、稳定的 profile 上下文。
 
-    Search keywords, trending RIDs, explore domains, and keyword-planner batches
-    need the user's stable taste shape, not the full high-churn profile state.
-    This deliberately excludes recent awareness, active insights, timestamps,
-    source provenance, and session context to keep prompt cost bounded and cache
-    keys stable while preserving the fields that actually shape search terms.
+    Search keyword、trending RID、explore domain 和 keyword-planner 批次
+    需要用户稳定的口味形状,而非完整的高 churn profile 状态。这里刻意
+    排除 recent awareness、active insight、时间戳、source provenance
+    和 session context,以保持 prompt 成本有界、cache key 稳定,同时
+    保留真正塑造搜索词的字段。
     """
     full = build_profile_summary(profile)
     disliked_topic_candidates = _compact_query_str_list(
@@ -934,7 +930,7 @@ def build_query_generation_profile_summary(
 
 
 def interest_aliases(name: str) -> set[str]:
-    """Return a set of normalised alias tokens for a given interest *name*."""
+    """为给定 interest *name* 返回一组归一化的别名 token。"""
     cleaned = re.sub(r"\s+", "", name).strip().lower()
     if not cleaned:
         return set()
@@ -956,7 +952,7 @@ def interest_aliases(name: str) -> set[str]:
 
 
 def interest_anchors(profile: SoulProfile) -> list[tuple[str, float]]:
-    """Build weighted interest anchor pairs from the top profile interests."""
+    """从顶层 profile interest 构建带权重的 interest anchor 对。"""
     anchors: dict[str, float] = {}
     for interest_item in profile.preferences.interests[:5]:
         raw_name = str(interest_item.name).strip()

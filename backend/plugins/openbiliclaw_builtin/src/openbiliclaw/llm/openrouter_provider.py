@@ -1,4 +1,4 @@
-"""OpenRouter provider built on the OpenAI-compatible client."""
+"""基于 OpenAI 兼容客户端构建的 OpenRouter provider。"""
 
 from __future__ import annotations
 
@@ -6,16 +6,15 @@ from .openai_provider import OpenAIProvider
 
 
 class OpenRouterProvider(OpenAIProvider):
-    """OpenRouter provider with optional attribution headers."""
+    """带可选 attribution 头的 OpenRouter provider。"""
 
-    # OpenRouter routes most chat models, but its embeddings coverage is
-    # spotty per-route — better to fall back to ollama / gemini by default
-    # than to surprise users with mid-pipeline 404s. Users who want
-    # OpenRouter embedding can set ``[llm.embedding] provider="openrouter"``
-    # with an explicit ``<vendor>/<model>`` (e.g.
-    # ``google/gemini-embedding-2-preview``); that dedicated path lives in
-    # ``registry._build_dedicated_embedding_provider`` and does not
-    # consult this flag.
+    # OpenRouter 路由大多数聊天模型，但其 embeddings 覆盖因路由而异
+    # —— 默认回退到 ollama / gemini 比让用户在管线中途遭遇 404 更好。
+    # 想用 OpenRouter 嵌入的用户可设置
+    # ``[llm.embedding] provider="openrouter"`` 并指定显式
+    # ``<vendor>/<model>``（例如 ``google/gemini-embedding-2-preview``）；
+    # 该专用路径位于
+    # ``registry._build_dedicated_embedding_provider``，不查阅此标志。
     supports_embedding = False
 
     def __init__(

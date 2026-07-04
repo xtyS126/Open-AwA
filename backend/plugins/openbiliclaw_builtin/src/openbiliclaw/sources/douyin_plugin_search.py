@@ -1,10 +1,10 @@
-"""Plugin-backed Douyin search discovery helper.
+"""插件驱动的抖音搜索发现辅助模块。
 
-Direct-cookie Douyin search can return HTTP 200 with a soft-empty
-``antispam_check / hit_shark`` payload. The browser extension path is
-more robust because it runs inside the logged-in page and can use the
-page's MAIN-world acrawler signer. This module exposes that path behind
-the same small client protocol used by ``DouyinDirectStrategy``.
+直连 Cookie 抖音搜索可能返回 HTTP 200，但 payload 为软空
+（``antispam_check / hit_shark``）。浏览器扩展路径更稳健，
+因为它在登录态页面内运行，可使用页面 MAIN-world 的 acrawler
+签名器。本模块在该路径后暴露同一小型客户端协议，
+供 ``DouyinDirectStrategy`` 使用。
 """
 
 from __future__ import annotations
@@ -24,27 +24,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DouyinBudgetExhausted(Exception):  # noqa: N818 - plan-mandated name (no Error suffix)
-    """Plugin-search task budget exhausted — a *distinguishable* "not searched".
+class DouyinBudgetExhausted(Exception):  # noqa: N818 - 计划指定名称（无 Error 后缀）
+    """插件搜索任务预算耗尽 —— 一种可区分的"未搜索"。
 
-    Raised (only when ``raise_on_budget`` is set on the client — the unified
-    keyword planner fetch path) when the plugin ``search`` task could not be
-    enqueued because the daily task budget is spent, so NO search ran. This is
-    deliberately distinct from a genuinely empty result (``[]``): the unified
-    keyword planner caller rolls the claimed keyword back to ``pending`` instead
-    of burning it as ``used``. Legacy callers leave ``raise_on_budget`` off and
-    keep the historical "budget → fall back to direct-cookie" behavior.
+    仅当客户端设置 ``raise_on_budget``（统一关键词 planner fetch 路径）时
+    抛出：当插件 ``search`` 任务因当日预算耗尽而未能入队时，表示
+    未运行任何搜索。这与真正的空结果（``[]``）有意识地加以区分：
+    统一关键词 planner 调用方会将已认领的关键词回滚至 ``pending``，
+    而不是将其标记为 ``used`` 烧掉。遗留调用方关闭 ``raise_on_budget``，
+    保留历史"预算耗尽 → 兜底直连 Cookie"行为。
     """
 
 
 def _normalize_daily_budget(value: int) -> int:
-    """Normalize daily task budget; 0 disables the per-day cap."""
+    """规范化每日任务预算；0 表示禁用按天上限。"""
 
     return max(0, int(value))
 
 
 class SupportsDouyinSearchFallback(Protocol):
-    """Subset of the direct client used as fallback/delegate."""
+    """用作兜底/委托的直连客户端子集。"""
 
     cookie: str
 
@@ -63,7 +62,7 @@ class SupportsDouyinSearchFallback(Protocol):
 
 
 def plugin_search_item_to_aweme(item: dict[str, Any]) -> dict[str, object] | None:
-    """Map one plugin ``dy_search`` item to aweme-like JSON."""
+    """将一个插件 ``dy_search`` 条目映射为类 aweme JSON。"""
     aweme_id = str(item.get("aweme_id", "") or "").strip()
     if not aweme_id:
         return None
@@ -101,7 +100,7 @@ def _to_int(value: Any) -> int:
 
 
 class DouyinPluginSearchClient:
-    """Client wrapper that resolves ``search_aweme`` through dy_tasks."""
+    """通过 dy_tasks 解析 ``search_aweme`` 的客户端封装。"""
 
     search_source_strategy = "dy-plugin-search"
     hot_source_strategy = "dy-plugin-hot-related"
@@ -126,10 +125,9 @@ class DouyinPluginSearchClient:
         self._direct_client = direct_client
         self._wait_seconds = max(0.0, float(wait_seconds))
         self._poll_interval_seconds = max(0.01, float(poll_interval_seconds))
-        # Unified keyword planner fetch path: surface plugin-search budget
-        # exhaustion as ``DouyinBudgetExhausted`` (distinguishable from an empty
-        # result) so a claimed keyword can be rolled back instead of burned.
-        # OFF by default → legacy "budget → fall back to direct-cookie".
+        # 统一关键词 planner fetch 路径：将插件搜索预算耗尽暴露为
+        # ``DouyinBudgetExhausted``（与空结果可区分），使已认领的关键词
+        # 可被回滚而非烧掉。默认关闭 → 遗留"预算耗尽 → 兜底直连 Cookie"。
         self._raise_on_budget = bool(raise_on_budget)
         self._allow_direct_fallback = bool(allow_direct_fallback)
         self._daily_search_budget = _normalize_daily_budget(
@@ -145,11 +143,11 @@ class DouyinPluginSearchClient:
 
     @property
     def cookie(self) -> str:
-        """Expose direct cookie for existing diagnostics/tests."""
+        """暴露直连 Cookie，供既有诊断/测试使用。"""
         return self._direct_client.cookie
 
     async def search_aweme(self, keyword: str, *, limit: int = 30) -> list[dict[str, object]]:
-        """Search via the browser plugin; direct-cookie fallback is opt-in diagnostics only."""
+        """通过浏览器插件搜索；直连 Cookie 兜底仅供选择性诊断。"""
         keyword = keyword.strip()
         if not keyword or limit <= 0:
             return []
@@ -165,7 +163,7 @@ class DouyinPluginSearchClient:
         return []
 
     async def get_hot_board(self, *, limit: int = 30) -> list[dict[str, object]]:
-        """Resolve hot candidates through the plugin; fallback is opt-in diagnostics only."""
+        """通过插件解析热点候选；兜底仅供选择性诊断。"""
         if limit <= 0:
             return []
 
@@ -186,11 +184,11 @@ class DouyinPluginSearchClient:
         *,
         limit: int = 30,
     ) -> list[dict[str, object]]:
-        """Delegate creator timeline to the direct client."""
+        """将创作者时间线委托给直连客户端。"""
         return await self._direct_client.get_creator_posts(sec_uid, limit=limit)
 
     async def get_recommend_feed(self, *, limit: int = 30) -> list[dict[str, object]]:
-        """Resolve home recommendation feed through the browser plugin."""
+        """通过浏览器插件解析首页推荐信息流。"""
         if limit <= 0:
             return []
 
@@ -228,8 +226,8 @@ class DouyinPluginSearchClient:
         if not task_id:
             logger.info("douyin plugin search skipped: task budget exhausted")
             if self._raise_on_budget:
-                # Distinguishable signal for the unified keyword planner fetch
-                # path: budget exhausted → no search ran → roll the word back.
+                # 统一关键词 planner fetch 路径的可区分信号：
+                # 预算耗尽 → 未运行搜索 → 将关键词回滚。
                 raise DouyinBudgetExhausted("douyin plugin search task budget exhausted")
             return []
 
@@ -346,7 +344,7 @@ class DouyinPluginSearchClient:
 
 
 def kick_douyin_task_dispatcher() -> None:
-    """Best-effort wake-up for the extension dispatcher."""
+    """尽力唤醒扩展调度器。"""
     req = request.Request(
         "http://127.0.0.1:8420/api/sources/dy/kick",
         method="POST",
@@ -382,7 +380,7 @@ def _normalize_hot_task_items(hot_terms: list[dict[str, object]]) -> list[dict[s
 
 
 def _hot_seed_count(limit: int) -> int:
-    """Return how many hot-board rows to expand for one discovery request."""
+    """返回单次发现请求需展开的热搜榜行数。"""
     if limit <= 0:
         return 0
     if limit <= 10:

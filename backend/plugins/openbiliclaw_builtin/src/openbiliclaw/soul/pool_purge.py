@@ -1,16 +1,15 @@
-"""Pool purge — recall + LLM precision pipeline.
+"""候选池清理 —— 召回 + LLM 精度流水线。
 
-When a new dislike is learned, the pool is cleaned in two stages:
+当学到一个新的 dislike 时，候选池分两阶段清理：
 
-Stage 1 (hard purge): string exact match on topic_key / topic_group /
-    pool_topic_label — high confidence, no LLM needed.
+阶段 1（硬清除）：对 topic_key / topic_group / pool_topic_label 做
+    字符串精确匹配 —— 置信度高，无需 LLM。
 
-Stage 2 (recall → LLM precision):
-  a) Embedding recall with a **low** threshold (0.55) casts a wide net
-     over all fresh candidates.
-  b) The recalled set is sent to an LLM agent that makes the final
-     purge/keep decision per candidate at the intent/pattern level.
-     (e.g. "不喜欢营销文" → purge "5分钟教你月入过万")
+阶段 2（召回 → LLM 精度）：
+  a) 用一个**较低**的阈值（0.55）做 embedding 召回，对所有新候选
+     撒一张大网。
+  b) 把召回集合交给 LLM agent，由它在意图/模式层面逐条做出最终的
+     清除/保留决策。（例如 "不喜欢营销文" → 清除 "5分钟教你月入过万"）
 """
 
 from __future__ import annotations
@@ -27,20 +26,19 @@ from openbiliclaw.llm.json_utils import extract_llm_json_object
 
 logger = logging.getLogger(__name__)
 
-# Recall threshold — deliberately low to maximize recall. False positives
-# are filtered out by the LLM precision pass. If no LLM is available,
-# the old high threshold (0.78) is used as a standalone fallback.
+# 召回阈值 —— 刻意调低以最大化召回率。假阳性由 LLM 精度 pass 滤除。
+# 当 LLM 不可用时，回退到旧的高阈值（0.78）作为独立 fallback。
 RECALL_THRESHOLD = 0.55
 STANDALONE_PURGE_THRESHOLD = 0.78
-# Backward compat alias for tests.
+# 测试用的向后兼容别名。
 DEFAULT_SEMANTIC_PURGE_THRESHOLD = STANDALONE_PURGE_THRESHOLD
 
-# Max candidates to scan per embedding recall pass.
+# 每次 embedding 召回 pass 最多扫描的候选数。
 DEFAULT_SCAN_LIMIT = 500
 
 
 class _SupportsEmbed(Protocol):
-    """Minimal protocol — matches EmbeddingService.embed."""
+    """最小协议 —— 匹配 EmbeddingService.embed。"""
 
     similarity_threshold: float
 
@@ -61,7 +59,7 @@ class _SupportsLLMTask(Protocol):
 
 
 def _candidate_text(cand: dict[str, object]) -> str:
-    """Build the text to embed for a candidate."""
+    """为候选构建要 embed 的文本。"""
     parts: list[str] = []
     for field in ("title", "topic_key", "topic_group", "pool_topic_label"):
         value = str(cand.get(field) or "").strip()
@@ -71,7 +69,7 @@ def _candidate_text(cand: dict[str, object]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Embedding recall
+# Embedding 召回
 # ---------------------------------------------------------------------------
 
 
@@ -82,9 +80,9 @@ async def _embedding_recall(
     embedding_service: _SupportsEmbed,
     threshold: float,
 ) -> list[tuple[dict[str, object], float, str]]:
-    """Return candidates whose embedding similarity exceeds *threshold*.
+    """返回 embedding 相似度超过 *threshold* 的候选。
 
-    Each result is ``(candidate_row, best_similarity, best_matching_topic)``.
+    每条结果为 ``(candidate_row, best_similarity, best_matching_topic)``。
     """
     topic_vectors: list[tuple[str, list[float]]] = []
     for topic in topics:
@@ -127,7 +125,7 @@ async def _embedding_recall(
 
 
 # ---------------------------------------------------------------------------
-# LLM precision judge
+# LLM 精度裁判
 # ---------------------------------------------------------------------------
 
 _LLM_PURGE_SYSTEM_PROMPT = """\
@@ -161,7 +159,7 @@ async def _llm_judge(
     llm_service: _SupportsLLMTask,
     batch_size: int = _LLM_PURGE_BATCH_SIZE,
 ) -> list[str]:
-    """Ask LLM to judge recalled candidates. Returns bvids to purge."""
+    """让 LLM 裁判召回的候选。返回要清除的 bvid 列表。"""
     items = [
         {
             "bvid": str(cand.get("bvid", "")),
@@ -227,7 +225,7 @@ async def _llm_judge(
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# 公共 API
 # ---------------------------------------------------------------------------
 
 
@@ -239,11 +237,10 @@ async def semantic_purge_pool_by_disliked_topics(
     threshold: float | None = None,
     scan_limit: int = DEFAULT_SCAN_LIMIT,
 ) -> int:
-    """Standalone embedding purge (no LLM available).
+    """独立的 embedding 清除（无 LLM 可用）。
 
-    Uses the high standalone threshold (0.78) to avoid false positives.
-    Called when ``llm_service`` is not available — the recall+LLM path
-    is preferred when both services are present.
+    使用较高的独立阈值（0.78）以避免假阳性。当 ``llm_service`` 不可
+    用时调用 —— 当两个服务都存在时，优先使用 召回+LLM 路径。
     """
     clean_topics = [t.strip() for t in topics if t and t.strip()]
     if not clean_topics or embedding_service is None:
@@ -290,19 +287,19 @@ async def recall_and_llm_purge_pool(
     recall_threshold: float = RECALL_THRESHOLD,
     scan_limit: int = DEFAULT_SCAN_LIMIT,
 ) -> int:
-    """Two-stage purge: embedding recall (low threshold) → LLM precision.
+    """两阶段清除：embedding 召回（低阈值）→ LLM 精度。
 
     Args:
-        database: Database handle.
-        topics: Newly added dislike topics.
-        all_disliked_topics: Full dislike list for LLM context.
-        embedding_service: Embedding service for recall.
-        llm_service: LLM service for precision judgment.
-        recall_threshold: Similarity threshold for recall (default 0.55).
-        scan_limit: Max candidates for embedding scan.
+        database: Database 句柄。
+        topics: 新增的 dislike 主题。
+        all_disliked_topics: 完整 dislike 列表，供 LLM 上下文使用。
+        embedding_service: 用于召回的 embedding 服务。
+        llm_service: 用于精度裁判的 LLM 服务。
+        recall_threshold: 召回相似度阈值（默认 0.55）。
+        scan_limit: embedding 扫描的最大候选数。
 
     Returns:
-        Number of candidates purged.
+        被清除的候选数。
     """
     clean_new = [t.strip() for t in topics if t and t.strip()]
     clean_all = [t.strip() for t in all_disliked_topics if t and t.strip()]
@@ -313,7 +310,7 @@ async def recall_and_llm_purge_pool(
     if not candidates:
         return 0
 
-    # Stage 1: wide embedding recall
+    # 阶段 1：宽口径 embedding 召回
     recalled = await _embedding_recall(
         candidates=candidates,
         topics=clean_new,
@@ -330,7 +327,7 @@ async def recall_and_llm_purge_pool(
         recall_threshold,
     )
 
-    # Stage 2: LLM precision judge
+    # 阶段 2：LLM 精度裁判
     bvids_to_purge = await _llm_judge(
         recalled=recalled,
         new_topics=clean_new,

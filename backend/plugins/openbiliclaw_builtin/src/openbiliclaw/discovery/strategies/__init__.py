@@ -1,1 +1,1 @@
-"""Discovery strategies package."""
+"""发现策略包。"""

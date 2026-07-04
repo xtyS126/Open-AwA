@@ -1,9 +1,8 @@
-"""Pool Curator — recommendation-side scoring independent of Discovery.
+"""Pool Curator —— 推荐侧评分，独立于 Discovery。
 
-Sits between the RecommendationEngine and the database to compute a
-composite ``rec_score`` that accounts for freshness, topic fatigue,
-source monotony, serendipity, and feedback signals — factors that
-Discovery's relevance_score does not capture.
+位于 RecommendationEngine 和数据库之间，计算一个复合 ``rec_score``，
+考虑新鲜度、话题疲劳、来源单调、惊喜和反馈信号 —— 这些是 Discovery 的
+relevance_score 未捕获的因素。
 """
 
 from __future__ import annotations
@@ -20,24 +19,22 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Immutable configuration & context
+# 不可变配置与上下文
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ScoringWeights:
-    """Tuneable weights for the composite rec_score.
+    """复合 rec_score 的可调权重。
 
-    Serendipity is weighted higher (0.20) to ensure cross-domain explore
-    content surfaces in recommendations, not just high-relevance safe picks.
+    Serendipity 权重较高 (0.20) 以确保跨域探索内容出现在推荐中，
+    而不仅是高相关性的安全选择。
 
-    ``topic_fatigue`` was raised from 0.15 to 0.25 after observing that
-    high-relevance candidates for "洛克王国"/"动漫"/etc. kept winning the
-    top-K reshuffle batches because the per-key fatigue penalty (~0.045)
-    couldn't overcome the relevance weight advantage (~0.28). Combined
-    with the steeper fatigue curve (now ``count^1.5/len*5``) and the new
-    topic_group axis, the same candidate now takes a 3-4x harder hit
-    when it has appeared ≥2 times in recent history.
+    ``topic_fatigue`` 从 0.15 提升到 0.25 是在观察到"洛克王国"/"动漫"
+    等高相关性候选持续赢得 top-K reshuffle 批次之后，因为每键疲劳惩罚
+    (~0.045) 无法克服相关性权重优势 (~0.28)。结合更陡的疲劳曲线
+    （现在是 ``count^1.5/len*5``）和新的 topic_group 轴，同一个候选
+    在最近历史中出现 ≥2 次时现在受到 3-4 倍更重的打击。
     """
 
     relevance: float = 0.30
@@ -49,23 +46,22 @@ class ScoringWeights:
 
 @dataclass(frozen=True)
 class FeedbackSignals:
-    """Immutable snapshot of recent feedback for score adjustments."""
+    """用于评分调整的最近反馈的不可变快照。"""
 
     disliked_up_mids: frozenset[int] = field(default_factory=frozenset)
     disliked_topic_keys: frozenset[str] = field(default_factory=frozenset)
     liked_topic_keys: frozenset[str] = field(default_factory=frozenset)
-    # Franchises (e.g. 原神 / 星穹铁道) extracted from disliked items'
-    # titles via :mod:`openbiliclaw.recommendation.franchise`. Without
-    # this axis, disliking one 原神 video only blocks that exact bvid;
-    # other 原神 candidates from related_chain keep coming through. With
-    # it the curator subtracts a soft penalty from any candidate whose
-    # title hits the same franchise.
+    # 从 dislike 项的标题通过 :mod:`openbiliclaw.recommendation.franchise`
+    # 提取的 franchise（例如 原神 / 星穹铁道）。没有这个轴，dislike 一个
+    # 原神视频只会阻止那个确切的 bvid；related_chain 的其他原神候选
+    # 仍会不断出现。有了它，curator 对标题命中同一 franchise 的任何
+    # 候选减去一个软惩罚。
     disliked_franchises: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
 class ScoringContext:
-    """Immutable snapshot of recent recommendation history."""
+    """最近推荐历史的不可变快照。"""
 
     recent_topic_keys: tuple[str, ...] = ()
     recent_topic_groups: tuple[str, ...] = ()
@@ -77,17 +73,17 @@ class ScoringContext:
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
 _FRESHNESS_HALF_LIFE_DAYS: float = 3.0
 _FEEDBACK_DISLIKE_UP_PENALTY: float = 0.20
 _FEEDBACK_DISLIKE_TOPIC_PENALTY: float = 0.10
-# Softer than topic penalty — franchise propagation is a heuristic
-# (substring match on title), so we don't want a single 原神 dislike
-# to brick all gaming content forever. With combined fatigue + topic
-# penalty, this 0.07 is enough to push 原神 candidates below other
-# fresh content but doesn't outright suppress.
+# 比话题惩罚更软 —— franchise 传播是一个启发式
+# （标题上的子串匹配），因此我们不希望单个原神 dislike
+# 永久破坏所有游戏内容。结合疲劳 + 话题惩罚，
+# 这 0.07 足以将原神候选推到其他新鲜内容之下，
+# 但不会完全抑制。
 _FEEDBACK_DISLIKE_FRANCHISE_PENALTY: float = 0.07
 _FEEDBACK_LIKE_TOPIC_BONUS: float = 0.05
 _POOL_LOW_THRESHOLD: int = 50
@@ -95,12 +91,12 @@ _DEFAULT_WEIGHTS = ScoringWeights()
 
 
 def normalize_amplification_key(value: str) -> str:
-    """Normalize a topic/domain label used by amplification guards."""
+    """规范化 amplification guard 使用的话题/域标签。"""
     return " ".join(value.strip().lower().split())
 
 
 def candidate_amplification_keys(item: DiscoveredContent) -> set[str]:
-    """Return v1 amplification keys for a recommendation candidate."""
+    """返回推荐候选的 v1 amplification 键。"""
     keys = {
         normalize_amplification_key(str(getattr(item, "topic_group", "") or "")),
         normalize_amplification_key(str(getattr(item, "topic_key", "") or "")),
@@ -114,10 +110,10 @@ def candidate_amplification_keys(item: DiscoveredContent) -> set[str]:
 
 
 class PoolCurator:
-    """Manages recommendation-side scoring and pool health.
+    """管理推荐侧评分和池健康。
 
-    The curator never mutates its inputs — it returns new score mappings
-    that the engine uses as an overlay on top of the raw candidates.
+    curator 永不 mutate 其输入 —— 它返回新的评分映射，
+    由引擎用作原始候选之上的 overlay。
     """
 
     def __init__(
@@ -132,7 +128,7 @@ class PoolCurator:
         self._history_window = history_window
 
     # ------------------------------------------------------------------
-    # Public API
+    # 公共 API
     # ------------------------------------------------------------------
 
     def build_context(
@@ -141,7 +137,7 @@ class PoolCurator:
         newly_confirmed_amplification_keys: set[str] | frozenset[str] | None = None,
         rolling_window_hours: int = 24,
     ) -> ScoringContext:
-        """Build a scoring context from recent recommendation history."""
+        """从最近推荐历史构建评分上下文。"""
         signals = self._database.get_recent_recommendation_signals(
             limit=self._history_window,
         )
@@ -167,11 +163,11 @@ class PoolCurator:
         disliked_ups: set[int] = set()
         disliked_topics: set[str] = set()
         liked_topics: set[str] = set()
-        # ``franchise_key`` is the LLM-tagged IP / franchise / series
-        # column on content_cache (added in v0.3.18). When the user
-        # dislikes any item, every other candidate sharing the same
-        # franchise_key gets a soft penalty in _feedback_adjustment —
-        # so disliking one 原神 video also down-ranks 提瓦特, 蒙德, etc.
+        # ``franchise_key`` 是 content_cache 上的 LLM 标记的 IP / franchise /
+        # 系列列（在 v0.3.18 中添加）。当用户 dislike 任何项时，每个共享
+        # 相同 franchise_key 的其他候选在 _feedback_adjustment 中获得
+        # 一个软惩罚 —— 因此 dislike 一个原神视频也会降级
+        # 提瓦特、蒙德等。
         disliked_franchises: set[str] = set()
         for row in feedback_rows:
             ftype = str(row.get("feedback_type", "")).strip()
@@ -236,10 +232,10 @@ class PoolCurator:
         candidates: list[DiscoveredContent],
         context: ScoringContext,
     ) -> dict[str, float]:
-        """Return a bvid → rec_score mapping for the given candidates.
+        """为给定候选返回 bvid → rec_score 映射。
 
-        The returned dict can be passed as ``score_override`` to the
-        engine's diversified batch selector.
+        返回的 dict 可以作为 ``score_override`` 传递给引擎的
+        多样化批次选择器。
         """
         w = self._weights
         scores: dict[str, float] = {}
@@ -264,7 +260,7 @@ class PoolCurator:
 
             score = base + fresh - fatigue - monotony + bonus
 
-            # Feedback adjustments (additive, outside weight system)
+            # 反馈调整（加性，在权重系统之外）
             score += self._feedback_adjustment(item, context.feedback)
             if candidate_amplification_keys(item) & context.over_budget_amplification_keys:
                 score -= 0.35
@@ -273,20 +269,20 @@ class PoolCurator:
         return scores
 
     def needs_replenishment(self, *, threshold: int = _POOL_LOW_THRESHOLD) -> bool:
-        """True when the pool is getting thin."""
+        """当池变薄时为 True。"""
         return self._database.count_pool_candidates() < threshold
 
     def pool_count(self) -> int:
-        """Current number of fresh pool candidates."""
+        """新鲜池候选的当前数量。"""
         return self._database.count_pool_candidates()
 
     # ------------------------------------------------------------------
-    # Scoring components (all pure functions)
+    # 评分组件（全是纯函数）
     # ------------------------------------------------------------------
 
     @staticmethod
     def _freshness_score(timestamp_str: str, now: datetime) -> float:
-        """Sigmoid decay: ~1.0 at age 0, ~0.5 at half-life, ~0.1 at 2× half-life."""
+        """Sigmoid 衰减：age 0 时 ~1.0，半衰期时 ~0.5，2× 半衰期时 ~0.1。"""
         if not timestamp_str:
             return 0.5
         try:
@@ -302,19 +298,18 @@ class PoolCurator:
 
     @staticmethod
     def _topic_fatigue(topic: str, recent_topics: tuple[str, ...]) -> float:
-        """Saturating fatigue from how often *topic* appeared in recent history.
+        """来自 *topic* 在最近历史中出现频率的饱和疲劳。
 
-        Curve (with the canonical ``len(recent)=30``):
+        曲线（以 ``len(recent)=30`` 为标准）：
           count=0 → 0.0          count=1 → 0.17
           count=2 → 0.47         count=3 → 0.87
-          count≥4 → saturates at 1.0
+          count≥4 → 饱和于 1.0
 
-        Derived from ``count^1.5 / len * 5``: linear-style first-occurrence
-        cost, but quadratic-ish growth thereafter so a topic that's been
-        served twice already gets a noticeably bigger penalty than one that
-        was served once. The previous ``count/len*3`` curve only hit 1.0 at
-        count≈10/30, which let high-relevance candidates re-win indefinitely
-        even after appearing 3 times in a row.
+        从 ``count^1.5 / len * 5`` 推导：首次出现的线性成本，
+        但之后是二次方增长，所以一个已经被服务两次的话题比
+        只被服务一次的话题受到明显更大的惩罚。之前的
+        ``count/len*3`` 曲线仅在 count≈10/30 时达到 1.0，
+        这让高相关性候选即使在连续出现 3 次后仍能无限重新获胜。
         """
         if not topic or not recent_topics:
             return 0.0
@@ -329,13 +324,12 @@ class PoolCurator:
         item: DiscoveredContent,
         context: ScoringContext,
     ) -> float:
-        """Fatigue across both topic_key (fine) and topic_group (coarse).
+        """跨 topic_key（细粒度）和 topic_group（粗粒度）的疲劳。
 
-        Either axis flagging the candidate as "we've shown this kind a
-        lot recently" should suffice — so we take the max. This catches
-        the case where ``topic_key`` siblings (动漫杂谈 / 动漫补番 /
-        动漫解说) keep escaping per-key fatigue but together saturate
-        the user's tolerance for one ``topic_group``.
+        任一轴将候选标记为"我们最近展示过这类内容很多"就足够了
+        —— 因此我们取 max。这捕获了 ``topic_key`` 兄弟
+        （动漫杂谈 / 动漫补番 / 动漫解说）持续逃避每键疲劳但
+        一起饱和用户对一个 ``topic_group`` 的容忍度的情况。
         """
         key_fatigue = cls._topic_fatigue(
             (item.topic_key or "").strip(),
@@ -349,7 +343,7 @@ class PoolCurator:
 
     @staticmethod
     def _source_monotony(source: str, recent_sources: tuple[str, ...]) -> float:
-        """Normalised frequency of source in recent recommendations."""
+        """source 在最近推荐中的归一化频率。"""
         if not source or not recent_sources:
             return 0.0
         count = sum(1 for s in recent_sources if s == source)
@@ -357,10 +351,10 @@ class PoolCurator:
 
     @staticmethod
     def _serendipity_bonus(source_strategy: str) -> float:
-        """Bonus for content that brings surprise/novelty.
+        """为带来惊喜/新颖的内容给予 bonus。
 
-        explore gets full bonus (cross-domain discovery),
-        trending gets partial bonus (popular but potentially new topics).
+        explore 获得完整 bonus（跨域发现），
+        trending 获得部分 bonus（流行但可能是新话题）。
         """
         if source_strategy == "explore":
             return 1.0
@@ -373,18 +367,16 @@ class PoolCurator:
         item: DiscoveredContent,
         feedback: FeedbackSignals,
     ) -> float:
-        """Additive score adjustment based on recent user feedback.
+        """基于最近用户反馈的加性评分调整。
 
-        Franchise penalty (since v0.3.18): if the user disliked any
-        item whose ``franchise_key`` is X, every candidate with the
-        same ``franchise_key`` takes a soft hit. Without this layer,
-        disliking one 原神 video only blocks that exact bvid; the
-        related_chain strategy keeps surfacing other 原神 content.
+        Franchise 惩罚（自 v0.3.18 起）：如果用户 dislike 了任何
+        ``franchise_key`` 为 X 的项，每个具有相同 ``franchise_key``
+        的候选受到软打击。没有这一层，dislike 一个原神视频只会
+        阻止那个确切的 bvid；related_chain 策略持续浮现其他原神内容。
 
-        ``franchise_key`` is the LLM-tagged IP / series column on
-        ``content_cache`` (populated by the content evaluator). It's
-        empty for general-interest content (e.g. 番茄炒蛋 教程), so
-        most rows pay zero franchise penalty — only matched IPs do.
+        ``franchise_key`` 是 ``content_cache`` 上的 LLM 标记的 IP / 系列
+        列（由内容评估器填充）。它对一般兴趣内容（例如 番茄炒蛋 教程）
+        为空，因此大多数行支付零 franchise 惩罚 —— 仅匹配的 IP 支付。
         """
         adj = 0.0
         if item.up_mid and item.up_mid in feedback.disliked_up_mids:
@@ -406,15 +398,15 @@ class PoolCurator:
         *,
         embedding_service: SupportsEmbeddingService | None = None,
     ) -> dict[str, float]:
-        """Async version of score_candidates with embedding-based fatigue/feedback.
+        """score_candidates 的异步版本，支持基于 embedding 的疲劳/反馈。
 
-        Uses embedding cosine similarity instead of exact string match for
-        topic_fatigue and feedback_adjustment when embedding_service is available.
+        当 embedding_service 可用时，使用 embedding 余弦相似度代替
+        精确字符串匹配进行 topic_fatigue 和 feedback_adjustment。
         """
         w = self._weights
         scores: dict[str, float] = {}
 
-        # Pre-embed recent topics and feedback topics for reuse
+        # 预嵌入最近的话题和反馈话题以便复用
         _recent_vecs: dict[str, list[float]] = {}
         _disliked_vecs: dict[str, list[float]] = {}
         _liked_vecs: dict[str, list[float]] = {}
@@ -453,11 +445,11 @@ class PoolCurator:
             )
             bonus = self._serendipity_bonus(item.source_strategy) * w.serendipity
 
-            # Embedding-based topic fatigue (when available) or the
-            # exact-string fallback. Either path takes both axes (topic_key
-            # for fine, topic_group for coarse) and uses the max — so a
-            # candidate trips fatigue if EITHER its specific topic OR its
-            # broader cluster has been served too often recently.
+            # 基于 embedding 的话题疲劳（当可用时）或
+            # 精确字符串回退。任一路径都采用两个轴（topic_key
+            # 细粒度，topic_group 粗粒度）并使用 max —— 因此
+            # 如果候选的具体话题 OR 其更宽泛的集群最近被服务
+            # 太多次，候选就会触发疲劳。
             topic_label = (item.topic_group or item.topic_key).strip()
             if embedding_service is not None and topic_label:
                 topic_vec = await embedding_service.embed(topic_label)
@@ -478,7 +470,7 @@ class PoolCurator:
 
             score = base + fresh - fatigue - monotony + bonus
 
-            # Embedding-based feedback adjustment
+            # 基于 embedding 的反馈调整
             if embedding_service is not None and topic_label:
                 topic_vec = await embedding_service.embed(topic_label)
                 adj = 0.0

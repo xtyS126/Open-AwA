@@ -1,1 +1,1 @@
-"""Soul package — User Soul Engine for deep user understanding."""
+"""Soul 包 —— 用户灵魂引擎，用于深度用户理解。"""

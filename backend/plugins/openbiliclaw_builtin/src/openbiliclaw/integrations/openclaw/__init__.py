@@ -1,4 +1,4 @@
-"""OpenClaw integration adapter package."""
+"""OpenClaw 集成适配器包。"""
 
 from .bootstrap import (
     OpenClawAdapterServices,

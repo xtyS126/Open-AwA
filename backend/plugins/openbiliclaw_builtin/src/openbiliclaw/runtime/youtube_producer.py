@@ -1,8 +1,8 @@
-"""Runtime YouTube discovery producer.
+"""Runtime YouTube 发现 producer。
 
-YouTube steady-state discovery is backend-direct: the runtime can call
-scrapetube / yt-dlp backed strategies itself and does not need the
-browser-extension task queue used by bootstrap imports.
+YouTube 稳态发现是后端直连：runtime 可以自己调用
+scrapetube / yt-dlp 后端策略，不需要 bootstrap 导入使用的
+浏览器扩展任务队列。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ _YOUTUBE_SCORE_THRESHOLDS = {
 
 @dataclass(frozen=True)
 class YoutubeStrategyRunResult:
-    """Result summary for one YouTube strategy execution."""
+    """一次 YouTube 策略执行的摘要结果。"""
 
     items: list[Any]
     units_used: int
@@ -41,7 +41,7 @@ YoutubeDiscoverCallable = Callable[..., Awaitable[YoutubeStrategyRunResult]]
 
 @dataclass
 class YoutubeDiscoveryProducer:
-    """Throttle and invoke YouTube discovery from the runtime loop."""
+    """在 runtime 循环中对 YouTube 发现进行节流和调用。"""
 
     database: Any
     soul_engine: Any
@@ -53,17 +53,17 @@ class YoutubeDiscoveryProducer:
     daily_channel_budget: int = 0
     strategies: tuple[str, ...] = YOUTUBE_DISCOVERY_STRATEGIES
     candidate_pipeline: Any | None = None
-    # Unified keyword planner fetch coordinator (P1.7). When wired AND the flag
-    # is on, the ``yt_search`` strategy claims words from the keyword store and
-    # injects them as ``queries``; the words are marked ``used`` once the raw
-    # candidates are handed off to the candidate pipeline (fetch-only: admission
-    # is downstream). ``None`` (default / flag off) → legacy self-gen path.
+    # 统一关键词规划器 fetch coordinator (P1.7)。当已接入且开关
+    # 打开时，``yt_search`` 策略从关键词 store claim 词并将它们
+    # 注入为 ``queries``；当原始候选被移交给 candidate pipeline 后，
+    # 这些词被标记为 ``used``（fetch-only：admission 在下游）。
+    # ``None``（默认 / 开关关闭）→ 传统自生成路径。
     keyword_fetch: Any | None = None
     _last_run_at: datetime | None = field(default=None, init=False)
     _last_skip_reason: str = field(default="", init=False)
 
     async def produce_if_due(self, *, limit: int | None = None) -> dict[str, object]:
-        """Run one YouTube discovery cycle if enabled, due, and under budget."""
+        """如果已启用、到期且在预算内，则运行一个 YouTube 发现周期。"""
         if not self.enabled:
             return self._skip("disabled")
         if not self._is_due():
@@ -90,10 +90,10 @@ class YoutubeDiscoveryProducer:
         source_counts: Counter[str] = Counter()
         error_count = 0
 
-        # Unified keyword planner fetch path (P1.7, flag-gated): claim words once
-        # for ``yt_search`` and inject them as ``queries``. The deficit gate is
-        # upstream; the distinct floor is ``min_interval`` / ``_is_due`` above;
-        # the per-strategy daily budget still gates the run.
+        # 统一关键词规划器 fetch 路径 (P1.7，开关受控)：为
+        # ``yt_search`` claim 一次词并将它们注入为 ``queries``。缺口
+        # 门控在上游；区分下限是上面的 ``min_interval`` / ``_is_due``；
+        # 每策略每日预算仍然门控本次运行。
         claimed_search: list[Any] = []
         coordinator = self.keyword_fetch
         flag_on = coordinator is not None and bool(
@@ -102,9 +102,9 @@ class YoutubeDiscoveryProducer:
         if flag_on and coordinator is not None and _YT_SEARCH in runnable:
             claimed_search = coordinator.claim(_PLATFORM_YOUTUBE)
             if not claimed_search:
-                # Flag on but the store has no claimable pending words → drop
-                # yt_search this cycle (the planner refills); other strategies
-                # (trending / channel) still run on their own budgets.
+                # 开关打开但 store 没有 claimable 的 pending 词 → 本周期
+                # 跳过 yt_search（planner 会重新填充）；其他策略
+                # (trending / channel) 仍然在自己的预算上运行。
                 runnable = [s for s in runnable if s != _YT_SEARCH]
 
         search_handed_off = False
@@ -115,8 +115,8 @@ class YoutubeDiscoveryProducer:
             extra: dict[str, Any] = {}
             if strategy == _YT_SEARCH and claimed_search:
                 extra["queries"] = [item.keyword for item in claimed_search]
-                # P1.8: thread the producing word's id onto each candidate for
-                # admit-time yield backfill.
+                # P1.8: 将生产词的 id 串接到每个候选以进行
+                # admit-time yield 回填。
                 extra["keyword_ids"] = {item.keyword: int(item.id) for item in claimed_search}
             try:
                 result = await self.discover(
@@ -160,15 +160,15 @@ class YoutubeDiscoveryProducer:
                     )
                 )
             if strategy == _YT_SEARCH:
-                # Fetch-only: the claimed words are consumed on the handoff of
-                # raw candidates to the candidate pipeline — mark them ``used``.
-                # When no pipeline is wired (cache mode), reaching this point
-                # after a successful strategy return still counts as consumed.
+                # Fetch-only：claimed 的词在原始候选移交给
+                # candidate pipeline 时被消耗 —— 将它们标记为 ``used``。
+                # 当没有 pipeline 接入（cache 模式）时，在策略成功
+                # 返回后到达此点仍算作已消耗。
                 search_handed_off = True
 
-        # Fetch-only lifecycle: yt_search words → ``used`` once handed off (yield
-        # backfill is P1.8). If the strategy errored (never handed off), leave
-        # them claimed — the lease reclaim returns them to pending.
+        # Fetch-only 生命周期：yt_search 词一旦移交即标记为 ``used``
+        # （yield 回填是 P1.8）。如果策略出错（从未移交），保留它们的
+        # claimed 状态 —— lease reclaim 会将它们返回到 pending。
         if claimed_search and self.keyword_fetch is not None and search_handed_off:
             self.keyword_fetch.mark_used(claimed_search)
         elif claimed_search and self.keyword_fetch is not None:
@@ -193,11 +193,11 @@ class YoutubeDiscoveryProducer:
         return payload
 
     def remaining_budgets(self, *, per_run_budget: int | None = None) -> dict[str, int]:
-        """Return runnable execution units by YouTube strategy.
+        """按 YouTube 策略返回可运行的执行单元。
 
-        ``daily_*_budget == 0`` means no per-day cap, matching the Bilibili
-        producer style: every due run is bounded by the runtime deficit /
-        ``discovery_limit`` passed in as ``per_run_budget``.
+        ``daily_*_budget == 0`` 表示无每日上限，匹配 Bilibili
+        producer 风格：每次到期运行受 runtime deficit /
+        作为 ``per_run_budget`` 传入的 ``discovery_limit`` 约束。
         """
         run_budget = max(1, int(per_run_budget or 10))
         configured = {
@@ -216,7 +216,7 @@ class YoutubeDiscoveryProducer:
         return remaining
 
     def consumed_today(self, strategy: str) -> int:
-        """Return today's successful execution units for one strategy."""
+        """返回某个策略今日的成功执行单元数。"""
         self._ensure_ledger_table()
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         row = self.database.conn.execute(
@@ -237,7 +237,7 @@ class YoutubeDiscoveryProducer:
         discovered: int,
         reason: str,
     ) -> None:
-        """Record one strategy execution in the daily budget ledger."""
+        """在每日预算台账中记录一次策略执行。"""
         self._ensure_ledger_table()
         self.database.conn.execute(
             """

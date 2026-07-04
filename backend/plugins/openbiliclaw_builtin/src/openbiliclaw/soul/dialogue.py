@@ -1,11 +1,11 @@
-"""Socratic dialogue module.
+"""苏格拉底式对话模块。
 
-Handles deep, probing conversations with the user to better understand them.
-The dialogue style is inspired by the Socratic method:
-- Ask "why" to uncover motivations
-- Propose hypotheses and test them
-- Confirm understanding before adjusting
-- Adapt dynamically based on responses
+处理与用户的深度、探询式对话，以更好地理解他们。
+对话风格受苏格拉底法启发：
+- 用「为什么」挖掘动机
+- 提出假设并验证
+- 调整前先确认理解
+- 根据回应动态调整
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DialogueTurn:
-    """A single turn in a dialogue."""
+    """对话中的一轮。"""
 
     role: str  # "user" | "agent"
     content: str
@@ -35,17 +35,16 @@ class DialogueTurn:
 
 
 class SocraticDialogue:
-    """Manages Socratic-style dialogue with the user.
+    """管理与用户的苏格拉底式对话。
 
-    The dialogue module doesn't just record what the user says — it actively
-    probes deeper to understand motivations, validate hypotheses, and refine
-    the agent's understanding of who the user really is.
+    对话模块不仅记录用户说了什么 —— 还主动深挖以理解动机、
+    验证假设，并精细化 agent 对用户真实面貌的理解。
 
-    Dialogue strategies:
-    1. 追问 Why — Don't stop at preferences, dig into motivations
-    2. 提出假设 — Actively hypothesize based on current understanding
-    3. 确认验证 — Use recommendations to test hypotheses
-    4. 动态调整 — Refine the soul profile based on dialogue
+    对话策略：
+    1. 追问 Why —— 不止于偏好，深挖动机
+    2. 提出假设 —— 基于当前理解主动假设
+    3. 确认验证 —— 用推荐来验证假设
+    4. 动态调整 —— 根据对话精细化灵魂画像
     """
 
     def __init__(
@@ -68,20 +67,20 @@ class SocraticDialogue:
         self._module_overrides = dict(module_overrides) if module_overrides is not None else None
 
     async def respond(self, user_message: str) -> str:
-        """Generate a Socratic response to a user message.
+        """对用户消息生成苏格拉底式回复。
 
-        The response should:
-        - Acknowledge what the user said
-        - Probe deeper when appropriate ("为什么？")
-        - Propose hypotheses ("我猜你可能...")
-        - Confirm understanding ("所以你的意思是...")
-        - Feel natural and warm, like a friend talking
+        回复应当：
+        - 确认用户所说
+        - 适时深挖（「为什么？」）
+        - 提出假设（「我猜你可能...」）
+        - 确认理解（「所以你的意思是...」）
+        - 自然温暖，像朋友交谈
 
-        Args:
-            user_message: The user's message.
+        参数：
+            user_message: 用户的消息。
 
-        Returns:
-            Agent's response.
+        返回：
+            Agent 的回复。
         """
         from openbiliclaw.llm.service import LLMServiceError
 
@@ -90,7 +89,7 @@ class SocraticDialogue:
         try:
             service = self._llm_service or self._build_service()
 
-            # If tools are configured, try tool-calling path first
+            # 若配置了工具，优先尝试工具调用路径
             if self._tools and self._tool_dispatcher:
                 reply = await self._respond_with_tools(service, user_message)
             else:
@@ -122,12 +121,12 @@ class SocraticDialogue:
         return reply
 
     async def _respond_with_tools(self, service: Any, user_message: str) -> str:
-        """Attempt a tool-calling response, falling back to normal dialogue.
+        """尝试工具调用回复，失败时回退到普通对话。
 
-        The flow:
-        1. Ask LLM with tool definitions — it may return a tool_call or text.
-        2. If tool_call: execute via dispatcher, feed result back, get final reply.
-        3. If text: return as-is.
+        流程：
+        1. 带工具定义询问 LLM —— 它可能返回 tool_call 或文本。
+        2. 若 tool_call：通过 dispatcher 执行，把结果回喂，得到最终回复。
+        3. 若文本：原样返回。
         """
         from openbiliclaw.llm.prompts import build_socratic_dialogue_prompt
 
@@ -156,7 +155,7 @@ class SocraticDialogue:
             bypass_semaphore=True,
         )
 
-        # If the LLM returned a tool call, execute and continue
+        # 若 LLM 返回了工具调用，执行并继续
         if response.tool_calls:
             tool_call = response.tool_calls[0]
             logger.info("Dialogue tool call: %s", tool_call.get("name"))
@@ -164,7 +163,7 @@ class SocraticDialogue:
                 return str(response.content)
             tool_result = self._tool_dispatcher.dispatch(tool_call)
 
-            # Feed tool result back to get a natural reply
+            # 把工具结果回喂以得到自然回复
             followup = await service.complete_socratic_dialogue(
                 user_message=f"[工具执行结果] {tool_result}",
                 history=self._history_to_messages()
@@ -179,29 +178,28 @@ class SocraticDialogue:
         return str(response.content)
 
     async def extract_insights(self, turns: list[DialogueTurn]) -> list[dict[str, Any]]:
-        """Extract insights about the user from dialogue turns.
+        """从对话轮次中提取关于用户的洞察。
 
-        Args:
-            turns: Recent dialogue turns to analyze.
+        参数：
+            turns: 待分析的近期对话轮次。
 
-        Returns:
-            List of extracted insight dicts.
+        返回：
+            提取出的洞察字典列表。
         """
-        # TODO: Use LLM to identify preference signals, motivations,
-        #       personality traits from the conversation
+        # TODO: 用 LLM 从对话中识别偏好信号、动机、人格特质
         return []
 
     @property
     def history(self) -> list[DialogueTurn]:
-        """The dialogue history."""
+        """对话历史。"""
         return self._history.copy()
 
     def clear_history(self) -> None:
-        """Clear the dialogue history."""
+        """清空对话历史。"""
         self._history.clear()
 
     def _history_to_messages(self) -> list[dict[str, str]]:
-        """Convert prior dialogue turns to chat messages for the LLM."""
+        """把先前的对话轮次转成 LLM 的聊天消息。"""
         return [
             {
                 "role": "assistant" if turn.role == "agent" else turn.role,
@@ -211,7 +209,7 @@ class SocraticDialogue:
         ]
 
     def _build_service(self) -> LLMService:
-        """Create the shared LLM service when one is not injected."""
+        """在未注入时创建共享的 LLM 服务。"""
         from openbiliclaw.llm.service import LLMService
 
         memory = getattr(self._soul_engine, "_memory", None)

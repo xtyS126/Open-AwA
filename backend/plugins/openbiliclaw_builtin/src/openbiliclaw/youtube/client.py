@@ -1,17 +1,17 @@
-"""YouTube scraper client for discovery strategies.
+"""用于 discovery 策略的 YouTube 爬虫客户端。
 
-Wraps scrapetube (search + channel) and YouTube InnerTube API (trending)
-behind a single async interface. All blocking calls run in the default thread
-executor so they don't stall the event loop.
+把 scrapetube（搜索 + 频道）和 YouTube InnerTube API（热门）封装在单个
+async 接口背后。所有阻塞调用都在默认线程执行器中运行，不会卡住事件
+循环。
 
-Supports three discovery modes:
-  - search_videos       — keyword search via scrapetube
-  - get_trending        — trending feed via InnerTube browse API
-  - get_channel_videos  — recent uploads from a channel via scrapetube
+支持三种 discovery 模式：
+  - search_videos       —— 通过 scrapetube 做关键词搜索
+  - get_trending        —— 通过 InnerTube browse API 获取热门 feed
+  - get_channel_videos  —— 通过 scrapetube 获取频道最近上传
 
-Field-name notes (scrapetube returns YouTube's internal renderer dicts):
-  title         → {"runs": [{"text": "..."}]}  or  {"simpleText": "..."}
-  ownerText     → {"runs": [{"text": "channel name"}]}
+字段名说明（scrapetube 返回 YouTube 内部 renderer dict）：
+  title         → {"runs": [{"text": "..."}]}  或  {"simpleText": "..."}
+  ownerText     → {"runs": [{"text": "频道名"}]}
   viewCountText → {"simpleText": "1,234,567 views"}
   lengthText    → {"simpleText": "12:34"}
   thumbnail     → {"thumbnails": [{"url": "...", "width": N, "height": N}]}
@@ -44,7 +44,7 @@ _TRENDING_TOPIC_PATHS: tuple[str, ...] = (
     "live",
 )
 
-# InnerTube client config for anonymous web requests
+# 用于匿名 web 请求的 InnerTube 客户端配置
 _INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 _INNERTUBE_CLIENT_VERSION = "2.20240101.00.00"
 _INNERTUBE_CONTEXT = {
@@ -65,7 +65,7 @@ class InnerTubeConfig:
 
 
 # ---------------------------------------------------------------------------
-# Blocking helpers (run in executor)
+# 阻塞辅助函数（在执行器中运行）
 # ---------------------------------------------------------------------------
 
 
@@ -100,7 +100,7 @@ def _scrapetube_channel(channel_id: str, limit: int) -> list[dict[str, Any]]:
 
 
 def _ytdlp_channel(channel_ref: str, limit: int) -> list[dict[str, Any]]:
-    """Fetch channel uploads with yt-dlp when scrapetube cannot resolve handles."""
+    """当 scrapetube 解析不了 handle 时，用 yt-dlp 拉取频道上传内容。"""
     url = _channel_uploads_url(channel_ref)
     if not url:
         return []
@@ -154,12 +154,11 @@ def _channel_uploads_url(channel_ref: str) -> str:
 
 
 def _innertube_trending(region_code: str, limit: int) -> list[dict[str, Any]]:
-    """Fetch YouTube trending via the InnerTube browse API (no API key needed).
+    """通过 InnerTube browse API 拉取 YouTube 热门（无需 API key）。
 
-    Uses the FEtrending browseId when YouTube still exposes it. If that
-    endpoint is unavailable, falls back to public YouTube topic pages that
-    still ship video renderers in ytInitialData.
-    Returns a flat list of video dicts ready for normalize_yt_video().
+    在 YouTube 仍然暴露 FEtrending browseId 时使用。如果该端点不可用，
+    回退到仍会在 ytInitialData 中返回视频 renderer 的公开 YouTube 主题
+    页。返回扁平的视频 dict 列表，可直接喂给 normalize_yt_video()。
     """
     results = _innertube_trending_feed(region_code, limit)
     if results:
@@ -168,7 +167,7 @@ def _innertube_trending(region_code: str, limit: int) -> list[dict[str, Any]]:
 
 
 def _innertube_trending_feed(region_code: str, limit: int) -> list[dict[str, Any]]:
-    """Fetch the legacy FEtrending InnerTube browse feed."""
+    """拉取遗留的 FEtrending InnerTube browse feed。"""
     try:
         config = _fetch_innertube_config(region_code)
         payload = json.dumps(
@@ -219,7 +218,7 @@ def _topic_page_trending(
     fetch_html: Callable[[str], str] | None = None,
     topic_paths: tuple[str, ...] = _TRENDING_TOPIC_PATHS,
 ) -> list[dict[str, Any]]:
-    """Fallback trending supply from public YouTube topic pages."""
+    """从公开 YouTube 主题页回退获取热门内容。"""
     fetch = fetch_html or _fetch_youtube_html
     seen: set[str] = set()
     results: list[dict[str, Any]] = []
@@ -317,7 +316,7 @@ def _extract_json_object_after(text: str, start: int) -> object | None:
 
 
 def _fetch_innertube_config(region_code: str) -> InnerTubeConfig:
-    """Read the current web client config from YouTube's trending page."""
+    """从 YouTube 热门页读取当前 web 客户端配置。"""
     try:
         url = f"https://www.youtube.com/feed/trending?gl={region_code}"
         req = urllib_request.Request(
@@ -340,7 +339,7 @@ def _fetch_innertube_config(region_code: str) -> InnerTubeConfig:
 
 
 def _extract_innertube_config(html: str) -> InnerTubeConfig:
-    """Extract InnerTube config constants from a YouTube HTML response."""
+    """从 YouTube HTML 响应中提取 InnerTube 配置常量。"""
     api_key = _extract_js_string(html, "INNERTUBE_API_KEY") or _INNERTUBE_KEY
     client_version = (
         _extract_js_string(html, "INNERTUBE_CLIENT_VERSION") or _INNERTUBE_CLIENT_VERSION
@@ -364,7 +363,7 @@ def _extract_js_number(html: str, key: str) -> str:
 
 
 def _extract_innertube_videos(data: dict[str, Any], *, limit: int) -> list[dict[str, Any]]:
-    """Walk InnerTube's nested renderer tree and extract video renderer dicts."""
+    """遍历 InnerTube 嵌套的 renderer 树，抽取视频 renderer dict。"""
     results: list[dict[str, Any]] = []
     _walk(data, results, limit)
     return results
@@ -387,12 +386,12 @@ def _walk(node: Any, out: list[dict[str, Any]], limit: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Normalization — handles both scrapetube and InnerTube renderer shapes
+# 规范化 —— 同时处理 scrapetube 和 InnerTube 的 renderer 形状
 # ---------------------------------------------------------------------------
 
 
 def _extract_text(value: Any) -> str:
-    """Unwrap YouTube's nested text objects to a plain string."""
+    """把 YouTube 嵌套的文本对象解包为纯字符串。"""
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, dict):
@@ -405,7 +404,7 @@ def _extract_text(value: Any) -> str:
 
 
 def _parse_number(text: str) -> int:
-    """Parse '1,234,567 views' or '1.2M' → int."""
+    """解析 '1,234,567 views' 或 '1.2M' → int。"""
     text = text.lower().replace(",", "").strip()
     m = re.search(r"([\d.]+)\s*([kmb]?)", text)
     if not m:
@@ -425,7 +424,7 @@ def _parse_optional_count(raw: Any) -> int:
 
 
 def _parse_duration(value: Any) -> int:
-    """Parse seconds (int/str) or 'H:MM:SS' / 'M:SS' text → seconds."""
+    """解析秒数（int/str）或 'H:MM:SS' / 'M:SS' 文本 → 秒。"""
     if isinstance(value, (int, float)):
         return int(value)
     text = _extract_text(value) if isinstance(value, dict) else str(value or "")
@@ -449,7 +448,7 @@ def normalize_yt_video(
     *,
     source_strategy: str,
 ) -> DiscoveredContent | None:
-    """Map a scrapetube / InnerTube video renderer dict to DiscoveredContent."""
+    """把 scrapetube / InnerTube 视频 renderer dict 映射为 DiscoveredContent。"""
     video_id = str(raw.get("videoId") or raw.get("id") or "").strip()
     if not video_id:
         return None
@@ -458,7 +457,7 @@ def normalize_yt_video(
     if not title:
         return None
 
-    # Channel name — try scrapetube fields first, then yt-dlp / InnerTube fields
+    # 频道名 —— 先试 scrapetube 字段，再试 yt-dlp / InnerTube 字段
     channel = _extract_text(
         raw.get("ownerText")
         or raw.get("shortBylineText")
@@ -469,7 +468,7 @@ def normalize_yt_video(
         or ""
     )
 
-    # View count — scrapetube uses viewCountText, yt-dlp uses view_count (int)
+    # 观看数 —— scrapetube 用 viewCountText，yt-dlp 用 view_count（int）
     view_count = 0
     for vc_key in ("viewCountText", "viewCount", "view_count"):
         vc = raw.get(vc_key)
@@ -483,7 +482,7 @@ def normalize_yt_video(
             view_count = _parse_number(text)
             break
 
-    # Duration — scrapetube: lengthText (simpleText "12:34"); yt-dlp: duration (int)
+    # 时长 —— scrapetube: lengthText（simpleText "12:34"）；yt-dlp: duration（int）
     duration = _parse_duration(
         raw.get("lengthText") or raw.get("lengthSeconds") or raw.get("duration")
     )
@@ -498,7 +497,7 @@ def normalize_yt_video(
         if comment_count:
             break
 
-    # Thumbnail — prefer highest resolution
+    # 缩略图 —— 优先最高分辨率
     cover_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
     thumbs_raw = raw.get("thumbnail") or {}
     if isinstance(thumbs_raw, dict):
@@ -508,7 +507,7 @@ def normalize_yt_video(
     elif isinstance(thumbs_raw, list) and thumbs_raw:
         cover_url = str(thumbs_raw[-1].get("url", cover_url))
 
-    # Description snippet
+    # 描述片段
     description = _extract_text(raw.get("descriptionSnippet") or raw.get("description") or "")[:300]
 
     return DiscoveredContent(
@@ -529,13 +528,13 @@ def normalize_yt_video(
 
 
 # ---------------------------------------------------------------------------
-# Async client
+# Async 客户端
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class YtScraperClient:
-    """Async YouTube discovery client backed by scrapetube + InnerTube API."""
+    """由 scrapetube + InnerTube API 支持的 async YouTube discovery 客户端。"""
 
     region_code: str = _DEFAULT_REGION
     _executor: Any = field(default=None, init=False, repr=False)

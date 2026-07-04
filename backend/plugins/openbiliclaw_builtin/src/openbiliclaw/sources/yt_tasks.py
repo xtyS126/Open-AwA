@@ -1,9 +1,9 @@
-"""YouTube bootstrap event-conversion helpers.
+"""YouTube bootstrap 事件转换辅助函数。
 
-Python-side entry point for YouTube signals captured by the browser
-extension (``/feed/history``, ``/feed/channels``, ``/playlist?list=LL``).
-Deliberately independent of xhs_tasks.py and dy_tasks.py — no imports
-cross between them. The only intentional shared layer is event_format.py.
+YouTube 信号（由浏览器扩展采集：``/feed/history``、``/feed/channels``、
+``/playlist?list=LL``）的 Python 侧入口。刻意与 xhs_tasks.py 和
+dy_tasks.py 保持独立 —— 它们之间没有交叉导入。唯一有意共享的层是
+event_format.py。
 """
 
 from __future__ import annotations
@@ -22,16 +22,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _RECENT_TASK_STATUSES = ("pending", "in_progress", "completed", "failed")
 
-# Map each YouTube bootstrap scope to the canonical event_type.
+# 将每个 YouTube bootstrap scope 映射到规范的 event_type。
 YT_BOOTSTRAP_SCOPE_EVENT_TYPES: dict[str, str] = {
     "yt_history": "view",
     "yt_subscriptions": "follow",
     "yt_likes": "like",
 }
 
-# Per-scope signal strength. Subscriptions are the highest-intent signal
-# (deliberate channel follow); likes are explicit approval; history is
-# passive exposure.
+# 每个 scope 的信号强度。订阅是最高意图信号
+# （刻意的频道关注）；点赞是显式认可；历史是被动曝光。
 YT_BOOTSTRAP_SIGNAL_STRENGTH: dict[str, float] = {
     "yt_history": 0.35,
     "yt_subscriptions": 1.0,
@@ -48,7 +47,7 @@ YT_BOOTSTRAP_SCOPE_LABELS: dict[str, str] = {
 def yt_bootstrap_items_to_events(
     items: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Convert extension-collected YouTube bootstrap items into unified events."""
+    """将扩展采集的 YouTube bootstrap 条目转换为统一事件。"""
     from openbiliclaw.sources.event_format import SOURCE_YOUTUBE, build_event
 
     events: list[dict[str, Any]] = []
@@ -110,7 +109,7 @@ def _item_key(item: dict[str, Any]) -> str:
 
 
 def yt_bootstrap_item_key(item: dict[str, Any]) -> str:
-    """Return the stable cross-task identity key for one bootstrap item."""
+    """返回单条 bootstrap 条目的稳定跨任务身份键。"""
     return _item_key(item)
 
 
@@ -179,10 +178,10 @@ def _merge_yt_result_payload(
 
 
 class YtTaskQueue:
-    """Manages the yt_tasks SQLite table.
+    """管理 yt_tasks SQLite 表。
 
-    Independent of XhsTaskQueue and DyTaskQueue. Schema mirrors dy_tasks
-    because the state machine is the same (pending → completed/failed).
+    独立于 XhsTaskQueue 和 DyTaskQueue。Schema 镜像 dy_tasks，
+    因为状态机相同（pending → completed/failed）。
     """
 
     def __init__(self, db: Database) -> None:
@@ -256,8 +255,8 @@ class YtTaskQueue:
 
     def next_pending(self, only_ids: set[str] | None = None) -> dict[str, Any] | None:
         stale_before = (datetime.now(UTC) - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
-        # ``only_ids`` restricts which tasks may be claimed (gui-init: during an
-        # active init only init-owned bootstrap tasks are handed out). None = all.
+        # ``only_ids`` 限制可被认领的任务（gui-init：在活跃初始化期间，
+        # 只下发 init 拥有的 bootstrap 任务）。None = 全部。
         where = "(status = 'pending' OR (status = 'in_progress' AND claimed_at <= ?))"
         params: list[Any] = [stale_before]
         if only_ids is not None:
@@ -299,7 +298,7 @@ class YtTaskQueue:
         recent_hours: float,
         statuses: tuple[str, ...] | None = None,
     ) -> dict[str, Any] | None:
-        """Return a recent task of this type for idempotent enqueue paths."""
+        """返回此类型的最近一个任务，用于幂等入队路径。"""
         if recent_hours <= 0:
             return None
         selected_statuses = statuses or _RECENT_TASK_STATUSES

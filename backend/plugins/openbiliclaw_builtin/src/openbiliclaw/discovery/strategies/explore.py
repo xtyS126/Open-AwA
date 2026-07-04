@@ -1,4 +1,4 @@
-"""Cross-domain exploration discovery strategy."""
+"""跨域探索发现策略。"""
 
 from __future__ import annotations
 
@@ -39,11 +39,11 @@ if TYPE_CHECKING:
     from openbiliclaw.storage.database import Database
 
 
-# Minimal contract — explore only needs the topic-group-coverage query
-# and shouldn't depend on the full Database surface (keeps unit tests
-# light, makes injection simple).
+# 最小契约 — explore 只需要 topic-group-coverage 查询
+# 且不应依赖完整 Database 表面 (保持单元测试轻量、
+# 使注入简单)。
 class _SupportsTopicCoverage(Protocol):
-    """Minimal protocol the strategy needs from a Database-like object."""
+    """策略从 Database-like 对象所需的最小协议。"""
 
     def get_active_pool_topic_groups(self, *, limit: int = 30, min_count: int = 2) -> list[str]: ...
 
@@ -53,23 +53,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExploreStrategy(DiscoveryStrategy):
-    """Cross-domain surprise discovery -- find the unexpected."""
+    """跨域惊喜发现 — 找到意想不到的内容。"""
 
     llm_service: SupportsStructuredTask
     bilibili_client: SupportsSearchClient
     concurrency: DiscoveryConcurrencyController | None = None
     embedding_service: SupportsEmbeddingService | None = None
-    # v0.3.31+: optional database handle so the strategy can query
-    # which topic_groups are already saturated in the active pool.
-    # The LLM domain generator avoids re-proposing those, which is
-    # the main fix for the "explore returned 30 items / 8 distinct
-    # topic_groups" pathology — most of the collapse came from the
-    # generator suggesting domains that mapped to already-covered
-    # topic_groups by the time the eval LLM labeled them.
+    # v0.3.31+: 可选的 database handle,使策略能查询
+    # active pool 里哪些 topic_groups 已饱和。
+    # LLM domain 生成器避免重新提议这些,这是
+    # "explore 返回 30 个 item / 8 个 distinct
+    # topic_groups" 病理的主要修复 — 大部分塌缩来自
+    # 生成器建议的 domain 在 eval LLM 标注时映射到了
+    # 已覆盖的 topic_groups。
     database: _SupportsTopicCoverage | None = None
-    # Explore can sit slightly below the normal 0.60 admission floor because
-    # its purpose is controlled novelty, but it must not become a broad low-
-    # score bypass for regular recommendation pool admission.
+    # Explore 可以略低于正常 0.60 的准入门槛,因为
+    # 其目的是受控的新奇,但不能成为常规推荐池准入的
+    # 宽松低分绕过通道。
     score_threshold: float = 0.58
     llm_evaluation: bool = True
     queries_per_domain: int = 3
@@ -98,17 +98,17 @@ class ExploreStrategy(DiscoveryStrategy):
         )
 
     async def discover(self, profile: SoulProfile, limit: int = 20) -> list[DiscoveredContent]:
-        """Deliberately explore domains the user hasn't tried.
+        """刻意探索用户尚未尝试的领域。
 
-        Uses the soul profile's deep needs and latent interests
-        to hypothesize about what new domains might resonate.
+        使用 soul profile 的 deep needs 和 latent interests
+        来假设哪些新领域可能产生共鸣。
 
         Args:
-            profile: User soul profile.
-            limit: Maximum results.
+            profile: 用户 soul profile。
+            limit: 最大结果数。
 
         Returns:
-            Discovered content list.
+            发现的内容列表。
         """
         cooldown_remaining = search_cooldown_remaining(self.bilibili_client)
         if cooldown_remaining > 0:
@@ -147,7 +147,7 @@ class ExploreStrategy(DiscoveryStrategy):
             for query in self._clean_queries(domain.get("queries", [])):
                 request_plan.append((query, novelty_level, interest_anchored, domain_name))
 
-        # Respect per-strategy search budget to avoid exhausting IP-level quota.
+        # 遵守单策略搜索预算,避免耗尽 IP 级配额。
         if self.concurrency is not None:
             budget = self.concurrency.search_budget_per_strategy
             if len(request_plan) > budget:
@@ -158,8 +158,8 @@ class ExploreStrategy(DiscoveryStrategy):
                 )
                 request_plan = request_plan[:budget]
 
-        # Use a dedicated cookie-free client and execute sequentially with
-        # delay to avoid triggering IP-level v_voucher rate-limiting.
+        # 使用专用无 cookie client 并按顺序带延迟执行,
+        # 避免触发 IP 级 v_voucher 限流。
         search_client = self._create_search_client()
         try:
             search_outcomes = await self._execute_search_sequential(
@@ -172,9 +172,9 @@ class ExploreStrategy(DiscoveryStrategy):
                 if callable(close):
                     await close()
 
-        # Bucket candidates by domain_label so the downstream eval hard-cap
-        # (30) doesn't starve later domains: without bucketing, the first
-        # 1-2 domains' query results consume the entire eval window.
+        # 按 domain_label 分桶,使下游 eval 硬上限
+        # (30) 不会饿死后面的 domain: 没有分桶,前 1-2 个
+        # domain 的 query 结果就会吞掉整个 eval 窗口。
         domain_order: list[str] = []
         per_domain: dict[str, list[tuple[DiscoveredContent, float, bool]]] = {}
         seen_bvids: set[str] = set()
@@ -215,13 +215,13 @@ class ExploreStrategy(DiscoveryStrategy):
                 if domain_label:
                     normalized_domain = re.sub(r"\s+", "", domain_label).lower()[:16]
                     content.topic_group = normalized_domain
-                    # Use domain-level granularity for topic_key so content from
-                    # the same exploration domain groups together properly
+                    # 使用 domain 级粒度作为 topic_key,使来自
+                    # 同一探索 domain 的内容正确分组
                     content.topic_key = normalized_domain
                 per_domain[bucket_key].append((content, novelty_level, interest_anchored))
 
-        # Round-robin interleave across domains so each domain gets fair
-        # representation in the 30-item eval window.
+        # 跨 domain 轮询交错,使每个 domain 在 30-item
+        # eval 窗口里有公平的代表权。
         candidates: list[tuple[DiscoveredContent, float, bool]] = []
         max_depth = max((len(per_domain[k]) for k in domain_order), default=0)
         for depth in range(max_depth):
@@ -251,16 +251,16 @@ class ExploreStrategy(DiscoveryStrategy):
                 novelty_level=novelty_level,
                 openness=profile.preferences.exploration_openness,
             )
-            # Explore uses a gentler blending formula than before:
-            # - Raw LLM score weighted at 0.60 (was 0.75) to leave room for bonus
-            # - Bonus weighted at 0.40 (was 0.25) so novelty/openness matter more
-            # - No distance_penalty: non-anchored is the point of explore
+            # Explore 使用比之前更温和的混合公式:
+            # - 原始 LLM 分数权重 0.60 (之前是 0.75),为 bonus 留出空间
+            # - bonus 权重 0.40 (之前是 0.25),让 novelty/openness 更重要
+            # - 无 distance_penalty: 非 anchored 才是 explore 的目的
             content.relevance_score = max(
                 0.0,
                 min(1.0, round(score * 0.60 + bonus * 0.40, 4)),
             )
-            # Explore may use a gently lower strategy threshold, but not the
-            # old 0.25 discount that admitted ordinary low-score content.
+            # Explore 可以用略低的策略门槛,但不是
+            # 旧的 0.25 折扣 (那会放行普通低分内容)。
             explore_threshold = max(0.55, min(1.0, self.score_threshold))
             if content.relevance_score < explore_threshold:
                 continue
@@ -271,11 +271,11 @@ class ExploreStrategy(DiscoveryStrategy):
         return self._sort_results(results)
 
     def _create_search_client(self) -> SupportsSearchClient:
-        """Create a cookie-free API client for explore searches.
+        """为 explore 搜索创建无 cookie 的 API client。
 
-        Avoids sharing the authenticated client's session/cookie with other
-        strategies, which would cause IP-level v_voucher rate-limiting.
-        Falls back to the shared client for non-API clients (e.g. in tests).
+        避免与其他策略共享 authenticated client 的 session/cookie,
+        否则会导致 IP 级 v_voucher 限流。
+        对非 API client (例如测试中) 回退到共享 client。
         """
         from openbiliclaw.bilibili.api import BilibiliAPIClient
 
@@ -292,7 +292,7 @@ class ExploreStrategy(DiscoveryStrategy):
         client: SupportsSearchClient,
         request_plan: list[tuple[str, float, bool, str]],
     ) -> list[object]:
-        """Execute search queries sequentially with delay to avoid rate-limiting."""
+        """按顺序带延迟执行搜索 query,避免限流。"""
         results: list[object] = []
         for i, (query, _, _, _) in enumerate(request_plan):
             cooldown_remaining = search_cooldown_remaining(client)
@@ -315,17 +315,17 @@ class ExploreStrategy(DiscoveryStrategy):
         return results
 
     async def _generate_domains(self, profile: SoulProfile) -> list[dict[str, object]]:
-        # v0.3.31+: feed already-saturated topic_groups to the LLM as
-        # "blind-spot guide" so it doesn't re-propose well-covered
-        # areas. Soft-fails to None on any DB error; the prompt's
-        # default branch (no covered_topic_groups) is the back-compat
-        # path.
+        # v0.3.31+: 把已饱和的 topic_groups 喂给 LLM 作为
+        # "blind-spot guide",使其不重新提议已覆盖的
+        # 区域。任何 DB 错误时软失败为 None;prompt 的
+        # 默认分支 (无 covered_topic_groups) 是向后兼容
+        # 路径。
         covered_topic_groups: list[str] | None = None
         if self.database is not None:
             try:
-                # Match the prompt-side cap (12) — pulling more from DB
-                # would just be discarded by the prompt builder. min_count=2
-                # avoids stuffing one-off long-tail topics into the avoid list.
+                # 与 prompt 端上限匹配 (12) — 从 DB 拉更多
+                # 只会被 prompt builder 丢弃。min_count=2
+                # 避免把一次性长尾 topic 塞进 avoid 列表。
                 covered_topic_groups = self.database.get_active_pool_topic_groups(
                     limit=12,
                     min_count=2,
@@ -440,15 +440,15 @@ class ExploreStrategy(DiscoveryStrategy):
         )
 
     async def _looks_too_similar_async(self, domain: str, current_interests: set[str]) -> bool:
-        """Check if domain is too similar to existing interests.
+        """检查 domain 是否与现有兴趣过于相似。
 
-        Uses embedding cosine similarity when available, falls back to substring check.
-        Threshold for "too similar" is 0.75 (stricter than dedup's 0.82 —
-        we want explore to be genuinely novel).
+        可用时使用 embedding 余弦相似度,否则回退到子串检查。
+        "过于相似"的阈值为 0.75 (比 dedup 的 0.82 更严格 —
+        我们希望 explore 是真正的新奇)。
         """
         if not domain:
             return False
-        # Fast path: exact or near-exact string match
+        # 快速路径: 精确或近精确字符串匹配
         for interest_val in current_interests:
             if not interest_val:
                 continue
@@ -459,9 +459,9 @@ class ExploreStrategy(DiscoveryStrategy):
             if domain in interest_val and len(interest_val) - len(domain) < 3:
                 return True
 
-        # Semantic check: catch near-synonyms like "AI应用" vs "人工智能"
-        # Threshold 0.85 = only reject very close synonyms, not loosely related topics
-        # (0.75 was too strict — rejected most domains when user has broad interests)
+        # 语义检查: 捕获近义词如 "AI应用" vs "人工智能"
+        # 阈值 0.85 = 只拒绝非常接近的同义词,不拒绝松散相关的主题
+        # (0.75 太严格 — 用户兴趣广泛时拒绝了大部分 domain)
         if self.embedding_service is not None:
             from openbiliclaw.llm.embedding import cosine_similarity
 
@@ -485,7 +485,7 @@ class ExploreStrategy(DiscoveryStrategy):
                             )
                             return True
             except Exception:
-                pass  # Fall through to False on embedding failure
+                pass  # embedding 失败时落入 False
         return False
 
     @staticmethod
@@ -518,8 +518,8 @@ class ExploreStrategy(DiscoveryStrategy):
         if not anchored:
             return domains[: self.max_domains]
 
-        # Prioritize loose (novel) domains to fight echo chamber:
-        # At least 3 loose domains when available, interleave with anchored
+        # 优先 loose (新奇) domain 以对抗 echo chamber:
+        # 可用时至少 3 个 loose domain,与 anchored 交错
         loose_cap = max(3, (self.max_domains + 1) // 2)
         anchored_cap = max(1, self.max_domains - min(loose_cap, len(loose)))
         prioritized = [*loose[:loose_cap], *anchored[:anchored_cap]]

@@ -1,4 +1,4 @@
-"""Short-term weak-signal buffer for exploratory interests."""
+"""探索性兴趣的短期弱信号缓冲。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ EXPLICIT_POSITIVE_EVENTS = frozenset(
 
 
 def normalize_buffer_key(domain: str, specifics: Sequence[str] = ()) -> str:
-    """Normalize a domain/specific tuple into a stable buffer key."""
+    """把域名/具体元组归一化为稳定的缓冲键。"""
     parts = [domain, *specifics]
     return "|".join("".join(part.strip().lower().split()) for part in parts if part.strip())
 
@@ -41,7 +41,7 @@ def make_buffer_entry(
     first_seen: datetime,
     specifics: Sequence[str] = (),
 ) -> dict[str, object]:
-    """Create a normalized empty buffer entry."""
+    """创建一个归一化的空缓冲条目。"""
     clean_specifics = [item.strip() for item in specifics if item.strip()]
     return {
         "domain": domain.strip(),
@@ -59,7 +59,7 @@ def make_buffer_entry(
 
 
 def normalize_buffer_state(raw: object) -> dict[str, object]:
-    """Return a JSON-safe buffer state."""
+    """返回一个 JSON 安全的缓冲状态。"""
     if not isinstance(raw, dict):
         return {"entries": []}
     entries: list[dict[str, object]] = []
@@ -143,7 +143,7 @@ def record_buffer_event(
     specifics: Sequence[str] = (),
     evidence_id: str = "",
 ) -> dict[str, object]:
-    """Record one weak/negative event into the short-term exploration buffer."""
+    """把一次弱/负事件记录进短期探索缓冲。"""
     normalized = normalize_buffer_state(state)
     clean_domain = domain.strip()
     if not clean_domain:
@@ -204,7 +204,7 @@ def pop_promotable_buffer_entries(
     *,
     now: datetime,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
-    """Return promotable entries and remove them from the buffer."""
+    """返回可提升的条目，并从缓冲中移除它们。"""
     normalized = normalize_buffer_state(state)
     entries = normalized["entries"]
     assert isinstance(entries, list)

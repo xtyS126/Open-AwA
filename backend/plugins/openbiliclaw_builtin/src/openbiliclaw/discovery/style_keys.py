@@ -1,4 +1,4 @@
-"""Closed viewing-mode taxonomy for discovery/recommendation style keys."""
+"""发现/推荐 style key 的封闭观看模式分类。"""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ STYLE_KEY_PROMPT_TEXT: str = "\n".join(
     f"   - {key}: {description}" for key, description in STYLE_KEY_DEFINITIONS
 )
 
-# Legacy content may already be cached with old content-form labels. Keep
-# consuming it by mapping each old label onto the new viewing-mode taxonomy.
+# 历史内容可能已用旧的内容形态标签缓存。通过将每个旧标签映射到新的
+# 观看模式分类上来继续消费它们。
 LEGACY_STYLE_KEY_MAP: dict[str, str] = {
     "deep_dive": "deep_focus",
     "tech_analysis": "deep_focus",
@@ -56,7 +56,7 @@ LEGACY_STYLE_KEY_MAP: dict[str, str] = {
 
 
 def normalize_style_key(value: object) -> str:
-    """Return a canonical viewing-mode style key, or ``""`` if unknown."""
+    """返回规范的观看模式 style key,未知时返回 ``""`` 。"""
     if value is None:
         return ""
     token = re.sub(r"[\s-]+", "_", str(value).strip().lower())

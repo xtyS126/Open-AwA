@@ -1,33 +1,28 @@
-"""LLM-judged consolidation of like / dislike topics at the prompt-cap boundary.
+"""在 prompt 上限边界处对喜欢 / 厌恶话题做 LLM 评判的整理。
 
-Interest tags and disliked topics accumulate wording variants forever:
-the merge path only collapses exact ``(name, category)`` matches, and
-weight decay never removes a variant that keeps getting reinforced. On
-real profiles this leaves the weight-sorted top-64 (the slice that
-actually reaches LLM prompts) half-occupied by duplicates of the same
-concept, crowding genuinely distinct interests out of the boundary.
+兴趣标签和厌恶话题会永远积累措辞变体：合并路径只会折叠精确的
+``(name, category)`` 匹配，而权重衰减永远不会移除一个持续被强化的
+变体。在真实画像上，这会让按权重排序的 top-64（真正进入 LLM
+prompt 的切片）被同一概念的重复占用一半，把真正不同的兴趣挤出边界。
 
-The consolidator runs a staged, mostly-free pipeline:
+整理器运行一条分阶段、几乎不耗成本的流水线：
 
-1. **Rule layer** — identical names within the same category merge in
-   code (no LLM); identical names across categories are forced to LLM
-   judgement as homonym-safety clusters.
-2. **Clustering** — embedding cosine similarity (or substring fallback)
-   groups suspect duplicates. Only multi-member clusters proceed.
-3. **No-merge memory** — pairs an earlier run already judged "distinct"
-   are not re-asked; a cluster with no unjudged pair is skipped, so
-   steady-state runs make zero LLM calls.
-4. **LLM judgement** — batched calls (32 clusters per call) return
-   merge/keep *operations*, never a rewritten list.
-5. **Deterministic apply** — code validates every op (members verbatim,
-   full cluster coverage, anti-generalization canonical rules) and
-   applies it to the flat preference layer; the Onion interest tree is
-   rebuilt via ``populate_from_flat_preference`` exactly like the
-   regular layer-update path.
+1. **规则层** —— 同一类别内的同名在代码中合并（无 LLM）；不同类别
+   的同名作为防多义词簇强制交给 LLM 评判。
+2. **聚类** —— embedding 余弦相似度（或子串回退）把疑似重复分组。
+   只有多成员簇继续往下走。
+3. **不合并记忆** —— 早期运行已判定为「不同」的对不再重问；
+   没有未判定对的簇被跳过，所以稳态运行零 LLM 调用。
+4. **LLM 评判** —— 分批调用（每次 32 个簇）返回 merge/keep
+   *操作*，从不返回重写后的列表。
+5. **确定性应用** —— 代码校验每个操作（成员逐字、整簇覆盖、
+   反泛化规范名规则）并应用到扁平 preference 层；
+   Onion 兴趣树通过 ``populate_from_flat_preference`` 重建，
+   与常规层更新路径一致。
 
-Every applied run writes a full before-snapshot to
-``data/memory/consolidation_runs/<run_id>.json`` (revert source) and an
-audit entry to ``soul_changelog.md``.
+每次应用的运行都会把完整前快照写到
+``data/memory/consolidation_runs/<run_id>.json``（回滚源），
+并把审计条目写到 ``soul_changelog.md``。
 """
 
 from __future__ import annotations
@@ -52,13 +47,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Consolidation works well past the 64-entry prompt caps: top-512 likes
-# by weight and the full dislike store (<= 128 by
-# _DISLIKED_TOPICS_STORE_CAP). Real profiles accumulate 1000+ interest
-# tags; a narrow boundary (128 until v0.3.121) left most wording
-# variants untouched, so duplicate weight stayed split across variants
-# and never re-entered the truncated top-64. 512 covers the whole
-# meaningful store; only the deep <0.5-weight tail is left to decay.
+# 整理在 64 条 prompt 上限之后仍然有效：按权重的 top-512 喜欢和
+# 完整的厌恶存储（<= 128，受 _DISLIKED_TOPICS_STORE_CAP 限制）。
+# 真实画像会积累 1000+ 兴趣标签；过窄的边界（v0.3.121 之前是 128）
+# 让大多数措辞变体未被触及，所以重复权重分散在变体上，
+# 永远进不了被截断的 top-64。512 覆盖整个有意义的存储；
+# 只有深度 <0.5 权重的尾部留给衰减。
 _LIKES_BOUNDARY = 512
 _SIMILARITY_THRESHOLD = 0.85
 _OVER_TARGET_SIMILARITY_FLOOR = 0.75
@@ -67,17 +61,17 @@ _DEFAULT_MIN_INTERVAL_SECONDS = 12 * 3600
 _STATE_FILENAME = "consolidation_state.json"
 _RUNS_DIRNAME = "consolidation_runs"
 _CHANGELOG_FILENAME = "soul_changelog.md"
-# Known-distinct pair memory is capped so the state file stays bounded
-# even after months of 12h runs. Sized for the 512-likes boundary: a
-# wide first pass can judge hundreds of clusters in one run.
+# 已知「不同」对的记忆有上限，让状态文件保持有界，
+# 即便连续数月的 12 小时运行也是如此。按 512 喜欢边界容量设定：
+# 一次宽首轮可能评判数百个簇。
 _NO_MERGE_PAIRS_CAP = 16000
-# Clusters per LLM judgement call. One giant call over a wide boundary
-# risks blowing the output token ceiling mid-JSON (the parse then fails
-# and every cluster gets rejected); batches keep each response small
-# and a single failed batch only loses its own clusters.
+# 每次 LLM 评判调用的簇数。一次跨越宽边界的巨型调用
+# 风险是输出 token 上限在 JSON 中途爆掉（解析随后失败，
+# 每个簇都被拒绝）；分批让每个响应更小，单个失败的批次
+# 只损失自己的簇。
 _JUDGE_CLUSTER_BATCH = 32
-# Anti-generalization guard for canonical names. Bare umbrella words
-# would turn a specific avoid-pattern into a broad content ban.
+# 规范名的反泛化守卫。裸伞形词会把一个具体回避模式
+# 变成宽泛的内容封禁。
 _BANNED_GENERIC_CANONICALS = frozenset(
     {
         "低质",
@@ -114,7 +108,7 @@ class SupportsEmbed(Protocol):
 
 
 def rebuild_profile_tree(memory: MemoryManager, preference_data: dict[str, object]) -> None:
-    """Rebuild the Onion interest tree from a flat preference payload."""
+    """从扁平 preference 载荷重建 Onion 兴趣树。"""
     from openbiliclaw.soul.profile import OnionProfile
 
     soul_layer = memory.get_layer("soul")
@@ -135,7 +129,7 @@ def rebuild_profile_tree(memory: MemoryManager, preference_data: dict[str, objec
 
 @dataclass
 class ConsolidationReport:
-    """Outcome of one consolidation pass."""
+    """一次整理运行的结果。"""
 
     ran: bool = False
     throttled: bool = False
@@ -169,7 +163,7 @@ class _Cluster:
 
     @property
     def member_keys(self) -> list[str]:
-        """No-merge pair keys. Homonym clusters qualify duplicate names by category."""
+        """不合并对的键。多义词簇按类别区分重复名。"""
         if self.member_categories is None:
             return list(self.members)
         return [
@@ -254,7 +248,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 class ProfileConsolidator:
-    """Staged like/dislike topic consolidation with LLM-judged merges."""
+    """分阶段的喜欢/厌恶话题整理，含 LLM 评判的合并。"""
 
     def __init__(
         self,
@@ -282,18 +276,17 @@ class ProfileConsolidator:
         self._like_target_soft = max(1, int(like_target_soft))
         self._archive_enabled = bool(archive_enabled)
 
-    # -- Public API -----------------------------------------------------------
+    # -- 公开 API -----------------------------------------------------------
 
     def set_embedding_service(self, embedding_service: SupportsEmbed | None) -> None:
-        """Attach or replace the embedding service after construction."""
+        """在构造之后挂载或替换 embedding 服务。"""
         self._embedding_service = embedding_service
 
     async def run_if_due(self, *, now: datetime | None = None) -> ConsolidationReport:
-        """Run a consolidation pass if the throttle interval elapsed.
+        """若节流间隔已到，则运行一次整理。
 
-        Also skips (cheaply) when the boundary-region input is unchanged
-        since the last completed run, so 12h ticks on a stable profile
-        cost nothing.
+        当边界区域输入自上次完成的运行以来未变化时也会（廉价地）跳过，
+        这样稳定画像上的 12 小时 tick 几乎零开销。
         """
         current = now or datetime.now()
         state = self._load_state()
@@ -317,7 +310,7 @@ class ProfileConsolidator:
         return await self.run(dry_run=False, now=current)
 
     async def run(self, *, dry_run: bool, now: datetime | None = None) -> ConsolidationReport:
-        """Execute one consolidation pass. ``dry_run`` never writes anything."""
+        """执行一次整理运行。``dry_run`` 永不写入任何东西。"""
         current = now or datetime.now()
         report = ConsolidationReport(
             ran=True,
@@ -352,11 +345,11 @@ class ProfileConsolidator:
             "disliked_topics": list(dislikes_raw),
         }
 
-        # ── Stage 0: rule layer — same name + same category ───────────────
+        # ── 阶段 0：规则层 —— 同名 + 同类别 ───────────────
         interests, rule_merges, homonym_groups = self._rule_merge_exact_names(interests_raw)
         report.rule_merges = rule_merges
 
-        # ── Boundary slice ─────────────────────────────────────────────────
+        # ── 边界切片 ─────────────────────────────────────────────────
         ranked = sorted(interests, key=lambda item: _coerce_float(item.get("weight")), reverse=True)
         likes_boundary = (
             len(ranked) if len(ranked) > self._like_target_upper else self._likes_boundary
@@ -365,7 +358,7 @@ class ProfileConsolidator:
         report.like_similarity_threshold = like_similarity_threshold
         like_slice_names = [str(item["name"]) for item in ranked[:likes_boundary]]
 
-        # ── Stage 1: clustering ────────────────────────────────────────────
+        # ── 阶段 1：聚类 ────────────────────────────────────────────
         state = self._load_state()
         no_merge: set[str] = set(str(p) for p in state.get("no_merge_pairs", []))
         forced_clusters = [
@@ -392,7 +385,7 @@ class ProfileConsolidator:
         if clusters and self._llm_service is not None:
             report.llm_batches = _batch_count(len(clusters), _JUDGE_CLUSTER_BATCH)
 
-        # ── Stage 2: LLM judgement ─────────────────────────────────────────
+        # ── 阶段 2：LLM 评判 ─────────────────────────────────────────
         valid_ops: list[dict[str, object]] = []
         judged_clusters: list[_Cluster] = []
         if clusters and self._llm_service is not None:
@@ -417,7 +410,7 @@ class ProfileConsolidator:
         elif clusters:
             report.errors.append("llm: service unavailable")
 
-        # ── Stage 3: apply ─────────────────────────────────────────────────
+        # ── 阶段 3：应用 ─────────────────────────────────────────────
         rename_map: dict[str, str] = {}
         for op in valid_ops:
             raw_members = op.get("members")
@@ -463,8 +456,8 @@ class ProfileConsolidator:
             self._write_run_record(report, before_snapshot, rename_map, overrides_before)
             self._append_changelog(report, current)
 
-        # Record judged-distinct pairs so future runs skip them, and
-        # advance run bookkeeping even on no-op runs.
+        # 记录已判定为不同的对，让未来运行跳过它们；
+        # 即便无操作运行也要推进运行簿记。
         for cluster in judged_clusters:
             if cluster.member_categories is not None:
                 if not any(op.get("cluster_id") == cluster.cluster_id for op in valid_ops):
@@ -486,7 +479,7 @@ class ProfileConsolidator:
         _log_run_summary(report, changed=changed)
         return report
 
-    # -- Stage 0: rule merges ---------------------------------------------------
+    # -- 阶段 0：规则合并 ---------------------------------------------------
 
     def _is_like_inventory_over_target(self) -> bool:
         preference_layer = self._memory.get_layer("preference")
@@ -503,7 +496,7 @@ class ProfileConsolidator:
         archived: list[dict[str, Any]],
         report: ConsolidationReport,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Archive low-value active likes until the active inventory is under target."""
+        """归档低价值活跃喜欢，直到活跃库存低于目标。"""
         report.likes_target_upper = self._like_target_upper
         report.likes_target_soft = min(self._like_target_soft, self._like_target_upper)
         if not self._archive_enabled:
@@ -585,7 +578,7 @@ class ProfileConsolidator:
     def _rule_merge_exact_names(
         self, interests: list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], list[str], list[list[dict[str, Any]]]]:
-        """Merge same normalized name within the same category only."""
+        """仅合并同一类别内同规范化名的条目。"""
         by_key: dict[tuple[str, str], dict[str, Any]] = {}
         order: list[tuple[str, str]] = []
         merges: list[str] = []
@@ -618,7 +611,7 @@ class ProfileConsolidator:
         homonym_groups = [group for group in homonym_by_name.values() if len(group) >= 2]
         return result, merges, homonym_groups
 
-    # -- Stage 1: clustering ------------------------------------------------------
+    # -- 阶段 1：聚类 ------------------------------------------------------
 
     async def _cluster(
         self,
@@ -661,7 +654,7 @@ class ProfileConsolidator:
                 if len(group) >= 2:
                     groups.append(group)
         else:
-            # Fallback without embeddings: substring containment grouping.
+            # 无 embedding 时回退：子串包含分组。
             assigned = set()
             for i, name in enumerate(unique_names):
                 if name in assigned:
@@ -693,14 +686,14 @@ class ProfileConsolidator:
                     return True
         return False
 
-    # -- Stage 2: LLM judgement ----------------------------------------------------
+    # -- 阶段 2：LLM 评判 ----------------------------------------------------
 
     async def _judge(self, clusters: list[_Cluster]) -> dict[str, list[dict[str, Any]]]:
-        """Judge clusters in batches of ``_JUDGE_CLUSTER_BATCH`` per LLM call.
+        """按每次 ``_JUDGE_CLUSTER_BATCH`` 个簇分批评判。
 
-        A failed batch only drops its own clusters (they re-cluster next
-        run); the call raises only when *every* batch failed, so the
-        caller's error reporting still fires on total LLM outage.
+        一个批次失败只会丢自己的簇（下次运行重新聚类）；只有当
+        *所有* 批次都失败时调用才上抛，以便调用方的错误报告
+        在 LLM 完全不可用时仍能触发。
         """
         if self._llm_service is None:
             return {}
@@ -812,7 +805,7 @@ class ProfileConsolidator:
         return ops_by_cluster
 
     def _validate_cluster_ops(self, cluster: _Cluster, ops: list[dict[str, Any]]) -> str:
-        """Return a rejection reason, or '' when the cluster's ops are valid."""
+        """返回拒绝原因，若簇操作有效则返回 ''。"""
         if not ops:
             return "no ops returned"
         records = [
@@ -894,17 +887,16 @@ class ProfileConsolidator:
             return f"canonical is a banned umbrella term: {canonical!r}"
         shortest = min(len(m) for m in members)
         member_norms = {_normalize_name(member) for member in members}
-        # A canonical dramatically shorter than every member is the
-        # signature of upward generalization ("低质内容" <- long specific
-        # avoid-patterns). Members themselves are exempt (picking the
-        # shortest member as canonical is fine for likes).
+        # 规范名比每个成员都短得多是向上泛化的特征
+        # （"低质内容" <- 长的具体回避模式）。成员自身豁免
+        # （选最短成员作为规范名对 likes 来说没问题）。
         if _normalize_name(canonical) not in member_norms and len(canonical) < shortest * 0.5:
             return f"canonical looks over-generalized for {scope}: {canonical!r}"
         return ""
 
     @staticmethod
     def _cluster_survivors(cluster: _Cluster, valid_ops: list[dict[str, object]]) -> list[str]:
-        """Names that remain distinct after this cluster's ops (keeps + canonicals)."""
+        """本簇操作后仍然不同的名字（保留项 + 规范名）。"""
         merged_away: set[str] = set()
         canonicals: list[str] = []
         for op in valid_ops:
@@ -921,7 +913,7 @@ class ProfileConsolidator:
         kept = [key for key in cluster.member_keys if key not in merged_away]
         return list(dict.fromkeys([*kept, *canonicals]))
 
-    # -- Stage 3: apply --------------------------------------------------------------
+    # -- 阶段 3：应用 --------------------------------------------------------------
 
     @staticmethod
     def _apply_like_merge(
@@ -952,10 +944,9 @@ class ProfileConsolidator:
                 return True
             return str(item.get("category", "")).strip() == canonical_category
 
-        # An existing entry already named `canonical` folds into the merge
-        # too, otherwise a rename would create a duplicate. For homonym
-        # clusters, only fold the canonical in the merged category; the
-        # same surface name in another category is a distinct interest.
+        # 一条已存在、名字就叫 `canonical` 的条目也会折进合并，
+        # 否则重命名会产生重复。对多义词簇，只折入合并类别的
+        # canonical；另一个类别中的同名是不同兴趣。
         involved = [item for item in interests if is_member(item) or is_existing_canonical(item)]
         base = max(involved, key=lambda item: _coerce_float(item.get("weight")))
         merged = dict(base)
@@ -988,8 +979,7 @@ class ProfileConsolidator:
         for topic in dislikes:
             if topic in member_set or topic == canonical:
                 if not inserted:
-                    # Keep the front-most (most recent) member's position
-                    # so recency ordering survives consolidation.
+                    # 保留最前（最近）成员的位置，让时序在整理后仍能保留。
                     result.append(canonical)
                     inserted = True
                 continue
@@ -999,18 +989,17 @@ class ProfileConsolidator:
         return result
 
     def _rebuild_profile_tree(self, preference_data: dict[str, object]) -> None:
-        """Rebuild the Onion interest tree from the consolidated flat preference."""
+        """从整理后的扁平 preference 重建 Onion 兴趣树。"""
         rebuild_profile_tree(self._memory, preference_data)
 
-    # -- Overrides passthrough + revert ------------------------------------------------
+    # -- 覆盖透传 + 回滚 ------------------------------------------------
 
     def _remap_overrides(self, rename_map: dict[str, str]) -> dict[str, object] | None:
-        """Apply the merge rename map to user profile overrides.
+        """把合并重命名映射应用到用户画像覆盖。
 
-        Overrides match by exact string (e.g. a removed disliked topic), so
-        a raw-store rename would silently un-match the user's edit and let
-        a removed avoid-topic resurrect under its canonical name. Returns
-        the pre-remap overrides dict (for revert) when anything changed.
+        覆盖按精确字符串匹配（例如被移除的厌恶话题），所以原存储重命名
+        会让用户的编辑静默失配，使被移除的回避话题以规范名复活。
+        当有变更时返回重映射前的覆盖字典（用于回滚）。
         """
         if not rename_map:
             return None
@@ -1035,11 +1024,10 @@ class ProfileConsolidator:
             return None
 
     def revert(self, run_id: str) -> bool:
-        """Restore the preference store (and overrides) from a run record.
+        """从运行记录恢复 preference 存储（及覆盖）。
 
-        The reverted merges' member pairs are added to the no-merge memory
-        so the next scheduled run does not simply redo the same merge the
-        user just rolled back.
+        被回滚的合并的成员对会加入不合并记忆，
+        这样下次计划运行不会简单重做用户刚回滚的同一合并。
         """
         if self._data_dir is None:
             return False
@@ -1077,8 +1065,7 @@ class ProfileConsolidator:
                 except Exception:
                     logger.exception("Failed to restore profile overrides for %s", run_id)
 
-        # Pin the rolled-back merges as known-distinct so the next run
-        # doesn't redo them.
+        # 把被回滚的合并钉为已知「不同」，让下次运行不会重做。
         state = self._load_state()
         no_merge = set(str(p) for p in state.get("no_merge_pairs", []))
         for merge in record.get("merges", []):
@@ -1100,7 +1087,7 @@ class ProfileConsolidator:
             logger.debug("Failed to append revert changelog", exc_info=True)
         return True
 
-    # -- Persistence -------------------------------------------------------------------
+    # -- 持久化 -------------------------------------------------------------------
 
     def _state_path(self) -> Path | None:
         return self._data_dir / _STATE_FILENAME if self._data_dir else None
@@ -1254,11 +1241,10 @@ def _latest(*values: object) -> str:
 
 
 def _remap_strings(value: object, rename_map: dict[str, str]) -> Any:
-    """Recursively replace exact string matches per ``rename_map``.
+    """按 ``rename_map`` 递归替换精确字符串匹配。
 
-    Only whole-string equality is rewritten (never substrings), covering
-    list entries, dict string values, and dict keys. Colliding renamed
-    keys keep the first occurrence.
+    只重写整串相等（绝不替换子串），覆盖列表项、字典字符串值和字典键。
+    冲突的重命名键保留首次出现。
     """
     if isinstance(value, str):
         return rename_map.get(value, value)

@@ -1,19 +1,17 @@
-"""Shared utilities for parsing LLM-generated structured JSON.
+"""解析 LLM 生成的结构化 JSON 的共享工具。
 
-Centralizes three concerns that every analyzer used to re-implement:
+集中了每个分析器过去都自行重新实现的三个关注点：
 
-1. A unified ``max_tokens`` budget for structured tasks — the provider default
-   of 4096 routinely truncates Chinese JSON payloads mid-value. Bumping this
-   to 16384 gives enough headroom for preference / profile / awareness /
-   insight / layer-delta responses.
-2. Markdown code-fence stripping.
-3. Best-effort salvage of truncated JSON: walks brace/bracket depth with
-   string-awareness, closes any still-open containers at the last safe
-   boundary, and returns the largest recoverable prefix.
+1. 结构化任务的统一 ``max_tokens`` 预算 —— provider 默认值 4096 经常
+   会把中文 JSON 载荷从值中间截断。把它提升到 16384 给 preference /
+   profile / awareness / insight / layer-delta 响应留出足够余量。
+2. Markdown 代码块围栏剥离。
+3. 尽力挽救截断的 JSON：遍历花括号/方括号深度（带字符串感知），
+   在最后一个安全边界闭合所有仍打开的容器，并返回可恢复的最大前缀。
 
-The salvage helpers used to live in ``soul/preference_analyzer.py`` as
-underscored locals; callers now import them from here so the behavior is
-consistent across analyzers and a single fix improves them all at once.
+这些挽救辅助函数过去位于 ``soul/preference_analyzer.py`` 中作为带
+下划线的局部函数；现在调用方都从本模块导入，使行为在所有分析器之间
+一致，单点修复即可同时改善它们。
 """
 
 from __future__ import annotations
@@ -25,10 +23,9 @@ from typing import TypeAlias
 
 logger = logging.getLogger(__name__)
 
-# Unified token budget for structured (JSON) LLM tasks. Gemini 3 Flash preview
-# and Claude both support much larger outputs, and Chinese JSON payloads
-# routinely exceed 4096 tokens. Using 16384 leaves plenty of headroom while
-# staying well under provider ceilings.
+# 结构化（JSON）LLM 任务的统一 token 预算。Gemini 3 Flash preview 和
+# Claude 都支持大得多的输出，且中文 JSON 载荷经常超过 4096 token。
+# 使用 16384 留出充足余量，同时远低于 provider 上限。
 DEFAULT_STRUCTURED_MAX_TOKENS = 16384
 
 JSONPrimitive: TypeAlias = None | bool | int | float | str
@@ -59,10 +56,10 @@ _DEFAULT_OBJECT_WRAPPER_KEYS = ("result", "item", "data", "output")
 
 
 def strip_json_fences(text: str) -> str:
-    """Remove Markdown ``` / ```json fences if present.
+    """若存在 Markdown ``` / ```json 围栏则移除。
 
-    Many LLMs wrap JSON output in a code block even when asked for pure JSON;
-    this normalizes the common cases so downstream ``json.loads`` succeeds.
+    许多 LLM 即便被要求输出纯 JSON 也会把输出包在代码块里；这里
+    对常见情况做归一化，使下游的 ``json.loads`` 能成功。
     """
     s = text.strip()
     if s.startswith("```"):
@@ -73,17 +70,16 @@ def strip_json_fences(text: str) -> str:
 
 
 def parse_llm_json_tolerant(text: str) -> JSONContainer | None:
-    """Parse LLM JSON output tolerantly.
+    """容忍地解析 LLM JSON 输出。
 
-    Strategy:
-        1. Strip Markdown fences.
-        2. Try a regular ``json.loads``.
-        3. On failure, attempt to salvage a truncated object or array by
-           closing unbalanced brackets at the last safe boundary.
+    策略：
+        1. 剥离 Markdown 围栏。
+        2. 尝试一次普通 ``json.loads``。
+        3. 失败时，通过在最后一个安全边界闭合未平衡的括号，
+           尝试挽救被截断的对象或数组。
 
-    Returns the parsed ``dict`` or ``list`` on success, or ``None`` if the
-    response is unrecoverable. Callers that need to distinguish "object"
-    from "array" should isinstance-check the result.
+    成功时返回解析后的 ``dict`` 或 ``list``，不可恢复时返回 ``None``。
+    需要区分"对象"与"数组"的调用方应对结果做 isinstance 检查。
     """
     cleaned = strip_json_fences(text)
     try:
@@ -97,7 +93,7 @@ def parse_llm_json_tolerant(text: str) -> JSONContainer | None:
     if stripped.startswith("["):
         return _salvage_container(cleaned, open_ch="[")
 
-    # Unknown root — try both
+    # 未知根 —— 两种都试
     return _salvage_container(cleaned, open_ch="{") or _salvage_container(cleaned, open_ch="[")
 
 
@@ -108,7 +104,7 @@ def extract_llm_json_list(
     allow_singleton: bool = False,
     item_predicate: JSONDictPredicate | None = None,
 ) -> list[dict[str, JSONValue]] | None:
-    """Extract a schema-valid JSON object list from messy LLM output."""
+    """从杂乱的 LLM 输出中提取符合 schema 的 JSON 对象列表。"""
     keys = _merge_wrapper_keys(_DEFAULT_LIST_WRAPPER_KEYS, wrapper_keys)
     parsed = parse_llm_json_tolerant(content)
     direct = _coerce_candidate_list(
@@ -153,7 +149,7 @@ def extract_llm_json_object(
     wrapper_keys: tuple[str, ...] = (),
     item_predicate: JSONDictPredicate | None = None,
 ) -> dict[str, JSONValue] | None:
-    """Extract a schema-valid JSON object from messy LLM output."""
+    """从杂乱的 LLM 输出中提取符合 schema 的 JSON 对象。"""
     keys = _merge_wrapper_keys(_DEFAULT_OBJECT_WRAPPER_KEYS, wrapper_keys)
     parsed = parse_llm_json_tolerant(content)
     direct = _coerce_candidate_object(
@@ -176,11 +172,10 @@ def extract_llm_json_object(
 
 
 def format_parse_failure(content: str, exc: Exception, *, label: str) -> str:
-    """Format a compact diagnostic entry for a failed parse.
+    """为解析失败格式化一条紧凑的诊断条目。
 
-    Intentionally includes both the head and tail of the raw response: the
-    tail is usually where a truncation manifests, while the head reveals
-    whether the LLM obeyed the schema.
+    故意同时包含原始响应的头部和尾部：尾部通常是截断发生的地方，
+    而头部能揭示 LLM 是否遵循了 schema。
     """
     snippet = content.strip()
     head = snippet[:400]
@@ -192,12 +187,11 @@ def format_parse_failure(content: str, exc: Exception, *, label: str) -> str:
 
 
 def _salvage_container(text: str, *, open_ch: str) -> JSONContainer | None:
-    """Best-effort recovery of a JSON object or array cut off mid-value.
+    """尽力恢复被从值中间截断的 JSON 对象或数组。
 
-    Walks ``text`` tracking brace/bracket depth and string state; records
-    the last "safe" truncation point (matching top-level close or a comma
-    at depth ≥1). Then tries progressively longer candidates by either
-    cutting at the safe point or repairing the tail with missing closers.
+    遍历 ``text``，跟踪花括号/方括号深度与字符串状态；记录最后一个
+    "安全"截断点（顶层闭合括号匹配或深度 ≥1 处的逗号）。然后尝试
+    逐渐加长的候选：要么在安全点截断，要么用缺失的闭合符修补尾部。
     """
     start = text.find(open_ch)
     if start < 0:
@@ -464,10 +458,10 @@ def _extract_balanced_json_snippets(
 
 
 def _remaining_closers(partial: str) -> str | None:
-    """Return the string of closing brackets needed to balance ``partial``.
+    """返回平衡 ``partial`` 所需的闭合括号字符串。
 
-    Returns ``None`` if the partial ends inside a string literal that cannot
-    be safely closed (we refuse to guess where a string should terminate).
+    若 partial 末尾位于一个无法安全闭合的字符串字面量中，则返回
+    ``None``（我们拒绝猜测字符串应在哪里终止）。
     """
     stack: list[str] = []
     in_string = False

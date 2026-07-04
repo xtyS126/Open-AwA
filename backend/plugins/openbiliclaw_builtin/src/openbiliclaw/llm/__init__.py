@@ -1,4 +1,4 @@
-"""LLM package — multi-model provider support."""
+"""LLM 包 —— 多模型 provider 支持。"""
 
 from .base import (
     HealthCheckResult,

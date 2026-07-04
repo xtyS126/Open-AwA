@@ -1,23 +1,20 @@
-"""Background task registry for cancel-on-hot-reload.
+"""用于热重载时取消的后台任务注册表。
 
-The runtime spawns many ``asyncio.create_task(...)`` calls for detached
-fire-and-forget work — per-strategy precompute, prewarm helpers,
-per-event triggers, manual refresh handles. When config changes at
-runtime (``RuntimeContext.rebuild_from_config``), only the top-level
-loop tasks were previously cancelled; detached tasks kept running with
-references to the OLD runtime object, competing with the freshly built
-runtime for SQLite writes and LLM tokens for many seconds after rebuild.
+运行时会发起许多 ``asyncio.create_task(...)`` 调用来执行分离的
+fire-and-forget 工作——各策略的预计算、预热助手、各事件触发器、手动
+刷新句柄。当配置在运行时发生变化（``RuntimeContext.rebuild_from_config``）
+时，过去只有顶层循环任务会被取消；分离任务仍持有对 *旧* runtime 对象的
+引用继续运行，与刚构建好的 runtime 争夺 SQLite 写入和 LLM token，持续
+数秒之久。
 
-``BackgroundTaskRegistry`` is the single chokepoint every detached task
-should flow through. ``cancel_all`` is awaited at the very top of
-``rebuild_from_config`` so the new runtime starts from a clean slate.
+``BackgroundTaskRegistry`` 是每个分离任务都应流经的单一收口点。
+``cancel_all`` 在 ``rebuild_from_config`` 的最顶部被 await，使新 runtime
+从干净状态启动。
 
-Backward compatibility note: every caller that previously used
-``asyncio.create_task`` directly continues to work unmodified — the
-registry is wired in optionally, and code paths that don't have one
-fall back to bare ``create_task`` exactly as before. This keeps the
-existing test suite green without forcing every test fixture to inject
-a registry.
+向后兼容说明：每个之前直接使用 ``asyncio.create_task`` 的调用方都继续
+原样工作——注册表是可选接入的，没有注册表的代码路径会回退到裸
+``create_task``，行为与之前完全一致。这样既保证现有测试套件不挂，也不
+强制每个测试夹具都注入注册表。
 """
 
 from __future__ import annotations
@@ -33,23 +30,21 @@ logger = logging.getLogger(__name__)
 
 
 class BackgroundTaskRegistry:
-    """Tracks asyncio.create_task spawns so hot reload can cancel them.
+    """跟踪 asyncio.create_task 派生任务，便于热重载时取消。
 
-    Every detached task that the runtime spawns (precompute, prewarm,
-    per-event trigger, refresh-loop ticks) should pass through
-    ``track`` instead of bare ``asyncio.create_task``. On
-    ``cancel_all``, the registry cancels every still-running task and
-    waits for them to settle.
+    runtime 派生的每个分离任务（预计算、预热、各事件触发器、刷新循环
+    tick）都应通过 ``track`` 而非裸 ``asyncio.create_task``。在
+    ``cancel_all`` 时，注册表会取消每个仍在运行的任务并等待其收尾。
     """
 
     def __init__(self) -> None:
         self._tasks: dict[asyncio.Task[Any], str] = {}
 
     def track(self, name: str, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
-        """Wrap ``asyncio.create_task`` and remember the resulting task.
+        """包装 ``asyncio.create_task`` 并记住返回的任务。
 
-        Tasks self-untrack on completion via ``add_done_callback`` so the
-        registry doesn't grow unbounded across a long-running daemon.
+        任务通过 ``add_done_callback`` 在完成时自我注销，使注册表不会
+        在长时间运行的守护进程中无限增长。
         """
         task = asyncio.create_task(coro, name=name)
         self._tasks[task] = name
@@ -59,11 +54,11 @@ class BackgroundTaskRegistry:
     async def cancel_all(
         self, *, grace_seconds: float = 1.5, exclude: frozenset[str] = frozenset()
     ) -> int:
-        """Cancel tracked tasks and wait up to ``grace_seconds`` for cleanup.
+        """取消已跟踪的任务，最多等待 ``grace_seconds`` 完成清理。
 
-        ``exclude`` is a set of task names to leave running (and still tracked)
-        — used so a config-driven rebuild doesn't kill the guided-init task
-        (gui-init spec §5c). Returns the number of tasks actually cancelled.
+        ``exclude`` 是要保留运行（且仍跟踪）的任务名集合——用于配置驱动
+        的 rebuild 不要杀掉 guided-init 任务（gui-init 规范 §5c）。返回
+        实际被取消的任务数。
         """
         tasks = [t for t, name in self._tasks.items() if name not in exclude]
         for task in tasks:
@@ -80,18 +75,17 @@ class BackgroundTaskRegistry:
                     sum(1 for t in tasks if not t.done()),
                     grace_seconds,
                 )
-        # Self-untrack callbacks may not have fired for cancelled tasks
-        # (especially when the grace timeout hit). Drop the cancelled ones
-        # explicitly; excluded tasks stay tracked so they remain cancellable.
+        # 被取消任务的自注销回调可能尚未触发（特别是宽限超时命中时）。
+        # 显式丢弃已取消的；排除的任务仍保持跟踪，便于后续可取消。
         for task in tasks:
             self._tasks.pop(task, None)
         return len(tasks)
 
     async def cancel(self, name: str, *, grace_seconds: float = 1.5) -> int:
-        """Cancel every tracked task with the given ``name``. Returns the count.
+        """取消所有以给定 ``name`` 跟踪的任务。返回取消数。
 
-        Used to stop a single named background task (e.g. ``guided_init``)
-        without touching the rest (gui-init spec §5f).
+        用于停止单个具名后台任务（如 ``guided_init``）而不动其他任务
+        （gui-init 规范 §5f）。
         """
         tasks = [t for t, n in self._tasks.items() if n == name]
         for task in tasks:
@@ -109,12 +103,12 @@ class BackgroundTaskRegistry:
         return len(tasks)
 
     def stats(self) -> dict[str, int]:
-        """Diagnostic: live task counts grouped by name prefix.
+        """诊断：按名称前缀分组的实时任务计数。
 
-        The prefix is everything up to the first ``.`` in the task name
-        (e.g. ``"precompute_pool_copy"`` → ``"precompute_pool_copy"``,
-        ``"refresh.manual"`` → ``"refresh"``). Tasks created without
-        a name fall under ``"unknown"``.
+        前缀是任务名中第一个 ``.`` 之前的部分（如
+        ``"precompute_pool_copy"`` → ``"precompute_pool_copy"``，
+        ``"refresh.manual"`` → ``"refresh"``）。未命名创建的任务归入
+        ``"unknown"``。
         """
         counts: dict[str, int] = {}
         for name in self._tasks.values():

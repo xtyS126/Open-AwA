@@ -1,4 +1,4 @@
-"""Authentication and cookie management for Bilibili."""
+"""Bilibili 的认证与 cookie 管理。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class SupportsNavClient(Protocol):
-    """Protocol for API clients used by AuthManager."""
+    """AuthManager 使用的 API 客户端协议。"""
 
     async def get_nav_info(self) -> NavInfo: ...
 
@@ -26,7 +26,7 @@ class SupportsNavClient(Protocol):
 
 @dataclass
 class AuthStatus:
-    """Structured authentication status for CLI and services."""
+    """用于 CLI 和 services 的结构化认证状态。"""
 
     has_cookie: bool
     authenticated: bool
@@ -37,11 +37,11 @@ class AuthStatus:
 
 
 class AuthManager:
-    """Manages Bilibili authentication state.
+    """管理 Bilibili 认证状态。
 
-    Supports:
-    - Cookie-based authentication (from browser)
-    - No-login mode (limited functionality)
+    支持：
+    - 基于 cookie 的认证（来自浏览器）
+    - 无登录模式（功能受限）
     """
 
     def __init__(
@@ -57,35 +57,35 @@ class AuthManager:
 
     @property
     def is_authenticated(self) -> bool:
-        """Whether we have a valid authentication cookie."""
+        """是否持有有效的认证 cookie。"""
         return bool(self._cookie)
 
     @property
     def cookie(self) -> str:
-        """Current cookie string."""
+        """当前 cookie 字符串。"""
         return self._cookie
 
     def set_cookie(self, cookie: str) -> None:
-        """Set and persist the authentication cookie.
+        """设置并持久化认证 cookie。
 
         Args:
-            cookie: Cookie string from browser.
+            cookie: 来自浏览器的 cookie 字符串。
         """
         self._cookie = cookie.strip()
         self._save_cookie()
         logger.info("Cookie set and saved.")
 
     def load_cookie(self) -> str:
-        """Load persisted cookie from disk.
+        """从磁盘加载持久化的 cookie。
 
         Returns:
-            Cookie string, or empty string if not found.
+            cookie 字符串，未找到时返回空字符串。
         """
         if self._cookie_path.exists():
-            # encoding="utf-8" matches save_cookie() — Bilibili cookies
-            # are ASCII so the bug never triggers in prod, but a
-            # platform-default encoding still risks UnicodeDecodeError
-            # on Windows GBK if a future cookie field carries non-ASCII.
+            # encoding="utf-8" 与 save_cookie() 保持一致 —— Bilibili cookie
+            # 是 ASCII，因此该 bug 在生产环境不会触发，但平台默认编码在
+            # Windows GBK 下，如果未来 cookie 字段携带非 ASCII 字符，
+            # 仍有 UnicodeDecodeError 风险。
             with open(self._cookie_path, encoding="utf-8") as f:
                 data = json.load(f)
                 self._cookie = data.get("cookie", "")
@@ -93,7 +93,7 @@ class AuthManager:
         return self._cookie
 
     async def validate_cookie(self, cookie: str) -> AuthStatus:
-        """Validate a cookie string against the Bilibili nav endpoint."""
+        """针对 Bilibili nav 端点校验 cookie 字符串。"""
         normalized_cookie = cookie.strip()
         if not normalized_cookie:
             return AuthStatus(
@@ -135,7 +135,7 @@ class AuthManager:
         )
 
     async def get_status(self) -> AuthStatus:
-        """Get current persisted authentication status."""
+        """获取当前持久化的认证状态。"""
         cookie = self.load_cookie()
         if not cookie.strip():
             return AuthStatus(
@@ -147,13 +147,13 @@ class AuthManager:
         return await self.validate_cookie(cookie)
 
     def _save_cookie(self) -> None:
-        """Persist cookie to disk. Always UTF-8 — see load_cookie()."""
+        """将 cookie 持久化到磁盘。始终使用 UTF-8 —— 见 load_cookie()。"""
         self._data_dir.mkdir(parents=True, exist_ok=True)
         with open(self._cookie_path, "w", encoding="utf-8") as f:
             json.dump({"cookie": self._cookie}, f)
 
     def clear_cookie(self) -> None:
-        """Clear stored cookie."""
+        """清除已存储的 cookie。"""
         self._cookie = ""
         if self._cookie_path.exists():
             self._cookie_path.unlink()
@@ -161,17 +161,17 @@ class AuthManager:
 
     @staticmethod
     def _default_api_client_factory(cookie: str) -> SupportsNavClient:
-        """Create the default Bilibili API client."""
+        """创建默认的 Bilibili API 客户端。"""
         from .api import BilibiliAPIClient
 
         return BilibiliAPIClient(cookie=cookie)
 
 
 def resolve_runtime_cookie(*, data_dir: Path, configured_cookie: str) -> str:
-    """Resolve the cookie used by runtime commands.
+    """解析运行时命令使用的 cookie。
 
-    Commands should prefer an explicitly configured cookie, but transparently
-    fall back to the cookie previously saved by `auth login`.
+    命令应优先使用显式配置的 cookie，但透明地回退到之前由
+    `auth login` 保存的 cookie。
     """
     normalized_cookie = configured_cookie.strip()
     if normalized_cookie:

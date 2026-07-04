@@ -1,4 +1,4 @@
-"""Resolve the backend launch command used by OS autostart entries."""
+"""解析 OS 自启项使用的后端启动命令。"""
 
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ def _path_with_ollama() -> str:
 
 
 def build_launch_spec(config: Config) -> LaunchSpec:
-    """Build the stable backend command embedded in OS autostart entries."""
-    del config  # The signature stays manager-friendly as config-driven fields grow.
+    """构建嵌入 OS 自启项的稳定后端命令。"""
+    del config  # 保留签名以备配置驱动字段扩展，便于管理器统一调用。
     working_dir = _project_root()
     return LaunchSpec(
         argv=[sys.executable, "-m", "openbiliclaw.cli", "start"],
@@ -42,7 +42,7 @@ def build_launch_spec(config: Config) -> LaunchSpec:
 
 
 def resolve_pythonw(executable: str | Path | None = None) -> Path:
-    """Return pythonw.exe next to ``executable`` when present, else the executable."""
+    """若 ``executable`` 旁存在 pythonw.exe 则返回它，否则返回原可执行文件。"""
     python = Path(executable) if executable is not None else Path(sys.executable)
     pythonw = python.with_name("pythonw.exe")
     return pythonw if pythonw.exists() else python

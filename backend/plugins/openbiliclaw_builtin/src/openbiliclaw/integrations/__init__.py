@@ -1,1 +1,1 @@
-"""Integration adapters for external systems."""
+"""外部系统集成适配器。"""

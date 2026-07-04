@@ -1,7 +1,7 @@
-"""LLM-based content extraction from raw page text.
+"""基于 LLM 的原始页面文本内容抽取。
 
-Converts unstructured web page text into structured DiscoveredContent
-objects using an LLM to identify titles, authors, summaries, and URLs.
+使用 LLM 将非结构化网页文本转换为结构化的 DiscoveredContent
+对象，以识别标题、作者、摘要与 URL。
 """
 
 from __future__ import annotations
@@ -54,16 +54,16 @@ async def extract_content_from_page(
     llm_service: Any,
     base_url: str = "",
 ) -> list[DiscoveredContent]:
-    """Use an LLM to extract structured content items from raw page text.
+    """使用 LLM 从原始页面文本中抽取结构化内容条目。
 
     Args:
-        page_text: Raw visible text from a web page.
-        source_platform: Platform identifier (e.g. "xiaohongshu", "web").
-        llm_service: An LLM service with ``complete_structured_task()``.
-        base_url: Base URL for resolving relative links.
+        page_text: 网页原始可见文本。
+        source_platform: 平台标识（例如 "xiaohongshu"、"web"）。
+        llm_service: 提供 ``complete_structured_task()`` 的 LLM 服务。
+        base_url: 用于解析相对链接的基础 URL。
 
     Returns:
-        List of DiscoveredContent items extracted from the page.
+        从页面中抽取的 DiscoveredContent 条目列表。
     """
     from openbiliclaw.discovery.engine import DiscoveredContent
 
@@ -71,7 +71,7 @@ async def extract_content_from_page(
         logger.debug("Page text too short for extraction (%d chars)", len(page_text))
         return []
 
-    # Truncate very long pages to stay within LLM context limits
+    # 截断过长的页面，以保持在 LLM 上下文上限内
     truncated = page_text[:8000] if len(page_text) > 8000 else page_text
 
     user_prompt = (
@@ -104,10 +104,10 @@ async def extract_content_from_page(
     for item in items_raw:
         if not isinstance(item, dict):
             continue
-        # LLMs often return JSON nulls for missing fields — ``item.get(key, "")``
-        # then yields ``None`` (the value), not the default, and ``str(None)``
-        # produces the string ``"None"`` which looks populated to every
-        # downstream truthiness check. Coerce to "" before stripping.
+        # LLM 常对缺失字段返回 JSON null —— 此时 ``item.get(key, "")``
+        # 取到的是 ``None``（值），而非默认值，且 ``str(None)``
+        # 会产生字符串 ``"None"``，使下游每个真值检查都视为已填充。
+        # 在 strip 前强制转为 ""。
         title = str(item.get("title") or "").strip()
         if not title:
             continue
@@ -115,7 +115,7 @@ async def extract_content_from_page(
         content_id = str(item.get("content_id") or "").strip()
         content_url = str(item.get("url") or "").strip()
 
-        # Generate a content_id from URL if not provided
+        # 若未提供 content_id，则从 URL 生成
         if not content_id and content_url:
             content_id = content_url.rstrip("/").rsplit("/", 1)[-1]
         if not content_id:

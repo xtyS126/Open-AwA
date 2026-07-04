@@ -1,34 +1,31 @@
-"""Server-side X (Twitter) read client — a thin async wrapper over ``twitter-cli``.
+"""服务端 X (Twitter) 读取客户端 —— ``twitter-cli`` 的轻量异步封装。
 
-Discovery for the X source is server-side cookie replay (like Bilibili /
-Douyin-direct, NOT an XHS-style stub). This client harvests the user's
-``auth_token`` + ``ct0`` cookies and drives ``twitter_cli.client.TwitterClient``'s
-**synchronous** read methods.
+X 内容源的发现是服务端 Cookie 回放（像 Bilibili / Douyin-direct，
+而非 XHS 式的桩）。此客户端采集用户的 ``auth_token`` + ``ct0`` Cookie
+并驱动 ``twitter_cli.client.TwitterClient`` 的**同步**读取方法。
 
-Design contract (see ``docs/plans/2026-06-08-x-twitter-source-plan.md`` Task 6):
+设计契约（见 ``docs/plans/2026-06-08-x-twitter-source-plan.md`` Task 6）：
 
-* **Lazy import.** ``twitter_cli`` (and its ``curl_cffi`` transitive dep) is
-  imported *inside* the network seam, never at module top. Importing this
-  module while the X source is disabled must not touch the dependency or fail;
-  ``openbiliclaw[x]`` remains only as a backwards-compatible install alias.
-  ``tests/test_x_client.py`` regresses this.
-* **Async wrapper.** ``twitter_cli`` reads are synchronous (curl_cffi), so the
-  public ``search`` / ``for_you`` / ``user_tweets`` (discovery) and ``likes`` /
-  ``bookmarks`` (init preference backfill) coroutines run them via
-  :func:`asyncio.to_thread`.
-* **Return shape.** Each public method returns ``list[dict]`` — the output of
-  ``twitter_cli.serialization.tweet_to_dict``. Keys are camelCase/JSON-safe:
-  ``id`` (the rest_id), ``text``, ``author`` (``{id, name, screenName,
-  profileImageUrl, verified}``), ``metrics`` (``{likes, retweets, replies,
-  quotes, views, bookmarks}``), ``createdAt`` / ``createdAtISO``, ``media``,
-  ``urls``, ``isRetweet``, ``retweetedBy``, ``lang``, ``score``, and optional
-  ``articleTitle`` / ``articleText`` (long-form note_tweet) / ``quotedTweet``.
-  Task 7's ``normalize_tweet`` consumes these dicts.
-* **Typed errors.** Underlying ``TwitterAPIError`` / ``AuthenticationError`` map
-  onto a small hierarchy so Task 10's source-health machine can branch cleanly:
-  missing cookie → :class:`XMissingCookieError` (``missing_cookie``); 401 →
-  :class:`XAuthError` (``expired_cookie``); 403 → :class:`XBlockedError`
-  (``blocked``); 429 → :class:`XRateLimitError` (``rate_limited``).
+* **惰性导入。** ``twitter_cli``（及其 ``curl_cffi`` 传递依赖）在
+  网络边界*内部*导入，从不在模块顶部。当 X 内容源被禁用时，导入此模块
+  不得触碰该依赖或失败；``openbiliclaw[x]`` 仅作为向后兼容的安装别名保留。
+  ``tests/test_x_client.py`` 对此进行回归测试。
+* **异步封装。** ``twitter_cli`` 的读取是同步的（curl_cffi），因此公开的
+  ``search`` / ``for_you`` / ``user_tweets``（发现）和 ``likes`` /
+  ``bookmarks``（初始化偏好回填）协程通过 :func:`asyncio.to_thread` 运行它们。
+* **返回形状。** 每个公开方法返回 ``list[dict]`` —— 即
+  ``twitter_cli.serialization.tweet_to_dict`` 的输出。键为 camelCase/JSON 安全的：
+  ``id``（即 rest_id）、``text``、``author``（``{id, name, screenName,
+  profileImageUrl, verified}``）、``metrics``（``{likes, retweets, replies,
+  quotes, views, bookmarks}``）、``createdAt`` / ``createdAtISO``、``media``、
+  ``urls``、``isRetweet``、``retweetedBy``、``lang``、``score``，以及可选的
+  ``articleTitle`` / ``articleText``（长文 note_tweet）/ ``quotedTweet``。
+  Task 7 的 ``normalize_tweet`` 消费这些字典。
+* **类型化错误。** 底层的 ``TwitterAPIError`` / ``AuthenticationError``
+  映射到一个小型层次结构，以便 Task 10 的源健康状态机能干净地分支处理：
+  缺少 Cookie → :class:`XMissingCookieError`（``missing_cookie``）；401 →
+  :class:`XAuthError`（``expired_cookie``）；403 → :class:`XBlockedError`
+  （``blocked``）；429 → :class:`XRateLimitError`（``rate_limited``）。
 """
 
 from __future__ import annotations
@@ -36,39 +33,39 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime here
+if TYPE_CHECKING:  # pragma: no cover - 仅用于类型标注，运行时从不导入
     from twitter_cli.models import Tweet
 
 
 class XClientError(RuntimeError):
-    """Base class for all X client failures."""
+    """所有 X 客户端失败的基类。"""
 
 
 class XMissingCookieError(XClientError):
-    """No usable cookie (``auth_token`` and/or ``ct0`` missing).
+    """没有可用的 Cookie（``auth_token`` 和/或 ``ct0`` 缺失）。
 
-    Raised lazily on first use — before any ``twitter_cli`` import — so the
-    disabled / unconfigured path never touches the X dependency.
+    在首次使用时惰性抛出 —— 在任何 ``twitter_cli`` 导入之前 —— 这样
+    禁用/未配置的路径永远不会触碰 X 依赖。
     """
 
 
 class XAuthError(XClientError):
-    """Authentication failed (HTTP 401 / ``AuthenticationError``) — cookie expired."""
+    """认证失败（HTTP 401 / ``AuthenticationError``）—— Cookie 已过期。"""
 
 
 class XBlockedError(XClientError):
-    """Request blocked (HTTP 403) — account/region/endpoint forbidden."""
+    """请求被拒绝（HTTP 403）—— 账号/地区/端点被禁。"""
 
 
 class XRateLimitError(XClientError):
-    """Rate limited (HTTP 429) — back off and retry later."""
+    """被限流（HTTP 429）—— 稍后重试。"""
 
 
 def _parse_cookie(cookie: str) -> tuple[str, str]:
-    """Pull ``auth_token`` and ``ct0`` out of a cookie header string.
+    """从 Cookie 头字符串中提取 ``auth_token`` 和 ``ct0``。
 
-    Accepts the usual ``"auth_token=...; ct0=...; other=..."`` form. Raises
-    :class:`XMissingCookieError` if either value is absent or empty.
+    接受常见的 ``"auth_token=...; ct0=...; other=..."`` 形式。
+    如果任一值缺失或为空，抛出 :class:`XMissingCookieError`。
     """
     pairs: dict[str, str] = {}
     for chunk in (cookie or "").split(";"):
@@ -85,38 +82,38 @@ def _parse_cookie(cookie: str) -> tuple[str, str]:
 
 
 class XClient:
-    """Async wrapper over ``twitter_cli.client.TwitterClient`` read methods.
+    """``twitter_cli.client.TwitterClient`` 读取方法的异步封装。
 
-    The cookie is parsed lazily (on first call), so constructing an ``XClient``
-    is cheap and never imports ``twitter_cli``.
+    Cookie 是惰性解析的（在首次调用时），因此构造 ``XClient`` 很廉价，
+    且从不导入 ``twitter_cli``。
     """
 
     def __init__(self, cookie: str) -> None:
         self._cookie = cookie or ""
 
-    # -- internal helpers -------------------------------------------------
+    # -- 内部辅助方法 ---------------------------------------------------
 
     def _auth_pair(self) -> tuple[str, str]:
-        """Lazily parse and return ``(auth_token, ct0)`` from the cookie."""
+        """惰性解析并返回 Cookie 中的 ``(auth_token, ct0)``。"""
         return _parse_cookie(self._cookie)
 
     def _client(self) -> Any:
-        """Build a ``twitter_cli`` client (lazy import lives here)."""
+        """构建一个 ``twitter_cli`` 客户端（惰性导入在此进行）。"""
         from twitter_cli.client import TwitterClient
 
         auth_token, ct0 = self._auth_pair()
         return TwitterClient(auth_token, ct0)
 
-    # -- network seams (synchronous; monkeypatched in tests) --------------
+    # -- 网络边界（同步；测试中被 monkeypatch）-------------------------
     #
-    # These are the only place ``twitter_cli`` is driven. Tests replace them
-    # so no network call (and no real cookie) is needed.
+    # 这些是 ``twitter_cli`` 被驱动的唯一位置。测试会替换它们，
+    # 这样就不需要真实网络调用（也不需要真实 Cookie）。
 
     def _raw_search(self, query: str, *, count: int, product: str) -> list[Tweet]:
         return list(self._client().fetch_search(query, count=count, product=product))
 
     def _raw_for_you(self, *, count: int) -> list[Tweet]:
-        # home_timeline is the "For You" feed; fetch_following_feed is chronological.
+        # home_timeline 是 "For You" 信息流；fetch_following_feed 是按时间顺序的。
         return list(self._client().fetch_home_timeline(count=count))
 
     def _raw_user_tweets(self, handle: str, *, count: int) -> list[Tweet]:
@@ -125,8 +122,8 @@ class XClient:
         return list(client.fetch_user_tweets(user_id, count=count))
 
     def _raw_likes(self, *, count: int) -> list[Tweet]:
-        # The authenticated user's own Likes timeline. fetch_user_likes needs a
-        # user_id, so resolve "me" first (one extra read, init-time only).
+        # 当前认证用户自己的点赞时间线。fetch_user_likes 需要 user_id，
+        # 所以先解析 "me"（仅初始化时多一次读取）。
         client = self._client()
         me = client.fetch_me()
         user_id = str(getattr(me, "id", "") or "")
@@ -137,53 +134,53 @@ class XClient:
     def _raw_bookmarks(self, *, count: int) -> list[Tweet]:
         return list(self._client().fetch_bookmarks(count=count))
 
-    # -- public async API -------------------------------------------------
+    # -- 公开异步 API ---------------------------------------------------
 
     async def search(self, query: str, *, limit: int, product: str = "Top") -> list[dict[str, Any]]:
-        """Search X. Returns up to ``limit`` ``tweet_to_dict`` dicts."""
+        """搜索 X。返回最多 ``limit`` 个 ``tweet_to_dict`` 字典。"""
         tweets = await self._run(self._raw_search, query, count=limit, product=product)
         return self._serialize(tweets, limit)
 
     async def for_you(self, *, limit: int) -> list[dict[str, Any]]:
-        """Fetch the "For You" home timeline. Returns ``tweet_to_dict`` dicts."""
+        """获取 "For You" 主页时间线。返回 ``tweet_to_dict`` 字典。"""
         tweets = await self._run(self._raw_for_you, count=limit)
         return self._serialize(tweets, limit)
 
     async def user_tweets(self, handle: str, *, limit: int) -> list[dict[str, Any]]:
-        """Fetch a creator's recent tweets by handle. Returns ``tweet_to_dict`` dicts."""
+        """按 handle 获取创作者最近的推文。返回 ``tweet_to_dict`` 字典。"""
         tweets = await self._run(self._raw_user_tweets, handle, count=limit)
         return self._serialize(tweets, limit)
 
     async def likes(self, *, limit: int) -> list[dict[str, Any]]:
-        """Fetch the authenticated user's own liked tweets (init preference backfill).
+        """获取当前认证用户自己点赞的推文（初始化偏好回填）。
 
-        Unlike ``search`` / ``for_you`` (discovery), this reads the user's *own*
-        historical engagement to seed the soul profile — the X analogue of B站
-        favorites backfill. Returns ``tweet_to_dict`` dicts.
+        与 ``search`` / ``for_you``（发现）不同，此方法读取用户*自己的*
+        历史互动数据来播种 Soul 画像 —— 是 B 站收藏回填的 X 对应物。
+        返回 ``tweet_to_dict`` 字典。
         """
         tweets = await self._run(self._raw_likes, count=limit)
         return self._serialize(tweets, limit)
 
     async def bookmarks(self, *, limit: int) -> list[dict[str, Any]]:
-        """Fetch the authenticated user's own bookmarked tweets (init preference backfill).
+        """获取当前认证用户自己收藏的推文（初始化偏好回填）。
 
-        Returns ``tweet_to_dict`` dicts.
+        返回 ``tweet_to_dict`` 字典。
         """
         tweets = await self._run(self._raw_bookmarks, count=limit)
         return self._serialize(tweets, limit)
 
-    # -- plumbing ---------------------------------------------------------
+    # -- 管道 -----------------------------------------------------------
 
     async def _run(self, fn: Any, *args: Any, **kwargs: Any) -> list[Tweet]:
-        """Run a sync seam off-thread, mapping twitter_cli errors to ours.
+        """在离线线程中运行同步边界方法，将 twitter_cli 错误映射到我们的错误。
 
-        ``XMissingCookieError`` propagates unchanged (raised before any import).
+        ``XMissingCookieError`` 原样传播（在任何导入之前抛出）。
         """
         try:
             return await asyncio.to_thread(fn, *args, **kwargs)
         except XClientError:
             raise
-        except Exception as exc:  # noqa: BLE001 - normalize twitter_cli surface
+        except Exception as exc:  # noqa: BLE001 - 规范化 twitter_cli 表面
             raise _map_exception(exc) from exc
 
     @staticmethod
@@ -195,9 +192,9 @@ class XClient:
 
 
 def _map_exception(exc: Exception) -> XClientError:
-    """Translate a ``twitter_cli`` exception into the local typed hierarchy."""
-    # Imported lazily so a non-X install can still import this module to map
-    # nothing (the except path only runs once twitter_cli is in play).
+    """将 ``twitter_cli`` 异常转换为本地类型化层次结构。"""
+    # 惰性导入，这样非 X 安装仍能导入此模块来映射空（except 路径仅在
+    # twitter_cli 已介入时才运行）。
     from twitter_cli.client import TwitterAPIError
     from twitter_cli.exceptions import AuthenticationError
 
@@ -211,6 +208,6 @@ def _map_exception(exc: Exception) -> XClientError:
             return XRateLimitError(str(exc))
         return XClientError(str(exc))
     if isinstance(exc, AuthenticationError):
-        # No status_code on AuthenticationError; treat as an expired/invalid cookie.
+        # AuthenticationError 没有 status_code；视为过期/无效的 Cookie。
         return XAuthError(str(exc))
     return XClientError(str(exc))

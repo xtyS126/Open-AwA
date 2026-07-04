@@ -1,4 +1,4 @@
-"""Shared evaluator/admission pipeline for discovery candidates."""
+"""发现候选的共享 evaluator/admission 流水线。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def _default_score_thresholds() -> dict[str, float]:
 
 @dataclass
 class DiscoveryCandidatePipeline:
-    """Drain pending raw candidates through one mixed-source evaluator."""
+    """通过单一混合源 evaluator 排空 pending 的原始候选。"""
 
     database: Any
     discovery_engine: ContentDiscoveryEngine
@@ -86,7 +86,7 @@ class DiscoveryCandidatePipeline:
         *,
         source_context: str = "",
     ) -> int:
-        """Normalize and enqueue discovered raw items into the candidate pool."""
+        """将发现的原始 item 归一化并入队到候选池。"""
 
         writes: list[DiscoveryCandidateWrite] = [
             discovered_content_to_candidate_write(item, source_context=source_context)
@@ -128,7 +128,7 @@ class DiscoveryCandidatePipeline:
         max_attempts: int | None = None,
         max_seconds: float | None = None,
     ) -> dict[str, int | str]:
-        """Produce raw candidates until the Evo input queue reaches a waterline."""
+        """生产原始候选，直到 Evo 输入队列达到水位线。"""
 
         requested = max(0, int(limit))
         target = max(0, int(target_pending if target_pending is not None else requested))
@@ -242,17 +242,17 @@ class DiscoveryCandidatePipeline:
         keywords: list[str] | None = None,
         keyword_ids: dict[str, int] | None = None,
     ) -> int:
-        """Fetch raw candidates with the discovery engine and enqueue them.
+        """使用 discovery engine 拉取原始候选并入队。
 
-        ``keywords`` (when provided) is forwarded to search sub-strategies that
-        accept it — the unified keyword planner injection point. ``None`` keeps
-        the legacy self-generating behavior. Only forwarded when non-None so
-        engines/stubs without a ``keywords`` kwarg stay byte-compatible.
+        ``keywords``（提供时）会转发给接受该参数的 search 子策略 ——
+        这是统一关键词规划器的注入点。``None`` 保持 legacy 自生成行为
+        字节一致。仅在非 None 时转发，使没有 ``keywords`` kwarg 的
+        engine/stub 保持字节兼容。
 
-        ``keyword_ids`` (P1.8) is the parallel ``keyword text → keyword id`` map
-        forwarded alongside ``keywords`` so each produced candidate carries its
-        producing word's ``source_keyword_id`` for admit-time yield backfill.
-        Only forwarded when truthy, so the flag-off path stays byte-compatible.
+        ``keyword_ids``（P1.8）是与 ``keywords`` 并行转发的
+        ``keyword text → keyword id`` 映射，使每个产出项携带其生产词的
+        ``source_keyword_id``，供准入时回填 yield。仅在 truthy 时转发，
+        使 flag-off 路径保持字节兼容。
         """
 
         if self.pool_full():
@@ -298,7 +298,7 @@ class DiscoveryCandidatePipeline:
         profile: Any,
         batch_size: int = _DEFAULT_EVAL_BATCH_SIZE,
     ) -> dict[str, int]:
-        """Evaluate one pending batch and admit accepted items into content_cache."""
+        """评估一个 pending 批次，并将接受的 item 准入到 content_cache。"""
 
         if self._drain_lock.locked():
             self.last_admitted_items = []
@@ -312,7 +312,7 @@ class DiscoveryCandidatePipeline:
         profile: Any,
         batch_size: int = _DEFAULT_EVAL_BATCH_SIZE,
     ) -> dict[str, int]:
-        """Evaluate one pending batch while the shared drain lock is held."""
+        """在持有共享 drain lock 期间评估一个 pending 批次。"""
 
         self.last_admitted_items = []
         batch_size = self._effective_batch_size(batch_size)
@@ -445,7 +445,7 @@ class DiscoveryCandidatePipeline:
         return claim_limit
 
     def pool_full(self) -> bool:
-        """Return whether the visible recommendation pool is at target."""
+        """返回可见推荐池是否已达目标。"""
 
         return self._pool_full()
 

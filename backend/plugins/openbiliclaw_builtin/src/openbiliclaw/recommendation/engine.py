@@ -1,7 +1,7 @@
-"""Recommendation Engine — ranking, expression, and delivery.
+"""推荐引擎 —— 排序、表达和交付。
 
-Handles the final stage: taking discovered content and presenting it
-to the user in a warm, friend-like manner with deep personal insights.
+处理最后阶段：将发现的内容以温暖、朋友式的方式呈现给用户，
+并附带深度的个人洞察。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _DEFAULT_EXPRESSION_BATCH_CONCURRENCY = 2
 
 
 def _interests_by_weight(profile: SoulProfile) -> list[InterestTag]:
-    """Interest tags sorted by weight (desc) so truncation keeps the strongest."""
+    """按权重降序排序的兴趣标签，这样截断时保留最强的。"""
     return sorted(profile.preferences.interests, key=lambda tag: tag.weight, reverse=True)
 
 
@@ -57,13 +57,12 @@ def _recommendation_profile_summary(
     *,
     interests: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """Unified profile input for recommendation prompts.
+    """推荐 prompt 的统一 profile 输入。
 
-    Delegates to :func:`build_profile_summary` so recommendation feeds the LLM
-    the exact same structured profile as discovery: no ``personality_portrait``
-    narrative, every other field included. Pass ``interests`` to substitute the
-    embedding-selected, content-relevant tag list for the default weight-ranked
-    one.
+    委托给 :func:`build_profile_summary`，因此推荐向 LLM 喂入与
+    discovery 完全相同的结构化 profile：不含 ``personality_portrait``
+    叙事，其他字段全部包含。传入 ``interests`` 可用 embedding 选出的、
+    与内容相关的 tag 列表替代默认的按权重排序的列表。
     """
     from openbiliclaw.discovery.strategies._utils import build_profile_summary
 
@@ -71,7 +70,7 @@ def _recommendation_profile_summary(
 
 
 def _content_result_keys(content: DiscoveredContent) -> set[str]:
-    """Stable keys that may identify a content item in batched LLM results."""
+    """可能在批次 LLM 结果中标识内容项的稳定键。"""
     return {
         key
         for key in {
@@ -86,10 +85,10 @@ def _batch_results_by_content_key(
     payload: list[dict[str, Any]],
     batch: list[DiscoveredContent],
 ) -> dict[str, dict[str, Any]] | None:
-    """Return payload entries keyed by content ID when the LLM supplied IDs.
+    """当 LLM 提供了 ID 时，返回以 content ID 为键的 payload 条目。
 
-    ``None`` means no usable IDs were present, so callers may fall back to
-    legacy index matching only when the response length is complete.
+    ``None`` 表示没有可用的 ID，因此调用方仅在响应长度完整时
+    才可回退到传统的索引匹配。
     """
     valid_keys: set[str] = set()
     for content in batch:
@@ -110,7 +109,7 @@ def _batch_results_by_content_key(
 
 
 class SupportsCoreMemoryTask(Protocol):
-    """Protocol for a core-memory-aware structured LLM task executor."""
+    """具备 core memory 感知能力的结构化 LLM 任务执行器协议。"""
 
     async def complete_structured_task(
         self,
@@ -127,7 +126,7 @@ class SupportsCoreMemoryTask(Protocol):
 
 
 class SupportsEmbeddingService(Protocol):
-    """Embedding service protocol used by recommendation helpers."""
+    """推荐 helper 使用的 embedding 服务协议。"""
 
     similarity_threshold: float
 
@@ -136,22 +135,22 @@ class SupportsEmbeddingService(Protocol):
 
 @dataclass
 class Recommendation:
-    """A recommendation ready to present to the user."""
+    """准备呈现给用户的推荐。"""
 
     content: DiscoveredContent
     recommendation_id: int = 0
-    expression: str = ""  # Friend-style recommendation reason
-    topic_label: str = ""  # Personal topic (not generic categories)
-    confidence: float = 0.0  # How confident the agent is in this rec
+    expression: str = ""  # 朋友式推荐理由
+    topic_label: str = ""  # 个人话题（非通用分类）
+    confidence: float = 0.0  # agent 对此推荐的信心度
     presented: bool = False
-    feedback: str | None = None  # User feedback after seeing it
+    feedback: str | None = None  # 用户看到后的反馈
 
 
 @dataclass
 class PersonalTopic:
-    """A deeply personalized recommendation topic.
+    """深度个性化的推荐话题。
 
-    Not generic labels like "Weekend Pack" but personal ones like:
+    不是通用标签如"周末放松包"，而是个人化的，例如：
     "你最近在探索摄影——这几个视频从你习惯的'搞明白原理'的角度讲构图"
     """
 
@@ -161,13 +160,12 @@ class PersonalTopic:
 
 
 class RecommendationEngine:
-    """Produces warm, personalized recommendations.
+    """产出温暖、个性化的推荐。
 
-    The engine takes discovered content and transforms it into
-    friend-style recommendations with:
-    - "我觉得" — subjective, personal judgment
-    - "我理解你" — demonstrates deep understanding
-    - Personal insights connecting content to the user's soul
+    引擎将发现的内容转换为朋友式的推荐，附带：
+    - "我觉得" —— 主观、个人化的判断
+    - "我理解你" —— 展现深度理解
+    - 将内容与用户 soul 连接的个人洞察
     """
 
     def __init__(
@@ -187,43 +185,40 @@ class RecommendationEngine:
         self._embedding_service = embedding_service
         self._xhs_self_info_provider = xhs_self_info_provider
         self._expression_batch_concurrency = max(1, min(16, int(expression_batch_concurrency)))
-        # v0.3.63+: optional registry for detached fire-and-forget tasks
-        # (classify_pool_backlog_detached, precompute_delight_scores_detached).
-        # When provided, those tasks register here so RuntimeContext's
-        # hot-reload can cancel them before the new runtime starts.
-        # When None, the engine falls back to bare asyncio.create_task —
-        # tests that don't inject a registry continue to work unchanged.
+        # v0.3.63+：可选的注册表，用于分离的 fire-and-forget 任务
+        # （classify_pool_backlog_detached、precompute_delight_scores_detached）。
+        # 提供时，这些任务注册到这里，以便 RuntimeContext 的热重载
+        # 可以在新 runtime 启动前取消它们。
+        # 为 None 时，引擎回退到裸 asyncio.create_task ——
+        # 未注入注册表的测试继续不受影响地工作。
         self.task_registry: BackgroundTaskRegistry | None = task_registry
         self._classify_lock = asyncio.Lock()
         self._profile_prompt_caches: defaultdict[str, PromptLayerRenderCache] = defaultdict(
             PromptLayerRenderCache
         )
-        # v0.3.47+: serialise precompute_pool_copy so multiple
-        # per-strategy fire-and-forget tasks (now created from
-        # _run_refresh_plan after each strategy completes) don't load
-        # the same un-precomputed candidates and double-spend LLM tokens.
+        # v0.3.47+：串行化 precompute_pool_copy，这样多个
+        # per-strategy fire-and-forget 任务（现在从
+        # _run_refresh_plan 在每个 strategy 完成后创建）不会加载
+        # 相同的未预计算候选并重复花费 LLM token。
         #
-        # v0.3.62+: split the previous single ``_precompute_lock`` into
-        # two independent locks. The old shared lock serialised
-        # expression generation and delight scoring — when delight
-        # scoring was slow (LLM backoff or a large un-scored backlog),
-        # the next expression batch had to wait behind it even though
-        # nothing about expression touches delight state. Now expression
-        # generation holds ``_expression_lock`` while delight scoring
-        # runs in a detached task guarded by ``_delight_lock``, so the
-        # two flows progress independently and back-to-back precompute
-        # calls still avoid double-spending delight LLM tokens.
+        # v0.3.62+：将之前的单个 ``_precompute_lock`` 拆分为两个
+        # 独立锁。旧的共享锁串行化了 expression 生成和 delight 评分
+        # —— 当 delight 评分慢（LLM 退避或大量未评分 backlog）时，
+        # 下一个 expression 批次必须在其后等待，即使 expression 完全
+        # 不触碰 delight 状态。现在 expression 生成持有
+        # ``_expression_lock``，而 delight 评分在由 ``_delight_lock``
+        # 守护的分离任务中运行，因此两个流程独立推进，而连续的
+        # precompute 调用仍然避免重复花费 delight LLM token。
         self._expression_lock = asyncio.Lock()
         self._delight_lock = asyncio.Lock()
-        # Background-computed supergroup canonical map. Populated by
-        # prewarm_supergroup_embeddings() during refresh ticks; consumed
-        # by serve()'s _merge_topic_supergroups for instant lookup.
-        # Keys/values are normalised (stripped+lowered).
+        # 后台计算的 supergroup 规范映射。由 refresh tick 期间的
+        # prewarm_supergroup_embeddings() 填充；由 serve() 的
+        # _merge_topic_supergroups 消费以进行即时查找。
+        # 键/值已规范化（strip+lower）。
         self._supergroup_canonical_map: dict[str, str] = {}
-        # v0.3.31+: track the previous served batch's bvids so the
-        # debug-summary log can compute carryover (how many items in
-        # the new batch were also in the previous batch). High
-        # carryover signals stale-pool / fatigue-bypass.
+        # v0.3.31+：跟踪上一个服务批次的 bvid，以便 debug-summary
+        # 日志可以计算 carryover（新批次中有多少项也在上一个批次中）。
+        # 高 carryover 信号表明池陈旧 / 疲劳绕过。
         self._last_served_bvids: frozenset[str] = frozenset()
 
     def _profile_blocks(
@@ -232,14 +227,14 @@ class RecommendationEngine:
         *,
         cache_key: str,
     ) -> list[str]:
-        """Render cached profile prompt layers for one recommendation task."""
+        """为一个推荐任务渲染缓存的 profile prompt 层。"""
 
         return self._profile_prompt_caches[cache_key].render_json_layers(
             profile_prompt_layers(profile_summary)
         )
 
     def _xhs_self_nickname(self) -> str:
-        """Return the persisted XHS self nickname for pool guards."""
+        """返回持久化的 XHS self 昵称用于 pool 守卫。"""
         if self._xhs_self_info_provider is None:
             return ""
         try:
@@ -276,22 +271,21 @@ class RecommendationEngine:
         excluded_bvids: frozenset[str] = frozenset(),
         expression_mode: Literal["realtime", "precomputed"] = "precomputed",
     ) -> list[Recommendation]:
-        """Unified recommendation entry point — always picks from the pool.
+        """统一推荐入口 —— 始终从池中挑选。
 
-        All recommendation paths (generate, reshuffle, append) converge here.
-        The engine is fully decoupled from Discovery: it only reads from the
-        candidate pool in content_cache.
+        所有推荐路径（generate、reshuffle、append）在此汇聚。
+        引擎与 Discovery 完全解耦：它只从 content_cache 的候选池读取。
 
         Args:
-            profile: User's soul profile for personalization.
-            limit: Maximum number of recommendations.
-            excluded_bvids: BVIDs already shown to the user (for pagination).
-            expression_mode: ``"precomputed"`` uses pool-cached copy (fast),
-                ``"realtime"`` generates fresh expressions via LLM (slow but
-                higher quality).
+            profile: 用户 soul profile 用于个性化。
+            limit: 最大推荐数。
+            excluded_bvids: 已展示给用户的 BVID（用于分页）。
+            expression_mode: ``"precomputed"`` 使用池缓存副本（快），
+                ``"realtime"`` 通过 LLM 生成新 expression（慢但
+                质量更高）。
 
         Returns:
-            List of personalized recommendations.
+            个性化推荐列表。
         """
         label = "realtime" if expression_mode == "realtime" else "pool"
         multiplier = 4 if excluded_bvids else 3
@@ -342,17 +336,16 @@ class RecommendationEngine:
             self._last_served_bvids = frozenset()
             return []
 
-        # Online supergroup merging — collapses semantically-equivalent
-        # topic_groups within this batch (e.g. 动漫/动漫产业/动漫文化) so
-        # the diversifier sees them as a single bucket. Adds 50–200ms of
-        # embedding I/O to the hot path, traded for batch-level richness
-        # that no offline precompute can guarantee at serve time.
+        # 在线 supergroup 合并 —— 将本批次中语义等价的 topic_group
+        # （如 动漫/动漫产业/动漫文化）折叠，使 diversifier 将它们视为
+        # 单个桶。为热路径增加 50-200ms 的 embedding I/O，换取批次级
+        # 的丰富度，这是任何离线预计算在 serve 时都无法保证的。
         await self._merge_topic_supergroups(candidates)
 
         prev_bvids = self._last_served_bvids
 
-        # Surface "pool says N but serve loads fewer" mismatches with enough
-        # readiness detail to distinguish pending material from query drift.
+        # 暴露"池说 N 但 serve 加载更少"的不匹配，附带足够的 readiness
+        # 细节以区分 pending 素材与查询漂移。
         if servable_pool_count != loaded_count:
             logger.info(
                 "serve(/%s) pool/load mismatch: count=%d → loaded=%d"
@@ -384,12 +377,12 @@ class RecommendationEngine:
             score_override = self._curator.score_candidates(candidates, context)
             amplification_guard = context.over_budget_amplification_keys
 
-        # v0.3.44+: pre-fetch embeddings for MMR-based diversification.
-        # In v0.3.45+ discovery and classify_pool_backlog warm these into
-        # the L2 SQLite cache up front, so this should be near-zero on
-        # the hot path. The elapsed/coverage log below makes regressions
-        # in cache warming visible — sustained "elapsed > 500ms" or
-        # "coverage < 100%" means warm hooks are missing items.
+        # v0.3.44+：为基于 MMR 的多样化预取 embedding。
+        # v0.3.45+ 的 discovery 和 classify_pool_backlog 会预先将这些
+        # 预热到 L2 SQLite 缓存，因此在热路径上这应当接近零。
+        # 下面的 elapsed/coverage 日志使缓存预热的回归可见 —— 持续的
+        # "elapsed > 500ms" 或 "coverage < 100%" 意味着 warm hook
+        # 遗漏了项。
         import time as _time
 
         _embed_t0 = _time.monotonic()
@@ -418,9 +411,8 @@ class RecommendationEngine:
                 ensure_ascii=False,
             ),
         )
-        # Snapshot for the next call. Use bvid only — title might
-        # legitimately repeat across different bvids and we want the
-        # carryover signal to be at the canonical-id level.
+        # 为下一次调用做快照。仅用 bvid —— title 可能在不同 bvid 间
+        # 合法地重复，我们希望 carryover 信号在 canonical-id 级别。
         self._last_served_bvids = frozenset(item.bvid for item in ranked if item.bvid)
 
         recommendations: list[Recommendation] = []
@@ -433,11 +425,10 @@ class RecommendationEngine:
             if expression_mode == "precomputed":
                 rec.expression = item.pool_expression.strip()
                 rec.topic_label = item.pool_topic_label.strip()
-                # v0.3.57+: pool gate (get_pool_candidates SQL) now requires
-                # pool_expression / pool_topic_label non-empty before a row
-                # is considered in-pool, so this fallback path should never
-                # fire in production. Keep it as a race-window safety net
-                # and log loudly when it does — the warning is the canary.
+                # v0.3.57+：pool gate（get_pool_candidates SQL）现在要求
+                # pool_expression / pool_topic_label 非空才将一行视为
+                # in-pool，因此此回退路径在生产中不应触发。将其保留为
+                # 竞争窗口安全网，并在触发时大声日志 —— 警告是金丝雀。
                 if not rec.expression:
                     logger.warning(
                         "Pool gate leak: bvid=%s pool_expression empty at "
@@ -450,8 +441,7 @@ class RecommendationEngine:
                     rec.topic_label = self._fallback_topic_label(profile)
             recommendations.append(rec)
 
-        # Critical-path write: only the insert (we need the IDs for the
-        # response). Single transaction, single fsync.
+        # 关键路径写：仅 insert（我们需要 ID 用于响应）。单事务，单 fsync。
         ids = self._database.batch_insert_recommendations(
             [
                 {
@@ -479,25 +469,24 @@ class RecommendationEngine:
                     topic=rec.topic_label,
                 )
 
-        # v0.3.45+: detach pool_status='shown' update from the response
-        # critical path. Under refresh-tick write contention (eg.
-        # _enforce_pool_cap reactivating 300+ rows) this UPDATE could
-        # wait 0.5-1.5s for the SQLite write lock, blowing the <1s
-        # budget. Within-session double-click protection is already
-        # provided by `_last_served_bvids` (in-memory) so it's safe to
-        # let the persistent flag commit slightly later.
+        # v0.3.45+：将 pool_status='shown' 更新从响应关键路径分离。
+        # 在 refresh-tick 写竞争下（例如 _enforce_pool_cap 重新激活
+        # 300+ 行），此 UPDATE 可能等待 0.5-1.5s 获取 SQLite 写锁，
+        # 突破 <1s 预算。会话内双击保护已由
+        # `_last_served_bvids`（内存中）提供，因此让持久标志稍后
+        # 提交是安全的。
         ranked_bvids = [item.bvid for item in ranked]
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._mark_pool_shown_async(ranked_bvids))
         except RuntimeError:
-            # serve() is normally invoked from an event loop; only the
-            # rare sync-test path falls through here.
+            # serve() 通常从事件循环调用；只有罕见的 sync-test
+            # 路径会落到这里。
             self._database.mark_pool_items_shown(ranked_bvids)
         return recommendations
 
     async def _mark_pool_shown_async(self, bvids: list[str]) -> None:
-        """Fire-and-forget pool-marking helper. Never raises."""
+        """Fire-and-forget 的池标记 helper。永不抛异常。"""
         try:
             self._database.mark_pool_items_shown(bvids)
         except Exception:
@@ -506,16 +495,14 @@ class RecommendationEngine:
                 len(bvids),
             )
 
-    # Hybrid rule for online supergroup merging:
-    #   - Strict embedding alone: sim >= 0.90 (catches 自走棋↔金铲铲之战
-    #     0.902 across name boundaries).
-    #   - Shared 2-char prefix + loose embedding: sim >= 0.80 (catches
-    #     动漫族 0.80–0.88, 游戏族 0.84–0.87 — locality signal protects
-    #     against transitive bridging that collapses a 40-group batch
-    #     into one bucket).
-    # Probe against live pool: should-merge band 0.80–0.92, should-
-    # separate band caps near 0.82. Embedding alone at 0.83 cascades
-    # via union-find; prefix gates loose-band merges.
+    # 在线 supergroup 合并的混合规则：
+    #   - 仅严格 embedding：sim >= 0.90（捕获自走棋↔金铲铲之战
+    #     0.902 跨名称边界）。
+    #   - 共享 2 字符前缀 + 宽松 embedding：sim >= 0.80（捕获
+    #     动漫族 0.80-0.88、游戏族 0.84-0.87 —— 局部性信号保护
+    #     防止将 40-group 批次折叠成一个桶的传递桥接）。
+    # 对实时池探测：应合并带 0.80-0.92，应分离带在 0.82 附近封顶。
+    # 仅 embedding 在 0.83 处通过 union-find 级联；前缀门控宽松带合并。
     _SUPERGROUP_STRICT_THRESHOLD = 0.90
     _SUPERGROUP_LOOSE_THRESHOLD = 0.80
     _SUPERGROUP_PREFIX_LEN = 2
@@ -524,20 +511,17 @@ class RecommendationEngine:
         self,
         candidates: list[DiscoveredContent],
     ) -> None:
-        """Apply the precomputed supergroup canonical map to candidates.
+        """将预计算的 supergroup 规范映射应用到候选。
 
-        The actual semantic merging happens in
-        :meth:`prewarm_supergroup_embeddings`, which runs each refresh
-        tick and uses ``"label | sample_titles"`` for accurate
-        disambiguation of short Chinese labels (a label-only embedding
-        of "赛博朋克" vs "动漫" can land at sim ≥ 0.90 and falsely
-        collapse the entire entertainment family into one bucket).
+        实际的语义合并在 :meth:`prewarm_supergroup_embeddings` 中
+        发生，它在每个 refresh tick 运行并使用 ``"label | sample_titles"``
+        对短中文标签进行准确消歧（仅标签 embedding 的"赛博朋克" vs
+        "动漫"可能落在 sim ≥ 0.90，错误地将整个娱乐族折叠到一个桶中）。
 
-        Serve-time is now a pure dict lookup — no embedding API calls,
-        no pairwise comparison. When the map is empty (cold start, or
-        the prewarmer hasn't run yet), this method is a no-op so we
-        do not produce false-positive merges from on-the-fly label-only
-        embeddings.
+        Serve-time 现在是纯 dict 查找 —— 无 embedding API 调用，
+        无两两比较。当映射为空（冷启动，或预热器尚未运行）时，
+        此方法是 no-op，因此我们不会从即时的仅标签 embedding 产生
+        假阳性合并。
         """
         if not self._supergroup_canonical_map or len(candidates) < 2:
             return
@@ -554,7 +538,7 @@ class RecommendationEngine:
                 item.topic_group = canonical
 
         if merges:
-            # Dedup the log line — each (src, dst) pair shows once.
+            # 去重日志行 —— 每个 (src, dst) 对只显示一次。
             unique_merges = sorted({m for m in merges})
             logger.info(
                 "Topic supergroup merges (serve, cached): %s",
@@ -568,15 +552,14 @@ class RecommendationEngine:
         *,
         top_k: int = 5,
     ) -> list[dict[str, object]]:
-        """Select interests most relevant to this content via embedding similarity.
+        """通过 embedding 相似度选择与此内容最相关的兴趣。
 
-        Falls back to top-K by weight when embedding service is unavailable.
+        当 embedding 服务不可用时回退到按权重排序的 top-K。
         """
-        # Candidate pool aligned with the profile summary's interest cap
-        # (256): a niche interest outside the head ranks should still be
-        # selectable when it's the best semantic match for this content.
-        # top_k (5) still bounds how many actually reach the prompt, so the
-        # wider pool improves coverage without growing prompt size.
+        # 与 profile summary 的 interest cap（256）对齐的候选池：
+        # 头部排名之外的小众兴趣在它与此内容是最佳语义匹配时
+        # 仍应可选。top_k（5）仍约束实际到达 prompt 的数量，因此
+        # 更宽的池在不增加 prompt 大小的情况下提升覆盖。
         all_interests = [
             {"name": item.name, "category": item.category, "weight": item.weight}
             for item in _interests_by_weight(profile)[:256]
@@ -602,7 +585,7 @@ class RecommendationEngine:
                 scored.append((interest, weight))
                 continue
             sim = cosine_similarity(content_vec, interest_vec)
-            # Blend embedding similarity with weight for ranking
+            # 将 embedding 相似度与权重混合用于排名
             blended = sim * 0.7 + weight * 0.3
             scored.append((interest, blended))
 
@@ -610,22 +593,22 @@ class RecommendationEngine:
         return [item for item, _ in scored[:top_k]]
 
     async def prewarm_supergroup_embeddings(self) -> int:
-        """Compute the supergroup canonical map for use by the popup hot path.
+        """计算供弹窗热路径使用的 supergroup 规范映射。
 
-        Embeds ``"{label} | {top-5 titles}"`` for every distinct
-        ``topic_group`` in the fresh pool, then runs the union-find
-        merge (strict 0.90, loose 0.80 with shared 2-char prefix) and
-        stores the resulting ``label → canonical`` mapping in
-        ``self._supergroup_canonical_map``. ``serve()`` then consumes
-        this map as a pure dict lookup — no API calls, no pairwise
-        comparison on the user's "换一批" click.
+        为新池中每个不同的 ``topic_group`` embedding
+        ``"{label} | {top-5 titles}"``，然后运行 union-find 合并
+        （严格 0.90，宽松 0.80 带共享 2 字符前缀）并将结果
+        ``label → canonical`` 映射存储到
+        ``self._supergroup_canonical_map``。``serve()`` 然后将此映射
+        作为纯 dict 查找消费 —— 在用户"换一批"点击时无 API 调用、
+        无两两比较。
 
-        Title context matters here: short Chinese labels are deceptively
-        similar in raw embedding space (赛博朋克 ≈ 动漫 at sim ≥ 0.90
-        without titles), and that bug looked like "30 of 40 candidates
-        belong to one bucket" in production logs. The titles disambiguate.
+        标题上下文在此很重要：短中文标签在原始 embedding 空间中
+        具有欺骗性的相似性（无标题时 赛博朋克 ≈ 动漫 在 sim ≥ 0.90），
+        该 bug 在生产日志中看起来像"40 个候选中的 30 个属于一个桶"。
+        标题进行消歧。
 
-        Returns the number of labels considered.
+        返回考虑的标签数。
         """
         if self._embedding_service is None:
             self._supergroup_canonical_map = {}
@@ -657,7 +640,7 @@ class RecommendationEngine:
             self._supergroup_canonical_map = {}
             return len(embeddings)
 
-        # Union-find on the embeddings to derive canonical labels
+        # 在 embedding 上运行 union-find 以派生规范标签
         labels = list(embeddings.keys())
         parent: dict[str, str] = {label: label for label in labels}
 
@@ -698,15 +681,13 @@ class RecommendationEngine:
                 len(labels),
                 len(new_map),
             )
-            # v0.3.56+: also update existing pool rows to the canonical
-            # form. Without this, ``Recommendation candidate summary``
-            # logs show "动漫" / "动漫杂谈" / "动漫二次元" as 3 separate
-            # topic_groups even after the map says they're synonyms,
-            # because the merge only ran at serve time. Mass-update
-            # makes downstream SQL (`get_topic_group_samples`,
-            # `count_pool_by_franchise`-equivalent group-by analytics,
-            # popup status displays) see the same canonical form
-            # serve-time would.
+            # v0.3.56+：也将现有池行更新为规范形式。没有这个，
+            # ``Recommendation candidate summary`` 日志显示"动漫" /
+            # "动漫杂谈" / "动漫二次元" 为 3 个独立的 topic_group，
+            # 即使映射说它们是同义词，因为合并只在 serve 时运行。
+            # 批量更新使下游 SQL（`get_topic_group_samples`、
+            # `count_pool_by_franchise` 等价的 group-by 分析、
+            # 弹窗状态显示）看到 serve 时会看到的相同规范形式。
             canonicalize = getattr(self._database, "canonicalize_topic_groups", None)
             if callable(canonicalize):
                 try:
@@ -724,28 +705,25 @@ class RecommendationEngine:
         return len(labels)
 
     async def prewarm_pool_mmr_embeddings(self, *, limit: int = 200) -> int:
-        """Warm the MMR embedding L2 cache for the current pool.
+        """为当前池预热 MMR embedding L2 缓存。
 
-        Companion to ``warm_mmr_embeddings`` (which fires per-item at
-        discovery / classification time) — this method handles the
-        migration / cold-restart case where the pool already contains
-        items that pre-date the warming hooks. Called from the refresh
-        loop and at startup so the next ``serve()`` is an L2 hit even
-        on day 1 of a deploy.
+        ``warm_mmr_embeddings`` 的伴侣（后者在 discovery / 分类时
+        per-item 触发）—— 此方法处理迁移 / 冷重启情况，即池已包含
+        早于预热 hook 的项。从 refresh 循环和启动时调用，因此下一次
+        ``serve()`` 即使在部署第 1 天也是 L2 命中。
 
-        ``limit`` defaults to 200 — covers the candidate window that
-        ``serve()`` actually pulls from, sized so a fresh-restart warm
-        completes in a few minutes against a slow local embedding
-        provider (Ollama). Idempotent: ``EmbeddingService.embed``
-        short-circuits on L2 hit.
+        ``limit`` 默认 200 —— 覆盖 ``serve()`` 实际拉取的候选窗口，
+        大小使得针对慢速本地 embedding provider（Ollama）的新重启
+        预热在几分钟内完成。幂等：``EmbeddingService.embed`` 在
+        L2 命中时短路。
 
-        Return contract (lever 4 observability — let callers tell a benign
-        cold start from a broken embedding backend):
-          * ``>0`` — items warmed.
-          * ``0``  — there WERE candidates but none embedded → the embedding
-            backend is unreachable (e.g. Ollama down). Worth retrying.
-          * ``-1`` — nothing to warm (no embedding service, or pool empty);
-            retrying is pointless — the cache lazy-fills as the pool fills.
+        返回契约（lever 4 可观测性 —— 让调用方区分良性冷启动与
+        损坏的 embedding 后端）：
+          * ``>0`` —— 项已预热。
+          * ``0``  —— 有候选但无 embedding → embedding 后端不可达
+            （例如 Ollama 宕机）。值得重试。
+          * ``-1`` —— 无需预热（无 embedding 服务，或池空）；
+            重试无意义 —— 缓存随池填充而懒填。
         """
         if self._embedding_service is None:
             logger.debug("Pool MMR prewarm skipped: embedding service not configured")
@@ -781,57 +759,51 @@ class RecommendationEngine:
         delight_limit: int = 30,
         batch_size: int = _DEFAULT_EXPRESSION_BATCH_SIZE,
     ) -> int:
-        """Precompute fast-path popup copy for fresh pool candidates.
+        """为新池候选预计算快路径弹窗文案。
 
-        v0.3.47+: batches dispatched in parallel via ``asyncio.gather``,
-        bounded by ``expression_batch_concurrency`` (default 2), and
-        ``batch_size`` defaults to 30. Real-provider concurrency testing
-        showed 45 can occasionally produce malformed batch JSON on
-        recommendation copy, so this path stays conservative while
-        discovery eval uses the larger text batch.
-        With the previous serial × ``batch_size=8`` shape, a 60-item
-        backlog needed 8 LLM calls and 8 sequential round trips. The new
-        shape needs 2 LLM calls running concurrently — popup copy
-        catches up minutes faster.
+        v0.3.47+：通过 ``asyncio.gather`` 并行分发批次，由
+        ``expression_batch_concurrency``（默认 2）约束，
+        ``batch_size`` 默认 30。真实 provider 并发测试显示 45 偶尔
+        在推荐文案上产生畸形批次 JSON，因此此路径保持保守，
+        而 discovery 评估使用更大的文本批次。
+        使用之前的 serial × ``batch_size=8`` 形状，60 项 backlog
+        需要 8 次 LLM 调用和 8 次顺序往返。新形状需要 2 次并发
+        运行的 LLM 调用 —— 弹窗文案赶上速度快几分钟。
 
-        v0.3.62+: expression generation is guarded by
-        ``self._expression_lock``; delight scoring runs in a detached
-        ``asyncio.create_task`` with its own ``self._delight_lock``. The
-        previous single ``_precompute_lock`` held both flows under one
-        gate, so a slow delight pass would stall the next expression
-        batch even though pool items already needed ``pool_expression``.
-        Splitting the locks lets expression and delight progress
-        independently while the per-flow lock still prevents
-        back-to-back fires from double-spending LLM tokens on the same
-        items.
+        v0.3.62+：expression 生成由 ``self._expression_lock`` 守护；
+        delight 评分在带自己 ``self._delight_lock`` 的分离
+        ``asyncio.create_task`` 中运行。之前的单个
+        ``_precompute_lock`` 在一个门下持有两个流程，因此慢的
+        delight pass 会拖延下一个 expression 批次，即使池项已经
+        需要 ``pool_expression``。拆分锁让 expression 和 delight
+        独立推进，同时 per-flow 锁仍防止连续触发在同一项上重复
+        花费 LLM token。
 
-        The per-strategy fire-and-forget tasks queued from
-        ``_run_refresh_plan`` therefore can't load the same
-        un-precomputed candidates twice for expression generation.
+        因此从 ``_run_refresh_plan`` 排队的 per-strategy
+        fire-and-forget 任务不能为 expression 生成两次加载相同的
+        未预计算候选。
 
-        Also runs delight scoring on un-scored candidates and generates
-        delight reasons for items above the delight threshold.
+        也在未评分候选上运行 delight 评分，并为超过 delight 阈值的
+        项生成 delight 理由。
 
         Args:
-            profile: Current soul profile used for personalisation.
-            limit: Max pool candidates to generate expression copy for.
-            delight_limit: Max un-scored candidates to evaluate for delight
-                potential. Independent from ``limit`` because delight scans
-                the whole pool for missing scores, not just items that need
-                expression copy — sharing one limit would starve delight
-                scoring whenever the copy queue is short.
-            batch_size: Batch size for expression generation LLM calls.
+            profile: 用于个性化的当前 soul profile。
+            limit: 为其生成 expression 文案的最大池候选数。
+            delight_limit: 评估 delight 潜力的最大未评分候选数。
+                与 ``limit`` 独立，因为 delight 扫描整个池查找缺失
+                分数，而不仅是需要 expression 文案的项 —— 共享一个
+                limit 会在文案队列短时饿死 delight 评分。
+            batch_size: expression 生成 LLM 调用的批次大小。
         """
-        # v0.3.59+: classify_pool_backlog fires as a detached task instead
-        # of awaiting. Previously precompute waited for classify to finish
-        # before reading candidates — under v_voucher rate limit this
-        # serialised the entire pipeline because classify backlog could
-        # take minutes per cycle. Production logs (2026-05-05 21:15-21:36)
-        # showed pool_available stuck at 0 for 16+ min because precompute
-        # was queued behind classify. Now both run on their own cadence;
-        # precompute reads whatever's available right now and the periodic
-        # refresh-loop drain (runtime/refresh.py:_drain_pool_precompute_backlog)
-        # picks up freshly-classified items on the next tick.
+        # v0.3.59+：classify_pool_backlog 作为分离任务触发而非
+        # await。之前 precompute 在读取候选前等待 classify 完成 ——
+        # 在 v_voucher 速率限制下这串行化了整个管道，因为 classify
+        # backlog 每周期可能耗时数分钟。生产日志（2026-05-05
+        # 21:15-21:36）显示 pool_available 在 16+ 分钟内卡在 0，
+        # 因为 precompute 排在 classify 之后。现在两者以自己的节奏
+        # 运行；precompute 读取当前可用的内容，周期性 refresh-loop
+        # 排空（runtime/refresh.py:_drain_pool_precompute_backlog）
+        # 在下一个 tick 拾取新分类的项。
         try:
             self._spawn_detached_task(
                 "classify_pool_backlog_detached",
@@ -840,10 +812,10 @@ class RecommendationEngine:
         except Exception:
             logger.exception("classify_pool_backlog detach failed, continuing with precompute")
 
-        # v0.3.62+: delight scoring runs detached so it doesn't block
-        # expression generation or the caller. Its own _delight_lock
-        # (taken inside _safe_precompute_delight_scores) keeps
-        # back-to-back fires from re-scoring the same items.
+        # v0.3.62+：delight 评分分离运行，因此它不阻塞 expression
+        # 生成或调用方。它自己的 _delight_lock（在
+        # _safe_precompute_delight_scores 内获取）防止连续触发
+        # 重新评分相同项。
         def _spawn_delight() -> None:
             try:
                 self._spawn_detached_task(
@@ -860,8 +832,8 @@ class RecommendationEngine:
             profile=profile, limit=limit, batch_size=batch_size
         )
 
-        # Fire delight scoring outside the expression lock so the next
-        # expression batch can start immediately while delight catches up.
+        # 在 expression 锁外触发 delight 评分，因此下一个 expression
+        # 批次可以立即开始，而 delight 赶上。
         _spawn_delight()
         return completed
 
@@ -872,16 +844,15 @@ class RecommendationEngine:
         limit: int,
         batch_size: int = _DEFAULT_EXPRESSION_BATCH_SIZE,
     ) -> int:
-        """Generate popup copy for classified-but-uncopied pool candidates.
+        """为已分类但未拷贝的池候选生成弹窗文案。
 
-        Copy-only: unlike :meth:`precompute_pool_copy` it does NOT spawn
-        classify / delight, so the post-classify hook
-        (:meth:`_safe_classify_pool_backlog`, lever 2b) can call it the
-        moment freshly-classified items become copy-eligible — draining
-        their expression copy in the same cycle instead of waiting for the
-        next refresh-loop tick — without re-entering classify. The shared
-        ``_expression_lock`` serialises it against the regular precompute
-        pass so the same items are never double-spent on LLM tokens.
+        仅文案：与 :meth:`precompute_pool_copy` 不同，它不 spawn
+        classify / delight，因此 post-classify hook
+        （:meth:`_safe_classify_pool_backlog`，lever 2b）可以在新分类
+        项变为文案合格的瞬间调用它 —— 在同一周期排空它们的
+        expression 文案而非等待下一个 refresh-loop tick —— 而不
+        重新进入 classify。共享的 ``_expression_lock`` 将其与常规
+        precompute pass 串行化，因此相同项永不重复花费 LLM token。
         """
         async with self._expression_lock:
             candidates = self._load_pool_candidates_needing_copy(limit=max(0, limit))
@@ -919,34 +890,32 @@ class RecommendationEngine:
                 completed += int(r or 0)
         return completed
 
-    # ── Source-agnostic content classification ───────────────────────
+    # ── 与源无关的内容分类 ───────────────────────
     #
-    # Content from any source (bilibili, xiaohongshu, web, …) must carry
-    # the same set of content features (style_key, topic_group,
-    # relevance_score) before it enters the diversity/ranking pipeline.
-    # Items that lack these features would collapse _select_diversified_batch
-    # — all sharing "unknown" style and a single fallback topic token.
+    # 来自任何源（bilibili、xiaohongshu、web 等）的内容在进入
+    # 多样性/排名管道前必须携带相同的内容特征集（style_key、
+    # topic_group、relevance_score）。缺少这些特征的项会使
+    # _select_diversified_batch 崩溃 —— 全部共享"unknown" style 和
+    # 单个回退 topic token。
     #
-    # classify_pool_backlog() is now a legacy/recovery gate: it picks up
-    # old rows that are already in content_cache without content features
-    # (for example, rows inserted before the discovery_candidates staging
-    # table existed), runs them through the same LLM evaluation used for
-    # discovery, and writes results back.  Normal source ingest should enter
-    # discovery_candidates first and be evaluated before content_cache.
+    # classify_pool_backlog() 现在是 legacy/recovery 门：它拾取已
+    # 在 content_cache 中但没有内容特征的旧行（例如，在
+    # discovery_candidates 暂存表存在之前插入的行），通过 discovery
+    # 使用的相同 LLM 评估运行它们，并将结果写回。正常源摄入应先
+    # 进入 discovery_candidates 并在 content_cache 之前被评估。
 
     def _spawn_detached_task(
         self,
         name: str,
         coro: Coroutine[Any, Any, Any],
     ) -> asyncio.Task[Any]:
-        """Spawn a detached task, routing through the registry when available.
+        """Spawn 分离任务，在可用时通过注册表路由。
 
-        v0.3.63+: when ``self.task_registry`` is wired (by
-        ``RuntimeContext`` at startup), the task is registered so that
-        ``rebuild_from_config``'s ``cancel_all`` can cancel it before
-        the new runtime starts. Tests that construct
-        ``RecommendationEngine`` directly (no registry) fall back to
-        bare ``asyncio.create_task`` for backward compat.
+        v0.3.63+：当 ``self.task_registry`` 被连接时（由
+        ``RuntimeContext`` 在启动时），任务被注册，因此
+        ``rebuild_from_config`` 的 ``cancel_all`` 可以在新 runtime
+        启动前取消它。直接构造 ``RecommendationEngine``（无注册表）
+        的测试回退到裸 ``asyncio.create_task`` 以保持向后兼容。
         """
         registry = self.task_registry
         if registry is not None:
@@ -959,23 +928,20 @@ class RecommendationEngine:
         profile: SoulProfile,
         limit: int = 30,
     ) -> int:
-        """Detached-task wrapper for classify_pool_backlog (v0.3.59+).
+        """classify_pool_backlog 的分离任务包装器（v0.3.59+）。
 
-        ``precompute_pool_copy`` schedules this as ``asyncio.create_task``
-        instead of ``await``-ing classify_pool_backlog directly. The
-        previous serial coupling let a slow classify (under v_voucher
-        backoff or a flood of fresh XHS notes) stall precompute for
-        minutes; now precompute reads whatever's classified-ready right
-        now while classify catches up in parallel.
+        ``precompute_pool_copy`` 将此调度为 ``asyncio.create_task``
+        而非直接 ``await`` classify_pool_backlog。之前的串行耦合让
+        慢的 classify（在 v_voucher 退避或大量新 XHS 笔记下）拖延
+        precompute 数分钟；现在 precompute 读取当前已分类就绪的内容，
+        而 classify 并行赶上。
 
-        v0.3.124+ (lever 2b): when classify actually labels new items, drain
-        their expression copy immediately rather than leaving them for the
-        next refresh-loop precompute tick. This closes the "classified but
-        not yet serveable" gap (the items still need ``pool_expression`` /
-        ``pool_topic_label`` before the pool-availability gate counts them).
-        The drain is copy-only so it can't re-enter classify, and the
-        shared ``_expression_lock`` serialises it against the in-flight
-        precompute pass.
+        v0.3.124+（lever 2b）：当 classify 实际标记新项时，立即排空
+        它们的 expression 文案，而非留给下一个 refresh-loop precompute
+        tick。这关闭了"已分类但尚不可服务"的缺口（项仍需要
+        ``pool_expression`` / ``pool_topic_label`` 才能被池可用性门
+        计入）。排空仅文案，因此不能重新进入 classify，且共享的
+        ``_expression_lock`` 将其与进行中的 precompute pass 串行化。
         """
         try:
             classified = await self.classify_pool_backlog(profile=profile, limit=limit)
@@ -995,17 +961,15 @@ class RecommendationEngine:
         profile: SoulProfile,
         limit: int,
     ) -> int:
-        """Detached-task wrapper for precompute_delight_scores (v0.3.62+).
+        """precompute_delight_scores 的分离任务包装器（v0.3.62+）。
 
-        ``precompute_pool_copy`` schedules this as ``asyncio.create_task``
-        instead of awaiting it inline. The previous shared
-        ``_precompute_lock`` made delight scoring stall the next
-        expression batch whenever the LLM was slow on delight calls —
-        pool items would sit waiting for ``pool_expression`` even
-        though expression generation itself was idle. Splitting the
-        work into a detached task with its own ``_delight_lock`` keeps
-        delight from blocking expression while still preventing two
-        precompute fires from re-scoring the same items.
+        ``precompute_pool_copy`` 将此调度为 ``asyncio.create_task``
+        而非内联 await。之前的共享 ``_precompute_lock`` 使 delight
+        评分在 LLM 对 delight 调用慢时拖延下一个 expression 批次
+        —— 池项会坐等 ``pool_expression`` 即使 expression 生成本身
+        空闲。将工作拆分为带自己 ``_delight_lock`` 的分离任务
+        防止 delight 阻塞 expression，同时仍防止两次 precompute
+        触发重新评分相同项。
         """
         if self._delight_lock.locked():
             return 0
@@ -1023,19 +987,18 @@ class RecommendationEngine:
         limit: int = 30,
         batch_size: int = 10,
     ) -> int:
-        """Legacy/recovery path for cached rows lacking style / topic / score.
+        """缺少 style / topic / score 的缓存行的 legacy/recovery 路径。
 
-        Normal source ingest now writes ``discovery_candidates`` and uses the
-        shared discovery-candidate pipeline before rows enter ``content_cache``.
-        This method remains as a safety net for legacy databases and recovery
-        jobs where rows are already cached but still missing ``style_key``,
-        ``topic_group``, or ``relevance_score``.
+        正常源摄入现在写入 ``discovery_candidates`` 并在行进入
+        ``content_cache`` 之前使用共享的 discovery-candidate 管道。
+        此方法仍作为遗留数据库和恢复作业的安全网存在，那里行已缓存
+        但仍缺少 ``style_key``、``topic_group`` 或 ``relevance_score``。
 
         Returns:
-            Number of items classified.
+            已分类的项数。
         """
         if self._classify_lock.locked():
-            return 0  # Another classify task is already running
+            return 0  # 另一个 classify 任务已在运行
         async with self._classify_lock:
             return await self._classify_pool_backlog_locked(
                 profile=profile,
@@ -1050,7 +1013,7 @@ class RecommendationEngine:
         limit: int,
         batch_size: int,
     ) -> int:
-        """Inner implementation of classify_pool_backlog, called under lock."""
+        """classify_pool_backlog 的内部实现，在锁下调用。"""
         rows = self._database.get_pool_candidates_needing_evaluation(
             limit=limit, xhs_self_nickname=self._xhs_self_nickname()
         )
@@ -1076,11 +1039,11 @@ class RecommendationEngine:
                 )
                 continue
 
-            # Persist results back to the pool.
+            # 将结果持久化回池。
             persisted: list[DiscoveredContent] = []
             for item in batch:
-                # Use topic_group as topic_key when the original is empty —
-                # diversity tokens fall back to topic_key, so this is critical.
+                # 当原始值为空时使用 topic_group 作为 topic_key ——
+                # 多样性 token 回退到 topic_key，因此这很关键。
                 if not item.topic_key and item.topic_group:
                     item.topic_key = item.topic_group
                 try:
@@ -1096,10 +1059,9 @@ class RecommendationEngine:
                         item.bvid,
                     )
 
-            # Pre-warm the MMR embedding cache so the next reshuffle is an
-            # L2 hit instead of paying ~150ms × N for serial API calls in
-            # serve(). Best-effort — failures fall back to the
-            # string-cap-only path at serve time.
+            # 预热 MMR embedding 缓存，因此下一次 reshuffle 是 L2 命中
+            # 而非在 serve() 中为串行 API 调用支付约 150ms × N。
+            # 尽力而为 —— 失败回退到 serve 时的仅 string-cap 路径。
             if persisted:
                 await self.warm_mmr_embeddings(persisted)
 
@@ -1117,10 +1079,10 @@ class RecommendationEngine:
         batch: list[DiscoveredContent],
         profile: SoulProfile,
     ) -> None:
-        """Run batched LLM evaluation on a group of un-classified items.
+        """对一组未分类项运行批处理 LLM 评估。
 
-        Mutates each item in-place: sets ``relevance_score``,
-        ``relevance_reason``, ``topic_group``, and ``style_key``.
+        就地 mutate 每项：设置 ``relevance_score``、
+        ``relevance_reason``、``topic_group`` 和 ``style_key``。
         """
         from openbiliclaw.llm.prompts import build_batch_content_evaluation_prompt
 
@@ -1136,15 +1098,15 @@ class RecommendationEngine:
                 "view_count": c.view_count,
                 "source_strategy": c.source_strategy,
                 "content_type": c.content_type,
-                # Text-first items (X tweets/threads) carry their full text
-                # here — titles are low-information for those, so the LLM
-                # needs body_text to judge relevance. Empty for video sources.
+                # 文本优先项（X tweets/threads）在此携带完整文本 ——
+                # 这些项的 title 信息量低，因此 LLM 需要 body_text 来
+                # 判断相关性。对视频源为空。
                 "body_text": c.body_text,
             }
             for c in batch
         ]
-        # Fetch recent negative exemplars so Rule 11 pattern-matching
-        # applies equally to non-bilibili pool items (e.g. xiaohongshu).
+        # 获取最近的负样本，使 Rule 11 模式匹配同样适用于
+        # 非 bilibili 池项（如 xiaohongshu）。
         negative_examples: list[dict[str, object]] | None = None
         try:
             from openbiliclaw.soul.negative_exemplars import recent_negative_exemplars
@@ -1153,7 +1115,7 @@ class RecommendationEngine:
         except Exception:
             logger.debug("classify_batch: negative_exemplars unavailable", exc_info=True)
 
-        # Determine the dominant platform for prompt context
+        # 确定 prompt 上下文的主导平台
         platform = (batch[0].source_platform or "bilibili") if batch else "bilibili"
         messages = build_batch_content_evaluation_prompt(
             profile_summary=profile_data,
@@ -1169,8 +1131,8 @@ class RecommendationEngine:
             system_instruction=messages[0]["content"],
             user_input=messages[1]["content"],
             max_tokens=8192,
-            # v0.3.51+: structured XHS classification — pure score +
-            # categorical fields, doesn't benefit from reasoning chain.
+            # v0.3.51+：结构化 XHS 分类 —— 纯分数 + 分类字段，
+            # 不从推理链中受益。
             reasoning_effort="",
             caller="recommendation.evaluate_batch",
             **without_core_memory_kwargs(complete_structured),
@@ -1216,9 +1178,9 @@ class RecommendationEngine:
                     None,
                 )
             if not isinstance(result, dict):
-                # Mark as attempted so get_pool_candidates_needing_evaluation
-                # won't retry this item forever.  A score of 0.01 signals
-                # "classification attempted but no usable result".
+                # 标记为已尝试，以便 get_pool_candidates_needing_evaluation
+                # 不会永远重试此项。0.01 分数信号表示"分类已尝试但无
+                # 可用结果"。
                 content.relevance_score = 0.01
                 content.relevance_reason = "classification_failed"
                 continue
@@ -1230,7 +1192,7 @@ class RecommendationEngine:
             topic_group = str(result.get("topic_group", "")).strip()
             style_key = normalize_style_key(result.get("style_key", ""))
 
-            content.relevance_score = score or 0.01  # never leave at 0.0
+            content.relevance_score = score or 0.01  # 永不留在 0.0
             content.relevance_reason = reason
             if topic_group:
                 content.topic_group = topic_group
@@ -1243,21 +1205,21 @@ class RecommendationEngine:
         profile: SoulProfile,
         limit: int = 50,
     ) -> int:
-        """Score un-scored pool candidates for proactive delight potential.
+        """为未评分的池候选评分主动 delight 潜力。
 
-        Two-stage retrieval:
-          1. Coarse: ``get_pool_candidates_needing_delight_score`` filters
-             by ``relevance_score >= 0.55`` and orders by relevance DESC,
-             capped at ``limit`` (default 50). Free — uses scores already
-             computed by discovery's ``evaluate_batch``.
-          2. Fine: ``LLMDelightScorer.score_batch`` LLM-judges those 50
-             against a delight rubric (cross-domain bridge / hidden need /
-             quality, not naive similarity).
+        两阶段检索：
+          1. 粗：``get_pool_candidates_needing_delight_score`` 按
+             ``relevance_score >= 0.55`` 过滤并按 relevance DESC 排序，
+             封顶 ``limit``（默认 50）。免费 —— 使用 discovery 的
+             ``evaluate_batch`` 已计算的分数。
+          2. 精：``LLMDelightScorer.score_batch`` 对那 50 项进行
+             delight rubric 的 LLM 判定（跨域桥接 / 隐藏需求 / 质量，
+             而非朴素相似度）。
 
-        Default ``limit=50`` (raised from 30 once relevance gate landed):
-        more head-room for the LLM to find true delights without burning
-        cycles on weak-fit junk. Cost: 50/5 = 10 batches × ~¥0.01 ≈
-        ¥0.10/cycle, ¥0.80/day at 8 cycles.
+        默认 ``limit=50``（一旦 relevance gate 落地，从 30 提升）：
+        为 LLM 找到真正 delight 留更多头部空间，而不在弱匹配垃圾上
+        烧周期。成本：50/5 = 10 批次 × ~¥0.01 ≈ ¥0.10/周期，
+        8 周期 ¥0.80/天。
         """
         from openbiliclaw.recommendation.delight import LLMDelightScorer
 
@@ -1276,10 +1238,10 @@ class RecommendationEngine:
 
         candidates = self._rows_to_discovered(rows)
 
-        # All ``rows`` returned here either lack a delight_score, or have
-        # a stale one from the embedding-era scorer (which we choose to
-        # re-judge with the LLM rather than trust). Send them all through
-        # one batched LLM scoring pass — no special-case backfill loop.
+        # 这里返回的所有 ``rows`` 要么缺 delight_score，要么有
+        # embedding 时代评分器的陈旧分数（我们选择用 LLM 重新判定
+        # 而非信任）。将它们全部通过一次批处理 LLM 评分 pass ——
+        # 无特殊情况的回填循环。
         scored_count = 0
         to_score: list[Any] = list(candidates)
 
@@ -1292,8 +1254,8 @@ class RecommendationEngine:
         for candidate in to_score:
             result = scored.get(candidate.bvid)
             if result is None:
-                # LLM dropped this one — mark with sentinel score so it's
-                # not picked again next cycle, but record nothing positive.
+                # LLM 丢弃了此项 —— 用哨兵分数标记，使其下周期不再被
+                # 选中，但不记录任何正向内容。
                 self._database.update_delight_score(
                     candidate.bvid,
                     delight_score=0.01,
@@ -1304,7 +1266,7 @@ class RecommendationEngine:
 
             persisted_score = max(0.01, result.score)
             if result.score < effective_threshold:
-                # Below threshold — persist score but no reason/hook
+                # 低于阈值 —— 持久化分数但无 reason/hook
                 self._database.update_delight_score(
                     candidate.bvid,
                     delight_score=persisted_score,
@@ -1314,8 +1276,8 @@ class RecommendationEngine:
                 scored_count += 1
                 continue
 
-            # Above threshold — LLM already provided rationale + hook
-            # in the same call, no extra LLM trip needed.
+            # 高于阈值 —— LLM 已在同一调用中提供 rationale + hook，
+            # 无需额外 LLM 跳。
             self._database.update_delight_score(
                 candidate.bvid,
                 delight_score=persisted_score,
@@ -1338,10 +1300,10 @@ class RecommendationEngine:
         profile: SoulProfile,
         reason_stub: str,
     ) -> tuple[str, str]:
-        """Generate a delight reason explanation via LLM.
+        """通过 LLM 生成 delight 理由解释。
 
         Returns:
-            (delight_reason, delight_hook) tuple.
+            (delight_reason, delight_hook) 元组。
         """
         from openbiliclaw.llm.prompts import build_delight_reason_prompt
 
@@ -1389,7 +1351,7 @@ class RecommendationEngine:
                 "Failed to generate delight reason for %s",
                 content.bvid,
             )
-        # Fallback
+        # 回退
         return ("这条可能会给你意外的惊喜", "意外惊喜")
 
     async def _precompute_batch(
@@ -1399,7 +1361,7 @@ class RecommendationEngine:
         *,
         fallback_to_single: bool = True,
     ) -> int:
-        """Generate expressions for a batch via one LLM call."""
+        """通过一次 LLM 调用为一个批次生成 expression。"""
         from openbiliclaw.llm.prompts import build_batch_expression_prompt
 
         tone_profile = build_tone_profile(
@@ -1440,10 +1402,9 @@ class RecommendationEngine:
                 system_instruction=messages[0]["content"],
                 user_input=messages[1]["content"],
                 max_tokens=8192,
-                # v0.3.51+: expression generation is short copy
-                # writing per item — reasoning chain just bloats
-                # output (write_expression cost ~3x with reasoning
-                # vs without, no quality difference).
+                # v0.3.51+：expression 生成是 per-item 的短文案写作
+                # —— 推理链只会膨胀输出（带推理的 write_expression 成本
+                # 约为不带的 3 倍，质量无差异）。
                 reasoning_effort="",
                 caller="recommendation.write_expression",
                 **without_core_memory_kwargs(complete_structured),
@@ -1479,17 +1440,14 @@ class RecommendationEngine:
 
         payload_by_id = _batch_results_by_content_key(payload, batch)
         if payload_by_id is None and len(batch) > 1:
-            # The prompt requires every entry to echo back its bvid /
-            # content_id (rule 2) and preserve input order (rule 1). When a
-            # *multi-item* response carries no identifiers we cannot verify
-            # alignment: a reordered or repeated array silently attaches each
-            # video the wrong (or an identical) reason. Weak local models
-            # (e.g. qwen:7b under a truncated context window) hit this
-            # constantly, surfacing to users as "every recommendation reason
-            # is the same and doesn't match the video". Regenerate per item
-            # instead — each single call carries exactly one content item and
-            # cannot be misaligned. (A 1-item batch has no ordering ambiguity,
-            # so positional matching below stays safe for it.)
+            # prompt 要求每个条目回显其 bvid / content_id（rule 2）并
+            # 保留输入顺序（rule 1）。当一个*多项*响应不带标识符时，
+            # 我们无法验证对齐：重排或重复的数组会静默地为每个视频
+            # 附加错误的（或相同的）理由。弱本地模型（如 qwen:7b 在
+            # 截断上下文窗口下）持续触发此情况，对用户呈现为"每个推荐
+            # 理由都相同且与视频不匹配"。改为 per-item 重新生成 ——
+            # 每个单次调用恰好携带一个内容项，不能错位。（1 项批次无
+            # 排序歧义，因此下面的位置匹配对它仍然安全。）
             if not fallback_to_single:
                 logger.warning(
                     "Batch expression response carried no bvid/content_id for %d "
@@ -1507,12 +1465,11 @@ class RecommendationEngine:
             )
             return await self._precompute_single_fallback(batch, profile)
 
-        # Gather candidates first (keyed match, or positional for a lone item
-        # where order is unambiguous) so we can reject a degenerate batch that
-        # repeats the same expression across distinct videos (violates rule 6;
-        # surfaces as identical 推荐语). Serving duplicate copy for different
-        # videos is worse than serving none — the pool gate simply skips the
-        # un-copied items until a healthier regeneration fills them.
+        # 先收集候选（键匹配，或对顺序无歧义的单项使用位置匹配），
+        # 这样我们可以拒绝在多个不同视频间重复相同 expression 的退化
+        # 批次（违反 rule 6；表现为相同的推荐语）。为不同视频服务重复
+        # 文案比不服务更糟 —— 池门只是跳过未拷贝项，直到更健康的重新
+        # 生成填充它们。
         gathered: list[tuple[DiscoveredContent, str, str]] = []
         for i, item in enumerate(batch):
             if payload_by_id is None:
@@ -1575,11 +1532,10 @@ class RecommendationEngine:
         batch: list[DiscoveredContent],
         profile: SoulProfile,
     ) -> int:
-        """Try a batch, split failed large batches, then fall back to singles.
+        """尝试一个批次，拆分失败的大批次，然后回退到单项。
 
-        Split retries run inside the current expression worker. They do not
-        create nested tasks, so ``expression_batch_concurrency`` remains the
-        single concurrency control point.
+        拆分重试在当前 expression worker 内运行。它们不创建嵌套任务，
+        因此 ``expression_batch_concurrency`` 仍是单一并发控制点。
         """
         if len(batch) <= 1:
             return await self._precompute_batch(batch, profile, fallback_to_single=True)
@@ -1604,7 +1560,7 @@ class RecommendationEngine:
         batch: list[DiscoveredContent],
         profile: SoulProfile,
     ) -> int:
-        """Fallback: generate expressions one by one."""
+        """回退：逐项生成 expression。"""
         completed = 0
         for item in batch:
             generated = await self._try_generate_expression(item, profile)
@@ -1627,11 +1583,11 @@ class RecommendationEngine:
         profile: SoulProfile,
         limit: int = 10,
     ) -> list[Recommendation]:
-        """Generate friend-style recommendations with real-time LLM expressions.
+        """通过实时 LLM expression 生成朋友式推荐。
 
-        Delegates to :meth:`serve` with ``expression_mode="realtime"``.
-        The *discovered* parameter is accepted for backward compatibility but
-        ignored — the engine always picks from the candidate pool.
+        委托给 :meth:`serve` 并带 ``expression_mode="realtime"``。
+        *discovered* 参数为向后兼容而接受但被忽略 —— 引擎始终从
+        候选池挑选。
         """
         return await self.serve(profile, limit=limit, expression_mode="realtime")
 
@@ -1641,9 +1597,9 @@ class RecommendationEngine:
         profile: SoulProfile,
         limit: int = 5,
     ) -> list[Recommendation]:
-        """Instantly pick a new batch from the discovery pool.
+        """从 discovery 池即时挑选新批次。
 
-        Delegates to :meth:`serve` with ``expression_mode="precomputed"``.
+        委托给 :meth:`serve` 并带 ``expression_mode="precomputed"``。
         """
         return await self.serve(profile, limit=limit, expression_mode="precomputed")
 
@@ -1654,9 +1610,9 @@ class RecommendationEngine:
         excluded_bvids: list[str],
         limit: int = 10,
     ) -> list[Recommendation]:
-        """Append another page of recommendations from the discovery pool.
+        """从 discovery 池追加另一页推荐。
 
-        Delegates to :meth:`serve` with excluded BVIDs for pagination.
+        委托给 :meth:`serve` 并带 excluded BVIDs 用于分页。
         """
         excluded = frozenset(b.strip() for b in excluded_bvids if b and b.strip())
         return await self.serve(
@@ -1671,19 +1627,19 @@ class RecommendationEngine:
         recommendations: list[Recommendation],
         profile: SoulProfile,
     ) -> PersonalTopic:
-        """Create a deeply personalized recommendation topic.
+        """创建深度个性化的推荐话题。
 
-        The topic is unique to this user — not "周末放松包" but something
-        that connects to their specific personality and current state.
+        话题对用户唯一 —— 不是"周末放松包"，而是连接到他们具体
+        性格和当前状态的内容。
 
         Args:
-            recommendations: Recommendations to group into a topic.
-            profile: User's soul profile.
+            recommendations: 分组到一个话题的推荐。
+            profile: 用户 soul profile。
 
         Returns:
-            A PersonalTopic with a custom title and description.
+            带自定义标题和描述的 PersonalTopic。
         """
-        # TODO: Use LLM to create a personal topic narrative
+        # TODO：使用 LLM 创建个人话题叙事
         return PersonalTopic()
 
     async def generate_expression(
@@ -1691,18 +1647,18 @@ class RecommendationEngine:
         content: DiscoveredContent,
         profile: SoulProfile,
     ) -> tuple[str, str]:
-        """Generate a friend-style recommendation expression.
+        """生成朋友式推荐 expression。
 
-        The expression should feel like a close friend recommending something:
-        warm, insightful, personal, with genuine understanding of why this
-        specific person would enjoy this specific content.
+        expression 应当感觉像一位密友推荐某事：温暖、有洞察力、
+        个人化，对为什么这个具体的人会享受这个具体的内容有真正
+        的理解。
 
         Args:
-            content: The content being recommended.
-            profile: User's soul profile.
+            content: 被推荐的内容。
+            profile: 用户 soul profile。
 
         Returns:
-            Expression text and a lightly personalized topic label.
+            Expression 文本和一个轻度个性化的 topic 标签。
         """
         generated = await self._try_generate_expression(content, profile)
         if generated is not None:
@@ -1714,11 +1670,11 @@ class RecommendationEngine:
         content: DiscoveredContent,
         profile: SoulProfile,
     ) -> tuple[str, str] | None:
-        """Try to generate personalized copy without applying a generic fallback."""
+        """尝试生成个性化文案而不应用通用回退。"""
         from openbiliclaw.llm.prompts import build_recommendation_expression_prompt
 
         tone_profile = self._expression_tone_profile(profile, content)
-        # Select most relevant interests for this content via embedding similarity
+        # 通过 embedding 相似度选择与此内容最相关的兴趣
         interests_for_prompt = await self._select_relevant_interests(content, profile)
 
         profile_summary = _recommendation_profile_summary(
@@ -1781,7 +1737,7 @@ class RecommendationEngine:
         return tone
 
     def mark_presented(self, recommendation_ids: list[int]) -> None:
-        """Mark recommendation rows as presented."""
+        """标记推荐行为已展示。"""
         ids = [item for item in recommendation_ids if item > 0]
         if not ids:
             return
@@ -1794,7 +1750,7 @@ class RecommendationEngine:
         feedback_type: str,
         note: str = "",
     ) -> None:
-        """Persist explicit user feedback for a recommendation."""
+        """持久化推荐的显式用户反馈。"""
         self._database.update_recommendation_feedback(
             recommendation_id,
             feedback_type=feedback_type,
@@ -1802,7 +1758,7 @@ class RecommendationEngine:
         )
 
     def get_recommendation(self, recommendation_id: int) -> dict[str, object] | None:
-        """Load a recommendation row for CLI or feedback workflows."""
+        """为 CLI 或反馈工作流加载推荐行。"""
         return self._database.get_recommendation_by_id(recommendation_id)
 
     @staticmethod
@@ -1864,11 +1820,11 @@ class RecommendationEngine:
 
     @staticmethod
     def _mmr_embedding_text(content: DiscoveredContent) -> str:
-        """Canonical text shape for the MMR embedding cache key.
+        """MMR embedding 缓存键的规范文本形状。
 
-        Kept as a single source of truth so warm-time and serve-time
-        agree on the cache key — otherwise the warm side fills L2 with
-        one shape while serve() looks up a different one and never hits.
+        保留为单一真相源，使 warm-time 和 serve-time 在缓存键上
+        达成一致 —— 否则 warm 端用一种形状填充 L2，而 serve()
+        查找另一种形状并永不命中。
         """
         return (f"{content.title or ''} {(content.description or '')[:160]}").strip()[:200]
 
@@ -1876,18 +1832,15 @@ class RecommendationEngine:
         self,
         candidates: list[DiscoveredContent],
     ) -> dict[str, list[float]]:
-        """Cache-only embedding lookup for MMR diversification.
+        """仅缓存 embedding 查找用于 MMR 多样化。
 
-        **Never triggers a provider API call** — this is the hot path
-        ``serve()`` runs on every "换一批" click and we contract a
-        sub-second budget. Items missing from the cache simply fall
-        through to the string-cap-only diversifier path; the warmer
-        (``warm_mmr_embeddings`` from discovery / classify / refresh /
-        startup) is responsible for filling the L2 SQLite cache so this
-        lookup hits next time.
+        **永不触发 provider API 调用** —— 这是 ``serve()`` 在每次
+        "换一批"点击时运行的热路径，我们签订亚秒预算。缓存中缺失
+        的项直接落到仅 string-cap 的 diversifier 路径；预热器
+        （``warm_mmr_embeddings``，来自 discovery / classify / refresh /
+        startup）负责填充 L2 SQLite 缓存，使此查找下次命中。
 
-        Returns ``{bvid: vector}`` only for items already cached. Pure
-        synchronous-via-async; no I/O.
+        仅返回已缓存项的 ``{bvid: vector}``。纯同步-via-async；无 I/O。
         """
         if self._embedding_service is None or not candidates:
             return {}
@@ -1908,14 +1861,13 @@ class RecommendationEngine:
         self,
         items: list[DiscoveredContent],
     ) -> int:
-        """Pre-warm the embedding cache for items entering the pool.
+        """为进入池的项预热 embedding 缓存。
 
-        Called by discovery and pool-classification paths so the
-        recommendation hot path (``serve`` → ``_fetch_candidate_embeddings``)
-        is an L2 cache hit instead of a 30× sequential API round trip.
-        Returns the number of items actually warmed (cache hits +
-        successful API calls). Idempotent — ``EmbeddingService.embed``
-        short-circuits on L1/L2 hit.
+        由 discovery 和池分类路径调用，因此推荐热路径
+        （``serve`` → ``_fetch_candidate_embeddings``）是 L2 缓存命中
+        而非 30× 顺序 API 往返。返回实际预热的项数（缓存命中 +
+        成功 API 调用）。幂等 —— ``EmbeddingService.embed`` 在
+        L1/L2 命中时短路。
         """
         embedding_service = self._embedding_service
         if embedding_service is None or not items:
@@ -1961,14 +1913,12 @@ class RecommendationEngine:
         if limit <= 1 or len(ranked) <= 1:
             return ranked[:limit]
 
-        # MMR path (v0.3.44+): when embeddings are available, replace the
-        # simple relevance-ordered greedy selection with Maximum Marginal
-        # Relevance — each pick balances "high relevance" against "low
-        # similarity to already-picked items" via embedding cosine. This
-        # catches "same topic, different LLM string label" duplication
-        # that the topic_group / style_key string caps miss (e.g. three
-        # rows tagged "人工智能" / "AI 趋势" / "AI 应用" that are
-        # semantically the same content tier).
+        # MMR 路径（v0.3.44+）：当 embedding 可用时，将简单的
+        # relevance-ordered 贪心选择替换为 Maximum Marginal Relevance
+        # —— 每次挑选平衡"高相关性"与"与已挑项的低相似度"通过 embedding
+        # 余弦。这捕获 topic_group / style_key string cap 遗漏的
+        # "相同话题、不同 LLM 字符串标签"重复（例如三行标记
+        # "人工智能" / "AI 趋势" / "AI 应用"在语义上是相同内容层）。
         if embeddings:
             return cls._select_with_mmr(
                 ranked,
@@ -2089,15 +2039,14 @@ class RecommendationEngine:
                 remaining,
                 topic_cap=soft_topic_cap,
                 enforce_style_cap=False,
-                enforce_broad_cap=True,  # Never relax broad_cap
+                enforce_broad_cap=True,  # 永不放宽 broad_cap
             )
         if len(selected) < limit:
-            # Final fallback: topic diversity still holds at a relaxed
-            # ceiling (2× the tight broad_cap). Topic is the true signal of
-            # content richness — if 10 items share the same broad topic the
-            # batch feels repetitive regardless of style or source. Items
-            # with no topic (bt == "") are allowed through freely so we
-            # still reach `limit` when the pool is thin but legitimate.
+            # 最终回退：topic 多样性仍在放宽的天花板（2× 紧的
+            # broad_cap）下保持。话题是内容丰富度的真实信号 ——
+            # 如果 10 项共享相同 broad topic，无论 style 或 source
+            # 如何，批次都感觉重复。无 topic（bt == ""）的项自由
+            # 通过，因此当池薄但合法时我们仍能达到 `limit`。
             fallback_broad_cap = broad_cap * 2
             for item in remaining:
                 bt = cls._broad_topic_token(item)
@@ -2153,18 +2102,17 @@ class RecommendationEngine:
         alpha: float,
         beta: float,
     ) -> list[DiscoveredContent]:
-        """Greedy Maximum Marginal Relevance pick with existing string caps.
+        """带现有 string cap 的贪心 Maximum Marginal Relevance 挑选。
 
-        At each step, choose the candidate maximising
-        ``alpha * relevance - beta * max_cosine_to_picked``.
+        每步选择最大化
+        ``alpha * relevance - beta * max_cosine_to_picked`` 的候选。
 
-        ``alpha = beta = 0.5`` (default) gives a balanced relevance /
-        diversity trade-off. Bumping ``beta`` up (or ``alpha`` down)
-        produces a more aggressively varied batch at the cost of
-        relevance. The string-based caps (``per_topic_cap`` /
-        ``per_style_cap`` / ``broad_topic_cap``) still gate every
-        pick — items violating them go to ``deferred`` and are only
-        reconsidered if MMR ran out of compliant candidates.
+        ``alpha = beta = 0.5``（默认）给出平衡的相关性 / 多样性
+        折中。提升 ``beta``（或降低 ``alpha``）以相关性为代价产生
+        更激进变化的批次。基于 string 的 cap（``per_topic_cap`` /
+        ``per_style_cap`` / ``broad_topic_cap``）仍门控每次挑选 ——
+        违反它们的项进入 ``deferred``，仅在 MMR 用完合规候选时
+        重新考虑。
         """
         from openbiliclaw.llm.embedding import cosine_similarity
 
@@ -2235,9 +2183,9 @@ class RecommendationEngine:
         deferred: list[DiscoveredContent] = []
         remaining = list(ranked)
 
-        # First pick: highest-relevance compliant item (MMR's "anchor"
-        # — no penalty since picked is empty).
-        # Subsequent picks: argmax(alpha*relevance - beta*max_cos_to_picked).
+        # 首次挑选：最高相关性的合规项（MMR 的"锚点" ——
+        # 由于 picked 为空，没有惩罚）。
+        # 后续挑选：argmax(alpha*relevance - beta*max_cos_to_picked)。
         while len(selected) < limit and remaining:
             best_idx = -1
             best_score = -1e9
@@ -2257,9 +2205,9 @@ class RecommendationEngine:
             selected.append(cand)
             _track(cand)
 
-        # Re-fill from deferred if we ran out of compliant items —
-        # progressively relax the topic cap, then drop style cap last,
-        # mirroring the legacy fallback chain. broad_cap stays hard.
+        # 如果合规项用尽则从 deferred 重新填充 ——
+        # 逐步放松 topic cap，最后丢弃 style cap，
+        # 镜像 legacy fallback 链。broad_cap 保持硬性。
         if len(selected) < limit:
             still_deferred: list[DiscoveredContent] = []
             for cand in deferred:
@@ -2277,7 +2225,7 @@ class RecommendationEngine:
             for cand in deferred:
                 if len(selected) >= limit:
                     break
-                # Final relaxation: only broad_cap still binding.
+                # 最终放松：只有 broad_cap 仍然约束。
                 if _exceeds_amplification_cap(cand):
                     continue
                 if _exceeds_broad_cap(cand):
@@ -2285,8 +2233,8 @@ class RecommendationEngine:
                 selected.append(cand)
                 _track(cand)
 
-        # Logging — surface MMR effect per call so we can tell if it
-        # actually rotated the topic mix vs the relevance-only path.
+        # 日志 —— 每次调用暴露 MMR 效果，以便我们能区分它
+        # 实际是否轮换了话题组合 vs 仅相关性路径。
         if selected:
             picked_topics = Counter(
                 cls._normalize_topic_token(item.topic_group) or "unknown" for item in selected
@@ -2303,7 +2251,7 @@ class RecommendationEngine:
                 top_share * 100,
             )
 
-        # Reuse legacy finalization (accessible_entry + interleave).
+        # 复用 legacy 终结化（accessible_entry + interleave）。
         finalized = cls._ensure_accessible_entry(
             ranked=ranked,
             selected=selected[:limit],
@@ -2321,10 +2269,10 @@ class RecommendationEngine:
         limit: int,
         score_override: dict[str, float] | None,
     ) -> list[DiscoveredContent]:
-        """Inject one easier-entry item when a full batch is uniformly hard.
+        """当一个完整批次统一较难时注入一个更易入口的项。
 
-        This only activates for full batches of 5+ items, and only when the
-        pool already contains a reasonably competitive lighter-style option.
+        仅对 5+ 项的完整批次激活，且仅当池中已存在一个有合理竞争力
+        的轻量风格选项时。
         """
         if limit < 5 or len(selected) < limit:
             return selected
@@ -2404,7 +2352,7 @@ class RecommendationEngine:
 
     @staticmethod
     def _diversity_tokens(item: DiscoveredContent) -> set[str]:
-        """Use topic_group (coarse semantic category) for diversity bucketing."""
+        """使用 topic_group（粗粒度语义分类）作为 diversity 分桶。"""
         topic_group = RecommendationEngine._normalize_topic_token(item.topic_group)
         if topic_group:
             return {topic_group}
@@ -2421,17 +2369,16 @@ class RecommendationEngine:
         if tokens:
             return tokens
 
-        # Fallback: use author + title keywords as diversity signals.
-        # NOTE: source_strategy is intentionally excluded — when many items
-        # share the same source_strategy (e.g. "xhs-extension-task"), using
-        # it as a topic token makes the diversity mechanism treat them as
-        # "same topic" and collapse the entire batch into one bucket.
+        # 回退：使用作者 + 标题关键词作为 diversity 信号。
+        # NOTE：source_strategy 被故意排除 —— 当许多项共享同一
+        # source_strategy（如 "xhs-extension-task"）时，将其用作
+        # topic token 会使 diversity 机制将它们视为"同一话题"并将
+        # 整个批次折叠进一个桶。
         fallback_fields = [item.up_name]
         title = item.title
         fallback_fields.extend(re.findall(r"[A-Za-z0-9]{2,}", title))
-        # Also extract Chinese character runs from the title as fallback
-        # topic signals — these are far more discriminating than
-        # source_strategy for content that lacks proper classification.
+        # 还从标题中提取中文连续字符作为回退 topic 信号 ——
+        # 对于缺乏正确分类的内容，这些远比 source_strategy 更具区分性。
         fallback_fields.extend(m for m in re.findall(r"[\u4e00-\u9fff]{2,4}", title))
         return {
             RecommendationEngine._normalize_topic_token(value)
@@ -2441,23 +2388,22 @@ class RecommendationEngine:
 
     @staticmethod
     def _style_token(item: DiscoveredContent) -> str:
-        """Normalize style_key into a cap-tracked bucket.
+        """将 style_key 规范化为受 cap 跟踪的桶。
 
-        Empty/missing style_key maps to the sentinel ``"unknown"`` so that
-        unclassified content (common for xhs notes, which lack the bilibili
-        style classification) still participates in the per-style cap.
-        Without this, unclassified items would all bypass style_counts and
-        could flood a batch with visually monotonous rows.
+        空/缺失的 style_key 映射到哨兵值 ``"unknown"``，使未分类内容
+        （xhs 笔记常见，它们缺乏 bilibili style 分类）仍参与 per-style
+        cap。没有这个，未分类项都会绕过 style_counts 并可能用视觉上
+        单调的行淹没一个批次。
         """
         token = RecommendationEngine._normalize_topic_token(normalize_style_key(item.style_key))
         return token or "unknown"
 
     @staticmethod
     def _broad_topic_token(item: DiscoveredContent) -> str:
-        """Extract a broad topic category for cross-variant grouping.
+        """为跨变体分组提取宽泛话题类别。
 
-        Uses topic_group directly when available (already coarse).
-        Falls back to first 4 chars of topic_key for legacy data.
+        可用时直接使用 topic_group（已经是粗粒度）。
+        对 legacy 数据回退到 topic_key 的前 4 个字符。
         """
         group = RecommendationEngine._normalize_topic_token(item.topic_group)
         if group:
@@ -2471,7 +2417,7 @@ class RecommendationEngine:
 
     @staticmethod
     def _broad_topic_cap(limit: int) -> int:
-        """Maximum items sharing the same broad topic category."""
+        """共享相同宽泛话题类别的最大项数。"""
         if limit <= 5:
             return 2
         if limit <= 10:
@@ -2483,9 +2429,9 @@ class RecommendationEngine:
         cls,
         items: list[DiscoveredContent],
     ) -> list[DiscoveredContent]:
-        """Reorder items so same-topic content is maximally spread apart.
+        """重排项使相同话题内容最大程度地分散开。
 
-        Uses round-robin from groups sorted by size (largest first).
+        使用按大小排序的组（最大优先）的 round-robin。
         """
         if len(items) <= 2:
             return items
@@ -2524,11 +2470,11 @@ class RecommendationEngine:
 
     @staticmethod
     def _platform_token(item: DiscoveredContent) -> str:
-        """Platform label for observability only — not used to filter picks.
+        """平台标签仅供可观测性 —— 不用于过滤挑选。
 
-        Diversity and caps are driven by content features (topic and style).
-        Exposed in ``_build_debug_summary`` so log readers can still see the
-        platform split per round.
+        Diversity 和 cap 由内容特征（topic 和 style）驱动。在
+        ``_build_debug_summary`` 中暴露以便日志读者仍能看到每轮的
+        平台分布。
         """
         platform = (item.source_platform or "").strip().lower()
         return platform or "bilibili"
@@ -2537,10 +2483,10 @@ class RecommendationEngine:
         self,
         rows: list[dict[str, Any]],
     ) -> list[DiscoveredContent]:
-        """Map raw DB pool rows into ``DiscoveredContent`` dataclasses.
+        """将原始 DB pool 行映射到 ``DiscoveredContent`` dataclass。
 
-        Single source of truth for the row → dataclass field mapping so
-        adding/removing a pool column only needs one edit.
+        row → dataclass 字段映射的唯一真相源，因此添加/移除一个
+        pool 列只需一处编辑。
         """
         from openbiliclaw.discovery.engine import DiscoveredContent
 
@@ -2675,24 +2621,21 @@ class RecommendationEngine:
         *,
         prev_bvids: frozenset[str] | None = None,
     ) -> dict[str, object]:
-        """Build a content-diversity-focused debug payload for one batch.
+        """为一个批次构建聚焦内容多样性的 debug 负载。
 
-        v0.3.31+: enriched to surface what really matters for "is this
-        batch diverse" diagnosis:
+        v0.3.31+：丰富以暴露对"这个批次是否多样"诊断真正重要的内容：
 
-        - ``unique_topics`` / ``unique_franchises``: total distinct
-          values, not just top-5. The previous summary's top-5 hid
-          tail diversity.
+        - ``unique_topics`` / ``unique_franchises``：总计不同值数，
+          不只是 top-5。之前摘要的 top-5 隐藏了尾部多样性。
         - ``top_topic_share`` / ``top_style_share`` /
-          ``top_franchise_share``: dominance ratio (max-bucket-count /
-          total). >0.4 on any of these = "this batch's content is
-          concentrated", <0.2 = "well-spread".
-        - ``carryover_from_prev``: how many items in this batch also
-          showed in the previous batch (when ``prev_bvids`` is given).
-          Tells you if the recommender keeps re-serving the same content.
-        - ``unique_titles_ratio``: distinct titles / count. <1.0 means
-          the same title appears multiple times in one batch (data quality
-          issue; same content cross-source).
+          ``top_franchise_share``：主导比（max-bucket-count /
+          total）。任一 >0.4 = "此批次内容集中"，<0.2 = "分布良好"。
+        - ``carryover_from_prev``：此批次中有多少项也在上一个批次中
+          出现（当给定 ``prev_bvids`` 时）。告诉你推荐器是否持续
+          重复服务相同内容。
+        - ``unique_titles_ratio``：不同标题数 / 计数。<1.0 意味着
+          同一标题在一个批次中出现多次（数据质量问题；相同内容
+          跨源）。
         """
         n = len(candidates)
         if n == 0:
@@ -2704,16 +2647,15 @@ class RecommendationEngine:
         )
         platform_counts = Counter(cls._platform_token(item) for item in candidates)
 
-        # Topic group counts. v0.3.46+: when an item has no proper
-        # ``topic_group`` / ``topic_key`` / tags (i.e. classify_pool_backlog
-        # hasn't run yet), bucket it as ``"_unclassified_"`` rather than
-        # leaning on ``_diversity_tokens()``'s title-prefix fallback —
-        # otherwise the summary log would print fake-looking topics like
-        # ``"165"``, ``"屎屎"`` or ``"三花"`` extracted from raw titles
-        # before the LLM evaluator gets to assign a real category.
-        # The bucketing path (used by the actual diversifier) keeps the
-        # fallback so unclassified items don't all collapse into one
-        # bucket — but the summary should not lie about what's there.
+        # Topic group 计数。v0.3.46+：当某项没有合适的
+        # ``topic_group`` / ``topic_key`` / tags（即 classify_pool_backlog
+        # 尚未运行）时，将其归入 ``"_unclassified_"`` 而非依赖
+        # ``_diversity_tokens()`` 的标题前缀回退 ——
+        # 否则摘要日志会打印看起来像假的话题，如
+        # ``"165"``、``"屎屎"`` 或 ``"三花"``，这些是从原始标题中
+        # 在 LLM 评估器分配真实类别之前提取出来的。
+        # 分桶路径（由实际 diversifier 使用）保留回退，使未分类项
+        # 不会全部坍塌进一个桶 —— 但摘要不应对存在的内容撒谎。
         topic_counts: Counter[str] = Counter()
         for item in candidates:
             primary = cls._normalize_topic_token(item.topic_group) or cls._normalize_topic_token(
@@ -2732,16 +2674,16 @@ class RecommendationEngine:
             else:
                 topic_counts["_unclassified_"] += 1
 
-        # Franchise key — exclude empty (non-IP-bearing content). This
-        # is OUR guard against "5 different 原神 angle videos in one
-        # batch" (same franchise, different topic_group).
+        # Franchise key —— 排除空值（非 IP 内容）。这是我们
+        # 对"一个批次中 5 个不同原神角度视频"（相同 franchise，
+        # 不同 topic_group）的守卫。
         franchise_counts: Counter[str] = Counter(
             (getattr(item, "franchise_key", "") or "").strip().lower() for item in candidates
         )
-        del franchise_counts[""]  # don't count non-franchise content
+        del franchise_counts[""]  # 不计入非 franchise 内容
 
-        # Carryover with previous batch — biggest "stale recommendations"
-        # signal users complain about. Stored on the engine across calls.
+        # 与上一个批次的 carryover —— 用户抱怨的最大"陈旧推荐"
+        # 信号。存储在引擎上跨调用保留。
         carryover = 0
         if prev_bvids is not None:
             carryover = sum(1 for item in candidates if item.bvid in prev_bvids)
@@ -2759,7 +2701,7 @@ class RecommendationEngine:
             "styles": dict(style_counts.most_common(5)),
             "sources": dict(source_counts.most_common(5)),
             "topics": dict(topic_counts.most_common(5)),
-            # New v0.3.31 content-diversity fields
+            # 新的 v0.3.31 内容多样性字段
             "unique_topics": len(topic_counts),
             "unique_franchises": len(franchise_counts),
             "top_topic_share": _share(topic_counts),

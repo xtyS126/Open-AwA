@@ -1,22 +1,20 @@
-"""Mutable runtime component container with config hot-reload support.
+"""可变运行时组件容器，支持配置热重载。
 
-All FastAPI endpoint closures access runtime components through a single
-``RuntimeContext`` instance.  When configuration changes at runtime (via
-``PUT /api/config``), the context atomically rebuilds every swappable
-component so the new settings take effect immediately — no server restart
-required.
+所有 FastAPI 端点闭包都通过单一的 ``RuntimeContext`` 实例访问运行时
+组件。当配置在运行时变更（通过 ``PUT /api/config``）时，context 原子地
+重建每个可交换组件，使新设置立即生效 —— 无需重启服务。
 
-**Stable components** (never rebuilt):
-  - ``database`` — owns the SQLite connection
-  - ``memory_manager`` — owns file-backed memory layers
-  - ``event_hub`` — holds live WebSocket subscriber queues
-  - ``presence`` — tracks shared extension runtime-stream presence
+**稳定组件**（从不重建）：
+  - ``database`` —— 持有 SQLite 连接
+  - ``memory_manager`` —— 持有文件-backed 的记忆层
+  - ``event_hub`` —— 持有活跃的 WebSocket 订阅者队列
+  - ``presence`` —— 跟踪共享的扩展 runtime-stream 在线状态
 
-**Swappable components** (rebuilt on hot-reload):
-  - ``llm_registry``, ``llm_service``, ``bilibili_client``
-  - ``soul_engine``, ``dialogue``
-  - ``discovery_engine``, ``recommendation_engine``
-  - ``runtime_controller``, ``account_sync_service``
+**可交换组件**（热重载时重建）：
+  - ``llm_registry``、``llm_service``、``bilibili_client``
+  - ``soul_engine``、``dialogue``
+  - ``discovery_engine``、``recommendation_engine``
+  - ``runtime_controller``、``account_sync_service``
   - ``auto_update_service``
 """
 
@@ -57,7 +55,7 @@ def build_youtube_discovery_strategies(
     database: Database | None = None,
     strategy_unit_budget: dict[str, int] | None = None,
 ) -> list[Any]:
-    """Build YouTube discovery strategies from `[sources.youtube]` config."""
+    """根据 `[sources.youtube]` 配置构建 YouTube 发现策略。"""
 
     from openbiliclaw.discovery.strategies.youtube import (
         YoutubeChannelStrategy,
@@ -106,7 +104,7 @@ def build_youtube_discovery_strategies(
 
 
 def _youtube_strategy_units_used(strategy: Any, *, fallback: int) -> int:
-    """Return the execution units consumed by one YouTube strategy run."""
+    """返回一次 YouTube 策略运行所消耗的执行单元数。"""
     name = str(getattr(strategy, "name", ""))
     intermediates = getattr(strategy, "last_intermediates", {}) or {}
     if name == "yt_search":
@@ -142,7 +140,7 @@ def build_youtube_discovery_producer(
     candidate_pipeline: Any | None = None,
     keyword_fetch: Any | None = None,
 ) -> Any | None:
-    """Build the runtime YouTube producer if YouTube discovery is enabled."""
+    """若启用了 YouTube 发现，则构建运行时 YouTube producer。"""
     yt_cfg = getattr(getattr(config, "sources", None), "youtube", None)
     if yt_cfg is None or not bool(getattr(yt_cfg, "enabled", False)):
         return None
@@ -188,15 +186,14 @@ def build_youtube_discovery_producer(
 
         selected_strategy = selected[0]
         discovery_engine.register_strategy(selected_strategy)
-        # Unified keyword planner injection (P1.7): forward claimed words to the
-        # engine as ``keywords``; the engine maps them onto the strategy's
-        # ``queries`` param (only ``yt_search`` declares it). ``None`` keeps the
-        # legacy self-generating behavior byte-identical.
+        # 统一关键词规划器注入（P1.7）：将认领的词作为 ``keywords`` 转发给
+        # engine；engine 将其映射到策略的 ``queries`` 参数（仅 ``yt_search``
+        # 声明了该参数）。``None`` 保持 legacy 自生成行为字节一致。
         inject: dict[str, Any] = {}
         if queries is not None:
             inject["keywords"] = list(queries)
-        # P1.8 yield provenance: forward the keyword→id map so the engine stamps
-        # each produced item's ``source_keyword_id`` for admit-time backfill.
+        # P1.8 yield provenance：转发 keyword→id 映射，使 engine 为每个
+        # 产出项的 ``source_keyword_id`` 盖章，供准入时回填使用。
         if keyword_ids:
             inject["keyword_ids"] = dict(keyword_ids)
         produce_fn = getattr(discovery_engine, "produce_candidates", None)
@@ -246,28 +243,27 @@ def build_youtube_discovery_producer(
 
 @dataclass
 class RuntimeContext:
-    """Mutable holder for all runtime components used by API endpoints."""
+    """API 端点使用的所有运行时组件的可变持有者。"""
 
-    # ── Stable (never rebuilt) ──────────────────────────────────────
+    # ── 稳定（从不重建） ──────────────────────────────────────
     database: Any = None
     memory_manager: Any = None
     event_hub: Any = None
     presence: PresenceTracker = field(default_factory=PresenceTracker)
-    # v0.3.63+: tracks every detached ``asyncio.create_task`` spawned by
-    # the runtime (refresh manual / per-strategy precompute, recommendation
-    # engine classify+delight, prewarm helpers, per-event triggers). On
-    # ``rebuild_from_config`` these are cancelled before new runtime objects
-    # are constructed so old detached work doesn't compete with the freshly
-    # built runtime for SQLite writes / LLM tokens.
+    # v0.3.63+：跟踪运行时派生的每个 detached ``asyncio.create_task``
+    # （refresh manual / per-strategy precompute、recommendation engine
+    # classify+delight、prewarm helpers、per-event triggers）。在
+    # ``rebuild_from_config`` 时这些任务会在新运行时对象构造之前被取消，
+    # 防止旧的 detached 工作与新建的运行时竞争 SQLite 写入 / LLM token。
     task_registry: BackgroundTaskRegistry = field(default_factory=BackgroundTaskRegistry)
-    # Lazily-built guided-init coordinator (gui-init spec §5). Not a constructor
-    # arg; created on first access bound to THIS ctx so it always reads the
-    # current database / runtime_controller even after a hot-reload swaps them
-    # (review R2 A-1). All three construct paths inherit it via the property.
+    # 懒加载的 guided-init 协调器（gui-init spec §5）。不是构造参数；
+    # 在首次访问时创建并绑定到 THIS ctx，因此即使热重载交换了
+    # database / runtime_controller，它也始终读取当前的
+    # （review R2 A-1）。三条构造路径都通过该 property 继承它。
     _init_coordinator: Any = field(default=None, init=False, repr=False, compare=False)
     _init_prereqs: Any = field(default=None, init=False, repr=False, compare=False)
 
-    # ── Swappable (rebuilt on hot-reload) ───────────────────────────
+    # ── 可交换（热重载时重建） ───────────────────────────
     config: Any = None
     degraded: bool = False
     degraded_reason: str = ""
@@ -285,7 +281,7 @@ class RuntimeContext:
 
     @property
     def init_coordinator(self) -> Any:
-        """Guided-init coordinator bound to this ctx (lazy singleton, spec §5)."""
+        """绑定到此 ctx 的 guided-init 协调器（懒加载单例，spec §5）。"""
         if self._init_coordinator is None:
             from openbiliclaw.runtime.init_coordinator import InitCoordinator
 
@@ -294,7 +290,7 @@ class RuntimeContext:
 
     @property
     def init_prereqs(self) -> Any:
-        """Cached guided-init prerequisite probes bound to this ctx (spec §3)."""
+        """绑定到此 ctx 的、缓存的 guided-init 前置探针（spec §3）。"""
         if self._init_prereqs is None:
             from openbiliclaw.runtime.init_prereqs import InitPrereqs
 
@@ -302,14 +298,14 @@ class RuntimeContext:
         return self._init_prereqs
 
     def background_llm_work_allowed(self) -> bool:
-        """Return whether daemon-owned background LLM / embedding work may run.
+        """返回 daemon 持有的后台 LLM / embedding 工作是否可以运行。
 
-        While a guided init is active, ALL daemon-owned background loops
-        (account_sync, continuous refresh, soul pipeline ticks) pause so they
-        can't race init's explicit analyze/build/backfill or double-process
-        signals (gui-init D1). Init's own work bypasses this gate — it calls
-        ``soul_engine`` / ``run_init_backfill`` directly, neither of which
-        consults ``llm_work_allowed``.
+        当 guided init 处于活跃状态时，所有 daemon 持有的后台循环
+        （account_sync、continuous refresh、soul pipeline ticks）都会暂停，
+        防止它们与 init 的显式 analyze/build/backfill 竞争或重复处理
+        信号（gui-init D1）。Init 自身的工作绕过此 gate —— 它直接调用
+        ``soul_engine`` / ``run_init_backfill``，二者都不查询
+        ``llm_work_allowed``。
         """
         try:
             if self.database is not None and self.init_coordinator.init_active():
@@ -320,26 +316,22 @@ class RuntimeContext:
         return _gate(scheduler, self.presence)
 
     async def rebuild_from_config(self, new_config: Config) -> None:
-        """Rebuild all swappable components from *new_config*.
+        """根据 *new_config* 重建所有可交换组件。
 
-        v0.3.63+: this is now ``async`` so the call can ``await`` the
-        background-task registry's ``cancel_all`` BEFORE constructing
-        new runtime objects. Without that step, detached tasks created
-        by the OLD recommendation engine / refresh controller (per-event
-        triggers, per-strategy precompute, prewarm helpers) keep running
-        after rebuild and compete with the new runtime for SQLite writes
-        and LLM tokens for several seconds.
+        v0.3.63+：此方法现在为 ``async``，以便调用方可以在构造新运行时
+        对象之前 ``await`` 后台任务注册表的 ``cancel_all``。如果没有这一步，
+        由旧 recommendation engine / refresh controller 派生的 detached
+        任务（per-event triggers、per-strategy precompute、prewarm helpers）
+        在重建后仍会继续运行，并在数秒内与新运行时竞争 SQLite 写入与
+        LLM token。
 
-        Construction itself is still synchronous and performed entirely
-        into local variables first — only after **every** component
-        succeeds are the attributes assigned, so atomic rollback on
-        failure is preserved. The asyncio event loop is single-threaded
-        so no endpoint handler can interleave during the attribute-
-        assignment sweep.
+        构造本身仍是同步的，并完全先写入局部变量 —— 仅当**每个**组件
+        都成功后才赋值属性，因此保留了失败时的原子回滚。asyncio 事件循环
+        是单线程的，因此在属性赋值扫掠期间不会有端点 handler 交错执行。
         """
-        # Keep a running guided-init task alive across rebuild — config writes
-        # are gated during init, but this is the belt-and-suspenders exemption
-        # so an init in flight is never silently cancelled (gui-init spec §5c).
+        # 让运行中的 guided-init 任务在 rebuild 期间存活 —— 配置写入在
+        # init 期间被 gate，但这是 belt-and-suspenders 豁免，确保进行中的
+        # init 不会被静默取消（gui-init spec §5c）。
         cancelled = await self.task_registry.cancel_all(exclude=frozenset({"guided_init"}))
         if cancelled:
             logger.info(
@@ -349,13 +341,12 @@ class RuntimeContext:
         self._rebuild_components(new_config)
 
     def _rebuild_components(self, new_config: Config) -> None:
-        """Synchronous component construction shared by hot-reload and startup.
+        """热重载与启动共享的同步组件构造。
 
-        ``rebuild_from_config`` (async) calls this after cancelling
-        in-flight background tasks. ``build_runtime_context`` calls this
-        directly during initial construction — at that point the
-        registry is empty so no cancel step is required, and remaining
-        sync simplifies the FastAPI startup path which is itself sync.
+        ``rebuild_from_config``（async）在取消进行中的后台任务后调用此方法。
+        ``build_runtime_context`` 在初始构造期间直接调用此方法 —— 此时
+        注册表为空，因此无需取消步骤，且保持同步可简化本身同步的
+        FastAPI 启动路径。
         """
         from openbiliclaw.bilibili.api import BilibiliAPIClient
         from openbiliclaw.bilibili.auth import resolve_runtime_cookie
@@ -380,7 +371,7 @@ class RuntimeContext:
         from openbiliclaw.soul.dialogue import SocraticDialogue
         from openbiliclaw.soul.engine import SoulEngine
 
-        # 1. LLM layer (with usage ledger so ``openbiliclaw cost`` has data)
+        # 1. LLM 层（带 usage ledger，使 ``openbiliclaw cost`` 有数据可用）
         new_registry = build_llm_registry(new_config)
         new_usage_recorder = UsageRecorder(sink=self.database)
         new_module_overrides = module_overrides_from_config(new_config)
@@ -401,18 +392,17 @@ class RuntimeContext:
             )
         )
 
-        # 3. Soul engine (reuses stable memory_manager)
-        # usage_recorder is forwarded so the internal LLMService SoulEngine
-        # builds (used by preference / awareness / insight / profile_builder
-        # / speculator) writes to the cost ledger with caller tags. Before
-        # this was wired, ``soul.*`` callers were entirely missing from
-        # ``openbiliclaw cost --by caller`` and speculator failures
-        # surfaced as silent "0 new" instead of explicit WARNs.
-        # Defensive getattr chain: legacy test fixtures and partial
-        # config stubs may not expose the new `soul.preference` block.
-        # Default to True when the field is absent: quick-exit rows should
-        # not self-feed into preferences, while explicit dislikes still
-        # remain available as negative evidence.
+        # 3. Soul engine（复用稳定的 memory_manager）
+        # usage_recorder 被转发，使 SoulEngine 内部构建的 LLMService
+        # （被 preference / awareness / insight / profile_builder
+        # / speculator 使用）以 caller 标签写入 cost ledger。在此
+        # 接通之前，``soul.*`` 调用方完全缺失于
+        # ``openbiliclaw cost --by caller``，且 speculator 失败
+        # 以静默的"0 new"而非显式 WARN 出现。
+        # 防御性 getattr 链：legacy 测试 fixture 和部分
+        # config stub 可能不暴露新的 `soul.preference` 块。
+        # 字段缺失时默认为 True：quick-exit 行不应自我喂入偏好，
+        # 而显式 dislike 仍可作为负面证据使用。
         soul_cfg = getattr(new_config, "soul", None)
         preference_cfg = getattr(soul_cfg, "preference", None) if soul_cfg else None
         satisfaction_filter_enabled = bool(
@@ -483,7 +473,7 @@ class RuntimeContext:
         # 4. Embedding service
         new_embedding_service = build_embedding_service(new_config, new_registry)
 
-        # 5. Share embedding with soul pipeline for semantic purges
+        # 5. 与 soul pipeline 共享 embedding service，用于语义清理
         set_emb = getattr(new_soul_engine, "set_embedding_service", None)
         if callable(set_emb):
             set_emb(new_embedding_service)
@@ -563,7 +553,7 @@ class RuntimeContext:
         new_discovery_engine.register_strategy(related_strategy)
         new_discovery_engine.register_strategy(explore_strategy)
 
-        # 7b. Register Bilibili source adapter (multi-source Phase 1)
+        # 7b. 注册 Bilibili 源适配器（multi-source Phase 1）
         from openbiliclaw.sources.bilibili_adapter import BilibiliAdapter
 
         bilibili_adapter = BilibiliAdapter(
@@ -574,20 +564,20 @@ class RuntimeContext:
         )
         new_discovery_engine.register_adapter(bilibili_adapter)
 
-        # Register Xiaohongshu adapter — content enters the pool via the
-        # extension's API endpoints (POST /api/sources/xhs/observed-urls),
-        # not via adapter.fetch(). The adapter is a stub so the registry
-        # knows "xiaohongshu" is a valid source type.
+        # 注册小红书 adapter —— 内容通过扩展的 API 端点
+        # （POST /api/sources/xhs/observed-urls）进入池，而非通过
+        # adapter.fetch()。adapter 是一个 stub，使注册表知道
+        # "xiaohongshu" 是有效的源类型。
         from openbiliclaw.sources.xiaohongshu_adapter import XiaohongshuAdapter
 
         xiaohongshu_adapter = XiaohongshuAdapter()
         new_discovery_engine.register_adapter(xiaohongshu_adapter)
 
-        # Register X (Twitter) adapter — server-side cookie replay, like
-        # Bilibili / Douyin-direct (a real fetch(), NOT an extension stub).
-        # Gated on [sources.twitter].enabled. The branch is the ONLY place
-        # twitter_cli / x_client are imported, so non-X installs (where the
-        # optional ``openbiliclaw[x]`` extra is absent) never touch them.
+        # 注册 X (Twitter) adapter —— 服务端 cookie replay，类似
+        # Bilibili / 抖音-direct（真实的 fetch()，不是 extension stub）。
+        # 受 [sources.twitter].enabled 门控。该分支是 twitter_cli /
+        # x_client 被导入的唯一位置，因此未安装 X 的环境（缺少可选的
+        # ``openbiliclaw[x]`` extra）永远不会触碰它们。
         twitter_cfg = getattr(getattr(new_config, "sources", None), "twitter", None)
         if twitter_cfg is not None and bool(getattr(twitter_cfg, "enabled", False)):
             from openbiliclaw.discovery.strategies.x import (
@@ -632,20 +622,20 @@ class RuntimeContext:
                 (_xhs_self_info_provider() or {}).get("nickname", "") or ""
             ).strip(),
         )
-        # P1.7: unified keyword planner FETCH coordinator — claim-from-store +
-        # word-lifecycle helper shared by the 5 search fetch sites (4 producers
-        # + the B站 search path in the controller). Holds the keyword-store DAO
-        # (the database) + discovery config (the flag + ``fetch_batch``). With
-        # the flag off (default) every site's ``should_claim`` returns False, so
-        # wiring it in is zero behavior change.
+        # P1.7：统一关键词规划器 FETCH 协调器 —— claim-from-store +
+        # word-lifecycle 助手，被 5 个搜索 fetch 站点共享（4 个 producer
+        # + controller 中的 B站 search 路径）。持有 keyword-store DAO
+        # （即 database）+ discovery config（flag + ``fetch_batch``）。
+        # flag 关闭（默认）时每个站点的 ``should_claim`` 都返回 False，
+        # 因此接入它是零行为变更。
         from openbiliclaw.config import DiscoveryConfig
         from openbiliclaw.runtime.keyword_fetch import KeywordFetchCoordinator
 
         new_keyword_fetch = KeywordFetchCoordinator(
             database=self.database,
-            # Real ``Config`` always carries ``discovery`` (a dataclass field);
-            # lightweight test stubs (SimpleNamespace) may not — fall back to the
-            # default (flag off) so the coordinator stays inert.
+            # 真实 ``Config`` 始终携带 ``discovery``（一个 dataclass 字段）；
+            # 轻量测试 stub（SimpleNamespace）可能不携带 —— 回退到
+            # 默认值（flag 关闭）以使 coordinator 保持 inert。
             discovery_config=discovery_cfg or DiscoveryConfig(),
         )
 
@@ -724,9 +714,9 @@ class RuntimeContext:
                 concurrency=concurrency,
                 keyword_fetch=new_keyword_fetch,
             )
-            # X (Twitter) producer — fetch-only; enqueues into discovery_candidates
-            # and never evaluates / writes content_cache (unified-pool spec). Gated
-            # on [sources.twitter].enabled; the disabled path imports no twitter_cli.
+            # X (Twitter) producer —— 仅 fetch；入队到 discovery_candidates
+            # 且从不 evaluate / 写 content_cache（unified-pool spec）。
+            # 受 [sources.twitter].enabled 门控；禁用路径不导入 twitter_cli。
             from openbiliclaw.runtime.x_producer import build_x_discovery_producer
 
             new_x_producer = build_x_discovery_producer(
@@ -753,12 +743,11 @@ class RuntimeContext:
                 kick=_kick_zhihu_extension,
             )
 
-        # P1.6: unified keyword planner — deficit-pulled merged keyword
-        # generation. Built as its OWN object (the controller has no
-        # llm_service field) holding llm_service + database + config, then
-        # passed to the controller, which launches its loop in run_forever and
-        # injects its own deficit / catalyst口径. Flag-off (default) → the loop
-        # no-ops → zero behavior change.
+        # P1.6：统一关键词规划器 —— deficit-pulled 合并关键词生成。
+        # 作为独立对象构建（controller 没有 llm_service 字段），持有
+        # llm_service + database + config，然后传给 controller，后者在
+        # run_forever 中启动循环并注入自己的 deficit / catalyst 口径。
+        # flag 关闭（默认）→ 循环 no-op → 零行为变更。
         from openbiliclaw.runtime.keyword_planner import KeywordPlanner
 
         new_keyword_planner = KeywordPlanner(
@@ -801,9 +790,9 @@ class RuntimeContext:
             zhihu_producer=new_zhihu_producer,
             scheduler_config=new_config.scheduler,
             presence=self.presence,
-            # gui-init D1: pause the controller's background loops while a guided
-            # init is active (account_sync already gates on the same predicate).
-            # init's own run_init_backfill bypasses _llm_work_allowed.
+            # gui-init D1：当 guided init 活跃时暂停 controller 的后台循环
+            # （account_sync 已基于同一谓词门控）。
+            # init 自身的 run_init_backfill 绕过 _llm_work_allowed。
             init_active_check=lambda: self.init_coordinator.init_active(),
             task_registry=self.task_registry,
         )
@@ -832,6 +821,7 @@ class RuntimeContext:
 
         # 11. Auto-update service
         try:
+
             new_auto_update = AutoUpdateService(
                 enabled=new_config.scheduler.auto_update_enabled,
                 check_interval_hours=new_config.scheduler.auto_update_check_interval_hours,
@@ -845,16 +835,15 @@ class RuntimeContext:
                 event_publisher=getattr(self.event_hub, "publish", None),
             )
 
-        # Carry the last update-check result forward so a config save (which
-        # rebuilds this service) doesn't reset the settings page from "发现新版本"
-        # back to "尚未检查更新" until the next scheduled check.
+        # 保留上一次 update-check 结果 —— 配置保存（会重建此 service）不应
+        # 让设置页从"发现新版本"回退到"尚未检查更新"，直到下一次定时检查。
         old_auto_update = getattr(self, "auto_update_service", None)
         if old_auto_update is not None:
             with suppress(Exception):
                 new_auto_update.adopt_status_from(old_auto_update)
 
-        # ── Atomic swap ─────────────────────────────────────────────
-        # All construction succeeded → assign attributes.
+        # ── 原子交换 ─────────────────────────────────────────────
+        # 所有构造均成功 → 赋值属性。
         self.config = new_config
         self.llm_registry = new_registry
         self.llm_service = new_llm_service
@@ -866,12 +855,11 @@ class RuntimeContext:
         self.runtime_controller = new_runtime_controller
         self.account_sync_service = new_account_sync
         self.auto_update_service = new_auto_update
-        # Drop the cached init prerequisite probes (chat/bilibili) — config or
-        # cookie just changed, so the next /api/init pre-flight must re-probe
-        # against the new provider/cookie instead of a stale TTL value (gui-init
-        # review). The InitCoordinator is intentionally NOT reset: it holds the
-        # current run handle and reads ctx components lazily, so it survives a
-        # rebuild (rebuild also excludes the guided_init task from cancellation).
+        # 丢弃缓存的 init 前置探针（chat/bilibili）—— 配置或 cookie 刚刚
+        # 变更，因此下一次 /api/init 预检必须重新探针新的 provider/cookie，
+        # 而不是使用陈旧的 TTL 值（gui-init review）。InitCoordinator 故意
+        # 不重置：它持有当前 run handle 并懒读取 ctx 组件，因此它在 rebuild
+        # 中存活（rebuild 也会把 guided_init 任务排除在 cancel 之外）。
         self._init_prereqs = None
 
         logger.info(
@@ -885,8 +873,8 @@ class RuntimeContext:
         *,
         run_post_reload_llm_work: bool = True,
     ) -> None:
-        """Cancel old background tasks and start new ones from current components."""
-        # Cancel existing tasks
+        """取消旧的后台任务，从当前组件启动新任务。"""
+        # 取消已存在的任务
         for attr in ("refresh_task", "account_sync_task", "auto_update_task"):
             task = getattr(app.state, attr, None)
             if task is not None:
@@ -894,9 +882,9 @@ class RuntimeContext:
                 with suppress(asyncio.CancelledError):
                     await task
 
-        # Start new tasks from the freshly-built components.
-        # v0.3.63+: route through ``self.task_registry.track`` so the
-        # next hot-reload's ``cancel_all`` cleanly stops them too.
+        # 从刚构建好的组件启动新任务。
+        # v0.3.63+：通过 ``self.task_registry.track`` 路由，使下一次热重载的
+        # ``cancel_all`` 也能干净地停止它们。
         if run_post_reload_llm_work:
             run_forever = getattr(self.runtime_controller, "run_forever", None)
             app.state.refresh_task = (
@@ -924,7 +912,7 @@ class RuntimeContext:
 
         llm_work_allowed = run_post_reload_llm_work and self.background_llm_work_allowed()
 
-        # Kick speculators to seed speculative interests / avoidances
+        # 触发 speculator 以播种 speculative interests / avoidances
         if self.soul_engine is not None and llm_work_allowed:
             try:
                 profile = await self.soul_engine.get_profile()
@@ -971,15 +959,15 @@ class RuntimeContext:
                     )
                     logger.debug("post-reload avoidance speculator scheduled as background task")
 
-                # v0.3.124+ (lever 2a): the cancel_all in rebuild_from_config
-                # also killed any in-flight classify_pool_backlog /
-                # precompute_pool_copy / delight scoring. Without a re-kick a
-                # user saving config mid-cold-start strands pool-fill until
-                # the next 60s refresh tick — or indefinitely if they keep
-                # saving. Re-kick the classify→copy→delight drain on the
-                # freshly-built engine so pool-fill resumes immediately.
-                # precompute_pool_copy spawns classify + delight detached
-                # internally, so one call restarts the whole trio.
+                # v0.3.124+（lever 2a）：rebuild_from_config 中的 cancel_all
+                # 也会杀掉任何 in-flight 的 classify_pool_backlog /
+                # precompute_pool_copy / delight scoring。如果不 re-kick，
+                # 用户在冷启动中途保存配置会把 pool-fill 卡住，直到下一次
+                # 60s refresh tick —— 或者如果用户持续保存则无限卡住。
+                # 在刚构建好的 engine 上 re-kick classify→copy→delight drain，
+                # 使 pool-fill 立即恢复。
+                # precompute_pool_copy 内部 detached 派生 classify + delight，
+                # 因此一次调用即可重启整个三件套。
                 precompute = getattr(self.recommendation_engine, "precompute_pool_copy", None)
                 if callable(precompute):
                     self.task_registry.track(
@@ -988,13 +976,12 @@ class RuntimeContext:
                     )
                     logger.debug("post-reload classify/copy drain scheduled as background task")
             except Exception:
-                pass  # Profile not initialized yet — skip silently
+                pass  # profile 尚未初始化 —— 静默跳过
 
-        # v0.3.45+: warm the recommendation MMR embedding L2 cache for
-        # the existing pool. The per-item warm hooks only catch items
-        # added *after* this code lands; without a startup pass, the
-        # first popup "换一批" pays a cold-fetch ~10-60s on day-1 of a
-        # deploy. Detached so we don't block API readiness.
+        # v0.3.45+：为现有 pool 预热 recommendation MMR embedding L2 缓存。
+        # per-item warm hook 只能捕获在此代码上线*之后*新增的 item；
+        # 如果不做启动扫描，部署第 1 天首次弹窗"换一批"会冷抓 ~10-60s。
+        # detached 执行，不阻塞 API 就绪。
         prewarm_pool = getattr(self.recommendation_engine, "prewarm_pool_mmr_embeddings", None)
         if callable(prewarm_pool) and llm_work_allowed:
             self.task_registry.track(
@@ -1015,7 +1002,7 @@ class RuntimeContext:
         feedback_history_key: str,
         memory_manager: Any,
     ) -> None:
-        """Run post-reload speculation without blocking config PUT."""
+        """执行 post-reload speculation，不阻塞配置 PUT。"""
         load_runtime_state = getattr(memory_manager, "load_discovery_runtime_state", None)
 
         def _load_feedback_history() -> object:
@@ -1046,15 +1033,14 @@ class RuntimeContext:
 
     @staticmethod
     async def _safe_post_reload_precompute(precompute_callable: Any, profile: Any) -> None:
-        """Re-kick the classify→copy→delight drain after a hot-reload.
+        """在热重载后重新触发 classify→copy→delight drain。
 
-        ``rebuild_from_config``'s ``cancel_all`` stops any in-flight
-        classify_pool_backlog / precompute_pool_copy / delight scoring (they
-        hold references to the now-swapped-out engine). One
-        ``precompute_pool_copy`` call restarts the whole trio on the fresh
-        engine — its own ``_expression_lock`` keeps it from racing the
-        refresh loop's periodic drain, which remains the backstop. Failures
-        are logged, not fatal to the config PUT.
+        ``rebuild_from_config`` 的 ``cancel_all`` 会停止任何 in-flight 的
+        classify_pool_backlog / precompute_pool_copy / delight scoring（它们
+        持有现已换出的 engine 的引用）。一次 ``precompute_pool_copy`` 调用
+        即可在新 engine 上重启整个三件套 —— 它自己的 ``_expression_lock``
+        防止其与 refresh loop 的周期性 drain 竞争，后者仍是兜底。失败
+        会被记录日志，对配置 PUT 不是致命的。
         """
         try:
             await precompute_callable(profile=profile)
@@ -1063,27 +1049,23 @@ class RuntimeContext:
 
     @staticmethod
     async def _safe_prewarm_pool_mmr_embeddings(prewarm_callable: Any) -> None:
-        """Run startup MMR prewarm with retry-on-low-coverage.
+        """执行启动 MMR 预热，并在覆盖率低时重试。
 
-        v0.3.54+: production logs (2026-05-05) showed
-        ``MMR embedding fetch: coverage=0/40`` for 31 minutes after
-        daemon start — Ollama was 502'ing during the prewarm window
-        and the single-shot startup task gave up. Loop with
-        exponential backoff so a slow Ollama warmup doesn't lock the
-        cache cold for half an hour. Stops after 5 attempts (≈31s)
-        OR when prewarm returns >0 (i.e. some embeddings landed).
-        Failures swallowed silently so pool MMR cache lazy-fills via
-        normal traffic if all 5 attempts truly fail.
+        v0.3.54+：生产日志（2026-05-05）显示 daemon 启动后
+        ``MMR embedding fetch: coverage=0/40`` 持续了 31 分钟 ——
+        Ollama 在预热窗口期间 502，单次启动任务直接放弃。改用
+        指数退避循环，使慢速 Ollama warmup 不会把缓存锁死半小时。
+        5 次尝试（≈31s）后停止，或当预热返回 >0（即一些 embedding
+        已落地）时停止。失败被静默吞掉，因此如果 5 次尝试真的全
+        失败，pool MMR 缓存会通过正常流量懒填充。
 
-        v0.3.124+ (lever 4): the retry loop only makes sense when there
-        is something to warm but it failed (backend warming up / down).
-        ``prewarm`` now returns ``-1`` when there is simply nothing to
-        warm yet (empty pool / no embedding service) — a benign cold
-        start, not a failure — so we log it plainly and stop instead of
-        burning 5 alarming "warmed=0 — retry" lines on every fresh deploy
-        (which read identically to a real Ollama outage). ``0`` with
-        candidates present is the genuine "backend unreachable" case and
-        keeps the retry-then-warn behaviour.
+        v0.3.124+（lever 4）：重试循环只在"有东西可预热但失败了"
+        （后端 warming up / down）时才有意义。``prewarm`` 现在当
+        没东西可预热（空 pool / 无 embedding service）时返回 ``-1``
+        —— 良性冷启动，非失败 —— 因此我们仅平淡记录并停止，而不是
+        在每次全新部署上烧 5 行刺眼的"warmed=0 — retry"日志（这些
+        日志与真实 Ollama 故障读起来一模一样）。``0`` 且有候选项存在
+        才是真正的"后端不可达"场景，保留 retry-then-warn 行为。
         """
         delay = 2.0
         for attempt in range(1, 6):
@@ -1093,8 +1075,8 @@ class RuntimeContext:
                     if warmed > 0:
                         return
                     if warmed < 0:
-                        # Nothing to warm yet — benign cold start; retrying
-                        # won't help (the cache lazy-fills as the pool fills).
+                        # 暂无东西可预热 —— 良性冷启动；重试无意义
+                        # （缓存会随 pool 填充懒加载）。
                         logger.info(
                             "Startup prewarm_pool_mmr_embeddings: nothing to warm yet "
                             "(empty pool or embedding service off) — skipping retries; "
@@ -1133,37 +1115,36 @@ def build_runtime_context(
     database: Any | None = None,
     event_hub: Any | None = None,
 ) -> RuntimeContext:
-    """Construct a fully-wired ``RuntimeContext`` from a ``Config``.
+    """根据 ``Config`` 构造一个完整接线的 ``RuntimeContext``。
 
-    Stable components (``database``, ``memory_manager``, ``event_hub``)
-    are created here if not supplied.  All swappable components are built
-    by delegating to ``RuntimeContext.rebuild_from_config``.
+    稳定组件（``database``、``memory_manager``、``event_hub``）在未提供时
+    在此创建。所有可交换组件通过委托给 ``RuntimeContext.rebuild_from_config``
+    构建。
     """
     from openbiliclaw.memory.manager import MemoryManager
     from openbiliclaw.runtime.events import RuntimeEventHub
     from openbiliclaw.storage.database import Database
 
-    # ── Stable components ───────────────────────────────────────────
+    # ── 稳定组件 ───────────────────────────────────────────
     created_runtime_database = False
     if database is None:
         database = Database(config.data_path / "openbiliclaw.db")
         database.initialize()
         created_runtime_database = True
     if memory_manager is None:
-        # Only share the database handle with memory_manager when WE created
-        # it — matches the original create_app() contract that callers who
-        # inject their own database don't expect it to be shared.
+        # 只有当数据库 handle 是我们自己创建时，才与 memory_manager 共享
+        # —— 与原始 create_app() 契约一致：注入自己的 database 的调用方
+        # 不期望它被共享。
         shared_database = database if created_runtime_database else None
         memory_manager = MemoryManager(config.data_path, database=shared_database)
         memory_manager.initialize()
     if event_hub is None:
         event_hub = RuntimeEventHub()
 
-    # Wire the soul-layer change callback so any code path that updates
-    # the profile (init, cognition cycle, dialogue ingestion, manual
-    # rebuild …) automatically broadcasts a ``profile_updated`` event
-    # over the WebSocket. The popup listens and re-fetches without
-    # requiring a manual ``init_completed`` poke.
+    # 接通 soul-layer 变更回调，使任何更新 profile 的代码路径
+    # （init、cognition cycle、dialogue ingestion、manual rebuild ……）
+    # 自动通过 WebSocket 广播 ``profile_updated`` 事件。弹窗监听并
+    # 重新拉取，无需手动 ``init_completed`` 戳一下。
     setter = getattr(memory_manager, "set_profile_change_callback", None)
     if callable(setter):
 
@@ -1187,10 +1168,10 @@ def build_runtime_context(
         event_hub=event_hub,
     )
 
-    # Build all swappable components via the same path used for hot-reload.
-    # ``_rebuild_components`` is the sync portion shared with
-    # ``rebuild_from_config``; the async wrapper's ``cancel_all`` is a
-    # no-op here because the registry was just created and is empty.
+    # 通过与热重载相同的路径构建所有可交换组件。
+    # ``_rebuild_components`` 是与 ``rebuild_from_config`` 共享的同步部分；
+    # async wrapper 的 ``cancel_all`` 在这里是 no-op，因为注册表刚创建
+    # 且为空。
     ctx._rebuild_components(config)
     return ctx
 
@@ -1203,11 +1184,10 @@ def build_degraded_runtime_context(
     event_hub: Any | None = None,
     exc: Exception | None = None,
 ) -> RuntimeContext:
-    """Construct a minimal context that can serve config recovery endpoints.
+    """构造一个能服务 config recovery 端点的最小 context。
 
-    ``build_runtime_context`` intentionally stays strict. This degraded
-    constructor is used only by FastAPI startup after registry construction
-    fails, so the popup can still read and repair config.toml.
+    ``build_runtime_context`` 故意保持严格。此降级构造器仅由 FastAPI 启动
+    在 registry 构造失败后使用，使弹窗仍能读取并修复 config.toml。
     """
     from openbiliclaw.config import ConfigIssue
     from openbiliclaw.memory.manager import MemoryManager
@@ -1244,10 +1224,9 @@ def build_degraded_runtime_context(
 
         setter(_on_profile_changed)
 
-    # Keep update check / apply available in degraded mode — a backend that
-    # can't build its LLM registry is exactly when the user may want to pull a
-    # fix-carrying release. Construction is cheap and network-free; never let it
-    # break the degraded recovery context.
+    # 在降级模式下保留 update check / apply —— 一个无法构建 LLM registry
+    # 的后端正是用户可能想拉取携带修复的 release 的时候。构造廉价且不
+    # 联网；绝不让它破坏降级 recovery context。
     degraded_auto_update: AutoUpdateService | None = None
     with suppress(Exception):
         degraded_auto_update = AutoUpdateService(

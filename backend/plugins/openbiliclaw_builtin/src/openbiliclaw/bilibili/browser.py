@@ -1,8 +1,8 @@
-"""Bilibili Browser automation via agent-browser.
+"""通过 agent-browser 实现 Bilibili 浏览器自动化。
 
-Provides browser-based interaction with Bilibili for operations
-that the API doesn't support or where visual context is needed.
-Uses Vercel's agent-browser CLI: https://github.com/vercel-labs/agent-browser
+为 API 不支持或需要视觉上下文的操作提供基于浏览器的
+Bilibili 交互能力。使用 Vercel 的 agent-browser CLI：
+https://github.com/vercel-labs/agent-browser
 """
 
 from __future__ import annotations
@@ -20,18 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class BrowserCommandError(RuntimeError):
-    """Raised when agent-browser returns a failing status."""
+    """当 agent-browser 返回失败状态时抛出。"""
 
 
 class BilibiliBrowser:
-    """Browser automation interface using agent-browser.
+    """使用 agent-browser 的浏览器自动化接口。
 
-    This is the secondary access layer, used when:
-    - The API doesn't cover a needed operation
-    - Visual context (DOM, screenshots) is needed
-    - Complex page interactions are required
+    这是次级访问层，用于以下场景：
+    - API 不覆盖某个所需操作
+    - 需要视觉上下文（DOM、截图）
+    - 需要复杂页面交互
 
-    Requires agent-browser to be installed:
+    需要先安装 agent-browser：
         npm install -g agent-browser
         agent-browser install
     """
@@ -49,7 +49,7 @@ class BilibiliBrowser:
 
     @staticmethod
     def _find_executable() -> str:
-        """Find the agent-browser executable."""
+        """查找 agent-browser 可执行文件。"""
         path = shutil.which("agent-browser")
         if path:
             return path
@@ -57,7 +57,7 @@ class BilibiliBrowser:
 
     @staticmethod
     def get_install_hint() -> str:
-        """Return the official agent-browser installation hint."""
+        """返回官方的 agent-browser 安装提示。"""
         return (
             "未检测到 agent-browser。请先执行 "
             "`npm install -g agent-browser`，然后执行 "
@@ -66,7 +66,7 @@ class BilibiliBrowser:
 
     @staticmethod
     def _has_executable(executable: str) -> bool:
-        """Check whether the configured executable is available."""
+        """检查配置的可执行文件是否可用。"""
         executable_path = Path(executable)
         if executable_path.is_absolute() or "/" in executable:
             if not (executable_path.exists() and executable_path.is_file()):
@@ -89,22 +89,22 @@ class BilibiliBrowser:
 
     @property
     def is_available(self) -> bool:
-        """Check if agent-browser is available."""
+        """检查 agent-browser 是否可用。"""
         return self._has_executable(self._executable)
 
     @property
     def executable(self) -> str:
-        """Return the resolved executable name or path."""
+        """返回解析后的可执行文件名或路径。"""
         return self._executable
 
     async def _run_command(self, *args: str) -> dict[str, Any]:
-        """Execute an agent-browser command and return the result.
+        """执行一个 agent-browser 命令并返回结果。
 
         Args:
-            *args: Command arguments.
+            *args: 命令参数。
 
         Returns:
-            Parsed JSON output from agent-browser.
+            从 agent-browser 解析出的 JSON 输出。
         """
         cmd = [self._executable, "--session", self._session_name, *args]
         if self._headed:
@@ -131,13 +131,13 @@ class BilibiliBrowser:
             return {"output": stdout.decode()}
 
     async def navigate(self, url: str) -> dict[str, Any]:
-        """Navigate to a URL.
+        """导航到指定 URL。
 
         Args:
-            url: Target URL.
+            url: 目标 URL。
 
         Returns:
-            Page info.
+            页面信息。
         """
         try:
             return await self._run_command("open", url)
@@ -147,13 +147,13 @@ class BilibiliBrowser:
         return await self._run_command("open", url)
 
     async def get_page_content(self, url: str) -> str:
-        """Get the text content of a page.
+        """获取页面的文本内容。
 
         Args:
-            url: Target URL.
+            url: 目标 URL。
 
         Returns:
-            Page text content.
+            页面文本内容。
         """
         await self.navigate(url)
         snapshot = await self._run_command("snapshot", "-i", "--json")
@@ -161,7 +161,7 @@ class BilibiliBrowser:
 
     @staticmethod
     def _extract_snapshot_text(result: dict[str, Any]) -> str:
-        """Extract visible page text from a snapshot payload."""
+        """从快照载荷中提取可见页面文本。"""
         data = result.get("data")
         if isinstance(data, dict):
             snapshot = data.get("snapshot")
@@ -178,20 +178,20 @@ class BilibiliBrowser:
         raise BrowserCommandError("agent-browser returned no readable snapshot content")
 
     async def screenshot(self, url: str, output_path: str) -> str:
-        """Take a screenshot of a page.
+        """对页面截图。
 
         Args:
-            url: Target URL.
-            output_path: Where to save the screenshot.
+            url: 目标 URL。
+            output_path: 截图保存路径。
 
         Returns:
-            Path to the saved screenshot.
+            已保存截图的路径。
         """
         result = await self._run_command("screenshot", url, "-o", output_path)
         return str(result.get("output", output_path))
 
     async def close(self) -> None:
-        """Close any active browser sessions."""
+        """关闭所有活跃的浏览器会话。"""
         try:
             await self._run_command("close")
         except Exception:

@@ -1,7 +1,7 @@
-"""Per-layer update functions for the ProfileUpdatePipeline.
+"""ProfileUpdatePipeline 的各层更新函数。
 
-Each layer has its own update logic: Surface uses computation, Interest
-delegates to PreferenceAnalyzer, Role/Values/Core use LLM with diff protection.
+每一层有自己的更新逻辑：Surface 用计算，Interest 委托给
+PreferenceAnalyzer，Role/Values/Core 用 LLM 并带 diff 保护。
 """
 
 from __future__ import annotations
@@ -55,7 +55,6 @@ def _string_list(value: object) -> list[str]:
             result.append(text)
     return result
 
-
 def _string_set(value: object) -> set[str]:
     return set(_string_list(value))
 
@@ -79,7 +78,7 @@ async def update_layer(
     embedding_service: Any | None = None,
     llm_service: Any | None = None,
 ) -> LayerUpdateResult:
-    """Dispatch to the appropriate layer updater."""
+    """分派到对应的层更新器。"""
     updater: LayerUpdater | None = _LAYER_UPDATERS.get(layer)
     if updater is None:
         return LayerUpdateResult(layer=layer, changed=False)
@@ -95,7 +94,7 @@ async def update_layer(
 
 
 # ---------------------------------------------------------------------------
-# Surface layer — computational, no LLM
+# Surface 层 —— 纯计算，无 LLM
 # ---------------------------------------------------------------------------
 
 
@@ -105,10 +104,10 @@ async def _update_surface(
     profile: OnionProfile,
     **_: Any,
 ) -> LayerUpdateResult:
-    """Update surface layer from behavioral signals using pure computation."""
+    """用纯计算从行为信号更新 surface 层。"""
     changes: list[str] = []
 
-    # Count event types for style inference
+    # 统计事件类型以推断风格
     view_count = 0
     search_count = 0
     for sig in signals:
@@ -120,10 +119,10 @@ async def _update_surface(
             elif event_type == "search":
                 search_count += 1
 
-    # If we have enough behavioral data, adjust depth preference
+    # 行为数据足够时，调整深度偏好
     if view_count >= 2:
         old_depth = profile.surface.style.depth_preference
-        # More search events relative to views suggests deeper engagement
+        # 相对观看更多的搜索事件意味着更深度的参与
         depth_signal = min(1.0, 0.5 + (search_count / max(view_count, 1)) * 0.3)
         new_depth = round(old_depth * 0.7 + depth_signal * 0.3, 2)
         if abs(new_depth - old_depth) > 0.05:
@@ -142,7 +141,7 @@ async def _update_surface(
 
 
 # ---------------------------------------------------------------------------
-# Interest layer — LLM + tree merge
+# Interest 层 —— LLM + 树合并
 # ---------------------------------------------------------------------------
 
 
@@ -156,8 +155,8 @@ async def _update_interest(
     llm_service: Any | None = None,
     **_: Any,
 ) -> LayerUpdateResult:
-    """Update interest layer by delegating to PreferenceAnalyzer."""
-    # Convert signals back to event format for PreferenceAnalyzer
+    """通过委托给 PreferenceAnalyzer 更新 interest 层。"""
+    # 把信号转回 PreferenceAnalyzer 用的事件格式
     events: list[dict[str, Any]] = []
     for sig in signals:
         payload = sig.get("payload", {})
@@ -181,20 +180,20 @@ async def _update_interest(
         logger.exception("PreferenceAnalyzer failed during interest update")
         return LayerUpdateResult(layer=OnionLayer.INTEREST, changed=False)
 
-    # Persist flat preference (unchanged pipeline)
+    # 持久化扁平 preference（pipeline 不变）
     preference_layer.data.clear()
     preference_layer.data.update(updated_preference)
     preference_layer.save()
 
-    # Update the onion interest + surface layers from flat preference
+    # 从扁平 preference 更新 onion 的 interest + surface 层
     profile.populate_from_flat_preference(updated_preference)
 
-    # Sync cognitive_style (not modeled in PreferenceLayer, bypasses populate)
+    # 同步 cognitive_style（PreferenceLayer 不建模，绕过 populate）
     cs = updated_preference.get("cognitive_style")
     if isinstance(cs, list):
         profile.surface.cognitive_style = [str(s) for s in cs if s]
 
-    # Detect changes
+    # 检测变化
     changes: list[str] = []
     old_interests = {
         str(item.get("name", "")).strip(): _coerce_float(item.get("weight", 0))
@@ -232,7 +231,7 @@ async def _update_interest(
             )
         )
 
-    # Feed speculative_interests to speculator as seed candidates
+    # 把 speculative_interests 喂给 speculator 作为种子候选
     speculative_seeds = updated_preference.get("speculative_interests")
     if isinstance(speculative_seeds, list) and speculative_seeds:
         try:
@@ -274,7 +273,7 @@ async def _update_interest(
 
 
 # ---------------------------------------------------------------------------
-# Role layer — LLM with diff protection
+# Role 层 —— LLM + diff 保护
 # ---------------------------------------------------------------------------
 
 
@@ -286,11 +285,11 @@ async def _update_role(
     profile_builder: ProfileBuilder,
     **_: Any,
 ) -> LayerUpdateResult:
-    """Update role layer (life_stage, current_phase) from accumulated signals.
+    """从累积信号更新 role 层（life_stage、current_phase）。
 
-    Uses LLM with diff-protection: only apply if LLM explicitly proposes change.
+    使用带 diff 保护的 LLM：仅当 LLM 显式提出变更时才应用。
     """
-    # Collect evidence from signals
+    # 从信号里收集证据
     evidence_parts: list[str] = []
     for sig in signals:
         payload = sig.get("payload", {})
@@ -362,7 +361,7 @@ async def _update_role(
 
 
 # ---------------------------------------------------------------------------
-# Values layer — LLM with delta-only updates
+# Values 层 —— LLM + 仅 delta 更新
 # ---------------------------------------------------------------------------
 
 
@@ -373,7 +372,7 @@ async def _update_values(
     profile_builder: ProfileBuilder,
     **_: Any,
 ) -> LayerUpdateResult:
-    """Update values layer using LLM delta (add/remove, max 1 per cycle)."""
+    """用 LLM delta（增/删，每周期最多 1 条）更新 values 层。"""
     evidence_parts: list[str] = []
     for sig in signals:
         payload = sig.get("payload", {})
@@ -389,7 +388,7 @@ async def _update_values(
     if not evidence_parts:
         return LayerUpdateResult(layer=OnionLayer.VALUES, changed=False)
 
-    # Inject profile context so LLM can connect evidence to user's life situation
+    # 注入画像上下文，让 LLM 把证据与用户的生活处境联系起来
     ctx_parts: list[str] = []
     if profile.role.life_stage:
         ctx_parts.append(f"生活阶段: {profile.role.life_stage}")
@@ -475,7 +474,7 @@ async def _update_values(
 
 
 # ---------------------------------------------------------------------------
-# Core layer — LLM with strongest diff protection
+# Core 层 —— LLM + 最强 diff 保护
 # ---------------------------------------------------------------------------
 
 
@@ -486,7 +485,7 @@ async def _update_core(
     profile_builder: ProfileBuilder,
     **_: Any,
 ) -> LayerUpdateResult:
-    """Update core layer (traits, needs, MBTI) with strong diff protection."""
+    """用强 diff 保护更新 core 层（特质、需求、MBTI）。"""
     evidence_parts: list[str] = []
     for sig in signals:
         payload = sig.get("payload", {})
@@ -567,7 +566,7 @@ async def _update_core(
             if removed:
                 changes.append(f"移除需求: {', '.join(removed)}")
 
-        # MBTI update (very rare)
+        # MBTI 更新（极罕见）
         new_mbti = result.get("mbti")
         if isinstance(new_mbti, dict) and new_mbti.get("type"):
             from openbiliclaw.soul.profile import MBTI, MBTIDimension
@@ -603,7 +602,7 @@ async def _update_core(
 
 
 # ---------------------------------------------------------------------------
-# Portrait regeneration
+# 画像重生成
 # ---------------------------------------------------------------------------
 
 
@@ -613,10 +612,10 @@ async def regenerate_portrait(
     profile_builder: ProfileBuilder,
     memory: MemoryManager,
 ) -> str:
-    """Regenerate personality_portrait from current profile state.
+    """从当前画像状态重生成 personality_portrait。
 
-    Only called when Core or Values layer actually changes.
-    Returns the new portrait text, or empty string on failure.
+    仅在 Core 或 Values 层真正变化时调用。返回新的画像文本，
+    失败时返回空字符串。
     """
     from .profile import awareness_note_to_dict, insight_hypothesis_to_dict
 
@@ -624,7 +623,7 @@ async def regenerate_portrait(
         legacy_profile = await profile_builder.build(
             history=[],
             preference=memory.get_layer("preference").data,
-            # Both windows are chronological oldest→newest; take the tail.
+            # 两个窗口都按时间最旧→最新排列；取尾部。
             awareness_notes=[awareness_note_to_dict(n) for n in profile.recent_awareness[-5:]],
             active_insights=[insight_hypothesis_to_dict(i) for i in profile.active_insights[-5:]],
         )
@@ -635,7 +634,7 @@ async def regenerate_portrait(
 
 
 # ---------------------------------------------------------------------------
-# Updater dispatch table
+# 更新器分派表
 # ---------------------------------------------------------------------------
 
 _LAYER_UPDATERS: dict[OnionLayer, LayerUpdater] = {

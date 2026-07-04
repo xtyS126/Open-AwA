@@ -1,4 +1,4 @@
-"""Trending/ranking content discovery strategy."""
+"""热门/排行内容发现策略。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TrendingStrategy(DiscoveryStrategy):
-    """Discover content from trending/ranking pages."""
+    """从热门/排行页面发现内容。"""
 
     bilibili_client: SupportsRankingClient
     llm_service: SupportsStructuredTask
@@ -51,7 +51,7 @@ class TrendingStrategy(DiscoveryStrategy):
     score_threshold: float = 0.60
     llm_evaluation: bool = True
     max_related_rids: int = 4
-    # Broader default RIDs covering more top-level categories:
+    # 覆盖更多顶级分区的更广默认 RID:
     # 36=科技, 188=资讯, 181=影视, 119=纪录片, 3=音乐, 129=舞蹈, 4=游戏, 160=生活
     default_rids: tuple[int, ...] = (36, 188, 181, 119, 3, 129, 4, 160)
     rid_cache_ttl_seconds: float = 6 * 60 * 60
@@ -60,7 +60,7 @@ class TrendingStrategy(DiscoveryStrategy):
         init=False,
         repr=False,
     )
-    # Mapping from Bilibili ranking rid to semantic topic category
+    # Bilibili 排行 rid 到语义主题分类的映射
     RID_TO_TOPIC: dict[int, str] = field(
         default_factory=lambda: {
             0: "综合热门",
@@ -104,14 +104,14 @@ class TrendingStrategy(DiscoveryStrategy):
         )
 
     async def discover(self, profile: SoulProfile, limit: int = 20) -> list[DiscoveredContent]:
-        """Scan trending and ranking content, filter by soul relevance.
+        """扫描热门和排行内容,按 soul 相关性过滤。
 
         Args:
-            profile: User soul profile.
-            limit: Maximum results.
+            profile: 用户 soul profile。
+            limit: 最大结果数。
 
         Returns:
-            Discovered content list.
+            发现的内容列表。
         """
         evaluator = ContentDiscoveryEngine(
             llm_service=self.llm_service,
@@ -154,10 +154,10 @@ class TrendingStrategy(DiscoveryStrategy):
                 bucket.append(content)
             per_rid.append(bucket)
 
-        # Round-robin interleave so the downstream eval hard-cap (30) gives
-        # each rid roughly equal representation. Without this, the rid=0
-        # bucket (always first) consumes the entire eval window when it has
-        # 100+ ranking entries, leaving the other 4 rids unevaluated.
+        # 轮询交错,使下游 eval 硬上限 (30) 给每个 rid
+        # 大致相等的代表性。没有这一步,rid=0
+        # 桶 (始终第一) 在有 100+ 排行条目时会吞掉整个 eval 窗口,
+        # 让其他 4 个 rid 都没被评估。
         candidates: list[DiscoveredContent] = []
         max_depth = max((len(bucket) for bucket in per_rid), default=0)
         for depth in range(max_depth):
@@ -266,7 +266,7 @@ class TrendingStrategy(DiscoveryStrategy):
 
         title = clean_text(str(item.get("title", "")))
         description = clean_text(str(item.get("description", item.get("desc", ""))))
-        # Prefer item's tname (B站分区名), then RID mapping, then tag/title fallback
+        # 优先用 item 的 tname (B站分区名),然后 RID 映射,最后 tag/title 回退
         tname = str(item.get("tname", "")).strip()
         if tname:
             topic_key = re.sub(r"\s+", "", tname).lower()[:16]
@@ -301,13 +301,13 @@ class TrendingStrategy(DiscoveryStrategy):
 
     @staticmethod
     def _infer_topic_key(item: dict[str, object], title: str) -> str:
-        """Infer topic_key from tags or title for ranking items."""
+        """从 tags 或 title 为排行 item 推断 topic_key。"""
         tags = item.get("tags", [])
         if isinstance(tags, list) and tags:
             first_tag = str(tags[0]).strip()
             if first_tag:
                 return re.sub(r"\s+", "", first_tag).lower()[:32]
-        # Fallback: first meaningful segment of title
+        # 回退: title 的第一个有意义分段
         cleaned = re.sub(r"[【】\[\]《》「」\s]+", " ", title).strip()
         parts = cleaned.split()
         if parts:

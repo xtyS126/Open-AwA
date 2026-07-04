@@ -1,4 +1,4 @@
-"""Helpers for writing confirmed speculative interests into the profile."""
+"""把已确认的投机性兴趣回写到画像的辅助函数。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ CONFIRMED_INTEREST_WEIGHTS = {
 
 
 def confirmed_interest_weight(source: str) -> float:
-    """Return the default profile weight for a confirmation source."""
+    """返回某个确认来源的默认画像权重。"""
     return CONFIRMED_INTEREST_WEIGHTS.get(source, CONFIRMED_INTEREST_WEIGHTS["speculated"])
 
 
@@ -36,7 +36,7 @@ def merge_confirmed_interest(
     first_seen: str = "",
     last_seen: str = "",
 ) -> bool:
-    """Merge a confirmed interest into ``profile.interest.likes`` without duplicates."""
+    """把一个已确认的兴趣合并进 ``profile.interest.likes``，去重。"""
     clean_domain = domain.strip()
     if not clean_domain:
         return False

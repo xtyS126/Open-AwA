@@ -1,7 +1,7 @@
-"""Minimal Douyin Web URL signing helpers.
+"""抖音 Web URL 签名辅助函数（最小实现）。
 
-The X-Bogus implementation is adapted from Evil0ctal's
-Douyin_TikTok_Download_API project, licensed under Apache-2.0:
+X-Bogus 实现改编自 Evil0ctal 的 Douyin_TikTok_Download_API 项目，
+遵循 Apache-2.0 协议：
 https://github.com/Evil0ctal/Douyin_TikTok_Download_API
 """
 
@@ -13,7 +13,7 @@ import time
 
 
 class XBogusSigner:
-    """Generate the legacy X-Bogus query parameter for Douyin Web URLs."""
+    """为抖音 Web URL 生成遗留的 X-Bogus 查询参数。"""
 
     def __init__(self, user_agent: str) -> None:
         self._character = "Dkdpgh4ZKsQB80/Mfvw36XI1R25-WUAlEi7NLboqYTOPuzmFjJnryx9HVGcaStCe="
@@ -25,7 +25,7 @@ class XBogusSigner:
         return self._user_agent
 
     def sign(self, url: str) -> str:
-        """Return *url* with an appended ``X-Bogus`` parameter."""
+        """返回追加了 ``X-Bogus`` 参数的 *url*。"""
         ua_md5_array = self._md5_str_to_array(
             self._md5(
                 base64.b64encode(

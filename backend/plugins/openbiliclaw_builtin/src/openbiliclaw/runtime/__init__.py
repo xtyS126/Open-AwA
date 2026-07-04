@@ -1,4 +1,4 @@
-"""Runtime helpers for long-lived local services."""
+"""本地常驻服务的运行时辅助工具。"""
 
 from .account_sync import AccountSyncService
 from .events import RuntimeEventHub

@@ -1,6 +1,6 @@
-"""User Soul Engine — the heart of OpenBiliClaw.
+"""用户灵魂引擎 —— OpenBiliClaw 的核心。
 
-Transforms raw behavioral data into deep, layered understanding of a person.
+把原始行为数据转化为对一个人深度的、分层理解。
 """
 
 from __future__ import annotations
@@ -62,8 +62,8 @@ SOURCE_LABELS = {
     "manual": "手动编辑",
 }
 
-# Human-readable labels for manual-edit cognition summaries, keyed by the
-# editable onion field path / interest polarity.
+# 手动编辑认知摘要的人类可读标签，按可编辑的 onion 字段路径 /
+# 兴趣极性作为键。
 _MANUAL_EDIT_LABELS = {
     "personality_portrait": "人格画像",
     "core.core_traits": "核心特质",
@@ -104,22 +104,21 @@ _FEEDBACK_ANALYSIS_METADATA_KEYS = frozenset(
 
 
 class SoulProfileNotInitializedError(Exception):
-    """Raised when the soul layer has not been initialized yet."""
+    """当灵魂层尚未初始化时抛出。"""
 
 
 class SoulEngine:
-    """Engine for building and maintaining deep user understanding.
+    """构建并维护深度用户理解的引擎。
 
-    The Soul Engine orchestrates the transformation of raw behavioral data
-    through the five-layer memory architecture:
+    灵魂引擎通过五层记忆架构编排原始行为数据的转化：
       Event → Preference → Awareness → Insight → Soul
 
-    It is responsible for:
-    1. Analyzing new behavioral events
-    2. Updating preference patterns
-    3. Writing daily awareness notes
-    4. Generating insight hypotheses
-    5. Maintaining the soul-level personality portrait
+    它负责：
+    1. 分析新的行为事件
+    2. 更新偏好模式
+    3. 写入每日认知笔记
+    4. 生成洞察假设
+    5. 维护灵魂层人格画像
     """
 
     def __init__(
@@ -160,13 +159,12 @@ class SoulEngine:
         self._feedback_batch_lock = asyncio.Lock()
         self._module_overrides = dict(module_overrides or {})
         self._llm_concurrency = llm_concurrency
-        # Pass usage_recorder through so internal LLM calls
-        # (preference / awareness / insight / profile_builder / speculator
-        # / dialogue_insight) appear in the cost ledger with their caller
-        # tags. Without this, the entire ``soul.*`` namespace was
-        # invisible in `openbiliclaw cost --by caller` and bypassed the
-        # empty-content guard in LLMService — speculator failures showed
-        # up as silent "0 new generations" instead of explicit WARNs.
+        # 透传 usage_recorder，让内部 LLM 调用
+        # （preference / awareness / insight / profile_builder / speculator
+        # / dialogue_insight）以各自的 caller 标签出现在成本台账里。
+        # 没有它，整个 ``soul.*`` 命名空间在 `openbiliclaw cost --by caller`
+        # 中不可见，并绕过 LLMService 的空内容守卫 —— speculator 失败
+        # 会表现为静默的「0 个新生成」而非显式的 WARN。
         self._llm_service: LLMService = LLMService(
             registry=llm,
             memory=memory,
@@ -238,17 +236,16 @@ class SoulEngine:
             speculator_idle_interval_minutes=speculator_idle_interval_minutes,
             profile_consolidator=self._profile_consolidator,
         )
-        # Detached post-edit work (the dislike pool purge runs an LLM+embedding
-        # recall that must not block the edit response). Tracked so it isn't
-        # garbage-collected mid-flight and can be awaited in tests / shutdown.
+        # 分离的编辑后任务（厌恶池清除运行一次 embedding+LLM 召回，
+        # 不能阻塞编辑响应）。被追踪以免在飞行途中被垃圾回收，并可在
+        # 测试 / 关闭时被 await。
         self._background_edit_tasks: set[asyncio.Task[Any]] = set()
         self._init_cognition_context: dict[str, object] = {}
 
     def set_embedding_service(self, embedding_service: Any) -> None:
-        """Attach or update the embedding service after construction.
+        """构造之后挂载或更新 embedding 服务。
 
-        Useful when the embedding service is built later than the soul
-        engine in the bootstrap order.
+        在 bootstrap 顺序中 embedding 服务晚于灵魂引擎构建时有用。
         """
         self._embedding_service = embedding_service
         self._preference_analyzer.embedding_service = embedding_service
@@ -258,7 +255,7 @@ class SoulEngine:
 
     @property
     def pipeline(self) -> Any:
-        """Access the ProfileUpdatePipeline for direct signal ingestion."""
+        """访问 ProfileUpdatePipeline 以直接喂入信号。"""
         return self._pipeline
 
     async def analyze_events(
@@ -267,18 +264,16 @@ class SoulEngine:
         *,
         event_chunk_size: int = 0,
     ) -> None:
-        """Analyze new behavioral events and update all memory layers.
+        """分析新的行为事件并更新所有记忆层。
 
-        This is the primary entry point for processing new user behavior.
-        Events flow upward through the memory layers, with each layer
-        potentially triggering updates in the layers above.
+        这是处理新用户行为的主入口。事件沿记忆层向上流动，每一层
+        都可能触发上层的更新。
 
-        Args:
-            events: List of behavioral event dicts from the collector.
-            event_chunk_size: When > 0, split the event list into chunks
-                of this size and analyse each chunk in parallel. Useful
-                for the init bootstrap where a single max-thinking call
-                on ~800 events would block for ~6 minutes.
+        参数：
+            events: 来自采集器的行为事件字典列表。
+            event_chunk_size: 大于 0 时，把事件列表拆成此大小的块
+                并行分析。用于 init 引导阶段 —— 单次 max-thinking
+                调用处理 ~800 条事件会阻塞 ~6 分钟。
         """
         import time as _time
 
@@ -306,16 +301,16 @@ class SoulEngine:
         )
 
     async def build_initial_profile(self, history: list[dict[str, Any]]) -> OnionProfile:
-        """Build an initial soul profile from historical data.
+        """从历史数据构建初始灵魂画像。
 
-        Used on first run to bootstrap the user understanding model
-        from existing Bilibili watch history, favorites, etc.
+        首次运行时用于从既有的 Bilibili 观看历史、收藏等引导用户
+        理解模型。
 
-        Args:
-            history: Historical data from Bilibili API.
+        参数：
+            history: 来自 Bilibili API 的历史数据。
 
-        Returns:
-            Initial OnionProfile.
+        返回：
+            初始 OnionProfile。
         """
         import time as _time
 
@@ -349,7 +344,7 @@ class SoulEngine:
             _time.monotonic() - t0,
         )
 
-        # Trigger speculator immediately after init to seed speculative interests
+        # init 之后立即触发 speculator，播种投机性兴趣
         try:
             load_runtime_state = getattr(self._memory, "load_discovery_runtime_state", None)
 
@@ -465,13 +460,12 @@ class SoulEngine:
         return max(0.0, min(1.0, number))
 
     def is_profile_ready(self) -> bool:
-        """Cheap, non-raising check for whether a soul profile exists.
+        """廉价的、不抛异常的检查：灵魂画像是否已存在。
 
-        Background-task consumers call this first to avoid using
-        ``SoulProfileNotInitializedError`` as flow control during the
-        ~7-minute init window — which would otherwise produce ERROR-level
-        traces for every classify / awareness / speculator tick that
-        runs before the profile lands.
+        后台任务消费者先调用它，以避免在 ~7 分钟 init 窗口内把
+        ``SoulProfileNotInitializedError`` 当作流控使用 —— 否则
+        画像落地前每个 classify / awareness / speculator tick 都会
+        产生 ERROR 级别 trace。
         """
         try:
             return bool(self._memory.get_layer("soul").data)
@@ -479,29 +473,28 @@ class SoulEngine:
             return False
 
     async def get_profile(self) -> OnionProfile:
-        """Get the current *effective* soul profile (AI profile ⊕ user overrides).
+        """获取当前 *有效* 灵魂画像（AI 画像 ⊕ 用户覆盖）。
 
-        Returns:
-            The OnionProfile from the soul memory layer with user overrides
-            merged on top. Active speculative interests are attached as
-            ``_active_speculations``.
+        返回：
+            来自灵魂记忆层的 OnionProfile，用户覆盖合并在其上。
+            活跃的投机性兴趣作为 ``_active_speculations`` 附加。
         """
         soul_data = self._memory.get_layer("soul").data
         if not soul_data:
             raise SoulProfileNotInitializedError("Soul profile has not been initialized yet.")
         profile = OnionProfile.from_dict(soul_data)
         profile = apply_overrides(profile, self._memory.load_profile_overrides())
-        # Attach active speculations so downstream consumers (Discovery) can use them
+        # 附加活跃投机，让下游消费者（Discovery）可以使用
         active_specs = self._speculator.get_active_speculations()
         if active_specs:
             profile._active_speculations = active_specs  # type: ignore[attr-defined]
         return profile
 
     async def get_raw_profile(self) -> OnionProfile:
-        """Get the AI-generated profile WITHOUT user overrides.
+        """获取 *不带* 用户覆盖的 AI 生成画像。
 
-        Used by the edit-state endpoint and drift detection so the UI can show
-        the AI's current suggestion alongside the user's pinned value.
+        被编辑状态端点和漂移检测使用，让 UI 可以在用户钉住的值
+        旁边展示 AI 当前建议。
         """
         soul_data = self._memory.get_layer("soul").data
         if not soul_data:
@@ -509,18 +502,18 @@ class SoulEngine:
         return OnionProfile.from_dict(soul_data)
 
     def get_overrides(self) -> ProfileOverrides:
-        """Return the current user-authored profile overrides."""
+        """返回当前用户编写的画像覆盖。"""
         return self._memory.load_profile_overrides()
 
     def get_effective_disliked_topics(self) -> list[str]:
-        """Effective dislike terms for hard filters.
+        """用于硬过滤的有效厌恶词。
 
-        Soul-side dislikes are taken from the EFFECTIVE profile (``apply_overrides``)
-        so overlay edits at *every* granularity reflect here — domain add/remove
-        AND per-domain specific add/remove. Flat ``preference.disliked_topics``
-        (which lives outside the soul layer) is unioned in, but suppressed by any
-        overlay dislike removal (domain- or specific-level) so a user-removed term
-        is not re-added by the raw preference layer (F6).
+        灵魂侧的厌恶取自 *有效* 画像（``apply_overrides``），
+        这样 *每一个* 粒度的覆盖编辑都反映在这里 —— 域名增删
+        以及每个域名下的具体增删。扁平的
+        ``preference.disliked_topics``（位于灵魂层之外）会被并集进来，
+        但会被任何覆盖厌恶移除（域名级或具体级）抑制，
+        这样用户移除的词不会被原始 preference 层重新添加（F6）。
         """
         overrides = self._memory.load_profile_overrides()
         terms: list[str] = []
@@ -564,15 +557,14 @@ class SoulEngine:
         embedding_service: Any | None = None,
         llm_service: Any | None = None,
     ) -> dict[str, object]:
-        """Apply one deterministic user edit to the profile overrides.
+        """把一次确定性的用户编辑应用到画像覆盖。
 
-        Pipeline: snapshot effective dislikes → fold the edit into the
-        overrides (validated; raises ``ProfileEditError`` on bad input) →
-        persist → if the edit added *new* effective dislikes, purge matching
-        already-pooled content (diff, not the raw value) → sync the matching
-        speculator → record a manual cognition update → refresh the
-        human-readable mirror (re-applies the overlay) and notify both
-        surfaces. Returns ``{ok, target, op}``.
+        流程：快照有效厌恶 → 把编辑折进覆盖（已校验；坏输入抛
+        ``ProfileEditError``）→ 持久化 → 若编辑添加了 *新的* 有效
+        厌恶，清除已入池的匹配内容（按 diff，不是原始值）→ 同步
+        匹配的 speculator → 记录一次手动认知更新 → 刷新人类可读
+        镜像（重新应用覆盖）并通知两个表面。返回
+        ``{ok, target, op}``。
         """
         before = set(self.get_effective_disliked_topics())
 
@@ -592,11 +584,10 @@ class SoulEngine:
         if self._memory.get_layer("soul").data:
             self._memory.sync_profile_files(await self.get_raw_profile())
 
-        # The dislike pool purge does an embedding recall + LLM classification
-        # that can take tens of seconds. It is a best-effort cleanup of
-        # already-pooled content and MUST NOT block the edit response — doing so
-        # makes the UI hang for the whole call and the new dislike appears "not
-        # saved". Run it detached; the override itself is already persisted.
+        # 厌恶池清除做一次 embedding 召回 + LLM 分类，可能耗时数十秒。
+        # 它是对已入池内容的尽力清理，绝不能阻塞编辑响应 —— 否则
+        # UI 会卡住整个调用，新厌恶看起来「没保存」。分离运行；
+        # 覆盖本身已经持久化了。
         if newly_added:
             self._schedule_dislike_purge(
                 newly_added=newly_added,
@@ -609,22 +600,21 @@ class SoulEngine:
         return {"ok": True, "target": target, "op": op}
 
     def _schedule_dislike_purge(self, **kwargs: Any) -> None:
-        """Run the dislike pool purge detached from the edit request.
+        """把厌恶池清除从编辑请求中分离运行。
 
-        ``apply_user_edit`` is always invoked inside a running event loop, so a
-        task is scheduled there. Failures are swallowed inside
-        ``_purge_for_new_dislikes``; the done-callback only drops the tracking
-        reference.
+        ``apply_user_edit`` 总是在运行中的事件循环里调用，所以
+        在那里调度一个 task。失败在 ``_purge_for_new_dislikes``
+        里被吞掉；done-callback 只丢弃追踪引用。
         """
         task = asyncio.ensure_future(self._purge_for_new_dislikes(**kwargs))
         self._background_edit_tasks.add(task)
         task.add_done_callback(self._background_edit_tasks.discard)
 
     async def wait_for_pending_edits(self) -> None:
-        """Await any detached post-edit work (the dislike pool purge).
+        """等待任何分离的编辑后任务（厌恶池清除）。
 
-        Used by tests and graceful shutdown so the background purge can finish
-        deterministically. No-op when nothing is pending.
+        被测试和优雅关闭使用，让后台清除可以确定性完成。无待办
+        时是 no-op。
         """
         tasks = list(self._background_edit_tasks)
         if tasks:
@@ -639,7 +629,7 @@ class SoulEngine:
         embedding_service: Any | None,
         llm_service: Any | None,
     ) -> None:
-        """Reuse the confirmed-avoidance pool purge for a manual dislike add."""
+        """为手动添加的厌恶复用已确认回避的池清除。"""
         db = database if database is not None else getattr(self._memory, "_database", None)
         if db is None:
             logger.info("skip manual-dislike pool purge: no database available")
@@ -660,11 +650,11 @@ class SoulEngine:
             logger.exception("manual-dislike pool purge failed")
 
     def _sync_speculators_for_edit(self, *, target: str, op: str, value: object) -> None:
-        """Keep the interest / avoidance speculators consistent with the edit.
+        """让 interest / avoidance speculator 与编辑保持一致。
 
-        like add/remove → interest speculator confirm/reject; dislike
-        add/remove → avoidance speculator confirm/reject. Defensive via
-        getattr so older speculator doubles don't break edits.
+        like 增/删 → interest speculator 确认/拒绝；dislike
+        增/删 → avoidance speculator 确认/拒绝。用 getattr 防御，
+        这样更老的 speculator 替身不会破坏编辑。
         """
         if not isinstance(value, str) or not value.strip():
             return
@@ -732,24 +722,24 @@ class SoulEngine:
         return f"你编辑了{label}。"
 
     async def update_from_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
-        """Update soul understanding based on explicit user feedback on a hypothesis.
+        """基于用户对某条假设的显式反馈更新灵魂理解。
 
-        Confirm/reject feedback on a specific insight hypothesis calibrates that
-        hypothesis: a confirm pins ``validated=True`` and raises confidence to at
-        least 0.75; a reject sets ``validated=False`` and caps confidence at 0.35
-        (the "soft invalidation" — the hypothesis is down-weighted in delight
-        scoring rather than deleted). The feedback is also logged as an event.
+        对某条 insight 假设的确认/拒绝反馈会校准该假设：确认会把
+        ``validated=True`` 钉住并把置信度提到至少 0.75；拒绝会把
+        ``validated=False`` 置位并把置信度上限压到 0.35
+        （「软失效」—— 假设在 delight 评分中被降权而不是被删除）。
+        该反馈也会作为事件记录。
 
-        Wired to ``POST /api/insights/feedback`` so the UI's insight cards can
-        drive this loop.
+        接到 ``POST /api/insights/feedback``，让 UI 的洞察卡片
+        驱动这一闭环。
 
-        Args:
-            feedback: ``{"hypothesis": str, "signal": str}``. ``signal`` is one
-                of confirm/like/support (positive) or reject/dislike/deny.
+        参数：
+            feedback: ``{"hypothesis": str, "signal": str}``。``signal``
+                是 confirm/like/support（正向）或 reject/dislike/deny。
 
-        Returns:
-            A result dict describing whether a hypothesis matched and its
-            post-update state — consumed by the API endpoint.
+        返回：
+            描述假设是否匹配及其更新后状态的结果字典 —— 由 API
+            端点消费。
         """
         logger.info("Updating soul from feedback...")
         await self._memory.propagate_event(
@@ -785,12 +775,11 @@ class SoulEngine:
             break
         if result["matched"]:
             self._save_insights(hypotheses)
-            # The insight layer is the source of truth, but get_profile()
-            # (UI profile-summary + delight scoring) reads the windowed
-            # ``active_insights`` snapshot cached on the soul layer. Without
-            # mirroring the calibration there, a confirm/reject wouldn't take
-            # visible or recommendation effect until the next 12h cognition
-            # sync. Patch the snapshot in place so the change is immediate.
+            # insight 层是真相源，但 get_profile()（UI profile-summary
+            # + delight 评分）读取的是缓存在灵魂层上、按窗口截取的
+            # ``active_insights`` 快照。不把校准镜像过去，确认/拒绝
+            # 在下次 12h 认知同步前都不会有可见或推荐效果。原地
+            # patch 快照，让变更立即生效。
             self._sync_insight_to_soul_snapshot(
                 target_normalized=target,
                 validated=bool(result["validated"]),
@@ -805,11 +794,11 @@ class SoulEngine:
         validated: bool,
         confidence: float,
     ) -> None:
-        """Mirror an insight calibration onto the soul layer's active_insights.
+        """把一次 insight 校准镜像到灵魂层的 active_insights。
 
-        No-op when the soul profile has no matching active insight (e.g. the
-        hypothesis exists only in the insight layer, not in the surfaced
-        window). Re-syncs the human-readable profile files on change.
+        当灵魂画像没有匹配的活跃 insight 时（例如假设只存在于
+        insight 层、不在被展示的窗口里）是 no-op。变更时重新同步
+        人类可读的画像文件。
         """
         soul_layer = self._memory.get_layer("soul")
         if not soul_layer.data:
@@ -842,7 +831,7 @@ class SoulEngine:
         assistant_reply: str,
         session: str,
     ) -> dict[str, object]:
-        """Persist a chat turn and update long-term understanding when warranted."""
+        """持久化一次聊天轮次，并在适当时更新长期理解。"""
         await self._memory.propagate_event(
             {
                 "event_type": "dialogue",
@@ -952,7 +941,7 @@ class SoulEngine:
         }
 
     async def process_feedback_batch_if_needed(self) -> dict[str, object]:
-        """Reanalyze preference/profile after enough new feedback has accumulated."""
+        """当累积了足够多的新反馈后，重新分析 preference/profile。"""
         if self._feedback_batch_lock.locked():
             return {
                 "triggered": False,
@@ -966,7 +955,7 @@ class SoulEngine:
             return await self._process_feedback_batch_if_needed_locked()
 
     async def _process_feedback_batch_if_needed_locked(self) -> dict[str, object]:
-        """Feedback batch implementation guarded by ``_feedback_batch_lock``."""
+        """由 ``_feedback_batch_lock`` 保护的反馈批处理实现。"""
         state = self._memory.load_feedback_state()
         last_processed_id = self._to_int(state.get("last_processed_feedback_event_id", 0))
         feedback_events = [
@@ -1066,7 +1055,7 @@ class SoulEngine:
         self,
         event: dict[str, object],
     ) -> dict[str, object]:
-        """Keep only preference-relevant feedback fields before LLM analysis."""
+        """LLM 分析前只保留与 preference 相关的反馈字段。"""
         compact: dict[str, object] = {}
         for key in (
             "id",
@@ -1100,10 +1089,10 @@ class SoulEngine:
         title: str,
         note: str = "",
     ) -> None:
-        """Record one lightweight cognition update from a single strong feedback.
+        """记录一次来自单条强反馈的轻量级认知更新。
 
-        This path is intentionally cheap: it only appends a short cognition update
-        for UI visibility and does not trigger preference/profile rebuilds.
+        此路径刻意廉价：它只追加一条短的认知更新用于 UI 可见性，
+        不触发 preference/profile 重建。
         """
         normalized_feedback = feedback_type.strip().lower()
         summary = ""
@@ -1188,7 +1177,7 @@ class SoulEngine:
         self,
         candidates: list[dict[str, object]],
     ) -> None:
-        """Record one lightweight cognition update from a single strong chat signal."""
+        """记录一次来自单条强聊天信号的轻量级认知更新。"""
         updates = self._memory.load_cognition_updates()
         changed = False
         for candidate in candidates:
@@ -1237,13 +1226,13 @@ class SoulEngine:
             self._memory.save_cognition_updates(updates)
 
     async def generate_awareness_note(self) -> str:
-        """Generate a daily awareness note.
+        """生成每日认知笔记。
 
-        The awareness note captures what the agent has observed about
-        the user's recent behavior patterns, mood changes, and interest shifts.
+        认知笔记捕获 agent 对用户近期行为模式、情绪变化、兴趣
+        偏移的观察。
 
-        Returns:
-            Natural language awareness note.
+        返回：
+            自然语言的认知笔记。
         """
         events = self._memory.query_events(limit=50)
         notes = await self._awareness_analyzer.analyze(
@@ -1258,15 +1247,15 @@ class SoulEngine:
         return notes[0].observation
 
     async def generate_insight(self) -> str:
-        """Generate or update insight hypotheses.
+        """生成或更新洞察假设。
 
-        Insights are deeper interpretations of user behavior:
-        - Why they do what they do
-        - What psychological needs are being met
-        - What latent interests might exist
+        洞察是对用户行为的更深层解读：
+        - 他们为什么这么做
+        - 满足了什么心理需求
+        - 可能存在什么潜在兴趣
 
-        Returns:
-            Natural language insight.
+        返回：
+            自然语言的洞察。
         """
         awareness_notes = self._load_awareness_notes()
         insights = await self._insight_analyzer.analyze(

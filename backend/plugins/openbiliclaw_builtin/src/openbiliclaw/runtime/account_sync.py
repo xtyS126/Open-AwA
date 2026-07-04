@@ -1,4 +1,4 @@
-"""Periodic account-side sync for long-term Bilibili signals."""
+"""账号侧信号的周期性同步，用于长期 Bilibili 信号采集。"""
 
 from __future__ import annotations
 
@@ -39,12 +39,12 @@ class SupportsAccountClient(Protocol):
 
 
 def _client_is_authenticated(client: Any) -> bool:
-    """True when the client either has no auth concept or reports authed.
+    """当客户端没有鉴权概念或已上报已鉴权时返回 True。
 
-    Tests pass plain stubs that don't expose ``is_authenticated``; for
-    those, we conservatively assume "authenticated" so behavior matches
-    pre-v0.3.57. Production ``BilibiliAPIClient`` exposes the real flag,
-    which is what gates the cookie-race short-circuit.
+    测试会传入不暴露 ``is_authenticated`` 的纯桩对象；针对这种情况，
+    我们保守地按"已鉴权"处理，以保持与 v0.3.57 之前一致的行为。
+    生产环境的 ``BilibiliAPIClient`` 会暴露真实标志，用于控制 cookie
+    竞态的短路逻辑。
     """
     if not hasattr(client, "is_authenticated"):
         return True
@@ -57,7 +57,7 @@ class SupportsSoulAnalyzer(Protocol):
 
 @dataclass
 class AccountSyncService:
-    """Incrementally import account-side history, favorites, and following."""
+    """增量导入账号侧历史、收藏与关注列表。"""
 
     memory_manager: SupportsAccountSyncState
     bilibili_client: SupportsAccountClient
@@ -70,18 +70,17 @@ class AccountSyncService:
     check_interval_seconds: int = 300
     llm_work_allowed: Callable[[], bool] | None = None
     _auto_bootstrap_attempted: bool = False
-    # v0.3.57+: tracks the cookie-not-ready → ready transition so
-    # ``sync_if_due`` only emits the "auth ready" INFO log once per
-    # session. Reset path is via fresh AccountSyncService instance,
-    # which is what ``rebuild_from_config`` already produces.
+    # v0.3.57+：跟踪 cookie 未就绪 → 就绪的状态切换，确保
+    # ``sync_if_due`` 每个会话只输出一次 "auth ready" INFO 日志。
+    # 重置方式是创建新的 AccountSyncService 实例，``rebuild_from_config``
+    # 已经按此方式工作。
     _last_seen_authenticated: bool = False
 
     async def sync_if_due(self) -> dict[str, object]:
-        """Run one account sync only when the configured interval has elapsed."""
-        # v0.3.57+: skip the throttle check entirely while the cookie
-        # hasn't arrived. ``sync_now`` will short-circuit too — checking
-        # here just keeps the no-auth signal visible in run_forever logs
-        # without "not_due" noise on every tick of the 5-min poll loop.
+        """仅在配置的间隔已过时执行一次账号同步。"""
+        # v0.3.57+：cookie 还没到位时直接跳过节流检查。``sync_now``
+        # 也会短路——这里只是检查一下，让 run_forever 日志中能持续看到
+        # 未鉴权信号，避免 5 分钟轮询每一 tick 都产生 "not_due" 噪声。
         authed = _client_is_authenticated(self.bilibili_client)
         if not authed:
             return {
@@ -111,14 +110,12 @@ class AccountSyncService:
         return await self.sync_now()
 
     async def sync_now(self) -> dict[str, object]:
-        """Run one immediate incremental account sync."""
-        # v0.3.57+: cookie race short-circuit. Daemon often starts before
-        # the extension cookie sync arrives; without this gate, the first
-        # tick fetches with empty cookies, gets 0 items, stamps
-        # last_account_sync_at, and locks the next attempt out for
-        # ``sync_interval_hours`` (default 6h). Bail out before touching
-        # the network OR the timestamp so the next ``sync_if_due`` tick
-        # (5 min) still re-tries.
+        """立即执行一次增量账号同步。"""
+        # v0.3.57+：cookie 竞态短路。守护进程经常早于扩展 cookie 同步
+        # 启动；如果不加这道闸门，第一 tick 会用空 cookie 拉取，得到
+        # 0 条数据，并写入 last_account_sync_at，把下一次尝试锁死
+        # ``sync_interval_hours``（默认 6h）。在动网络或时间戳之前先
+        # 退出，让下一次 ``sync_if_due`` tick（5 分钟）能继续重试。
         if not _client_is_authenticated(self.bilibili_client):
             return {
                 "synced": False,
@@ -209,7 +206,7 @@ class AccountSyncService:
         }
 
     def get_runtime_status(self) -> dict[str, object]:
-        """Expose lightweight account sync runtime fields."""
+        """暴露账号同步的轻量级运行时字段。"""
         state = self.memory_manager.load_account_sync_state()
         return {
             "last_account_sync_at": str(state.get("last_account_sync_at", "")),
@@ -217,7 +214,7 @@ class AccountSyncService:
         }
 
     async def _auto_bootstrap_soul_profile(self, event_count: int) -> None:
-        """Build the first soul profile after account sync learns preferences."""
+        """账号同步学到偏好后构建首个 soul 画像。"""
         if self._auto_bootstrap_attempted:
             return
 
@@ -253,15 +250,15 @@ class AccountSyncService:
                 exc_info=True,
             )
 
-    # v0.3.57+: tighter retry while cookie hasn't arrived. The default
-    # ``check_interval_seconds`` of 300 is right for steady-state polling
-    # but stretches the cookie-race symptom — daemon up, cookie arrives
-    # ~2s later, but next history fetch waits up to 5 min. Drop to 15s
-    # until first auth, restore to ``check_interval_seconds`` after.
+    # v0.3.57+：cookie 还没到位时使用更紧凑的重试间隔。默认的
+    # ``check_interval_seconds``（300 秒）适合稳态轮询，但会拉长
+    # cookie 竞态症状——守护进程已启动，cookie 约 2 秒后到达，但下一
+    # 次历史拉取最多要等 5 分钟。在首次鉴权前降到 15 秒，鉴权成功后
+    # 再恢复为 ``check_interval_seconds``。
     _UNAUTH_RETRY_INTERVAL_SECONDS: ClassVar[int] = 15
 
     async def run_forever(self) -> None:
-        """Run account sync loop until cancelled."""
+        """运行账号同步循环，直到被取消。"""
         while True:
             authed_before = self._last_seen_authenticated
             try:

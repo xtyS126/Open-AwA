@@ -1,4 +1,4 @@
-"""Anthropic Claude LLM provider."""
+"""Anthropic Claude LLM provider。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class ClaudeProvider(LLMProvider):
-    """Anthropic Claude provider."""
+    """Anthropic Claude provider。"""
 
     _MAX_RETRIES = 3
     _BASE_RETRY_DELAY = 0.25
@@ -49,12 +49,11 @@ class ClaudeProvider(LLMProvider):
         reasoning_effort: str | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        # ``reasoning_effort`` is DeepSeek-specific; Claude has its own
-        # ``thinking`` mode controlled separately. Accept the kwarg for
-        # signature compatibility but don't act on it here.
+        # ``reasoning_effort`` 是 DeepSeek 专有；Claude 有自己的、单独控制的
+        # ``thinking`` 模式。为保持签名兼容性接受此参数，但此处不对其做处理。
         del reasoning_effort
         effective_model = (model or "").strip() or self._model
-        # Extract system message if present
+        # 若存在 system 消息则提取出来
         system = ""
         chat_messages = []
         for msg in messages:
@@ -63,17 +62,14 @@ class ClaudeProvider(LLMProvider):
             else:
                 chat_messages.append(msg)
 
-        # v0.3.29+: Anthropic prompt-cache integration. Claude requires
-        # explicit ``cache_control: {"type": "ephemeral"}`` markers on
-        # the message blocks we want cached — pure plain-string
-        # ``system="..."`` is never cached. We always mark the system
-        # block as cacheable; Anthropic silently ignores the marker if
-        # the system text is below the per-model min (1024 tok Sonnet,
-        # 2048 tok Haiku/Opus), so this is safe for short prompts too.
-        # Cache hit gets billed at 10% of input rate; the first call
-        # writes cache at +25% surcharge, then 5min TTL on reads. The
-        # system_param goes through ``_render_system_param`` which the
-        # tests can override.
+        # v0.3.29+: Anthropic prompt-cache 集成。Claude 要求对我们希望缓存的
+        # 消息块显式添加 ``cache_control: {"type": "ephemeral"}`` 标记 ——
+        # 纯字符串 ``system="..."`` 永远不会被缓存。我们始终把 system 块
+        # 标记为可缓存；当 system 文本低于各模型的最小阈值（Sonnet 1024
+        # token，Haiku/Opus 2048 token）时 Anthropic 会静默忽略标记，因此
+        # 对短 prompt 也安全。缓存命中按输入费率的 10% 计费；首次调用会以
+        # +25% 附加费写入缓存，随后读取有 5 分钟 TTL。system_param 会经过
+        # ``_render_system_param``，测试可对其进行覆盖。
         system_text = system or "You are a helpful assistant."
         system_param: Any = self._render_system_param(system_text)
 
@@ -96,11 +92,11 @@ class ClaudeProvider(LLMProvider):
         if not content.strip():
             raise LLMResponseError("claude returned empty content")
 
-        # Claude exposes cache fields when prompt-cache is in use:
-        # cache_read_input_tokens (90% off) + cache_creation_input_tokens
-        # (+25% surcharge). We surface them under the universal
-        # ``cached_input_tokens`` / ``cache_creation_input_tokens`` keys
-        # so downstream pricing / observability is provider-agnostic.
+        # Claude 在使用 prompt-cache 时会暴露缓存字段：
+        # cache_read_input_tokens（9 折）+ cache_creation_input_tokens
+        # （+25% 附加费）。我们将它们挂到通用的
+        # ``cached_input_tokens`` / ``cache_creation_input_tokens`` 键下，
+        # 以便下游的计费/可观测性与 provider 无关。
         cache_read = int(getattr(response.usage, "cache_read_input_tokens", 0) or 0)
         cache_create = int(getattr(response.usage, "cache_creation_input_tokens", 0) or 0)
         usage_dict = {
@@ -121,15 +117,13 @@ class ClaudeProvider(LLMProvider):
         )
 
     def _render_system_param(self, system_text: str) -> Any:
-        """Wrap the system prompt in Anthropic's prompt-cache shape.
+        """将 system prompt 包装为 Anthropic 的 prompt-cache 形状。
 
-        The Claude API accepts ``system`` as either a plain string or a
-        list of typed blocks; only the latter form supports
-        ``cache_control``. We always emit the list form with an
-        ``ephemeral`` cache marker on the system block. If the system
-        text is below the per-model minimum (1024 tok Sonnet / 2048
-        tok Haiku/Opus), Anthropic silently ignores the marker rather
-        than erroring, so this is safe regardless of size.
+        Claude API 接受 ``system`` 为纯字符串或带类型的块列表；只有后者
+        支持 ``cache_control``。我们始终输出列表形式，并在 system 块上加
+        ``ephemeral`` 缓存标记。若 system 文本低于各模型的最小阈值
+        （Sonnet 1024 token / Haiku/Opus 2048 token），Anthropic 会静默
+        忽略标记而非报错，因此无论大小都安全。
         """
         return [
             {
@@ -140,7 +134,7 @@ class ClaudeProvider(LLMProvider):
         ]
 
     async def _request_with_retry(self, **kwargs: Any) -> Any:
-        """Send a request with bounded retry for transient failures."""
+        """发送请求，对瞬时失败进行有界重试。"""
         last_error: Exception | None = None
 
         for attempt in range(1, self._MAX_RETRIES + 1):
@@ -165,7 +159,7 @@ class ClaudeProvider(LLMProvider):
         raise last_error
 
     def _map_error(self, exc: Exception) -> LLMProviderError:
-        """Map Anthropic or network errors into shared provider errors."""
+        """将 Anthropic 或网络错误映射为共享的 provider 错误。"""
         if isinstance(exc, LLMProviderError):
             return exc
         if isinstance(exc, TimeoutError):
@@ -178,7 +172,7 @@ class ClaudeProvider(LLMProvider):
         return LLMProviderError(f"claude request failed: {exc}")
 
     def _is_retryable(self, exc: LLMProviderError) -> bool:
-        """Whether a mapped exception should be retried."""
+        """判断映射后的异常是否应重试。"""
         if isinstance(exc, LLMRateLimitError):
             return False
         return isinstance(exc, (LLMProviderError, LLMTimeoutError))

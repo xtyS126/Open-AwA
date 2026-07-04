@@ -1,12 +1,12 @@
-"""Auto-update service — periodically check for and apply backend source tags.
+"""自动更新服务 —— 周期性检查并应用 backend 源码 tag。
 
-Release contract:
-- backend source updates are git tags named ``backend-vX.Y.Z``;
-- legacy ``vX.Y.Z`` / bare ``X.Y.Z`` tags are tolerated for old installs;
-- extension artifacts use ``extension-vX.Y.Z`` and MUST be ignored here;
-- GitHub ``/releases/latest`` is not authoritative for backend updates because
-  current Releases are extension artifacts. ``_fetch_latest_version`` therefore
-  queries ``/tags`` directly and filters for backend tags.
+发布契约：
+- backend 源码更新是名为 ``backend-vX.Y.Z`` 的 git tag；
+- 旧版 ``vX.Y.Z`` / 裸 ``X.Y.Z`` tag 对旧安装被容忍；
+- 扩展产物使用 ``extension-vX.Y.Z`` 且必须在此被忽略；
+- GitHub ``/releases/latest`` 对 backend 更新不是权威来源，因为
+  当前的 Releases 是扩展产物。``_fetch_latest_version`` 因此直接
+  查询 ``/tags`` 并过滤 backend tag。
 """
 
 from __future__ import annotations
@@ -68,11 +68,11 @@ class _BackendTagSelection:
 
 
 def _project_root() -> Path:
-    """Return the git root of the project (best-effort)."""
+    """返回项目的 git root（best-effort）。"""
     env_root = os.environ.get("OPENBILICLAW_PROJECT_ROOT", "").strip()
     if env_root:
         return Path(env_root).resolve()
-    # Walk up from package location
+    # 从包位置向上查找
     pkg_dir = Path(openbiliclaw.__file__).resolve().parent
     for parent in [pkg_dir, *pkg_dir.parents]:
         if (parent / ".git").exists():
@@ -81,14 +81,14 @@ def _project_root() -> Path:
 
 
 def detect_install_mode() -> str:
-    """Best-effort install-mode detection for update-status surfaces.
+    """对更新状态表面的 best-effort 安装模式检测。
 
-    - ``frozen``: PyInstaller desktop bundle. There is no git checkout to
-      fast-forward, so backend self-update is structurally unsupported —
-      users update by installing a newer desktop package.
-    - ``git``: the project root is a git checkout (one-line installer,
-      agent install, or dev checkout) — the auto-update flow can apply.
-    - ``unsupported``: anything else (e.g. a bare pip install).
+    - ``frozen``：PyInstaller 桌面包。没有 git checkout 可以
+      fast-forward，因此 backend 自更新在结构上不受支持 ——
+      用户通过安装更新的桌面包来更新。
+    - ``git``：项目 root 是 git checkout（一行安装器、
+      agent 安装或 dev checkout）—— 自动更新流程可以应用。
+    - ``unsupported``：其他任何情况（例如裸 pip install）。
     """
     if getattr(sys, "frozen", False):
         return "frozen"
@@ -98,7 +98,7 @@ def detect_install_mode() -> str:
 
 
 def _parse_version(v: str) -> tuple[int, ...]:
-    """Parse a version string like 'v0.2.1' or '0.2.1' into a comparable tuple."""
+    """将 'v0.2.1' 或 '0.2.1' 这样的版本字符串解析为可比较的 tuple。"""
     v = v.strip().lstrip("vV")
     parts: list[int] = []
     for seg in v.split("."):
@@ -114,7 +114,7 @@ def _parse_backend_candidate(
     *,
     include_prerelease: bool = False,
 ) -> _BackendTagCandidate | None:
-    """Parse backend release tags and ignore extension/non-backend tags."""
+    """解析 backend 发布 tag 并忽略 extension/非 backend tag。"""
     raw = tag.strip()
     if not raw:
         return None
@@ -148,7 +148,7 @@ def _parse_backend_candidate(
 
 
 def _parse_backend_version(tag: str) -> tuple[int, ...] | None:
-    """Parse stable backend release tags and ignore extension/prerelease tags."""
+    """解析稳定的 backend 发布 tag 并忽略 extension/prerelease tag。"""
     candidate = _parse_backend_candidate(tag)
     return candidate.version if candidate is not None else None
 
@@ -158,12 +158,11 @@ def _parse_desktop_candidate(
     *,
     include_prerelease: bool = False,
 ) -> _BackendTagCandidate | None:
-    """Parse desktop installer release tags — ``desktop-vX.Y.Z`` only.
+    """解析桌面安装器发布 tag —— 仅 ``desktop-vX.Y.Z``。
 
-    Frozen bundles update by downloading a newer installer, and installers are
-    published under ``desktop-v*`` tags (which do not always ship in lockstep
-    with ``backend-v*`` source tags). Legacy ``v*`` / bare semver tags were
-    backend source releases, so they never count as installer candidates.
+    Frozen 包通过下载更新的安装器更新，安装器在 ``desktop-v*`` tag 下
+    发布（并不总是与 ``backend-v*`` 源码 tag 同步发布）。旧版 ``v*`` /
+    裸 semver tag 是 backend 源码发布，因此它们永不计数为安装器候选。
     """
     raw = tag.strip()
     if not raw.startswith(_DESKTOP_TAG_PREFIX):
@@ -297,12 +296,12 @@ def _decode_process_output(data: bytes | str | None) -> str:
 
 
 def _dirty_paths_besides_uv_lock(porcelain: str) -> list[str]:
-    """Return dirty paths from ``git status --porcelain``, ignoring uv.lock.
+    """从 ``git status --porcelain`` 返回脏路径，忽略 uv.lock。
 
-    ``uv sync`` rewrites uv.lock whenever a release tag ships a stale lock
-    (the version bump forgot ``uv lock``), so virtually every install has a
-    modified uv.lock from day one. That alone must not block updates — the
-    apply flow resets uv.lock before merging and re-syncs afterwards.
+    ``uv sync`` 每当发布 tag 附带陈旧的 lock 时就会重写 uv.lock
+    （版本提升忘记 ``uv lock``），因此几乎每个安装从第一天起就有
+    一个修改过的 uv.lock。仅此一项绝不能阻止更新 ——
+    apply 流程在合并前重置 uv.lock 并在之后重新 sync。
     """
     dirty: list[str] = []
     for line in porcelain.splitlines():
@@ -336,11 +335,11 @@ def _merge_or_rebase_in_progress(root: Path, git_dir_text: str) -> bool:
 
 @dataclass
 class AutoUpdateService:
-    """Periodically check GitHub for a newer version and auto-apply updates."""
+    """周期性检查 GitHub 是否有更新版本并自动应用更新。"""
 
     enabled: bool = False
     check_interval_hours: int = 6
-    check_interval_seconds: int = 600  # loop sleep between due-checks
+    check_interval_seconds: int = 600  # 到期检查之间的循环 sleep
     allow_prerelease: bool = False
     allowed_remotes: Sequence[str] = DEFAULT_ALLOWED_REMOTES
     event_publisher: Callable[[dict[str, object]], Awaitable[object]] | None = None
@@ -353,18 +352,18 @@ class AutoUpdateService:
     _apply_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _apply_task: asyncio.Task[None] | None = field(default=None, repr=False)
 
-    # --- public API -----------------------------------------------------------
+    # --- 公共 API -----------------------------------------------------------
 
     async def check_and_update_if_due(self) -> dict[str, object]:
-        """Run the update check only when the configured interval has elapsed."""
+        """仅在配置的间隔已过时运行更新检查。"""
         if detect_install_mode() == "frozen":
-            # Desktop bundles can't self-apply (the binary IS the code; there is
-            # no git checkout of their own to fast-forward), but they still poll
-            # for new installer releases — regardless of the auto-update toggle,
-            # which only governs auto-apply — so the settings page and runtime
-            # stream can nudge the user to download the next desktop package.
-            # ``request_apply`` refuses non-git installs separately, so this
-            # can never mutate a co-located git checkout.
+            # 桌面包无法自应用（二进制就是代码；没有自己的
+            # git checkout 可以 fast-forward），但它们仍然轮询新的
+            # 安装器发布 —— 无论自动更新开关如何（开关仅管理
+            # 自动应用）—— 以便设置页面和 runtime 流可以提示
+            # 用户下载下一个桌面包。
+            # ``request_apply`` 单独拒绝非 git 安装，因此这永远
+            # 不会 mutate 共置的 git checkout。
             if not self._is_due():
                 return {"checked": False, "reason": "not_due"}
             backend = await self.check_now()
@@ -382,7 +381,7 @@ class AutoUpdateService:
         return await self.check_and_update_now()
 
     async def check_and_update_now(self) -> dict[str, object]:
-        """Check for a new version and auto-apply it when scheduling is enabled."""
+        """检查新版本并在调度启用时自动应用。"""
         backend = await self.check_now()
         if backend["state"] != "update_available":
             reason = str(backend.get("reason", "none"))
@@ -398,10 +397,10 @@ class AutoUpdateService:
                 "remote_version": backend["latest_tag"],
             }
         if detect_install_mode() != "git":
-            # Non-git installs surface the update but never attempt to apply —
-            # request_apply would refuse anyway; returning here keeps the
-            # freshly-set update_available state from being clobbered by an
-            # apply attempt's unsupported/blocked state.
+            # 非 git 安装显示更新但永不尝试应用 ——
+            # request_apply 无论如何会拒绝；在此返回保持
+            # 刚设置的 update_available 状态不被 apply 尝试的
+            # unsupported/blocked 状态覆盖。
             return {
                 "checked": True,
                 "updated": False,
@@ -427,15 +426,15 @@ class AutoUpdateService:
         }
 
     async def check_now(self) -> dict[str, object]:
-        """Manually refresh backend update status without applying updates."""
+        """手动刷新 backend 更新状态而不应用更新。"""
         self._state = "checking"
         self._reason = "none"
         self._last_check_at = datetime.now(tz=UTC)
         current = openbiliclaw.__version__
         current_parsed = _parse_version(current)
-        # Frozen bundles update by downloading a newer installer, so they track
-        # ``desktop-v*`` installer tags; git checkouts track ``backend-v*``
-        # source tags. The two are not always released in lockstep.
+        # Frozen 包通过下载更新的安装器更新，因此它们跟踪
+        # ``desktop-v*`` 安装器 tag；git checkout 跟踪 ``backend-v*``
+        # 源码 tag。两者并不总是同步发布。
         channel = "desktop" if detect_install_mode() == "frozen" else "backend"
         selection = await self._fetch_latest_candidate(channel=channel)
 
@@ -485,7 +484,7 @@ class AutoUpdateService:
         return self.get_update_status()
 
     async def request_apply(self, *, tag: str = "") -> tuple[int, dict[str, object]]:
-        """Validate and start a backend apply flow, returning before restart."""
+        """验证并启动 backend apply 流程，在重启前返回。"""
         async with self._apply_lock:
             if self._apply_task is not None and not self._apply_task.done():
                 self._state = "applying"
@@ -532,7 +531,7 @@ class AutoUpdateService:
             )
 
     def get_update_status(self) -> dict[str, object]:
-        """Expose backend update status for the update-status API."""
+        """为更新状态 API 暴露 backend 更新状态。"""
         state = self._state or ("disabled" if not self.enabled else "unknown")
         return {
             "state": state,
@@ -547,7 +546,7 @@ class AutoUpdateService:
         }
 
     def get_runtime_status(self) -> dict[str, object]:
-        """Expose update status for the runtime-status API."""
+        """为 runtime 状态 API 暴露更新状态。"""
         return {
             "auto_update_enabled": self.enabled,
             "install_mode": detect_install_mode(),
@@ -564,15 +563,14 @@ class AutoUpdateService:
         }
 
     def adopt_status_from(self, other: AutoUpdateService) -> None:
-        """Carry the last check result across a hot-reload rebuild.
+        """跨热重载重建携带上次检查结果。
 
-        A config save rebuilds every swappable component, including this
-        service. Without this, a freshly-fetched ``update_available`` /
-        ``up_to_date`` status would drop back to "尚未检查更新" on the settings
-        page until the next scheduled check (up to ``check_interval_hours``).
-        Only settled status is adopted — a transient ``checking`` / ``applying``
-        state is left to re-derive so an in-flight apply on the previous
-        instance is not misrepresented by the fresh one.
+        一次配置保存会重建每个可替换组件，包括此服务。没有这个，
+        一个刚 fetch 的 ``update_available`` / ``up_to_date`` 状态会
+        在设置页面回退到"尚未检查更新"，直到下次计划检查（最多
+        ``check_interval_hours``）。仅采用已稳定的状态 —— 瞬态
+        ``checking`` / ``applying`` 状态留给重新推导，以便前一实例
+        上进行中的 apply 不会被新实例误报。
         """
         self._last_check_at = other._last_check_at
         self._latest_remote_version = other._latest_remote_version
@@ -584,19 +582,19 @@ class AutoUpdateService:
         self._update_error = other._update_error
 
     def _background_loop_enabled(self) -> bool:
-        """The loop runs when auto-update is on — or always on frozen bundles.
+        """当自动更新开启时循环运行 —— 或在 frozen 包上始终运行。
 
-        Frozen desktop installs run a check-only loop (the toggle governs
-        auto-apply, which frozen can never do) so users get a "new installer
-        available, go download it" reminder without opting in to anything.
+        Frozen 桌面安装运行 check-only 循环（开关管理自动应用，
+        frozen 永远做不到），以便用户无需选择加入任何东西即可获得
+        "有新安装器可用，去下载"提醒。
         """
         return self.enabled or detect_install_mode() == "frozen"
 
     async def run_forever(self) -> None:
-        """Background loop: periodically check (and on git installs apply) updates."""
+        """后台循环：周期性检查（并在 git 安装上应用）更新。"""
         if not self._background_loop_enabled():
             return
-        # Small initial delay to let the main app finish startup
+        # 小的初始延迟，让主应用完成启动
         await asyncio.sleep(10)
         while True:
             try:
@@ -605,7 +603,7 @@ class AutoUpdateService:
                 logger.exception("Unexpected error in auto-update loop")
             await asyncio.sleep(self.check_interval_seconds)
 
-    # --- internals ------------------------------------------------------------
+    # --- 内部 ------------------------------------------------------------
 
     def _is_due(self) -> bool:
         if self._last_check_at is None:
@@ -618,11 +616,11 @@ class AutoUpdateService:
         *,
         channel: str = "backend",
     ) -> _BackendTagSelection:
-        """Query GitHub tags and select the newest allowed tag for *channel*.
+        """查询 GitHub tag 并为 *channel* 选择最新允许的 tag。
 
-        ``backend`` (default) tracks ``backend-v*`` source tags with legacy
-        ``v*`` / bare-semver fallback; ``desktop`` tracks ``desktop-v*``
-        installer tags only.
+        ``backend``（默认）跟踪 ``backend-v*`` 源码 tag 并有旧版
+        ``v*`` / 裸 semver 回退；``desktop`` 仅跟踪 ``desktop-v*``
+        安装器 tag。
         """
         selection = await self._fetch_latest_candidate_once(channel=channel, verify_tls=True)
         if selection.error_reason != "tls_verification_failed":
@@ -719,18 +717,17 @@ class AutoUpdateService:
         )
 
     async def _fetch_latest_version(self) -> str:
-        """Query GitHub tags for the newest backend version tag."""
+        """查询 GitHub tag 以获取最新的 backend 版本 tag。"""
         return (await self._fetch_latest_candidate()).tag
 
     async def _check_apply_guards(self, tag: str) -> str:
-        """Return a stable reason when local state makes apply unsafe."""
-        # A PyInstaller desktop bundle reports ``frozen`` even when it shares a
-        # data root with a co-located git checkout (entry.py points
-        # OPENBILICLAW_PROJECT_ROOT at ~/OpenBiliClaw, the same dir an AI /
-        # one-line install uses). Fast-forwarding that checkout would mutate
-        # someone else's source + venv while the packaged binary keeps running
-        # its bundled old code on restart — an endless update loop. Refuse
-        # structurally, regardless of the on-disk ``.git``.
+        """当本地状态使 apply 不安全时返回稳定 reason。"""
+        # PyInstaller 桌面包即使与共置的 git checkout 共享数据 root
+        # 也报告 ``frozen``（entry.py 将 OPENBILICLAW_PROJECT_ROOT 指向
+        # ~/OpenBiliClaw，与 AI / 一行安装使用的同一目录）。fast-forward
+        # 该 checkout 会在打包二进制重启时继续运行其捆绑的旧代码的
+        # 同时 mutate 别人的源码 + venv —— 一个无尽的更新循环。
+        # 在结构上拒绝，无论磁盘上的 ``.git``。
         if detect_install_mode() != "git":
             return "unsupported_install_mode"
         root = _project_root()
@@ -772,12 +769,12 @@ class AutoUpdateService:
         return ""
 
     async def _apply_update_to_tag(self, tag: str) -> None:
-        """Fast-forward to *tag*, reinstall dependencies, and restart."""
+        """Fast-forward 到 *tag*，重装依赖，并重启。"""
         root = _project_root()
         try:
-            # Drop the local uv.lock rewrite (stale-lock releases make uv sync
-            # dirty it on install) so --ff-only is not refused for "local
-            # changes would be overwritten"; the post-merge sync regenerates it.
+            # 丢弃本地 uv.lock 重写（陈旧 lock 发布让 uv sync
+            # 在安装时弄脏它），以便 --ff-only 不会被"本地更改
+            # 会被覆盖"拒绝；合并后的 sync 重新生成它。
             await self._run_git(["checkout", "--", "uv.lock"], root)
 
             merge = await self._run_git(["merge", "--ff-only", tag], root, timeout=120)
@@ -885,15 +882,15 @@ class AutoUpdateService:
 
     @staticmethod
     def _detect_install_command(root: Path) -> list[str]:
-        """Detect the best install command based on the project environment."""
-        # Prefer uv if uv.lock exists
+        """根据项目环境检测最佳安装命令。"""
+        # 如果 uv.lock 存在则优先使用 uv
         if (root / "uv.lock").exists():
             return ["uv", "sync"]
-        # Fallback to pip
+        # 回退到 pip
         return [sys.executable, "-m", "pip", "install", "-e", "."]
 
     @staticmethod
     def _restart_process() -> None:
-        """Restart the current process with the same arguments."""
+        """用相同的参数重启当前进程。"""
         logger.info("Restarting process: %s %s", sys.executable, sys.argv)
         os.execv(sys.executable, [sys.executable, *sys.argv])

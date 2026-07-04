@@ -1,13 +1,12 @@
-"""Delight Scorer — identifies content that would surprise and delight the user.
+"""Delight Scorer —— 识别会让用户惊喜的内容。
 
-Computes a composite ``delight_score`` that measures how deeply a piece of
-content resonates with the user's soul profile — not just surface interests,
-but deep needs, active insight hypotheses, and latent curiosity patterns.
+计算一个复合 ``delight_score``，度量一条内容与用户 soul profile 的
+共鸣深度 —— 不仅是表面兴趣，还包括深层需求、活跃洞察假设和潜在
+好奇心模式。
 
-This score is deliberately separate from the PoolCurator's ``rec_score``
-(which handles freshness/fatigue/monotony for the regular recommendation
-batch). The delight score focuses on **deep resonance**, not recency or
-diversity.
+此分数刻意与 PoolCurator 的 ``rec_score``（处理常规推荐批次的
+新鲜度/疲劳/单调）分离。delight 分数聚焦于**深度共鸣**，而非
+近因性或多样性。
 """
 
 from __future__ import annotations
@@ -45,26 +44,24 @@ class SupportsRecommendationSignalStore(Protocol):
 
 @dataclass(frozen=True)
 class DelightSignals:
-    """Individual signal components that compose the delight score."""
+    """组成 delight 分数的各个信号分量。"""
 
     deep_need_alignment: float = 0.0
     insight_resonance: float = 0.0
-    # Embedding match against the user's actual top likes — this is the
-    # signal that carries entertainment / playful axes that deep_needs
-    # alone misses (deep_needs leans analytical for many users).
+    # 与用户实际 top likes 的嵌入匹配 —— 这是携带 deep_needs 单独
+    # 遗漏的娱乐/玩乐维度的信号（deep_needs 对许多用户偏分析向）。
     likes_alignment: float = 0.0
     novelty_factor: float = 0.0
     quality_indicator: float = 0.0
     exploration_match: float = 0.0
-    # Embedding match against the user's disliked_topics. Higher means
-    # the content semantically resembles something they explicitly
-    # rejected → subtracts from final score.
+    # 与用户 disliked_topics 的嵌入匹配。值越高意味着内容在语义上
+    # 类似于他们明确拒绝的东西 → 从最终分数中减去。
     dislike_penalty: float = 0.0
 
 
 @dataclass(frozen=True)
 class DelightWeights:
-    """Tuneable weights for the composite delight score."""
+    """复合 delight 分数的可调权重。"""
 
     deep_need: float = 0.20
     insight: float = 0.15
@@ -72,69 +69,65 @@ class DelightWeights:
     novelty: float = 0.15
     quality: float = 0.10
     exploration: float = 0.10
-    # Multiplier applied to dislike_penalty before it's subtracted from
-    # the positive sum.  0.50 means a strongly disliked match (penalty=1.0)
-    # subtracts 0.50 from the score, typically pushing it below threshold.
+    # 在从正向和减去之前应用于 dislike_penalty 的乘数。0.50 意味着
+    # 一个强 dislike 匹配（penalty=1.0）从分数中减去 0.50，通常
+    # 将其推到阈值之下。
     dislike_penalty: float = 0.50
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# 常量
 # ---------------------------------------------------------------------------
 
-# Delight threshold:
-# Calibrated for the bge-m3 multilingual embedding (the user's main
-# local embedding via Ollama). bge-m3's cosine distribution is
-# tighter than Gemini's — even strong likes_alignment matches top out
-# around raw cosine 0.85, which after the ``(sim - 0.5) * 2.0``
-# amplifier yields ~0.70 contribution; combined with the 0.30 weight
-# that's a 0.21 ceiling on the likes signal alone.
+# Delight 阈值：
+# 为 bge-m3 多语言嵌入（用户通过 Ollama 的主要本地嵌入）校准。
+# bge-m3 的余弦分布比 Gemini 更紧 —— 即使强的 likes_alignment
+# 匹配在原始余弦 0.85 处触顶，这在 ``(sim - 0.5) * 2.0`` 放大器
+# 之后产生约 0.70 的贡献；结合 0.30 的权重，likes 信号单独的
+# 上限是 0.21。
 #
-# History of this constant:
-#   v0.3.31  0.65  Gemini-era; under bge-m3 unreachable, killed feature
-#   v0.3.34  0.45  embedding-cosine empirical p95 (~4-5/100)
-#   v0.3.35  0.44  re-tuned for ~12-18/600 (top-200 sample extrapolation)
-#   v0.3.39  0.55  ↓ swap to LLM-judged scoring exposed a wider score
-#                  distribution: with rubric-driven rationale, LLM
-#                  generously gives 0.45-0.55 to "common-fit" content
-#                  (hooks like 「常规关联」/「常规推荐」). Empirical
-#                  observation 2026-05-04 on 193 scored items:
-#                    0.44-0.60:  9   ← "common" tier — LLM hedging
-#                    0.60-0.75: 14   ← real cross-domain delight
-#                    0.75+   : 12   ← exceptional ("跨域惊喜")
-#                  35/193 = 18.1% = ~116 in 642 pool — 7x the v0.3.35
-#                  target. Lifting to 0.55 cuts the LLM's middle-of-rubric
-#                  "common" tier (which doesn't read as surprise to the
-#                  user) while keeping the 0.60+ band that's genuinely
-#                  delightful. Expected: ~26/642 ≈ 4% pass rate.
-#   v0.3.41  0.57  ↑ 0.55 still admitted ~26/642 which the user judged
-#                  too many. 0.57 splits the "common" tail closer to 0.60
-#                  where the LLM's reasoning starts to read as actual
-#                  surprise rather than hedging. Expected: ~18-20/642
-#                  ≈ 3% pass rate, tracking closer to v0.3.35's target.
-# CONSERVATIVE bar shifts to 0.67 (proportionally tighter for low-
-# exploration users — only the 0.67+ "scoring rationale = surprise" tier).
+# 此常量的历史：
+#   v0.3.31  0.65  Gemini 时代；在 bge-m3 下不可达，被砍掉的功能
+#   v0.3.34  0.45  embedding-cosine 经验 p95（约 4-5/100）
+#   v0.3.35  0.44  为约 12-18/600 重新调优（top-200 样本外推）
+#   v0.3.39  0.55  ↓ 切换到 LLM 评分暴露了更宽的分数分布：使用
+#                  rubric 驱动的理由，LLM 慷慨地给"常规匹配"内容
+#                  0.45-0.55（钩子如「常规关联」/「常规推荐」）。
+#                  2026-05-04 对 193 个评分项的经验观察：
+#                    0.44-0.60:  9   ← "common" 层 —— LLM 对冲
+#                    0.60-0.75: 14   ← 真正的跨域 delight
+#                    0.75+   : 12   ← 卓越（"跨域惊喜"）
+#                  35/193 = 18.1% = 642 池中约 116 —— 是 v0.3.35
+#                  目标的 7 倍。提升到 0.55 切掉 LLM 的 rubric 中段
+#                  "common" 层（对用户来说不像是惊喜），同时保留
+#                  0.60+ 的真正令人愉悦的带。预期：~26/642 ≈ 4%
+#                  通过率。
+#   v0.3.41  0.57  ↑ 0.55 仍然放过了约 26/642，用户判定太多。
+#                  0.57 将 "common" 尾巴切到更接近 0.60，那里 LLM
+#                  的推理开始读起来像实际的惊喜而非对冲。预期：
+#                  ~18-20/642 ≈ 3% 通过率，更接近 v0.3.35 的目标。
+# CONSERVATIVE 阈值移到 0.67（对低探索用户比例上更紧 —— 仅
+# 0.67+ "scoring rationale = surprise" 层）。
 #
-# v0.3.49: jump 0.57 → 0.70 to actually align with the LLM rubric in
-# `_DELIGHT_BATCH_SCORE_SYSTEM_PROMPT`, which itself defines:
-#   0.70-0.85: 跨域呼应,用户大概率会感兴趣但自己不会主动找  ← real delight
-#   0.55-0.70: 有惊喜潜力但相对常规                          ← NOT delight
-# 0.57 was 13 ticks below the LLM's own "actually delight" line, so
-# every batch surfaced a flood of "相对常规" content as delight (35
-# candidates in 43 minutes, hooks like "常规补给" / "实用工具" /
-# "信息整合"). Bumping past the LLM's stated boundary cuts the false-
-# positive rate ~60% — only items the scorer itself rated 跨域呼应
-# tier or higher get pushed. CONSERVATIVE bar likewise shifts to 0.80
-# (the next tier up — "用户不会主动找" + extra caution).
+# v0.3.49: 跳 0.57 → 0.70 以实际对齐 `_DELIGHT_BATCH_SCORE_SYSTEM_PROMPT`
+# 中的 LLM rubric，其本身定义：
+#   0.70-0.85: 跨域呼应,用户大概率会感兴趣但自己不会主动找  ← 真正的 delight
+#   0.55-0.70: 有惊喜潜力但相对常规                          ← 不是 delight
+# 0.57 比 LLM 自己的"实际 delight"线低 13 个 tick，因此每批次
+# 浮现大量"相对常规"内容作为 delight（43 分钟内 35 个候选，钩子
+# 如"常规补给" / "实用工具" / "信息整合"）。越过 LLM 陈述的边界
+# 将假阳性率切掉约 60% —— 只有评分器自己评为跨域呼应层或更高的
+# 项被推送。CONSERVATIVE 阈值同样移到 0.80（上一档 —— "用户不会
+# 主动找" + 额外谨慎）。
 DEFAULT_DELIGHT_THRESHOLD: float = 0.70
 CONSERVATIVE_DELIGHT_THRESHOLD: float = 0.80
 _LOW_EXPLORATION_OPENNESS: float = 0.3
 _DEFAULT_WEIGHTS = DelightWeights()
 
 
-# Default batch size for LLM delight scoring. 5 keeps each prompt small
-# (cache-friendly, fast) while still amortising the per-call HTTP/handshake
-# cost. With ~30 candidates per refresh tick, that's 6 batched calls.
+# LLM delight 评分的默认批次大小。5 保持每个 prompt 小（缓存友好、
+# 快速），同时仍然摊销每次调用的 HTTP/握手成本。每个刷新 tick 约
+# 30 个候选时，那是 6 个批次调用。
 _DELIGHT_LLM_BATCH_SIZE: int = 5
 
 
@@ -152,7 +145,7 @@ class _SupportsStructuredLLM(Protocol):
 
 @dataclass
 class DelightLLMResult:
-    """One LLM-judged delight result for a candidate."""
+    """一个候选的 LLM 判定的 delight 结果。"""
 
     score: float = 0.0
     rationale: str = ""
@@ -160,20 +153,18 @@ class DelightLLMResult:
 
 
 class LLMDelightScorer:
-    """LLM-based delight scoring (replaces embedding-cosine pipeline).
+    """基于 LLM 的 delight 评分（替代 embedding-cosine 管道）。
 
-    Why LLM instead of embedding cosine: embedding similarity rewards
-    content that is *similar* to the user's existing likes, which is the
-    opposite of "surprise". The pre-2026-05-04 ``DelightScorer`` therefore
-    surfaced reinforcement content (more DeepSeek tutorials for an AI-heavy
-    user) instead of cross-domain delights. An LLM evaluating a rubric
-    can distinguish "concept-bridging" from "topic-repeating" in a way
-    cosine cannot.
+    为什么用 LLM 而非 embedding 余弦：embedding 相似度奖励与用户
+    现有 likes *相似* 的内容，这与"惊喜"相反。因此 2026-05-04 之前
+    的 ``DelightScorer`` 浮现的是强化内容（对 AI 重度用户给更多
+    DeepSeek 教程）而非跨域 delight。评估 rubric 的 LLM 可以用
+    余弦无法做到的方式区分"概念桥接"和"话题重复"。
 
-    Cost: at batch_size=5 and ~30 new candidates per refresh tick, that's
-    6 LLM calls per cycle × ~¥0.01 = ¥0.06/cycle, ¥0.48/day at 8 cycles.
-    Each call returns score + rationale + hook in one shot, eliminating
-    the secondary ``_generate_delight_reason`` LLM hop.
+    成本：在 batch_size=5 且每个刷新 tick 约 30 个新候选时，每个
+    周期 6 次 LLM 调用 × ~¥0.01 = ¥0.06/周期，8 个周期 ¥0.48/天。
+    每次调用一次返回 score + rationale + hook，消除了次级
+    ``_generate_delight_reason`` LLM 跳。
     """
 
     def __init__(
@@ -193,7 +184,7 @@ class LLMDelightScorer:
         return self._threshold
 
     def effective_threshold(self, exploration_openness: float) -> float:
-        """Return a possibly raised threshold for conservative users."""
+        """对保守用户返回可能提高的阈值。"""
         if exploration_openness < _LOW_EXPLORATION_OPENNESS:
             return max(self._threshold, CONSERVATIVE_DELIGHT_THRESHOLD)
         return self._threshold
@@ -203,13 +194,12 @@ class LLMDelightScorer:
         candidates: list[SupportsDelightCandidate],
         profile: Any,
     ) -> dict[str, DelightLLMResult]:
-        """Score a list of candidates via batched LLM calls.
+        """通过批次 LLM 调用为一组候选评分。
 
-        Returns a mapping ``bvid -> DelightLLMResult``. Items the LLM
-        omits or mis-routes default to ``score=0.0``; callers should
-        treat missing entries as "below threshold" and not retry the
-        same batch (the LLM will keep dropping them — usually because
-        the title was empty or untranslatable).
+        返回映射 ``bvid -> DelightLLMResult``。LLM 遗漏或错误路由的
+        项默认为 ``score=0.0``；调用方应将缺失条目视为"低于阈值"，
+        不要重试同一批次（LLM 会持续丢弃它们 —— 通常是因为标题为
+        空或无法翻译）。
         """
         if not candidates:
             return {}
@@ -280,22 +270,20 @@ class LLMDelightScorer:
 
 
 def _extract_delight_entries(content: str, *, expected_count: int) -> list[dict[str, Any]]:
-    """Extract a list of {bvid, score, rationale, hook} from an LLM response.
+    """从 LLM 响应中提取 {bvid, score, rationale, hook} 列表。
 
-    Different LLM providers/models in JSON mode return different root
-    shapes:
-      - DeepSeek typically returns a clean ``[...]`` list (matching the
-        prompt's <output_schema>).
-      - mimo-v2.5-pro tends to wrap in an object: ``{"results": [...]}``,
-        ``{"items": [...]}``, ``{"delights": [...]}``, or sometimes emits
-        multiple root JSON objects newline-separated (causing
-        ``json.JSONDecodeError: Extra data``).
-      - Some models echo the schema as a single object when batch=1.
+    JSON 模式下不同的 LLM 提供商/模型返回不同的根形状：
+      - DeepSeek 通常返回干净的 ``[...]`` 列表（匹配 prompt 的
+        <output_schema>）。
+      - mimo-v2.5-pro 倾向于包装在对象中：``{"results": [...]}``、
+        ``{"items": [...]}``、``{"delights": [...]}``，或有时发出
+        多个根 JSON 对象以换行分隔（导致 ``json.JSONDecodeError:
+        Extra data``）。
+      - 某些模型在 batch=1 时将 schema 回显为单个对象。
 
-    This helper delegates to the shared LLM JSON extractor so array
-    snippets, wrappers, singleton entries, and JSONL are handled the same
-    way as recommendation/discovery parsers. Returns an empty list only if
-    no valid entry could be extracted.
+    此 helper 委托给共享的 LLM JSON 提取器，因此数组片段、包装器、
+    单条目和 JSONL 的处理方式与 recommendation/discovery 解析器一致。
+    仅在无法提取任何有效条目时返回空列表。
     """
     text = content.strip()
     if not text:
@@ -324,14 +312,14 @@ def _extract_delight_entries(content: str, *, expected_count: int) -> list[dict[
 
 
 def _build_delight_profile_summary(profile: Any) -> dict[str, object]:
-    """Compact profile shape for the delight LLM prompt.
+    """为 delight LLM prompt 构建的紧凑 profile 形状。
 
-    Keeps only the fields the rubric actually uses:
-      - top likes (domain + weight + first 4 specifics)
+    仅保留 rubric 实际使用的字段：
+      - top likes（domain + weight + 前 4 个 specifics）
       - deep_needs
-      - active_insights (hypothesis + confidence)
+      - active_insights（hypothesis + confidence）
       - exploration_openness
-      - disliked_topics (top 8)
+      - disliked_topics（top 8）
     """
     summary: dict[str, object] = {}
 
@@ -374,7 +362,7 @@ def _build_delight_profile_summary(profile: Any) -> dict[str, object]:
     summary["deep_needs"] = deep_needs
 
     insights_out: list[dict[str, object]] = []
-    # Chronological window: newest insights are at the tail.
+    # 时间顺序窗口：最新的 insights 在尾部。
     for ins in (getattr(profile, "active_insights", []) or [])[-5:]:
         hyp = str(getattr(ins, "hypothesis", "")).strip()
         if not hyp:
@@ -401,10 +389,10 @@ def _build_delight_profile_summary(profile: Any) -> dict[str, object]:
 
 
 class DelightScorer:
-    """Computes a delight score for content based on deep profile resonance.
+    """基于与深度 profile 共鸣的内容 delight 分数计算。
 
-    The scorer uses embedding similarity to match content against the user's
-    deep_needs and active_insights, combined with novelty and quality signals.
+    评分器使用 embedding 相似度将内容与用户的 deep_needs 和
+    active_insights 匹配，结合新颖性和质量信号。
     """
 
     def __init__(
@@ -425,7 +413,7 @@ class DelightScorer:
         return self._threshold
 
     def effective_threshold(self, exploration_openness: float) -> float:
-        """Return a possibly raised threshold for conservative users."""
+        """对保守用户返回可能提高的阈值。"""
         if exploration_openness < _LOW_EXPLORATION_OPENNESS:
             return max(self._threshold, CONSERVATIVE_DELIGHT_THRESHOLD)
         return self._threshold
@@ -435,12 +423,12 @@ class DelightScorer:
         candidate: SupportsDelightCandidate,
         profile: Any,
     ) -> tuple[float, DelightSignals, str]:
-        """Compute a delight score for a candidate given the soul profile.
+        """给定 soul profile 为候选计算 delight 分数。
 
         Returns:
-            A tuple of (delight_score, signals, reason_stub).
-            reason_stub is a short hint for the LLM to expand into the
-            full delight_reason.
+            一个元组 (delight_score, signals, reason_stub)。
+            reason_stub 是一个短提示，供 LLM 展开为完整的
+            delight_reason。
         """
         w = self._weights
         signals = await self._compute_signals(candidate, profile)
@@ -464,14 +452,13 @@ class DelightScorer:
         candidate: SupportsDelightCandidate,
         profile: Any,
     ) -> DelightSignals:
-        """Compute individual delight signal components."""
+        """计算各个 delight 信号分量。"""
         content_text = f"{candidate.title} {candidate.description or ''}"
 
-        # Probe the embedding subsystem once with the content text. If
-        # this returns empty, the provider is genuinely broken — the
-        # downstream signal calls would then all return 0.0 silently.
-        # Cheap: subsequent embed() calls for the same content_text hit
-        # the L1 cache (~10µs).
+        # 用内容文本探测 embedding 子系统一次。如果返回空，provider
+        # 确实坏了 —— 下游信号调用会全部静默返回 0.0。
+        # 廉价：同一 content_text 的后续 embed() 调用命中 L1 缓存
+        # （约 10µs）。
         embed_alive = True
         if self._embedding is not None:
             probe_vec = await self._embedding.embed(content_text)
@@ -485,13 +472,12 @@ class DelightScorer:
         exploration = self._exploration_match(candidate, profile, novelty)
         dislike = await self._dislike_penalty(content_text, profile)
 
-        # Surface "embedding subsystem dead" cascades — only when the
-        # provider actually returned no vector for the content. Earlier
-        # version (v0.3.31) flagged the case where all 4 embedding-
-        # driven signals were 0.0, but that fires false-positive on
-        # legitimate content-out-of-user-interest items: a history doc
-        # for a tech-only user gets likes=0.0 from low cosine + clamp,
-        # not from a dead embedding. embed_alive directly distinguishes.
+        # 暴露"embedding 子系统死亡"级联 —— 仅当 provider 实际上
+        # 对内容文本返回了空向量时。早期版本（v0.3.31）在所有 4 个
+        # embedding 驱动信号都为 0.0 时标记此情况，但对合法的
+        # 内容-超出-用户兴趣项会触发假阳性：对技术专用用户的历史
+        # 文档，likes=0.0 来自低余弦 + clamp，而非死的 embedding。
+        # embed_alive 直接区分。
         if self._embedding is not None and not embed_alive:
             logger.warning(
                 "Delight scoring degraded for %s: embedding provider "
@@ -515,7 +501,7 @@ class DelightScorer:
         content_text: str,
         profile: Any,
     ) -> float:
-        """Score alignment between content and user's deep needs."""
+        """评分内容与用户深层需求的对齐度。"""
         if self._embedding is None:
             return 0.0
 
@@ -540,7 +526,7 @@ class DelightScorer:
             sim = cosine_similarity(content_vec, need_vec)
             max_sim = max(max_sim, sim)
 
-        # Normalize: similarity 0.5 → 0.0, similarity 1.0 → 1.0
+        # 归一化：相似度 0.5 → 0.0，相似度 1.0 → 1.0
         return max(0.0, min(1.0, (max_sim - 0.5) * 2.0))
 
     async def _insight_resonance(
@@ -548,7 +534,7 @@ class DelightScorer:
         content_text: str,
         profile: Any,
     ) -> float:
-        """Score alignment between content and active insight hypotheses."""
+        """评分内容与活跃洞察假设的对齐度。"""
         if self._embedding is None:
             return 0.0
 
@@ -563,7 +549,7 @@ class DelightScorer:
             return 0.0
 
         max_sim = 0.0
-        # Chronological window: newest insights are at the tail.
+        # 时间顺序窗口：最新的 insights 在尾部。
         for insight in active_insights[-5:]:
             hypothesis = str(getattr(insight, "hypothesis", "")).strip()
             if not hypothesis:
@@ -572,7 +558,7 @@ class DelightScorer:
             if not insight_vec:
                 continue
             sim = cosine_similarity(content_vec, insight_vec)
-            # Weight by confidence
+            # 按 confidence 加权
             confidence = float(getattr(insight, "confidence", 0.5))
             weighted_sim = sim * (0.5 + confidence * 0.5)
             max_sim = max(max_sim, weighted_sim)
@@ -584,20 +570,18 @@ class DelightScorer:
         content_text: str,
         profile: Any,
     ) -> float:
-        """Score embedding similarity with the user's actual top likes.
+        """与用户实际 top likes 的 embedding 相似度评分。
 
-        Uses the onion ``interest.likes`` tree directly so each like's
-        text input combines the domain name with its specifics — short
-        category words like "游戏" alone produce weak embedding signal
-        against B站 titles, but "游戏 / 自走棋 王者荣耀 金铲铲" is
-        rich enough to actually correlate with content.
+        直接使用 onion ``interest.likes`` 树，因此每个 like 的文本
+        输入将 domain 名与其 specifics 组合 —— 短类别词如"游戏"单独
+        对 B 站标题产生弱 embedding 信号，但"游戏 / 自走棋 王者荣耀
+        金铲铲"丰富到足以实际与内容关联。
         """
         if self._embedding is None:
             return 0.0
 
-        # Prefer the onion ``interest.likes`` tree (carries specifics).
-        # Fall back to flat preferences.interests if the onion shape
-        # isn't present.
+        # 优先使用 onion ``interest.likes`` 树（携带 specifics）。
+        # 如果 onion 形状不存在，回退到扁平的 preferences.interests。
         like_texts: list[tuple[str, float]] = []  # (text, weight)
         interest_layer = getattr(profile, "interest", None)
         likes = getattr(interest_layer, "likes", []) if interest_layer is not None else []
@@ -643,14 +627,14 @@ class DelightScorer:
             if not tag_vec:
                 continue
             sim = cosine_similarity(content_vec, tag_vec)
-            # Down-weight low-weight likes — a 0.4-weight tag matters less
-            # than a 0.95-weight one.
+            # 对低权重 like 降权 —— 一个 0.4 权重的 tag 不如一个
+            # 0.95 权重的那么重要。
             score = sim * (0.6 + 0.4 * min(1.0, weight))
             max_score = max(max_score, score)
 
-        # Normalize same as deep_need_alignment: similarity 0.5 → 0.0,
-        # 1.0 → 1.0.  Avoids the over-aggressive 2.857 multiplier we
-        # tried first which drove typical scores too low.
+        # 与 deep_need_alignment 同样归一化：相似度 0.5 → 0.0，
+        # 1.0 → 1.0。避免我们最初尝试的过于激进的 2.857 乘数，
+        # 它把典型分数压得太低。
         return max(0.0, min(1.0, (max_score - 0.5) * 2.0))
 
     async def _dislike_penalty(
@@ -658,20 +642,19 @@ class DelightScorer:
         content_text: str,
         profile: Any,
     ) -> float:
-        """Embedding-based negative signal: how much the content resembles a
-        topic the user explicitly disliked.
+        """基于 embedding 的负向信号：内容在多大程度上类似于用户
+        明确 dislike 的话题。
 
-        Replaces the brittle substring filter at push time — embedding
-        similarity catches near-synonyms (e.g. ``手工木工`` matching a
-        video about woodworking even when the literal phrase isn't in
-        the title) without false-positive collisions on common stems.
+        替代推送时的脆弱子串过滤器 —— embedding 相似度能捕获近义
+        词（例如 ``手工木工`` 匹配一个关于 woodworking 的视频，即使
+        字面短语不在标题中）而不会在公共词干上发生假阳性碰撞。
         """
         if self._embedding is None:
             return 0.0
 
         prefs = getattr(profile, "preferences", None)
         disliked = getattr(prefs, "disliked_topics", []) if prefs is not None else []
-        # Filter out generic phrases that don't carry a topical signal.
+        # 过滤掉不携带话题信号的通用短语。
         skip_terms = {"低质内容", "虚假信息", "标题党", "低质", "虚假"}
         topical = [
             str(t).strip() for t in disliked if str(t).strip() and str(t).strip() not in skip_terms
@@ -693,29 +676,24 @@ class DelightScorer:
             sim = cosine_similarity(content_vec, term_vec)
             max_sim = max(max_sim, sim)
 
-        # Threshold + amplifier calibrated for bge-m3 (multilingual,
-        # the user's main local embedding). bge-m3 puts low-semantic
-        # Chinese fragments — live-stream titles like "青梅煮酒_20260425
-        # dy主播", short metadata strings, etc. — into a "generic
-        # Chinese" embedding cluster where cosine similarity to ANY
-        # Chinese phrase floats around 0.78-0.85. The original
-        # ``(sim - 0.55) * 2.5`` (calibrated for Gemini's larger
-        # baseline spread) blew through this cluster: any low-semantic
-        # Chinese title scored dislike_penalty ≈ 0.6-0.73 against
-        # arbitrary disliked terms, killing legitimate delight scores.
-        # Empirical bge-m3 cosine distribution against the user's
-        # disliked_topics:
-        #   high-semantic content (e.g. "Scratch物理引擎"):  0.02-0.05
-        #   low-semantic fragments ("dy主播 青梅煮酒"):      0.78-0.85
-        #   actually similar topic (genuine match):          0.88-0.95
-        # Threshold 0.78 cuts the false-positive cluster; amplifier
-        # 1.5 keeps the true-positive band (0.88+) actionable without
-        # over-penalizing borderline matches.
+        # 为 bge-m3（多语言，用户的主要本地嵌入）校准的阈值 + 放大器。
+        # bge-m3 将低语义中文片段 —— 直播标题如"青梅煮酒_20260425
+        # dy主播"、短元数据字符串等 —— 放入一个"通用中文"嵌入簇，
+        # 那里与任何中文短语的余弦相似度在 0.78-0.85 浮动。原来的
+        # ``(sim - 0.55) * 2.5``（为 Gemini 更大的基线散布校准）
+        # 冲过这个簇：任何低语义中文标题对任意 dislike 项得分
+        # dislike_penalty ≈ 0.6-0.73，杀掉了合法的 delight 分数。
+        # 对用户 disliked_topics 的经验 bge-m3 余弦分布：
+        #   高语义内容（如"Scratch物理引擎"）:  0.02-0.05
+        #   低语义片段（"dy主播 青梅煮酒"）:      0.78-0.85
+        #   实际相似话题（真正匹配）:              0.88-0.95
+        # 阈值 0.78 切掉假阳性簇；放大器 1.5 保持真阳性带（0.88+）
+        # 可操作而不过度惩罚边界匹配。
         return max(0.0, min(1.0, (max_sim - 0.78) * 1.5))
 
     def _novelty_factor(self, candidate: SupportsDelightCandidate) -> float:
-        """Score novelty based on discovery strategy and topic freshness."""
-        # Explore strategy inherently carries more novelty
+        """基于发现策略和话题新鲜度评分新颖性。"""
+        # Explore 策略固有地携带更多新颖性
         strategy_novelty = {
             "explore": 0.9,
             "trending": 0.5,
@@ -724,14 +702,14 @@ class DelightScorer:
         }
         base_novelty = strategy_novelty.get(candidate.source_strategy, 0.3)
 
-        # Check how often this topic has been recommended
+        # 检查此话题被推荐过的频率
         signals = self._database.get_recent_recommendation_signals(limit=30)
         topic = (candidate.topic_group or candidate.topic_key).strip().lower()
         if topic and signals:
             topic_count = sum(
                 1 for s in signals if str(s.get("topic_key", "")).strip().lower() == topic
             )
-            # Penalize if topic has been seen often
+            # 如果话题经常出现则惩罚
             repetition_penalty = min(1.0, topic_count / 5.0)
             base_novelty = base_novelty * (1.0 - repetition_penalty * 0.5)
 
@@ -739,18 +717,18 @@ class DelightScorer:
 
     @staticmethod
     def _quality_indicator(candidate: SupportsDelightCandidate) -> float:
-        """Score content quality from engagement signals."""
+        """从参与度信号评分内容质量。"""
         view_count = max(1, candidate.view_count)
         like_count = candidate.like_count
 
         if view_count < 100:
-            return 0.3  # Not enough data
+            return 0.3  # 数据不足
 
         like_ratio = like_count / view_count
-        # Normalize: 0.01 → 0.2, 0.05 → 0.7, 0.10+ → 1.0
+        # 归一化：0.01 → 0.2，0.05 → 0.7，0.10+ → 1.0
         quality = min(1.0, like_ratio * 12.0)
 
-        # Blend with relevance_score
+        # 与 relevance_score 混合
         return quality * 0.5 + candidate.relevance_score * 0.5
 
     @staticmethod
@@ -759,16 +737,16 @@ class DelightScorer:
         profile: Any,
         novelty: float,
     ) -> float:
-        """Score based on user's exploration openness and content novelty."""
+        """基于用户探索开放度和内容新颖性评分。"""
         prefs = getattr(profile, "preferences", None)
         exploration_openness = float(getattr(prefs, "exploration_openness", 0.5))
 
         if exploration_openness > 0.6:
-            # Open users delight in novel cross-domain content
+            # 开放用户在新颖的跨域内容中感到惊喜
             return novelty * exploration_openness
         else:
-            # Conservative users delight in deep dives in known domains
-            # High relevance in a known domain = deep satisfaction
+            # 保守用户在已知领域的深度潜入中感到惊喜
+            # 已知领域的高相关性 = 深度满足
             depth_signal = candidate.relevance_score * (1.0 - novelty)
             return depth_signal * (1.0 - exploration_openness * 0.5)
 
@@ -778,7 +756,7 @@ class DelightScorer:
         candidate: SupportsDelightCandidate,
         profile: Any,
     ) -> str:
-        """Build a structured reason stub for LLM expansion."""
+        """为 LLM 展开构建结构化理由 stub。"""
         parts: list[str] = []
 
         if signals.likes_alignment >= 0.6:

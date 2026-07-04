@@ -1,4 +1,4 @@
-"""Search-based content discovery strategy."""
+"""基于搜索的内容发现策略。"""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SearchStrategy(DiscoveryStrategy):
-    """Discover content by generating search queries from user interests."""
+    """通过从用户 interest 生成搜索 query 来发现内容。"""
 
     llm_service: SupportsStructuredTask
     bilibili_client: SupportsSearchClient
@@ -78,29 +78,28 @@ class SearchStrategy(DiscoveryStrategy):
         queries: list[str] | None = None,
         keyword_ids: dict[str, int] | None = None,
     ) -> list[DiscoveredContent]:
-        """Generate search queries based on user soul and execute them.
+        """基于用户 soul 生成搜索 query 并执行它们。
 
-        Strategy:
-        1. Extract key interests from the soul profile
-        2. Generate creative search keyword combinations
-        3. Execute searches via Bilibili API
-        4. Score results against the soul profile
+        策略:
+        1. 从 soul profile 提取关键 interest
+        2. 生成有创意的搜索关键词组合
+        3. 通过 Bilibili API 执行搜索
+        4. 对照 soul profile 对结果评分
 
         Args:
-            profile: User soul profile.
-            limit: Maximum results.
-            pool_snapshot: Optional current pool distribution summary.
-            queries: Optional caller-supplied search queries. When provided
-                (non-None), they are used verbatim and the internal LLM
-                query-generation call is skipped (the unified keyword planner
-                injection point). When ``None``, behavior is unchanged.
-            keyword_ids: Optional ``query → discovery_keywords.id`` map (P1.8
-                yield provenance). When provided, each produced candidate is
-                stamped with the id of the query that produced it so admission
-                can credit the originating keyword. ``None`` → no stamping.
+            profile: 用户 soul profile。
+            limit: 最大结果数。
+            pool_snapshot: 可选的当前池分布摘要。
+            queries: 可选的调用方提供的搜索 query。当提供 (非 None) 时,
+                它们会被原样使用,并跳过内部 LLM query 生成调用
+                (统一关键词 planner 注入点)。为 ``None`` 时行为不变。
+            keyword_ids: 可选的 ``query → discovery_keywords.id`` 映射
+                (P1.8 yield provenance)。提供时,每个产出的候选会被
+                盖上产出它的 query 的 id,使 admission 能把来源关键词
+                记账。``None`` → 不盖章。
 
         Returns:
-            Discovered content list.
+            发现的内容列表。
         """
         cooldown_remaining = search_cooldown_remaining(self.bilibili_client)
         if cooldown_remaining > 0:
@@ -125,7 +124,7 @@ class SearchStrategy(DiscoveryStrategy):
         candidates: list[DiscoveredContent] = []
         candidates_by_query: dict[int, list[DiscoveredContent]] = {}
         seen_bvids: set[str] = set()
-        # Respect per-strategy search budget to avoid exhausting IP-level quota.
+        # 遵守 per-strategy search 预算,避免耗尽 IP 级别配额。
         effective_queries = queries
         if self.concurrency is not None:
             budget = self.concurrency.search_budget_per_strategy
@@ -143,10 +142,9 @@ class SearchStrategy(DiscoveryStrategy):
             for query_index, query in enumerate(effective_queries)
             for page in range(1, self.max_pages + 1)
         ]
-        # Use a dedicated API client for search to avoid session-level
-        # rate-limiting from B站.  The shared client accumulates request
-        # history from other strategies (trending, related_chain, explore)
-        # which triggers v_voucher challenges on the search endpoint.
+        # 使用专用 API client 进行搜索,以避免 B站 session 级别的限流。
+        # 共享 client 累积了其他策略 (trending、related_chain、explore)
+        # 的请求历史,这会在 search 端点触发 v_voucher 挑战。
         search_client = self._create_search_client()
         try:
             gathered = await self._execute_search_queries(
@@ -193,8 +191,8 @@ class SearchStrategy(DiscoveryStrategy):
                 )
                 if content is None or content.bvid in seen_bvids:
                     continue
-                # P1.8 yield provenance: stamp the producing query's keyword id
-                # (unified planner injection). No-op when unmapped / not injected.
+                # P1.8 yield provenance: 盖上产出 query 的 keyword id
+                # (统一 planner 注入)。未映射 / 未注入时为 no-op。
                 if keyword_ids:
                     content.source_keyword_id = keyword_ids.get(query)
                 seen_bvids.add(content.bvid)
@@ -245,7 +243,7 @@ class SearchStrategy(DiscoveryStrategy):
     def _interleave_query_candidates(
         candidates_by_query: dict[int, list[DiscoveredContent]],
     ) -> list[DiscoveredContent]:
-        """Round-robin candidates so small LLM windows still cover each query."""
+        """轮询候选,使小的 LLM 窗口仍能覆盖每个 query。"""
         ordered_query_indices = sorted(candidates_by_query)
         max_depth = max(
             (len(candidates_by_query[index]) for index in ordered_query_indices),
@@ -270,15 +268,13 @@ class SearchStrategy(DiscoveryStrategy):
         )
 
     def _create_search_client(self) -> SupportsSearchClient:
-        """Create a fresh API client for search while preserving auth.
+        """创建一个全新的 API client 用于搜索,同时保留 auth。
 
-        B站 rate-limits search per session. Other strategies
-        (especially explore) exhaust the shared client's search quota,
-        so we use a dedicated client. Search currently returns
-        ``v_voucher`` for anonymous WBI requests, so the dedicated client
-        must carry over the runtime cookie when one exists. Falls back to
-        the shared client if creation fails or if the bilibili_client is
-        not the real API client (e.g. in tests).
+        B站按 session 对 search 限流。其他策略 (尤其是 explore) 会
+        耗尽共享 client 的 search 配额,所以我们用专用 client。Search
+        目前对匿名 WBI 请求返回 ``v_voucher``,所以专用 client 必须
+        在存在时携带运行时 cookie。创建失败或 bilibili_client 不是
+        真实 API client (例如在测试中) 时回退到共享 client。
         """
         from openbiliclaw.bilibili.api import BilibiliAPIClient
 
@@ -298,19 +294,16 @@ class SearchStrategy(DiscoveryStrategy):
         client: SupportsSearchClient,
         request_plan: list[tuple[int, str, int]],
     ) -> list[object]:
-        """Execute search queries sequentially with delay + storm backoff.
+        """顺序执行搜索 query,带延迟 + storm backoff。
 
-        v0.3.61+: per-query delay now jitter-randomised in 0.5–1.0s to
-        avoid synchronised waves of WBI requests landing in the same
-        Bilibili rate-limit bucket. ``client.search`` already retries
-        v_voucher challenges 3× internally, so an empty list at this
-        layer means the keyword exhausted retries and the IP is being
-        challenged. Three consecutive empty results = "storm mode" —
-        we abort the rest of the plan rather than burn LLM-generated
-        queries against an IP that's currently being denied. The
-        remaining queries get filled with empty results so the strategy
-        can still gracefully return what it has, and the next refresh
-        tick (60s later) gets a fresh shot.
+        v0.3.61+: per-query 延迟现在在 0.5–1.0s 之间 jitter 随机化,
+        以避免同步的 WBI 请求波次落入同一个 Bilibili rate-limit 桶。
+        ``client.search`` 内部已经重试 v_voucher 挑战 3 次,所以这层
+        返回空列表意味着该关键词耗尽了重试且 IP 正在被挑战。连续三次
+        空结果 = "storm mode" — 我们中止计划的剩余部分,而不是把
+        LLM 生成的 query 烧在当前正被拒绝的 IP 上。剩余 query 用空
+        结果填充,使策略仍能优雅地返回它已有的内容,而下一个刷新 tick
+        (60s 后) 获得新的尝试机会。
         """
         import random
 
@@ -333,9 +326,9 @@ class SearchStrategy(DiscoveryStrategy):
                 gathered.extend([] for _ in range(len(request_plan) - i))
                 break
             if i > 0:
-                # Jitter 0.5–1.0s. Steady-state cost: ~0.75s/query;
-                # under storm: backoff already happens inside client.search,
-                # so this is purely a desync between queries.
+                # Jitter 0.5–1.0s。稳态成本: ~0.75s/query;
+                # storm 期间: backoff 已在 client.search 内部发生,
+                # 所以这纯粹是 query 之间的去同步。
                 await asyncio.sleep(0.5 + random.uniform(0.0, 0.5))
             try:
                 result = await client.search(
@@ -345,14 +338,13 @@ class SearchStrategy(DiscoveryStrategy):
                 )
             except Exception as exc:
                 gathered.append(exc)
-                # An exception path doesn't count as v_voucher storm
-                # evidence (could be 412, network blip, etc.); reset.
+                # exception 路径不算 v_voucher storm 证据
+                # (可能是 412、网络抖动等);重置。
                 consecutive_empty = 0
                 continue
             gathered.append(result)
-            # Storm detection: empty result after retries already
-            # consumed = IP is being rate-limited *now*. Burning the
-            # remaining queries just deepens the hole.
+            # Storm 检测: 重试已耗尽后的空结果 = IP 正在被限流 *现在*。
+            # 烧剩余 query 只会加深坑。
             if isinstance(result, list) and not result:
                 cooldown_remaining = search_cooldown_remaining(client)
                 if cooldown_remaining > 0:
@@ -479,7 +471,7 @@ class SearchStrategy(DiscoveryStrategy):
 
     @staticmethod
     def _dedupe_queries(queries: list[str]) -> list[str]:
-        """Strip + dedupe caller-injected queries (no per-run cap)."""
+        """strip + 去重调用方注入的 query (无 per-run cap)。"""
         deduped: list[str] = []
         seen: set[str] = set()
         for item in queries:
@@ -537,7 +529,7 @@ class SearchStrategy(DiscoveryStrategy):
         return queries
 
     # ------------------------------------------------------------------
-    # Delegating static helpers — keep backwards-compatible class API
+    # 委托静态 helper — 保持向后兼容的 class API
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -577,7 +569,7 @@ class SearchStrategy(DiscoveryStrategy):
         return normalize_match_text(value)
 
     # ------------------------------------------------------------------
-    # Instance helpers
+    # 实例 helper
     # ------------------------------------------------------------------
 
     def _map_search_result(
@@ -594,7 +586,7 @@ class SearchStrategy(DiscoveryStrategy):
             return None
         title = clean_text(str(item.get("title", "")))
         description = clean_text(str(item.get("description", "")))
-        # Pre-filter score: interest anchor bonus only (LLM eval overwrites later)
+        # 预过滤分数: 仅 interest anchor bonus (LLM eval 后续会覆盖)
         anchor_bonus = self._interest_anchor_bonus(
             query=query,
             title=title,
@@ -658,7 +650,7 @@ class SearchStrategy(DiscoveryStrategy):
 
     @staticmethod
     def _topic_group_from_query(query: str) -> str:
-        """Extract the core topic word from a search query.
+        """从搜索 query 提取核心 topic 词。
 
         "强化学习 游戏ai 决策模型" → "强化学习"
         "纪录片 原理" → "纪录片"

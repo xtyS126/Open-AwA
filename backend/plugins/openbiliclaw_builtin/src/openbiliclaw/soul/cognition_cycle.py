@@ -1,20 +1,17 @@
-"""Periodic cognition cycle — throttled awareness + insight generation.
+"""周期性认知循环 —— 节流的认知 + 洞察生成。
 
-The ProfileUpdatePipeline calls ``CognitionCycle.run_if_due()`` from its
-``tick()`` loop. On each call, the cycle checks whether enough time has
-passed since the last successful run (default: 12 hours) and, if so,
-regenerates awareness notes and insight hypotheses via the LLM-backed
-analyzers, then syncs the results into the OnionProfile so the extension
-popup's profile view shows them.
+ProfileUpdatePipeline 在其 ``tick()`` 循环中调用 ``CognitionCycle.run_if_due()``。
+每次调用时，循环会检查距上次成功运行是否已过足够时间（默认 12 小时），
+若是则通过 LLM 后端的分析器重新生成认知笔记和洞察假设，并将结果
+同步到 OnionProfile，使扩展弹窗的画像视图能展示它们。
 
-State is persisted to ``<data_dir>/memory/cognition_cycle_state.json`` so
-throttling survives process restarts.
+状态持久化到 ``<data_dir>/memory/cognition_cycle_state.json``，
+让节流逻辑能在进程重启后保留。
 
-This module exists to bridge a gap that was previously "orphaned": the
-AwarenessAnalyzer and InsightAnalyzer were defined but had zero runtime
-callers, so ``profile.recent_awareness`` and ``profile.active_insights``
-were always empty. The cycle wires them into the normal tick loop with a
-cost-aware throttle so LLM spend stays bounded.
+此模块的存在是为了填补一个曾经的「孤儿」缺口：AwarenessAnalyzer
+和 InsightAnalyzer 已定义但运行时零调用方，因此
+``profile.recent_awareness`` 和 ``profile.active_insights`` 总是空。
+本循环将它们接入常规 tick 循环，并用成本感知的节流让 LLM 开销保持有界。
 """
 
 from __future__ import annotations
@@ -47,57 +44,54 @@ from openbiliclaw.soul.profile import (
 
 logger = logging.getLogger(__name__)
 
-# Default throttle: generate awareness+insight once every 12 hours.
+# 默认节流：每 12 小时生成一次认知 + 洞察。
 DEFAULT_MIN_INTERVAL_SECONDS = 12 * 60 * 60
 
-# --- Cursor-based incremental reads (replaces the old fixed limit=50) ----
-# Awareness reads events with id > last_awareness_event_id rather than the
-# most-recent-50 window, so a burst of >50 events in one throttle window is
-# never silently dropped, and a quiet window doesn't re-send the same events.
+# --- 基于游标的增量读取（替代旧的固定 limit=50） ----
+# 认知层读取 id > last_awareness_event_id 的事件，而不是最近 50 条窗口，
+# 这样一个节流窗口内突发的 >50 条事件不会被静默丢弃，
+# 而安静窗口也不会重复发送同样的事件。
 #
-# Bound on the newest still-unprocessed events folded into a single awareness
-# run. On a huge backlog (e.g. first run after a long offline period) the
-# watermark jumps to the newest event and older unprocessed events beyond this
-# window are skipped (logged, not silent) to keep "recent awareness" recent.
+# 单次认知运行折叠的、最新的、尚未处理事件数的上限。
+# 在巨大积压下（例如长时间离线后的首次运行），水位线跳到最新事件，
+# 超过此窗口的更老未处理事件会被跳过（记日志，不静默）以保持
+# 「近期认知」的近期性。
 _AWARENESS_BACKLOG_CAP = 900
-# Per-LLM-call batch size. Sized for modern long-context models (256k+): an
-# event is ~100 tokens, so 300 events ≈ 30-45k input tokens — a typical 12h
-# window (even heavy usage) fits in a SINGLE call, no needless splitting.
-# Batching only kicks in for pathological backlogs (> 300 new events in one
-# window), as a safety net so worst-case is a few modest calls rather than one
-# 90k-token call that smaller-context providers might choke on.
+# 每次 LLM 调用的批量大小。为现代长上下文模型（256k+）设计：
+# 一条事件约 100 token，所以 300 条事件 ≈ 30-45k 输入 token ——
+# 一个典型 12 小时窗口（即便重度使用）单次调用即可容纳，无需多余拆分。
+# 分批只在病态积压时（一个窗口内 > 300 条新事件）才触发，
+# 作为安全网，让最坏情况只是几次中等规模调用，而不是一次
+# 上下文较小的 provider 可能噎住的 90k-token 调用。
 _AWARENESS_EVENT_BATCH_SIZE = 300
-# Recent already-processed events (id <= watermark) included read-only in the
-# first batch so observations stay trend-aware even when few events are new.
+# 已处理的近期事件（id <= 水位线）以只读形式并入第一批，
+# 让观察在新增事件很少时仍保持趋势感知。
 _AWARENESS_CONTEXT_LOOKBACK = 10
 
-# Insight reads awareness notes after last_insight_awareness_index (a positional
-# cursor — notes are append-only) instead of the full awareness history, so the
-# insight prompt no longer grows without bound. Notes are denser than events
-# (each is an LLM-written observation), so the batch is smaller than awareness'
-# but still large enough that real runs (a handful of new notes) are one call.
+# 洞察读取 last_insight_awareness_index 之后的认知笔记（位置型游标 ——
+# 笔记只追加），而不是完整认知历史，这样洞察 prompt 不会无限增长。
+# 笔记比事件更密集（每条都是 LLM 写的观察），所以批量比认知层小，
+# 但仍大到足以让真实运行（少数几条新笔记）一次调用完成。
 _INSIGHT_NOTE_BACKLOG_CAP = 450
 _INSIGHT_NOTE_BATCH_SIZE = 150
 
-# Output-token budget for the batched cognition LLM calls. Larger than the
-# generic 16k default so a dense batch of events/notes can emit a full notes /
-# hypotheses array without truncation.
+# 分批认知 LLM 调用的输出 token 预算。比通用 16k 默认值大，
+# 让密集的事件/笔记批次能输出完整的 notes / hypotheses 数组而不被截断。
 _COGNITION_MAX_TOKENS = 32768
 
-# How many notes/insights to keep attached to the OnionProfile (surfaced in UI).
+# 附加到 OnionProfile（在 UI 中呈现）的笔记/洞察数量上限。
 _PROFILE_AWARENESS_WINDOW = 8
 _PROFILE_INSIGHT_WINDOW = 6
 
-# Backoff between the first and second awareness attempt. MiMo 502s and
-# transient JSON-shape glitches typically clear on a re-call after a brief
-# pause; 2s is enough to dodge most retryable bursts without lengthening
-# the cycle noticeably.
+# 第一次和第二次认知尝试之间的退避。MiMo 502 和瞬时 JSON 形状
+# 故障通常在短暂暂停后重试一次即可恢复；2s 足以躲过大多数可重试
+# 突发，又不会让循环明显变长。
 _AWARENESS_RETRY_BACKOFF_SECONDS = 2.0
 
 
 @dataclass
 class CognitionCycleResult:
-    """Summary of one cognition cycle run."""
+    """一次认知循环运行的摘要。"""
 
     ran: bool = False
     throttled: bool = False
@@ -109,9 +103,9 @@ class CognitionCycleResult:
 
 
 class CognitionCycle:
-    """Throttled awareness + insight generation runner.
+    """节流的认知 + 洞察生成运行器。
 
-    Usage:
+    用法：
         cycle = CognitionCycle(
             memory=memory,
             awareness_analyzer=...,
@@ -134,24 +128,22 @@ class CognitionCycle:
         self._insight_analyzer = insight_analyzer
         self._min_interval_seconds = int(min_interval_seconds)
 
-    # -- Public API -----------------------------------------------------------
+    # -- 公开 API -----------------------------------------------------------
 
     async def run_if_due(self, *, now: datetime | None = None) -> CognitionCycleResult:
-        """Run awareness+insight generation if the throttle interval has elapsed.
+        """若节流间隔已到，则运行认知 + 洞察生成。
 
-        Returns a result describing what happened. On throttle skip, returns
-        ``CognitionCycleResult(ran=False, throttled=True)``.
+        返回描述结果的对象。若因节流跳过，则返回
+        ``CognitionCycleResult(ran=False, throttled=True)``。
         """
         current_time = now or datetime.now()
         state = self._load_state()
         result = CognitionCycleResult()
 
-        # Gate: awareness + insight LLM calls feed on `preference` and `soul`
-        # memory layers. If neither has been built yet (init's first ~7
-        # minutes), the analyzer prompts get near-empty inputs and tend to
-        # blow up. Silent skip here avoids the ERROR-level traces every
-        # cognition tick before the profile lands, while still allowing a
-        # partially initialized profile to accrue fresh awareness.
+        # 门控：认知 + 洞察 LLM 调用消费 `preference` 和 `soul` 记忆层。
+        # 若两者均尚未构建（init 的前 ~7 分钟），分析器 prompt 拿到的输入
+        # 几乎为空，容易爆掉。这里静默跳过，避免画像落地前每个认知 tick
+        # 都打 ERROR 级别日志，同时仍允许部分初始化的画像积累新认知。
         preference_data = self._memory.get_layer("preference").data
         soul_data = self._memory.get_layer("soul").data
         if not preference_data and not soul_data:
@@ -171,19 +163,18 @@ class CognitionCycle:
 
         result.ran = True
 
-        # 1. Awareness pass
+        # 1. 认知阶段
         if awareness_due:
             try:
                 added = await self._run_awareness(state)
                 result.awareness_generated = added
                 state["last_awareness_at"] = current_time.isoformat()
             except AwarenessGenerationError as exc:
-                # Recoverable: bad JSON shape or single LLM hiccup. Log at
-                # WARNING (not ERROR) and DO NOT advance ``last_awareness_at``
-                # — the next tick will re-attempt instead of waiting the full
-                # 12h throttle. Pre-resilience this fell through the generic
-                # ``except Exception`` branch which silently advanced the
-                # schedule and blanked the awareness window for half a day.
+                # 可恢复：JSON 形状错误或单次 LLM 抽风。以 WARNING
+                # （而非 ERROR）记日志，且不推进 ``last_awareness_at``
+                # —— 下次 tick 会重试，而不是等满 12 小时节流。
+                # 健壮性补丁之前这里落到通用 ``except Exception`` 分支，
+                # 会静默推进调度并把认知窗口清空半天。
                 logger.warning(
                     "Awareness analyzer failed twice; will retry next tick: %s",
                     exc,
@@ -193,7 +184,7 @@ class CognitionCycle:
                 logger.exception("Awareness analyzer failed during cognition cycle")
                 result.errors.append(f"awareness: {exc}")
 
-        # 2. Insight pass — runs after awareness so it can use the fresh notes
+        # 2. 洞察阶段 —— 在认知之后运行，以便使用新笔记
         if insight_due:
             try:
                 added = await self._run_insight(state)
@@ -203,9 +194,8 @@ class CognitionCycle:
                 logger.exception("Insight analyzer failed during cognition cycle")
                 result.errors.append(f"insight: {exc}")
 
-        # 3. Sync the fresh awareness/insights into the OnionProfile so the
-        # popup sees them immediately. This is a best-effort write — a
-        # missing soul layer or mid-init state should not break the cycle.
+        # 3. 把新认知/洞察同步进 OnionProfile，让弹窗立即看到。
+        # 这是尽力而为的写入 —— 缺失 soul 层或 init 中状态不应破坏循环。
         try:
             self._sync_to_profile(result)
         except Exception:
@@ -214,7 +204,7 @@ class CognitionCycle:
         self._save_state(state)
         return result
 
-    # -- Internal -------------------------------------------------------------
+    # -- 内部 -------------------------------------------------------------
 
     def _is_due(
         self,
@@ -227,21 +217,19 @@ class CognitionCycle:
         return elapsed >= self._min_interval_seconds
 
     async def _run_awareness(self, state: dict[str, Any]) -> int:
-        """Fold events newer than the watermark into awareness notes.
+        """把水位线之后的新事件折叠为认知笔记。
 
-        Cursor-based: reads events with ``id > last_awareness_event_id`` (the
-        newest ``_AWARENESS_BACKLOG_CAP`` of them on a large backlog), processes
-        them in ``_AWARENESS_EVENT_BATCH_SIZE`` chunks, and advances the
-        watermark after each successful chunk so partial progress survives a
-        later-chunk failure. A small lookback of already-processed events rides
-        in the first chunk so observations stay trend-aware when little is new.
+        基于游标：读取 ``id > last_awareness_event_id`` 的事件
+        （大积压下取最新的 ``_AWARENESS_BACKLOG_CAP`` 条），按
+        ``_AWARENESS_EVENT_BATCH_SIZE`` 分块处理，每块成功后推进水位线，
+        这样后续块失败时部分进展得以保留。第一批还会附带少量已处理事件
+        作为上下文，让观察在新增很少时仍保持趋势感知。
 
-        Each chunk's analyze call retries once on ``AwarenessGenerationError``
-        (mirrors the legacy single-call behavior). A persistent failure bubbles
-        up to ``run_if_due`` — the watermark stays at the last good chunk, so
-        the next tick resumes from there instead of waiting the full throttle.
+        每块的 analyze 调用在 ``AwarenessGenerationError`` 时重试一次
+        （镜像旧的单次调用行为）。持续失败会上抛到 ``run_if_due`` ——
+        水位线停留在最后一块成功处，下次 tick 从那里恢复而不是等满节流。
 
-        Returns the number of NEW notes added across all chunks.
+        返回所有块新增的笔记数。
         """
         watermark = _coerce_int(state.get("last_awareness_event_id", 0))
         rows = self._memory.query_events(
@@ -256,7 +244,7 @@ class CognitionCycle:
                 "skipped (watermark jumps to newest of this window).",
                 _AWARENESS_BACKLOG_CAP,
             )
-        rows.reverse()  # query returns newest-first; process chronologically
+        rows.reverse()  # 查询返回最新在前；按时间顺序处理
 
         lookback = self._awareness_lookback(watermark)
         preference = self._memory.get_layer("preference").data
@@ -273,8 +261,8 @@ class CognitionCycle:
                 merged = self._awareness_analyzer.merge_notes(existing, new_notes)
                 total_added += max(0, len(merged) - len(existing))
                 self._save_awareness_notes(merged)
-            # Advance the watermark past this chunk and persist immediately so a
-            # failure in a later chunk doesn't reprocess this one next tick.
+            # 把水位线推进到本块之后并立即持久化，
+            # 这样后续块的失败不会让本块在下次 tick 被重新处理。
             batch_max_id = max(_coerce_int(item.get("id", 0)) for item in batch)
             watermark = max(watermark, batch_max_id)
             state["last_awareness_event_id"] = watermark
@@ -287,7 +275,7 @@ class CognitionCycle:
         preference: dict[str, Any],
         soul_profile_data: dict[str, Any],
     ) -> list[AwarenessNote]:
-        """One awareness analyze call with a single retry on structured failure."""
+        """一次认知 analyze 调用，结构化失败时单次重试。"""
         try:
             return await self._awareness_analyzer.analyze(
                 events=events,
@@ -305,10 +293,10 @@ class CognitionCycle:
             )
 
     def _awareness_lookback(self, watermark: int) -> list[dict[str, Any]]:
-        """Recent already-processed events (id <= watermark) for trend context.
+        """已处理的近期事件（id <= 水位线），用作趋势上下文。
 
-        Empty on the first run (no prior events) — the backlog itself supplies
-        plenty of context then. Returned chronologically (oldest-first).
+        首次运行时为空（没有先前事件）—— 此时积压本身已提供足够上下文。
+        按时间顺序返回（最旧在前）。
         """
         if watermark <= 0:
             return []
@@ -318,22 +306,21 @@ class CognitionCycle:
         return prior
 
     async def _run_insight(self, state: dict[str, Any]) -> int:
-        """Derive insights from awareness notes newer than the insight cursor.
+        """从洞察游标之后的认知笔记中提炼洞察。
 
-        Cursor-based: reads ``awareness_notes[last_insight_awareness_index:]``
-        (notes are append-only, so a positional index is a stable cursor)
-        instead of the full awareness history — bounding the prompt. Processes
-        in ``_INSIGHT_NOTE_BATCH_SIZE`` chunks, passing the current active
-        hypotheses as read-only context so the LLM can refine rather than
-        restate. Advances the cursor after each chunk.
+        基于游标：读取 ``awareness_notes[last_insight_awareness_index:]``
+        （笔记只追加，所以位置索引是稳定游标），而不是完整认知历史 ——
+        从而给 prompt 设界。按 ``_INSIGHT_NOTE_BATCH_SIZE`` 分块处理，
+        并把当前活跃假设作为只读上下文传入，让 LLM 能精细化而非重述。
+        每块之后推进游标。
 
-        Returns the number of NEW hypotheses added across all chunks.
+        返回所有块新增的假设数。
         """
         all_notes = self._load_awareness_notes()
         total_notes = len(all_notes)
         cursor = _coerce_int(state.get("last_insight_awareness_index", 0))
         if cursor > total_notes:
-            # Notes shrank (unexpected — e.g. a future GC). Reprocess from 0.
+            # 笔记变少了（异常 —— 例如未来某次 GC）。从 0 重新处理。
             cursor = 0
         new_notes = all_notes[cursor:]
         if not new_notes:
@@ -372,22 +359,22 @@ class CognitionCycle:
         return total_added
 
     def _sync_to_profile(self, result: CognitionCycleResult) -> None:
-        """Copy the freshest awareness/insights into the OnionProfile.
+        """把最新的认知/洞察复制进 OnionProfile。
 
-        Reads the current soul layer, attaches the latest windowed notes
-        and insights, and writes back. This makes them visible via
-        ``profile.recent_awareness`` and ``profile.active_insights`` which
-        is what the /api/profile-summary endpoint reads.
+        读取当前 soul 层，附上最新的窗口化笔记和洞察，再写回。
+        这让它们通过 ``profile.recent_awareness`` 和
+        ``profile.active_insights`` 可见，正是 /api/profile-summary
+        端点读取的字段。
         """
         if result.awareness_generated == 0 and result.insight_generated == 0:
-            # Nothing to sync, but still update the total counts for observability
+            # 没什么可同步，但仍更新总数以便可观测性
             result.total_awareness_after = len(self._load_awareness_notes())
             result.total_insight_after = len(self._load_insights())
             return
 
         soul_layer = self._memory.get_layer("soul")
         if not soul_layer.data:
-            # Profile has not been initialized yet — skip sync silently
+            # 画像尚未初始化 —— 静默跳过同步
             return
 
         try:
@@ -399,9 +386,8 @@ class CognitionCycle:
         all_notes = self._load_awareness_notes()
         all_insights = self._load_insights()
 
-        # Keep the most recent window slice. Order of notes is preserved by
-        # the merge functions (append-only with dedup), so taking the tail
-        # gives us the newest items.
+        # 保留最近的窗口切片。笔记顺序由合并函数保留（追加并去重），
+        # 所以取尾部即得到最新条目。
         profile.recent_awareness = all_notes[-_PROFILE_AWARENESS_WINDOW:]
         profile.active_insights = all_insights[-_PROFILE_INSIGHT_WINDOW:]
         profile.updated_at = datetime.now().isoformat()
@@ -410,8 +396,7 @@ class CognitionCycle:
         soul_layer.data.update(profile.to_dict())
         soul_layer.save()
 
-        # Also sync the markdown/json files so the filesystem-visible profile
-        # reflects the new awareness/insights.
+        # 同时同步 markdown/json 文件，让文件系统可见的画像反映新认知/洞察。
         try:
             self._memory.sync_profile_files(profile)
         except Exception:
@@ -420,7 +405,7 @@ class CognitionCycle:
         result.total_awareness_after = len(all_notes)
         result.total_insight_after = len(all_insights)
 
-    # -- Memory layer helpers (mirrors SoulEngine's private helpers) ----------
+    # -- 记忆层辅助函数（镜像 SoulEngine 的私有辅助） ----------
 
     def _load_awareness_notes(self) -> list[AwarenessNote]:
         layer_data = self._memory.get_layer("awareness").data
@@ -452,7 +437,7 @@ class CognitionCycle:
         )
         layer.save()
 
-    # -- State persistence ----------------------------------------------------
+    # -- 状态持久化 ----------------------------------------------------
 
     def _state_path(self) -> Path | None:
         data_dir = getattr(self._memory, "_data_dir", None)
@@ -493,7 +478,7 @@ def _parse_iso(value: Any) -> datetime | None:
 
 
 def _coerce_int(value: Any) -> int:
-    """Best-effort int coercion for watermark/cursor values read from JSON state."""
+    """对从 JSON 状态读出的水位线/游标值尽力做 int 转换。"""
     if isinstance(value, bool):
         return int(value)
     if isinstance(value, int):
@@ -509,7 +494,7 @@ def _coerce_int(value: Any) -> int:
 
 
 def _chunk(items: list[Any], size: int) -> Iterator[list[Any]]:
-    """Yield successive ``size``-length slices of ``items`` (last may be shorter)."""
+    """逐个产出 ``items`` 的 ``size`` 长度切片（最后一块可能更短）。"""
     step = max(1, int(size))
     for start in range(0, len(items), step):
         yield items[start : start + step]

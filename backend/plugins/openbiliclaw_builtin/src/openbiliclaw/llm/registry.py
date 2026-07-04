@@ -1,4 +1,4 @@
-"""Factory helpers for building configured LLM registries."""
+"""构建已配置 LLM registry 的工厂辅助工具。"""
 
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 class RegistryBuildError(LLMProviderError):
-    """Raised when no usable providers can be created from config."""
+    """当配置无法创建任何可用 provider 时抛出。"""
 
 
 @dataclass
 class RegistrySummary:
-    """Summary of registry construction details."""
+    """registry 构建细节的摘要。"""
 
     configured_default: str
     effective_default: str
@@ -40,7 +40,7 @@ def build_llm_registry(
     provider_overrides: dict[str, LLMProvider] | None = None,
     fallback_order: list[str] | None = None,
 ) -> LLMRegistry:
-    """Build an LLM registry from application config."""
+    """根据应用配置构建 LLM registry。"""
     overrides = provider_overrides or {}
     registry = LLMRegistry()
     registry.fallback_enabled = bool(getattr(config.llm, "fallback_enabled", False))
@@ -59,10 +59,9 @@ def build_llm_registry(
     for _name, provider in provider_specs:
         if provider is None:
             continue
-        # Ollama gets a special chat-capability check: the registry needs
-        # it for embedding even when the user never configured a chat
-        # model, but in that case it MUST stay out of the chat fallback
-        # chain (see _ollama_is_chat_capable + base.py:_fallback_order).
+        # Ollama 有特殊的 chat 能力检查：即使用户从未配置 chat 模型，
+        # registry 在做 embedding 时也需要它；但此时它 MUST 不进入
+        # chat fallback 链（见 _ollama_is_chat_capable + base.py:_fallback_order）。
         chat_capable = True
         if _name == "ollama" and not _ollama_is_chat_capable(config):
             chat_capable = False
@@ -94,51 +93,49 @@ _EMBEDDING_CAPABLE_PROVIDERS: tuple[str, ...] = (
     "openai",
     "gemini",
     "ollama",
-    # Most OpenAI-protocol-compatible backends (Together, vLLM, Azure
-    # OpenAI, ...) expose /v1/embeddings. Groq currently does not, but
-    # users running a Groq + openai_compatible setup already have to
-    # supply an explicit embedding provider in [llm.embedding] — this
-    # candidate only kicks in when they actively requested it.
+    # 大多数 OpenAI 协议兼容后端（Together、vLLM、Azure OpenAI 等）
+    # 暴露 /v1/embeddings。Groq 目前不暴露，但运行 Groq +
+    # openai_compatible 配置的用户本来就必须在 [llm.embedding] 中显式
+    # 指定 embedding provider —— 这个候选项只有在用户主动请求时才生效。
     "openai_compatible",
-    # OpenRouter routes embeddings per ``<vendor>/<model>`` slug
-    # (e.g. ``google/gemini-embedding-2-preview``,
-    # ``openai/text-embedding-3-small``). Coverage is spotty per-route
-    # so it stays out of the chat-side ``supports_embedding`` flag —
-    # users must opt in by setting ``[llm.embedding].provider =
-    # "openrouter"`` with an explicit ``model``.
+    # OpenRouter 按 ``<vendor>/<model>`` slug 路由 embedding
+    # （例如 ``google/gemini-embedding-2-preview``、
+    # ``openai/text-embedding-3-small``）。各路由覆盖范围参差不齐，
+    # 因此它不进入 chat 侧的 ``supports_embedding`` 标志 ——
+    # 用户必须通过设置 ``[llm.embedding].provider = "openrouter"``
+    # 并显式指定 ``model`` 来主动启用。
     "openrouter",
 )
 _DEFAULT_EMBEDDING_MODEL_BY_PROVIDER: dict[str, str] = {
     "gemini": "gemini-embedding-001",
     "openai": "text-embedding-3-small",
     "ollama": "bge-m3",
-    # No safe default for openai_compatible — depends entirely on the
-    # upstream service. Users must specify an explicit model.
+    # openai_compatible 没有安全的默认值 —— 完全取决于上游服务。
+    # 用户必须显式指定模型。
     "openai_compatible": "text-embedding-3-small",
 }
-# Module-level set so the back-compat WARNING fires once per provider per
-# process (not once per build_embedding_service call — runtime_context
-# rebuilds embedding on every PUT /api/config and we don't want to spam).
+# 模块级集合，确保 back-compat 警告在每个进程每个 provider 上只触发一次
+# （而非每次 build_embedding_service 调用都触发 —— runtime_context 在
+# 每次 PUT /api/config 时都会重建 embedding，不能让它刷屏）。
 _embedding_compat_warned: set[str] = set()
 
 
 def build_embedding_service(
     config: Config,
-    registry: LLMRegistry,  # noqa: ARG001 — kept for back-compat callers
+    registry: LLMRegistry,  # noqa: ARG001 — 保留给 back-compat 调用方
 ) -> SupportsEmbeddingService | None:
-    """Build an EmbeddingService from ``[llm.embedding]``.
+    """根据 ``[llm.embedding]`` 构建 EmbeddingService。
 
-    v0.3.32+ embedding owns its own ``api_key`` / ``base_url`` (see
-    ``EmbeddingConfig``), so the embedding provider is constructed as a
-    dedicated instance — completely decoupled from the chat-side
-    LLMRegistry. The ``registry`` parameter is preserved only so existing
-    call sites don't need to change; it is no longer consulted.
+    v0.3.32+ 起 embedding 拥有自己专属的 ``api_key`` / ``base_url``
+    （见 ``EmbeddingConfig``），因此 embedding provider 作为独立实例
+    构造 —— 与 chat 侧的 LLMRegistry 完全解耦。保留 ``registry`` 参数
+    只是为了现有调用点不必修改；它已不再被查阅。
 
-    Empty ``[llm.embedding].provider`` disables embedding; it no longer
-    follows ``[llm].default_provider``. Provider fallback is opt-in via
-    ``[llm.embedding].fallback_provider`` and only tries that one
-    explicit backup provider. ``fallback_enabled`` remains as a legacy
-    compatibility flag for borrowing chat-side credentials.
+    ``[llm.embedding].provider`` 为空时禁用 embedding；它不再跟随
+    ``[llm].default_provider``。Provider fallback 通过
+    ``[llm.embedding].fallback_provider`` 显式启用，且只会尝试那一个
+    显式备份 provider。``fallback_enabled`` 作为遗留兼容标志保留，
+    用于借用 chat 侧凭证。
     """
     try:
         from typing import cast
@@ -149,10 +146,9 @@ def build_embedding_service(
         requested_name = emb_cfg.provider.strip().lower()
         fallback_provider = str(getattr(emb_cfg, "fallback_provider", "")).strip().lower()
 
-        # Build candidate ordering: requested first, then optional
-        # explicit fallback provider. Empty provider no longer follows
-        # [llm].default_provider; embedding is an independent config
-        # surface.
+        # 构建候选顺序：先请求的 provider，再可选的显式 fallback provider。
+        # 空 provider 不再跟随 [llm].default_provider；embedding 是独立的
+        # 配置面。
         fallback_order: list[str] = []
         fallback_candidates: tuple[str, ...] = (fallback_provider,) if fallback_provider else ()
         for name in ((requested_name,) if requested_name else ()) + fallback_candidates:
@@ -192,7 +188,7 @@ def build_embedding_service(
                 chosen_name,
             )
 
-        # Persistent L2 cache: store embeddings in SQLite alongside main DB
+        # 持久化 L2 缓存：将 embedding 存储在与主 DB 同目录的 SQLite 中
         l2_cache: EmbeddingCache | None = None
         try:
             cache_path = config.data_path / "embedding_cache.db"
@@ -225,26 +221,25 @@ def _build_dedicated_embedding_provider(
     config: Config,
     requested_name: str,
 ) -> tuple[LLMProvider, str] | None:
-    """Construct a dedicated provider instance for embedding calls.
+    """为 embedding 调用构造独立的 provider 实例。
 
-    Returns ``(provider, effective_model)`` or ``None`` if the candidate
-    can't be constructed (missing api_key, missing SDK, ...).
+    返回 ``(provider, effective_model)``，若候选无法构造（缺 api_key、
+    缺 SDK 等）则返回 ``None``。
     """
     emb_api_key = emb_cfg.api_key.strip()
     emb_base_url = emb_cfg.base_url.strip()
     fallback_enabled = bool(getattr(emb_cfg, "fallback_enabled", False))
     output_dimensionality = _embedding_output_dimensionality(emb_cfg)
 
-    # First-class path: candidate matches what the user requested AND
-    # they supplied credentials in [llm.embedding].
+    # 一等路径：候选与用户请求一致 且 用户在 [llm.embedding] 中提供了凭证。
     use_embedding_creds = candidate == requested_name and bool(emb_api_key or emb_base_url)
 
     if use_embedding_creds:
         api_key = emb_api_key
         base_url = emb_base_url
     elif fallback_enabled:
-        # Optional back-compat path: borrow from [llm.<candidate>] only
-        # when embedding fallback is explicitly enabled.
+        # 可选 back-compat 路径：仅在 embedding fallback 显式开启时
+        # 才从 [llm.<candidate>] 借用凭证。
         chat_cfg = getattr(config.llm, candidate, None)
         api_key = (getattr(chat_cfg, "api_key", "") if chat_cfg is not None else "").strip()
         base_url = (getattr(chat_cfg, "base_url", "") if chat_cfg is not None else "").strip()
@@ -262,10 +257,9 @@ def _build_dedicated_embedding_provider(
         api_key = ""
         base_url = ""
 
-    # Effective model: honour explicit emb_cfg.model only when we're
-    # building the requested provider — fallback paths must use the
-    # per-provider default (e.g. text-embedding-3-small on OpenAI is
-    # meaningless when we fell back to Ollama).
+    # 有效模型：只有在构造被请求的 provider 时才尊重显式的
+    # emb_cfg.model —— fallback 路径必须使用各 provider 的默认值
+    # （例如回退到 Ollama 时 text-embedding-3-small 毫无意义）。
     if candidate == requested_name and emb_cfg.model.strip():
         effective_model = emb_cfg.model.strip()
     else:
@@ -274,14 +268,13 @@ def _build_dedicated_embedding_provider(
         )
 
     if candidate == "ollama":
-        # Ollama doesn't require an api_key, so without a gate the
-        # constructor would always succeed and silently mask "user has no
-        # embedding-capable provider" — which matters for the warning
-        # path that tells users to set up Ollama or a Gemini key. Only
-        # build it when the user actually opted in:
-        #   - [llm.embedding] supplied its own ollama config, OR
-        #   - the user requested Ollama for embedding, OR
-        #   - [llm.ollama] is configured (back-compat — they run it locally).
+        # Ollama 不需要 api_key，若不加门控构造器永远会成功，从而静默
+        # 掩盖"用户没有任何 embedding 能力的 provider"这一事实 —— 这
+        # 会影响警告路径（提示用户去设置 Ollama 或 Gemini key）。仅在
+        # 用户确实主动选择时才构造：
+        #   - [llm.embedding] 提供了自己的 ollama 配置，或
+        #   - 用户为 embedding 请求了 Ollama，或
+        #   - [llm.ollama] 已配置（back-compat —— 用户在本地跑它）。
         chat_ollama = config.llm.ollama
         has_chat_ollama_config = bool(chat_ollama.model.strip() or chat_ollama.base_url.strip())
         if not use_embedding_creds and requested_name != "ollama" and not has_chat_ollama_config:
@@ -328,9 +321,9 @@ def _build_dedicated_embedding_provider(
         )
 
     if candidate == "openai_compatible":
-        # Strict — no api_key OR no base_url means we can't construct it.
-        # Unlike "openai", there's no api.openai.com fallback because
-        # this provider's whole reason to exist is the custom base_url.
+        # 严格 —— 没有 api_key 或没有 base_url 就无法构造。
+        # 与 "openai" 不同，这里没有 api.openai.com fallback，
+        # 因为该 provider 存在的全部理由就是自定义 base_url。
         if not api_key or not base_url:
             return None
         return (
@@ -344,16 +337,15 @@ def _build_dedicated_embedding_provider(
         )
 
     if candidate == "openrouter":
-        # OpenRouter requires an explicit ``<vendor>/<model>`` slug — no
-        # safe default since routing depends on it. Refuse to construct
-        # without one rather than 404 at first embed call.
+        # OpenRouter 要求显式的 ``<vendor>/<model>`` slug —— 没有安全
+        # 默认值，因为路由取决于它。无 slug 时拒绝构造，而不是在第一次
+        # embed 调用时才 404。
         if not api_key:
             return None
         if candidate == requested_name and not emb_cfg.model.strip():
             return None
-        # Pass through optional attribution headers from [llm.openrouter]
-        # so the embedding traffic shows up under the same OpenRouter
-        # account dashboard as chat traffic.
+        # 从 [llm.openrouter] 透传可选的 attribution headers，让
+        # embedding 流量与 chat 流量在同一个 OpenRouter 账户面板下显示。
         chat_openrouter = config.llm.openrouter
         return (
             OpenRouterProvider(
@@ -400,8 +392,8 @@ def _embedding_provider_honors_output_dimensionality(
 
 
 def _emit_embedding_compat_warning(provider_name: str) -> None:
-    """Emit at most one WARNING per provider per process for the
-    embedding back-compat path."""
+    """每个 provider 每个进程至多触发一次 embedding back-compat 路径的
+    WARNING。"""
     if provider_name in _embedding_compat_warned:
         return
     _embedding_compat_warned.add(provider_name)
@@ -415,7 +407,7 @@ def _emit_embedding_compat_warning(provider_name: str) -> None:
 
 
 def summarize_registry(config: Config, registry: LLMRegistry) -> RegistrySummary:
-    """Return registry summary details for CLI display."""
+    """返回 registry 摘要详情，用于 CLI 展示。"""
     return RegistrySummary(
         configured_default=config.llm.default_provider,
         effective_default=registry.default_provider,
@@ -510,20 +502,18 @@ def _maybe_ollama_provider(config: Config, overrides: dict[str, LLMProvider]) ->
     raw_base_url = config.llm.ollama.base_url.strip()
     model = config.llm.ollama.model.strip()
 
-    # v0.3.32+ note: build_embedding_service now constructs its own Ollama
-    # provider directly from [llm.embedding] (or back-compat from
-    # [llm.ollama]) — it no longer goes through this registry. So we no
-    # longer need the old ``embedding_wants_ollama`` auto-register hack:
-    # the chat registry stays clean, and Ollama is only registered here
-    # when the user actually wants chat completions through it.
+    # v0.3.32+ 注：build_embedding_service 现在直接从 [llm.embedding]
+    # （或 back-compat 从 [llm.ollama]）构造自己的 Ollama provider ——
+    # 不再经过本 registry。因此不再需要旧的 ``embedding_wants_ollama``
+    # 自动注册 hack：chat registry 保持干净，Ollama 仅在用户确实想用
+    # 它做 chat completion 时才在这里注册。
     if not model and not raw_base_url:
         return None
     base_url = raw_base_url or "http://localhost:11434/v1"
-    # Normalise: Ollama's OpenAI-compat shim lives at `/v1/...`. Older
-    # config.example.toml shipped `http://localhost:11434` (no /v1),
-    # which makes the OpenAI SDK call `/chat/completions` — Ollama 404s
-    # those. Append /v1 defensively so existing users with stale configs
-    # still get working chat completions after upgrade.
+    # 规范化：Ollama 的 OpenAI 兼容 shim 位于 ``/v1/...``。旧版
+    # config.example.toml 中是 ``http://localhost:11434``（无 /v1），
+    # 这会让 OpenAI SDK 调用 ``/chat/completions`` —— Ollama 会 404。
+    # 防御性地补上 /v1，让使用旧配置的用户升级后仍能正常 chat。
     if not base_url.rstrip("/").endswith("/v1"):
         base_url = base_url.rstrip("/") + "/v1"
     return OllamaProvider(
@@ -536,28 +526,26 @@ def _maybe_ollama_provider(config: Config, overrides: dict[str, LLMProvider]) ->
 
 
 def _ollama_is_chat_capable(config: Config) -> bool:
-    """Decide whether the registered Ollama instance can serve chat
-    completions, or only embedding requests.
+    """判断已注册的 Ollama 实例是否能提供 chat completion，还是只能
+    处理 embedding 请求。
 
-    The user opts in to chat capability by any of:
-      * setting ``[llm.ollama] model`` (their explicit chat model), or
-      * picking ``ollama`` as ``[llm].default_provider``, or
-      * naming ``ollama`` as ``[llm].fallback_provider`` — an explicit
-        request to use local Ollama as the chat fallback, or
-      * using it in any per-module override.
+    用户通过以下任意方式启用 chat 能力：
+      * 设置 ``[llm.ollama] model``（显式 chat 模型），或
+      * 将 ``ollama`` 选为 ``[llm].default_provider``，或
+      * 将 ``ollama`` 命名为 ``[llm].fallback_provider`` —— 显式请求
+        将本地 Ollama 作为 chat fallback，或
+      * 在任何按模块的 override 中使用它。
 
-    If none of those are true and we only registered Ollama because the
-    embedding section pointed there, treat it as embedding-only. The
-    fallback chain will skip it for chat completions, avoiding the
-    "All providers failed (..., ollama). Last error: ollama request
-    failed: 404" path when the only model on disk is bge-m3.
+    若以上都不满足，且我们仅因 embedding 段指向它才注册了 Ollama，
+    则视为仅支持 embedding。fallback 链在 chat completion 时会跳过它，
+    避免出现"磁盘上唯一的模型是 bge-m3 时，报 All providers failed
+    (..., ollama). Last error: ollama request failed: 404"的情况。
 
-    Note: when chat capability comes *solely* from ``fallback_provider``
-    (no explicit ``[llm.ollama] model``), the provider is built with the
-    ``llama3`` default — so the user must have a chat model pulled
-    locally for the fallback to actually serve requests. That's the
-    user's stated intent though, so a 404 at fallback time is a louder,
-    more honest failure than silently dropping Ollama from the chain.
+    注：当 chat 能力*仅*来自 ``fallback_provider``（无显式
+    ``[llm.ollama] model``）时，provider 会以 ``llama3`` 默认值构造 ——
+    因此用户必须本地拉取一个 chat 模型，fallback 才能真正服务请求。
+    但这是用户声明的意图，fallback 时的 404 比"静默把 Ollama 从链中
+    删除"是更响亮、更诚实的失败。
     """
     if config.llm.ollama.model.strip():
         return True
@@ -594,22 +582,21 @@ def _maybe_openrouter_provider(
 def _maybe_openai_compatible_provider(
     config: Config, overrides: dict[str, LLMProvider]
 ) -> LLMProvider | None:
-    """Generic OpenAI-protocol-compatible provider (Groq / Together / Azure
-    OpenAI / vLLM / self-hosted, etc.).
+    """通用 OpenAI 协议兼容 provider（Groq / Together / Azure OpenAI /
+    vLLM / 自托管等）。
 
-    Distinct from ``[llm.openai]`` so users can run both in parallel and
-    keep cost / model accounting separate. Refuses to register without a
-    ``base_url`` — that's the whole point of this provider; without it
-    the call would just hit api.openai.com and would be indistinguishable
-    from ``[llm.openai]`` (and would 401 against the wrong key)."""
+    与 ``[llm.openai]`` 区分，让用户可以并行运行两者并保持成本 / 模型
+    核算独立。无 ``base_url`` 时拒绝注册 —— 这是该 provider 存在的全部
+    意义；没有它，调用只会打到 api.openai.com，与 ``[llm.openai]`` 无
+    法区分（且会用错的 key 401）。"""
     if "openai_compatible" in overrides:
         return overrides["openai_compatible"]
     cfg = config.llm.openai_compatible
     if not cfg.api_key.strip():
         return None
     if not cfg.base_url.strip():
-        # Surfaced as a ConfigIssue in _collect_config_issues; here we
-        # just refuse to construct a misconfigured provider.
+        # 在 _collect_config_issues 中作为 ConfigIssue 暴露；这里只是
+        # 拒绝构造一个配置错误的 provider。
         return None
     return OpenAIProvider(
         api_key=cfg.api_key,

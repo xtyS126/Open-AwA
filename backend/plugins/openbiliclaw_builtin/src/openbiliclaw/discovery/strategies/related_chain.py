@@ -1,4 +1,4 @@
-"""Related-chain content discovery strategy."""
+"""相关链内容发现策略。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RelatedChainStrategy(DiscoveryStrategy):
-    """Discover content by following related recommendation chains."""
+    """通过追踪相关推荐链发现内容。"""
 
     bilibili_client: SupportsRelatedClient
     llm_service: SupportsStructuredTask
@@ -51,13 +51,13 @@ class RelatedChainStrategy(DiscoveryStrategy):
     max_seeds: int = 5
     related_per_seed: int = 8
     max_depth: int = 2
-    # Cap candidates passed to the LLM evaluator per depth round.
-    # Without this, depth-2 fanout (up to ``max_seeds * related_per_seed`` ×
-    # next-layer-size) can send hundreds of items to ``evaluate_content_batch``
-    # — an order of magnitude more than other strategies produce — which
-    # dominates discover wall time. 40 keeps a round's eval work roughly
-    # balanced with search/trending/explore while still letting depth-2
-    # exploration happen.
+    # 限制每轮 depth 传给 LLM evaluator 的候选数。
+    # 没有这一步,depth-2 fanout (可达 ``max_seeds * related_per_seed`` ×
+    # 下一层大小) 会把数百个 item 发给 ``evaluate_content_batch``
+    # — 比其他策略产出的多一个数量级 — 这会
+    # 主导 discover wall time。40 使一轮的 eval 工作量大致
+    # 与 search/trending/explore 平衡,同时仍允许 depth-2
+    # 探索发生。
     max_eval_candidates_per_round: int = 40
     last_intermediates: dict[str, object] = field(default_factory=dict)
 
@@ -76,14 +76,14 @@ class RelatedChainStrategy(DiscoveryStrategy):
         )
 
     async def discover(self, profile: SoulProfile, limit: int = 20) -> list[DiscoveredContent]:
-        """Start from known good content and explore related chains.
+        """从已知好内容出发,探索相关链。
 
         Args:
-            profile: User soul profile.
-            limit: Maximum results.
+            profile: 用户 soul profile。
+            limit: 最大结果数。
 
         Returns:
-            Discovered content list.
+            发现的内容列表。
         """
         evaluator = ContentDiscoveryEngine(
             llm_service=self.llm_service,
@@ -101,7 +101,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
         seen_bvids = {seed_bvid for seed_bvid, _ in seed_descriptors}
         visited_source_bvids: set[str] = set()
 
-        # Layer-parallel BFS: process each depth level concurrently
+        # 层级并行 BFS: 每层 depth 同时处理
         current_layer: list[tuple[str, int, int, str]] = [
             (seed_bvid, 1, seed_index, topic_key)
             for seed_index, (seed_bvid, topic_key) in enumerate(seed_descriptors)
@@ -113,7 +113,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
             if not current_layer or len(results) >= limit:
                 break
 
-            # Dedupe and filter visited within layer
+            # 层内去重并过滤已访问
             layer_items: list[tuple[str, int, int, str]] = []
             for item in current_layer:
                 if item[0] not in visited_source_bvids:
@@ -123,21 +123,21 @@ class RelatedChainStrategy(DiscoveryStrategy):
             if not layer_items:
                 break
 
-            # Fetch related videos for entire layer concurrently
+            # 并发抓取整层的相关视频
             related_outcomes = await _gather_bounded(
                 [self.bilibili_client.get_related_videos(bvid) for bvid, _, _, _ in layer_items],
                 runner=runner,
             )
 
-            # Collect candidates from all results
+            # 从所有结果中收集候选
             batch_candidates: list[tuple[DiscoveredContent, int, int, str]] = []
-            # v0.3.50+: per-UP cap inside one depth round. Without this
-            # cap, related_chain following a "popular UP" seed could
-            # dump 13+ items of the same UP into a single batch (real
-            # case: 张雪机车×13 — observed 2026-05-05). We track count
-            # per up_name across ALL seeds in this round, not per seed,
-            # because the same UP shows up via multiple seeds when the
-            # user genuinely follows them.
+            # v0.3.50+: 一个 depth round 内的 per-UP 上限。没有这个
+            # 上限,related_chain 在跟 "popular UP" 种子时可能
+            # 在单批里倒出 13+ 个同一 UP 的 item (真实
+            # 案例: 张雪机车×13 — 2026-05-05 观察)。我们在本
+            # round 跨所有种子追踪 per up_name 计数,而不是
+            # per seed,因为用户真的关注某 UP 时,该 UP 会通过
+            # 多个种子出现。
             from openbiliclaw.discovery.engine import _RELATED_CHAIN_PER_UP_CAP
 
             up_counts: dict[str, int] = {}
@@ -186,11 +186,10 @@ class RelatedChainStrategy(DiscoveryStrategy):
                     ", ".join(f"{k}×{v}" for k, v in up_skipped.items()),
                 )
 
-            # Cap per-round candidate count so depth-2 fanout doesn't
-            # dump hundreds of items into evaluate_content_batch. We
-            # prioritise retaining one slot per distinct seed_index so
-            # each seed lineage still contributes before the cap kicks
-            # in.
+            # 限制单轮候选数,避免 depth-2 fanout
+            # 把数百个 item 倒进 evaluate_content_batch。我们
+            # 优先为每个 distinct seed_index 保留一个 slot,使
+            # 每个 seed 血统在 cap 触发前仍能贡献。
             eval_candidate_limit = min(
                 self.max_eval_candidates_per_round,
                 llm_eval_candidate_limit(limit),
@@ -221,7 +220,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
                 )
                 batch_candidates = trimmed
 
-            # Evaluate all candidates in batched LLM calls
+            # 在批量 LLM 调用中评估所有候选
             contents = [c for c, _, _, _ in batch_candidates]
             if not self.llm_evaluation or discovery_raw_candidate_mode_enabled():
                 results.extend(contents)
@@ -260,11 +259,11 @@ class RelatedChainStrategy(DiscoveryStrategy):
         seeds: list[tuple[str, str]] = []
         seen: set[str] = set()
 
-        # Reserve slots for cross-domain seeds to fight echo chamber
+        # 为跨域种子预留 slot 以对抗 echo chamber
         cross_domain_slots = max(1, self.max_seeds // 3)
         interest_slots = self.max_seeds - cross_domain_slots
 
-        # Phase 1: fill interest-based seeds (events + preferences)
+        # 阶段 1: 填充基于兴趣的种子 (事件 + preferences)
         for bvid, title in self._event_seed_bvids_with_title():
             if bvid in seen:
                 continue
@@ -282,7 +281,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
                 if len(seeds) >= interest_slots:
                     break
 
-        # Phase 2: fill cross-domain seeds from explore/trending strategies
+        # 阶段 2: 从 explore/trending 策略填充跨域种子
         for strategy in (self.search_strategy, self.trending_strategy):
             if strategy is None:
                 continue
@@ -312,7 +311,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
             event_types=["favorite", "like", "coin", "share", "feedback", "view"],
             limit=max(self.max_seeds * 5, 20),
         )
-        # Diversify seeds: pick from different titles/topics to avoid echo chamber
+        # 多样化种子: 从不同 title/topic 选取以避免 echo chamber
         seed_pairs: list[tuple[str, str]] = []
         seen_title_prefixes: set[str] = set()
         ranked_events = sorted(
@@ -326,7 +325,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
             if not bvid:
                 continue
             full_title = str(event.get("title", "")).strip()
-            # Use first 4 chars of title as a rough topic dedup key
+            # 用 title 前 4 个字符作为粗略的 topic 去重 key
             prefix = full_title[:4]
             if prefix and prefix in seen_title_prefixes:
                 continue
@@ -393,7 +392,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
             if up_name.strip()
         )
 
-        # Respect per-strategy search budget.
+        # 遵守单策略搜索预算。
         if self.concurrency is not None:
             budget = self.concurrency.search_budget_per_strategy
             queries = queries[:budget]
@@ -459,7 +458,7 @@ class RelatedChainStrategy(DiscoveryStrategy):
             share_count = to_int(stat.get("share", 0))
 
         title_text = clean_text(str(item.get("title", "")))
-        # Prefer B站分区名 (tname) for topic_key, fall back to seed's key
+        # 优先用 B站分区名 (tname) 作为 topic_key,回退到 seed 的 key
         tname = str(item.get("tname", "")).strip()
         item_topic_key = re.sub(r"\s+", "", tname).lower()[:16] if tname else seed_topic_key
         return DiscoveredContent(
@@ -488,43 +487,43 @@ class RelatedChainStrategy(DiscoveryStrategy):
 
     @staticmethod
     def _topic_key_from_seed_bvid(seed_bvid: str) -> str:
-        """Fallback when no title is available — kept for preference seeds."""
+        """无 title 可用时的回退 — 为 preference seed 保留。"""
         return f"related:{seed_bvid.strip().lower()}"
 
     @staticmethod
     def _topic_key_from_title(title: str) -> str:
-        """Derive a semantic topic_key from a video title.
+        """从视频标题派生语义 topic_key。
 
-        Strategy:
-        1. Extract bracket-wrapped label if present (e.g. 【科技】→ 科技)
-        2. Otherwise split on punctuation/filler and keep core noun phrase
-        3. Cap at 8 chars to stay at category granularity, not video level
+        策略:
+        1. 若存在括号包裹的标签则提取 (如 【科技】→ 科技)
+        2. 否则按标点/虚词切分,保留核心名词短语
+        3. 截断到 8 字符以保持品类粒度,不落到视频级
         """
         if not title:
             return ""
-        # Try extracting bracket-wrapped label first: 【xxx】, [xxx], 《xxx》
+        # 先尝试提取括号包裹的标签: 【xxx】、[xxx]、《xxx》
         bracket_match = re.search(r"[【\[《「]([^】\]》」]{2,8})[】\]》」]", title)
         if bracket_match:
             return re.sub(r"\s+", "", bracket_match.group(1)).lower()[:8]
-        # Strip all brackets, punctuation, emojis, numbers-heavy prefixes
+        # 去除所有括号、标点、emoji、数字密集前缀
         cleaned = re.sub(
             r"[【】\[\]《》「」（）()！!？?：:，,。.·\-—|／/～~\d]+",
             " ",
             title,
         ).strip()
-        # Split on whitespace and common Chinese filler/connective patterns
+        # 按空白和常见中文虚词/连接词切分
         parts = re.split(r"[\s,，、]+", cleaned)
-        # Filter: keep segments 2-8 chars (too short = noise, too long = sentence)
+        # 过滤: 保留 2-8 字符的分段 (太短 = 噪声,太长 = 句子)
         meaningful = [p for p in parts if 2 <= len(p) <= 8]
         if meaningful:
             return re.sub(r"\s+", "", meaningful[0]).lower()[:8]
-        # Fallback: first 6 chars of cleaned title
+        # 回退: 清理后 title 的前 6 个字符
         fallback = re.sub(r"\s+", "", cleaned).lower()
         return fallback[:6] if fallback else ""
 
     @staticmethod
     def _topic_group_from_title(title: str) -> str:
-        """Extract a coarse topic group from title for diversity bucketing."""
+        """从 title 提取粗粒度 topic group 用于多样性分桶。"""
         cleaned = re.sub(r"[【】\[\]《》「」\s]+", " ", title).strip()
         parts = cleaned.split()
         if parts:

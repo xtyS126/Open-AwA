@@ -1,7 +1,7 @@
-"""OptimizationLoop — SGD/RL-inspired iterative profile optimization.
+"""OptimizationLoop — 受 SGD/RL 启发的画像迭代优化。
 
-Runs mini-batch evaluation cycles with exploration/exploitation,
-early stopping, and validation-based commit/rollback.
+运行带有探索/利用、早停和基于验证集提交/回滚的
+mini-batch 评估循环。
 """
 
 from __future__ import annotations
@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Config and results
+# 配置与结果
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class OptimizationConfig:
-    """Configuration for the optimization loop."""
+    """优化循环的配置。"""
 
     batch_size: int = 5
     max_epochs: int = 20
@@ -45,7 +45,7 @@ class OptimizationConfig:
 
 @dataclass
 class EpochResult:
-    """Result of one optimization epoch."""
+    """单个优化 epoch 的结果。"""
 
     epoch: int
     train_mean: float
@@ -59,7 +59,7 @@ class EpochResult:
 
 @dataclass
 class OptimizationResult:
-    """Final result of the optimization loop."""
+    """优化循环的最终结果。"""
 
     epochs_run: int = 0
     best_score: float = 0.0
@@ -95,16 +95,16 @@ class OptimizationResult:
 
 
 class OptimizationLoop:
-    """SGD/RL-inspired optimization loop for profile generation.
+    """受 SGD/RL 启发的画像生成优化循环。
 
-    Each epoch:
-    1. Sample mini-batch of diverse personas (ground truth)
-    2. Generate simulated events for each persona
-    3. Run events through the real pipeline → predicted profile
-    4. Evaluate predicted vs ground truth → EvalReport
-    5. Exploit (fix worst field) or explore (random perturbation)
-    6. Validate on held-out personas
-    7. Accept or rollback changes
+    每个 epoch：
+    1. 采样一个多样化的 mini-batch 人格（ground truth）
+    2. 为每个人格生成模拟事件
+    3. 将事件通过真实 pipeline → 预测画像
+    4. 评估预测画像 vs ground truth → EvalReport
+    5. 利用（修复最差字段）或探索（随机扰动）
+    6. 在留出人格上验证
+    7. 接受或回滚改动
     """
 
     def __init__(
@@ -115,7 +115,7 @@ class OptimizationLoop:
         persona_generator: PersonaGenerator,
         event_simulator: EventSimulator,
         optimizer: PromptOptimizer,
-        pipeline_factory: Any,  # Callable that creates a fresh pipeline for eval
+        pipeline_factory: Any,  # 创建全新 pipeline 用于评估的 Callable
         data_dir: Path | None = None,
     ) -> None:
         self._config = config
@@ -127,7 +127,7 @@ class OptimizationLoop:
         self._data_dir = data_dir or Path("data")
 
     async def run(self) -> OptimizationResult:
-        """Run the full optimization loop."""
+        """运行完整优化循环。"""
         cfg = self._config
         best_score = 0.0
         best_epoch = 0
@@ -144,7 +144,7 @@ class OptimizationLoop:
         for epoch in range(cfg.max_epochs):
             logger.info("=== Epoch %d/%d ===", epoch + 1, cfg.max_epochs)
 
-            # 1. Generate mini-batch of personas
+            # 1. 生成 mini-batch 人格
             personas = await self._persona_generator.generate_batch(cfg.batch_size)
             if len(personas) < cfg.validation_split + 1:
                 logger.warning("Not enough personas generated, skipping epoch")
@@ -153,11 +153,11 @@ class OptimizationLoop:
             train_personas = personas[: -cfg.validation_split]
             val_personas = personas[-cfg.validation_split :]
 
-            # 2. Forward pass on training set
+            # 2. 在训练集上前向传播
             train_reports = await self._evaluate_batch(train_personas)
             train_mean = _mean(r.overall_score for r in train_reports)
 
-            # 3. Backward pass: exploit or explore
+            # 3. 反向传播：利用或探索
             is_exploration = random.random() < cfg.exploration_rate
             if is_exploration:
                 changes = await self._optimizer.explore()
@@ -167,15 +167,15 @@ class OptimizationLoop:
                 changes = await self._optimizer.exploit(worst_fields)
                 logger.info("Epoch %d: EXPLOIT — %d changes", epoch + 1, len(changes))
 
-            # 4. Apply changes
+            # 4. 应用改动
             if changes:
                 self._optimizer.apply(changes)
 
-            # 5. Validate on held-out set
+            # 5. 在留出集上验证
             val_reports = await self._evaluate_batch(val_personas)
             val_mean = _mean(r.overall_score for r in val_reports)
 
-            # 6. Accept or rollback
+            # 6. 接受或回滚
             accepted = False
             if val_mean > best_score and changes:
                 best_score = val_mean
@@ -213,7 +213,7 @@ class OptimizationLoop:
             history.append(epoch_result)
             self._save_epoch(epoch_result)
 
-            # 7. Early stopping checks
+            # 7. 早停检查
             if patience_counter >= cfg.early_stop_patience:
                 logger.info("Early stopping: patience exhausted")
                 return OptimizationResult(
@@ -233,7 +233,7 @@ class OptimizationLoop:
                     history=history,
                 )
 
-        # Collect final attributions from last epoch
+        # 从最后一个 epoch 收集最终归因
         final_attrs: list[str] = []
         if history:
             last_train = history[-1].train_reports
@@ -258,28 +258,28 @@ class OptimizationLoop:
         self,
         personas: list[OnionProfile],
     ) -> list[EvalReport]:
-        """Evaluate a batch of personas: simulate events → pipeline → score."""
+        """评估一批人格：模拟事件 → pipeline → 评分。"""
         from openbiliclaw.soul.pipeline import signals_from_events
 
         reports: list[EvalReport] = []
         for persona in personas:
             try:
-                # Generate events
+                # 生成事件
                 events = await self._event_simulator.simulate(
                     persona,
                     event_count=self._config.event_count_per_persona,
                 )
 
-                # Run through pipeline
+                # 通过 pipeline 处理
                 pipeline = self._pipeline_factory()
                 signals = signals_from_events(events)
                 await pipeline.ingest_batch(signals)
                 await pipeline.flush()
 
-                # Get predicted profile
+                # 获取预测画像
                 predicted = pipeline._load_profile()
 
-                # Evaluate
+                # 评估
                 report = await self._evaluator.evaluate(persona, predicted)
                 reports.append(report)
             except Exception:
@@ -288,7 +288,7 @@ class OptimizationLoop:
         return reports
 
     def _save_epoch(self, result: EpochResult) -> None:
-        """Persist epoch result to data/eval/reports/."""
+        """将 epoch 结果持久化到 data/eval/reports/。"""
         report_dir = self._data_dir / "eval" / "reports"
         report_dir.mkdir(parents=True, exist_ok=True)
         path = report_dir / f"auto_epoch_{result.epoch:03d}.json"
@@ -310,7 +310,7 @@ class OptimizationLoop:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 辅助函数
 # ---------------------------------------------------------------------------
 
 
@@ -320,7 +320,7 @@ def _mean(values: Any) -> float:
 
 
 def _aggregate_worst(reports: list[Any]) -> list[Any]:
-    """Collect worst fields across all reports, deduplicate by field."""
+    """收集所有报告中最差的字段，按字段去重。"""
     field_map: dict[str, Any] = {}
     for report in reports:
         for f in report.worst_fields:

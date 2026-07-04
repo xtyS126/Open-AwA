@@ -1,25 +1,25 @@
-"""Local cover-image disk cache: shared key primitives + cleanup.
+"""本地封面图磁盘缓存：共享键原语 + 清理。
 
-The image proxy (``GET /api/image-proxy``) caches successfully fetched cover
-images under ``data/image-cache/`` so covers keep loading after an upstream
-CDN's signed URL token expires. This matters most for Xiaohongshu, whose
-``sns-webpic-qc.xhscdn.com`` URLs carry a short-lived ``{timestamp}/{token}``
-prefix — once it expires the only durable copy of the cover is the cached one.
+图片代理（``GET /api/image-proxy``）会把成功抓取的封面图缓存到
+``data/image-cache/`` 下，确保上游 CDN 的签名 URL token 过期后封面
+仍可继续加载。这对小红书最为重要——其
+``sns-webpic-qc.xhscdn.com`` URL 携带短生命周期的
+``{timestamp}/{token}`` 前缀，一旦过期，封面唯一持久的副本就是缓存里
+的那张。
 
-This module owns the cache-key normalization (single source of truth, also
-imported by :mod:`openbiliclaw.api.app`) and the consumption-aware cleanup that
-bounds disk growth without deleting covers that can never be re-fetched.
+本模块拥有缓存键归一化（单一事实源，也被
+:mod:`openbiliclaw.api.app` 引用）以及考虑消费状态的清理逻辑，能在不
+删除无法再抓取的封面的前提下，控制磁盘增长。
 
-Cleanup rules (unioned), see :func:`cleanup_image_cache`:
+清理规则（联合生效），见 :func:`cleanup_image_cache`：
 
-* **Consumed + unsaved** — covers of content whose ``pool_status`` is terminal
-  (the user has seen / passed / it aged out) and that is not in favorites or
-  watch-later are evicted. Re-fetchable covers (Bilibili etc., stable URLs) are
-  always safe — they re-download on next view.
-* **Un-refetchable protection** — covers carrying a rotating token (XHS) are
-  protected from consumption eviction by default; the cache is their only copy.
-* **Aged orphans** — cached files no live content row references are removed
-  once older than ``max_age_days`` (bounded-growth backstop / degraded mode).
+* **已消费 + 未收藏** —— ``pool_status`` 已终态的内容（用户已看 / 已
+  跳过 / 已过期）的封面，且不在收藏或稍后再看中，会被驱逐。可再抓取
+  的封面（Bilibili 等，URL 稳定）始终安全——下次浏览时会重新下载。
+* **不可再抓取保护** —— 携带轮换 token 的封面（XHS）默认受保护，
+  不会被消费型驱逐；缓存是它们唯一的副本。
+* **老化孤儿** —— 没有任何活跃内容行引用的缓存文件，超过
+  ``max_age_days`` 后会被移除（控制增长的兜底 / 降级模式）。
 """
 
 from __future__ import annotations
@@ -37,38 +37,37 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-# Resolved lazily (and cached) under the configured data dir — NOT a relative
-# "data/image-cache", which resolved against the process CWD (the read-only
-# install dir on packaged Windows) instead of the user's data dir.
+# 在配置的数据目录下懒解析（并缓存）——不是相对路径
+# "data/image-cache"，那会相对进程 CWD 解析（打包 Windows 上是只读
+# 安装目录），而不是用户的数据目录。
 _CACHE_DIR: Path | None = None
 
 
 def _resolve_cache_dir() -> Path:
-    """Locate the image cache under the configured data dir.
+    """在配置的数据目录下定位图片缓存。
 
-    Uses ``Config.data_path`` (which honours ``OPENBILICLAW_PROJECT_ROOT`` and a
-    custom ``data_dir``), so the cache lives with the user's data — e.g.
-    ``%LOCALAPPDATA%/OpenBiliClaw/data/image-cache`` — not next to the packaged
-    executable. Falls back to the env-aware project root if config can't load yet.
+    使用 ``Config.data_path``（它会遵守 ``OPENBILICLAW_PROJECT_ROOT``
+    和自定义 ``data_dir``），所以缓存与用户数据放在一起——例如
+    ``%LOCALAPPDATA%/OpenBiliClaw/data/image-cache``——而不是打包可执行
+    文件旁边。如果配置尚未就绪，则回退到环境感知的项目根。
     """
     try:
         from openbiliclaw.config import load_config
 
         return load_config().data_path / "image-cache"
-    except Exception:  # noqa: BLE001 — config not ready → still env-aware fallback
+    except Exception:  # noqa: BLE001 — 配置未就绪 → 仍走环境感知的回退
         from openbiliclaw.config import _project_root
 
         return _project_root() / "data" / "image-cache"
 
 
-# XHS CDN signed URL: https://sns-webpic-qc.xhscdn.com/{ts:12}/{token:hex}/{path}
-# The {ts}/{token} prefix rotates on every regeneration; {path} is stable.
+# XHS CDN 签名 URL：https://sns-webpic-qc.xhscdn.com/{ts:12}/{token:hex}/{path}
+# {ts}/{token} 前缀在每次重新生成时轮换；{path} 是稳定的。
 _XHS_TOKEN_RE = re.compile(r"(https?://[^/]*xhscdn\.com)/\d{12}/[0-9a-f]+/(.*)")
 
-# content_cache.pool_status values that mean "the user is done with this item":
-# it has been surfaced and acted on, or aged out. ``fresh`` (pending) and
-# ``suppressed`` (temporarily hidden, may revive to fresh) are intentionally
-# excluded — their covers are still needed.
+# content_cache.pool_status 中表示"用户已结束这条内容"的值：
+# 已被展示并处理过、或已过期。``fresh``（待处理）和 ``suppressed``
+# （临时隐藏，可能复活为 fresh）被刻意排除——它们的封面仍然需要。
 CONSUMED_POOL_STATUSES: frozenset[str] = frozenset(
     {"shown", "feedbacked", "stale", "purged_by_dislike"}
 )
@@ -85,11 +84,11 @@ _CONTENT_TYPE_BY_EXTENSION: dict[str, str] = {
 
 
 def _https_normalize(url: str) -> str:
-    """Mirror the frontend ``normalizeCoverUrl``: protocol-relative / http -> https.
+    """与前端 ``normalizeCoverUrl`` 对齐：协议相对 / http → https。
 
-    The browser applies this before building the proxy URL, so the cache is
-    keyed on the https form. Cleanup reads raw ``content_cache.cover_url`` (which
-    may be ``//…`` or ``http://…``) and must apply the same step to match.
+    浏览器在构造代理 URL 之前会做这一步，所以缓存键基于 https 形式。
+    清理逻辑读取原始 ``content_cache.cover_url``（可能是 ``//…`` 或
+    ``http://…``），必须应用同样的步骤才能匹配。
     """
     u = (url or "").strip()
     if u.startswith("//"):
@@ -100,7 +99,7 @@ def _https_normalize(url: str) -> str:
 
 
 def normalize_cache_url(url: str) -> str:
-    """Normalize a cover URL to a stable cache identity (https + token-stripped)."""
+    """把封面 URL 归一化为稳定的缓存身份（https + 去 token）。"""
     u = _https_normalize(url)
     m = _XHS_TOKEN_RE.match(u)
     if m:
@@ -109,21 +108,21 @@ def normalize_cache_url(url: str) -> str:
 
 
 def image_cache_key(url: str) -> str:
-    """SHA-256 of the normalized URL — the cache filename stem."""
+    """归一化后 URL 的 SHA-256——缓存文件名主干。"""
     return hashlib.sha256(normalize_cache_url(url).encode()).hexdigest()
 
 
 def is_refetchable(url: str) -> bool:
-    """Whether the cover can be re-fetched after eviction.
+    """驱逐后是否还能重新抓取封面。
 
-    False only for URLs carrying a rotating/expiring token (XHS) — the cached
-    copy is their sole durable source, so cleanup must not delete them.
+    仅对携带轮换/过期 token 的 URL（XHS）返回 False——缓存副本是它们
+    唯一持久的来源，所以清理时不能删除它们。
     """
     return _XHS_TOKEN_RE.match(_https_normalize(url)) is None
 
 
 def image_cache_dir() -> Path:
-    """Return the cache directory (resolved once, under the data dir), creating it."""
+    """返回缓存目录（在数据目录下解析一次），并创建它。"""
     global _CACHE_DIR
     if _CACHE_DIR is None:
         _CACHE_DIR = _resolve_cache_dir()
@@ -132,14 +131,14 @@ def image_cache_dir() -> Path:
 
 
 def image_cache_extension(content_type: str) -> str:
-    """Map a ``Content-Type`` to a cache file extension (defaults to ``jpg``)."""
+    """把 ``Content-Type`` 映射为缓存文件扩展名（默认 ``jpg``）。"""
     ext = content_type.split("/")[-1].split(";")[0].strip().lower()
     return ext if ext in _VALID_IMAGE_EXTS else "jpg"
 
 
 @dataclass
 class CleanupResult:
-    """Outcome of one :func:`cleanup_image_cache` pass."""
+    """一次 :func:`cleanup_image_cache` 的结果。"""
 
     removed: int = 0
     freed_bytes: int = 0
@@ -149,10 +148,10 @@ class CleanupResult:
 
 
 class CoverLifecycleSource(Protocol):
-    """Minimal database surface required by :func:`cleanup_image_cache`."""
+    """:func:`cleanup_image_cache` 所需的最小数据库接口。"""
 
     def iter_cover_lifecycle(self) -> Iterable[tuple[str, str, bool]]:
-        """Yield ``(cover_url, pool_status, is_saved)`` for every cached candidate."""
+        """为每个被缓存的候选项产出 ``(cover_url, pool_status, is_saved)``。"""
         ...
 
 
@@ -165,20 +164,20 @@ def cleanup_image_cache(
     cache_dir: Path | None = None,
     now: float | None = None,
 ) -> CleanupResult:
-    """Prune cached cover images.
+    """修剪缓存的封面图。
 
     Args:
-        database: source of cover lifecycle rows. When ``None`` (degraded mode)
-            only the aged-orphan backstop runs.
-        max_age_days: aged-orphan cutoff for files no content row references.
-        consumed_statuses: ``pool_status`` values treated as consumed.
-        protect_unrefetchable: keep covers that cannot be re-fetched (XHS tokens)
-            even when their content is consumed + unsaved.
-        cache_dir: override the cache directory (tests).
-        now: override the current epoch seconds (tests).
+        database: 封面生命周期行的来源。当为 ``None``（降级模式）时，
+            只运行老化孤儿兜底。
+        max_age_days: 没有内容行引用的文件的老化孤儿截止时间。
+        consumed_statuses: 视为已消费的 ``pool_status`` 值。
+        protect_unrefetchable: 即使内容已消费 + 未收藏，也保留无法再
+            抓取的封面（XHS token）。
+        cache_dir: 覆盖缓存目录（测试用）。
+        now: 覆盖当前 epoch 秒（测试用）。
 
     Returns:
-        A :class:`CleanupResult` with counts and freed bytes.
+        含计数和释放字节数的 :class:`CleanupResult`。
     """
     directory = cache_dir if cache_dir is not None else image_cache_dir()
     result = CleanupResult()
@@ -189,9 +188,9 @@ def cleanup_image_cache(
     if not files:
         return result
 
-    # Aggregate per cache key across all referencing content rows.
-    needed: set[str] = set()  # some row is saved or still pending -> never evict
-    consumed_only: set[str] = set()  # every referencing row is consumed + unsaved
+    # 跨所有引用该缓存键的内容行聚合状态。
+    needed: set[str] = set()  # 某行已收藏或仍在待处理 → 永不驱逐
+    consumed_only: set[str] = set()  # 所有引用行都已消费 + 未收藏
     unrefetchable: set[str] = set()
     referenced: set[str] = set()
     consumed = frozenset(consumed_statuses)
@@ -220,7 +219,7 @@ def cleanup_image_cache(
     for path in files:
         key = path.stem
         if key not in referenced:
-            # Orphan: no content row points here. Remove once aged out.
+            # 孤儿：没有内容行指向这里。老化后再删除。
             with suppress(OSError):
                 if path.stat().st_mtime >= cutoff:
                     continue
@@ -231,7 +230,7 @@ def cleanup_image_cache(
                 result.removed_aged_orphans += 1
             continue
         if key in needed:
-            # Still pending or saved (favorite / watch-later) — always keep.
+            # 仍在待处理或已收藏（收藏 / 稍后再看）——始终保留。
             continue
         if key not in consumed_only:
             continue
@@ -247,13 +246,13 @@ def cleanup_image_cache(
     return result
 
 
-# ── Cover fetch (shared by the proxy route and the prefetch sweep) ──────────
+# ── 封面抓取（代理路由和预取扫描共用） ────────────────────────────────────
 #
-# The whitelist + redirect + size/type validation below is the SSRF-protection
-# boundary for every server-side image fetch. It lives here (single source of
-# truth) so both ``api.app``'s ``/api/image-proxy`` route and RefreshRuntime's
-# prefetch sweep share identical security checks. Failures raise CoverFetchError
-# carrying the HTTP status the proxy exposes; the route maps it to HTTPException.
+# 下方的白名单 + 重定向 + 大小/类型校验是所有服务端图片抓取的 SSRF
+# 防护边界。它放在这里（单一事实源），让 ``api.app`` 的
+# ``/api/image-proxy`` 路由与 RefreshRuntime 的预取扫描共享完全相同的
+# 安全检查。失败时抛出 CoverFetchError，携带代理暴露的 HTTP 状态码；
+# 路由会把它映射为 HTTPException。
 
 ALLOWED_IMAGE_HOST_SUFFIXES: tuple[str, ...] = (
     "hdslb.com",
@@ -278,7 +277,7 @@ _UPSTREAM_HEADERS = {
 
 
 class CoverFetchError(Exception):
-    """A cover could not be fetched. ``status_code`` mirrors the proxy's HTTP semantics."""
+    """封面抓取失败。``status_code`` 与代理的 HTTP 语义一致。"""
 
     def __init__(self, status_code: int, detail: str) -> None:
         super().__init__(detail)
@@ -287,7 +286,7 @@ class CoverFetchError(Exception):
 
 
 def is_allowed_image_host(hostname: str) -> bool:
-    """Domain-boundary whitelist match (``host == suffix`` or ``*.suffix``)."""
+    """域边界白名单匹配（``host == suffix`` 或 ``*.suffix``）。"""
     host = hostname.rstrip(".").lower()
     return any(
         host == suffix or host.endswith(f".{suffix}") for suffix in ALLOWED_IMAGE_HOST_SUFFIXES
@@ -295,10 +294,10 @@ def is_allowed_image_host(hostname: str) -> bool:
 
 
 def is_allowed_image_url(url: str) -> bool:
-    """Cheap pre-check (no network) used to skip non-proxyable URLs.
+    """廉价预检（无网络），用于跳过不可代理的 URL。
 
-    Accepts the protocol-relative ``//host/…`` and ``http://`` forms stored in
-    ``content_cache.cover_url`` by normalizing to https first (mirrors the cache key).
+    接受存储在 ``content_cache.cover_url`` 中的协议相对 ``//host/…``
+    和 ``http://`` 形式，先归一化为 https（与缓存键一致）。
     """
     try:
         parsed = httpx.URL(_https_normalize(url))
@@ -313,9 +312,9 @@ def is_allowed_image_url(url: str) -> bool:
 
 
 def _parse_image_url(raw_url: str) -> httpx.URL:
-    # Normalize //host and http:// to https first so the prefetch path (which reads
-    # raw content_cache.cover_url) and the proxy path (already-normalized) agree, and
-    # the fetched bytes cache under the same key the proxy looks up.
+    # 先把 //host 和 http:// 归一化为 https，使预取路径（读取原始
+    # content_cache.cover_url）与代理路径（已归一化）保持一致，且抓取
+    # 到的字节缓存到代理查找的同一个键下。
     try:
         parsed = httpx.URL(_https_normalize(raw_url))
     except httpx.InvalidURL as exc:
@@ -378,12 +377,12 @@ async def _read_bounded(response: httpx.Response) -> bytes:
 
 
 async def fetch_cover_bytes(url: str) -> tuple[bytes, str]:
-    """Fetch a whitelisted cover image, returning ``(data, content_type)``.
+    """抓取白名单内的封面图，返回 ``(data, content_type)``。
 
-    Enforces scheme/host whitelist, manual redirect revalidation (max 3 hops),
-    ``image/*`` content type, and a 10MB ceiling (rejected before reading the
-    body when ``Content-Length`` says so, and during the read otherwise). Raises
-    :class:`CoverFetchError` (400/403/413/502/504) on any failure.
+    强制 scheme/host 白名单、手动重定向再校验（最多 3 跳）、
+    ``image/*`` content type，以及 10MB 上限（当 ``Content-Length``
+    超限时在读 body 之前就拒绝，否则在读过程中拒绝）。任何失败都抛出
+    :class:`CoverFetchError`（400/403/413/502/504）。
     """
     parsed = _parse_image_url(url)
     try:
@@ -407,14 +406,14 @@ async def fetch_cover_bytes(url: str) -> tuple[bytes, str]:
 
 
 def save_image_bytes(url: str, data: bytes, content_type: str) -> None:
-    """Persist fetched cover bytes to the disk cache (best-effort)."""
+    """把抓取到的封面字节持久化到磁盘缓存（尽力而为）。"""
     path = image_cache_dir() / f"{image_cache_key(url)}.{image_cache_extension(content_type)}"
     with suppress(OSError):
         path.write_bytes(data)
 
 
 def is_cover_cached(url: str) -> bool:
-    """True if a non-empty cached copy of this cover already exists on disk."""
+    """若磁盘上已有该封面的非空缓存副本，返回 True。"""
     for candidate in image_cache_dir().glob(f"{image_cache_key(url)}.*"):
         with suppress(OSError):
             if candidate.stat().st_size > 0:
@@ -423,7 +422,7 @@ def is_cover_cached(url: str) -> bool:
 
 
 def _cached_cover_bytes(url: str) -> tuple[bytes, str] | None:
-    """Return cached cover bytes when a non-empty cached file exists."""
+    """当存在非空缓存文件时，返回缓存的封面字节。"""
     for candidate in image_cache_dir().glob(f"{image_cache_key(url)}.*"):
         ext = candidate.suffix.lower().lstrip(".")
         if ext not in _CONTENT_TYPE_BY_EXTENSION:
@@ -436,7 +435,7 @@ def _cached_cover_bytes(url: str) -> tuple[bytes, str] | None:
 
 
 async def get_or_fetch_cover_bytes(url: str) -> tuple[bytes, str]:
-    """Return cover bytes from disk cache first, fetching and caching on miss."""
+    """优先从磁盘缓存返回封面字节，未命中时抓取并缓存。"""
     _parse_image_url(url)
     cached = _cached_cover_bytes(url)
     if cached is not None:
@@ -448,11 +447,11 @@ async def get_or_fetch_cover_bytes(url: str) -> tuple[bytes, str]:
 
 
 def select_prefetch_targets(urls: Iterable[str], *, max_fetch: int) -> list[str]:
-    """Pick which candidate cover URLs are worth prefetching right now.
+    """挑选当前值得预取的候选封面 URL。
 
-    Keeps only whitelisted, not-yet-cached URLs (deduped, preserving input order),
-    sorts un-refetchable (XHS rotating-token) covers first because they expire while
-    re-fetchable ones do not, and caps the result at ``max_fetch``.
+    只保留白名单内、尚未缓存的 URL（去重，保持输入顺序），把不可再抓取
+    （XHS 轮换 token）的封面排到前面——因为它们会过期，而可再抓取的
+    不会；最后用 ``max_fetch`` 截断结果。
     """
     todo: list[str] = []
     seen: set[str] = set()
@@ -463,16 +462,16 @@ def select_prefetch_targets(urls: Iterable[str], *, max_fetch: int) -> list[str]
         if not is_allowed_image_url(url) or is_cover_cached(url):
             continue
         todo.append(url)
-    # is_refetchable False (XHS token) sorts before True → fragile covers first.
+    # is_refetchable 为 False（XHS token）排到 True 之前 → 易失封面优先。
     todo.sort(key=is_refetchable)
     return todo[:max_fetch]
 
 
 async def prefetch_cover(url: str) -> bool:
-    """Fetch + cache a cover while its CDN token is still fresh (best-effort).
+    """在 CDN token 仍新鲜时抓取 + 缓存封面（尽力而为）。
 
-    Returns True only when a new cache entry was written. Never raises — prefetch
-    is opportunistic, so any whitelist / network / upstream failure is swallowed.
+    仅当写入了新的缓存条目时返回 True。永不抛异常——预取是机会主义
+    行为，任何白名单 / 网络 / 上游失败都会被吞掉。
     """
     if not is_allowed_image_url(url) or is_cover_cached(url):
         return False

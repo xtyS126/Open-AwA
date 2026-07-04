@@ -1,14 +1,13 @@
-"""Xiaohongshu (小红书) source adapter — extension-driven content discovery.
+"""小红书（Xiaohongshu）内容源适配器 —— 由扩展驱动的内容发现。
 
-All content discovery and metadata extraction happens in the user's
-browser via the Chrome extension (passive URL collection, background-tab
-search tasks, creator subscription fetches). The extension sends note
-metadata (title, author, cover, URL) directly to the backend API, which
-stores it in the shared ``discovery_candidates`` pending-evaluation pool.
+所有内容发现和元数据提取都在用户浏览器中通过 Chrome 扩展完成
+（被动 URL 收集、后台标签页搜索任务、创作者订阅拉取）。扩展将笔记
+元数据（标题、作者、封面、URL）直接发送到后端 API，后端将其存储到
+共享的 ``discovery_candidates`` 待评估池中。
 
-This adapter exists so the ``AdapterRegistry`` has a ``"xiaohongshu"``
-entry. Its ``fetch()`` is a no-op: the real data path is
-``POST /api/sources/xhs/observed-urls`` → ``discovery_candidates``.
+此适配器存在的目的是让 ``AdapterRegistry`` 拥有一个 ``"xiaohongshu"``
+条目。其 ``fetch()`` 是空操作：真实数据路径是
+``POST /api/sources/xhs/observed-urls`` → ``discovery_candidates``。
 """
 
 from __future__ import annotations
@@ -25,11 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 class XiaohongshuAdapter:
-    """Adapter stub — xhs content enters the system via the extension API,
-    not through the adapter's ``fetch()`` method.
+    """适配器桩 —— xhs 内容通过扩展 API 进入系统，
+    而非通过适配器的 ``fetch()`` 方法。
 
-    Registered so that ``AdapterRegistry.has("xiaohongshu")`` returns True
-    and multi-source pipeline code doesn't need special-casing.
+    注册此适配器是为了让 ``AdapterRegistry.has("xiaohongshu")`` 返回 True，
+    使多源流水线代码无需特殊处理。
     """
 
     @property
@@ -42,7 +41,7 @@ class XiaohongshuAdapter:
         profile: SoulProfile,
         limit: int = 20,
     ) -> list[DiscoveredContent]:
-        """No-op — xhs content is ingested via observed-urls into the candidate pool."""
+        """空操作 —— xhs 内容通过 observed-urls 进入候选池。"""
         logger.debug(
             "XiaohongshuAdapter.fetch() called but xhs content enters "
             "via extension API, not adapter.fetch(). Returning empty.",

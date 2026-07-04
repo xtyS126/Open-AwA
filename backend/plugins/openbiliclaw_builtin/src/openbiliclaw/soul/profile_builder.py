@@ -1,4 +1,4 @@
-"""Structured initial soul-profile generation."""
+"""结构化的初始灵魂画像生成。"""
 
 from __future__ import annotations
 
@@ -40,12 +40,12 @@ class SupportsCoreMemoryTask(Protocol):
 
 
 class SoulProfileBuildError(Exception):
-    """Raised when soul-profile generation fails or returns invalid data."""
+    """当灵魂画像生成失败或返回无效数据时抛出。"""
 
 
 @dataclass
 class ProfileBuilder:
-    """Generate an initial soul profile from history and preference context."""
+    """从历史与偏好上下文生成初始灵魂画像。"""
 
     registry: SupportsCoreMemoryTask
 
@@ -131,7 +131,7 @@ class ProfileBuilder:
             life_stage=str(payload.get("life_stage", "")),
             deep_needs=self._as_str_list(payload.get("deep_needs")),
         )
-        # Attach raw MBTI data so OnionProfile.from_legacy() can pick it up
+        # 附带原始 MBTI 数据，供 OnionProfile.from_legacy() 取用
         profile._raw_mbti = payload.get("mbti")  # type: ignore[attr-defined]
         return profile
 
@@ -141,7 +141,7 @@ class ProfileBuilder:
         *,
         original_count: int,
     ) -> dict[str, object]:
-        """Build a low-risk retry summary that avoids raw titles/contexts."""
+        """构造一份低风险的重试摘要，避免原始标题/上下文。"""
         raw_count = history_summary.get("count")
         count = (
             raw_count
@@ -247,7 +247,7 @@ class ProfileBuilder:
 
     @staticmethod
     def _summarize_history(history: list[dict[str, Any]]) -> dict[str, object]:
-        # Separate enriched items (favorites/following summaries) from regular history
+        # 把增强条目（收藏/关注摘要）从普通历史中分离出来
         regular_items: list[dict[str, Any]] = []
         favorites_summary: str = ""
         following_summary: str = ""
@@ -260,7 +260,7 @@ class ProfileBuilder:
                 regular_items.append(item)
 
         titles = [str(item.get("title", "")).strip() for item in regular_items if item.get("title")]
-        # Extract authors from multiple possible field names
+        # 从多个可能的字段名中抽取作者
         authors: list[str] = []
         for item in regular_items:
             author = (
@@ -272,20 +272,18 @@ class ProfileBuilder:
             )
             if author and str(author).strip():
                 authors.append(str(author).strip())
-        # Deduplicate while preserving order for frequency ranking
+        # 去重但保留顺序，以便按频次排序
         from collections import Counter
 
         author_counts = Counter(authors)
         top_authors = [name for name, _ in author_counts.most_common(50)]
 
-        # v0.3.23+: per-item natural-language context. For history rows
-        # that already carry ``context`` (xhs items, future sources that
-        # plumbed through event_format) we use it verbatim. For raw B站
-        # history items we synthesize from event_format.format_event_context
-        # so the LLM sees a uniform stream of "在 X 平台干了 Y" sentences
-        # regardless of where the signal originated. This makes
-        # cross-platform behaviour readable instead of forcing the model
-        # to reverse-engineer it from titles + author lists.
+        # v0.3.23+：逐条自然语言上下文。对于已经携带 ``context`` 的历史行
+        # （xhs 条目，以及未来把 context 透传出来的来源），我们原样使用。
+        # 对于原始 B站 历史条目，我们用 event_format.format_event_context
+        # 合成，这样 LLM 看到的是统一的"在 X 平台干了 Y"句子流，无论信号
+        # 来自哪里。这让跨平台行为可读，而不至于逼模型从 标题+作者列表
+        # 反推。
         from openbiliclaw.sources.event_format import (
             SOURCE_BILIBILI,
             format_event_context,
@@ -300,11 +298,11 @@ class ProfileBuilder:
             source_platform = (
                 str(item.get("source_platform", "")).strip()
                 or str(metadata.get("source_platform", "")).strip()
-                or SOURCE_BILIBILI  # legacy raw-B站-history default
+                or SOURCE_BILIBILI  # 旧版原始 B站 历史 default
             )
             event_type = (
                 str(item.get("event_type", "")).strip()
-                or "view"  # raw history items are implicitly views
+                or "view"  # 原始历史条目隐式为 view
             )
             title = str(item.get("title", "")).strip()
             author = (
@@ -322,7 +320,7 @@ class ProfileBuilder:
                 author=author,
             )
 
-        # Time-based grouping: split into recent vs older if timestamps exist
+        # 基于时间的分组：若存在时间戳则切分为"近期"与"较旧"
         recent_titles: list[str] = []
         older_titles: list[str] = []
         recent_contexts: list[str] = []
@@ -342,10 +340,9 @@ class ProfileBuilder:
                 if ctx_line:
                     older_contexts.append(ctx_line)
 
-        # Cap context lists to keep prompt token cost bounded. Each line
-        # is ~30 chars Chinese ≈ 60-90 tokens; 50 + 50 + 100 ≈ 12k tokens
-        # additional payload at the worst case, comparable to the existing
-        # titles[:100] payload.
+        # 给上下文列表设上限以控制 prompt token 成本。每行约 30 个中文字符
+        # ≈ 60-90 tokens；50 + 50 + 100 ≈ 12k tokens 的最坏情况额外负载，
+        # 与既有 titles[:100] 负载相当。
         all_contexts: list[str] = []
         for item in regular_items:
             ctx_line = _item_context(item)

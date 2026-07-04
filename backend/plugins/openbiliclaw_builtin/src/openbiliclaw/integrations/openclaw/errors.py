@@ -1,17 +1,17 @@
-"""Error types for the OpenClaw adapter layer."""
+"""OpenClaw 适配器层的错误类型。"""
 
 
 class OpenClawAdapterError(Exception):
-    """Base error for OpenClaw integration failures."""
+    """OpenClaw 集成失败的基类错误。"""
 
 
 class AdapterInitializationError(OpenClawAdapterError):
-    """Raised when adapter bootstrap fails."""
+    """适配器引导启动失败时抛出。"""
 
 
 class AdapterValidationError(OpenClawAdapterError):
-    """Raised when adapter input validation fails."""
+    """适配器输入校验失败时抛出。"""
 
 
 class AdapterOperationError(OpenClawAdapterError):
-    """Raised when an adapter operation cannot be completed."""
+    """适配器操作无法完成时抛出。"""

@@ -1,4 +1,4 @@
-"""Dependency bootstrap for the OpenClaw adapter."""
+"""OpenClaw 适配器的依赖引导装配。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from .operations import OpenClawAdapter
 
 @dataclass(slots=True)
 class OpenClawAdapterServices:
-    """Shared services bundle used by the OpenClaw adapter."""
+    """OpenClaw 适配器使用的共享服务集合。"""
 
     config: Config | Any
     database: Database | Any
@@ -49,7 +49,7 @@ class OpenClawAdapterServices:
 
 
 def build_openclaw_adapter_services() -> OpenClawAdapterServices:
-    """Build the shared service bundle for the OpenClaw adapter."""
+    """构建 OpenClaw 适配器的共享服务集合。"""
     config = load_config()
     llm_registry = build_llm_registry(config)
     module_overrides = module_overrides_from_config(config)
@@ -246,5 +246,5 @@ def build_openclaw_adapter_services() -> OpenClawAdapterServices:
 
 
 def build_openclaw_adapter() -> OpenClawAdapter:
-    """Build a ready-to-use OpenClaw adapter."""
+    """构建一个可直接使用的 OpenClaw 适配器。"""
     return OpenClawAdapter(services=build_openclaw_adapter_services())

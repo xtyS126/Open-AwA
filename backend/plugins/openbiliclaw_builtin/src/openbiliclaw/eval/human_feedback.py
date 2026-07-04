@@ -1,8 +1,7 @@
-"""Human feedback collection and optimization application.
+"""人工反馈收集与优化应用。
 
-Shared by run_init_eval.py and run_update_eval.py to close the
-human-in-the-loop optimization cycle:
-  display profile → collect per-layer feedback → optimizer → apply → validate.
+由 run_init_eval.py 和 run_update_eval.py 共享，用于闭合人在环优化流程：
+  展示画像 → 收集逐层反馈 → optimizer → 应用 → 验证。
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Layer definitions for interactive feedback
+# 用于交互式反馈的层定义
 EVAL_LAYERS = [
     ("core", "核心层 Core", "core_traits / deep_needs / mbti"),
     ("values_layer", "价值层 Values", "values / motivational_drivers"),
@@ -29,10 +28,10 @@ SCORE_MAP = {"1": 1.0, "2": 0.7, "3": 0.3}
 
 
 def collect_human_feedback() -> dict[str, Any] | None:
-    """Interactively collect per-layer feedback from the user.
+    """交互式地从用户收集逐层反馈。
 
-    Returns None if user chooses to skip optimization.
-    Returns dict with layer scores and deviations.
+    如果用户选择跳过优化则返回 None。
+    返回包含层评分和偏差的 dict。
     """
     print("\n" + "=" * 60)
     print("逐层评测 — 请为每层打分")
@@ -82,7 +81,7 @@ def feedback_to_optimizer_report(
     *,
     task: str = "init",
 ) -> dict[str, Any]:
-    """Convert human feedback to the format expected by run_optimizer_agent()."""
+    """将人工反馈转换为 run_optimizer_agent() 期望的格式。"""
     from openbiliclaw.eval.evaluator import FIELD_TO_PIPELINE
     from openbiliclaw.eval.optimizer import MODIFIABLE_FILES
 
@@ -91,7 +90,7 @@ def feedback_to_optimizer_report(
         if layer_fb["score"] >= 1.0:
             continue
         layer_key = layer_fb["layer"]
-        # Map layer to representative fields
+        # 将层映射到代表性字段
         field_map = {
             "core": ["core_traits", "mbti"],
             "values_layer": ["values", "motivational_drivers"],
@@ -110,7 +109,7 @@ def feedback_to_optimizer_report(
                 }
             )
 
-    # Sort by score ascending (worst first)
+    # 按分数升序排序（最差的在前）
     worst_fields.sort(key=lambda f: f["score"])
 
     return {
@@ -135,9 +134,9 @@ async def run_optimization_cycle(
     task: str = "init",
     run_logger: Any = None,
 ) -> dict[str, Any]:
-    """Run the full optimization cycle: feedback → optimizer → apply → validate.
+    """运行完整优化循环：反馈 → optimizer → 应用 → 验证。
 
-    Returns a summary dict of what happened.
+    返回所发生操作的摘要 dict。
     """
     from openbiliclaw.eval.agents import run_optimizer_agent
     from openbiliclaw.eval.optimizer import ParamChange, PromptOptimizer
@@ -156,13 +155,13 @@ async def run_optimization_cycle(
     )
     print("=" * 60)
 
-    # Log input
+    # 记录输入
     if run_logger:
         opt_step = run_logger.step("optimizer")
         opt_step.save_json("human_feedback.json", feedback)
         opt_step.save_json("optimizer_input.json", report)
 
-    # Run optimizer agent
+    # 运行 optimizer agent
     optimization = await run_optimizer_agent(report, project_root)
     raw_changes = optimization.get("changes", [])
     summary = optimization.get("summary", "无建议")
@@ -177,7 +176,7 @@ async def run_optimization_cycle(
         print("  Optimizer 未提出修改。")
         return {"optimized": False, "reason": "no_changes", "summary": summary}
 
-    # Show proposed changes and ask for confirmation
+    # 展示拟议修改并请求确认
     for i, c in enumerate(raw_changes, 1):
         print(f"\n  修改 {i}:")
         print(f"    文件: {c.get('file_path', '?')}")
@@ -192,7 +191,7 @@ async def run_optimization_cycle(
         print("  已取消。")
         return {"optimized": False, "reason": "user_cancelled", "summary": summary}
 
-    # Convert and apply
+    # 转换并应用
     optimizer = PromptOptimizer(project_root=project_root)
     param_changes = [
         ParamChange(
@@ -214,7 +213,7 @@ async def run_optimization_cycle(
         print("  没有匹配到可修改的内容。")
         return {"optimized": False, "reason": "no_match", "summary": summary}
 
-    # Pytest validation
+    # pytest 验证
     if optimizer.has_pipeline_changes():
         print("  检测到 pipeline 代码修改，运行 pytest...")
         passed, test_output = optimizer.validate_with_tests()

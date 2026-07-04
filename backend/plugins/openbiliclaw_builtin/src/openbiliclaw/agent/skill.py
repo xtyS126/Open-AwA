@@ -1,7 +1,7 @@
-"""Skill system — extensible capability framework.
+"""技能系统 —— 可扩展的能力框架。
 
-Skills are self-contained modules that give the agent specific capabilities.
-Users and the community can create custom skills to extend the agent.
+技能是自包含的模块，赋予 agent 特定的能力。
+用户和社区可以创建自定义技能来扩展 agent。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SkillMetadata:
-    """Metadata describing a skill."""
+    """描述技能的元数据。"""
 
     name: str
     description: str
@@ -29,85 +29,85 @@ class SkillMetadata:
 
 
 class Skill(ABC):
-    """Base class for all skills.
+    """所有技能的基类。
 
-    A Skill is an independent, self-contained capability that the agent can use.
-    Each skill has:
-    - A name and description
-    - An execute method that performs the skill's action
-    - Input/output schema definitions
+    Skill 是 agent 可使用的独立、自包含能力。
+    每个技能具有：
+    - 名称与描述
+    - 一个执行技能动作的 execute 方法
+    - 输入/输出 schema 定义
 
-    To create a custom skill:
-    1. Subclass Skill
-    2. Implement the `execute` method
-    3. Define `metadata` property
-    4. Place in the skills/ directory with a SKILL.md file
+    创建自定义技能的步骤：
+    1. 继承 Skill
+    2. 实现 `execute` 方法
+    3. 定义 `metadata` 属性
+    4. 放到 skills/ 目录下并附带 SKILL.md 文件
     """
 
     @property
     @abstractmethod
     def metadata(self) -> SkillMetadata:
-        """Return metadata about this skill."""
+        """返回此技能的元数据。"""
         ...
 
     @property
     def name(self) -> str:
-        """Skill name shortcut."""
+        """技能名称快捷访问。"""
         return self.metadata.name
 
     @abstractmethod
     async def execute(self, **kwargs: Any) -> Any:
-        """Execute the skill.
+        """执行技能。
 
         Args:
-            **kwargs: Skill-specific parameters.
+            **kwargs: 技能特定的参数。
 
         Returns:
-            Skill-specific result.
+            技能特定的结果。
         """
         ...
 
     def describe(self) -> str:
-        """Return a human-readable description for LLM context."""
+        """返回供 LLM 上下文使用的人类可读描述。"""
         meta = self.metadata
         return f"[{meta.name}] {meta.description}"
 
 
 class SkillRegistry:
-    """Registry for discovering and managing skills."""
+    """用于发现和管理技能的注册表。"""
 
     def __init__(self) -> None:
         self._skills: dict[str, Skill] = {}
 
     def register(self, skill: Skill) -> None:
-        """Register a skill instance."""
+        """注册一个技能实例。"""
         self._skills[skill.name] = skill
         logger.info("Skill registered: %s", skill.name)
 
     def get(self, name: str) -> Skill | None:
-        """Get a skill by name."""
+        """按名称获取技能。"""
         return self._skills.get(name)
 
     @property
     def all_skills(self) -> list[Skill]:
-        """All registered skills."""
+        """所有已注册的技能。"""
         return list(self._skills.values())
 
     def describe_all(self) -> str:
-        """Return descriptions of all skills (for LLM context)."""
+        """返回所有技能的描述（供 LLM 上下文使用）。"""
         return "\n".join(skill.describe() for skill in self._skills.values())
 
     @staticmethod
     def discover_skills(skills_dir: Path) -> list[Path]:
-        """Discover skill directories under the given path.
+        """在指定路径下发现技能目录。
 
-        A valid skill directory contains a SKILL.md file.
+        一个合法的技能目录需包含 SKILL.md 文件。
 
         Args:
-            skills_dir: Root directory to search for skills.
+            skills_dir: 搜索技能的根目录。
 
         Returns:
-            List of paths to SKILL.md files.
+            SKILL.md 文件的路径列表。
         """
         if not skills_dir.exists():
             return []

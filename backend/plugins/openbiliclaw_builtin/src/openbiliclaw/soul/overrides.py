@@ -1,15 +1,14 @@
-"""User-authored overrides layered on top of the AI-generated profile.
+"""用户编写的覆盖层，叠加在 AI 生成的画像之上。
 
-The soul profile (``OnionProfile``) is regenerated periodically by the
-SoulEngine, which fully overwrites ``soul.json``. To let users edit their
-profile *and have those edits survive regeneration*, edits are stored
-separately in ``data/memory/profile_overrides.json`` and merged onto the
-generated profile at read time (``apply_overrides``, added later) and when
-rendering the human-readable mirror (``MemoryManager.sync_profile_files``).
+灵魂画像（``OnionProfile``）由 SoulEngine 周期性重新生成，每次都会
+完全覆写 ``soul.json``。为了让用户能编辑自己的画像 *并让这些编辑在
+重新生成后仍然保留*，编辑内容被单独存储在
+``data/memory/profile_overrides.json`` 中，并在读取时
+（``apply_overrides``，后文添加）以及渲染人类可读镜像时
+（``MemoryManager.sync_profile_files``）合并到生成的画像上。
 
-This module owns the override data model + serialization. The deterministic
-merge (``apply_overrides``) and the edit reducer (``apply_edit``) are added
-on top of these structures in subsequent changes.
+本模块负责覆盖数据模型与序列化。确定性合并（``apply_overrides``）
+与编辑规约器（``apply_edit``）在后续改动中基于这些结构构建。
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ def _as_int(raw: object, default: int) -> int:
 
 @dataclass
 class TextPin:
-    """A pinned free-text / prose field; overrides the AI value at read time."""
+    """固定的自由文本 / 散文字段；读取时覆盖 AI 的值。"""
 
     value: str = ""
     ai_value_at_pin: str = ""
@@ -80,7 +79,7 @@ class TextPin:
 
 @dataclass
 class ScalarPin:
-    """A pinned numeric (0-1) field."""
+    """固定的数值（0-1）字段。"""
 
     value: float = 0.0
     ai_value_at_pin: float = 0.0
@@ -105,7 +104,7 @@ class ScalarPin:
 
 @dataclass
 class ListEdit:
-    """Add / remove sets for a flat list-typed field (e.g. core_traits)."""
+    """扁平列表型字段（如 core_traits）的增 / 删集合。"""
 
     add: list[str] = field(default_factory=list)
     remove: list[str] = field(default_factory=list)
@@ -124,7 +123,7 @@ class ListEdit:
 
 @dataclass
 class DomainAdd:
-    """A user-added interest domain (with optional narrow specifics)."""
+    """用户添加的兴趣领域（可选附带窄化 specifics）。"""
 
     domain: str = ""
     weight: float = 0.5
@@ -145,7 +144,7 @@ class DomainAdd:
 
 @dataclass
 class InterestPolarityEdit:
-    """Edits for one polarity of the interest tree (``likes`` or ``dislikes``)."""
+    """兴趣树某一极（``likes`` 或 ``dislikes``）的编辑。"""
 
     add_domains: list[DomainAdd] = field(default_factory=list)
     remove_domains: list[str] = field(default_factory=list)
@@ -201,12 +200,12 @@ class InterestPolarityEdit:
 
 @dataclass
 class ProfileOverrides:
-    """User edits layered on top of the AI-generated ``OnionProfile``.
+    """叠加在 AI 生成的 ``OnionProfile`` 之上的用户编辑。
 
-    Keys in ``text_pins`` / ``scalar_pins`` / ``list_edits`` are onion field
-    paths (e.g. ``"personality_portrait"``, ``"core.core_traits"``,
-    ``"surface.exploration_openness"``). ``interest_edits`` is keyed by
-    polarity: ``"likes"`` / ``"dislikes"``.
+    ``text_pins`` / ``scalar_pins`` / ``list_edits`` 中的键是 onion 字段
+    路径（如 ``"personality_portrait"``、``"core.core_traits"``、
+    ``"surface.exploration_openness"``）。``interest_edits`` 按极性
+    建键：``"likes"`` / ``"dislikes"``。
     """
 
     version: int = 1
@@ -277,7 +276,7 @@ class ProfileOverrides:
 
 
 # ---------------------------------------------------------------------------
-# Editable field whitelist (onion paths). Shared by apply_overrides + apply_edit.
+# 可编辑字段白名单（onion 路径）。apply_overrides + apply_edit 共用。
 # ---------------------------------------------------------------------------
 
 TEXT_FIELDS: tuple[str, ...] = (
@@ -303,7 +302,7 @@ INTEREST_POLARITIES: tuple[str, ...] = ("likes", "dislikes")
 
 
 # ---------------------------------------------------------------------------
-# Deterministic merge: effective profile = AI profile ⊕ user overrides.
+# 确定性合并：生效画像 = AI 画像 ⊕ 用户覆盖。
 # ---------------------------------------------------------------------------
 
 
@@ -316,12 +315,11 @@ def _clamp01(value: float) -> float:
 
 
 def _merge_list(current: list[str], edit: ListEdit) -> list[str]:
-    """``(current − remove) ∪ add``, order-preserving, case/space-insensitive dedup.
+    """``(current − remove) ∪ add``，保持顺序、按大小写/空格不敏感去重。
 
-    ``remove`` only suppresses AI-derived (``current``) items — that is what
-    keeps a user-deleted item gone even after the AI re-derives it. Explicit
-    ``add`` items are appended unconditionally (they are mutually exclusive
-    with ``remove`` at the reducer layer).
+    ``remove`` 只压制 AI 推导（``current``）的条目 —— 这正是让用户
+    删除的条目在 AI 重新推导后仍然不出现的原因。显式的 ``add`` 条目
+    无条件追加（在规约器层与 ``remove`` 互斥）。
     """
     remove_keys = {_norm(item) for item in edit.remove if _norm(item)}
     result: list[str] = []
@@ -362,7 +360,7 @@ def _apply_specific_listedit(domain: InterestDomain, edit: ListEdit) -> None:
 def _apply_interest_edit(
     domains: list[InterestDomain], edit: InterestPolarityEdit
 ) -> list[InterestDomain]:
-    """Apply one polarity's edits to a list of interest domains (in place-safe)."""
+    """把某一极的编辑应用到兴趣领域列表上（原位安全）。"""
     remove_keys = {_norm(item) for item in edit.remove_domains if _norm(item)}
     result: list[InterestDomain] = []
     by_key: dict[str, InterestDomain] = {}
@@ -472,11 +470,11 @@ def _get_scalar_field(profile: OnionProfile, path: str) -> float:
 
 
 def apply_overrides(profile: OnionProfile, overrides: ProfileOverrides) -> OnionProfile:
-    """Return the effective profile = AI ``profile`` ⊕ user ``overrides``.
+    """返回生效画像 = AI ``profile`` ⊕ 用户 ``overrides``。
 
-    Pure: deep-copies ``profile`` (via ``to_dict``/``from_dict``) and never
-    mutates the input. Dynamic attributes (e.g. ``_active_speculations``) are
-    intentionally not carried — callers attach those after merging.
+    纯函数：深拷贝 ``profile``（通过 ``to_dict``/``from_dict``），从不
+    修改输入。动态属性（如 ``_active_speculations``）刻意不保留 ——
+    调用方在合并后重新挂载它们。
     """
     result = OnionProfile.from_dict(profile.to_dict())
     if overrides.is_empty():
@@ -501,7 +499,7 @@ def apply_overrides(profile: OnionProfile, overrides: ProfileOverrides) -> Onion
 
 
 # ---------------------------------------------------------------------------
-# Edit reducer: validate one user edit and fold it into the overrides.
+# 编辑规约器：校验一条用户编辑并折叠进覆盖。
 # ---------------------------------------------------------------------------
 
 MAX_PORTRAIT_LEN = 1200
@@ -512,7 +510,7 @@ VALID_OPS: tuple[str, ...] = ("set", "add", "remove", "reset")
 
 
 class ProfileEditError(ValueError):
-    """Raised when a profile edit request is invalid (maps to HTTP 422)."""
+    """当画像编辑请求非法时抛出（对应 HTTP 422）。"""
 
 
 @dataclass
@@ -616,7 +614,7 @@ def _edit_interest(
     parent_key = parent.strip()
 
     if parent_key and op in ("add", "remove"):
-        # specific under a domain
+        # 某领域下的 specific
         listedit = edit.specific_edits.get(parent_key, ListEdit())
         if op == "add":
             listedit.remove = _drop(listedit.remove, key)
@@ -666,11 +664,11 @@ def apply_edit(
     parent: str = "",
     weight: float | None = None,
 ) -> tuple[ProfileOverrides, EditResult]:
-    """Validate one edit and fold it into a *copy* of ``overrides``.
+    """校验一条编辑并折叠进 ``overrides`` 的 *副本*。
 
-    Pure: never mutates the input. Raises ``ProfileEditError`` on invalid
-    input (unknown target/op, empty/oversized value, …). add/remove sets are
-    kept mutually exclusive; repeated add / absent remove are idempotent.
+    纯函数：从不修改输入。当输入非法时抛出 ``ProfileEditError``
+    （未知 target/op、空/超长值 等）。add/remove 集合保持互斥；
+    重复 add / 缺失 remove 是幂等的。
     """
     if op not in VALID_OPS:
         raise ProfileEditError(f"未知操作: {op}")
@@ -691,20 +689,20 @@ def apply_edit(
 
 
 # ---------------------------------------------------------------------------
-# Edit-state view: full (un-truncated) editable fields + overrides + drift.
+# 编辑态视图：完整（未截断）可编辑字段 + 覆盖 + 漂移。
 # ---------------------------------------------------------------------------
 
 
 def build_edit_state(
     raw: OnionProfile, effective: OnionProfile, overrides: ProfileOverrides
 ) -> dict[str, object]:
-    """Assemble the full editable-profile view for the edit UI.
+    """为编辑 UI 组装完整的可编辑画像视图。
 
-    Unlike ``/api/profile-summary`` (which truncates lists for display), this
-    returns *every* editable field un-truncated, annotated with override state
-    (``pinned`` / ``added`` / ``removed`` / ``user_added``) and, for pinned
-    text/scalar fields, the AI's current value as ``ai_suggestion`` when it
-    drifts from the pin (so the UI can offer "AI 想更新此项").
+    与 ``/api/profile-summary``（为展示截断列表）不同，本函数返回
+    *每一个* 可编辑字段的未截断值，并标注覆盖状态
+    （``pinned`` / ``added`` / ``removed`` / ``user_added``）；对固定的
+    text/scalar 字段，当 AI 当前值与固定值漂移时，把 AI 值作为
+    ``ai_suggestion`` 返回（这样 UI 可以提示"AI 想更新此项"）。
     """
     fields: dict[str, object] = {}
 

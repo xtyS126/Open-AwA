@@ -1,4 +1,4 @@
-"""Pydantic models for the local backend API."""
+"""本地后端 API 的 Pydantic 模型。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class BehaviorEventIn(BaseModel):
-    """One behavior event reported by the extension."""
+    """由扩展上报的单个行为事件。"""
 
     type: str
     url: str = ""
@@ -17,36 +17,34 @@ class BehaviorEventIn(BaseModel):
     source_platform: str = "bilibili"
     context: dict[str, object] = Field(default_factory=dict)
     metadata: dict[str, object] = Field(default_factory=dict)
-    # v0.3.x event-satisfaction signal: dwell on video-page exit. Either
-    # top-level or `metadata.watch_seconds` is accepted; the endpoint
-    # folds top-level into metadata before persistence so the storage
-    # classifier reads from a single canonical location.
+    # v0.3.x event-satisfaction 信号：视频页退出时的 dwell。顶层
+    # 或 `metadata.watch_seconds` 均可接受；端点在持久化前把顶层
+    # 折叠进 metadata，使 storage 分类器从单一规范位置读取。
     watch_seconds: float | None = None
     video_duration_seconds: float | None = None
 
 
 class BehaviorEventBatchIn(BaseModel):
-    """Batch payload used by the service worker."""
+    """service worker 使用的批量载荷。"""
 
     events: list[BehaviorEventIn]
 
 
 class HealthResponse(BaseModel):
-    """Health-check response."""
+    """健康检查响应。"""
 
     status: str
     service: str
     profile_ready: bool | None = None
     lan_ip: str | None = None
-    # v0.3.95+: surfaces whether the embedding service built successfully.
-    # ``False`` means semantic dedup / diversity is degraded (recommendations
-    # may repeat near-identical content under different ids) — the popup
-    # turns this into a one-click "enable local Ollama" banner.
+    # v0.3.95+：暴露 embedding service 是否构建成功。
+    # ``False`` 表示语义去重 / 多样性降级（推荐可能在不同 id 下重复
+    # 近似内容）—— 弹窗据此显示一键"启用本地 Ollama"横幅。
     embedding_ready: bool | None = None
 
 
 class InitStageOut(BaseModel):
-    """One stage of guided init (gui-init spec API shape)."""
+    """guided init 的一个阶段（gui-init spec API 形状）。"""
 
     n: int
     label: str
@@ -55,7 +53,7 @@ class InitStageOut(BaseModel):
 
 
 class InitPrerequisitesOut(BaseModel):
-    """Pre-init checklist surfaced to the UI."""
+    """呈现给 UI 的预初始化检查清单。"""
 
     bilibili_logged_in: bool = False
     bilibili_check: str = "checking"  # ok | failed | checking
@@ -66,7 +64,7 @@ class InitPrerequisitesOut(BaseModel):
 
 
 class InitStatusOut(BaseModel):
-    """Authoritative guided-init status / progress (gui-init spec API shape)."""
+    """权威的 guided-init 状态/进度（gui-init spec API 形状）。"""
 
     initialized: bool = False
     running: bool = False
@@ -84,7 +82,7 @@ class InitStatusOut(BaseModel):
 
 
 class RecommendationOut(BaseModel):
-    """Recommendation payload exposed to the popup."""
+    """暴露给弹窗的推荐载荷。"""
 
     id: int
     bvid: str
@@ -95,37 +93,36 @@ class RecommendationOut(BaseModel):
     topic_label: str = ""
     presented: bool = False
     feedback_type: str = ""
-    # Multi-source fields (additive, backward-compatible)
+    # 多源字段（附加、向后兼容）
     content_id: str = ""
     content_url: str = ""
     source_platform: str = ""
-    # Text-first sources (X tweet/thread): the popup renders a no-cover
-    # text card from body_text/title when content_type is tweet/thread or
-    # cover_url is empty.
+    # 文本优先源（X tweet/thread）：当 content_type 为 tweet/thread 或
+    # cover_url 为空时，弹窗根据 body_text/title 渲染无封面的文本卡片。
     content_type: str = "video"
     body_text: str = ""
 
 
 class RecommendationListResponse(BaseModel):
-    """Wrapper response for recommendation lists."""
+    """推荐列表的包装响应。"""
 
     items: list[RecommendationOut]
 
 
 class RecommendationReshuffleResponse(BaseModel):
-    """Immediate recommendation reshuffle result."""
+    """即时推荐重洗结果。"""
 
     items: list[RecommendationOut]
 
 
 class RecommendationAppendIn(BaseModel):
-    """Request payload for appending another recommendation page."""
+    """追加下一页推荐的请求载荷。"""
 
     excluded_bvids: list[str] = Field(default_factory=list)
 
 
 class RecommendationRefreshResponse(BaseModel):
-    """Result of one explicit recommendation refresh request."""
+    """一次显式推荐刷新请求的结果。"""
 
     ok: bool
     accepted: bool
@@ -134,7 +131,7 @@ class RecommendationRefreshResponse(BaseModel):
 
 
 class RuntimeStatusResponse(BaseModel):
-    """Runtime summary for popup and background status checks."""
+    """供弹窗和后台状态检查使用的运行时摘要。"""
 
     initialized: bool
     recommendation_count: int
@@ -166,7 +163,7 @@ class RuntimeStatusResponse(BaseModel):
 
 
 class ActivityFeedItemOut(BaseModel):
-    """One recent user-visible activity item for the popup."""
+    """弹窗中一项近期的用户可见活动条目。"""
 
     id: str
     kind: str
@@ -177,7 +174,7 @@ class ActivityFeedItemOut(BaseModel):
 
 
 class ActivityFeedResponse(BaseModel):
-    """Aggregated activity feed for the popup activity card."""
+    """弹窗活动卡片的聚合活动流。"""
 
     live_summary: str = ""
     headline: str = ""
@@ -187,7 +184,7 @@ class ActivityFeedResponse(BaseModel):
 
 
 class PendingNotificationOut(BaseModel):
-    """One notification-worthy recommendation."""
+    """一条值得通知的推荐。"""
 
     recommendation_id: int
     bvid: str
@@ -196,13 +193,13 @@ class PendingNotificationOut(BaseModel):
 
 
 class PendingNotificationResponse(BaseModel):
-    """Wrapper for a pending notification candidate."""
+    """待处理通知候选项的包装。"""
 
     item: PendingNotificationOut | None = None
 
 
 class PendingCognitionUpdateOut(BaseModel):
-    """One cognition update worthy of notifying in the extension."""
+    """一条值得在扩展中通知的认知更新。"""
 
     id: str
     kind: str
@@ -210,13 +207,13 @@ class PendingCognitionUpdateOut(BaseModel):
 
 
 class PendingCognitionUpdateResponse(BaseModel):
-    """Wrapper for a pending cognition update."""
+    """待处理认知更新的包装。"""
 
     item: PendingCognitionUpdateOut | None = None
 
 
 class PendingDelightOut(BaseModel):
-    """One proactive delight recommendation."""
+    """一条主动 delight 推荐。"""
 
     bvid: str
     title: str = ""
@@ -229,30 +226,30 @@ class PendingDelightOut(BaseModel):
 
 
 class PendingDelightResponse(BaseModel):
-    """Wrapper for a pending delight candidate."""
+    """待处理 delight 候选项的包装。"""
 
     item: PendingDelightOut | None = None
 
 
 class DelightAckIn(BaseModel):
-    """Acknowledge delivery of a delight notification."""
+    """确认收到 delight 通知。"""
 
     bvid: str
 
 
 class DelightAckResponse(BaseModel):
-    """Response after marking a delight notification as delivered."""
+    """将 delight 通知标记为已送达后的响应。"""
 
     ok: bool
     bvid: str
 
 
 class BilibiliCookieIn(BaseModel):
-    """Cookie sync payload from the browser extension.
+    """来自浏览器扩展的 Cookie 同步载荷。
 
-    Lets the extension push the user's live bilibili.com session cookies
-    to the backend (writes to data/bilibili_cookie.json + config.toml's
-    [bilibili].cookie). Replaces the manual F12 → copy → paste flow.
+    允许扩展将用户实时的 bilibili.com 会话 cookie 推送到
+    后端（写入 data/bilibili_cookie.json + config.toml 的
+    [bilibili].cookie）。替代手工的 F12 → 复制 → 粘贴流程。
     """
 
     cookie: str = Field(
@@ -272,11 +269,11 @@ class BilibiliCookieIn(BaseModel):
 
 
 class BilibiliCookieResponse(BaseModel):
-    """Result of a cookie-sync attempt.
+    """一次 cookie 同步尝试的结果。
 
-    ``error_code`` lets the extension pick a smart retry cadence
-    (network errors → quick retry, expired cookie → wait for next
-    login). Empty when ``ok=True``.
+    ``error_code`` 让扩展选择智能的重试节奏
+    （网络错误 → 快速重试，cookie 过期 → 等待下次登录）。
+    当 ``ok=True`` 时为空。
     """
 
     ok: bool
@@ -284,17 +281,16 @@ class BilibiliCookieResponse(BaseModel):
     username: str = ""
     user_id: int = 0
     message: str = ""
-    # v0.3.42+ machine-readable code for the extension to branch retry
-    # logic on. One of:
-    #   ""                       — success
-    #   "empty_cookie"           — payload was empty
-    #   "cookie_invalid"         — Bilibili says cookie is bad / expired
-    #   "validation_network"     — backend couldn't reach api.bilibili.com
+    # v0.3.42+ 机器可读代码，供扩展分支重试逻辑使用。取值之一：
+    #   ""                       — 成功
+    #   "empty_cookie"           — 载荷为空
+    #   "cookie_invalid"         — Bilibili 报告 cookie 无效/过期
+    #   "validation_network"     — 后端无法访问 api.bilibili.com
     error_code: str = ""
 
 
 class DouyinCookieIn(BaseModel):
-    """Cookie sync payload for Douyin direct-cookie discovery."""
+    """抖音 direct-cookie 发现模式的 Cookie 同步载荷。"""
 
     cookie: str = Field(
         ...,
@@ -308,7 +304,7 @@ class DouyinCookieIn(BaseModel):
 
 
 class DouyinCookieResponse(BaseModel):
-    """Result of syncing a Douyin Cookie header."""
+    """同步抖音 Cookie header 的结果。"""
 
     ok: bool
     has_cookie: bool
@@ -318,7 +314,7 @@ class DouyinCookieResponse(BaseModel):
 
 
 class XCookieIn(BaseModel):
-    """Cookie sync payload for X (Twitter) server-side cookie-replay discovery."""
+    """X (Twitter) 服务端 cookie-replay 发现的 Cookie 同步载荷。"""
 
     cookie: str = Field(
         ...,
@@ -332,10 +328,10 @@ class XCookieIn(BaseModel):
 
 
 class XCookieResponse(BaseModel):
-    """Result of syncing an X (Twitter) Cookie header.
+    """同步 X (Twitter) Cookie header 的结果。
 
-    ``has_cookie`` is true only when BOTH ``auth_token`` and ``ct0`` are
-    present — twitter-cli needs both to authenticate.
+    仅当 ``auth_token`` 和 ``ct0`` 同时存在时 ``has_cookie`` 才为
+    true —— twitter-cli 需要二者才能认证。
     """
 
     ok: bool
@@ -346,11 +342,11 @@ class XCookieResponse(BaseModel):
 
 
 class XStatusResponse(BaseModel):
-    """Current X (Twitter) source health (spec §7).
+    """X (Twitter) 源的当前健康状态（spec §7）。
 
-    ``state`` is one of ``ok`` / ``missing_cookie`` / ``expired_cookie`` /
-    ``rate_limited`` / ``blocked``. ``feed_paused`` is true when repeated
-    For-You failures have auto-paused the high-visibility home-timeline fetch.
+    ``state`` 取值为 ``ok`` / ``missing_cookie`` / ``expired_cookie`` /
+    ``rate_limited`` / ``blocked`` 之一。当 For-You 反复失败自动暂停
+    高可见度的 home-timeline 拉取时，``feed_paused`` 为 true。
     """
 
     state: str = "ok"
@@ -362,28 +358,25 @@ class XStatusResponse(BaseModel):
 
 
 class SourceStatusItem(BaseModel):
-    """Unified per-source login / cookie readiness (settings pages).
+    """统一的按源登录/cookie 就绪状态（设置页）。
 
-    ``state`` is a coarse, source-agnostic status so every platform can render
-    the same chip:
+    ``state`` 是粗粒度、与源无关的状态，因此每个平台都能渲染同样的 chip：
 
-    - ``ok``         — credential present AND live-validated (X only, from the
-      health store).
-    - ``ready``      — credential present and structurally valid, but not
-      live-validated (B站 cookie with login fields, 抖音 cookie present, 小红书
-      access tokens synced within the freshness window).
-    - ``partial``    — credential present but structurally incomplete, likely
-      broken (B站 cookie missing some of the core login fields).
-    - ``stale``      — credential synced before but not recently, likely
-      expired (小红书 tokens older than the freshness window).
-    - ``missing``    — source enabled but no usable credential.
-    - ``unverified`` — plugin-backed source is enabled but local task history
-      does not prove a recent successful or failed login-state run yet.
-    - ``expired`` / ``rate_limited`` / ``blocked`` — X live-health states.
-    - ``no_auth``    — source needs no login (YouTube, public).
+    - ``ok``         —— 凭证存在且经过实时验证（仅 X，来自 health store）。
+    - ``ready``      —— 凭证存在且结构有效，但未实时验证（带登录字段的
+      B站 cookie、存在的抖音 cookie、新鲜度窗口内同步的小红书 access token）。
+    - ``partial``    —— 凭证存在但结构不完整，可能已损坏（B站 cookie 缺少
+      部分核心登录字段）。
+    - ``stale``      —— 凭证之前同步过但已不新鲜，可能已过期（小红书 token
+      早于新鲜度窗口）。
+    - ``missing``    —— 源已启用但没有可用凭证。
+    - ``unverified`` —— 插件支撑的源已启用，但本地任务历史尚不能证明近期
+      有成功或失败的登录态运行。
+    - ``expired`` / ``rate_limited`` / ``blocked`` —— X 实时健康状态。
+    - ``no_auth``    —— 源无需登录（YouTube，公开）。
 
-    ``logged_in`` is a convenience flag (``state in {ok, ready, no_auth}``) so
-    the UI can pick a dot colour without re-deriving the rule.
+    ``logged_in`` 是一个便捷标志（``state in {ok, ready, no_auth}``），
+    让 UI 无需重新推导规则即可选择点的颜色。
     """
 
     enabled: bool = False
@@ -394,12 +387,11 @@ class SourceStatusItem(BaseModel):
 
 
 class SourcesStatusResponse(BaseModel):
-    """Login / cookie readiness for every content source, keyed by platform.
+    """每个内容源的登录/cookie 就绪状态，按平台为键。
 
-    Backs the unified status chip shown on both the desktop-Web and the
-    extension settings pages. Derived entirely from local signals (config
-    cookie fields, the X health store, the Douyin cookie file/env, and the
-    recency of token-bearing 小红书 cache rows) — no outbound platform calls.
+    支撑桌面 Web 与扩展设置页上显示的统一状态 chip。完全由本地信号
+    推导（config cookie 字段、X health store、抖音 cookie file/env、
+    以及携带 token 的小红书 cache 行的新鲜度）—— 无任何出站平台调用。
     """
 
     bilibili: SourceStatusItem = Field(default_factory=SourceStatusItem)
@@ -411,7 +403,7 @@ class SourcesStatusResponse(BaseModel):
 
 
 class SourceCredentialItem(BaseModel):
-    """Current local credential snapshot for a source settings page."""
+    """源设置页的当前本地凭证快照。"""
 
     label: str = "Cookie"
     value: str = ""
@@ -420,7 +412,7 @@ class SourceCredentialItem(BaseModel):
 
 
 class SourcesCredentialsResponse(BaseModel):
-    """Current local Cookie / token values for source settings pages."""
+    """源设置页的当前本地 Cookie / token 值。"""
 
     bilibili: SourceCredentialItem = Field(default_factory=SourceCredentialItem)
     xiaohongshu: SourceCredentialItem = Field(default_factory=SourceCredentialItem)
@@ -431,33 +423,33 @@ class SourcesCredentialsResponse(BaseModel):
 
 
 class NotificationAckIn(BaseModel):
-    """Acknowledge one browser notification delivery."""
+    """确认一条浏览器通知的送达。"""
 
     bvid: str
 
 
 class NotificationAckResponse(BaseModel):
-    """Response after marking a notification as delivered."""
+    """将通知标记为已送达后的响应。"""
 
     ok: bool
     bvid: str
 
 
 class CognitionUpdateSeenIn(BaseModel):
-    """Acknowledge one cognition update as seen/notified."""
+    """确认一条认知更新已查看/已通知。"""
 
     id: str
 
 
 class CognitionUpdateSeenResponse(BaseModel):
-    """Response after marking a cognition update as seen."""
+    """将认知更新标记为已查看后的响应。"""
 
     ok: bool
     id: str
 
 
 class CognitionUpdateSummary(BaseModel):
-    """Structured cognition card shown in the popup profile tab."""
+    """弹窗 profile 标签页中展示的结构化认知卡片。"""
 
     summary: str
     context_line: str = ""
@@ -471,14 +463,14 @@ class CognitionUpdateSummary(BaseModel):
 
 
 class SpeculativeSpecificOut(BaseModel):
-    """A narrow topic within a speculative domain."""
+    """推测领域内的一个窄主题。"""
 
     name: str = ""
     confirmation_count: int = 0
 
 
 class SpeculativeInterestOut(BaseModel):
-    """A speculated interest direction with two-level structure."""
+    """一个推测的兴趣方向，带两级结构。"""
 
     domain: str = ""
     reason: str = ""
@@ -492,7 +484,7 @@ class SpeculativeInterestOut(BaseModel):
 
 
 class SpeculativeAvoidanceOut(BaseModel):
-    """A speculated avoidance direction with two-level structure."""
+    """一个推测的回避方向，带两级结构。"""
 
     domain: str = ""
     reason: str = ""
@@ -506,14 +498,14 @@ class SpeculativeAvoidanceOut(BaseModel):
 
 
 class MBTIDimensionOut(BaseModel):
-    """A single MBTI dimension pole with strength."""
+    """单个 MBTI 维度极向及其强度。"""
 
     pole: str = ""
     strength: float = 0.5
 
 
 class MBTIOut(BaseModel):
-    """MBTI personality type with dimensional breakdown."""
+    """MBTI 人格类型及其维度分解。"""
 
     type: str = ""
     dimensions: dict[str, MBTIDimensionOut] = Field(default_factory=dict)
@@ -521,14 +513,14 @@ class MBTIOut(BaseModel):
 
 
 class InterestSpecificOut(BaseModel):
-    """A narrow interest within a domain."""
+    """一个领域内的窄兴趣。"""
 
     name: str = ""
     weight: float = 0.5
 
 
 class InterestDomainOut(BaseModel):
-    """A broad interest domain with optional specific sub-interests."""
+    """一个宽泛的兴趣领域，可带可选的具体子兴趣。"""
 
     domain: str = ""
     weight: float = 0.5
@@ -536,7 +528,7 @@ class InterestDomainOut(BaseModel):
 
 
 class StylePreferenceOut(BaseModel):
-    """Content style preferences."""
+    """内容风格偏好。"""
 
     preferred_duration: str = ""
     preferred_pace: str = ""
@@ -546,7 +538,7 @@ class StylePreferenceOut(BaseModel):
 
 
 class ContextModeOut(BaseModel):
-    """Contextual usage patterns."""
+    """上下文使用模式。"""
 
     weekday_patterns: str = ""
     weekend_patterns: str = ""
@@ -555,7 +547,7 @@ class ContextModeOut(BaseModel):
 
 
 class AwarenessNoteOut(BaseModel):
-    """A single awareness observation from the soul layer."""
+    """来自 soul 层的一条觉察观察。"""
 
     date: str = ""
     observation: str = ""
@@ -564,7 +556,7 @@ class AwarenessNoteOut(BaseModel):
 
 
 class InsightHypothesisOut(BaseModel):
-    """An active insight or hypothesis about the user."""
+    """关于用户的一条活跃洞察或假设。"""
 
     hypothesis: str = ""
     evidence: list[str] = Field(default_factory=list)
@@ -574,30 +566,30 @@ class InsightHypothesisOut(BaseModel):
 
 
 class ProfileSummaryResponse(BaseModel):
-    """Full soul profile exposed to the popup — all five Onion layers."""
+    """暴露给弹窗的完整 soul profile —— 全部五层 Onion。"""
 
     initialized: bool
     personality_portrait: str = ""
-    # Core layer
+    # Core 层
     core_traits: list[str] = Field(default_factory=list)
     deep_needs: list[str] = Field(default_factory=list)
     mbti: MBTIOut = Field(default_factory=MBTIOut)
-    # Values layer
+    # Values 层
     values: list[str] = Field(default_factory=list)
     motivational_drivers: list[str] = Field(default_factory=list)
-    # Interest layer
+    # Interest 层
     likes: list[InterestDomainOut] = Field(default_factory=list)
     dislikes: list[InterestDomainOut] = Field(default_factory=list)
     favorite_up_users: list[str] = Field(default_factory=list)
-    # Role layer
+    # Role 层
     life_stage: str = ""
     current_phase: str = ""
-    # Surface layer
+    # Surface 层
     cognitive_style: list[str] = Field(default_factory=list)
     style: StylePreferenceOut = Field(default_factory=StylePreferenceOut)
     context: ContextModeOut = Field(default_factory=ContextModeOut)
     exploration_openness: float = 0.5
-    # Cross-cutting
+    # 横切关注点
     speculative_interests: list[SpeculativeInterestOut] = Field(default_factory=list)
     speculative_avoidances: list[SpeculativeAvoidanceOut] = Field(default_factory=list)
     recent_cognition_updates: list[CognitionUpdateSummary] = Field(default_factory=list)
@@ -605,13 +597,13 @@ class ProfileSummaryResponse(BaseModel):
     next_cognition_cursor: str = ""
     active_insights: list[InsightHypothesisOut] = Field(default_factory=list)
     recent_awareness: list[AwarenessNoteOut] = Field(default_factory=list)
-    # User-authored overrides (ProfileOverrides.to_dict()), so the display UI
-    # can badge edited/pinned fields. Empty when the user has made no edits.
+    # 用户编写的覆盖（ProfileOverrides.to_dict()），使展示 UI
+    # 可对已编辑/已钉住字段加徽章。用户未做编辑时为空。
     overrides: dict[str, object] = Field(default_factory=dict)
 
 
 class EventRejectedOut(BaseModel):
-    """One event skipped during batch ingest."""
+    """批量 ingest 时跳过的一条事件。"""
 
     index: int
     type: str
@@ -619,7 +611,7 @@ class EventRejectedOut(BaseModel):
 
 
 class EventIngestResponse(BaseModel):
-    """Response after accepting a batch of events."""
+    """接收一批事件后的响应。"""
 
     accepted: int
     rejected: list[EventRejectedOut] = Field(default_factory=list)
@@ -647,7 +639,7 @@ def _default_extension_e2e_platforms() -> list[ExtensionE2EPlatform]:
 
 
 class ExtensionE2ERunIn(BaseModel):
-    """Request to run a local browser-extension E2E simulation."""
+    """运行本地浏览器扩展 E2E 模拟的请求。"""
 
     platforms: list[ExtensionE2EPlatform] = Field(
         default_factory=_default_extension_e2e_platforms,
@@ -659,7 +651,7 @@ class ExtensionE2ERunIn(BaseModel):
 
 
 class ExtensionE2EActionResultIn(BaseModel):
-    """One action result reported by the extension E2E runner."""
+    """扩展 E2E runner 上报的单个动作结果。"""
 
     action: ExtensionE2EAction
     status: ExtensionE2EActionStatus
@@ -667,7 +659,7 @@ class ExtensionE2EActionResultIn(BaseModel):
 
 
 class ExtensionE2EPlatformResultIn(BaseModel):
-    """Per-platform action results reported by the extension."""
+    """扩展上报的按平台动作结果。"""
 
     platform: ExtensionE2EPlatform
     actions: list[ExtensionE2EActionResultIn] = Field(default_factory=list)
@@ -675,7 +667,7 @@ class ExtensionE2EPlatformResultIn(BaseModel):
 
 
 class ExtensionE2EResultIn(BaseModel):
-    """Signed extension callback payload for a local E2E run."""
+    """本地 E2E run 的已签名扩展回调载荷。"""
 
     run_id: str
     token: str
@@ -684,7 +676,7 @@ class ExtensionE2EResultIn(BaseModel):
 
 
 class ExtensionE2EEventMatchOut(BaseModel):
-    """Natural backend event matched to a requested extension action."""
+    """与一个所请求扩展动作匹配的、自然产生的后端事件。"""
 
     event_id: int
     event_type: str
@@ -693,7 +685,7 @@ class ExtensionE2EEventMatchOut(BaseModel):
 
 
 class ExtensionE2EActionReportOut(BaseModel):
-    """Final report for one requested action."""
+    """单个所请求动作的最终报告。"""
 
     action: ExtensionE2EAction
     extension_status: ExtensionE2EActionStatus = "skipped"
@@ -704,7 +696,7 @@ class ExtensionE2EActionReportOut(BaseModel):
 
 
 class ExtensionE2EPlatformReportOut(BaseModel):
-    """Final report for one requested platform."""
+    """单个所请求平台的最终报告。"""
 
     platform: ExtensionE2EPlatform
     actions: list[ExtensionE2EActionReportOut] = Field(default_factory=list)
@@ -712,7 +704,7 @@ class ExtensionE2EPlatformReportOut(BaseModel):
 
 
 class ExtensionE2ERunOut(BaseModel):
-    """Final local E2E run report."""
+    """本地 E2E run 的最终报告。"""
 
     run_id: str
     status: ExtensionE2ERunStatus
@@ -722,7 +714,7 @@ class ExtensionE2ERunOut(BaseModel):
 
 
 class FeedbackIn(BaseModel):
-    """Feedback payload submitted from CLI-compatible clients."""
+    """从 CLI 兼容客户端提交的反馈载荷。"""
 
     recommendation_id: int
     feedback_type: str
@@ -730,7 +722,7 @@ class FeedbackIn(BaseModel):
 
 
 class FeedbackResponse(BaseModel):
-    """Response after accepting recommendation feedback."""
+    """接收推荐反馈后的响应。"""
 
     ok: bool
     recommendation_id: int
@@ -738,14 +730,14 @@ class FeedbackResponse(BaseModel):
 
 
 class InsightFeedbackIn(BaseModel):
-    """User confirm/reject on a specific insight hypothesis (insight cards)."""
+    """用户对一条具体 insight 假设的确认/拒绝（insight 卡片）。"""
 
     hypothesis: str
     signal: str  # confirm/like/support (positive) or reject/dislike/deny
 
 
 class InsightFeedbackResponse(BaseModel):
-    """Result of calibrating an insight hypothesis from user feedback."""
+    """根据用户反馈校准一条 insight 假设后的结果。"""
 
     ok: bool
     matched: bool
@@ -756,12 +748,12 @@ class InsightFeedbackResponse(BaseModel):
 
 
 class ProfileEditIn(BaseModel):
-    """One user edit to the AI-generated profile overlay.
+    """用户对 AI 生成 profile 覆盖层的一次编辑。
 
-    ``target`` is an onion field path (e.g. ``core.core_traits``) or an
-    interest polarity (``likes`` / ``dislikes``). ``op`` ∈
-    {set, add, remove, reset}. ``parent`` targets a specific under an
-    interest domain; ``weight`` pins an interest domain's weight.
+    ``target`` 是一个 onion 字段路径（如 ``core.core_traits``）或一个
+    兴趣极性（``likes`` / ``dislikes``）。``op`` ∈
+    {set, add, remove, reset}。``parent`` 定位到某个兴趣领域下的具体项；
+    ``weight`` 钉住某个兴趣领域的权重。
     """
 
     target: str
@@ -772,21 +764,21 @@ class ProfileEditIn(BaseModel):
 
 
 class WatchLaterAddIn(BaseModel):
-    """Payload to bookmark a video."""
+    """将视频加入稍后再看的载荷。"""
 
     bvid: str
     note: str = ""
 
 
 class WatchLaterStateResponse(BaseModel):
-    """Whether a single video is bookmarked, plus the total count."""
+    """单个视频是否已加入稍后再看，以及总数。"""
 
     saved: bool
     total: int
 
 
 class WatchLaterItem(BaseModel):
-    """One item in the watch-later list."""
+    """稍后再看列表中的一项。"""
 
     bvid: str
     title: str = ""
@@ -798,28 +790,28 @@ class WatchLaterItem(BaseModel):
 
 
 class WatchLaterListResponse(BaseModel):
-    """Paginated watch-later list."""
+    """分页的稍后再看列表。"""
 
     items: list[WatchLaterItem]
     total: int
 
 
 class FavoriteAddIn(BaseModel):
-    """Payload to favorite (收藏) a video."""
+    """将视频加入收藏 (收藏) 的载荷。"""
 
     bvid: str
     note: str = ""
 
 
 class FavoriteStateResponse(BaseModel):
-    """Whether a single video is favorited, plus the total count."""
+    """单个视频是否已收藏，以及总数。"""
 
     saved: bool
     total: int
 
 
 class FavoriteItem(BaseModel):
-    """One item in the favorites list."""
+    """收藏列表中的一项。"""
 
     bvid: str
     title: str = ""
@@ -831,14 +823,14 @@ class FavoriteItem(BaseModel):
 
 
 class FavoriteListResponse(BaseModel):
-    """Paginated favorites list."""
+    """分页的收藏列表。"""
 
     items: list[FavoriteItem]
     total: int
 
 
 class RecommendationClickIn(BaseModel):
-    """Payload for a recommendation click-through from the extension popup."""
+    """来自扩展弹窗的推荐点击穿透载荷。"""
 
     recommendation_id: int | None = None
     bvid: str = ""
@@ -848,16 +840,15 @@ class RecommendationClickIn(BaseModel):
     title: str = ""
     topic_label: str = ""
     up_name: str = ""
-    # v0.3.x event-satisfaction signal: optional dwell on the
-    # recommendation click-through. When present, these flow into the
-    # persisted click event's metadata so storage classification can
-    # tell meaningful_dwell vs quick_exit on recommended content.
+    # v0.3.x event-satisfaction 信号：推荐点击穿透的可选 dwell。
+    # 当存在时，这些值流入持久化 click 事件的 metadata，使 storage
+    # 分类器可在推荐内容上区分 meaningful_dwell 与 quick_exit。
     watch_seconds: float | None = None
     video_duration_seconds: float | None = None
 
 
 class RecommendationClickResponse(BaseModel):
-    """Response after ingesting a recommendation click-through."""
+    """接收一条推荐点击穿透后的响应。"""
 
     ok: bool
     bvid: str
@@ -865,23 +856,23 @@ class RecommendationClickResponse(BaseModel):
 
 
 class ChatIn(BaseModel):
-    """Popup chat request."""
+    """弹窗聊天请求。"""
 
     message: str
 
 
 class ChatResponse(BaseModel):
-    """Popup chat response."""
+    """弹窗聊天响应。"""
 
     reply: str
 
 
 class ChatTurnIn(BaseModel):
-    """Durable popup chat turn request.
+    """持久化的弹窗聊天 turn 请求。
 
-    The popup uses this endpoint for lifecycle-safe chat.  The POST
-    returns quickly with a pending turn; the backend completes it in the
-    background and the popup polls by ``turn_id`` after reloads.
+    弹窗使用此端点进行生命周期安全的聊天。POST
+    快速返回一个 pending turn；后端在后台完成它，
+    弹窗在 reload 后通过 ``turn_id`` 轮询。
     """
 
     message: str
@@ -893,7 +884,7 @@ class ChatTurnIn(BaseModel):
 
 
 class ChatTurnOut(BaseModel):
-    """One durable popup chat turn."""
+    """一个持久化的弹窗聊天 turn。"""
 
     turn_id: str
     session: str = "popup"
@@ -909,7 +900,7 @@ class ChatTurnOut(BaseModel):
 
 
 class ChatTurnListResponse(BaseModel):
-    """Durable popup chat history."""
+    """持久化的弹窗聊天历史。"""
 
     items: list[ChatTurnOut]
 
@@ -918,7 +909,7 @@ class ChatTurnListResponse(BaseModel):
 
 
 class LLMProviderConfigOut(BaseModel):
-    """LLM provider configuration (keys masked by default)."""
+    """LLM provider 配置（默认对 key 做掩码）。"""
 
     api_key: str = ""
     model: str = ""
@@ -932,7 +923,7 @@ class LLMProviderConfigOut(BaseModel):
 class EmbeddingConfigOut(BaseModel):
     provider: str = ""
     model: str = ""
-    # v0.3.32+ embedding owns its own credentials; api_key is masked.
+    # v0.3.32+ embedding 拥有自己的凭证；api_key 已做掩码。
     api_key: str = ""
     base_url: str = ""
     output_dimensionality: int = 1024
@@ -958,7 +949,7 @@ class LLMConfigOut(BaseModel):
     deepseek: LLMProviderConfigOut = Field(default_factory=LLMProviderConfigOut)
     ollama: LLMProviderConfigOut = Field(default_factory=LLMProviderConfigOut)
     openrouter: LLMProviderConfigOut = Field(default_factory=LLMProviderConfigOut)
-    # v0.3.32+ — generic OpenAI-protocol-compatible provider.
+    # v0.3.32+ —— 通用 OpenAI 协议兼容 provider。
     openai_compatible: LLMProviderConfigOut = Field(default_factory=LLMProviderConfigOut)
     embedding: EmbeddingConfigOut = Field(default_factory=EmbeddingConfigOut)
     soul: ModuleLLMConfigOut = Field(default_factory=ModuleLLMConfigOut)
@@ -993,9 +984,9 @@ class XiaohongshuSourceConfigOut(BaseModel):
 class DouyinSourceConfigOut(BaseModel):
     enabled: bool = False
     mode: str = "direct"
-    # Resolved Cookie header (env override, else data/douyin_cookie.json).
-    # Read-only mirror for the settings pages — masked unless reveal_keys.
-    # PUT routes a non-empty value to DouyinCookieManager, never config.toml.
+    # 已解析的 Cookie header（env 覆盖，否则 data/douyin_cookie.json）。
+    # 设置页的只读镜像 —— 除非 reveal_keys 否则做掩码。
+    # PUT 将非空值路由到 DouyinCookieManager，从不写入 config.toml。
     cookie: str = ""
     cookie_env: str = "OPENBILICLAW_DOUYIN_COOKIE"
     daily_search_budget: int = 0
@@ -1016,9 +1007,9 @@ class YoutubeSourceConfigOut(BaseModel):
 class TwitterSourceConfigOut(BaseModel):
     enabled: bool = False
     mode: str = "cookie"
-    # Resolved Cookie header (env override, else data/x_cookie.json).
-    # Read-only mirror for the settings pages — masked unless reveal_keys.
-    # PUT routes a non-empty value to XCookieManager, never config.toml.
+    # 已解析的 Cookie header（env 覆盖，否则 data/x_cookie.json）。
+    # 设置页的只读镜像 —— 除非 reveal_keys 否则做掩码。
+    # PUT 将非空值路由到 XCookieManager，从不写入 config.toml。
     cookie: str = ""
     cookie_env: str = "OPENBILICLAW_X_COOKIE"
     daily_search_budget: int = 0
@@ -1185,7 +1176,7 @@ class ConfigIssueOut(BaseModel):
 
 
 class ConfigResponse(BaseModel):
-    """Full configuration response."""
+    """完整的配置响应。"""
 
     language: str = "zh"
     data_dir: str = "data"
@@ -1203,7 +1194,7 @@ class ConfigResponse(BaseModel):
 
 
 class ConfigUpdateIn(BaseModel):
-    """Partial config update. Only provided fields are updated."""
+    """部分配置更新。仅更新提供的字段。"""
 
     language: str | None = None
     data_dir: str | None = None
@@ -1219,14 +1210,14 @@ class ConfigUpdateIn(BaseModel):
 
 
 class ConfigServiceProbeIn(BaseModel):
-    """No-write request to probe the submitted LLM or embedding config."""
+    """不写入的请求，用于探测提交的 LLM 或 embedding 配置。"""
 
     kind: Literal["llm", "embedding"]
     config: dict[str, object] = Field(default_factory=dict)
 
 
 class ConfigServiceProbeResponse(BaseModel):
-    """Result of a user-triggered provider connectivity probe."""
+    """用户触发的 provider 连通性探测结果。"""
 
     ok: bool
     kind: Literal["llm", "embedding"]
@@ -1238,14 +1229,14 @@ class ConfigServiceProbeResponse(BaseModel):
 
 
 class SourceShareSuggestionIn(BaseModel):
-    """Optional overrides from a settings form that has not been saved yet."""
+    """来自尚未保存的设置表单的可选覆盖项。"""
 
     enabled_sources: dict[str, bool] | None = None
     configured_shares: dict[str, int] | None = None
 
 
 class ConfigUpdateResponse(BaseModel):
-    """Response after config save."""
+    """配置保存后的响应。"""
 
     ok: bool = True
     config: ConfigResponse
@@ -1256,7 +1247,7 @@ class ConfigUpdateResponse(BaseModel):
 
 
 class SourceShareSuggestionResponse(BaseModel):
-    """Suggested source shares based on observed source event counts."""
+    """基于观察到的源事件计数建议的 source shares。"""
 
     event_counts: dict[str, int] = Field(default_factory=dict)
     enabled_sources: dict[str, bool] = Field(default_factory=dict)

@@ -1,9 +1,9 @@
-# FastAPI 升级至 0.115.0+ 修复多个 CVE（DEP-03）
+# FastAPI 升级至 0.139.0+ 修复多个 CVE（DEP-03）
 # 包含 Starlette 路径遍历、DoS 等安全修复
-fastapi>=0.115.0,<0.140.0
-# Starlette 显式约束下限，确保包含 0.40.0 起的安全修复（DEP-03）
-# 注：starlette 1.0+ CVE 修复需 FastAPI 0.140+ 协调升级，暂保持当前区间
-starlette>=0.40.0,<1.0.0
+fastapi>=0.139.0,<0.140.0
+# Starlette 升级至 1.3.1+ 修复 PYSEC-2026-161/248/249 + CVE-2026-48817/48818
+# FastAPI 0.139.0 已协调支持 starlette 1.x
+starlette>=1.3.1,<2.0.0
 uvicorn[standard]==0.27.0
 sqlalchemy==2.0.25
 pydantic>=2.6.0,<3.0.0
@@ -24,7 +24,8 @@ aiofiles==23.2.1
 python-dotenv>=1.2.2,<2.0.0
 click~=8.1.0
 slowapi~=0.1.9
-RestrictedPython>=5.0,<8.0
+# RestrictedPython 升级至 8.0+ 修复 CVE-2025-22153
+RestrictedPython>=8.0,<9.0
 cachetools>=5.3.0,<6.0.0
 acp>=0.1.0,<1.0.0
 psutil>=5.9.0,<7.0.0

@@ -1,7 +1,7 @@
-"""Bilibili API Client.
+"""Bilibili API 客户端。
 
-Primary interface for interacting with Bilibili, prioritizing the official
-and reverse-engineered API for speed and efficiency.
+与 Bilibili 交互的主接口，优先使用官方和逆向工程 API
+以追求速度与效率。
 """
 
 from __future__ import annotations
@@ -21,19 +21,19 @@ logger = logging.getLogger(__name__)
 
 
 class BilibiliAPIError(RuntimeError):
-    """Raised when a Bilibili API request returns an application error."""
+    """当 Bilibili API 请求返回应用错误时抛出。"""
 
 
 class BilibiliAuthExpiredError(BilibiliAPIError):
-    """Raised when Bilibili reports the current Cookie is logged out."""
+    """当 Bilibili 报告当前 Cookie 已登出时抛出。"""
 
 
 def _json_object(value: Any) -> dict[str, Any]:
-    """Coerce a JSON value into an object for strict typing.
+    """将 JSON 值强制转换为对象以便严格类型校验。
 
-    Returns an empty dict when *value* is ``None`` (common when B站
-    returns ``"data": null`` under rate-limiting or for empty ranking
-    regions), mirroring :func:`_json_list`'s null-handling.
+    当 *value* 为 ``None`` 时返回空 dict（这在 B站 限流或
+    排行榜分区为空时返回 ``"data": null`` 很常见），
+    与 :func:`_json_list` 的 null 处理保持一致。
     """
     if value is None:
         return {}
@@ -41,10 +41,10 @@ def _json_object(value: Any) -> dict[str, Any]:
 
 
 def _json_list(value: Any) -> list[dict[str, Any]]:
-    """Coerce a JSON value into a list of objects for strict typing.
+    """将 JSON 值强制转换为对象列表以便严格类型校验。
 
-    Returns an empty list when *value* is ``None`` (common when B站
-    returns ``"result": null`` under rate-limiting).
+    当 *value* 为 ``None`` 时返回空列表（这在 B站 限流时
+    返回 ``"result": null`` 很常见）。
     """
     if value is None:
         return []
@@ -53,13 +53,13 @@ def _json_list(value: Any) -> list[dict[str, Any]]:
 
 @dataclass
 class VideoInfo:
-    """Basic video information from Bilibili."""
+    """Bilibili 视频基本信息。"""
 
     bvid: str = ""
     aid: int = 0
     title: str = ""
     description: str = ""
-    duration: int = 0  # seconds
+    duration: int = 0  # 秒
     cover_url: str = ""
     up_name: str = ""
     up_mid: int = 0
@@ -75,7 +75,7 @@ class VideoInfo:
 
 @dataclass
 class NavInfo:
-    """Basic authenticated user info from the nav endpoint."""
+    """来自 nav 端点的基本已登录用户信息。"""
 
     is_login: bool = False
     uname: str = ""
@@ -84,7 +84,7 @@ class NavInfo:
 
 @dataclass
 class FavoriteFolder:
-    """Favorite folder metadata."""
+    """收藏夹元数据。"""
 
     media_id: int
     title: str
@@ -93,7 +93,7 @@ class FavoriteFolder:
 
 @dataclass
 class FavoriteFolderWithItems:
-    """Favorite folder plus fetched items."""
+    """收藏夹及其已抓取条目。"""
 
     folder: FavoriteFolder
     items: list[dict[str, Any]]
@@ -102,7 +102,7 @@ class FavoriteFolderWithItems:
 
 @dataclass
 class FollowingUser:
-    """Basic followed user info."""
+    """基本关注用户信息。"""
 
     mid: int
     uname: str
@@ -111,7 +111,7 @@ class FollowingUser:
 
 @dataclass
 class CommentInfo:
-    """Basic comment info."""
+    """基本评论信息。"""
 
     mid: int
     uname: str
@@ -120,26 +120,25 @@ class CommentInfo:
 
 
 class BilibiliAPIClient:
-    """Client for Bilibili's web API.
+    """Bilibili Web API 客户端。
 
-    This is the primary data access layer (API-first approach).
-    For operations not supported by the API, use BilibiliBrowser.
+    这是主数据访问层（API 优先策略）。
+    对于 API 不支持的操作，请使用 BilibiliBrowser。
     """
 
     _BASE_URL = "https://api.bilibili.com"
     _SEARCH_WEB_LOCATION = 1430654
-    # A v_voucher exhaustion is usually recoverable WBI-key churn / mild
-    # rate limiting, so it gets a short, escalating back-off. A genuine
-    # HTTP 412 is an explicit IP-level block and gets the longer hard
-    # cooldown instead (see ``_SEARCH_COOLDOWN_412_SECONDS``).
+    # v_voucher 耗尽通常是可以恢复的 WBI 密钥轮换 / 轻度限流，
+    # 所以采用短暂、逐步升级的退避。真正的 HTTP 412 是显式的
+    # IP 级别封禁，会触发更长的硬冷却
+    # （见 ``_SEARCH_COOLDOWN_412_SECONDS``）。
     _SEARCH_COOLDOWN_BASE_SECONDS: ClassVar[float] = 180.0
     _SEARCH_COOLDOWN_412_SECONDS: ClassVar[float] = 600.0
     _SEARCH_COOLDOWN_MAX_SECONDS: ClassVar[float] = 1800.0
     _SEARCH_DOM_FALLBACK_SECONDS: ClassVar[float] = 180.0
-    # A single challenged keyword (transient churn) must NOT zero out the
-    # whole search round + the explore strategy that shares this cooldown.
-    # Only trip the process-wide cooldown after this many *consecutive*
-    # keyword-level v_voucher exhaustions; any success resets the streak.
+    # 单个关键词被挑战（瞬时轮换）不能清零整个搜索轮次 + 与之共享
+    # 冷却的 explore 策略。只有连续 *多次* 关键词级 v_voucher 耗尽
+    # 后才触发进程级冷却；任何一次成功都会重置连续计数。
     _SEARCH_VOUCHER_BLOCK_THRESHOLD: ClassVar[int] = 3
     _search_cooldown_until: ClassVar[float] = 0.0
     _search_cooldown_level: ClassVar[int] = 0
@@ -212,7 +211,7 @@ class BilibiliAPIClient:
         52,
     ]
 
-    _WBI_KEY_TTL: float = 300.0  # Refresh WBI keys every 5 minutes
+    _WBI_KEY_TTL: float = 300.0  # 每 5 分钟刷新一次 WBI 密钥
 
     def __init__(self, cookie: str = "", *, min_request_interval: float = 0.2) -> None:
         self._cookie = cookie
@@ -236,11 +235,11 @@ class BilibiliAPIClient:
 
     @property
     def is_authenticated(self) -> bool:
-        """Whether we have a valid authentication cookie."""
+        """是否拥有有效的认证 Cookie。"""
         return bool(self._cookie)
 
     async def _respect_rate_limit(self) -> None:
-        """Wait to keep a minimum interval between requests."""
+        """等待以满足请求之间的最小间隔。"""
         elapsed = time.monotonic() - self._last_request_at
         remaining = self._min_request_interval - elapsed
         if remaining > 0:
@@ -249,21 +248,21 @@ class BilibiliAPIClient:
 
     @classmethod
     def search_cooldown_remaining(cls) -> float:
-        """Seconds remaining in the process-wide Bilibili search cooldown."""
+        """进程级 Bilibili 搜索冷却剩余秒数。"""
         return max(0.0, cls._search_cooldown_until - time.monotonic())
 
     @classmethod
     def search_dom_fallback_remaining(cls) -> float:
-        """Seconds remaining while rendered-page search fallback is preferred."""
+        """渲染页面搜索回退被偏好的剩余秒数。"""
         return max(0.0, cls._search_dom_fallback_until - time.monotonic())
 
     @classmethod
     def _activate_search_dom_fallback(cls, *, seconds: float | None = None) -> float:
-        """Ask the extension-search producer to try DOM search soon.
+        """请求扩展搜索生产者尽快尝试 DOM 搜索。
 
-        This signal is intentionally weaker than the global cooldown: API
-        search may keep probing, but the browser extension can backfill via a
-        rendered search page while the API path looks degraded.
+        这个信号故意弱于全局冷却：API 搜索可以继续探活，
+        但浏览器扩展可以在 API 路径降级期间通过渲染的搜索
+        页面进行回填。
         """
         duration = cls._SEARCH_DOM_FALLBACK_SECONDS if seconds is None else seconds
         cls._search_dom_fallback_until = max(
@@ -274,11 +273,10 @@ class BilibiliAPIClient:
 
     @classmethod
     def _activate_search_cooldown(cls, *, base_seconds: float | None = None) -> float:
-        """Back off all search clients after repeated v_voucher/412 blocks.
+        """在重复 v_voucher/412 封禁后让所有搜索客户端退避。
 
-        ``base_seconds`` overrides the per-step base (412 blocks pass the
-        longer hard-cooldown base); the escalation multiplier and absolute
-        ceiling are shared across both causes.
+        ``base_seconds`` 覆盖每步基数（412 封禁传入更长的硬冷却
+        基数）；升级倍数与绝对上限在两种原因之间共享。
         """
         cls._search_cooldown_level = min(cls._search_cooldown_level + 1, 3)
         base = cls._SEARCH_COOLDOWN_BASE_SECONDS if base_seconds is None else base_seconds
@@ -295,14 +293,13 @@ class BilibiliAPIClient:
 
     @classmethod
     def _record_voucher_block(cls) -> float:
-        """Record one keyword exhausting its v_voucher retries.
+        """记录一个关键词耗尽其 v_voucher 重试。
 
-        Returns the cooldown duration if this block crossed the
-        consecutive-failure threshold (the whole search path now backs
-        off), or ``0.0`` if search stays live and only this one keyword is
-        dropped — a lone challenged keyword is usually transient WBI churn,
-        not an IP-level block, and must not strand the search round +
-        explore for the full cooldown.
+        如果本次封禁跨越了连续失败阈值（整个搜索路径现在退避），
+        返回冷却时长；若搜索保持可用、仅丢弃当前关键词，
+        则返回 ``0.0`` —— 单个被挑战的关键词通常是瞬时 WBI
+        轮换，并非 IP 级封禁，不应让整个搜索轮次 + explore
+        在完整冷却中被搁置。
         """
         cls._search_voucher_block_streak += 1
         if cls._search_voucher_block_streak >= cls._SEARCH_VOUCHER_BLOCK_THRESHOLD:
@@ -311,7 +308,7 @@ class BilibiliAPIClient:
 
     @classmethod
     def _reset_search_cooldown_backoff(cls) -> None:
-        """Reset escalation + the v_voucher streak once search succeeds again."""
+        """搜索再次成功后重置升级 + v_voucher 连续计数。"""
         cls._search_cooldown_level = 0
         cls._search_voucher_block_streak = 0
 
@@ -322,7 +319,7 @@ class BilibiliAPIClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Perform a GET request and return the decoded `data` payload."""
+        """执行 GET 请求并返回解码后的 `data` 载荷。"""
         await self._respect_rate_limit()
         try:
             resp = await self._client.get(
@@ -350,11 +347,11 @@ class BilibiliAPIClient:
         return _json_object(payload.get("data", {}))
 
     async def _get_wbi_keys(self) -> tuple[str, str]:
-        """Fetch and cache the WBI image/sub keys used for signed search requests.
+        """获取并缓存用于签名搜索请求的 WBI image/sub 密钥。
 
-        Keys are refreshed after :attr:`_WBI_KEY_TTL` seconds because B站
-        rotates them periodically — stale keys cause search to return an
-        empty ``v_voucher`` response instead of actual results.
+        密钥在 :attr:`_WBI_KEY_TTL` 秒后刷新，因为 B站 会
+        周期性轮换它们 —— 旧密钥会导致搜索返回空的
+        ``v_voucher`` 响应而非真实结果。
         """
         if (
             self._cached_wbi_keys is not None
@@ -382,14 +379,14 @@ class BilibiliAPIClient:
 
     @staticmethod
     def _extract_wbi_key_component(url: str) -> str:
-        """Return the key segment from a WBI image URL."""
+        """从 WBI 图片 URL 中返回密钥片段。"""
         path = urlparse(url).path
         filename = path.rsplit("/", 1)[-1]
         return filename.rsplit(".", 1)[0]
 
     @classmethod
     def _build_wbi_mixin_key(cls, img_key: str, sub_key: str) -> str:
-        """Build the mixed key used by Bilibili WBI request signing."""
+        """构建 Bilibili WBI 请求签名使用的混合密钥。"""
         merged = img_key + sub_key
         return "".join(merged[index] for index in cls._WBI_MIXIN_KEY_ENC_TAB)[:32]
 
@@ -401,7 +398,7 @@ class BilibiliAPIClient:
         img_key: str,
         sub_key: str,
     ) -> dict[str, str]:
-        """Sign search params using Bilibili's WBI algorithm."""
+        """使用 Bilibili 的 WBI 算法对搜索参数进行签名。"""
         mixin_key = cls._build_wbi_mixin_key(img_key, sub_key)
         signed_params = {**params, "wts": int(time.time())}
         ordered_items = sorted(signed_params.items())
@@ -411,7 +408,7 @@ class BilibiliAPIClient:
         return sanitized
 
     async def get_nav_info(self) -> NavInfo:
-        """Get the current login state from Bilibili nav API."""
+        """从 Bilibili nav API 获取当前登录状态。"""
         data = await self._get_json("/x/web-interface/nav")
         return NavInfo(
             is_login=bool(data.get("isLogin", False)),
@@ -420,13 +417,13 @@ class BilibiliAPIClient:
         )
 
     async def get_video_info(self, bvid: str) -> VideoInfo:
-        """Get video information by BV ID.
+        """根据 BV ID 获取视频信息。
 
         Args:
-            bvid: Bilibili video BV ID.
+            bvid: Bilibili 视频 BV ID。
 
         Returns:
-            VideoInfo dataclass.
+            VideoInfo 数据类。
         """
         resp = await self._client.get(
             f"{self._BASE_URL}/x/web-interface/view",
@@ -463,15 +460,15 @@ class BilibiliAPIClient:
         page_size: int = 20,
         order: str = "totalrank",
     ) -> list[dict[str, Any]]:
-        """Search for videos by keyword.
+        """按关键词搜索视频。
 
         Args:
-            keyword: Search query.
-            page: Page number.
-            page_size: Results per page.
+            keyword: 搜索查询。
+            page: 页码。
+            page_size: 每页结果数。
 
         Returns:
-            List of search result dicts.
+            搜索结果字典列表。
         """
         cooldown_remaining = self.search_cooldown_remaining()
         if cooldown_remaining > 0:
@@ -482,21 +479,18 @@ class BilibiliAPIClient:
             )
             return []
 
-        # v0.3.55+: 3 attempts with exponential backoff (was 2 with 1.5s
-        # linear). Production logs (2026-05-05) showed 141 v_voucher
-        # challenges in 43 minutes; with only 1 retry, ~9 full search
-        # rounds returned 0 results because keywords got challenged twice
-        # and we gave up. The new schedule (1.5s / 5s / 15s = ~21s total
-        # per keyword) lets the WBI key churn settle without immediately
-        # surrendering. Steady-state cost is zero — retries don't fire
-        # when keys are healthy.
+        # v0.3.55+：3 次尝试，指数退避（原来是 2 次、1.5s 线性）。
+        # 生产日志（2026-05-05）显示 43 分钟内出现 141 次 v_voucher
+        # 挑战；仅 1 次重试时，约 9 个完整搜索轮次返回 0 结果，
+        # 因为关键词被挑战两次后我们就放弃。新调度（1.5s / 5s / 15s
+        # = 每关键词约 21s）让 WBI 密钥轮换平息而不立即投降。
+        # 稳态成本为零 —— 密钥健康时不会触发重试。
         #
-        # Fast-fail once a storm is suspected: the first keyword to fail in
-        # a fresh round gets the full retry budget so transient churn can
-        # settle, but once one keyword has already fully exhausted
-        # (streak>0) we drop to a single quick probe — confirming a real
-        # storm in a few fast attempts instead of hammering B站 with doomed
-        # ~21s retry chains per keyword (which would only deepen the block).
+        # 一旦疑似风暴就快速失败：每轮第一个失败的关键词获得
+        # 完整重试预算以便瞬时轮换平息，但一旦已有某个关键词
+        # 完全耗尽（streak>0），我们就降为单次快速探活 —— 用几次
+        # 快速尝试确认真正的风暴，而不是对每个关键词都向 B站 砸
+        # 约 21s 注定失败的重试链（那样只会加深封禁）。
         max_attempts = 1 if type(self)._search_voucher_block_streak > 0 else 3
         backoff_schedule = (1.5, 5.0, 15.0)
         for attempt in range(max_attempts):
@@ -526,8 +520,8 @@ class BilibiliAPIClient:
             except BilibiliAPIError as exc:
                 cause = exc.__cause__
                 if isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code == 412:
-                    # 412 is an explicit IP-level block — back off hard and
-                    # immediately (no streak threshold), with the longer base.
+                    # 412 是显式的 IP 级封禁 —— 立即硬退避
+                    # （无 streak 阈值），使用更长的基数。
                     duration = self._activate_search_cooldown(
                         base_seconds=self._SEARCH_COOLDOWN_412_SECONDS
                     )
@@ -541,7 +535,7 @@ class BilibiliAPIClient:
                 self._activate_search_dom_fallback()
                 raise
 
-            # Detect v_voucher-only response (stale WBI keys or rate limit)
+            # 检测仅 v_voucher 响应（WBI 密钥过期或限流）
             if "v_voucher" in data and data.get("result") is None:
                 if attempt < max_attempts - 1:
                     delay = backoff_schedule[attempt]
@@ -556,10 +550,9 @@ class BilibiliAPIClient:
                     self._cached_wbi_keys = None
                     await asyncio.sleep(delay)
                     continue
-                # Final attempt also got v_voucher. Record the block; only
-                # trip the shared cooldown once consecutive keyword failures
-                # cross the threshold — a lone challenged keyword just gets
-                # dropped so the rest of the round (and explore) stays live.
+                # 最终尝试仍然得到 v_voucher。记录封禁；只有连续关键词
+                # 失败跨越阈值时才触发共享冷却 —— 单个被挑战的关键词
+                # 仅被丢弃，使本轮的其余部分（以及 explore）保持可用。
                 self._activate_search_dom_fallback()
                 duration = self._record_voucher_block()
                 if duration > 0:
@@ -589,15 +582,15 @@ class BilibiliAPIClient:
         return []
 
     async def get_user_history(self, max_items: int = 100) -> list[dict[str, Any]]:
-        """Get the authenticated user's watch history.
+        """获取已登录用户的观看历史。
 
-        Requires valid authentication cookie.
+        需要有效的认证 Cookie。
 
         Args:
-            max_items: Maximum number of history items to fetch. 0 means fetch all.
+            max_items: 最多抓取的历史条目数。0 表示抓取全部。
 
         Returns:
-            List of history item dicts.
+            历史条目字典列表。
         """
         if not self.is_authenticated:
             logger.warning("Cannot fetch history without authentication.")
@@ -633,15 +626,15 @@ class BilibiliAPIClient:
         max_items: int = 20,
         page_size: int = 20,
     ) -> list[dict[str, Any]]:
-        """Get content from a favorites folder.
+        """获取收藏夹中的内容。
 
         Args:
-            media_id: Favorites folder media ID.
-            max_items: Maximum number of favorite items to fetch.
-            page_size: Page size for the Bilibili resource list endpoint.
+            media_id: 收藏夹 media ID。
+            max_items: 最多抓取的收藏条目数。
+            page_size: Bilibili resource list 端点的页大小。
 
         Returns:
-            List of favorite item dicts.
+            收藏条目字典列表。
         """
         item_limit = max(0, int(max_items))
         if item_limit <= 0:
@@ -669,7 +662,7 @@ class BilibiliAPIClient:
         return items[:item_limit]
 
     async def get_favorite_folders(self) -> list[FavoriteFolder]:
-        """Get the authenticated user's favorite folder metadata."""
+        """获取已登录用户的收藏夹元数据。"""
         nav = await self.get_nav_info()
         data = await self._get_json(
             "/x/v3/fav/folder/created/list-all",
@@ -692,7 +685,7 @@ class BilibiliAPIClient:
         max_items_per_folder: int = 50,
         max_total_items: int | None = None,
     ) -> list[FavoriteFolderWithItems]:
-        """Get favorite folders and fetch each folder's items within budget."""
+        """获取收藏夹并在预算内抓取每个收藏夹的条目。"""
         folders = await self.get_favorite_folders()
         folder_limit = max(0, int(max_items_per_folder))
         folder_count = max(0, int(max_folders))
@@ -732,7 +725,7 @@ class BilibiliAPIClient:
         page: int = 1,
         page_size: int = 50,
     ) -> list[FollowingUser]:
-        """Get the authenticated user's following list."""
+        """获取已登录用户的关注列表。"""
         nav = await self.get_nav_info()
         data = await self._get_json(
             "/x/relation/followings",
@@ -749,13 +742,13 @@ class BilibiliAPIClient:
         ]
 
     async def get_related_videos(self, bvid: str) -> list[dict[str, Any]]:
-        """Get related/recommended videos for a given video.
+        """获取给定视频的相关/推荐视频。
 
         Args:
-            bvid: Source video BV ID.
+            bvid: 源视频 BV ID。
 
         Returns:
-            List of related video dicts.
+            相关视频字典列表。
         """
         resp = await self._client.get(
             f"{self._BASE_URL}/x/web-interface/archive/related",
@@ -766,13 +759,13 @@ class BilibiliAPIClient:
         return _json_list(payload.get("data", []))
 
     async def get_ranking(self, rid: int = 0) -> list[dict[str, Any]]:
-        """Get ranking/trending videos.
+        """获取排行榜/热门视频。
 
         Args:
-            rid: Region ID (0 for all).
+            rid: 分区 ID（0 表示全部）。
 
         Returns:
-            List of ranking item dicts.
+            排行榜条目字典列表。
         """
         resp = await self._client.get(
             f"{self._BASE_URL}/x/web-interface/ranking/v2",
@@ -784,7 +777,7 @@ class BilibiliAPIClient:
         return _json_list(data.get("list", []))
 
     async def get_video_comments(self, bvid: str, limit: int = 20) -> list[CommentInfo]:
-        """Get the top comments for a video."""
+        """获取视频的热门评论。"""
         video = await self.get_video_info(bvid)
         data = await self._get_json(
             "/x/v2/reply/main",
@@ -803,5 +796,5 @@ class BilibiliAPIClient:
         return comments[:limit]
 
     async def close(self) -> None:
-        """Close the HTTP client."""
+        """关闭 HTTP 客户端。"""
         await self._client.aclose()

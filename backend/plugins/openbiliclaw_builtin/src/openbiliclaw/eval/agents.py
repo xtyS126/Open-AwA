@@ -1,8 +1,8 @@
-"""Claude Agent SDK wrappers for eval agents.
+"""评估 Agent 使用的 Claude Agent SDK 封装。
 
-Each agent uses `claude_agent_sdk.query()` with system_prompt
-for role definition and tool permissions for autonomous operation.
-JSON is extracted from the assistant's text response.
+每个 Agent 使用 `claude_agent_sdk.query()` 配合 system_prompt
+定义角色和工具权限以实现自主操作。
+从助手文本响应中提取 JSON。
 """
 
 from __future__ import annotations
@@ -21,20 +21,20 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    """Extract a JSON object from text that may contain markdown code blocks.
+    """从可能包含 markdown 代码块的文本中提取 JSON 对象。
 
-    Tries multiple strategies:
-    1. Closed markdown code block
-    2. Truncated code block (opening ``` but no closing ```)
-    3. Full text as JSON
-    4. Brace-balanced substring
-    5. Truncated JSON repair (append missing closing braces)
+    尝试多种策略：
+    1. 闭合的 markdown 代码块
+    2. 截断的代码块（有开头的 ``` 但没有结尾的 ```）
+    3. 将整段文本作为 JSON
+    4. 大括号平衡的子串
+    5. 截断 JSON 修复（追加缺失的右大括号）
     """
     if not text or not text.strip():
         msg = "Empty response — cannot extract JSON"
         raise ValueError(msg)
 
-    # Strategy 1: closed code block
+    # 策略 1：闭合的代码块
     for match in re.finditer(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL):
         block = match.group(1).strip()
         if not block:
@@ -46,27 +46,27 @@ def _extract_json(text: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             continue
 
-    # Strategy 2: truncated code block (has opening ``` but no closing ```)
+    # 策略 2：截断的代码块（有开头的 ``` 但没有结尾的 ```）
     trunc_match = re.search(r"```(?:json)?\s*\n?(.+)", text, re.DOTALL)
     if trunc_match:
         block = trunc_match.group(1).strip()
-        # Try parsing as-is first
+        # 先尝试原样解析
         result = _try_parse_json_dict(block)
         if result is not None:
             return result
-        # Try repairing truncated JSON
+        # 尝试修复截断的 JSON
         result = _repair_truncated_json(block)
         if result is not None:
             return result
 
-    # Strategy 3: full text as JSON
+    # 策略 3：将整段文本作为 JSON
     stripped = text.strip()
     if stripped.startswith("{"):
         result = _try_parse_json_dict(stripped)
         if result is not None:
             return result
 
-    # Strategy 4: brace-balanced substring (string-aware)
+    # 策略 4：大括号平衡的子串（感知字符串）
     start = text.find("{")
     if start >= 0:
         depth = 0
@@ -95,7 +95,7 @@ def _extract_json(text: str) -> dict[str, Any]:
                         return result
                     break
 
-    # Strategy 5: repair truncated JSON from first { to end
+    # 策略 5：从第一个 { 到末尾修复截断的 JSON
     if start is not None and start >= 0:
         result = _repair_truncated_json(text[start:])
         if result is not None:
@@ -106,7 +106,7 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 def _try_parse_json_dict(text: str) -> dict[str, Any] | None:
-    """Try to parse text as a JSON dict, return None on failure."""
+    """尝试将文本解析为 JSON dict，失败时返回 None。"""
     try:
         result = json.loads(text)
         if isinstance(result, dict):
@@ -117,18 +117,18 @@ def _try_parse_json_dict(text: str) -> dict[str, Any] | None:
 
 
 def _repair_truncated_json(text: str) -> dict[str, Any] | None:
-    """Try to repair truncated JSON by appending missing closing braces/brackets.
+    """通过追加缺失的右大括号/中括号尝试修复截断的 JSON。
 
-    Walks the string tracking brace/bracket depth, then appends the
-    necessary closing characters. Handles up to 10 levels of nesting.
+    遍历字符串追踪大括号/中括号深度，然后追加必要的闭合字符。
+    最多处理 10 层嵌套。
     """
-    # Strip trailing whitespace and incomplete tokens
+    # 去除尾部空白和不完整 token
     cleaned = text.rstrip()
-    # Remove trailing comma (common in truncated arrays/objects)
+    # 去除尾部的逗号（在截断的数组/对象中很常见）
     if cleaned.endswith(","):
         cleaned = cleaned[:-1]
-    # Remove trailing incomplete string (no closing quote)
-    # Count unescaped quotes
+    # 去除尾部不完整的字符串（没有闭合引号）
+    # 统计未转义引号的数量
     in_string = False
     escape_next = False
     open_stack: list[str] = []
@@ -148,11 +148,11 @@ def _repair_truncated_json(text: str) -> dict[str, Any] | None:
             open_stack.append("}" if ch == "{" else "]")
         elif ch in "}]" and open_stack:
             open_stack.pop()
-    # If still inside a string, try to close it
+    # 如果仍在字符串内部，尝试闭合它
     suffix = ""
     if in_string:
         suffix += '"'
-    # Append missing closing brackets/braces in reverse order
+    # 按相反顺序追加缺失的右中括号/大括号
     suffix += "".join(reversed(open_stack))
     if not suffix or len(open_stack) > 10:
         return None
@@ -160,16 +160,16 @@ def _repair_truncated_json(text: str) -> dict[str, Any] | None:
 
 
 async def _collect_text(prompt: str, options: Any) -> str:
-    """Run a query and collect all assistant text from the response."""
+    """执行查询并从响应中收集所有助手文本。"""
     all_text, _ = await _collect_text_with_last(prompt, options)
     return all_text
 
 
 async def _collect_text_with_last(prompt: str, options: Any) -> tuple[str, str]:
-    """Run a query and return (all_text, last_message_text).
+    """执行查询并返回 (all_text, last_message_text)。
 
-    For multi-turn agents, the final JSON result is usually in the last
-    assistant message, while earlier messages contain tool-use reasoning.
+    对于多轮 Agent，最终 JSON 结果通常在最后一条助手消息中，
+    而较早的消息包含工具使用推理。
     """
     from claude_agent_sdk import AssistantMessage, TextBlock, query
 
@@ -201,33 +201,32 @@ async def collect_json(
     label: str = "",
     json_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Collect structured JSON from LLM via Claude Agent SDK.
+    """通过 Claude Agent SDK 从 LLM 收集结构化 JSON。
 
-    Uses ``output_format='json'`` with ``max_turns=2`` for reliable
-    structured output.  Falls back to text extraction + repair on
-    parse failures.
+    使用 ``output_format='json'`` 配合 ``max_turns=2`` 获取可靠的
+    结构化输出。解析失败时回退到文本提取 + 修复。
 
-    If *json_schema* is provided it is appended to the prompt as a
-    human-readable schema hint so the model knows the expected shape.
+    如果提供了 *json_schema*，会将其作为人类可读的 schema 提示
+    追加到 prompt 中，让模型知道期望的数据结构。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
-    # Append schema hint to prompt
+    # 将 schema 提示追加到 prompt
     if json_schema is not None:
         import json as _json
 
         schema_text = _json.dumps(json_schema, ensure_ascii=False, indent=2)[:2000]
         prompt = f"{prompt}\n\nJSON Schema (输出必须符合此结构):\n{schema_text}"
 
-    # Patch options to enable JSON output mode.
-    # output_format='json' only works with max_turns >= 2.
+    # 修改 options 以启用 JSON 输出模式。
+    # output_format='json' 仅在 max_turns >= 2 时生效。
     original_system = getattr(options, "system_prompt", "") or ""
     json_options = ClaudeAgentOptions(
         system_prompt=original_system + "\n只返回纯 JSON 对象，不要 code fence 或其他文字。",
         max_turns=max(getattr(options, "max_turns", 1), 2),
         output_format="json",
     )
-    # Copy optional fields if they were set
+    # 复制已设置的可选字段
     for attr in ("allowed_tools", "cwd"):
         val = getattr(options, attr, None)
         if val is not None:
@@ -248,11 +247,11 @@ async def collect_json(
             if not text.strip():
                 msg = "LLM returned empty response"
                 raise ValueError(msg)
-            # With output_format='json', response should be pure JSON
+            # 使用 output_format='json' 时，响应应为纯 JSON
             result = _try_parse_json_dict(text.strip())
             if result is not None:
                 return result
-            # Fall back to extraction strategies (code fence, etc.)
+            # 回退到提取策略（代码块等）
             return _extract_json(text)
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = exc
@@ -289,7 +288,7 @@ async def collect_json(
 
 
 # ---------------------------------------------------------------------------
-# Persona generation prompt snippet (shared by all auto-optimize scripts)
+# 人格生成 prompt 片段（所有自动优化脚本共用）
 # ---------------------------------------------------------------------------
 
 PERSONA_SCHEMA_HINT = """
@@ -339,7 +338,7 @@ likes 中每个 domain 必须包含 "domain"、"weight"、"specifics" 字段。
 
 
 # ---------------------------------------------------------------------------
-# JSON Schemas for structured output
+# 结构化输出的 JSON Schema
 # ---------------------------------------------------------------------------
 
 ONION_PROFILE_SCHEMA: dict[str, Any] = {
@@ -517,14 +516,14 @@ PARAM_CHANGE_SCHEMA: dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
-# Agent runners
+# Agent 运行器
 # ---------------------------------------------------------------------------
 
 
 async def run_persona_agent(
     constraints: dict[str, str],
 ) -> OnionProfile:
-    """Generate a ground truth persona using Claude Agent SDK."""
+    """使用 Claude Agent SDK 生成基准真实人格。"""
     from claude_agent_sdk import ClaudeAgentOptions
 
     from openbiliclaw.soul.profile import OnionProfile
@@ -554,7 +553,7 @@ async def run_event_agent(
     persona: OnionProfile,
     event_count: int = 100,
 ) -> list[dict[str, Any]]:
-    """Generate simulated behavioral events using Claude Agent SDK."""
+    """使用 Claude Agent SDK 生成模拟行为事件。"""
     from claude_agent_sdk import ClaudeAgentOptions
 
     persona_context = persona.to_llm_context()
@@ -582,7 +581,7 @@ async def run_eval_agent(
     expected: OnionProfile,
     predicted: OnionProfile,
 ) -> dict[str, Any]:
-    """Evaluate predicted vs expected profile using Claude Agent SDK."""
+    """使用 Claude Agent SDK 评估预测画像与期望画像的差异。"""
     from claude_agent_sdk import ClaudeAgentOptions
 
     prompt = (
@@ -618,10 +617,10 @@ async def run_optimizer_agent(
     eval_report: dict[str, Any],
     project_root: Path,
 ) -> dict[str, Any]:
-    """Optimize prompts and pipeline code based on eval deviations.
+    """根据评估偏差优化 prompt 和 pipeline 代码。
 
-    This agent has Read/Grep/Glob tools — it can autonomously read code
-    to understand both prompt templates and pipeline logic before proposing changes.
+    该 Agent 拥有 Read/Grep/Glob 工具——可在提出修改建议前
+    自主读取代码以理解 prompt 模板和 pipeline 逻辑。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -694,8 +693,8 @@ async def run_optimizer_agent(
         return {"changes": [], "summary": f"optimizer agent crashed: {exc!s:.100}"}
     elapsed = _time.monotonic() - t0
     logger.info("[optimizer] Agent done (%.1fs, response %d chars)", elapsed, len(all_text))
-    # Try last message first (most likely to contain the JSON result),
-    # then fall back to full text (in case JSON spans multiple messages)
+    # 先尝试最后一条消息（最可能包含 JSON 结果），
+    # 再回退到完整文本（防止 JSON 跨越多条消息）
     for text_source in [last_text, all_text]:
         if not text_source:
             continue
@@ -704,8 +703,8 @@ async def run_optimizer_agent(
         except (ValueError, json.JSONDecodeError):
             continue
 
-    # JSON extraction failed — use a follow-up collect_json call to
-    # format the agent's analysis into the required JSON structure.
+    # JSON 提取失败——使用后续 collect_json 调用
+    # 将 Agent 的分析格式化为所需的 JSON 结构。
     logger.warning("Optimizer agent did not return valid JSON (%.1fs), reformatting...", elapsed)
     agent_analysis = (last_text or all_text or "")[:3000]
     try:
@@ -738,7 +737,7 @@ async def run_optimizer_agent(
 
 
 # ---------------------------------------------------------------------------
-# Speculation evaluation agents
+# 推测兴趣评估 Agent
 # ---------------------------------------------------------------------------
 
 
@@ -747,11 +746,10 @@ async def run_speculation_event_agent(
     event_count: int = 30,
     matching_ratio: float = 0.4,
 ) -> dict[str, Any]:
-    """Generate simulated future events for speculation testing.
+    """为推测兴趣测试生成模拟未来事件。
 
-    Returns {"matching_events": [...], "non_matching_events": [...]}
-    where matching events should confirm speculations and non-matching
-    events should NOT.
+    返回 {"matching_events": [...], "non_matching_events": [...]}
+    其中 matching 事件应确认推测，non_matching 事件不应确认推测。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -781,7 +779,7 @@ async def run_speculation_event_agent(
 
 
 # ---------------------------------------------------------------------------
-# Discovery optimization agent
+# 发现系统优化 Agent
 # ---------------------------------------------------------------------------
 
 
@@ -789,10 +787,10 @@ async def run_discovery_optimizer_agent(
     eval_report: dict[str, Any],
     project_root: Path,
 ) -> dict[str, Any]:
-    """Optimize discovery prompts based on eval dimension deviations.
+    """根据评估维度偏差优化发现系统 prompt。
 
-    Similar to run_optimizer_agent but focused on discovery-specific prompts
-    and pipeline code.
+    类似于 run_optimizer_agent，但专注于发现系统特定的
+    prompt 和 pipeline 代码。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 

@@ -1,4 +1,4 @@
-"""Extension presence tracking for background LLM work gating."""
+"""扩展存在性跟踪，用于后台 LLM 工作的门控。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _DEFAULT_EXTENSION_DISCONNECT_GRACE_SECONDS = 90
 
 
 class PresenceTracker:
-    """Track shared extension presence across runtime-stream clients."""
+    """跟踪跨 runtime-stream 客户端的共享扩展存在性。"""
 
     def __init__(self, *, now: Callable[[], float] = time.monotonic) -> None:
         self._now = now
@@ -25,14 +25,14 @@ class PresenceTracker:
         self._last_disconnect_at: float | None = now()
 
     def on_connect(self) -> None:
-        """Record a runtime-stream client connection."""
+        """记录一次 runtime-stream 客户端连接。"""
         with self._lock:
             self._active_count += 1
             if self._active_count == 1:
                 self._last_disconnect_at = None
 
     def on_disconnect(self) -> None:
-        """Record a runtime-stream client disconnect."""
+        """记录一次 runtime-stream 客户端断开。"""
         with self._lock:
             if self._active_count <= 0:
                 logger.warning("Presence disconnect received without active clients")
@@ -43,7 +43,7 @@ class PresenceTracker:
                 self._last_disconnect_at = self._now()
 
     def is_present(self, grace_seconds: int) -> bool:
-        """Return whether a client is active or inside the disconnect grace window."""
+        """返回是否有客户端处于活跃状态，或处于断开宽限期内。"""
         with self._lock:
             active_count = self._active_count
             last_disconnect_at = self._last_disconnect_at
@@ -54,7 +54,7 @@ class PresenceTracker:
         return self._now() - last_disconnect_at <= grace_seconds
 
     def snapshot(self) -> dict[str, int | float | None]:
-        """Return current presence state for diagnostics."""
+        """返回当前存在性状态用于诊断。"""
         with self._lock:
             active_count = self._active_count
             last_disconnect_at = self._last_disconnect_at
@@ -69,7 +69,7 @@ class PresenceTracker:
 
 
 def background_llm_work_allowed(scheduler: object, presence: PresenceTracker) -> bool:
-    """Return whether daemon-owned background LLM / embedding work may run."""
+    """返回守护进程持有的后台 LLM / embedding 工作是否可以运行。"""
     if not bool(getattr(scheduler, "enabled", True)):
         return False
     if not bool(getattr(scheduler, "pause_on_extension_disconnect", False)):

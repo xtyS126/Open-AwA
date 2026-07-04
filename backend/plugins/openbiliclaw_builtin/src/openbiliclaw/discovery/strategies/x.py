@@ -1,29 +1,29 @@
-"""X (Twitter) discovery strategies — fetch-only producers.
+"""X (Twitter) 发现策略 — 仅抓取的生产者。
 
-Three strategies drive the server-side ``XClient`` (cookie replay over
-``twitter-cli``) and normalize the raw ``tweet_to_dict`` dicts into
+三个策略驱动服务端 ``XClient`` (在 ``twitter-cli`` 上重放 cookie),
+并将原始 ``tweet_to_dict`` dict 归一化为
 :class:`DiscoveredContent`:
 
 ``XSearchStrategy``
-    LLM generates X-flavored search keyword(s) from the Soul profile (reusing
-    the ``xhs_keyword_gen`` approach) → ``XClient.search`` → ``normalize_tweet``.
-    An explicit ``query`` (from a recipe / subscription) short-circuits keyword
-    generation.
+    LLM 从 Soul profile 生成 X 风格的搜索关键词 (复用
+    ``xhs_keyword_gen`` 方式) → ``XClient.search`` → ``normalize_tweet``。
+    显式的 ``query`` (来自 recipe / subscription) 会短路关键词
+    生成。
 
 ``XForYouStrategy``
-    Reads the user's "For You" home timeline (``XClient.for_you``).
+    读取用户的 "For You" 主页时间线 (``XClient.for_you``)。
 
 ``XCreatorStrategy``
-    Reads a creator's recent tweets by handle (``XClient.user_tweets``).
+    按 handle 读取创作者最近的推文 (``XClient.user_tweets``)。
 
-These strategies are **fetch-only**: they return normalized candidates and do
-NOT score / write ``content_cache``. The shared mixed-source evaluator owns
-that downstream (per the unified-pool spec). ``normalize_tweet`` → ``None``
-items (tombstones / unavailable tweets) are dropped.
+这些策略是 **仅抓取的**: 它们返回归一化的候选,并
+不评分 / 写 ``content_cache``。共享的多源评估器在下游拥有
+那部分职责 (按统一池 spec)。``normalize_tweet`` → ``None``
+的 item (墓碑 / 不可用推文) 会被丢弃。
 
-Lazy-import note: this module never imports ``twitter_cli`` at module load.
-``XClient`` is referenced only for type hints (``TYPE_CHECKING``); the concrete
-client is injected by the runtime on the enabled path.
+懒加载说明: 本模块从不在模块加载时导入 ``twitter_cli``。
+``XClient`` 仅用于类型提示 (``TYPE_CHECKING``);具体
+client 由运行时在 enabled 路径上注入。
 """
 
 from __future__ import annotations
@@ -44,15 +44,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Source-strategy tags carried on every normalized item (and used by the
-# producer / pool to attribute X candidates to the right sub-strategy).
+# Source-strategy 标签,携带在每个归一化 item 上 (并被生产者 / 池
+# 用来把 X 候选归因到正确的子策略)。
 SEARCH_STRATEGY_TAG = "x-search"
 FEED_STRATEGY_TAG = "x-feed"
 CREATOR_STRATEGY_TAG = "x-creator"
 
 
 class SupportsXRead(Protocol):
-    """The subset of :class:`XClient` the strategies drive (tests inject fakes)."""
+    """策略驱动的 :class:`XClient` 子集 (测试注入 fake)。"""
 
     async def search(
         self, query: str, *, limit: int, product: str = "Top"
@@ -77,9 +77,9 @@ class SupportsStructuredTask(Protocol):
     ) -> object: ...
 
 
-# X-flavored keyword generation. Mirrors ``xhs_keyword_gen``: a byte-static
-# system prompt (prompt-cache convention) with all per-call data in the user
-# message.
+# X 风格的关键词生成。镜像 ``xhs_keyword_gen``: 字节静态的
+# system prompt (prompt-cache 约定),所有每次调用的数据放在 user
+# message 里。
 _KEYWORDS_SYSTEM_PROMPT = """\
 你要为 X(Twitter)内容发现生成一组适合 X 搜索的关键词。
 
@@ -123,7 +123,7 @@ def _parse_keywords(content: str, *, count: int) -> list[str]:
 
 
 def _dedupe_keywords(keywords: list[str]) -> list[str]:
-    """Strip + dedupe caller-injected keywords (unified planner injection)."""
+    """strip + 去重调用方注入的关键词 (统一 planner 注入)。"""
     seen: set[str] = set()
     out: list[str] = []
     for item in keywords:
@@ -140,7 +140,7 @@ def _normalize_raw(
     *,
     source_strategy: str,
 ) -> list[DiscoveredContent]:
-    """Normalize raw ``tweet_to_dict`` dicts, dropping tombstones + dupes."""
+    """归一化原始 ``tweet_to_dict`` dict,丢弃墓碑和重复。"""
     seen: set[str] = set()
     out: list[DiscoveredContent] = []
     for raw in raw_tweets:
@@ -160,7 +160,7 @@ def _normalize_raw(
 
 @dataclass
 class XSearchStrategy:
-    """Discover X content by (LLM-generated) keyword search."""
+    """通过 (LLM 生成的) 关键词搜索发现 X 内容。"""
 
     client: SupportsXRead
     llm_service: SupportsStructuredTask | None = None
@@ -182,8 +182,8 @@ class XSearchStrategy:
         if explicit:
             keywords = [explicit]
         elif queries is not None:
-            # Unified keyword planner injection: search each supplied keyword,
-            # skipping internal LLM keyword generation.
+            # 统一关键词 planner 注入: 搜索每个提供的关键词,
+            # 跳过内部 LLM 关键词生成。
             keywords = _dedupe_keywords(queries)
         else:
             keywords = await self._generate_keywords(profile)
@@ -194,8 +194,8 @@ class XSearchStrategy:
         seen: set[str] = set()
         results: list[DiscoveredContent] = []
         for keyword in keywords:
-            # P1.8 yield provenance: the id of the word currently being searched
-            # (unified planner injection). ``None`` when unmapped / not injected.
+            # P1.8 yield provenance: 当前正在搜索的词的 id
+            # (统一 planner 注入)。未映射 / 未注入时为 ``None``。
             keyword_id = keyword_ids.get(keyword) if keyword_ids else None
             raw = await self.client.search(keyword, limit=limit, product=self.product)
             for content in _normalize_raw(raw, source_strategy=SEARCH_STRATEGY_TAG):
@@ -212,9 +212,9 @@ class XSearchStrategy:
         if not profile.preferences.interests:
             return []
         keywords = await self._llm_keywords(profile)
-        # Deterministic fallback when LLM is unavailable / fails / returns
-        # nothing — so the unified planner (and the legacy path) never loses X
-        # to a transient failure (mirrors B站/YouTube/抖音).
+        # LLM 不可用 / 失败 / 返回空时的确定性回退 —
+        # 这样统一 planner (以及旧路径) 永远不会因为
+        # 暂时性失败而失去 X (镜像 B站/YouTube/抖音)。
         return keywords or _x_interest_fallback(profile, self.keywords_per_run)
 
     async def _llm_keywords(self, profile: SoulProfile) -> list[str]:
@@ -230,7 +230,7 @@ class XSearchStrategy:
                 caller="discovery.x.keyword_gen",
                 **without_core_memory_kwargs(complete_structured),
             )
-        except Exception as exc:  # noqa: BLE001 - degrade to fallback
+        except Exception as exc:  # noqa: BLE001 - 降级到回退
             logger.warning("x keyword LLM call failed: %s", exc)
             return []
 
@@ -240,9 +240,9 @@ class XSearchStrategy:
 
 
 def _build_keyword_user_prompt(profile: SoulProfile, count: int) -> str:
-    # Same canonical structured profile every other discovery prompt sees
-    # (B站 / YouTube query-gen, all-platform evaluation) — no divergent
-    # representation. Deterministic dump keeps the prompt-cache prefix stable.
+    # 与其他所有发现 prompt 看到的相同结构化 profile
+    # (B站 / YouTube query-gen、全平台 evaluation) — 没有
+    # 分歧的表示。确定性 dump 保持 prompt-cache prefix 稳定。
     summary = build_profile_summary(profile)
     return (
         "<profile_summary>\n"
@@ -254,7 +254,7 @@ def _build_keyword_user_prompt(profile: SoulProfile, count: int) -> str:
 
 
 def _x_interest_fallback(profile: SoulProfile, count: int) -> list[str]:
-    """Deterministic interest-name keywords (mirrors B站/YouTube/抖音 fallback)."""
+    """确定性的 interest 名关键词 (镜像 B站/YouTube/抖音 回退)。"""
     ranked = sorted(
         profile.preferences.interests, key=lambda tag: float(tag.weight or 0.0), reverse=True
     )
@@ -276,7 +276,7 @@ def _x_interest_fallback(profile: SoulProfile, count: int) -> list[str]:
 
 @dataclass
 class XForYouStrategy:
-    """Discover X content from the user's "For You" home timeline."""
+    """从用户的 "For You" 主页时间线发现 X 内容。"""
 
     client: SupportsXRead
 
@@ -296,7 +296,7 @@ class XForYouStrategy:
 
 @dataclass
 class XCreatorStrategy:
-    """Discover X content from a subscribed creator's recent tweets."""
+    """从订阅创作者的最近推文发现 X 内容。"""
 
     client: SupportsXRead
 

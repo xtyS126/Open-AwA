@@ -1,4 +1,4 @@
-"""Preference layer analysis built on structured LLM extraction."""
+"""基于结构化 LLM 抽取的偏好层分析。"""
 
 from __future__ import annotations
 
@@ -25,12 +25,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Stored disliked_topics are recency-ordered and capped so the list (and
-# the preference-analysis prompt that echoes it back) stay bounded.
-# The downstream prompt caps (_DISLIKED_TOPICS_CAP in discovery and the
-# recommendation summary) equal this store cap, so every stored
-# avoid-topic reaches LLM prompts; the stalest topics decay out past
-# this when re-flagged entries keep bubbling to the front.
+# 存储中的 disliked_topics 按近度排序并设上限，让列表（以及回显它的
+# 偏好分析 prompt）保持有界。下游 prompt 的上限（discovery 里的
+# _DISLIKED_TOPICS_CAP 和推荐摘要）等于这个存储上限，因此每个存储
+# 的 avoid-topic 都能进入 LLM prompt；当重新被标记的条目不断冒到
+# 前面时，最旧的主题会从这一上限之外衰减掉。
 _DISLIKED_TOPICS_STORE_CAP = 128
 
 DEFAULT_PREFERENCE_EVENT_CHUNK_SIZE = 200
@@ -73,24 +72,23 @@ class SupportsCoreMemoryTask(Protocol):
 
 
 class PreferenceAnalysisError(Exception):
-    """Raised when preference extraction fails or returns invalid data."""
+    """当偏好抽取失败或返回无效数据时抛出。"""
 
 
 @dataclass
 class PreferenceAnalyzer:
-    """Analyze recent events into a structured preference profile."""
+    """把近期事件分析为结构化的偏好画像。"""
 
     registry: SupportsCoreMemoryTask
     decay_factor_per_week: float = 0.9
     min_interest_weight: float = 0.05
-    # EMA blend: 0.3 * latest batch + 0.7 * prior mix. Chosen so one-off
-    # cross-platform batches don't erase long-running bilibili history.
+    # EMA 混合：0.3 * 最新批次 + 0.7 * 先前混合。这样选是为了让一次性的
+    # 跨平台批次不会抹掉长期积累的 bilibili 历史。
     source_mix_blend_alpha: float = 0.3
-    # v0.3.x event-satisfaction signal: when True, drop passive negative
-    # events such as quick-exit before building the LLM prompt. Explicit
-    # dislike feedback is retained as negative evidence so the analyzer can
-    # update disliked_topics without mistaking that title for a positive
-    # interest.
+    # v0.3.x 事件满意度信号：为 True 时，在构造 LLM prompt 之前丢弃
+    # 被动的负向事件（如快速退出）。显式的 dislike 反馈作为负向证据
+    # 保留，让分析器可以更新 disliked_topics，又不会把那个标题误判
+    # 为正向兴趣。
     satisfaction_filter_enabled: bool = True
     embedding_service: SupportsEmbed | None = None
     max_prompt_chars: int = 24_000
@@ -111,17 +109,15 @@ class PreferenceAnalyzer:
         existing_preference: dict[str, object],
         event_chunk_size: int = 0,
     ) -> dict[str, object]:
-        """Run structured extraction and merge the result with existing preference state.
+        """执行结构化抽取，并把结果与现有偏好状态合并。
 
-        When ``event_chunk_size`` > 0 and the event list reaches that size,
-        the input is split into chunks of at most ``event_chunk_size`` events
-        and each chunk is analysed concurrently in a separate LLM call. Partial
-        preferences from each chunk are then folded into ``existing_preference``
-        via the regular ``merge_preferences`` path, preserving weighted
-        interest merging and cognitive-style union. Use this for
-        latency-sensitive flows (e.g. init bootstrap with hundreds of
-        historical events) where a single max-thinking call on the whole batch
-        would block for minutes.
+        当 ``event_chunk_size`` > 0 且事件数达到该值时，输入被切分为
+        每块至多 ``event_chunk_size`` 条事件的分块，每块在独立的 LLM
+        调用里并发分析。每块的部分偏好随后通过常规的
+        ``merge_preferences`` 路径折叠进 ``existing_preference``，
+        保留加权兴趣合并和认知风格并集。适用于对延迟敏感的流程
+        （例如初始化时面对数百条历史事件，单次 max-thinking 调用整批
+        会阻塞数分钟）。
         """
         events = self._maybe_filter_events(events)
         if event_chunk_size > 0 and len(events) >= event_chunk_size:
@@ -160,13 +156,12 @@ class PreferenceAnalyzer:
         self,
         events: list[dict[str, object]],
     ) -> list[dict[str, object]]:
-        """Drop passive negative events when the flag is on.
+        """开关打开时丢弃被动的负向事件。
 
-        The ``"unknown"`` bucket is included so pre-classification legacy
-        rows (NULL ``inferred_satisfaction``) still feed the analyzer.
-        ``"neutral"`` is included because searches / shallow views are not
-        satisfaction evidence, but they are still useful preference context.
-        Explicit dislike feedback is kept so it can feed disliked_topics.
+        包含 ``"unknown"`` 桶是为了让分类之前的旧行（NULL
+        ``inferred_satisfaction``）仍能喂给分析器。包含 ``"neutral"``
+        是因为搜索 / 浅浏览不是满意度证据，但仍是有效的偏好上下文。
+        显式的 dislike 反馈被保留，以便喂给 disliked_topics。
         """
         if not self.satisfaction_filter_enabled:
             return events
@@ -230,7 +225,7 @@ class PreferenceAnalyzer:
             existing_preference.get("source_platform_mix"),
             self.compute_source_platform_mix(events),
         )
-        # Preserve cognitive_style from LLM output (not modeled in PreferenceLayer)
+        # 保留 LLM 输出里的 cognitive_style（PreferenceLayer 不建模该字段）
         raw_cs = raw_preference.get("cognitive_style")
         if isinstance(raw_cs, list):
             merged["cognitive_style"] = [str(s) for s in raw_cs if s]
@@ -248,7 +243,7 @@ class PreferenceAnalyzer:
         max_tokens: int,
         caller: str,
     ) -> LLMResponse:
-        """Run preference extraction without dynamic core-memory system suffixes."""
+        """执行偏好抽取，不带动态核心记忆的 system 后缀。"""
         kwargs: dict[str, Any] = {
             "system_instruction": system_instruction,
             "user_input": user_input,
@@ -336,11 +331,11 @@ class PreferenceAnalyzer:
         self,
         event: dict[str, object],
     ) -> dict[str, object]:
-        """Build a lower-risk prompt event for retrying model refusals.
+        """为重试模型拒答构造一份更低风险的 prompt 事件。
 
-        Long natural-language page context can trigger provider safety refusals
-        even though preference extraction is benign. A title/URL/source retry
-        keeps useful preference signal while removing the likely offending body.
+        长自然语言页面上下文可能触发 provider 的安全拒答，即使偏好
+        抽取本身是无害的。仅保留 title/URL/source 的重试在保留有效
+        偏好信号的同时，移除可能冒犯的正文。
         """
         compact = self._compact_event_for_prompt(event)
         compact.pop("context", None)
@@ -364,7 +359,7 @@ class PreferenceAnalyzer:
         existing_preference: dict[str, object],
         chunk_size: int,
     ) -> dict[str, object]:
-        """Split events into bounded concurrent chunk batches, then fold."""
+        """把事件切成有界的并发分块，然后折叠。"""
         import asyncio as _asyncio
 
         chunk_size = max(1, chunk_size)
@@ -376,12 +371,11 @@ class PreferenceAnalyzer:
             chunk_size,
         )
 
-        # Each chunk is analysed against an empty seed so the LLM calls
-        # are truly independent — we don't want one chunk's partial
-        # state to leak into another's prompt. The final merge step
-        # below folds each chunk's normalized output into the real
-        # ``existing_preference`` using merge_preferences, which already
-        # handles weighted interest aggregation across calls.
+        # 每块都对着空种子分析，这样 LLM 调用真正独立 —— 我们不希望
+        # 一块的部分状态泄漏进另一块的 prompt。下面的最终合并步骤
+        # 用 merge_preferences 把每块归一化后的输出折叠进真实的
+        # ``existing_preference``，merge_preferences 已经处理跨调用的
+        # 加权兴趣聚合。
         async def _run_chunk_once(
             chunk: list[dict[str, object]],
         ) -> tuple[dict[str, object], dict[str, object]]:
@@ -480,10 +474,9 @@ class PreferenceAnalyzer:
                         )
                         return await _split_or_compact_chunk(chunk)
                     raise
-                # Invalid JSON / model refusal is often content-local: split
-                # the batch to isolate the offending event, then skip only
-                # that final single event if a title/source-only retry still
-                # refuses.
+                # 无效 JSON / 模型拒答通常是内容局部的：拆分批次以隔离
+                # 出问题的那条事件，然后如果仅用 title/source 重试仍被
+                # 拒答，就只跳过那最后一条事件。
                 if len(chunk) <= 1:
                     event = chunk[0] if chunk else {}
                     if isinstance(event, dict):
@@ -505,10 +498,9 @@ class PreferenceAnalyzer:
             )
         outcomes = [item for group in outcome_groups for item in group]
 
-        # Fold each chunk's normalized preference into the running merge
-        # one at a time. merge_preferences already does weighted interest
-        # aggregation + dislike-list union, so stacking calls gives an
-        # aggregate comparable in spirit to a single big-prompt analysis.
+        # 把每块归一化后的偏好逐一折叠进运行中的合并结果。
+        # merge_preferences 已做加权兴趣聚合 + dislike 列表并集，所以
+        # 级联调用的聚合效果在精神上与单次大 prompt 分析相当。
         merged: dict[str, object] = dict(existing_preference)
         cognitive_style_union: list[str] = []
         for raw_preference, normalized in outcomes:
@@ -545,7 +537,7 @@ class PreferenceAnalyzer:
     def compute_source_platform_mix(
         events: list[dict[str, object]],
     ) -> dict[str, float]:
-        """Count events by source_platform and return a normalized share dict."""
+        """按 source_platform 统计事件数，返回归一化的份额 dict。"""
         counts: dict[str, int] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -557,7 +549,7 @@ class PreferenceAnalyzer:
                 if isinstance(raw, str):
                     source = raw.strip()
             if not source:
-                # Events predating source_platform are always bilibili.
+                # 早于 source_platform 字段的事件都是 bilibili。
                 source = "bilibili"
             counts[source] = counts.get(source, 0) + 1
         total = sum(counts.values())
@@ -676,7 +668,7 @@ class PreferenceAnalyzer:
         existing: object,
         batch: dict[str, float],
     ) -> dict[str, float]:
-        """Blend the existing persisted mix with the latest batch using EMA."""
+        """用 EMA 把已持久化的混合与最新批次混合。"""
         prior: dict[str, float] = {}
         if isinstance(existing, dict):
             for key, value in existing.items():
@@ -706,7 +698,7 @@ class PreferenceAnalyzer:
         *,
         now: datetime,
     ) -> dict[str, object]:
-        """Merge and decay preference state."""
+        """合并并衰减偏好状态。"""
         existing_interests = self._decay_interests(
             existing_preference.get("interests", []),
             now=now,
@@ -766,22 +758,19 @@ class PreferenceAnalyzer:
             merged_interests[key] = self._merge_interest_record(existing, item, now=now)
             active_aliases = self._alias_key_map(merged_interests.values())
 
-        # Union old and new UP users to accumulate across batches.
-        # Individual batches may only mention a subset; replacing would lose
-        # previously confirmed UP users.
+        # 新旧 UP 用户取并集，跨批次累积。
+        # 单个批次可能只提到一个子集；直接替换会丢失此前已确认的 UP
+        # 用户。
         new_up = self._as_str_list(new_preference.get("favorite_up_users", []))
         old_up = self._as_str_list(existing_preference.get("favorite_up_users", []))
-        # Union old+new to accumulate across batches. A single batch may
-        # only mention a subset of UP users, so replacing with this batch's
-        # list (the previous behaviour) silently dropped previously
-        # confirmed creators whenever the batch named any creator at all.
+        # 新旧取并集以跨批次累积。一个批次可能只提到 UP 用户的子集，
+        # 因此用本批次列表替换（之前的行为）会在批次提到任何创作者时
+        # 静默丢弃之前已确认的创作者。
         favorite_up_users = sorted(set(old_up) | set(new_up))
-        # Recency-ordered union: this round's avoid-topics go first so the
-        # most-recently-reinforced survive the downstream top-N cut, and a
-        # topic re-flagged each round keeps bubbling to the front. The old
-        # alphabetical sort meant the top-N cut kept whichever topics sorted
-        # first, not the freshest/most relevant. Stalest topics fall past
-        # the store cap and decay out.
+        # 按近度排序的并集：本轮 avoid-topics 在前，让最近被强化的主题
+        # 在下游 top-N 截断中存活，且每轮都被重新标记的主题会持续冒到
+        # 前面。旧的字母序排序意味着 top-N 截断保留的是字母序靠前的
+        # 主题，而不是最新/最相关的。最旧的主题会越过存储上限衰减掉。
         disliked_topics = list(
             dict.fromkeys(
                 [
@@ -799,7 +788,7 @@ class PreferenceAnalyzer:
         context.update(self._as_dict(existing_preference.get("context", {})))
         context.update(self._as_dict(new_preference.get("context", {})))
 
-        # Preserve speculative_interests from new analysis (for speculator seeding)
+        # 保留新分析里的 speculative_interests（用于 speculator 播种）
         speculative = self._as_list(new_preference.get("speculative_interests", []))
 
         merged = {
@@ -896,7 +885,7 @@ class PreferenceAnalyzer:
         normalized["favorite_up_users"] = self._as_str_list(
             raw_preference.get("favorite_up_users", [])
         )
-        # Preserve speculative interests from LLM output
+        # 保留 LLM 输出里的 speculative interests
         raw_speculative = self._as_list(raw_preference.get("speculative_interests", []))
         normalized["speculative_interests"] = [
             {

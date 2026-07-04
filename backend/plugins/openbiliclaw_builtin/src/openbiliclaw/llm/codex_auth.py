@@ -1,9 +1,8 @@
-"""Experimental Codex CLI OAuth credential support.
+"""实验性的 Codex CLI OAuth 凭据支持。
 
-This module imports the local Codex CLI login state and exposes a bearer
-token for the existing OpenAI provider. It is intentionally conservative:
-OpenBiliClaw does not run its own OAuth browser flow here, and it never
-prints token values.
+本模块导入本地 Codex CLI 登录状态，并为现有的 OpenAI provider 暴露一个
+bearer token。它在设计上保持保守：OpenBiliClaw 不在此处运行自己的 OAuth
+浏览器流程，并且绝不打印 token 值。
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ _refresh_lock = asyncio.Lock()
 
 
 class CodexAuthError(RuntimeError):
-    """Raised when Codex credentials cannot be loaded, imported, or refreshed."""
+    """当 Codex 凭据无法加载、导入或刷新时抛出。"""
 
 
 class _AsyncPostClient(Protocol):
@@ -48,7 +47,7 @@ class _AsyncPostClient(Protocol):
 
 @dataclass(frozen=True)
 class CodexCredentials:
-    """Minimal token set needed to call OpenAI with Codex CLI credentials."""
+    """调用 OpenAI 所需的最小 token 集合（使用 Codex CLI 凭据）。"""
 
     access_token: str
     refresh_token: str
@@ -56,7 +55,7 @@ class CodexCredentials:
     account_id: str = ""
 
     def is_expired(self, *, skew_seconds: float = _EXPIRY_SKEW_SECONDS) -> bool:
-        """Return whether the token is expired or too close to expiry."""
+        """返回 token 是否已过期或临近过期。"""
         return self.expires_at <= time.time() + skew_seconds
 
     def to_json(self) -> dict[str, object]:
@@ -69,7 +68,7 @@ class CodexCredentials:
 
 
 def default_token_path() -> Path:
-    """Return OpenBiliClaw's private Codex credential path."""
+    """返回 OpenBiliClaw 私有的 Codex 凭据路径。"""
     env_path = os.environ.get(_CODEX_AUTH_PATH_ENV, "").strip()
     if env_path:
         return Path(env_path).expanduser()
@@ -77,7 +76,7 @@ def default_token_path() -> Path:
 
 
 def default_codex_cli_auth_path() -> Path:
-    """Return the Codex CLI auth file path."""
+    """返回 Codex CLI 的 auth 文件路径。"""
     env_path = os.environ.get(_CODEX_CLI_AUTH_PATH_ENV, "").strip()
     if env_path:
         return Path(env_path).expanduser()
@@ -85,7 +84,7 @@ def default_codex_cli_auth_path() -> Path:
 
 
 def codex_credentials_exist(*, token_path: Path | None = None) -> bool:
-    """Return whether OpenBiliClaw has a local Codex credential file."""
+    """返回 OpenBiliClaw 是否存在本地 Codex 凭据文件。"""
     return (token_path or default_token_path()).expanduser().exists()
 
 
@@ -94,7 +93,7 @@ def save_codex_credentials(
     *,
     token_path: Path | None = None,
 ) -> Path:
-    """Persist credentials with user-only permissions where the OS allows it."""
+    """持久化凭据，并在操作系统允许时使用仅用户可访问的权限。"""
     path = (token_path or default_token_path()).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     _chmod_best_effort(path.parent, 0o700)
@@ -110,7 +109,7 @@ def save_codex_credentials(
 
 
 def load_codex_credentials(*, token_path: Path | None = None) -> CodexCredentials | None:
-    """Load OpenBiliClaw's local Codex credentials."""
+    """加载 OpenBiliClaw 本地的 Codex 凭据。"""
     path = (token_path or default_token_path()).expanduser()
     if not path.exists():
         return None
@@ -122,7 +121,7 @@ def load_codex_credentials(*, token_path: Path | None = None) -> CodexCredential
 
 
 def delete_codex_credentials(*, token_path: Path | None = None) -> bool:
-    """Delete OpenBiliClaw's local Codex credentials."""
+    """删除 OpenBiliClaw 本地的 Codex 凭据。"""
     path = (token_path or default_token_path()).expanduser()
     if not path.exists():
         return False
@@ -135,7 +134,7 @@ def import_codex_credentials(
     source: Path | None = None,
     destination: Path | None = None,
 ) -> CodexCredentials:
-    """Import credentials from Codex CLI auth.json into OpenBiliClaw storage."""
+    """将 Codex CLI auth.json 中的凭据导入到 OpenBiliClaw 存储。"""
     source_path = (source or default_codex_cli_auth_path()).expanduser()
     if not source_path.exists():
         raise CodexAuthError(f"未找到 Codex CLI 凭据文件: {source_path}")
@@ -155,7 +154,7 @@ async def refresh_codex_token(
     token_path: Path | None = None,
     client: _AsyncPostClient | None = None,
 ) -> CodexCredentials:
-    """Refresh a Codex OAuth access token and persist the new credentials."""
+    """刷新 Codex OAuth access token 并持久化新凭据。"""
     data: dict[str, object] = {
         "grant_type": "refresh_token",
         "refresh_token": credentials.refresh_token,
@@ -177,7 +176,7 @@ async def get_valid_codex_token(
     force_refresh: bool = False,
     token_path: Path | None = None,
 ) -> str:
-    """Return a valid Codex access token, refreshing when needed."""
+    """返回有效的 Codex access token，必要时进行刷新。"""
     path = token_path or default_token_path()
     credentials = load_codex_credentials(token_path=path)
     if credentials is None:
@@ -196,7 +195,7 @@ async def get_valid_codex_token(
 
 
 def run_codex_cli_login(*, command: Sequence[str] | None = None) -> None:
-    """Run the official Codex CLI login flow."""
+    """运行官方的 Codex CLI 登录流程。"""
     cmd = list(command or ("codex", "login"))
     executable = shutil.which(cmd[0])
     if executable is None:

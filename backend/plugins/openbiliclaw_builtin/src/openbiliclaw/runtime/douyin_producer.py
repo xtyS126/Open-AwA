@@ -1,8 +1,7 @@
-"""Runtime Douyin discovery producer.
+"""运行时 Douyin 发现 producer。
 
-The continuous refresh controller owns pool quotas. This producer owns
-the throttled call into the reusable Douyin discovery service when the
-Douyin platform family is under quota.
+持续刷新控制器拥有内容池配额。本 producer 在 Douyin 平台族
+仍处于配额内时，负责对可复用 Douyin 发现服务做节流调用。
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ _DOUYIN_DEFAULT_SCORE_THRESHOLD = _DOUYIN_SCORE_THRESHOLDS["search"]
 
 
 def douyin_runtime_hot_budget(*, base_budget: int, requested_limit: int) -> int:
-    """Return the effective hot-task budget for one runtime replenishment run."""
+    """返回单次运行时补货使用的有效热榜任务预算。"""
     configured = int(base_budget)
     if configured <= 0:
         return 0
@@ -45,7 +44,7 @@ def douyin_runtime_hot_budget(*, base_budget: int, requested_limit: int) -> int:
 
 @dataclass
 class DouyinDiscoveryProducer:
-    """Throttle and invoke Douyin discovery from the runtime loop."""
+    """从运行时循环中对 Douyin 发现做节流调用。"""
 
     soul_engine: Any
     discover: DouyinDiscoverCallable
@@ -55,16 +54,16 @@ class DouyinDiscoveryProducer:
     evaluate: bool = True
     candidate_pipeline: Any | None = None
     per_source_limit: int = 20
-    # Unified keyword planner fetch coordinator (P1.7). When wired AND the flag
-    # is on, the producer's search source claims words from the keyword store
-    # and walks them through the inline-admit lifecycle (used / failed /
-    # budget-rollback). ``None`` (default / tests / flag off) → legacy path.
+    # 统一关键词规划器抓取协调器（P1.7）。当其接入且开关打开时，
+    # producer 的 search 源会从关键词存储中 claim 单词，并走内联准入
+    # 生命周期（used / failed / budget-rollback）。``None``（默认 /
+    # 测试 / 开关关闭）→ 走旧路径。
     keyword_fetch: Any | None = None
     _last_run_at: datetime | None = field(default=None, init=False)
     _last_skip_reason: str = field(default="", init=False)
 
     async def produce_if_due(self, *, limit: int | None = None) -> dict[str, object]:
-        """Run one Douyin discovery cycle if enabled and due."""
+        """启用且到期时，运行一次 Douyin 发现循环。"""
         if not self.enabled:
             return self._skip("disabled")
         if not self._is_due():
@@ -91,11 +90,11 @@ class DouyinDiscoveryProducer:
         )
         use_candidate_pipeline = self.candidate_pipeline is not None
 
-        # Unified keyword planner fetch path (P1.7, flag-gated). Only when this
-        # run actually includes the ``search`` source — hot/feed-only runs never
-        # touch the keyword store. The deficit gate is enforced upstream (the
-        # controller only invokes the producer when douyin is under quota); the
-        # distinct floor is ``min_interval`` via ``_is_due`` above.
+        # 统一关键词规划器抓取路径（P1.7，开关控制）。仅当本次运行
+        # 真的包含 ``search`` 源时才走——纯 hot/feed 运行绝不触碰
+        # 关键词存储。缺口闸门在上游强制（控制器只在 douyin 处于
+        # 配额内时才调用 producer）；最小间隔底线由上方
+        # ``_is_due`` 的 ``min_interval`` 提供。
         claimed: list[Any] = []
         coordinator = self.keyword_fetch
         flag_on_search = (
@@ -106,9 +105,9 @@ class DouyinDiscoveryProducer:
         if flag_on_search and coordinator is not None:
             claimed = coordinator.claim(_PLATFORM_DOUYIN)
             if not claimed:
-                # Flag on but the store has no claimable pending words → skip the
-                # search fetch this cycle (the planner will refill); don't run a
-                # legacy self-generated search behind the planner's back.
+                # 开关打开但存储中没有可 claim 的待处理词 → 本轮跳过
+                # search 抓取（由规划器再补充）；不要绕开规划器跑一次
+                # 旧路径的自生成搜索。
                 return self._skip("no_keywords")
 
         options = DouyinDiscoveryOptions(
@@ -119,16 +118,16 @@ class DouyinDiscoveryProducer:
             per_source_limit=per_source_limit,
             keywords_per_run=1,
             keywords=tuple(item.keyword for item in claimed) if claimed else (),
-            # P1.8: thread the producing word's id onto each search candidate for
-            # admit-time yield backfill.
+            # P1.8：把产出词的 id 透传到每条 search 候选上，便于准入
+            # 时回填 yield。
             keyword_ids={item.keyword: int(item.id) for item in claimed} if claimed else {},
             raise_on_budget=bool(claimed),
         )
         try:
             result = await self.discover(profile, options)
         except _DouyinBudgetExhausted:
-            # Claimed but the plugin search budget was spent → no search ran →
-            # roll every claimed word back to pending (do NOT burn as used).
+            # 已 claim 但插件搜索预算耗尽 → 没有 search 实际跑过 →
+            # 把每个 claimed 词回滚为 pending（不要当作 used 烧掉）。
             if coordinator is not None:
                 for item in claimed:
                     coordinator.rollback(item)
@@ -139,9 +138,9 @@ class DouyinDiscoveryProducer:
                 coordinator.mark_failed(claimed)
             return self._skip("error")
 
-        # Inline-admit lifecycle: a successful return that produced candidates
-        # marks every claimed word ``used``; an empty fetch marks them ``failed``
-        # (retry). yield backfill is P1.8, decoupled from ``used``.
+        # 内联准入生命周期：成功返回且产出了候选 → 把所有 claimed 词
+        # 标记为 ``used``；空抓取 → 标记为 ``failed``（重试）。
+        # yield 回填属于 P1.8，与 ``used`` 解耦。
         if claimed and coordinator is not None:
             if result.items:
                 coordinator.mark_used(claimed)
@@ -244,7 +243,7 @@ def build_douyin_discovery_producer(
     candidate_pipeline: Any | None = None,
     keyword_fetch: Any | None = None,
 ) -> DouyinDiscoveryProducer | None:
-    """Build the runtime Douyin producer if Douyin discovery is enabled."""
+    """当 Douyin 发现启用时构建运行时 Douyin producer。"""
     dy_cfg = getattr(getattr(config, "sources", None), "douyin", None)
     if dy_cfg is None or not bool(getattr(dy_cfg, "enabled", False)):
         return None
@@ -287,9 +286,8 @@ def build_douyin_discovery_producer(
                         requested_limit=options.limit,
                     ),
                     daily_feed_budget=int(getattr(dy_cfg, "daily_feed_budget", 0)),
-                    # Unified keyword planner fetch path: surface budget
-                    # exhaustion as a distinguishable signal so the claimed
-                    # keyword rolls back instead of being burned (P1.7).
+                    # 统一关键词规划器抓取路径：把预算耗尽暴露成可区分
+                    # 信号，使 claimed 词被回滚而不是被烧掉（P1.7）。
                     raise_on_budget=bool(getattr(options, "raise_on_budget", False)),
                 )
             service = DouyinDiscoveryService(

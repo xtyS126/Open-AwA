@@ -1,9 +1,8 @@
-"""Embedding service with two-layer caching for semantic similarity.
+"""带有两层缓存的嵌入服务，用于语义相似度计算。
 
-Provides text embedding via configurable models (default: Gemini),
-with L1 in-memory cache and L2 SQLite persistent cache.
-Discovery writes embeddings to L2; recommendation reads from L2
-with zero API calls on the hot path.
+通过可配置的模型（默认：Gemini）提供文本嵌入，具有 L1 内存缓存和
+L2 SQLite 持久化缓存。Discovery 将嵌入写入 L2；recommendation 在
+热路径上以零 API 调用从 L2 读取。
 """
 
 from __future__ import annotations
@@ -22,25 +21,25 @@ logger = logging.getLogger(__name__)
 
 
 class SupportsEmbed(Protocol):
-    """Protocol for providers that support text embedding."""
+    """支持文本嵌入的 provider 协议。"""
 
     async def embed(self, text: str, *, model: str = ...) -> list[float]: ...
 
 
 class SupportsEmbeddingService(Protocol):
-    """Protocol for semantic embedding helpers used by mainline services."""
+    """主流程服务使用的语义嵌入辅助协议。"""
 
     similarity_threshold: float
 
     async def embed(self, text: str) -> list[float]: ...
 
     def lookup_cached(self, text: str) -> list[float]:
-        """Cache-only lookup; default returns ``[]`` for protocol compatibility."""
+        """仅查缓存；为协议兼容默认返回 ``[]``。"""
         return []
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute cosine similarity between two vectors (pure Python)."""
+    """计算两个向量的余弦相似度（纯 Python 实现）。"""
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -50,17 +49,16 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 class EmbeddingCache:
-    """SQLite-backed persistent embedding cache (L2).
+    """基于 SQLite 的持久化嵌入缓存（L2）。
 
-    Stores text → vector mappings in a dedicated table so embeddings
-    computed during discovery survive process restarts and are reusable
-    during recommendation serving without any API calls.
+    将 text → vector 映射存放在专用表中，使 discovery 期间计算的嵌入
+    可以跨进程重启保留，并在 recommendation 服务时无需任何 API 调用即可复用。
 
-    Thread-safe: the cache is read/written from background discovery and
-    recommendation-prewarm workers running on different threads, so the single
-    connection is opened with ``check_same_thread=False`` and every access is
-    serialized by an ``RLock`` (a bare ``sqlite3`` connection otherwise raises
-    "SQLite objects created in a thread can only be used in that same thread").
+    线程安全：缓存会被运行在不同线程上的后台 discovery 与
+    recommendation 预热 worker 读写，因此单连接以
+    ``check_same_thread=False`` 打开，并且每次访问都通过 ``RLock``
+    串行化（否则裸 ``sqlite3`` 连接会抛出
+    "SQLite objects created in a thread can only be used in that same thread"）。
     """
 
     def __init__(self, db_path: str | Path) -> None:
@@ -155,20 +153,20 @@ class EmbeddingCache:
 
 
 class EmbeddingService:
-    """Cached embedding service for semantic similarity operations.
+    """用于语义相似度操作的缓存式嵌入服务。
 
-    Two-layer cache:
-    - L1: in-memory dict (fastest, session-scoped)
-    - L2: SQLite persistent cache (survives restarts)
+    两层缓存：
+    - L1：内存字典（最快，会话级作用域）
+    - L2：SQLite 持久化缓存（可跨重启）
 
-    Discovery writes to both layers; recommendation reads hit L1 first,
-    then L2, and only calls the API as a last resort.
+    Discovery 同时写入两层；recommendation 先查 L1，再查 L2，最后
+    才退回 API 调用。
 
-    All parameters (model, threshold, cache_size) can be configured
-    via ``[llm.embedding]`` in config.toml.
+    所有参数（model、threshold、cache_size）都可通过 config.toml 中
+    的 ``[llm.embedding]`` 配置。
     """
 
-    # Fixed text used by ``probe()`` for /api/health live readiness checks.
+    # ``probe()`` 用于 /api/health 实时就绪检查的固定文本。
     _PROBE_TEXT = "openbiliclaw embedding readiness probe"
 
     def __init__(
@@ -185,34 +183,30 @@ class EmbeddingService:
         self._provider = provider
         self._model = model
         self._cache_model = cache_model or model
-        # OrderedDict + move_to_end on hit gives us proper LRU instead of
-        # FIFO. With a 500-key cache and bursty access patterns (delight
-        # scoring iterates the same like_texts repeatedly), FIFO would
-        # evict heavy-hit keys whenever the cache filled with cold misses.
+        # OrderedDict + 命中时 move_to_end 给我们真正的 LRU，而不是
+        # FIFO。500 键缓存配合突发访问模式（delight 打分会反复迭代
+        # 同一组 like_texts），FIFO 会在缓存被冷缺失填满时驱逐高频
+        # 命中的键。
         self._l1_cache: OrderedDict[str, list[float]] = OrderedDict()
         self._cache_size = cache_size
         self.similarity_threshold = similarity_threshold
         self._l2_cache = persistent_cache
-        # Cap concurrent provider calls. Local CPU-bound providers (Ollama
-        # bge-m3 on a single GGUF runner) collapse under unbounded
-        # asyncio.gather fan-out from delight scoring + topic supergroup
-        # merge + speculator. v0.3.31 caught a real cascade where the
-        # daemon spawned 14+ concurrent embed calls within 1 second after
-        # the proxy fix landed; Ollama queued them serially, exceeded the
-        # 60s read timeout, and every call returned ``[]``. Even cloud
-        # providers benefit from a small ceiling to amortize TLS handshake
-        # cost. Default 2 keeps single-CPU bge-m3 healthy while still
-        # using both cores for inference + tokenization.
+        # 限制并发 provider 调用。本地 CPU 密集型 provider（单 GGUF
+        # runner 上的 Ollama bge-m3）在 delight 打分 + topic supergroup
+        # 合并 + speculator 的无限制 asyncio.gather 扇出下会崩溃。
+        # v0.3.31 抓到过一次真实级联：代理修复落地后守护进程在 1 秒内
+        # 派生了 14+ 个并发 embed 调用；Ollama 串行排队，超过 60s
+        # 读超时，每个调用都返回 ``[]``。即便是云 provider，小并发上限
+        # 也有助于摊薄 TLS 握手成本。默认值 2 在保持单 CPU bge-m3
+        # 健康的同时仍能利用双核进行推理 + 分词。
         self._provider_semaphore = asyncio.Semaphore(max_concurrent_provider_calls)
 
     def lookup_cached(self, text: str) -> list[float]:
-        """Cache-only lookup — never triggers a provider API call.
+        """仅查缓存 —— 绝不触发 provider API 调用。
 
-        Returns ``[]`` on miss. Callers (recommendation hot path) use
-        this when they need a hard latency budget: a miss means the
-        item simply doesn't participate in embedding-based diversity
-        for this batch, and the warmer task fills the cache asynchronously
-        for subsequent batches.
+        未命中返回 ``[]``。调用方（recommendation 热路径）在需要
+        硬延迟预算时使用：未命中意味着该条目在本批次中 simply 不
+        参与基于嵌入的多样性，预热任务会异步填充缓存以供后续批次使用。
         """
         key = text.strip().lower()[:200]
         if not key:
@@ -229,17 +223,17 @@ class EmbeddingService:
         return []
 
     async def embed(self, text: str) -> list[float]:
-        """Get embedding for text. Checks L1 → L2 → API."""
+        """获取文本的嵌入。依次查 L1 → L2 → API。"""
         key = text.strip().lower()[:200]
         if not key:
             return []
 
-        # L1 / L2 cache lookup (also covers warming-side hits).
+        # L1 / L2 缓存查找（也覆盖预热侧的命中）。
         cached = self.lookup_cached(text)
         if cached:
             return cached
 
-        # L3: API call (throttled — see __init__ semaphore comment)
+        # L3：API 调用（已限流 —— 见 __init__ 中 semaphore 注释）
         async with self._provider_semaphore:
             try:
                 vector = await self._provider.embed(key, model=self._model)
@@ -247,16 +241,13 @@ class EmbeddingService:
                 logger.warning("Embedding failed for: %s", key[:50], exc_info=True)
                 return []
 
-        # Never cache an empty vector. Empty means the provider failed
-        # transparently (e.g. swallowed timeout) and returned ``[]``;
-        # caching that pins the text to "no embedding" forever even
-        # after the upstream issue is fixed. v0.3.31 had ~170 keys
-        # poisoned this way before this guard existed — top user
-        # interests like 游戏攻略 / 洛克王国 / 金铲铲之战 were affected
-        # and the cascade silently zero'd DelightScorer's
-        # likes_alignment for the most relevant content. Surface a
-        # WARN per occurrence so the failure mode is visible at the
-        # service layer, not buried in provider-level logs.
+        # 绝不缓存空向量。空意味着 provider 透明地失败了（例如吞掉
+        # 了超时）并返回 ``[]``；缓存它会把该文本永久钉在"无嵌入"上，
+        # 即便上游问题已修复也不变。v0.3.31 在此守卫存在前有约 170
+        # 个键被这样污染 —— 游戏攻略 / 洛克王国 / 金铲铲之战 等顶级
+        # 用户兴趣受影响，级联悄然把 DelightScorer 中最相关内容的
+        # likes_alignment 置零。每次出现都打 WARN，让失败模式在服务层
+        # 可见，而不是埋在 provider 级日志里。
         if not vector:
             logger.warning(
                 "Embedding service got empty vector for key=%r — "
@@ -266,9 +257,9 @@ class EmbeddingService:
             )
             return []
 
-        # Store in both caches (LRU eviction: popitem(last=False) drops
-        # the least-recently-used entry — combined with move_to_end on
-        # cache hit above, this is true LRU instead of FIFO).
+        # 同时写入两层缓存（LRU 驱逐：popitem(last=False) 丢弃
+        # 最久未使用的条目 —— 配合上面缓存命中时的 move_to_end，
+        # 这是真正的 LRU 而非 FIFO）。
         if len(self._l1_cache) >= self._cache_size:
             self._l1_cache.popitem(last=False)
         self._l1_cache[key] = vector
@@ -282,15 +273,13 @@ class EmbeddingService:
         return vector
 
     async def probe(self) -> bool:
-        """Live readiness check — bypasses the cache and hits the provider once.
+        """实时就绪检查 —— 绕过缓存并直接调用一次 provider。
 
-        Returns ``True`` only when the provider currently returns a
-        non-empty vector. The L1/L2 cache is bypassed on purpose: a
-        previously-cached success must never mask a provider that has
-        since gone down (Ollama stopped, ``bge-m3`` never pulled so every
-        call 404s, remote key revoked, …). ``/api/health`` calls this
-        behind its own short TTL + single-flight, so the extra provider
-        round-trip happens at most a couple of times a minute.
+        仅当 provider 当前返回非空向量时才返回 ``True``。L1/L2 缓存
+        被故意绕过：之前缓存的成功绝不能掩盖此后已宕机的 provider
+        （Ollama 停了、``bge-m3`` 从未拉取导致每次调用 404、远端
+        密钥被吊销……）。``/api/health`` 在自身的短 TTL + 单飞机制后
+        调用本方法，因此额外的 provider 往返每分钟最多发生几次。
         """
         async with self._provider_semaphore:
             try:
@@ -301,7 +290,7 @@ class EmbeddingService:
         return bool(vector)
 
     async def are_similar(self, text_a: str, text_b: str) -> bool:
-        """Check if two texts are semantically similar above threshold."""
+        """判断两段文本是否在阈值之上语义相似。"""
         vec_a = await self.embed(text_a)
         vec_b = await self.embed(text_b)
         if not vec_a or not vec_b:
@@ -313,14 +302,14 @@ class EmbeddingService:
         text: str,
         existing_clusters: dict[str, list[float]],
     ) -> str | None:
-        """Find which existing cluster a text belongs to, or None if novel.
+        """找出文本属于哪个已有聚类，若为新内容则返回 None。
 
         Args:
-            text: The text to classify.
-            existing_clusters: Map of cluster_label → centroid_vector.
+            text: 待分类的文本。
+            existing_clusters: cluster_label → centroid_vector 的映射。
 
         Returns:
-            The label of the most similar cluster (if above threshold), or None.
+            最相似聚类的标签（若高于阈值），否则返回 None。
         """
         vec = await self.embed(text)
         if not vec:
@@ -337,7 +326,7 @@ class EmbeddingService:
         return None
 
     def clear_cache(self) -> None:
-        """Clear the embedding cache."""
+        """清空嵌入缓存。"""
         self._l1_cache.clear()
 
 

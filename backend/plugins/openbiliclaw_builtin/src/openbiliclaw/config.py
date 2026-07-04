@@ -1,7 +1,7 @@
-"""Configuration management for OpenBiliClaw.
+"""OpenBiliClaw 的配置管理。
 
-Loads configuration from TOML files with environment variable overrides.
-SchedulerConfig.enabled is the authoritative gate for background LLM loops.
+从 TOML 文件加载配置，支持环境变量覆盖。
+SchedulerConfig.enabled 是后台 LLM 循环的权威开关。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Default config search paths
+# 默认配置搜索路径
 _CONFIG_FILENAMES = ["config.toml", "config.local.toml"]
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _PROJECT_ROOT_ENV = "OPENBILICLAW_PROJECT_ROOT"
@@ -35,10 +35,10 @@ _DEFAULT_DELIGHT_QUEUE_LIMIT = 20
 _DEFAULT_PROACTIVE_PUSH_INTERVAL_SECONDS = 120
 _DEFAULT_SPECULATOR_IDLE_INTERVAL_MINUTES = 30
 _DEFAULT_FEEDBACK_BATCH_THRESHOLD = 3
-# Unified keyword planner (Discover backpressure refactor P1, spec §6).
-# All defaults are the owner-approved starting baseline; see
-# docs/plans/2026-06-14-discover-backpressure-refactor-design.md §6 and
-# docs/plans/2026-06-14-discover-backpressure-P1-plan.md §P1.0.
+# 统一关键词规划器（Discover 背压重构 P1，spec §6）。
+# 所有默认值都是 owner 批准的起始基线；参见
+# docs/plans/2026-06-14-discover-backpressure-refactor-design.md §6 和
+# docs/plans/2026-06-14-discover-backpressure-P1-plan.md §P1.0。
 _DEFAULT_UNIFIED_KEYWORD_PLANNER_ENABLED = True
 _DEFAULT_KW_CACHE_HIGH = 30
 _DEFAULT_KW_CACHE_LOW = 10
@@ -77,21 +77,21 @@ _REMOTE_PROVIDER_FIELDS = {
     "gemini": "llm.gemini.api_key",
     "deepseek": "llm.deepseek.api_key",
     "openrouter": "llm.openrouter.api_key",
-    # v0.3.32+ — generic OpenAI-protocol-compatible provider (Groq /
-    # Together / Azure OpenAI / vLLM / self-hosted, etc.). Distinct from
-    # ``openai`` so users can run both in parallel (chat = openai for
-    # gpt-5-nano, openai_compatible = Groq for fast Llama drafting).
+    # v0.3.32+ — 通用的 OpenAI 协议兼容 provider（Groq /
+    # Together / Azure OpenAI / vLLM / 自托管 等）。与
+    # ``openai`` 区分开，以便用户并行运行两者（chat = openai 用
+    # gpt-5-nano，openai_compatible = Groq 用于快速 Llama 起草）。
     "openai_compatible": "llm.openai_compatible.api_key",
 }
 
 
 class ConfigError(ValueError):
-    """Raised when required runtime configuration is missing or invalid."""
+    """运行时所需配置缺失或非法时抛出。"""
 
 
 @dataclass(frozen=True)
 class ConfigIssue:
-    """A user-facing configuration problem."""
+    """面向用户的配置问题。"""
 
     field: str
     message: str
@@ -100,7 +100,7 @@ class ConfigIssue:
 
 @dataclass
 class ConfigDiagnostics:
-    """Supplementary information collected during config loading."""
+    """配置加载过程中收集的补充信息。"""
 
     config_path: Path | None = None
     created_default_config: bool = False
@@ -110,7 +110,7 @@ class ConfigDiagnostics:
 
 @dataclass
 class LLMProviderConfig:
-    """Configuration for a single LLM provider."""
+    """单个 LLM provider 的配置。"""
 
     api_key: str = ""
     model: str = ""
@@ -118,35 +118,33 @@ class LLMProviderConfig:
     auth_mode: str = ""
     http_referer: str = ""
     x_title: str = ""
-    # DeepSeek v4 thinking-mode control. "" disables; "high" / "max" enable
-    # reasoning. v0.3.31 default = "max" — combined with v0.3.29's prompt-cache
-    # refactor (system 100% static, DeepSeek auto-cache 90% off) the
-    # reasoning-token cost becomes affordable, and the LLM produces noticeably
-    # better tags (franchise_key consistent across batch, score_threshold=0.70
-    # still gives healthy pool throughput). Set to "" if the per-day spend
-    # creeps too high and you want to trade off label quality for budget.
-    # Ignored by providers that don't accept ``thinking`` / ``reasoning_effort``.
+    # DeepSeek v4 thinking 模式控制。"" 禁用；"high" / "max" 启用
+    # 推理。v0.3.31 默认 = "max"——配合 v0.3.29 的 prompt-cache
+    # 重构（system 100% 静态，DeepSeek 自动缓存 90% 关闭），
+    # reasoning-token 成本变得可承受，且 LLM 产出的标签明显更好
+    # （franchise_key 在批次内一致，score_threshold=0.70 仍能保持
+    # 健康的池吞吐量）。若单日花费过高，可设为 "" 以标签质量换预算。
+    # 不接受 ``thinking`` / ``reasoning_effort`` 的 provider 会忽略此项。
     reasoning_effort: str = "max"
-    # Ollama-only: context window (tokens). 0 = use Ollama's server default
-    # (usually 4096) via the OpenAI-compat ``/v1`` shim. When >0, chat routes
-    # through Ollama's native ``/api/chat`` so ``options.num_ctx`` actually
-    # applies — the ``/v1`` shim silently ignores it, truncating large batch
-    # prompts and breaking structured-JSON output. Ignored by all other
-    # providers. See OllamaProvider._complete_native.
+    # 仅 Ollama 使用：上下文窗口（token 数）。0 = 通过 OpenAI 兼容的
+    # ``/v1`` shim 使用 Ollama 服务端默认值（通常 4096）。>0 时，chat
+    # 走 Ollama 原生 ``/api/chat`` 以便 ``options.num_ctx`` 真正生效——
+    # ``/v1`` shim 会静默忽略该参数，截断大批量 prompt 并破坏结构化
+    # JSON 输出。其他 provider 均忽略此项。参见 OllamaProvider._complete_native。
     num_ctx: int = 0
 
 
 @dataclass
 class EmbeddingConfig:
-    """Embedding model configuration.
+    """Embedding 模型配置。
 
-    v0.3.32+ owns its own ``api_key`` / ``base_url`` so the embedding
-    provider is fully independent from ``[llm].default_provider`` and the
-    chat-side ``[llm.<name>]`` blocks. Fallback to other embedding
-    providers or chat-side credentials is opt-in via ``fallback_enabled``.
+    v0.3.32+ 自带 ``api_key`` / ``base_url``，使 embedding provider
+    完全独立于 ``[llm].default_provider`` 和 chat 侧的
+    ``[llm.<name>]`` 配置块。回退到其他 embedding provider 或 chat 侧
+    凭据需通过 ``fallback_enabled`` 显式开启。
     """
 
-    provider: str = ""  # Empty = embedding disabled until explicitly configured
+    provider: str = ""  # 留空 = 在显式配置前禁用 embedding
     model: str = "gemini-embedding-001"
     api_key: str = ""
     base_url: str = ""
@@ -158,7 +156,7 @@ class EmbeddingConfig:
 
 @dataclass
 class ModuleLLMConfig:
-    """Per-module LLM override. Empty strings = use global defaults."""
+    """按模块覆盖的 LLM 配置。空字符串 = 使用全局默认。"""
 
     provider: str = ""
     model: str = ""
@@ -166,7 +164,7 @@ class ModuleLLMConfig:
 
 @dataclass
 class LLMConfig:
-    """LLM configuration with global defaults and per-module overrides."""
+    """LLM 配置，包含全局默认值和按模块覆盖。"""
 
     default_provider: str = "deepseek"
     concurrency: int = DEFAULT_LLM_CONCURRENCY
@@ -179,11 +177,11 @@ class LLMConfig:
     deepseek: LLMProviderConfig = field(default_factory=LLMProviderConfig)
     ollama: LLMProviderConfig = field(default_factory=LLMProviderConfig)
     openrouter: LLMProviderConfig = field(default_factory=LLMProviderConfig)
-    # v0.3.32+ generic OpenAI-protocol-compatible provider. Always
-    # requires an explicit base_url (otherwise it would just be ``openai``).
+    # v0.3.32+ 通用的 OpenAI 协议兼容 provider。始终
+    # 需要显式 base_url（否则就等同于 ``openai``）。
     openai_compatible: LLMProviderConfig = field(default_factory=LLMProviderConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
-    # Per-module overrides (empty = use global default)
+    # 按模块覆盖（留空 = 使用全局默认）
     soul: ModuleLLMConfig = field(default_factory=ModuleLLMConfig)
     discovery: ModuleLLMConfig = field(default_factory=ModuleLLMConfig)
     recommendation: ModuleLLMConfig = field(default_factory=ModuleLLMConfig)
@@ -191,7 +189,7 @@ class LLMConfig:
 
 
 def _gemini_api_key_from_env() -> str:
-    """Return Gemini API key from official environment variables."""
+    """从官方环境变量返回 Gemini API key。"""
     google_api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
     gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     return google_api_key or gemini_api_key
@@ -199,7 +197,7 @@ def _gemini_api_key_from_env() -> str:
 
 @dataclass
 class BilibiliConfig:
-    """Bilibili connection configuration."""
+    """Bilibili 连接配置。"""
 
     auth_method: str = "cookie"
     cookie: str = ""
@@ -209,7 +207,7 @@ class BilibiliConfig:
 
 @dataclass
 class SchedulerConfig:
-    """Scheduler configuration."""
+    """调度器配置。"""
 
     enabled: bool = True
     pause_on_extension_disconnect: bool = False
@@ -228,9 +226,9 @@ class SchedulerConfig:
     delight_queue_limit: int = _DEFAULT_DELIGHT_QUEUE_LIMIT
     proactive_push_interval_seconds: int = _DEFAULT_PROACTIVE_PUSH_INTERVAL_SECONDS
     speculator_idle_interval_minutes: int = _DEFAULT_SPECULATOR_IDLE_INTERVAL_MINUTES
-    # LLM-judged like/dislike topic consolidation (soul/consolidator.py).
-    # Runs from the pipeline tick at most once per interval; dirty-check
-    # and no-merge pair memory make steady-state runs nearly free.
+    # LLM 判定的喜欢/不喜欢话题合并（soul/consolidator.py）。
+    # 由 pipeline tick 触发，每个 interval 至多一次；脏检查
+    # 和无合并对的内存使稳态运行几乎零成本。
     profile_consolidation_enabled: bool = True
     profile_consolidation_interval_hours: int = 12
     profile_consolidation_like_target_upper: int = 512
@@ -249,12 +247,11 @@ class SchedulerConfig:
     avoidance_speculation_confirmation_threshold: int = 3
     avoidance_speculation_max_active: int = 5
     feedback_batch_threshold: int = _DEFAULT_FEEDBACK_BATCH_THRESHOLD
-    # Default off. The auto-updater pulls from GitHub releases and
-    # restarts the backend when a newer version is detected, but it has
-    # historically caused restart loops when the local
-    # ``openbiliclaw.__version__`` drifts from the published release
-    # tag. Opt-in only — set ``true`` in config.toml after the release
-    # pipeline is reliable.
+    # 默认关闭。自动更新器从 GitHub releases 拉取并在检测到
+    # 新版本时重启后端，但历史上当本地
+    # ``openbiliclaw.__version__`` 与已发布 release tag 不一致时
+    # 会触发重启循环。仅 opt-in——待发布流水线稳定后在
+    # config.toml 中设为 ``true``。
     auto_update_enabled: bool = False
     auto_update_check_interval_hours: int = 6
     auto_update_allow_prerelease: bool = False
@@ -265,51 +262,50 @@ class SchedulerConfig:
 
 @dataclass
 class DiscoveryConfig:
-    """Unified keyword planner configuration (Discover backpressure, P1).
+    """统一关键词规划器配置（Discover 背压，P1）。
 
-    Governs the double-buffered keyword store + merged keyword planner that
-    replaces the per-platform search keyword generators. All knobs are gated
-    behind ``unified_keyword_planner_enabled`` (default ON as of v0.3.124; set
-    it ``false`` to fall back, byte-for-byte, to the legacy per-platform LLM
-    generation path). See
-    ``docs/plans/2026-06-14-discover-backpressure-refactor-design.md`` §6 for
-    the parameter table these defaults come from. ``fetch_floor`` is NOT a
-    field here — the planner reuses each platform's existing ``min_interval``.
+    管控双缓冲关键词存储 + 合并关键词规划器，后者取代了
+    各平台独立的搜索关键词生成器。所有旋钮都由
+    ``unified_keyword_planner_enabled`` 把控（v0.3.124 起默认开启；设为
+    ``false`` 可逐字节回退到旧的各平台 LLM 生成路径）。参见
+    ``docs/plans/2026-06-14-discover-backpressure-refactor-design.md`` §6
+    中的参数表，这些默认值即来源于此。``fetch_floor`` 不是这里的
+    字段——规划器复用各平台既有的 ``min_interval``。
     """
 
-    # Master feature flag. True (default, v0.3.124+) runs the merged planner /
-    # keyword store; False falls back to the legacy per-platform search keyword
-    # generators (the path stays dormant and the fallback is byte-identical).
+    # 主功能开关。True（默认，v0.3.124+）运行合并规划器 /
+    # 关键词存储；False 回退到旧的各平台搜索关键词生成器
+    # （该路径保持休眠，回退行为逐字节一致）。
     unified_keyword_planner_enabled: bool = _DEFAULT_UNIFIED_KEYWORD_PLANNER_ENABLED
-    # Per-platform keyword cache high/low watermarks. Generation fires when
-    # pending < low and a real deficit exists; it refills up to high.
+    # 各平台关键词缓存高/低水位。当 pending < low 且确实存在缺口时
+    # 触发生成；补充至 high。
     kw_cache_high: int = _DEFAULT_KW_CACHE_HIGH
     kw_cache_low: int = _DEFAULT_KW_CACHE_LOW
-    # Keywords generated per platform per merged LLM call.
+    # 每次合并 LLM 调用为每个平台生成的关键词数。
     gen_batch: int = _DEFAULT_GEN_BATCH
-    # Keywords atomically claimed per fetch.
+    # 每次获取原子性认领的关键词数。
     fetch_batch: int = _DEFAULT_FETCH_BATCH
-    # Dedup history window: at most this many recent keywords, within this many
-    # hours, are surfaced to the planner as "don't repeat".
+    # 去重历史窗口：最多这么多个近期关键词、在这么多个小时内，
+    # 会被作为"勿重复"提供给规划器。
     history_window_size: int = _DEFAULT_HISTORY_WINDOW_SIZE
     history_window_hours: int = _DEFAULT_HISTORY_WINDOW_HOURS
-    # Claim lease: a claimed/executing keyword older than this is reclaimed to
-    # pending (guards loop/task crashes leaking in-flight rows).
+    # 认领租约：超过此时长（分钟）的已认领/执行中关键词会被回收为
+    # pending（防止 loop/task 崩溃导致在途行泄漏）。
     claim_lease_minutes: int = _DEFAULT_CLAIM_LEASE_MINUTES
-    # Keyword planner poll interval (seconds). Idle polls are near-zero cost.
+    # 关键词规划器轮询间隔（秒）。空闲轮询近乎零成本。
     planner_poll_seconds: int = _DEFAULT_PLANNER_POLL_SECONDS
-    # Plan staleness backstop: pending keywords older than this expire even if
-    # the profile digest hasn't changed.
+    # 计划陈旧兜底：超过此时长（小时）的 pending 关键词会过期，
+    # 即使 profile digest 未变化。
     plan_ttl_hours: int = _DEFAULT_PLAN_TTL_HOURS
-    # Unified recommendation-pool admission floor. Source/provenance metadata
-    # must never bypass this; explicit strategy thresholds live on candidates.
+    # 统一推荐池准入下限。来源/溯源元数据绝不能绕过此限制；
+    # 显式策略阈值存在于 candidates 上。
     admission_min_score: float = _DEFAULT_ADMISSION_MIN_SCORE
-    # Optional cover-image evaluation. Kept off by default because it changes
-    # LLM cost/latency and requires a vision-capable evaluation model.
+    # 可选的封面图评估。默认关闭，因为它会改变 LLM
+    # 成本/延迟，并要求评估模型具备视觉能力。
     multimodal_evaluation_enabled: bool = False
-    # Smaller batch for image-bearing evaluation calls.
+    # 携带图片的评估调用使用更小批量。
     multimodal_batch_size: int = _DEFAULT_MULTIMODAL_BATCH_SIZE
-    # Cover-image preprocessing bounds before sending to the evaluator.
+    # 发送给评估器前的封面图预处理边界。
     multimodal_image_max_px: int = _DEFAULT_MULTIMODAL_IMAGE_MAX_PX
     multimodal_image_quality: int = _DEFAULT_MULTIMODAL_IMAGE_QUALITY
     multimodal_image_timeout_seconds: int = _DEFAULT_MULTIMODAL_IMAGE_TIMEOUT_SECONDS
@@ -317,7 +313,7 @@ class DiscoveryConfig:
 
 @dataclass
 class AutostartConfig:
-    """Boot autostart configuration."""
+    """开机自启动配置。"""
 
     enabled: bool = False
     manage_ollama: bool = True
@@ -325,31 +321,29 @@ class AutostartConfig:
 
 @dataclass
 class XiaohongshuSourceConfig:
-    """Xiaohongshu source-specific configuration.
+    """小红书源特定配置。
 
-    Content discovery and metadata extraction happens entirely in the
-    user's browser via the Chrome extension (passive collection +
-    background-tab tasks). No sidecar or backend crawling needed.
+    内容发现与元数据抽取完全在用户浏览器中通过 Chrome 扩展完成
+    （被动采集 + 后台标签页任务）。无需 sidecar 或后端爬取。
     """
 
-    # XHS is opt-in because it requires the browser extension and a logged-in
-    # browser session. Init --yes-xhs or the settings page can enable it later.
+    # 小红书是 opt-in 的，因为它需要浏览器扩展和已登录的
+    # 浏览器会话。Init --yes-xhs 或设置页可在之后启用。
     enabled: bool = False
-    # Max Soul-driven search tasks the backend may enqueue per day.
+    # 后端每日可入队的 Soul 驱动搜索任务上限。
     daily_search_budget: int = 0
-    # Max creator-subscription fetch tasks per day.
+    # 每日创作者订阅拉取任务上限。
     daily_creator_budget: int = 0
-    # Seconds the extension dispatcher waits between tasks.
+    # 扩展分发器在任务之间的等待秒数。
     task_interval_seconds: int = 45
 
 
 @dataclass
 class DouyinSourceConfig:
-    """Douyin direct-cookie discovery configuration.
+    """抖音直连 cookie 发现配置。
 
-    Initialization bootstrap still uses the browser extension. These
-    settings only control optional backend discovery jobs that read a
-    user-supplied Douyin cookie from the environment.
+    初始化引导仍使用浏览器扩展。这些设置仅控制可选的
+    后端发现任务，从环境变量读取用户提供的抖音 cookie。
     """
 
     enabled: bool = False
@@ -363,11 +357,11 @@ class DouyinSourceConfig:
 
 @dataclass
 class YoutubeSourceConfig:
-    """YouTube source-specific configuration.
+    """YouTube 源特定配置。
 
-    YouTube steady-state discovery runs through a backend-direct runtime
-    producer. The budget knobs cap per-day execution units: search
-    queries, trending fetch breadth, and subscribed-channel breadth.
+    YouTube 稳态发现通过后端直连 runtime producer 运行。
+    预算旋钮为每日执行单元设置上限：搜索查询、
+    热门拉取广度、订阅频道广度。
     """
 
     enabled: bool = False
@@ -380,14 +374,14 @@ class YoutubeSourceConfig:
 
 @dataclass
 class TwitterSourceConfig:
-    """X (Twitter) direct-cookie discovery configuration.
+    """X (Twitter) 直连 cookie 发现配置。
 
-    Steady-state discovery is server-side cookie replay (search / For-You /
-    creator), mirroring the Douyin-direct path. The X producer reads the
-    budget / interval knobs below to throttle the three strategies and to
-    keep the high-visibility For-You feed to a low daily cadence. ``0`` daily
-    budgets mean "no per-day cap" (each due run is bounded by the runtime
-    deficit), matching the Douyin / YouTube producer convention.
+    稳态发现为服务端 cookie 重放（搜索 / For-You /
+    创作者），镜像抖音直连路径。X producer 读取下方的
+    预算 / 间隔旋钮来为三种策略限流，并将高曝光的 For-You
+    feed 控制在低每日频率。``0`` 日预算表示"无每日上限"
+    （每次到期运行由 runtime 缺口界定），与抖音 / YouTube
+    producer 约定一致。
     """
 
     enabled: bool = False
@@ -402,11 +396,11 @@ class TwitterSourceConfig:
 
 @dataclass
 class ZhihuSourceConfig:
-    """Zhihu plugin-backed discovery configuration.
+    """知乎插件驱动的发现配置。
 
-    Zhihu discovery runs in the browser extension so it can reuse the user's
-    logged-in browser session. The backend only enqueues search tasks and stores
-    returned candidates in the unified discovery pool.
+    知乎发现在浏览器扩展中运行，以便复用用户已登录的
+    浏览器会话。后端仅入队搜索任务并将返回的候选存入
+    统一发现池。
     """
 
     enabled: bool = False
@@ -422,27 +416,26 @@ class ZhihuSourceConfig:
 
 @dataclass
 class BilibiliSourceConfig:
-    """Bilibili discovery source switch."""
+    """Bilibili 发现源开关。"""
 
     enabled: bool = True
 
 
 @dataclass
 class SourcesConfig:
-    """Multi-source content adapters configuration.
+    """多源内容适配器配置。
 
-    Contains platform-level discovery switches and the generic browser options
-    for non-Bilibili web adapters. The browser options here are independent of
-    ``bilibili.browser`` (which controls the agent-browser CLI used by
-    Bilibili login/QR flows).
+    包含平台级发现开关以及非 Bilibili web 适配器的通用浏览器
+    选项。这里的浏览器选项独立于 ``bilibili.browser``
+    （后者控制 Bilibili 登录/二维码流程使用的 agent-browser CLI）。
     """
 
-    # URL of a pre-launched Chrome DevTools endpoint, e.g.
-    # ``http://127.0.0.1:9222``. When set, the web adapter connects via
-    # Playwright ``chromium.connect_over_cdp`` and reuses that Chrome's
-    # logged-in session. When empty, falls back to agent-browser CLI.
+    # 预启动的 Chrome DevTools 端点 URL，例如
+    # ``http://127.0.0.1:9222``。设置后，web 适配器通过
+    # Playwright ``chromium.connect_over_cdp`` 连接并复用该 Chrome
+    # 已登录的会话。留空则回退到 agent-browser CLI。
     browser_cdp_url: str = ""
-    # Whether to launch a headed agent-browser (fallback path only).
+    # 是否启动带界面的 agent-browser（仅回退路径）。
     browser_headed: bool = False
     bilibili: BilibiliSourceConfig = field(default_factory=BilibiliSourceConfig)
     xiaohongshu: XiaohongshuSourceConfig = field(default_factory=XiaohongshuSourceConfig)
@@ -454,14 +447,14 @@ class SourcesConfig:
 
 @dataclass
 class StorageConfig:
-    """Storage configuration."""
+    """存储配置。"""
 
     db_path: str = "data/openbiliclaw.db"
 
 
 @dataclass
 class LoggingConfig:
-    """Logging configuration."""
+    """日志配置。"""
 
     level: str = "INFO"
     file_level: str = "DEBUG"
@@ -489,7 +482,7 @@ class LoggingConfig:
 
     @property
     def directory_path(self) -> Path:
-        """Resolved log directory path."""
+        """解析后的日志目录路径。"""
         path = Path(self.directory)
         if not path.is_absolute():
             path = _project_root() / path
@@ -497,18 +490,17 @@ class LoggingConfig:
 
     @property
     def file_path(self) -> Path:
-        """Resolved full log file path."""
+        """解析后的完整日志文件路径。"""
         return self.directory_path / self.filename
 
 
 @dataclass
 class SoulPreferenceConfig:
-    """Preference-layer toggles.
+    """偏好层开关。
 
-    ``satisfaction_filter_enabled``: v0.3.x event-satisfaction signal —
-    when True, the preference analyzer ignores passive negative events
-    such as quick-exit while retaining explicit dislike feedback as
-    disliked_topics evidence.
+    ``satisfaction_filter_enabled``：v0.3.x 事件满意度信号——
+    为 True 时，偏好分析器忽略被动负向事件（如快速退出），
+    但保留显式不喜欢反馈作为 disliked_topics 证据。
     """
 
     satisfaction_filter_enabled: bool = True
@@ -516,20 +508,20 @@ class SoulPreferenceConfig:
 
 @dataclass
 class SoulConfig:
-    """Soul engine knobs. Currently only the preference sub-section."""
+    """Soul 引擎旋钮。当前仅包含 preference 子段。"""
 
     preference: SoulPreferenceConfig = field(default_factory=SoulPreferenceConfig)
 
 
 @dataclass
 class ApiAuthConfig:
-    """Optional password gate for LAN / remote access (see
-    ``docs/plans/2026-05-30-web-password-auth-design.md``).
+    """可选的局域网/远程访问密码门禁（参见
+    ``docs/plans/2026-05-30-web-password-auth-design.md``）。
 
-    Only takes effect when ``enabled`` is true *and* the request is not a
-    trusted-local request (loopback without forwarding headers, see §4.1).
-    ``session_secret`` is auto-generated on first enable. The revocation epoch
-    (``auth_epoch``) and password fingerprint live in SQLite, not here (§4.7).
+    仅当 ``enabled`` 为 true *且* 请求不是可信本地请求
+    （无 forwarding 头的回环，参见 §4.1）时生效。
+    ``session_secret`` 在首次启用时自动生成。吊销纪元
+    （``auth_epoch``）和密码指纹存于 SQLite，不在此处（§4.7）。
     """
 
     enabled: bool = False
@@ -543,12 +535,11 @@ class ApiAuthConfig:
 
 @dataclass
 class ApiConfig:
-    """Backend API server settings.
+    """后端 API 服务器设置。
 
-    ``host`` controls which network interface the server binds to.
-    ``0.0.0.0`` (default) binds all interfaces so mobile devices on the
-    same LAN can reach the ``/m/`` mobile web.  ``127.0.0.1`` restricts
-    access to this machine only.
+    ``host`` 控制服务器绑定到哪个网络接口。
+    ``0.0.0.0``（默认）绑定所有接口，以便同局域网的移动设备
+    可访问 ``/m/`` 移动端网页。``127.0.0.1`` 仅限本机访问。
     """
 
     host: str = "0.0.0.0"
@@ -558,7 +549,7 @@ class ApiConfig:
 
 @dataclass
 class Config:
-    """Root configuration for OpenBiliClaw."""
+    """OpenBiliClaw 的根配置。"""
 
     language: str = "zh"
     data_dir: str = "data"
@@ -567,19 +558,19 @@ class Config:
     bilibili: BilibiliConfig = field(default_factory=BilibiliConfig)
     sources: SourcesConfig = field(default_factory=SourcesConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    # Top-level `[discovery]` carries the unified keyword planner / backpressure
-    # knobs (P1). Distinct from `[llm.discovery]` (per-module provider override).
+    # 顶层 ``[discovery]`` 承载统一关键词规划器 / 背压
+    # 旋钮（P1）。与 ``[llm.discovery]``（按模块 provider 覆盖）不同。
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     autostart: AutostartConfig = field(default_factory=AutostartConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
-    # Top-level `[soul]` is distinct from `[llm.soul]` (per-module
-    # provider override): this carries soul-engine behavior toggles.
+    # 顶层 ``[soul]`` 与 ``[llm.soul]``（按模块
+    # provider 覆盖）不同：此处承载 soul 引擎行为开关。
     soul: SoulConfig = field(default_factory=SoulConfig)
 
     @property
     def data_path(self) -> Path:
-        """Resolved data directory path."""
+        """解析后的数据目录路径。"""
         p = Path(self.data_dir)
         if not p.is_absolute():
             p = _project_root() / p
@@ -587,7 +578,7 @@ class Config:
 
 
 def _project_root() -> Path:
-    """Return the runtime project root used for config, data, and logs."""
+    """返回用于配置、数据和日志的运行时项目根目录。"""
     env_root = os.environ.get(_PROJECT_ROOT_ENV, "").strip()
     if env_root:
         return Path(env_root).expanduser().resolve()
@@ -603,7 +594,7 @@ def _project_root() -> Path:
 
 
 def _looks_like_project_root(path: Path) -> bool:
-    """Return whether a path resembles the repository/runtime root."""
+    """判断路径是否类似于仓库/运行时根目录。"""
     return any(
         (path / marker).exists()
         for marker in ["pyproject.toml", "config.example.toml", "config.toml"]
@@ -611,17 +602,17 @@ def _looks_like_project_root(path: Path) -> bool:
 
 
 def _default_config_path() -> Path:
-    """Return the default config.toml path."""
+    """返回默认的 config.toml 路径。"""
     return _project_root() / "config.toml"
 
 
 def _config_example_path() -> Path:
-    """Return the repository config example path."""
+    """返回仓库的配置示例路径。"""
     return _project_root() / "config.example.toml"
 
 
 def _ensure_default_config_file(diagnostics: ConfigDiagnostics) -> None:
-    """Create config.toml from the example file when it is missing."""
+    """当 config.toml 缺失时从示例文件创建。"""
     config_path = _default_config_path()
     diagnostics.config_path = config_path
 
@@ -641,7 +632,7 @@ def _ensure_default_config_file(diagnostics: ConfigDiagnostics) -> None:
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Deep merge two dicts, override values take precedence."""
+    """深度合并两个字典，override 中的值优先。"""
     merged = base.copy()
     for key, value in override.items():
         if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
@@ -652,21 +643,21 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
-    """Apply environment variable overrides.
+    """应用环境变量覆盖。
 
-    Environment variables follow the pattern: OPENBILICLAW_SECTION_KEY
-    e.g. OPENBILICLAW_LLM_DEFAULT_PROVIDER=claude
+    环境变量遵循如下模式：OPENBILICLAW_SECTION_KEY
+    例如 OPENBILICLAW_LLM_DEFAULT_PROVIDER=claude
     """
     prefix = "OPENBILICLAW_"
     for env_key, env_value in os.environ.items():
         if not env_key.startswith(prefix):
             continue
-        # Auth vars are multi-word (PASSWORD_HASH, SESSION_TTL_HOURS, …); the naive
-        # `_` split would mis-nest them — e.g. PASSWORD_HASH → api.auth.password.hash,
-        # injecting a dict at auth.password (later hashed as its repr) or raising
-        # TypeError when an on-disk plaintext `password` string is descended into.
-        # `_build_api_auth` reads every API_AUTH_ENV_VARS var explicitly, so skip
-        # them here entirely (review r7#1).
+        # Auth 变量是多词的（PASSWORD_HASH、SESSION_TTL_HOURS ……）；朴素的
+        # ``_`` 切分会把它们错误嵌套——例如 PASSWORD_HASH → api.auth.password.hash，
+        # 会在 auth.password 处注入一个 dict（后续按其 repr 哈希），
+        # 或在磁盘上存在明文 `password` 字符串时深入访问而抛 TypeError。
+        # `_build_api_auth` 显式读取每个 API_AUTH_ENV_VARS 变量，因此这里
+        # 完全跳过它们（评审 r7#1）。
         if env_key in API_AUTH_ENV_VARS:
             continue
         parts = env_key[len(prefix) :].lower().split("_")
@@ -678,7 +669,7 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_config(raw: dict[str, Any]) -> Config:
-    """Build a Config dataclass from raw dict."""
+    """从原始 dict 构建 Config dataclass。"""
     general = raw.get("general", {})
     api_raw = raw.get("api", {}) if isinstance(raw.get("api"), dict) else {}
     llm_raw = raw.get("llm", {})
@@ -954,13 +945,13 @@ def _build_config(raw: dict[str, Any]) -> Config:
 
 
 def _build_discovery(discovery_raw: dict[str, Any]) -> DiscoveryConfig:
-    """Assemble ``DiscoveryConfig`` from the raw ``[discovery]`` table.
+    """从原始 ``[discovery]`` 表组装 ``DiscoveryConfig``。
 
-    Every numeric knob goes through ``_normalize_scheduler_int`` (the same
-    bounded-positive-int coercion the scheduler fields use), so a bad / missing
-    / out-of-range value falls back to its spec §6 default. ``_coerce_bool``
-    handles the feature flag, which means env-string overrides
-    (``OPENBILICLAW_DISCOVERY_*``) normalize identically to TOML values.
+    每个数值旋钮都经过 ``_normalize_scheduler_int``（与 scheduler 字段
+    使用的有界正整数强制转换相同），因此非法 / 缺失 / 越界的值会回退
+    到 spec §6 默认值。``_coerce_bool`` 处理功能开关，这意味着
+    环境字符串覆盖（``OPENBILICLAW_DISCOVERY_*``）与 TOML 值的规范化
+    方式完全一致。
     """
     return DiscoveryConfig(
         unified_keyword_planner_enabled=_coerce_bool(
@@ -1048,7 +1039,7 @@ def _build_discovery(discovery_raw: dict[str, Any]) -> DiscoveryConfig:
 
 
 def _normalize_probability(value: object, *, default: float) -> float:
-    """Normalize a TOML probability in the open interval ``(0, 1]``."""
+    """将 TOML 概率值规范化到开区间 ``(0, 1]``。"""
     if isinstance(value, bool):
         return default
     if not isinstance(value, (int, float, str)):
@@ -1063,7 +1054,7 @@ def _normalize_probability(value: object, *, default: float) -> float:
 
 
 def _coerce_bool(value: object, *, default: bool = False) -> bool:
-    """Coerce TOML/env values to bool. Env values arrive as strings."""
+    """将 TOML/env 值强制转换为 bool。env 值以字符串形式传入。"""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -1079,14 +1070,14 @@ def _coerce_bool(value: object, *, default: bool = False) -> bool:
 
 
 def _coerce_ttl_hours(value: object) -> int:
-    """Coerce a session TTL (TOML int / float or env string) to a non-negative
-    int, falling back to 0 on missing or malformed input.
+    """将会话 TTL（TOML int/float 或 env 字符串）强制转换为非负
+    int，缺失或格式非法时回退为 0。
 
-    Shared by ``_build_api_auth`` (load) and ``_api_auth_lines`` (env-managed
-    save preservation) so a preserved on-disk value round-trips to exactly what
-    the loader would compute.
+    由 ``_build_api_auth``（加载）和 ``_api_auth_lines``（env 管理
+    保存时保留）共享，因此被保留的磁盘值能往返还原为加载器计算出的
+    完全一致的结果。
     """
-    if isinstance(value, int | float):  # bool is an int subclass: int(True) == 1
+    if isinstance(value, int | float):  # bool 是 int 子类：int(True) == 1
         try:
             return max(0, int(value))  # int(nan) → ValueError, int(inf) → OverflowError
         except (ValueError, OverflowError):
@@ -1100,14 +1091,13 @@ def _coerce_ttl_hours(value: object) -> int:
 
 
 def config_local_auth_keys() -> set[str]:
-    """``[api.auth]`` keys pinned in ``config.local.toml`` (the override layer that
-    ``load_config`` merges OVER ``config.toml``, local winning).
+    """固定在 ``config.local.toml`` 中的 ``[api.auth]`` 键（``load_config``
+    会把该层覆盖合并到 ``config.toml`` 之上，local 优先）。
 
-    A write to ``config.toml`` (admin endpoint / ``set-password``) can't change a
-    field that ``config.local.toml`` shadows — the value silently reverts on the
-    next restart. Callers use this to refuse such a write loudly instead of
-    reporting a false success (review r9). Empty when there is no local file or no
-    ``[api.auth]`` section.
+    写入 ``config.toml``（admin endpoint / ``set-password``）无法改变
+    被 ``config.local.toml`` 遮蔽的字段——该值在下次重启时会静默回退。
+    调用方据此显式拒绝此类写入，而非报告虚假成功（评审 r9）。
+    当无 local 文件或无 ``[api.auth]`` 段时返回空集。
     """
     local = _project_root() / "config.local.toml"
     if not local.exists():
@@ -1123,13 +1113,12 @@ def config_local_auth_keys() -> set[str]:
 
 
 def _hash_matches_plaintext(plaintext: object, password_hash: str) -> bool:
-    """True iff ``password_hash`` is a scrypt hash of ``plaintext``.
+    """当且仅当 ``password_hash`` 是 ``plaintext`` 的 scrypt 哈希时返回 True。
 
-    Used on save to decide whether an on-disk plaintext ``password`` key still
-    represents the current credential (so it can be preserved verbatim, keeping
-    the reconcile fingerprint basis stable) or was deliberately changed in memory
-    (so the stale plaintext must be dropped for the new hash). Defensive: a
-    malformed hash never raises, it just means "no match" → write the hash.
+    用于保存时判断磁盘上的明文 ``password`` 键是否仍代表当前凭据
+    （若是则原样保留，保持 reconcile 指纹基稳定），还是在内存中被
+    故意修改（若是则必须丢弃陈旧明文以适配新哈希）。防御性：格式
+    非法的哈希绝不抛异常，仅视为"不匹配" → 写入该哈希。
     """
     text = str(plaintext) if plaintext is not None else ""
     if not text.strip() or not password_hash.strip():
@@ -1143,7 +1132,7 @@ def _hash_matches_plaintext(plaintext: object, password_hash: str) -> bool:
 
 
 def _coerce_str_list(value: object) -> list[str]:
-    """Coerce a TOML list (or comma string) of strings into a clean list."""
+    """将 TOML 列表（或逗号分隔字符串）强制转换为干净的列表。"""
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     if isinstance(value, (list, tuple)):
@@ -1151,11 +1140,11 @@ def _coerce_str_list(value: object) -> list[str]:
     return []
 
 
-# Single source of truth: every env var ``_build_api_auth`` honors for
-# ``[api.auth]``. The gate's "env-managed" guard (api/auth.py) imports this so a
-# config-file edit (CLI / local admin endpoint) is refused for EVERY field that
-# an env override would silently win back on restart — not just the password.
-# Adding an override below MUST add its name here; ``test_config`` enforces it.
+# 单一权威来源：``_build_api_auth`` 为 ``[api.auth]`` 而认可的所有 env 变量。
+# 门禁的 "env-managed" 守卫（api/auth.py）会导入此项，因此对
+# 每一个 env 覆盖会重启后静默夺回的字段，配置文件编辑（CLI / 本地 admin
+# endpoint）都会被拒绝——而不仅仅是 password。下方新增 override 必须同步
+# 增加此处的名称；``test_config`` 强制校验。
 API_AUTH_ENV_VARS: tuple[str, ...] = (
     "OPENBILICLAW_API_AUTH_PASSWORD",
     "OPENBILICLAW_API_AUTH_PASSWORD_HASH",
@@ -1167,12 +1156,12 @@ API_AUTH_ENV_VARS: tuple[str, ...] = (
 
 
 def _build_api_auth(api_raw: dict[str, Any]) -> ApiAuthConfig:
-    """Assemble ``ApiAuthConfig`` from raw config + dedicated env vars.
+    """从原始配置 + 专用 env 变量组装 ``ApiAuthConfig``。
 
-    Multi-word fields cannot use the generic ``OPENBILICLAW_A_B_C`` override
-    (it splits on ``_``), so the security-sensitive ones are read explicitly
-    here. See ``docs/plans/2026-05-30-web-password-auth-design.md`` §5.2. The set
-    of variables read here is mirrored by ``API_AUTH_ENV_VARS`` above.
+    多词字段无法使用通用的 ``OPENBILICLAW_A_B_C`` 覆盖
+    （它按 ``_`` 切分），因此安全敏感字段在此显式读取。
+    参见 ``docs/plans/2026-05-30-web-password-auth-design.md`` §5.2。
+    此处读取的变量集合由上方的 ``API_AUTH_ENV_VARS`` 镜像。
     """
     from openbiliclaw.auth_core import hash_password
 
@@ -1183,10 +1172,10 @@ def _build_api_auth(api_raw: dict[str, Any]) -> ApiAuthConfig:
         value = os.environ.get(name)
         return value if value and value.strip() else None
 
-    # Explicit credential precedence (review r7#1):
-    #   env PASSWORD > env PASSWORD_HASH > on-disk plaintext password > on-disk hash.
-    # A higher-priority source completely shadows the lower ones, so an env hash
-    # rotation is never overridden by a stale on-disk plaintext password.
+    # 显式凭据优先级（评审 r7#1）：
+    #   env PASSWORD > env PASSWORD_HASH > 磁盘明文 password > 磁盘 hash。
+    # 高优先级来源会完全遮蔽低优先级来源，因此 env hash 轮换
+    # 绝不会被陈旧的磁盘明文 password 覆盖。
     env_plain = _env("OPENBILICLAW_API_AUTH_PASSWORD")
     env_hash = _env("OPENBILICLAW_API_AUTH_PASSWORD_HASH")
     disk_plain = auth_raw.get("password")
@@ -1223,29 +1212,27 @@ def _build_api_auth(api_raw: dict[str, Any]) -> ApiAuthConfig:
 
 
 def get_auth_plain_password() -> str | None:
-    """Return the plaintext auth password (env first, then config file).
+    """返回明文 auth 密码（env 优先，其次配置文件）。
 
-    Used by the startup fingerprint reconcile (§4.7): the fingerprint must be
-    derived from *stable* credential material, not the freshly-salted scrypt
-    hash, or an unchanged password would falsely revoke sessions on every
-    restart. The plaintext is stable across restarts whether it comes from
-    ``OPENBILICLAW_API_AUTH_PASSWORD`` (Docker/env) or a ``[api.auth].password``
-    line in config.toml. Returns ``None`` when only a persisted hash is used
-    (in which case the hash string itself is the stable fingerprint material).
+    供启动指纹 reconcile（§4.7）使用：指纹必须基于*稳定*凭据材料
+    派生，而非新加盐的 scrypt 哈希，否则未变更的密码在每次重启时
+    都会错误地吊销会话。无论明文来自 ``OPENBILICLAW_API_AUTH_PASSWORD``
+    （Docker/env）还是 config.toml 中的 ``[api.auth].password`` 行，
+    跨重启都是稳定的。当仅使用持久化的 hash 时返回 ``None``
+    （此时 hash 字符串本身即为稳定的指纹材料）。
     """
     env_value = os.environ.get("OPENBILICLAW_API_AUTH_PASSWORD")
     if env_value and env_value.strip():
         return env_value
-    # When an env PASSWORD_HASH governs the credential (and no env PASSWORD), there
-    # is no stable plaintext — the effective password is the env hash, which wins
-    # over any on-disk plaintext (see _build_api_auth precedence). Return None so
-    # the reconcile fingerprint is derived from "ph:"+hash, not a stale on-disk
-    # plaintext that no longer governs (review r7#1).
+    # 当一个 env PASSWORD_HASH 管控凭据时（且无 env PASSWORD），不存在
+    # 稳定的明文——生效密码是 env hash，它优先于任何磁盘明文
+    # （见 _build_api_auth 优先级）。返回 None 以便 reconcile 指纹由
+    # "ph:"+hash 派生，而非来自已失效的磁盘明文（评审 r7#1）。
     env_hash = os.environ.get("OPENBILICLAW_API_AUTH_PASSWORD_HASH")
     if env_hash and env_hash.strip():
         return None
-    # Fall back to a plaintext password persisted in config.toml so that path is
-    # also fingerprint-stable (review r1#3).
+    # 回退到 config.toml 中持久化的明文密码，使该路径同样指纹稳定
+    # （评审 r1#3）。
     try:
         raw: dict[str, Any] = {}
         for filename in _CONFIG_FILENAMES:
@@ -1262,7 +1249,7 @@ def get_auth_plain_password() -> str | None:
 
 
 def _normalize_api_port(value: object) -> int:
-    """Normalize API port values into the valid TCP port range."""
+    """将 API 端口值规范化到有效 TCP 端口范围。"""
     if isinstance(value, bool):
         return 8420
     if isinstance(value, int | float):
@@ -1278,7 +1265,7 @@ def _normalize_api_port(value: object) -> int:
 
 
 def _normalize_llm_concurrency(value: object) -> int:
-    """Normalize the shared LLM request concurrency limit."""
+    """规范化共享 LLM 请求并发上限。"""
     if isinstance(value, bool):
         return DEFAULT_LLM_CONCURRENCY
     if isinstance(value, int | float):
@@ -1297,7 +1284,7 @@ def _normalize_llm_concurrency(value: object) -> int:
 
 
 def _normalize_llm_timeout(value: object) -> int:
-    """Normalize the LLM request timeout (seconds)."""
+    """规范化 LLM 请求超时（秒）。"""
     if isinstance(value, bool):
         return _DEFAULT_LLM_TIMEOUT
     if isinstance(value, int | float):
@@ -1316,10 +1303,10 @@ def _normalize_llm_timeout(value: object) -> int:
 
 
 def llm_concurrency_from_config(config: object) -> int:
-    """Extract LLM concurrency from a config object, with safe fallback.
+    """从 config 对象提取 LLM 并发数，带有安全回退。
 
-    Works with both a full ``Config`` instance and a bare
-    ``types.SimpleNamespace`` (used by test stubs and hot-reload paths).
+    同时兼容完整的 ``Config`` 实例和裸
+    ``types.SimpleNamespace``（供测试桩和热重载路径使用）。
     """
     llm_section = getattr(config, "llm", None)
     raw = getattr(llm_section, "concurrency", DEFAULT_LLM_CONCURRENCY)
@@ -1327,7 +1314,7 @@ def llm_concurrency_from_config(config: object) -> int:
 
 
 def _normalize_pool_source_shares(value: object) -> dict[str, int]:
-    """Normalize scheduler pool source shares from TOML into positive ints."""
+    """将 TOML 中的调度器池来源份额规范化为正整数。"""
     if not isinstance(value, dict):
         return dict(_DEFAULT_POOL_SOURCE_SHARES)
 
@@ -1347,7 +1334,7 @@ def _normalize_pool_source_shares(value: object) -> dict[str, int]:
 
 
 def _normalize_extension_disconnect_grace(value: object) -> int:
-    """Normalize extension disconnect grace seconds into a positive int."""
+    """将扩展断连宽限期（秒）规范化为正整数。"""
     if isinstance(value, int | float):
         grace = int(value)
     elif isinstance(value, str):
@@ -1370,7 +1357,7 @@ def _normalize_scheduler_int(
     min_value: int,
     max_value: int | None = None,
 ) -> int:
-    """Normalize scheduler tuning values into bounded positive ints."""
+    """将调度器调优值规范化为有界正整数。"""
     if isinstance(value, int | float):
         normalized = int(value)
     elif isinstance(value, str):
@@ -1389,7 +1376,7 @@ def _normalize_scheduler_int(
 
 
 def _normalize_auto_update_allowed_remotes(value: object) -> list[str]:
-    """Normalize auto-update remote allowlist into non-empty string URLs."""
+    """将自动更新远程白名单规范化为非空字符串 URL 列表。"""
     if not isinstance(value, list):
         return list(_DEFAULT_AUTO_UPDATE_ALLOWED_REMOTES)
     remotes = [str(item).strip() for item in value if str(item).strip()]
@@ -1397,7 +1384,7 @@ def _normalize_auto_update_allowed_remotes(value: object) -> list[str]:
 
 
 def _collect_config_issues(config: Config) -> list[ConfigIssue]:
-    """Collect non-fatal config issues to display as guidance."""
+    """收集非致命配置问题，作为指引展示。"""
     issues: list[ConfigIssue] = []
 
     if config.api.auth.enabled and not config.api.auth.password_hash.strip():
@@ -1503,10 +1490,10 @@ def _collect_config_issues(config: Config) -> list[ConfigIssue]:
             )
         )
 
-    # openai_compatible without an explicit base_url is meaningless — it
-    # would just be ``openai`` with extra steps. Surface this so the user
-    # knows to fill ``[llm.openai_compatible].base_url`` (Groq:
-    # https://api.groq.com/openai/v1, vLLM: http://your-vllm:8000/v1, ...).
+    # openai_compatible 没有显式 base_url 是无意义的——
+    # 那只是多了几步的 ``openai``。在此提示用户填写
+    # ``[llm.openai_compatible].base_url``（Groq:
+    # https://api.groq.com/openai/v1, vLLM: http://your-vllm:8000/v1, ...）。
     if provider_name == "openai_compatible" and not config.llm.openai_compatible.base_url.strip():
         issues.append(
             ConfigIssue(
@@ -1545,19 +1532,19 @@ def load_config_with_diagnostics(
     *,
     ensure_default_file: bool = True,
 ) -> tuple[Config, ConfigDiagnostics]:
-    """Load configuration from TOML file(s).
+    """从 TOML 文件加载配置。
 
-    Resolution order:
-    1. Explicit path (if provided)
-    2. config.toml in project root
-    3. config.local.toml overrides (if exists)
-    4. Environment variable overrides
+    解析顺序：
+    1. 显式路径（若提供）
+    2. 项目根目录下的 config.toml
+    3. config.local.toml 覆盖（若存在）
+    4. 环境变量覆盖
 
     Args:
-        config_path: Optional explicit path to config file.
+        config_path: 可选的显式配置文件路径。
 
     Returns:
-        Populated Config instance with diagnostics.
+        填充好的 Config 实例及诊断信息。
     """
     diagnostics = ConfigDiagnostics()
     raw: dict[str, Any] = {}
@@ -1589,18 +1576,18 @@ def load_config_with_diagnostics(
 
 
 def load_config(config_path: str | Path | None = None) -> Config:
-    """Load configuration only, without diagnostics."""
+    """仅加载配置，不返回诊断信息。"""
     config, _ = load_config_with_diagnostics(config_path, ensure_default_file=False)
     return config
 
 
 def _auth_env_field_overrides() -> dict[str, bool]:
-    """Which renderable ``[api.auth]`` fields are currently env-overridden.
+    """当前被 env 覆盖的可渲染 ``[api.auth]`` 字段。
 
-    Maps each persisted field to whether an ``OPENBILICLAW_API_AUTH_*`` var
-    currently governs it (``PASSWORD`` and ``PASSWORD_HASH`` both feed
-    ``password_hash``). ``trusted_proxies`` / ``allowed_bearer_origins`` have no
-    env override (TOML-only) and so never appear here.
+    将每个持久化字段映射到当前是否有 ``OPENBILICLAW_API_AUTH_*`` 变量
+    管控它（``PASSWORD`` 和 ``PASSWORD_HASH`` 都注入
+    ``password_hash``）。``trusted_proxies`` / ``allowed_bearer_origins``
+    没有 env 覆盖（仅 TOML），因此从不出现在此。
     """
 
     def _set(name: str) -> bool:
@@ -1616,8 +1603,8 @@ def _auth_env_field_overrides() -> dict[str, bool]:
     }
 
 
-# Maps each ``config.local.toml`` ``[api.auth]`` key to the ``config.toml`` render
-# field it shadows (``password`` / ``password_hash`` both feed the credential).
+# 将每个 ``config.local.toml`` ``[api.auth]`` 键映射到它所遮蔽的
+# ``config.toml`` 渲染字段（``password`` / ``password_hash`` 都注入凭据）。
 _LOCAL_AUTH_KEY_TO_FIELD = {
     "password": "password_hash",
     "password_hash": "password_hash",
@@ -1631,22 +1618,20 @@ _LOCAL_AUTH_KEY_TO_FIELD = {
 
 
 def _auth_overridden_fields(*, consult_local: bool) -> set[str]:
-    """Render fields of ``[api.auth]`` governed by an override LAYER above
-    ``config.toml`` — environment variables OR ``config.local.toml`` (both win over
-    ``config.toml`` in ``load_config``).
+    """被 ``config.toml`` 之上的覆盖层（环境变量 OR ``config.local.toml``，
+    两者在 ``load_config`` 中都胜出）管控的 ``[api.auth]`` 渲染字段。
 
-    ``save_config`` must NOT bake the merged in-memory value of these fields into
-    ``config.toml``: that would persist the layer's value as a stale literal that
-    silently shifts the effective auth once the layer is removed (reviews r4#1 /
-    r9 / r10). Such a field is instead written from ``config.toml``'s own on-disk
-    value, or omitted (the layer keeps governing at runtime).
+    ``save_config`` 绝不能把这些字段的合并内存值烘焙进
+    ``config.toml``：那会作为陈旧字面值持久化该层的值，一旦移除该层
+    就会静默偏移生效的 auth（评审 r4#1 / r9 / r10）。此类字段应从
+    ``config.toml`` 自身的磁盘值写入，或省略（由层在运行时继续管控）。
 
-    Env vars apply to EVERY load, so env-governed fields always count. But
-    ``config.local.toml`` is merged ONLY when ``load_config`` runs with no explicit
-    path (the production / default-path case); ``load_config(explicit_path)`` reads
-    that file alone. So ``consult_local`` must be False for an explicit-path save to
-    an unrelated file, or we would preserve/omit fields based on a project-root
-    local layer that was never merged into the config being saved (review r11).
+    env 变量对每次加载都生效，因此 env 管控的字段始终计入。但
+    ``config.local.toml`` 仅在 ``load_config`` 无显式路径运行时合并
+    （生产 / 默认路径场景）；``load_config(explicit_path)`` 只读取
+    该文件本身。因此对不相关文件的显式路径保存，``consult_local``
+    必须为 False，否则会基于一个从未合并进当前保存配置的项目根
+    local 层来保留/省略字段（评审 r11）。
     """
     fields = {field for field, on in _auth_env_field_overrides().items() if on}
     if consult_local:
@@ -1658,7 +1643,7 @@ def _auth_overridden_fields(*, consult_local: bool) -> set[str]:
 
 
 def _read_on_disk_auth(path: Path) -> dict[str, Any]:
-    """Return the raw ``[api.auth]`` table currently persisted at ``path`` ({} if none)."""
+    """返回当前持久化在 ``path`` 的原始 ``[api.auth]`` 表（无则为 {}）。"""
     try:
         with path.open("rb") as handle:
             data = tomllib.load(handle)
@@ -1670,7 +1655,7 @@ def _read_on_disk_auth(path: Path) -> dict[str, Any]:
 
 
 def _read_on_disk_autostart(path: Path) -> dict[str, Any]:
-    """Return the raw ``[autostart]`` table currently persisted at ``path`` ({} if none)."""
+    """返回当前持久化在 ``path`` 的原始 ``[autostart]`` 表（无则为 {}）。"""
     try:
         with path.open("rb") as handle:
             data = tomllib.load(handle)
@@ -1683,32 +1668,28 @@ def _read_on_disk_autostart(path: Path) -> dict[str, Any]:
 def _api_auth_lines(
     config: Config, on_disk_auth: dict[str, Any] | None, *, consult_local: bool
 ) -> list[str]:
-    """Render the ``[api.auth]`` block, preserving on-disk credential provenance.
+    """渲染 ``[api.auth]`` 块，保留磁盘上的凭据溯源。
 
-    ``on_disk_auth`` is the raw ``[api.auth]`` table currently on disk (``None``
-    only when no file exists). Two preservation rules keep an unrelated write from
-    silently changing the effective auth:
+    ``on_disk_auth`` 是当前磁盘上的原始 ``[api.auth]`` 表（仅在无文件时
+    为 ``None``）。两条保留规则避免无关写入静默改变生效的 auth：
 
-    1. **Override-layer fields (reviews r4#1 / r9 / r10).** Any field governed by an
-       override LAYER above ``config.toml`` — an ``OPENBILICLAW_API_AUTH_*`` env var
-       OR a ``config.local.toml`` ``[api.auth]`` key (both win in ``load_config``) —
-       must NOT be re-rendered from the merged in-memory Config: that would bake the
-       layer's value into ``config.toml`` as a stale literal that shifts the trust
-       boundary / session lifetime once the layer is removed. Such a field is
-       written from ``config.toml``'s own on-disk value (coerced exactly as the
-       loader would, review r5#1) or omitted (falls back to default; the layer
-       keeps governing at runtime).
-    2. **Plaintext password convenience (review r8).** When the credential is NOT
-       layer-governed and the operator uses an on-disk plaintext ``password`` key
-       that the in-memory hash still verifies against, the credential is unchanged →
-       keep the plaintext line so the reconcile fingerprint basis stays ``pw:`` and
-       an unrelated save doesn't flip it to ``ph:`` and spuriously revoke remembered
-       sessions on restart.
+    1. **覆盖层字段（评审 r4#1 / r9 / r10）。** 任何被 ``config.toml`` 之上
+       的覆盖层——``OPENBILICLAW_API_AUTH_*`` env 变量或
+       ``config.local.toml`` ``[api.auth]`` 键（两者在 ``load_config`` 中均
+       胜出）——管控的字段，绝不能从合并后的内存 Config 重新渲染：那会
+       把该层的值烘焙进 ``config.toml`` 作为陈旧字面值，一旦移除该层就会
+       偏移信任边界 / 会话生命周期。此类字段应从 ``config.toml`` 自身的
+       磁盘值写入（与加载器强制转换方式一致，评审 r5#1），或省略（回退到
+       默认值；该层在运行时继续管控）。
+    2. **明文密码便利性（评审 r8）。** 当凭据未被层管控，且操作员使用
+       磁盘明文 ``password`` 键而内存 hash 仍能校验通过时，凭据未变更 →
+       保留明文行以使 reconcile 指纹基保持 ``pw:``，避免无关保存将其
+       翻转为 ``ph:`` 并在重启时错误地吊销记住的会话。
 
-    All writers (`save_config` from startup secret-gen, `PUT /api/config`, cookie
-    sync, admin, CLI) go through here, so the protection is central. (Layer-shadowed
-    writes that *intend* to change auth, e.g. the admin endpoint, additionally do an
-    effective-reload verify and refuse — see review r9.)
+    所有写入路径（启动 secret-gen 的 `save_config`、`PUT /api/config`、
+    cookie 同步、admin、CLI）都经过此处，因此保护是集中的。（意图变更
+    auth 的层遮蔽写入，例如 admin endpoint，还会额外做一次生效重载校验
+    并拒绝——见评审 r9。）
     """
     auth = config.api.auth
     overridden = _auth_overridden_fields(consult_local=consult_local)
@@ -1718,36 +1699,36 @@ def _api_auth_lines(
     def emit(field: str, mem_line: str, disk_repr: Callable[[Any], str]) -> None:
         if field in overridden:
             if field in disk:
-                # Re-render the base file's own value through the loader's coercion
-                # (review r5#1) — never persist the override-layer value.
+                # 通过加载器的强制转换重新渲染基础文件自身的值
+                # （评审 r5#1）——绝不持久化覆盖层的值。
                 lines.append(f"{field} = {disk_repr(disk[field])}")
-            # else: omit — base file has no value; falls back to default at load
+            # 否则：省略——基础文件无值；加载时回退到默认值
         else:
             lines.append(mem_line)
 
     emit("enabled", f"enabled = {_toml_bool(auth.enabled)}", lambda v: _toml_bool(_coerce_bool(v)))
-    # The password credential maps from env PASSWORD / _PASSWORD_HASH and the
-    # config.local `password` / `password_hash` keys onto the rendered field
-    # `password_hash`; _build_api_auth honors EITHER an on-disk plaintext `password`
-    # (hashed, preferred) OR `password_hash`.
+    # 密码凭据从 env PASSWORD / _PASSWORD_HASH 与 config.local 的
+    # `password` / `password_hash` 键映射到渲染字段
+    # `password_hash`；_build_api_auth 接受磁盘明文 `password`
+    # （哈希后，优先）或 `password_hash`。
     if "password_hash" in overridden:
-        # a layer governs the credential → preserve whichever on-disk key(s) the
-        # operator wrote in config.toml so removing the layer restores their own
-        # password instead of leaving `enabled = true` with no credential (r6#1).
+        # 某层管控凭据 → 保留操作员在 config.toml 中写入的磁盘键
+        # 以便移除该层后恢复其自己的密码，而不是留下 `enabled = true`
+        # 但无凭据（r6#1）。
         disk_pw = disk.get("password")
         if disk_pw is not None and str(disk_pw).strip():
             lines.append(f"password = {_toml_string(str(disk_pw))}")
         disk_hash = disk.get("password_hash")
         if disk_hash is not None and str(disk_hash).strip():
             lines.append(f"password_hash = {_toml_string(str(disk_hash))}")
-        # neither present → omit (no on-disk credential to preserve)
+        # 两者均无 → 省略（无磁盘凭据可保留）
     elif _hash_matches_plaintext(disk.get("password"), auth.password_hash):
-        # unchanged plaintext-backed credential → keep the plaintext line so the
-        # reconcile fingerprint basis stays "pw:"+plain across restarts (r8).
+        # 未变更的明文背书凭据 → 保留明文行以使 reconcile 指纹基
+        # 在跨重启时保持 "pw:"+plain（r8）。
         lines.append(f"password = {_toml_string(str(disk['password']))}")
     else:
-        # no on-disk plaintext, or it no longer matches (password was changed in
-        # memory, e.g. set-password) → persist the in-memory hash.
+        # 无磁盘明文，或明文已不匹配（密码在内存中被修改，例如
+        # set-password）→ 持久化内存 hash。
         lines.append(f"password_hash = {_toml_string(auth.password_hash)}")
     emit(
         "session_secret",
@@ -1764,8 +1745,8 @@ def _api_auth_lines(
         f"trust_loopback = {_toml_bool(auth.trust_loopback)}",
         lambda v: _toml_bool(_coerce_bool(v, default=True)),
     )
-    # These two have no env override but config.local.toml CAN shadow them, so they
-    # go through emit too (preserve the base file's list, or omit).
+    # 这两个字段没有 env 覆盖，但 config.local.toml 可以遮蔽它们，因此
+    # 也通过 emit 处理（保留基础文件的列表，或省略）。
     emit(
         "trusted_proxies",
         f"trusted_proxies = {_toml_str_list(auth.trusted_proxies)}",
@@ -1785,12 +1766,12 @@ def _autostart_lines(
     *,
     autostart_authoritative: bool,
 ) -> list[str]:
-    """Render ``[autostart]`` without clobbering the OS-registration intent.
+    """渲染 ``[autostart]``，不破坏 OS 注册意图。
 
-    Ordinary whole-file writes can hold a stale ``Config`` snapshot, so they preserve
-    the on-disk ``enabled`` value. Apply/CLI writers pass ``autostart_authoritative``
-    and become the only code paths allowed to change it. ``manage_ollama`` has no OS
-    side effect and is always rendered from memory.
+    普通全文件写入可能持有陈旧的 ``Config`` 快照，因此保留磁盘上的
+    ``enabled`` 值。Apply/CLI 写入器传入 ``autostart_authoritative``，
+    成为唯一允许修改它的代码路径。``manage_ollama`` 无 OS 副作用，
+    始终从内存渲染。
     """
     lines = ["[autostart]"]
     if autostart_authoritative:
@@ -1809,19 +1790,18 @@ def save_config(
     *,
     autostart_authoritative: bool = False,
 ) -> Path:
-    """Persist a Config dataclass to TOML."""
+    """将 Config dataclass 持久化为 TOML。"""
     path = Path(config_path) if config_path is not None else _default_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Capture the on-disk [api.auth] table so the renderer can preserve credential
-    # provenance: env-overridden fields (review r4#1) and an unchanged plaintext
-    # `password` convenience key (review r8). Read on every save (not just when
-    # env-managed) so a normal settings/cookie write can't drop a plaintext
-    # password and flip the reconcile fingerprint basis.
+    # 捕获磁盘上的 [api.auth] 表，以便渲染器保留凭据溯源：
+    # env 覆盖字段（评审 r4#1）和未变更明文 `password` 便利键
+    # （评审 r8）。每次保存都读取（非仅 env 管控时），以便普通
+    # 设置/cookie 写入不会丢失明文密码并翻转 reconcile 指纹基。
     on_disk_auth = _read_on_disk_auth(path) if path.exists() else None
     on_disk_autostart = _read_on_disk_autostart(path) if path.exists() else None
-    # config.local.toml is merged ONLY when load_config runs with no explicit path
-    # (production / default path). For a save to any other explicit file it was
-    # never merged, so its overrides must not gate this render (review r11).
+    # config.local.toml 仅在 load_config 无显式路径运行时合并
+    # （生产 / 默认路径）。保存到任何其他显式文件时它从未被合并，
+    # 因此其覆盖不应管控此次渲染（评审 r11）。
     consult_local = config_path is None or path.resolve() == _default_config_path().resolve()
     path.write_text(
         _render_config_toml(
@@ -1844,7 +1824,7 @@ def _render_config_toml(
     autostart_authoritative: bool = False,
     consult_local: bool = False,
 ) -> str:
-    """Render a Config dataclass into TOML."""
+    """将 Config dataclass 渲染为 TOML。"""
     lines = [
         "[general]",
         f"language = {_toml_string(config.language)}",
@@ -1883,7 +1863,7 @@ def _render_config_toml(
             f"fallback_enabled = {_toml_bool(config.llm.embedding.fallback_enabled)}",
             f"fallback_provider = {_toml_string(config.llm.embedding.fallback_provider)}",
             "",
-            "# Per-module LLM overrides (empty = use global default)",
+            "# 按模块 LLM 覆盖（留空 = 使用全局默认）",
             "[llm.soul]",
             f"provider = {_toml_string(config.llm.soul.provider)}",
             f"model = {_toml_string(config.llm.soul.model)}",
@@ -2058,10 +2038,10 @@ def _render_config_toml(
             f"unmanaged_max_age_days = {config.logging.unmanaged_max_age_days}",
             "",
             "[soul.preference]",
-            "# v0.3.x event-satisfaction signal. When true, preference",
-            "# analysis ignores passive negative events such as quick_exit.",
-            "# Explicit dislike feedback is retained as disliked_topics",
-            "# evidence instead of being learned as a positive interest.",
+            "# v0.3.x 事件满意度信号。为 true 时，偏好",
+            "# 分析忽略被动负向事件如 quick_exit。",
+            "# 显式不喜欢反馈仍保留为 disliked_topics",
+            "# 证据，而非被学习为正向兴趣。",
             "satisfaction_filter_enabled = "
             f"{_toml_bool(config.soul.preference.satisfaction_filter_enabled)}",
             "",
@@ -2071,7 +2051,7 @@ def _render_config_toml(
 
 
 def _render_provider_section(name: str, provider: LLMProviderConfig) -> list[str]:
-    """Render one provider subsection."""
+    """渲染单个 provider 子段。"""
     lines = [f"[llm.{name}]"]
     lines.append(f"api_key = {_toml_string(provider.api_key)}")
     lines.append(f"model = {_toml_string(provider.model)}")
@@ -2089,23 +2069,23 @@ def _render_provider_section(name: str, provider: LLMProviderConfig) -> list[str
 
 
 def _toml_string(value: str) -> str:
-    """Render a TOML string literal."""
+    """渲染 TOML 字符串字面值。"""
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
 def _toml_bool(value: bool) -> str:
-    """Render a TOML boolean literal."""
+    """渲染 TOML 布尔字面值。"""
     return "true" if value else "false"
 
 
 def _toml_str_list(values: list[str]) -> str:
-    """Render a TOML array of strings."""
+    """渲染 TOML 字符串数组。"""
     return "[" + ", ".join(_toml_string(item) for item in values) + "]"
 
 
 def validate_runtime_config(config: Config) -> None:
-    """Raise ConfigError when runtime-critical config is invalid."""
+    """运行时关键配置非法时抛出 ConfigError。"""
     issues = _collect_config_issues(config)
     if issues:
         issue = issues[0]

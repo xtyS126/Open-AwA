@@ -1,15 +1,13 @@
-"""Filter helpers for the inferred_satisfaction signal.
+"""inferred_satisfaction 信号的过滤辅助函数。
 
-The classifier in ``openbiliclaw.sources.event_format`` tags every event
-at ingest time. Downstream consumers (preference analyzer, awareness
-analyzer, ...) call ``filter_events_by_satisfaction`` to drop rows the
-classifier marked as quick-exit or explicit-negative before feeding the
-LLM.
+``openbiliclaw.sources.event_format`` 里的分类器在摄入时给每条
+事件打标签。下游消费者（preference 分析器、awareness 分析器……）
+调用 ``filter_events_by_satisfaction`` 把分类器标记为快速退出或
+显式负向的行丢掉，再喂给 LLM。
 
-The aliasing rule: requesting ``"unknown"`` also matches rows whose
-``inferred_satisfaction`` is missing or ``None``. This lets callers opt
-in to unclassified legacy events (pre-migration rows) without writing
-the NULL branch by hand.
+别名规则：请求 ``"unknown"`` 也匹配 ``inferred_satisfaction``
+缺失或为 ``None`` 的行。这让调用者可以选择未分类的旧事件
+（迁移前的行），而无需手写 NULL 分支。
 """
 
 from __future__ import annotations
@@ -25,14 +23,14 @@ def filter_events_by_satisfaction(
     *,
     modes: frozenset[str],
 ) -> list[dict[str, Any]]:
-    """Return only the events whose ``inferred_satisfaction`` is in ``modes``.
+    """只返回 ``inferred_satisfaction`` 在 ``modes`` 中的事件。
 
-    Order is preserved. An empty ``modes`` set returns ``[]`` (caller
-    explicitly asked for nothing — do not silently fall back to "all").
+    顺序保留。空的 ``modes`` 集合返回 ``[]``（调用者显式什么
+    都不要 —— 不要静默回退到「全部」）。
 
-    A row whose ``inferred_satisfaction`` is ``None`` or missing is
-    treated as ``"unknown"`` so legacy rows survive when the caller
-    opts into them with ``modes={"positive", "unknown"}``.
+    ``inferred_satisfaction`` 为 ``None`` 或缺失的行被视作
+    ``"unknown"``，这样当调用者用
+    ``modes={"positive", "unknown"}`` 选中时，旧行能存活。
     """
     if not modes:
         return []

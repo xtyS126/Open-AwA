@@ -1,14 +1,12 @@
-"""Recency-weighted list of recent quick-exit / negative titles.
+"""近期快速退出 / 负向标题的近度加权列表。
 
-Downstream consumer of the v0.3.x ``inferred_satisfaction`` signal.
-Used by ``discovery/engine.py``'s eval-batch call site to anchor the
-LLM evaluator on concrete examples of content the user actually
-disliked, so candidates resembling clickbait or course-pitch language
-get downscored without depending on hand-curated regex blocklists.
+v0.3.x ``inferred_satisfaction`` 信号的下游消费者。被
+``discovery/engine.py`` 的 eval-batch 调用点用于把 LLM 评估器
+锚定到用户实际不喜欢的具体示例上，这样类似标题党或课程推销
+话术的候选项会被降权，而无需依赖手工维护的正则黑名单。
 
-Pure, deterministic, no LLM calls. Storage failures are swallowed —
-the eval-batch must still run when the negative store is empty or
-unavailable.
+纯函数、确定性、无 LLM 调用。存储失败被吞掉 —— 当负向存储
+为空或不可用时，eval-batch 仍必须能跑。
 """
 
 from __future__ import annotations
@@ -28,19 +26,16 @@ MAX_LIMIT = 16
 DEFAULT_HALF_LIFE_DAYS = 14
 TITLE_MAX_CHARS = 80
 
-# How many candidate rows to pull from the event store before recency
-# weighting / dedup. Larger than ``limit`` so the scorer has material
-# to discard.
+# 在近度加权 / 去重之前从事件存储拉取的候选行数。比 ``limit``
+# 大，让评分器有素材可以丢弃。
 _FETCH_LIMIT = 200
 
-# Normalised prefix length used for dedup. 20 chars is enough to catch
-# clickbait variants of the same hook without collapsing genuinely
-# different titles.
+# 用于去重的归一化前缀长度。20 字符足以捕获同一钩子的标题党
+# 变体，又不会把真正不同的标题折叠到一起。
 _DEDUPE_PREFIX_CHARS = 20
 
-# Characters stripped from titles before computing the dedup key. Hash /
-# emoji / common punctuation noise is removed; alpha-numeric and CJK
-# characters are kept verbatim.
+# 计算去重键前从标题里剥离的字符。哈希 / emoji / 常见标点噪音
+# 被移除；字母数字和 CJK 字符原样保留。
 _DEDUPE_STRIP_PATTERN = re.compile(r"[\s#​]+|[!！?？.。,，~～\-—•·]+")
 
 
@@ -60,11 +55,11 @@ def recent_negative_exemplars(
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Return up to ``limit`` recent negative exemplars, recency-weighted.
+    """返回最多 ``limit`` 条近度加权的近期负向示例。
 
-    Each record carries ``{"title": str, "reason": str, "age_days": int}``.
-    Storage exceptions are swallowed and yield an empty list — the
-    consumer (eval-batch) must always run.
+    每条记录携带 ``{"title": str, "reason": str, "age_days": int}``。
+    存储异常被吞掉并返回空列表 —— 消费者（eval-batch）必须
+    始终能跑。
     """
     capped_limit = min(int(limit), MAX_LIMIT)
     if capped_limit <= 0:
@@ -94,16 +89,16 @@ def recent_negative_exemplars(
                     "title": _truncate_title(title),
                     "reason": str(row.get("satisfaction_reason") or "negative"),
                     "age_days": int(round(age_days)),
-                    # Carry the raw weight + raw title for dedup decisions;
-                    # both are stripped from the returned record below.
+                    # 携带原始权重 + 原始标题用于去重决策；
+                    # 两者都在下面返回的记录里被剥离。
                     "_raw_title": title,
                     "_weight": weight,
                 },
             )
         )
 
-    # Sort by weight descending (newer wins); stable so ties prefer the
-    # first row from the event store (already DESC by created_at).
+    # 按权重降序排序（更新的胜出）；稳定排序让平局优先选择
+    # 事件存储里的第一行（已按 created_at DESC 排序）。
     scored.sort(key=lambda pair: pair[0], reverse=True)
 
     deduped: list[dict[str, Any]] = []
@@ -128,7 +123,7 @@ def recent_negative_exemplars(
 
 
 def _event_age_days(row: dict[str, Any], now: datetime) -> float:
-    """Compute age in days from a row's ``created_at`` or fallback fields."""
+    """从行的 ``created_at`` 或回退字段计算以天为单位的年龄。"""
     raw = row.get("created_at") or row.get("timestamp")
     if isinstance(raw, str) and raw:
         try:
@@ -150,7 +145,7 @@ def _truncate_title(title: str) -> str:
 
 
 def _normalize_prefix(title: str) -> str:
-    """Compute a dedup key. Strips whitespace, hashtags, punctuation."""
+    """计算去重键。剥离空白、井号、标点。"""
     lowered = title.lower()
     stripped = _DEDUPE_STRIP_PATTERN.sub("", lowered)
     return stripped[:_DEDUPE_PREFIX_CHARS]

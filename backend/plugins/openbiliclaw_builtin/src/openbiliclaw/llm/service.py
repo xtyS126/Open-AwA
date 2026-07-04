@@ -1,4 +1,4 @@
-"""Shared service facade for prompt assembly and LLM execution."""
+"""prompt 组装与 LLM 执行的共享服务 facade。"""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class SupportsComplete(Protocol):
-    """Protocol for providers or registries with a complete method."""
+    """带 complete 方法的 provider 或 registry 的 Protocol。"""
 
     @property
     def default_provider(self) -> str: ...
@@ -59,15 +59,15 @@ class SupportsComplete(Protocol):
 
 
 class LLMServiceError(Exception):
-    """Base exception for service-layer LLM errors."""
+    """服务层 LLM 错误的基类异常。"""
 
 
 class LLMResponseContentError(LLMServiceError):
-    """Raised when an LLM call returns empty content."""
+    """当 LLM 调用返回空内容时抛出。"""
 
 
 class LLMProviderExecutionError(LLMServiceError):
-    """Raised when the underlying provider or registry call fails."""
+    """当底层 provider 或 registry 调用失败时抛出。"""
 
 
 _RATE_LIMIT_ERROR_MARKERS = (
@@ -89,11 +89,10 @@ _RATE_LIMIT_ERROR_MARKERS = (
 
 
 def is_llm_rate_limit_error(exc: BaseException) -> bool:
-    """Return True when an exception chain represents provider backoff.
+    """当异常链代表 provider 限流退避时返回 True。
 
-    Batch callers use this to avoid exploding one provider-limit event
-    into N doomed per-item calls while the registry is already cooling
-    down.
+    批量调用方用它来避免在 registry 已经在退避时，把一次 provider 限流
+    事件炸成 N 个注定失败的逐项调用。
     """
     seen: set[int] = set()
     current: BaseException | None = exc
@@ -110,7 +109,7 @@ def is_llm_rate_limit_error(exc: BaseException) -> bool:
 
 @dataclass(frozen=True)
 class ModuleOverride:
-    """Per-module LLM route override."""
+    """按模块覆盖的 LLM 路由配置。"""
 
     provider: str = ""
     model: str = ""
@@ -120,7 +119,7 @@ _MODULE_OVERRIDE_BUCKETS = ("soul", "discovery", "recommendation", "evaluation")
 
 
 def module_overrides_from_config(config: object) -> dict[str, ModuleOverride]:
-    """Build normalized module LLM overrides from ``Config.llm`` blocks."""
+    """从 ``Config.llm`` 各分块构建规范化的模块 LLM 覆盖配置。"""
     llm_config = getattr(config, "llm", None)
     if llm_config is None:
         return {}
@@ -138,15 +137,13 @@ def module_overrides_from_config(config: object) -> dict[str, ModuleOverride]:
 
 
 class PrioritySemaphore:
-    """Asyncio semaphore that serves waiters in priority order.
+    """按优先级顺序服务等待者的 asyncio 信号量。
 
-    Lower priority numbers go first (1 = highest). Within the same
-    priority bucket, FIFO is preserved via a monotonically increasing
-    sequence counter. The semaphore takes effect only when there is
-    contention — if the slot is free the caller acquires immediately.
+    优先级数字越小越先获取（1 = 最高）。同一优先级桶内，通过单调递增的
+    序列计数器保持 FIFO。信号量仅在有竞争时生效 —— 如果槽位空闲，调用
+    方立即获取。
 
-    Concurrency is bounded by ``capacity``: only ``capacity`` callers
-    may hold a slot at once.
+    并发受 ``capacity`` 限制：同时只有 ``capacity`` 个调用方能持有槽位。
     """
 
     def __init__(self, capacity: int = 1) -> None:
@@ -154,8 +151,8 @@ class PrioritySemaphore:
             raise ValueError("capacity must be >= 1")
         self._capacity = capacity
         self._in_flight = 0
-        # Heap entries: (priority, sequence, future). The sequence
-        # counter breaks ties so the heap stays FIFO within a bucket.
+        # 堆条目：(priority, sequence, future)。序列计数器打破平局，
+        # 让堆在同一桶内保持 FIFO。
         self._waiters: list[tuple[int, int, asyncio.Future[None]]] = []
         self._counter = itertools.count()
 
@@ -169,12 +166,11 @@ class PrioritySemaphore:
         try:
             await fut
         except asyncio.CancelledError:
-            # Drop ourselves from the heap if we hadn't been woken yet.
+            # 如果还没被唤醒，把自己从堆里丢掉。
             self._waiters = [entry for entry in self._waiters if entry[2] is not fut]
             heapq.heapify(self._waiters)
-            # If the slot was already handed to us before the cancel
-            # propagated, hand it on to the next waiter so the queue
-            # doesn't deadlock.
+            # 如果取消传播之前槽位已经交给我们，把它传给下一个等待者，
+            # 避免队列死锁。
             if fut.done() and not fut.cancelled():
                 self._release_one()
             raise
@@ -185,8 +181,7 @@ class PrioritySemaphore:
         self._release_one()
 
     def _release_one(self) -> None:
-        # Hand the slot to the highest-priority waiter, or just decrement
-        # the in-flight count if no one is waiting.
+        # 把槽位交给最高优先级的等待者；若无人等待则只递减在飞计数。
         while self._waiters:
             _, _, fut = heapq.heappop(self._waiters)
             if not fut.done():
@@ -204,7 +199,7 @@ class PrioritySemaphore:
 
 
 def _coerce_concurrency(value: object) -> int:
-    """Return a positive LLM concurrency value, falling back to the default."""
+    """返回一个正数的 LLM 并发值，否则回退到默认值。"""
     if isinstance(value, bool):
         return DEFAULT_LLM_CONCURRENCY
     if isinstance(value, int | float):
@@ -225,17 +220,15 @@ def _build_priority_semaphore(capacity: int = DEFAULT_LLM_CONCURRENCY) -> Priori
 
 @dataclass
 class LLMService:
-    """Facade that assembles prompts and delegates calls to the registry."""
+    """组装 prompt 并把调用委托给 registry 的 facade。"""
 
-    # v0.3.63+: caller-tag → priority map. Lower number wins. Resolved
-    # by longest-prefix match against the ``caller`` tag passed to
-    # ``complete_with_core_memory``. Untagged or unmatched callers fall
-    # through to ``_DEFAULT_PRIORITY``. The intent: when the system is
-    # under load, popup-visible work (write_expression, evaluate_batch
-    # for the active discovery batch) gets the next LLM slot before
-    # background bulk scoring (delight_score) or cold-path soul/xhs
-    # analysis. Without this, a long delight-scoring sweep could starve
-    # the user-visible expression backfill for minutes.
+    # v0.3.63+: 调用方标签 → 优先级映射。数字越小越优先。通过对传给
+    # ``complete_with_core_memory`` 的 ``caller`` 标签做最长前缀匹配来
+    # 解析。未打标签或未匹配的调用方回落到 ``_DEFAULT_PRIORITY``。意图：
+    # 当系统处于负载下，弹窗可见的任务（write_expression、活跃 discovery
+    # 批次的 evaluate_batch）应先于后台批量打分（delight_score）或冷路径
+    # 的 soul/xhs 分析获得下一个 LLM 槽位。否则一次漫长的 delight 打分
+    # 扫描可能让用户可见的表达回填饿死几分钟。
     _PRIORITY_MAP: ClassVar[dict[str, int]] = {
         "recommendation.write_expression": 1,
         "discovery.evaluate_batch": 1,
@@ -262,16 +255,14 @@ class LLMService:
 
     registry: SupportsComplete
     memory: MemoryManager
-    # v0.3.26+: optional usage ledger sink. When supplied, every
-    # successful LLM response is written to the ``llm_usage`` table so
-    # ``openbiliclaw cost`` can report daily spend. Default None
-    # preserves prior behaviour for tests / standalone callers that
-    # don't care about cost tracking.
+    # v0.3.26+: 可选的 usage 账本写入端。提供后，每次成功的 LLM 响应都会
+    # 写入 ``llm_usage`` 表，``openbiliclaw cost`` 即可按日报告花费。
+    # 默认 None 保留测试/独立调用方先前不关心成本追踪时的行为。
     usage_recorder: object | None = None
     module_overrides: Mapping[str, ModuleOverride] = field(default_factory=dict)
     concurrency: int = DEFAULT_LLM_CONCURRENCY
-    # v0.3.63+: lazy-initialised priority gate. ``init=False`` keeps the
-    # semaphore private while ``concurrency`` remains configurable.
+    # v0.3.63+: 懒初始化的优先级闸门。``init=False`` 让信号量保持私有，
+    # 同时 ``concurrency`` 仍然可配置。
     _priority_sem: PrioritySemaphore = field(init=False, repr=False)
     _logged_unknown_override_keys: set[tuple[str, str]] = field(
         default_factory=set, init=False, repr=False
@@ -283,15 +274,15 @@ class LLMService:
 
     @classmethod
     def _resolve_priority(cls, caller: str) -> int:
-        """Longest-prefix match of ``caller`` against ``_PRIORITY_MAP``.
+        """对 ``caller`` 与 ``_PRIORITY_MAP`` 做最长前缀匹配。
 
-        ``"recommendation.write_expression"`` matches exactly, while
-        ``"soul.preference"`` matches the ``"soul"`` prefix. Unknown
-        callers (or empty tag) fall through to ``_DEFAULT_PRIORITY``.
+        ``"recommendation.write_expression"`` 完全匹配，而
+        ``"soul.preference"`` 匹配 ``"soul"`` 前缀。未知调用方（或空标签）
+        回落到 ``_DEFAULT_PRIORITY``。
         """
         if not caller:
             return cls._DEFAULT_PRIORITY
-        best: tuple[int, int] | None = None  # (prefix length, priority)
+        best: tuple[int, int] | None = None  # (前缀长度, 优先级)
         for prefix, priority in cls._PRIORITY_MAP.items():
             if caller == prefix or caller.startswith(prefix + "."):
                 length = len(prefix)
@@ -301,7 +292,7 @@ class LLMService:
 
     @classmethod
     def _route_bucket_for_caller(cls, caller: str) -> str | None:
-        """Map a concrete caller tag to a module override bucket."""
+        """把具体 caller 标签映射到模块覆盖桶。"""
         tag = caller.strip()
         if not tag:
             return None
@@ -360,25 +351,22 @@ class LLMService:
         bypass_semaphore: bool = False,
         inject_core_memory: bool = True,
     ) -> LLMResponse:
-        """Execute a task with automatically injected core memory context.
+        """执行任务并自动注入 core memory 上下文。
 
-        ``caller`` is an optional free-form tag (e.g. ``"soul.preference"``,
-        ``"discovery.eval"``) attached to the usage row so the ``cost``
-        report can break spend down by module.
+        ``caller`` 是可选的自由格式标签（如 ``"soul.preference"``、
+        ``"discovery.eval"``），附加到 usage 行上，``cost`` 报告即可按模块
+        拆分花费。
 
-        ``reasoning_effort`` (v0.3.51+) lets a caller force-disable the
-        provider's thinking mode for tasks that don't benefit from it
-        (structured eval / classify / write-expression). ``None`` keeps
-        the provider default; ``""`` explicitly disables for this call.
+        ``reasoning_effort``（v0.3.51+）让调用方为不会从思考中受益的任务
+        （结构化 eval / classify / write-expression）强制禁用 provider 的
+        思考模式。``None`` 保留 provider 默认；``""`` 表示此次调用显式禁用。
 
-        ``bypass_semaphore`` (v0.3.64+) skips the global concurrency
-        gate entirely. Use for user-initiated interactive requests
-        (e.g. chat dialogue) that must never queue behind background work.
+        ``bypass_semaphore``（v0.3.64+）完全跳过全局并发闸门。用于用户
+        发起的交互式请求（如聊天对话），这些请求绝不能排在后台任务之后。
 
-        ``inject_core_memory`` lets hot-path evaluators opt out when
-        they already pass a task-specific structured profile in
-        ``user_input``. This keeps provider-side prompt-cache prefixes
-        stable without changing the information available to the task.
+        ``inject_core_memory`` 让热路径评估器在已经在 ``user_input`` 中
+        传入任务专属结构化画像时选择退出。这样可在不改变任务可用信息的
+        前提下，保持 provider 端 prompt-cache 前缀稳定。
         """
         core_memory_block = ""
         if inject_core_memory and self.memory is not None:
@@ -426,9 +414,8 @@ class LLMService:
             raise LLMProviderExecutionError(str(exc)) from exc
         if not response.content.strip():
             raise LLMResponseContentError("LLM returned an empty response.")
-        # Best-effort usage ledger write. The recorder swallows its own
-        # exceptions so a billing-table hiccup never affects the LLM
-        # response that just succeeded.
+        # 尽力而为的 usage 账本写入。recorder 自己吞掉异常，这样账单表
+        # 出问题不会影响刚刚成功的 LLM 响应。
         recorder = self.usage_recorder
         if recorder is not None:
             record_fn = getattr(recorder, "record", None)
@@ -449,13 +436,12 @@ class LLMService:
         reasoning_effort: str | None = None,
         inject_core_memory: bool = True,
     ) -> LLMResponse:
-        """Execute a JSON-mode task with core memory injection.
+        """执行带 core memory 注入的 JSON 模式任务。
 
-        ``reasoning_effort`` (v0.3.51+): pass ``""`` to disable the
-        provider's thinking mode for this call. Recommended for
-        structured tasks (eval / classify / write-expression) that
-        don't benefit from chain-of-thought — disabling it on
-        DeepSeek-V4 cuts a 30-item batch from ~10 min to ~30s.
+        ``reasoning_effort``（v0.3.51+）：传 ``""`` 为此次调用禁用 provider
+        的思考模式。推荐用于不会从思维链中受益的结构化任务
+        （eval / classify / write-expression）—— 在 DeepSeek-V4 上禁用可把
+        30 项批量从 ~10 min 降到 ~30s。
         """
         return await self.complete_with_core_memory(
             system_instruction=system_instruction,
@@ -470,7 +456,7 @@ class LLMService:
         )
 
     def supports_image_input(self, caller: str = "discovery.evaluate_batch") -> bool:
-        """Best-effort check for OpenAI-compatible vision-capable routes."""
+        """尽力检查 OpenAI 兼容的视觉能力路由。"""
         routed = self._resolve_module_override(caller)
         provider_name = (
             routed[0] if routed is not None else self.registry.default_provider
@@ -520,7 +506,7 @@ class LLMService:
         reasoning_effort: str | None = None,
         inject_core_memory: bool = True,
     ) -> LLMResponse:
-        """Execute a JSON-mode task with user text plus image inputs."""
+        """执行带用户文本和图像输入的 JSON 模式任务。"""
         core_memory_block = ""
         if inject_core_memory and self.memory is not None:
             with suppress(Exception):
@@ -603,15 +589,13 @@ class LLMService:
         caller: str = "",
         bypass_semaphore: bool = False,
     ) -> LLMResponse:
-        """Execute a completion that may include tool/function calls.
+        """执行可能包含工具/函数调用的补全。
 
-        The LLM is given a set of tool definitions.  If it decides to call
-        a tool, the response will have ``tool_calls`` populated.  Otherwise
-        ``content`` will contain the text reply.
+        LLM 会收到一组工具定义。如果它决定调用工具，响应里会填好
+        ``tool_calls``；否则 ``content`` 中是文本回复。
 
-        This method uses JSON mode under the hood: the tools are serialised
-        into the system prompt and the model is asked to return a JSON
-        wrapper with either ``reply`` or ``tool_call`` keys.
+        本方法底层使用 JSON 模式：工具被序列化进 system prompt，模型被
+        要求返回带 ``reply`` 或 ``tool_call`` 键的 JSON 包装。
         """
         tools_desc = "\n".join(f"- {t['name']}: {t.get('description', '')}" for t in tools)
         tool_names = [t["name"] for t in tools]
@@ -636,7 +620,7 @@ class LLMService:
             bypass_semaphore=bypass_semaphore,
         )
 
-        # Try to parse tool calls from the response
+        # 尝试从响应里解析工具调用
         import json
 
         content = (response.content or "").strip()
@@ -649,7 +633,7 @@ class LLMService:
                         response.tool_calls = [call]
                         response.content = ""
             except (json.JSONDecodeError, TypeError):
-                pass  # Not valid JSON — treat as normal text reply
+                pass  # 不是合法 JSON —— 当作普通文本回复
 
         return response
 
@@ -660,7 +644,7 @@ class LLMService:
         history: list[dict[str, str]],
         caller: str = "",
     ) -> LLMResponse:
-        """Generate a Socratic dialogue reply using core memory context."""
+        """使用 core memory 上下文生成苏格拉底式对话回复。"""
         tone_profile = self._build_dialogue_tone_profile()
         preference_raw = self.memory.get_layer("preference").data
         source_mix = preference_layer_from_dict(preference_raw).source_platform_mix
@@ -680,7 +664,7 @@ class LLMService:
         )
 
     def _build_dialogue_tone_profile(self) -> ToneProfile:
-        """Infer tone profile for dialogue from persisted memory."""
+        """从持久化 memory 推断对话用的语气画像。"""
         soul_raw = self.memory.get_layer("soul").data
         preference_raw = self.memory.get_layer("preference").data
         profile = None

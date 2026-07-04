@@ -1,21 +1,21 @@
-"""Stable, quantized digest of the keyword-shaping profile fields (P1.2).
+"""keyword-shaping profile 字段的稳定量化摘要 (P1.2)。
 
-``profile_kw_digest`` decides WHEN the unified keyword cache is invalidated
-(see ``docs/plans/2026-06-14-discover-backpressure-refactor-design.md`` §8). It
-is **path-agnostic** — it hashes the *current* profile regardless of which path
-(chat / feedback event / 12h consolidation) changed it — and it is deliberately:
+``profile_kw_digest`` 决定统一关键词缓存何时失效
+(见 ``docs/plans/2026-06-14-discover-backpressure-refactor-design.md`` §8)。它是
+**与路径无关的** — 它对 *当前* profile 计算哈希,不关心是哪条路径
+(chat / feedback event / 12h consolidation) 修改了它 — 并且刻意如此设计:
 
-- **covering** the slow-moving fields that actually shape search keywords
-  (interests, dislikes, traits, values, drivers, phase, cognitive style, style);
-- **quantizing** interest / style weights into coarse buckets so per-event
-  weight drift does NOT churn the cache;
-- **excluding** high-churn / low-keyword-impact state (``recent_awareness``,
-  ``active_insights``) and per-tag timestamps (``first_seen`` / ``last_seen``),
-  which move constantly as the user browses but barely change search terms.
+- **覆盖**真正影响搜索关键词的慢变字段
+  (interests、dislikes、traits、values、drivers、phase、cognitive style、style);
+- **量化** interest / style 权重到粗糙的桶中,使单次事件的
+  权重漂移不会让缓存反复失效;
+- **排除**高变动 / 低关键词影响的状态 (``recent_awareness``、
+  ``active_insights``) 和按 tag 的时间戳 (``first_seen`` / ``last_seen``),
+  这些会随用户浏览不断变化但几乎不影响搜索词。
 
-The digest is NOT the freshness mechanism (generation always reads the live
-profile). It only proactively flushes stale ``pending`` keywords when the
-profile materially changes — see the spec for the full rationale.
+digest 不是新鲜度机制 (生成阶段始终读取 live profile)。它只在
+profile 发生实质性变化时主动 flush 陈旧的 ``pending`` 关键词 —
+完整理由见 spec。
 """
 
 from __future__ import annotations
@@ -27,13 +27,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from openbiliclaw.soul.profile import SoulProfile
 
-# Coarse bucket so a single feedback event nudging a weight by <0.1 collapses to
-# the same digest. 0.1 steps == the same granularity discovery already truncates
-# interests at.
+# 粗糙的桶,使单次 feedback 事件把权重挪动 <0.1 时折叠到
+# 同一个 digest。0.1 步长 == discovery 已经在截断 interests 时使用的
+# 同一粒度。
 _WEIGHT_BUCKET = 0.1
-# Cap the interests that feed the digest: the strongest interests dominate
-# keyword generation, so churn in the long tail below this cap must not flip the
-# digest. Generous enough to capture the meaningful head.
+# 限制参与 digest 的 interests 数量: 最强的 interests 主导
+# 关键词生成,因此低于此上限的长尾变动不应翻转 digest。
+# 上限足够宽松,可以捕获有意义的头部。
 _TOP_INTERESTS = 64
 
 
@@ -52,7 +52,7 @@ def _clean_sorted(values: object) -> list[str]:
 
 
 def profile_kw_digest(profile: SoulProfile) -> str:
-    """Return a short stable hex digest of the keyword-shaping profile fields."""
+    """返回 keyword-shaping profile 字段的短小稳定 hex digest。"""
     prefs = profile.preferences
     ranked = sorted(prefs.interests, key=lambda tag: float(tag.weight or 0.0), reverse=True)
     interests = sorted(

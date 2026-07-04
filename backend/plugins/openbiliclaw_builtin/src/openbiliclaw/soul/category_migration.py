@@ -1,4 +1,4 @@
-"""One-shot migration of free-form interest categories onto ``CATEGORY_VOCAB``."""
+"""将自由形式的兴趣类别一次性迁移到 ``CATEGORY_VOCAB``。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CategoryMigrationReport:
-    """Outcome of a category migration preview or apply run."""
+    """一次分类迁移预览或应用运行的结果。"""
 
     ran: bool = False
     dry_run: bool = False
@@ -39,7 +39,7 @@ class CategoryMigrationReport:
 
 
 class CategoryMigrator:
-    """Map all stored interest categories to the closed first-level taxonomy."""
+    """将所有已存储的兴趣类别映射到封闭的一级分类法。"""
 
     def __init__(
         self,
@@ -54,7 +54,7 @@ class CategoryMigrator:
         self._data_dir = Path(resolved_dir) if resolved_dir else None
 
     async def run(self, *, dry_run: bool, now: datetime | None = None) -> CategoryMigrationReport:
-        """Run a dry-run preview or apply the validated category mapping."""
+        """运行一次 dry-run 预览，或应用经过校验的分类映射。"""
         current = now or datetime.now()
         report = CategoryMigrationReport(
             ran=True,

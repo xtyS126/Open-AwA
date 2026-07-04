@@ -1,4 +1,4 @@
-"""Linux XDG desktop autostart manager."""
+"""Linux XDG 桌面自启管理器。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class LinuxXdgAutostartManager:
-    """Manage the user's XDG autostart ``.desktop`` entry."""
+    """管理用户的 XDG autostart ``.desktop`` 自启项。"""
 
     mechanism = "xdg_autostart"
 

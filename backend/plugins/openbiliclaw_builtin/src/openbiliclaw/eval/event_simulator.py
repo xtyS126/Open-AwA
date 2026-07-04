@@ -1,7 +1,7 @@
-"""EventSimulator — generate simulated behavioral events from a persona.
+"""EventSimulator — 从人格生成模拟行为事件。
 
-Given a ground truth OnionProfile, generates realistic B站 behavioral events
-(views, searches, likes, dislikes, dialogues) that such a user would produce.
+给定 ground truth OnionProfile，生成该用户在 B 站上会产生的真实行为事件
+（观看、搜索、点赞、点踩、对话）。
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ def build_event_simulation_prompt(
     persona: OnionProfile,
     event_count: int,
 ) -> list[dict[str, str]]:
-    """Build LLM prompt for generating simulated events from a persona."""
-    # Build a compact persona summary for the prompt
+    """构建用于从人格生成模拟事件的 LLM prompt。"""
+    # 为 prompt 构建紧凑的人格摘要
     persona_summary = persona.to_llm_context()
 
     system = f"""<task>
@@ -76,11 +76,11 @@ def build_event_simulation_prompt(
 
 
 class EventSimulator:
-    """Generate simulated behavioral events from a ground truth persona.
+    """从 ground truth 人格生成模拟行为事件。
 
-    Supports two backends:
-    - Claude Agent SDK (default): uses `run_event_agent()` from `agents.py`
-    - Direct LLM: pass an `llm` instance for unit testing
+    支持两种后端：
+    - Claude Agent SDK（默认）：使用 `agents.py` 中的 `run_event_agent()`
+    - 直接 LLM：传入 `llm` 实例用于单元测试
     """
 
     def __init__(self, llm: Any = None, *, use_agent_sdk: bool = True) -> None:
@@ -93,13 +93,13 @@ class EventSimulator:
         *,
         event_count: int = 100,
     ) -> list[dict[str, object]]:
-        """Generate simulated events matching the persona."""
+        """生成与人格匹配的模拟事件。"""
         if self._use_agent_sdk:
             from openbiliclaw.eval.agents import run_event_agent
 
             return await run_event_agent(persona, event_count=event_count)
 
-        # Fallback: direct LLM call
+        # 兜底方案：直接调用 LLM
         messages = build_event_simulation_prompt(persona, event_count)
         response: LLMResponse = await self._llm.complete(
             messages,
@@ -110,7 +110,7 @@ class EventSimulator:
         return self._parse_response(response.content)
 
     def _parse_response(self, content: str) -> list[dict[str, object]]:
-        """Parse LLM response into event list."""
+        """将 LLM 响应解析为事件列表。"""
         text = content.strip()
         if text.startswith("```"):
             text = text.strip("`")
@@ -119,7 +119,7 @@ class EventSimulator:
 
         data = json.loads(text)
 
-        # Handle both {"events": [...]} and bare [...]
+        # 同时兼容 {"events": [...]} 和裸数组 [...]
         if isinstance(data, dict):
             events = data.get("events", [])
         elif isinstance(data, list):
@@ -131,7 +131,7 @@ class EventSimulator:
         if not isinstance(events, list):
             return []
 
-        # Normalize and validate events
+        # 规范化并校验事件
         result: list[dict[str, object]] = []
         for event in events:
             if not isinstance(event, dict):
@@ -145,8 +145,8 @@ class EventSimulator:
                     "title": str(event.get("title", "")),
                     "url": str(event.get("url", "")),
                     "metadata": event.get("metadata", {}),
-                    # v0.3.23+: align eval simulator with the unified
-                    # event_format string contract. Was {}.
+                    # v0.3.23+：让 eval 模拟器与统一 event_format 字符串契约对齐。
+                    # 原先是 {}。
                     "context": event.get("context", ""),
                 }
             )

@@ -1,9 +1,9 @@
-"""Speculative Interest Lifecycle — proactive interest boundary exploration.
+"""猜测兴趣生命周期 —— 主动探索兴趣边界。
 
-Periodically generates speculative interest directions via LLM, tracks
-confirmation through user events, and promotes or rejects them with cooldown.
+周期性地通过 LLM 生成猜测兴趣方向，跟踪用户事件的确认情况，并在
+满足条件时晋升或拒绝（带冷却）。
 
-Lifecycle: Generate → Active → Promote (confirmed) / Reject + Cooldown (expired)
+生命周期：生成 → 活跃 → 晋升（已确认）/ 拒绝 + 冷却（已过期）
 """
 
 from __future__ import annotations
@@ -34,13 +34,13 @@ _DEFAULT_CHALLENGE_MAX_ACTIVE = 3
 
 
 # ---------------------------------------------------------------------------
-# Data model
+# 数据模型
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class SpeculativeSpecific:
-    """A narrow interest topic within a speculative domain."""
+    """猜测领域内的一个窄兴趣话题。"""
 
     name: str = ""
     confirmation_count: int = 0
@@ -64,7 +64,7 @@ class SpeculativeSpecific:
 
 @dataclass
 class SpeculativeInterest:
-    """A speculated interest direction (domain) with optional specifics."""
+    """一个猜测的兴趣方向（领域），可附带窄兴趣。"""
 
     domain: str = ""
     category: str = ""
@@ -138,7 +138,7 @@ class SpeculativeInterest:
 
 @dataclass
 class CooldownEntry:
-    """A rejected speculation that should not be re-guessed for a while."""
+    """一条被拒绝的猜测，短期内不应再被猜。"""
 
     domain: str = ""
     category: str = ""
@@ -165,7 +165,7 @@ class CooldownEntry:
 
 @dataclass
 class SpeculativeState:
-    """Container for all speculative interest lifecycle state."""
+    """所有猜测兴趣生命周期的状态容器。"""
 
     active: list[SpeculativeInterest] = field(default_factory=list)
     cooldown: list[CooldownEntry] = field(default_factory=list)
@@ -203,7 +203,7 @@ class SpeculativeState:
 
 @dataclass
 class SpeculatorTickResult:
-    """Summary of what happened during a speculator tick."""
+    """一次 speculator tick 的摘要。"""
 
     generated: list[SpeculativeInterest] = field(default_factory=list)
     promoted: list[SpeculativeInterest] = field(default_factory=list)
@@ -212,13 +212,13 @@ class SpeculatorTickResult:
 
 
 # ---------------------------------------------------------------------------
-# Observation (keyword matching, no LLM)
+# 观测（关键词匹配，不调用 LLM）
 # ---------------------------------------------------------------------------
 
 
 def _tokenize(text: str) -> set[str]:
-    """Extract meaningful tokens from text for matching."""
-    # Split on common delimiters, keep tokens >= 2 chars
+    """从文本中抽取有意义的 token 用于匹配。"""
+    # 按常见分隔符切分，保留长度 >= 2 的 token
     tokens: set[str] = set()
     for part in text.replace("·", " ").replace("、", " ").replace("/", " ").split():
         cleaned = part.strip().lower()
@@ -228,22 +228,21 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _split_chinese_keywords(text: str) -> list[str]:
-    """Split Chinese text into keyword segments by common delimiters."""
+    """按常见分隔符把中文文本切成关键词片段。"""
     import re
 
-    # Split on conjunctions, punctuation, and particles
+    # 按连词、标点、助词切分
     parts = re.split(r"[与和·、/\s及]+", text)
     return [p.strip() for p in parts if len(p.strip()) >= 2]
 
 
 def _chinese_bigrams(text: str) -> set[str]:
-    """Extract distinct 2-char bigrams from continuous Chinese runs.
+    """从连续中文片段中抽取去重的 2 字 bigram。
 
-    For LLM-generated probe domains like ``"AI图像生成工作流深度拆解"`` the
-    delimiter-based splits + whitespace-tokenization both fail (no
-    delimiters, the entire 11-char run is one token). Bigrams give the
-    matcher enough granularity to confirm probes against real video
-    titles like "ComfyUI图像生成入门" (overlaps 图像, 像生, 生成).
+    对于 LLM 生成的 probe domain，例如 ``"AI图像生成工作流深度拆解"``，
+    基于分隔符的切分 + 空白 token 化都会失败（没有分隔符，整段 11 字
+    是一个 token）。bigram 让 matcher 有足够粒度去对照真实视频标题
+    确认 probe，例如 "ComfyUI图像生成入门"（重叠 图像、像生、生成）。
     """
     import re
 
@@ -257,7 +256,7 @@ def _chinese_bigrams(text: str) -> set[str]:
 
 
 def _build_event_text(event: dict[str, Any]) -> str:
-    """Extract searchable text from an event."""
+    """从事件中抽取可搜索的文本。"""
     title = str(event.get("title", "")).lower()
     tags = str(event.get("tags", "")).lower()
     category = str(event.get("category", "")).lower()
@@ -265,7 +264,7 @@ def _build_event_text(event: dict[str, Any]) -> str:
 
 
 def _text_matches_keywords(event_text: str, name: str, category: str = "") -> bool:
-    """Check if event_text matches a name/category via substring or token overlap."""
+    """通过子串或 token 重叠检查 event_text 是否匹配 name/category。"""
     name_lower = name.lower()
     cat_lower = category.lower()
 
@@ -283,13 +282,12 @@ def _text_matches_keywords(event_text: str, name: str, category: str = "") -> bo
     if spec_tokens and len(spec_tokens & event_tokens) >= 2:
         return True
 
-    # Chinese bigram fallback for long composite phrases that delimiter-
-    # splits and whitespace-tokenization cannot break apart. Require a
-    # name-side bigram pool of at least 4 distinct bigrams (i.e. ≥5-char
-    # Chinese run) to guard against over-matching short generic names,
-    # and ≥2 overlapping bigrams to count as a hit. With
-    # ``confirmation_threshold=3`` upstream, two stray bigram hits across
-    # three unrelated events still won't promote a probe.
+    # 中文 bigram 兜底，处理分隔符切分和空白 token 化都无法拆开的
+    # 长复合短语。要求 name 一侧的 bigram 池至少有 4 个独立 bigram
+    # （即 ≥5 字中文片段），以防止对短通用名过度匹配；并要求 ≥2 个
+    # 重叠 bigram 才算命中。在上游 ``confirmation_threshold=3`` 的
+    # 约束下，三个不相关事件里出现两次偶发 bigram 命中也不会让 probe
+    # 晋升。
     name_bigrams = _chinese_bigrams(name) | _chinese_bigrams(category)
     if len(name_bigrams) < 4:
         return False
@@ -300,7 +298,7 @@ def _event_matches_speculation(
     event: dict[str, Any],
     spec: SpeculativeInterest,
 ) -> bool:
-    """Check if an event matches a speculative interest at domain level."""
+    """检查事件是否在领域级别匹配某条猜测兴趣。"""
     event_text = _build_event_text(event)
     return _text_matches_keywords(event_text, spec.domain, spec.category)
 
@@ -309,14 +307,13 @@ def _event_matches_specific(
     event_text: str,
     specific: SpeculativeSpecific,
 ) -> bool:
-    """Check if event text matches a specific topic."""
+    """检查事件文本是否匹配某个窄兴趣。"""
     return _text_matches_keywords(event_text, specific.name)
 
 
 def _normalize_probe_term(value: Any) -> str:
-    """Normalize a probe term for local duplicate checks."""
+    """规范化 probe 项用于本地去重检查。"""
     return "".join(str(value or "").strip().lower().split())
-
 
 NEGATIVE_PROBE_FEEDBACK_RESPONSES = {"reject", "chat_negative", "chat_rejected"}
 HANDLED_PROBE_FEEDBACK_RESPONSES = {
@@ -346,7 +343,7 @@ def _specific_names(value: Any) -> list[str]:
 
 
 def normalize_probe_feedback_history(history: object) -> list[dict[str, object]]:
-    """Return sanitized probe feedback records, capped to the recent window."""
+    """返回已清洗的 probe 反馈记录，截断到最近窗口。"""
     if not isinstance(history, list):
         return []
 
@@ -389,7 +386,7 @@ def append_probe_feedback_history(
     history: object,
     entry: dict[str, object],
 ) -> list[dict[str, object]]:
-    """Append a sanitized probe feedback record to runtime history."""
+    """把一条已清洗的 probe 反馈记录追加到运行时历史。"""
     payload = dict(entry)
     if not _string_field(payload.get("created_at")):
         payload["created_at"] = datetime.now().isoformat()
@@ -426,11 +423,10 @@ def _handled_probe_feedback_domains(feedback_history: object) -> list[str]:
 
 
 def _has_probe_term_overlap(candidate: str, existing: str) -> bool:
-    """Return True when two probe terms are clearly the same coverage.
+    """当两个 probe 项明显覆盖同一范畴时返回 True。
 
-    This intentionally stays conservative: exact/substring matches catch
-    English and mixed terms, while Chinese bigram overlap catches obvious
-    phrase extensions such as "ComfyUI工作流" → "ComfyUI工作流拆解".
+    这里刻意保持保守：精确/子串匹配可捕获英文与混合词，而中文 bigram
+    重叠捕获明显的短语扩展，例如 "ComfyUI工作流" → "ComfyUI工作流拆解"。
     """
     normalized_candidate = _normalize_probe_term(candidate)
     normalized_existing = _normalize_probe_term(existing)
@@ -450,7 +446,7 @@ def _has_probe_term_overlap(candidate: str, existing: str) -> bool:
 
 @dataclass
 class ProbeNoveltyGuard:
-    """Local duplicate guard for speculative interest probes."""
+    """猜测兴趣 probe 的本地去重守卫。"""
 
     exact_terms: set[str] = field(default_factory=set)
     fuzzy_terms: set[str] = field(default_factory=set)
@@ -517,10 +513,10 @@ def observe_events(
     events: list[dict[str, Any]],
     state: SpeculativeState,
 ) -> tuple[SpeculativeState, int]:
-    """Check events against active speculations at both domain and specific levels.
+    """在领域与窄兴趣两个层级把事件与活跃猜测进行对照。
 
-    Matching works bottom-up: if a specific matches, the domain also gets
-    credited. A direct domain match (without specific) still counts.
+    匹配是自底向上的：若某个窄兴趣命中，对应领域也获得计数。直接
+    的领域命中（无窄兴趣）同样计数。
     """
     match_count = 0
     for spec in state.active:
@@ -530,7 +526,7 @@ def observe_events(
             event_text = _build_event_text(event)
             title_short = str(event.get("title", ""))[:50]
 
-            # Check specifics first (more granular)
+            # 先检查窄兴趣（粒度更细）
             specific_matched = False
             for specific in spec.specifics:
                 if _event_matches_specific(event_text, specific):
@@ -538,7 +534,7 @@ def observe_events(
                     specific.confirming_events.append(title_short)
                     specific_matched = True
 
-            # Domain-level confirmation: either a specific matched or domain directly matches
+            # 领域级确认：窄兴趣命中 或 领域直接命中
             if specific_matched or _text_matches_keywords(event_text, spec.domain, spec.category):
                 spec.confirmation_count += 1
                 spec.confirming_events.append(title_short)
@@ -547,31 +543,30 @@ def observe_events(
 
 
 # ---------------------------------------------------------------------------
-# Promotion and expiry (pure logic, no LLM)
+# 晋升与过期（纯逻辑，不调用 LLM）
 # ---------------------------------------------------------------------------
 
 
 def promote_ready(state: SpeculativeState) -> tuple[list[SpeculativeInterest], SpeculativeState]:
-    """Extract speculations ready to graduate from speculative to confirmed.
+    """抽取已准备好从"猜测"毕业到"已确认"的猜测。
 
-    Two convergent promote paths:
+    两条收敛的晋升路径：
 
-      1. **Natural** — ``status == "active"`` and behavioural signals have
-         pushed ``confirmation_count`` to ``confirmation_threshold``. The
-         user kept clicking on the topic; the system promotes
-         autonomously.
-      2. **User-driven** — ``status == "confirmed"``. The user picked
-         "喜欢" / 是 in the popup or CLI ``probe``;
-         ``user_confirm_speculation`` set ``status="confirmed"`` and
-         pre-loaded ``confirmation_count = threshold``. Without this
-         second branch the row got stuck in ``state.active`` forever:
-         ``promote_ready`` ignored it (status != "active"),
-         ``expire_stale`` ignored it (same gate), and ``_generate``
-         counted it toward ``len(state.active) >= max_active``,
-         eventually wedging probe generation entirely. Regression for
-         a v0.3.32-era report where ``openbiliclaw probe`` returned
-         "no active speculations" yet ``force_tick generated=0`` because
-         the active list silently held N confirmed-but-unmoved entries.
+      1. **自然** —— ``status == "active"`` 且行为信号把
+         ``confirmation_count`` 推到了 ``confirmation_threshold``。用户
+         持续点击该话题；系统自主晋升。
+      2. **用户驱动** —— ``status == "confirmed"``。用户在弹窗或
+         CLI ``probe`` 里点了"喜欢" / "是"；
+         ``user_confirm_speculation`` 把 ``status`` 设为
+         ``"confirmed"`` 并预填 ``confirmation_count = threshold``。
+         没有这第二条分支的话，该行会永远卡在 ``state.active``：
+         ``promote_ready`` 忽略它（status != "active"），
+         ``expire_stale`` 也忽略它（同样的门限），而 ``_generate``
+         会把它算进 ``len(state.active) >= max_active``，最终彻底
+         卡死 probe 生成。这是 v0.3.32 时代一份报告的回归：``openbiliclaw
+         probe`` 返回 "no active speculations"，但 ``force_tick
+         generated=0``，因为 active 列表里默默积着 N 条
+         confirmed-but-unmoved 条目。
     """
     promoted: list[SpeculativeInterest] = []
     remaining: list[SpeculativeInterest] = []
@@ -594,7 +589,7 @@ def expire_stale(
     now: datetime,
     cooldown_days: int = 30,
 ) -> tuple[list[SpeculativeInterest], SpeculativeState]:
-    """Expire speculations past TTL, add to cooldown, clean expired cooldowns."""
+    """让超过 TTL 的猜测过期，加入冷却，并清理过期冷却条目。"""
     rejected: list[SpeculativeInterest] = []
     remaining: list[SpeculativeInterest] = []
     for spec in state.active:
@@ -622,7 +617,7 @@ def expire_stale(
             remaining.append(spec)
     state.active = remaining
 
-    # Clean expired cooldowns
+    # 清理过期冷却
     valid_cooldowns: list[CooldownEntry] = []
     for entry in state.cooldown:
         try:
@@ -637,12 +632,12 @@ def expire_stale(
 
 
 # ---------------------------------------------------------------------------
-# State persistence
+# 状态持久化
 # ---------------------------------------------------------------------------
 
 
 def load_speculative_state(data_dir: Path) -> SpeculativeState:
-    """Load speculative state from disk."""
+    """从磁盘加载猜测状态。"""
     path = data_dir / "memory" / "speculative_state.json"
     if not path.exists():
         return SpeculativeState()
@@ -655,7 +650,7 @@ def load_speculative_state(data_dir: Path) -> SpeculativeState:
 
 
 def save_speculative_state(data_dir: Path, state: SpeculativeState) -> None:
-    """Persist speculative state to disk."""
+    """把猜测状态持久化到磁盘。"""
     update_speculative_state(data_dir, lambda _state: state)
 
 
@@ -663,7 +658,7 @@ def update_speculative_state(
     data_dir: Path,
     mutator: Callable[[SpeculativeState], SpeculativeState | None],
 ) -> SpeculativeState:
-    """Atomically update speculative interest state from latest disk data."""
+    """基于最新的磁盘数据原子地更新猜测兴趣状态。"""
     from openbiliclaw.memory.json_state import update_json_state
 
     path = data_dir / "memory" / "speculative_state.json"
@@ -684,18 +679,18 @@ def update_speculative_state(
 
 
 # ---------------------------------------------------------------------------
-# Core engine
+# 核心引擎
 # ---------------------------------------------------------------------------
 
 
 class InterestSpeculator:
-    """Orchestrates the speculative interest lifecycle.
+    """编排猜测兴趣的生命周期。
 
-    Responsibilities:
-    - Generate new speculations via LLM (periodic)
-    - Observe events for confirmation (every ingest)
-    - Promote confirmed speculations to official interests
-    - Expire and cooldown rejected speculations
+    职责：
+    - 通过 LLM 生成新的猜测（周期性）
+    - 观察事件以做确认（每次 ingest）
+    - 把已确认的猜测晋升为正式兴趣
+    - 让被拒绝的猜测过期并进入冷却
     """
 
     def __init__(
@@ -723,22 +718,18 @@ class InterestSpeculator:
         self._challenge_max_active = challenge_max_active
         self._max_primary_interests = max_primary_interests
         self._max_secondary_interests = max_secondary_interests
-        # Quality gate: discard candidates whose self-rated confidence
-        # falls below this threshold. Threshold history:
-        #   0.48 → 0.40 (v0.3.x, "DeepSeek scores 0.35-0.46 once profile
-        #               has 25+ likes; 0.40 lets typical output through")
-        #   0.40 → 0.30 (v0.3.53, 2026-05-05): production logs showed
-        #               speculator force_tick generated=5 / promoted=0 —
-        #               every candidate hit confidence=0.35 exactly,
-        #               i.e. the LLM was nailed at 0.35 for a calibrated
-        #               user. 0.40 was JUST above LLM's actual output
-        #               band, dropping all 5. 0.30 lets the LLM's
-        #               natural confidence range through; downstream
-        #               pipeline (specifics≥2 / reason≥20chars /
-        #               domain not shadowing existing like / dedup
-        #               against active+cooldown) still rejects lazy
-        #               candidates. Below 0.30 is "naming random
-        #               domains" territory.
+        # 质量门：丢弃自评置信度低于该阈值的候选。阈值历史：
+        #   0.48 → 0.40（v0.3.x，"DeepSeek 在画像有 25+ likes 后
+        #               打分 0.35-0.46；0.40 让典型输出能过")
+        #   0.40 → 0.30（v0.3.53，2026-05-05）：生产日志显示
+        #               speculator force_tick generated=5 / promoted=0
+        #               —— 每个候选都正好命中 confidence=0.35，即 LLM
+        #               对一个已校准用户死钉在 0.35。0.40 刚好高于 LLM
+        #               的实际输出带，把 5 个全砍了。0.30 让 LLM 的自然
+        #               置信带能通过；下游流水线（specifics≥2 /
+        #               reason≥20chars / domain 不遮盖既有 like / 对
+        #               active+cooldown 去重）仍会拒绝偷懒候选。低于
+        #               0.30 就是"随便报域名"的领地。
         self._min_confidence = min_confidence
 
     def _load_state(self) -> SpeculativeState:
@@ -833,7 +824,7 @@ class InterestSpeculator:
         self._update_state(_mutate)
         return generated
 
-    # -- Public API -----------------------------------------------------------
+    # -- 公共 API -----------------------------------------------------------
 
     async def tick(
         self,
@@ -842,7 +833,7 @@ class InterestSpeculator:
         feedback_history: object | None = None,
         feedback_history_loader: Callable[[], object] | None = None,
     ) -> SpeculatorTickResult:
-        """Main periodic entry point: expire → promote → generate → save."""
+        """周期性主入口：过期 → 晋升 → 生成 → 保存。"""
         now = datetime.now()
         result = SpeculatorTickResult()
 
@@ -855,7 +846,7 @@ class InterestSpeculator:
 
         state = self._update_state(_prepare)
 
-        # 3. Generate new speculations if interval elapsed and caps not reached
+        # 3. 若间隔已过且未达上限，则生成新的猜测
         if self._should_generate(state, now, profile):
             pre_active_domains = {s.domain for s in state.active if s.status == "active"}
             snapshot = await self._generate(
@@ -907,10 +898,10 @@ class InterestSpeculator:
         feedback_history: object | None = None,
         feedback_history_loader: Callable[[], object] | None = None,
     ) -> SpeculatorTickResult:
-        """Force a speculator tick ignoring the interval timer.
+        """忽略间隔计时器强制执行一次 speculator tick。
 
-        Used on init and process startup to ensure speculations exist immediately.
-        Still respects interest tier caps and max_active.
+        在 init 与进程启动时使用，确保猜测能立即出现。
+        仍会遵守兴趣层级上限与 max_active。
         """
         now = datetime.now()
         result = SpeculatorTickResult()
@@ -924,16 +915,13 @@ class InterestSpeculator:
 
         state = self._update_state(_prepare)
 
-        # Generate regardless of interval (but respect caps).
-        # The "primary interests" cap historically gated on
-        # ``confirmed_domains + active_count``, which deadlocks the
-        # whole probe pipeline once the user has more confirmed
-        # interests than the cap (e.g. profile with 21 confirmed
-        # likes vs cap=15 → no probe ever fires). The cap is meant
-        # to bound *speculative* fanout, not punish well-mapped
-        # users. Gate only on ``active_count`` so probes can still
-        # flow regardless of how many interests are already
-        # confirmed.
+        # 不论间隔都生成（但仍遵守上限）。
+        # "primary interests" 上限历史上以 ``confirmed_domains +
+        # active_count`` 为门，一旦用户已确认兴趣超过上限就会死锁整个
+        # probe 流水线（例如画像有 21 个 confirmed likes 而上限=15 →
+        # 永远不触发 probe）。该上限的本意是限制 *猜测* fanout，不是
+        # 惩罚兴趣已充分画像的用户。这里只对 ``active_count`` 设门，
+        # 这样无论已确认多少兴趣，probe 仍能流动。
         active_count = sum(1 for s in state.active if s.status == "active")
         near_slots, challenge_slots = _available_probe_slots(
             state.active,
@@ -967,8 +955,8 @@ class InterestSpeculator:
                 profile,
                 feedback_history=latest_feedback,
             )
-        # Only log at INFO when something meaningful happened, otherwise
-        # demote to DEBUG so idle force_ticks don't pollute the log.
+        # 只有发生有意义事件时才打 INFO，否则降级到 DEBUG，
+        # 避免空闲 force_tick 污染日志。
         if result.generated or result.promoted or result.rejected:
             logger.info(
                 "Speculator force_tick: generated=%d, promoted=%d, rejected=%d",
@@ -989,7 +977,7 @@ class InterestSpeculator:
         return result
 
     def observe(self, events: list[dict[str, Any]]) -> int:
-        """Observe events against active speculations. Returns match count."""
+        """把事件对活跃猜测进行观测。返回命中数。"""
         if not events:
             return 0
         match_count = 0
@@ -1004,11 +992,10 @@ class InterestSpeculator:
 
         self._update_state(_mutate)
         if match_count > 0:
-            # Promoted to INFO so the live confirmation pulse is visible
-            # in production logs (DEBUG was effectively invisible at our
-            # default file_level).  Surfaces the active probe count too
-            # so a reader can sanity-check "events arrived but matched 0
-            # of 5 active probes" diagnostics.
+            # 升级到 INFO，让生产日志能看到实时确认脉动（在我们的默认
+            # file_level 下 DEBUG 实际不可见）。同时附上 active probe
+            # 数量，便于读者核查"事件到达但 5 个 active probe 命中 0"
+            # 这类诊断。
             logger.info(
                 "Speculator observed %d match(es) from %d event(s) against %d active probe(s)",
                 match_count,
@@ -1025,7 +1012,7 @@ class InterestSpeculator:
         probed_domains: set[str] | None = None,
         feedback_history: object | None = None,
     ) -> int:
-        """Ingest speculative interests from PreferenceAnalyzer as seed candidates."""
+        """把 PreferenceAnalyzer 输出的猜测兴趣作为种子候选 ingest。"""
         if not seeds:
             return 0
 
@@ -1082,7 +1069,7 @@ class InterestSpeculator:
         return added
 
     def get_active_speculations(self) -> list[SpeculativeInterest]:
-        """Return currently active speculations (for discovery integration)."""
+        """返回当前活跃的猜测（供 discovery 集成使用）。"""
         state = self._load_state()
         return [s for s in state.active if s.status == "active"]
 
@@ -1092,15 +1079,14 @@ class InterestSpeculator:
         *,
         confirmation_source: str = "probe_confirmed",
     ) -> bool:
-        """User explicitly confirmed a speculated interest. Force-promote it.
+        """用户显式确认了一条猜测兴趣。强制晋升它。
 
-        Sets ``status="confirmed"`` so the API stops surfacing this row in
-        the popup's speculative-list (the promotion to a real interest tag
-        still happens asynchronously inside :meth:`force_tick`). Without
-        this, profile-summary kept returning the row with
-        ``confirmation_count == threshold`` and the popup re-rendered it
-        seconds after the user clicked "喜欢" — looking like the action
-        was ignored.
+        把 ``status`` 设为 ``"confirmed"``，让 API 不再把这一行作为
+        speculative 列表暴露在弹窗里（晋升为真正的兴趣标签仍在
+        :meth:`force_tick` 内异步发生）。没有这一步的话，
+        profile-summary 会持续返回 ``confirmation_count == threshold``
+        的这一行，弹窗在用户点 "喜欢" 几秒后又重新渲染它 —— 看起来
+        像动作被忽略了。
         """
         now = datetime.now().isoformat()
         found = False
@@ -1121,7 +1107,7 @@ class InterestSpeculator:
         return found
 
     def user_reject_speculation(self, domain: str, cooldown_days: int = 30) -> bool:
-        """User explicitly rejected a speculated interest. Move to cooldown."""
+        """用户显式拒绝了一条猜测兴趣。把它移入冷却。"""
         found = False
         now = datetime.now()
 
@@ -1148,7 +1134,7 @@ class InterestSpeculator:
         self._update_state(_mutate)
         return found
 
-    # -- Internal -------------------------------------------------------------
+    # -- 内部 -------------------------------------------------------------
 
     def _should_generate(
         self,
@@ -1156,13 +1142,13 @@ class InterestSpeculator:
         now: datetime,
         profile: OnionProfile | None = None,
     ) -> bool:
-        """Check if generation should run.
+        """检查是否应该执行生成。
 
-        Skips if:
-        - active speculations already at max_active
-        - primary interests (confirmed domains + active speculations) at cap
-        - secondary interests (confirmed specifics + active speculations) at cap
-        - interval not yet elapsed
+        跳过的情况：
+        - 活跃猜测已达 max_active
+        - primary interests（已确认 domain + 活跃猜测）达上限
+        - secondary interests（已确认窄兴趣 + 活跃猜测）达上限
+        - 间隔未过
         """
         active_count = sum(1 for s in state.active if s.status == "active")
         near_slots, challenge_slots = _available_probe_slots(
@@ -1174,13 +1160,12 @@ class InterestSpeculator:
         if available_slots <= 0:
             return False
 
-        # Slot-aware throttle: when there's only 1 free slot, the dedup
-        # gate (existing_domains) almost always wins because the LLM
-        # tends to re-propose stuck active probes by name. We observed
-        # 7+ consecutive 30-min ticks generating the same 2 stuck
-        # domains and adding 0 new probes, burning ~¥0.005 per tick on
-        # nothing. Require at least 2 free slots so the candidate yield
-        # is realistic for the LLM call cost.
+        # 槽位感知的节流：当只剩 1 个空槽时，去重门
+        # （existing_domains）几乎总会赢，因为 LLM 倾向于按名字重复
+        # 提出卡住的 active probe。我们观察到连续 7+ 个 30 分钟 tick
+        # 都生成同样的 2 个卡住 domain，新增 0 个 probe，每次 tick
+        # 烧掉约 ¥0.005 一无所获。要求至少 2 个空槽，使候选产出对
+        # LLM 调用成本而言更现实。
         if available_slots < 2:
             near_count, challenge_count = _active_probe_slot_counts(state.active)
             logger.debug(
@@ -1195,11 +1180,9 @@ class InterestSpeculator:
             )
             return False
 
-        # Check active speculation tier cap. We gate solely on
-        # ``active_count`` here, not ``confirmed + active`` — see the
-        # comment in ``force_tick``: a well-mapped user with many
-        # confirmed interests was permanently deadlocked under the
-        # old gate.
+        # 检查活跃猜测层级上限。这里只对 ``active_count`` 设门，而非
+        # ``confirmed + active`` —— 见 ``force_tick`` 中的注释：在旧
+        # 门限下，一个已确认兴趣很多的用户会被永久死锁。
         if profile is not None:
             if active_count >= self._max_primary_interests:
                 logger.debug(
@@ -1209,9 +1192,9 @@ class InterestSpeculator:
                 )
                 return False
 
-            # Same fix for secondary cap — gate on active speculation
-            # count alone, not ``confirmed_specifics + active``, so a
-            # rich profile doesn't permanently silence the probe loop.
+            # secondary 上限同样修复 —— 只对活跃猜测计数设门，而不是
+            # ``confirmed_specifics + active``，这样画像丰富的用户
+            # 不会被永久静音 probe 循环。
             if active_count >= self._max_secondary_interests:
                 logger.debug(
                     "Speculation skipped: active speculations at secondary cap (%d/%d)",
@@ -1236,7 +1219,7 @@ class InterestSpeculator:
         *,
         feedback_history: object | None = None,
     ) -> SpeculativeState:
-        """Use LLM to generate new speculative interest directions."""
+        """用 LLM 生成新的猜测兴趣方向。"""
         from openbiliclaw.llm.prompts import build_speculation_generation_prompt
 
         existing_domains = {s.domain.lower() for s in state.active}
@@ -1284,10 +1267,9 @@ class InterestSpeculator:
             logger.warning("Speculation generation failed", exc_info=True)
             return state
 
-        # Set of user's existing top-level like domain names (lowercase).
-        # Used as a quality check: an LLM-generated probe whose ``domain``
-        # equals one of the user's actual like domains is a lazy probe
-        # (e.g. domain="娱乐" when user already has 娱乐 0.95) — drop it.
+        # 用户既有顶层 like domain 名集合（小写）。用作质量检查：若 LLM
+        # 生成的 probe ``domain`` 等于用户实际的某个 like domain，就是
+        # 偷懒 probe（例如 domain="娱乐" 而用户已有 娱乐 0.95）—— 丢弃。
         like_domain_set = {
             str(getattr(d, "domain", "")).strip().lower()
             for d in getattr(profile.interest, "likes", [])
@@ -1315,28 +1297,28 @@ class InterestSpeculator:
             confidence = float(item.get("confidence", 0.4))
             reason_text = str(item.get("reason", "")).strip()
 
-            # ── Quality gate ────────────────────────────────────────
-            # Skip low-confidence probes (LLM's own hedges).
+            # ── 质量门 ────────────────────────────────────────
+            # 跳过低置信 probe（LLM 自己的含糊其辞）。
             if confidence < self._min_confidence:
                 rejected_reasons.append(
                     f"{domain} (conf={confidence:.2f} < {self._min_confidence})"
                 )
                 continue
-            # Skip probes whose domain is just the user's main axis name.
+            # 跳过 domain 就是用户主轴名 的 probe。
             if domain.lower() in like_domain_set:
                 rejected_reasons.append(f"{domain} (domain shadows existing like)")
                 continue
-            # Skip probes that restate profile/active/cooldown coverage.
+            # 跳过重复 profile/active/cooldown 覆盖范围的 probe。
             if novelty_guard.is_duplicate_domain(domain):
                 rejected_reasons.append(f"{domain} (duplicate coverage)")
                 continue
-            # Skip probes with no actionable specifics.
+            # 跳过没有可用 specifics 的 probe。
             filtered_specific_names = novelty_guard.filter_specifics([s.name for s in specifics])
             specifics = [SpeculativeSpecific(name=name) for name in filtered_specific_names]
             if len(specifics) < 2:
                 rejected_reasons.append(f"{domain} (specifics<2)")
                 continue
-            # Skip probes whose reason is implausibly short (LLM phoning it in).
+            # 跳过理由短得离谱的 probe（LLM 在敷衍）。
             if len(reason_text) < 20:
                 rejected_reasons.append(f"{domain} (reason<20chars)")
                 continue
@@ -1388,10 +1370,10 @@ class InterestSpeculator:
 
 
 def _parse_speculation_response(content: str) -> list[dict[str, Any]]:
-    """Extract speculations list from an LLM response.
+    """从 LLM 响应中抽取猜测列表。
 
-    Accepts either a raw list or a ``{"speculations": [...]}`` object, and
-    falls back to truncation salvage for responses that were cut off mid-field.
+    接受裸列表或 ``{"speculations": [...]}`` 对象，并对半截被截断的
+    响应回退到截断抢救。
     """
     data = parse_llm_json_tolerant(content)
     if isinstance(data, dict):

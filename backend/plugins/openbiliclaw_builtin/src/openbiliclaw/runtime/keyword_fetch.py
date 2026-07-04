@@ -1,35 +1,33 @@
-"""Deficit-driven keyword fetch coordinator (Discover backpressure, P1.7).
+"""缺口驱动的关键词抓取协调器（Discover 反压，P1.7）。
 
-P1.6 made the keyword *planner* fill the ``discovery_keywords`` store with
-``pending`` search words. P1.7 makes the five search *fetch* sites consume that
-store: when the ``[discovery].unified_keyword_planner_enabled`` flag is on, each
-site claims words from the store (atomic ``claim_keywords``), injects them via
-the P1.5 injection param, fetches, and walks each claimed word through its
-lifecycle terminal — ``used`` / ``failed`` / (async) ``executing`` — depending
-on the site's *execution shape* (design spec §5.1 / §11):
+P1.6 让关键词 *规划器* 用 ``pending`` 搜索词填满 ``discovery_keywords``
+存储。P1.7 让五个搜索 *抓取* 站点消费该存储：当
+``[discovery].unified_keyword_planner_enabled`` 开关打开时，每个站点
+从存储中 claim 词（原子 ``claim_keywords``），通过 P1.5 的注入参数
+注入、抓取，并按其 *执行形态* 把每个 claimed 词推到对应终态——
+``used`` / ``failed`` / （异步）``executing``（设计规范 §5.1 / §11）：
 
-* **Inline-admit** (B站 search, 抖音 plugin): fetch → evaluate → admit happen
-  synchronously in the call. A successful return marks every claimed word
-  ``used``; a fetch exception / empty result marks them ``failed``.
-* **Fetch-only → deferred pipeline admit** (X, YouTube): the producer fetches
-  raw candidates and hands them to ``discovery_candidates`` / the candidate
-  pipeline; admission is downstream. The word is *consumed* on that handoff →
-  ``used`` (yield is backfilled later, P1.8, decoupled from ``used``).
-* **Truly async** (小红书 only): the extension executes the search out-of-band.
-  Claim → enqueue the xhs task carrying ``source_keyword_id`` → mark the word
-  ``executing`` (NOT ``used``). The xhs task-result handler marks it ``used`` /
-  ``failed`` on the terminal callback. A missing callback is covered by the
-  planner's ``reclaim_leased_keywords`` lease sweep.
+* **内联准入**（B 站 search、抖音 plugin）：抓取 → 评估 → 准入同步
+  发生在调用中。成功返回时把每个 claimed 词标记为 ``used``；抓取异常
+  / 空结果标记为 ``failed``。
+* **仅抓取 → 延迟管线准入**（X、YouTube）：producer 抓取原始候选，
+  交给 ``discovery_candidates`` / 候选管线；准入在下游。词在交接时即
+  被 *消费* → ``used``（yield 稍后回填，P1.8，与 ``used`` 解耦）。
+* **真正异步**（仅小红书）：扩展在带外执行搜索。Claim → 入队携带
+  ``source_keyword_id`` 的 xhs 任务 → 把词标记为 ``executing``（不是
+  ``used``）。xhs 任务结果处理器在终态回调中把它标记为 ``used`` /
+  ``failed``。回调缺失由规划器的 ``reclaim_leased_keywords`` 租约
+  扫描兜底。
 
-**Budget-rejection-after-claim rollback.** If a word is claimed but the
-downstream enqueue / fetch is then refused by a budget cap (so no fetch ever
-ran), the word must go back to ``pending`` rather than be burned. This needs a
-*distinguishable* signal: XHS enqueue returns ``ok=False``; 抖音 ``search_aweme``
-raises :class:`~openbiliclaw.sources.douyin_plugin_search.DouyinBudgetExhausted`.
-The coordinator's :meth:`rollback` issues ``rollback_keyword_to_pending``.
+**claim 后被预算拒绝的回滚。** 如果一个词已 claim，但随后的入队 /
+抓取被预算上限拒绝（实际没有任何抓取发生），该词必须回到
+``pending``，而不是被烧掉。这需要一个 *可区分* 的信号：XHS 入队返回
+``ok=False``；抖音 ``search_aweme`` 抛
+:class:`~openbiliclaw.sources.douyin_plugin_search.DouyinBudgetExhausted`。
+协调器的 :meth:`rollback` 会调用 ``rollback_keyword_to_pending``。
 
-The flag stays OFF by default; the flag-on cutover + E2E is P1.9. With the flag
-off (or no coordinator wired) every site takes its byte-identical legacy path.
+开关默认关闭；开关打开的切换 + E2E 属于 P1.9。开关关闭（或未注入
+协调器）时，每个站点走字节级一致的旧路径。
 """
 
 from __future__ import annotations
@@ -43,8 +41,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Canonical long-form platform identifiers — these are the keys the keyword
-# store + planner share (NOT short codes xhs/dy/yt/bili).
+# 规范的长形平台标识——这些是关键词存储 + 规划器共用的键
+# （不是短码 xhs/dy/yt/bili）。
 PLATFORM_BILIBILI = "bilibili"
 PLATFORM_XIAOHONGSHU = "xiaohongshu"
 PLATFORM_DOUYIN = "douyin"
@@ -55,56 +53,55 @@ PLATFORM_ZHIHU = "zhihu"
 
 @dataclass(frozen=True)
 class ClaimedKeyword:
-    """One claimed search keyword + its store row id (lifecycle correlation)."""
+    """一条 claimed 搜索词 + 其存储行 id（生命周期关联）。"""
 
     id: int
     keyword: str
 
 
 class KeywordFetchCoordinator:
-    """Claim-from-store + word-lifecycle helper shared by the 5 fetch sites.
+    """5 个抓取站点共用的"从存储 claim + 词生命周期"助手。
 
-    Holds the database (the ``discovery_keywords`` DAO) and the discovery
-    config (the flag + ``fetch_batch``). One coordinator instance is wired into
-    each producer / the refresh controller; each fetch site asks
-    :meth:`should_claim` whether the flag-on path is active, then drives
-    :meth:`claim` and the terminal markers below.
+    持有数据库（``discovery_keywords`` DAO）和 discovery 配置（开关 +
+    ``fetch_batch``）。一个协调器实例注入到每个 producer / 刷新控制器
+    中；每个抓取站点通过 :meth:`should_claim` 询问是否走开关打开的
+    路径，再驱动 :meth:`claim` 及下方的终态标记。
     """
 
     def __init__(self, *, database: Any, discovery_config: DiscoveryConfig) -> None:
         self._db = database
         self._discovery = discovery_config
 
-    # ── flag / gate ─────────────────────────────────────────────────────
+    # ── 开关 / 闸门 ─────────────────────────────────────────────────────
 
     @property
     def enabled(self) -> bool:
-        """Whether the unified keyword planner flag is on (default OFF)."""
+        """统一关键词规划器开关是否打开（默认关闭）。"""
         return bool(getattr(self._discovery, "unified_keyword_planner_enabled", False))
 
     @property
     def fetch_batch(self) -> int:
-        """How many words to claim per fetch (``[discovery].fetch_batch``)."""
+        """每次抓取 claim 多少个词（``[discovery].fetch_batch``）。"""
         return max(1, int(getattr(self._discovery, "fetch_batch", 5)))
 
     def should_claim(self) -> bool:
-        """Return whether a fetch site should take the claim-from-store path.
+        """返回抓取站点是否应走"从存储 claim"路径。
 
-        The deficit gate (deficit > 0) and the distinct floor (each platform's
-        existing ``min_interval`` / ``_is_due``) are enforced by the site
-        itself *before* calling this — the coordinator only owns the flag. The
-        store-non-empty gate is enforced by :meth:`claim` returning ``[]``.
+        缺口闸门（deficit > 0）和独立底线（各平台既有的
+        ``min_interval`` / ``_is_due``）由站点在调用此方法 *之前*
+        自行强制——协调器只拥有开关。"存储非空" 闸门由 :meth:`claim`
+        返回 ``[]`` 来强制。
         """
         return self.enabled
 
     # ── claim ───────────────────────────────────────────────────────────
 
     def claim(self, platform: str, n: int | None = None) -> list[ClaimedKeyword]:
-        """Atomically claim up to ``n`` (default ``fetch_batch``) pending words.
+        """原子地 claim 最多 ``n`` 个（默认 ``fetch_batch``）pending 词。
 
-        Returns ``[]`` when the store has no claimable ``pending`` words for the
-        platform (the "store non-empty" gate) — the caller must then fall back
-        to its legacy/no-op path and must NOT mark any lifecycle state.
+        当存储中没有该平台可 claim 的 ``pending`` 词时返回 ``[]``
+        （即 "存储非空" 闸门）——此时调用方必须回退到旧路径 / no-op
+        路径，且不得标记任何生命周期状态。
         """
         count = self.fetch_batch if n is None else max(0, int(n))
         if count <= 0:
@@ -128,10 +125,10 @@ class KeywordFetchCoordinator:
                 claimed.append(ClaimedKeyword(id=kid, keyword=word))
         return claimed
 
-    # ── lifecycle terminals ─────────────────────────────────────────────
+    # ── 生命周期终态 ─────────────────────────────────────────────────────
 
     def mark_used(self, claimed: list[ClaimedKeyword]) -> None:
-        """Mark every claimed word ``used`` (inline success / fetch-only handoff)."""
+        """把每个 claimed 词标记为 ``used``（内联成功 / 仅抓取交接）。"""
         mark = getattr(self._db, "mark_keyword_used", None)
         if not callable(mark):
             return
@@ -142,7 +139,7 @@ class KeywordFetchCoordinator:
                 logger.exception("keyword fetch: mark_keyword_used failed for id=%s", item.id)
 
     def mark_failed(self, claimed: list[ClaimedKeyword]) -> None:
-        """Mark every claimed word ``failed`` (fetch exception / empty result)."""
+        """把每个 claimed 词标记为 ``failed``（抓取异常 / 空结果）。"""
         mark = getattr(self._db, "mark_keyword_failed", None)
         if not callable(mark):
             return
@@ -153,7 +150,7 @@ class KeywordFetchCoordinator:
                 logger.exception("keyword fetch: mark_keyword_failed failed for id=%s", item.id)
 
     def mark_executing(self, claimed: ClaimedKeyword) -> None:
-        """Mark one claimed word ``executing`` (async XHS task enqueued)."""
+        """把一个 claimed 词标记为 ``executing``（异步 XHS 任务入队）。"""
         mark = getattr(self._db, "mark_keyword_executing", None)
         if not callable(mark):
             return
@@ -163,7 +160,7 @@ class KeywordFetchCoordinator:
             logger.exception("keyword fetch: mark_keyword_executing failed for id=%s", claimed.id)
 
     def rollback(self, claimed: ClaimedKeyword) -> None:
-        """Return one claimed word to ``pending`` (budget rejection after claim)."""
+        """把一个 claimed 词回滚为 ``pending``（claim 后被预算拒绝）。"""
         rollback = getattr(self._db, "rollback_keyword_to_pending", None)
         if not callable(rollback):
             return
@@ -181,12 +178,12 @@ def mark_keyword_terminal_from_xhs_task(
     *,
     success: bool,
 ) -> None:
-    """Mark an xhs-task's ``source_keyword_id`` word ``used`` / ``failed``.
+    """把 xhs 任务的 ``source_keyword_id`` 词标记为 ``used`` / ``failed``。
 
-    Called by the xhs task-result handler (``api/app.py``) on a terminal
-    callback. The keyword id rides on the task payload (P1.7 lifecycle
-    correlation); a task with no ``source_keyword_id`` (legacy / non-planner
-    task) is a silent no-op. Tolerates a missing / malformed payload.
+    在终态回调时由 xhs 任务结果处理器（``api/app.py``）调用。关键词 id
+    挂在任务 payload 上（P1.7 生命周期关联）；没有
+    ``source_keyword_id`` 的任务（旧任务 / 非规划器任务）静默 no-op。
+    容忍缺失 / 格式错误的 payload。
     """
     keyword_id = _extract_source_keyword_id(payload_json)
     if keyword_id is None:
@@ -202,17 +199,17 @@ def mark_keyword_terminal_from_xhs_task(
 
 
 def source_keyword_id_from_xhs_task(payload_json: str | None) -> int | None:
-    """Public: read ``source_keyword_id`` off an xhs-task payload, or ``None``.
+    """公开：从 xhs 任务 payload 读取 ``source_keyword_id``，或 ``None``。
 
-    Used by the xhs task-result handler (P1.8) to thread the producing keyword's
-    id onto the candidates ingested from that task, so admission can backfill the
-    keyword's yield. Tolerates a missing / malformed / legacy payload.
+    由 xhs 任务结果处理器（P1.8）使用，把产出关键词的 id 透传到该任务
+    摄入的候选上，使准入时能回填该关键词的 yield。容忍缺失 / 格式错误
+    / 旧版 payload。
     """
     return _extract_source_keyword_id(payload_json)
 
 
 def _extract_source_keyword_id(payload_json: str | None) -> int | None:
-    """Parse ``source_keyword_id`` out of an xhs-task payload JSON blob."""
+    """从 xhs 任务 payload JSON 中解析 ``source_keyword_id``。"""
     if not payload_json:
         return None
     import json

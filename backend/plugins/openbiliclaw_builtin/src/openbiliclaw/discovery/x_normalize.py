@@ -1,26 +1,26 @@
-"""Normalize an X (Twitter) tweet dict into :class:`DiscoveredContent`.
+"""将 X (Twitter) tweet dict 归一化为 :class:`DiscoveredContent`。
 
-**Input contract.** ``normalize_tweet`` consumes ONE dict in the shape emitted by
-``twitter_cli.serialization.tweet_to_dict`` — i.e. ``twitter-cli`` has already
-parsed and unwrapped the raw GraphQL response (``TweetWithVisibilityResults`` /
-``note_tweet`` long-form / retweet-quote nesting). We do NOT re-implement
-``prinsss/twitter-web-exporter``'s ``extractDataFromResponse`` here; the library
-owns that. We only map the plain dict onto the unified ``DiscoveredContent`` shape
-(see ``docs/plans/2026-06-08-x-twitter-source-spec.md`` §5.2).
+**输入契约。** ``normalize_tweet`` 消费一个 dict,其形状由
+``twitter_cli.serialization.tweet_to_dict`` 产出 — 即 ``twitter-cli`` 已经
+解析并解包了原始 GraphQL 响应 (``TweetWithVisibilityResults`` /
+``note_tweet`` 长文 / retweet-quote 嵌套)。我们不再这里重新实现
+``prinsss/twitter-web-exporter`` 的 ``extractDataFromResponse``;该库
+拥有那部分逻辑。我们只把普通 dict 映射到统一的 ``DiscoveredContent`` 形状
+(见 ``docs/plans/2026-06-08-x-twitter-source-spec.md`` §5.2)。
 
-The keys ``tweet_to_dict`` emits (mirror of ``x_client.py``'s contract):
+``tweet_to_dict`` 产出的键 (镜像 ``x_client.py`` 的契约):
 
-``id`` (rest_id), ``text`` (full tweet text), ``author``
-(``{id, name, screenName, profileImageUrl, verified}``), ``metrics``
-(``{likes, retweets, replies, quotes, views, bookmarks}``),
-``createdAt`` / ``createdAtLocal`` / ``createdAtISO``, ``media``
-(``[{type, url, width, height}]``), ``urls``, ``isRetweet``, ``retweetedBy``,
-``lang``, ``score``, and the optional ``articleTitle`` / ``articleText``
-(long-form note_tweet) / ``quotedTweet``.
+``id`` (rest_id)、``text`` (完整推文文本)、``author``
+(``{id, name, screenName, profileImageUrl, verified}``)、``metrics``
+(``{likes, retweets, replies, quotes, views, bookmarks}``)、
+``createdAt`` / ``createdAtLocal`` / ``createdAtISO``、``media``
+(``[{type, url, width, height}]``)、``urls``、``isRetweet``、``retweetedBy``、
+``lang``、``score``,以及可选的 ``articleTitle`` / ``articleText``
+(长文 note_tweet) / ``quotedTweet``。
 
-This function is **pure and offline**: it never imports ``twitter_cli`` and never
-touches the network. Return ``None`` for tombstones / unavailable tweets — those
-surface as a missing/empty ``id`` once ``tweet_to_dict`` has run.
+本函数是 **纯函数且离线**: 它从不导入 ``twitter_cli``,也从不
+触碰网络。对墓碑 / 不可用推文返回 ``None`` — 这些在
+``tweet_to_dict`` 运行后会以缺失/空 ``id`` 的形式暴露。
 """
 
 from __future__ import annotations
@@ -30,15 +30,15 @@ from typing import Any
 
 from openbiliclaw.discovery.engine import DiscoveredContent
 
-# Card titles read better when short; the full text always lives in body_text.
+# 卡片标题短一些更好;完整文本始终在 body_text 里。
 _TITLE_MAX_LEN = 140
 
-# Leading thread markers a self-thread head commonly uses: "1/", "1/7",
-# "1.", "(1/n)", or the [THREAD] emoji anywhere in the first line.
+# 自线程头部常用的前导 thread 标记: "1/"、"1/7"、
+# "1."、"(1/n)",或第一行任意位置出现 [THREAD] emoji。
 _THREAD_MARKER_RE = re.compile(r"^\s*\(?\s*1\s*[/.)]")
 _THREAD_EMOJI = "\U0001f9f5"  # [THREAD] emoji 用于文本匹配
 
-# Hashtags: "#word" with unicode letters/digits/underscore, no leading digit-only.
+# Hashtags: "#word" 含 unicode 字母/数字/下划线,不允许纯数字开头。
 _HASHTAG_RE = re.compile(r"#(\w*[^\W\d_]\w*)", re.UNICODE)
 
 
@@ -54,7 +54,7 @@ def _as_int(value: Any) -> int:
 
 
 def _first_media_url(media: Any) -> str:
-    """Return the first media thumbnail URL, or "" for a text-only tweet."""
+    """返回第一个媒体缩略图 URL,纯文本推文返回 ""。"""
     if not isinstance(media, list):
         return ""
     for entry in media:
@@ -66,10 +66,10 @@ def _first_media_url(media: Any) -> str:
 
 
 def _extract_hashtags(text: str) -> list[str]:
-    """Pull hashtags out of the tweet text (deduped, order-preserving).
+    """从推文文本中提取 hashtags (去重、保序)。
 
-    ``tweet_to_dict`` does not emit an ``entities``/``hashtags`` block, so we
-    recover them from the text. Returns the tag bodies without the leading ``#``.
+    ``tweet_to_dict`` 不输出 ``entities``/``hashtags`` 块,所以我们
+    从文本中恢复它们。返回不带前导 ``#`` 的 tag 内容。
     """
     seen: set[str] = set()
     tags: list[str] = []
@@ -93,7 +93,7 @@ def _truncate(text: str, limit: int = _TITLE_MAX_LEN) -> str:
     text = text.strip()
     if len(text) <= limit:
         return text
-    return text[: limit - 1].rstrip() + "…"  # … ellipsis
+    return text[: limit - 1].rstrip() + "…"  # … 省略号
 
 
 def _looks_like_thread(text: str) -> bool:
@@ -108,11 +108,10 @@ def normalize_tweet(
     *,
     source_strategy: str = "",
 ) -> DiscoveredContent | None:
-    """Map one ``tweet_to_dict`` dict onto :class:`DiscoveredContent`.
+    """把一个 ``tweet_to_dict`` dict 映射到 :class:`DiscoveredContent`。
 
-    Returns ``None`` for tombstones / unavailable tweets — detected as a missing
-    or empty ``id`` (the only durable signal once ``tweet_to_dict`` has parsed
-    the raw response).
+    对墓碑 / 不可用推文返回 ``None`` — 检测方式是缺失或空的
+    ``id`` (``tweet_to_dict`` 解析原始响应后唯一可靠的信号)。
     """
     if not isinstance(raw, dict):
         return None
@@ -124,20 +123,20 @@ def normalize_tweet(
     raw_author = raw.get("author")
     author: dict[str, Any] = raw_author if isinstance(raw_author, dict) else {}
     screen_name = _as_str(author.get("screenName"))
-    handle = screen_name or "i"  # x.com/i/status/<id> resolves even without a handle
+    handle = screen_name or "i"  # x.com/i/status/<id> 即使没有 handle 也能解析
     author_name = f"@{screen_name}" if screen_name else ""
 
     text = _as_str(raw.get("text"))
     article_text = _as_str(raw.get("articleText"))
     article_title = _as_str(raw.get("articleTitle"))
 
-    # body_text: long-form note_tweet wins, else the full tweet text.
+    # body_text: 长文 note_tweet 优先,否则用完整推文文本。
     body_text = article_text or text
 
-    # title: a note's own title wins; otherwise the (truncated) first line.
+    # title: note 自己的标题优先;否则用 (截断的) 第一行。
     title = _truncate(article_title) if article_title else _truncate(_first_line(text))
 
-    # content_type: note_tweet long-form OR a thread-marked head → "thread".
+    # content_type: note_tweet 长文 OR 带 thread 标记的头部 → "thread"。
     is_thread = bool(article_text) or _looks_like_thread(text)
     content_type = "thread" if is_thread else "tweet"
 

@@ -1,11 +1,10 @@
-"""FastAPI glue for the LAN password gate.
+"""LAN 密码门禁的 FastAPI 胶水层。
 
-Wires the stdlib primitives in :mod:`openbiliclaw.auth_core` to Starlette
-requests/responses: the auth middleware, the ``/api/auth/*`` routes, cookie and
-CSRF handling, login-failure rate limiting, and startup reconciliation of the
-session secret and password fingerprint.
+将 :mod:`openbiliclaw.auth_core` 中的标准库原语接入 Starlette 的
+请求/响应：auth 中间件、``/api/auth/*`` 路由、cookie 与 CSRF 处理、
+登录失败限流，以及启动时对会话密钥与密码指纹的对账。
 
-See ``docs/plans/2026-05-30-web-password-auth-design.md``.
+参见 ``docs/plans/2026-05-30-web-password-auth-design.md``。
 """
 
 from __future__ import annotations
@@ -37,12 +36,11 @@ GateGetter = Callable[[], "AuthGate"]
 logger = logging.getLogger(__name__)
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-# GET endpoints with real side effects (claim+lock a source task; bootstrap-write
-# the recommendation history; schedule a pending chat-turn completion). They need
-# CSRF like unsafe methods. The custom `X-OBC-Auth` header is a complete CSRF
-# defense (a credentialed cross-origin request can't set it under
-# allow_origins=["*"]); the SPA sends it on every fetch. img/WS don't hit these
-# paths. See review r2#2 / r3#2.
+# 具有真实副作用的 GET 端点（认领+锁定源任务；引导写入推荐历史；
+# 调度一个待处理的 chat-turn 完成任务）。它们需要像不安全方法一样做 CSRF。
+# 自定义 `X-OBC-Auth` 头是完整的 CSRF 防御（在 allow_origins=["*"] 下，
+# 带凭证的跨源请求无法设置该头）；SPA 在每次 fetch 都发送它。img/WS
+# 不会命中这些路径。参见 review r2#2 / r3#2。
 _CSRF_GET_EXACT = frozenset(
     {
         "/api/sources/xhs/next-task",
@@ -52,15 +50,15 @@ _CSRF_GET_EXACT = frozenset(
         "/api/recommendations",
     }
 )
-_CSRF_GET_PREFIXES = ("/api/chat/turns/",)  # GET /api/chat/turns/{id} resumes a pending turn
-_NEVER_EXPIRE_MAX_AGE = 10 * 365 * 24 * 3600  # ~10 years for "remember login"
+_CSRF_GET_PREFIXES = ("/api/chat/turns/",)  # GET /api/chat/turns/{id} 恢复一个待处理的 turn
+_NEVER_EXPIRE_MAX_AGE = 10 * 365 * 24 * 3600  # ~10 年用于"记住登录"
 
 
 def _auth_env_overrides() -> list[str]:
-    # When any auth env var is set, auth is env-managed and config-file edits
-    # (incl. the local admin endpoint) won't take effect on restart — see CLI
-    # guard. The canonical var list lives with the config loader so the guard
-    # always matches the real override surface (every field, not just password).
+    # 当任意 auth 环境变量被设置时，auth 由 env 管理，配置文件编辑
+    # （包括 local admin 端点）在重启后不会生效 —— 参见 CLI 守卫。
+    # 规范化的变量列表放在 config loader 中，使守卫始终匹配真实的
+    # override 覆盖面（每个字段，不仅仅是 password）。
     from openbiliclaw.config import API_AUTH_ENV_VARS
 
     return [name for name in API_AUTH_ENV_VARS if (os.environ.get(name) or "").strip()]
@@ -71,7 +69,7 @@ def _is_mutating_get(path: str) -> bool:
 
 
 class _RateLimiter:
-    """In-memory per-IP login-failure limiter (resets on restart)."""
+    """内存中按 IP 的登录失败限流器（重启后重置）。"""
 
     def __init__(self, *, max_failures: int = 5, window: int = 900, lockout: int = 900) -> None:
         self._max = max_failures
@@ -105,18 +103,18 @@ class _RateLimiter:
 
 
 class AuthGate:
-    """Holds live auth config + database and answers per-request auth questions."""
+    """持有实时 auth 配置 + 数据库，并响应每个请求的 auth 问题。"""
 
     def __init__(self, auth: ApiAuthConfig, database: Database | None) -> None:
         self.auth = auth
         self.database = database
         self.rate = _RateLimiter()
-        # When startup fingerprint reconciliation fails we cannot guarantee a
-        # password change was revoked, so fail closed for all token auth until a
-        # successful reconcile (loopback still bypasses). See §4.7 / review r1#2.
+        # 启动指纹对账失败时，无法保证一个密码变更被撤销，
+        # 因此在成功对账之前对所有 token auth 采取失败即关闭策略
+        # （loopback 仍然绕过）。参见 §4.7 / review r1#2。
         self.reconcile_ok = True
 
-    # ── request introspection ──────────────────────────────────────────
+    # ── 请求内省 ──────────────────────────────────────────
 
     def resolve_client(self, request: HTTPConnection) -> tuple[str | None, bool]:
         peer = request.client.host if request.client else ""
@@ -139,50 +137,46 @@ class AuthGate:
         client_ip, local = self.resolve_client(request)
         if not auth_core.is_trusted_local(client_ip, local):
             return False
-        # A loopback peer is not enough: the user's browser can be driven by a
-        # malicious page to issue cross-origin requests to http://127.0.0.1,
-        # which would otherwise inherit the local bypass (localhost CSRF / DNS
-        # rebinding). Only grant the bypass to non-cross-origin-browser callers:
-        # no Origin (CLI/curl/non-browser), the local web UI itself (same-origin),
-        # a browser extension, or an explicitly allow-listed origin. See review r7.
+        # 仅 loopback peer 不够：用户的浏览器可能被恶意页面驱动向
+        # http://127.0.0.1 发起跨源请求，否则会继承本地绕过（localhost
+        # CSRF / DNS rebinding）。仅对非跨源浏览器调用方授予绕过：
+        # 无 Origin（CLI/curl/非浏览器）、本地 web UI 自身（同源）、
+        # 浏览器扩展、或显式允许列表中的 origin。参见 review r7。
         return self._origin_safe_for_local(request)
 
     def _origin_safe_for_local(self, request: HTTPConnection) -> bool:
         origin = request.headers.get("origin")
-        # A real browser extension (the primary local client) is trusted by its
-        # origin scheme alone — a web page can't forge a chrome-extension origin.
+        # 一个真实的浏览器扩展（主要的本地客户端）仅凭其 origin scheme 即可信
+        # —— 网页无法伪造 chrome-extension origin。
         if origin and (
             origin.startswith("chrome-extension://") or origin.startswith("moz-extension://")
         ):
             return True
-        # NOTE: allowed_bearer_origins are deliberately NOT treated as
-        # trusted-local. They are the cross-origin case that authenticates via a
-        # bearer *token*; granting them a no-token local bypass would also hand
-        # them /api/auth/admin (manage the gate) without a session. They still
-        # work via the token path (pick_token). See review r1#1 (admin).
-        # Fetch Metadata: a real browser reveals cross-origin intent even when it
-        # omits Origin (no-cors subresources like
-        # `<img src="http://127.0.0.1:8420/api/sources/xhs/next-task">`). Deny the
-        # local bypass for cross-site / cross-origin-same-site browser requests so a
-        # malicious page can't drive no-Origin loopback state changes. CLI/curl send
-        # no Sec-Fetch-* (unaffected); the extension uses its chrome-extension Origin
-        # branch above. See review r9.
+        # 注意：allowed_bearer_origins 故意不被视为 trusted-local。
+        # 它们是通过 bearer *token* 认证的跨源场景；授予它们无 token 的
+        # 本地绕过会让它们无需会话即可访问 /api/auth/admin（管理 gate）。
+        # 它们仍然通过 token 路径工作（pick_token）。参见 review r1#1 (admin)。
+        # Fetch Metadata：真实浏览器即使省略 Origin 也会暴露跨源意图
+        # （no-cors 子资源如
+        # `<img src="http://127.0.0.1:8420/api/sources/xhs/next-task">`）。
+        # 对跨站 / 跨源同站的浏览器请求拒绝本地绕过，防止恶意页面驱动
+        # 无 Origin 的 loopback 状态变更。CLI/curl 不发送 Sec-Fetch-*
+        # （不受影响）；扩展使用上面的 chrome-extension Origin 分支。
+        # 参见 review r9。
         if request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
             return False
         eff = self.effective(request)
-        # DNS-rebinding defense: a rebound browser (Host: evil.example → 127.0.0.1)
-        # connects DIRECTLY, so when the peer itself is loopback the no-Origin /
-        # same-origin exemptions additionally require a canonical loopback Host.
-        # When the client was resolved via a configured trusted proxy (peer is the
-        # proxy, not loopback), the proxy config is the trust anchor and rebinding
-        # doesn't apply, so the Host (the external proxied name) isn't required to
-        # be loopback.
+        # DNS-rebinding 防御：rebound 浏览器（Host: evil.example → 127.0.0.1）
+        # 直接连接，因此当 peer 本身是 loopback 时，无 Origin / 同源豁免
+        # 额外要求一个规范化的 loopback Host。当客户端通过配置的可信
+        # proxy 解析（peer 是 proxy 而非 loopback）时，proxy 配置是信任锚
+        # 且 rebinding 不适用，因此 Host（外部代理名）不要求是 loopback。
         peer_host = request.client.host if request.client else None
         peer_is_loopback = auth_core.is_loopback_host(peer_host)
         if peer_is_loopback and (eff is None or not auth_core.is_loopback_host(eff[1])):
             return False
         if not origin:
-            return True  # CLI/curl/non-browser, or same-origin GET
+            return True  # CLI/curl/非浏览器，或同源 GET
         parsed = auth_core.parse_origin(origin)
         return parsed is not None and auth_core.same_origin(parsed, eff)
 
@@ -198,7 +192,7 @@ class AuthGate:
         )
 
     def pick_token(self, request: HTTPConnection) -> tuple[bool, str | None]:
-        """Return ``(used_cookie, token)``. Bearer/query only for allowed origins."""
+        """返回 ``(used_cookie, token)``。Bearer/query 仅对允许的 origin 有效。"""
         cookie = request.cookies.get(COOKIE_NAME)
         if cookie:
             return True, cookie
@@ -221,15 +215,14 @@ class AuthGate:
         if not token:
             return False
         if not self.reconcile_ok:
-            return False  # revocation state unverified → fail closed
-        epoch = self.current_epoch()  # may raise -> caller fails closed
+            return False  # 撤销状态未验证 → 失败即关闭
+        epoch = self.current_epoch()  # 可能 raise -> 调用方失败即关闭
         return auth_core.verify_token(token, self.auth.session_secret, current_epoch=epoch)
 
     def csrf_ok(self, request: Request, *, require_origin: bool = True) -> bool:
-        # The custom header is the core defense (cross-origin credentialed
-        # requests can't set it). For unsafe methods we *also* pin Origin==Host
-        # (Origin is reliably present there); GET requests may legitimately omit
-        # Origin when same-origin, so the header alone gates them.
+        # 自定义头是核心防御（跨源带凭证请求无法设置它）。对不安全方法，
+        # 我们*额外*钉住 Origin==Host（Origin 在这里可靠出现）；GET 请求
+        # 同源时可能合法地省略 Origin，因此仅靠该头来放行。
         if request.headers.get(CSRF_HEADER) is None:
             return False
         if require_origin:
@@ -239,7 +232,7 @@ class AuthGate:
         return True
 
 
-# ── cookie helpers ──────────────────────────────────────────────────────────
+# ── cookie 辅助函数 ──────────────────────────────────────────────────────────
 
 
 def _set_session_cookie(resp: Response, token: str, *, ttl_hours: int, secure: bool) -> None:
@@ -264,17 +257,17 @@ def _is_secure(gate: AuthGate, request: Request) -> bool:
     return eff is not None and eff[0] == "https"
 
 
-# ── whitelist (always-public paths) ─────────────────────────────────────────
+# ── 白名单（始终公开的路径） ─────────────────────────────────────────
 
 
 def _is_public(request: Request) -> bool:
-    """Paths that bypass the gate even when auth is enabled (§4.2)."""
+    """即使启用 auth 也绕过 gate 的路径（§4.2）。"""
     path = request.url.path
     method = request.method.upper()
     if method == "OPTIONS":
         return True
     if not path.startswith("/api"):
-        return True  # static SPA shells, "/", favicon, etc.
+        return True  # 静态 SPA 壳、"/"、favicon 等
     if path == "/api/health":
         return True
     if path in ("/api/auth/status", "/api/auth/login"):
@@ -283,26 +276,26 @@ def _is_public(request: Request) -> bool:
         return True
     if path == "/api/autostart/apply":
         return True
-    # guided-init status is remote-readable (can_manage flags local-only); the
-    # write endpoints (init / init/cancel) are whitelisted too but self-gate via
-    # is_trusted_local in their handlers (gui-init spec §2).
+    # guided-init 状态可被远端读取（can_manage 标记仅本地）；
+    # 写端点（init / init/cancel）也在白名单中，但其 handler 通过
+    # is_trusted_local 自我 gate（gui-init spec §2）。
     if path in ("/api/init-status", "/api/init", "/api/init/cancel"):
         return True
-    # gate management bypasses the middleware so its handler can enforce
-    # trusted-local itself and return a specific 403 local_only for every
-    # non-local caller (remote OR cross-origin loopback), instead of a generic
-    # 401 that leaks whether a token was presented. The handler is the gate.
+    # gate 管理绕过中间件，以便其 handler 自行强制 trusted-local，
+    # 并对每个非本地调用方（远端或跨源 loopback）返回特定的
+    # 403 local_only，而不是会泄露是否提交了 token 的通用 401。
+    # handler 即 gate。
     if path == "/api/auth/admin":
         return True
-    # plain logout is public + idempotent; global revoke (?all=true) is NOT.
+    # 普通登出是公开 + 幂等的；全局撤销（?all=true）则不是。
     return bool(path == "/api/auth/logout" and request.query_params.get("all") != "true")
 
 
-# ── middleware ──────────────────────────────────────────────────────────────
+# ── 中间件 ──────────────────────────────────────────────────────────────
 
 
 def make_auth_middleware(get_gate: GateGetter) -> Any:
-    """Build the ASGI http middleware dispatch closure."""
+    """构建 ASGI http 中间件分发闭包。"""
 
     async def auth_guard(request: Request, call_next: Any) -> Any:
         gate: AuthGate = get_gate()
@@ -316,7 +309,7 @@ def make_auth_middleware(get_gate: GateGetter) -> Any:
         used_cookie, token = gate.pick_token(request)
         try:
             valid = gate.token_valid(token)
-        except Exception:  # DB unavailable -> fail closed
+        except Exception:  # DB 不可用 -> 失败即关闭
             logger.warning("auth: epoch read failed; failing closed", exc_info=True)
             return _unauthorized(clear_cookie=False)
         if not valid:
@@ -336,18 +329,18 @@ def make_auth_middleware(get_gate: GateGetter) -> Any:
 
 
 def authorize_websocket(gate: AuthGate, websocket: Any) -> bool:
-    """Authorize a WebSocket handshake (the http middleware does NOT cover ws).
+    """授权一个 WebSocket 握手（http 中间件不覆盖 ws）。
 
-    Must be called *before* ``websocket.accept()``. Mirrors the HTTP gate plus a
-    same-origin (CSWSH) check, since browsers can't set custom headers on a
-    WebSocket handshake. WebSocket exposes the same ``client`` / ``headers`` /
-    ``cookies`` / ``query_params`` / ``url`` attributes the gate reads.
+    必须在 ``websocket.accept()`` *之前* 调用。镜像 HTTP gate 并额外
+    做一次同源（CSWSH）检查，因为浏览器无法在 WebSocket 握手上设置
+    自定义头。WebSocket 暴露与 gate 读取相同的 ``client`` / ``headers`` /
+    ``cookies`` / ``query_params`` / ``url`` 属性。
     """
     if not gate.auth.enabled:
         return True
     if gate.is_trusted_local(websocket):
         return True
-    # CSWSH defense: Origin must be same-origin or an allow-listed bearer origin.
+    # CSWSH 防御：Origin 必须同源或属于允许的 bearer origin 列表。
     origin = websocket.headers.get("origin")
     parsed = auth_core.parse_origin(origin)
     same = auth_core.same_origin(parsed, gate.effective(websocket))
@@ -363,8 +356,8 @@ def authorize_websocket(gate: AuthGate, websocket: Any) -> bool:
 
 
 def _cors_echo(resp: JSONResponse) -> JSONResponse:
-    # middleware short-circuits run outside CORSMiddleware; echo a permissive
-    # header so cross-origin desktop clients can read the status code.
+    # 中间件短路运行在 CORSMiddleware 之外；回显一个宽松的头，
+    # 使跨源桌面客户端可以读取状态码。
     resp.headers.setdefault("Access-Control-Allow-Origin", "*")
     return resp
 
@@ -380,19 +373,19 @@ def _forbidden_csrf() -> JSONResponse:
     return _cors_echo(JSONResponse({"error": "csrf"}, status_code=403))
 
 
-# ── routes ──────────────────────────────────────────────────────────────────
+# ── 路由 ──────────────────────────────────────────────────────────────────
 
 
 def register_auth_routes(app: FastAPI, get_gate: GateGetter) -> None:
-    """Register ``/api/auth/{status,login,logout}`` on the FastAPI app."""
+    """在 FastAPI app 上注册 ``/api/auth/{status,login,logout}``。"""
 
     @app.get("/api/auth/status")
     async def auth_status(request: Request) -> JSONResponse:
         gate: AuthGate = get_gate()
         env_managed = bool(_auth_env_overrides())
         local = gate.is_trusted_local(request)
-        # can_manage: only a trusted-local caller (extension/local UI/CLI) may
-        # toggle the gate via /api/auth/admin, and not when env-managed.
+        # can_manage：仅 trusted-local 调用方（扩展/本地 UI/CLI）可通过
+        # /api/auth/admin 切换 gate，且 env-managed 时不允许。
         can_manage = local and not env_managed
         if not gate.auth.enabled:
             return JSONResponse(
@@ -450,14 +443,14 @@ def register_auth_routes(app: FastAPI, get_gate: GateGetter) -> None:
         origin = request.headers.get("origin")
         req_origin = auth_core.parse_origin(origin)
         eff = gate.effective(request)
-        # Server decides the mode by Origin; the client cannot ask for a token.
+        # 服务端根据 Origin 决定模式；客户端无法主动请求 token。
         is_same = req_origin is None or auth_core.same_origin(req_origin, eff)
         if is_same:
             token = auth_core.sign_token(gate.auth.session_secret, epoch=epoch, ttl_hours=ttl)
             resp = JSONResponse({"ok": True})
             _set_session_cookie(resp, token, ttl_hours=ttl, secure=_is_secure(gate, request))
             return resp
-        # cross-origin → bearer mode (allow-listed + finite TTL only)
+        # 跨源 → bearer 模式（仅在白名单中且 TTL 有限）
         if not auth_core.origin_allowed_for_bearer(origin, gate.auth.allowed_bearer_origins):
             return JSONResponse({"ok": False, "error": "origin_forbidden"}, status_code=403)
         if ttl <= 0:
@@ -473,7 +466,7 @@ def register_auth_routes(app: FastAPI, get_gate: GateGetter) -> None:
         resp = JSONResponse({"ok": True})
         _clear_session_cookie(resp)
         if request.query_params.get("all") == "true" and gate.database is not None:
-            # global revoke; middleware already required a valid session here
+            # 全局撤销；中间件已在此要求一个有效会话
             try:
                 gate.database.bump_auth_epoch()
             except Exception:
@@ -482,11 +475,11 @@ def register_auth_routes(app: FastAPI, get_gate: GateGetter) -> None:
         return resp
 
 
-# ── startup reconciliation ──────────────────────────────────────────────────
+# ── 启动对账 ──────────────────────────────────────────────────────────────────
 
 
 def ensure_session_secret(auth: ApiAuthConfig) -> bool:
-    """Generate a session secret on first enable. Returns True if it changed."""
+    """首次启用时生成 session secret。如果发生变更则返回 True。"""
     if auth.enabled and not auth.session_secret.strip():
         auth.session_secret = secrets.token_urlsafe(32)
         return True
@@ -494,7 +487,7 @@ def ensure_session_secret(auth: ApiAuthConfig) -> bool:
 
 
 def reconcile_password_fingerprint(gate: AuthGate, *, plain: str | None) -> None:
-    """Bump the revocation epoch if the password changed since last boot (§4.7)."""
+    """若自上次启动以来密码已变更，则提升撤销 epoch（§4.7）。"""
     auth = gate.auth
     if not (auth.enabled and auth.password_hash.strip() and auth.session_secret.strip()):
         return
@@ -509,8 +502,8 @@ def reconcile_password_fingerprint(gate: AuthGate, *, plain: str | None) -> None
         if bumped:
             logger.info("auth: password change detected, revoked existing sessions")
     except Exception:
-        # Could not confirm/revoke a possible password change → fail closed for
-        # all token auth (loopback still works) until a clean reconcile.
+        # 无法确认/撤销一个可能的密码变更 → 在下次干净对账之前
+        # 对所有 token auth 失败即关闭（loopback 仍可用）。
         gate.reconcile_ok = False
         logger.warning(
             "auth: fingerprint reconcile failed; token auth disabled until next "

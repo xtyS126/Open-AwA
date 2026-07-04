@@ -1,7 +1,7 @@
-"""Source management tools for agent function calling.
+"""内容源管理工具，供 Agent 函数调用使用。
 
-These tools can be invoked by the dialogue agent to create, list, and
-manage content source subscriptions (SourceRecipe) on behalf of the user.
+这些工具可被对话 Agent 调用，以代表用户创建、列出和管理内容源订阅
+（SourceRecipe）。
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# ── Tool definitions (for LLM) ─────────────────────────────────────
+# ── 工具定义（供 LLM 使用）─────────────────────────────────────────
 
 SOURCE_TOOLS: list[dict[str, Any]] = [
     {
@@ -42,23 +42,23 @@ SOURCE_TOOLS: list[dict[str, Any]] = [
 ]
 
 
-# ── Tool dispatcher ─────────────────────────────────────────────────
+# ── 工具分发器 ────────────────────────────────────────────────────
 
 
 class SourceToolDispatcher:
-    """Executes source management tool calls against the database."""
+    """针对数据库执行内容源管理工具调用。"""
 
     def __init__(self, database: Any) -> None:
         self._db = database
 
     def dispatch(self, tool_call: dict[str, Any]) -> str:
-        """Execute a tool call and return a human-readable result string.
+        """执行工具调用并返回人类可读的结果字符串。
 
         Args:
-            tool_call: Dict with ``name`` and optional ``arguments`` keys.
+            tool_call: 包含 ``name`` 和可选 ``arguments`` 键的字典。
 
         Returns:
-            Result message suitable for feeding back to the LLM.
+            适合反馈给 LLM 的结果消息。
         """
         name = tool_call.get("name", "")
         args = tool_call.get("arguments", {})

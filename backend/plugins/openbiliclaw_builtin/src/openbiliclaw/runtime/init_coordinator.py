@@ -1,17 +1,16 @@
-"""Coordinator for guided (GUI) initialization.
+"""引导式（GUI）初始化的协调器。
 
-Owns the init lifecycle on a *live* backend (gui-init spec §5):
+负责在 *活跃* 后端上拥有初始化生命周期（gui-init 规范 §5）：
 
-* single-flight start (TOCTOU) via the ``init_runs`` reservation,
-* the **single writer** to the status store + progress events,
-* the per-run ``enqueued_task_ids`` set that writer-gating consults to let
-  init's own bootstrap task-results through,
-* cooperative cancel of the background task.
+* 通过 ``init_runs`` 预约实现单次并发启动（TOCTOU），
+* 是状态存储 + 进度事件的 **唯一写者**，
+* 维护单次运行的 ``enqueued_task_ids`` 集合，writer-gating 据此放行
+  初始化自身的引导任务结果，
+* 协作式取消后台任务。
 
-It holds the :class:`RuntimeContext` (not direct component references) and
-reads ``ctx.database`` / ``ctx.event_hub`` / ``ctx.runtime_controller`` lazily
-so it always uses the current instances after a config-driven rebuild swaps
-them (review R2 A-1).
+它持有 :class:`RuntimeContext`（不是直接的组件引用），并懒读取
+``ctx.database`` / ``ctx.event_hub`` / ``ctx.runtime_controller``，
+确保在配置驱动的 rebuild 替换组件后仍使用当前实例（评审 R2 A-1）。
 """
 
 from __future__ import annotations
@@ -42,18 +41,18 @@ def _utcnow_iso() -> str:
 
 
 class InitCoordinator:
-    """Lifecycle owner for one guided-init run at a time."""
+    """同一时刻仅允许一次引导式初始化运行的生命周期持有者。"""
 
     def __init__(self, ctx: Any) -> None:
         self._ctx = ctx
         self._current_task: asyncio.Task[Any] | None = None
         self._enqueued_task_ids: set[str] = set()
-        # Serializes status writes + event publishes so the parallel stage 3/4
-        # progress updates can't interleave / reorder ``sequence`` (spec §5e).
+        # 串行化状态写入 + 事件发布，避免阶段 3/4 并行进度更新交错或
+        # 重排 ``sequence``（规范 §5e）。
         self._write_lock = asyncio.Lock()
         self._seq = 0
 
-    # ── lazy component access (survives rebuild) ───────────────────────────
+    # ── 懒加载组件访问（rebuild 后仍生效） ────────────────────────────────
     @property
     def _db(self) -> Any:
         return self._ctx.database
@@ -62,9 +61,9 @@ class InitCoordinator:
     def _event_hub(self) -> Any:
         return getattr(self._ctx, "event_hub", None)
 
-    # ── boot / liveness ────────────────────────────────────────────────────
+    # ── 启动 / 存活 ────────────────────────────────────────────────────────
     def reconcile_on_boot(self) -> int:
-        """Fail stale starting/running runs left by a crash. Returns count."""
+        """把崩溃残留的 starting/running 运行标记为失败。返回数量。"""
         db = self._db
         if db is None:
             return 0
@@ -74,9 +73,9 @@ class InitCoordinator:
         run = self._db.get_latest_init_run()
         return bool(run and run["status"] in _ACTIVE)
 
-    # ── start / reset (TOCTOU lives in the DB CAS; E2 does cheap pre-checks) ─
+    # ── 启动 / 重置（TOCTOU 在 DB CAS 里；E2 做廉价预检） ──────────────────
     def try_start(self, run_id: str) -> bool:
-        """Reserve a new run (single-flight). Seeds the stage list on success."""
+        """预约一个新运行（单次并发）。成功时初始化阶段列表。"""
         if not self._db.try_reserve_init_starting(run_id):
             return False
         self._enqueued_task_ids = set()
@@ -87,10 +86,10 @@ class InitCoordinator:
         return True
 
     def reset_to_idle(self, run_id: str, *, reason: str | None = None) -> None:
-        """Roll a reserved-but-not-launched run back (E2 pre-flight reject)."""
+        """把已预约但未启动的运行回滚（E2 预检拒绝）。"""
         self._db.update_init_run(run_id, status="idle", error_reason=reason)
 
-    # ── bootstrap task ownership (consulted by writer-gating, D1) ──────────
+    # ── 引导任务归属（被 writer-gating 查询，D1） ──────────────────────────
     def register_enqueued_task(self, run_id: str, task_id: str) -> None:
         self._enqueued_task_ids.add(str(task_id))
 
@@ -98,29 +97,29 @@ class InitCoordinator:
         return self.init_active() and str(task_id) in self._enqueued_task_ids
 
     def owned_task_ids(self) -> set[str]:
-        """Bootstrap task ids enqueued by the active run (empty if idle).
+        """活跃运行入队的引导任务 id（空闲时为空）。
 
-        ``next-task`` consults this so the extension is only handed init's own
-        bootstrap work while a run is active — never a stale pending task that
-        would otherwise starve the run's collectors (gui-init review)."""
+        ``next-task`` 据此查询，使扩展只在运行活跃时拿到初始化自身的
+        引导工作——绝不会拿到一条陈旧的 pending 任务，否则会让运行的
+        采集器饿死（gui-init review）。"""
         if not self.init_active():
             return set()
         return set(self._enqueued_task_ids)
 
-    # ── background task handle (for cancel) ────────────────────────────────
+    # ── 后台任务句柄（用于取消） ───────────────────────────────────────────
     def attach_task(self, run_id: str, task: asyncio.Task[Any]) -> None:
         self._current_task = task
 
     async def cancel_current_run(self, run_id: str) -> bool:
-        """Request cancellation of the running task. The wrapper's ``finally``
-        persists the ``cancelled`` status (single-writer; spec §5f)."""
+        """请求取消正在运行的任务。包装器的 ``finally`` 会持久化
+        ``cancelled`` 状态（单写者；规范 §5f）。"""
         task = self._current_task
         if task is None or task.done():
             return False
         task.cancel()
         return True
 
-    # ── single status writer ───────────────────────────────────────────────
+    # ── 单一状态写者 ───────────────────────────────────────────────────────
     async def _write(
         self,
         run_id: str,
@@ -147,10 +146,9 @@ class InitCoordinator:
                     if s["n"] == stage:
                         s["status"] = stage_status
                         s["reason"] = stage_reason
-            # On a terminal failure/cancel, downgrade any still-"running" or
-            # "pending" stage so status consumers (and the extension checklist,
-            # which keys off stage status) don't show a non-terminal timeline
-            # for a finished run (gui-init review).
+            # 终态失败/取消时，把任何仍在 "running" 或 "pending" 的阶段
+            # 降级，使状态消费方（以及按阶段状态驱动的扩展 checklist）
+            # 不会为已结束的运行展示非终态时间线（gui-init review）。
             if status in ("failed", "cancelled"):
                 for s in stages:
                     if s["status"] in ("running", "pending"):
@@ -241,7 +239,7 @@ class InitCoordinator:
             event_extra={"reason": reason},
         )
 
-    # ── status read (run-derived part; E1 adds prereqs/can_manage) ─────────
+    # ── 状态读取（运行派生部分；E1 补充 prereqs/can_manage） ───────────────
     def get_status(self) -> dict[str, Any]:
         run = self._db.get_latest_init_run()
         if run is None:
@@ -271,7 +269,7 @@ class InitCoordinator:
 
 
 def _current_stage(stages: Sequence[dict[str, Any]]) -> int:
-    """Lowest still-running stage; else the highest completed; else 0 (spec §5e)."""
+    """仍在运行的最低阶段；否则最高的已完成阶段；否则 0（规范 §5e）。"""
     running = [int(s["n"]) for s in stages if s["status"] == "running"]
     if running:
         return min(running)

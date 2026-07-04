@@ -1,4 +1,4 @@
-"""JSON CLI bridge for the OpenClaw adapter."""
+"""OpenClaw 适配器的 JSON CLI 桥接。"""
 
 from __future__ import annotations
 
@@ -25,12 +25,12 @@ _SKILL_PACK_PATH = (
 
 _RUNTIME_STREAM_URL = "ws://127.0.0.1:8420/api/runtime-stream"
 
-# Event types that the ``listen`` command forwards to stdout.
+# ``listen`` 命令转发到 stdout 的事件类型。
 #
-# ``delight.candidate`` — proactive surprise recommendation push.
-# ``interest.probe``    — the agent has a new speculative interest hypothesis
-#                         it wants the user to confirm; payload mirrors the
-#                         response of ``next-probe``.
+# ``delight.candidate`` — 主动惊喜推荐推送。
+# ``interest.probe``    — agent 有一个新的推测性兴趣假设，
+#                         想让用户确认；payload 与
+#                         ``next-probe`` 的响应一致。
 _LISTEN_EVENT_TYPES = frozenset({"delight.candidate", "interest.probe", "avoidance.probe"})
 
 
@@ -198,7 +198,7 @@ async def _run_command(args: argparse.Namespace, adapter: Any) -> dict[str, obje
 
 
 # ---------------------------------------------------------------------------
-# ``listen`` — long-running WebSocket event stream
+# ``listen`` — 长时运行的 WebSocket 事件流
 # ---------------------------------------------------------------------------
 
 _WS_RECONNECT_DELAY = 3.0
@@ -206,7 +206,7 @@ _DELIGHT_ACK_URL = "http://127.0.0.1:8420/api/delight/sent"
 
 
 async def _acknowledge_delight(bvid: str) -> None:
-    """POST acknowledgment so the backend marks the item as notified."""
+    """POST 确认，以便后端将该条目标记为已通知。"""
     try:
         import aiohttp
 
@@ -219,7 +219,7 @@ async def _acknowledge_delight(bvid: str) -> None:
         ):
             resp.raise_for_status()
     except Exception:
-        # Fallback to synchronous urllib when aiohttp is unavailable
+        # aiohttp 不可用时回退到同步 urllib
         try:
             import urllib.request
 
@@ -235,13 +235,13 @@ async def _acknowledge_delight(bvid: str) -> None:
 
 
 async def _listen_ws(ws_url: str, event_types: frozenset[str]) -> None:
-    """Connect to the runtime WebSocket stream and forward matching events.
+    """连接运行时 WebSocket 流并转发匹配的事件。
 
-    Each matching event is written to stdout as a single JSON line:
+    每个匹配的事件作为单行 JSON 写入 stdout：
 
         {"type": "delight.candidate", "bvid": "BV1xxx", ...}
 
-    The connection auto-reconnects on failure. Press Ctrl-C to stop.
+    连接失败时自动重连。按 Ctrl-C 停止。
     """
     try:
         import websockets
@@ -284,7 +284,7 @@ async def _listen_ws(ws_url: str, event_types: frozenset[str]) -> None:
                         continue
                     _print_payload({"ok": True, "data": event})
                     sys.stdout.flush()
-                    # Auto-ACK delight candidates so cooldown starts immediately
+                    # 自动 ACK 惊喜候选，使冷却立即开始
                     if event_type == "delight.candidate":
                         bvid = str(event.get("bvid", ""))
                         if bvid:
@@ -302,11 +302,11 @@ async def _listen_ws(ws_url: str, event_types: frozenset[str]) -> None:
 
 
 def main(argv: Sequence[str] | None = None, *, adapter: Any | None = None) -> int:
-    """Run the OpenClaw adapter CLI and print JSON output."""
+    """运行 OpenClaw 适配器 CLI 并打印 JSON 输出。"""
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    # ``listen`` is a long-running stream — handle separately
+    # ``listen`` 是长时运行流 — 单独处理
     if args.command == "listen":
         event_types = (
             frozenset(t.strip() for t in args.events.split(",") if t.strip()) or _LISTEN_EVENT_TYPES

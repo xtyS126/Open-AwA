@@ -1,8 +1,8 @@
-"""Discovery candidate pool primitives.
+"""发现候选池基础数据结构。
 
-Discovery producers enqueue raw cross-platform content here first.  A
-separate evaluator can then claim mixed-source batches and persist accepted
-items into ``content_cache`` through the existing ``DiscoveredContent`` path.
+发现生产者首先将跨平台的原始内容入队到这里。随后独立的评估器
+可以领取混合来源的批次，并通过现有的 ``DiscoveredContent`` 路径
+将接受的条目持久化到 ``content_cache`` 中。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ FAILED_EVAL = "failed_eval"
 
 
 def discovery_candidate_pending_cap(pool_target_count: int) -> int:
-    """Return the per-source candidate-row cap used by all enqueue paths."""
+    """返回所有入队路径使用的每来源候选行上限。"""
 
     target = max(0, int(pool_target_count))
     return max(target * 2, target + 120, 600)
@@ -36,7 +36,7 @@ def discovery_candidate_pending_cap(pool_target_count: int) -> int:
 
 @dataclass
 class DiscoveryCandidateWrite:
-    """Serializable row shape for enqueuing raw discovery candidates."""
+    """用于入队原始发现候选条目的可序列化行结构。"""
 
     candidate_key: str
     source_platform: str
@@ -68,9 +68,9 @@ class DiscoveryCandidateWrite:
     candidate_tier: str = "primary"
     score_threshold: float = 0.0
     raw_payload: dict[str, Any] = field(default_factory=dict)
-    # P1.8 yield provenance: the discovery_keywords.id that produced this
-    # candidate (NULL for non-search / legacy / flag-off). Survives the
-    # discovery_candidates round-trip so admit can backfill yield.
+    # P1.8 yield provenance: 产生此候选条目的 discovery_keywords.id
+    # (非搜索 / 旧版本 / flag 关闭时为 NULL)。在 discovery_candidates
+    # 往返过程中保留，以便 admit 能够回填 yield。
     source_keyword_id: int | None = None
 
 
@@ -117,7 +117,7 @@ def _canonical_url(raw_url: object) -> str:
 
 
 def candidate_key_for(item: DiscoveredContent) -> str:
-    """Return a stable dedupe key for a discovered item."""
+    """返回发现条目的稳定去重 key。"""
 
     platform = _canonical_platform(item.source_platform or ("bilibili" if item.bvid else ""))
     content_id = str(item.content_id or item.bvid or "").strip()
@@ -133,13 +133,12 @@ def candidate_key_for(item: DiscoveredContent) -> str:
 
 
 def resolve_content_type(item_content_type: object, platform: str) -> str:
-    """Resolve a candidate's content shape, honoring an explicit value first.
+    """解析候选条目的内容形态，优先尊重显式指定的值。
 
-    ``DiscoveredContent.content_type`` defaults to ``"video"`` (the
-    platform-neutral sentinel). Sources that set a real shape — e.g. X
-    ("tweet"/"thread") — win outright. Items that left the default in
-    place fall back to the per-platform default (xiaohongshu → "note",
-    everything else → "video").
+    ``DiscoveredContent.content_type`` 默认为 ``"video"`` (平台中立
+    的占位符)。设置了真实形态的来源 —— 例如 X ("tweet"/"thread")
+    —— 直接胜出。保留默认值的条目则回退到对应平台的默认值
+    (xiaohongshu → "note"，其余 → "video")。
     """
 
     explicit = str(item_content_type or "").strip()
@@ -158,7 +157,7 @@ def discovered_content_to_candidate_write(
     source_context: str = "",
     raw_payload: dict[str, Any] | None = None,
 ) -> DiscoveryCandidateWrite:
-    """Convert a discovered item into a candidate-pool write payload."""
+    """将一个发现条目转换为候选池写入载荷。"""
 
     platform = _canonical_platform(item.source_platform or ("bilibili" if item.bvid else ""))
     content_id = str(item.content_id or item.bvid or "").strip()
@@ -203,7 +202,7 @@ def discovered_content_to_candidate_write(
 
 
 def _coerce_optional_int(value: object) -> int | None:
-    """Coerce a DB cell to ``int`` or ``None`` (P1.8 source_keyword_id)."""
+    """将数据库单元格强制转换为 ``int`` 或 ``None`` (P1.8 source_keyword_id)。"""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -231,7 +230,7 @@ def _json_list(value: object) -> list[str]:
 
 
 def row_to_discovered_content(row: dict[str, Any]) -> DiscoveredContent:
-    """Convert a ``discovery_candidates`` row into ``DiscoveredContent``."""
+    """将一行 ``discovery_candidates`` 转换为 ``DiscoveredContent``。"""
 
     content_id = str(row.get("content_id") or row.get("bvid") or "").strip()
     bvid = str(row.get("bvid") or content_id).strip()

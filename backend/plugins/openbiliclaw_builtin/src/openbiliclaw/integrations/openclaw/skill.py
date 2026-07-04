@@ -1,4 +1,4 @@
-"""Protocol-neutral skill descriptors for OpenClaw integration."""
+"""OpenClaw 集成的协议无关技能描述符。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .schemas import AvoidanceProbeFeedbackRequest, ChatRequest, FeedbackRequest
 
 @dataclass(slots=True)
 class OpenClawSkillDescriptor:
-    """One skill descriptor that can be registered with OpenClaw."""
+    """可向 OpenClaw 注册的单个技能描述符。"""
 
     name: str
     description: str
@@ -60,7 +60,7 @@ def _to_int(value: object, default: int = 0) -> int:
 
 
 def build_openclaw_skills(adapter: Any) -> list[OpenClawSkillDescriptor]:
-    """Build protocol-neutral skill descriptors backed by the adapter."""
+    """构建由适配器支撑的协议无关技能描述符。"""
 
     async def sync_account_handler(payload: dict[str, object]) -> dict[str, object]:
         del payload

@@ -1,1 +1,1 @@
-"""Memory package — multi-layer networked memory system."""
+"""Memory 包 —— 多层网络化记忆系统。"""

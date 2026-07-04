@@ -1,4 +1,4 @@
-"""Douyin direct-cookie discovery strategy."""
+"""抖音直连 cookie 发现策略。"""
 
 from __future__ import annotations
 
@@ -42,9 +42,9 @@ class SupportsDouyinDirectClient(Protocol):
     async def get_recommend_feed(self, *, limit: int = 30) -> list[dict[str, object]]: ...
 
 
-# Douyin-flavored keyword generation. Mirrors x.py / xhs_keyword_gen: a
-# byte-static system prompt (prompt-cache convention) with all per-call data
-# (the build_profile_summary dict) in the user message.
+# 抖音风格的关键词生成。镜像 x.py / xhs_keyword_gen: 
+# 字节静态的 system prompt (prompt-cache 约定),所有每次调用的数据
+# (build_profile_summary dict) 放在 user message 里。
 _DOUYIN_KEYWORDS_SYSTEM_PROMPT = """\
 你要为抖音内容发现生成一组适合抖音搜索的关键词。
 
@@ -64,9 +64,9 @@ _DOUYIN_KEYWORDS_SYSTEM_PROMPT = """\
 
 
 def _build_douyin_keyword_user_prompt(profile: SoulProfile, count: int) -> str:
-    # Same canonical structured profile every other discovery prompt sees
-    # (B站 / YouTube / X / 小红书 query-gen, all-platform evaluation) — no
-    # divergent representation. Deterministic dump keeps the cache prefix stable.
+    # 与其他所有发现 prompt 看到的相同结构化 profile
+    # (B站 / YouTube / X / 小红书 query-gen、全平台 evaluation) — 没有
+    # 分歧的表示。确定性 dump 保持 cache prefix 稳定。
     summary = build_profile_summary(profile)
     return (
         "<profile_summary>\n"
@@ -105,7 +105,7 @@ def _parse_douyin_keywords(content: str, *, count: int) -> list[str]:
 
 @dataclass
 class DouyinDirectStrategy(DiscoveryStrategy):
-    """Discover Douyin candidates using backend direct-cookie Web requests."""
+    """使用后端直连 cookie Web 请求发现抖音候选。"""
 
     client: SupportsDouyinDirectClient
     llm_service: SupportsStructuredTask | None = None
@@ -113,9 +113,9 @@ class DouyinDirectStrategy(DiscoveryStrategy):
     database: Database | None = None
     sources: tuple[str, ...] = ("search", "hot", "feed")
     seed_keywords: tuple[str, ...] = ()
-    # P1.8 yield provenance: ``keyword text → discovery_keywords.id`` for the
-    # injected search words. Empty for legacy runs. Search candidates produced
-    # by a mapped keyword carry its id so admission can backfill yield.
+    # P1.8 yield provenance: ``keyword text → discovery_keywords.id`` 用于
+    # 注入的搜索词。旧 run 为空。由映射关键词产出的搜索候选携带其 id,
+    # 以便 admission 能回填 yield。
     seed_keyword_ids: dict[str, int] = field(default_factory=dict)
     creator_sec_uids: tuple[str, ...] = ()
     keywords_per_run: int = 5
@@ -129,13 +129,13 @@ class DouyinDirectStrategy(DiscoveryStrategy):
         return "douyin_direct"
 
     async def discover(self, profile: SoulProfile, limit: int = 20) -> list[DiscoveredContent]:
-        # Each raw item carries (source_strategy, raw_dict, source_keyword_id).
-        # Only search items get a non-None keyword id (P1.8 yield provenance);
-        # hot / feed / creator items are attribution-free (None).
+        # 每个 raw item 携带 (source_strategy, raw_dict, source_keyword_id)。
+        # 只有 search item 拿到非 None 的 keyword id (P1.8 yield provenance);
+        # hot / feed / creator item 无归因 (None)。
         raw_items: list[tuple[str, dict[str, object], int | None]] = []
-        # Only synthesize / LLM-generate search keywords when the search source
-        # is active. hot/feed/creator-only modes must NOT burn an LLM call (or
-        # fall back to interest names) for keywords they will never search.
+        # 只有当 search source 激活时才合成 / LLM 生成搜索关键词。
+        # 仅 hot/feed/creator 模式绝不应为它们永远不会搜索的关键词
+        # 烧一次 LLM 调用 (或回退到 interest 名)。
         keywords = await self._keywords(profile) if "search" in self.sources else []
         self.last_intermediates = {
             "sources": list(self.sources),
@@ -212,18 +212,18 @@ class DouyinDirectStrategy(DiscoveryStrategy):
         return results
 
     async def _keywords(self, profile: SoulProfile) -> list[str]:
-        # Explicit recipe keywords win — no need to synthesize.
+        # 显式 recipe 关键词优先 — 无需合成。
         seeds = self._dedupe_cap([str(k).strip() for k in self.seed_keywords])
         if seeds:
             return seeds
-        # LLM keyword generation, aligned with B站 / 小红书 / X: feed the same
-        # build_profile_summary dict and rewrite into Douyin-native search terms.
+        # LLM 关键词生成,与 B站 / 小红书 / X 对齐: 喂给相同的
+        # build_profile_summary dict,改写成抖音原生搜索词。
         llm_keywords = await self._generate_keywords_llm(profile)
         if llm_keywords:
             return llm_keywords
-        # Fallback (no llm_service wired / call failed / empty): raw interest
-        # names — the original deterministic behavior, so Douyin keeps
-        # discovering even when no LLM is injected.
+        # 回退 (未注入 llm_service / 调用失败 / 空): 原始 interest
+        # 名 — 最初的确定性行为,使 Douyin 在没有 LLM 注入时仍能
+        # 持续发现。
         return self._dedupe_cap([str(i.name).strip() for i in profile.preferences.interests])
 
     def _dedupe_cap(self, candidates: list[str]) -> list[str]:
@@ -251,7 +251,7 @@ class DouyinDirectStrategy(DiscoveryStrategy):
                 caller="discovery.douyin.keyword_gen",
                 **without_core_memory_kwargs(complete_structured),
             )
-        except Exception as exc:  # noqa: BLE001 - degrade to deterministic fallback
+        except Exception as exc:  # noqa: BLE001 - 降级到确定性回退
             logger.warning("douyin keyword LLM call failed: %s", exc)
             return []
         content = getattr(response, "content", response)
@@ -270,8 +270,8 @@ class DouyinDirectStrategy(DiscoveryStrategy):
             key = content.content_id or content.bvid
             if key in seen:
                 continue
-            # P1.8 yield provenance — search items carry the producing keyword's
-            # id; hot/feed/creator pass None (attribution-free).
+            # P1.8 yield provenance — search item 携带产出关键词的
+            # id; hot/feed/creator 传 None (无归因)。
             if source_keyword_id is not None:
                 content.source_keyword_id = source_keyword_id
             seen.add(key)

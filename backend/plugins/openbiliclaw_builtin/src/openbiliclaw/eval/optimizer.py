@@ -1,8 +1,8 @@
-"""PromptOptimizer — attribution-driven prompt and parameter optimization.
+"""PromptOptimizer — 归因驱动的 prompt 和参数优化。
 
-Maps evaluation deviations back to specific prompts/parameters,
-generates targeted modifications (exploit), or random perturbations (explore).
-Supports commit/rollback for safe experimentation.
+将评估偏差映射回具体的 prompt/参数，
+生成针对性修改（利用）或随机扰动（探索）。
+支持 commit/rollback 以安全实验。
 """
 
 from __future__ import annotations
@@ -21,17 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Parameter space
+# 参数空间
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class ContinuousParam:
-    """A numeric parameter that can be optimized via perturbation."""
+    """可通过扰动优化的数值参数。"""
 
     name: str
     file_path: str
-    accessor: str  # dot-path to the value (e.g., "decay_factor_per_week")
+    accessor: str  # 值的 dot-path（例如 "decay_factor_per_week"）
     current: float = 0.0
     min_val: float = 0.0
     max_val: float = 1.0
@@ -40,7 +40,7 @@ class ContinuousParam:
 
 @dataclass
 class PromptParam:
-    """A prompt template parameter optimized via LLM rewrite."""
+    """通过 LLM 重写优化的 prompt 模板参数。"""
 
     name: str
     file_path: str
@@ -50,7 +50,7 @@ class PromptParam:
 
 @dataclass
 class ParamChange:
-    """A single parameter modification."""
+    """单个参数修改。"""
 
     param_name: str
     change_type: str  # "continuous" / "prompt"
@@ -61,12 +61,12 @@ class ParamChange:
 
 
 # ---------------------------------------------------------------------------
-# Default parameter registry
+# 默认参数注册表
 # ---------------------------------------------------------------------------
 
 _SRC = "src/openbiliclaw"
 
-# Files the optimizer is allowed to modify (whitelist)
+# optimizer 允许修改的文件白名单
 MODIFIABLE_FILES: list[str] = [
     f"{_SRC}/llm/prompts.py",
     f"{_SRC}/soul/layer_updaters.py",
@@ -148,12 +148,12 @@ DEFAULT_PROMPT_PARAMS: list[PromptParam] = [
 
 
 class PromptOptimizer:
-    """Attribute eval deviations to parameters and generate optimizations.
+    """将评估偏差归因到参数并生成优化。
 
-    Supports two backends:
-    - Claude Agent SDK (default): uses `run_optimizer_agent()` — the agent
-      can Read/Edit/Grep files and run tests autonomously
-    - Direct LLM: pass an `llm` instance for unit testing
+    支持两种后端：
+    - Claude Agent SDK（默认）：使用 `run_optimizer_agent()` — agent
+      可以自主 Read/Edit/Grep 文件并运行测试
+    - 直接 LLM：传入 `llm` 实例用于单元测试
     """
 
     def __init__(
@@ -175,24 +175,24 @@ class PromptOptimizer:
         self._modifiable_files = modifiable_files or list(MODIFIABLE_FILES)
         self._field_to_param = field_to_param or dict(FIELD_TO_PARAM)
         self._pending_changes: list[ParamChange] = []
-        self._backup: dict[str, str] = {}  # file_path → original content
+        self._backup: dict[str, str] = {}  # file_path → 原始内容
 
     async def exploit(
         self,
         worst_fields: list[FieldScore],
     ) -> list[ParamChange]:
-        """Generate changes to fix the worst-scoring fields (exploitation)."""
+        """生成修复最差评分字段的改动（利用）。"""
         if not worst_fields:
             return []
 
-        # Agent SDK path: let the optimizer agent read files and propose changes
+        # Agent SDK 路径：让 optimizer agent 读取文件并提出修改
         if self._use_agent_sdk:
             return await self._exploit_via_agent(worst_fields)
 
         changes: list[ParamChange] = []
         targeted_params: set[str] = set()
 
-        for field_score in worst_fields[:2]:  # Focus on top-2 worst
+        for field_score in worst_fields[:2]:  # 聚焦最差的 top-2
             param_name = self._field_to_param.get(
                 f"{field_score.layer}.{field_score.field}",
                 "",
@@ -201,7 +201,7 @@ class PromptOptimizer:
                 continue
             targeted_params.add(param_name)
 
-            # Check if it maps to a continuous param
+            # 检查是否映射到连续参数
             cont = self._find_continuous(param_name)
             if cont:
                 change = self._perturb_continuous(cont, direction="improve")
@@ -209,7 +209,7 @@ class PromptOptimizer:
                     changes.append(change)
                 continue
 
-            # Otherwise it's a prompt param — generate LLM-driven modification
+            # 否则是 prompt 参数 — 生成 LLM 驱动的修改
             prompt_param = self._find_prompt(param_name)
             if prompt_param:
                 change = await self._optimize_prompt(prompt_param, field_score)
@@ -222,7 +222,7 @@ class PromptOptimizer:
         self,
         worst_fields: list[FieldScore],
     ) -> list[ParamChange]:
-        """Use Claude Agent SDK to autonomously read files and propose fixes."""
+        """使用 Claude Agent SDK 自主读取文件并提出修复。"""
         from openbiliclaw.eval.agents import run_optimizer_agent
 
         eval_data = {
@@ -257,7 +257,7 @@ class PromptOptimizer:
         return changes
 
     async def explore(self) -> list[ParamChange]:
-        """Random perturbation of a parameter (exploration)."""
+        """对参数进行随机扰动（探索）。"""
         all_params: list[str] = [p.name for p in self._continuous] + [p.name for p in self._prompts]
         if not all_params:
             return []
@@ -277,13 +277,13 @@ class PromptOptimizer:
         return []
 
     def apply(self, changes: list[ParamChange]) -> int:
-        """Apply parameter changes (write to files). Returns count of successful changes."""
+        """应用参数改动（写入文件）。返回成功改动的数量。"""
         self._pending_changes = changes
         applied = 0
         for change in changes:
             if not change.file_path:
                 continue
-            # Whitelist check
+            # 白名单检查
             if change.file_path not in self._modifiable_files:
                 logger.warning(
                     "File not in MODIFIABLE_FILES whitelist, skipping: %s",
@@ -294,14 +294,14 @@ class PromptOptimizer:
             if not full_path.exists():
                 logger.warning("File not found: %s", change.file_path)
                 continue
-            # Backup original
+            # 备份原始内容
             if change.file_path not in self._backup:
                 self._backup[change.file_path] = full_path.read_text(encoding="utf-8")
 
             if change.change_type == "continuous":
                 ok = self._apply_continuous_change(full_path, change)
             else:
-                # "prompt" and "pipeline" both use text replacement
+                # "prompt" 和 "pipeline" 都使用文本替换
                 ok = self._apply_prompt_change(full_path, change)
             if ok:
                 applied += 1
@@ -314,12 +314,12 @@ class PromptOptimizer:
         return applied
 
     def has_pipeline_changes(self) -> bool:
-        """Check if any pending changes touch non-prompt files."""
+        """检查是否有待处理改动触及非 prompt 文件。"""
         prompt_file = f"{_SRC}/llm/prompts.py"
         return any(c.file_path and c.file_path != prompt_file for c in self._pending_changes)
 
     def validate_with_tests(self, timeout: int = 60) -> tuple[bool, str]:
-        """Run pytest to validate pipeline changes. Returns (passed, output)."""
+        """运行 pytest 验证 pipeline 改动。返回 (passed, output)。"""
         import subprocess
 
         try:
@@ -348,13 +348,13 @@ class PromptOptimizer:
             return False, f"pytest failed to run: {exc}"
 
     def commit(self) -> None:
-        """Confirm changes — clear backups."""
+        """确认改动 — 清空备份。"""
         self._backup.clear()
         self._pending_changes.clear()
         logger.info("Optimizer committed changes")
 
     def rollback(self) -> None:
-        """Rollback changes — restore from backups."""
+        """回滚改动 — 从备份恢复。"""
         for file_path, content in self._backup.items():
             full_path = self._project_root / file_path
             full_path.write_text(content, encoding="utf-8")
@@ -363,13 +363,13 @@ class PromptOptimizer:
         self._pending_changes.clear()
 
     def get_change_log(self) -> list[dict[str, str]]:
-        """Return descriptions of pending changes."""
+        """返回待处理改动的描述。"""
         return [
             {"param": c.param_name, "type": c.change_type, "description": c.description}
             for c in self._pending_changes
         ]
 
-    # -- Internal helpers ------------------------------------------------------
+    # -- 内部辅助函数 ------------------------------------------------------
 
     def _find_continuous(self, name: str) -> ContinuousParam | None:
         for p in self._continuous:
@@ -411,18 +411,18 @@ class PromptOptimizer:
         param: PromptParam,
         worst: FieldScore,
     ) -> ParamChange | None:
-        """Use LLM to generate a targeted prompt fix."""
+        """使用 LLM 生成针对性的 prompt 修复。"""
         full_path = self._project_root / param.file_path
         if not full_path.exists():
             return None
 
         current_content = full_path.read_text(encoding="utf-8")
-        # Extract the function body
+        # 提取函数体
         func_start = current_content.find(f"def {param.function_name}")
         if func_start < 0:
             return None
 
-        # Find next function or end of file
+        # 查找下一个函数或文件末尾
         next_def = current_content.find("\ndef ", func_start + 1)
         end = next_def if next_def > 0 else len(current_content)
         func_body = current_content[func_start:end]
@@ -481,7 +481,7 @@ class PromptOptimizer:
             return None
 
     async def _explore_prompt(self, param: PromptParam) -> ParamChange | None:
-        """Generate a random prompt variation for exploration."""
+        """生成随机 prompt 变体用于探索。"""
         full_path = self._project_root / param.file_path
         if not full_path.exists():
             return None
@@ -545,7 +545,7 @@ class PromptOptimizer:
 
     @staticmethod
     def _apply_continuous_change(path: Path, change: ParamChange) -> bool:
-        """Apply a continuous parameter change to a file."""
+        """将连续参数改动应用到文件。"""
         content = path.read_text(encoding="utf-8")
         old_str = str(change.old_value)
         new_str = str(change.new_value)
@@ -557,27 +557,27 @@ class PromptOptimizer:
 
     @staticmethod
     def _apply_prompt_change(path: Path, change: ParamChange) -> bool:
-        """Apply a prompt text change to a file with fuzzy whitespace matching."""
+        """通过模糊空白匹配将 prompt 文本改动应用到文件。"""
         content = path.read_text(encoding="utf-8")
         old_text = str(change.old_value)
         new_text = str(change.new_value)
 
-        # Exact match first
+        # 先尝试精确匹配
         if old_text in content:
             content = content.replace(old_text, new_text, 1)
             path.write_text(content, encoding="utf-8")
             return True
 
-        # Fuzzy: strip trailing whitespace per line and retry
+        # 模糊：去除每行尾部空白后重试
         def _normalize(s: str) -> str:
             return "\n".join(line.rstrip() for line in s.splitlines())
 
         norm_content = _normalize(content)
         norm_old = _normalize(old_text)
         if norm_old in norm_content:
-            # Find the original span by matching normalized positions
+            # 通过匹配规范化位置找到原始区间
             start = norm_content.index(norm_old)
-            # Map back: count original chars up to the same line/col
+            # 反向映射：按相同行/列计数原始字符
             orig_lines = content.splitlines(keepends=True)
             norm_lines = norm_content.splitlines(keepends=True)
             char_count = 0
@@ -591,21 +591,21 @@ class PromptOptimizer:
                 char_count += len(orig_line)
                 norm_char_count += len(norm_line)
 
-            # Find the end by counting normalized old_text length in original
+            # 通过计数原始中规范化 old_text 的长度找到结尾
             orig_end = orig_start
             norm_remaining = len(norm_old)
             for orig_line in content[orig_start:].splitlines(keepends=True):
                 if norm_remaining <= 0:
                     break
                 orig_end += len(orig_line)
-                norm_remaining -= len(orig_line.rstrip()) + 1  # +1 for \n
+                norm_remaining -= len(orig_line.rstrip()) + 1  # +1 为 \n
 
             content = content[:orig_start] + new_text + content[orig_end:]
             path.write_text(content, encoding="utf-8")
             logger.info("Applied change via fuzzy whitespace matching")
             return True
 
-        # Fuzzy: normalize Chinese/English punctuation
+        # 模糊：规范化中英文标点
         def _normalize_punct(s: str) -> str:
             return (
                 s.replace("。", ".")
@@ -617,17 +617,17 @@ class PromptOptimizer:
             )
 
         if _normalize_punct(old_text) in _normalize_punct(content):
-            # Find best matching substring
+            # 找到最佳匹配子串
             np_content = _normalize_punct(content)
             np_old = _normalize_punct(old_text)
             idx = np_content.index(np_old)
-            # The character positions map 1:1 since we only replaced single chars
+            # 由于只替换单个字符，字符位置 1:1 对应
             content = content[:idx] + new_text + content[idx + len(old_text) :]
             path.write_text(content, encoding="utf-8")
             logger.info("Applied change via punctuation normalization")
             return True
 
-        # Aggressive: collapse all whitespace to single space and try
+        # 激进：将所有空白折叠为单个空格后尝试
         import re as _re
 
         def _collapse(s: str) -> str:
@@ -636,9 +636,9 @@ class PromptOptimizer:
         collapsed_content = _collapse(content)
         collapsed_old = _collapse(old_text)
         if collapsed_old and collapsed_old in collapsed_content:
-            # Find the approximate location in original content
+            # 在原始内容中找到近似位置
             idx = collapsed_content.index(collapsed_old)
-            # Map collapsed index back to original by counting non-whitespace chars
+            # 通过计数非空白字符将折叠索引映射回原始
             orig_idx = 0
             collapsed_idx = 0
             for i, ch in enumerate(content):
@@ -650,7 +650,7 @@ class PromptOptimizer:
                         collapsed_idx += 1
                 else:
                     collapsed_idx += 1
-            # Find end similarly
+            # 同样找到结尾
             end_target = idx + len(collapsed_old)
             orig_end = orig_idx
             for i in range(orig_idx, len(content)):

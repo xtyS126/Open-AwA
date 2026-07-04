@@ -1,4 +1,4 @@
-"""Discovery strategies -- re-export hub for backwards compatibility."""
+"""发现策略 — 为向后兼容提供的 re-export hub。"""
 
 from openbiliclaw.discovery.strategies._utils import (
     SupportsMemoryManager,

@@ -1,4 +1,4 @@
-"""Persisted Douyin cookie helpers for direct-cookie discovery."""
+"""直连 Cookie 发现所用的抖音 Cookie 持久化辅助函数。"""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class DouyinCookieRecord:
-    """Stored Douyin Cookie header plus lightweight provenance."""
+    """存储的抖音 Cookie 头及其轻量来源信息。"""
 
     cookie: str
     source: str = "unknown"
 
 
 class DouyinCookieManager:
-    """Store the user's Douyin Cookie header outside config.toml."""
+    """将用户抖音 Cookie 头存储在 config.toml 之外。"""
 
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
@@ -77,11 +77,10 @@ def resolve_douyin_cookie(
     data_dir: Path,
     cookie_env: str = "OPENBILICLAW_DOUYIN_COOKIE",
 ) -> str:
-    """Resolve Douyin Cookie for direct discovery.
+    """解析直连发现所用的抖音 Cookie。
 
-    The environment variable remains the explicit override for debugging,
-    while the browser extension can keep ``data/douyin_cookie.json`` fresh
-    for normal use.
+    环境变量仍作为调试用的显式覆盖项，
+    而浏览器扩展可在日常使用中保持 ``data/douyin_cookie.json`` 最新。
     """
     env_cookie = os.environ.get(cookie_env, "").strip()
     if env_cookie:

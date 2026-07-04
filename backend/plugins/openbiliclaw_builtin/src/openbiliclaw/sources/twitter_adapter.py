@@ -1,22 +1,19 @@
-"""X (Twitter) source adapter — server-side cookie-replay discovery.
+"""X (Twitter) 内容源适配器 —— 服务端 Cookie 回放式发现。
 
-Unlike the Xiaohongshu stub adapter (whose content enters via extension API
-endpoints), the X source runs a **real** ``fetch()`` like Bilibili / Douyin-
-direct: the three injected strategies drive an :class:`XClient` (cookie replay
-over ``twitter-cli``) and return normalized :class:`DiscoveredContent`.
+与小红书桩适配器（其内容通过扩展 API 端点进入）不同，X 内容源像
+Bilibili / Douyin-direct 一样运行**真实的** ``fetch()``：三个注入的策略
+驱动一个 :class:`XClient`（通过 ``twitter-cli`` 进行 Cookie 回放）并返回
+规范化的 :class:`DiscoveredContent`。
 
-``fetch()`` dispatches by ``recipe.strategy``:
+``fetch()`` 按 ``recipe.strategy`` 分发：
 
-* ``"search"``  → ``XSearchStrategy``  (keyword(s) from the Soul profile / a
-  recipe ``query``)
-* ``"feed"``    → ``XForYouStrategy``  (the "For You" home timeline)
-* ``"creator"`` → ``XCreatorStrategy`` (a subscribed handle from
-  ``recipe.config["handle"]``)
+* ``"search"``  → ``XSearchStrategy``  （来自 Soul 画像 / recipe ``query`` 的关键词）
+* ``"feed"``    → ``XForYouStrategy``  （"For You" 主页时间线）
+* ``"creator"`` → ``XCreatorStrategy`` （来自 ``recipe.config["handle"]`` 的订阅 handle）
 
-The adapter never imports ``twitter_cli`` — the injected ``XClient`` owns the
-lazy import on the network seam, and the strategies only reference it through
-a structural protocol. Constructing/registering the adapter on the
-``enabled=false`` path is therefore safe.
+适配器从不导入 ``twitter_cli`` —— 注入的 ``XClient`` 在网络边界拥有
+惰性导入，策略仅通过结构化协议引用它。因此在 ``enabled=false`` 路径上
+构造/注册此适配器是安全的。
 """
 
 from __future__ import annotations
@@ -35,11 +32,11 @@ _SOURCE_TYPE = "twitter"
 
 
 def _coerce_keyword_list(value: Any) -> list[str] | None:
-    """Coerce a recipe-config ``keywords`` value into a clean list of strings.
+    """将 recipe 配置中的 ``keywords`` 值强制转换为干净的字符串列表。
 
-    Returns ``None`` when the recipe carries no ``keywords`` (so the adapter
-    keeps the legacy single-``query`` call path byte-for-byte). A present but
-    empty / all-blank list yields ``[]`` (an explicit "no keywords" injection).
+    当 recipe 不携带 ``keywords`` 时返回 ``None``（这样适配器保持逐字节
+    兼容遗留的单 ``query`` 调用路径）。存在但为空/全空白的列表返回
+    ``[]``（显式表示"无关键词"注入）。
     """
     if value is None:
         return None
@@ -61,11 +58,10 @@ def _coerce_keyword_list(value: Any) -> list[str] | None:
 
 
 def _coerce_keyword_id_map(value: Any) -> dict[str, int]:
-    """Coerce a recipe-config ``keyword_ids`` value into a ``{str: int}`` map.
+    """将 recipe 配置中的 ``keyword_ids`` 值强制转换为 ``{str: int}`` 映射。
 
-    Tolerant of missing / malformed input (returns ``{}``) so a recipe without
-    P1.8 provenance is a clean no-op. Only well-formed ``keyword → int`` pairs
-    survive.
+    容忍缺失/格式错误的输入（返回 ``{}``），因此没有 P1.8 溯源的 recipe
+    会干净地成为无操作。只有格式良好的 ``keyword → int`` 键值对会被保留。
     """
     if not isinstance(value, dict):
         return {}
@@ -82,10 +78,10 @@ def _coerce_keyword_id_map(value: Any) -> dict[str, int]:
 
 
 class _SupportsDiscover(Protocol):
-    """Structural type for the three injected strategy callables.
+    """三个注入策略可调用对象的结构化类型。
 
-    Each strategy accepts the profile, a ``limit``, and strategy-specific
-    keyword arguments (``query`` for search, ``handle`` for creator).
+    每个策略接受画像、一个 ``limit`` 和策略特定的关键字参数
+    （search 用 ``query``，creator 用 ``handle``）。
     """
 
     async def discover(
@@ -94,12 +90,11 @@ class _SupportsDiscover(Protocol):
 
 
 class XAdapter:
-    """Adapter that fetches X content via three server-side strategies.
+    """通过三个服务端策略获取 X 内容的适配器。
 
-    The ``client`` is retained for lifecycle parity with the other real
-    adapters (and so the runtime owns a single :class:`XClient`); the actual
-    network calls go through the injected strategies, which hold their own
-    reference to the same client.
+    ``client`` 被保留是为了与其他真实适配器保持生命周期一致
+    （并让运行时拥有单个 :class:`XClient`）；实际的网络调用通过
+    注入的策略进行，策略自身持有对同一 client 的引用。
     """
 
     def __init__(
@@ -115,7 +110,7 @@ class XAdapter:
         self._feed = feed
         self._creator = creator
 
-    # ── SourceAdapter protocol ──────────────────────────────────────
+    # ── SourceAdapter 协议 ──────────────────────────────────────────
 
     @property
     def source_type(self) -> str:
@@ -127,21 +122,21 @@ class XAdapter:
         profile: SoulProfile,
         limit: int = 20,
     ) -> list[DiscoveredContent]:
-        """Dispatch to the strategy named by ``recipe.strategy``."""
+        """按 ``recipe.strategy`` 分发到对应策略。"""
         config = recipe.config if isinstance(recipe.config, dict) else {}
         strategy = recipe.strategy
 
         if strategy == "search":
             query = str(config.get("query", "") or "")
-            # ``queries`` is the unified-planner injection key — it maps to the
-            # real ``XSearchStrategy.discover(queries=)`` param. ``keywords``
-            # remains the legacy config key (forwarded as ``keywords=``), which
-            # the real strategy ignores; both stay supported for back-compat.
+            # ``queries`` 是统一规划器注入的键 —— 它映射到真实的
+            # ``XSearchStrategy.discover(queries=)`` 参数。``keywords``
+            # 仍是遗留的配置键（作为 ``keywords=`` 转发），真实策略会
+            # 忽略它；两者都保留以向后兼容。
             queries = _coerce_keyword_list(config.get("queries"))
             keywords = _coerce_keyword_list(config.get("keywords"))
-            # P1.8 yield provenance: optional ``keyword → id`` map forwarded
-            # alongside ``queries``. Only passed when present so the legacy call
-            # shape stays byte-identical for non-planner recipes.
+            # P1.8 产出溯源：可选的 ``keyword → id`` 映射随 ``queries`` 一起
+            # 转发。仅在存在时传递，以使非规划器 recipe 的调用形式保持
+            # 逐字节一致。
             keyword_ids = _coerce_keyword_id_map(config.get("keyword_ids"))
             extra_ids: dict[str, Any] = {"keyword_ids": keyword_ids} if keyword_ids else {}
             if queries is not None:
@@ -166,8 +161,8 @@ class XAdapter:
             )
             return []
 
-        # Defensive: every X item must carry source_platform="twitter" so the
-        # mixed-source pool attributes it correctly even if a strategy forgot.
+        # 防御性处理：每个 X item 必须携带 source_platform="twitter"，
+        # 这样即使某个策略遗漏了，混合源池也能正确归因。
         for item in items:
             if not item.source_platform:
                 item.source_platform = _SOURCE_TYPE
