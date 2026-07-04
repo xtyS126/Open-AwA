@@ -40,11 +40,7 @@ function getCategoryIcon(category: string) {
 }
 
 export default function TestPage() {
-  // 开发模式守卫：非开发环境下重定向到仪表盘
-  if (!import.meta.env.DEV) {
-    return <Navigate to="/dashboard" replace />
-  }
-
+  // 所有 Hooks 必须在任何条件返回之前调用，保证 Hook 调用顺序在每次渲染中一致
   const navigate = useNavigate()
   const [tests, setTests] = useState<FeatureTest[]>([
     { name: 'server-ping', label: '服务器连通性', category: 'backend', status: 'idle', message: '待检测', detail: null },
@@ -248,6 +244,11 @@ export default function TestPage() {
   const runningCount = tests.filter((t) => t.status === 'running').length
   const scenarioPassed = scenarios.filter((s) => s.status === 'ok').length
   const scenarioFailed = scenarios.filter((s) => s.status === 'fail').length
+
+  // 开发模式守卫：非开发环境下重定向到仪表盘（在所有 Hooks 调用之后执行）
+  if (!import.meta.env.DEV) {
+    return <Navigate to="/dashboard" replace />
+  }
 
   return (
     <div className={styles['test-page']}>

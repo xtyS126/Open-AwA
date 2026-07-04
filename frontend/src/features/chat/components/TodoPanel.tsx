@@ -14,11 +14,12 @@ interface TodoPanelProps {
 }
 
 export function TodoPanel({ items, summary }: TodoPanelProps) {
-  if (items.length === 0) return null
-
+  // Hooks 必须在条件返回之前调用，保证每次渲染顺序一致
   const pendingItems = useMemo(() => items.filter(i => i.status === 'pending'), [items])
   const inProgressItems = useMemo(() => items.filter(i => i.status === 'in_progress'), [items])
   const completedItems = useMemo(() => items.filter(i => i.status === 'completed'), [items])
+
+  if (items.length === 0) return null
 
   return (
     <div className={styles.panel}>

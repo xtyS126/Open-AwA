@@ -91,10 +91,7 @@ const FileTree: React.FC = () => {
   const [rootTree, setRootTree] = useState<FileTreeNode | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadTree();
-  }, [projectDir]);
-
+  // 声明 loadTree 后再被 useEffect 引用，避免变量在声明前被访问
   const loadTree = async () => {
     try {
       setLoading(true);
@@ -114,6 +111,11 @@ const FileTree: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadTree();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectDir]);
 
   const handleSelectFile = async (path: string) => {
     try {

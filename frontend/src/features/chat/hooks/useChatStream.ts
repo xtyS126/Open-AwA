@@ -269,7 +269,9 @@ export function useChatStream({
   const bufferRef = useRef({
     content: '',
     reasoning: '',
-    lastUpdateTime: Date.now(),
+    // 初始化为 0，首次 chunk 到达时会被 handleStreamChunkEvent 立即更新
+    // 避免在 useRef 初始化中调用 Date.now()（impure function）违反纯渲染规则
+    lastUpdateTime: 0,
   })
 
   const addMessage = useSessionStore((s) => s.addMessage)

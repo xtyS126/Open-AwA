@@ -29,8 +29,9 @@ import React from 'react'
 
 // 针对 react-virtuoso 单元测试下的替代 mock，因为 virtuoso 依赖浏览器真正的 layout 及尺寸计算。
 // 在 jsdom 测试环境下，使用一个普通的组件包裹来代替真实渲染。
-vi.mock('react-virtuoso', () => {
-  const ReactMock = require('react')
+vi.mock('react-virtuoso', async () => {
+  // 使用 vi.importActual 获取真实的 react 模块，避免使用被禁止的 require() 语法
+  const ReactMock = await vi.importActual<typeof import('react')>('react')
   const VirtuosoMock = ReactMock.forwardRef(({ data, itemContent, components }: any, ref: any) => {
     const Footer = components?.Footer || (() => null)
     return (

@@ -31,13 +31,15 @@ function _getDB(): Promise<IDBPDatabase | null> {
 async function _saveDraft(sessionId: string, text: string, cursorPosition: number): Promise<void> {
   const db = await _getDB();
   if (!db) {
-    try { localStorage.setItem(`${DRAFT_KEY_PREFIX}${sessionId}`, JSON.stringify({ text, cursorPosition })); } catch {}
+    // IndexedDB 不可用时回退到 localStorage，写入失败可忽略（草稿丢失不影响主流程）
+    try { localStorage.setItem(`${DRAFT_KEY_PREFIX}${sessionId}`, JSON.stringify({ text, cursorPosition })); } catch { /* localStorage 写入失败可忽略 */ }
     return;
   }
   try {
     await db.put(DRAFT_STORE, { text, cursorPosition, updatedAt: Date.now() }, `${DRAFT_KEY_PREFIX}${sessionId}`);
   } catch {
-    try { localStorage.setItem(`${DRAFT_KEY_PREFIX}${sessionId}`, JSON.stringify({ text, cursorPosition })); } catch {}
+    // IndexedDB 写入失败时回退到 localStorage，localStorage 写入失败可忽略
+    try { localStorage.setItem(`${DRAFT_KEY_PREFIX}${sessionId}`, JSON.stringify({ text, cursorPosition })); } catch { /* localStorage 写入失败可忽略 */ }
   }
 }
 
@@ -65,7 +67,8 @@ async function _loadDraft(sessionId: string): Promise<{ text: string; cursorPosi
 async function _clearDraft(sessionId: string): Promise<void> {
   const db = await _getDB();
   if (!db) { localStorage.removeItem(`${DRAFT_KEY_PREFIX}${sessionId}`); return; }
-  try { await db.delete(DRAFT_STORE, `${DRAFT_KEY_PREFIX}${sessionId}`); } catch {}
+  // IndexedDB 删除失败可忽略，残留草稿不影响主流程
+  try { await db.delete(DRAFT_STORE, `${DRAFT_KEY_PREFIX}${sessionId}`); } catch { /* 删除失败可忽略 */ }
   localStorage.removeItem(`${DRAFT_KEY_PREFIX}${sessionId}`);
 }
 
@@ -85,9 +88,13 @@ interface UseChatDraftOptions {
  */
 export function useChatDraft({ sessionId, onRestore }: UseChatDraftOptions) {
   const sessionRef = useRef(sessionId);
-  sessionRef.current = sessionId;
   const onRestoreRef = useRef(onRestore);
-  onRestoreRef.current = onRestore;
+
+  // 在 useEffect 中更新 ref，避免在 render 阶段修改 ref 违反 React 纯渲染规则
+  useEffect(() => {
+    sessionRef.current = sessionId;
+    onRestoreRef.current = onRestore;
+  });
 
   // 挂载时恢复草稿
   useEffect(() => {

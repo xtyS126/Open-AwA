@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useEffect } from 'react'
 import { getAgent, getTranscript } from '@/shared/api/taskRuntimeApi'
 import type { AssistantExecutionMeta, AssistantMessageSegment, ToolEventMeta } from '@/features/chat/types'
 import {
@@ -186,7 +186,10 @@ export function useSubagentSync({
   }, [updateAssistantMeta, triggerContinuation])
 
   // 保持 ref 指向最新的聚合函数，供稳定闭包调用
-  aggregateSubagentOutputsRef.current = aggregateSubagentOutputs
+  // 在 useEffect 中更新 ref，避免在 render 阶段修改 ref 违反 React 纯渲染规则
+  useEffect(() => {
+    aggregateSubagentOutputsRef.current = aggregateSubagentOutputs
+  })
 
   /** 安排子代理聚合延迟执行，等待所有子代理完成后触发聚合 */
   const scheduleSubagentAggregation = useCallback((assistantMessageId: string) => {
@@ -299,7 +302,10 @@ export function useSubagentSync({
   }, [clearSubagentSyncTimer, clearSubagentTimeout, updateAssistantMeta, updateAssistantSegments, scheduleSubagentTimeout, scheduleSubagentAggregation, isMountedRef, messageMetaRef])
 
   // 保持 ref 指向最新的同步函数，支持递归调度
-  syncSubagentRuntimeRef.current = syncSubagentRuntime
+  // 在 useEffect 中更新 ref，避免在 render 阶段修改 ref 违反 React 纯渲染规则
+  useEffect(() => {
+    syncSubagentRuntimeRef.current = syncSubagentRuntime
+  })
 
   /** 清理所有子代理相关的计时器和状态 */
   const cleanupAllSubagentTimers = useCallback(() => {

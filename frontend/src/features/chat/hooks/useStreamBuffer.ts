@@ -25,7 +25,10 @@ export function useStreamBuffer({ onFlush, flushInterval = 50 }: StreamBufferOpt
   const rafIdRef = useRef<number | null>(null)
   const lastFlushRef = useRef<number>(0)
   const onFlushRef = useRef(onFlush)
-  onFlushRef.current = onFlush
+  // 在 useEffect 中更新 ref，避免在 render 阶段修改 ref 违反 React 纯渲染规则
+  useEffect(() => {
+    onFlushRef.current = onFlush
+  })
 
   const doFlush = useCallback((messageId?: string) => {
     const buffer = bufferRef.current

@@ -84,8 +84,9 @@ export function SearchTabContainer() {
         ? err.detail
         : err instanceof Error ? err.message : '保存失败'
       showNotification({ type: 'error', text: `保存失败：${detail}` })
-      // 重新抛出，让展示组件在表单内显示具体错误；原始错误已通过闭包保留在调用栈中
-      throw new Error(detail)
+      // 重新抛出，让展示组件在表单内显示具体错误；通过 cause 保留原始错误链路
+      // 使用 Object.assign 附挂 cause，兼容 ES2020 类型定义（Error 构造函数 cause 选项需 ES2022）
+      throw Object.assign(new Error(detail), { cause: err })
     }
   }, [showNotification])
 
@@ -114,7 +115,8 @@ export function SearchTabContainer() {
         ? err.detail
         : err instanceof Error ? err.message : '测试请求失败'
       showNotification({ type: 'error', text: `测试失败：${detail}` })
-      throw new Error(detail)
+      // 使用 Object.assign 附挂 cause，兼容 ES2020 类型定义（Error 构造函数 cause 选项需 ES2022）
+      throw Object.assign(new Error(detail), { cause: err })
     }
   }, [showNotification])
 

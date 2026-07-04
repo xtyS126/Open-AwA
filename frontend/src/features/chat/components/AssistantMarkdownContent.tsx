@@ -58,7 +58,7 @@ function ImageWithLightbox({ src, alt }: { src?: string; alt?: string }) {
  */
 function preprocessImageContent(content: string): string {
   // 检测独立的 base64 图片 URL（不在 markdown 图片语法中）
-  const base64ImageRegex = /(?<!\(|\!\[)(data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+)(?!\))/g
+  const base64ImageRegex = /(?<!\(|!\[)(data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+)(?!\))/g
   const hasMarkdownImage = /!\[.*?\]\(.*?\)/.test(content)
 
   // 如果内容中已有 markdown 图片语法，不做转换
@@ -86,7 +86,7 @@ function preprocessImageContent(content: string): string {
   }
 
   // 同时检测纯 URL 图片链接（非 base64、非 markdown 包裹）
-  const urlImageRegex = /(?<!\(|\!\[)(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|gif|webp|bmp)(?:\?[^\s"'<>]*)?)(?!\))/gi
+  const urlImageRegex = /(?<!\(|!\[)(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|gif|webp|bmp)(?:\?[^\s"'<>]*)?)(?!\))/gi
   if (!hasMarkdownImage) {
     let urlMatch: RegExpExecArray | null
     const urlMatches: Array<{ index: number; text: string }> = []

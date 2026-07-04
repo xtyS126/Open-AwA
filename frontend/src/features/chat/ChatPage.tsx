@@ -190,7 +190,9 @@ function ChatPage() {
   const bufferRef = useRef({
     content: '',
     reasoning: '',
-    lastUpdateTime: Date.now()
+    // 初始化为 0，首次 chunk 到达时会被立即更新
+    // 避免在 useRef 初始化中调用 Date.now()（impure function）违反纯渲染规则
+    lastUpdateTime: 0
   })
 
   const flushBuffer = useCallback((assistantMessageId?: string) => {
@@ -217,25 +219,7 @@ function ChatPage() {
     messageMetaRef.current = messageMeta
   }, [messageMeta])
 
-  useEffect(() => {
-    isMountedRef.current = true
-    return () => {
-      // 组件卸载时取消进行中的流式请求并清理子代理定时器，防止资源泄露
-      isMountedRef.current = false
-      try {
-        chatStream.abortStream()
-      } catch (err) {
-        // 卸载阶段忽略 abort 错误
-        void err
-      }
-      try {
-        subagentSync.cleanupAllSubagentTimers()
-      } catch (err) {
-        void err
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // 组件卸载清理逻辑已移至 chatStream/subagentSync 声明之后，避免变量在声明前被访问
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -627,6 +611,27 @@ function ChatPage() {
     onApiKeyStale: () => setShowApiKeyStaleDialog(true),
   })
 
+  // 组件卸载时取消进行中的流式请求并清理子代理定时器，防止资源泄露。
+  // 必须在 chatStream/subagentSync 声明之后定义，避免变量在声明前被访问。
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      try {
+        chatStream.abortStream()
+      } catch (err) {
+        // 卸载阶段忽略 abort 错误
+        void err
+      }
+      try {
+        subagentSync.cleanupAllSubagentTimers()
+      } catch (err) {
+        void err
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // 标记当前流式是否需要广播到其他标签页（声明于 hook 顶部，供 handleSend 与 useEffect 共享）
   const handleSend = useCallback(async (userMessage?: string, uploadedAttachments?: FileAttachment[], options?: import('./hooks/useChatStream').SendMessageOptions) => {
     const messageText = (userMessage || '').trim()
@@ -651,7 +656,10 @@ function ChatPage() {
     )
   }, [chatStream, ensureConversationSession, flushConversationCache, sessionId, loadConversationList, broadcastConversationChange])
 
-  handleSendRef.current = handleSend
+  // 在 useEffect 中更新 ref，避免在 render 阶段修改 ref 违反 React 纯渲染规则
+  useEffect(() => {
+    handleSendRef.current = handleSend
+  }, [handleSend])
 
   // 稳定化传递给子组件的回调：通过 ref 读取最新 handleSend，避免内联箭头函数导致子组件无效重渲染
   const handleChatInputSend = useCallback((content: string, atts?: FileAttachment[]) => {
