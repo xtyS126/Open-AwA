@@ -207,7 +207,8 @@ class BundleManifestAdapter:
         name = data.get("name")
         version = data.get("version")
         if not isinstance(name, str) or not isinstance(version, str):
-            logger.error(f"Open-AwA 原生 manifest 缺少 name/version: {manifest_path}")
+            # 非插件 manifest（如 PWA web/manifest.json）碰巧同名，静默跳过
+            logger.debug(f"跳过非插件 manifest（缺少 name/version）: {manifest_path}")
             return None
 
         return AdaptedManifest(
