@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -337,42 +338,58 @@ def _generate_user_profile(db: Session, user_id: str) -> dict:
     """
     从行为日志中生成用户的 AI 画像。
     包含兴趣标签、使用时长统计、活跃时段等。
+
+    性能优化：使用 SQL 聚合（GROUP BY + COUNT）替代全量加载到 Python 端统计，
+    避免 30 天日志量增长时内存与 CPU 同步增长。
     """
     from datetime import datetime as dt, timedelta
 
     now = dt.now(timezone.utc)
     thirty_days_ago = now - timedelta(days=30)
 
-    # 查询最近 30 天的行为日志
-    behaviors = (
-        db.query(BehaviorLog)
+    # SQL 聚合：按小时分组统计活跃时段（避免全量加载）
+    hour_rows = (
+        db.query(
+            extract("hour", BehaviorLog.timestamp).label("hour"),
+            func.count(BehaviorLog.id).label("cnt"),
+        )
         .filter(
             BehaviorLog.user_id == user_id,
             BehaviorLog.timestamp >= thirty_days_ago,
         )
+        .group_by("hour")
         .all()
     )
-
-    # 统计活跃时段
-    hour_counts = {}
-    for b in behaviors:
-        hour = b.timestamp.hour
-        hour_counts[hour] = hour_counts.get(hour, 0) + 1
-
+    hour_counts = {int(row.hour): int(row.cnt) for row in hour_rows}
     active_hours = sorted(hour_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     active_hour_labels = [f"{h}:00-{h+1}:00" for h, _ in active_hours]
 
-    # 统计行为类型作为兴趣标签
-    action_counts = {}
-    for b in behaviors:
-        action = b.action_type or "other"
-        action_counts[action] = action_counts.get(action, 0) + 1
-
+    # SQL 聚合：按行为类型分组统计兴趣标签
+    action_rows = (
+        db.query(
+            func.coalesce(BehaviorLog.action_type, "other").label("action"),
+            func.count(BehaviorLog.id).label("cnt"),
+        )
+        .filter(
+            BehaviorLog.user_id == user_id,
+            BehaviorLog.timestamp >= thirty_days_ago,
+        )
+        .group_by("action")
+        .all()
+    )
+    action_counts = {row.action: int(row.cnt) for row in action_rows}
     interest_tags = sorted(action_counts.items(), key=lambda x: x[1], reverse=True)[:8]
     interest_labels = [tag for tag, _ in interest_tags]
 
-    # 计算总使用会话数
-    total_actions = len(behaviors)
+    # SQL 聚合：总操作数
+    total_actions = (
+        db.query(func.count(BehaviorLog.id))
+        .filter(
+            BehaviorLog.user_id == user_id,
+            BehaviorLog.timestamp >= thirty_days_ago,
+        )
+        .scalar() or 0
+    )
 
     return {
         "generated_at": now.isoformat(),

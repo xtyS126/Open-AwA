@@ -696,7 +696,7 @@ async def revise_discussion(
             discussion_id=discussion_id,
             error=str(exc),
         ).error(f"修订执行失败: {exc}")
-        raise HTTPException(status_code=500, detail=f"修订执行失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail="修订执行失败，请稍后重试") from exc
 
     logger.bind(
         event="discussion_revised",
@@ -935,7 +935,7 @@ async def force_execute_discussion(
             ).error(f"旁路执行状态更新失败: {exc}")
             raise HTTPException(
                 status_code=500,
-                detail=f"旁路执行状态更新失败: {exc}",
+                detail="旁路执行状态更新失败，请稍后重试",
             ) from exc
 
     # 5. 后台异步触发执行，避免阻塞响应

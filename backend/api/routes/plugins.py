@@ -260,7 +260,7 @@ def _persist_plugin_config(
                 )
 
         logger.error(f"Failed to persist config for plugin '{plugin.name}': {exc}")
-        raise HTTPException(status_code=500, detail=f"保存插件配置失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail="保存插件配置失败，请稍后重试") from exc
 
     return {
         "plugin_id": plugin.id,
@@ -867,7 +867,7 @@ async def execute_plugin(
         raise
     except Exception as e:
         logger.error(f"Error executing plugin '{plugin.name}': {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Plugin execution failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="插件执行失败，请稍后重试")
 
 
 @router.get("/{plugin_id}/tools", response_model=PluginToolsResponse)
@@ -904,7 +904,7 @@ def get_plugin_tools(
         raise
     except Exception as e:
         logger.error(f"Error getting tools for plugin '{plugin.name}': {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get plugin tools: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取插件工具失败，请稍后重试")
 
 
 @router.post("/validate", response_model=PluginValidationResult)
@@ -1082,7 +1082,7 @@ async def upload_plugin(
         for moved_dir in moved_dirs:
             shutil.rmtree(moved_dir, ignore_errors=True)
         logger.error(f"Error extracting plugin: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to extract plugin: {str(e)}")
+        raise HTTPException(status_code=500, detail="插件解压失败，请稍后重试")
     finally:
         # 清理临时目录
         if temp_dir and os.path.exists(temp_dir):

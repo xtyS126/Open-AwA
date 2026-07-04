@@ -165,6 +165,24 @@ def _validate_uploaded_filename(filename: str) -> None:
         raise HTTPException(status_code=400, detail="非法文件名") from exc
 
 
+def _write_file_bytes_sync(file_path: Path, content: bytes) -> None:
+    """同步写入文件字节（供 asyncio.to_thread 调用，避免阻塞事件循环）。"""
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+
+def _write_metadata_sync(metadata_path: Path, metadata: Dict[str, Any]) -> None:
+    """同步写入元数据 JSON（供 asyncio.to_thread 调用）。"""
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False)
+
+
+def _read_metadata_sync(metadata_path: Path) -> Dict[str, Any]:
+    """同步读取元数据 JSON（供 asyncio.to_thread 调用）。"""
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 @router.post("", response_model=Union[ChatResponse, str])
 async def chat(
     request: Request,
@@ -638,8 +656,8 @@ async def upload_chat_file(
     file_path = UPLOAD_DIR / safe_filename
 
     try:
-        with open(file_path, "wb") as f:
-            f.write(content)
+        # 使用 asyncio.to_thread 包装同步文件写入，避免阻塞事件循环（大文件上传场景）
+        await asyncio.to_thread(_write_file_bytes_sync, file_path, content)
     except OSError as exc:
         # 不向客户端泄露内部异常细节（文件系统路径等），仅记录日志
         logger.error(f"chat 文件上传写入失败: {exc}", exc_info=exc)
@@ -658,8 +676,8 @@ async def upload_chat_file(
         "content_type": file.content_type or "",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False)
+    # 同样用 to_thread 包装元数据写入
+    await asyncio.to_thread(_write_metadata_sync, metadata_path, metadata)
 
     logger.bind(
         event="chat_file_uploaded",
@@ -703,8 +721,8 @@ async def get_uploaded_file(
         raise HTTPException(status_code=404, detail="文件不存在")
 
     try:
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
+        # 使用 asyncio.to_thread 包装同步文件读取，避免阻塞事件循环
+        metadata = await asyncio.to_thread(_read_metadata_sync, metadata_path)
     except (OSError, json.JSONDecodeError) as exc:
         logger.bind(
             event="chat_file_metadata_error",

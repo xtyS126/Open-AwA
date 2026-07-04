@@ -195,7 +195,9 @@ async def install_plugin(
                 download_log.error_message = str(exc)
                 download_log.duration_ms = int((time.time() - started_at) * 1000)
                 db.commit()
-                raise HTTPException(status_code=502, detail=f"插件下载失败: {exc}")
+                # 记录实际异常便于排查，但避免向客户端泄露内部错误详情
+                logger.error("插件下载失败", exc_info=exc, extra={"plugin_id": plugin_id, "target_version": target_version})
+                raise HTTPException(status_code=502, detail="插件下载失败，请稍后重试")
 
         # 创建插件记录
         new_plugin = Plugin(
@@ -235,7 +237,7 @@ async def install_plugin(
         download_log.duration_ms = int((time.time() - started_at) * 1000)
         db.commit()
         logger.error(f"插件安装异常: {exc}")
-        raise HTTPException(status_code=500, detail=f"插件安装失败: {exc}")
+        raise HTTPException(status_code=500, detail="插件安装失败，请稍后重试")
 
 
 @router.get(
@@ -443,13 +445,36 @@ async def rate_plugin(
         db.add(rating)
     db.commit()
 
-    # 返回汇总
-    ratings = db.query(PluginRating).filter(PluginRating.plugin_id == plugin_id).all()
-    total = len(ratings)
-    avg = sum(r.score for r in ratings) / total if total > 0 else 0.0
+    # 返回汇总：使用 SQL 聚合避免全量加载到 Python 端
+    from sqlalchemy import func as _func
+
+    total_row = (
+        db.query(_func.count(PluginRating.id).label("cnt"))
+        .filter(PluginRating.plugin_id == plugin_id)
+        .scalar()
+    )
+    total = int(total_row or 0)
+    avg_row = (
+        db.query(_func.avg(PluginRating.score).label("avg"))
+        .filter(PluginRating.plugin_id == plugin_id)
+        .scalar()
+    )
+    avg = float(avg_row) if avg_row is not None else 0.0
+
+    # 评分分布：单次 GROUP BY 查询
+    dist_rows = (
+        db.query(
+            PluginRating.score.label("score"),
+            _func.count(PluginRating.id).label("cnt"),
+        )
+        .filter(PluginRating.plugin_id == plugin_id)
+        .group_by(PluginRating.score)
+        .all()
+    )
     distribution: Dict[int, int] = {i: 0 for i in range(1, 6)}
-    for r in ratings:
-        distribution[r.score] = distribution.get(r.score, 0) + 1
+    for row in dist_rows:
+        if row.score in distribution:
+            distribution[row.score] = int(row.cnt)
 
     return {
         "plugin_id": plugin_id,
@@ -471,12 +496,35 @@ async def get_plugin_rating(
     current_user=Depends(get_current_user),
 ):
     """获取插件评分汇总信息"""
-    ratings = db.query(PluginRating).filter(PluginRating.plugin_id == plugin_id).all()
-    total = len(ratings)
-    avg = sum(r.score for r in ratings) / total if total > 0 else 0.0
+    # 使用 SQL 聚合避免全量加载评分记录
+    from sqlalchemy import func as _func
+
+    total_row = (
+        db.query(_func.count(PluginRating.id).label("cnt"))
+        .filter(PluginRating.plugin_id == plugin_id)
+        .scalar()
+    )
+    total = int(total_row or 0)
+    avg_row = (
+        db.query(_func.avg(PluginRating.score).label("avg"))
+        .filter(PluginRating.plugin_id == plugin_id)
+        .scalar()
+    )
+    avg = float(avg_row) if avg_row is not None else 0.0
+
+    dist_rows = (
+        db.query(
+            PluginRating.score.label("score"),
+            _func.count(PluginRating.id).label("cnt"),
+        )
+        .filter(PluginRating.plugin_id == plugin_id)
+        .group_by(PluginRating.score)
+        .all()
+    )
     distribution: Dict[int, int] = {i: 0 for i in range(1, 6)}
-    for r in ratings:
-        distribution[r.score] = distribution.get(r.score, 0) + 1
+    for row in dist_rows:
+        if row.score in distribution:
+            distribution[row.score] = int(row.cnt)
 
     # 当前用户评分
     user_rating = db.query(PluginRating).filter(

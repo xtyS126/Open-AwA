@@ -2427,12 +2427,18 @@ class ExecutionLayer:
         """
         files = step.get("targets", [])
         results = {}
-        
+
+        from pathlib import Path as _Path
         import os as _os
-        _workspace = _os.path.abspath(_os.environ.get("OPENAWA_WORKSPACE", _os.getcwd()))
+        _workspace = _Path(_os.environ.get("OPENAWA_WORKSPACE", _os.getcwd())).resolve()
         for file_path in files:
-            resolved = _os.path.abspath(_os.path.join(_workspace, str(file_path).lstrip("/\\")))
-            if not resolved.startswith(_workspace + _os.sep) and resolved != _workspace:
+            # 路径穿越防护：使用 Path.resolve() + relative_to() 替代 startswith
+            # startswith 可被符号链接或 .. 序列绕过，relative_to 是项目硬约束
+            try:
+                resolved = (_workspace / str(file_path).lstrip("/\\")).resolve()
+                # 触发 relative_to 校验，不在工作区内则抛 ValueError
+                resolved.relative_to(_workspace)
+            except (ValueError, OSError):
                 results[file_path] = {
                     "status": "error",
                     "message": "Path traversal denied"

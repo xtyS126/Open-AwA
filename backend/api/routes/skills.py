@@ -1148,7 +1148,7 @@ async def get_skills(
             error_type=type(e).__name__,
             error_message=sanitize_for_logging(str(e)),
         ).opt(exception=True).error(f"获取技能列表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取技能列表失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取技能列表失败，请稍后重试")
 
 
 @router.get("/{skill_id}", response_model=SkillResponse)
@@ -1176,7 +1176,7 @@ async def get_skill(
             error_type=type(e).__name__,
             error_message=sanitize_for_logging(str(e)),
         ).opt(exception=True).error(f"获取技能详情失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取技能详情失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取技能详情失败，请稍后重试")
 
 
 @router.post(
@@ -1501,7 +1501,7 @@ async def execute_skill(
             error_type=type(e).__name__,
             error_message=sanitize_for_logging(str(e)),
         ).exception("skill execute failed")
-        raise HTTPException(status_code=500, detail=f"Skill execution failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="技能执行失败，请稍后重试")
 
 
 @router.get("/{skill_id}/config", response_model=SkillConfigResponse)
@@ -1745,7 +1745,7 @@ async def install_skill_from_package(
             error_type=type(e).__name__,
             error_message=sanitize_for_logging(str(e)),
         ).exception("skill install from package failed")
-        raise HTTPException(status_code=500, detail=f"安装技能失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="安装技能失败，请稍后重试")
 
 
 # ---- 技能市场端点 ----

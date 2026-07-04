@@ -549,7 +549,8 @@ class AuditLog(Base):
     result: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # created_at 索引：审计日志按时间范围查询是高频场景，缺索引会导致全表扫描
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class LoginRateLimit(Base):
@@ -647,7 +648,8 @@ class ConversationData(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     conversation_id: Mapped[str] = mapped_column(String(64), index=True)
-    role_id: Mapped[str] = mapped_column(String(64), default="")
+    # role_id 索引：按角色聚合统计对话数据是高频分析场景
+    role_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     user_message: Mapped[str] = mapped_column(Text)
     assistant_message: Mapped[str] = mapped_column(Text)
     tools_used: Mapped[dict] = mapped_column(JSON, default=list)
@@ -665,7 +667,8 @@ class ToolCallData(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     conversation_id: Mapped[str] = mapped_column(String(64), index=True)
-    role_id: Mapped[str] = mapped_column(String(64), default="")
+    # role_id 索引：按角色分析工具使用模式
+    role_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     tool_name: Mapped[str] = mapped_column(String(100))
     tool_params: Mapped[dict] = mapped_column(JSON)
     result_summary: Mapped[str] = mapped_column(Text, default="")
@@ -682,7 +685,8 @@ class ExecutionTrace(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     conversation_id: Mapped[str] = mapped_column(String(64), index=True)
-    role_id: Mapped[str] = mapped_column(String(64), default="")
+    # role_id 索引：按角色分析执行轨迹
+    role_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     plan_steps: Mapped[dict] = mapped_column(JSON)
     executed_steps: Mapped[dict] = mapped_column(JSON)
     error_steps: Mapped[dict] = mapped_column(JSON, default=list)
@@ -2128,6 +2132,56 @@ def init_db(bind_engine=None):
         _migrate_execution_trace(_inspector, _conn)
         _migrate_role_switch_event(_inspector, _conn)
         _migrate_user_feedback_add_columns(_inspector, _conn)
+    # 索引补齐：为高频查询字段补充索引（幂等，已存在则跳过）
+    _ensure_missing_indexes(use_engine=use_engine)
+
+
+def _ensure_missing_indexes(use_engine=None):
+    """
+    为已有表幂等补充索引。
+
+    背景：Base.metadata.create_all 仅在创建新表时应用 index=True 标记，
+    对已存在的表不会自动追加索引。这里通过 CREATE INDEX IF NOT EXISTS
+    为高频查询字段补充索引，避免全表扫描。
+
+    覆盖场景：
+    - audit_logs.created_at：审计日志按时间范围查询
+    - conversation_data.role_id / tool_call_data.role_id / execution_trace.role_id：
+      按角色聚合分析对话与工具调用数据
+    """
+    target_engine = use_engine or engine
+    inspector = inspect(target_engine)
+    table_names = set(inspector.get_table_names())
+
+    # (表名, 索引名, 列名) 三元组列表
+    pending_indexes: list[tuple[str, str, str]] = []
+    if "audit_logs" in table_names:
+        pending_indexes.append(("audit_logs", "ix_audit_logs_created_at", "created_at"))
+    if "conversation_data" in table_names:
+        pending_indexes.append(("conversation_data", "ix_conversation_data_role_id", "role_id"))
+    if "tool_call_data" in table_names:
+        pending_indexes.append(("tool_call_data", "ix_tool_call_data_role_id", "role_id"))
+    if "execution_trace" in table_names:
+        pending_indexes.append(("execution_trace", "ix_execution_trace_role_id", "role_id"))
+
+    if not pending_indexes:
+        return
+
+    with target_engine.begin() as conn:
+        for table_name, index_name, column_name in pending_indexes:
+            # 检查索引是否已存在，避免重复创建报错
+            existing_indexes = {idx["name"] for idx in inspector.get_indexes(table_name)}
+            if index_name in existing_indexes:
+                continue
+            try:
+                # SQLite/PostgreSQL 均支持 IF NOT EXISTS 语法
+                conn.execute(
+                    text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({column_name})")
+                )
+                logger.info(f"已为表 {table_name} 创建索引 {index_name} ({column_name})")
+            except Exception as exc:
+                # 索引创建失败不应阻塞启动，记录警告后继续
+                logger.warning(f"创建索引 {index_name} 失败: {exc}")
 
 
 def _migrate_user_role_fk(use_engine=None):

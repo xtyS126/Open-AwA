@@ -495,7 +495,7 @@ async def run_graph(
         }
     except Exception as e:
         logger.error(f"Graph execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"图执行失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="图执行失败，请稍后重试")
 
 
 @router.post("/run/sequential")
@@ -517,7 +517,7 @@ async def run_sequential(
         }
     except Exception as e:
         logger.error(f"Sequential execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"顺序执行失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="顺序执行失败，请稍后重试")
 
 
 @router.post("/run/parallel")
@@ -539,7 +539,7 @@ async def run_parallel(
         }
     except Exception as e:
         logger.error(f"Parallel execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"并行执行失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="并行执行失败，请稍后重试")
 
 
 # ── SubagentOrchestrator API（委派-收集-合并模式） ──────────────────
@@ -699,7 +699,7 @@ async def orchestrator_delegate(
         }
     except Exception as e:
         logger.error(f"Orchestrator delegation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"委派执行失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="委派执行失败，请稍后重试")
 
 
 @router.post("/orchestrator/cancel")
@@ -1046,7 +1046,9 @@ async def run_definition(
             _build_graph_from_definition(schema, definition.name, definition.description, manager)
             graph = manager.get_graph(definition.name)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"图重建失败: {exc}")
+            # 记录实际异常便于排查，但避免向客户端泄露内部错误详情
+            logger.error("图重建失败", exc_info=exc, extra={"graph_name": definition.name})
+            raise HTTPException(status_code=500, detail="图重建失败，请稍后重试")
 
     if not graph:
         raise HTTPException(status_code=500, detail="图运行时实例不可用")

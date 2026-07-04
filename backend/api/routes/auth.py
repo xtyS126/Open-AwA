@@ -241,6 +241,7 @@ async def get_me(current_user: UserModel = Depends(get_current_user)):
     description="验证旧密码后设置新密码，新密码需满足强度要求（至少8位，含大小写字母和数字）。"
 )
 async def change_password(
+    request: Request,
     request_body: PasswordChangeRequest,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -248,10 +249,28 @@ async def change_password(
     """
     修改当前用户的登录密码。
     要求提供旧密码进行验证，新密码需满足强度规则。
+
+    安全防护：复用 RateLimitStore 限制每个用户密码修改频率，
+    防止已登录会话被滥用进行旧密码暴力尝试。
     """
+    # 密码修改限流：基于 user_id 隔离，避免已登录会话暴力尝试旧密码
+    rate_limit_store = get_rate_limit_store()
+    pwd_rate_key = f"pwd_change|{current_user.id}"
+    retry_after = rate_limit_store.get_retry_after_seconds(pwd_rate_key)
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"密码修改尝试过于频繁，请 {retry_after} 秒后重试"
+        )
+
     # 验证旧密码
     if not verify_password(request_body.old_password, current_user.password_hash):
+        # 记录失败尝试，触发限流
+        rate_limit_store.record_failed_attempt(pwd_rate_key)
         raise HTTPException(status_code=400, detail="旧密码不正确")
+
+    # 旧密码验证通过后清理限流计数
+    rate_limit_store.clear_attempts(pwd_rate_key)
 
     # 确认密码一致性
     if request_body.new_password != request_body.confirm_password:

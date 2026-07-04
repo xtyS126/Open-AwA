@@ -285,25 +285,27 @@ class Settings(BaseSettings):
                     # 默认拒绝启动，强制运维显式配置密钥
                     raise RuntimeError(msg)
         else:
-            # 开发环境：保证服务可启动，使用可预测默认值便于联调
+            # 开发环境：使用一次性随机密钥，避免硬编码可预测默认值
+            # 历史问题：曾使用固定字符串 "openawa-dev-jwt-default-..." 等可被外部预测
+            from cryptography.fernet import Fernet
             if not self.JWT_SECRET_KEY:
-                object.__setattr__(self, "JWT_SECRET_KEY", "openawa-dev-jwt-default-32chars-minimum!!")
+                object.__setattr__(self, "JWT_SECRET_KEY", secrets.token_urlsafe(64))
                 logger.info(
-                    "开发环境未配置 JWT_SECRET_KEY，已使用固定开发默认值。"
+                    "开发环境未配置 JWT_SECRET_KEY，已生成一次性随机密钥。"
                     "生产环境请显式设置 JWT_SECRET_KEY 环境变量（长度 >= 32）。"
                 )
             if not self.CSRF_SECRET_KEY:
-                object.__setattr__(self, "CSRF_SECRET_KEY", "openawa-dev-csrf-default-32chars-minimum!!")
+                object.__setattr__(self, "CSRF_SECRET_KEY", secrets.token_urlsafe(64))
                 logger.info(
-                    "开发环境未配置 CSRF_SECRET_KEY，已使用固定开发默认值。"
+                    "开发环境未配置 CSRF_SECRET_KEY，已生成一次性随机密钥。"
                     "生产环境请显式设置 CSRF_SECRET_KEY 环境变量（长度 >= 32）。"
                 )
             if not self.ENCRYPTION_KEY:
-                # 开发环境使用固定默认值，避免重启后密钥变化导致已加密数据无法解密
-                # 如需自定义密钥，请在 .env.local 中设置 ENCRYPTION_KEY（base64-urlsafe 32 字节）
-                object.__setattr__(self, "ENCRYPTION_KEY", "MtBIvOX8B_AGq5_4WeNjGpboilROKxqQxy8YwmpD-OQ=")
+                # 开发环境使用一次性随机密钥；注意：重启后已加密数据将无法解密
+                # 如需跨重启持久化，请在 .env.local 中设置 ENCRYPTION_KEY（base64-urlsafe 32 字节）
+                object.__setattr__(self, "ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
                 logger.info(
-                    "开发环境未配置 ENCRYPTION_KEY，已使用固定开发默认值。"
+                    "开发环境未配置 ENCRYPTION_KEY，已生成一次性随机密钥（重启后已加密数据无法解密）。"
                     "生产环境请显式设置 ENCRYPTION_KEY 环境变量（base64-urlsafe 32 字节）。"
                 )
 

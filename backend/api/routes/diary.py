@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +25,9 @@ from api.services.diary_writer import (
 from db.models import get_db, User
 
 router = APIRouter(prefix="/diary", tags=["diary"])
+
+# 日期格式校验：YYYY-MM-DD，防止任意字符串构造路径或注入
+_DIARY_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 # ──────────────────────────────────────────────
@@ -118,7 +122,7 @@ async def generate_diary(
             logical_date=logical_date,
             error=str(e),
         ).error(f"日记生成失败: {e}")
-        raise HTTPException(status_code=500, detail=f"日记生成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="日记生成失败，请稍后重试")
 
     # 确定工作目录并保存日记
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
@@ -170,6 +174,16 @@ async def get_diary(date: str, current_user: User = Depends(get_current_user)):
     获取当前用户指定日期的日记内容。
     日期格式：YYYY-MM-DD。
     """
+    # 严格校验日期格式，防止任意字符串注入路径或绕过逻辑日期边界
+    if not _DIARY_DATE_PATTERN.match(date):
+        raise HTTPException(status_code=400, detail="日期格式非法，要求 YYYY-MM-DD")
+    # 进一步校验真实日期有效性（如 2026-13-45 应被拒绝）
+    try:
+        from datetime import datetime as _dt
+        _dt.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期无效，请提供真实存在的日期")
+
     workspace_dir = os.getenv("WORKSPACE_DIR", os.getcwd())
     content = read_diary(workspace_dir, date)
     if content is None:

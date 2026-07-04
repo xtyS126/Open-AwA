@@ -677,7 +677,9 @@ def _render_markdown_file(abs_path: str) -> dict:
         with open(abs_path, "r", encoding="utf-8") as fh:
             md_text = fh.read()
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"读取文件失败: {exc}")
+        # 记录实际异常便于排查，但避免向客户端泄露内部错误详情
+        logger.error("读取文件失败", exc_info=exc, extra={"abs_path": abs_path})
+        raise HTTPException(status_code=500, detail="读取文件失败，请稍后重试")
 
     if _markdown_lib is None or _bleach_lib is None:
         # 优雅降级：返回 <pre> 包裹的 HTML 转义文本

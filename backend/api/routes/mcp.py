@@ -331,7 +331,9 @@ async def list_server_resources(
             "count": len(resources),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取资源列表失败: {str(e)}")
+        # 记录实际异常便于排查，但避免向客户端泄露内部错误详情
+        logger.error("获取资源列表失败", exc_info=e, extra={"server_id": server_id})
+        raise HTTPException(status_code=500, detail="获取资源列表失败，请稍后重试")
 
 
 @router.post("/servers/{server_id}/resources/read")
@@ -357,4 +359,6 @@ async def read_server_resource(
             "blob": content.blob,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取资源失败: {str(e)}")
+        # 记录实际异常便于排查，但避免向客户端泄露内部错误详情
+        logger.error("读取资源失败", exc_info=e, extra={"server_id": server_id, "uri": uri})
+        raise HTTPException(status_code=500, detail="读取资源失败，请稍后重试")

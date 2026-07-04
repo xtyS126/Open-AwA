@@ -117,7 +117,7 @@ async def synthesize_tts(
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.bind(event="tts_synthesize_error", error=str(e)).error("TTS 合成失败")
-        raise HTTPException(status_code=500, detail=f"TTS 合成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="TTS 合成失败，请稍后重试")
 
     # 根据音频格式确定 MIME 类型
     mime_map = {
@@ -258,7 +258,7 @@ async def clone_voice(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.bind(event="clone_voice_error", error=str(e)).error("声音复刻失败")
-        raise HTTPException(status_code=500, detail=f"声音复刻失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="声音复刻失败，请稍后重试")
 
 
 @router.get("/clone/{speaker_id}")
