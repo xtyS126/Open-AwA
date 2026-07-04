@@ -8,8 +8,9 @@ uvicorn[standard]==0.27.0
 sqlalchemy==2.0.25
 pydantic>=2.6.0,<3.0.0
 pydantic-settings>=2.1.0,<3.0.0
-# python-jose 升级至 3.4.2+ 修复算法混淆漏洞 CVE-2024-33664（DEP-01）
-python-jose[cryptography]>=3.4.2,<4.0.0
+# PyJWT 替代 python-jose（jose 已停止维护且与 pyasn1 0.6.x 冲突）
+# PyJWT 是事实标准，API 兼容，无 pyasn1 依赖
+PyJWT>=2.8.0,<3.0.0
 passlib[bcrypt]==1.7.4
 # python-multipart 升级至 0.0.31+ 修复 CVE-2026-42561/53538/53539/53540（DEP-02）
 python-multipart>=0.0.31,<1.0.0

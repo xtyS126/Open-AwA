@@ -15,7 +15,8 @@ from typing import Optional
 import bcrypt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Response
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 from loguru import logger
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -209,7 +210,7 @@ def decode_access_token(token: str) -> Optional[dict]:
         if expire_time <= datetime.now(timezone.utc):
             return None
         return payload
-    except (JWTError, TypeError, ValueError, OverflowError):
+    except (PyJWTError, TypeError, ValueError, OverflowError):
         return None
 
 

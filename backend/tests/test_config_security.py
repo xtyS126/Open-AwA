@@ -288,7 +288,7 @@ class TestJWTToken:
         """缺少 exp 字段的 token 返回 None"""
         from config.security import decode_access_token
         from config.settings import settings
-        from jose import jwt
+        import jwt
 
         # JWT 签名密钥改用独立的 JWT_SECRET_KEY
         token = jwt.encode(
