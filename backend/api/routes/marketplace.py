@@ -4,7 +4,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-from typing import Optional, List, Dict
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 from datetime import datetime, timezone
 import asyncio
@@ -68,7 +68,7 @@ async def list_plugins(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(12, ge=1, le=50, description="每页数量"),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """分页获取市场插件列表"""
     result = marketplace_registry.list_plugins(
         category=category,
@@ -87,7 +87,7 @@ async def list_plugins(
 async def search_plugins(
     q: str = Query("", description="搜索关键词"),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """根据关键词搜索市场插件"""
     plugins = marketplace_registry.search_plugins(q)
     return {
@@ -107,7 +107,7 @@ async def search_plugins(
 async def get_plugin_detail(
     plugin_id: str,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取单个插件的详细信息"""
     plugin = marketplace_registry.get_plugin(plugin_id)
     if not plugin:
@@ -125,7 +125,7 @@ async def install_plugin(
     payload: Optional[PluginInstallWithVersionRequest] = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     从市场安装指定插件到系统。
 
@@ -247,7 +247,7 @@ async def install_plugin(
 )
 async def get_categories(
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取所有插件分类"""
     categories = marketplace_registry.get_categories()
     return {"categories": categories}
@@ -266,7 +266,7 @@ async def list_plugin_versions(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取插件的所有版本记录"""
     versions = db.query(PluginVersion).filter(
         PluginVersion.plugin_id == plugin_id,
@@ -290,7 +290,7 @@ async def get_plugin_version_detail(
     version: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取插件指定版本的详情"""
     version_record = db.query(PluginVersion).filter(
         PluginVersion.plugin_id == plugin_id,
@@ -311,7 +311,7 @@ async def check_plugin_update(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """检查插件是否有可用更新"""
     # 从市场注册表获取插件信息
     plugin_meta = marketplace_registry.get_plugin(plugin_id)
@@ -356,7 +356,7 @@ async def upgrade_plugin(
     payload: PluginUpgradeRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """升级已安装插件到目标版本"""
     plugin_meta = marketplace_registry.get_plugin(plugin_id)
     if not plugin_meta:
@@ -419,7 +419,7 @@ async def rate_plugin(
     payload: PluginRatingCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """创建或更新用户评分"""
     plugin_meta = marketplace_registry.get_plugin(plugin_id)
     if not plugin_meta:
@@ -494,7 +494,7 @@ async def get_plugin_rating(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取插件评分汇总信息"""
     # 使用 SQL 聚合避免全量加载评分记录
     from sqlalchemy import func as _func
@@ -552,7 +552,7 @@ async def create_plugin_review(
     payload: PluginReviewCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """创建插件评论"""
     plugin_meta = marketplace_registry.get_plugin(plugin_id)
     if not plugin_meta:
@@ -605,7 +605,7 @@ async def list_plugin_reviews(
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """分页获取插件评论列表"""
     query = db.query(PluginReview).filter(
         PluginReview.plugin_id == plugin_id,
@@ -635,7 +635,7 @@ async def update_plugin_review(
     payload: PluginReviewUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新评论内容或评分（仅作者可操作）"""
     review = db.query(PluginReview).filter(PluginReview.id == review_id).first()
     if not review:
@@ -670,7 +670,7 @@ async def delete_plugin_review(
     review_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """删除评论（作者或管理员可操作）"""
     review = db.query(PluginReview).filter(PluginReview.id == review_id).first()
     if not review:

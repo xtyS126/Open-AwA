@@ -5,7 +5,7 @@ P2 安全增强 API 路由模块，提供细粒度权限管理、IP 白名单/�
 所有接口均需认证，管理员接口需 admin 角色。
 """
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from loguru import logger
@@ -52,7 +52,7 @@ router = APIRouter(prefix="/api/security/enhanced", tags=["SecurityEnhanced"])
 @router.get("/permissions/known")
 async def list_known_permissions(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出系统预定义的所有权限目录。"""
     manager = FineGrainedPermissionManager.__new__(FineGrainedPermissionManager)
     return {"permissions": manager.list_known_permissions()}
@@ -63,7 +63,7 @@ async def check_fine_grained_permission(
     body: FineGrainedPermissionCheckRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """检查指定用户是否拥有某项细粒度权限。"""
     manager = get_permission_manager(db)
     allowed = await manager.check_permission(body.user_id, body.permission)
@@ -77,7 +77,7 @@ async def check_fine_grained_permission(
 async def list_custom_roles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出所有自定义角色。"""
     manager = get_permission_manager(db)
     return manager.list_roles()
@@ -88,7 +88,7 @@ async def create_custom_role(
     body: CustomRoleCreate,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """创建自定义角色（仅管理员）。"""
     manager = get_permission_manager(db)
     try:
@@ -117,7 +117,7 @@ async def get_custom_role(
     role_name: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定自定义角色详情。"""
     manager = get_permission_manager(db)
     role_info = manager.get_role(role_name)
@@ -132,7 +132,7 @@ async def update_custom_role(
     body: CustomRoleUpdate,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """更新自定义角色（仅管理员）。"""
     manager = get_permission_manager(db)
     try:
@@ -160,7 +160,7 @@ async def delete_custom_role(
     role_name: str,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> None:
     """删除自定义角色（仅管理员）。"""
     manager = get_permission_manager(db)
     try:
@@ -178,7 +178,7 @@ async def list_ip_access_entries(
     active_only: bool = Query(True, description="仅返回活跃条目"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出 IP 访问条目。"""
     controller = IpAccessController(db)
     return controller.list_entries(list_type=list_type, active_only=active_only)
@@ -189,7 +189,7 @@ async def add_ip_access_entry(
     body: IpAccessEntryCreate,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """添加 IP 到白名单或黑名单（仅管理员）。"""
     controller = IpAccessController(db)
     try:
@@ -220,7 +220,7 @@ async def remove_ip_access_entry(
     entry_id: int,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> None:
     """移除 IP 访问条目（仅管理员）。"""
     controller = IpAccessController(db)
     try:
@@ -234,7 +234,7 @@ async def check_ip_access(
     body: IpAccessCheckRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """检查指定 IP 是否被允许访问。"""
     controller = IpAccessController(db)
     result = controller.check_ip(body.ip_address)
@@ -252,7 +252,7 @@ async def list_anomaly_events(
     limit: int = Query(50, ge=1, le=500, description="返回最大数量"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出异常行为事件。"""
     detector = get_anomaly_detector()
     return detector.list_events(
@@ -269,7 +269,7 @@ async def resolve_anomaly_event(
     event_id: int,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """标记异常事件为已解决（仅管理员）。"""
     detector = get_anomaly_detector()
     try:
@@ -287,7 +287,7 @@ async def generate_csrf_token(
     body: CsrfTokenGenerateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """生成新的 CSRF token。"""
     manager = CsrfTokenManager(db)
     result = manager.generate_token(
@@ -303,7 +303,7 @@ async def validate_csrf_token(
     body: CsrfTokenValidateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """校验 CSRF token 有效性。"""
     manager = CsrfTokenManager(db)
     result = manager.validate_token(
@@ -319,7 +319,7 @@ async def rotate_csrf_token(
     body: CsrfTokenRotateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """轮换 CSRF token：撤销旧 token 并生成新 token。"""
     manager = CsrfTokenManager(db)
     try:
@@ -339,7 +339,7 @@ async def revoke_csrf_token(
     token: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """撤销指定 CSRF token。"""
     manager = CsrfTokenManager(db)
     try:
@@ -356,7 +356,7 @@ async def revoke_csrf_token(
 async def get_user_rate_limit_stats(
     user_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定用户的速率限制统计。"""
     limiter = get_user_rate_limiter()
     stats = limiter.get_stats(user_id)
@@ -367,7 +367,7 @@ async def get_user_rate_limit_stats(
 async def reset_user_rate_limit(
     user_id: str,
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """重置指定用户的速率限制状态（仅管理员）。"""
     limiter = get_user_rate_limiter()
     limiter.reset(user_id)

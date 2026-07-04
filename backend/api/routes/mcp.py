@@ -5,7 +5,7 @@ MCP 相关 API 路由模块，提供 MCP Server 管理、工具发现与调用�
 安全：所有 Server 资源按 owner_user_id 隔离，防止 IDOR 跨用户访问他人 MCP Server。
 """
 
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -47,7 +47,7 @@ def _check_ownership(manager: MCPManager, server_id: str, current_user: User) ->
 
 
 @router.get("/servers", response_model=List[MCPServerResponse])
-async def get_servers(current_user: User = Depends(get_current_user)):
+async def get_servers(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """获取已配置的 MCP Server 列表（仅返回当前用户拥有的 Server）"""
     manager = _get_manager()
     # 安全：按 owner_user_id 过滤，避免跨用户泄露
@@ -73,7 +73,7 @@ async def get_servers(current_user: User = Depends(get_current_user)):
 async def add_server(
     data: MCPServerCreate,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """添加 MCP Server 配置（自动绑定到当前用户）"""
     manager = _get_manager()
     config = MCPServerConfig(
@@ -103,7 +103,7 @@ async def add_server(
 async def delete_server(
     server_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """删除 MCP Server 配置（需所有权校验）"""
     manager = _get_manager()
     _check_ownership(manager, server_id, current_user)
@@ -124,7 +124,7 @@ async def delete_server(
 async def connect_server(
     server_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """连接指定的 MCP Server（需所有权校验）"""
     manager = _get_manager()
     _check_ownership(manager, server_id, current_user)
@@ -140,7 +140,7 @@ async def connect_server(
 async def disconnect_server(
     server_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """断开指定的 MCP Server 连接（需所有权校验）"""
     manager = _get_manager()
     _check_ownership(manager, server_id, current_user)
@@ -155,7 +155,7 @@ async def disconnect_server(
 async def get_server_tools(
     server_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定 MCP Server 的工具列表（需所有权校验）"""
     manager = _get_manager()
     _check_ownership(manager, server_id, current_user)
@@ -173,7 +173,7 @@ async def get_server_tools(
 async def call_tool(
     data: MCPToolCallCreate,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """调用 MCP 工具（需对 server_id 做所有权校验）"""
     manager = _get_manager()
     _check_ownership(manager, data.server_id, current_user)
@@ -188,7 +188,7 @@ async def call_tool(
 
 
 @router.get("/config/snapshots")
-async def list_config_snapshots(current_user: User = Depends(get_current_user)):
+async def list_config_snapshots(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """
     列出 MCP 配置的可用版本快照。
 
@@ -204,7 +204,7 @@ async def list_config_snapshots(current_user: User = Depends(get_current_user)):
 @router.post("/config/snapshots")
 async def create_config_snapshot(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动创建 MCP 配置快照。
 
@@ -227,7 +227,7 @@ async def create_config_snapshot(
 async def rollback_config(
     snapshot_name: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     回滚 MCP 配置到指定快照版本。
 
@@ -252,7 +252,7 @@ async def rollback_config(
 
 
 @router.post("/config/hot-reload")
-async def hot_reload_config(current_user: User = Depends(get_current_user)):
+async def hot_reload_config(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """
     手动触发 MCP 配置热更新检测。
 
@@ -281,7 +281,7 @@ async def hot_reload_config(current_user: User = Depends(get_current_user)):
 # ==================== MCP 资源管理 ====================
 
 @router.get("/resources")
-async def list_all_resources(current_user: User = Depends(get_current_user)):
+async def list_all_resources(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """获取当前用户所有已连接 MCP Server 的资源列表（聚合，按 owner 过滤）"""
     manager = _get_manager()
     owned_ids = manager.list_servers_for_user(current_user.id)
@@ -310,7 +310,7 @@ async def list_all_resources(current_user: User = Depends(get_current_user)):
 async def list_server_resources(
     server_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定 MCP Server 的资源列表（需所有权校验）"""
     manager = _get_manager()
     _check_ownership(manager, server_id, current_user)
@@ -341,7 +341,7 @@ async def read_server_resource(
     server_id: str,
     body: dict,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """读取指定 MCP Server 的资源内容（需所有权校验）"""
     uri = body.get("uri")
     if not uri:

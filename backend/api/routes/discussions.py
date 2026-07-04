@@ -614,7 +614,7 @@ async def list_discussions(
     page: int = Query(default=1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页数量，最大 100"),
     status_filter: Optional[str] = Query(default=None, alias="status", description="按状态过滤"),
-):
+) -> Dict[str, Any]:
     """
     分页查询当前用户的讨论任务列表。
 
@@ -676,7 +676,7 @@ async def get_discussion(
     discussion_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     查询单个讨论任务详情。
 
@@ -711,7 +711,7 @@ async def revise_discussion(
     payload: DiscussionReviseRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     提交修订后的提议动作，触发新一轮讨论。
 
@@ -800,7 +800,7 @@ async def stream_discussion(
     discussion_id: str,
     request: Request,
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     SSE 端点：实时推送指定讨论任务的事件流。
 
@@ -905,7 +905,7 @@ async def force_execute_discussion(
     payload: DiscussionForceExecuteRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     紧急旁路执行：跳过未完成投票，直接触发 execute_approved_action。
 

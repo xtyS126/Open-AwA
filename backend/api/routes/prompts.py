@@ -6,7 +6,7 @@
 import threading
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import Any, Dict, List
 from db.models import get_db, PromptConfig
 from api.dependencies import get_current_user
 from api.schemas import PromptConfigCreate, PromptConfigUpdate, PromptConfigResponse
@@ -28,7 +28,7 @@ _active_prompt_lock = threading.Lock()
 async def get_prompts(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取prompts相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -46,7 +46,7 @@ async def get_prompts(
 async def get_active_prompt(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取active、prompt相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -95,7 +95,7 @@ async def get_prompt(
     prompt_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取prompt相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -111,7 +111,7 @@ async def create_prompt(
     prompt: PromptConfigCreate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     创建prompt相关对象、记录或执行结果。
     实现过程中往往会涉及初始化、组装、持久化或返回统一结构。
@@ -137,7 +137,7 @@ async def update_prompt(
     prompt_update: PromptConfigUpdate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新prompt相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -174,7 +174,7 @@ async def delete_prompt(
     prompt_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     删除prompt相关对象或持久化记录。
     实现中通常还会同时处理资源释放、状态回收或关联数据清理。

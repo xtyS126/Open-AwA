@@ -87,7 +87,7 @@ class ProbeRespondRequest(BaseModel):
 async def get_profile(
     request: Request,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的五层画像（洋葱模型）。
     返回 surface / interest / role / values / core 五层数据。
@@ -115,7 +115,7 @@ async def save_overrides(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动编辑画像覆盖层，保存到数据库。
     覆盖层优先级高于 AI 推断，实现"用户编辑 ⊕ AI 画像"的合并逻辑。
@@ -162,7 +162,7 @@ async def save_overrides(
 async def get_probes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户待确认的兴趣探针。
     返回 status=pending 的探针列表，供前端展示苏格拉底式提问。
@@ -186,7 +186,7 @@ async def respond_to_probe(
     req: ProbeRespondRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     确认或拒绝兴趣探针。
     确认后写入正式画像，拒绝后标记为已拒绝。
@@ -227,7 +227,7 @@ async def respond_to_probe(
 async def init_profile(
     request: Request,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     初始化用户画像，创建空画像（如果尚未存在）。
     画像已存在时直接返回现有画像。

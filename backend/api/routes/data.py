@@ -30,7 +30,7 @@ router = APIRouter(prefix="/data", tags=["data"])
 async def get_stats(
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """数据统计概览。"""
     conversation_count = db.query(func.count(ConversationData.id)).scalar() or 0
     tool_call_count = db.query(func.count(ToolCallData.id)).scalar() or 0
@@ -74,7 +74,7 @@ async def list_conversations(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """对话记录查询。"""
     query = db.query(ConversationData)
 
@@ -119,7 +119,7 @@ async def list_tool_calls(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """工具调用日志查询。"""
     query = db.query(ToolCallData)
 
@@ -159,7 +159,7 @@ async def list_execution_traces(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """执行轨迹查询。"""
     query = db.query(ExecutionTrace)
 
@@ -199,7 +199,7 @@ async def list_feedback(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """用户反馈查询。"""
     query = db.query(UserFeedback)
 
@@ -239,7 +239,7 @@ async def export_data(
     end_date: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """数据导出。"""
     if data_type == "conversations":
         query = db.query(ConversationData)

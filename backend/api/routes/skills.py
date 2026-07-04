@@ -683,7 +683,7 @@ async def _parse_weixin_request_payload(request: Request) -> Dict[str, Any]:
 async def weixin_health_check(
     request: Request,
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理weixin、health、check相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -708,7 +708,7 @@ async def save_weixin_config(
     request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     保存weixin、config相关数据到持久化存储。
     实现过程往往伴随序列化、写入、事务提交或异常回滚等步骤。
@@ -733,7 +733,7 @@ _weixin_config_migrated = False
 async def get_weixin_config(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取weixin、config相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -773,7 +773,7 @@ async def weixin_qr_start(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理weixin、qr、start相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -851,7 +851,7 @@ async def weixin_qr_image(
     session_key: Optional[str] = None,
     qrcode_url: Optional[str] = None,
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理weixin、qr、image相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -891,7 +891,7 @@ async def weixin_qr_wait(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理weixin、qr、wait相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1081,7 +1081,7 @@ async def weixin_qr_exit(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理weixin、qr、exit相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1133,7 +1133,7 @@ async def get_skills(
     current_user = Depends(get_current_user),
     limit: int = Query(100, ge=1, le=500, description="返回数量上限"),
     offset: int = Query(0, ge=0, description="分页偏移量"),
-):
+) -> Dict[str, Any]:
     """
     获取skills相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -1156,7 +1156,7 @@ async def get_skill(
     skill_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取skill相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -1189,7 +1189,7 @@ async def install_skill(
     skill: SkillCreate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理install、skill相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1258,7 +1258,7 @@ async def uninstall_skill(
     skill_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理uninstall、skill相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1278,7 +1278,7 @@ async def toggle_skill(
     skill_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理toggle、skill相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1302,7 +1302,7 @@ async def extract_experience(
     status: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理extract、experience相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1363,7 +1363,7 @@ async def update_skill(
     skill_update: SkillUpdate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     更新skill相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -1439,7 +1439,7 @@ async def execute_skill(
     execution_data: SkillExecute,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理execute、skill相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1509,7 +1509,7 @@ async def get_skill_config(
     skill_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取skill、config相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -1531,7 +1531,7 @@ async def get_skill_config(
 
 
 @router.post("/validate", response_model=SkillValidationResult)
-async def validate_skill(skill_data: SkillValidationRequest):
+async def validate_skill(skill_data: SkillValidationRequest) -> Dict[str, Any]:
     """
     校验skill相关输入、规则或结构是否合法。
     返回结果通常用于阻止非法输入继续流入后续链路。
@@ -1611,7 +1611,7 @@ async def install_skill_from_package(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理install、skill、from、package相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1836,7 +1836,7 @@ async def broadcast_skill_to_workspaces(
     body: dict,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     将指定技能复制/链接到多个工作空间。
     请求体: {"workspace_ids": ["ws1", "ws2", ...]}

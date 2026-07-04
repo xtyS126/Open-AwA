@@ -84,7 +84,7 @@ class ToolResponse(BaseModel):
 # --- 工具列表 ---
 
 @router.get("/list")
-async def list_tools():
+async def list_tools() -> Dict[str, Any]:
     """获取所有可用的Agent工具列表。"""
     tools = await built_in_tool_registry.list_tools()
     return {"tools": tools, "count": len(tools)}
@@ -93,7 +93,7 @@ async def list_tools():
 # --- 文件操作 ---
 
 @router.post("/file/read", response_model=ToolResponse)
-async def file_read(req: FileReadRequest):
+async def file_read(req: FileReadRequest) -> Dict[str, Any]:
     """读取文件内容。"""
     result = await _safe_execute_tool(
         'file_manager',
@@ -108,7 +108,7 @@ async def file_read(req: FileReadRequest):
 
 
 @router.post("/file/write", response_model=ToolResponse)
-async def file_write(req: FileWriteRequest):
+async def file_write(req: FileWriteRequest) -> Dict[str, Any]:
     """写入文件内容。"""
     result = await _safe_execute_tool(
         'file_manager',
@@ -123,7 +123,7 @@ async def file_write(req: FileWriteRequest):
 
 
 @router.post("/file/list", response_model=ToolResponse)
-async def file_list(req: FileListRequest):
+async def file_list(req: FileListRequest) -> Dict[str, Any]:
     """列出目录文件。"""
     result = await _safe_execute_tool(
         'file_manager',
@@ -138,7 +138,7 @@ async def file_list(req: FileListRequest):
 
 
 @router.post("/file/delete", response_model=ToolResponse)
-async def file_delete(req: FileDeleteRequest):
+async def file_delete(req: FileDeleteRequest) -> Dict[str, Any]:
     """删除文件或目录。"""
     result = await _safe_execute_tool(
         'file_manager',
@@ -153,7 +153,7 @@ async def file_delete(req: FileDeleteRequest):
 
 
 @router.post("/file/exists", response_model=ToolResponse)
-async def file_exists(req: FileReadRequest):
+async def file_exists(req: FileReadRequest) -> Dict[str, Any]:
     """检查文件是否存在。"""
     result = await _safe_execute_tool(
         'file_manager',
@@ -170,7 +170,7 @@ async def file_exists(req: FileReadRequest):
 # --- 终端命令 ---
 
 @router.post("/terminal/run", response_model=ToolResponse)
-async def terminal_run(req: CommandRequest):
+async def terminal_run(req: CommandRequest) -> Dict[str, Any]:
     """执行终端命令。"""
     result = await _safe_execute_tool(
         'terminal_executor',
@@ -189,7 +189,7 @@ async def terminal_run(req: CommandRequest):
 
 
 @router.get("/terminal/status", response_model=ToolResponse)
-async def terminal_status():
+async def terminal_status() -> Dict[str, Any]:
     """获取系统状态。"""
     result = await _safe_execute_tool(
         'terminal_executor',
@@ -206,7 +206,7 @@ async def terminal_status():
 # --- 网页搜索 ---
 
 @router.post("/search/web", response_model=ToolResponse)
-async def web_search(req: SearchRequest):
+async def web_search(req: SearchRequest) -> Dict[str, Any]:
     """搜索网页。"""
     result = await _safe_execute_tool(
         'web_search',
@@ -224,7 +224,7 @@ async def web_search(req: SearchRequest):
 
 
 @router.post("/search/fetch", response_model=ToolResponse)
-async def fetch_url(req: FetchUrlRequest):
+async def fetch_url(req: FetchUrlRequest) -> Dict[str, Any]:
     """获取URL内容。"""
     result = await _safe_execute_tool(
         'web_search',
@@ -270,7 +270,7 @@ class RemoveDocumentRequest(BaseModel):
 
 
 @router.post("/search/local", response_model=ToolResponse)
-async def local_search(req: LocalSearchRequest):
+async def local_search(req: LocalSearchRequest) -> Dict[str, Any]:
     """在本地索引中搜索文档。"""
     result = await _safe_execute_tool(
         'local_search',
@@ -289,7 +289,7 @@ async def local_search(req: LocalSearchRequest):
 
 
 @router.post("/search/index", response_model=ToolResponse)
-async def index_document(req: IndexDocumentRequest):
+async def index_document(req: IndexDocumentRequest) -> Dict[str, Any]:
     """索引文档到本地搜索引擎。"""
     result = await _safe_execute_tool(
         'local_search',
@@ -309,7 +309,7 @@ async def index_document(req: IndexDocumentRequest):
 
 
 @router.post("/search/index-directory", response_model=ToolResponse)
-async def index_directory(req: IndexDirectoryRequest):
+async def index_directory(req: IndexDirectoryRequest) -> Dict[str, Any]:
     """批量索引目录文件。"""
     result = await _safe_execute_tool(
         'local_search',
@@ -327,7 +327,7 @@ async def index_directory(req: IndexDirectoryRequest):
 
 
 @router.post("/search/remove", response_model=ToolResponse)
-async def remove_document(req: RemoveDocumentRequest):
+async def remove_document(req: RemoveDocumentRequest) -> Dict[str, Any]:
     """从索引中移除文档。"""
     result = await _safe_execute_tool(
         'local_search',
@@ -342,7 +342,7 @@ async def remove_document(req: RemoveDocumentRequest):
 
 
 @router.get("/search/stats", response_model=ToolResponse)
-async def search_stats():
+async def search_stats() -> Dict[str, Any]:
     """获取本地搜索索引统计。"""
     result = await _safe_execute_tool(
         'local_search',

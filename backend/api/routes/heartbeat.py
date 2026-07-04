@@ -51,7 +51,7 @@ def _ensure_engine(workspace_id: str) -> HeartbeatEngine:
 async def get_heartbeat_config(
     workspace_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定工作空间的心跳配置。"""
     engine = _ensure_engine(workspace_id)
     return {"success": True, "config": engine.get_config()}
@@ -62,7 +62,7 @@ async def update_heartbeat_config(
     workspace_id: str,
     body: HeartbeatConfigUpdateRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新指定工作空间的心跳配置。"""
     engine = _ensure_engine(workspace_id)
     engine.configure(body.model_dump(exclude_none=True))
@@ -73,7 +73,7 @@ async def update_heartbeat_config(
 async def test_heartbeat(
     workspace_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """手动触发一次心跳检查（测试用）。"""
     engine = _ensure_engine(workspace_id)
     engine.configure({"enabled": True})  # 临时启用以测试
@@ -86,7 +86,7 @@ async def update_heartbeat_file(
     workspace_id: str,
     body: HeartbeatFileUpdateRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新工作空间的 HEARTBEAT.md 内容。"""
     engine = _ensure_engine(workspace_id)
     engine.update_heartbeat_file(body.content)

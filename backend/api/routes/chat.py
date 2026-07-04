@@ -189,7 +189,7 @@ async def chat(
     message: ChatMessage,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理chat相关逻辑，并为调用方返回对应结果。
     如果请求 mode='stream'，则返回 SSE。否则返回 JSON。
@@ -293,7 +293,7 @@ async def confirm_operation(
     confirmation: ConfirmationRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理confirm、operation相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -343,7 +343,7 @@ async def confirm_operation(
 async def cancel_agent_task(
     session_id: str,
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """取消指定会话中正在执行的 Agent 任务。"""
     from core.agent import get_agent_task, unregister_agent_task
 
@@ -376,7 +376,7 @@ async def submit_feedback(
     feedback: UserFeedbackRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """记录用户对助手消息的显式反馈。"""
     from core.feedback import feedback_layer_registry
 
@@ -527,7 +527,7 @@ async def get_chat_history(
     workspace_id: str = "default",
     limit: int = Query(200, ge=1, le=1000, description="返回消息数量上限，默认 200，最大 1000"),
     offset: int = Query(0, ge=0, description="分页偏移量，用于翻页加载更早的消息"),
-):
+) -> Dict[str, Any]:
     """
     获取指定会话的聊天历史。
     验证会话属于当前用户，防止越权访问，限制工作区范围。
@@ -622,7 +622,7 @@ def _validate_chat_upload_magic_bytes(data: bytes, ext: str) -> bool:
 async def upload_chat_file(
     file: UploadFile,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     接收文件上传，校验类型和大小后保存到 uploads 目录。
     返回文件元信息和访问 URL。
@@ -707,7 +707,7 @@ async def upload_chat_file(
 async def get_uploaded_file(
     filename: str,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     返回已上传的文件。文件名必须是系统生成的安全文件名。
     """
@@ -755,7 +755,7 @@ async def undo_operation(
     request: Request,
     data: ChatUndoOperationRequest,
     current_user=Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """撤销操作检查点。"""
     operation_id = data.operation_id
 

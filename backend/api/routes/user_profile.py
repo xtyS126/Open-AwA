@@ -159,7 +159,7 @@ async def extract_profile(
     payload: ExtractRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动触发用户画像提取。
     分析用户的对话历史和行为日志，提取结构化的用户特征。
@@ -178,7 +178,7 @@ async def extract_profile(
 async def auto_extract_profile(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     自动检查并触发画像提取（由定时任务或对话后钩子调用）。
     仅在满足提取条件时执行。
@@ -225,7 +225,7 @@ async def list_profile_facts(
     offset: int = Query(0, ge=0, description="偏移量"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的所有画像事实。
     支持按类别、置信度和活跃状态筛选，支持分页。
@@ -268,7 +268,7 @@ async def get_profile_fact(
     fact_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取单个画像事实的详细信息。
     """
@@ -289,7 +289,7 @@ async def update_profile_fact(
     payload: FactUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动编辑画像事实。编辑后来源类型自动设为 manual。
     """
@@ -324,7 +324,7 @@ async def create_profile_fact(
     payload: FactCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动添加画像事实。
     """
@@ -356,7 +356,7 @@ async def delete_profile_fact(
     fact_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     删除画像事实（软删除，设置 is_active=False）。
     """
@@ -384,7 +384,7 @@ async def verify_profile_fact(
     fact_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     用户确认画像事实。提高置信度并增加验证计数。
     """
@@ -398,7 +398,7 @@ async def dispute_profile_fact(
     fact_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     用户否定画像事实。降低置信度。
     """
@@ -413,7 +413,7 @@ async def dispute_profile_fact(
 async def refresh_profile(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     全局刷新画像：重新计算所有事实的有效置信度，归档低于阈值的事实。
     """
@@ -430,7 +430,7 @@ async def refresh_profile(
 async def get_profile_summary(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取画像摘要（用于前端仪表盘展示）。
     """
@@ -442,7 +442,7 @@ async def get_profile_summary(
 async def get_profile_context(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取 Agent 上下文注入用的画像文本（调试用）。
     """
@@ -458,7 +458,7 @@ async def get_profile_context(
 async def export_profile(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     导出用户画像为 JSON（用于数据可移植性）。
     """
@@ -490,7 +490,7 @@ async def export_profile(
 async def purge_profile(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     清空所有画像数据（用户控制的"遗忘权"）。
     """
@@ -524,7 +524,7 @@ async def purge_profile(
 async def get_profile_stats(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取画像统计数据：总量、分布、完整度等。
     """
@@ -538,7 +538,7 @@ async def get_extraction_logs(
     offset: int = Query(0, ge=0, description="偏移量"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取画像提取历史日志。
     """
@@ -578,7 +578,7 @@ async def get_extraction_logs(
 
 
 @router.get("/dimensions")
-async def get_profile_dimensions():
+async def get_profile_dimensions() -> Dict[str, Any]:
     """
     获取画像维度定义（用于前端渲染类别筛选器和表单）。
     """

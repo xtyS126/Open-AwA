@@ -602,7 +602,7 @@ class PTYTerminalSession:
 async def create_pty_session(
     request: PTYCreateRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     创建 PTY 持久化终端会话。
 
@@ -670,7 +670,7 @@ async def create_pty_session(
 @router.get("/sessions/pty")
 async def list_pty_sessions(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出当前用户所有活跃的 PTY 终端会话（按 owner_user_id 过滤）。"""
     owner_id = str(current_user.id)
     return {
@@ -693,7 +693,7 @@ async def list_pty_sessions(
 async def close_pty_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """关闭 PTY 终端会话（仅会话所有者可操作）。"""
     session = _pty_sessions.get(session_id)
     if session is None:
@@ -720,7 +720,7 @@ async def close_pty_session(
 async def get_pty_snapshot(
     session_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     返回 PTY 会话的屏幕快照（仅会话所有者可访问）。
 
@@ -749,7 +749,7 @@ async def get_pty_snapshot(
 async def get_session_snapshot(
     session_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     返回终端会话的屏幕快照（兼容路径，仅会话所有者可访问）。
 
@@ -1000,7 +1000,7 @@ async def terminal_pty_websocket(
 async def create_session(
     cwd: Optional[str] = Query(default=None, description="工作目录"),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """创建新的终端会话。需要认证。"""
     # 校验 cwd 路径安全性
     safe_cwd = _validate_cwd(cwd)
@@ -1035,7 +1035,7 @@ async def execute_command(
     session_id: str,
     request: TerminalCommandRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """在指定会话中执行命令。需要认证（仅会话所有者可执行）。"""
     session = _terminal_sessions.get(session_id)
     if not session or not session.active:
@@ -1063,7 +1063,7 @@ async def execute_command(
 async def close_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """关闭终端会话。需要认证（仅会话所有者可关闭）。"""
     session = _terminal_sessions.get(session_id)
     if not session:
@@ -1089,7 +1089,7 @@ async def close_session(
 @router.get("/sessions")
 async def list_sessions(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出当前用户所有活跃的终端会话（按 owner_user_id 过滤）。"""
     owner_id = str(current_user.id)
     return {

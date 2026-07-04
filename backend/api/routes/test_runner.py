@@ -375,7 +375,7 @@ SCENARIO_RUNNERS: Dict[str, Callable] = {
 @router.get("")
 async def list_scenarios(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     列出所有可用测试场景及其描述。
     供Claude Code等工具了解可用的测试场景。
@@ -398,7 +398,7 @@ async def run_scenario(
     body: RunScenarioRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     运行指定的单个测试场景。
     传入场景名称，返回执行结果（通过/失败/耗时）。
@@ -445,7 +445,7 @@ async def run_scenario(
 async def run_all_scenarios(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     运行全部测试场景。
     按顺序执行所有已注册场景，返回汇总报告。

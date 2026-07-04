@@ -40,7 +40,7 @@ async def list_market_roles(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """浏览市场角色列表。"""
     query = db.query(AgentRole).filter(AgentRole.is_public == True)  # noqa: E712
     if category and category != "all":
@@ -84,7 +84,7 @@ async def list_market_roles(
 async def list_categories(
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取市场分类列表。"""
     return {
         "categories": [
@@ -103,7 +103,7 @@ async def publish_role(
     request: RolePublishRequest,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """发布角色到市场。"""
     role = db.query(AgentRole).filter(AgentRole.id == request.role_id).first()
     if not role:
@@ -127,7 +127,7 @@ async def install_role(
     role_id: str,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """从市场安装角色（复制到自己的角色列表）。"""
     import uuid
     source_role = db.query(AgentRole).filter(
@@ -167,7 +167,7 @@ async def rate_role(
     request: RoleRatingRequest,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """为角色评分。"""
     role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
     if not role:

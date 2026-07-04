@@ -10,7 +10,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
-from typing import List, Optional, Any
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 from db.models import get_db, ExperienceMemory, ExperienceExtractionLog, User
 from api.dependencies import get_current_user
@@ -209,7 +209,7 @@ async def extract_experience(
     request: ExperienceExtractionRequest,
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理extract、experience相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -283,7 +283,7 @@ async def search_experiences(
     limit: int = Query(10, ge=1, le=50, description="返回数量"),
     manager: ExperienceManager = Depends(get_experience_manager),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理search、experiences相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。

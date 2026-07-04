@@ -6,7 +6,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -300,7 +300,7 @@ def _resolve_pending_request(user_id: str, request_id: str, reply: str) -> bool:
 async def list_roles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取所有角色列表。"""
     rbac = RBACManager(db)
     rbac.ensure_built_in_roles()
@@ -313,7 +313,7 @@ async def get_user_role(
     user_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定用户的角色信息。"""
     rbac = RBACManager(db)
     role_name = await rbac.get_user_role(user_id)
@@ -326,7 +326,7 @@ async def set_user_role(
     body: UserRoleUpdate,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """设置用户角色（仅管理员可操作）。"""
     rbac = RBACManager(db)
     rbac.ensure_built_in_roles()
@@ -348,7 +348,7 @@ async def check_permission(
     body: PermissionCheckRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """检查指定用户是否拥有某项权限。"""
     rbac = RBACManager(db)
     role_name = await rbac.get_user_role(body.user_id)
@@ -373,7 +373,7 @@ async def get_audit_logs(
     end_time: Optional[str] = Query(None, description="结束时间，ISO 格式"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取审计日志列表，支持分页和多维度筛选。
 
     权限隔离：非管理员仅能查询自身审计日志，传入 user_id 参数会被强制覆盖为当前用户 ID，
@@ -430,7 +430,7 @@ async def export_audit_logs(
     end_time: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """
     导出审计日志为 JSONL 格式（仅管理员可操作）。
 
@@ -501,7 +501,7 @@ async def export_audit_logs(
 async def get_audit_stats(
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """
     获取审计日志统计信息（仅管理员可操作）。
 
@@ -548,7 +548,7 @@ async def get_audit_stats(
 @router.get("/permissions/pending")
 async def get_pending_permissions(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户待处理的权限请求列表。
     前端通过轮询此接口实现权限请求的实时推送。
@@ -587,7 +587,7 @@ async def stream_permission_requests(
     ticket: Optional[str] = Query(None, description="一次性 SSE ticket（首选方式，通过 POST /permissions/sse-ticket 获取）"),
     api_key: Optional[str] = Query(None, description="（已弃用）API Key，存在 URL 泄露风险，建议改用 ticket"),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     SSE 端点：实时推送当前用户的权限请求事件。
     前端连接此端点后，当后端有新的权限请求时，会以
@@ -705,7 +705,7 @@ async def reply_to_permission(
     body: PermissionReplyRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     回复权限请求。
 
@@ -806,7 +806,7 @@ async def get_saved_permissions(
     page_size: int = Query(50, ge=1, le=200, description="每页数量，最大 200"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户已保存的持久化权限规则列表（分页）。
 
@@ -835,7 +835,7 @@ async def delete_saved_permission(
     permission_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     删除指定的持久化权限规则。
     """
@@ -867,7 +867,7 @@ async def delete_saved_permission(
 async def delete_all_saved_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     删除当前用户所有已保存的持久化权限规则。
     """

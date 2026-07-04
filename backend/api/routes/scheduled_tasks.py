@@ -117,7 +117,7 @@ async def list_scheduled_tasks(
     limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     user_id = str(current_user.id)
     query = db.query(ScheduledTask).filter(ScheduledTask.user_id == user_id)
     if status:
@@ -136,7 +136,7 @@ async def list_scheduled_task_executions(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     user_id = str(current_user.id)
     query = db.query(ScheduledTaskExecution).filter(ScheduledTaskExecution.user_id == user_id)
     if task_id is not None:
@@ -154,7 +154,7 @@ async def create_scheduled_task(
     request: ScheduledTaskCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     title = _require_non_empty_text(request.title, "title")
     prompt = (request.prompt or "").strip()
 
@@ -211,7 +211,7 @@ async def create_scheduled_task(
 @router.get("/plugin-commands", response_model=List[PluginCommandInfo])
 async def list_plugin_commands(
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     列出所有已加载插件的可用命令，供前端插件命令选择器使用。
     """
@@ -265,7 +265,7 @@ async def get_scheduled_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     return _get_task_or_404(db, task_id, str(current_user.id))
 
 
@@ -275,7 +275,7 @@ async def update_scheduled_task(
     request: ScheduledTaskUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     task = _get_task_or_404(db, task_id, str(current_user.id))
     _ensure_task_status_allowed(task, UPDATABLE_TASK_STATUSES, "updated")
 
@@ -319,7 +319,7 @@ async def cancel_scheduled_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     task = _get_task_or_404(db, task_id, str(current_user.id))
     _ensure_task_status_allowed(task, CANCELLABLE_TASK_STATUSES, "cancelled")
 
@@ -338,7 +338,7 @@ async def trigger_scheduled_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动触发一次定时任务立即执行（不等 cron 时间）。
     任务必须是 pending 状态且未被取消。

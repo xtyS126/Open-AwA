@@ -31,7 +31,7 @@ class MagicCommandCompactRequest(BaseModel):
 
 
 @router.get("", summary="列出所有可用的魔法命令")
-async def list_commands(current_user: User = Depends(get_current_user)):
+async def list_commands(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """返回所有已注册的魔法命令列表，包含名称、描述和属性。"""
     registry = get_magic_command_registry()
     return {"commands": registry.list_commands(), "total": len(registry.list_commands())}
@@ -42,7 +42,7 @@ async def execute_command(
     body: MagicCommandExecuteRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     执行指定的魔法命令。
     请求体需包含 command_name，可选 context 字典（如 session_id、workspace_id 等）。
@@ -71,7 +71,7 @@ async def execute_command(
 async def trigger_compact(
     body: MagicCommandCompactRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动触发当前会话的上下文压缩。
     将对话历史压缩为摘要，保留最近几轮完整对话。

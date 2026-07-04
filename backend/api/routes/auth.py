@@ -4,7 +4,7 @@
 """
 
 from datetime import timedelta
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -51,7 +51,7 @@ async def login(
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
-):
+) -> Dict[str, Any]:
     """
     处理login相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -156,7 +156,7 @@ async def logout(
     response: Response,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     清理当前访问令牌 Cookie，将当前 token 加入数据库黑名单防止重放，
     并返回统一登出结果。
@@ -220,7 +220,7 @@ class PasswordChangeRequest(BaseModel):
     summary="获取当前用户信息",
     description="返回当前访问令牌对应的用户资料。"
 )
-async def get_me(current_user: UserModel = Depends(get_current_user)):
+async def get_me(current_user: UserModel = Depends(get_current_user)) -> Dict[str, Any]:
     """
     获取me相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -245,7 +245,7 @@ async def change_password(
     request_body: PasswordChangeRequest,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     修改当前用户的登录密码。
     要求提供旧密码进行验证，新密码需满足强度规则。
@@ -323,7 +323,7 @@ async def rotate_api_key(
     request: Request,
     request_body: ApiKeyRotateRequest,
     current_user: UserModel = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     轮转全局 API Key：生成新 Key → 写入 .env.local → 更新 settings → 返回新 Key。
     旧 Key 立即失效，调用方需保存新 Key 并更新所有客户端配置。

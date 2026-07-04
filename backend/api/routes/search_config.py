@@ -95,7 +95,7 @@ def _normalize_base_url(raw: Optional[str]) -> Optional[str]:
 async def get_search_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     返回当前激活的搜索 provider 配置。
     激活定义：enabled=True 的记录（理论上仅一条）。
@@ -122,7 +122,7 @@ async def update_search_config(
     payload: SearchConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     更新搜索 provider 配置。
     校验规则：
@@ -217,7 +217,7 @@ async def update_search_config(
 async def test_search(
     payload: SearchTestRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     测试搜索 provider 的连通性与可用性，不写入数据库。
     - searxng: 调用 {base_url}/search?q=...&format=json&pageno=1，超时 10 秒；

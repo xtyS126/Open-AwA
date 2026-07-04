@@ -173,7 +173,7 @@ def _check_environment() -> Dict[str, Any]:
 @router.get("/diagnostics")
 async def system_diagnostics(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     系统综合诊断端点，逐一检查各子系统状态并返回统一报告。
     供前端测试页面和自动化测试任务使用。
@@ -221,7 +221,7 @@ async def system_diagnostics(
 
 
 @router.get("/ping")
-async def ping():
+async def ping() -> Dict[str, Any]:
     """
     轻量级连通性检查，无需认证。
     用于基础网络可达性验证。
@@ -235,7 +235,7 @@ class EnvVarUpdatePayload(BaseModel):
 
 
 @router.get("/env-vars")
-async def list_env_vars(current_user: User = Depends(get_current_admin_user)):
+async def list_env_vars(current_user: User = Depends(get_current_admin_user)) -> Dict[str, Any]:
     """
     获取系统环境变量列表（基于模块级 ENV_VAR_META 单一数据源）。
     """
@@ -273,7 +273,7 @@ async def list_env_vars(current_user: User = Depends(get_current_admin_user)):
 async def update_env_variable(
     payload: EnvVarUpdatePayload,
     current_user: User = Depends(get_current_admin_user)
-):
+) -> Dict[str, Any]:
     """
     临时更新环境变量并动态修改 runtime 内存设置。
     """
@@ -428,7 +428,7 @@ def _classify_http_error(status_code: int) -> str:
 async def test_connectivity(
     payload: ConnectivityTestRequest,
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Dict[str, Any]:
     """
     对 LLM 供应商执行真实的 API 连通性测试。
     通过调用供应商的 /v1/models 端点验证 API Key 是否有效以及网络是否可达。
@@ -634,7 +634,7 @@ async def test_connectivity(
 async def test_env_variable(
     name: str,
     current_user: User = Depends(get_current_admin_user)
-):
+) -> Dict[str, Any]:
     """
     针对选定的 API 环境变量执行真实连通性测试。
     通过调用对应 LLM 供应商的 /v1/models 端点验证 Key 有效性和网络可达性。

@@ -6,7 +6,7 @@
 import asyncio
 import os
 import re
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -71,7 +71,7 @@ class DiaryReadResponse(BaseModel):
 async def generate_diary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     触发日记生成。
     按逻辑日收集当天所有对话摘要，调用 LLM 生成日记并持久化到文件系统。
@@ -152,7 +152,7 @@ async def generate_diary(
     summary="列出所有日记",
     description="返回所有已生成日记文件的列表。",
 )
-async def list_diary_entries(current_user: User = Depends(get_current_user)):
+async def list_diary_entries(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """
     列出当前用户的所有已生成日记文件。
     """
@@ -172,7 +172,7 @@ async def list_diary_entries(current_user: User = Depends(get_current_user)):
     summary="获取指定日期日记",
     description="按日期字符串（如 2026-05-16）读取对应的日记内容。",
 )
-async def get_diary(date: str, current_user: User = Depends(get_current_user)):
+async def get_diary(date: str, current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """
     获取当前用户指定日期的日记内容。
     日期格式：YYYY-MM-DD。

@@ -6,7 +6,7 @@
 import time
 from datetime import datetime, timezone
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -43,7 +43,7 @@ async def query_logs(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     处理query、logs相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -76,7 +76,7 @@ async def export_logs(
     level: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     处理export、logs相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -116,7 +116,7 @@ async def export_logs(
 async def trace_by_request_id(
     request_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     根据 request_id 追踪单次请求的全部日志，
     用于排查某个请求从接收到响应的完整调用链路。
@@ -137,7 +137,7 @@ async def trace_by_request_id(
 async def get_errors_summary(
     hours: int = Query(24, ge=1, le=720, description="统计最近 N 小时内的错误"),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     汇总最近指定时间范围内的错误日志统计，
     包含错误数量、按模块分组、高频错误类型等。
@@ -156,7 +156,7 @@ async def get_errors_summary(
 @router.get("/files")
 async def list_log_files(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     列出日志目录中所有的日志文件，包含文件名、大小和修改时间。
     """
@@ -168,7 +168,7 @@ async def list_log_files(
 async def download_log_file(
     filename: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     下载指定的日志文件。文件名仅允许合法字符，防止路径穿越攻击。
     """
@@ -218,7 +218,7 @@ async def report_client_error(
     request: Request,
     report: ClientErrorReport,
     current_user: Optional[User] = Depends(get_optional_current_user),
-):
+) -> Dict[str, Any]:
     """
     接收前端上报的错误信息，统一写入后端日志系统。
     使前端的 console.error 级别错误也能在后端日志中查看和分析。

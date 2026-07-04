@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ def get_workflow_engine(db: Session = Depends(get_db)) -> WorkflowEngine:
 async def list_workflows(
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     return (
         engine.db_session.query(Workflow)
         .filter(Workflow.user_id == str(current_user.id))
@@ -46,7 +46,7 @@ async def create_workflow(
     request: WorkflowCreate,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     parsed = engine.parser.parse_definition(request.definition, format_hint=request.format)
     workflow = Workflow(
         user_id=str(current_user.id),
@@ -73,7 +73,7 @@ async def get_workflow(
     workflow_id: int,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     workflow = (
         engine.db_session.query(Workflow)
         .filter(Workflow.id == workflow_id, Workflow.user_id == str(current_user.id))
@@ -90,7 +90,7 @@ async def update_workflow(
     request: WorkflowUpdate,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     workflow = (
         engine.db_session.query(Workflow)
         .filter(Workflow.id == workflow_id, Workflow.user_id == str(current_user.id))
@@ -122,7 +122,7 @@ async def delete_workflow(
     workflow_id: int,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     workflow = (
         engine.db_session.query(Workflow)
         .filter(Workflow.id == workflow_id, Workflow.user_id == str(current_user.id))
@@ -140,7 +140,7 @@ async def execute_workflow(
     request: WorkflowExecutionRequest,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     workflow = None
     definition = request.definition
     workflow_name = request.workflow_name
@@ -182,7 +182,7 @@ async def get_workflow_execution(
     execution_id: int,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     execution = (
         engine.db_session.query(WorkflowExecution)
         .filter(WorkflowExecution.id == execution_id, WorkflowExecution.user_id == str(current_user.id))

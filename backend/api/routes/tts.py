@@ -4,7 +4,7 @@
 """
 import base64
 import os
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, Response
@@ -85,7 +85,7 @@ class StreamSynthesizeRequest(BaseModel):
 async def synthesize_tts(
     body: SynthesizeRequest,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     非流式语音合成，返回完整音频文件。
     """
@@ -143,7 +143,7 @@ async def synthesize_tts(
 async def synthesize_tts_stream(
     body: StreamSynthesizeRequest,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     流式语音合成（SSE），实时推送 base64 编码的音频块。
     前端可通过 EventSource 或 fetch + ReadableStream 消费。
@@ -204,7 +204,7 @@ async def clone_voice(
     audio_file: UploadFile = File(..., description="音频文件（WAV，14~30秒）"),
     context_texts: Optional[str] = Form(default=None, description="音频对应文本"),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     上传音频样本，创建声音复刻训练任务。
     返回 speaker_id，可通过 GET /clone/{speaker_id} 查询训练进度。
@@ -265,7 +265,7 @@ async def clone_voice(
 async def get_clone_status(
     speaker_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     查询声音复刻训练状态。
     """
@@ -286,7 +286,7 @@ async def get_clone_status(
 async def delete_cloned_speaker(
     speaker_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     删除复刻音色。
     """
@@ -310,7 +310,7 @@ async def delete_cloned_speaker(
 @router.get("/speakers")
 async def list_speakers(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     列出所有可用音色（预置 + 复刻）。
     """
@@ -332,7 +332,7 @@ async def list_speakers(
 async def get_speaker_info(
     speaker_id: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取音色详细信息。
     """
@@ -351,7 +351,7 @@ async def get_speaker_info(
 @router.get("/health")
 async def tts_health(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     豆包 TTS 服务连通性检查。
 

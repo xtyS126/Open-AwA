@@ -83,7 +83,7 @@ class RoleActivateRequest(BaseModel):
 async def list_roles(
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取所有角色列表。"""
     roles = db.query(AgentRole).order_by(AgentRole.created_at.desc()).all()
     return roles
@@ -92,7 +92,7 @@ async def list_roles(
 @router.get("/presets", response_model=List[Dict[str, Any]])
 async def get_presets(
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取预设角色模板列表。"""
     return RoleEngine.get_preset_roles()
 
@@ -102,7 +102,7 @@ async def get_role(
     role_id: str,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取角色详情。"""
     role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
     if not role:
@@ -115,7 +115,7 @@ async def create_role(
     role_data: RoleCreate,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """创建新角色。"""
     role_id = str(uuid.uuid4())[:8]
     role = AgentRole(
@@ -145,7 +145,7 @@ async def update_role(
     role_data: RoleUpdate,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新角色配置。"""
     role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
     if not role:
@@ -170,7 +170,7 @@ async def delete_role(
     role_id: str,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> None:
     """删除角色。"""
     role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
     if not role:
@@ -189,7 +189,7 @@ async def activate_role(
     request: RoleActivateRequest,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """激活角色（绑定到当前会话）。"""
     role = db.query(AgentRole).filter(AgentRole.id == role_id).first()
     if not role:

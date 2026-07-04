@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import os
 import uuid
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, Field
@@ -81,7 +81,7 @@ async def get_user_profile(
     request: Request,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的 AI 画像信息。
     从数据库中的 profile_data 或行为日志动态生成。
@@ -121,7 +121,7 @@ async def update_user_profile(
     request: UserProfileUpdate,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     更新当前用户的个人信息（昵称、邮箱、电话）。
     """
@@ -150,7 +150,7 @@ async def upload_avatar(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
-):
+) -> Dict[str, Any]:
     """
     上传用户头像图片。
     仅支持 jpg/png 格式，大小不超过 1MB。
@@ -205,7 +205,7 @@ async def get_user_devices(
     request: Request,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的所有登录设备列表。
     返回设备类型、IP、登录时间等信息，标记当前设备。
@@ -253,7 +253,7 @@ async def revoke_device(
     device_id: int,
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     远程登出指定设备，将其 JWT token 加入黑名单。
     """
@@ -290,7 +290,7 @@ async def revoke_device(
 async def get_user_preferences(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的偏好设置。
     返回 profile_data["preferences"]，不存在则返回空字典。
@@ -312,7 +312,7 @@ async def update_user_preferences(
     body: "UserPreferencesUpdate",
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     增量更新用户偏好设置。
     将传入的键值对合并到 profile_data["preferences"] 中，不影响其他键。

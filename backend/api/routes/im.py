@@ -37,7 +37,7 @@ _channel_configs: Dict[str, ChannelConfigRequest] = {}
 @router.get("/channels")
 async def list_channels(
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """列出所有渠道及其状态。"""
     channels = []
     for channel_name in ["telegram", "feishu", "dingtalk"]:
@@ -55,7 +55,7 @@ async def update_channel_config(
     channel: str,
     config: ChannelConfigRequest,
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新渠道配置。"""
     if channel not in ["telegram", "feishu", "dingtalk"]:
         raise HTTPException(status_code=400, detail="不支持的渠道")
@@ -77,7 +77,7 @@ async def update_channel_config(
 async def send_message(
     request: SendMessageRequest,
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """通过指定渠道发送消息。"""
     from im.router import message_router
 
@@ -92,7 +92,7 @@ async def send_message(
 @router.get("/status")
 async def get_status(
     current_user: Dict = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取 IM 网关整体状态。"""
     from im.router import message_router
 

@@ -2,7 +2,7 @@
 记忆管理路由，提供短期/长期记忆 CRUD、混合检索、归档、质量评估与统计接口。
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -61,7 +61,7 @@ async def get_short_term_memory(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     workspace_id: str = "default",
-):
+) -> Dict[str, Any]:
     """
     获取短期记忆，先验证会话所有权并限制工作区范围。
     """
@@ -87,7 +87,7 @@ async def add_short_term_memory(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     workspace_id: str = "default",
-):
+) -> Dict[str, Any]:
     """
     新增短期记忆，先验证会话所有权并绑定工作区。
     """
@@ -111,7 +111,7 @@ async def delete_short_term_memory(
     memory_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     删除短期记忆，先验证该记忆所属会话是否属于当前用户。
     防止越权删除其他用户的记忆。
@@ -141,7 +141,7 @@ async def get_long_term_memories(
     include_archived: bool = Query(False, description="是否包含已归档记忆"),
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     memories = await manager.get_long_term_memories(
         limit=limit,
         offset=skip,
@@ -156,7 +156,7 @@ async def add_long_term_memory(
     memory: LongTermMemoryCreate,
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     return await manager.add_long_term_memory(
         user_id=str(current_user.id),
         content=memory.content,
@@ -171,7 +171,7 @@ async def delete_long_term_memory(
     memory_id: int,
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     db = manager.session_factory()
     try:
         memory = db.query(LongTermMemory).filter(
@@ -198,7 +198,7 @@ async def search_memories(
     layer: Optional[str] = Query(None, description="记忆层级过滤：core（核心事实）/episodic（情景记忆）/semantic（语义知识）/working（工作记忆）"),
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     # 执行搜索，获取候选记忆列表
     results = await manager.search_memories(
         query=query,
@@ -222,7 +222,7 @@ async def vector_search_memories(
     request: MemoryVectorSearchRequest,
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     return await manager.search_memories(
         query=request.query,
         limit=request.limit,
@@ -243,7 +243,7 @@ async def archive_memories(
     request: MemoryArchiveRequest,
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     archived_count = await manager.archive_memories(
         user_id=str(current_user.id),
         older_than_days=request.older_than_days,
@@ -264,7 +264,7 @@ async def get_memory_quality(
     limit: int = Query(20, ge=1, le=100, description="批量报告数量"),
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     return await manager.get_quality_report(
         user_id=str(current_user.id),
         memory_id=memory_id,
@@ -281,7 +281,7 @@ async def get_memory_stats(
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     # 获取基础统计数据
     base_stats = await manager.get_memory_stats(user_id=str(current_user.id))
     # 查询各记忆层级的计数
@@ -334,7 +334,7 @@ async def update_decay_config(
     config: MemoryDecayConfigRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     # 查找或创建该层级的衰减配置
     existing = db.query(MemoryDecayConfig).filter(
         MemoryDecayConfig.layer == config.layer

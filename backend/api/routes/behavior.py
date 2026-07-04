@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime, timedelta, timezone
 from db.models import get_db, BehaviorLog, User
 from api.dependencies import get_current_user
@@ -21,7 +21,7 @@ async def get_behavior_stats(
     days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的行为统计数据，按用户ID过滤防止信息泄露。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -169,7 +169,7 @@ async def get_behavior_logs(
     action_type: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     获取当前用户的行为日志，按用户ID过滤防止信息泄露。
     支持分页和按行为类型筛选。
@@ -203,7 +203,7 @@ async def log_behavior(
     details: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理log、behavior相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。

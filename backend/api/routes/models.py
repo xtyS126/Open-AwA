@@ -6,7 +6,7 @@
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 
 @router.get("/ollama")
-async def get_ollama_models(current_user=Depends(get_current_user)):
+async def get_ollama_models(current_user=Depends(get_current_user)) -> Dict[str, Any]:
     """
     发现本地 Ollama 服务中的可用模型列表。
     当 Ollama 服务未运行时返回空列表。
@@ -50,7 +50,7 @@ async def get_ollama_models(current_user=Depends(get_current_user)):
 async def get_providers_status(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     获取所有已配置的模型提供商列表及其连接状态。
     遍历数据库中的提供商配置，逐个检测连通性。
@@ -121,7 +121,7 @@ async def get_model_capabilities(
     provider: str,
     model: str,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取指定模型的能力参数（是否支持视觉、多模态、函数调用等）。
     从 model_capabilities.json 配置文件中读取。
@@ -162,7 +162,7 @@ async def get_model_capabilities(
 @router.get("/failover/circuit-breakers")
 async def get_circuit_breakers_status(
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取所有模型提供商的熔断器状态。
     返回每个提供商的熔断器状态（closed/open/half_open）、失败计数、恢复超时等。
@@ -179,7 +179,7 @@ async def get_circuit_breakers_status(
 @router.get("/failover/chains")
 async def get_failover_chains(
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取所有已注册的故障转移链。
     """
@@ -209,7 +209,7 @@ async def get_failover_events(
     limit: int = Query(50, ge=1, le=500, description="返回事件数量"),
     chain_key: Optional[str] = Query(None, description="按链标识过滤"),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取最近的故障转移事件列表。
     """
@@ -239,7 +239,7 @@ async def get_latency_stats(
     model: Optional[str] = Query(None, description="按模型过滤"),
     limit: int = Query(100, ge=10, le=1000, description="统计样本数"),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取模型调用的延迟统计。
     返回 count、avg_ms、p50_ms、p95_ms、p99_ms、ttft_avg_ms、success_rate。
@@ -256,7 +256,7 @@ async def get_latency_stats(
 @router.get("/latency/providers")
 async def get_providers_latency_summary(
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取所有提供商的延迟汇总，用于延迟 benchmark 面板。
     """
@@ -301,7 +301,7 @@ class LLMRoutingRulesResponse(BaseModel):
 async def get_llm_registry(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     获取已注册的 LLM Provider 列表。
     从数据库 model_configurations 表中提取所有活跃的提供商及其模型。
@@ -342,7 +342,7 @@ async def get_llm_registry(
 async def update_llm_routing(
     request: LLMRoutingRuleRequest,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     配置指定任务类型的 LLM 路由规则。
     路由规则按优先级排序，客户端在调用时根据 task_type 选择对应规则链。
@@ -372,7 +372,7 @@ async def update_llm_routing(
 async def get_llm_routing(
     task_type: Optional[str] = Query(None, description="按任务类型过滤，不传则返回全部"),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取已配置的 LLM 路由规则。
     可按 task_type 过滤，不传参数则返回全部已配置规则。
@@ -408,7 +408,7 @@ async def get_llm_usage(
     limit: int = Query(100, ge=1, le=1000, description="返回记录数"),
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     获取 LLM 用量统计，支持按用户、任务类型和 Provider 维度过滤。
     返回详细记录及聚合统计（总 token 数、总成本、平均延迟等）。

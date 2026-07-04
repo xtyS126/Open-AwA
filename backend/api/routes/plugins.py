@@ -403,7 +403,7 @@ async def uninstall_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
-):
+) -> Dict[str, Any]:
     """
     卸载插件：从运行时卸载并删除数据库记录。
     """
@@ -464,7 +464,7 @@ async def toggle_plugin(
     plugin_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
-):
+) -> Dict[str, Any]:
     """
     切换插件启用/禁用状态，并同步加载或卸载运行时实例。
     """
@@ -829,7 +829,7 @@ async def execute_plugin(
     execution_data: PluginExecute,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> Dict[str, Any]:
     """
     处理execute、plugin相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -992,7 +992,7 @@ async def upload_plugin(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
-):
+) -> Dict[str, Any]:
     """
     处理upload、plugin相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -1115,7 +1115,7 @@ async def import_plugin_from_url(
     payload: PluginImportUrlRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
-):
+) -> Dict[str, Any]:
     """
     处理远程 URL 插件导入，成功后写入数据库并返回导入结果。
     """

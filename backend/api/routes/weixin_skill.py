@@ -604,7 +604,7 @@ class WeixinQrExitReq(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/health-check")
-async def weixin_health_check(request: Request, current_user=Depends(get_current_user)):
+async def weixin_health_check(request: Request, current_user=Depends(get_current_user)) -> Dict[str, Any]:
     """测试微信 API 连接健康状态。"""
     config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     base_url = str(config.base_url or DEFAULT_BASE_URL).strip().rstrip("/") or DEFAULT_BASE_URL
@@ -633,7 +633,7 @@ async def save_weixin_config(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """保存微信连接配置。"""
     config = WeixinConfigReq(**(await _parse_weixin_request_payload(request)))
     _save_weixin_config_to_db(
@@ -653,7 +653,7 @@ async def save_weixin_config(
 async def get_weixin_config(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取当前用户的微信连接配置。"""
     global _weixin_config_migrated
     if not _weixin_config_migrated:
@@ -690,7 +690,7 @@ async def weixin_qr_start(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """发起微信二维码登录。"""
     payload = WeixinQrStartReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
@@ -762,7 +762,7 @@ async def weixin_qr_image(
     session_key: Optional[str] = None,
     qrcode_url: Optional[str] = None,
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """代理获取微信二维码图片。"""
     _purge_expired_qr_sessions()
     session: Optional[Dict[str, Any]] = None
@@ -803,7 +803,7 @@ async def weixin_qr_wait(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """轮询微信二维码扫码状态。"""
     payload = WeixinQrWaitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()
@@ -999,7 +999,7 @@ async def weixin_qr_exit(
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """退出微信二维码登录，清理会话和配置。"""
     payload = WeixinQrExitReq(**(await _parse_weixin_request_payload(request)))
     _purge_expired_qr_sessions()

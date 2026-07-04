@@ -252,7 +252,7 @@ class WeixinConfigResponse(BaseModel):
 async def get_binding(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取当前用户的微信绑定状态"""
     binding = _ensure_binding_exists(db, str(current_user.id))
     if not binding:
@@ -274,7 +274,7 @@ async def save_binding(
     payload: WeixinBindingCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """保存或更新当前用户的微信绑定信息"""
     user_id = str(current_user.id)
     adapter = WeixinSkillAdapter()
@@ -327,7 +327,7 @@ async def save_binding(
 async def delete_binding(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """解除当前用户的微信绑定"""
     user_id = str(current_user.id)
     adapter = WeixinSkillAdapter()
@@ -351,7 +351,7 @@ async def delete_binding(
 async def get_weixin_params(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取当前用户的微信连接参数，合并绑定记录与全局默认值"""
     binding = db.query(WeixinBinding).filter(
         WeixinBinding.user_id == str(current_user.id)
@@ -373,7 +373,7 @@ async def update_weixin_params(
     payload: WeixinConfigUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新当前用户的微信连接参数（bot_type, channel_version, base_url）"""
     user_id = str(current_user.id)
     binding = db.query(WeixinBinding).filter(
@@ -409,7 +409,7 @@ async def update_weixin_params(
 async def get_auto_reply_status(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取当前用户微信自动回复运行状态。"""
     _ensure_binding_exists(db, str(current_user.id))
     manager = get_auto_reply_manager()
@@ -420,7 +420,7 @@ async def get_auto_reply_status(
 async def start_auto_reply(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """启动当前用户的微信自动回复后台轮询。"""
     _ensure_binding_exists(db, str(current_user.id))
     manager = get_auto_reply_manager()
@@ -431,7 +431,7 @@ async def start_auto_reply(
 
 
 @router.post("/auto-reply/stop")
-async def stop_auto_reply(current_user=Depends(get_current_user)):
+async def stop_auto_reply(current_user=Depends(get_current_user)) -> Dict[str, Any]:
     """停止当前用户的微信自动回复后台轮询。"""
     manager = get_auto_reply_manager()
     return await manager.stop(str(current_user.id))
@@ -441,7 +441,7 @@ async def stop_auto_reply(current_user=Depends(get_current_user)):
 async def restart_auto_reply(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """重启当前用户的微信自动回复后台轮询。"""
     _ensure_binding_exists(db, str(current_user.id))
     manager = get_auto_reply_manager()
@@ -455,7 +455,7 @@ async def restart_auto_reply(
 async def process_auto_reply_once(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     手动执行一次轮询，便于诊断、测试和观察最近一次处理结果。
     """
@@ -471,7 +471,7 @@ async def process_auto_reply_once(
 async def get_auto_reply_diagnostics(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     返回自动回复诊断信息：绑定状态、回调地址有效性、adapter 健康检查。
     """
@@ -545,7 +545,7 @@ class WeixinAutoReplyRuleResponse(BaseModel):
 async def list_auto_reply_rules(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取当前用户的所有微信自动回复规则"""
     rules = db.query(WeixinAutoReplyRule).filter(
         WeixinAutoReplyRule.user_id == str(current_user.id)
@@ -558,7 +558,7 @@ async def create_auto_reply_rule(
     payload: WeixinAutoReplyRuleCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """创建新的微信自动回复规则"""
     rule = WeixinAutoReplyRule(
         user_id=str(current_user.id),
@@ -581,7 +581,7 @@ async def update_auto_reply_rule(
     payload: WeixinAutoReplyRuleUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新微信自动回复规则"""
     rule = db.query(WeixinAutoReplyRule).filter(
         WeixinAutoReplyRule.id == rule_id,
@@ -613,7 +613,7 @@ async def delete_auto_reply_rule(
     rule_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """删除微信自动回复规则"""
     rule = db.query(WeixinAutoReplyRule).filter(
         WeixinAutoReplyRule.id == rule_id,
@@ -654,7 +654,7 @@ async def list_weixin_conversations(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     limit: int = Query(default=20, ge=1, le=100),
-):
+) -> Dict[str, Any]:
     """
     列出当前用户的所有微信对话会话摘要。
     聚合 ShortTermMemory 中 weixin:auto: 前缀的 session，按最近活跃排序。
@@ -706,7 +706,7 @@ async def get_weixin_conversation(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     limit: int = Query(default=50, ge=1, le=200),
-):
+) -> Dict[str, Any]:
     """
     获取指定微信对话会话的完整消息历史。
 
@@ -745,7 +745,7 @@ async def get_cross_channel_context(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
     limit: int = Query(default=DEFAULT_CROSS_CHANNEL_CONTEXT_TURNS, ge=1, le=50),
-):
+) -> Dict[str, Any]:
     """
     获取跨渠道上下文预览：主用户 Web UI 最近对话 + 所有微信对话会话列表。
     用于诊断和可视化 AI 在生成微信回复时的上下文来源。
@@ -824,7 +824,7 @@ async def list_recent_multimedia(
     current_user=Depends(get_current_user),
     limit: int = Query(default=20, ge=1, le=100),
     media_type: Optional[str] = Query(default=None, pattern=r"^(image|voice|file|video)$"),
-):
+) -> Dict[str, Any]:
     """
     列出当前用户最近的微信多媒体消息。
 
@@ -902,7 +902,7 @@ async def get_multimedia_detail(
     message_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取指定多媒体消息的详细信息。
 
@@ -960,7 +960,7 @@ async def send_multimedia(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     上传并发送微信多媒体消息。
 

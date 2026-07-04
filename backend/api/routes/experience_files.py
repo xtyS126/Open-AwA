@@ -6,7 +6,7 @@
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -151,7 +151,7 @@ def _list_experience_files_sync(user_id: int) -> list[ExperienceFileSummary]:
 
 
 @router.get("", response_model=List[ExperienceFileSummary])
-async def list_experience_files(current_user=Depends(get_current_user)):
+async def list_experience_files(current_user=Depends(get_current_user)) -> Dict[str, Any]:
     """
     列出当前用户专属的经验文件。
     安全：仅返回当前用户目录下的文件，按 user_id 隔离。
@@ -180,7 +180,7 @@ def _read_experience_file_sync(file_name: str, user_id: int) -> ExperienceFileDe
 
 
 @router.get("/{file_name}", response_model=ExperienceFileDetail)
-async def get_experience_file_detail(file_name: str, current_user=Depends(get_current_user)):
+async def get_experience_file_detail(file_name: str, current_user=Depends(get_current_user)) -> Dict[str, Any]:
     """
     获取当前用户专属的经验文件详情。
     安全：仅允许访问当前用户目录下的文件。
@@ -207,7 +207,7 @@ def _write_experience_file_sync(file_name: str, content: str, user_id: int) -> E
 
 
 @router.put("/{file_name}", response_model=ExperienceFileSaveResponse)
-async def save_experience_file(file_name: str, payload: ExperienceFileSaveRequest, current_user=Depends(get_current_user)):
+async def save_experience_file(file_name: str, payload: ExperienceFileSaveRequest, current_user=Depends(get_current_user)) -> Dict[str, Any]:
     """
     保存当前用户专属的经验文件。
     安全：仅允许写入当前用户目录下的文件。

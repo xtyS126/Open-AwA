@@ -10,7 +10,7 @@ P3 Chain-of-Thought 推理审计 API 路由模块。
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -39,7 +39,7 @@ router = APIRouter(prefix="/api/cot", tags=["ChainOfThought"])
 async def assess_complexity(
     body: ComplexityAssessRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     评估用户输入的问题复杂度，返回推荐推理深度。
 
@@ -72,7 +72,7 @@ async def list_reasoning_audits(
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """查询推理审计记录列表，支持分页和多维度筛选。"""
     manager = get_audit_manager(db)
 
@@ -112,7 +112,7 @@ async def get_reasoning_audit(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定推理审计记录详情。"""
     manager = get_audit_manager(db)
     audit = manager.get_audit(audit_id)
@@ -131,7 +131,7 @@ async def get_reasoning_audit_stats(
     end_time: Optional[str] = Query(None, description="结束时间 ISO 格式"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取推理审计统计信息。"""
     manager = get_audit_manager(db)
 
@@ -165,7 +165,7 @@ async def export_reasoning_content(
     format: str = Query("json", description="导出格式: json/markdown"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     导出指定会话的推理内容。
 

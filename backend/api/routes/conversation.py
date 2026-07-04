@@ -128,7 +128,7 @@ async def list_sessions(
     include_deleted: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     返回当前用户的会话列表，支持搜索、排序与分页。
     """
@@ -191,7 +191,7 @@ async def create_session(
     payload: ConversationSessionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     创建新的用户会话，或在指定会话存在时返回该会话。
     """
@@ -233,7 +233,7 @@ async def get_records_preview(
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取records、preview相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -268,7 +268,7 @@ async def batch_delete_sessions(
     payload: ConversationSessionBatchDeleteRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     批量软删除会话，并返回本次更新后的会话条目。
     """
@@ -310,7 +310,7 @@ async def export_records_jsonl(
     end_time: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     处理export、records、jsonl相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -358,7 +358,7 @@ async def cleanup_records(
     days: int = Query(30, ge=0, le=3650),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     处理cleanup、records相关逻辑，并为调用方返回对应结果。
     阅读时可结合入参、副作用与返回值理解它在整个链路中的定位。
@@ -395,7 +395,7 @@ async def cleanup_records(
     summary="获取采集状态",
     description="返回当前用户的会话数据采集开关状态与运行时统计。"
 )
-async def get_collection_status(current_user: User = Depends(get_current_user)):
+async def get_collection_status(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """
     获取collection、status相关数据或当前状态。
     调用方通常依赖该结果继续进行后续判断、渲染或业务编排。
@@ -424,7 +424,7 @@ async def get_collection_status(current_user: User = Depends(get_current_user)):
 async def update_collection_status(
     enabled: bool,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     更新collection、status相关数据、配置或状态。
     阅读时需要重点关注覆盖规则、副作用以及更新后的数据一致性。
@@ -462,7 +462,7 @@ async def rename_session(
     payload: ConversationSessionRenameRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     更新指定会话标题。
     """
@@ -494,7 +494,7 @@ async def delete_session(
     retention_days: int = Query(30, ge=1, le=3650),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     软删除指定会话。
     """
@@ -525,7 +525,7 @@ async def restore_session_route(
     session_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     恢复已软删除的会话。
     """

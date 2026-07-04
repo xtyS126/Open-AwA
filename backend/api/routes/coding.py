@@ -6,7 +6,7 @@ import html as _html_module
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 from urllib.parse import quote as _url_quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -303,7 +303,7 @@ async def read_file(
     body: FileReadRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     读取文件内容。
     """
@@ -324,7 +324,7 @@ async def write_file(
     body: FileWriteRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     写入文件内容。
     """
@@ -864,7 +864,7 @@ async def preview_file(
     project_dir: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> Dict[str, Any]:
     """
     预览文件内容：按扩展名返回适当格式。
 

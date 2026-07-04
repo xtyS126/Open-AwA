@@ -437,7 +437,7 @@ class RunParallelRequest(BaseModel):
 @router.get("/agents")
 async def list_agents(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取所有已注册的子Agent（需认证）。"""
     manager = _get_manager()
     agents = manager.get_registered_agents()
@@ -447,7 +447,7 @@ async def list_agents(
 @router.get("/graphs")
 async def list_graphs(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取所有已创建的执行图（需认证）。"""
     manager = _get_manager()
     graphs = manager.get_graphs_info()
@@ -458,7 +458,7 @@ async def list_graphs(
 async def get_graph(
     graph_name: str,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定图的详细信息（需认证）。"""
     manager = _get_manager()
     graph = manager.get_graph(graph_name)
@@ -471,7 +471,7 @@ async def get_graph(
 async def run_graph(
     req: RunGraphRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """运行指定的Agent执行图（需认证）。"""
     manager = _get_manager()
     graph = manager.get_graph(req.graph_name)
@@ -502,7 +502,7 @@ async def run_graph(
 async def run_sequential(
     req: RunSequentialRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """顺序执行多个子Agent（需认证）。"""
     manager = _get_manager()
     state = AgentState(context=req.context)
@@ -524,7 +524,7 @@ async def run_sequential(
 async def run_parallel(
     req: RunParallelRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """并行执行多个子Agent（需认证）。"""
     manager = _get_manager()
     state = AgentState(context=req.context)
@@ -585,7 +585,7 @@ class CancelRequest(BaseModel):
 async def orchestrator_delegate(
     req: DelegateRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     并行委派多个子代理任务（需认证）。
 
@@ -706,7 +706,7 @@ async def orchestrator_delegate(
 async def orchestrator_cancel(
     req: CancelRequest,
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """取消指定子代理任务（需认证）。"""
     orchestrator = _get_orchestrator()
     cancelled = await orchestrator.cancel(req.task_id)
@@ -721,7 +721,7 @@ async def orchestrator_cancel(
 @router.get("/orchestrator/active")
 async def orchestrator_active(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取当前活跃的子代理任务列表（需认证）。"""
     orchestrator = _get_orchestrator()
     return {
@@ -733,7 +733,7 @@ async def orchestrator_active(
 @router.get("/orchestrator/capabilities")
 async def orchestrator_capabilities(
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """
     获取编排器能力描述（需认证）。
 
@@ -890,7 +890,7 @@ async def list_definitions(
     current_user: User = Depends(get_current_user),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-):
+) -> Dict[str, Any]:
     """列出当前用户的图定义（含内置图）。"""
     user_id = str(current_user.id)
     definitions = (
@@ -911,7 +911,7 @@ async def create_definition(
     payload: SubagentDefinitionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """创建新的图定义。"""
     user_id = str(current_user.id)
     manager = _get_manager()
@@ -955,7 +955,7 @@ async def update_definition(
     payload: SubagentDefinitionUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """更新图定义。内置图不可更新。"""
     user_id = str(current_user.id)
     definition = db.query(SubagentDefinition).filter(
@@ -994,7 +994,7 @@ async def delete_definition(
     definition_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """删除图定义。内置图不可删除。"""
     user_id = str(current_user.id)
     definition = db.query(SubagentDefinition).filter(
@@ -1027,7 +1027,7 @@ async def run_definition(
     payload: RunDefinitionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """运行指定的图定义。"""
     user_id = str(current_user.id)
     definition = db.query(SubagentDefinition).filter(
@@ -1130,7 +1130,7 @@ async def list_execution_history(
     graph_name: Optional[str] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-):
+) -> Dict[str, Any]:
     """查询当前用户的子智能体执行历史。"""
     user_id = str(current_user.id)
     query = db.query(SubagentExecutionHistory).filter(
@@ -1152,7 +1152,7 @@ async def get_execution_history(
     history_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Dict[str, Any]:
     """获取指定执行历史详情。"""
     user_id = str(current_user.id)
     history = db.query(SubagentExecutionHistory).filter(
