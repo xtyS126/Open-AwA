@@ -215,6 +215,136 @@ ACP（Agent Client Protocol）是一套用于调用本地 vibe coding 应用的�
 - `backend/static/claude-code-hooks.json` - Claude Code hooks 配置模板
 - `frontend/src/features/vibe-coding/` - 前端三栏布局页面（Agent 选择 / 会话面板 / 终端 / 文件预览）
 
+### 5.2 Android 原生应用（Open-AwA-Android）
+
+Android 端采用**原生 Kotlin + Jetpack Compose** 重写，废弃早期 Capacitor + Chaquopy 的 `mobile/` 目录方案。后端走**内嵌 Chaquopy + 远程混合**：本地数据（会话/消息/用户偏好）走内嵌 Python FastAPI，LLM 调用/ACP/插件等重活走远程 Open-AwA 后端。
+
+**项目位置与工具**
+
+- **原生项目根目录**：`D:\代码\Open-AwA\Android\Open-AwA-Android`（从 F 盘迁移到工作目录，因工具沙箱限制）
+  - applicationId: `com.xtys126.open_awa`
+  - namespace: `com.xtys126.open_awa`
+  - AGP 9.2.1 + Gradle 9.4.1，compileSdk 36，minSdk 24，targetSdk 36
+  - 阿里云 maven 镜像已配置（`settings.gradle.kts`）
+- **android-cli 工具**：`D:\代码\Open-AwA\Android-Cli\android.exe`
+  - SDK 位置：`C:\Users\23941\AppData\Local\Android\Sdk`
+  - 用途：项目创建、模拟器管理、APK 部署、UI 布局检查、文档查询
+  - 调用示例：`& "D:\代码\Open-AwA\Android-Cli\android.exe" emulator list` / `run` / `layout` / `screenshot`
+- **测试模拟器**：`127.0.0.1:16448`（MuMu 模拟器，Android 12 x86_64）
+  - 备用：`emulator-5554`（Pixel_7_Pro AVD，android-cli 管理）
+  - adb 路径：`D:\Program Files\Netease\MuMu\nx_main\adb.exe`（MuMu 自带，主机 adb.exe 在 PATH 不可用）
+  - 连接：`& "D:\Program Files\Netease\MuMu\nx_main\adb.exe" connect 127.0.0.1:16448`
+
+**技术栈**
+
+- **UI**：Jetpack Compose + Material 3 + Compose BOM
+- **导航**：Jetpack Navigation 3（scene-based）
+- **异步**：Kotlin Coroutines + Flow
+- **网络**：Ktor Client（多平台，纯 Kotlin）
+- **依赖注入**：手动构造（Application 单例），不引入 Hilt 简化构建
+- **本地存储**：DataStore Preferences（替代 SharedPreferences）
+- **内嵌后端**：Chaquopy 17.0.0 + Python 3.12（pure-Python wheel 白名单）
+- **主题**：Material 3 + 复用 frontend `tokens.css` 设计令牌（颜色/间距/圆角/阴影）
+
+**目录结构（F:\AndroidStudioProjects\Open-AwA-Android）**
+
+```
+app/
+  build.gradle.kts              # Compose/Chaquopy/Ktor 依赖配置
+  src/
+    main/
+      AndroidManifest.xml       # INTERNET 权限 + Application 注册
+      kotlin/com/xtys126/open_awa/
+        OpenAwAApplication.kt   # Application 入口，启动 Chaquopy 后端
+        MainActivity.kt         # 单 Activity + Compose 入口
+        core/
+          backend/
+            BackendManager.kt   # 内嵌/远程后端选择与端口管理
+            EmbeddedBackend.kt  # Chaquopy 启动器
+            ApiClient.kt        # Ktor HTTP 客户端
+          theme/
+            Color.kt            # 设计令牌（对应 tokens.css）
+            Theme.kt            # Material3 主题（亮/暗色）
+            Type.kt             # 字体
+          nav/
+            AppNavGraph.kt      # Navigation3 路由表
+            AppShell.kt         # 抽屉式导航外壳
+        data/
+          AuthRepository.kt     # 登录/CSRF 令牌管理
+          ChatRepository.kt     # 会话/消息
+          PreferencesRepository.kt  # 用户偏好（DataStore）
+        features/
+          auth/LoginScreen.kt
+          chat/ChatScreen.kt
+          settings/SettingsScreen.kt
+          dashboard/DashboardScreen.kt
+          skills/SkillsScreen.kt
+          plugins/PluginsScreen.kt
+          memory/MemoryScreen.kt
+          billing/BillingScreen.kt
+          experience/ExperienceScreen.kt
+          coding/CodingScreen.kt
+          vibecoding/VibeCodingScreen.kt
+          workspace/WorkspaceScreen.kt
+          roles/RolesScreen.kt
+          tts/TtsScreen.kt
+          im/ImChannelsScreen.kt
+          workflow/WorkflowScreen.kt
+          subagents/SubAgentScreen.kt
+          discussions/DiscussionsScreen.kt
+          inbox/InboxScreen.kt
+      python/
+        chaquopy_bootstrap.py   # Chaquopy 启动入口
+        backend_mobile/         # 复用 mobile/android/app/src/main/python/backend_mobile 代码
+          config.py / db.py / security.py / main.py
+          routes/
+            __init__.py / system.py / auth.py / chat.py / user.py / security.py
+```
+
+**关键设计决策**
+
+1. **单 Activity + Compose**：`MainActivity` 只承载 `OpenAwAApp` Composable，所有页面用 Navigation3 scene 管理
+2. **内嵌后端启动流程**：`Application.onCreate()` → 启动 Chaquopy 子线程 → 端口写入 DataStore → 前端轮询 `127.0.0.1:port/api/system/ping` 就绪后进入登录页
+3. **JS Interface 替代**：原生 Kotlin 不需要 `window.OpenAwABackend` JS 桥，直接通过 `BackendManager.getPort()` 同步获取
+4. **设计令牌映射**：`tokens.css` 的 `--color-*` / `--space-*` / `--radius-*` 在 `core/theme/Color.kt` 中以 `val ColorPrimary = Color(0xFF3B82F6)` 形式等价映射
+5. **离线降级**：内嵌后端离线时（启动失败）自动降级到远程后端，由 `BackendManager.resolveBaseUrl()` 决策
+6. **不引入 Hilt**：依赖注入用 `Application` 单例 + `remember { ... }` 传递，减少构建配置复杂度
+
+**构建与运行**
+
+```powershell
+# 构建 APK
+cd D:\代码\Open-AwA\Android\Open-AwA-Android
+.\gradlew.bat assembleDebug
+
+# 安装到 MuMu 模拟器
+& "D:\Program Files\Netease\MuMu\nx_main\adb.exe" -s 127.0.0.1:16448 install -r app\build\outputs\apk\debug\app-debug.apk
+
+# 启动 App
+& "D:\Program Files\Netease\MuMu\nx_main\adb.exe" -s 127.0.0.1:16448 shell am start -n com.xtys126.open_awa/.MainActivity
+
+# 查看日志
+& "D:\Program Files\Netease\MuMu\nx_main\adb.exe" -s 127.0.0.1:16448 logcat *:W | Select-String "OpenAwA|AndroidRuntime|com.xtys126"
+
+# 用 android-cli 管理模拟器与 UI 检查
+& "D:\代码\Open-AwA\Android-Cli\android.exe" emulator list
+& "D:\代码\Open-AwA\Android-Cli\android.exe" layout --device 127.0.0.1:16448
+& "D:\代码\Open-AwA\Android-Cli\android.exe" screen capture --device 127.0.0.1:16448
+```
+
+**已知构建约束（2026-07-08 验证）**
+
+1. **AGP 9 内置 Kotlin**：app/build.gradle.kts 不需要 `alias(libs.plugins.kotlin.android)`，否则报 `Cannot add extension with name 'kotlin'`；只用 `kotlin-compose` + `kotlin-serialization`
+2. **kotlinOptions 已废弃**：AGP 9 不再支持 `kotlinOptions { jvmTarget = "11" }`，改用 `kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_11) } }`
+3. **项目路径含中文**：需在 `gradle.properties` 添加 `android.overridePathCheck=true` 绕过 AGP 路径检查
+4. **XML 注释禁用 `--`**：colors.xml 等 XML 资源文件的注释中不允许出现 `--` 字符串（XML 规范），`--color-primary` 要写成 `color-primary`
+5. **Chaquopy 暂未集成**：当前阶段先验证 Compose UI 骨架，Chaquopy 内嵌 Python 后端待后续集成（Gradle 9 兼容性待验证）
+6. **Material 图标**：`Icons.Outlined.Brain`/`Icons.Outlined.Devops` 不存在，用 `Psychology`/`Engineering` 替代；`Login`/`Chat`/`CallSplit` 有 deprecation 警告，建议用 `Icons.AutoMirrored.Outlined.*`
+
+**已废弃方案（mobile/ 目录）**
+
+> `mobile/` 目录的 Capacitor + Chaquopy 方案于 2026-07-08 23:30 起废弃，不再维护。所有移动端工作迁移到 `D:\代码\Open-AwA\Android\Open-AwA-Android`。`mobile/android/app/src/main/python/backend_mobile/` 的 Python 后端代码作为参考迁移到新项目的 `app/src/main/python/`，迁移完成后删除 `mobile/` 目录。
+
 ---
 
 ## 6. Code Style

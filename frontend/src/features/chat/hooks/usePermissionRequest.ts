@@ -50,6 +50,16 @@ function hasCookieCredential(): boolean {
 }
 
 /**
+ * 检测当前是否运行在移动端（Capacitor WebView）。
+ *
+ * 移动端通过 window.OpenAwABackend 注入的 JS 接口标识（setupMobileApi.ts 注册）。
+ * 移动端没有 ACP 子进程，不会产生权限请求事件，因此跳过 SSE 连接避免无意义重连。
+ */
+function isMobilePlatform(): boolean {
+  return typeof window !== 'undefined' && !!(window as Window & { OpenAwABackend?: unknown }).OpenAwABackend
+}
+
+/**
  * 权限请求实时推送 Hook。
  * 当 sessionId 有效时自动建立 SSE 连接，监听后端推送的权限请求。
  * 组件卸载或 sessionId 变化时自动断开并重连。
@@ -79,6 +89,17 @@ export function usePermissionRequest(sessionId: string | undefined): UsePermissi
   // 建立 SSE 连接
   useEffect(() => {
     if (!sessionId || sessionId === 'default') {
+      setConnected(false)
+      return
+    }
+
+    // 移动端无 ACP 子进程，不会产生权限请求事件，跳过 SSE 连接避免无意义重连
+    if (isMobilePlatform()) {
+      appLogger.info({
+        event: 'permission_sse_skipped_on_mobile',
+        module: 'usePermissionRequest',
+        message: '移动端无 ACP 子进程，跳过权限请求 SSE 连接',
+      })
       setConnected(false)
       return
     }

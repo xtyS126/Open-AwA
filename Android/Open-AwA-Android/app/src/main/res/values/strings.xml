@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">Open-AwA</string>
+
+    <!-- 顶栏菜单组 -->
+    <string name="nav_group_control">控制台</string>
+    <string name="nav_group_agent">智能体</string>
+    <string name="nav_group_settings">设置</string>
+
+    <!-- 菜单项 -->
+    <string name="nav_chat">聊天</string>
+    <string name="nav_coding">编码</string>
+    <string name="nav_vibe_coding">Vibe Coding</string>
+    <string name="nav_workspace">工作区</string>
+    <string name="nav_dashboard">仪表盘</string>
+    <string name="nav_billing">计费</string>
+    <string name="nav_inbox">收件箱</string>
+    <string name="nav_tts">TTS</string>
+    <string name="nav_roles">角色管理</string>
+    <string name="nav_role_market">角色市场</string>
+    <string name="nav_skills">技能</string>
+    <string name="nav_skill_market">技能市场</string>
+    <string name="nav_scheduled_tasks">定时任务</string>
+    <string name="nav_workflows">工作流</string>
+    <string name="nav_subagents">子智能体</string>
+    <string name="nav_discussions">讨论</string>
+    <string name="nav_plugins">插件</string>
+    <string name="nav_memory">记忆</string>
+    <string name="nav_experience">经验</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_im">IM 渠道</string>
+    <string name="nav_user">用户中心</string>
+    <string name="nav_login">登录</string>
+
+    <!-- 通用 -->
+    <string name="action_menu">打开菜单</string>
+    <string name="action_toggle_theme">切换主题</string>
+    <string name="action_back">返回</string>
+    <string name="loading">加载中…</string>
+    <string name="error_load">加载失败</string>
+    <string name="retry">重试</string>
+</resources>

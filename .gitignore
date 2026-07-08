@@ -176,3 +176,26 @@ openawa/uploads/
 openawa/openawa.db*
 openawa/openawa_e2e*.db
 openawa/.mypy_cache/
+
+# =========================
+# Android 原生项目构建产物
+# =========================
+Android/Open-AwA-Android/.gradle/
+Android/Open-AwA-Android/build/
+Android/Open-AwA-Android/app/build/
+Android/Open-AwA-Android/local.properties
+Android/Open-AwA-Android/.idea/
+Android/Open-AwA-Android/captures/
+Android/Open-AwA-Android/.cxx/
+Android/Open-AwA-Android/screenshots/
+Android/Open-AwA-Android/*.iml
+Android/Open-AwA-Android/app/*.iml
+
+# =========================
+# 工具二进制与临时输出
+# =========================
+.codex/
+Android-Cli/
+dogfood-output/
+*.codex-disposable
+backend/uploads/

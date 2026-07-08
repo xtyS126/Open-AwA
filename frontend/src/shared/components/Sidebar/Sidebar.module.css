@@ -314,24 +314,29 @@
 .mobile-menu-btn {
   display: none;
   position: fixed;
-  top: var(--space-3);
-  left: var(--space-3);
+  top: 8px;
+  left: 8px;
   z-index: 999;
-  width: var(--space-10);
-  height: var(--space-10);
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
   padding: 0;
-  background: var(--color-bg-secondary);
+  background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--color-text);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), transform var(--transition-fast);
 }
 
 .mobile-menu-btn:hover {
+  background: transparent;
+}
+
+.mobile-menu-btn:active {
   background: var(--color-bg-tertiary);
+  transform: scale(0.92);
 }
 
 /* 移动端遮罩层 */
@@ -341,6 +346,8 @@
   inset: 0;
   z-index: 999;
   background: var(--color-overlay);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   animation: fadeIn var(--transition-base);
 }
 
@@ -363,11 +370,18 @@
     transform: translateX(-100%);
     transition: transform var(--transition-smooth);
     box-shadow: none;
+    border-right: none;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    width: var(--sidebar-width);
+    max-width: 85vw;
   }
 
   .sidebar.mobile-open {
     transform: translateX(0);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
+    box-shadow:
+      4px 0 24px rgba(0, 0, 0, 0.08),
+      12px 0 40px rgba(0, 0, 0, 0.12);
   }
 
   /* 移动端不使用折叠模式，恢复完整宽度 */
@@ -394,6 +408,22 @@
 
   .sidebar.collapsed .group-items {
     align-items: stretch;
+  }
+
+  /* 移动端菜单项触感反馈 */
+  .sidebar-item {
+    transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  }
+
+  .sidebar-item:active {
+    transform: scale(0.98);
+  }
+
+  /* 移动端激活态：更明显的指示条 */
+  .sidebar-item.active::before {
+    width: 4px;
+    height: 22px;
+    border-radius: 0 3px 3px 0;
   }
 }
 
