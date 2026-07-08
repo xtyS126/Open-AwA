@@ -72,6 +72,6 @@ fun AppNavGraph(navController: NavHostController) {
         composable("user") { UserCenterScreen() }
 
         // 登录页
-        composable("login") { LoginScreen() }
+        composable("login") { LoginScreen(navController) }
     }
 }

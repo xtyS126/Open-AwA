@@ -71,3 +71,5 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 # Kotlinx Serialization 插件
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+# Chaquopy 内嵌 Python 运行时插件
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
