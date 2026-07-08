@@ -233,7 +233,11 @@ function ChatPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [flushBuffer, scrollToLatest])
 
+  // 使用 ref 守卫避免 React StrictMode 开发模式双重挂载时重复触发 mount 日志
+  const mountLoggedRef = useRef(false)
   useEffect(() => {
+    if (mountLoggedRef.current) return
+    mountLoggedRef.current = true
     appLogger.info({
       event: 'page_view',
       module: 'chat_page',

@@ -877,11 +877,14 @@ async def _extract_user_id_from_request(request: Request) -> Optional[str]:
 
     优先从 JWT payload 的 uid 字段直接读取（高效路径），
     其次回退到通过 username 查 DB 的兼容路径（支持旧版不含 uid 的令牌）。
+    最后兜底支持 API Key 认证（单用户模式下 Bearer 等于 OPENAWA_API_KEY），
+    返回 owner 用户 ID。
 
     User.id 为字符串类型，所有路径统一返回 str 或 None。
     不会抛出异常，解析失败返回 None。
     """
     from config.security import decode_access_token, ACCESS_TOKEN_COOKIE_NAME
+    from config.settings import settings
 
     token: Optional[str] = None
     auth_header = request.headers.get("Authorization", "")
@@ -891,6 +894,24 @@ async def _extract_user_id_from_request(request: Request) -> Optional[str]:
         token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
     if not token:
         return None
+
+    # 路径 0: API Key 认证（单用户模式，Bearer 等于 OPENAWA_API_KEY 时返回 owner ID）
+    # 必须先于 JWT 解析，避免 API Key 被误当作 JWT 触发解码失败
+    try:
+        api_key = settings.OPENAWA_API_KEY.get_secret_value() if settings.OPENAWA_API_KEY else None
+    except Exception:
+        api_key = None
+    if api_key:
+        import secrets as _secrets
+        if _secrets.compare_digest(token, api_key):
+            try:
+                from api.dependencies import _get_owner_from_settings
+                owner = _get_owner_from_settings()
+                if owner is not None:
+                    return str(owner.id)
+            except Exception as exc:
+                logger.warning("API Key 路径加载 owner 失败: {0}", exc)
+            return None
 
     payload = decode_access_token(token)
     if payload is None:

@@ -72,6 +72,23 @@ function AppRoutes() {
   const location = useLocation()
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const isInitialized = useAuthStore(s => s.isInitialized)
+
+  // 初始化未完成时显示 App Shell + 主内容区 loading 占位
+  // 避免在 isAuthenticated 默认 false 期间把所有非 /login 路径误重定向到 /login
+  // 这修复了"直接 URL 访问被重定向到 /chat"和"侧边栏点击无响应"两类问题
+  if (!isInitialized) {
+    return (
+      <div className="app-container">
+        <Suspense fallback={<div className="sidebar-skeleton" />}>
+          <Sidebar />
+        </Suspense>
+        <main id="main-content" className="main-content">
+          <div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>
+        </main>
+      </div>
+    )
+  }
 
   if (!isAuthenticated) {
     return (
@@ -121,11 +138,11 @@ function AppRoutes() {
               <Route path="/role-market" element={<ErrorBoundary name="RoleMarket"><RoleMarketPage /></ErrorBoundary>} />
               <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
               <Route path="/im" element={<ErrorBoundary name="ImChannels"><ImChannelsPage /></ErrorBoundary>} />
-            <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
-            <Route path="/subagents" element={<ErrorBoundary name="SubAgents"><SubAgentPage /></ErrorBoundary>} />
-            <Route path="/vibe-coding" element={<ErrorBoundary name="VibeCoding"><VibeCodingPage /></ErrorBoundary>} />
-            <Route path="/discussions" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
-            <Route path="/discussions/:id" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
+              <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
+              <Route path="/subagents" element={<ErrorBoundary name="SubAgents"><SubAgentPage /></ErrorBoundary>} />
+              <Route path="/vibe-coding" element={<ErrorBoundary name="VibeCoding"><VibeCodingPage /></ErrorBoundary>} />
+              <Route path="/discussions" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
+              <Route path="/discussions/:id" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
             </Routes>
           </div>
         </Suspense>

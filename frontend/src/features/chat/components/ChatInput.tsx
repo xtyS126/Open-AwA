@@ -226,6 +226,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
                 className={styles['attachment-remove']}
                 onClick={() => removeAttachment(att.id)}
                 title="remove attachment"
+                aria-label="remove attachment"
               >
                 <X size={10} strokeWidth={2.5} />
               </button>
@@ -247,6 +248,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
           className={styles['attach-btn']}
           onClick={() => fileInputRef.current?.click()}
           title="attach file"
+          aria-label="attach file"
           disabled={isLoading}
         >
           <Paperclip size={20} strokeWidth={2} />
@@ -268,6 +270,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
             onClick={onAbort}
             disabled={aborting}
             title={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
+            aria-label={aborting ? t('chat.stopping') : t('chat.stopGeneration')}
           >
             <Square size={18} />
           </button>
@@ -276,6 +279,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, streamingA
             className={`btn btn-primary ${styles['send-btn']}`}
             onClick={() => void handleSend()}
             disabled={(!input.trim() && attachments.length === 0) || isLoading}
+            aria-label={t('chat.send') || 'send message'}
           >
             <Send size={18} />
           </button>

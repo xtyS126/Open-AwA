@@ -3,7 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import asyncio
 import json
 import os
@@ -527,7 +527,7 @@ async def get_chat_history(
     workspace_id: str = "default",
     limit: int = Query(200, ge=1, le=1000, description="返回消息数量上限，默认 200，最大 1000"),
     offset: int = Query(0, ge=0, description="分页偏移量，用于翻页加载更早的消息"),
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """
     获取指定会话的聊天历史。
     验证会话属于当前用户，防止越权访问，限制工作区范围。

@@ -202,17 +202,22 @@ export function dispatchStructuredStreamEvent(
     const agentId = getEventString(event, 'agent_id')!
     const agentType = getEventString(event, 'agent_type')
     const runMode = getEventString(event, 'run_mode')
+    const normalizedRunMode = runMode === 'foreground' || runMode === 'background'
+      ? runMode
+      : undefined
     const description = getEventString(event, 'description') || '子代理已启动'
     const toolMeta = applySubagentStart(createEmptyExecutionMeta(), {
       agentId,
       agentType,
       description,
+      runMode: normalizedRunMode,
     }).toolEvents[0]
 
     updateAssistantMeta(assistantMessageId, (current) => applySubagentStart(current, {
       agentId,
       agentType,
       description,
+      runMode: normalizedRunMode,
     }))
 
     if (toolMeta) {
@@ -231,11 +236,15 @@ export function dispatchStructuredStreamEvent(
     const agentId = getEventString(event, 'agent_id')!
     const agentType = getEventString(event, 'agent_type')
     const summary = getEventString(event, 'summary') || `状态: ${getEventValue(event, 'state')}`
+    const runMode = getEventString(event, 'run_mode')
+    const normalizedRunMode: 'foreground' | 'background' | undefined =
+      runMode === 'foreground' || runMode === 'background' ? runMode : undefined
     const stopPayload = {
       agentId,
       agentType,
       state: getEventString(event, 'state'),
       summary,
+      runMode: normalizedRunMode,
     }
 
     updateAssistantMeta(assistantMessageId, (current) => applySubagentStop(current, stopPayload))
