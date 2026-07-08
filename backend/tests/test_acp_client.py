@@ -14,7 +14,7 @@ from typing import Any, List, Tuple
 
 import pytest
 
-from acp_host.client import ACPHostedClient, _safe_isinstance
+from acp_host.client import ACPHostedClient, _ACP_AVAILABLE, _safe_isinstance
 from acp_host.core import ACPAgentConfig
 
 
@@ -314,9 +314,12 @@ class TestRequestPermission:
             payload.get("type") == "permission_request"
             for payload, _ in captured
         )
-        # 返回 cancelled 占位 dict
-        assert isinstance(result, dict)
-        assert result["outcome"]["outcome"] == "cancelled"
+        # 返回 cancelled 响应：SDK 可用时为 RequestPermissionResponse，缺失时为 dict 占位
+        if _ACP_AVAILABLE:
+            assert getattr(result.outcome, "outcome", None) == "cancelled"
+        else:
+            assert isinstance(result, dict)
+            assert result["outcome"]["outcome"] == "cancelled"
         # 未挂起 future
         assert client._pending_permission is None
         assert client._permission_future is None
@@ -353,10 +356,17 @@ class TestRequestPermission:
         # resolve
         client.resolve_permission("allow_once")
         result = await asyncio.wait_for(task, timeout=1.0)
-        # 返回 selected 占位 dict
-        assert isinstance(result, dict)
-        assert result["outcome"]["outcome"] == "selected"
-        assert result["outcome"]["optionId"] == "allow_once"
+        # 返回 selected 响应：SDK 可用时为 RequestPermissionResponse，缺失时为 dict 占位
+        if _ACP_AVAILABLE:
+            assert getattr(result.outcome, "outcome", None) == "selected"
+            assert (
+                getattr(result.outcome, "option_id", None)
+                or getattr(result.outcome, "optionId", None)
+            ) == "allow_once"
+        else:
+            assert isinstance(result, dict)
+            assert result["outcome"]["outcome"] == "selected"
+            assert result["outcome"]["optionId"] == "allow_once"
         # 挂起状态已清理
         assert client._pending_permission is None
         assert client._permission_future is None

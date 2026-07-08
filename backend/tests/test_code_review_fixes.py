@@ -286,24 +286,6 @@ class TestRequestDurationLogging:
 
 
 # ---------------------------------------------------------------------------
-# P2-13: Verify SQLite connection leak fix in migrate_db.py
-# ---------------------------------------------------------------------------
-
-class TestMigrateDbConnectionLeak:
-    """Verify migrate_db.py closes connection in finally block."""
-
-    def test_migrate_database_has_finally(self):
-        """migrate_database should have a finally block to close connection."""
-        with open(os.path.join(_BACKEND_DIR, 'migrate_db.py'), 'r', encoding='utf-8') as f:
-            source = f.read()
-        
-        # Should have finally block
-        assert 'finally:' in source, "migrate_db.py should have a finally block"
-        # Should close connection in finally
-        assert 'conn.close()' in source
-
-
-# ---------------------------------------------------------------------------
 # P0-2: Verify openawa.db removed from git tracking
 # ---------------------------------------------------------------------------
 

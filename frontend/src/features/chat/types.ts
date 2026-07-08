@@ -15,6 +15,7 @@ export type TaskStatus = 'pending' | 'running' | 'completed' | 'error'
 export interface SubagentExecutionState {
   agentId: string
   agentType?: string
+  runMode?: 'foreground' | 'background'
   logs: string
   archivedLogs?: string
   summary?: string

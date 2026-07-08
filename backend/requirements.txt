@@ -17,7 +17,8 @@ python-multipart>=0.0.31,<1.0.0
 websockets==12.0
 loguru==0.7.2
 pyyaml==6.0.1
-chromadb==0.4.22
+# Qdrant 嵌入式向量库，替代 ChromaDB，原生支持 dense + sparse 混合检索（RRF 融合）
+qdrant-client>=1.18.0,<2.0.0
 httpx>=0.26.0,<0.28.0
 litellm>=1.80.0,<2.0.0
 aiofiles==23.2.1
@@ -25,9 +26,29 @@ aiofiles==23.2.1
 python-dotenv>=1.2.2,<2.0.0
 click~=8.1.0
 slowapi~=0.1.9
+# fastapi-csrf-protect 提供双提交 Cookie 模式的 CSRF 防护，替代 proactive_defense.py:CsrfTokenManager
+fastapi-csrf-protect>=1.0.0,<2.0.0
 # RestrictedPython 升级至 8.0+ 修复 CVE-2025-22153
 RestrictedPython>=8.0,<9.0
 cachetools>=5.3.0,<6.0.0
 acp>=0.1.0,<1.0.0
 psutil>=5.9.0,<7.0.0
 pywinpty>=2.0.0,<3.0.0; sys_platform == "win32"
+# pyte 终端仿真器，替代自实现的 VT100 子集，支持 vim/tmux/htop 等复杂 TUI
+pyte>=0.8.2,<1.0.0
+# tree-sitter-languages 提供 60+ 语言的预编译 AST parser，替代自实现 Python-only ast_search
+# 注意: tree-sitter-languages 1.10 与 tree-sitter>=0.22 的 Language 构造签名不兼容，
+# 因此锁定 tree-sitter>=0.21,<0.22
+tree-sitter-languages>=1.10,<2.0
+tree-sitter>=0.21,<0.22
+# mcp 官方 Python SDK，替代 backend/mcp/ 自实现协议层（types/protocol/transport/client）
+# 提供 stdio_client / sse_client / ClientSession 等标准实现
+mcp>=1.27.0,<2.0.0
+# APScheduler 4.x 替代 backend/core/scheduled_task_manager.py 的 DB 轮询 + asyncio.Lock
+# 使用 AsyncScheduler + CronTrigger + SQLAlchemyDataStore（指向主数据库）
+# APScheduler 内部维护 apscheduler_jobs 等独立表，与业务表 scheduled_tasks 分离
+# 注: 4.x 目前处于 alpha 阶段，需 --pre 安装；API 与 3.x 差异较大（原生 async）
+apscheduler[sqlalchemy]>=4.0.0a1,<5.0.dev0
+# multilspy（Microsoft 开源）替代 backend/core/coding/lsp_proxy.py 自管 JSON-RPC framing + PRESET_SERVERS
+# 统一管理 Python/TypeScript/JavaScript/Rust/Go 等语言 LSP server 的下载、启动与 JSON-RPC 通信
+multilspy>=0.0.15,<1.0.0

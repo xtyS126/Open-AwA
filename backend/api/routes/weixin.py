@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
+from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_origin
 from api.services.weixin_auto_reply import (
     WeixinAutoReplyService,
     get_auto_reply_manager,
@@ -1102,61 +1103,6 @@ async def _ws_authenticate(token: str) -> Optional[str]:
         db.close()
 
 
-def _validate_ws_origin(origin: Optional[str]) -> bool:
-    """
-    校验 WebSocket 握手 Origin 头，防御 CSWSH（Cross-Site WebSocket Hijacking）攻击。
-
-    攻击场景：恶意页面在用户浏览器中发起 WebSocket 连接，浏览器会自动携带 Cookie。
-    若服务端不校验 Origin，恶意页面可冒充用户建立 WebSocket 通道。
-    本服务采用 query 参数 token 鉴权，但仍校验 Origin 作为深度防御：
-    若 Origin 不在白名单内（或为空），拒绝握手。
-    """
-    if not origin:
-        # 缺失 Origin 头的连接（如非浏览器客户端）按需放行：
-        # 这里选择拒绝，强制浏览器来源符合白名单；非浏览器客户端可显式注入白名单 Origin
-        return False
-    # 复用 CORS 白名单：与 HTTP 同源策略保持一致
-    from main import ALLOWED_ORIGINS
-    if origin in ALLOWED_ORIGINS:
-        return True
-    # 局域网跨域访问（ALLOW_LAN_ACCESS=true 时允许）
-    import re as _re
-    from main import ALLOW_LAN_ORIGIN_REGEX
-    if ALLOW_LAN_ORIGIN_REGEX and _re.match(ALLOW_LAN_ORIGIN_REGEX, origin):
-        return True
-    return False
-
-
-def _extract_token_from_subprotocol(websocket: WebSocket) -> str:
-    """
-    从 Sec-WebSocket-Protocol 子协议头中提取 JWT token。
-
-    前端（useWeixinWebSocket.ts）以 `bearer.<token>` 形式通过子协议传递 token，
-    避免 token 出现在 URL query（会泄露到 access log / Referer / 浏览器历史）。
-
-    支持的子协议格式：
-        - bearer.<token>     标准格式（首选）
-        - <token>            兼容旧客户端的裸 token
-
-    返回空字符串表示未提供 token。
-    """
-    raw = websocket.headers.get("sec-websocket-protocol", "")
-    if not raw:
-        return ""
-    # 浏览器可能以逗号分隔发送多个候选协议，逐个解析
-    for candidate in raw.split(","):
-        candidate = candidate.strip()
-        if not candidate:
-            continue
-        if candidate.startswith("bearer."):
-            return candidate[len("bearer."):]
-        # 兼容裸 token：仅当候选值看起来不像标准子协议名时才视为 token
-        # 标准子协议名通常只包含字母数字与连字符，且不含点号
-        if "." in candidate and not candidate.islower():
-            return candidate
-    return ""
-
-
 @router.websocket("/ws")
 async def weixin_ws_endpoint(websocket: WebSocket):
     """
@@ -1179,13 +1125,15 @@ async def weixin_ws_endpoint(websocket: WebSocket):
     """
     # CSWSH 防护：握手前校验 Origin，禁止跨站 WebSocket 连接
     request_origin = websocket.headers.get("origin")
-    if not _validate_ws_origin(request_origin):
+    if not validate_ws_origin(request_origin or ""):
         # 握手阶段未 accept，直接 close 不会被浏览器看到，但能阻断恶意连接
         await websocket.close(code=4003, reason="Origin not allowed")
         return
 
     # SEC-16: 从子协议头读取 token，避免 URL 泄露
-    token = _extract_token_from_subprotocol(websocket)
+    # 共享层返回 (token, subprotocol) 元组；微信端点不回显子协议（见下方 accept 注释），
+    # 因此丢弃 subprotocol，仅取 token
+    token, _subprotocol = extract_token_from_subprotocol(websocket)
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return

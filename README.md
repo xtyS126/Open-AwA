@@ -240,8 +240,11 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 生产环境中应显式设置：
 
-- `SECRET_KEY`（生产环境未显式设置时启动会报错）
+- `JWT_SECRET_KEY`（JWT 签名密钥，至少 32 字符）
+- `CSRF_SECRET_KEY`（CSRF 签名密钥，至少 32 字符）
+- `ENCRYPTION_KEY`（Fernet 密钥，用于敏感配置加密）
 - `OPENAWA_API_KEY`（必填，至少 32 字符）
+- `OPENAWA_OWNER_PASSWORD`（Owner 初始密码）
 - `DATABASE_URL`
 - `ALLOWED_ORIGINS`（生产环境未配置时拒绝启动）
 - `ENVIRONMENT=production`
@@ -529,5 +532,5 @@ E2E 配置见：
 
 - 前端 `App.tsx` 中保留了开发态自动登录逻辑（通过 `useAppInitialization` Hook），属于开发便利逻辑，不适合作为正式产品流程说明，见 [App.tsx](frontend/src/App.tsx#L131-L173)
 - 后端启动强制要求 `OPENAWA_API_KEY`（至少 32 字符），未配置时拒绝启动，可通过 `python generate_api_key.py` 生成
-- 生产环境（`ENVIRONMENT=production`）启动时会强制校验 `SECRET_KEY` 与 `ALLOWED_ORIGINS`，未配置将拒绝启动
+- 生产环境（`ENVIRONMENT=production`）启动时会强制校验 `JWT_SECRET_KEY`、`CSRF_SECRET_KEY`、`ENCRYPTION_KEY` 与 `ALLOWED_ORIGINS`，未配置将拒绝启动
 - README 只描述已存在的接口与页面，不对未完成功能做保证

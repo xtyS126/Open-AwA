@@ -1,159 +1,16 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import React, { Suspense, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
+import { RouterProvider } from 'react-router-dom'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
 import { appLogger } from '@/shared/utils/logger'
 import { useAppInitialization } from '@/shared/hooks/useAppInitialization'
 import { useAuthStore } from '@/shared/store/authStore'
 import { useThemeStore } from '@/shared/store/themeStore'
 import { mark } from '@/shared/perf/metrics'
-import { Skeleton } from '@/shared/components/ui/Skeleton'
-import { SkipLink } from '@/shared/components/SkipLink/SkipLink'
-
-// P2: Sidebar 懒加载，减少主包体积
-const Sidebar = React.lazy(() => import('@/shared/components/Sidebar/Sidebar'))
-
-const routerFutureConfig = {
-  v7_startTransition: true,
-  v7_relativeSplatPath: true,
-}
-
-const LoginPage = React.lazy(() => import('@/features/auth/LoginPage'))
-const ChatPage = React.lazy(() => import('@/features/chat/ChatPage'))
-const DashboardPage = React.lazy(() => import('@/features/dashboard/DashboardPage'))
-const SettingsPage = React.lazy(() => import('@/features/settings/SettingsPage'))
-const SkillsPage = React.lazy(() => import('@/features/skills/SkillsPage'))
-const ScheduledTasksPage = React.lazy(() => import('@/features/scheduledTasks/ScheduledTasksPage'))
-const PluginsPage = React.lazy(() => import('@/features/plugins/PluginsPage'))
-const PluginConfigPage = React.lazy(() => import('@/features/plugins/PluginConfigPage'))
-const MemoryPage = React.lazy(() => import('@/features/memory/MemoryPage'))
-const BillingPage = React.lazy(() => import('@/features/billing/BillingPage'))
-const ExperiencePage = React.lazy(() => import('@/features/experiences/ExperiencePage'))
-const UserCenterPage = React.lazy(() => import('@/features/user/UserCenterPage'))
-const TestPage = React.lazy(() => import('@/features/test/TestPage'))
-const WorkspacePage = React.lazy(() => import('@/features/workspace/WorkspacePage'))
-const CodingPage = React.lazy(() => import('@/features/coding/CodingPage'))
-const InboxPage = React.lazy(() => import('@/features/inbox/InboxPage'))
-const SkillMarketPage = React.lazy(() => import('@/features/skills/SkillMarketPage'))
-const RolesPage = React.lazy(() => import('@/features/roles/RolesPage'))
-const RoleMarketPage = React.lazy(() => import('@/features/marketplace/RoleMarketPage'))
-const TtsPage = React.lazy(() => import('@/features/tts/TtsPage'))
-const ImChannelsPage = React.lazy(() => import('@/features/im/ImChannelsPage'))
-const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage'))
-const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'))
-const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
-const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
-
-function NavigationLogger() {
-  const location = useLocation()
-
-  useEffect(() => {
-    appLogger.info({
-      event: 'page_view',
-      module: 'app',
-      action: 'navigate',
-      status: 'success',
-      message: 'page visited',
-      extra: { path: location.pathname },
-    })
-  }, [location.pathname])
-
-  return null
-}
-
-// 开发模式路由守卫：非开发环境下重定向到仪表盘
-const DevTestRoute = () => {
-  if (!import.meta.env.DEV) {
-    return <Navigate to="/dashboard" replace />
-  }
-  return <TestPage />
-}
-
-function AppRoutes() {
-  const location = useLocation()
-  // 使用选择器精确订阅，避免整个 store 变化触发重渲染
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
-  const isInitialized = useAuthStore(s => s.isInitialized)
-
-  // 初始化未完成时显示 App Shell + 主内容区 loading 占位
-  // 避免在 isAuthenticated 默认 false 期间把所有非 /login 路径误重定向到 /login
-  // 这修复了"直接 URL 访问被重定向到 /chat"和"侧边栏点击无响应"两类问题
-  if (!isInitialized) {
-    return (
-      <div className="app-container">
-        <Suspense fallback={<div className="sidebar-skeleton" />}>
-          <Sidebar />
-        </Suspense>
-        <main id="main-content" className="main-content">
-          <div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>
-        </main>
-      </div>
-    )
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={3} /></div>}>
-        <Routes>
-          <Route path="/login" element={<ErrorBoundary name="Login"><LoginPage /></ErrorBoundary>} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Suspense>
-    )
-  }
-
-  return (
-    <div className="app-container">
-      <Suspense fallback={<div className="sidebar-skeleton" />}>
-        <Sidebar />
-      </Suspense>
-      {/* 主内容区，skip-link 目标锚点 */}
-      <main id="main-content" className="main-content">
-        <Suspense fallback={<div className="loading-fallback"><Skeleton.Paragraph lines={4} /></div>}>
-          {/* 使用 location.pathname 作为 key，触发 CSS 动画实现页面切换淡入 */}
-          <div className="page-transition-wrapper" key={location.pathname}>
-            <Routes>
-              <Route path="/" element={<Navigate to="/chat" replace />} />
-              <Route path="/login" element={<Navigate to="/chat" replace />} />
-              <Route path="/chat" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
-              <Route path="/chat/:conversationId" element={<ErrorBoundary name="Chat"><ChatPage /></ErrorBoundary>} />
-              <Route path="/dashboard" element={<ErrorBoundary name="Dashboard"><DashboardPage /></ErrorBoundary>} />
-              <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
-              <Route path="/skills" element={<ErrorBoundary name="Skills"><SkillsPage /></ErrorBoundary>} />
-              <Route path="/skills/market" element={<ErrorBoundary name="SkillMarket"><SkillMarketPage /></ErrorBoundary>} />
-              <Route path="/scheduled-tasks" element={<ErrorBoundary name="ScheduledTasks"><ScheduledTasksPage /></ErrorBoundary>} />
-              <Route path="/plugins">
-                <Route index element={<Navigate to="manage" replace />} />
-                <Route path="manage" element={<ErrorBoundary name="Plugins"><PluginsPage /></ErrorBoundary>} />
-                <Route path="config/:pluginId" element={<ErrorBoundary name="PluginConfig"><PluginConfigPage /></ErrorBoundary>} />
-              </Route>
-              <Route path="/memory" element={<ErrorBoundary name="Memory"><MemoryPage /></ErrorBoundary>} />
-              <Route path="/experience" element={<ErrorBoundary name="Experience"><ExperiencePage hideHeader /></ErrorBoundary>} />
-              <Route path="/billing" element={<ErrorBoundary name="Billing"><BillingPage /></ErrorBoundary>} />
-              <Route path="/user" element={<ErrorBoundary name="UserCenter"><UserCenterPage /></ErrorBoundary>} />
-              <Route path="/dev/test" element={<ErrorBoundary name="Test"><DevTestRoute /></ErrorBoundary>} />
-              <Route path="/workspace" element={<ErrorBoundary name="Workspace"><WorkspacePage /></ErrorBoundary>} />
-              <Route path="/coding" element={<ErrorBoundary name="Coding"><CodingPage /></ErrorBoundary>} />
-              <Route path="/inbox" element={<ErrorBoundary name="Inbox"><InboxPage /></ErrorBoundary>} />
-              <Route path="/roles" element={<ErrorBoundary name="Roles"><RolesPage /></ErrorBoundary>} />
-              <Route path="/role-market" element={<ErrorBoundary name="RoleMarket"><RoleMarketPage /></ErrorBoundary>} />
-              <Route path="/tts" element={<ErrorBoundary name="Tts"><TtsPage /></ErrorBoundary>} />
-              <Route path="/im" element={<ErrorBoundary name="ImChannels"><ImChannelsPage /></ErrorBoundary>} />
-              <Route path="/workflows" element={<ErrorBoundary name="Workflow"><WorkflowPage /></ErrorBoundary>} />
-              <Route path="/subagents" element={<ErrorBoundary name="SubAgents"><SubAgentPage /></ErrorBoundary>} />
-              <Route path="/vibe-coding" element={<ErrorBoundary name="VibeCoding"><VibeCodingPage /></ErrorBoundary>} />
-              <Route path="/discussions" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
-              <Route path="/discussions/:id" element={<ErrorBoundary name="Discussions"><DiscussionsPage /></ErrorBoundary>} />
-            </Routes>
-          </div>
-        </Suspense>
-      </main>
-    </div>
-  )
-}
+import { router } from '@/router'
 
 function App() {
   // 使用选择器精确订阅，避免整个 store 变化触发重渲染
-  const isInitialized = useAuthStore(s => s.isInitialized)
+  const isInitialized = useAuthStore((s) => s.isInitialized)
   const { theme } = useThemeStore()
   const shellMarkedRef = useRef<boolean | null>(null)
   useAppInitialization()
@@ -182,16 +39,41 @@ function App() {
     }
   }, [theme])
 
-  // P0: 始终渲染 App Shell，不再全屏白屏等待初始化完成
-  // 壳层立即可见，认证状态决定路由内容
+  // NavigationLogger：通过 router.subscribe 监听导航事件
+  // 替代原 useLocation + useEffect 方案，避免在 RouterProvider 外层使用 useLocation
+  // 初始化时记录一次首屏路径，后续每次路径变化时记录 page_view
+  useEffect(() => {
+    let lastPath = window.location.pathname
+    appLogger.info({
+      event: 'page_view',
+      module: 'app',
+      action: 'navigate',
+      status: 'success',
+      message: 'page visited',
+      extra: { path: lastPath },
+    })
+
+    const unsubscribe = router.subscribe((state) => {
+      const currentPath = state.location.pathname
+      if (currentPath !== lastPath) {
+        lastPath = currentPath
+        appLogger.info({
+          event: 'page_view',
+          module: 'app',
+          action: 'navigate',
+          status: 'success',
+          message: 'page visited',
+          extra: { path: currentPath },
+        })
+      }
+    })
+    return unsubscribe
+  }, [])
+
+  // P0: 始终渲染 RouterProvider，由 RootGuard 内部根据认证状态决定具体内容
   return (
     <ErrorBoundary name="Root">
-      <BrowserRouter future={routerFutureConfig}>
-        {/* 可访问性：跳转到主内容链接 */}
-        <SkipLink />
-        <NavigationLogger />
-        <AppRoutes />
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </ErrorBoundary>
   )
 }

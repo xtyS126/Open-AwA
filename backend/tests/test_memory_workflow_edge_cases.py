@@ -76,75 +76,6 @@ class FakeVectorStore:
         return self.count_value
 
 
-class FakeCollection:
-    def __init__(self):
-        self.records = {}
-
-    def upsert(self, ids, documents, embeddings, metadatas):
-        for index, record_id in enumerate(ids):
-            self.records[record_id] = {
-                "document": documents[index],
-                "embedding": embeddings[index],
-                "metadata": metadatas[index],
-            }
-
-    def delete(self, ids):
-        for record_id in ids:
-            self.records.pop(record_id, None)
-
-    def get(self, ids=None, include=None, where=None):
-        selected = []
-        if ids is not None:
-            for record_id in ids:
-                if record_id in self.records:
-                    selected.append((record_id, self.records[record_id]))
-        else:
-            for record_id, record in self.records.items():
-                if self._match_where(record["metadata"], where):
-                    selected.append((record_id, record))
-        return {
-            "ids": [record_id for record_id, _ in selected],
-            "documents": [record["document"] for _, record in selected],
-            "metadatas": [record["metadata"] for _, record in selected],
-            "embeddings": [record["embedding"] for _, record in selected],
-        }
-
-    def query(self, query_embeddings, n_results, where=None, include=None):
-        selected = []
-        for record_id, record in self.records.items():
-            if not self._match_where(record["metadata"], where):
-                continue
-            distance = abs(sum(query_embeddings[0]) - sum(record["embedding"]))
-            selected.append((distance, record_id, record))
-        selected.sort(key=lambda item: item[0])
-        selected = selected[:n_results]
-        return {
-            "ids": [[record_id for _, record_id, _ in selected]],
-            "documents": [[record["document"] for _, _, record in selected]],
-            "metadatas": [[record["metadata"] for _, _, record in selected]],
-            "distances": [[distance for distance, _, _ in selected]],
-        }
-
-    def count(self):
-        return len(self.records)
-
-    def _match_where(self, metadata, where):
-        if where is None:
-            return True
-        if "$and" in where:
-            return all(self._match_where(metadata, item) for item in where["$and"])
-        return all(metadata.get(key) == value for key, value in where.items())
-
-
-class FakePersistentClient:
-    def __init__(self, path):
-        self.path = path
-        self.collection = FakeCollection()
-
-    def get_or_create_collection(self, name, metadata):
-        return self.collection
-
-
 class FakeTool:
     def __init__(self, config=None):
         self.config = config or {}
@@ -340,11 +271,11 @@ async def test_vector_embedding_providers_and_factory(monkeypatch):
     assert isinstance(fallback, HashEmbeddingProvider)
 
 
-async def test_vector_store_manager_helper_paths(monkeypatch, tmp_path):
+async def test_vector_store_manager_helper_paths(tmp_path):
     """
     验证向量管理器的初始化、元数据处理、更新与计数辅助逻辑。
+    使用真实 Qdrant 嵌入式模式，无需 mock。
     """
-    monkeypatch.setattr("memory.vector_store_manager.chromadb.PersistentClient", FakePersistentClient)
     manager = VectorStoreManager(
         persist_directory=str(tmp_path / "vector_store"),
         collection_name="helpers",
@@ -354,22 +285,30 @@ async def test_vector_store_manager_helper_paths(monkeypatch, tmp_path):
     assert manager.provider_name == "hash"
     assert manager._document_id(7) == "memory:7"
     assert manager._sanitize_metadata({"a": 1, "b": None, "c": {"nested": True}})["c"] == "{'nested': True}"
-    assert manager._extract_first_item([[1, 2, 3]]) == [1, 2, 3]
-    assert manager._extract_first_item([{"ok": True}]) == {"ok": True}
-    assert manager._build_where_clause(user_id=None, include_archived=True) is None
-    assert manager._build_where_clause(user_id="u", include_archived=True) == {"user_id": "u"}
-    assert manager._build_where_clause(user_id="u", include_archived=False) == {
-        "$and": [{"user_id": "u"}, {"archive_status": "active"}]
-    }
+    # Qdrant 过滤条件构造：无条件返回 None；仅 user_id 返回单条件 Filter；组合条件返回多条件 Filter
+    assert manager._build_filter(user_id=None, include_archived=True) is None
+    user_only_filter = manager._build_filter(user_id="u", include_archived=True)
+    assert len(user_only_filter.must) == 1
+    assert user_only_filter.must[0].key == "user_id"
+    combined_filter = manager._build_filter(user_id="u", include_archived=False)
+    assert len(combined_filter.must) == 2
+    assert {c.key for c in combined_filter.must} == {"user_id", "archive_status"}
 
-    manager.update_memory_metadata(999, foo="bar")
+    # upsert 一条记录，更新元数据后通过 retrieve 验证 payload
     await manager.upsert_memory(1, "hello", user_id="user-1", metadata={"nested": {"value": 1}})
     manager.update_memory_metadata(1, foo="bar")
 
-    record = manager.collection.get(ids=[manager._document_id(1)], include=["documents", "metadatas", "embeddings"])
-    assert record["metadatas"][0]["foo"] == "bar"
+    records = manager.client.retrieve(
+        collection_name=manager.collection_name,
+        ids=[1],
+        with_payload=True,
+        with_vectors=False,
+    )
+    assert records
+    assert records[0].payload["foo"] == "bar"
     assert manager.count() == 1
     assert manager.count(user_id="user-1", include_archived=False) == 1
+    manager.close()
 
 
 def test_memory_manager_shared_vector_store_is_initialized_once(monkeypatch):

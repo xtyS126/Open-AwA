@@ -14,7 +14,7 @@
  */
 import { create } from 'zustand'
 import { safeGetItem, safeSetItem } from '@/shared/utils/safeStorage'
-import { persistSelectedModel, type PreferenceMutationOptions } from '@/shared/store/chatStoreEffects'
+import { persistSelectedModel, type PreferenceMutationOptions } from '@/features/chat/store/chatStoreEffects'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 
 /** 模型配置项，用于全局模型选择 */

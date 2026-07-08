@@ -8,16 +8,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcp.client import MCPClient, MCPClientError
-from mcp.manager import MCPManager
-from mcp.transport import SSETransport, MCPTransportError
-from mcp.types import (
+from mcp.manager import (
+    MCPClient,
+    MCPClientError,
+    MCPManager,
     MCPResource,
     MCPResourceContent,
     MCPServerConfig,
     MCPTool,
+    MCPTransportError,
+    SSETransport,
     TransportType,
     build_mcp_tool_name,
+)
+# 官方 mcp SDK 类型，用于构造 session mock 返回值
+from mcp.types import (
+    BlobResourceContents,
+    ReadResourceResult,
+    TextResourceContents,
 )
 from core.permission_manager import (
     PermissionEffect,
@@ -101,26 +109,27 @@ def test_sse_origin_trailing_slash():
 
 
 @pytest.mark.asyncio
-async def test_sse_connect_rejected_origin():
-    """origin 不在白名单时连接应失败。"""
+async def test_sse_check_origin_rejected():
+    """origin 不在白名单时 _check_origin 应抛出 MCPTransportError。
+
+    新版 SSETransport 为静态工具类（不再实例化），origin 校验通过 _check_origin 完成。
+    """
     SSETransport.set_allowed_origins(["https://allowed.com"])
-    transport = SSETransport("https://evil.com/sse")
-    with pytest.raises(MCPTransportError, match="origin 被拒绝"):
-        await transport.connect()
-    # 重置白名单
-    SSETransport.set_allowed_origins([])
+    try:
+        with pytest.raises(MCPTransportError, match="origin 被拒绝"):
+            SSETransport._check_origin("https://evil.com/sse")
+    finally:
+        # 重置白名单
+        SSETransport.set_allowed_origins([])
 
 
 @pytest.mark.asyncio
-async def test_sse_connect_allowed_origin():
-    """origin 在白名单时连接应通过 origin 校验（httpx 可能失败但不是 origin 问题）。"""
+async def test_sse_check_origin_allowed():
+    """origin 在白名单时 _check_origin 应通过（不抛出异常）。"""
     SSETransport.set_allowed_origins(["https://allowed.com"])
-    transport = SSETransport("https://allowed.com/sse")
-    # 由于没有真实服务器，连接会在 httpx 层失败，但不应是 origin 拒绝
     try:
-        await transport.connect()
-    except MCPTransportError as e:
-        assert "origin 被拒绝" not in str(e)
+        # 不应抛出任何异常（连接层由官方 sse_client 负责，此处仅验证 origin 校验通过）
+        SSETransport._check_origin("https://allowed.com/sse")
     finally:
         SSETransport.set_allowed_origins([])
 
@@ -137,20 +146,20 @@ async def test_client_read_resource_text():
     )
     client = MCPClient(config)
 
-    # 模拟 _send_request 返回
-    mock_response = {
-        "result": {
-            "contents": [
-                {
-                    "uri": "file:///test.txt",
-                    "mimeType": "text/plain",
-                    "text": "hello world",
-                }
-            ]
-        }
-    }
-    with patch.object(client, '_send_request', new_callable=AsyncMock, return_value=mock_response):
-        content = await client.read_resource("file:///test.txt")
+    # 模拟已连接的 session，read_resource 返回官方 SDK 的 ReadResourceResult
+    mock_session = MagicMock()
+    mock_session.read_resource = AsyncMock(return_value=ReadResourceResult(
+        contents=[
+            TextResourceContents(
+                uri="file:///test.txt",
+                mimeType="text/plain",
+                text="hello world",
+            )
+        ]
+    ))
+    client._session = mock_session
+
+    content = await client.read_resource("file:///test.txt")
 
     assert content.uri == "file:///test.txt"
     assert content.mime_type == "text/plain"
@@ -167,9 +176,12 @@ async def test_client_read_resource_empty():
     )
     client = MCPClient(config)
 
-    mock_response = {"result": {"contents": []}}
-    with patch.object(client, '_send_request', new_callable=AsyncMock, return_value=mock_response):
-        content = await client.read_resource("file:///empty")
+    # 模拟已连接的 session，返回空 contents
+    mock_session = MagicMock()
+    mock_session.read_resource = AsyncMock(return_value=ReadResourceResult(contents=[]))
+    client._session = mock_session
+
+    content = await client.read_resource("file:///empty")
 
     assert content.uri == "file:///empty"
     assert content.text == ""
@@ -185,19 +197,20 @@ async def test_client_read_resource_blob():
     )
     client = MCPClient(config)
 
-    mock_response = {
-        "result": {
-            "contents": [
-                {
-                    "uri": "file:///image.png",
-                    "mimeType": "image/png",
-                    "blob": "aGVsbG8=",
-                }
-            ]
-        }
-    }
-    with patch.object(client, '_send_request', new_callable=AsyncMock, return_value=mock_response):
-        content = await client.read_resource("file:///image.png")
+    # 模拟已连接的 session，返回 BlobResourceContents
+    mock_session = MagicMock()
+    mock_session.read_resource = AsyncMock(return_value=ReadResourceResult(
+        contents=[
+            BlobResourceContents(
+                uri="file:///image.png",
+                mimeType="image/png",
+                blob="aGVsbG8=",
+            )
+        ]
+    ))
+    client._session = mock_session
+
+    content = await client.read_resource("file:///image.png")
 
     assert content.blob == "aGVsbG8="
     assert content.mime_type == "image/png"

@@ -1,10 +1,12 @@
 /**
  * 角色管理页面 — 展示预设角色和自定义角色，支持创建、编辑、删除。
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Edit3, Star, Users } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRoles, createRole, updateRole, deleteRole } from '@/shared/api/rolesApi'
 import type { AgentRole, RoleCreateRequest, RolePersonality } from '@/shared/types/role'
+import { appLogger } from '@/shared/utils/logger'
 import styles from './RolesPage.module.css'
 
 /** 角色编辑器模态框 */
@@ -118,26 +120,37 @@ function RoleEditorModal({
 
 /** 角色管理页面主组件 */
 function RolesPage() {
-  const [roles, setRoles] = useState<AgentRole[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [editingRole, setEditingRole] = useState<AgentRole | null>(null)
   const [showEditor, setShowEditor] = useState(false)
 
-  // 加载角色列表
-  const loadRoles = useCallback(async () => {
-    try {
-      setLoading(true)
+  // 角色列表查询（替代原 useState + useCallback + useEffect 模式）
+  const rolesQuery = useQuery<AgentRole[], Error>({
+    queryKey: ['roles', 'list'],
+    queryFn: async () => {
       const roleList = await getRoles()
-      setRoles(roleList)
-    } catch {
-      // 加载失败时保持空列表
-      setRoles([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return roleList
+    },
+    retry: false,
+  })
 
-  useEffect(() => { loadRoles() }, [loadRoles])
+  const roles = rolesQuery.data ?? []
+  const loading = rolesQuery.isLoading
+
+  // 加载失败时记录日志（error 变化时触发）
+  useEffect(() => {
+    if (rolesQuery.error) {
+      const error = rolesQuery.error
+      appLogger.error({
+        event: 'roles_page_load_failed',
+        module: 'roles',
+        action: 'load',
+        status: 'failure',
+        message: '加载角色列表失败',
+        extra: { error: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }, [rolesQuery.error])
 
   // 创建角色
   const handleCreate = () => {
@@ -156,9 +169,18 @@ function RolesPage() {
     if (!confirm('确定要删除此角色吗？')) return
     try {
       await deleteRole(roleId)
-      loadRoles()
-    } catch {
-      // 删除失败时静默处理，保留当前列表
+      // 失效角色列表查询，触发后台刷新
+      await queryClient.invalidateQueries({ queryKey: ['roles'] })
+    } catch (error) {
+      // 删除失败时记录日志，保留当前列表
+      appLogger.error({
+        event: 'roles_page_delete_failed',
+        module: 'roles',
+        action: 'delete',
+        status: 'failure',
+        message: '删除角色失败',
+        extra: { role_id: roleId, error: error instanceof Error ? error.message : String(error) },
+      })
     }
   }
 
@@ -171,9 +193,18 @@ function RolesPage() {
         await createRole(data)
       }
       setShowEditor(false)
-      loadRoles()
-    } catch {
-      // 保存失败时静默处理，保留编辑器
+      // 失效角色列表查询，触发后台刷新
+      await queryClient.invalidateQueries({ queryKey: ['roles'] })
+    } catch (error) {
+      // 保存失败时记录日志，保留编辑器
+      appLogger.error({
+        event: 'roles_page_save_failed',
+        module: 'roles',
+        action: 'save',
+        status: 'failure',
+        message: '保存角色失败',
+        extra: { role_id: editingRole?.id, error: error instanceof Error ? error.message : String(error) },
+      })
     }
   }
 

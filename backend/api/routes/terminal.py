@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketState
 
 from api.dependencies import get_current_user
+from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_origin
 from config.security import decode_access_token
 from core.terminal import PTYSession
 from db.models import SessionLocal, User
@@ -107,69 +108,6 @@ def _count_user_sessions(sessions_dict: Dict[str, Any], owner_user_id: str) -> i
         1 for s in sessions_dict.values() if getattr(s, "owner_user_id", None) == owner_user_id
     )
 
-
-def _is_origin_allowed(origin: str) -> bool:
-    """
-    校验 WebSocket Origin 是否在白名单内，防止 CSWSH 跨站 WebSocket 劫持。
-
-    判定顺序：
-    1. 空 origin 直接拒绝
-    2. 开发环境本地地址（localhost / 127.0.0.1）允许
-    3. main.py 中 ALLOWED_ORIGINS 白名单允许
-    4. main.py 中 ALLOW_LAN_ORIGIN_REGEX（LAN 模式私有网段）允许
-    5. 其余一律拒绝
-    """
-    if not origin:
-        return False
-
-    # 开发环境默认白名单（前端 Vite 端口 5173 + 后端 8000）
-    dev_origins = {
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    }
-    if origin in dev_origins:
-        return True
-
-    # 检查 main.py 中配置的 ALLOWED_ORIGINS 白名单
-    try:
-        from main import ALLOWED_ORIGINS
-        if origin in ALLOWED_ORIGINS:
-            return True
-    except ImportError:
-        pass
-
-    # 检查 LAN 模式（允许私有网段 IP）
-    try:
-        from main import ALLOW_LAN_ORIGIN_REGEX
-        if ALLOW_LAN_ORIGIN_REGEX is not None and ALLOW_LAN_ORIGIN_REGEX.match(origin):
-            return True
-    except ImportError:
-        pass
-
-    return False
-
-
-def _extract_token_from_subprotocol(websocket: WebSocket) -> tuple:
-    """
-    从 Sec-WebSocket-Protocol 子协议头提取 bearer token。
-
-    子协议格式：bearer.<token>
-
-    Returns:
-        (token, subprotocol) 元组。token 为 None 表示未找到；
-        subprotocol 为需要回显的子协议标识（浏览器要求 accept 时回显，否则拒绝连接）。
-    """
-    protocol_header = websocket.headers.get("sec-websocket-protocol", "")
-    if not protocol_header:
-        return (None, None)
-    for proto in protocol_header.split(","):
-        proto = proto.strip()
-        if proto.startswith("bearer."):
-            token = proto[len("bearer."):]
-            return (token, proto)
-    return (None, None)
 
 # 禁止执行的危险命令名（完整匹配命令名，非子串匹配）
 BLOCKED_COMMANDS = [
@@ -795,14 +733,14 @@ async def terminal_pty_websocket(
     """
     # Origin 校验（防 CSWSH 跨站 WebSocket 劫持）：在 accept 之前 close
     origin = websocket.headers.get("origin", "")
-    if not _is_origin_allowed(origin):
+    if not validate_ws_origin(origin):
         await websocket.close(code=4003, reason="Origin not allowed")
         return
 
     # token 解析：优先取 query 参数，缺失时尝试从 Sec-WebSocket-Protocol 子协议提取
     subprotocol: Optional[str] = None
     if not token:
-        token, subprotocol = _extract_token_from_subprotocol(websocket)
+        token, subprotocol = extract_token_from_subprotocol(websocket)
 
     # 鉴权
     if not token:
@@ -1119,14 +1057,14 @@ async def terminal_websocket(
     """
     # Origin 校验（防 CSWSH 跨站 WebSocket 劫持）：在 accept 之前 close
     origin = websocket.headers.get("origin", "")
-    if not _is_origin_allowed(origin):
+    if not validate_ws_origin(origin):
         await websocket.close(code=4003, reason="Origin not allowed")
         return
 
     # token 解析：优先取 query 参数，缺失时尝试从 Sec-WebSocket-Protocol 子协议提取
     subprotocol: Optional[str] = None
     if not token:
-        token, subprotocol = _extract_token_from_subprotocol(websocket)
+        token, subprotocol = extract_token_from_subprotocol(websocket)
 
     # 鉴权：token 必须存在且可解析为有效用户
     if not token:

@@ -19,10 +19,11 @@ from loguru import logger
 
 from api.dependencies import get_current_user
 from api.schemas import ChatMessage, ChatResponse, ChatUndoOperationRequest, ConfirmationRequest, UserFeedbackRequest
+from api.security.ws_auth import extract_token_from_subprotocol, validate_ws_origin
 from api.services.chat_protocol import build_sse_response, handle_websocket_session
 from api.services.ws_manager import ws_manager
 from config.logging import REQUEST_ID_HEADER, generate_request_id, sanitize_for_logging
-from core.model_service import CLIENT_VERSION_HEADER
+from core.litellm_adapter import CLIENT_VERSION_HEADER
 from config.security import decode_access_token
 from core.agent import AIAgent
 from db.models import ConversationRecord, SessionLocal, User, get_db
@@ -50,91 +51,6 @@ def _ws_load_session_owner_id(session_id: str) -> str:
             ConversationRecord.session_id == session_id
         ).first()
         return str(getattr(record, "user_id", "") or "").strip()
-
-
-# 局域网跨域访问允许的私有网段 origin 正则。
-# 与 main.py 中 _resolve_allow_origin_regex 实现保持一致，避免循环导入 main 模块。
-_LAN_ORIGIN_REGEX_PATTERN = (
-    r"^https?://("
-    r"localhost|127\.0\.0\.1|"
-    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
-    r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
-    r"192\.168\.\d{1,3}\.\d{1,3}"
-    r")(:\d+)?$"
-)
-
-
-def _is_origin_allowed(origin: str) -> bool:
-    """
-    校验 WebSocket Origin 是否在白名单内，防 CSWSH 跨站 WebSocket 劫持。
-
-    放行规则：
-      1. 同源：与 settings.BASE_URL 完全相等
-      2. 局域网：当 ALLOW_LAN_ACCESS=true 时匹配私网段 IP/localhost
-      3. 开发模式：本地开发服务器 origin（Vite 5173 / 后端 8000）
-
-    其余 origin 一律拒绝，避免恶意页面借助浏览器自动携带 Cookie 发起跨站 WS 攻击。
-    """
-    if not origin:
-        return False
-
-    # 开发模式允许的本地 origin（与 main.py 中默认 ALLOWED_ORIGINS 对齐）
-    dev_origins = {
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:8000", "http://127.0.0.1:8000",
-    }
-    if origin in dev_origins:
-        return True
-
-    # 同源校验：与 settings.BASE_URL 比对
-    try:
-        from config.settings import settings
-        base_url = getattr(settings, "BASE_URL", "") or ""
-        if base_url and origin == base_url:
-            return True
-    except (ImportError, AttributeError):
-        # settings 模块不可用时跳过同源校验，继续走 LAN 与开发分支
-        pass
-
-    # 局域网模式：当 ALLOW_LAN_ACCESS 开启时，匹配私网段 IP
-    try:
-        import re as _re
-        allow_lan = False
-        try:
-            from config.settings import settings as _settings
-            allow_lan = bool(getattr(_settings, "ALLOW_LAN_ACCESS", False))
-        except (ImportError, AttributeError):
-            # 退回环境变量直接读取，确保 LAN 开关在 settings 未配置时仍能生效
-            import os as _os
-            allow_lan = _os.getenv("ALLOW_LAN_ACCESS", "").lower() == "true"
-
-        if allow_lan and _re.match(_LAN_ORIGIN_REGEX_PATTERN, origin):
-            return True
-    except (ImportError, AttributeError):
-        pass
-
-    return False
-
-
-def _extract_token_from_subprotocol(websocket: WebSocket) -> tuple:
-    """
-    从 Sec-WebSocket-Protocol 子协议头提取 bearer token。
-
-    子协议格式：bearer.<token>
-
-    Returns:
-        (token, subprotocol) 元组。token 为 None 表示未找到；
-        subprotocol 为需要回显的子协议标识（浏览器要求 accept 时回显，否则拒绝连接）。
-    """
-    protocol_header = websocket.headers.get("sec-websocket-protocol", "")
-    if not protocol_header:
-        return (None, None)
-    for proto in protocol_header.split(","):
-        proto = proto.strip()
-        if proto.startswith("bearer."):
-            token = proto[len("bearer."):]
-            return (token, proto)
-    return (None, None)
 
 
 def _build_upload_metadata_path(filename: str) -> Path:
@@ -420,14 +336,14 @@ async def websocket_endpoint(
     # Origin 校验（防 CSWSH 跨站 WebSocket 劫持，参考 P0-2）
     # 必须在 accept() 前完成，避免恶意页面借助浏览器自动携带的 Cookie 建立跨站 WS
     origin = websocket.headers.get("origin", "") or ""
-    if not _is_origin_allowed(origin):
+    if not validate_ws_origin(origin):
         await websocket.close(code=4010, reason="Origin not allowed")
         return
 
     # token 解析：优先取 query 参数，缺失时尝试从 Sec-WebSocket-Protocol 子协议提取
     subprotocol: Optional[str] = None
     if not token:
-        token, subprotocol = _extract_token_from_subprotocol(websocket)
+        token, subprotocol = extract_token_from_subprotocol(websocket)
 
     if token is None:
         await websocket.close(code=4001, reason="Missing authentication token")

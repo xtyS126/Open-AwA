@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Open-AwA 一键安装脚本 (Windows PowerShell)
 
@@ -144,12 +144,20 @@ if (-not $SkipFrontend -and $hasNode) {
 
 # ---- 初始化配置 ----
 Write-Info "初始化配置..."
-$secretKey = if ($env:SECRET_KEY) { $env:SECRET_KEY } else { [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 })) }
+$jwtSecretKey = if ($env:JWT_SECRET_KEY) { $env:JWT_SECRET_KEY } else { python -c "import secrets; print(secrets.token_urlsafe(64))" }
+$csrfSecretKey = if ($env:CSRF_SECRET_KEY) { $env:CSRF_SECRET_KEY } else { python -c "import secrets; print(secrets.token_urlsafe(64))" }
+$encryptionKey = if ($env:ENCRYPTION_KEY) { $env:ENCRYPTION_KEY } else { python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" }
+$openawaApiKey = if ($env:OPENAWA_API_KEY) { $env:OPENAWA_API_KEY } else { python -c "import secrets; print(secrets.token_urlsafe(48))" }
+$ownerPassword = if ($env:OPENAWA_OWNER_PASSWORD) { $env:OPENAWA_OWNER_PASSWORD } else { python -c "import secrets; print(secrets.token_urlsafe(24))" }
 
 $envContent = @"
 # Open-AwA 配置文件（由安装脚本自动生成）
 ENVIRONMENT=production
-SECRET_KEY=$secretKey
+JWT_SECRET_KEY=$jwtSecretKey
+CSRF_SECRET_KEY=$csrfSecretKey
+ENCRYPTION_KEY=$encryptionKey
+OPENAWA_API_KEY=$openawaApiKey
+OPENAWA_OWNER_PASSWORD=$ownerPassword
 BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8000
 DATABASE_URL=sqlite:///$InstallDir/data/openawa.db

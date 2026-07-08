@@ -473,6 +473,10 @@ describe('ChatPage', () => {
     // 修复后，subagent 容器显示累积的完整日志（含实时输出和摘要），用部分匹配确认摘要出现
     await waitFor(() => expect(screen.getByText(/子代理摘要/)).toBeInTheDocument())
     expect(screen.getByText('主代理完成回复。')).toBeInTheDocument()
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 120))
+    })
+    expect(apiMocks.sendMessageStream).toHaveBeenCalledTimes(1)
   })
 
   it('将连续的子代理思考消息渲染为单个思考块', async () => {

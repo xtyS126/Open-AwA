@@ -9,7 +9,6 @@ omit =
     */__init__.py
     skills/external/*
     plugins/examples/*
-    migrate_db.py
     setup.cfg
     data/*
     */test_litellm_*.py

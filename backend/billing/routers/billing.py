@@ -25,9 +25,8 @@ from billing.reporter import BillingReporter
 from billing.tracker import UsageTracker
 from config.config_loader import config_loader
 from config.logging import REQUEST_ID_HEADER
-from core.litellm_adapter import litellm_list_models
+from core.litellm_adapter import build_standard_error, litellm_list_models
 from core.metrics import record_model_service_metric
-from core.model_service import build_standard_error
 from db.models import ConversationRecord, get_db
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])

@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createElement } from 'react'
 import {
   usePluginConfig,
   usePluginConfigActions,
@@ -33,6 +35,28 @@ vi.mock('@/shared/api/api', () => ({
   },
 }))
 
+// 每个测试独立的 QueryClient 实例，避免缓存污染
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        gcTime: 0,
+      },
+    },
+  })
+}
+
+// 包裹 QueryClientProvider 的 renderHook wrapper
+function wrapper() {
+  const testQueryClient = createTestQueryClient()
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return createElement(QueryClientProvider, { client: testQueryClient }, children)
+  }
+  return { Wrapper, queryClient: testQueryClient }
+}
+
 describe('features/plugins/hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -43,7 +67,8 @@ describe('features/plugins/hooks', () => {
       .mockRejectedValueOnce(new Error('list failed'))
       .mockResolvedValueOnce({ data: [{ id: 'plugin-1', name: 'demo', version: '1.0.0', enabled: true }] })
 
-    const { result } = renderHook(() => usePluginList())
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginList(), { wrapper: Wrapper })
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -54,8 +79,11 @@ describe('features/plugins/hooks', () => {
       await result.current.retry()
     })
 
-    expect(result.current.error).toBeNull()
-    expect(result.current.plugins).toHaveLength(1)
+    // refetch 完成后状态可能需要再等一轮渲染才更新
+    await waitFor(() => {
+      expect(result.current.error).toBeNull()
+      expect(result.current.plugins).toHaveLength(1)
+    })
     expect(pluginsAPI.getAll).toHaveBeenCalledTimes(2)
   })
 
@@ -64,7 +92,8 @@ describe('features/plugins/hooks', () => {
       .mockRejectedValueOnce(new Error('import failed'))
       .mockResolvedValueOnce({ data: { ok: true } })
 
-    const { result } = renderHook(() => usePluginImport())
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginImport(), { wrapper: Wrapper })
 
     await act(async () => {
       await expect(result.current.importFromUrl('https://example.com/demo.zip')).rejects.toThrow('import failed')
@@ -86,7 +115,8 @@ describe('features/plugins/hooks', () => {
       return { data: { ok: true } }
     })
 
-    const { result } = renderHook(() => usePluginDelete())
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginDelete(), { wrapper: Wrapper })
     let batchResult: Awaited<ReturnType<typeof result.current.deleteBatch>> | null = null
 
     await act(async () => {
@@ -103,7 +133,8 @@ describe('features/plugins/hooks', () => {
       data: { id: 'plugin-1', name: 'demo', version: '1.0.0', enabled: true },
     })
 
-    const { result } = renderHook(() => usePluginDetail('plugin-1'))
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginDetail('plugin-1'), { wrapper: Wrapper })
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -119,7 +150,8 @@ describe('features/plugins/hooks', () => {
       .mockRejectedValueOnce(new Error('save failed'))
       .mockResolvedValueOnce({ data: { plugin_id: 'plugin-1', plugin_name: 'demo', config: { api_key: 'new' } } })
 
-    const { result } = renderHook(() => usePluginConfig('plugin-1'))
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginConfig('plugin-1'), { wrapper: Wrapper })
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -152,7 +184,8 @@ describe('features/plugins/hooks', () => {
         },
       })
 
-    const { result } = renderHook(() => usePluginConfigSchema('plugin-1'))
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginConfigSchema('plugin-1'), { wrapper: Wrapper })
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -178,7 +211,8 @@ describe('features/plugins/hooks', () => {
       data: { plugin_id: 'plugin-1', plugin_name: 'demo', config: { mode: 'safe' } },
     })
 
-    const { result } = renderHook(() => usePluginConfigActions('plugin-1'))
+    const { Wrapper } = wrapper()
+    const { result } = renderHook(() => usePluginConfigActions('plugin-1'), { wrapper: Wrapper })
 
     await act(async () => {
       expect(await result.current.saveConfig({ mode: 'safe' })).toEqual({ mode: 'safe' })
@@ -219,8 +253,9 @@ describe('features/plugins/hooks', () => {
     })
     ;(pluginsAPI.toggle as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ok: true } })
 
-    const permissionsHook = renderHook(() => usePluginPermissions())
-    const toggleHook = renderHook(() => usePluginToggle())
+    const { Wrapper } = wrapper()
+    const permissionsHook = renderHook(() => usePluginPermissions(), { wrapper: Wrapper })
+    const toggleHook = renderHook(() => usePluginToggle(), { wrapper: Wrapper })
 
     await act(async () => {
       await permissionsHook.result.current.refreshPermissions({ id: 'plugin-1', name: 'demo' } as Pick<Plugin, 'id' | 'name'>)

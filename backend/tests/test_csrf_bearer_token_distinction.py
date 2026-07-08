@@ -1,14 +1,16 @@
 """
 CSRF 中间件 Bearer token 类型区分测试。
 
-验证 CSRF 豁免策略：
-- API Key Bearer token (sk-xxx) 豁免 CSRF 验证
-- JWT Bearer token 必须携带 X-CSRF-Token
+验证 CSRF 豁免策略（基于双提交 Cookie 模式）：
+- 纯 Bearer token 认证（无 Cookie）豁免 CSRF 验证：CSRF 攻击依赖浏览器自动携带 Cookie，
+  若请求无 Cookie，则 CSRF 无攻击面，无论 Bearer token 是 API Key 还是 JWT 格式
+- 携带 Cookie 的请求（含 Bearer token）必须通过 X-CSRF-Token 校验
+- 无 Bearer token 的 Cookie 认证请求必须通过 X-CSRF-Token 校验
 """
 
 import os
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
@@ -20,7 +22,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from main import csrf_protection_middleware
-from config.security import generate_csrf_token
 
 
 @pytest.fixture(autouse=True)
@@ -118,13 +119,17 @@ class TestCSRFBearerTokenDistinction:
             assert response.status_code == 200, f"API Key {api_key} 应豁免 CSRF"
 
     @pytest.mark.asyncio
-    async def test_jwt_bearer_requires_csrf_token(
+    async def test_jwt_bearer_without_cookie_exempt_from_csrf(
         self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
     ):
-        """JWT Bearer token 无 CSRF token 时应返回 403"""
+        """纯 JWT Bearer token（无 Cookie）豁免 CSRF 验证。
+
+        新策略：CSRF 攻击依赖浏览器自动携带 Cookie，若请求无 Cookie，
+        则 CSRF 无攻击面，无论 Bearer token 是 JWT 还是 API Key 格式。
+        """
         # 构造 JWT 格式 token (三段 base64 用 . 连接)
         jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImV4cCI6OTk5OTk5OTk5OX0.signature"
-        
+
         headers = Headers({
             "authorization": f"Bearer {jwt_token}",
         })
@@ -132,11 +137,38 @@ class TestCSRFBearerTokenDistinction:
         request.url.path = "/api/chat/send"
         request.method = "POST"
         request.headers = headers
-        
+
         # 调用中间件
         response = await csrf_protection_middleware(request, mock_call_next)
-        
-        # JWT Bearer 无 CSRF token 应返回 403
+
+        # 纯 Bearer（无 Cookie）应直接放行，返回 200
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_jwt_bearer_with_cookie_requires_csrf_token(
+        self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
+    ):
+        """JWT Bearer token 携带 Cookie 时必须通过 CSRF 校验（缺失 CSRF token 返回 403）。
+
+        策略：若请求同时携带 Cookie（可能存在基于 Cookie 的会话），
+        即使有 Bearer header 也继续校验 CSRF。
+        """
+        # 构造 JWT 格式 token (三段 base64 用 . 连接)
+        jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImV4cCI6OTk5OTk5OTk5OX0.signature"
+
+        headers = Headers({
+            "authorization": f"Bearer {jwt_token}",
+            "cookie": "access_token=abc123",
+        })
+        request = MagicMock(spec=Request)
+        request.url.path = "/api/chat/send"
+        request.method = "POST"
+        request.headers = headers
+
+        # 调用中间件
+        response = await csrf_protection_middleware(request, mock_call_next)
+
+        # Bearer + Cookie 但无 CSRF token 应返回 403
         assert response.status_code == 403
         # 解析响应体校验错误码
         import json
@@ -144,57 +176,64 @@ class TestCSRFBearerTokenDistinction:
         assert body["error"] == "missing_csrf_token"
 
     @pytest.mark.asyncio
-    async def test_jwt_bearer_with_valid_csrf_token_passes(
+    async def test_jwt_bearer_with_cookie_and_valid_csrf_token_passes(
         self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
     ):
-        """JWT Bearer token 携带有效 CSRF token 时应正常通过"""
+        """JWT Bearer token 携带 Cookie 且 CSRF 校验通过时应正常放行。
+
+        新策略：Bearer + Cookie 组合需要 CSRF 校验，校验通过则放行。
+        """
         # 构造 JWT 格式 token
         jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImV4cCI6OTk5OTk5OTk5OX0.signature"
-        
-        # 生成有效的 CSRF token (假设 user_id = "user-123")
-        csrf_token = generate_csrf_token(user_id="user-123")
-        
+
         headers = Headers({
             "authorization": f"Bearer {jwt_token}",
-            "x-csrf-token": csrf_token,
+            "cookie": "access_token=abc123",
+            "x-csrf-token": "some-csrf-token",
         })
         request = MagicMock(spec=Request)
         request.url.path = "/api/chat/send"
         request.method = "POST"
         request.headers = headers
-        
-        # Mock _extract_user_id_from_request 返回匹配的 user_id
-        with patch('main._extract_user_id_from_request', new_callable=AsyncMock) as mock_extract:
-            mock_extract.return_value = "user-123"
-            
-            # 调用中间件
+
+        # Mock validate_csrf_request 返回 True（校验通过）
+        with patch('main.validate_csrf_request', return_value=True):
             response = await csrf_protection_middleware(request, mock_call_next)
-        
-        # 有效 CSRF token 应通过验证，返回 200
+
+        # CSRF 校验通过应放行，返回 200
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_jwt_bearer_with_invalid_csrf_token_rejected(
+    async def test_jwt_bearer_with_cookie_and_invalid_csrf_token_rejected(
         self, mock_call_next, mock_csrf_exempt_paths, mock_csrf_checked_methods
     ):
-        """JWT Bearer token 携带无效 CSRF token 时应返回 403"""
+        """JWT Bearer token 携带 Cookie 但 CSRF 校验失败时应返回 403。
+
+        新策略：Bearer + Cookie 组合需要 CSRF 校验，校验失败则拒绝。
+        """
         # 构造 JWT 格式 token
         jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImV4cCI6OTk5OTk5OTk5OX0.signature"
-        
+
         headers = Headers({
             "authorization": f"Bearer {jwt_token}",
+            "cookie": "access_token=abc123",
             "x-csrf-token": "invalid_csrf_token",
         })
         request = MagicMock(spec=Request)
         request.url.path = "/api/chat/send"
         request.method = "POST"
         request.headers = headers
-        
-        # 调用中间件
-        response = await csrf_protection_middleware(request, mock_call_next)
-        
-        # 无效 CSRF token 应返回 403
+
+        # Mock validate_csrf_request 返回 False（校验失败）
+        with patch('main.validate_csrf_request', return_value=False):
+            response = await csrf_protection_middleware(request, mock_call_next)
+
+        # CSRF 校验失败应返回 403
         assert response.status_code == 403
+        # 解析响应体校验错误码
+        import json
+        body = json.loads(response.body.decode("utf-8"))
+        assert body["error"] == "invalid_csrf_token"
 
     @pytest.mark.asyncio
     async def test_api_key_bearer_short_token_exempt_from_csrf(

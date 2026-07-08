@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Search,
   Plus,
@@ -126,10 +127,7 @@ type TypeFilter = 'all' | SkillCategory
 function SkillsPage() {
   const navigate = useNavigate()
 
-  const [skills, setSkills] = useState<SkillItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [pendingSkillId, setPendingSkillId] = useState<string | null>(null)
 
@@ -138,14 +136,26 @@ function SkillsPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
-  /** 加载技能列表 */
-  const loadSkills = useCallback(async () => {
-    setLoading(true)
-    setLoadError(null)
-    try {
+  /** 技能列表查询 —— TanStack Query 管理服务端状态 */
+  const skillsQuery = useQuery<SkillItem[], Error>({
+    queryKey: ['skills', 'list'],
+    queryFn: async () => {
       const response = await skillsAPI.getAll()
-      setSkills(response.data)
-    } catch (error) {
+      return response.data
+    },
+    retry: false,
+  })
+
+  const skills = skillsQuery.data ?? []
+  const loading = skillsQuery.isLoading
+  const loadError = skillsQuery.error
+    ? getErrorMessage(skillsQuery.error, '加载技能列表失败，请稍后重试')
+    : null
+
+  /** 失败时记录日志（error 变化时触发） */
+  useEffect(() => {
+    if (skillsQuery.error) {
+      const error = skillsQuery.error
       appLogger.error({
         event: 'skills_page_load_failed',
         module: 'skills',
@@ -154,16 +164,13 @@ function SkillsPage() {
         message: '加载技能列表失败',
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
-      setSkills([])
-      setLoadError(getErrorMessage(error, '加载技能列表失败，请稍后重试'))
-    } finally {
-      setLoading(false)
     }
-  }, [])
+  }, [skillsQuery.error])
 
-  useEffect(() => {
-    void loadSkills()
-  }, [loadSkills])
+  /** 刷新技能列表 */
+  const loadSkills = useCallback(async () => {
+    await skillsQuery.refetch()
+  }, [skillsQuery])
 
   /** 切换技能启用状态 */
   const handleToggle = useCallback(
@@ -172,7 +179,7 @@ function SkillsPage() {
       setPendingSkillId(id)
       try {
         await skillsAPI.toggle(id)
-        await loadSkills()
+        await skillsQuery.refetch()
       } catch (error) {
         appLogger.error({
           event: 'skills_page_toggle_failed',
@@ -187,7 +194,7 @@ function SkillsPage() {
         setPendingSkillId(null)
       }
     },
-    [loadSkills]
+    [skillsQuery]
   )
 
   /** 跳转技能市场 */

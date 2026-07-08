@@ -262,14 +262,18 @@ class TestSkillExecutorShellAction:
         """验证 rm 命令被拒绝。"""
         with pytest.raises(RuntimeError) as exc_info:
             await executor._execute_shell_action("test", {"command": "rm -rf /"})
-        assert "不在允许列表" in str(exc_info.value)
+        # rm 在 DANGEROUS_COMMANDS 黑名单中，返回"被明确禁止执行"，
+        # 与 sandbox.py 行为一致（命令白名单单一真相源）
+        assert "禁止" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_dangerous_command_sudo_rejected(self, executor):
         """验证 sudo 命令被拒绝。"""
         with pytest.raises(RuntimeError) as exc_info:
             await executor._execute_shell_action("test", {"command": "sudo ls"})
-        assert "不在允许列表" in str(exc_info.value)
+        # sudo 在 DANGEROUS_COMMANDS 黑名单中，返回"被明确禁止执行"，
+        # 与 sandbox.py 行为一致（命令白名单单一真相源）
+        assert "禁止" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_shell_injection_semicolon_rejected(self, executor):

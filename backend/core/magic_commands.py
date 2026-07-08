@@ -350,14 +350,8 @@ class MagicCommandRegistry:
 
         # 通过 LLM 生成技能配置
         try:
-            from core.model_service import get_model_service
-            model_service = get_model_service()
-            llm_response = await model_service.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1500,
-                temperature=0.7,
-            )
-            content = llm_response.get("content", "") if isinstance(llm_response, dict) else str(llm_response)
+            # model_service 已删除，LLM 路径已废弃；except 自然降级到启发式生成
+            raise RuntimeError("LLM skill generation pending litellm_chat_completion migration")
         except Exception as exc:
             # LLM 不可用时使用启发式生成
             logger.bind(module="magic_commands", event="skill_generation_llm_failed").debug(
@@ -477,14 +471,8 @@ class MagicCommandRegistry:
     "expected_outcome": "预期成果"
 }}"""
         try:
-            from core.model_service import get_model_service
-            model_service = get_model_service()
-            llm_response = await model_service.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1500,
-                temperature=0.5,
-            )
-            content = llm_response.get("content", "") if isinstance(llm_response, dict) else str(llm_response)
+            # model_service 已删除，LLM 路径已废弃；except 自然降级到占位计划
+            raise RuntimeError("LLM plan generation pending litellm_chat_completion migration")
         except Exception as exc:
             # LLM 不可用时降级返回占位计划，记录 debug 便于排查
             logger.bind(module="magic_commands", event="plan_generation_llm_failed").debug(

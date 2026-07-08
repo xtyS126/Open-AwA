@@ -21,7 +21,7 @@ import core.litellm_adapter as litellm_adapter_module
 from core.executor import ExecutionLayer
 from core.executor import resolve_max_tool_call_rounds as resolve_executor_max_tool_call_rounds
 from core.feedback import FeedbackLayer
-from core.model_service import build_provider_request, build_thinking_params
+from core.litellm_adapter import build_thinking_params
 from main import app
 
 
@@ -66,44 +66,6 @@ def test_pricing_manager_normalizes_provider_specific_base_suffix():
 
     assert normalized_alibaba == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert normalized_zhipu == "https://open.bigmodel.cn/api/paas/v4"
-
-
-def test_build_provider_request_generates_provider_specific_headers_and_payload():
-    """
-    不同 Provider 应生成符合自身协议的端点、请求头和载荷。
-    """
-
-    anthropic_request = build_provider_request(
-        provider="anthropic",
-        api_endpoint="https://api.anthropic.com",
-        api_key="anthropic-secret",
-        purpose="chat",
-        model="claude-3-5-sonnet",
-        prompt="你好",
-        request_id="req-a",
-        client_version="2.0.0",
-        context={"scene": "test"},
-    )
-    google_request = build_provider_request(
-        provider="google",
-        api_endpoint="https://generativelanguage.googleapis.com",
-        api_key="google-secret",
-        purpose="chat",
-        model="gemini-2.0-flash",
-        prompt="你好",
-        request_id="req-g",
-        client_version="2.0.0",
-    )
-
-    assert anthropic_request.endpoint == "https://api.anthropic.com/v1/messages"
-    assert anthropic_request.headers["x-api-key"] == "anthropic-secret"
-    assert anthropic_request.payload["messages"][0]["content"] == "你好"
-    assert anthropic_request.payload["metadata"]["request_id"] == "req-a"
-
-    assert google_request.endpoint.endswith("/v1beta/models/gemini-2.0-flash:generateContent?key=google-secret")
-    assert google_request.payload["contents"][0]["parts"][0]["text"] == "你好"
-    # systemInstruction 可能在特定 provider 版本中不存在，仅验证 Google 特有字段存在
-    assert "contents" in google_request.payload
 
 
 def test_build_thinking_params_keeps_deepseek_thinking_and_reasoning_effort():
@@ -934,8 +896,13 @@ def test_websocket_sends_chunked_messages_with_seq_and_checksum(monkeypatch):
 
     with TestClient(app) as client:
         with client.websocket_connect(
-            "/api/chat/ws/session-1?token=fake-token",
-            headers={"X-Request-Id": "req-ws-1", "X-Client-Ver": "1.0.0"},
+            "/api/chat/ws/session-1",
+            headers={
+                "Origin": "http://localhost:5173",
+                "X-Request-Id": "req-ws-1",
+                "X-Client-Ver": "1.0.0",
+            },
+            subprotocols=["bearer.fake-token"],
         ) as websocket:
             websocket.send_json(
                 {

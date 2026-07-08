@@ -331,7 +331,7 @@ class AIAgent:
             return
         provider = context.get("provider", "")
         model = context.get("model", "")
-        from core.model_service import build_multimodal_message
+        from core.litellm_adapter import build_multimodal_message
         multimodal_content = build_multimodal_message(user_input, attachments, provider)
         context["_multimodal_content"] = multimodal_content
 
@@ -343,7 +343,7 @@ class AIAgent:
         thinking_depth = context.get("thinking_depth", 0)
         provider = context.get("provider", "")
         model = context.get("model", "")
-        from core.model_service import build_thinking_params
+        from core.litellm_adapter import build_thinking_params
         thinking_params = build_thinking_params(provider, model, thinking_depth, thinking_enabled)
         if thinking_params:
             context["_thinking_params"] = thinking_params

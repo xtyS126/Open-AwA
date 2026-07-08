@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import {
   LineChart,
@@ -36,62 +37,80 @@ const CHART_COLORS = {
 }
 
 function BillingPage() {
-  const [statistics, setStatistics] = useState<CostStatistics | null>(null)
-  const [usageRecords, setUsageRecords] = useState<UsageRecord[]>([])
-  const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
+  // 通过 useContext 获取当前 QueryClient（测试时可注入独立实例，避免污染全局）
+  const queryClient = useQueryClient()
+  // 周期选择为本地用户输入状态，保留 useState
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly')
+  // 上次更新时间为派生 UI 状态，保留 useState（在数据成功加载后更新）
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
+  // 导出操作的本地错误状态（不依赖服务端查询）
+  const [exportError, setExportError] = useState<string | null>(null)
 
-  const loadBillingData = useCallback(async (options?: { silent?: boolean }) => {
-    const silent = Boolean(options?.silent)
-    try {
-      if (silent) {
-        setRefreshing(true)
-      } else {
-        setLoading(true)
-      }
-      setError(null)
-      
-      const [statsRes, usageRes, budgetRes] = await Promise.all([
-        billingAPI.getCostStatistics({ period }),
-        billingAPI.getUsage({ limit: 50 }),
-        billingAPI.getBudget('current').catch(() => ({ data: null }))
-      ])
-      
-      setStatistics(statsRes.data)
-      setUsageRecords(usageRes.data.records || [])
-      setBudgetStatus(budgetRes.data)
-      setLastUpdatedAt(new Date())
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setError(axiosErr.response?.data?.detail || '加载计费数据失败')
-    } finally {
-      if (silent) {
-        setRefreshing(false)
-      } else {
-        setLoading(false)
-      }
-    }
-  }, [period])
+  // 成本统计查询 —— period 变化时自动刷新
+  const statsQuery = useQuery<CostStatistics>({
+    queryKey: ['billing', 'stats', period],
+    queryFn: async () => {
+      const response = await billingAPI.getCostStatistics({ period })
+      return response.data
+    },
+  })
 
+  // 用量明细查询 —— 与统计独立，互不阻塞
+  const usageQuery = useQuery<UsageRecord[]>({
+    queryKey: ['billing', 'usage', period],
+    queryFn: async () => {
+      const response = await billingAPI.getUsage({ limit: 50 })
+      return response.data.records || []
+    },
+  })
+
+  // 预算状态查询 —— 后端可能未配置预算，失败时降级为 null
+  const budgetQuery = useQuery<BudgetStatus | null>({
+    queryKey: ['billing', 'budget'],
+    queryFn: async () => {
+      const response = await billingAPI.getBudget('current').catch(() => ({ data: null }))
+      return response.data
+    },
+  })
+
+  const statistics = statsQuery.data ?? null
+  const usageRecords = usageQuery.data ?? []
+  const budgetStatus = budgetQuery.data ?? null
+
+  // 派生 loading / refreshing / error 状态
+  // isInitialLoading 表示首次加载（无缓存数据），对应原 loading 状态
+  const loading = statsQuery.isInitialLoading && !statistics
+  // 任一查询后台刷新中即视为"同步中"
+  const refreshing = statsQuery.isFetching && !statsQuery.isInitialLoading
+  // 优先展示统计查询错误，其次展示用量查询错误
+  const error = statsQuery.error
+    ? (statsQuery.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '加载计费数据失败'
+    : usageQuery.error
+      ? (usageQuery.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '加载用量明细失败'
+      : null
+
+  // 数据成功加载后更新"最近更新"时间戳
   useEffect(() => {
-    loadBillingData()
-  }, [loadBillingData])
+    if (statsQuery.isSuccess && statsQuery.data) {
+      setLastUpdatedAt(new Date())
+    }
+  }, [statsQuery.dataUpdatedAt, statsQuery.isSuccess, statsQuery.data])
 
+  // 监听计费用量更新事件 —— 改为 queryClient.invalidateQueries 触发后台刷新
   useEffect(() => {
     const handleUsageUpdated = () => {
-      loadBillingData({ silent: true })
+      // 失效所有 ['billing', ...] 查询，TanStack Query 会在 staleTime 后自动重新获取
+      // 此处主动触发重新获取，保证用户立即看到最新数据
+      void queryClient.invalidateQueries({ queryKey: ['billing'] })
     }
 
     window.addEventListener(BILLING_USAGE_UPDATED_EVENT, handleUsageUpdated)
     return () => window.removeEventListener(BILLING_USAGE_UPDATED_EVENT, handleUsageUpdated)
-  }, [loadBillingData])
+  }, [queryClient])
 
   const handleExport = async () => {
     try {
+      setExportError(null)
       const response = await billingAPI.getReport({ period, format: 'csv' })
       const csvContent = typeof response.data === 'string'
         ? response.data
@@ -108,8 +127,8 @@ function BillingPage() {
       a.download = `billing-report-${period}-${new Date().toISOString().split('T')[0]}.csv`
       a.click()
       window.URL.revokeObjectURL(url)
-    } catch (err) {
-      setError('导出失败')
+    } catch {
+      setExportError('导出失败')
     }
   }
 
@@ -194,6 +213,9 @@ function BillingPage() {
         </div>
       </div>
 
+      {/* 导出操作错误提示（独立于服务端查询错误） */}
+      {exportError && <div className={styles['error-message']}>{exportError}</div>}
+
       {/* 预算状态条 */}
       {budgetStatus?.has_budget_configured && (
         <div className={`${styles['budget-bar']} ${budgetStatus.is_exceeded ? styles['budget-exceeded'] : budgetStatus.is_warning ? styles['budget-warning'] : ''}`}>
@@ -245,13 +267,13 @@ function BillingPage() {
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
               <XAxis dataKey="date" stroke={CHART_COLORS.axis} fontSize={12} />
               <YAxis stroke={CHART_COLORS.axis} fontSize={12} />
-              <Tooltip 
+              <Tooltip
                 formatter={(value: number) => formatCurrencyShort(value, statistics?.currency || 'USD')}
               />
-              <Line 
-                type="monotone" 
-                dataKey="cost" 
-                stroke={CHART_COLORS.line} 
+              <Line
+                type="monotone"
+                dataKey="cost"
+                stroke={CHART_COLORS.line}
                 strokeWidth={2}
                 dot={{ fill: CHART_COLORS.line, r: 3 }}
               />

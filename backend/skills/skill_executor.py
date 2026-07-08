@@ -8,6 +8,10 @@
 代码安全校验已迁移至 security.backends.RestrictedPythonBackend（基于 RestrictedPython 的
 compile_restricted 进行 AST 级安全编译）。本模块的 execute_with_timeout 仅在 RestrictedPython
 已验证并编译字节码后执行，不直接接受用户提供的代码字符串。
+
+命令白名单、危险命令黑名单、危险参数模式等常量已迁移至
+security.command_whitelist 模块作为单一真相源，本模块通过 re-export
+保持向后兼容（_ALLOWED_SHELL_COMMANDS / _DANGEROUS_ARG_PATTERNS）。
 """
 
 import os
@@ -21,29 +25,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, NamedTuple
 from loguru import logger
 
+from security.command_whitelist import (
+    ALLOWED_COMMANDS,
+    DANGEROUS_ARG_PATTERNS,
+    is_path_allowed as _is_path_in_workspace,
+    validate_command_safety_detailed as _validate_command_safety_detailed,
+)
+
 
 # ---------------------------------------------------------------------------
-# 安全常量
+# 安全常量（向后兼容 re-export，实际定义已迁移至 security.command_whitelist）
 # ---------------------------------------------------------------------------
 
-# Shell 命令白名单（仅保留低风险命令，移除 rm/chmod/chown/xargs 等高危命令）
-_ALLOWED_SHELL_COMMANDS = frozenset([
-    'ls', 'cat', 'grep', 'find', 'echo', 'pwd',
-    'head', 'tail', 'sort', 'uniq', 'wc', 'cut', 'tr', 'tee',
-    'mkdir', 'cp', 'mv',
-    'tar', 'gzip', 'gunzip', 'zip', 'unzip',
-])
+# Shell 命令白名单（与 sandbox.py / command_executor.py 共用同一真相源）
+_ALLOWED_SHELL_COMMANDS = ALLOWED_COMMANDS
 
-# 危险参数模式（防止参数级注入）
-_DANGEROUS_ARG_PATTERNS = [
-    re.compile(r'\.\.[\\/]'),          # 路径遍历
-    re.compile(r'^[\\/]etc[\\/]'),     # /etc/ 目录
-    re.compile(r'^[\\/]root'),         # /root 目录
-    re.compile(r'^[\\/]proc'),         # /proc 目录
-    re.compile(r'^[\\/]sys'),          # /sys 目录
-    re.compile(r'[;&|`]'),             # Shell 特殊字符
-    re.compile(r'\$\('),               # 命令替换
-]
+# 危险参数模式（与 sandbox.py / command_executor.py 共用同一真相源）
+_DANGEROUS_ARG_PATTERNS = DANGEROUS_ARG_PATTERNS
 
 
 # ---------------------------------------------------------------------------
@@ -192,10 +190,10 @@ def _validate_file_path(file_path: str, base_dir: Optional[str] = None) -> Path:
         raise SecurityValidationError(f"无法解析文件路径: {e}")
 
     if base_dir:
-        base = Path(base_dir).resolve()
-        try:
-            resolved.relative_to(base)
-        except ValueError:
+        # 委托给 command_whitelist.is_path_allowed 进行 Path.resolve() + relative_to() 校验
+        # 禁止使用 str.startswith()——可被 ../ 符号链接绕过
+        if not _is_path_in_workspace(resolved, Path(base_dir)):
+            base = Path(base_dir).resolve()
             raise SecurityValidationError(
                 f"文件路径超出允许范围: {resolved!r} 不在 {base!r} 内"
             )
@@ -402,8 +400,12 @@ class SkillExecutor:
         """
         执行白名单限制的 Shell 命令。
 
-        命令必须在 _ALLOWED_SHELL_COMMANDS 白名单内，
-        参数中不允许包含危险字符（;、|、& 等），
+        命令安全校验委托给 security.command_whitelist.validate_command_safety_detailed，
+        统一三处（sandbox.py / command_executor.py / skill_executor.py）的安全基线：
+        - 危险命令黑名单（rm/sudo/mkfs/dd 等）直接拒绝
+        - 必须在 ALLOWED_COMMANDS 白名单内
+        - 参数不允许匹配 DANGEROUS_ARG_PATTERNS（路径遍历、Shell 特殊字符等）
+        - ACP 硬阻断模式（rm -rf / / sudo rm -rf / / mkfs / dd if=）直接拒绝
         使用 shell=False 模式防止 Shell 注入。
 
         Args:
@@ -434,20 +436,13 @@ class SkillExecutor:
 
         executable = command_list[0]
 
-        # 白名单校验
-        if executable not in _ALLOWED_SHELL_COMMANDS:
-            raise RuntimeError(
-                f"命令 '{executable}' 不在允许列表中。"
-                f"允许的命令: {', '.join(sorted(_ALLOWED_SHELL_COMMANDS))}"
-            )
-
-        # 参数安全校验（防止参数级注入）
-        for arg in command_list[1:]:
-            for pattern in _DANGEROUS_ARG_PATTERNS:
-                if pattern.search(arg):
-                    raise RuntimeError(
-                        f"命令参数包含不允许的字符或模式: {arg!r}"
-                    )
+        # 委托给 command_whitelist.validate_command_safety_detailed 进行统一校验
+        # 包括：危险命令黑名单 + 白名单 + 参数危险模式 + ACP 硬阻断模式（rm -rf / 等）
+        is_safe, err_msg = _validate_command_safety_detailed(
+            executable, command_list[1:]
+        )
+        if not is_safe:
+            raise RuntimeError(err_msg or "命令被安全策略拒绝")
 
         # 校验工作目录
         cwd = params.get('cwd', None)

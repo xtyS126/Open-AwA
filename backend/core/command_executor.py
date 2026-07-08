@@ -19,6 +19,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
+from security.command_whitelist import ALLOWED_COMMANDS as _ALLOWED_COMMANDS
+
 
 @dataclass
 class CommandDefinition:
@@ -54,13 +56,6 @@ class CommandDefinition:
     def _expand_shell_commands(template: str) -> str:
         """展开模板中的 !`command` shell 命令（仅允许安全命令白名单）"""
 
-        # 安全的只读命令白名单（不允许破坏性操作）
-        SAFE_COMMANDS = {
-            "git", "echo", "ls", "dir", "cat", "type", "head", "tail",
-            "wc", "find", "grep", "rg", "date", "pwd", "whoami",
-            "hostname", "uname", "env", "printenv", "which", "where",
-        }
-
         def _run_shell(match: re.Match) -> str:
             command_str = match.group(1).strip()
             if not command_str:
@@ -76,10 +71,10 @@ class CommandDefinition:
                 return "(空命令)"
 
             cmd_name = os.path.basename(args[0])  # 防止路径遍历
-            if cmd_name not in SAFE_COMMANDS:
+            if cmd_name not in _ALLOWED_COMMANDS:
                 return (
                     f"(命令被阻止: {cmd_name} 不在安全白名单中。"
-                    f"允许的命令: {', '.join(sorted(SAFE_COMMANDS))})"
+                    f"允许的命令: {', '.join(sorted(_ALLOWED_COMMANDS))})"
                 )
 
             try:

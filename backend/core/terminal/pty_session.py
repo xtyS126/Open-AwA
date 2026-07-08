@@ -2,7 +2,10 @@
 跨平台 PTY 会话抽象。
 
 Windows 平台使用 pywinpty（仅 Windows 需要安装），POSIX 平台使用标准库 pty + asyncio。
-PTYSession 维护 PTY 子进程、VT 屏幕仿真器与读取协程。
+PTYSession 维护 PTY 子进程、pyte 屏幕仿真器与读取协程。
+
+VT100/VT220/VT320 终端序列解析委托给 pyte 库（HistoryScreen + Stream），
+支持完整 CSI/SGR/DECSC/DECRC/256色/真彩色序列，可正确渲染 vim/tmux/htop 等复杂 TUI。
 """
 
 from __future__ import annotations
@@ -12,15 +15,17 @@ import os
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
+import pyte
 from loguru import logger
-
-from core.terminal.vt_screen import VTScreen
 
 # 跨平台判定
 _is_windows: bool = sys.platform == "win32"
 
 # 单次读取的缓冲区大小
 _READ_BUFFER_SIZE = 4096
+
+# pyte HistoryScreen 默认滚动历史保留行数
+_DEFAULT_SCROLLBACK_LIMIT = 1000
 
 
 class PTYSession:
@@ -61,8 +66,15 @@ class PTYSession:
         self.cols: int = max(1, cols)
         self.rows: int = max(1, rows)
 
-        # VT 屏幕仿真器
-        self.vt_screen: VTScreen = VTScreen(cols=self.cols, rows=self.rows)
+        # pyte 屏幕仿真器：HistoryScreen 自带滚动历史（history.top 为 deque）
+        # 保留 vt_screen 属性名以维持向后兼容（部分测试 mock 直接访问该属性）
+        self.vt_screen: pyte.HistoryScreen = pyte.HistoryScreen(
+            columns=self.cols,
+            lines=self.rows,
+            history=_DEFAULT_SCROLLBACK_LIMIT,
+        )
+        # Stream 绑定到 Screen，调用 feed(data) 解析 ANSI 流并更新屏幕
+        self._stream: pyte.Stream = pyte.Stream(self.vt_screen)
 
         # 子进程句柄（POSIX）或 PtyProcess（Windows）
         self.process: Optional[asyncio.subprocess.Process] = None
@@ -162,9 +174,9 @@ class PTYSession:
                 if not data_bytes:
                     # EOF：子进程已退出
                     break
-                # 解码并写入 VT 屏幕
+                # 解码并喂给 pyte Stream 解析 ANSI 流
                 data_str = data_bytes.decode("utf-8", errors="replace")
-                self.vt_screen.write(data_str)
+                self._stream.feed(data_str)
                 # 触发输出回调（如已注册）
                 if self._on_output is not None:
                     try:
@@ -274,8 +286,8 @@ class PTYSession:
         rows = max(1, rows)
         self.cols = cols
         self.rows = rows
-        # 调整 VT 屏幕大小
-        self.vt_screen.resize(cols, rows)
+        # pyte Screen.resize 第一个参数是 lines，第二个是 columns，必须用关键字参数
+        self.vt_screen.resize(lines=rows, columns=cols)
         # 调整 PTY 窗口大小
         if _is_windows:
             await self._resize_winpty(cols, rows)
@@ -329,12 +341,34 @@ class PTYSession:
     # 状态查询
     # ------------------------------------------------------------------
     def get_snapshot(self) -> List[List[str]]:
-        """返回 VT 屏幕快照（二维字符网格）。"""
-        return self.vt_screen.get_snapshot()
+        """
+        返回 VT 屏幕快照（二维字符网格）。
+
+        pyte Screen.display 返回 List[str]（每行已 pad 到 columns 宽度），
+        这里转为 List[List[str]] 以维持原接口签名。
+        """
+        return [list(line) for line in self.vt_screen.display]
 
     def get_scrollback(self, limit: int = 100) -> List[str]:
-        """返回滚动历史（字符串列表）。"""
-        return self.vt_screen.get_scrollback(limit)
+        """
+        返回滚动历史（字符串列表）。
+
+        pyte HistoryScreen.history.top 是 deque，每个元素是 {col: Char} 的行字典。
+        缺列访问返回默认 Char(data=' ')，因此 join 后每行自动 pad 到 columns 宽度。
+        """
+        if limit <= 0:
+            return []
+        history_top = self.vt_screen.history.top
+        # deque 末尾是最近滚出的行，按时间顺序取最近 limit 行
+        total = len(history_top)
+        start = max(0, total - limit)
+        columns = self.vt_screen.columns
+        result: List[str] = []
+        for i in range(start, total):
+            line = history_top[i]
+            # line[i] 在缺列时返回默认 Char(data=' ')
+            result.append("".join(line[c].data for c in range(columns)))
+        return result
 
     def is_alive(self) -> bool:
         """子进程是否仍在运行。"""

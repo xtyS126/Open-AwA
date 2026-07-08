@@ -16,12 +16,11 @@ import random
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
 
 from config.logging import generate_request_id, get_request_id
-from core.model_service import build_standard_error
 
 # LiteLLM 依赖检测
 _LITELLM_AVAILABLE = False
@@ -82,6 +81,400 @@ RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 _CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5  # 连续失败阈值
 _CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 60  # 熔断恢复等待时间（秒）
 _CIRCUIT_BREAKER_HALF_OPEN_MAX_REQUESTS = 1  # 半开状态最大请求数
+
+
+# ==================== 通用工具函数（迁移自 core/model_service.py） ====================
+# 以下常量与函数原属 model_service.py，现统一收归至 litellm_adapter 作为唯一 LLM 入口的一部分。
+
+# 客户端/服务端版本协商请求头
+CLIENT_VERSION_HEADER = "X-Client-Ver"
+SERVER_VERSION_HEADER = "X-Server-Ver"
+VERSION_STATUS_HEADER = "X-Version-Status"
+
+# Anthropic API 版本协商头
+ANTHROPIC_VERSION_HEADER = "anthropic-version"
+DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
+
+# Google Gemini API topK 取值上限（整数），用于把归一化的 0.0-1.0 浮点映射回原始区间
+GOOGLE_TOPK_MAX = 40
+
+# 全局共享的异步 HTTP 客户端，复用连接池以减少 TLS 握手与连接建立开销
+# 主要供非 LLM 路径（如 webhook 回调、健康检查）复用，LLM 调用走 litellm 自有客户端
+_shared_client: Optional["httpx.AsyncClient"] = None
+
+
+def build_standard_error(
+    code: str,
+    message: str,
+    *,
+    request_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    retryable: bool = False,
+    status_code: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    统一标准错误对象结构，便于前端和日志系统稳定解析。
+    """
+    error: Dict[str, Any] = {
+        "code": str(code or "unknown_error"),
+        "message": str(message or "Unknown error"),
+        "request_id": str(request_id or generate_request_id()),
+        "retryable": bool(retryable),
+        "details": details or {},
+    }
+    if status_code is not None:
+        error["status_code"] = int(status_code)
+    return error
+
+
+def _parse_version_tuple(version: Optional[str]) -> Tuple[int, int, int]:
+    """
+    将版本号解析为三段整数，无法识别时回退为 0.0.0，
+    这样可以在不中断请求的情况下做宽松兼容判断。
+    """
+    raw = str(version or "").strip().lstrip("vV")
+    if not raw:
+        return (0, 0, 0)
+
+    parts = raw.split(".")
+    normalized = []
+    for part in parts[:3]:
+        digits = "".join(ch for ch in part if ch.isdigit())
+        normalized.append(int(digits or "0"))
+
+    while len(normalized) < 3:
+        normalized.append(0)
+
+    return tuple(normalized[:3])  # type: ignore[return-value]
+
+
+def negotiate_version_status(
+    client_version: Optional[str],
+    server_version: Optional[str] = None,
+) -> str:
+    """
+    根据客户端与服务端版本返回一个简单的协商结果。
+    当前策略优先比较主版本，主版本一致视为兼容。
+    """
+    # 延迟导入避免循环依赖
+    from config.settings import settings
+
+    server = str(server_version or settings.VERSION).strip() or settings.VERSION
+    client = str(client_version or "").strip()
+    if not client:
+        return "server_only"
+
+    client_major, client_minor, _ = _parse_version_tuple(client)
+    server_major, server_minor, _ = _parse_version_tuple(server)
+
+    if client_major == 0 or server_major == 0:
+        return "compatible"
+    if client_major != server_major:
+        return "upgrade_required"
+    if client_minor < server_minor:
+        return "upgrade_recommended"
+    return "compatible"
+
+
+def get_shared_client() -> "httpx.AsyncClient":
+    """
+    获取全局共享的异步 HTTP 客户端实例。
+    在应用生命周期内复用同一个连接池。
+    """
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        import httpx
+        _shared_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _shared_client
+
+
+async def close_shared_client() -> None:
+    """
+    关闭全局共享的 HTTP 客户端，通常在应用关闭时调用。
+    """
+    global _shared_client
+    if _shared_client is not None and not _shared_client.is_closed:
+        await _shared_client.aclose()
+        _shared_client = None
+
+
+# ==================== 多模态与思考参数工具（迁移自 llm/utils.py） ====================
+
+
+def build_thinking_params(
+    provider: str,
+    model: str,
+    thinking_depth: int,
+    thinking_enabled: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """
+    根据厂商和模型映射思考深度到具体的 API 参数字典。
+    深度 0-5 映射策略：
+    - OpenAI (o1/o3/o4/gpt-5): reasoning_effort（0-1->low, 2-3->medium, 4-5->high）
+    - Anthropic (Claude 4.6/4.7): thinking.type=adaptive + output_config.effort（low/medium/high/xhigh/max）
+    - Anthropic (Claude旧版): thinking.type=enabled + budget_tokens（深度*4000，最低1024）
+    - DeepSeek (V4/R1): extra_body.thinking.type=enabled/disabled + reasoning_effort（high/max）
+    - Gemini (2.5/3.0): reasoning_effort（none/low/medium/high）
+    - Zhipu GLM: thinking.type=enabled/disabled
+    - Aliyun Qwen/QwQ: extra_body={"enable_thinking": True/False}
+    - 其他模型返回空字典
+    """
+    from billing.pricing_manager import PricingManager
+
+    # 兼容 thinking_depth 未传入或为 None 的情况，避免 None < int 比较失败
+    if thinking_depth is None:
+        thinking_depth = 0
+
+    normalized = PricingManager.normalize_provider(provider)
+    if not model:
+        return {}
+
+    model_lower = model.lower()
+
+    # 处理明确关闭思考的情况
+    if thinking_enabled is False:
+        if normalized == "deepseek" or "deepseek" in model_lower:
+            # V4 系列不支持 thinking 参数，关闭思考时需用 reasoning_effort
+            if any(v4_prefix in model_lower for v4_prefix in ("deepseek-v4", "deepseek_v4")):
+                return {"extra_body": {"reasoning_effort": "none"}}
+            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        if normalized == "google" or "gemini" in model_lower:
+            return {"reasoning_effort": "none"}
+        if normalized == "zhipu" and "glm" in model_lower:
+            return {"thinking": {"type": "disabled"}}
+        if normalized == "aliyun" or "qwen" in model_lower or "qwq" in model_lower:
+            return {"extra_body": {"enable_thinking": False}}
+        return {}
+
+    # 如果没有开启思考，且 depth < 1，返回空
+    if thinking_depth < 1 and thinking_enabled is not True:
+        return {}
+
+    # OpenAI (o系列/gpt-5)
+    if normalized in ("openai",) and any(
+        model_lower.startswith(prefix) for prefix in ("o1", "o3", "o4", "gpt-5")
+    ):
+        if thinking_depth <= 1:
+            effort = "low"
+        elif thinking_depth <= 3:
+            effort = "medium"
+        else:
+            effort = "high"
+        return {"reasoning_effort": effort}
+
+    # Anthropic (Claude)
+    if normalized == "anthropic":
+        # 新版 Claude 4.6/4.7 系列使用 Adaptive thinking
+        if any(v in model_lower for v in ("claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7")):
+            if thinking_depth <= 1:
+                effort = "low"
+            elif thinking_depth == 2:
+                effort = "medium"
+            elif thinking_depth == 3:
+                effort = "high"
+            elif thinking_depth == 4:
+                effort = "xhigh"
+            else:
+                effort = "max"
+            return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
+        else:
+            # 旧版使用 budget_tokens
+            budget_tokens = max(1024, thinking_depth * 4000 if thinking_depth > 0 else 4000)
+            return {"thinking": {"type": "enabled", "budget_tokens": budget_tokens}}
+
+    # DeepSeek 推理模型
+    if normalized == "deepseek" or "deepseek" in model_lower:
+        if thinking_depth <= 3:
+            effort = "high"
+        else:
+            effort = "max"
+        # V4 系列模型：仅支持 reasoning_effort，不支持 thinking 参数（thinking 为 R1 独有）
+        if any(v4_prefix in model_lower for v4_prefix in ("deepseek-v4", "deepseek_v4")):
+            return {"extra_body": {"reasoning_effort": effort}}
+        # R1/旧版推理模型：同时需要 thinking 和 reasoning_effort
+        return {
+            "extra_body": {
+                "thinking": {"type": "enabled"},
+                "reasoning_effort": effort,
+            }
+        }
+
+    # Gemini (2.5/3.0)
+    if normalized == "google" or "gemini" in model_lower:
+        if thinking_depth <= 1:
+            effort = "low"
+        elif thinking_depth <= 3:
+            effort = "medium"
+        else:
+            effort = "high"
+        return {"reasoning_effort": effort}
+
+    # Zhipu GLM 推理模型
+    if normalized == "zhipu" and "glm" in model_lower:
+        return {"thinking": {"type": "enabled"}}
+
+    # 阿里云 Qwen/QwQ 推理模型
+    if normalized == "aliyun" or "qwen" in model_lower or "qwq" in model_lower:
+        return {"extra_body": {"enable_thinking": True}}
+
+    return {}
+
+
+def build_multimodal_message(
+    text: str,
+    attachments: Optional[List[Dict[str, Any]]] = None,
+    provider: str = "",
+) -> Union[str, List[Dict[str, Any]]]:
+    """
+    根据 provider 将文本和附件构建为多模态消息格式。
+    无附件时返回纯文本字符串以保证向后兼容。
+    """
+    from billing.pricing_manager import PricingManager
+
+    if not attachments:
+        return text
+
+    normalized = PricingManager.normalize_provider(provider)
+
+    if normalized == "anthropic":
+        # Anthropic content blocks 格式
+        content_blocks: List[Dict[str, Any]] = []
+        if text:
+            content_blocks.append({"type": "text", "text": text})
+        for att in attachments:
+            att_type = att.get("type", "")
+            mime = att.get("mime_type", "")
+            data = att.get("data", "")
+            if att_type == "image":
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": data,
+                    },
+                })
+            elif att_type == "audio":
+                content_blocks.append({
+                    "type": "audio",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": data,
+                    },
+                })
+            elif att_type == "video":
+                content_blocks.append({
+                    "type": "video",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": data,
+                    },
+                })
+        return content_blocks
+
+    if normalized == "google":
+        # Google Gemini parts 格式
+        parts: List[Dict[str, Any]] = []
+        if text:
+            parts.append({"text": text})
+        for att in attachments:
+            att_type = att.get("type", "")
+            mime = att.get("mime_type", "")
+            data = att.get("data", "")
+            if att_type == "image":
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+            elif att_type == "audio":
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+            elif att_type == "video":
+                parts.append({"inline_data": {"mime_type": mime, "data": data}})
+        return parts
+
+    # OpenAI 兼容格式（OpenAI / DeepSeek / Alibaba / Moonshot / Zhipu）
+    content_parts: List[Dict[str, Any]] = []
+    if text:
+        content_parts.append({"type": "text", "text": text})
+    for att in attachments:
+        att_type = att.get("type", "")
+        mime = att.get("mime_type", "")
+        data = att.get("data", "")
+        if att_type == "image":
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{data}"},
+            })
+        elif att_type == "audio":
+            content_parts.append({
+                "type": "audio_url",
+                "audio_url": {"url": f"data:{mime};base64,{data}"},
+            })
+        elif att_type == "video":
+            content_parts.append({
+                "type": "video_url",
+                "video_url": {"url": f"data:{mime};base64,{data}"},
+            })
+    return content_parts
+
+
+def extract_reasoning_content(response_data: Dict[str, Any], provider: str = "") -> str:
+    """
+    从模型非流式响应中提取推理内容（思维链）。
+    不同 Provider 的响应格式不同，需分别处理：
+    - OpenAI/DeepSeek: choices[0].message.reasoning_content
+    - Anthropic: content blocks 中 type 为 "thinking" 的 block
+    """
+    # OpenAI / DeepSeek 兼容格式
+    choices = response_data.get("choices")
+    if isinstance(choices, list) and choices:
+        first_choice = choices[0]
+        if isinstance(first_choice, dict):
+            message = first_choice.get("message")
+            if isinstance(message, dict):
+                reasoning = message.get("reasoning_content")
+                if isinstance(reasoning, str) and reasoning:
+                    return reasoning
+
+    # Anthropic 格式：content 列表中 type 为 "thinking" 的 block
+    content = response_data.get("content")
+    if isinstance(content, list):
+        thinking_parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "thinking":
+                text = block.get("thinking", "")
+                if isinstance(text, str) and text:
+                    thinking_parts.append(text)
+        if thinking_parts:
+            return "\n".join(thinking_parts)
+
+    return ""
+
+
+def normalize_provider_name(provider: str) -> str:
+    """
+    标准化 Provider 名称。
+    将各种别名统一为规范名称。
+
+    Args:
+        provider: 原始 Provider 名称
+
+    Returns:
+        str: 标准化后的名称
+    """
+    provider = provider.lower().strip()
+
+    # 别名映射
+    aliases = {
+        "anthropic": "claude",
+        "google": "gemini",
+        "deepseek": "openai",  # DeepSeek 兼容 OpenAI 格式
+        "azure": "openai",
+    }
+
+    return aliases.get(provider, provider)
 
 
 class CircuitBreakerState:

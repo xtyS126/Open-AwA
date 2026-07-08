@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import BillingPage from '@/features/billing/BillingPage'
 import { BrowserRouter } from 'react-router-dom'
 import { BILLING_USAGE_UPDATED_EVENT } from '@/shared/events/billingEvents'
@@ -15,6 +16,33 @@ const billingMocks = vi.hoisted(() => ({
 vi.mock('@/features/billing/billingApi', () => ({
   billingAPI: billingMocks,
 }))
+
+// 每个测试独立的 QueryClient 实例，避免缓存污染
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        // 关闭重试，避免失败测试等待过久
+        retry: false,
+        // 关闭 staleTime，确保每次 mount 都重新发起查询
+        staleTime: 0,
+        gcTime: 0,
+      },
+    },
+  })
+}
+
+function renderWithQueryClient(ui: React.ReactNode) {
+  const testQueryClient = createTestQueryClient()
+  return {
+    queryClient: testQueryClient,
+    ...render(
+      <QueryClientProvider client={testQueryClient}>
+        <BrowserRouter>{ui}</BrowserRouter>
+      </QueryClientProvider>,
+    ),
+  }
+}
 
 describe('BillingPage', () => {
   beforeEach(() => {
@@ -68,14 +96,14 @@ describe('BillingPage', () => {
   })
 
   it('renders billing data and sync status', async () => {
-    render(<BrowserRouter><BillingPage /></BrowserRouter>)
+    renderWithQueryClient(<BillingPage />)
     expect(await screen.findByText('用量计费')).toBeInTheDocument()
     expect(await screen.findByText('已开启聊天用量联动')).toBeInTheDocument()
     expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument()
   })
 
   it('receives billing usage update event and refreshes silently', async () => {
-    render(<BrowserRouter><BillingPage /></BrowserRouter>)
+    renderWithQueryClient(<BillingPage />)
 
     await waitFor(() => expect(billingMocks.getCostStatistics).toHaveBeenCalledTimes(1))
 
@@ -85,6 +113,7 @@ describe('BillingPage', () => {
       }))
     })
 
+    // invalidateQueries 触发后台刷新，getCostStatistics 应被再次调用
     await waitFor(() => expect(billingMocks.getCostStatistics).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByText('已开启聊天用量联动')).toBeInTheDocument())
   })

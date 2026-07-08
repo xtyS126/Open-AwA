@@ -103,10 +103,12 @@ def _test_client():
     app.dependency_overrides[get_current_user] = override_get_current_user
     # 覆盖记忆管理器依赖，确保使用测试库的会话工厂
     app.dependency_overrides[get_memory_manager] = lambda: MemoryManager(TestingSessionLocal)
+    client = TestClient(app)
     try:
-        with TestClient(app) as client:
-            yield client
+        # 本文件只验证路由契约，避免 lifespan 写入真实用户数据库
+        yield client
     finally:
+        client.close()
         app.dependency_overrides = previous_overrides
 
 

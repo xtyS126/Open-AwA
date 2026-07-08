@@ -61,20 +61,24 @@ from config.logging import (
     set_request_id,
 )
 from core.metrics import prometheus_registry
-from core.model_service import (
+from core.litellm_adapter import (
     CLIENT_VERSION_HEADER,
     SERVER_VERSION_HEADER,
     VERSION_STATUS_HEADER,
     build_standard_error,
     close_shared_client,
+    is_litellm_available,
     negotiate_version_status,
 )
-from core.litellm_adapter import is_litellm_available
 from core.scheduled_task_manager import scheduled_task_manager
 from core.startup.profiler import StartupProfiler
 from config.security import generate_csrf_token, verify_csrf_token
 from config.settings import is_production_environment, settings
 from db.models import engine, init_db
+from security.csrf_manager import (
+    generate_csrf_token_pair,
+    validate_csrf_request,
+)
 
 
 init_logging(
@@ -750,7 +754,7 @@ def _startup_mcp_sse_origin(profiler: StartupProfiler) -> None:
     （SSETransport 在白名单为空时允许所有 origin，仅适用于开发环境）。
     """
     with profiler.step("mcp_sse_origin_config"):
-        from mcp.transport import SSETransport
+        from mcp.manager import SSETransport
 
         raw_origins = os.getenv("MCP_SSE_ALLOWED_ORIGINS", "")
         origins = [item.strip() for item in raw_origins.split(",") if item.strip()]
@@ -943,27 +947,34 @@ async def get_csrf_token(request: Request):
     """
     返回当前用户会话的 CSRF token（需认证）。
 
-    前端在登录后调用此接口获取 per-session CSRF token，
+    前端在登录后调用此接口获取 CSRF token，
     存储在 JS 内存中，在状态变更请求时通过 X-CSRF-Token header 发送。
+    同时后端将签名 token 写入 Cookie（双提交 Cookie 模式），
+    中间件校验 header 中的原始 token 与 Cookie 中的签名 token 是否匹配。
     """
     user_id = await _extract_user_id_from_request(request)
     if user_id is None:
         raise FastAPIHTTPException(status_code=401, detail="Authentication required")
-    csrf_token = generate_csrf_token(user_id)
-    return {"csrf_token": csrf_token}
+    # 兼容旧版 per-session 签名 token（前端内存缓存路径，向后兼容）
+    legacy_token = generate_csrf_token(user_id)
+    # 同时通过 fastapi-csrf-protect 生成双提交 Cookie 模式的 token 对
+    # 签名 token 写入 Cookie，原始 token 返回给前端
+    raw_token, _ = generate_csrf_token_pair(response=None)
+    return {"csrf_token": raw_token, "legacy_csrf_token": legacy_token}
 
 
 @app.middleware("http")
 async def csrf_protection_middleware(request: Request, call_next):
     """
-    Per-session 签名 Token 模式的 CSRF 保护中间件。
+    双提交 Cookie 模式的 CSRF 保护中间件（基于 fastapi-csrf-protect）。
 
     对 POST/PUT/DELETE/PATCH 请求校验 X-CSRF-Token header：
-    1. 验证 token 签名和有效期
-    2. 提取 token 中绑定的 user_id
-    3. 与请求中认证用户的 user_id 比对，确保一一对应
+    1. 从 Cookie 中读取签名 token
+    2. 从 header 中读取原始 token
+    3. 校验签名 token 与原始 token 是否匹配（fastapi-csrf-protect 内部完成）
 
-    Bearer token 认证的请求自动跳过 CSRF 校验（CSRF 仅对 Cookie 认证有意义）。
+    Bearer token 认证的请求（且无 Cookie）自动跳过 CSRF 校验
+    （CSRF 仅对 Cookie 认证有意义）。
     WebSocket 连接和豁免路径跳过校验。
     """
     path = request.url.path
@@ -980,8 +991,6 @@ async def csrf_protection_middleware(request: Request, call_next):
     # 对 Bearer token 认证的请求进行 CSRF 豁免判断：
     # 安全策略：仅当请求未携带任何 Cookie 时才豁免 CSRF 校验。
     # 原因：CSRF 攻击依赖浏览器自动携带 Cookie，若请求无 Cookie，则 CSRF 无攻击面。
-    # 不再尝试通过格式检测区分 JWT / API Key（旧的 JWT 格式检测可被构造绕过，
-    # 例如构造 3 段含非 base64 字符的 Bearer token 即可被判定为 "API Key" 而绕过 CSRF）。
     # 若请求同时携带 Cookie（可能存在基于 Cookie 的会话），即使有 Bearer header 也继续校验 CSRF。
     auth_header = request.headers.get("Authorization", "")
     has_cookie = bool(request.headers.get("cookie", ""))
@@ -1002,9 +1011,8 @@ async def csrf_protection_middleware(request: Request, call_next):
                 },
             )
 
-        # 验证 CSRF token 签名和有效期
-        csrf_payload = verify_csrf_token(header_token)
-        if csrf_payload is None:
+        # 通过 fastapi-csrf-protect 校验 header 中的原始 token 与 Cookie 中的签名 token 是否匹配
+        if not validate_csrf_request(request):
             return JSONResponse(
                 status_code=403,
                 content={
@@ -1014,19 +1022,20 @@ async def csrf_protection_middleware(request: Request, call_next):
                 },
             )
 
-        # 提取请求中的认证用户 ID 并与 CSRF token 中绑定的用户比对
-        request_user_id = await _extract_user_id_from_request(request)
-        if request_user_id is None or request_user_id != csrf_payload["sub"]:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "error": "csrf_user_mismatch",
-                    "message": "CSRF token 与当前用户不匹配",
-                    "detail": "CSRF token user mismatch",
-                },
-            )
-
     response = await call_next(request)
+    # 对状态变更请求的响应自动刷新 CSRF Cookie（token 轮换）
+    # fastapi-csrf-protect 的双提交模式下，每次响应都重新签发 Cookie 可保持 token 不过期
+    if method in _CSRF_CHECKED_METHODS and path not in _CSRF_EXEMPT_PATHS:
+        try:
+            _, signed_token = generate_csrf_token_pair(response=None)
+            # 仅在响应是 JSONResponse 时设置 Cookie（避免对 StreamingResponse 等造成副作用）
+            if isinstance(response, JSONResponse):
+                from security.csrf_manager import get_csrf_protect
+                get_csrf_protect().set_csrf_cookie(signed_token, response)
+        except Exception as exc:
+            logger.bind(event="csrf_cookie_refresh_failed", module="main").debug(
+                f"CSRF Cookie 刷新失败（不影响主流程）: {exc}"
+            )
     return response
 
 

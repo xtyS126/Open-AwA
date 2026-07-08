@@ -105,6 +105,24 @@ describe('executionMeta', () => {
     expect(meta.toolEvents[0].subagent?.errorText).toContain('KeyError')
   })
 
+  it('保留前台子代理的运行模式直到任务结束', () => {
+    let meta = applySubagentStart(createEmptyExecutionMeta(), {
+      agentId: 'agt-foreground',
+      agentType: 'planner',
+      description: '前台任务',
+      runMode: 'foreground',
+    })
+
+    meta = applySubagentStop(meta, {
+      agentId: 'agt-foreground',
+      agentType: 'planner',
+      state: 'completed',
+      summary: '前台任务完成',
+    })
+
+    expect(meta.toolEvents[0].subagent?.runMode).toBe('foreground')
+  })
+
   it('在超过 20 个子代理容器时隐藏最早完成的容器', () => {
     let meta = createEmptyExecutionMeta()
 

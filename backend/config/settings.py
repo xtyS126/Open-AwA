@@ -128,7 +128,8 @@ class Settings(BaseSettings):
     MOONSHOT_BASE_URL: str = "https://api.moonshot.cn/v1"
     
     # 矢量数据库路径，基于 backend 目录碟定绝对路径，避免工作目录不同导致路径错误
-    VECTOR_DB_PATH: str = str(Path(__file__).resolve().parents[1] / "data" / "vector_db")
+    # Qdrant 嵌入式模式使用该目录持久化数据（替代 ChromaDB）
+    VECTOR_DB_PATH: str = str(Path(__file__).resolve().parents[1] / "data" / "qdrant")
 
     # API Key 认证配置（单用户模式）
     # 全局 API Key，未设置时启动时自动生成并写入 .env.local

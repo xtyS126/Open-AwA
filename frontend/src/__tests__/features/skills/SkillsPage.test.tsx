@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SkillsPage from '@/features/skills/SkillsPage'
 import { BrowserRouter } from 'react-router-dom'
 
@@ -32,6 +33,18 @@ vi.mock('@/features/settings/modelsApi', () => ({
   }
 }))
 
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        gcTime: 0,
+      },
+    },
+  })
+}
+
 describe('SkillsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -40,7 +53,11 @@ describe('SkillsPage', () => {
   it('在加载技能失败时显示错误提示', async () => {
     getAllMock.mockRejectedValueOnce({ response: { data: { detail: '技能服务暂不可用' } } })
 
-    render(<BrowserRouter><SkillsPage /></BrowserRouter>)
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <BrowserRouter><SkillsPage /></BrowserRouter>
+      </QueryClientProvider>,
+    )
 
     expect(await screen.findByText('技能服务暂不可用')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试加载' })).toBeInTheDocument()

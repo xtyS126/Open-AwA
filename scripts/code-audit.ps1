@@ -39,9 +39,9 @@ function Write-ColorLine($Text, $Color) {
     else { Write-Host "  [INFO] $Text" }
 }
 
-function Add-Pass($Check) { $global:Passes += $Check; Write-ColorLine $Check 'Green' }
-function Add-Fail($Check) { $global:Failures += $Check; Write-ColorLine $Check 'Red' }
-function Add-Warn($Check) { $global:Warnings += $Check; Write-ColorLine $Check 'Yellow' }
+function Add-Pass($Check) { $script:Passes += $Check; Write-ColorLine $Check 'Green' }
+function Add-Fail($Check) { $script:Failures += $Check; Write-ColorLine $Check 'Red' }
+function Add-Warn($Check) { $script:Warnings += $Check; Write-ColorLine $Check 'Yellow' }
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -238,16 +238,18 @@ foreach ($file in $changedTextFiles) {
     if (-not (Test-Path $fullPath)) { continue }
     if ($file -match '__tests__|\.test\.|\.spec\.') { continue }
 
-    $rawContent = Get-Content $fullPath -Raw -ErrorAction SilentlyContinue
+    $rawContent = Get-Content $fullPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
     if (-not $rawContent) { continue }
 
-    $emojiMatches = [regex]::Matches($rawContent, '[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F1E0}-\x{1F1FF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}\x{FE00}-\x{FE0F}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}]')
+    # 使用 UTF-16 代理项表达补充平面字符，兼容 Windows PowerShell 5.1 的 .NET 正则实现
+    $emojiPattern = '[\u2600-\u27BF\uFE00-\uFE0F]|(?:\uD83C[\uDDE0-\uDDFF\uDF00-\uDFFF])|(?:\uD83D[\uDC00-\uDEFF])|(?:\uD83E[\uDD00-\uDEFF])'
+    $emojiMatches = [regex]::Matches($rawContent, $emojiPattern)
     foreach ($m in $emojiMatches) {
         $emojiFound = $true
         Add-Fail "Emoji: $file contains emoji '$($m.Value)'"
     }
 
-    $lines = Get-Content $fullPath -ErrorAction SilentlyContinue
+    $lines = Get-Content $fullPath -Encoding UTF8 -ErrorAction SilentlyContinue
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match '\bdebugger\b') {
             $debugFound = $true
@@ -354,7 +356,30 @@ if ($totalFailures -eq 0) {
     $reportLines += "Result: FAILED - fix issues before commit"
 }
 
-$reportLines -join "`n" | Out-File -FilePath $ReportFile -Encoding UTF8
+$reportTempFile = "$ReportFile.tmp"
+try {
+    # 先写同目录临时文件再原子替换，避免历史报告的只读 ACL 阻断本次审计
+    $reportLines -join "`n" | Out-File -FilePath $reportTempFile -Encoding UTF8 -Force -ErrorAction Stop
+    if (Test-Path -LiteralPath $ReportFile) {
+        try {
+            Remove-Item -LiteralPath $ReportFile -Force -ErrorAction Stop
+        }
+        catch {
+            # 旧报告可能由管理员账户创建，当前账户无法删除时保留旧文件并改写新报告
+            $reportTimestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $ReportFile = Join-Path $RepoRoot "reports\audit-result-$reportTimestamp.txt"
+        }
+    }
+    Move-Item -LiteralPath $reportTempFile -Destination $ReportFile -Force -ErrorAction Stop
+}
+catch {
+    Write-Host "  [FAIL] Cannot write audit report: $($_.Exception.Message)" -ForegroundColor Red
+    if (Test-Path -LiteralPath $reportTempFile) {
+        Remove-Item -LiteralPath $reportTempFile -Force -ErrorAction SilentlyContinue
+    }
+    Pop-Location
+    exit 1
+}
 
 Pop-Location
 

@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import PluginsPage from '@/features/plugins/PluginsPage'
 import { pluginsAPI } from '@/shared/api/api'
 import { getPlugins, searchPlugins, installPlugin, getPluginRating } from '@/features/plugins/marketplaceApi'
@@ -50,6 +51,28 @@ const authorizePermissionsMock = pluginsAPI.authorizePermissions as ReturnType<t
 const revokePermissionsMock = pluginsAPI.revokePermissions as ReturnType<typeof vi.fn>
 const uploadMock = pluginsAPI.upload as ReturnType<typeof vi.fn>
 const importFromUrlMock = pluginsAPI.importFromUrl as ReturnType<typeof vi.fn>
+
+// 每个测试独立的 QueryClient 实例，避免缓存污染（usePluginList 现已使用 TanStack Query）
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        gcTime: 0,
+      },
+    },
+  })
+}
+
+/** 包裹 QueryClientProvider 的渲染辅助函数 */
+function renderWithProviders(ui: React.ReactNode) {
+  return render(
+    <QueryClientProvider client={createTestQueryClient()}>
+      <BrowserRouter>{ui}</BrowserRouter>
+    </QueryClientProvider>,
+  )
+}
 
 describe('PluginsPage permissions', () => {
   beforeEach(() => {
@@ -102,13 +125,11 @@ describe('PluginsPage permissions', () => {
   })
 
   it('应显示权限弹窗并可授权缺失权限', async () => {
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
-    await waitFor(() => {
-      expect(pluginsAPI.getAll).toHaveBeenCalled()
-    })
-
-    fireEvent.click(screen.getByText('权限'))
+    // 等待 usePluginList 的 queryFn 完成并渲染插件卡片（包含「权限」按钮）
+    const permissionButton = await screen.findByText('权限')
+    fireEvent.click(permissionButton)
 
     await waitFor(() => {
       expect(pluginsAPI.getPermissions).toHaveBeenCalledWith('plugin-1')
@@ -146,13 +167,11 @@ describe('PluginsPage permissions', () => {
         },
       })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
-    await waitFor(() => {
-      expect(pluginsAPI.getAll).toHaveBeenCalled()
-    })
-
-    fireEvent.click(screen.getByText('权限'))
+    // 等待 usePluginList 的 queryFn 完成并渲染插件卡片（包含「权限」按钮）
+    const permissionButton = await screen.findByText('权限')
+    fireEvent.click(permissionButton)
 
     await waitFor(() => {
       expect(screen.getByText('撤销')).toBeInTheDocument()
@@ -175,7 +194,7 @@ describe('PluginsPage permissions', () => {
       ],
     })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(pluginsAPI.getAll).toHaveBeenCalled()
@@ -216,7 +235,7 @@ describe('PluginsPage permissions', () => {
       ],
     })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByText('作者：config-author')).toBeInTheDocument()
@@ -291,7 +310,7 @@ describe('PluginsPage builtin plugins section', () => {
   // ==================== 分组渲染测试（5 个用例）====================
   describe('分组渲染', () => {
     it('renders user plugins section: 应渲染用户插件分区标题', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('用户插件')).toBeInTheDocument()
@@ -299,7 +318,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('renders builtin plugins section: 应渲染系统内置插件分区标题与描述', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         // 分区标题来自 i18n key plugins.section.builtin
@@ -318,7 +337,7 @@ describe('PluginsPage builtin plugins section', () => {
         ],
       })
 
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('用户插件')).toBeInTheDocument()
@@ -328,7 +347,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('renders correct count badge for each section: 各分区计数徽章正确', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -344,7 +363,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('renders builtin plugin with correct name: 内置插件名称与版本正确渲染', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         // 卡片头部应显示完整的插件名称
@@ -358,7 +377,7 @@ describe('PluginsPage builtin plugins section', () => {
   // ==================== 按钮禁用测试（6 个用例）====================
   describe('按钮禁用', () => {
     it('does not render uninstall button for builtin plugin: 内置插件卡片不渲染卸载按钮', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -371,7 +390,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('disables toggle button for builtin plugin: 内置插件禁用按钮被禁用', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -387,7 +406,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('does not render checkbox for builtin plugin: 内置插件卡片不渲染复选框', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -400,7 +419,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('shows tooltip explaining why button is disabled: 内置插件禁用按钮 Tooltip 提示文案正确', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -415,7 +434,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('keeps view config button enabled for builtin plugin: 内置插件设置按钮保持可用', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -428,7 +447,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('keeps all action buttons enabled for user plugin: 用户插件禁用与卸载按钮均启用', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('alpha-plugin')).toBeInTheDocument()
@@ -452,7 +471,7 @@ describe('PluginsPage builtin plugins section', () => {
   // ==================== 交互拦截测试（3 个用例）====================
   describe('交互拦截', () => {
     it('clicking toggle on builtin plugin does not call toggle api: 内置插件点击禁用按钮不触发 toggle API', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -468,7 +487,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('builtin plugin has no uninstall button so uninstall api never called: 内置插件无卸载按钮，uninstall API 不会被调用', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -481,7 +500,7 @@ describe('PluginsPage builtin plugins section', () => {
     })
 
     it('clicking view config on builtin plugin navigates to config page: 内置插件点击设置按钮跳转到配置页', async () => {
-      render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+      renderWithProviders(<PluginsPage />)
 
       await waitFor(() => {
         expect(screen.getByText('openbiliclaw-builtin')).toBeInTheDocument()
@@ -568,7 +587,7 @@ describe('PluginsPage 市场 Tab', () => {
   }
 
   it('应加载市场插件并支持分类筛选', async () => {
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     // 先等待已安装 Tab 渲染完成
     await waitFor(() => {
@@ -591,7 +610,7 @@ describe('PluginsPage 市场 Tab', () => {
   })
 
   it('应支持搜索并展示搜索结果', async () => {
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -614,7 +633,7 @@ describe('PluginsPage 市场 Tab', () => {
   })
 
   it('应在安装成功后显示已安装状态', async () => {
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -639,7 +658,7 @@ describe('PluginsPage 市场 Tab', () => {
     ;(installPlugin as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
       response: { data: { detail: '服务异常' } },
     })
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -718,7 +737,7 @@ describe('PluginsPage 市场 Tab 内置插件过滤', () => {
       },
     })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -770,7 +789,7 @@ describe('PluginsPage 市场 Tab 内置插件过滤', () => {
       },
     })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -809,7 +828,7 @@ describe('PluginsPage 市场 Tab 内置插件过滤', () => {
       },
     })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -854,7 +873,7 @@ describe('PluginsPage 市场 Tab 本地安装工具栏', () => {
   })
 
   it('应在本地导入时校验 zip 扩展名与文件大小', async () => {
-    const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    const { container } = renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -887,7 +906,7 @@ describe('PluginsPage 市场 Tab 本地安装工具栏', () => {
   it('应在远程导入时去除 URL 首尾空白并成功调用接口', async () => {
     importFromUrlMock.mockResolvedValue({ data: { message: 'ok' } })
 
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -911,7 +930,7 @@ describe('PluginsPage 市场 Tab 本地安装工具栏', () => {
 
   it('应在本地 zip 导入成功后刷新列表并提示成功', async () => {
     uploadMock.mockResolvedValue({ data: { message: 'ok' } })
-    const { container } = render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    const { container } = renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()
@@ -935,7 +954,7 @@ describe('PluginsPage 市场 Tab 本地安装工具栏', () => {
   })
 
   it('应在远程 URL 为空时给出提示且不发起导入请求', async () => {
-    render(<BrowserRouter><PluginsPage /></BrowserRouter>)
+    renderWithProviders(<PluginsPage />)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /已安装/ })).toBeInTheDocument()

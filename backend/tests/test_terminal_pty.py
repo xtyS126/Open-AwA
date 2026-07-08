@@ -40,7 +40,10 @@ from main import app
 class FakePTY:
     """
     PTYSession 的 mock 实现，避免在测试中启动真实 PTY 子进程。
-    通过直接驱动 vt_screen.write 来模拟 PTY 输出。
+    通过直接驱动 pyte.Stream.feed 来模拟 PTY 输出。
+
+    终端序列解析逻辑与 PTYSession 保持一致（pyte.HistoryScreen + pyte.Stream），
+    但跳过真实 PTY 子进程管理，仅用于测试 PTYTerminalSession 的 WebSocket 协议层。
     """
 
     def __init__(
@@ -59,9 +62,11 @@ class FakePTY:
         self._on_output = on_output
         self._closed: bool = False
         self._started: bool = False
-        # 复用真实 VTScreen 以便 vt_screen 行为可测试
-        from core.terminal.vt_screen import VTScreen
-        self.vt_screen = VTScreen(cols=cols, rows=rows)
+        # 复用 pyte.HistoryScreen + pyte.Stream 模拟 PTY 输出解析
+        # 与 PTYSession 的终端逻辑保持镜像，便于 feed_output 驱动屏幕状态
+        import pyte
+        self.vt_screen = pyte.HistoryScreen(columns=cols, lines=rows, history=1000)
+        self._stream = pyte.Stream(self.vt_screen)
         self.written_data: List[str] = []
 
     async def start(self) -> None:
@@ -73,13 +78,24 @@ class FakePTY:
     async def resize(self, cols: int, rows: int) -> None:
         self.cols = cols
         self.rows = rows
-        self.vt_screen.resize(cols, rows)
+        # pyte Screen.resize 第一个参数是 lines，第二个是 columns
+        self.vt_screen.resize(lines=rows, columns=cols)
 
     def get_snapshot(self) -> List[List[str]]:
-        return self.vt_screen.get_snapshot()
+        return [list(line) for line in self.vt_screen.display]
 
     def get_scrollback(self, limit: int = 100) -> List[str]:
-        return self.vt_screen.get_scrollback(limit)
+        if limit <= 0:
+            return []
+        history_top = self.vt_screen.history.top
+        total = len(history_top)
+        start = max(0, total - limit)
+        columns = self.vt_screen.columns
+        result: List[str] = []
+        for i in range(start, total):
+            line = history_top[i]
+            result.append("".join(line[c].data for c in range(columns)))
+        return result
 
     def is_alive(self) -> bool:
         return not self._closed
@@ -89,7 +105,7 @@ class FakePTY:
 
     def feed_output(self, data: str) -> None:
         """测试辅助：模拟 PTY 子进程输出数据。"""
-        self.vt_screen.write(data)
+        self._stream.feed(data)
         if self._on_output is not None:
             self._on_output(data)
 
@@ -135,7 +151,8 @@ def _override_auth(monkeypatch):
     monkeypatch.setattr(terminal_route, "decode_access_token", lambda token: {"sub": "tester"})
     monkeypatch.setattr(terminal_route, "SessionLocal", lambda: FakeSession())
     # 测试环境跳过 Origin 校验（Origin 检查由独立的 Origin 校验测试覆盖）
-    monkeypatch.setattr(terminal_route, "_is_origin_allowed", lambda origin: True)
+    # 终端路由已改为从 api.security.ws_auth 导入 validate_ws_origin，patch 模块内的引用即可生效
+    monkeypatch.setattr(terminal_route, "validate_ws_origin", lambda origin: True)
 
     # 覆盖 HTTP 依赖（WebSocket 用自己的鉴权）
     def _override_user():

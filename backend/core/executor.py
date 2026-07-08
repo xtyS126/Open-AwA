@@ -18,10 +18,8 @@ from loguru import logger
 from config.logging import generate_request_id, get_request_id, sanitize_for_logging
 from config.settings import settings
 from core.metrics import record_model_service_metric, record_tool_execution_metric
-from core.model_service import (
-    build_standard_error,
-)
 from core.litellm_adapter import (
+    build_standard_error,
     litellm_chat_completion,
     litellm_chat_completion_stream,
 )

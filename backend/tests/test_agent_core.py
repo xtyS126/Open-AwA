@@ -565,7 +565,7 @@ class TestMultimodalAndThinking:
         attachments = [{"type": "image", "url": "https://example.com/img.png"}]
         ctx = {"attachments": attachments, "provider": "openai", "model": "gpt-4o"}
 
-        with patch("core.model_service.build_multimodal_message") as mock_build:
+        with patch("core.litellm_adapter.build_multimodal_message") as mock_build:
             mock_build.return_value = [{"type": "text", "text": "你好"}, {"type": "image_url", "image_url": {"url": "..."}}]
             agent._build_multimodal_context("你好", ctx)
             mock_build.assert_called_once_with("你好", attachments, "openai")
@@ -588,7 +588,7 @@ class TestMultimodalAndThinking:
             "model": "gpt-4o",
         }
 
-        with patch("core.model_service.build_thinking_params") as mock_build:
+        with patch("core.litellm_adapter.build_thinking_params") as mock_build:
             mock_build.return_value = {"type": "enabled", "budget_tokens": 4000}
             agent._build_thinking_context(ctx)
             mock_build.assert_called_once_with("openai", "gpt-4o", 2, True)
@@ -603,7 +603,7 @@ class TestMultimodalAndThinking:
             "model": "gpt-4o",
         }
 
-        with patch("core.model_service.build_thinking_params") as mock_build:
+        with patch("core.litellm_adapter.build_thinking_params") as mock_build:
             mock_build.return_value = None
             agent._build_thinking_context(ctx)
             assert "_thinking_params" not in ctx

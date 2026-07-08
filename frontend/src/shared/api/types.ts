@@ -1,7 +1,14 @@
 /**
  * API 共享类型定义。
  * 从原 api.ts 提取，供各域 API 模块引用。
+ *
+ * 部分类型已从 OpenAPI 自动生成的 schema.d.ts 推断，覆盖 billing/plugins/memory/skills 相关接口；
+ * 其余仍为手工镜像类型，待后续逐步迁移。
  */
+import type { components } from './schema'
+
+/** 从 OpenAPI schema 推断的组件类型别名，便于在下方引用 */
+type Schemas = components['schemas']
 
 export type ApiPayload = Record<string, unknown>
 export type ApiObject = Record<string, unknown>
@@ -43,16 +50,8 @@ export interface ChatStreamEvent {
 }
 
 // ---- 技能 API 响应类型 ----
-export interface SkillItem {
-  id: string
-  name: string
-  version?: string | null
-  description?: string | null
-  config?: Record<string, unknown> | null
-  enabled: boolean
-  installed_at?: string
-  [key: string]: unknown
-}
+// 从 OpenAPI schema.d.ts 推断；不带交叉索引签名，避免与历史调用方结构兼容性检查退化属性类型
+export type SkillItem = Schemas['SkillResponse']
 
 // GET /skills 返回裸数组
 export type SkillsListResponse = SkillItem[]
@@ -66,19 +65,8 @@ export interface SkillParseUploadResponse {
 }
 
 // ---- 插件 API 响应类型 ----
-export interface PluginItem {
-  id: string
-  name: string
-  version?: string | null
-  enabled: boolean
-  installed_at?: string
-  runtime_loaded?: boolean | null
-  runtime_state?: string | null
-  category?: string | null
-  author?: string | null
-  source?: string | null
-  [key: string]: unknown
-}
+// 从 OpenAPI schema.d.ts 推断；不带交叉索引签名，避免与 Plugin 接口结构兼容性检查时退化属性类型
+export type PluginItem = Schemas['PluginResponse']
 
 // GET /plugins 返回裸数组
 export type PluginsListResponse = PluginItem[]
@@ -108,28 +96,11 @@ export interface PluginInstallResponse {
 }
 
 // ---- 记忆 API 响应类型 ----
-export interface ShortTermMemoryItem {
-  id: number
-  session_id: string
-  role: string
-  content: string
-  timestamp: string
-  [key: string]: unknown
-}
+// 从 OpenAPI schema.d.ts 推断；不带交叉索引签名，避免结构兼容性检查退化属性类型
+export type ShortTermMemoryItem = Schemas['ShortTermMemoryResponse']
 
-export interface LongTermMemoryItem {
-  id: number
-  content: string
-  importance: number
-  created_at?: string
-  access_count?: number
-  last_access?: string
-  confidence?: number
-  quality_score?: number
-  archive_status?: string
-  memory_metadata?: Record<string, unknown>
-  [key: string]: unknown
-}
+// 从 OpenAPI schema.d.ts 推断；不带交叉索引签名，避免结构兼容性检查退化属性类型
+export type LongTermMemoryItem = Schemas['LongTermMemoryResponse']
 
 // GET /memory/short-term/{sessionId} 返回裸数组
 export type ShortTermMemoryListResponse = ShortTermMemoryItem[]

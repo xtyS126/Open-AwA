@@ -6,25 +6,34 @@ from datetime import datetime, timezone, time as dt_time
 from pathlib import Path
 from typing import Any, Optional, Callable
 
+from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 
-# Cron 解析辅助：简单的五段 cron 支持
-_CRON_RE = re.compile(
-    r'^(\*|\d+(?:-\d+)?(?:/\d+)?(?:,\d+(?:-\d+)?(?:/\d+)?)*)\s+'
-    r'(\*|\d+(?:-\d+)?(?:/\d+)?(?:,\d+(?:-\d+)?(?:/\d+)?)*)\s+'
-    r'(\*|\d+(?:-\d+)?(?:/\d+)?(?:,\d+(?:-\d+)?(?:/\d+)?)*)\s+'
-    r'(\*|\d+(?:-\d+)?(?:/\d+)?(?:,\d+(?:-\d+)?(?:/\d+)?)*)\s+'
-    r'(\*|\d+(?:-\d+)?(?:/\d+)?(?:,\d+(?:-\d+)?(?:/\d+)?)*)$'
-)
+
+def _is_cron_expression(every: str) -> bool:
+    """
+    判断字符串是否为有效的五段 cron 表达式。
+    委托给 APScheduler CronTrigger.from_crontab 进行校验，
+    替代原自实现的 _CRON_RE 正则。
+    """
+    if not every or not isinstance(every, str):
+        return False
+    try:
+        CronTrigger.from_crontab(every, timezone="UTC")
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def _parse_interval(every: str) -> int:
     """
     解析间隔字符串为秒数。
     支持格式: "30s", "5m", "1h", "2h30m", "90s"
+    若为 cron 表达式则返回 0（实际调度由 ScheduledTaskManager 内的 APScheduler 处理）。
     """
-    if _CRON_RE.match(every):
-        return 0  # Cron 表达式由调度器处理
+    # cron 表达式判定委托给 CronTrigger.from_crontab
+    if _is_cron_expression(every):
+        return 0
 
     total_seconds = 0
     parts = re.findall(r'(\d+)(s|m|h)', every)
@@ -37,17 +46,6 @@ def _parse_interval(every: str) -> int:
         elif unit == 'h':
             total_seconds += v * 3600
     return total_seconds or 21600  # 默认 6 小时
-
-
-def _is_cron_match(cron_expr: str, dt: datetime) -> bool:
-    """
-    检查给定时间是否匹配 cron 表达式（简化实现）。
-    """
-    if not _CRON_RE.match(cron_expr):
-        return False
-    parts = cron_expr.split()
-    # 简化实现：只做每分钟检查
-    return True  # 实际调度由 ScheduledTaskManager 处理
 
 
 class HeartbeatEngine:

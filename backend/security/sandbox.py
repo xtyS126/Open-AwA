@@ -3,6 +3,10 @@
 
 所有命令执行和文件操作必须经过权限检查和路径校验，
 防止命令注入、路径遍历等安全漏洞。
+
+命令白名单、危险命令黑名单、危险参数模式等常量已迁移至
+security.command_whitelist 模块作为单一真相源，本模块通过 re-export
+保持向后兼容（_ALLOWED_COMMANDS / _DANGEROUS_COMMANDS / _DANGEROUS_ARG_PATTERNS）。
 """
 
 import asyncio
@@ -14,37 +18,20 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from config.settings import settings
 from security.command_validators import ValidationResult, validate_command
+from security.command_whitelist import (
+    ALLOWED_COMMANDS,
+    DANGEROUS_COMMANDS,
+    DANGEROUS_ARG_PATTERNS,
+    is_path_allowed as _is_path_in_workspace,
+    validate_command_safety_detailed as _validate_command_safety_detailed,
+)
 
 
-# 允许执行的命令白名单（仅包含安全的只读或低风险命令）
-_ALLOWED_COMMANDS = frozenset([
-    'ls', 'cat', 'grep', 'find', 'echo', 'pwd',
-    'head', 'tail', 'sort', 'uniq', 'wc', 'cut',
-    'mkdir', 'cp', 'mv',
-    'tar', 'gzip', 'gunzip', 'zip', 'unzip',
-    'diff', 'du', 'df', 'file', 'stat',  # 只读诊断命令
-])
-
-# 危险命令黑名单（即使在白名单中也拒绝）
-_DANGEROUS_COMMANDS = frozenset([
-    'rm', 'chmod', 'chown', 'xargs', 'awk', 'sed',
-    'dd', 'mkfs', 'fdisk', 'mount', 'umount',
-    'sudo', 'su', 'bash', 'sh', 'zsh', 'fish',
-    'python', 'python3', 'perl', 'ruby', 'node',
-    'curl', 'wget', 'nc', 'netcat', 'ncat',
-])
-
-# 危险参数模式（正则）
-_DANGEROUS_ARG_PATTERNS = [
-    re.compile(r'\.\.[\\/]'),          # 路径遍历 ../
-    re.compile(r'^[\\/]etc[\\/]'),     # /etc/ 目录
-    re.compile(r'^[\\/]root'),         # /root 目录
-    re.compile(r'^[\\/]proc'),         # /proc 目录
-    re.compile(r'^[\\/]sys'),          # /sys 目录
-    re.compile(r'[;|`$]'),             # Shell 命令分隔符和变量引用（& 已移除：create_subprocess_exec 非 shell 模式无意义）
-    re.compile(r'\$\('),               # 命令替换
-    re.compile(r'`'),                  # 反引号命令替换
-]
+# 向后兼容：原 sandbox.py 内部白名单/黑名单/参数模式常量
+# 实际定义已迁移至 security.command_whitelist 作为单一真相源
+_ALLOWED_COMMANDS = ALLOWED_COMMANDS
+_DANGEROUS_COMMANDS = DANGEROUS_COMMANDS
+_DANGEROUS_ARG_PATTERNS = DANGEROUS_ARG_PATTERNS
 
 # 路径 deny 规则：匹配则拒绝访问
 # 同时兼容 Unix 正斜杠和 Windows 反斜杠
@@ -110,6 +97,9 @@ def validate_command_safety(executable: str, args: list = None) -> tuple:
 
     可在任何需要命令校验的地方使用，无需实例化 Sandbox。
 
+    实际校验逻辑委托给 security.command_whitelist.validate_command_safety_detailed，
+    本函数保留原签名以保证向后兼容（返回 (is_safe, error_message) 元组）。
+
     Args:
         executable: 可执行文件名（如 'ls', 'cat' 等）
         args: 命令参数列表（可选）
@@ -117,23 +107,7 @@ def validate_command_safety(executable: str, args: list = None) -> tuple:
     Returns:
         (is_safe: bool, error_message: str or None) 元组
     """
-    args = args or []
-
-    # 拒绝危险命令
-    if executable in _DANGEROUS_COMMANDS:
-        return (False, f"命令 '{executable}' 被明确禁止执行")
-
-    # 必须在白名单内
-    if executable not in _ALLOWED_COMMANDS:
-        return (False, f"命令 '{executable}' 不在允许列表中。允许的命令: {', '.join(sorted(_ALLOWED_COMMANDS))}")
-
-    # 校验参数中是否含有危险模式
-    for arg in args:
-        for pattern in _DANGEROUS_ARG_PATTERNS:
-            if pattern.search(arg):
-                return (False, f"命令参数包含不允许的字符或模式: {arg!r}")
-
-    return (True, None)
+    return _validate_command_safety_detailed(executable, args or [])
 
 
 def validate_path(path: str) -> bool:
@@ -369,42 +343,27 @@ def is_path_allowed(
         return False
 
     # 第 3 层：内部可编辑路径（项目目录等）
+    # 委托给 command_whitelist.is_path_allowed 进行 Path.resolve() + relative_to() 校验
     try:
         resolved = Path(path_str).resolve()
         for editable in _INTERNAL_EDITABLE_PATHS:
-            try:
-                editable_resolved = Path(editable).resolve()
-                resolved.relative_to(editable_resolved)
+            if _is_path_in_workspace(resolved, Path(editable)):
                 return True
-            except ValueError:
-                continue
     except (ValueError, OSError, RuntimeError):
         # 解析失败，继续后续检查
         pass
 
     # 第 4 层：工作目录检查
     if working_dir:
-        try:
-            working_resolved = Path(working_dir).resolve()
-            resolved = Path(path_str).resolve()
-            try:
-                resolved.relative_to(working_resolved)
-                return True
-            except ValueError:
-                pass
-        except (ValueError, OSError, RuntimeError):
-            pass
+        if _is_path_in_workspace(Path(path_str), Path(working_dir)):
+            return True
 
     # 第 5 层：沙箱白名单
     try:
         resolved = Path(path_str).resolve()
         for whitelist_dir in _SANDBOX_WHITELIST_DIRS:
-            try:
-                whitelist_resolved = Path(whitelist_dir).resolve()
-                resolved.relative_to(whitelist_resolved)
+            if _is_path_in_workspace(resolved, Path(whitelist_dir)):
                 return True
-            except ValueError:
-                continue
     except (ValueError, OSError, RuntimeError):
         pass
 
@@ -467,9 +426,8 @@ class Sandbox:
             raise SandboxPathError(f"无法解析文件路径: {e}")
 
         # 确保路径在工作目录内（防止路径遍历）
-        try:
-            resolved.relative_to(self.work_dir)
-        except ValueError:
+        # 委托给 command_whitelist.is_path_allowed 进行 Path.resolve() + relative_to() 校验
+        if not _is_path_in_workspace(resolved, self.work_dir):
             raise SandboxPathError(
                 f"文件路径超出允许范围: {resolved!r} 不在 {self.work_dir!r} 内"
             )
@@ -507,24 +465,13 @@ class Sandbox:
 
         executable = command_list[0]
 
-        # 拒绝危险命令
-        if executable in _DANGEROUS_COMMANDS:
-            raise SandboxPermissionError(f"命令 '{executable}' 被明确禁止执行")
-
-        # 必须在白名单内
-        if executable not in _ALLOWED_COMMANDS:
-            raise SandboxPermissionError(
-                f"命令 '{executable}' 不在允许列表中。"
-                f"允许的命令: {', '.join(sorted(_ALLOWED_COMMANDS))}"
-            )
-
-        # 校验参数中是否含有危险模式
-        for arg in command_list[1:]:
-            for pattern in _DANGEROUS_ARG_PATTERNS:
-                if pattern.search(arg):
-                    raise SandboxPermissionError(
-                        f"命令参数包含不允许的字符或模式: {arg!r}"
-                    )
+        # 委托给 command_whitelist.validate_command_safety_detailed 进行统一校验
+        # 包括：危险命令黑名单 + 白名单 + 参数危险模式 + ACP 硬阻断模式（rm -rf / 等）
+        is_safe, err_msg = _validate_command_safety_detailed(
+            executable, command_list[1:]
+        )
+        if not is_safe:
+            raise SandboxPermissionError(err_msg or "命令被安全策略拒绝")
 
     async def check_permission(self, operation: str, target: str) -> bool:
         """

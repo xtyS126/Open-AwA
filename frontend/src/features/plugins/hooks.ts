@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   pluginsAPI,
   PluginConfigSchemaResponse,
   PluginPermissionStatus,
   PluginPermissionUpdateResponse,
 } from '@/shared/api/api'
+import { queryClient } from '@/shared/api/queryClient'
 import type { Plugin } from '@/features/dashboard/dashboard'
 
 /** 文件系统中发现的插件元数据（来自 GET /plugins/discover） */
@@ -29,70 +31,72 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback
 }
 
+/**
+ * 插件列表查询 —— 使用 TanStack Query 管理服务端状态。
+ *
+ * 设计要点：
+ *   - retry: false：避免自动重试掩盖错误（保留原 hook 显式 retry 语义）
+ *   - 通过 queryClient.setQueryData 提供 setPlugins 等价能力（局部乐观更新）
+ *   - retry/refresh 等价于 refetch，保留原 API 兼容
+ */
 export function usePluginList() {
-  const [plugins, setPlugins] = useState<Plugin[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const fetchPlugins = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
+  const query = useQuery<Plugin[], Error>({
+    queryKey: ['plugins', 'list'],
+    queryFn: async () => {
       const response = await pluginsAPI.getAll()
-      setPlugins(response.data || [])
-    } catch (error) {
-      setError(getErrorMessage(error, '插件列表加载失败'))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return response.data || []
+    },
+    // 关闭自动重试，保持原 hook 的"显式 retry"语义
+    retry: false,
+  })
 
-  useEffect(() => {
-    fetchPlugins()
-  }, [fetchPlugins])
+  const retry = useCallback(async () => {
+    await query.refetch()
+  }, [query])
+
+  const setPlugins = useCallback(
+    (updater: Plugin[] | ((prev: Plugin[]) => Plugin[])) => {
+      queryClient.setQueryData<Plugin[]>(['plugins', 'list'], (prev) => {
+        const prevList = prev ?? []
+        return typeof updater === 'function' ? updater(prevList) : updater
+      })
+    },
+    [],
+  )
 
   return {
-    plugins,
-    loading,
-    error,
-    retry: fetchPlugins,
-    refresh: fetchPlugins,
+    plugins: query.data ?? [],
+    loading: query.isLoading,
+    error: query.error ? getErrorMessage(query.error, '插件列表加载失败') : null,
+    retry,
+    refresh: retry,
     setPlugins,
   }
 }
 
 /** 获取文件系统中发现的本地插件列表 */
 export function useDiscoveredPlugins() {
-  const [discovered, setDiscovered] = useState<DiscoveredPlugin[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const fetchDiscovered = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
+  const query = useQuery<DiscoveredPlugin[], Error>({
+    queryKey: ['plugins', 'discover'],
+    queryFn: async () => {
       const response = await pluginsAPI.discover()
       // 后端返回裸数组
       const data = response.data
-      const list = Array.isArray(data) ? data : []
-      setDiscovered(list)
-    } catch (error) {
-      setError(getErrorMessage(error, '本地插件发现失败'))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return Array.isArray(data) ? data : []
+    },
+    retry: false,
+  })
 
-  useEffect(() => {
-    fetchDiscovered()
-  }, [fetchDiscovered])
+  const retry = useCallback(async () => {
+    await query.refetch()
+  }, [query])
 
   return {
-    discovered,
-    loading,
-    error,
-    retry: fetchDiscovered,
-    refresh: fetchDiscovered,
+    discovered: query.data ?? [],
+    loading: query.isLoading,
+    error: query.error ? getErrorMessage(query.error, '本地插件发现失败') : null,
+    retry,
+    refresh: retry,
   }
 }
 

@@ -11,7 +11,7 @@ import {
   persistThinkingEnabled,
   persistThinkingDepth,
   type PreferenceMutationOptions,
-} from '@/shared/store/chatStoreEffects'
+} from '@/features/chat/store/chatStoreEffects'
 
 interface PreferenceState {
   /** 输出模式：流式传输或直接输出 */

@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MemoryPage from '@/features/memory/MemoryPage'
 import { BrowserRouter } from 'react-router-dom'
 
@@ -34,6 +35,27 @@ vi.mock('@/features/settings/modelsApi', () => ({
   }
 }))
 
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        gcTime: 0,
+      },
+    },
+  })
+}
+
+function renderWithQueryClient(ui: React.ReactNode) {
+  const testQueryClient = createTestQueryClient()
+  return render(
+    <QueryClientProvider client={testQueryClient}>
+      <BrowserRouter>{ui}</BrowserRouter>
+    </QueryClientProvider>,
+  )
+}
+
 describe('MemoryPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -50,7 +72,7 @@ describe('MemoryPage', () => {
     })
     getShortTermMock.mockResolvedValue({ data: [] })
 
-    render(<BrowserRouter><MemoryPage /></BrowserRouter>)
+    renderWithQueryClient(<MemoryPage />)
 
     await waitFor(() => expect(getShortTermMock).toHaveBeenCalledWith('session-123'))
     expect(getShortTermMock).not.toHaveBeenCalledWith('default')

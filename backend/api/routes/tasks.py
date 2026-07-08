@@ -251,7 +251,7 @@ async def _fire_webhook(
 
     async def _post():
         try:
-            from core.model_service import get_shared_client
+            from core.litellm_adapter import get_shared_client
             client = get_shared_client()
             payload = {
                 "event": "task.completed",

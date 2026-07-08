@@ -1,24 +1,23 @@
 """
-P2 安全增强 API 路由模块，提供细粒度权限管理、IP 白名单/黑名单、异常事件查询与 CSRF token 管理。
+P2 安全增强 API 路由模块，提供细粒度权限管理、IP 白名单/黑名单与异常事件查询。
 
 路由前缀: /api/security/enhanced
 所有接口均需认证，管理员接口需 admin 角色。
+
+注：CSRF token 管理与用户级速率限制统计已迁移至成熟包：
+- CSRF 防护由 fastapi-csrf-protect 通过双提交 Cookie 模式在 main.py 中间件层处理
+  前端通过 GET /api/auth/csrf-token 获取 token
+- 速率限制由 slowapi 在中间件层全局处理，无需用户级统计端点
 """
 
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from loguru import logger
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user, get_current_admin_user
 from api.schemas import (
     AnomalyEventResponse,
-    CsrfTokenGenerateRequest,
-    CsrfTokenResponse,
-    CsrfTokenRotateRequest,
-    CsrfTokenValidateRequest,
-    CsrfTokenValidateResponse,
     CustomRoleCreate,
     CustomRoleResponse,
     CustomRoleUpdate,
@@ -28,19 +27,14 @@ from api.schemas import (
     IpAccessCheckResponse,
     IpAccessEntryCreate,
     IpAccessEntryResponse,
-    UserRateLimitStatsResponse,
 )
 from db.models import User, get_db
+from security.anomaly_detector import get_anomaly_detector
 from security.fine_grained_permissions import (
     FineGrainedPermissionManager,
     get_permission_manager,
 )
-from security.proactive_defense import (
-    CsrfTokenManager,
-    IpAccessController,
-    get_anomaly_detector,
-    get_user_rate_limiter,
-)
+from security.ip_access import IpAccessController
 
 
 router = APIRouter(prefix="/api/security/enhanced", tags=["SecurityEnhanced"])
@@ -280,100 +274,11 @@ async def resolve_anomaly_event(
 
 
 # -------- CSRF Token 管理 --------
-
-
-@router.post("/csrf/token", response_model=CsrfTokenResponse)
-async def generate_csrf_token(
-    body: CsrfTokenGenerateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """生成新的 CSRF token。"""
-    manager = CsrfTokenManager(db)
-    result = manager.generate_token(
-        user_id=str(current_user.id),
-        session_id=body.session_id,
-        ttl_hours=body.ttl_hours,
-    )
-    return CsrfTokenResponse(**result)
-
-
-@router.post("/csrf/token/validate", response_model=CsrfTokenValidateResponse)
-async def validate_csrf_token(
-    body: CsrfTokenValidateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """校验 CSRF token 有效性。"""
-    manager = CsrfTokenManager(db)
-    result = manager.validate_token(
-        token=body.token,
-        user_id=str(current_user.id),
-        consume=body.consume,
-    )
-    return CsrfTokenValidateResponse(**result)
-
-
-@router.post("/csrf/token/rotate", response_model=CsrfTokenResponse)
-async def rotate_csrf_token(
-    body: CsrfTokenRotateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """轮换 CSRF token：撤销旧 token 并生成新 token。"""
-    manager = CsrfTokenManager(db)
-    try:
-        result = manager.rotate_token(
-            old_token=body.old_token,
-            user_id=str(current_user.id),
-            session_id=body.session_id,
-            ttl_hours=body.ttl_hours,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return CsrfTokenResponse(**result)
-
-
-@router.delete("/csrf/token/{token}", status_code=status.HTTP_200_OK)
-async def revoke_csrf_token(
-    token: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """撤销指定 CSRF token。"""
-    manager = CsrfTokenManager(db)
-    try:
-        manager.revoke_token(token)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return {"ok": True}
+# 注：CSRF 防护已迁移至 fastapi-csrf-protect 双提交 Cookie 模式，
+# 由 main.py 的 csrf_protection_middleware 中间件统一处理。
+# 前端通过 GET /api/auth/csrf-token 获取 token，无需显式管理端点。
 
 
 # -------- 用户级速率限制统计 --------
-
-
-@router.get("/rate-limit/stats/{user_id}", response_model=UserRateLimitStatsResponse)
-async def get_user_rate_limit_stats(
-    user_id: str,
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """获取指定用户的速率限制统计。"""
-    limiter = get_user_rate_limiter()
-    stats = limiter.get_stats(user_id)
-    return UserRateLimitStatsResponse(user_id=user_id, **stats)
-
-
-@router.post("/rate-limit/reset/{user_id}", status_code=status.HTTP_200_OK)
-async def reset_user_rate_limit(
-    user_id: str,
-    admin_user: User = Depends(get_current_admin_user),
-) -> Dict[str, Any]:
-    """重置指定用户的速率限制状态（仅管理员）。"""
-    limiter = get_user_rate_limiter()
-    limiter.reset(user_id)
-    logger.bind(
-        event="user_rate_limit_reset",
-        user_id=user_id,
-        admin_id=str(admin_user.id),
-    ).info(f"用户 {user_id} 速率限制已重置")
-    return {"ok": True}
+# 注：UserRateLimiter 已删除，速率限制由 slowapi 在中间件层全局处理，
+# 不再提供用户级统计端点。如需限流配置，请参考 main.py 中的 limiter 配置。

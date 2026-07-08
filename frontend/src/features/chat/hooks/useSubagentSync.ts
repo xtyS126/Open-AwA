@@ -198,7 +198,10 @@ export function useSubagentSync({
       const meta = messageMetaRef.current[assistantMessageId]
       const subagents = meta?.toolEvents.filter((tool) => tool.kind === 'subagent') || []
       const aggregatedIds = aggregatedSubagentIdsRef.current[assistantMessageId] || new Set<string>()
-      const pendingSubagents = subagents.filter((tool) => !aggregatedIds.has(tool.id))
+      // 前台子代理已在当前 SSE 流中由主代理继续处理，不能再次触发隐藏续写。
+      const pendingSubagents = subagents.filter((tool) => (
+        tool.subagent?.runMode !== 'foreground' && !aggregatedIds.has(tool.id)
+      ))
       const allCompleted = pendingSubagents.length > 0 && pendingSubagents.every((tool) => tool.status === 'completed' || tool.status === 'error')
       if (!allCompleted) {
         return

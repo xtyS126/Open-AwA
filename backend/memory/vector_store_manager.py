@@ -1,26 +1,23 @@
 """
 向量存储管理模块，负责长期记忆的向量化存储与语义检索。
-默认使用 ChromaDB 作为持久化后端，并根据环境自动选择可用的嵌入提供方。
+默认使用 Qdrant 嵌入式模式作为持久化后端，原生支持 dense + sparse 混合检索。
+根据环境自动选择可用的嵌入提供方，并保留哈希嵌入作为兜底。
 """
 
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import math
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
-import numpy as np
-
-if not hasattr(np, "float_"):
-    # 兼容 ChromaDB 依赖的旧版 NumPy 类型别名。
-    np.float_ = np.float64
-
-import chromadb
 import httpx
 from loguru import logger
+from qdrant_client import QdrantClient, models
 
 from config.settings import settings
 
@@ -38,6 +35,16 @@ os.environ.setdefault("HF_HOME", os.path.join(_MODELS_DIR, "huggingface"))
 
 DEFAULT_COLLECTION_NAME = "long_term_memory"
 DEFAULT_HASH_DIMENSION = 32
+
+# Qdrant 命名向量字段
+DENSE_VECTOR_NAME = "dense"
+SPARSE_VECTOR_NAME = "sparse"
+
+# 稀疏向量哈希空间大小（2^16），平衡碰撞率与索引内存占用
+SPARSE_HASH_SPACE = 65536
+
+# 中英文混合分词正则：英文单词 / 单个中文字符 / 数字串
+_TOKEN_RE = re.compile(r"[a-zA-Z]+|[一-鿿]|\d+")
 
 
 class EmbeddingProvider(Protocol):
@@ -261,10 +268,87 @@ def create_embedding_provider(provider_type: Optional[str] = None) -> EmbeddingP
         return HashEmbeddingProvider()
 
 
+def _tokenize(text: str) -> List[str]:
+    """
+    中英文混合分词：小写化后提取英文单词、单个中文字符、数字串。
+    用于 Qdrant 稀疏向量（BM25 风格）的构造。
+    """
+    if not text:
+        return []
+    return _TOKEN_RE.findall(text.lower())
+
+
+def _hash_token(token: str) -> int:
+    """
+    将 token 哈希到固定大小的稀疏空间，作为 sparse vector 的索引。
+    使用 sha256 前 4 字节，碰撞率可控且无需维护词表。
+    """
+    digest = hashlib.sha256(token.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % SPARSE_HASH_SPACE
+
+
+def compute_sparse_vector(text: str) -> models.SparseVector:
+    """
+    根据文本构造 Qdrant 稀疏向量。
+    使用 token 词频作为权重，Qdrant 内部基于 IDF 维护 BM25 风格的评分。
+
+    若文本为空，返回带哨兵索引的稀疏向量（Qdrant 要求 indices/values 非空）。
+    """
+    tokens = _tokenize(text)
+    if not tokens:
+        return models.SparseVector(indices=[0], values=[0.0])
+
+    counter: Dict[int, float] = {}
+    for token in tokens:
+        index = _hash_token(token)
+        counter[index] = counter.get(index, 0.0) + 1.0
+
+    # 合并相同哈希桶的权重，避免重复索引
+    indices = sorted(counter.keys())
+    values = [counter[i] for i in indices]
+    return models.SparseVector(indices=indices, values=values)
+
+
+def _probe_dimension_in_thread(provider: EmbeddingProvider) -> int:
+    """
+    在独立线程的事件循环中执行嵌入调用以探测维度。
+    用于规避当前线程已有运行中事件循环时无法直接 run_until_complete 的问题。
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        vectors = loop.run_until_complete(provider.embed_texts(["dimension_probe"]))
+        if vectors and vectors[0]:
+            return len(vectors[0])
+    finally:
+        loop.close()
+    return DEFAULT_HASH_DIMENSION
+
+
+def _detect_dense_dimension(provider: EmbeddingProvider) -> int:
+    """
+    探测嵌入提供方的向量维度，用于创建 Qdrant collection。
+    优先从 provider.dimension 属性读取（HashEmbeddingProvider 等同步提供方），
+    否则在独立线程中执行嵌入调用探测，避免与已运行的事件循环冲突。
+    """
+    # HashEmbeddingProvider 等带 dimension 属性的提供方直接读取
+    dim = getattr(provider, "dimension", None)
+    if isinstance(dim, int) and dim > 0:
+        return dim
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_probe_dimension_in_thread, provider)
+            return future.result(timeout=60)
+    except Exception as exc:
+        logger.warning(f"探测嵌入维度失败，回退到默认维度 {DEFAULT_HASH_DIMENSION}: {exc}")
+    return DEFAULT_HASH_DIMENSION
+
+
 class VectorStoreManager:
     """
-    ChromaDB 向量存储封装。
+    Qdrant 向量存储封装。
     负责长期记忆的 upsert、删除、混合查询与基础统计。
+    使用 Qdrant 嵌入式模式（path=...），原生支持 dense + sparse 混合检索（RRF 融合）。
     """
 
     def __init__(
@@ -278,35 +362,36 @@ class VectorStoreManager:
         os.makedirs(self.persist_directory, exist_ok=True)
 
         self.embedding_provider = embedding_provider or create_embedding_provider(provider_type)
-        try:
-            from chromadb.config import Settings as ChromaSettings
-            chroma_settings = ChromaSettings(
-                anonymized_telemetry=False,
-                chroma_product_telemetry_impl="memory.chroma_telemetry.NoOpProductTelemetryClient",
-                chroma_telemetry_impl="memory.chroma_telemetry.NoOpProductTelemetryClient",
-            )
-        except Exception as exc:
-            logger.warning(f"构建 Chroma 配置失败，回退默认配置: {exc}")
-            chroma_settings = None
-        client_kwargs = {
-            "path": self.persist_directory,
-        }
-        if chroma_settings is not None:
-            client_kwargs["settings"] = chroma_settings
+        self.collection_name = collection_name
 
-        try:
-            self.client = chromadb.PersistentClient(**client_kwargs)
-        except TypeError as exc:
-            if chroma_settings is None or "settings" not in str(exc):
-                raise
-            logger.warning(f"PersistentClient 不支持 settings 参数，回退默认初始化: {exc}")
-            self.client = chromadb.PersistentClient(path=self.persist_directory)
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        # 嵌入式 Qdrant，数据持久化到本地路径
+        self.client = QdrantClient(path=self.persist_directory)
+        self._ensure_collection()
+
         logger.info(
-            f"VectorStoreManager initialized with provider={self.embedding_provider.provider_name} path={self.persist_directory}"
+            f"VectorStoreManager initialized with provider={self.embedding_provider.provider_name} "
+            f"path={self.persist_directory} collection={collection_name}"
+        )
+
+    def _ensure_collection(self) -> None:
+        """
+        确保 Qdrant collection 存在；若不存在则按嵌入维度创建，并配置 dense + sparse 双向量字段。
+        """
+        if self.client.collection_exists(self.collection_name):
+            return
+
+        dimension = _detect_dense_dimension(self.embedding_provider)
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            vectors_config={
+                DENSE_VECTOR_NAME: models.VectorParams(
+                    size=dimension,
+                    distance=models.Distance.COSINE,
+                )
+            },
+            sparse_vectors_config={
+                SPARSE_VECTOR_NAME: models.SparseVectorParams()
+            },
         )
 
     @property
@@ -314,6 +399,10 @@ class VectorStoreManager:
         return self.embedding_provider.provider_name
 
     def _document_id(self, memory_id: int) -> str:
+        """
+        兼容旧 ChromaDB 风格的文档 ID 字符串表示。
+        实际 Qdrant point ID 使用整型 memory_id，此处仅用于日志与外部展示。
+        """
         return f"memory:{memory_id}"
 
     def _sanitize_metadata(self, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -340,61 +429,57 @@ class VectorStoreManager:
     ) -> None:
         """
         新增或更新一条长期记忆向量记录。
+        同时写入 dense 与 sparse 向量，供混合检索使用。
         """
         vector = embedding or (await self.embedding_provider.embed_texts([content]))[0]
+        sparse_vector = compute_sparse_vector(content)
         payload = {
             "memory_id": int(memory_id),
             "user_id": str(user_id or ""),
             "importance": float(importance),
             "archive_status": archive_status,
+            "content": content,
         }
         payload.update(self._sanitize_metadata(metadata))
-        self.collection.upsert(
-            ids=[self._document_id(memory_id)],
-            documents=[content],
-            embeddings=[vector],
-            metadatas=[payload],
+
+        self.client.upsert(
+            collection_name=self.collection_name,
+            points=[
+                models.PointStruct(
+                    id=int(memory_id),
+                    vector={
+                        DENSE_VECTOR_NAME: vector,
+                        SPARSE_VECTOR_NAME: sparse_vector,
+                    },
+                    payload=payload,
+                )
+            ],
         )
 
     def delete_memory(self, memory_id: int) -> None:
         """
         删除一条向量记忆记录。
         """
-        self.collection.delete(ids=[self._document_id(memory_id)])
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.PointIdsList(points=[int(memory_id)]),
+        )
 
     def update_memory_metadata(self, memory_id: int, **fields: Any) -> None:
         """
         更新已存在向量记录的元数据。
-        该方法会保留原文档与向量，仅覆盖元数据字段。
+        使用 set_payload 增量更新指定字段，不影响原文档与向量。
         """
-        record = self.collection.get(
-            ids=[self._document_id(memory_id)],
-            include=["documents", "metadatas", "embeddings"],
-        )
-        if not record.get("ids"):
+        sanitized = self._sanitize_metadata(fields)
+        if not sanitized:
             return
 
-        existing_metadata = self._extract_first_item(record.get("metadatas"), default={}) or {}
-        existing_metadata.update(self._sanitize_metadata(fields))
-        document = self._extract_first_item(record.get("documents"), default="") or ""
-        embedding = self._extract_first_item(record.get("embeddings"), default=[]) or []
-        self.collection.upsert(
-            ids=[self._document_id(memory_id)],
-            documents=[document],
-            embeddings=[embedding],
-            metadatas=[existing_metadata],
+        # Qdrant 不允许设置 None 值，若需删除字段应使用 delete_payload；此处仅做覆盖更新
+        self.client.set_payload(
+            collection_name=self.collection_name,
+            payload=sanitized,
+            points=[int(memory_id)],
         )
-
-    def _extract_first_item(self, values: Any, default: Any = None) -> Any:
-        """
-        兼容 ChromaDB 在不同接口下返回的一维或二维列表结构。
-        """
-        if not values:
-            return default
-        first = values[0]
-        if isinstance(first, list) and first and isinstance(first[0], list):
-            return first[0] if first else default
-        return first
 
     async def search(
         self,
@@ -405,65 +490,106 @@ class VectorStoreManager:
         include_archived: bool = False,
     ) -> List[VectorSearchHit]:
         """
-        执行语义向量搜索，并返回标准化结果。
+        执行混合检索：dense + sparse 双路召回，RRF 融合排序。
+        通过 query_filter 实现用户隔离与归档过滤。
         """
-        where = self._build_where_clause(user_id=user_id, include_archived=include_archived)
-        vector = (await self.embedding_provider.embed_texts([query_text]))[0]
-        result = self.collection.query(
-            query_embeddings=[vector],
-            n_results=limit,
-            where=where,
-            include=["documents", "metadatas", "distances"],
+        query_filter = self._build_filter(user_id=user_id, include_archived=include_archived)
+        dense_vector = (await self.embedding_provider.embed_texts([query_text]))[0]
+        sparse_vector = compute_sparse_vector(query_text)
+
+        # 单次调用 Qdrant 原生混合检索：prefetch 双路召回 + RRF 融合
+        response = self.client.query_points(
+            collection_name=self.collection_name,
+            prefetch=[
+                models.Prefetch(
+                    query=dense_vector,
+                    using=DENSE_VECTOR_NAME,
+                    limit=max(limit * 3, 20),
+                    filter=query_filter,
+                ),
+                models.Prefetch(
+                    query=sparse_vector,
+                    using=SPARSE_VECTOR_NAME,
+                    limit=max(limit * 3, 20),
+                    filter=query_filter,
+                ),
+            ],
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
         )
 
-        ids = (result.get("ids") or [[]])[0]
-        documents = (result.get("documents") or [[]])[0]
-        metadatas = (result.get("metadatas") or [[]])[0]
-        distances = (result.get("distances") or [[]])[0]
-
         hits: List[VectorSearchHit] = []
-        for index, document_id in enumerate(ids):
-            metadata = metadatas[index] if index < len(metadatas) else {}
-            distance = distances[index] if index < len(distances) else 1.0
-            memory_id = int(metadata.get("memory_id") or str(document_id).split(":")[-1])
+        for point in response.points:
+            payload = point.payload or {}
+            memory_id = int(payload.get("memory_id") or point.id)
+            content = str(payload.get("content") or "")
+            # RRF 融合分数范围 [0, 1]，无需额外转换
+            score = float(point.score or 0.0)
             hits.append(
                 VectorSearchHit(
                     memory_id=memory_id,
-                    score=max(0.0, 1.0 - float(distance)),
-                    content=documents[index] if index < len(documents) else "",
-                    metadata=metadata or {},
+                    score=score,
+                    content=content,
+                    metadata=payload,
                 )
             )
         return hits
 
-    def _build_where_clause(
+    def _build_filter(
         self,
         *,
         user_id: Optional[str] = None,
         include_archived: bool = False,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[models.Filter]:
         """
-        构造兼容 ChromaDB 的过滤条件。
+        构造 Qdrant 过滤条件：用户隔离 + 归档状态过滤。
         """
-        conditions: List[Dict[str, Any]] = []
+        must: List[models.Condition] = []
         if user_id is not None:
-            conditions.append({"user_id": str(user_id)})
+            must.append(
+                models.FieldCondition(
+                    key="user_id",
+                    match=models.MatchValue(value=str(user_id)),
+                )
+            )
         if not include_archived:
-            conditions.append({"archive_status": "active"})
+            must.append(
+                models.FieldCondition(
+                    key="archive_status",
+                    match=models.MatchValue(value="active"),
+                )
+            )
 
-        if not conditions:
+        if not must:
             return None
-        if len(conditions) == 1:
-            return conditions[0]
-        return {"$and": conditions}
+        return models.Filter(must=must)
 
     def count(self, user_id: Optional[str] = None, include_archived: bool = True) -> int:
         """
         返回向量库中满足条件的记录数量。
         """
         if user_id is None and include_archived:
-            return self.collection.count()
+            return int(self.client.count(
+                collection_name=self.collection_name,
+                count_filter=None,
+                exact=True,
+            ).count)
 
-        where = self._build_where_clause(user_id=user_id, include_archived=include_archived)
-        records = self.collection.get(where=where)
-        return len(records.get("ids", []))
+        count_filter = self._build_filter(user_id=user_id, include_archived=include_archived)
+        return int(self.client.count(
+            collection_name=self.collection_name,
+            count_filter=count_filter,
+            exact=True,
+        ).count)
+
+    def close(self) -> None:
+        """
+        关闭 Qdrant 客户端，释放本地文件锁。
+        """
+        try:
+            self.client.close()
+        except Exception as exc:
+            logger.warning(f"关闭 Qdrant 客户端时出现异常: {exc}")

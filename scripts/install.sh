@@ -159,16 +159,22 @@ build_frontend() {
 init_config() {
     info "初始化配置..."
 
-    # 生成 SECRET_KEY（如果未设置）
-    if [ -z "${SECRET_KEY:-}" ]; then
-        SECRET_KEY=$($PYTHON -c "import secrets; print(secrets.token_urlsafe(32))")
-    fi
+    # 生成生产环境所需的独立密钥与初始凭据（保留调用方显式提供的值）
+    JWT_SECRET_KEY=${JWT_SECRET_KEY:-$($PYTHON -c "import secrets; print(secrets.token_urlsafe(64))")}
+    CSRF_SECRET_KEY=${CSRF_SECRET_KEY:-$($PYTHON -c "import secrets; print(secrets.token_urlsafe(64))")}
+    ENCRYPTION_KEY=${ENCRYPTION_KEY:-$($PYTHON -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")}
+    OPENAWA_API_KEY=${OPENAWA_API_KEY:-$($PYTHON -c "import secrets; print(secrets.token_urlsafe(48))")}
+    OPENAWA_OWNER_PASSWORD=${OPENAWA_OWNER_PASSWORD:-$($PYTHON -c "import secrets; print(secrets.token_urlsafe(24))")}
 
     # 创建 .env 文件
     cat > "${INSTALL_DIR}/.env" <<EOF
 # Open-AwA 配置文件（由安装脚本自动生成）
 ENVIRONMENT=production
-SECRET_KEY=${SECRET_KEY}
+JWT_SECRET_KEY=${JWT_SECRET_KEY}
+CSRF_SECRET_KEY=${CSRF_SECRET_KEY}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+OPENAWA_API_KEY=${OPENAWA_API_KEY}
+OPENAWA_OWNER_PASSWORD=${OPENAWA_OWNER_PASSWORD}
 BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8000
 DATABASE_URL=sqlite:///${INSTALL_DIR}/data/openawa.db

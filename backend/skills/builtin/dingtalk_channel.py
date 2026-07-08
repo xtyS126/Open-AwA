@@ -9,6 +9,24 @@ SKILL_NAME = "dingtalk_channel"
 SKILL_DESCRIPTION = "钉钉频道接入引导，支持配置引导、消息发送、Markdown消息和交互卡片"
 
 
+def _build_config(credentials: dict[str, Any]):
+    """从 credentials 字典构建 IMChannelConfig。
+
+    credentials 字典字段映射：
+    - client_id (AppKey)     -> app_id
+    - client_secret (AppSecret) -> app_secret
+    - webhook_url            -> webhook_url
+    """
+    from im.adapter_base import IMChannelConfig
+    return IMChannelConfig(
+        channel="dingtalk",
+        enabled=True,
+        app_id=credentials.get("client_id", ""),
+        app_secret=credentials.get("client_secret", ""),
+        webhook_url=credentials.get("webhook_url", ""),
+    )
+
+
 async def execute(
     action: str = "guide",
     message: Optional[str] = None,
@@ -21,7 +39,7 @@ async def execute(
     Args:
         action: 操作类型（guide/send_message/send_markdown/send_action_card/health）
         message: 消息内容
-        target: 目标会话 ID（可选）
+        target: 目标会话 ID（可选，Webhook 模式下未使用）
 
     Returns:
         操作结果
@@ -71,32 +89,25 @@ async def execute(
         if not message:
             return {"success": False, "error": "send_message 需要提供 message"}
         try:
-            from channels.dingtalk import DingTalkAdapter
-            from channels.base import ChannelConfig, ChannelType, ChannelMessage, MessageType
+            from im.dingtalk_adapter import DingtalkAdapter
 
-            config = ChannelConfig(
-                channel_type=ChannelType.DINGTALK,
-                enabled=True,
-                credentials=kwargs.get("credentials", {}),
-            )
-            adapter = DingTalkAdapter(config)
-            connected = await adapter.connect()
-            if not connected:
-                return {"success": False, "error": "钉钉连接失败，请检查 client_id 和 client_secret"}
+            config = _build_config(kwargs.get("credentials", {}))
+            adapter = DingtalkAdapter(config)
+            try:
+                await adapter.start()
+            except Exception as e:
+                return {"success": False, "error": f"钉钉连接失败，请检查 client_id 和 client_secret: {str(e)}"}
 
-            result = await adapter.send_message(ChannelMessage(
-                channel=ChannelType.DINGTALK,
-                content=message,
-                message_type=MessageType.TEXT,
-            ))
-            await adapter.disconnect()
-            return {
-                "success": result.get("success", False),
-                "action": "send_message",
-                "response": result,
-            }
+            try:
+                success = await adapter.send_message(target or "", message)
+                return {
+                    "success": success,
+                    "action": "send_message",
+                }
+            finally:
+                await adapter.stop()
         except ImportError:
-            return {"success": False, "error": "钉钉适配器不可用，请检查 channels 模块"}
+            return {"success": False, "error": "钉钉适配器不可用，请检查 im 模块"}
         except Exception as e:
             logger.bind(event="dingtalk_skill_error").error(f"发送失败: {str(e)}")
             return {"success": False, "error": f"发送失败: {str(e)}"}
@@ -106,30 +117,24 @@ async def execute(
         if not message:
             return {"success": False, "error": "send_markdown 需要提供 message"}
         try:
-            from channels.dingtalk import DingTalkAdapter
-            from channels.base import ChannelConfig, ChannelType, ChannelMessage, MessageType
+            from im.dingtalk_adapter import DingtalkAdapter
 
-            config = ChannelConfig(
-                channel_type=ChannelType.DINGTALK,
-                enabled=True,
-                credentials=kwargs.get("credentials", {}),
-            )
-            adapter = DingTalkAdapter(config)
-            connected = await adapter.connect()
-            if not connected:
-                return {"success": False, "error": "钉钉连接失败"}
+            config = _build_config(kwargs.get("credentials", {}))
+            adapter = DingtalkAdapter(config)
+            try:
+                await adapter.start()
+            except Exception as e:
+                return {"success": False, "error": f"钉钉连接失败: {str(e)}"}
 
-            result = await adapter.send_message(ChannelMessage(
-                channel=ChannelType.DINGTALK,
-                content=f"**Open-AwA 消息**\n\n{message}",
-                message_type=MessageType.TEXT,
-            ))
-            await adapter.disconnect()
-            return {
-                "success": result.get("success", False),
-                "action": "send_markdown",
-                "response": result,
-            }
+            try:
+                markdown_content = f"**Open-AwA 消息**\n\n{message}"
+                success = await adapter.send_message(target or "", markdown_content)
+                return {
+                    "success": success,
+                    "action": "send_markdown",
+                }
+            finally:
+                await adapter.stop()
         except ImportError:
             return {"success": False, "error": "钉钉适配器不可用"}
         except Exception as e:
@@ -154,21 +159,24 @@ async def execute(
     # ---- 健康检查 ----
     elif action == "health":
         try:
-            from channels.dingtalk import DingTalkAdapter
-            from channels.base import ChannelConfig, ChannelType
+            from im.dingtalk_adapter import DingtalkAdapter
 
-            config = ChannelConfig(
-                channel_type=ChannelType.DINGTALK,
-                enabled=True,
-                credentials=kwargs.get("credentials", {}),
-            )
-            adapter = DingTalkAdapter(config)
-            health = await adapter.get_health()
-            return {
-                "success": True,
-                "action": "health",
-                "health": health,
-            }
+            config = _build_config(kwargs.get("credentials", {}))
+            adapter = DingtalkAdapter(config)
+            try:
+                await adapter.start()
+            except Exception as e:
+                return {"success": False, "error": f"钉钉连接失败: {str(e)}"}
+
+            try:
+                healthy = await adapter.health_check()
+                return {
+                    "success": True,
+                    "action": "health",
+                    "health": {"connected": healthy, "channel": "dingtalk"},
+                }
+            finally:
+                await adapter.stop()
         except ImportError:
             return {"success": False, "error": "钉钉适配器不可用"}
         except Exception as e:

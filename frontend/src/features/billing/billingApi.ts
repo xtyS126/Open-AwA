@@ -1,5 +1,6 @@
 import api from '@/shared/api/api'
 
+// 用量记录（与 billing.ts 中 BillingUsage 等价，取并集为权威定义）
 export interface UsageRecord {
   call_id: string
   user_id: string | null
@@ -18,6 +19,7 @@ export interface UsageRecord {
   created_at: string
 }
 
+// 模型定价（合并自 billing.ts 的 ModelPrice，覆盖多模态字段）
 export interface ModelPricing {
   id: number
   provider: string
@@ -35,21 +37,47 @@ export interface ModelPricing {
   updated_at: string | null
 }
 
+// 预算状态（合并自 billing.ts 的 Budget，budget_type 收敛为 union 类型）
 export interface BudgetStatus {
   has_budget_configured: boolean
-  budget_type?: string
+  budget_type?: 'global' | 'user' | 'project' | 'model'
   max_amount?: number
   current_usage?: number
   remaining?: number
   usage_percentage?: number
   warning_threshold?: number
-  period_type?: string
+  period_type?: 'daily' | 'weekly' | 'monthly' | 'yearly'
   currency?: string
   is_warning?: boolean
   is_exceeded?: boolean
   message?: string
 }
 
+// 单个模型的成本汇总（从 CostStatistics.by_model 抽出命名）
+export interface ModelCost {
+  provider: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cost: number
+  call_count: number
+}
+
+// 单个内容类型的 token 与成本（从 CostStatistics.by_content_type 抽出命名）
+export interface TokensAndCost {
+  tokens: number
+  cost: number
+}
+
+// 单日趋势数据（从 CostStatistics.trend 抽出命名）
+export interface DailyTrend {
+  date: string
+  cost: number
+  input_tokens: number
+  output_tokens: number
+}
+
+// 成本统计（合并自 billing.ts 的 CostStats，嵌套类型引用命名导出）
 export interface CostStatistics {
   period: string
   period_start: string
@@ -58,24 +86,13 @@ export interface CostStatistics {
   total_input_tokens: number
   total_output_tokens: number
   total_calls: number
-  by_model: Array<{
-    provider: string
-    model: string
-    input_tokens: number
-    output_tokens: number
-    cost: number
-    call_count: number
-  }>
-  by_content_type: Record<string, { tokens: number; cost: number }>
-  trend: Array<{
-    date: string
-    cost: number
-    input_tokens: number
-    output_tokens: number
-  }>
+  by_model: ModelCost[]
+  by_content_type: Record<string, TokensAndCost>
+  trend: DailyTrend[]
   currency: string
 }
 
+// 保留期配置（与 billing.ts 中 RetentionSettings 等价）
 export interface RetentionConfig {
   retention_days: number
   total_records: number
@@ -83,11 +100,26 @@ export interface RetentionConfig {
   newest_record: string | null
 }
 
+// 更新保留期请求体（从 billingAPI.updateRetention 参数抽出命名）
+export interface RetentionUpdate {
+  retention_days: number
+  cleanup?: boolean
+}
+
+// 更新保留期响应（与 billing.ts 中 RetentionUpdateResult 等价）
 export interface RetentionUpdateResponse {
   success: boolean
   old_retention_days: number
   new_retention_days: number
   deleted_records: number
+}
+
+// 更新模型定价请求体（从 billingAPI.updateModelPricing 参数抽出命名）
+export interface PriceUpdate {
+  input_price?: number
+  output_price?: number
+  currency?: string
+  cache_hit_price?: number
 }
 
 export const billingAPI = {
@@ -108,12 +140,8 @@ export const billingAPI = {
   getModels: (params?: { provider?: string }) =>
     api.get('/billing/models', { params }),
 
-  updateModelPricing: (modelId: number, data: {
-    input_price?: number
-    output_price?: number
-    currency?: string
-    cache_hit_price?: number
-  }) => api.put(`/billing/models/${modelId}`, data),
+  updateModelPricing: (modelId: number, data: PriceUpdate) =>
+    api.put(`/billing/models/${modelId}`, data),
 
   getBudget: (userId: string) =>
     api.get('/billing/budget', { params: { user_id: userId } }),
@@ -162,8 +190,6 @@ export const billingAPI = {
   getRetention: () =>
     api.get('/billing/retention'),
 
-  updateRetention: (data: {
-    retention_days: number
-    cleanup?: boolean
-  }) => api.post('/billing/retention', data),
+  updateRetention: (data: RetentionUpdate) =>
+    api.post('/billing/retention', data),
 }

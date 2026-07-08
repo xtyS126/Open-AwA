@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from core.metrics import record_websocket_message_metric
-from core.model_service import build_standard_error
+from core.litellm_adapter import build_standard_error
 from config.logging import sanitize_for_logging
 from api.services.ws_manager import ws_manager
 

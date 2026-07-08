@@ -1,10 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './styles/tokens.css'
 import './styles/global.css'
 import { appLogger } from '@/shared/utils/logger'
 import { mark } from '@/shared/perf/metrics'
+import { queryClient } from '@/shared/api/queryClient'
 
 // P2: Web Vitals 性能指标采集
 import { onLCP, onCLS, onINP, onTTFB } from 'web-vitals'
@@ -60,6 +62,8 @@ window.addEventListener('unhandledrejection', (event) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </React.StrictMode>,
 )

@@ -67,6 +67,7 @@ function normalizeSubagentState(
   return {
     agentId: incoming.agentId || fallbackId,
     agentType: incoming.agentType,
+    runMode: incoming.runMode,
     logs: String(incoming.logs || ''),
     archivedLogs: typeof incoming.archivedLogs === 'string' ? incoming.archivedLogs : undefined,
     summary: typeof incoming.summary === 'string' ? incoming.summary : undefined,
@@ -314,7 +315,7 @@ export function applyToolUpdate(meta: AssistantExecutionMeta, tool: Record<strin
 
 export function applySubagentStart(
   meta: AssistantExecutionMeta,
-  payload: { agentId: string; agentType?: string; description?: string }
+  payload: { agentId: string; agentType?: string; description?: string; runMode?: 'foreground' | 'background' }
 ): AssistantExecutionMeta {
   const now = Date.now()
   return applyToolUpdate(meta, {
@@ -327,6 +328,7 @@ export function applySubagentStart(
     subagent: {
       agentId: payload.agentId,
       agentType: payload.agentType,
+      runMode: payload.runMode,
       logs: payload.description || '',
       summary: payload.description,
       lastOutputAt: now,
@@ -368,7 +370,7 @@ export function applySubagentMessage(
 
 export function applySubagentStop(
   meta: AssistantExecutionMeta,
-  payload: { agentId: string; agentType?: string; state?: string; summary?: string }
+  payload: { agentId: string; agentType?: string; state?: string; summary?: string; runMode?: 'foreground' | 'background' }
 ): AssistantExecutionMeta {
   const existing = meta.toolEvents.find((tool) => tool.id === payload.agentId)
   const finishedAt = Date.now()
@@ -392,6 +394,7 @@ export function applySubagentStop(
     subagent: {
       agentId: payload.agentId,
       agentType: payload.agentType || existing?.subagent?.agentType,
+      runMode: payload.runMode || existing?.subagent?.runMode,
       logs: nextLogs.logs,
       archivedLogs: existing?.subagent?.archivedLogs,
       summary: summaryText || existing?.subagent?.summary,

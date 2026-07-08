@@ -13,9 +13,7 @@ from loguru import logger
 from api.dependencies import get_current_user
 from api.schemas import MCPServerCreate, MCPServerResponse, MCPToolCallCreate, MCPToolCallResponse
 from db.models import User
-from mcp.client import MCPClientError
-from mcp.manager import MCPManager
-from mcp.types import MCPServerConfig, TransportType
+from mcp.manager import MCPClientError, MCPManager, MCPServerConfig, TransportType
 
 router = APIRouter(prefix="/api/mcp", tags=["MCP"])
 

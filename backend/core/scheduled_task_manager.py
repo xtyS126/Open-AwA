@@ -1,5 +1,14 @@
 """
-定时任务调度管理器，负责轮询待执行任务并在隔离上下文中调用 AI Agent。
+定时任务调度管理器，基于 APScheduler 4.x 实现周期性 / 一次性任务的调度与执行。
+
+设计要点：
+- 业务表 scheduled_tasks 仍是用户可见的"任务配置"真相源（标题、prompt、cron_expression 等）。
+- APScheduler 的 AsyncScheduler + SQLAlchemyDataStore 负责实际的触发与去重，
+  其内部表（tasks/schedules/jobs/job_results/metadata）由 SQLAlchemyDataStore 自动建表，
+  与业务表完全分离，避免污染 scheduled_tasks 业务语义。
+- CronTrigger.from_crontab 复用成熟 cron 解析，删除自实现的 _parse_cron_field 与逐分钟遍历。
+- 多 worker 部署时，SQLAlchemyDataStore 提供分布式锁语义（同一 job 只被一个 scheduler acquire）。
+- register_task / unregister_task 在调度器未启动时静默 no-op，避免测试与启动早期报错。
 """
 
 from __future__ import annotations
@@ -9,122 +18,240 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from apscheduler import AsyncScheduler, ScheduleLookupError
+from apscheduler._enums import ConflictPolicy
+from apscheduler.datastores.sqlalchemy import SQLAlchemyDataStore
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from loguru import logger
 
 from core.agent import AIAgent
-from db.models import ScheduledTask, ScheduledTaskExecution, SessionLocal
+from db.models import ScheduledTask, ScheduledTaskExecution, SessionLocal, engine as main_engine
+
+
+# 业务任务在 APScheduler 中的 schedule id 前缀，避免与其他模块潜在 schedule 冲突
+_SCHEDULE_ID_PREFIX = "scheduled_task_"
+
+
+async def _execute_scheduled_task(task_id: int) -> None:
+    """
+    APScheduler 触发时调用的可执行对象。
+
+    必须为模块级函数（不能是 lambda / 嵌套函数），以便 APScheduler 序列化为
+    "core.scheduled_task_manager:_execute_scheduled_task" 引用。
+    委托给全局单例 scheduled_task_manager._execute_task 完成实际执行。
+    """
+    await scheduled_task_manager._execute_task(int(task_id))
 
 
 class ScheduledTaskManager:
     """
-    一次性定时任务调度器。
-    使用后台轮询方式查找到期任务，并复用现有 Agent 主链路完成执行。
+    基于 APScheduler 4.x 的定时任务管理器。
+
+    取代原 DB 轮询 + asyncio.Lock 实现：
+    - 不再每 2 秒查 DB 找到期任务，APScheduler 内部基于 trigger 计算下次触发时间。
+    - 不再用 asyncio.Lock 防并发领取，APScheduler 的 SQLAlchemyDataStore 提供跨 worker 锁语义。
+    - 不再自实现 cron 解析，CronTrigger.from_crontab 提供完整 5 字段 cron 支持。
     """
 
-    def __init__(self, poll_interval_seconds: float = 2.0):
-        self.poll_interval_seconds = max(poll_interval_seconds, 1.0)
-        self._runner_task: Optional[asyncio.Task] = None
-        self._stop_event: Optional[asyncio.Event] = None
-        self._processing_lock = asyncio.Lock()
+    def __init__(self) -> None:
+        self._scheduler: Optional[AsyncScheduler] = None
+        self._data_store: Optional[SQLAlchemyDataStore] = None
+        self._started: bool = False
+        # 保护 register/unregister 并发，避免同一任务重复注册产生竞态
+        self._register_lock = asyncio.Lock()
 
     @staticmethod
     def _utcnow() -> datetime:
-        """
-        统一返回 UTC 当前时间，避免不同调用点出现时间来源不一致。
-        """
+        """统一返回 UTC 当前时间，避免不同调用点出现时间来源不一致。"""
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _build_schedule_id(task_id: int) -> str:
+        """根据业务任务 id 生成 APScheduler schedule id。"""
+        return f"{_SCHEDULE_ID_PREFIX}{task_id}"
+
+    @staticmethod
+    def _build_trigger(task: Any) -> Optional[Any]:
+        """
+        根据 ScheduledTask 业务字段构建 APScheduler trigger。
+
+        - 周期任务（is_daily=True 且 cron_expression 非空）：CronTrigger.from_crontab
+        - 一次性任务（scheduled_at 为未来时间）：DateTrigger
+        - 已过期的一次性任务：返回 None，调用方决定是否立即触发或跳过
+        """
+        cron_expr = (getattr(task, "cron_expression", None) or "").strip()
+        is_daily = bool(getattr(task, "is_daily", False))
+        if is_daily and cron_expr:
+            # 使用 UTC 时区解析 cron，与项目其他模块时间基准一致
+            return CronTrigger.from_crontab(cron_expr, timezone="UTC")
+
+        scheduled_at = getattr(task, "scheduled_at", None)
+        if scheduled_at is None:
+            return None
+        # DateTrigger 接受 timezone-aware datetime
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        return DateTrigger(scheduled_at)
 
     async def start(self) -> None:
         """
-        启动后台轮询任务。
+        启动 APScheduler 调度器并注册所有待执行任务。
+
+        步骤：
+        1. 用主数据库 engine 创建 SQLAlchemyDataStore（APScheduler 自动建内部表）。
+        2. 进入 AsyncScheduler 上下文（初始化 data store / event broker）。
+        3. 回收重启前遗留的 running 任务（与原实现保持一致）。
+        4. 扫描 scheduled_tasks 表所有 pending 任务，注册到 APScheduler。
+        5. 后台启动调度器。
         """
-        if self._runner_task and not self._runner_task.done():
+        if self._started:
             return
 
+        # 复用主数据库 engine，APScheduler 内部表与业务表共库不同名
+        self._data_store = SQLAlchemyDataStore(main_engine)
+        self._scheduler = AsyncScheduler(data_store=self._data_store)
+
+        # 进入上下文：初始化 data store，创建 apscheduler 内部表
+        await self._scheduler.__aenter__()
+
+        # 回收中断前遗留的 running 任务，与原实现行为保持一致
         await self._reset_running_tasks()
-        self._stop_event = asyncio.Event()
-        self._runner_task = asyncio.create_task(self._run_loop())
-        logger.bind(event="scheduled_task_manager_started", module="scheduled_tasks").info("scheduled task manager started")
+
+        # 注册所有 pending 任务到 APScheduler
+        await self._register_all_pending_tasks()
+
+        # 后台启动调度器
+        await self._scheduler.start_in_background()
+
+        self._started = True
+        logger.bind(
+            event="scheduled_task_manager_started",
+            module="scheduled_tasks",
+        ).info("scheduled task manager started (APScheduler 4.x)")
 
     async def stop(self) -> None:
-        """
-        停止后台轮询任务。
-        """
-        if not self._runner_task:
+        """停止 APScheduler 调度器并释放资源。"""
+        if not self._started or self._scheduler is None:
             return
 
-        if self._stop_event:
-            self._stop_event.set()
-
         try:
-            await self._runner_task
-        except asyncio.CancelledError:
-            logger.bind(event="scheduled_task_manager_cancelled", module="scheduled_tasks").warning("scheduled task manager cancelled")
-        finally:
-            self._runner_task = None
-            self._stop_event = None
+            await self._scheduler.__aexit__(None, None, None)
+        except Exception as exc:
+            logger.bind(
+                event="scheduled_task_manager_stop_error",
+                module="scheduled_tasks",
+                error_type=type(exc).__name__,
+            ).warning(f"scheduled task manager stop failed: {exc}")
 
-        logger.bind(event="scheduled_task_manager_stopped", module="scheduled_tasks").info("scheduled task manager stopped")
+        self._started = False
+        self._scheduler = None
+        self._data_store = None
+        logger.bind(
+            event="scheduled_task_manager_stopped",
+            module="scheduled_tasks",
+        ).info("scheduled task manager stopped")
 
-    async def process_due_tasks(self) -> int:
+    async def register_task(self, task: Any) -> None:
         """
-        处理当前所有到期但尚未执行的任务。
-        返回本轮成功领取的任务数量。
+        将一个 ScheduledTask 业务对象注册到 APScheduler。
+
+        - 调度器未启动时静默 no-op（用于测试与启动早期）。
+        - 使用 conflict_policy=replace，确保 idempotent：重复注册同一任务会更新 trigger 而非报错。
+        - 周期任务（is_daily + cron_expression）：CronTrigger。
+        - 一次性任务（scheduled_at）：DateTrigger。
+        - 已过期的一次性任务：立即触发执行（catch-up 语义，与原轮询实现一致）。
         """
-        if self._processing_lock.locked():
-            return 0
+        if not self._started or self._scheduler is None:
+            return
 
-        async with self._processing_lock:
-            def _sync_get_due_task_ids():
-                db = SessionLocal()
-                try:
-                    return [
-                        task_id
-                        for (task_id,) in (
-                            db.query(ScheduledTask.id)
-                            .filter(
-                                ScheduledTask.status == "pending",
-                                ScheduledTask.scheduled_at <= self._utcnow(),
-                            )
-                            .order_by(ScheduledTask.scheduled_at.asc(), ScheduledTask.id.asc())
-                            .all()
-                        )
-                    ]
-                finally:
-                    db.close()
+        async with self._register_lock:
+            task_id = int(task.id)
+            schedule_id = self._build_schedule_id(task_id)
+            trigger = self._build_trigger(task)
 
-            due_task_ids = await asyncio.to_thread(_sync_get_due_task_ids)
+            if trigger is None:
+                # 一次性任务的 scheduled_at 已过期 → 立即触发，与原轮询行为一致
+                logger.bind(
+                    event="scheduled_task_register_no_trigger",
+                    module="scheduled_tasks",
+                    task_id=task_id,
+                ).warning("task has no valid trigger, will execute immediately")
+                asyncio.create_task(self._execute_task(task_id))
+                return
 
-            for task_id in due_task_ids:
-                await self._execute_task(task_id)
-
-            return len(due_task_ids)
-
-    async def _run_loop(self) -> None:
-        """
-        后台循环，持续轮询到期任务直到收到停止信号。
-        """
-        if self._stop_event is None:
-            self._stop_event = asyncio.Event()
-
-        while not self._stop_event.is_set():
             try:
-                await self.process_due_tasks()
+                await self._scheduler.add_schedule(
+                    _execute_scheduled_task,
+                    trigger,
+                    id=schedule_id,
+                    args=(task_id,),
+                    conflict_policy=ConflictPolicy.replace,
+                )
+            except Exception as exc:
+                # 注册失败不影响 API 主流程，仅记录日志
+                logger.bind(
+                    event="scheduled_task_register_error",
+                    module="scheduled_tasks",
+                    task_id=task_id,
+                    error_type=type(exc).__name__,
+                ).warning(f"failed to register task to APScheduler: {exc}")
+
+    async def unregister_task(self, task_id: int) -> None:
+        """
+        从 APScheduler 移除任务调度。
+
+        - 调度器未启动时静默 no-op。
+        - schedule 不存在时静默忽略（ScheduleLookupError）。
+        """
+        if not self._started or self._scheduler is None:
+            return
+
+        async with self._register_lock:
+            schedule_id = self._build_schedule_id(int(task_id))
+            try:
+                await self._scheduler.remove_schedule(schedule_id)
+            except ScheduleLookupError:
+                # schedule 已不存在（可能已自动过期或从未注册），静默忽略
+                pass
             except Exception as exc:
                 logger.bind(
-                    event="scheduled_task_loop_error",
+                    event="scheduled_task_unregister_error",
                     module="scheduled_tasks",
+                    task_id=task_id,
                     error_type=type(exc).__name__,
-                ).opt(exception=True).error(f"scheduled task loop failed: {exc}")
+                ).warning(f"failed to unregister task from APScheduler: {exc}")
 
+    async def _register_all_pending_tasks(self) -> None:
+        """
+        启动时扫描 scheduled_tasks 表所有 pending 任务，批量注册到 APScheduler。
+
+        DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
+        """
+        def _sync_list_pending():
+            db = SessionLocal()
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self.poll_interval_seconds)
-            except asyncio.TimeoutError:
-                continue
+                return (
+                    db.query(ScheduledTask)
+                    .filter(ScheduledTask.status == "pending")
+                    .all()
+                )
+            finally:
+                db.close()
+
+        pending_tasks = await asyncio.to_thread(_sync_list_pending)
+        for task in pending_tasks:
+            await self.register_task(task)
+
+        logger.bind(
+            event="scheduled_task_bulk_register",
+            module="scheduled_tasks",
+            count=len(pending_tasks),
+        ).info(f"registered {len(pending_tasks)} pending tasks to APScheduler")
 
     async def _reset_running_tasks(self) -> None:
         """
-        启动时回收中断前遗留的运行中任务，确保重启后可以重新调度。
+        启动时回收中断前遗留的 running 任务，确保重启后可以重新调度。
         DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
         """
         def _sync_reset():
@@ -155,7 +282,7 @@ class ScheduledTaskManager:
 
     async def execute_task_now(self, task, db=None) -> Dict[str, Any]:
         """
-        手动触发执行一个定时任务，不依赖 claim 机制，直接执行并返回结果。
+        手动触发执行一个定时任务，不依赖 APScheduler 触发，直接执行并返回结果。
         用于 API 手动触发场景。
 
         Args:
@@ -192,6 +319,8 @@ class ScheduledTaskManager:
     async def _execute_task(self, task_id: int) -> None:
         """
         执行单个定时任务，根据任务类型分流到AI Agent或插件命令执行。
+
+        被 APScheduler 的 _execute_scheduled_task 调用，也可被 register_task 用于过期立即触发。
         """
         try:
             claimed_task, execution_id = await asyncio.to_thread(self._claim_task_for_execution, task_id)
@@ -373,7 +502,7 @@ class ScheduledTaskManager:
     ) -> None:
         """
         将任务和执行记录更新为成功完成状态。
-        如果是每日任务，则重新排程到下一次执行时间。
+        周期任务执行后不修改状态（保持 pending），APScheduler 会按 CronTrigger 自动触发下一次。
         DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
         """
         now = self._utcnow()
@@ -389,18 +518,12 @@ class ScheduledTaskManager:
                 if task is None or execution is None:
                     return None, None
 
-                # 每日任务：执行后重新排程而非标记为完成
+                # 周期任务保持 pending 状态（APScheduler 按 CronTrigger 自动续程）
+                # 一次性任务标记为 completed
                 if task.is_daily and task.cron_expression:
-                    next_exec = self._calculate_next_cron_execution(task.cron_expression)
-                    if next_exec:
-                        task.status = "pending"
-                        task.scheduled_at = next_exec
-                        task.last_error_message = None
-                        task.completed_at = None
-                    else:
-                        task.status = "completed"
-                        task.completed_at = now
-                        task.last_error_message = "无法计算下一次执行时间，任务已标记为完成"
+                    task.status = "pending"
+                    task.last_error_message = None
+                    task.completed_at = None
                 else:
                     task.status = "completed"
                     task.completed_at = now
@@ -444,121 +567,36 @@ class ScheduledTaskManager:
                 logger.warning(f"[scheduled_task] 收件箱推送失败，task_id={scheduled_task.get('id')}: {exc}", exc_info=exc)
 
     @staticmethod
-    def _parse_cron_field(field: str, min_val: int, max_val: int) -> set:
-        """
-        解析单个 cron 字段，支持：
-        - 通配符 '*' → 所有值
-        - 单个值 '5' → {5}
-        - 多个值 '1,3,5' → {1,3,5}
-        - 步长 '*/5' → 每 5 个值
-        - 范围 '1-5' → {1,2,3,4,5}
-        """
-        field = field.strip()
-        if field == '*':
-            return set(range(min_val, max_val + 1))
-
-        values = set()
-        for part in field.split(','):
-            part = part.strip()
-            if '/' in part:
-                # 步长语法: */5 或 1-10/2
-                range_part, step_str = part.split('/', 1)
-                step = int(step_str)
-                if step <= 0:
-                    continue
-                if range_part == '*':
-                    values.update(range(min_val, max_val + 1, step))
-                elif '-' in range_part:
-                    r_start, r_end = range_part.split('-', 1)
-                    values.update(range(int(r_start), int(r_end) + 1, step))
-            elif '-' in part:
-                r_start, r_end = part.split('-', 1)
-                values.update(range(int(r_start), int(r_end) + 1))
-            else:
-                values.add(int(part))
-
-        return {v for v in values if min_val <= v <= max_val}
-
-    @staticmethod
     def _calculate_next_cron_execution(cron_expression: str) -> Optional[datetime]:
         """
         根据 cron 表达式计算下一次执行时间。
-        支持完整 5 字段格式：分 时 日 月 星期
-        支持 */N 步长、逗号分隔多值、范围等语法。
 
-        PERF-09: 使用逐分钟遍历查找下一次匹配时间。
-        限制最大迭代次数为一年（525600 分钟），超过则返回 None。
-        计算耗时超过 100ms 时记录 warning 日志。
+        委托给 APScheduler CronTrigger.from_crontab，删除原自实现的逐分钟遍历。
+        返回 timezone-aware UTC datetime，与项目其他模块时间基准一致。
 
-        未来优化方向：引入 croniter 库实现 O(1) 级别的下次时间计算，
-        替代当前的逐分钟遍历方案。croniter 基于日历算法直接推算下一匹配，
-        无需逐分钟试探，对长周期 cron 表达式（如年度任务）性能提升显著。
+        Args:
+            cron_expression: 标准 5 字段 cron 表达式（分 时 日 月 周）
+
+        Returns:
+            下一次执行时间（UTC），无效表达式或无下次匹配时返回 None
         """
         if not cron_expression:
             return None
-        import time as _time
-        from datetime import timedelta
-        parts = cron_expression.strip().split()
-        if len(parts) != 5:
+        try:
+            trigger = CronTrigger.from_crontab(cron_expression, timezone="UTC")
+        except (ValueError, TypeError):
             return None
         try:
-            target_minutes = ScheduledTaskManager._parse_cron_field(parts[0], 0, 59)
-            target_hours = ScheduledTaskManager._parse_cron_field(parts[1], 0, 23)
-            target_days = ScheduledTaskManager._parse_cron_field(parts[2], 1, 31)
-            target_months = ScheduledTaskManager._parse_cron_field(parts[3], 1, 12)
-            target_weekdays = ScheduledTaskManager._parse_cron_field(parts[4], 0, 7)
-            # 支持 7 表示周日，统一映射
-            if 7 in target_weekdays:
-                target_weekdays.discard(7)
-                target_weekdays.add(0)
-        except (ValueError, IndexError):
+            next_fire = next(trigger)
+        except StopIteration:
+            # trigger 已耗尽，无下次匹配
             return None
-
-        now = datetime.now(timezone.utc)
-        check = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-
-        # PERF-09: 最大迭代上限为一年的分钟数，防止极端 cron 表达式导致无限遍历
-        MAX_CRON_ITERATIONS = 525600  # 365 * 24 * 60
-        PERF_WARN_THRESHOLD_MS = 100  # 计算耗时超过 100ms 记录 warning
-
-        _start_ts = _time.monotonic()
-        for i in range(MAX_CRON_ITERATIONS):
-            # Python weekday(): 0=周一 → cron: 0=周日，需要 +1 取模转换
-            weekday = (check.weekday() + 1) % 7
-            if (check.minute in target_minutes and
-                check.hour in target_hours and
-                check.day in target_days and
-                check.month in target_months and
-                weekday in target_weekdays and
-                check > now):
-                _elapsed_ms = (_time.monotonic() - _start_ts) * 1000
-                if _elapsed_ms > PERF_WARN_THRESHOLD_MS:
-                    logger.bind(
-                        event="cron_calc_slow",
-                        module="scheduled_tasks",
-                        cron_expression=cron_expression,
-                        elapsed_ms=round(_elapsed_ms, 2),
-                        iterations=i + 1,
-                    ).warning(
-                        f"cron 下次执行时间计算耗时 {_elapsed_ms:.1f}ms "
-                        f"(表达式: {cron_expression}, 迭代 {i + 1} 次)"
-                    )
-                return check
-            check += timedelta(minutes=1)
-
-        # 超过最大迭代次数仍未找到匹配，返回 None 并记录 warning
-        _elapsed_ms = (_time.monotonic() - _start_ts) * 1000
-        logger.bind(
-            event="cron_calc_exhausted",
-            module="scheduled_tasks",
-            cron_expression=cron_expression,
-            max_iterations=MAX_CRON_ITERATIONS,
-            elapsed_ms=round(_elapsed_ms, 2),
-        ).warning(
-            f"cron 表达式 '{cron_expression}' 在 {MAX_CRON_ITERATIONS} 次迭代内"
-            f"未找到匹配时间，可能为无效表达式或周期超过一年"
-        )
-        return None
+        # CronTrigger.__next__ 返回 timezone-aware datetime，确保转为 UTC
+        if next_fire.tzinfo is None:
+            next_fire = next_fire.replace(tzinfo=timezone.utc)
+        else:
+            next_fire = next_fire.astimezone(timezone.utc)
+        return next_fire
 
     async def _mark_task_failed(
         self,
@@ -570,6 +608,7 @@ class ScheduledTaskManager:
     ) -> None:
         """
         将任务和执行记录更新为失败状态。
+        周期任务失败后仍保持 pending（APScheduler 会按 cron 继续触发下一次）。
         DB 操作通过 asyncio.to_thread 执行，避免阻塞事件循环。
         """
         now = self._utcnow()
@@ -582,8 +621,13 @@ class ScheduledTaskManager:
                 if task is None or execution is None:
                     return
 
-                task.status = "failed"
-                task.completed_at = now
+                # 周期任务失败后仍保持 pending，APScheduler 按 CronTrigger 自动续程
+                if task.is_daily and task.cron_expression:
+                    task.status = "pending"
+                    task.completed_at = None
+                else:
+                    task.status = "failed"
+                    task.completed_at = now
                 task.last_error_message = error_message
 
                 execution.status = "failed"
@@ -609,9 +653,7 @@ class ScheduledTaskManager:
 
     @staticmethod
     def _extract_response_text(result: Dict[str, Any]) -> str:
-        """
-        从 Agent 输出中提取最终文本响应。
-        """
+        """从 Agent 输出中提取最终文本响应。"""
         response = result.get("response")
         if isinstance(response, str):
             return response
@@ -621,9 +663,7 @@ class ScheduledTaskManager:
 
     @staticmethod
     def _extract_provider_and_model(result: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
-        """
-        从执行结果中提取实际使用的 provider 和 model。
-        """
+        """从执行结果中提取实际使用的 provider 和 model。"""
         for item in result.get("results", []):
             if not isinstance(item, dict):
                 continue
@@ -641,9 +681,7 @@ class ScheduledTaskManager:
 
     @staticmethod
     def _build_execution_metadata(result: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        提取任务页展示所需的轻量执行元数据。
-        """
+        """提取任务页展示所需的轻量执行元数据。"""
         return {
             "status": result.get("status"),
             "skills_executed": result.get("skills_executed", 0),

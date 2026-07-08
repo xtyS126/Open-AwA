@@ -1,8 +1,12 @@
 """
-P2 安全增强测试：细粒度权限、IP 白名单/黑名单、用户级速率限制、异常检测、CSRF token。
+P2 安全增强测试：细粒度权限、IP 白名单/黑名单、异常检测。
+
+注：CSRF token 管理与用户级速率限制已迁移至成熟包：
+- CSRF 防护由 fastapi-csrf-protect 通过双提交 Cookie 模式在 main.py 中间件层处理
+- 速率限制由 slowapi 在中间件层全局处理
+  相关测试见 test_csrf_bearer_token_distinction.py 与 test_config_security.py
 """
 import asyncio
-import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -13,12 +17,12 @@ from sqlalchemy.orm import sessionmaker
 from db.models import (
     AnomalyEvent,
     Base,
-    CsrfToken,
     CustomRole,
     IpAccessList,
     Role,
     UserRole,
 )
+from security.anomaly_detector import AnomalyDetector, get_anomaly_detector
 from security.fine_grained_permissions import (
     FineGrainedPermissionManager,
     KNOWN_PERMISSIONS,
@@ -26,14 +30,7 @@ from security.fine_grained_permissions import (
     normalize_permissions,
     validate_permission_format,
 )
-from security.proactive_defense import (
-    AnomalyDetector,
-    CsrfTokenManager,
-    IpAccessController,
-    UserRateLimiter,
-    get_anomaly_detector,
-    get_user_rate_limiter,
-)
+from security.ip_access import IpAccessController
 
 
 # ── 测试夹具 ──────────────────────────────────────────
@@ -61,18 +58,6 @@ def permission_manager(db_session):
 def ip_controller(db_session):
     """创建 IP 访问控制器实例。"""
     return IpAccessController(db_session)
-
-
-@pytest.fixture
-def csrf_manager(db_session):
-    """创建 CSRF token 管理器实例。"""
-    return CsrfTokenManager(db_session)
-
-
-@pytest.fixture
-def rate_limiter():
-    """创建用户级速率限制器实例（独立于全局单例）。"""
-    return UserRateLimiter(max_requests=5, window_seconds=2)
 
 
 @pytest.fixture
@@ -385,57 +370,8 @@ class TestIpAccessController:
 
 
 # ── 用户级速率限制器测试 ──────────────────────────────────────────
-
-
-class TestUserRateLimiter:
-    """用户级速率限制器测试。"""
-
-    def test_allow_under_limit(self, rate_limiter):
-        result = rate_limiter.check("user1")
-        assert result["allowed"] is True
-        assert result["remaining"] == 4
-
-    def test_block_over_limit(self, rate_limiter):
-        for _ in range(5):
-            rate_limiter.check("user1")
-        result = rate_limiter.check("user1")
-        assert result["allowed"] is False
-        assert result["remaining"] == 0
-
-    def test_independent_users(self, rate_limiter):
-        for _ in range(5):
-            rate_limiter.check("user1")
-        # user2 仍然可以请求
-        result = rate_limiter.check("user2")
-        assert result["allowed"] is True
-
-    def test_reset_user(self, rate_limiter):
-        for _ in range(5):
-            rate_limiter.check("user1")
-        assert rate_limiter.check("user1")["allowed"] is False
-        rate_limiter.reset("user1")
-        assert rate_limiter.check("user1")["allowed"] is True
-
-    def test_empty_user_id_allowed(self, rate_limiter):
-        result = rate_limiter.check("")
-        assert result["allowed"] is True
-
-    def test_get_stats(self, rate_limiter):
-        rate_limiter.check("user1")
-        rate_limiter.check("user1")
-        stats = rate_limiter.get_stats("user1")
-        assert stats["current_count"] == 2
-        assert stats["max_requests"] == 5
-
-    def test_window_sliding(self, rate_limiter):
-        """窗口滑动后计数重置。"""
-        for _ in range(5):
-            rate_limiter.check("user1")
-        assert rate_limiter.check("user1")["allowed"] is False
-        # 等待窗口过期（window_seconds=2）
-        time.sleep(2.1)
-        result = rate_limiter.check("user1")
-        assert result["allowed"] is True
+# 注：UserRateLimiter 已删除，速率限制由 slowapi 在中间件层全局处理。
+# 相关限流测试由 test_config_security.py 与 main.py 中间件层覆盖。
 
 
 # ── 异常检测器测试 ──────────────────────────────────────────
@@ -522,115 +458,8 @@ class TestAnomalyDetector:
 
 
 # ── CSRF Token 管理器测试 ──────────────────────────────────────────
-
-
-class TestCsrfTokenManager:
-    """CSRF token 管理器测试。"""
-
-    def test_generate_token(self, csrf_manager, db_session):
-        result = csrf_manager.generate_token(user_id="user1")
-        assert "token" in result
-        assert "expires_at" in result
-        assert len(result["token"]) == 64  # 32 字节 hex 编码
-
-    def test_validate_valid_token(self, csrf_manager):
-        gen = csrf_manager.generate_token(user_id="user1")
-        result = csrf_manager.validate_token(gen["token"], user_id="user1")
-        assert result["valid"] is True
-
-    def test_validate_consumes_token(self, csrf_manager):
-        gen = csrf_manager.generate_token(user_id="user1")
-        # 第一次校验消费
-        result1 = csrf_manager.validate_token(gen["token"], consume=True)
-        assert result1["valid"] is True
-        # 第二次校验失败（已使用）
-        result2 = csrf_manager.validate_token(gen["token"])
-        assert result2["valid"] is False
-        assert "使用" in result2["reason"]
-
-    def test_validate_without_consume(self, csrf_manager):
-        gen = csrf_manager.generate_token(user_id="user1")
-        # 不消费，可多次校验
-        result1 = csrf_manager.validate_token(gen["token"], consume=False)
-        result2 = csrf_manager.validate_token(gen["token"], consume=False)
-        assert result1["valid"] is True
-        assert result2["valid"] is True
-
-    def test_validate_empty_token(self, csrf_manager):
-        result = csrf_manager.validate_token("")
-        assert result["valid"] is False
-        assert "为空" in result["reason"]
-
-    def test_validate_nonexistent_token(self, csrf_manager):
-        result = csrf_manager.validate_token("nonexistent_token")
-        assert result["valid"] is False
-        assert "不存在" in result["reason"]
-
-    def test_validate_user_mismatch(self, csrf_manager):
-        gen = csrf_manager.generate_token(user_id="user1")
-        result = csrf_manager.validate_token(gen["token"], user_id="user2")
-        assert result["valid"] is False
-        assert "不匹配" in result["reason"]
-
-    def test_validate_expired_token(self, csrf_manager, db_session):
-        """过期 token 校验失败。"""
-        # 直接插入一个已过期的 token
-        expired = datetime.now(timezone.utc) - timedelta(hours=1)
-        token = CsrfToken(
-            token="expired_token_value",
-            user_id="user1",
-            is_used=False,
-            is_revoked=False,
-            created_at=datetime.now(timezone.utc) - timedelta(hours=2),
-            expires_at=expired,
-        )
-        db_session.add(token)
-        db_session.commit()
-        result = csrf_manager.validate_token("expired_token_value")
-        assert result["valid"] is False
-        assert "过期" in result["reason"]
-
-    def test_revoke_token(self, csrf_manager):
-        gen = csrf_manager.generate_token(user_id="user1")
-        assert csrf_manager.revoke_token(gen["token"]) is True
-        result = csrf_manager.validate_token(gen["token"])
-        assert result["valid"] is False
-        assert "撤销" in result["reason"]
-
-    def test_revoke_nonexistent_raises(self, csrf_manager):
-        with pytest.raises(ValueError, match="不存在"):
-            csrf_manager.revoke_token("nonexistent")
-
-    def test_rotate_token(self, csrf_manager):
-        gen = csrf_manager.generate_token(user_id="user1")
-        new = csrf_manager.rotate_token(gen["token"], user_id="user1")
-        assert new["token"] != gen["token"]
-        # 旧 token 已撤销
-        old_result = csrf_manager.validate_token(gen["token"])
-        assert old_result["valid"] is False
-        # 新 token 有效
-        new_result = csrf_manager.validate_token(new["token"])
-        assert new_result["valid"] is True
-
-    def test_rotate_nonexistent_raises(self, csrf_manager):
-        with pytest.raises(ValueError, match="不存在"):
-            csrf_manager.rotate_token("nonexistent")
-
-    def test_cleanup_expired(self, csrf_manager, db_session):
-        """清理过期且已使用的 token。"""
-        expired = datetime.now(timezone.utc) - timedelta(hours=1)
-        token = CsrfToken(
-            token="cleanup_token",
-            user_id="user1",
-            is_used=True,
-            is_revoked=False,
-            created_at=datetime.now(timezone.utc) - timedelta(hours=2),
-            expires_at=expired,
-        )
-        db_session.add(token)
-        db_session.commit()
-        count = csrf_manager.cleanup_expired()
-        assert count == 1
+# 注：CsrfTokenManager 已删除，CSRF 防护由 fastapi-csrf-protect 通过双提交 Cookie 模式处理。
+# 相关 CSRF 中间件测试见 test_csrf_bearer_token_distinction.py 与 test_config_security.py。
 
 
 # ── 全局单例工厂测试 ──────────────────────────────────────────
@@ -638,11 +467,6 @@ class TestCsrfTokenManager:
 
 class TestSingletons:
     """全局单例工厂测试。"""
-
-    def test_get_user_rate_limiter_singleton(self):
-        limiter1 = get_user_rate_limiter()
-        limiter2 = get_user_rate_limiter()
-        assert limiter1 is limiter2
 
     def test_get_anomaly_detector_singleton(self):
         d1 = get_anomaly_detector()
@@ -670,8 +494,8 @@ class TestRouterLoading:
 
     def test_security_enhanced_router_has_routes(self):
         from api.routes.security_enhanced import router
-        # 应包含多个路由
-        assert len(router.routes) >= 15
+        # 应包含多个路由（CSRF token 管理与用户级速率限制端点已迁移至成熟包）
+        assert len(router.routes) >= 11
 
     def test_security_enhanced_router_registered_in_main(self):
         """验证路由已在 main.py 中注册。"""
@@ -705,6 +529,7 @@ class TestModelRegistration:
     def test_models_create_tables(self, db_session):
         """模型能正确创建表。"""
         # 通过 fixture 已创建所有表，验证可查询
+        from db.models import CsrfToken
         db_session.query(CustomRole).all()
         db_session.query(IpAccessList).all()
         db_session.query(AnomalyEvent).all()

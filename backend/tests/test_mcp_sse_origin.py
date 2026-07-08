@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.startup.profiler import StartupProfiler
-from mcp.transport import SSETransport
+from mcp.manager import SSETransport
 import main
 
 
@@ -126,22 +126,27 @@ class TestStartupMcpSseOrigin:
 
 # ==================== MCP 会话过期检测与自动重连测试（Task 20） ====================
 
-from mcp.client import (
+from mcp.manager import (
     MCPClient,
     MCPClientError,
+    MCPManager,
+    MCPResource,
+    MCPServerConfig,
+    MCPTool,
+    MCPToolCallResponse,
+    TransportType,
     _cache_resources,
     _cache_tools,
     _create_mcp_client,
     _make_connection_key,
     is_mcp_session_expired_error,
 )
-from mcp.manager import MCPManager
+# 官方 mcp SDK 类型，用于构造 session mock 返回值
 from mcp.types import (
-    MCPResource,
-    MCPServerConfig,
-    MCPTool,
-    MCPToolCallResponse,
-    TransportType,
+    ListResourcesResult,
+    ListToolsResult,
+    Resource,
+    Tool,
 )
 
 
@@ -413,31 +418,29 @@ class TestListToolsAndResourcesCache:
         )
         client = MCPClient(config)
 
-        mock_response = {
-            "result": {
-                "tools": [
-                    {"name": "tool1", "description": "工具1"},
-                    {"name": "tool2", "description": "工具2"},
-                ]
-            }
-        }
+        # 模拟已连接的 session，list_tools 返回官方 SDK 的 ListToolsResult
+        mock_session = MagicMock()
+        mock_session.list_tools = AsyncMock(return_value=ListToolsResult(
+            tools=[
+                Tool(name="tool1", description="工具1", inputSchema={}),
+                Tool(name="tool2", description="工具2", inputSchema={}),
+            ]
+        ))
+        client._session = mock_session
 
-        # 模拟 _send_request，记录调用次数
-        send_request_mock = AsyncMock(return_value=mock_response)
-        with patch.object(client, "_send_request", send_request_mock):
-            # 首次调用：发起网络请求
-            result1 = await client.list_tools()
-            assert len(result1) == 2
-            assert result1[0].name == "tool1"
-            assert send_request_mock.call_count == 1
+        # 首次调用：发起网络请求
+        result1 = await client.list_tools()
+        assert len(result1) == 2
+        assert result1[0].name == "tool1"
+        assert mock_session.list_tools.call_count == 1
 
-            # 第二次调用：应命中缓存，不发起网络请求
-            result2 = await client.list_tools()
-            assert len(result2) == 2
-            assert send_request_mock.call_count == 1  # 仍为 1，未增加
+        # 第二次调用：应命中缓存，不发起网络请求
+        result2 = await client.list_tools()
+        assert len(result2) == 2
+        assert mock_session.list_tools.call_count == 1  # 仍为 1，未增加
 
-            # 两次返回的工具列表应一致
-            assert [t.name for t in result1] == [t.name for t in result2]
+        # 两次返回的工具列表应一致
+        assert [t.name for t in result1] == [t.name for t in result2]
 
     @pytest.mark.asyncio
     async def test_list_resources_cached(self, reset_mcp_caches: None) -> None:
@@ -447,29 +450,28 @@ class TestListToolsAndResourcesCache:
         )
         client = MCPClient(config)
 
-        mock_response = {
-            "result": {
-                "resources": [
-                    {"uri": "file:///a", "name": "A", "description": "资源A", "mimeType": "text/plain"},
-                    {"uri": "file:///b", "name": "B", "description": "资源B", "mimeType": None},
-                ]
-            }
-        }
+        # 模拟已连接的 session，list_resources 返回官方 SDK 的 ListResourcesResult
+        mock_session = MagicMock()
+        mock_session.list_resources = AsyncMock(return_value=ListResourcesResult(
+            resources=[
+                Resource(uri="file:///a", name="A", description="资源A", mimeType="text/plain"),
+                Resource(uri="file:///b", name="B", description="资源B", mimeType=None),
+            ]
+        ))
+        client._session = mock_session
 
-        send_request_mock = AsyncMock(return_value=mock_response)
-        with patch.object(client, "_send_request", send_request_mock):
-            # 首次调用：发起网络请求
-            result1 = await client.list_resources()
-            assert len(result1) == 2
-            assert result1[0].uri == "file:///a"
-            assert send_request_mock.call_count == 1
+        # 首次调用：发起网络请求
+        result1 = await client.list_resources()
+        assert len(result1) == 2
+        assert result1[0].uri == "file:///a"
+        assert mock_session.list_resources.call_count == 1
 
-            # 第二次调用：应命中缓存
-            result2 = await client.list_resources()
-            assert len(result2) == 2
-            assert send_request_mock.call_count == 1  # 仍为 1
+        # 第二次调用：应命中缓存
+        result2 = await client.list_resources()
+        assert len(result2) == 2
+        assert mock_session.list_resources.call_count == 1  # 仍为 1
 
-            assert [r.uri for r in result1] == [r.uri for r in result2]
+        assert [r.uri for r in result1] == [r.uri for r in result2]
 
     @pytest.mark.asyncio
     async def test_cache_cleared_on_disconnect(self, reset_mcp_caches: None) -> None:
@@ -479,27 +481,27 @@ class TestListToolsAndResourcesCache:
         )
         client = MCPClient(config)
 
-        mock_response = {
-            "result": {
-                "tools": [{"name": "tool1", "description": "工具1"}]
-            }
-        }
+        # 模拟已连接的 session
+        mock_session = MagicMock()
+        mock_session.list_tools = AsyncMock(return_value=ListToolsResult(
+            tools=[Tool(name="tool1", description="工具1", inputSchema={})]
+        ))
+        client._session = mock_session
 
-        send_request_mock = AsyncMock(return_value=mock_response)
-        with patch.object(client, "_send_request", send_request_mock):
-            # 首次调用：缓存结果
-            await client.list_tools()
-            assert send_request_mock.call_count == 1
+        # 首次调用：缓存结果
+        await client.list_tools()
+        assert mock_session.list_tools.call_count == 1
 
-            # 模拟断开连接（不依赖真实 transport）
-            client._transport = None
-            await client.disconnect()
+        # 断开连接：会清除缓存并将 _session 置为 None
+        await client.disconnect()
 
-            # 重新设置 transport 状态以允许下次调用
-            mock_transport = MagicMock()
-            mock_transport.is_connected = True
-            client._transport = mock_transport
+        # 重新设置 session 以允许下次调用（模拟重连后状态）
+        mock_session2 = MagicMock()
+        mock_session2.list_tools = AsyncMock(return_value=ListToolsResult(
+            tools=[Tool(name="tool1", description="工具1", inputSchema={})]
+        ))
+        client._session = mock_session2
 
-            # 断开后再调用：缓存已清除，应重新发起请求
-            await client.list_tools()
-            assert send_request_mock.call_count == 2  # 增加到 2
+        # 断开后再调用：缓存已清除，应重新发起请求
+        await client.list_tools()
+        assert mock_session2.list_tools.call_count == 1  # 新 session 被调用 1 次

@@ -15,7 +15,6 @@ from db.models import Base
 from billing.models import ModelConfiguration, ModelPricing
 from billing.pricing_manager import PricingManager
 from core.executor import ExecutionLayer
-from core.model_service import build_provider_request
 from api.dependencies import get_current_user
 from db.models import get_db
 from main import app
@@ -161,11 +160,11 @@ class TestBillingProviderModelsRoute:
                 return MockResponse()
 
         import httpx
-        import core.model_service as _ms
+        import core.litellm_adapter as _la
 
         monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
         # 重置全局共享客户端，避免测试间状态污染
-        monkeypatch.setattr(_ms, "_shared_client", None)
+        monkeypatch.setattr(_la, "_models_httpx_client", None)
 
         response = client.post("/api/billing/models-by-provider/openai", json={})
         assert response.status_code == 200
@@ -233,11 +232,11 @@ class TestBillingProviderModelsRoute:
                 )
 
         import httpx
-        import core.model_service as _ms
+        import core.litellm_adapter as _la
 
         monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
         # 重置全局共享客户端，避免测试间状态污染
-        monkeypatch.setattr(_ms, "_shared_client", None)
+        monkeypatch.setattr(_la, "_models_httpx_client", None)
 
         response = client.post(
             "/api/billing/models-by-provider/openai",
@@ -306,10 +305,10 @@ class TestBillingProviderModelsRoute:
                 return MockResponse()
 
         import httpx
-        import core.model_service as _ms
+        import core.litellm_adapter as _la
 
         monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
-        monkeypatch.setattr(_ms, "_shared_client", None)
+        monkeypatch.setattr(_la, "_models_httpx_client", None)
 
         response = client.post(
             "/api/billing/models-by-provider/openai",
@@ -530,25 +529,3 @@ async def test_execution_layer_uses_provider_level_credentials_for_selected_mode
     assert resolved["model"] == "deepseek-v4-flash"
     assert resolved["api_key"] == "secret"
     assert resolved["api_endpoint"] == "https://api.deepseek.com/v1/chat/completions"
-
-
-def test_build_provider_request_for_openai_compatible_excludes_metadata_payload():
-    """
-    OpenAI 兼容接口（含 DeepSeek）不应注入 metadata，避免上游 400。
-    """
-    spec = build_provider_request(
-        provider="deepseek",
-        api_endpoint="https://api.deepseek.com/v1",
-        api_key="test-key",
-        purpose="chat",
-        model="deepseek-chat",
-        prompt="hello",
-        # no max_tokens
-        request_id="rid-1",
-        client_version="test-client",
-        context={"channel": "weixin"},
-    )
-    assert spec.endpoint.endswith("/chat/completions")
-    assert "metadata" not in spec.payload
-    assert spec.payload["model"] == "deepseek-chat"
-    assert spec.payload["messages"][0]["content"] == "hello"

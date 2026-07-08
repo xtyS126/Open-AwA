@@ -390,7 +390,7 @@ MCP（Model Context Protocol）模块已实现完整的客户端协议栈，位�
 - **CSRF 防护**：后端中间件对变更类请求强制验证 Double Submit Cookie；前端 axios 拦截器自动从 Cookie 读取 csrf_token 并注入 X-CSRF-Token 请求头。
 - **RBAC 权限模型**：内置 admin/developer/viewer 三种角色，权限检查通过 RBACManager 集中管理，所有管理接口要求 admin 角色。
 - **审计日志**：AuditLogger 异步写入审计记录，写入失败时记录 Loguru 告警而非静默丢弃。
-- **敏感数据加密**：微信令牌、API 密钥等敏感字段使用基于 SECRET_KEY 派生的 Fernet 对称加密存储。
+- **敏感数据加密**：微信令牌、API 密钥等敏感字段使用独立的 `ENCRYPTION_KEY` 进行 Fernet 对称加密；JWT 与 CSRF 分别使用 `JWT_SECRET_KEY` 和 `CSRF_SECRET_KEY`。
 - **插件安全**：ZIP 解压逐文件校验路径并阻止 symlink；远程下载使用 IP Pinning 防止 DNS Rebinding；AST 静态扫描检测危险导入。
 - **OPENAWA_API_KEY 强制校验**：v1.5 引入，未配置时拒绝启动，CLI 工具 generate_api_key.py 写入 .env.local 后立即 chmod 600 消除 TOCTOU 窗口。
 - **SSRF 加固**：BASE_URL 校验阻断内网/本地/链路本地 IP 地址。
@@ -622,7 +622,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 ### 8.4 生产环境配置
 
-生产环境中应显式设置以下环境变量：SECRET_KEY（必须显式设置，用于 JWT 签名与 Fernet 密钥派生，自动生成的值在重启后导致已签发令牌与已加密数据不可用）；DATABASE_URL；ALLOWED_ORIGINS；各模型提供方 API Key。
+生产环境中应显式设置以下环境变量：`JWT_SECRET_KEY`、`CSRF_SECRET_KEY`、`ENCRYPTION_KEY`、`OPENAWA_API_KEY`、`OPENAWA_OWNER_PASSWORD`、`DATABASE_URL` 与 `ALLOWED_ORIGINS`。三类密钥必须跨重启保持稳定，否则已签发令牌或已加密数据会失效。
 
 ---
 

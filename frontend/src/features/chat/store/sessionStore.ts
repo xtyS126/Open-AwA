@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand'
 import { safeGetItem } from '@/shared/utils/safeStorage'
-import { persistPinnedConversations } from '@/shared/store/chatStoreEffects'
+import { persistPinnedConversations } from '@/features/chat/store/chatStoreEffects'
 import { usePreferenceStore } from '@/features/chat/store/preferenceStore'
 import {
   getActiveSessionId,

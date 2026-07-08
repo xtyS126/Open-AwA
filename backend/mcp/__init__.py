@@ -1,23 +1,45 @@
 """
 MCP (Model Context Protocol) 模块初始化文件。
-提供 MCP 协议支持，包括类型定义、协议处理、传输层、客户端与管理器。
+基于官方 mcp Python SDK，提供类型定义、客户端与管理器。
+
+原 types.py / protocol.py / transport.py / client.py 四个文件已合并到 manager.py，
+由官方 mcp SDK 的 ClientSession / stdio_client / sse_client 统一处理协议层与传输层。
 """
 
-from mcp.types import MCPTool, MCPResource, MCPServerConfig, MCPToolCallRequest, MCPToolCallResponse, MCPMessage
-from mcp.protocol import MCPProtocol
-from mcp.client import MCPClient
 from mcp.config_store import MCPConfigStore
-from mcp.manager import MCPManager
+from mcp.manager import (
+    MCPClient,
+    MCPClientError,
+    MCPManager,
+    MCPMessage,
+    MCPResource,
+    MCPResourceContent,
+    MCPServerConfig,
+    MCPTool,
+    MCPToolCallRequest,
+    MCPToolCallResponse,
+    MCPTransportError,
+    SSETransport,
+    TransportType,
+    build_mcp_tool_name,
+    is_mcp_session_expired_error,
+)
 
 __all__ = [
     "MCPTool",
     "MCPResource",
+    "MCPResourceContent",
     "MCPServerConfig",
     "MCPToolCallRequest",
     "MCPToolCallResponse",
     "MCPMessage",
-    "MCPProtocol",
     "MCPClient",
+    "MCPClientError",
+    "MCPTransportError",
     "MCPConfigStore",
     "MCPManager",
+    "SSETransport",
+    "TransportType",
+    "build_mcp_tool_name",
+    "is_mcp_session_expired_error",
 ]

@@ -1,9 +1,10 @@
 /**
  * 记忆管理页面 —— 对齐 Canvas 设计参考 (open-awa-canvas/pages/memory.html)。
  * 结构：页面标题 / 统计卡片 / 左侧记忆列表 + 右侧系统状态侧栏。
- * 数据获取逻辑保持不变（短期/长期记忆）。
+ * 数据获取通过 TanStack Query 管理服务端状态（短期/长期记忆独立查询）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { conversationAPI, memoryAPI } from '@/shared/api/api'
 import { ShortTermMemory, LongTermMemory } from '@/shared/types/api'
 import { useSessionStore } from '@/features/chat/store/sessionStore'
@@ -219,19 +220,15 @@ function formatRelativeTime(timestamp?: string): string {
  * ============================================================ */
 
 function MemoryPage() {
-  /* ----- 数据状态 ----- */
-  const [shortTermMemories, setShortTermMemories] = useState<ShortTermMemory[]>([])
-  const [longTermMemories, setLongTermMemories] = useState<LongTermMemory[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [selectedSessionId, setSelectedSessionId] = useState('')
+  /* ----- 本地用户输入状态（保留 useState） ----- */
   const [searchQuery, setSearchQuery] = useState('')
-
-  /* ----- 混合搜索配置状态 ----- */
   const [bm25Weight, setBm25Weight] = useState(0.3)
   const [vectorWeight, setVectorWeight] = useState(0.7)
   const [memoryDecay, setMemoryDecay] = useState(true)
+  /* 操作错误状态（删除操作等本地错误，不依赖服务端查询） */
+  const [actionError, setActionError] = useState<string | null>(null)
+  /* 当前展示的会话 ID（由短期记忆 queryFn 内部决定） */
+  const [selectedSessionId, setSelectedSessionId] = useState('')
 
   const chatSessionId = useSessionStore((state) => state.sessionId)
 
@@ -254,49 +251,67 @@ function MemoryPage() {
     return Array.from(candidates)
   }, [chatSessionId])
 
-  /* 加载短期记忆 —— 保持原有逻辑 */
-  const loadShortTermMemories = useCallback(async () => {
-    const candidateSessionIds = await getCandidateSessionIds()
+  /* 短期记忆查询 —— TanStack Query 管理，queryFn 内部执行候选 sessionId 循环逻辑 */
+  const shortTermQuery = useQuery<{
+    memories: ShortTermMemory[]
+    sessionId: string
+  }>({
+    queryKey: ['memory', 'short-term', chatSessionId],
+    queryFn: async () => {
+      const candidateSessionIds = await getCandidateSessionIds()
 
-    if (candidateSessionIds.length === 0) {
-      setSelectedSessionId('')
-      setShortTermMemories([])
-      return
-    }
-
-    for (const sessionId of candidateSessionIds) {
-      try {
-        const response = await memoryAPI.getShortTerm(sessionId)
-        setSelectedSessionId(sessionId)
-        setShortTermMemories(response.data)
-        return
-      } catch (error) {
-        const status = (error as { response?: { status?: number } })?.response?.status
-        if (status === 403) {
-          continue
-        }
-        throw error
+      if (candidateSessionIds.length === 0) {
+        return { memories: [], sessionId: '' }
       }
-    }
 
-    setSelectedSessionId('')
-    setShortTermMemories([])
-  }, [getCandidateSessionIds])
+      for (const sessionId of candidateSessionIds) {
+        try {
+          const response = await memoryAPI.getShortTerm(sessionId)
+          return { memories: response.data, sessionId }
+        } catch (error) {
+          const status = (error as { response?: { status?: number } })?.response?.status
+          if (status === 403) {
+            continue
+          }
+          throw error
+        }
+      }
 
-  /* 加载所有数据 —— 短期 + 长期，两个数据源相互独立，并行加载并各自容错 */
-  const loadAllData = useCallback(async () => {
-    setLoading(true)
-    setLoadError(null)
+      return { memories: [], sessionId: '' }
+    },
+    retry: false,
+  })
 
-    /* 两路并行：短期记忆、长期记忆同时发起，互不阻塞 */
-    const [shortTermResult, longTermResult] = await Promise.allSettled([
-      loadShortTermMemories(),
-      memoryAPI.getLongTerm(),
-    ])
+  /* 长期记忆查询 —— 独立查询，与短期记忆互不阻塞 */
+  const longTermQuery = useQuery<LongTermMemory[]>({
+    queryKey: ['memory', 'long-term'],
+    queryFn: async () => {
+      const response = await memoryAPI.getLongTerm()
+      return response.data
+    },
+    retry: false,
+  })
 
-    /* 短期记忆结果处理 —— 失败时记录错误并提示，不影响其他数据展示 */
-    if (shortTermResult.status === 'rejected') {
-      const error = shortTermResult.reason
+  const shortTermMemories = shortTermQuery.data?.memories ?? []
+  const longTermMemories = longTermQuery.data ?? []
+
+  // 同步短期记忆查询返回的 selectedSessionId 到本地状态（用于 UI 展示）
+  useEffect(() => {
+    setSelectedSessionId(shortTermQuery.data?.sessionId ?? '')
+  }, [shortTermQuery.data?.sessionId])
+
+  /* 派生 loading / loadError 状态 */
+  const loading = shortTermQuery.isInitialLoading || longTermQuery.isInitialLoading
+  const loadError = shortTermQuery.error
+    ? getErrorMessage(shortTermQuery.error, '加载短期记忆失败，请稍后重试')
+    : longTermQuery.error
+      ? getErrorMessage(longTermQuery.error, '加载长期记忆失败，请稍后重试')
+      : null
+
+  /* 失败时记录日志（不影响其他数据展示） */
+  useEffect(() => {
+    if (shortTermQuery.error) {
+      const error = shortTermQuery.error
       appLogger.error({
         event: 'memory_page_load_short_term_failed',
         module: 'memory',
@@ -305,14 +320,12 @@ function MemoryPage() {
         message: '加载短期记忆失败',
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
-      setLoadError(getErrorMessage(error, '加载短期记忆失败，请稍后重试'))
     }
+  }, [shortTermQuery.error])
 
-    /* 长期记忆结果处理 —— 失败时清空列表并记录错误 */
-    if (longTermResult.status === 'fulfilled') {
-      setLongTermMemories(longTermResult.value.data)
-    } else {
-      const error = longTermResult.reason
+  useEffect(() => {
+    if (longTermQuery.error) {
+      const error = longTermQuery.error
       appLogger.error({
         event: 'memory_page_load_long_term_failed',
         module: 'memory',
@@ -321,24 +334,22 @@ function MemoryPage() {
         message: '加载长期记忆失败',
         extra: { error: error instanceof Error ? error.message : String(error) },
       })
-      setLongTermMemories([])
     }
+  }, [longTermQuery.error])
 
-    setLoading(false)
-  }, [loadShortTermMemories])
+  /* 刷新所有数据 —— 同时重新获取短期 + 长期记忆 */
+  const refreshAll = useCallback(() => {
+    void shortTermQuery.refetch()
+    void longTermQuery.refetch()
+  }, [shortTermQuery, longTermQuery])
 
-  /* 挂载时加载所有数据 */
-  useEffect(() => {
-    void loadAllData()
-  }, [loadAllData])
-
-  /* 删除长期记忆 —— 仅刷新长期列表，避免全量重载 */
+  /* 删除长期记忆 —— 失效长期记忆查询，触发后台刷新 */
   const handleDeleteLongTerm = async (id: number) => {
     setActionError(null)
     try {
       await memoryAPI.deleteLongTerm(id)
-      const response = await memoryAPI.getLongTerm()
-      setLongTermMemories(response.data)
+      // 删除成功后失效长期记忆查询，TanStack Query 会自动重新获取
+      await longTermQuery.refetch()
     } catch (error) {
       appLogger.error({
         event: 'memory_page_delete_long_term_failed',
@@ -405,7 +416,7 @@ function MemoryPage() {
         <div className={styles.pageActions}>
           <button
             className={styles.btnSecondary}
-            onClick={() => void loadAllData()}
+            onClick={refreshAll}
             disabled={loading}
           >
             <RefreshIcon />
