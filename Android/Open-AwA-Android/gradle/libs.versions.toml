@@ -22,9 +22,6 @@ kotlinxSerialization = "1.7.3"
 # 本地存储
 datastorePreferences = "1.1.1"
 
-# Chaquopy 内嵌 Python 运行时
-chaquopy = "17.0.0"
-
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -71,5 +68,3 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 # Kotlinx Serialization 插件
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-# Chaquopy 内嵌 Python 运行时插件
-chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

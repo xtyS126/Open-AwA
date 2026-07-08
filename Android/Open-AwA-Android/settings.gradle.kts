@@ -2,8 +2,6 @@ pluginManagement {
     repositories {
         maven{url=uri("https://maven.aliyun.com/repository/google")}
         maven{url=uri("https://maven.aliyun.com/repository/central")}
-        // Chaquopy 内嵌 Python 运行时插件仓库
-        maven{url=uri("https://chaquo.com/chaquopy/maven/")}
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -23,8 +21,6 @@ dependencyResolutionManagement {
     repositories {
         maven{url=uri("https://maven.aliyun.com/repository/google")}
         maven{url=uri("https://maven.aliyun.com/repository/central")}
-        // Chaquopy 内嵌 Python 运行时插件仓库
-        maven{url=uri("https://chaquo.com/chaquopy/maven/")}
         google()
         mavenCentral()
     }

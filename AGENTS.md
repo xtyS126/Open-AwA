@@ -217,7 +217,7 @@ ACP（Agent Client Protocol）是一套用于调用本地 vibe coding 应用的�
 
 ### 5.2 Android 原生应用（Open-AwA-Android）
 
-Android 端采用**原生 Kotlin + Jetpack Compose** 重写，废弃早期 Capacitor + Chaquopy 的 `mobile/` 目录方案。后端走**内嵌 Chaquopy + 远程混合**：本地数据（会话/消息/用户偏好）走内嵌 Python FastAPI，LLM 调用/ACP/插件等重活走远程 Open-AwA 后端。
+Android 端采用**原生 Kotlin + Jetpack Compose**，作为**服务器中心多端一体架构**的瘦客户端。所有业务逻辑（auth/chat/billing/skills/plugins/memory/acp）由服务器后端提供，Android 端通过统一 REST API + SSE/WebSocket 接入，与 Web/桌面端对等，共享同一份用户数据与会话状态。废弃早期 Capacitor + Chaquopy 的 `mobile/` 目录方案（已删除）。
 
 **项目位置与工具**
 
@@ -238,41 +238,45 @@ Android 端采用**原生 Kotlin + Jetpack Compose** 重写，废弃早期 Capac
 **技术栈**
 
 - **UI**：Jetpack Compose + Material 3 + Compose BOM
-- **导航**：Jetpack Navigation 3（scene-based）
+- **导航**：Jetpack Navigation Compose 2.8.5（NavHost + composable 路由）
 - **异步**：Kotlin Coroutines + Flow
-- **网络**：Ktor Client（多平台，纯 Kotlin）
+- **网络**：Ktor Client 2.3.13（CIO 引擎 + ContentNegotiation + kotlinx.serialization.json）
 - **依赖注入**：手动构造（Application 单例），不引入 Hilt 简化构建
-- **本地存储**：DataStore Preferences（替代 SharedPreferences）
-- **内嵌后端**：Chaquopy 17.0.0 + Python 3.12（pure-Python wheel 白名单）
+- **本地存储**：DataStore Preferences 1.1.1（替代 SharedPreferences，持久化 token/偏好）
 - **主题**：Material 3 + 复用 frontend `tokens.css` 设计令牌（颜色/间距/圆角/阴影）
 
-**目录结构（F:\AndroidStudioProjects\Open-AwA-Android）**
+**目录结构**
 
 ```
 app/
-  build.gradle.kts              # Compose/Chaquopy/Ktor 依赖配置
+  build.gradle.kts              # Compose/Ktor 依赖配置
   src/
     main/
       AndroidManifest.xml       # INTERNET 权限 + Application 注册
       kotlin/com/xtys126/open_awa/
-        OpenAwAApplication.kt   # Application 入口，启动 Chaquopy 后端
+        OpenAwAApplication.kt   # Application 入口，初始化 BackendManager
         MainActivity.kt         # 单 Activity + Compose 入口
         core/
           backend/
-            BackendManager.kt   # 内嵌/远程后端选择与端口管理
-            EmbeddedBackend.kt  # Chaquopy 启动器
+            BackendManager.kt   # 服务器后端 URL 管理（瘦客户端）
             ApiClient.kt        # Ktor HTTP 客户端
           theme/
             Color.kt            # 设计令牌（对应 tokens.css）
             Theme.kt            # Material3 主题（亮/暗色）
             Type.kt             # 字体
           nav/
-            AppNavGraph.kt      # Navigation3 路由表
+            Destination.kt      # 22 路由定义
+            AppNavGraph.kt      # NavHost 路由表
             AppShell.kt         # 抽屉式导航外壳
+          ui/
+            CommonComponents.kt # LoadingBox/ErrorBox/EmptyBox/SectionCard
+            Lists.kt            # StatCard/StatusBadge/FilterChipRow
         data/
+          model/Models.kt       # 10 个 @Serializable 数据类
           AuthRepository.kt     # 登录/CSRF 令牌管理
           ChatRepository.kt     # 会话/消息
           PreferencesRepository.kt  # 用户偏好（DataStore）
+          ViewModelFactory.kt   # UiState + 3 个 ViewModel + Factory
         features/
           auth/LoginScreen.kt
           chat/ChatScreen.kt
@@ -293,22 +297,16 @@ app/
           subagents/SubAgentScreen.kt
           discussions/DiscussionsScreen.kt
           inbox/InboxScreen.kt
-      python/
-        chaquopy_bootstrap.py   # Chaquopy 启动入口
-        backend_mobile/         # 复用 mobile/android/app/src/main/python/backend_mobile 代码
-          config.py / db.py / security.py / main.py
-          routes/
-            __init__.py / system.py / auth.py / chat.py / user.py / security.py
+          user/UserCenterScreen.kt
 ```
 
 **关键设计决策**
 
-1. **单 Activity + Compose**：`MainActivity` 只承载 `OpenAwAApp` Composable，所有页面用 Navigation3 scene 管理
-2. **内嵌后端启动流程**：`Application.onCreate()` → 启动 Chaquopy 子线程 → 端口写入 DataStore → 前端轮询 `127.0.0.1:port/api/system/ping` 就绪后进入登录页
-3. **JS Interface 替代**：原生 Kotlin 不需要 `window.OpenAwABackend` JS 桥，直接通过 `BackendManager.getPort()` 同步获取
+1. **服务器中心多端一体**：本应用为瘦客户端，所有业务逻辑由服务器后端提供，与 Web/桌面端对等共享数据
+2. **单 Activity + Compose**：`MainActivity` 只承载 `OpenAwAApp` Composable，所有页面用 Navigation Compose 管理
+3. **后端 URL 用户可配置**：`BackendManager` 持久化服务器 BaseUrl 到 SharedPreferences，设置页可修改，默认 `http://192.168.1.100:8000`
 4. **设计令牌映射**：`tokens.css` 的 `--color-*` / `--space-*` / `--radius-*` 在 `core/theme/Color.kt` 中以 `val ColorPrimary = Color(0xFF3B82F6)` 形式等价映射
-5. **离线降级**：内嵌后端离线时（启动失败）自动降级到远程后端，由 `BackendManager.resolveBaseUrl()` 决策
-6. **不引入 Hilt**：依赖注入用 `Application` 单例 + `remember { ... }` 传递，减少构建配置复杂度
+5. **不引入 Hilt**：依赖注入用 `Application` 单例 + `remember { ... }` 传递，减少构建配置复杂度
 
 **构建与运行**
 
@@ -332,18 +330,20 @@ cd D:\代码\Open-AwA\Android\Open-AwA-Android
 & "D:\代码\Open-AwA\Android-Cli\android.exe" screen capture --device 127.0.0.1:16448
 ```
 
-**已知构建约束（2026-07-08 验证）**
+**已知构建约束（2026-07-09 验证）**
 
 1. **AGP 9 内置 Kotlin**：app/build.gradle.kts 不需要 `alias(libs.plugins.kotlin.android)`，否则报 `Cannot add extension with name 'kotlin'`；只用 `kotlin-compose` + `kotlin-serialization`
 2. **kotlinOptions 已废弃**：AGP 9 不再支持 `kotlinOptions { jvmTarget = "11" }`，改用 `kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_11) } }`
 3. **项目路径含中文**：需在 `gradle.properties` 添加 `android.overridePathCheck=true` 绕过 AGP 路径检查
 4. **XML 注释禁用 `--`**：colors.xml 等 XML 资源文件的注释中不允许出现 `--` 字符串（XML 规范），`--color-primary` 要写成 `color-primary`
-5. **Chaquopy 暂未集成**：当前阶段先验证 Compose UI 骨架，Chaquopy 内嵌 Python 后端待后续集成（Gradle 9 兼容性待验证）
-6. **Material 图标**：`Icons.Outlined.Brain`/`Icons.Outlined.Devops` 不存在，用 `Psychology`/`Engineering` 替代；`Login`/`Chat`/`CallSplit` 有 deprecation 警告，建议用 `Icons.AutoMirrored.Outlined.*`
+5. **Material 图标**：`Icons.Outlined.Brain`/`Icons.Outlined.Devops` 不存在，用 `Psychology`/`Engineering` 替代；`Login`/`Chat`/`CallSplit` 有 deprecation 警告，建议用 `Icons.AutoMirrored.Outlined.*`
+6. **Ktor url() 语法**：`client.request(url) { ... }` 替代 `client.request { url(url); ... }`，否则类型不匹配
+7. **KDoc 嵌套注释**：KDoc 中 `/api/auth/*` 的 `/*` 会被解析为嵌套块注释报 `Unclosed comment`，改为 `/api/auth/`
+8. **Modifier.background 需显式 import**：`androidx.compose.foundation.background`，weight modifier 不可显式 import
 
-**已废弃方案（mobile/ 目录）**
+**已废弃方案（mobile/ 目录，已删除）**
 
-> `mobile/` 目录的 Capacitor + Chaquopy 方案于 2026-07-08 23:30 起废弃，不再维护。所有移动端工作迁移到 `D:\代码\Open-AwA\Android\Open-AwA-Android`。`mobile/android/app/src/main/python/backend_mobile/` 的 Python 后端代码作为参考迁移到新项目的 `app/src/main/python/`，迁移完成后删除 `mobile/` 目录。
+> `mobile/` 目录的 Capacitor + Chaquopy 方案于 2026-07-08 23:30 起废弃，2026-07-09 已从仓库删除。所有移动端工作迁移到 `D:\代码\Open-AwA\Android\Open-AwA-Android`。架构从"内嵌+远程混合"改为"服务器中心多端一体"瘦客户端，不再维护内嵌 Python 后端。
 
 ---
 

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Brightness6
-import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Logout
@@ -39,14 +38,13 @@ import com.xtys126.open_awa.core.ui.SectionCard
  *
  * 分组列表（[LazyColumn] + [SectionCard] + [ListItem]）：
  * - 通用：主题切换（亮/暗）、语言（中文/英文）
- * - 后端：内嵌/远程切换、远程 URL、端口显示
+ * - 后端：服务器后端 URL 配置
  * - 账户：用户名、邮箱、登出
  * - 关于：版本号、开源协议
  *
  * TODO:
  * - 主题切换接入 ThemeStore（DataStore），支持亮/暗/跟随系统三态
  * - 账户信息接入 AuthRepository，登出调用 AuthRepository.logout()
- * - 后端配置已与 [BackendManager] 双向同步
  */
 @Composable
 fun SettingsScreen() {
@@ -54,10 +52,9 @@ fun SettingsScreen() {
     var darkTheme by remember { mutableStateOf(false) }
     var languageZh by remember { mutableStateOf(true) }
 
-    // 后端（与 BackendManager 双向同步）
-    var useRemote by remember { mutableStateOf(BackendManager.useRemote.value) }
+    // 后端（服务器中心架构：仅配置服务器 URL）
     var remoteUrl by remember { mutableStateOf(BackendManager.getRemoteUrl()) }
-    val port = remember { BackendManager.getEmbeddedPort() }
+    var urlInput by remember { mutableStateOf(remoteUrl) }
 
     // 账户（TODO: 接入 AuthRepository）
     val username = remember { mutableStateOf("未登录") }
@@ -119,57 +116,40 @@ fun SettingsScreen() {
         // 后端分组
         item {
             SectionCard(title = "后端") {
-                Column {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     ListItem(
-                        headlineContent = { Text(text = "使用远程后端") },
-                        supportingContent = { Text(text = "关闭时使用内嵌 Chaquopy 后端") },
+                        headlineContent = { Text(text = "服务器后端 URL") },
+                        supportingContent = { Text(text = "瘦客户端架构，所有业务由服务器提供") },
                         leadingContent = {
                             Icon(
                                 imageVector = Icons.Outlined.Storage,
                                 contentDescription = null,
                             )
                         },
-                        trailingContent = {
-                            Switch(
-                                checked = useRemote,
-                                onCheckedChange = {
-                                    useRemote = it
-                                    BackendManager.setUseRemote(it)
-                                },
-                            )
-                        },
                     )
-                    if (useRemote) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            Text(
-                                text = "远程后端 URL",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            OutlinedTextField(
-                                value = remoteUrl,
-                                onValueChange = { remoteUrl = it },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(onClick = { BackendManager.setRemoteUrl(remoteUrl) }) {
-                                Text(text = "保存")
-                            }
-                        }
-                    } else {
-                        ListItem(
-                            headlineContent = { Text(text = "内嵌后端端口") },
-                            supportingContent = {
-                                Text(text = if (port > 0) "$port" else "未启动")
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Code,
-                                    contentDescription = null,
-                                )
-                            },
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = urlInput,
+                        onValueChange = { urlInput = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(text = "https://your-server:8000") },
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            BackendManager.setRemoteUrl(urlInput)
+                            remoteUrl = urlInput
+                        },
+                    ) {
+                        Text(text = "保存")
+                    }
+                    if (remoteUrl != urlInput) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "当前生效：$remoteUrl",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
