@@ -3,12 +3,20 @@ package com.xtys126.open_awa.data
 import android.util.Log
 import com.xtys126.open_awa.core.backend.ApiClient
 import com.xtys126.open_awa.core.backend.ApiException
+import com.xtys126.open_awa.core.backend.BackendManager
+import com.xtys126.open_awa.core.backend.SseClient
+import com.xtys126.open_awa.core.backend.SseEvent
+import com.xtys126.open_awa.data.model.AttachmentResponse
+import com.xtys126.open_awa.data.model.ChatStreamRequest
 import com.xtys126.open_awa.data.model.CreateSessionRequest
 import com.xtys126.open_awa.data.model.Message
 import com.xtys126.open_awa.data.model.SendMessageRequest
 import com.xtys126.open_awa.data.model.Session
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import java.io.File
 
 /**
  * 聊天仓库
@@ -16,7 +24,8 @@ import kotlinx.serialization.json.Json
  * 封装会话与消息相关接口：
  * 1. 会话列表的增删查
  * 2. 历史消息查询
- * 3. 发送新消息
+ * 3. 发送新消息（普通 / SSE 流式）
+ * 4. 聊天附件上传
  *
  * 所有接口通过 [ApiClient] 调用后端 `/api/chat/` 下的聊天接口
  */
@@ -125,6 +134,103 @@ class ChatRepository {
         val request = SendMessageRequest(content = content, sessionId = sessionId)
         val responseText = ApiClient.post("chat/messages", request)
         return json.decodeFromString(Message.serializer(), responseText)
+    }
+
+    /**
+     * 流式发送消息（SSE）
+     *
+     * 调用后端 `POST /api/chat`（mode="stream"），返回 AI 回复增量文本流。
+     * 调用方 collect Flow 即可实时拿到每一段文本，取消 collect 自动终止 SSE 连接。
+     *
+     * 事件过滤规则：
+     * - [SseEvent.Chunk]：正常回复增量，yield content
+     * - [SseEvent.Reasoning]：推理内容增量，当前不在主流中返回（后续可在 UI 单独展示）
+     * - [SseEvent.Error]：转换为 [ApiException.HttpError] 抛出，触发调用方 catch
+     * - [SseEvent.Cancelled] / [SseEvent.Done]：结束流，不返回内容
+     * - [SseEvent.Other]：透传事件（status/plan/task/tool/usage 等），当前不返回
+     *
+     * @param sessionId 会话 ID（字符串形式，与后端 ChatMessage.session_id 对齐）
+     * @param content 用户消息内容
+     * @return AI 回复增量文本流
+     */
+    fun streamMessage(sessionId: String, content: String): Flow<String> {
+        val payload = ChatStreamRequest(
+            message = content,
+            sessionId = sessionId,
+            mode = "stream",
+        )
+        val url = "${BackendManager.resolveBaseUrl()}/api/chat"
+        return SseClient.streamChat(
+            url = url,
+            token = ApiClient.getAccessToken(),
+            csrf = ApiClient.getCsrfToken(),
+            payload = payload,
+        ).mapNotNull { event ->
+            when (event) {
+                is SseEvent.Chunk -> event.content
+                is SseEvent.Error -> throw ApiException.HttpError(
+                    500,
+                    "[${event.code}] ${event.message}",
+                )
+                is SseEvent.Reasoning -> null
+                is SseEvent.Cancelled -> null
+                is SseEvent.Done -> null
+                is SseEvent.Other -> null
+            }
+        }
+    }
+
+    /**
+     * 上传聊天附件
+     *
+     * 调用后端 `POST /api/chat/upload`（multipart/form-data，字段名 `file`）。
+     * 后端校验扩展名白名单与 magic bytes，返回安全文件名与访问 URL。
+     *
+     * @param filePath 本地文件绝对路径
+     * @param mimeType MIME 类型（如 "image/png"），需与文件内容匹配
+     * @return 上传响应（包含 filename / original_name / size / type / url）
+     * @throws ApiException 文件不存在、网络或 HTTP 错误时抛出
+     */
+    suspend fun uploadAttachment(filePath: String, mimeType: String): AttachmentResponse {
+        val file = File(filePath)
+        if (!file.exists()) {
+            Log.e(TAG, "上传文件不存在: $filePath")
+            throw ApiException.NetworkError("文件不存在: $filePath")
+        }
+        val bytes = file.readBytes()
+        val responseText = ApiClient.uploadFile(
+            path = "chat/upload",
+            bytes = bytes,
+            fileName = file.name,
+            mimeType = mimeType,
+        )
+        return json.decodeFromString(AttachmentResponse.serializer(), responseText)
+    }
+
+    /**
+     * 上传聊天附件（字节数组版本，适配 Android Uri 选择器）
+     *
+     * Android 文件选择器（ActivityResultContracts.GetContent）返回的是 Uri
+     * 而非文件路径，调用方需自行通过 ContentResolver 读取字节，再用此方法上传。
+     *
+     * @param bytes 文件二进制内容
+     * @param fileName 原始文件名（含扩展名，后端据此校验类型）
+     * @param mimeType MIME 类型（如 "image/png"）
+     * @return 上传响应
+     * @throws ApiException 网络或 HTTP 错误时抛出
+     */
+    suspend fun uploadAttachmentBytes(
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+    ): AttachmentResponse {
+        val responseText = ApiClient.uploadFile(
+            path = "chat/upload",
+            bytes = bytes,
+            fileName = fileName,
+            mimeType = mimeType,
+        )
+        return json.decodeFromString(AttachmentResponse.serializer(), responseText)
     }
 
     /** 工具方法：将 JsonElement 安全转换为 JsonObject，非对象时返回 null */

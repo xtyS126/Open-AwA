@@ -98,6 +98,51 @@ data class CreateSessionRequest(
 )
 
 /**
+ * 流式聊天请求体
+ *
+ * 对应后端 `POST /api/chat`（mode="stream" 触发 SSE 响应）
+ * 字段命名与后端 `ChatMessage` schema 对齐
+ */
+@Serializable
+data class ChatStreamRequest(
+    val message: String,
+    @SerialName("session_id") val sessionId: String,
+    val mode: String = "stream",
+    /** 附件列表（base64 内联，对应后端 AttachmentItem；当前未启用，预留字段） */
+    val attachments: List<AttachmentItemDto>? = null,
+)
+
+/**
+ * 附件项（与后端 AttachmentItem 对齐，base64 内联）
+ *
+ * 当前实现走 `/api/chat/upload` 上传后返回 URL，此结构保留以便后续内联传输
+ */
+@Serializable
+data class AttachmentItemDto(
+    val type: String,
+    val data: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("file_name") val fileName: String? = null,
+)
+
+/**
+ * 文件上传响应
+ *
+ * 对应后端 `POST /api/chat/upload` 返回结构
+ */
+@Serializable
+data class AttachmentResponse(
+    /** 系统生成的安全文件名（UUID + 扩展名） */
+    val filename: String,
+    @SerialName("original_name") val originalName: String,
+    val size: Long,
+    /** 附件分类：image / file */
+    val type: String,
+    /** 访问 URL（相对路径，如 /api/chat/uploads/xxx.png） */
+    val url: String,
+)
+
+/**
  * 用户偏好响应
  *
  * 对应后端 `/api/user/preferences` 返回的偏好映射

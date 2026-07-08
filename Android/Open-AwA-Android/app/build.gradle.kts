@@ -78,6 +78,8 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.client.logging)
+    // WebSocket 客户端：用于实时推送（聊天、通知、终端）
+    implementation(libs.ktor.client.websockets)
 
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)

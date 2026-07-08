@@ -1,5 +1,11 @@
 package com.xtys126.open_awa.features.chat
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -19,8 +26,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,15 +42,24 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xtys126.open_awa.core.ui.EmptyBox
+import com.xtys126.open_awa.data.ChatRepository
+import com.xtys126.open_awa.data.model.AttachmentResponse
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.util.UUID
+
+private const val TAG = "ChatScreen"
 
 /**
  * 聊天页
@@ -48,27 +67,39 @@ import java.util.UUID
  * 三段式布局：
  * - 顶部 [LazyRow] 会话列表（横向滚动，支持新建对话）
  * - 中部 [LazyColumn] 消息列表（用户消息右对齐主色调，AI 消息左对齐 surface）
- * - 底部 [Scaffold] bottomBar：[OutlinedTextField] + 发送 [IconButton]
+ * - 底部 [Scaffold] bottomBar：附件按钮 + [OutlinedTextField] + 发送/停止 [IconButton]
  *
- * 空状态：居中显示"开始新对话"按钮（[EmptyBox]）
+ * 流式聊天：调用 [ChatRepository.streamMessage] 接收 SSE 增量文本，
+ * AI 回复气泡实时追加 content；点击停止按钮取消协程，SSE 连接自动断开。
  *
- * TODO: ChatRepository 由其他子代理并行实现，当前用 [remember] + [mutableStateOf] 模拟数据
- *       接入后替换为 ViewModel + StateFlow + Flow 收集
+ * 附件上传：点击附件按钮通过 [ActivityResultContracts.GetContent] 选文件，
+ * 上传到 `/api/chat/upload` 后显示文件名缩略，随用户消息一起入列表。
+ *
+ * 当前会话列表为本地占位（避免依赖后端会话接口），activeConversationId 用作
+ * 流式聊天的 session_id 传给后端；后续接入真实会话接口时替换即可。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen() {
-    // TODO: 替换为 ChatRepository + ViewModel
+    val repository = remember { ChatRepository() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
     var conversations by remember {
         mutableStateOf(
             listOf(
-                Conversation(id = "1", title = "新对话"),
+                Conversation(id = "default", title = "默认会话"),
             ),
         )
     }
-    var activeConversationId by remember { mutableStateOf("1") }
-    var messages by remember { mutableStateOf<List<Message>>(emptyList()) }
+    var activeConversationId by remember { mutableStateOf("default") }
+    val messages = remember { mutableStateListOf<UiMessage>() }
     var inputText by remember { mutableStateOf("") }
+    val pendingAttachments = remember { mutableStateListOf<AttachmentResponse>() }
+    var streamingJob by remember { mutableStateOf<Job?>(null) }
+    var isStreaming by remember { mutableStateOf(false) }
+    var isUploading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val listState = rememberLazyListState()
 
@@ -77,6 +108,101 @@ fun ChatScreen() {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
+    }
+
+    // 文件选择器：返回 Uri 后读取字节并上传
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            isUploading = true
+            try {
+                val mimeType = context.contentResolver.getType(uri)
+                    ?: "application/octet-stream"
+                val fileName = queryFileName(context, uri) ?: "upload"
+                val bytes = readUriBytes(context, uri)
+                val response = repository.uploadAttachmentBytes(
+                    bytes = bytes,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                )
+                pendingAttachments.add(response)
+            } catch (e: Exception) {
+                Log.e(TAG, "附件上传失败: ${e.message}", e)
+                errorMessage = "附件上传失败: ${e.message}"
+            } finally {
+                isUploading = false
+            }
+        }
+    }
+
+    /**
+     * 发送消息：构造用户消息 + 空 AI 消息，启动 SSE 流协程实时追加 content
+     */
+    fun sendMessage(content: String) {
+        if (content.isBlank() && pendingAttachments.isEmpty()) return
+        if (isStreaming) return
+
+        val userMsg = UiMessage(
+            id = UUID.randomUUID().toString(),
+            role = MessageRole.USER,
+            content = content,
+            attachments = pendingAttachments.toList(),
+        )
+        val aiMsg = UiMessage(
+            id = UUID.randomUUID().toString(),
+            role = MessageRole.ASSISTANT,
+            content = "",
+            isStreaming = true,
+        )
+        messages.add(userMsg)
+        messages.add(aiMsg)
+        pendingAttachments.clear()
+        inputText = ""
+        isStreaming = true
+
+        streamingJob = scope.launch {
+            try {
+                repository.streamMessage(
+                    sessionId = activeConversationId,
+                    content = content,
+                ).collect { chunk ->
+                    // 找到当前流式 AI 消息，追加增量文本
+                    val idx = messages.indexOfLast { it.id == aiMsg.id }
+                    if (idx >= 0) {
+                        val current = messages[idx]
+                        messages[idx] = current.copy(content = current.content + chunk)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 用户主动取消，正常退出
+                Log.d(TAG, "流式聊天被取消: ${e.message}")
+            } catch (e: Exception) {
+                Log.e(TAG, "流式聊天异常: ${e.message}", e)
+                errorMessage = "流式聊天异常: ${e.message}"
+            } finally {
+                // 标记 AI 消息流式结束
+                val idx = messages.indexOfLast { it.id == aiMsg.id }
+                if (idx >= 0) {
+                    val current = messages[idx]
+                    if (current.isStreaming) {
+                        messages[idx] = current.copy(isStreaming = false)
+                    }
+                }
+                streamingJob = null
+                isStreaming = false
+            }
+        }
+    }
+
+    /**
+     * 取消流式：取消协程会触发 SSE 连接关闭，Flow 自然终止
+     */
+    fun cancelStreaming() {
+        streamingJob?.cancel()
+        streamingJob = null
+        isStreaming = false
     }
 
     Scaffold(
@@ -95,25 +221,12 @@ fun ChatScreen() {
             ChatInputBar(
                 text = inputText,
                 onTextChange = { inputText = it },
-                onSend = {
-                    val content = inputText.trim()
-                    if (content.isEmpty()) return@ChatInputBar
-                    val userMsg = Message(
-                        id = UUID.randomUUID().toString(),
-                        role = MessageRole.USER,
-                        content = content,
-                    )
-                    messages = messages + userMsg
-                    inputText = ""
-                    // TODO: 调用 ChatRepository.sendMessage(content) 接收 AI 回复
-                    // 当前用模拟回复占位
-                    val aiMsg = Message(
-                        id = UUID.randomUUID().toString(),
-                        role = MessageRole.ASSISTANT,
-                        content = "（模拟回复）你发送了：$content",
-                    )
-                    messages = messages + aiMsg
-                },
+                isStreaming = isStreaming,
+                isUploading = isUploading,
+                pendingAttachmentCount = pendingAttachments.size,
+                onPickAttachment = { filePicker.launch("*/*") },
+                onSend = { sendMessage(inputText.trim()) },
+                onCancel = { cancelStreaming() },
             )
         },
     ) { innerPadding ->
@@ -134,9 +247,25 @@ fun ChatScreen() {
                     )
                     conversations = conversations + newConv
                     activeConversationId = newConv.id
-                    messages = emptyList()
+                    messages.clear()
                 },
             )
+
+            // 错误提示
+            errorMessage?.let { msg ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(12.dp),
+                ) {
+                    Text(
+                        text = msg,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
 
             // 消息列表 / 空状态
             if (messages.isEmpty()) {
@@ -145,13 +274,7 @@ fun ChatScreen() {
                     title = "暂无消息",
                     actionText = "开始新对话",
                     onAction = {
-                        val userMsg = Message(
-                            id = UUID.randomUUID().toString(),
-                            role = MessageRole.USER,
-                            content = "你好",
-                        )
-                        messages = listOf(userMsg)
-                        // TODO: 触发 ChatRepository.sendMessage
+                        sendMessage("你好")
                     },
                 )
             } else {
@@ -172,12 +295,21 @@ fun ChatScreen() {
 
 /**
  * 输入栏（Scaffold bottomBar）
+ *
+ * 布局：附件按钮 + 文本输入框 + 发送/停止按钮
+ * - 流式中显示停止按钮（替代发送）
+ * - 上传中禁用附件按钮并显示加载指示
  */
 @Composable
 private fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
+    isStreaming: Boolean,
+    isUploading: Boolean,
+    pendingAttachmentCount: Int,
+    onPickAttachment: () -> Unit,
     onSend: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -186,28 +318,87 @@ private fun ChatInputBar(
             .padding(12.dp)
             .imePadding(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        // 附件按钮
+        Box {
+            IconButton(
+                onClick = onPickAttachment,
+                enabled = !isUploading && !isStreaming,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.AttachFile,
+                    contentDescription = "添加附件",
+                    tint = if (isUploading || isStreaming) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
+            }
+            // 附件计数徽标
+            if (pendingAttachmentCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = pendingAttachmentCount.toString(),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+
+        // 上传中加载指示
+        if (isUploading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+            )
+            Spacer(modifier = Modifier.size(4.dp))
+        }
+
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
             placeholder = { Text(text = "输入消息…") },
             modifier = Modifier.weight(1f),
             maxLines = 4,
+            enabled = !isStreaming,
         )
-        IconButton(
-            onClick = onSend,
-            enabled = text.isNotBlank(),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Send,
-                contentDescription = "发送",
-                tint = if (text.isNotBlank()) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+
+        if (isStreaming) {
+            // 停止按钮
+            IconButton(onClick = onCancel) {
+                Icon(
+                    imageVector = Icons.Outlined.Stop,
+                    contentDescription = "停止",
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        } else {
+            // 发送按钮
+            IconButton(
+                onClick = onSend,
+                enabled = text.isNotBlank() || pendingAttachmentCount > 0,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Send,
+                    contentDescription = "发送",
+                    tint = if (text.isNotBlank() || pendingAttachmentCount > 0) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
         }
     }
 }
@@ -268,9 +459,10 @@ private fun ConversationRow(
  * 消息气泡
  *
  * 用户消息右对齐 + 主色调背景，AI 消息左对齐 + surface 背景
+ * 流式中的 AI 消息末尾闪烁光标（用 isLoading 圆点替代，避免动画复杂度）
  */
 @Composable
-private fun MessageBubble(message: Message) {
+private fun MessageBubble(message: UiMessage) {
     val isUser = message.role == MessageRole.USER
     val alignment = if (isUser) Alignment.End else Alignment.Start
     val bgColor = if (isUser) {
@@ -288,6 +480,18 @@ private fun MessageBubble(message: Message) {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment,
     ) {
+        // 附件预览（用户消息显示已上传附件的文件名）
+        if (message.attachments.isNotEmpty()) {
+            Column(
+                modifier = Modifier.padding(bottom = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                message.attachments.forEach { att ->
+                    AttachmentChip(attachment = att)
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .background(
@@ -296,23 +500,93 @@ private fun MessageBubble(message: Message) {
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            Text(
-                text = message.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = fgColor,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (message.content.isEmpty() && message.isStreaming) {
+                        "思考中…"
+                    } else {
+                        message.content
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = fgColor,
+                )
+                if (message.isStreaming && message.content.isNotEmpty()) {
+                    Spacer(modifier = Modifier.size(4.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        strokeWidth = 1.5.dp,
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * 附件缩略行（显示上传后的文件名 + 类型图标）
+ */
+@Composable
+private fun AttachmentChip(attachment: AttachmentResponse) {
+    Row(
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.AttachFile,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(12.dp),
+        )
+        Text(
+            text = attachment.originalName,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}
+
+/**
+ * 从 Uri 查询原始文件名
+ */
+private fun queryFileName(context: Context, uri: Uri): String? {
+    return runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex < 0 || !cursor.moveToFirst()) return@use null
+            cursor.getString(nameIndex)
+        }
+    }.getOrNull()
+}
+
+/**
+ * 从 Uri 读取文件字节
+ *
+ * @throws java.io.IOException 无法打开输入流时抛出
+ */
+@Throws(java.io.IOException::class)
+private fun readUriBytes(context: Context, uri: Uri): ByteArray {
+    return context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        ?: throw java.io.IOException("无法读取文件: $uri")
 }
 
 // 数据类（TODO: 迁移到 data 层 ChatRepository）
 
 private enum class MessageRole { USER, ASSISTANT }
 
-private data class Message(
+private data class UiMessage(
     val id: String,
     val role: MessageRole,
     val content: String,
+    /** 是否处于流式接收中（AI 消息） */
+    val isStreaming: Boolean = false,
+    /** 用户消息携带的附件列表（已上传） */
+    val attachments: List<AttachmentResponse> = emptyList(),
 )
 
 private data class Conversation(
