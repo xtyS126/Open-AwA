@@ -1,11 +1,13 @@
 package com.xtys126.open_awa.data
 
+import android.content.Context
 import android.util.Log
 import com.xtys126.open_awa.core.backend.ApiClient
 import com.xtys126.open_awa.core.backend.BackendManager
 import com.xtys126.open_awa.core.backend.WebSocketClient
 import com.xtys126.open_awa.core.backend.WebSocketConnectionState
 import com.xtys126.open_awa.core.backend.WebSocketEvent
+import com.xtys126.open_awa.core.notification.SystemNotifier
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -79,15 +81,22 @@ data class InboxListResponse(
  *
  * 整合 WebSocket 实时推送与 REST 操作：
  * 1. [start]：建立 WebSocket 连接，接收实时推送
- * 2. [collectEvents]：收集 WebSocket 事件流，解析为 [Notification] 后回调上层
+ * 2. [collectEvents]：收集 WebSocket 事件流，解析为 [Notification] 后回调上层，
+ *    同时根据 [Notification.type] 触发系统通知栏通知（task_result 走
+ *    [SystemNotifier.showTaskResult]，其他走 [SystemNotifier.showGeneric]）
  * 3. [stop]：断开 WebSocket 连接
  * 4. [listMessages]：REST 拉取历史 inbox 消息
  * 5. [markAsRead] / [markAllRead]：REST 标记已读
  *
  * 鉴权：WebSocket token 通过 Sec-WebSocket-Protocol 子协议传递（bearer.<token>），
  * 由 [WebSocketClient.connect] 内部设置，本仓库仅组装 subprotocol 字符串。
+ *
+ * @param appContext Application 上下文，用于 [SystemNotifier] 显示系统通知。
+ *                   可空，为空时仅推送 WebSocket 事件，不显示系统通知（用于无 UI 上下文的场景）。
  */
-class NotificationRepository {
+class NotificationRepository(
+    private val appContext: Context? = null,
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -129,6 +138,12 @@ class NotificationRepository {
      * 此为挂起函数，内部 `collect` 会阻塞直到协程被取消（页面销毁时）。
      * 调用方应在 `LaunchedEffect` 或 `rememberCoroutineScope` 中调用。
      *
+     * 同时根据 [Notification.type] 触发系统通知栏通知：
+     * - task_result → [SystemNotifier.showTaskResult]
+     * - 其他类型 → [SystemNotifier.showGeneric]
+     *
+     * 系统通知仅在 [appContext] 非空时触发，避免在无 UI 上下文的场景下显示。
+     *
      * @param onEvent 每收到一条可识别的通知时回调，调用方通常将通知插入列表顶部
      */
     suspend fun collectEvents(onEvent: (Notification) -> Unit) {
@@ -137,7 +152,38 @@ class NotificationRepository {
                 val notification = parseMessageToNotification(event.text)
                 if (notification != null) {
                     onEvent(notification)
+                    showSystemNotification(notification)
                 }
+            }
+        }
+    }
+
+    /**
+     * 根据通知类型显示系统通知栏通知
+     *
+     * @param notification 解析后的通知对象
+     */
+    private fun showSystemNotification(notification: Notification) {
+        val ctx = appContext ?: return
+        when (notification.type) {
+            NotificationType.TASK_RESULT.value -> {
+                SystemNotifier.showTaskResult(
+                    context = ctx,
+                    title = notification.title,
+                    content = notification.content,
+                )
+            }
+            NotificationType.CHAT.value -> {
+                // chat 类型的 WebSocket 推送是聊天增量，不显示系统通知
+                // 避免聊天界面打开时频繁打扰用户
+            }
+            else -> {
+                SystemNotifier.showGeneric(
+                    context = ctx,
+                    title = notification.title,
+                    content = notification.content,
+                    category = notification.type,
+                )
             }
         }
     }
@@ -153,6 +199,26 @@ class NotificationRepository {
     suspend fun listMessages(): InboxListResponse {
         val text = ApiClient.get("inbox")
         return json.decodeFromString(InboxListResponse.serializer(), text)
+    }
+
+    /**
+     * 拉取未读消息数
+     *
+     * 对应后端 `GET /api/inbox/count`，返回 `{unread: int, total: int}` 结构。
+     * 用于轮询兜底场景：WebSocket 断线时通过此接口同步未读数。
+     *
+     * @return 未读数（解析失败时返回 0）
+     * @throws com.xtys126.open_awa.core.backend.ApiException 网络或 HTTP 错误时抛出
+     */
+    suspend fun fetchUnreadCount(): Int {
+        val text = ApiClient.get("inbox/count")
+        return try {
+            val obj = json.parseToJsonElement(text).jsonObject
+            obj["unread"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+        } catch (e: Exception) {
+            Log.w(TAG, "解析未读数失败: ${e.message}", e)
+            0
+        }
     }
 
     /**

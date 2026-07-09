@@ -181,6 +181,12 @@ def add_notification(
     内部通知推送函数。
 
     需要 user_id 才能正确归属消息；未提供 user_id 时返回 None（避免误归到错误用户）。
+
+    实时推送：
+    消息持久化到 inbox 后，通过 ws_manager.broadcast_to_user 推送到该用户的所有
+    WebSocket 连接（含 /api/chat/ws/{session_id}）。推送失败不影响 inbox 写入，
+    客户端仍可通过 REST 轮询拉取。定时任务完成通知（category=task_result）即
+    经此链路实时送达 Android InboxScreen。
     """
     if not user_id:
         return None
@@ -200,6 +206,40 @@ def add_notification(
         user_msgs.insert(0, msg)
         while len(user_msgs) > 200:
             user_msgs.pop()
+
+    # 实时推送到该用户的所有 WebSocket 连接
+    # add_notification 可能在 async 上下文（如 scheduled_task_manager._mark_task_completed）
+    # 或同步上下文被调用，需兼容两种场景
+    try:
+        from api.services.ws_manager import ws_manager
+        import asyncio
+
+        try:
+            # 优先用运行中的事件循环（async 上下文）
+            loop = asyncio.get_running_loop()
+            asyncio.ensure_future(
+                ws_manager.broadcast_to_user(user_id, msg),
+                loop=loop,
+            )
+        except RuntimeError:
+            # 无运行中的事件循环（同步上下文），用线程安全方式提交
+            # 若仍无事件循环可引用，跳过实时推送，inbox 已持久化可被轮询拉取
+            import logging
+            logging.getLogger(__name__).debug(
+                "inbox 通知无运行中事件循环，跳过 WebSocket 实时推送（user_id=%s, msg_id=%s）",
+                user_id,
+                msg_id,
+            )
+    except Exception:
+        # 推送失败不影响 inbox 写入，仅记录日志
+        import logging
+        logging.getLogger(__name__).warning(
+            "inbox WebSocket 实时推送失败（user_id=%s, msg_id=%s）",
+            user_id,
+            msg_id,
+            exc_info=True,
+        )
+
     return msg_id
 
 

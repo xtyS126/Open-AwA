@@ -87,6 +87,9 @@ dependencies {
     // DataStore Preferences
     implementation(libs.androidx.datastore.preferences)
 
+    // ZXing Android Embedded：二维码扫描（扫码链接后端）
+    implementation(libs.zxing.android.embedded)
+
     // 测试
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

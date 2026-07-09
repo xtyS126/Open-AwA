@@ -25,6 +25,12 @@ import {
   scheduledTasksAPI,
 } from '@/shared/api/api'
 import { appLogger } from '@/shared/utils/logger'
+import { useToast } from '@/shared/components/Toast/Toast'
+import {
+  connectInboxStream,
+  disconnectInboxStream,
+  subscribeInboxMessages,
+} from '@/features/inbox/inboxStream'
 
 import PluginCommandSelector from './components/PluginCommandSelector'
 import CronExpressionBuilder from './components/CronExpressionBuilder'
@@ -130,6 +136,9 @@ export default function ScheduledTasksPage() {
   const [pluginWeekdays, setPluginWeekdays] = useState('')
   const [pluginDailyTime, setPluginDailyTime] = useState('09:00')
 
+  /* --- Toast 提醒（任务完成通知） --- */
+  const { addToast, ToastContainer } = useToast()
+
   /* --- 数据加载 --- */
 
   const loadData = useCallback(async () => {
@@ -162,6 +171,29 @@ export default function ScheduledTasksPage() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  /* --- 实时通知：定时任务完成时自动刷新列表 + toast 提醒 ---
+   * 通过 inbox WebSocket 流接收 task_result 通知（后端 add_task_result_notification 推送），
+   * 收到后自动重新加载任务列表与执行历史，并在页面顶部弹出 toast。
+   * 引用计数：mount 时 connect，unmount 时 disconnect，与 InboxPage 共享同一连接。
+   */
+  useEffect(() => {
+    connectInboxStream()
+    return () => {
+      disconnectInboxStream()
+    }
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = subscribeInboxMessages((msg) => {
+      if (msg.category !== 'task_result') return
+      const toastType = msg.title.startsWith('任务失败') ? 'error' : 'success'
+      addToast(`${msg.title}：${msg.content}`, toastType)
+      // 任务完成后自动刷新列表，反映最新状态与执行历史
+      void loadData()
+    })
+    return unsubscribe
+  }, [addToast, loadData])
 
   /* --- 表单重置 --- */
 
@@ -996,6 +1028,9 @@ export default function ScheduledTasksPage() {
 
       {/* 执行历史 */}
       <TaskLogViewer />
+
+      {/* 任务完成实时提醒 toast 容器 */}
+      <ToastContainer />
     </div>
   )
 }

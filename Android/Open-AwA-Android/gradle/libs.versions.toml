@@ -22,6 +22,9 @@ kotlinxSerialization = "1.7.3"
 # 本地存储
 datastorePreferences = "1.1.1"
 
+# 二维码扫描：扫码链接后端
+zxingAndroidEmbedded = "4.3.0"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -62,6 +65,9 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 
 # DataStore Preferences（替代 SharedPreferences）
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastorePreferences" }
+
+# ZXing Android Embedded：二维码扫描（扫码链接后端）
+zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingAndroidEmbedded" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

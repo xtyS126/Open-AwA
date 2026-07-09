@@ -8,6 +8,8 @@ import { useI18nStore } from '@/i18n';
 import { inboxApi } from './inboxApi';
 import { appLogger } from '@/shared/utils/logger';
 import { EmptyState } from '@/shared/components/ui';
+import { useToast } from '@/shared/components/Toast/Toast';
+import { connectInboxStream, disconnectInboxStream, subscribeInboxMessages } from './inboxStream';
 import styles from './InboxPage.module.css';
 
 const CATEGORY_I18N_KEY: Record<string, string> = {
@@ -33,6 +35,7 @@ const InboxPage: React.FC = () => {
     removeMessage: s.removeMessage,
   }), shallow);
   const t = useI18nStore(s => s.t);
+  const { addToast, ToastContainer } = useToast();
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [error, setError] = useState('');
@@ -49,11 +52,34 @@ const InboxPage: React.FC = () => {
   }, [t]);
 
   useEffect(() => {
-    loadMessages();
-    // 每 30 秒轮询新消息
-    const interval = setInterval(loadMessages, 30000);
+    void loadMessages();
+    // 轮询作为 WS 推送的兜底（WS 实时推送已为主路径，60s 轮询拉取遗漏消息）
+    const interval = setInterval(() => void loadMessages(), 60000);
     return () => clearInterval(interval);
   }, [loadMessages]);
+
+  // 连接 inbox 实时流：mount 时连接，unmount 时断开
+  // task_result 等通知通过 WS 实时插入列表顶部，无需等待轮询
+  useEffect(() => {
+    connectInboxStream();
+    return () => {
+      disconnectInboxStream();
+    };
+  }, []);
+
+  // 订阅 task_result 通知：收到时显示 toast 提醒用户
+  // 审批与普通通知不弹 toast，避免打扰；仅任务结果触发提醒
+  useEffect(() => {
+    const unsubscribe = subscribeInboxMessages((msg) => {
+      if (msg.category === 'task_result') {
+        const toastType = msg.title.startsWith('任务失败')
+          ? 'error'
+          : 'success';
+        addToast(`${msg.title}：${msg.content}`, toastType);
+      }
+    });
+    return unsubscribe;
+  }, [addToast]);
 
   const handleMarkRead = async (msg: InboxMessage) => {
     try {
@@ -157,6 +183,9 @@ const InboxPage: React.FC = () => {
           ))
         )}
       </div>
+
+      {/* task_result 实时提醒 toast 容器 */}
+      <ToastContainer />
     </div>
   );
 };

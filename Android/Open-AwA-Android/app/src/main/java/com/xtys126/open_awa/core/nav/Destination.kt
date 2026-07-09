@@ -110,9 +110,9 @@ sealed class Destination(
         /** 所有路由（按 Sidebar 分组顺序） */
         val all: List<Destination> = listOf(
             // 控制台
-            Chat, Coding, VibeCoding, Workspace, Dashboard, Billing, Inbox,
+            Chat, Coding, VibeCoding, Workspace, Dashboard, Billing, Inbox, ScheduledTasks,
             // 智能体
-            Tts, Roles, RoleMarket, Skills, SkillMarket, ScheduledTasks, Workflows,
+            Tts, Roles, RoleMarket, Skills, SkillMarket, Workflows,
             SubAgents, Discussions, Plugins, Memory, Experience,
             // 设置
             Settings, Im, UserCenter,
@@ -120,12 +120,12 @@ sealed class Destination(
 
         /** 控制台分组 */
         val controlGroup: List<Destination> = listOf(
-            Chat, Coding, VibeCoding, Workspace, Dashboard, Billing, Inbox,
+            Chat, Coding, VibeCoding, Workspace, Dashboard, Billing, Inbox, ScheduledTasks,
         )
 
         /** 智能体分组 */
         val agentGroup: List<Destination> = listOf(
-            Tts, Roles, RoleMarket, Skills, SkillMarket, ScheduledTasks, Workflows,
+            Tts, Roles, RoleMarket, Skills, SkillMarket, Workflows,
             SubAgents, Discussions, Plugins, Memory, Experience,
         )
 

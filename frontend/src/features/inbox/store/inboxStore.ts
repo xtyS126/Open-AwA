@@ -18,6 +18,8 @@ interface InboxStore {
   messages: InboxMessage[];
   unreadCount: number;
   setMessages: (messages: InboxMessage[]) => void;
+  /** 新增单条消息（WebSocket 实时推送时使用），插入列表顶部，已存在则跳过去重 */
+  addMessage: (message: InboxMessage) => void;
   markAsRead: (id: string) => void;
   markAllRead: () => void;
   removeMessage: (id: string) => void;
@@ -30,6 +32,16 @@ export const useInboxStore = create<InboxStore>((set, get) => ({
     messages,
     unreadCount: messages.filter((m) => !m.read).length,
   }),
+  addMessage: (message) => {
+    const existing = get().messages;
+    // 去重：避免 WS 推送与轮询拉取产生重复条目
+    if (existing.some((m) => m.id === message.id)) return;
+    const messages = [message, ...existing];
+    set({
+      messages,
+      unreadCount: messages.filter((m) => !m.read).length,
+    });
+  },
   markAsRead: (id) => {
     const messages = get().messages.map((m) =>
       m.id === id ? { ...m, read: true } : m

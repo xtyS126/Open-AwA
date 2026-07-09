@@ -16,6 +16,7 @@ import com.xtys126.open_awa.features.inbox.InboxScreen
 import com.xtys126.open_awa.features.memory.MemoryScreen
 import com.xtys126.open_awa.features.plugins.PluginsScreen
 import com.xtys126.open_awa.features.roles.RolesScreen
+import com.xtys126.open_awa.features.scheduled.ScheduledTaskScreen
 import com.xtys126.open_awa.features.settings.SettingsScreen
 import com.xtys126.open_awa.features.skills.SkillsScreen
 import com.xtys126.open_awa.features.subagents.SubAgentScreen
@@ -57,7 +58,7 @@ fun AppNavGraph(navController: NavHostController) {
         composable("skills") { SkillsScreen() }
         composable("skills/market") { SkillsScreen() }
         composable("scheduled-tasks") {
-            PlaceholderScreen(title = "定时任务", icon = Destination.ScheduledTasks.icon)
+            ScheduledTaskScreen()
         }
         composable("workflows") { WorkflowScreen() }
         composable("subagents") { SubAgentScreen() }

@@ -1,5 +1,9 @@
 package com.xtys126.open_awa.features.inbox
 
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -56,8 +60,12 @@ import com.xtys126.open_awa.data.AuthRepository
 import com.xtys126.open_awa.data.Notification
 import com.xtys126.open_awa.data.NotificationRepository
 import com.xtys126.open_awa.data.NotificationType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+/** 轮询兜底间隔（毫秒），WebSocket 断线时每 30 秒拉取一次 inbox 列表 */
+private const val POLL_INTERVAL_MS = 30_000L
 
 /**
  * 收件箱页
@@ -68,9 +76,15 @@ import kotlinx.coroutines.launch
  * 3. WebSocket 推送的新通知插入列表顶部，带未读标记
  * 4. 点击通知调用 [NotificationRepository.markAsRead] 更新已读状态
  * 5. 顶部全部已读按钮调用 [NotificationRepository.markAllRead]
+ * 6. 30 秒轮询兜底：WebSocket 断线时通过 REST 拉取最新消息，避免漏推
+ * 7. 收到 task_result 通知时震动反馈（[vibrate]）
  *
  * 鉴权约束：WebSocket token 通过 Sec-WebSocket-Protocol 子协议传递，
  * 由 [NotificationRepository.start] 内部封装，UI 不感知。
+ *
+ * 系统通知：[NotificationRepository] 构造时传入 applicationContext，
+ * 收到 task_result 时由 [com.xtys126.open_awa.core.notification.SystemNotifier]
+ * 弹出系统通知栏通知（即使 App 在后台也能看到）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,7 +93,10 @@ fun InboxScreen() {
     val scope = rememberCoroutineScope()
 
     // Repository 实例（remember 保证跨 recompose 复用，避免重复创建）
-    val notificationRepo = remember { NotificationRepository() }
+    // 传入 applicationContext 以启用系统通知栏通知
+    val notificationRepo = remember {
+        NotificationRepository(appContext = context.applicationContext)
+    }
     val authRepo = remember { AuthRepository(context.applicationContext) }
 
     // 消息列表（合并历史 + 实时推送），新增通知插入到顶部
@@ -120,11 +137,38 @@ fun InboxScreen() {
                     // 去重后插入顶部（同 id 通知可能是更新推送，覆盖旧条目）
                     messages.removeAll { it.id == notification.id }
                     messages.add(0, notification)
+                    // 收到 task_result 通知时震动反馈
+                    if (notification.type == NotificationType.TASK_RESULT.value) {
+                        vibrate(context)
+                    }
                 }
             }
         }.onFailure { e ->
             // WebSocket 启动失败不阻塞 UI，仅记录错误
             errorMessage = "实时通道启动失败: ${e.message}"
+        }
+    }
+
+    // 30 秒轮询兜底：WebSocket 断线时通过 REST 拉取最新消息
+    // 与 WebSocket 同时运行，作为补漏机制（不替代 WebSocket）
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(POLL_INTERVAL_MS)
+            runCatching {
+                notificationRepo.listMessages()
+            }.onSuccess { response ->
+                // 仅在拉取到的最新消息 id 不在本地列表顶部时刷新
+                // 避免覆盖 WebSocket 实时推送的顺序
+                val topId = messages.firstOrNull()?.id
+                val remoteTopId = response.messages.firstOrNull()?.id
+                if (topId != remoteTopId) {
+                    messages.clear()
+                    messages.addAll(response.messages)
+                }
+            }.onFailure { e ->
+                // 轮询失败不阻塞 UI，仅记录错误
+                errorMessage = "轮询失败: ${e.message}"
+            }
         }
     }
 
@@ -247,6 +291,61 @@ fun InboxScreen() {
         }
     }
 }
+
+/**
+ * 震动反馈
+ *
+ * 收到 task_result 通知时调用，短促震动 200ms 提醒用户。
+ *
+ * 兼容性：
+ * - Android 8+（API 26+）：使用 [VibrationEffect.createOneShot]
+ * - Android 7 及以下：使用废弃的 [Vibrator.vibrate]（无 VibrationEffect）
+ *
+ * @param context 任意 Context
+ */
+private fun vibrate(context: android.content.Context) {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ 通过 VibratorManager 获取 Vibrator
+            val vibratorManager = context.getSystemService(
+                android.content.Context.VIBRATOR_MANAGER_SERVICE,
+            ) as? VibratorManager
+            val vibrator = vibratorManager?.defaultVibrator ?: return
+            if (vibrator.hasVibrator()) {
+                vibrator.vibrate(
+                    VibrationEffect.createOneShot(
+                        VIBRATION_DURATION_MS,
+                        VibrationEffect.DEFAULT_AMPLITUDE,
+                    ),
+                )
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val vibrator = context.getSystemService(
+                android.content.Context.VIBRATOR_SERVICE,
+            ) as? Vibrator ?: return
+            if (vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(
+                        VibrationEffect.createOneShot(
+                            VIBRATION_DURATION_MS,
+                            VibrationEffect.DEFAULT_AMPLITUDE,
+                        ),
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(VIBRATION_DURATION_MS)
+                }
+            }
+        }
+    } catch (e: Exception) {
+        // 震动失败不阻塞主流程
+        android.util.Log.w("InboxScreen", "震动反馈失败: ${e.message}", e)
+    }
+}
+
+/** 震动时长（毫秒） */
+private const val VIBRATION_DURATION_MS = 200L
 
 /**
  * 连接状态指示器

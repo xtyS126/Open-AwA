@@ -4,6 +4,7 @@
  */
 import { useCallback } from 'react'
 import { BackendConnection } from '@/features/settings/components/BackendConnection'
+import { QrCodeSection } from '@/features/settings/components/QrCodeSection'
 import { API_BASE_URL } from '@/shared/api/client'
 
 /** 桌面端 IPC 测试连接返回类型 */
@@ -52,6 +53,8 @@ export function BackendConnectionTabContainer() {
         onSave={isDesktop ? handleSave : undefined}
         onTest={isDesktop ? handleTest : undefined}
       />
+      {/* 移动端接入二维码：渲染后端地址二维码供手机 App 扫码连接 */}
+      <QrCodeSection />
     </div>
   )
 }

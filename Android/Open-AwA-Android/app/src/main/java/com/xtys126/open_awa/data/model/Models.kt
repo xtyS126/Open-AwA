@@ -159,3 +159,134 @@ data class UserPreferences(
 data class UpdatePreferencesRequest(
     val preferences: Map<String, String?> = emptyMap(),
 )
+
+// ============================================================
+// 定时任务相关数据模型
+// 对应后端 /api/scheduled-tasks 系列接口
+// ============================================================
+
+/**
+ * 定时任务实体
+ *
+ * 对应后端 `GET /api/scheduled-tasks` 与 `POST /api/scheduled-tasks` 返回的任务条目。
+ *
+ * 字段说明：
+ * - [status] 任务状态：pending / running / completed / failed / cancelled
+ * - [taskType] 任务类型：ai_prompt（AI 提示词）/ plugin_command（插件命令）
+ * - [isDaily] 是否每日重复
+ * - [cronExpression] Cron 表达式（与 [isDaily] 互斥，二选一）
+ * - [weekdays] 周几执行（逗号分隔的 0-6 数字字符串，0=周日）
+ * - [dailyTime] 每日执行时间（HH:MM 格式）
+ * - [nextExecutionAt] 下次执行时间（ISO 字符串，后端计算）
+ * - [completedAt] 完成时间（仅 status=completed 时有值）
+ * - [cancelledAt] 取消时间（仅 status=cancelled 时有值）
+ * - [lastErrorMessage] 最近一次错误信息（仅 status=failed 时有值）
+ * - [taskMetadata] 任务元数据（如执行结果摘要、自定义参数等）
+ */
+@Serializable
+data class ScheduledTask(
+    val id: Int,
+    @SerialName("user_id") val userId: String = "",
+    val title: String,
+    val prompt: String = "",
+    @SerialName("scheduled_at") val scheduledAt: String = "",
+    val provider: String? = null,
+    val model: String? = null,
+    @SerialName("is_daily") val isDaily: Boolean = false,
+    @SerialName("cron_expression") val cronExpression: String? = null,
+    val weekdays: String? = null,
+    @SerialName("daily_time") val dailyTime: String? = null,
+    @SerialName("task_type") val taskType: String = "ai_prompt",
+    @SerialName("plugin_name") val pluginName: String? = null,
+    @SerialName("command_name") val commandName: String? = null,
+    @SerialName("command_params") val commandParams: Map<String, String> = emptyMap(),
+    val status: String = "pending",
+    @SerialName("last_error_message") val lastErrorMessage: String? = null,
+    @SerialName("task_metadata") val taskMetadata: Map<String, String> = emptyMap(),
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
+    @SerialName("completed_at") val completedAt: String? = null,
+    @SerialName("cancelled_at") val cancelledAt: String? = null,
+    @SerialName("next_execution_at") val nextExecutionAt: String? = null,
+)
+
+/**
+ * 定时任务执行历史实体
+ *
+ * 对应后端 `GET /api/scheduled-tasks/executions` 返回的执行记录条目。
+ *
+ * 字段说明：
+ * - [status] 执行状态：running / completed / failed
+ * - [response] AI 执行结果（status=completed 时有值）
+ * - [errorMessage] 执行错误信息（status=failed 时有值）
+ * - [executionMetadata] 执行元数据
+ */
+@Serializable
+data class ScheduledTaskExecution(
+    val id: Int,
+    @SerialName("task_id") val taskId: Int,
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("task_title") val taskTitle: String = "",
+    val prompt: String = "",
+    @SerialName("scheduled_for") val scheduledFor: String = "",
+    val status: String = "running",
+    val response: String? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+    val provider: String? = null,
+    val model: String? = null,
+    @SerialName("request_id") val requestId: String? = null,
+    @SerialName("execution_metadata") val executionMetadata: Map<String, String> = emptyMap(),
+    @SerialName("started_at") val startedAt: String = "",
+    @SerialName("completed_at") val completedAt: String? = null,
+)
+
+/**
+ * 创建定时任务请求体
+ *
+ * 对应后端 `POST /api/scheduled-tasks`。
+ * 必填字段：[title]、[prompt]、[scheduledAt]（或 [isDaily] + [dailyTime]）
+ *
+ * @param title 任务标题
+ * @param prompt 任务提示词（AI 任务用）
+ * @param scheduledAt 首次执行时间（ISO 字符串）
+ * @param isDaily 是否每日重复
+ * @param cronExpression Cron 表达式（可选）
+ * @param weekdays 周几执行（可选）
+ * @param dailyTime 每日执行时间（可选）
+ * @param taskType 任务类型：ai_prompt / plugin_command
+ * @param provider 模型服务提供方（可选）
+ * @param model 模型名称（可选）
+ */
+@Serializable
+data class CreateScheduledTaskRequest(
+    val title: String,
+    val prompt: String,
+    @SerialName("scheduled_at") val scheduledAt: String,
+    @SerialName("is_daily") val isDaily: Boolean = false,
+    @SerialName("cron_expression") val cronExpression: String? = null,
+    val weekdays: String? = null,
+    @SerialName("daily_time") val dailyTime: String? = null,
+    @SerialName("task_type") val taskType: String = "ai_prompt",
+    val provider: String? = null,
+    val model: String? = null,
+    @SerialName("plugin_name") val pluginName: String? = null,
+    @SerialName("command_name") val commandName: String? = null,
+    @SerialName("command_params") val commandParams: Map<String, String> = emptyMap(),
+)
+
+/**
+ * 更新定时任务请求体
+ *
+ * 对应后端 `PUT /api/scheduled-tasks/{id}`，所有字段可选以支持部分更新。
+ */
+@Serializable
+data class UpdateScheduledTaskRequest(
+    val title: String? = null,
+    val prompt: String? = null,
+    @SerialName("scheduled_at") val scheduledAt: String? = null,
+    @SerialName("is_daily") val isDaily: Boolean? = null,
+    @SerialName("cron_expression") val cronExpression: String? = null,
+    val weekdays: String? = null,
+    @SerialName("daily_time") val dailyTime: String? = null,
+    val status: String? = null,
+)
