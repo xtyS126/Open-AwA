@@ -7,24 +7,38 @@ import androidx.compose.ui.graphics.Color
  *
  * 对应 frontend/src/styles/tokens.css 中的 --color-* 变量
  * 所有颜色集中定义，组件通过 [OpenAwAColors] 访问
+ *
+ * 2026-07-09 UI 优化：
+ * - 主品牌色升级为更深的靛蓝（Indigo 600 #4F46E5），提升识别度与品牌感
+ * - 补充渐变色 [BrandGradientStart]/[BrandGradientEnd]，用于 Logo/按钮渐变
+ * - 表面层次更清晰：surface / surfaceVariant / surfaceContainer 区分
  */
 
-// 亮色主题颜色
-val ColorPrimary = Color(0xFF3B82F6)
-val ColorPrimaryHover = Color(0xFF2563EB)
-val ColorPrimaryDark = Color(0xFF1D4ED8)
-val ColorPrimaryRing = Color(0x333B82F6) // 20% 透明度
+// ==================== 亮色主题 ====================
 
-val ColorBg = Color(0xFFFFFFFF)
-val ColorBgSecondary = Color(0xFFF8FAFC)
-val ColorBgTertiary = Color(0xFFF1F5F9)
+// 主品牌色（Indigo 600 系）
+val ColorPrimary = Color(0xFF4F46E5)
+val ColorPrimaryHover = Color(0xFF4338CA)
+val ColorPrimaryDark = Color(0xFF3730A3)
+val ColorPrimaryRing = Color(0x334F46E5) // 20% 透明度
 
-val ColorText = Color(0xFF0F172A)
-val ColorTextSecondary = Color(0xFF475569)
-val ColorTextTertiary = Color(0xFF94A3B8)
+// 品牌渐变（Logo / 主按钮强调色）
+val BrandGradientStart = Color(0xFF6366F1) // Indigo 500
+val BrandGradientEnd = Color(0xFF8B5CF6) // Violet 500
 
-val ColorBorder = Color(0xFFE2E8F0)
-val ColorBorderSubtle = Color(0xFFF1F5F9)
+// 表面与背景
+val ColorBg = Color(0xFFFAFAFA)
+val ColorBgSecondary = Color(0xFFF4F4F5)
+val ColorBgTertiary = Color(0xFFE4E4E7)
+
+// 文本
+val ColorText = Color(0xFF18181B)
+val ColorTextSecondary = Color(0xFF52525B)
+val ColorTextTertiary = Color(0xFFA1A1AA)
+
+// 边框
+val ColorBorder = Color(0xFFE4E4E7)
+val ColorBorderSubtle = Color(0xFFF4F4F5)
 
 // 语义色 - 成功
 val ColorSuccess = Color(0xFF10B981)
@@ -46,21 +60,26 @@ val ColorInfoBg = Color(0xFFDBEAFE)
 // 遮罩
 val ColorOverlay = Color(0x802E3A52) // 50% 透明度
 
-// 暗色主题颜色覆写
-val ColorPrimaryDark_ = Color(0xFF3B82F6)
-val ColorPrimaryHoverDark = Color(0xFF60A5FA)
-val ColorPrimaryRingDark = Color(0x4D3B82F6) // 30% 透明度
+// ==================== 暗色主题 ====================
 
-val ColorBgDark = Color(0xFF0F172A)
-val ColorBgSecondaryDark = Color(0xFF1E293B)
-val ColorBgTertiaryDark = Color(0xFF334155)
+val ColorPrimaryDark_ = Color(0xFF818CF8) // Indigo 400（暗色背景上更亮）
+val ColorPrimaryHoverDark = Color(0xFFA5B4FC)
+val ColorPrimaryRingDark = Color(0x4D818CF8) // 30% 透明度
 
-val ColorTextDark = Color(0xFFF8FAFC)
-val ColorTextSecondaryDark = Color(0xFFCBD5E1)
-val ColorTextTertiaryDark = Color(0xFF94A3B8)
+// 暗色品牌渐变
+val BrandGradientStartDark = Color(0xFF818CF8)
+val BrandGradientEndDark = Color(0xFFA78BFA)
 
-val ColorBorderDark = Color(0xFF334155)
-val ColorBorderSubtleDark = Color(0xFF1E293B)
+val ColorBgDark = Color(0xFF09090B)
+val ColorBgSecondaryDark = Color(0xFF18181B)
+val ColorBgTertiaryDark = Color(0xFF27272A)
+
+val ColorTextDark = Color(0xFFFAFAFA)
+val ColorTextSecondaryDark = Color(0xFFD4D4D8)
+val ColorTextTertiaryDark = Color(0xFFA1A1AA)
+
+val ColorBorderDark = Color(0xFF27272A)
+val ColorBorderSubtleDark = Color(0xFF18181B)
 
 val ColorSuccessDark = Color(0xFF34D399)
 val ColorSuccessBgDark = Color(0x3334D399)

@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -299,6 +301,11 @@ fun ChatScreen() {
  * 布局：附件按钮 + 文本输入框 + 发送/停止按钮
  * - 流式中显示停止按钮（替代发送）
  * - 上传中禁用附件按钮并显示加载指示
+ *
+ * 2026-07-09 UI 优化：
+ * - 输入栏背景使用 surface + 上边框 outlineVariant，视觉分隔更清晰
+ * - 发送按钮改用 FilledIconButton + 品牌色背景，替代纯 IconButton
+ * - 圆角统一 24dp
  */
 @Composable
 private fun ChatInputBar(
@@ -315,10 +322,10 @@ private fun ChatInputBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(12.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
             .imePadding(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // 附件按钮
         Box {
@@ -372,10 +379,11 @@ private fun ChatInputBar(
             modifier = Modifier.weight(1f),
             maxLines = 4,
             enabled = !isStreaming,
+            shape = RoundedCornerShape(24.dp),
         )
 
         if (isStreaming) {
-            // 停止按钮
+            // 停止按钮（保持 IconButton 风格，避免用户误触）
             IconButton(onClick = onCancel) {
                 Icon(
                     imageVector = Icons.Outlined.Stop,
@@ -384,19 +392,16 @@ private fun ChatInputBar(
                 )
             }
         } else {
-            // 发送按钮
-            IconButton(
+            // 发送按钮：FilledIconButton + 品牌色背景，圆角 16dp
+            val sendEnabled = text.isNotBlank() || pendingAttachmentCount > 0
+            androidx.compose.material3.FilledIconButton(
                 onClick = onSend,
-                enabled = text.isNotBlank() || pendingAttachmentCount > 0,
+                enabled = sendEnabled,
+                shape = RoundedCornerShape(16.dp),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Send,
                     contentDescription = "发送",
-                    tint = if (text.isNotBlank() || pendingAttachmentCount > 0) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
                 )
             }
         }
@@ -405,6 +410,10 @@ private fun ChatInputBar(
 
 /**
  * 会话列表（横向滚动）
+ *
+ * 2026-07-09 UI 优化：
+ * - 新建对话按钮用品牌渐变背景 + Add 图标，替代纯 IconButton
+ * - 会话卡片圆角 16dp + 选中态加粗
  */
 @Composable
 private fun ConversationRow(
@@ -414,17 +423,39 @@ private fun ConversationRow(
     onNew: () -> Unit,
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
-            IconButton(onClick = onNew) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = "新建对话",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+            // 新建对话按钮：品牌渐变背景 + 圆角
+            Box(
+                modifier = Modifier
+                    .background(
+                        brush = com.xtys126.open_awa.core.theme.LocalBrandGradient.current,
+                        shape = RoundedCornerShape(16.dp),
+                    )
+                    .clickable { onNew() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "新建对话",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "新对话",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
         }
         items(conversations, key = { it.id }) { conv ->
@@ -439,7 +470,8 @@ private fun ConversationRow(
                         },
                         shape = RoundedCornerShape(16.dp),
                     )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .clickable { onSelect(conv) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Text(
                     text = conv.title,
@@ -449,6 +481,7 @@ private fun ConversationRow(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
         }
@@ -460,6 +493,12 @@ private fun ConversationRow(
  *
  * 用户消息右对齐 + 主色调背景，AI 消息左对齐 + surface 背景
  * 流式中的 AI 消息末尾闪烁光标（用 isLoading 圆点替代，避免动画复杂度）
+ *
+ * 2026-07-09 UI 优化：
+ * - 用户消息：品牌色背景 + 右下角小圆角（尾翼效果），其余 16dp
+ * - AI 消息：surfaceVariant 背景 + 左下角小圆角（尾翼效果），其余 16dp
+ * - 气泡最大宽度 80%，避免长文本占满整行
+ * - 流式光标改为品牌色小圆点，更精致
  */
 @Composable
 private fun MessageBubble(message: UiMessage) {
@@ -473,7 +512,13 @@ private fun MessageBubble(message: UiMessage) {
     val fgColor = if (isUser) {
         MaterialTheme.colorScheme.onPrimary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.colorScheme.onSurface
+    }
+    // 尾翼效果：发送方一侧的角落圆角更小
+    val bubbleShape = if (isUser) {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+    } else {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
     }
 
     Column(
@@ -483,8 +528,11 @@ private fun MessageBubble(message: UiMessage) {
         // 附件预览（用户消息显示已上传附件的文件名）
         if (message.attachments.isNotEmpty()) {
             Column(
-                modifier = Modifier.padding(bottom = 4.dp),
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .fillMaxWidth(0.8f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalAlignment = alignment,
             ) {
                 message.attachments.forEach { att ->
                     AttachmentChip(attachment = att)
@@ -494,11 +542,12 @@ private fun MessageBubble(message: UiMessage) {
 
         Box(
             modifier = Modifier
+                .fillMaxWidth(0.8f)
                 .background(
                     color = bgColor,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = bubbleShape,
                 )
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -509,12 +558,22 @@ private fun MessageBubble(message: UiMessage) {
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = fgColor,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (message.isStreaming && message.content.isNotEmpty()) {
-                    Spacer(modifier = Modifier.size(4.dp))
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(10.dp),
-                        strokeWidth = 1.5.dp,
+                    Spacer(modifier = Modifier.size(6.dp))
+                    // 流式光标：品牌色小圆点
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                color = if (isUser) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                shape = RoundedCornerShape(4.dp),
+                            ),
                     )
                 }
             }
