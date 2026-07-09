@@ -199,3 +199,10 @@ Android-Cli/
 dogfood-output/
 *.codex-disposable
 backend/uploads/
+
+# Android 测试截图与测试报告（临时产物）
+android_test_*.png
+Android/test-reports/
+
+# Qdrant 向量数据库本地数据
+backend/data/qdrant/
