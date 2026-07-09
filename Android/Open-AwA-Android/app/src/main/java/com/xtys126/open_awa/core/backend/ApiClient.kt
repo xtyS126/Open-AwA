@@ -6,6 +6,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header
@@ -22,6 +23,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.http.parametersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
@@ -144,6 +146,43 @@ object ApiClient {
      */
     suspend fun post(path: String, body: Any? = null): String =
         request(path, HttpMethod.Post, body)
+
+    /**
+     * POST application/x-www-form-urlencoded 请求
+     *
+     * 用于后端 OAuth2PasswordRequestForm 接口（如 /api/auth/login）。
+     *
+     * @param path API 路径（不含 /api 前缀）
+     * @param form 表单键值对
+     * @return 响应字符串，失败抛 [ApiException]
+     */
+    suspend fun postForm(path: String, form: Map<String, String>): String {
+        val baseUrl = BackendManager.resolveBaseUrl()
+        val url = "$baseUrl/api/$path"
+        Log.d(TAG, "表单请求: POST $url")
+
+        val response = try {
+            client.post(url) {
+                accessToken?.let { header("Authorization", "Bearer $it") }
+                csrfToken?.let { header("X-CSRF-Token", it) }
+                setBody(
+                    FormDataContent(
+                        parametersOf(form.mapValues { listOf(it.value) }),
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "表单请求失败: ${e.message}", e)
+            throw ApiException.NetworkError(e.message ?: "网络错误")
+        }
+
+        val text = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            Log.e(TAG, "表单请求 HTTP ${response.status.value}: $text")
+            throw ApiException.HttpError(response.status.value, text)
+        }
+        return text
+    }
 
     /**
      * PUT 请求

@@ -152,6 +152,11 @@ object WebSocketClient {
         connectJob?.cancel()
         connectJob = scope.launch {
             var attempt = 0
+            // 从 ws/wss URL 推导 Origin header（scheme + host + port，不含 path/query）
+            // 非浏览器客户端默认不发送 Origin，服务端 validate_ws_origin 会拒绝空 Origin（防 CSWSH）
+            // 注意：Origin 规范格式为 scheme://host[:port]，不能包含 path 或 query，
+            // 否则会被服务端白名单匹配拒绝
+            val origin = buildOriginFromWsUrl(wsUrl)
             while (shouldReconnect) {
                 try {
                     client.webSocket(
@@ -159,6 +164,7 @@ object WebSocketClient {
                         request = {
                             url(wsUrl)
                             header("Sec-WebSocket-Protocol", subprotocol)
+                            header("Origin", origin)
                         },
                     ) {
                         // 连接建立成功
@@ -246,5 +252,32 @@ object WebSocketClient {
         } catch (_: Exception) {
             false
         }
+    }
+
+    /**
+     * 从 ws/wss URL 推导 Origin header
+     *
+     * Origin 规范格式为 `scheme://host[:port]`，不含 path / query / fragment。
+     * 直接把整个 wsUrl 的 scheme 替换会把 path 一起带进 Origin，
+     * 导致服务端白名单匹配失败（如 `http://host:port/api/chat/ws/x` 不在白名单）。
+     *
+     * 协议映射：ws -> http, wss -> https
+     *
+     * @param wsUrl WebSocket 完整地址（如 `ws://host:port/path`）
+     * @return Origin 字符串（如 `http://host:port`）
+     */
+    private fun buildOriginFromWsUrl(wsUrl: String): String {
+        // 1. 协议映射：ws -> http, wss -> https
+        val httpUrl = wsUrl
+            .replace("ws://", "http://")
+            .replace("wss://", "https://")
+        // 2. 截断 path / query：保留 scheme://host[:port]
+        //    格式：scheme://authority/path?query#fragment
+        //    authority 后第一个 / 或 ? 即 path 起点
+        val schemeEnd = httpUrl.indexOf("://")
+        if (schemeEnd < 0) return httpUrl
+        val authorityStart = schemeEnd + 3
+        val pathStart = httpUrl.indexOfAny(charArrayOf('/', '?', '#'), authorityStart)
+        return if (pathStart >= 0) httpUrl.substring(0, pathStart) else httpUrl
     }
 }

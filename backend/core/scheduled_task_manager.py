@@ -302,14 +302,47 @@ class ScheduledTaskManager:
             "plugin_name": getattr(task, "plugin_name", None),
             "command_name": getattr(task, "command_name", None),
             "command_params": getattr(task, "command_params", None) or {},
+            "user_id": str(getattr(task, "user_id", "") or ""),
         }
         try:
             if scheduled_task.get("task_type") == "plugin_command":
                 result = await self._run_plugin_command(scheduled_task)
             else:
                 result = await self._run_agent(scheduled_task)
+            # 手动触发也要推送任务完成通知到收件箱，与 APScheduler 触发路径行为一致
+            try:
+                from api.routes.inbox import add_task_result_notification
+                title = scheduled_task.get("title", "未命名任务")
+                resp_text = result.get("response", "") if isinstance(result, dict) else ""
+                summary = (resp_text or "")[:200]
+                add_task_result_notification(
+                    task_name=title,
+                    success=True,
+                    summary=summary,
+                    user_id=scheduled_task.get("user_id"),
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"[scheduled_task] 手动触发收件箱推送失败, task_id={scheduled_task.get('id')}: {exc}",
+                    exc_info=exc,
+                )
             return result
         except Exception as exc:
+            # 失败也推送通知，让用户知道任务执行出错
+            try:
+                from api.routes.inbox import add_task_result_notification
+                title = scheduled_task.get("title", "未命名任务")
+                add_task_result_notification(
+                    task_name=title,
+                    success=False,
+                    summary=f"任务执行失败: {exc}"[:200],
+                    user_id=scheduled_task.get("user_id"),
+                )
+            except Exception as notify_exc:
+                logger.warning(
+                    f"[scheduled_task] 手动触发失败通知推送失败, task_id={scheduled_task.get('id')}: {notify_exc}",
+                    exc_info=notify_exc,
+                )
             return {
                 "status": "failed",
                 "response": "",

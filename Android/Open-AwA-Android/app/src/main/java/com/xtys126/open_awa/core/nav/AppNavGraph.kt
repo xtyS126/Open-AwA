@@ -38,7 +38,7 @@ import com.xtys126.open_awa.features.workspace.WorkspaceScreen
 fun AppNavGraph(navController: NavHostController) {
     NavHost(
         navController = navController,
-        startDestination = "chat",
+        startDestination = "login",
     ) {
         // 控制台分组
         composable("chat") { ChatScreen() }

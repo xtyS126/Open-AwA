@@ -55,15 +55,20 @@ class AuthRepository(private val context: Context) {
     /**
      * 登录
      *
+     * 后端 /api/auth/login 使用 OAuth2PasswordRequestForm，
+     * 因此必须通过 application/x-www-form-urlencoded 提交 username / password。
+     *
      * @param username 用户名
      * @param password 密码
      * @return 登录成功后的令牌响应
      * @throws ApiException 网络或 HTTP 错误时抛出
      */
     suspend fun login(username: String, password: String): TokenResponse {
-        val request = LoginRequest(username = username, password = password)
-        // 按任务约定调用 ApiClient.post，请求体为 LoginRequest
-        val responseText = ApiClient.post("auth/login", request)
+        val form = mapOf(
+            "username" to username,
+            "password" to password,
+        )
+        val responseText = ApiClient.postForm("auth/login", form)
         val token = json.decodeFromString<TokenResponse>(responseText)
         saveTokens(token.access_token, token.csrf_token)
         return token
@@ -72,22 +77,17 @@ class AuthRepository(private val context: Context) {
     /**
      * 注册
      *
+     * 当前后端未开放公开注册接口，注册模式直接复用登录逻辑，
+     * 由管理员在后端预创建账号后使用（单用户/owner 模式）。
+     *
      * @param username 用户名
      * @param password 密码
-     * @param email 邮箱（可选）
-     * @return 注册成功后的登录令牌（若后端直接返回令牌）
+     * @param email 邮箱（可选，当前未使用）
+     * @return 登录成功后的令牌响应
      * @throws ApiException 网络或 HTTP 错误时抛出
      */
     suspend fun register(username: String, password: String, email: String): TokenResponse {
-        val request = RegisterRequest(username = username, password = password, email = email)
-        val responseText = ApiClient.post("auth/register", request)
-        // 兼容两种后端实现：返回 TokenResponse 或返回 User（注册后需另行登录）
-        return runCatching {
-            json.decodeFromString<TokenResponse>(responseText)
-        }.getOrElse {
-            // 若后端不返回令牌，则直接登录
-            login(username, password)
-        }
+        return login(username, password)
     }
 
     /**

@@ -125,7 +125,7 @@ def _resolve_allow_origin_regex() -> Optional[str]:
 
     匹配范围（收紧后）：
       - localhost / 127.0.0.1：本地回环，用于开发与 HMR
-      - 192.168.0.0/24、192.168.1.0/24：常见家庭路由器默认网段
+      - 192.168.0.0/24、192.168.1.0/24、192.168.2.0/24：常见家庭/办公网段
     不再覆盖 10.0.0.0/8、172.16.0.0/12 与完整 192.168.0.0/16，
     如需访问其他网段，请通过 ALLOWED_ORIGINS 显式配置具体 origin。
     支持 http/https 协议与任意端口，格式严格为 http(s)://host(:port)。
@@ -133,12 +133,12 @@ def _resolve_allow_origin_regex() -> Optional[str]:
     """
     if os.getenv("ALLOW_LAN_ACCESS", "").lower() != "true":
         return None
-    # 仅允许本地回环与最常见的家庭网段，避免与 allow_credentials=True 组合
+    # 仅允许本地回环与最常见的家庭/办公网段，避免与 allow_credentials=True 组合
     # 时形成跨域凭据泄露面；其他网段需通过 ALLOWED_ORIGINS 显式白名单
     return (
         r"^https?://("
         r"localhost|127\.0\.0\.1|"
-        r"192\.168\.(0|1)\.\d{1,3}"
+        r"192\.168\.(0|1|2)\.\d{1,3}"
         r")(:\d+)?$"
     )
 

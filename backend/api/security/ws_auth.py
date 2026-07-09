@@ -17,9 +17,11 @@ WebSocket 鉴权共享层。
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Tuple
 
 from fastapi import WebSocket
+from loguru import logger
 
 
 def extract_token_from_subprotocol(websocket: WebSocket) -> Tuple[Optional[str], Optional[str]]:
@@ -77,16 +79,17 @@ def validate_ws_origin(origin: str) -> bool:
         if origin in ALLOWED_ORIGINS:
             return True
     except ImportError:
-        # main 模块不可用时跳过白名单校验，继续走 LAN 分支
         pass
 
     # 检查 LAN 模式（允许私有网段 IP）
     try:
         from main import ALLOW_LAN_ORIGIN_REGEX
-        if ALLOW_LAN_ORIGIN_REGEX is not None and ALLOW_LAN_ORIGIN_REGEX.match(origin):
+        if ALLOW_LAN_ORIGIN_REGEX is not None and re.match(ALLOW_LAN_ORIGIN_REGEX, origin):
             return True
     except ImportError:
-        # main 模块不可用时跳过 LAN 校验
         pass
 
+    logger.bind(event="ws_origin_rejected", module="ws_auth", origin=origin).warning(
+        f"WebSocket origin rejected: {origin}"
+    )
     return False

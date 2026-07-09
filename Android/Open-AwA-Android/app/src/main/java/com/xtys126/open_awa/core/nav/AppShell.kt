@@ -1,10 +1,8 @@
 package com.xtys126.open_awa.core.nav
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -128,42 +127,49 @@ private fun AppDrawer(
     onNavigate: (Destination) -> Unit,
 ) {
     ModalDrawerSheet {
-        // 抽屉头部：Logo + 应用名
-        Column(
+        // 使用单个 LazyColumn 渲染抽屉内容，避免嵌套滚动组件导致无限高度约束崩溃
+        // 结构：Header + 控制台分组 + 分隔线 + 智能体分组 + 分隔线 + 设置分组
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
         ) {
-            DrawerHeader()
-            Spacer(modifier = Modifier.height(16.dp))
+            item {
+                DrawerHeader()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // 控制台分组
-            DrawerGroupTitle(title = stringResource(R.string.nav_group_control))
-            DrawerGroupItems(
+            item { DrawerGroupTitle(title = stringResource(R.string.nav_group_control)) }
+            drawerGroupItems(
                 items = Destination.controlGroup,
                 currentPath = currentPath,
                 onNavigate = onNavigate,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(8.dp))
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // 智能体分组
-            DrawerGroupTitle(title = stringResource(R.string.nav_group_agent))
-            DrawerGroupItems(
+            item { DrawerGroupTitle(title = stringResource(R.string.nav_group_agent)) }
+            drawerGroupItems(
                 items = Destination.agentGroup,
                 currentPath = currentPath,
                 onNavigate = onNavigate,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(8.dp))
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // 设置分组
-            DrawerGroupTitle(title = stringResource(R.string.nav_group_settings))
-            DrawerGroupItems(
+            item { DrawerGroupTitle(title = stringResource(R.string.nav_group_settings)) }
+            drawerGroupItems(
                 items = Destination.settingsGroup,
                 currentPath = currentPath,
                 onNavigate = onNavigate,
@@ -172,6 +178,11 @@ private fun AppDrawer(
     }
 }
 
+/**
+ * 抽屉头部
+ *
+ * Logo 占位（圆形品牌色背景）+ 应用名 + 副标题
+ */
 @Composable
 private fun DrawerHeader() {
     Row(
@@ -221,31 +232,38 @@ private fun DrawerGroupTitle(title: String) {
     )
 }
 
-@Composable
-private fun DrawerGroupItems(
+/**
+ * 在 [LazyListScope] 中渲染一组导航抽屉项
+ *
+ * 使用 [LazyListScope.items] 直接插入到外层 [LazyColumn]，避免嵌套独立的 LazyColumn。
+ *
+ * @param items 该分组下的 Destination 列表
+ * @param currentPath 当前路由路径，用于高亮选中项
+ * @param onNavigate 点击导航回调
+ */
+private fun LazyListScope.drawerGroupItems(
     items: List<Destination>,
     currentPath: String,
     onNavigate: (Destination) -> Unit,
 ) {
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        items(items) { dest ->
-            val selected = currentPath == dest.path || currentPath.startsWith("${dest.path}/")
-            NavigationDrawerItem(
-                icon = {
-                    Icon(
-                        imageVector = dest.icon,
-                        contentDescription = null,
-                    )
-                },
-                label = { Text(text = destinationTitle(dest)) },
-                selected = selected,
-                onClick = { onNavigate(dest) },
-                colors = NavigationDrawerItemDefaults.colors(),
-            )
-        }
+    items(
+        items = items,
+        key = { it.path },
+    ) { dest ->
+        val selected = currentPath == dest.path || currentPath.startsWith("${dest.path}/")
+        NavigationDrawerItem(
+            icon = {
+                Icon(
+                    imageVector = dest.icon,
+                    contentDescription = null,
+                )
+            },
+            label = { Text(text = destinationTitle(dest)) },
+            selected = selected,
+            onClick = { onNavigate(dest) },
+            colors = NavigationDrawerItemDefaults.colors(),
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
     }
 }
 

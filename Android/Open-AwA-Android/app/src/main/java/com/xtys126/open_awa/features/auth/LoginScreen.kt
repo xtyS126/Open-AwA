@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -46,10 +48,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.xtys126.open_awa.core.backend.ApiClient
+import com.xtys126.open_awa.data.AuthRepository
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * 登录页
@@ -63,9 +63,6 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * 登录成功后通过 [navController] 导航到 "chat" 路由，并弹出登录页
  *
- * TODO: ViewModel 由其他子代理并行实现，登录逻辑先用伪代码占位
- *       接入 AuthRepository 后将状态管理迁移到 ViewModel + StateFlow
- *
  * @param navController 导航控制器，登录成功后跳转聊天页
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,9 +70,11 @@ import kotlinx.serialization.json.JsonPrimitive
 fun LoginScreen(
     navController: NavHostController,
 ) {
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
+    val authRepo = remember { AuthRepository(context.applicationContext) }
 
     // 本地 UI 状态（TODO: 迁移到 ViewModel + StateFlow）
     var username by remember { mutableStateOf("") }
@@ -83,6 +82,25 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var isRegisterMode by remember { mutableStateOf(false) }
+    var autoChecking by remember { mutableStateOf(true) }
+
+    // 启动时检查本地是否已有 token，有则直接跳到聊天页
+    LaunchedEffect(Unit) {
+        runCatching {
+            authRepo.restoreTokens()
+            authRepo.isAuthenticated()
+        }.onSuccess { authenticated ->
+            autoChecking = false
+            if (authenticated) {
+                navController.navigate("chat") {
+                    popUpTo("login") { inclusive = true }
+                }
+            }
+        }.onFailure { e ->
+            autoChecking = false
+            android.util.Log.w("LoginScreen", "恢复登录态失败: ${e.message}", e)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -206,24 +224,18 @@ fun LoginScreen(
                             keyboard?.hide()
                             isLoading = true
                             scope.launch {
-                                try {
-                                    // TODO: 接入 AuthRepository.login(username, password)
-                                    // 当前为伪代码，构造请求体并调用 ApiClient.post
-                                    val body = JsonObject(
-                                        mapOf(
-                                            "username" to JsonPrimitive(username),
-                                            "password" to JsonPrimitive(password),
-                                        ),
-                                    )
-                                    // val response = ApiClient.post("auth/login", body)
-                                    // TODO: 解析 access_token / csrf_token 并设置到 ApiClient
-                                    ApiClient.setAccessToken(null)
-                                    ApiClient.setCsrfToken(null)
+                                runCatching {
+                                    if (isRegisterMode) {
+                                        authRepo.register(username, password, email = "")
+                                    } else {
+                                        authRepo.login(username, password)
+                                    }
+                                }.onSuccess {
                                     isLoading = false
                                     navController.navigate("chat") {
                                         popUpTo("login") { inclusive = true }
                                     }
-                                } catch (e: Exception) {
+                                }.onFailure { e ->
                                     // 登录是关键路径，错误显示给用户而非静默吞
                                     isLoading = false
                                     snackbarHostState.showSnackbar(
