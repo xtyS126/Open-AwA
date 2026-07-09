@@ -72,9 +72,9 @@ export default defineConfig(({ mode }) => {
             recharts: ['recharts'],
             core: ['zustand', 'axios'],
             virtuoso: ['react-virtuoso'],
-            // P0: markdown 拆分为更细粒度，避免单 chunk 过大
-            markdown: ['react-markdown', 'remark-gfm', 'remark-math'],
-            markdownMath: ['rehype-katex', 'katex'],
+            // P0: markdown 全家桶合并到同一 chunk，避免 rehype-katex/katat 跨 chunk 引用触发 TDZ
+            // （katex.mjs 内部模块间引用在 rollup manualChunks 拆分后会形成 "Cannot access 'x' before initialization"）
+            markdown: ['react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex'],
             markdownRender: ['rehype-highlight', 'highlight.js'],
             // P0: lucide 图标单独分包
             icons: ['lucide-react'],
