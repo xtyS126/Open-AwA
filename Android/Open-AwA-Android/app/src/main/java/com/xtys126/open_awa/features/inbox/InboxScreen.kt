@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -29,7 +30,6 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,12 +50,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xtys126.open_awa.core.backend.WebSocketConnectionState
+import com.xtys126.open_awa.core.theme.LocalBrandGradient
+import com.xtys126.open_awa.core.ui.EmptyBox
+import com.xtys126.open_awa.core.ui.LoadingBox
 import com.xtys126.open_awa.data.AuthRepository
 import com.xtys126.open_awa.data.Notification
 import com.xtys126.open_awa.data.NotificationRepository
@@ -236,19 +240,15 @@ fun InboxScreen() {
         ) {
             when {
                 isLoading -> {
-                    // 加载中
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                    )
+                    // 加载中：使用通用 LoadingBox（品牌色）
+                    LoadingBox()
                 }
 
                 messages.isEmpty() -> {
-                    // 空列表
-                    Text(
-                        text = errorMessage ?: "暂无通知",
-                        modifier = Modifier.align(Alignment.Center),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // 空列表：使用通用 EmptyBox（品牌渐变图标）
+                    EmptyBox(
+                        icon = Icons.Outlined.Notifications,
+                        title = errorMessage ?: "暂无通知",
                     )
                 }
 
@@ -350,33 +350,67 @@ private const val VIBRATION_DURATION_MS = 200L
 /**
  * 连接状态指示器
  *
- * 根据 [WebSocketConnectionState] 显示对应颜色的小圆点：
- * - Connected: 绿色
- * - Reconnecting: 橙色
- * - Disconnected/Failed: 灰色
+ * 根据 [WebSocketConnectionState] 显示对应颜色的小圆点 + 文字标签：
+ * - Connected: 绿色 + "已连接"
+ * - Reconnecting: 橙色 + "重连中"
+ * - Failed: 红色 + "连接失败"
+ * - Disconnected: 灰色 + "未连接"
+ *
+ * 2026-07-09 UI 优化：
+ * - 双圈设计：外圈淡色背景 18dp + 内圈实色 8dp，更精致
+ * - 增加文字标签，状态语义清晰
+ * - 颜色改为半透明叠加，与主题更协调
  *
  * @param state 当前 WebSocket 连接状态
  */
 @Composable
 private fun ConnectionStateIndicator(state: WebSocketConnectionState) {
-    val color = when (state) {
-        is WebSocketConnectionState.Connected -> Color(0xFF4CAF50)
-        is WebSocketConnectionState.Reconnecting -> Color(0xFFFF9800)
-        is WebSocketConnectionState.Failed -> Color(0xFFF44336)
-        WebSocketConnectionState.Disconnected -> Color(0xFF9E9E9E)
+    val (color, label) = when (state) {
+        is WebSocketConnectionState.Connected -> Color(0xFF22C55E) to "已连接"
+        is WebSocketConnectionState.Reconnecting -> Color(0xFFF59E0B) to "重连中"
+        is WebSocketConnectionState.Failed -> Color(0xFFEF4444) to "连接失败"
+        WebSocketConnectionState.Disconnected -> Color(0xFF9CA3AF) to "未连接"
     }
-    Box(
-        modifier = Modifier
-            .size(8.dp)
-            .clip(CircleShape)
-            .background(color),
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // 双圈设计：外圈淡色背景 + 内圈实色
+        Box(
+            modifier = Modifier.size(18.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.18f)),
+            )
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /**
  * 通知卡片
  *
  * 根据 [Notification.type] 显示对应图标，未读消息高亮背景。
+ *
+ * 2026-07-09 UI 优化：
+ * - 类型图标用品牌渐变圆形背景（未读）或 surfaceVariant 圆形背景（已读）
+ * - 未读时左侧加品牌色竖条作为未读指示，替代右侧"新"Badge
+ * - 圆角 16dp + 未读 elevation 2dp / 已读 0dp
+ * - 标题/时间分两行排版，标题 SemiBold（未读） / Normal（已读）
  *
  * @param notification 通知数据
  * @param onClick 点击回调（用于标记已读）
@@ -387,72 +421,95 @@ private fun NotificationCard(
     onClick: () -> Unit,
 ) {
     val icon = notificationTypeIcon(notification.type)
-    val iconTint = if (!notification.read) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val isUnread = !notification.read
 
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (!notification.read) 2.dp else 1.dp,
+            defaultElevation = if (isUnread) 2.dp else 0.dp,
         ),
-        colors = if (!notification.read) {
+        colors = if (isUnread) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         } else {
-            CardDefaults.cardColors()
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         },
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 类型图标
+            // 未读左侧竖条指示
+            if (isUnread) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 3.dp, height = 36.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(LocalBrandGradient.current),
+                )
+                Spacer(modifier = Modifier.size(10.dp))
+            } else {
+                Spacer(modifier = Modifier.size(13.dp))
+            }
+
+            // 类型图标：未读用品牌渐变圆形背景，已读用 surfaceVariant
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(CircleShape),
+                    .clip(CircleShape)
+                    .background(
+                        if (isUnread) {
+                            LocalBrandGradient.current
+                        } else {
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                ),
+                            )
+                        },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = iconTint,
+                    tint = if (isUnread) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(20.dp),
                 )
             }
-            Spacer(modifier = Modifier.padding(end = 12.dp))
+            Spacer(modifier = Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = notification.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = if (!notification.read) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                    Text(
-                        text = formatTime(notification.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = notification.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = if (isUnread) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (isUnread) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                Spacer(modifier = Modifier.size(2.dp))
                 Text(
                     text = notification.content,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                 )
-            }
-            // 未读徽章
-            if (!notification.read) {
-                Spacer(modifier = Modifier.padding(start = 8.dp))
-                Badge { Text(text = "新") }
+                Spacer(modifier = Modifier.size(4.dp))
+                Text(
+                    text = formatTime(notification.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
