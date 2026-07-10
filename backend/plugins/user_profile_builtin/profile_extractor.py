@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.models import ProfileFact, ProfileExtractionLog, BehaviorLog, ShortTermMemory
+from db.models import ProfileFact, ProfileExtractionLog, BehaviorLog, ShortTermMemory, Conversation
 from .profile_dimensions import PROFILE_CATEGORIES
 from .profile_confidence import (
     ConfidenceModel,
@@ -85,7 +85,8 @@ class ProfileExtractor:
                 return self._build_result(
                     extraction_log_id, "skipped",
                     "无对话内容和行为日志，跳过提取",
-                    0, 0, 0, 0, 0, start_time
+                    0, 0, 0, 0, 0,
+                    start_time=start_time,
                 )
 
             # Step 2: 构建 Prompt 并调用 LLM
@@ -100,7 +101,8 @@ class ProfileExtractor:
                 return self._build_result(
                     extraction_log_id, "partial",
                     "LLM 未提取到新的画像事实",
-                    turns_count, behavior_count, 0, 0, 0, start_time
+                    turns_count, behavior_count, 0, 0, 0,
+                    start_time=start_time,
                 )
 
             # Step 4: 合并决策
@@ -140,7 +142,8 @@ class ProfileExtractor:
             return self._build_result(
                 extraction_log_id, "failed",
                 f"提取失败: {exc}",
-                0, 0, 0, 0, 0, start_time,
+                0, 0, 0, 0, 0,
+                start_time=start_time,
             )
 
     def _collect_conversations(
@@ -149,23 +152,38 @@ class ProfileExtractor:
         """
         收集对话历史内容。
 
+        ShortTermMemory 表无 user_id 字段，需通过 Conversation 表（有 user_id）关联用户：
+        先查 Conversation 中属于当前用户的 session_id 列表，再用这些 session_id
+        过滤 ShortTermMemory。ShortTermMemory 用 timestamp 字段排序（无 created_at）。
+
+        注意：不使用 ConversationRecord 表，因为该表由 conversation_recorder 异步写入，
+        在数据清空后或异步写入失败时可能为空，而 Conversation 表在 chat 流程中同步写入更可靠。
+
         Args:
             session_ids: 指定会话 ID 列表
 
         Returns:
             (格式化的对话文本, 对话轮次数)
         """
+        user_session_ids_query = self.db.query(Conversation.session_id).filter(
+            Conversation.user_id == self.user_id,
+        ).distinct()
+        if session_ids:
+            user_session_ids_query = user_session_ids_query.filter(
+                Conversation.session_id.in_(session_ids)
+            )
+        user_session_ids = [row[0] for row in user_session_ids_query.all()]
+
+        if not user_session_ids:
+            return "", 0
+
         query = self.db.query(ShortTermMemory).filter(
-            ShortTermMemory.user_id == self.user_id,
-            ShortTermMemory.session_id.isnot(None),
+            ShortTermMemory.session_id.in_(user_session_ids),
         )
 
-        if session_ids:
-            query = query.filter(ShortTermMemory.session_id.in_(session_ids))
-
-        # 按时间倒序取最近的对话
+        # 按时间倒序取最近的对话（ShortTermMemory 用 timestamp 字段）
         memories = query.order_by(
-            ShortTermMemory.created_at.desc()
+            ShortTermMemory.timestamp.desc()
         ).limit(self.MAX_TURNS_PER_EXTRACTION * 2).all()
 
         if not memories:
@@ -192,7 +210,7 @@ class ProfileExtractor:
         behaviors = self.db.query(BehaviorLog).filter(
             BehaviorLog.user_id == self.user_id
         ).order_by(
-            BehaviorLog.created_at.desc()
+            BehaviorLog.timestamp.desc()
         ).limit(self.MAX_BEHAVIOR_LOGS).all()
 
         if not behaviors:
@@ -211,7 +229,7 @@ class ProfileExtractor:
         # 加入最近10条具体行为
         summary_parts.append("\n最近行为：")
         for b in behaviors[:10]:
-            ts = b.created_at.strftime("%m-%d %H:%M") if b.created_at else "?"
+            ts = b.timestamp.strftime("%m-%d %H:%M") if b.timestamp else "?"
             summary_parts.append(f"  [{ts}] {b.action_type}")
 
         return "\n".join(summary_parts), len(behaviors)
@@ -267,10 +285,14 @@ class ProfileExtractor:
         else:
             existing_context = "暂无已有画像数据"
 
-        return template.format(
-            existing_profile_context=existing_context,
-            conversation_content=conversation_content or "无对话内容",
-            recent_behaviors=behavior_summary or "无行为数据",
+        # 注意：模板中包含 JSON 示例（如 {"extracted_facts": ...}），
+        # 不能用 str.format()（会把 JSON 的 {...} 当作变量名解析抛 KeyError），
+        # 改用 str.replace 逐个替换占位符。
+        return (
+            template
+            .replace("{existing_profile_context}", existing_context)
+            .replace("{conversation_content}", conversation_content or "无对话内容")
+            .replace("{recent_behaviors}", behavior_summary or "无行为数据")
         )
 
     def _load_prompt_template(self, filename: str) -> str:
@@ -310,9 +332,82 @@ class ProfileExtractor:
         调用 LLM 进行画像提取（异步）。
 
         使用项目已有的 litellm_adapter 进行调用。
+        provider 和 api_key 解析顺序：
+        1. 默认 ModelConfiguration（若 api_key 有效）
+        2. 遍历所有 active provider 的 ModelConfiguration，找到第一个有凭据的
+        3. DeepSeek 优先（v4-flash > v4-pro），与 E2E 测试一致
         """
         try:
             from core.litellm_adapter import litellm_chat_completion
+            from billing.pricing_manager import PricingManager
+            from config.security import decrypt_secret_value
+            from db.models import ModelConfiguration, ProviderCredential
+
+            pricing_manager = PricingManager(self.db)
+
+            # 候选配置列表：默认配置 + 所有 active 配置（去重）
+            default_config = pricing_manager.get_default_configuration()
+            all_configs = self.db.query(ModelConfiguration).filter(
+                ModelConfiguration.is_active == True,
+            ).all()
+
+            # 按 provider 分组，DeepSeek 优先
+            def _config_priority(c):
+                # 优先级：deepseek-v4-flash > deepseek-v4-pro > deepseek 其他 > 其他
+                p = (c.provider or "").lower()
+                m = (c.model or "").lower()
+                if p == "deepseek" and "v4-flash" in m:
+                    return 0
+                if p == "deepseek" and "v4-pro" in m:
+                    return 1
+                if p == "deepseek":
+                    return 2
+                return 3
+
+            candidates = sorted(all_configs, key=_config_priority)
+            if default_config and default_config not in candidates:
+                candidates.insert(0, default_config)
+
+            provider = ""
+            model = model_name or ""
+            api_key = ""
+            api_endpoint = None
+
+            for config in candidates:
+                p = (config.provider or "").strip()
+                m = (config.model or "").strip()
+                if not p or not m:
+                    continue
+
+                # 优先从 ModelConfiguration.api_key 解密
+                raw_key = getattr(config, "api_key", "") or ""
+                if raw_key:
+                    if raw_key.startswith("enc:"):
+                        continue
+                    api_key = decrypt_secret_value(raw_key) or ""
+                else:
+                    # 回退到 ProviderCredential 表
+                    cred = pricing_manager.get_provider_credential(p)
+                    if cred and cred.api_key:
+                        if cred.api_key.startswith("enc:"):
+                            continue
+                        api_key = decrypt_secret_value(cred.api_key) or ""
+                        if not api_endpoint and getattr(cred, "base_url", None):
+                            api_endpoint = cred.base_url
+
+                if api_key:
+                    provider = p
+                    model = m
+                    api_endpoint = api_endpoint or config.api_endpoint
+                    logger.info(f"画像提取选用 provider={provider}, model={model}")
+                    break
+
+            if not api_key or not provider:
+                logger.warning("无法从任何 active provider 解析有效 API Key")
+                return json.dumps({
+                    "extracted_facts": [],
+                    "summary": "API Key 未配置或已失效"
+                })
 
             messages = [
                 {
@@ -323,15 +418,51 @@ class ProfileExtractor:
             ]
 
             response = await litellm_chat_completion(
+                provider=provider,
+                model=model,
                 messages=messages,
-                model=model_name,
+                api_key=api_key,
+                api_base=api_endpoint,
                 temperature=0.3,
-                max_tokens=2000,
+                max_tokens=4000,
             )
 
-            if response and response.get("choices"):
-                return response["choices"][0]["message"]["content"]
-            return ""
+            # litellm_adapter 返回的字典可能包含 ok 字段
+            # 成功: {"ok": True, "response": "...", "reasoning_content": "..."}
+            # 失败: {"ok": False, "error": {...}}
+            if not response:
+                logger.warning("LLM 返回空响应对象")
+                return ""
+
+            if response.get("ok") is False:
+                error_info = response.get("error", {})
+                logger.warning(f"LLM 调用返回错误: {error_info.get('error_type', 'unknown')}: {error_info.get('message', '')}")
+                return json.dumps({
+                    "extracted_facts": [],
+                    "summary": f"LLM 调用失败: {error_info.get('message', 'unknown')}"
+                })
+
+            # 优先取 response 字段（litellm_adapter 的标准返回格式）
+            content = response.get("response") or ""
+            reasoning = response.get("reasoning_content") or ""
+
+            # 兼容原始 choices 格式
+            if not content and response.get("choices"):
+                choices = response["choices"]
+                if choices and isinstance(choices[0], dict):
+                    msg = choices[0].get("message", {})
+                    content = msg.get("content") or ""
+                    reasoning = msg.get("reasoning_content") or ""
+
+            # 某些 reasoner 模型（如 deepseek-v4-flash）可能把内容放在 reasoning_content
+            if not content and reasoning:
+                logger.info("LLM content 为空，使用 reasoning_content 作为响应")
+                content = reasoning
+
+            if not content:
+                logger.warning(f"LLM 响应 content 和 reasoning_content 均为空，完整响应 keys: {list(response.keys())}")
+
+            return content
 
         except ImportError:
             logger.warning("litellm_adapter 不可用，返回空结果")
