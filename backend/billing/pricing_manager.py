@@ -1739,10 +1739,10 @@ class PricingManager:
 
     def delete_provider_configurations(self, provider: str) -> int:
         """
-        删除指定供应商的所有配置和凭据。
+        硬删除指定供应商的所有配置和凭据。
 
-        同时软删除 ModelConfiguration 和 ProviderCredential，
-        防止凭据残留导致 get_provider_catalog 返回空壳供应商。
+        物理删除 ModelConfiguration 和 ProviderCredential 行（含已软删除的历史记录），
+        确保密钥密文从数据库中彻底清除，避免凭据残留导致安全风险。
 
         Args:
             provider: 供应商名称。
@@ -1755,24 +1755,23 @@ class PricingManager:
         if not provider_id:
             return 0
 
-        configs = self.db.query(ModelConfiguration).filter(
-            ModelConfiguration.provider == provider_id,
-            ModelConfiguration.is_active == True
-        ).all()
+        # 统计待删除的配置数量（含已软删除的历史记录）
+        configs_count = self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider_id
+        ).count()
 
-        now = datetime.now(timezone.utc)
-        for config in configs:
-            config.is_active = False
-            config.updated_at = now
+        # 物理删除所有模型配置（含 is_active=True/False 的全部记录）
+        self.db.query(ModelConfiguration).filter(
+            ModelConfiguration.provider == provider_id
+        ).delete(synchronize_session=False)
 
-        # 同步删除凭据，避免 credential 残留
-        cred = self.get_provider_credential(provider_id)
-        if cred:
-            cred.is_active = False
-            cred.updated_at = now
+        # 物理删除凭据（含 is_active=True/False 的全部记录），彻底清除密钥密文
+        self.db.query(ProviderCredential).filter(
+            ProviderCredential.provider == provider_id
+        ).delete(synchronize_session=False)
 
         self.db.commit()
-        return len(configs)
+        return configs_count
 
     def set_default_configuration(self, config_id: int) -> Optional[ModelConfiguration]:
         """
