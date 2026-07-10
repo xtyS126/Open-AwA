@@ -189,6 +189,7 @@ async def delete_long_term_memory(
 
 @router.get(
     "/search",
+    response_model=List[LongTermMemoryResponse],
     summary="搜索长期记忆",
     description="根据关键词搜索长期记忆内容，支持按记忆层级过滤。"
 )
@@ -198,8 +199,8 @@ async def search_memories(
     layer: Optional[str] = Query(None, description="记忆层级过滤：core（核心事实）/episodic（情景记忆）/semantic（语义知识）/working（工作记忆）"),
     manager: MemoryManager = Depends(get_memory_manager),
     current_user: User = Depends(get_current_user)
-) -> Dict[str, Any]:
-    # 执行搜索，获取候选记忆列表
+) -> List[LongTermMemoryResponse]:
+    # 执行搜索，获取候选记忆列表（含关键词检索 + 向量检索的混合排序结果）
     results = await manager.search_memories(
         query=query,
         user_id=str(current_user.id),

@@ -1096,16 +1096,54 @@ class ExecutionLayer:
 
         return "\n".join(lines).strip()
 
+    def _build_relevant_memories_system_prompt(self, context: Dict[str, Any]) -> str:
+        """
+        将 agent 层检索到的相关长期记忆格式化为 system prompt 片段。
+        仅在 context["vector_retrieved_memories"] 非空时生成内容，否则返回空串。
+        记忆来源：agent._retrieve_relevant_memories（混合检索关键词 + 向量）。
+        """
+        memories = context.get("vector_retrieved_memories")
+        if not isinstance(memories, list) or not memories:
+            return ""
+
+        lines = [
+            "以下是与当前用户请求可能相关的长期记忆，回答时可参考但不要逐字复述：",
+        ]
+        for idx, memory in enumerate(memories, start=1):
+            if not isinstance(memory, dict):
+                continue
+            content = str(memory.get("content", "")).strip()
+            if not content:
+                continue
+            importance = memory.get("importance")
+            confidence = memory.get("confidence")
+            meta_parts: list[str] = []
+            if isinstance(importance, (int, float)):
+                meta_parts.append(f"重要度={float(importance):.2f}")
+            if isinstance(confidence, (int, float)):
+                meta_parts.append(f"置信度={float(confidence):.2f}")
+            meta_text = f"（{', '.join(meta_parts)}）" if meta_parts else ""
+            lines.append(f"{idx}. {content}{meta_text}")
+
+        return "\n".join(lines)
+
     def _build_messages_with_history(self, prompt: str, context: Dict[str, Any]) -> list:
         """
         从上下文中提取对话历史，构建包含历史消息的 messages 列表。
         对话历史由 agent 层在调用前注入到 context["conversation_history"] 中。
         支持多模态内容：若 context 含 _multimodal_content 则使用数组格式。
+        同时注入 context["vector_retrieved_memories"] 作为相关长期记忆 system 片段，
+        避免 agent 层检索到的记忆仅用于统计计数而未参与 LLM 上下文。
         """
         messages = []
         system_prompt = self._build_agent_capability_system_prompt(context)
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+
+        # 注入检索到的相关长期记忆（在能力描述之后、自动执行结果之前，保持语义层级清晰）
+        memories_prompt = self._build_relevant_memories_system_prompt(context)
+        if memories_prompt:
+            messages.append({"role": "system", "content": memories_prompt})
 
         auto_execution_results = context.get("auto_execution_results")
         if auto_execution_results:

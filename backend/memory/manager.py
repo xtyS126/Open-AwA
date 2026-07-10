@@ -49,7 +49,10 @@ class MemoryManager:
         self._history_cache_ttl = 5.0  # 5 秒 TTL
         self._history_cache_lock = Lock()
         # 短消息阈值：低于此长度的查询跳过向量检索，只做关键词检索
-        self._SHORT_QUERY_THRESHOLD = 20
+        # 中文字符在 Python len() 中按 1 计，"你好"=2、"Python"=6、"我喜欢Python"=10
+        # 原阈值 20 过高导致常见中文查询（如"用户喜欢什么编程语言"=10）被跳过向量检索
+        # 降到 4：保留对超短查询（如"你好"）的跳过逻辑，同时允许 5+ 字符的查询触发向量检索
+        self._SHORT_QUERY_THRESHOLD = 4
         logger.info("MemoryManager initialized")
 
     def _source_score(self, metadata: Optional[Dict[str, Any]]) -> float:

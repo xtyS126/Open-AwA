@@ -171,9 +171,17 @@ class FeedbackLayer:
                 tool_events=tool_events or None,
             )
             
-            if self._should_persist(response):
+            # 同时检查用户输入与助手响应：用户主动声明偏好（如"请记住我喜欢 Python"）时
+            # 助手回复可能不含关键词，必须以 user_input 为主触发持久化
+            if self._should_persist(response) or self._should_persist(user_input):
+                # 提取关键信息：若用户输入含"记住/偏好/喜欢"等显式偏好声明，优先以用户输入作为记忆内容
+                # 否则保留 user_input + response 的完整对话上下文
+                if self._should_persist(user_input):
+                    persist_content = user_input
+                else:
+                    persist_content = f"User asked: {user_input}\nAssistant responded: {response}"
                 await self.memory_manager.add_long_term_memory(
-                    content=f"User asked: {user_input}\nAssistant responded: {response}",
+                    content=persist_content,
                     importance=0.7,
                     user_id=user_id,
                 )
@@ -185,9 +193,11 @@ class FeedbackLayer:
         """判断对话内容是否包含需持久化到长期记忆的关键词(如 remember/记住/preference 等)."""
         important_keywords = [
             "remember", "记住", "important", "重要",
-            "preference", "偏好", "习惯", "always"
+            "preference", "偏好", "习惯", "always",
+            # 用户显式偏好表达高频词（中英）
+            "喜欢", "不喜欢", "讨厌", "常用", "favorite", "like", "dislike",
         ]
-        
+
         content_lower = content.lower()
         return any(keyword in content_lower for keyword in important_keywords)
 
