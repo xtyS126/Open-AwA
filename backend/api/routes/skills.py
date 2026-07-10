@@ -1541,6 +1541,132 @@ async def validate_skill(skill_data: SkillValidationRequest) -> Dict[str, Any]:
     return result
 
 
+@router.post("/parse-upload")
+async def parse_skill_upload(
+    file: UploadFile = File(...),
+    current_user = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    解析上传的技能文件，返回 name/description/instructions 用于前端表单预填。
+
+    支持三种格式：
+    - SKILL.md（agentskills.io 标准，YAML frontmatter + Markdown 正文）
+    - skill.yaml / skill.yml（旧格式）
+    - .zip 包（包含上述任一配置文件）
+
+    不落库，仅解析。前端 SkillModal 上传文件后调用此端点预填表单字段。
+    """
+    try:
+        # 大小校验
+        if file.size is not None and file.size > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+        content = await file.read()
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+
+        filename = file.filename or ""
+        lower_name = filename.lower()
+
+        # 根据文件类型分发解析
+        if lower_name.endswith(".zip") or (file.content_type in ("application/zip", "application/x-zip-compressed")):
+            # ZIP 包路径：复用 install-from-package 的查找与解析逻辑
+            try:
+                zip_file = zipfile.ZipFile(io.BytesIO(content))
+            except zipfile.BadZipFile:
+                raise HTTPException(status_code=400, detail="无效的ZIP文件")
+
+            if len(zip_file.namelist()) > MAX_ZIP_FILES:
+                raise HTTPException(status_code=400, detail=f"ZIP文件中文件数量超过限制 ({MAX_ZIP_FILES})")
+
+            # 路径穿越防护
+            for member in zip_file.namelist():
+                if member.startswith('/') or member.startswith('\\'):
+                    raise HTTPException(status_code=400, detail="非法的ZIP文件路径: 绝对路径")
+                if len(member) >= 2 and member[1] == ':':
+                    raise HTTPException(status_code=400, detail="非法的ZIP文件路径: 盘符路径")
+                if '..' in member.split('/'):
+                    raise HTTPException(status_code=400, detail="非法的ZIP文件路径: 目录穿越")
+
+            config_type, config_name = _find_skill_config_in_zip(zip_file)
+            if config_type is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="技能包中未找到 SKILL.md 或 skill.yaml 配置文件"
+                )
+
+            config_content = zip_file.read(config_name).decode('utf-8')
+            if config_type == "skillmd":
+                config_dict = _parse_skillmd_config(config_content)
+                return {
+                    "name": config_dict.get("name", ""),
+                    "description": config_dict.get("description", ""),
+                    "instructions": config_dict.get("instructions", ""),
+                }
+            else:
+                # yaml 路径
+                try:
+                    config_dict = yaml.safe_load(config_content)
+                except yaml.YAMLError:
+                    raise HTTPException(status_code=400, detail="技能配置文件格式错误")
+                if not isinstance(config_dict, dict):
+                    raise HTTPException(status_code=400, detail="技能配置文件格式错误")
+                return {
+                    "name": str(config_dict.get("name", "")),
+                    "description": str(config_dict.get("description", "")),
+                    "instructions": str(config_dict.get("instructions", config_dict.get("prompt", ""))),
+                }
+
+        elif lower_name.endswith(".md"):
+            # SKILL.md 单文件路径
+            try:
+                text = content.decode('utf-8')
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=400, detail="文件编码错误，请使用 UTF-8")
+            config_dict = _parse_skillmd_config(text)
+            return {
+                "name": config_dict.get("name", ""),
+                "description": config_dict.get("description", ""),
+                "instructions": config_dict.get("instructions", ""),
+            }
+
+        elif lower_name.endswith(".yaml") or lower_name.endswith(".yml"):
+            # skill.yaml 单文件路径
+            try:
+                text = content.decode('utf-8')
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=400, detail="文件编码错误，请使用 UTF-8")
+            try:
+                config_dict = yaml.safe_load(text)
+            except yaml.YAMLError:
+                raise HTTPException(status_code=400, detail="技能配置文件格式错误")
+            if not isinstance(config_dict, dict):
+                raise HTTPException(status_code=400, detail="技能配置文件格式错误")
+            return {
+                "name": str(config_dict.get("name", "")),
+                "description": str(config_dict.get("description", "")),
+                "instructions": str(config_dict.get("instructions", config_dict.get("prompt", ""))),
+            }
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="不支持的文件类型，请上传 .md / .yaml / .yml / .zip 文件"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.bind(
+            event="skill_parse_upload_error",
+            module="skills",
+            action="parse_upload",
+            status="failure",
+            error_type=type(e).__name__,
+            error_message=sanitize_for_logging(str(e)),
+        ).exception("skill parse upload failed")
+        raise HTTPException(status_code=500, detail="解析技能文件失败，请稍后重试")
+
+
 def _find_skill_config_in_zip(zip_file: zipfile.ZipFile) -> tuple:
     """
     在 ZIP 包中查找技能配置文件，优先 SKILL.md，其次 skill.yaml/skill.yml。
