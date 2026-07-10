@@ -3,7 +3,7 @@
 这些路由函数通常是前端或外部调用与后端内部能力之间的第一层行为边界。
 """
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Union
 import asyncio
 import functools
 import json
@@ -33,6 +33,82 @@ from db.models import ConversationRecord, SessionLocal, User, get_db
 
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+async def _trigger_profile_n_turn_fallback(user_id: str) -> None:
+    """
+    递增对话轮次计数器，并在达阈值时强制触发画像提取（N 轮兜底）。
+
+    整个方法设计为后台任务：由 chat 路由通过 asyncio.create_task 启动，
+    不阻塞 chat 响应。使用独立 db session（SessionLocal），避免与请求级
+    session 共享生命周期（请求结束后 session 会被关闭）。
+
+    流程：
+    1. 递增 turns_since_last_extract
+    2. 读取 n_threshold（用户可配置，默认 5）
+    3. 若 turns >= n_threshold，调用 maybe_extract(force=True)
+       maybe_extract 内部有 asyncio.Lock 去重，与 feedback 触发不会重复执行
+
+    异常全部捕获并记录日志，不影响 chat 主流程。
+
+    Args:
+        user_id: 用户 ID，从 current_user.id 获取
+    """
+    if not user_id:
+        return
+    async_db = SessionLocal()
+    try:
+        from plugins.user_profile_builtin.coordinator import get_coordinator
+
+        coordinator = get_coordinator()
+        turns = await coordinator.increment_turns(user_id, async_db)
+        settings = coordinator.get_settings(user_id, async_db)
+        n_threshold = settings.get("n_threshold") or coordinator.DEFAULT_N_THRESHOLD
+
+        if turns >= n_threshold:
+            # 达阈值：在同一 session 内强制触发画像提取
+            # maybe_extract 内部有锁去重，与 feedback 触发不会重复执行
+            logger.bind(
+                event="profile_n_turn_fallback_triggered",
+                module="chat",
+                user_id=user_id,
+                turns=turns,
+                n_threshold=n_threshold,
+            ).info("N 轮兜底触发画像提取")
+            await coordinator.maybe_extract(user_id, async_db, force=True)
+    except Exception as exc:
+        # N 轮兜底是辅助路径，不静默吞异常，记录完整堆栈便于诊断
+        logger.opt(exception=True).warning(
+            f"N 轮兜底触发画像提取失败: {exc}"
+        )
+    finally:
+        async_db.close()
+
+
+async def _stream_with_profile_trigger(
+    stream_gen: AsyncGenerator[Dict[str, Any], None],
+    user_id: str,
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    包装流式生成器，在流结束（正常/异常/取消）后触发 N 轮兜底。
+
+    用 try/finally 确保无论流如何结束都执行计数器递增。
+    通过 asyncio.create_task 启动后台任务，不阻塞 [DONE] 信号发送。
+
+    Args:
+        stream_gen: 原始流式生成器（agent.process_stream 返回值）
+        user_id: 用户 ID
+
+    Yields:
+        原始流式生成器的每个 chunk
+    """
+    try:
+        async for chunk in stream_gen:
+            yield chunk
+    finally:
+        # 流结束后启动后台任务，不阻塞 [DONE] 信号发送
+        if user_id:
+            asyncio.create_task(_trigger_profile_n_turn_fallback(user_id))
 
 
 def _ws_load_user_by_name(username: str):
@@ -217,9 +293,15 @@ async def chat(
         ).info("阶段耗时: agent_registry")
 
         if message.mode == "stream":
-            return await build_sse_response(agent.process_stream(message.message, context))
+            # 流式：包装生成器，在流结束后触发 N 轮兜底（由 _stream_with_profile_trigger 的 finally 负责）
+            stream_gen = agent.process_stream(message.message, context)
+            wrapped_gen = _stream_with_profile_trigger(stream_gen, current_user.id)
+            return await build_sse_response(wrapped_gen)
 
         result = await agent.process(message.message, context)
+        # 非流式：chat 完成后启动后台任务递增计数器 + 检查 N 轮兜底
+        # asyncio.create_task 确保不阻塞 chat 响应，任务在后台继续执行
+        asyncio.create_task(_trigger_profile_n_turn_fallback(current_user.id))
     except asyncio.CancelledError:
         logger.bind(
             event="chat_cancelled",

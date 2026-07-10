@@ -170,7 +170,7 @@ class FeedbackLayer:
                 reasoning_content=reasoning_content or None,
                 tool_events=tool_events or None,
             )
-            
+
             # 同时检查用户输入与助手响应：用户主动声明偏好（如"请记住我喜欢 Python"）时
             # 助手回复可能不含关键词，必须以 user_input 为主触发持久化
             if self._should_persist(response) or self._should_persist(user_input):
@@ -185,9 +185,61 @@ class FeedbackLayer:
                     importance=0.7,
                     user_id=user_id,
                 )
-                
+                # 命中持久化决策后，异步触发画像提取（复用 _should_persist 信号）
+                # maybe_extract 内部有锁去重，与 chat 路由的 N 轮兜底不会重复执行
+                self._trigger_profile_extract_async(user_id)
+
         except Exception as e:
             logger.error(f"Error updating memory: {str(e)}")
+
+    def _trigger_profile_extract_async(self, user_id: str) -> None:
+        """
+        异步触发画像提取（后台任务，不阻塞主流程）。
+
+        复用 _should_persist 命中的信号，通过 asyncio.create_task 在后台
+        调用 ProfileExtractionCoordinator.maybe_extract(force=False)。
+
+        关键设计：
+        1. 使用独立 db session（SessionLocal），不复用请求级 session
+           （请求结束后 session 会被关闭，后台任务需独立生命周期）
+        2. 通过 asyncio.create_task 启动，不 await，确保不阻塞 chat 响应
+        3. 异常全部捕获并记录日志，不影响主流程
+        4. 延迟导入 coordinator 与 SessionLocal，避免循环依赖与模块加载顺序问题
+
+        Args:
+            user_id: 用户 ID，从 context.user_id 获取
+        """
+        if not user_id:
+            return
+        try:
+            from plugins.user_profile_builtin.coordinator import get_coordinator
+            from db.models import SessionLocal
+
+            async def _extract_task() -> None:
+                """后台画像提取任务，使用独立 db session。"""
+                async_db = SessionLocal()
+                try:
+                    coordinator = get_coordinator()
+                    # 偏好关键词触发时使用 force=True，绕过 N 轮阈值检查，
+                    # 实现"用户显式声明偏好 → 立即提取画像"的即时反馈。
+                    # maybe_extract 内部有 asyncio.Lock 去重，与 chat 路由的
+                    # N 轮兜底不会重复执行（锁占用时直接跳过）。
+                    await coordinator.maybe_extract(user_id, async_db, force=True)
+                except Exception as exc:
+                    # 后台任务异常不静默吞，记录完整堆栈便于诊断
+                    logger.opt(exception=True).warning(
+                        f"画像提取后台任务异常（不影响主流程）: {exc}"
+                    )
+                finally:
+                    async_db.close()
+
+            # 创建后台 Task，不 await，确保不阻塞 chat 响应
+            asyncio.create_task(_extract_task())
+        except Exception as exc:
+            # 导入失败或任务创建失败：记录日志但不影响主流程
+            logger.opt(exception=True).warning(
+                f"触发画像提取失败（不影响主流程）: {exc}"
+            )
     
     def _should_persist(self, content: str) -> bool:
         """判断对话内容是否包含需持久化到长期记忆的关键词(如 remember/记住/preference 等)."""

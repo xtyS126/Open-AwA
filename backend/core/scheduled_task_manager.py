@@ -222,6 +222,48 @@ class ScheduledTaskManager:
                     error_type=type(exc).__name__,
                 ).warning(f"failed to unregister task from APScheduler: {exc}")
 
+    async def register_external_schedule(
+        self,
+        schedule_id: str,
+        cron_expression: str,
+        func: Any,
+    ) -> bool:
+        """
+        注册一个不依赖业务表 scheduled_tasks 的外部定时任务。
+
+        用于模型目录同步等系统级 cron job，无需创建 ScheduledTask 业务记录。
+        使用 conflict_policy=replace 保证 idempotent。
+
+        Args:
+            schedule_id: schedule 唯一 id（建议加前缀避免与业务任务冲突）
+            cron_expression: 5 字段 cron 表达式
+            func: 异步可调用对象
+
+        Returns:
+            True 表示注册成功，False 表示调度器未启动或注册失败
+        """
+        if not self._started or self._scheduler is None:
+            return False
+
+        async with self._register_lock:
+            try:
+                trigger = CronTrigger.from_crontab(cron_expression, timezone="UTC")
+                await self._scheduler.add_schedule(
+                    func,
+                    trigger,
+                    id=schedule_id,
+                    conflict_policy=ConflictPolicy.replace,
+                )
+                return True
+            except Exception as exc:
+                logger.bind(
+                    event="external_schedule_register_error",
+                    module="scheduled_tasks",
+                    schedule_id=schedule_id,
+                    error_type=type(exc).__name__,
+                ).warning(f"failed to register external schedule: {exc}")
+                return False
+
     async def _register_all_pending_tasks(self) -> None:
         """
         启动时扫描 scheduled_tasks 表所有 pending 任务，批量注册到 APScheduler。

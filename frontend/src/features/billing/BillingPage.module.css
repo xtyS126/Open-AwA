@@ -492,3 +492,166 @@
   font-weight: 500;
   color: var(--color-primary);
 }
+
+/* 模型目录同步按钮 —— admin 专用 */
+.sync-catalog-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+.sync-catalog-btn:hover {
+  opacity: 0.9;
+}
+
+.sync-catalog-btn:active {
+  transform: translateY(1px);
+}
+
+.sync-catalog-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 用量明细行内"查看详情"按钮 */
+.detail-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.detail-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* 计数方法标签 */
+.method-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* 估算/精确徽章 */
+.precision-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.precision-badge.estimated {
+  background: var(--color-warning-soft-bg);
+  color: var(--color-warning-strong);
+}
+
+.precision-badge.exact {
+  background: var(--color-success-soft-bg);
+  color: var(--color-success-strong);
+}
+
+/* 同步对话框内容 */
+.sync-dialog-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text);
+}
+
+.sync-dialog-content strong {
+  color: var(--color-primary);
+}
+
+.sync-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.sync-dialog-btn {
+  padding: 8px 20px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  transition: border-color 0.2s;
+}
+
+.sync-dialog-btn:hover {
+  border-color: var(--color-text-secondary);
+}
+
+.sync-dialog-btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.sync-dialog-btn.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 同步对话框遮罩与主体 —— 居中模态 */
+.sync-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-overlay);
+  animation: fadeIn var(--transition-fast) ease;
+  padding: var(--space-4);
+}
+
+.sync-dialog {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 520px;
+  width: 100%;
+  padding: var(--space-6);
+  animation: slideUp var(--transition-base) ease;
+}
+
+.sync-dialog-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  margin: 0 0 var(--space-4) 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}

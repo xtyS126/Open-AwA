@@ -43,6 +43,8 @@ import type {
   ChatCancelResponse,
   ChatFeedbackResponse,
   ChatUndoOperationResponse,
+  IssueFeedbackPayload,
+  IssueFeedbackSubmitResponse,
 } from './types'
 
 // 向后兼容：保持原有命名导出
@@ -1323,6 +1325,19 @@ export const diaryAPI = {
     const response = await api.get(`/diary/${date}`)
     return response.data
   },
+}
+
+/**
+ * 问题反馈 API。
+ * 提交用户反馈到后端，后端落盘为 markdown 文件并返回 file_id。
+ * 注意：api.post 返回 AxiosResponse，这里通过 .then(r => r.data) 直接返回业务数据，
+ * 便于调用方处理与单元测试 mock。
+ */
+export const issueFeedbackAPI = {
+  submit: (payload: IssueFeedbackPayload) =>
+    api
+      .post<IssueFeedbackSubmitResponse>('/feedback/issue', payload)
+      .then((r) => r.data),
 }
 
 export { api as sharedApi }

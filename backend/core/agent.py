@@ -28,6 +28,7 @@ from .conversation_recorder import conversation_recorder
 from .magic_commands import get_magic_command_registry
 from .compaction_manager import CompactionManager
 from .context.token_budget import TokenBudget
+from billing.token_counter import TokenBreakdown
 from .budget_tracker import BudgetTracker
 from .content_replacement import ContentReplacementState, enforce_tool_result_budget
 from .soul_state import SoulStateManager
@@ -1502,13 +1503,30 @@ class AIAgent:
         llm_input: Any = None,
         llm_output: Any = None,
         llm_tokens_used: Optional[int] = None,
+        token_breakdown: Optional[TokenBreakdown] = None,
         execution_duration_ms: Optional[int] = None,
         metadata: Any = None,
     ) -> None:
         """
         将对话节点（LLM调用/工具执行/意图识别）通过后台任务异步记录到行为日志和对话记录表。
         受 scheduled_execution_isolated 开关控制，定时任务执行时不写入记录以避免污染。
+
+        token 计数来源优先级：
+        1. token_breakdown 非 None 时直接使用（携带 input/output/cache 等明细）
+        2. 否则从 llm_tokens_used 构造简单 breakdown（向后兼容旧调用方）
+        最终 llm_tokens_used 从 breakdown.total_tokens 派生，保证下游记录器一致。
         """
+        # 统一 token 计数来源：优先 token_breakdown，否则从 llm_tokens_used 构造
+        if token_breakdown is None and llm_tokens_used is not None:
+            token_breakdown = TokenBreakdown(
+                output_tokens=llm_tokens_used,
+                method="api_usage",
+                estimated=False,
+            )
+        if token_breakdown is not None:
+            # 向后兼容：从 breakdown 派生 llm_tokens_used 供下游记录器使用
+            llm_tokens_used = token_breakdown.total_tokens
+
         user_id = context.get("user_id")
         session_id = context.get("session_id", "default")
         if not user_id:
@@ -1559,6 +1577,32 @@ class AIAgent:
             )
         )
         task.add_done_callback(lambda t: self._handle_record_task_result(t))
+
+        # 写入 usage_records 表（计费扣减）
+        # 仅当 token_breakdown 非 None 且绑定 db_session 时执行
+        # 计费失败由 UsageTracker.record_llm_call 内部 catch，不传播到 Agent 主流程
+        if token_breakdown is not None and self._db_session:
+            try:
+                from billing.usage_tracker import UsageTracker
+                usage_tracker = UsageTracker(self._db_session)
+                usage_task = asyncio.create_task(
+                    self._record_with_backpressure(
+                        usage_tracker.record_llm_call(
+                            user_id=str(user_id) if user_id is not None else "",
+                            session_id=session_id,
+                            provider=context.get("provider") or "",
+                            model=context.get("model") or "",
+                            token_breakdown=token_breakdown,
+                            duration_ms=execution_duration_ms or 0,
+                        )
+                    )
+                )
+                usage_task.add_done_callback(lambda t: self._handle_record_task_result(t))
+            except Exception as exc:
+                logger.bind(
+                    module="agent",
+                    event="usage_record_schedule_error",
+                ).error(f"计费扣减任务调度失败: {exc}")
 
     def _build_behavior_entries(
         self,

@@ -5,18 +5,21 @@ import {
   Clock, Blocks, Brain, Settings, Award, Radio,
   Cat, Sun, Moon, Menu, ChevronDown, Bell,
   Users, ShoppingBag, Network, Terminal,
-  MessagesSquare
+  MessagesSquare,
+  MessageSquareWarning,
+  Layers,
 } from 'lucide-react'
 import { useThemeStore } from '../../store/themeStore'
 import { useI18nStore } from '@/i18n'
 import { UserFloatingArea } from '../UserFloatingArea'
 import { Tooltip } from '@/shared/components/ui'
+import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
 import styles from './Sidebar.module.css'
 
 interface MenuItem {
   path: string
   label: string
-  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions'
+  iconType: 'chat' | 'dashboard' | 'billing' | 'skills' | 'scheduledTasks' | 'plugins' | 'memory' | 'settings' | 'experience' | 'workspace' | 'coding' | 'inbox' | 'roles' | 'im' | 'roleMarket' | 'subagents' | 'vibeCoding' | 'discussions' | 'userProfile'
 }
 
 interface MenuGroup {
@@ -45,6 +48,7 @@ const renderIcon = (type: string, size = 18) => {
     case 'subagents': return <Network size={size} />
     case 'vibeCoding': return <Terminal size={size} />
     case 'discussions': return <MessagesSquare size={size} />
+    case 'userProfile': return <Layers size={size} />
     default: return <MessageSquare size={size} />
   }
 }
@@ -84,6 +88,7 @@ const renderIcon = (type: string, size = 18) => {
         { path: '/plugins/manage', label: t('sidebar.plugins'), iconType: 'plugins' as const },
         { path: '/memory', label: t('sidebar.memory'), iconType: 'memory' as const },
         { path: '/experience', label: t('sidebar.experience'), iconType: 'experience' as const },
+        { path: '/user-profile', label: t('sidebar.userProfile') || '我的画像', iconType: 'userProfile' as const },
       ]
     },
     {
@@ -244,9 +249,9 @@ const renderIcon = (type: string, size = 18) => {
           <>
             <div className={styles['logo-container']}>
               {config.logoIcon ? (
-                <img src={config.logoIcon} alt="Logo" className={styles['custom-logo-icon']} fetchpriority="high" decoding="async" />
+                <img src={config.logoIcon} alt="Logo" className={styles['custom-logo-icon']} fetchPriority="high" decoding="async" />
               ) : (
-                <img src="/logo.svg" alt="Logo" className={styles['custom-logo-icon']} fetchpriority="high" decoding="async" />
+                <img src="/logo.svg" alt="Logo" className={styles['custom-logo-icon']} fetchPriority="high" decoding="async" />
               )}
               <span className={styles['logo-text']}>Open-AwA</span>
             </div>
@@ -321,7 +326,36 @@ const renderIcon = (type: string, size = 18) => {
             )}
           </div>
         ))}
-        
+
+        {/* 问题反馈入口：独立按钮，不在 menuGroups 数据结构中，点击打开全局反馈面板 */}
+        {!collapsed ? (
+          <button
+            className={styles['sidebar-item']}
+            onClick={() => {
+              useIssueFeedbackStore.getState().open()
+              setMobileOpen(false)
+            }}
+            data-testid="sidebar-issue-feedback-btn"
+            aria-label={t('sidebar.issueFeedback') || '问题反馈'}
+            type="button"
+          >
+            <span className={styles['sidebar-icon']}><MessageSquareWarning size={18} /></span>
+            <span className={styles['sidebar-label']}>{t('sidebar.issueFeedback') || '问题反馈'}</span>
+          </button>
+        ) : (
+          <Tooltip content={t('sidebar.issueFeedback') || '问题反馈'} position="right">
+            <button
+              className={styles['sidebar-item']}
+              onClick={() => useIssueFeedbackStore.getState().open()}
+              aria-label={t('sidebar.issueFeedback') || '问题反馈'}
+              type="button"
+              data-testid="sidebar-issue-feedback-btn"
+            >
+              <span className={styles['sidebar-icon']}><MessageSquareWarning size={18} /></span>
+            </button>
+          </Tooltip>
+        )}
+
         {/* User Floating Area inserted at the bottom of the nav */}
         <div className={styles['nav-bottom-spacer']}></div>
         <UserFloatingArea collapsed={collapsed} />

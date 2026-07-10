@@ -224,3 +224,56 @@ export async function getProfileDimensions(): Promise<ProfileDimensionsResponse>
   const { data } = await sharedApi.get(`${PROFILE_BASE}/dimensions`)
   return data
 }
+
+/* ── 画像设置（N 值与探针触发条件）── */
+
+/**
+ * 画像设置所在的路径。
+ * 注意：后端 router prefix 为 /api/profile（绝对前缀，不走 /api/v1），
+ * 而 sharedApi 的 baseURL 已包含 /api，因此此处使用 /profile/settings。
+ */
+const PROFILE_SETTINGS_PATH = '/profile/settings'
+
+/** 探针触发条件 flags */
+export interface ProbeFlags {
+  /** 低置信度：画像事实置信度低于阈值时生成探针让用户确认 */
+  low_confidence: boolean
+  /** 新兴趣不确定：检测到新兴趣但无法归类时生成探针 */
+  new_interest: boolean
+  /** 定期复核：每 N 轮对话触发一次画像复核 */
+  periodic_review: boolean
+}
+
+/** 画像设置完整结构 */
+export interface ProfileSettings {
+  /** N 轮阈值（3-20），达到后触发自主画像提取 */
+  n_threshold: number
+  /** 探针触发条件 */
+  probe_flags: ProbeFlags
+  /** 距上次提取的对话轮数 */
+  turns_since_last_extract: number
+  /** 上次提取时间（ISO 字符串），可能为 null */
+  last_extracted_at: string | null
+}
+
+/** 画像设置更新请求载荷，仅传需要变更的字段 */
+export interface ProfileSettingsUpdatePayload {
+  /** N 轮阈值（3-20） */
+  n_threshold?: number
+  /** 探针触发条件，可仅传部分字段 */
+  probe_flags?: Partial<ProbeFlags>
+}
+
+/** 获取当前用户的画像设置 */
+export async function getProfileSettings(): Promise<ProfileSettings> {
+  const { data } = await sharedApi.get<ProfileSettings>(PROFILE_SETTINGS_PATH)
+  return data
+}
+
+/** 更新当前用户的画像设置（仅传需要变更的字段） */
+export async function updateProfileSettings(
+  payload: ProfileSettingsUpdatePayload
+): Promise<ProfileSettings> {
+  const { data } = await sharedApi.put<ProfileSettings>(PROFILE_SETTINGS_PATH, payload)
+  return data
+}

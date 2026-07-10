@@ -597,9 +597,8 @@ v1.5 对自主模式进行了全面安全加固，实现了**四层安全洋葱�
 
 | 文件 | 类/函数 | 说明 |
 |------|---------|------|
-| `tracker.py` | `UsageTracker` | 用量追踪（v1.5.1: SQL聚合替代循环查询） |
+| `tracker.py` | `UsageTracker` | 用量追踪（v1.5.1: SQL聚合替代循环查询），含 `record_llm_call()` 计费入口 |
 | `calculator.py` | `CostCalculator` | 成本计算 |
-| `engine.py` | `BillingEngine` | 计费引擎 |
 | `pricing_manager.py` | `PricingManager` | 价格配置管理（DB读写、模型配置解析）、v1.5.1: provider_catalog N+1 → 3 次批量查询 |
 | `budget_manager.py` | `BudgetManager` | 预算管理 |
 | `reporter.py` | `UsageReporter` | 报表生成 |

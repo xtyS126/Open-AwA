@@ -187,3 +187,21 @@ export interface ChatUndoOperationResponse {
   restored?: boolean
   [key: string]: unknown
 }
+
+// ---- 问题反馈 API 类型 ----
+/** 问题反馈类型：bug 报告 / 功能建议 / 使用疑问 / 其他 */
+export type IssueFeedbackType = 'bug' | 'suggestion' | 'question' | 'other'
+
+/** 问题反馈提交请求体 */
+export interface IssueFeedbackPayload {
+  issue_type: IssueFeedbackType
+  title: string
+  content: string
+  page_url: string
+}
+
+/** 问题反馈提交响应 */
+export interface IssueFeedbackSubmitResponse {
+  ok: boolean
+  file_id: string
+}

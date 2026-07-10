@@ -68,6 +68,8 @@ const jaJP: Record<string, string> = {
   "sidebar.lightMode": "ライトモードに切替",
   "sidebar.nightMode": "ダークモード",
   "sidebar.dayMode": "ライトモード",
+  "sidebar.issueFeedback": "問題フィードバック",
+  "sidebar.userProfile": "マイプロフィール",
   "sidebar.tts": "TTS 音声",
   "sidebar.agents": "エージェント",
   "sidebar.roles": "ロール管理",
@@ -1091,6 +1093,29 @@ const jaJP: Record<string, string> = {
   "search.indexFailed": "索引失敗",
   "search.indexRequestFailed": "失敗: {error}",
   "pageLayout.app": "アプリ",
+
+  // ===== 問題フィードバック =====
+  "issueFeedback.title": "問題フィードバック",
+  "issueFeedback.typeLabel": "種類",
+  "issueFeedback.typeBug": "バグ報告",
+  "issueFeedback.typeSuggestion": "機能提案",
+  "issueFeedback.typeQuestion": "使用に関する質問",
+  "issueFeedback.typeOther": "その他",
+  "issueFeedback.titleLabel": "タイトル",
+  "issueFeedback.titlePlaceholder": "問題を簡潔に記述してください",
+  "issueFeedback.contentLabel": "内容",
+  "issueFeedback.contentPlaceholder": "問題や提案を詳細に記述してください",
+  "issueFeedback.currentPage": "現在のページ",
+  "issueFeedback.submit": "送信",
+  "issueFeedback.cancel": "キャンセル",
+  "issueFeedback.close": "閉じる",
+  "issueFeedback.submitSuccess": "フィードバックを送信しました。ご協力ありがとうございます",
+  "issueFeedback.submitFailed": "送信に失敗しました。後でもう一度お試しください",
+  "issueFeedback.titleRequired": "タイトルを入力してください",
+  "issueFeedback.contentRequired": "内容を入力してください",
+  "issueFeedback.discardDraftConfirm": "未送信の下書きを破棄しますか？",
+  "issueFeedback.discardDraft": "破棄",
+  "issueFeedback.keepDraft": "下書きを保持",
 };
 
 export default jaJP;

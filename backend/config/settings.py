@@ -226,6 +226,20 @@ class Settings(BaseSettings):
     experience_extraction_enabled: bool = True
     experience_retrieval_enabled: bool = True
 
+    # 计费与模型目录同步配置
+    # 计费总开关，关闭后不计算 token 用量与扣费
+    ENABLE_BILLING: bool = True
+    # tiktoken 开关，离线环境可关闭以避免下载编码表
+    TIKTOKEN_ENABLED: bool = True
+    # 模型目录定时同步开关，开启后按 MODEL_CATALOG_SYNC_CRON 定时拉取上游
+    MODEL_CATALOG_SYNC_ENABLED: bool = False
+    # 模型目录定时同步 cron 表达式（默认每周一 03:00 UTC）
+    MODEL_CATALOG_SYNC_CRON: str = "0 3 * * 1"
+    # models.dev 上游 API 地址
+    MODELS_DEV_URL: str = "https://models.dev/api.json"
+    # openrouter 上游 API 地址
+    OPENROUTER_MODELS_URL: str = "https://openrouter.ai/api/v1/models"
+
     def is_ssl_enabled(self) -> bool:
         """
         判断当前配置是否具备启用 HTTPS 的最小条件。

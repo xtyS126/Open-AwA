@@ -194,7 +194,7 @@ class CostOptimizationService:
         """获取按模型分组的用量统计。"""
         try:
             rows = self.db.query(
-                UsageRecord.model_name,
+                UsageRecord.model,
                 func.sum(UsageRecord.total_cost).label("total_cost"),
                 func.sum(UsageRecord.input_tokens).label("total_input"),
                 func.sum(UsageRecord.output_tokens).label("total_output"),
@@ -205,11 +205,11 @@ class CostOptimizationService:
                     UsageRecord.created_at >= start_date,
                     UsageRecord.created_at <= end_date,
                 )
-            ).group_by(UsageRecord.model_name).all()
+            ).group_by(UsageRecord.model).all()
 
             return [
                 {
-                    "model_name": row.model_name,
+                    "model_name": row.model,
                     "total_cost": float(row.total_cost or 0),
                     "total_input": int(row.total_input or 0),
                     "total_output": int(row.total_output or 0),

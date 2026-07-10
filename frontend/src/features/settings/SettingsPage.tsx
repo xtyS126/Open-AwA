@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Server,
   Search as SearchTabIcon,
+  User as UserIcon,
 } from 'lucide-react'
 import PageLayout from '@/shared/components/PageLayout/PageLayout'
 import ErrorBoundary from '@/shared/components/ErrorBoundary/ErrorBoundary'
@@ -39,6 +40,7 @@ const MCPSettings = lazy(() => import('./MCPSettings'))
 const AppearanceTabContainer = lazy(() => import('./containers/AppearanceTabContainer').then(m => ({ default: m.AppearanceTabContainer })))
 const BackendConnectionTabContainer = lazy(() => import('./containers/BackendConnectionTabContainer').then(m => ({ default: m.BackendConnectionTabContainer })))
 const SearchTabContainer = lazy(() => import('./containers/SearchTabContainer').then(m => ({ default: m.SearchTabContainer })))
+const ProfileSettingsTabContainer = lazy(() => import('./containers/ProfileSettingsTabContainer').then(m => ({ default: m.ProfileSettingsTabContainer })))
 
 /** 旧 Tab ID 到新 URL 的重定向映射 */
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
@@ -142,6 +144,7 @@ function SettingsPage() {
   const renderTabBar = () => {
     const tabs = [
       { id: 'general', label: '通用', icon: <SettingsIcon size={16} /> },
+      { id: 'profile', label: '画像', icon: <UserIcon size={16} /> },
       { id: 'api', label: '模型', icon: <Plug size={16} /> },
       { id: 'appearance', label: '外观', icon: <Palette size={16} /> },
       { id: 'search', label: '搜索', icon: <SearchTabIcon size={16} /> },
@@ -293,6 +296,14 @@ function SettingsPage() {
           <ErrorBoundary name="GeneralSettings">
             <Suspense fallback={<TabLoadingFallback />}>
               <GeneralTabContainer />
+            </Suspense>
+          </ErrorBoundary>
+        )}
+
+        {activeTab === 'profile' && (
+          <ErrorBoundary name="ProfileSettings">
+            <Suspense fallback={<TabLoadingFallback />}>
+              <ProfileSettingsTabContainer />
             </Suspense>
           </ErrorBoundary>
         )}

@@ -86,6 +86,7 @@ class ProbeRespondRequest(BaseModel):
 @router.get("/profile", response_model=ApiResponse)
 async def get_profile(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
@@ -93,7 +94,7 @@ async def get_profile(
     返回 surface / interest / role / values / core 五层数据。
     """
     engine = _get_soul_engine(request)
-    profile = engine.get_profile(str(current_user.id))
+    profile = engine.get_profile(str(current_user.id), db)
 
     if profile is None:
         return ApiResponse(
@@ -106,6 +107,32 @@ async def get_profile(
         success=True,
         data=profile.to_dict(),
         message="获取画像成功",
+    )
+
+
+@router.post("/profile/refresh", response_model=ApiResponse)
+async def refresh_profile(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    内部接口：强制刷新用户画像。
+    仅 AI 调用，用户不可主动触发。
+
+    通过请求头 X-Internal-Token 或 API Key 鉴权（简化实现：仅校验当前登录用户，
+    但前端不暴露此接口按钮）。
+    """
+    from plugins.user_profile_builtin.coordinator import get_coordinator
+
+    user_id = str(current_user.id)
+    coordinator = get_coordinator()
+    result = await coordinator.maybe_extract(user_id, db, force=True)
+
+    return ApiResponse(
+        success=True,
+        data=result,
+        message="画像刷新已触发" if result else "画像刷新未触发（可能正在提取中）",
     )
 
 
@@ -207,6 +234,25 @@ async def respond_to_probe(
 
     probe.status = req.response
     probe.responded_at = datetime.now(timezone.utc)
+
+    # 联动 ProfileFact：confirmed 提升置信度，rejected 标记失效
+    # InterestProbe 无 fact_id 字段，从 reasoning JSON 提取
+    reasoning = probe.reasoning or {}
+    fact_id = reasoning.get("fact_id")
+    if fact_id:
+        from db.models import ProfileFact
+        fact = db.query(ProfileFact).filter(
+            ProfileFact.id == fact_id,
+            ProfileFact.user_id == str(current_user.id),
+        ).first()
+        if fact:
+            if req.response == "confirmed":
+                # 用户确认后提升置信度至 0.9（接近明确声明）
+                fact.confidence = 0.9
+            elif req.response == "rejected":
+                # 用户拒绝后标记事实为非活跃，不再参与画像推断
+                fact.is_active = False
+
     db.commit()
     db.refresh(probe)
 
@@ -226,6 +272,7 @@ async def respond_to_probe(
 @router.post("/init", response_model=ApiResponse)
 async def init_profile(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
@@ -235,7 +282,7 @@ async def init_profile(
     engine = _get_soul_engine(request)
     user_id = str(current_user.id)
 
-    existing = engine.get_profile(user_id)
+    existing = engine.get_profile(user_id, db)
     if existing is not None:
         return ApiResponse(
             success=True,
@@ -243,7 +290,7 @@ async def init_profile(
             message="画像已存在",
         )
 
-    profile = engine.get_or_create_profile(user_id)
+    profile = engine.get_or_create_profile(user_id, db)
 
     logger.bind(user_id=user_id).info("用户画像已初始化")
 

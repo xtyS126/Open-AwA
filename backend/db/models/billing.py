@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -107,6 +108,21 @@ class ModelPricing(Base):
     # 模态标签：输入/输出方向各自支持的模态列表（JSON 数组，如 ["text","image"]）
     input_modality: Mapped[str] = mapped_column(Text, nullable=True)
     output_modality: Mapped[str] = mapped_column(Text, nullable=True)
+    # cherry-studio 兼容字段：缓存读写 token 单价（USD/百万 token）
+    cache_read_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    cache_write_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # 多模态计费：按图/按分钟单价（USD），与 token_per_image 等折算规则并存
+    per_image_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    per_minute_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # 模型元信息：所有方、模型族（如 openai/gpt-4、anthropic/claude-3）
+    owned_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    family: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # 能力与模态列表（JSON 数组，如 ["tools","vision"]、["text","image"]）
+    capabilities: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    input_modalities: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    output_modalities: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # 最大输出 token 数（与 context_window 区分：后者为输入上下文窗口）
+    max_output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc),

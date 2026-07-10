@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 # 项目内部
-from api.dependencies import get_current_user
+from api.dependencies import get_current_admin_user, get_current_user
 from billing.budget_manager import BudgetManager
 from billing.models import ModelConfiguration, ProviderCredential
 from billing.pricing_manager import PricingManager
@@ -77,6 +77,21 @@ class PricingUpdateRequest(BaseModel):
     token_per_image: Optional[int] = None
     token_per_second_audio: Optional[int] = None
     token_per_second_video: Optional[int] = None
+    # cherry-studio 兼容字段：缓存读写 token 单价（USD/百万 token）
+    cache_read_price: Optional[float] = None
+    cache_write_price: Optional[float] = None
+    # 多模态计费：按图/按分钟单价
+    per_image_price: Optional[float] = None
+    per_minute_price: Optional[float] = None
+    # 模型元信息：所有方、模型族
+    owned_by: Optional[str] = None
+    family: Optional[str] = None
+    # 能力与模态列表（JSON 数组）
+    capabilities: Optional[List[str]] = None
+    input_modalities: Optional[List[str]] = None
+    output_modalities: Optional[List[str]] = None
+    # 最大输出 token 数
+    max_output_tokens: Optional[int] = None
 
 
 class BudgetCreateRequest(BaseModel):
@@ -374,7 +389,7 @@ async def get_models(
     """
     pricing_manager = PricingManager(db)
     models = pricing_manager.get_all_pricing(provider=provider)
-    
+
     return {
         "models": [
             {
@@ -389,6 +404,21 @@ async def get_models(
                 "is_active": m.is_active,
                 "supports_vision": m.supports_vision,
                 "is_multimodal": m.is_multimodal,
+                # cherry-studio 兼容字段：缓存读写单价（USD/百万 token）
+                "cache_read_price": m.cache_read_price,
+                "cache_write_price": m.cache_write_price,
+                # 多模态计费：按图/按分钟单价
+                "per_image_price": m.per_image_price,
+                "per_minute_price": m.per_minute_price,
+                # 模型元信息
+                "owned_by": m.owned_by,
+                "family": m.family,
+                # 能力与模态列表（JSON 数组）
+                "capabilities": m.capabilities,
+                "input_modalities": m.input_modalities,
+                "output_modalities": m.output_modalities,
+                # 最大输出 token 数
+                "max_output_tokens": m.max_output_tokens,
                 "updated_at": m.updated_at.isoformat() if m.updated_at else None
             }
             for m in models
@@ -1770,3 +1800,58 @@ async def get_optimization_suggestions(
     service = CostOptimizationService(db)
     report = service.get_optimization_suggestions(str(current_user.id))
     return {"success": True, "report": report}
+
+
+@router.post("/sync-catalog")
+async def sync_model_catalog(
+    current_user = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    管理员手动触发模型目录同步。
+
+    从 models.dev / openrouter.ai 拉取上游模型目录与定价，
+    合并后写入 config/pricing/pricing_data.json。
+    仅 admin 角色可调用，避免普通用户触发远程拉取。
+    同步结果通过 add_task_result_notification 推送到收件箱。
+    """
+    from billing.catalog_sync import run_sync
+    from api.routes.inbox import add_task_result_notification
+
+    try:
+        stats = await run_sync(user_id=str(current_user.id))
+    except Exception as exc:
+        logger.bind(
+            event="model_catalog_sync_failed",
+            module="billing",
+            error_type=type(exc).__name__,
+        ).opt(exception=True).error(f"模型目录同步失败: {exc}")
+        # 失败也推送通知，便于管理员及时发现
+        add_task_result_notification(
+            task_name="模型目录同步",
+            success=False,
+            summary=f"同步失败: {exc}",
+            user_id=str(current_user.id),
+        )
+        raise HTTPException(status_code=502, detail=f"模型目录同步失败: {exc}")
+
+    # 推送成功结果到收件箱
+    add_task_result_notification(
+        task_name="模型目录同步",
+        success=True,
+        summary=(
+            f"新增 {stats['added']} 条，更新 {stats['updated']} 条，"
+            f"保留 {stats['removed']} 条，跳过 {stats['skipped']} 条"
+        ),
+        user_id=str(current_user.id),
+    )
+
+    return {
+        "success": True,
+        "synced_at": stats.get("synced_at"),
+        "added": stats["added"],
+        "updated": stats["updated"],
+        "removed": stats["removed"],
+        "skipped": stats["skipped"],
+        "dry_run": stats.get("dry_run", False),
+    }

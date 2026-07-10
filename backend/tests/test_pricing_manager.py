@@ -215,16 +215,18 @@ class TestInitializeDefaultPricing:
         """
         验证旧库已包含非空能力列时，默认定价初始化仍可成功写入。
         """
+        from config.config_loader import config_loader
         session = _create_pricing_session_with_schema(include_capability_columns=True)
         try:
             pricing_manager = PricingManager(session)
 
             count = pricing_manager.initialize_default_pricing()
 
-            assert count == len(PricingManager.DEFAULT_PRICING_DATA)
+            # 初始化条目数应与 pricing_data.json 一致
+            assert count == len(config_loader.load_pricing_data())
             gemini = session.query(ModelPricing).filter(
                 ModelPricing.provider == "google",
-                ModelPricing.model == "gemini-2.0-flash"
+                ModelPricing.model == "gemini-2.5-flash"
             ).first()
             assert gemini is not None
             assert gemini.supports_vision is True

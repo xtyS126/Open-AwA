@@ -21,7 +21,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul, discussions, search_config  # [NEW] Task 3+9: 讨论任务 + 搜索配置路由
+from api.routes import auth, chat, skills, plugins, memory, prompts, behavior, experiences, conversation, experience_files, logs, mcp, models, workflows, scheduled_tasks, soul, discussions, search_config, profile_settings  # [NEW] Task 3+9: 讨论任务 + 搜索配置 + 画像设置路由
+from api.routes import issue_feedback  # 全局问题反馈路由
 from api.routes.data import router as data_router
 from api.dependencies import get_current_user
 from api.routes.diary import router as diary_router
@@ -678,6 +679,35 @@ async def _startup_background_tasks(profiler: StartupProfiler) -> None:
 
     with profiler.step("scheduled_task_start"):
         await scheduled_task_manager.start()
+
+    # 模型目录定时同步：仅在配置开启时注册到 APScheduler
+    # 复用 scheduled_task_manager 的 AsyncScheduler，无需创建业务表 ScheduledTask
+    with profiler.step("model_catalog_sync_schedule"):
+        try:
+            from config.settings import settings
+            if settings.MODEL_CATALOG_SYNC_ENABLED:
+                from billing.catalog_sync import run_scheduled_catalog_sync
+                registered = await scheduled_task_manager.register_external_schedule(
+                    schedule_id="model_catalog_sync",
+                    cron_expression=settings.MODEL_CATALOG_SYNC_CRON,
+                    func=run_scheduled_catalog_sync,
+                )
+                if registered:
+                    logger.bind(
+                        event="model_catalog_sync_scheduled",
+                        module="billing",
+                        cron=settings.MODEL_CATALOG_SYNC_CRON,
+                    ).info(
+                        f"模型目录定时同步已注册 (cron={settings.MODEL_CATALOG_SYNC_CRON})"
+                    )
+                else:
+                    logger.warning("模型目录定时同步注册失败：调度器未启动或注册异常")
+        except Exception as exc:
+            logger.bind(
+                event="model_catalog_sync_schedule_error",
+                module="billing",
+                error_type=type(exc).__name__,
+            ).warning(f"模型目录定时同步注册异常: {exc}")
 
     with profiler.step("weixin_auto_reply"):
         from db.models import WeixinBinding
@@ -1417,6 +1447,8 @@ app.include_router(notifications_router)
 # [NEW] Task 3: 多 Agent 讨论任务路由，前缀 /api/discussions 已内置在 router 定义中
 app.include_router(discussions.router)
 app.include_router(search_config.router)  # [NEW] Task 9: 搜索配置路由
+app.include_router(issue_feedback.router)  # 全局问题反馈路由
+app.include_router(profile_settings.router)  # [NEW] Task 9: 用户画像设置路由
 # [NOTE] Task 3 SubTask 3.9: DiscussionOrchestrator 未提供独立的 init() 方法，
 # 三个角色（critic/validator/approver）的 system prompt 已由 core/discussion/roles.py
 # 静态定义，orchestrator 在 run_discussion_round 中按顺序调用 build_role_messages

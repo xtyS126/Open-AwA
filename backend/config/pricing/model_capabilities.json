@@ -21,6 +21,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -47,6 +50,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -73,6 +80,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -98,6 +109,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -123,6 +138,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -148,6 +167,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -173,6 +196,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -198,6 +225,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -223,6 +254,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -249,6 +284,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -275,6 +314,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -301,6 +344,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -327,6 +374,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -353,6 +404,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -379,6 +434,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -405,6 +464,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -431,6 +494,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -457,6 +524,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -483,6 +554,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -509,6 +584,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -535,6 +614,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -561,6 +644,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -587,6 +674,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -613,6 +704,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -639,6 +734,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -665,6 +764,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -691,6 +794,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -717,6 +824,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -743,6 +854,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -769,6 +884,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -795,6 +914,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -821,6 +944,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -847,6 +974,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -873,6 +1004,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -899,6 +1034,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -923,6 +1062,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -946,7 +1088,8 @@
     ],
     "output_modality": [
       "text"
-    ]
+    ],
+    "capabilities": []
   },
   {
     "provider_model": "deepseek/deepseek-v3",
@@ -970,6 +1113,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -993,7 +1139,8 @@
     ],
     "output_modality": [
       "text"
-    ]
+    ],
+    "capabilities": []
   },
   {
     "provider_model": "deepseek/deepseek-v4-flash",
@@ -1017,6 +1164,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1041,6 +1191,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1065,6 +1218,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1088,7 +1244,8 @@
     ],
     "output_modality": [
       "text"
-    ]
+    ],
+    "capabilities": []
   },
   {
     "provider_model": "deepseek/deepseek-v3.1",
@@ -1112,6 +1269,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1136,6 +1296,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1162,6 +1325,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1188,6 +1355,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1214,6 +1385,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1240,6 +1415,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1266,6 +1445,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1292,6 +1475,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1316,6 +1503,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1340,6 +1530,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1364,6 +1557,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1388,6 +1584,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1414,6 +1613,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1438,6 +1641,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1462,6 +1668,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1486,6 +1695,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1510,6 +1722,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1534,6 +1749,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1558,6 +1776,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1582,6 +1803,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1608,6 +1832,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1634,6 +1862,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1658,6 +1890,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1682,6 +1917,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1705,7 +1943,8 @@
     ],
     "output_modality": [
       "text"
-    ]
+    ],
+    "capabilities": []
   },
   {
     "provider_model": "moonshot/kimi-k2.6",
@@ -1729,6 +1968,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1753,6 +1995,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1777,6 +2022,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1803,6 +2051,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1827,6 +2079,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   },
   {
@@ -1853,6 +2108,10 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call",
+      "vision"
     ]
   },
   {
@@ -1877,6 +2136,9 @@
     ],
     "output_modality": [
       "text"
+    ],
+    "capabilities": [
+      "function-call"
     ]
   }
 ]

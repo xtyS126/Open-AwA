@@ -29,6 +29,7 @@ const WorkflowPage = React.lazy(() => import('@/features/workflow/WorkflowPage')
 const SubAgentPage = React.lazy(() => import('@/features/subagents/SubAgentPage'))
 const VibeCodingPage = React.lazy(() => import('@/features/vibe-coding/VibeCodingPage'))
 const DiscussionsPage = React.lazy(() => import('@/features/discussions/DiscussionsPage'))
+const UserProfilePage = React.lazy(() => import('@/features/user-profile/UserProfilePage'))
 
 // 统一的页面级 Suspense fallback：路由懒加载期间的占位骨架
 // 使用设计令牌保持与全局间距体系一致
@@ -97,6 +98,7 @@ export const router = createBrowserRouter(
         { path: 'experience', element: <ErrorBoundary name="Experience">{withSuspense(<ExperiencePage hideHeader />)}</ErrorBoundary> },
         { path: 'billing', element: <ErrorBoundary name="Billing">{withSuspense(<BillingPage />)}</ErrorBoundary> },
         { path: 'user', element: <ErrorBoundary name="UserCenter">{withSuspense(<UserCenterPage />)}</ErrorBoundary> },
+        { path: 'user-profile', element: <ErrorBoundary name="UserProfile">{withSuspense(<UserProfilePage />)}</ErrorBoundary> },
         { path: 'dev/test', element: <ErrorBoundary name="Test"><DevTestRoute /></ErrorBoundary> },
         { path: 'workspace', element: <ErrorBoundary name="Workspace">{withSuspense(<WorkspacePage />)}</ErrorBoundary> },
         { path: 'coding', element: <ErrorBoundary name="Coding">{withSuspense(<CodingPage />)}</ErrorBoundary> },
@@ -110,6 +112,7 @@ export const router = createBrowserRouter(
         { path: 'vibe-coding', element: <ErrorBoundary name="VibeCoding">{withSuspense(<VibeCodingPage />)}</ErrorBoundary> },
         { path: 'discussions', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
         { path: 'discussions/:id', element: <ErrorBoundary name="Discussions">{withSuspense(<DiscussionsPage />)}</ErrorBoundary> },
+        { path: 'user-profile', element: <ErrorBoundary name="UserProfile">{withSuspense(<UserProfilePage />)}</ErrorBoundary> },
         // 兜底：未匹配路径重定向到 /chat（保持用户体验友好，URL 不变）
         { path: '*', element: <Navigate to="/chat" replace /> },
       ],

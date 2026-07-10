@@ -36,6 +36,7 @@ from db.models.user import (
     LoginDevice,
     MemoryDecayConfig,
     ProfileExtractionLog,
+    ProfileExtractionState,
     ProfileFact,
     Role,
     User,
@@ -161,6 +162,7 @@ __all__ = [
     "MemoryDecayConfig",
     "ProfileFact",
     "ProfileExtractionLog",
+    "ProfileExtractionState",
     # 会话域
     "Conversation",
     "ShortTermMemory",

@@ -71,6 +71,8 @@ const zhCN: Record<string, string> = {
   "sidebar.lightMode": "切换到白天模式",
   "sidebar.nightMode": "黑夜模式",
   "sidebar.dayMode": "白天模式",
+  "sidebar.issueFeedback": "问题反馈",
+  "sidebar.userProfile": "我的画像",
 
   // ===== 用户 =====
   "user.center": "用户中心",
@@ -1558,6 +1560,29 @@ const zhCN: Record<string, string> = {
   "vibeCoding.permission.selectOption": "请选择审批选项",
   "vibeCoding.permission.cancel": "拒绝",
   "vibeCoding.permission.processing": "处理中...",
+
+  // ===== 问题反馈 =====
+  "issueFeedback.title": "问题反馈",
+  "issueFeedback.typeLabel": "类型",
+  "issueFeedback.typeBug": "Bug 报告",
+  "issueFeedback.typeSuggestion": "功能建议",
+  "issueFeedback.typeQuestion": "使用疑问",
+  "issueFeedback.typeOther": "其他",
+  "issueFeedback.titleLabel": "标题",
+  "issueFeedback.titlePlaceholder": "请简要描述问题",
+  "issueFeedback.contentLabel": "内容",
+  "issueFeedback.contentPlaceholder": "请详细描述您遇到的问题或建议",
+  "issueFeedback.currentPage": "当前页面",
+  "issueFeedback.submit": "提交反馈",
+  "issueFeedback.cancel": "取消",
+  "issueFeedback.close": "关闭",
+  "issueFeedback.submitSuccess": "反馈已提交，感谢您的支持",
+  "issueFeedback.submitFailed": "提交失败，请稍后重试",
+  "issueFeedback.titleRequired": "请填写标题",
+  "issueFeedback.contentRequired": "请填写内容",
+  "issueFeedback.discardDraftConfirm": "是否丢弃未提交的草稿？",
+  "issueFeedback.discardDraft": "丢弃",
+  "issueFeedback.keepDraft": "保留草稿",
 };
 
 export default zhCN;

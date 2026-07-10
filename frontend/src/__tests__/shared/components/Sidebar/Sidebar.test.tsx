@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Sidebar from '@/shared/components/Sidebar/Sidebar'
 import { MemoryRouter } from 'react-router-dom'
 import { useI18nStore } from '@/i18n'
+import { useIssueFeedbackStore } from '@/shared/store/issueFeedbackStore'
 import styles from '@/shared/components/Sidebar/Sidebar.module.css'
 
 vi.mock('@/shared/api/api', () => ({
@@ -33,6 +34,12 @@ vi.mock('@/features/settings/modelsApi', () => ({
 describe('Sidebar', () => {
   beforeEach(() => {
     useI18nStore.getState().setLocale('zh-CN')
+    // 重置问题反馈 store 状态
+    useIssueFeedbackStore.setState({
+      isOpen: false,
+      submitting: false,
+      draft: { issue_type: 'bug', title: '', content: '', page_url: '' },
+    })
   })
 
   it('展示导航链接：定时任务、插件等模块入口', () => {
@@ -55,6 +62,23 @@ describe('Sidebar', () => {
 
     const pluginLink = screen.getByRole('link', { name: '插件管理' })
     expect(pluginLink.className).toMatch(/active/)
+  })
+
+  it('点击问题反馈按钮打开反馈面板', () => {
+    render(
+      <MemoryRouter initialEntries={['/chat']}>
+        <Sidebar />
+      </MemoryRouter>
+    )
+
+    const feedbackBtn = screen.getByTestId('sidebar-issue-feedback-btn')
+    expect(feedbackBtn).toBeInTheDocument()
+
+    act(() => {
+      fireEvent.click(feedbackBtn)
+    })
+
+    expect(useIssueFeedbackStore.getState().isOpen).toBe(true)
   })
 })
 

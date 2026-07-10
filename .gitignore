@@ -206,3 +206,6 @@ Android/test-reports/
 
 # Qdrant 向量数据库本地数据
 backend/data/qdrant/
+
+# 问题反馈只写器落盘目录（仅写入，禁止读取/删除/列举）
+backend/data/issue_reports/

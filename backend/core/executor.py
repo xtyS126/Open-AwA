@@ -14,6 +14,8 @@ from typing import Awaitable, Dict, Any, Optional, Callable, List, Tuple
 
 import httpx
 from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from config.logging import generate_request_id, get_request_id, sanitize_for_logging
 from config.settings import settings
@@ -24,6 +26,11 @@ from core.litellm_adapter import (
     litellm_chat_completion_stream,
 )
 from core.tool_use_context import ToolUseContext, coerce_tool_context
+from billing.token_counter import (
+    TokenBreakdown,
+    count_from_stream,
+    count_from_usage,
+)
 from memory.experience_manager import ExperienceManager
 from mcp.manager import MCPManager
 
@@ -109,7 +116,127 @@ def _handle_audit_task_result(task: asyncio.Task) -> None:
             return
         task.result()
     except Exception as e:
-        logger.warning(f"[审计日志] 任务结果检查异常: {e}")
+        logger.warning(f"[审计日志] 任务执行失败: {e}")
+
+
+def _build_profile_context(user_id: str, db: Session) -> str:
+    """
+    构建 OnionProfile 五层摘要，用于注入 system prompt。
+
+    从 user_profiles 表读取 OnionProfile，按 surface/interest/role/values/core
+    五层结构生成简短摘要文本。未建立画像或读取失败时返回空字符串，不阻塞主流程。
+
+    Args:
+        user_id: 用户 ID
+        db: 数据库 session
+
+    Returns:
+        格式化的画像摘要文本，未建立画像时返回空字符串
+    """
+    if not user_id or db is None:
+        return ""
+
+    try:
+        from soul.persistence import load_profile
+
+        profile = load_profile(db, user_id)
+    except SQLAlchemyError as exc:
+        logger.bind(user_id=user_id).opt(exception=True).warning(
+            f"读取用户画像数据库查询失败: {exc}"
+        )
+        return ""
+    except (ImportError, AttributeError, ValueError, TypeError) as exc:
+        logger.bind(user_id=user_id).opt(exception=True).warning(
+            f"加载用户画像失败: {exc}"
+        )
+        return ""
+
+    if profile is None:
+        return ""
+
+    parts = ["[用户画像]"]
+
+    # 五层洋葱模型：surface / interest / role / values / core
+    layer_labels = {
+        "surface": "行为偏好",
+        "interest": "兴趣偏好",
+        "role": "角色认同",
+        "values": "价值观",
+        "core": "人格特征",
+    }
+
+    for layer_name, label in layer_labels.items():
+        layer = getattr(profile, layer_name, None)
+        if layer is None:
+            continue
+        description = getattr(layer, "description", None)
+        if description:
+            parts.append(f"- {label}: {description}")
+
+    if len(parts) <= 1:
+        return ""
+
+    return "\n".join(parts)
+
+
+def _build_profile_facts_context(user_id: str, db: Session) -> str:
+    """
+    构建高置信度 ProfileFact 摘要，用于注入 system prompt。
+
+    从 profile_facts 表读取 confidence >= 0.7 且 is_active 的事实，按置信度
+    降序取前 20 条。无事实或读取失败时返回空字符串，不阻塞主流程。
+
+    Args:
+        user_id: 用户 ID
+        db: 数据库 session
+
+    Returns:
+        格式化的事实摘要文本，无事实时返回空字符串
+    """
+    if not user_id or db is None:
+        return ""
+
+    try:
+        from db.models import ProfileFact
+
+        facts = (
+            db.query(ProfileFact)
+            .filter(
+                ProfileFact.user_id == user_id,
+                ProfileFact.is_active.is_(True),
+                ProfileFact.confidence >= 0.7,
+            )
+            .order_by(ProfileFact.confidence.desc())
+            .limit(20)
+            .all()
+        )
+    except SQLAlchemyError as exc:
+        logger.bind(user_id=user_id).opt(exception=True).warning(
+            f"读取用户画像事实数据库查询失败: {exc}"
+        )
+        return ""
+    except (ImportError, AttributeError) as exc:
+        logger.bind(user_id=user_id).opt(exception=True).warning(
+            f"加载 ProfileFact 模型失败: {exc}"
+        )
+        return ""
+
+    if not facts:
+        return ""
+
+    parts = ["[用户画像事实]"]
+    for fact in facts:
+        fact_key = getattr(fact, "fact_key", "")
+        fact_value = getattr(fact, "fact_value", "")
+        confidence = getattr(fact, "confidence", 0.0)
+        if not fact_key or not fact_value:
+            continue
+        parts.append(f"- {fact_key}: {fact_value} (置信度: {float(confidence):.0%})")
+
+    if len(parts) <= 1:
+        return ""
+
+    return "\n".join(parts)
 
 
 class ExecutionLayer:
@@ -1140,6 +1267,19 @@ class ExecutionLayer:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
+        # 注入用户画像（五层 OnionProfile 摘要 + 高置信度 ProfileFact）
+        # 放在能力描述之后、长期记忆之前：用户身份是较稳定的上下文，优先级高于请求级记忆
+        user_id = context.get("user_id")
+        db = context.get("db")
+        profile_context = _build_profile_context(user_id, db)
+        profile_facts_context = _build_profile_facts_context(user_id, db)
+        if profile_context or profile_facts_context:
+            profile_block = "\n\n".join(
+                part for part in (profile_context, profile_facts_context) if part
+            )
+            if profile_block:
+                messages.append({"role": "system", "content": profile_block})
+
         # 注入检索到的相关长期记忆（在能力描述之后、自动执行结果之前，保持语义层级清晰）
         memories_prompt = self._build_relevant_memories_system_prompt(context)
         if memories_prompt:
@@ -1358,7 +1498,7 @@ class ExecutionLayer:
 
         if callable(record_hook):
             usage = result.get("usage")
-            tokens_used = usage.get("total_tokens") if isinstance(usage, dict) else None
+            token_breakdown = count_from_usage(usage if isinstance(usage, dict) else None)
             record_hook(
                 node_type="llm_call",
                 user_message=context.get("message", prompt),
@@ -1366,7 +1506,8 @@ class ExecutionLayer:
                 status="success",
                 llm_input=llm_input_payload,
                 llm_output=result,
-                llm_tokens_used=tokens_used,
+                token_breakdown=token_breakdown,
+                llm_tokens_used=token_breakdown.total_tokens,
                 execution_duration_ms=duration_ms,
                 metadata={
                     "provider": resolved["provider"],
@@ -1402,6 +1543,8 @@ class ExecutionLayer:
         _tools = context.get("_tools")
         full_content = ""
         full_reasoning = ""
+        # 收集流式 chunk 用于后续 token 计数（count_from_stream 会查找 usage 字段）
+        stream_chunks: List[Dict[str, Any]] = []
 
         try:
             _thinking_params = context.get("_thinking_params")
@@ -1447,6 +1590,10 @@ class ExecutionLayer:
                 except StopAsyncIteration:
                     break
 
+                # 收集 chunk 用于后续 token 计数（count_from_stream 查找 usage 字段）
+                if isinstance(chunk, dict):
+                    stream_chunks.append(chunk)
+
                 # 错误事件直接转发
                 if "error" in chunk:
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
@@ -1487,6 +1634,7 @@ class ExecutionLayer:
             record_model_service_metric(resolved["provider"], "chat_stream", "success", duration_ms)
 
             if callable(record_hook):
+                token_breakdown = count_from_stream(stream_chunks)
                 record_hook(
                     node_type="llm_call",
                     user_message=context.get("message", prompt),
@@ -1500,6 +1648,8 @@ class ExecutionLayer:
                         "provider": resolved["provider"],
                         "model": resolved["model"],
                     },
+                    token_breakdown=token_breakdown,
+                    llm_tokens_used=token_breakdown.total_tokens,
                     execution_duration_ms=duration_ms,
                     metadata={
                         "provider": resolved["provider"],
@@ -2720,3 +2870,7 @@ class ExecutionLayer:
             )
         except Exception as e:
             logger.opt(exception=True).error(f"记录经验反馈失败: {e}")
+
+
+# ExecutionLayer 的别名，用于对外暴露统一的执行器名称
+Executor = ExecutionLayer

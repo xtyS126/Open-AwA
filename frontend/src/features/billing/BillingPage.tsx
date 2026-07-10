@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download } from 'lucide-react'
+import { Download, RefreshCw, Eye } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -16,7 +16,17 @@ import {
   Bar,
   Legend
 } from 'recharts'
-import { billingAPI, CostStatistics, UsageRecord, BudgetStatus } from '@/features/billing/billingApi'
+import {
+  billingAPI,
+  syncModelCatalog,
+  CostStatistics,
+  UsageRecord,
+  BudgetStatus,
+  CatalogSyncResult,
+} from '@/features/billing/billingApi'
+import { useAuthStore } from '@/shared/store/authStore'
+import { useToast } from '@/shared/components/Toast'
+import UsageDetailDrawer from './components/UsageDetailDrawer'
 import { BILLING_USAGE_UPDATED_EVENT } from '@/shared/events/billingEvents'
 import styles from './BillingPage.module.css'
 
@@ -36,6 +46,19 @@ const CHART_COLORS = {
   ]
 }
 
+/** 计数方法中文标签映射 —— 与 UsageDetailDrawer 保持一致 */
+const METHOD_LABELS: Record<NonNullable<UsageRecord['method']>, string> = {
+  api_usage: 'API',
+  stream: '流式',
+  tiktoken: 'tiktoken',
+  ratio: '字符比率',
+}
+
+/** 判断当前用户是否为 admin 角色 */
+function checkIsAdmin(role: string | undefined): boolean {
+  return role === 'admin'
+}
+
 function BillingPage() {
   // 通过 useContext 获取当前 QueryClient（测试时可注入独立实例，避免污染全局）
   const queryClient = useQueryClient()
@@ -45,6 +68,22 @@ function BillingPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
   // 导出操作的本地错误状态（不依赖服务端查询）
   const [exportError, setExportError] = useState<string | null>(null)
+
+  // 模型目录同步对话框状态（admin 专用）
+  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false)
+  // 同步进行中标记（控制按钮 loading 与重复点击）
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  // 用量详情抽屉状态
+  const [selectedRecord, setSelectedRecord] = useState<UsageRecord | null>(null)
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false)
+
+  // 当前用户信息 —— 用于判断是否显示 admin 同步按钮
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = checkIsAdmin(user?.role)
+
+  // Toast 通知 —— 同步结果/错误反馈
+  const { addToast, ToastContainer } = useToast()
 
   // 成本统计查询 —— period 变化时自动刷新
   const statsQuery = useQuery<CostStatistics>({
@@ -132,6 +171,46 @@ function BillingPage() {
     }
   }
 
+  /**
+   * 执行模型目录同步。
+   *
+   * 调用 POST /api/billing/sync-catalog，从 models.dev / openrouter.ai 拉取最新模型与定价。
+   * 成功时展示统计 toast 并刷新模型列表；失败时展示错误 toast。
+   * 同步过程中按钮显示 loading 状态，防止重复点击。
+   */
+  const handleSyncCatalog = useCallback(async () => {
+    setIsSyncing(true)
+    try {
+      const result: CatalogSyncResult = await syncModelCatalog()
+      addToast(
+        `同步完成：新增 ${result.added} 个，更新 ${result.updated} 个，失效 ${result.removed} 个，跳过 ${result.skipped} 个`,
+        'success'
+      )
+      setIsSyncDialogOpen(false)
+      // 刷新模型列表与用量数据，确保展示最新定价
+      void queryClient.invalidateQueries({ queryKey: ['billing'] })
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : '模型目录同步失败'
+      // 兼容 axios 错误响应中的 detail 字段
+      const axiosErr = e as { response?: { data?: { detail?: string } } }
+      const detail = axiosErr?.response?.data?.detail
+      addToast(detail || errMsg, 'error')
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [addToast, queryClient])
+
+  /** 打开用量详情抽屉 */
+  const handleOpenDetail = useCallback((record: UsageRecord) => {
+    setSelectedRecord(record)
+    setIsDetailDrawerOpen(true)
+  }, [])
+
+  /** 关闭用量详情抽屉 */
+  const handleCloseDetail = useCallback(() => {
+    setIsDetailDrawerOpen(false)
+  }, [])
+
   const formatCurrency = (amount: number, currency: string) => {
     const symbol = currency === 'CNY' ? '¥' : '$'
     return `${symbol}${amount.toFixed(6)}`
@@ -147,6 +226,38 @@ function BillingPage() {
     if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(2)}M`
     if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`
     return tokens.toString()
+  }
+
+  /** 格式化可选 token 字段，0 或缺失时显示 "-" */
+  const formatOptionalTokens = (tokens: number | undefined): string => {
+    if (!tokens || tokens <= 0) return '-'
+    return formatTokens(tokens)
+  }
+
+  /** 格式化缓存成本合计（cache_read_cost + cache_write_cost），保留 6 位小数 */
+  const formatCacheCost = (record: UsageRecord): string => {
+    const read = record.cache_read_cost ?? 0
+    const write = record.cache_write_cost ?? 0
+    const total = read + write
+    if (total <= 0) return '-'
+    const symbol = record.currency === 'CNY' ? '¥' : '$'
+    return `${symbol}${total.toFixed(6)}`
+  }
+
+  /** 渲染计数方法标签 */
+  const renderMethodTag = (record: UsageRecord) => {
+    if (!record.method) return <span className={styles['method-tag']}>-</span>
+    const label = METHOD_LABELS[record.method]
+    return (
+      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+        <span className={styles['method-tag']}>{label}</span>
+        {record.estimated !== undefined && (
+          <span className={`${styles['precision-badge']} ${record.estimated ? styles['estimated'] : styles['exact']}`}>
+            {record.estimated ? '估算' : '精确'}
+          </span>
+        )}
+      </span>
+    )
   }
 
   const getPieData = () => {
@@ -210,6 +321,19 @@ function BillingPage() {
             <Download size={14} />
             导出CSV
           </button>
+          {/* 模型目录同步按钮 —— 仅 admin 角色可见 */}
+          {isAdmin && (
+            <button
+              className={styles['sync-catalog-btn']}
+              onClick={() => setIsSyncDialogOpen(true)}
+              disabled={isSyncing}
+              aria-label="同步模型目录"
+              type="button"
+            >
+              <RefreshCw size={14} />
+              {isSyncing ? '同步中...' : '同步模型目录'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -351,14 +475,20 @@ function BillingPage() {
               <th>内容类型</th>
               <th>输入Tokens</th>
               <th>输出Tokens</th>
+              <th>缓存读取Tokens</th>
+              <th>缓存写入Tokens</th>
+              <th>缓存成本</th>
+              <th>思考Tokens</th>
+              <th>计数方法</th>
               <th>成本</th>
               <th>耗时</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {usageRecords.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
+                <td colSpan={14} style={{ textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
                   暂无数据
                 </td>
               </tr>
@@ -377,17 +507,84 @@ function BillingPage() {
                   </td>
                   <td data-label="输入Tokens">{formatTokens(record.input_tokens)}</td>
                   <td data-label="输出Tokens">{formatTokens(record.output_tokens)}</td>
+                  <td data-label="缓存读取Tokens">{formatOptionalTokens(record.cache_read_tokens)}</td>
+                  <td data-label="缓存写入Tokens">{formatOptionalTokens(record.cache_write_tokens)}</td>
+                  <td data-label="缓存成本">{formatCacheCost(record)}</td>
+                  <td data-label="思考Tokens">{formatOptionalTokens(record.thoughts_tokens)}</td>
+                  <td data-label="计数方法">{renderMethodTag(record)}</td>
                   <td data-label="成本">
                     {formatCurrency(record.total_cost, record.currency)}
                     {record.cache_hit && <span className={styles['cache-badge']}>缓存</span>}
                   </td>
                   <td data-label="耗时">{record.duration_ms}ms</td>
+                  <td data-label="操作">
+                    <button
+                      className={styles['detail-btn']}
+                      onClick={() => handleOpenDetail(record)}
+                      type="button"
+                      aria-label={`查看 ${record.model} 调用详情`}
+                    >
+                      <Eye size={12} />
+                      详情
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* 模型目录同步确认对话框 —— 仅 admin 可触发 */}
+      {isSyncDialogOpen && (
+        <div
+          className={styles['sync-dialog-overlay']}
+          onClick={() => !isSyncing && setIsSyncDialogOpen(false)}
+          role="presentation"
+        >
+          <div
+            className={styles['sync-dialog']}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sync-dialog-title"
+          >
+            <h3 id="sync-dialog-title" className={styles['sync-dialog-title']}>同步模型目录</h3>
+            <div className={styles['sync-dialog-content']}>
+              此操作将从 <strong>models.dev</strong> 和 <strong>openrouter.ai</strong> 拉取最新模型列表与定价。
+              同步将覆盖本地未标记 <strong>user_overrides</strong> 的修改。是否继续？
+            </div>
+            <div className={styles['sync-dialog-actions']}>
+              <button
+                className={styles['sync-dialog-btn']}
+                onClick={() => setIsSyncDialogOpen(false)}
+                disabled={isSyncing}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                className={`${styles['sync-dialog-btn']} ${styles['primary']}`}
+                onClick={handleSyncCatalog}
+                disabled={isSyncing}
+                type="button"
+              >
+                {isSyncing ? '同步中...' : '确认同步'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 用量详情抽屉 */}
+      <UsageDetailDrawer
+        record={selectedRecord}
+        open={isDetailDrawerOpen}
+        onClose={handleCloseDetail}
+      />
+
+      {/* Toast 通知容器 —— 同步结果/错误反馈 */}
+      <ToastContainer />
     </div>
   )
 }

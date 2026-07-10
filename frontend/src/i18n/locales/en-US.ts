@@ -71,6 +71,8 @@ const enUS: Record<string, string> = {
   "sidebar.lightMode": "Switch to light mode",
   "sidebar.nightMode": "Dark mode",
   "sidebar.dayMode": "Light mode",
+  "sidebar.issueFeedback": "Issue Feedback",
+  "sidebar.userProfile": "My Profile",
 
   // ===== User =====
   "user.center": "User Center",
@@ -1501,6 +1503,29 @@ const enUS: Record<string, string> = {
   "chat.model": "Model",
   "chat.jumpToLatest": "Jump to latest",
   "chat.unreadMessages": "{count} new messages",
+
+  // ===== Issue Feedback =====
+  "issueFeedback.title": "Issue Feedback",
+  "issueFeedback.typeLabel": "Type",
+  "issueFeedback.typeBug": "Bug Report",
+  "issueFeedback.typeSuggestion": "Feature Suggestion",
+  "issueFeedback.typeQuestion": "Usage Question",
+  "issueFeedback.typeOther": "Other",
+  "issueFeedback.titleLabel": "Title",
+  "issueFeedback.titlePlaceholder": "Briefly describe the issue",
+  "issueFeedback.contentLabel": "Content",
+  "issueFeedback.contentPlaceholder": "Describe the issue or suggestion in detail",
+  "issueFeedback.currentPage": "Current Page",
+  "issueFeedback.submit": "Submit",
+  "issueFeedback.cancel": "Cancel",
+  "issueFeedback.close": "Close",
+  "issueFeedback.submitSuccess": "Feedback submitted, thank you",
+  "issueFeedback.submitFailed": "Submit failed, please try again later",
+  "issueFeedback.titleRequired": "Title is required",
+  "issueFeedback.contentRequired": "Content is required",
+  "issueFeedback.discardDraftConfirm": "Discard unsaved draft?",
+  "issueFeedback.discardDraft": "Discard",
+  "issueFeedback.keepDraft": "Keep Draft",
 };
 
 export default enUS;

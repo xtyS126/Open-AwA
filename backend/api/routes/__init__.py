@@ -6,3 +6,4 @@
 from api.routes import soul
 from api.routes import search_config  # noqa: F401  Task 9: 搜索配置路由
 from api.routes import discussions  # noqa: F401  Task 3: 多 Agent 讨论任务路由
+from api.routes import profile_settings  # noqa: F401  Task 9: 用户画像设置路由

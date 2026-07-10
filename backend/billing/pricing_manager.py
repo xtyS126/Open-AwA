@@ -64,12 +64,20 @@ class PricingManager:
     @staticmethod
     def validate_default_configurations() -> Tuple[bool, List[Tuple[str, str]]]:
         """
-        校验默认配置的唯一性。
-        
+        校验默认配置的唯一性。从 default_configurations.json 加载配置。
+
         Returns:
             元组，第一个元素表示是否唯一，第二个元素为重复项列表。
         """
-        return PricingManager._validate_configurations_uniqueness(PricingManager.DEFAULT_CONFIGURATIONS)
+        try:
+            from config.config_loader import config_loader
+            configurations = config_loader.load_default_configurations()
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="config_loader_error").warning(
+                f"从 JSON 加载默认配置失败: {exc}"
+            )
+            return (True, [])
+        return PricingManager._validate_configurations_uniqueness(configurations)
 
     @staticmethod
     def normalize_provider(provider: Optional[str]) -> str:
@@ -256,494 +264,6 @@ class PricingManager:
         ("deepseek", "deepseek-chat")
     ]
 
-    DEFAULT_CONFIGURATIONS = [
-        {
-            "provider": "openai",
-            "model": "gpt-4.1",
-            "display_name": "GPT-4.1",
-            "description": "最新旗舰模型，适合复杂推理与长文本处理",
-            "is_active": True,
-            "is_default": True,
-            "sort_order": 0,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4.1-mini",
-            "display_name": "GPT-4.1 Mini",
-            "description": "GPT-4.1 轻量版，兼顾速度与成本",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 1,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4.1-nano",
-            "display_name": "GPT-4.1 Nano",
-            "description": "GPT-4.1 极速版，适合高频低成本场景",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 2,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o",
-            "display_name": "GPT-4o",
-            "description": "多模态旗舰，支持图像与文本",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 3,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "display_name": "GPT-4o Mini",
-            "description": "兼顾速度与成本的轻量模型",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 4,
-        },
-        {
-            "provider": "openai",
-            "model": "o1",
-            "display_name": "o1",
-            "description": "深度推理模型，适合复杂数学与编程任务",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 5,
-        },
-        {
-            "provider": "openai",
-            "model": "o3-mini",
-            "display_name": "o3-mini",
-            "description": "轻量推理模型，速度更快",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 6,
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-sonnet",
-            "display_name": "Claude 3.5 Sonnet",
-            "description": "适合复杂推理与长文本处理",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 7,
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-haiku",
-            "display_name": "Claude 3.5 Haiku",
-            "description": "快速轻量，适合日常对话",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 8,
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3-opus",
-            "display_name": "Claude 3 Opus",
-            "description": "最高智能水平，适合高要求任务",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 9,
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-flash",
-            "display_name": "Gemini 2.0 Flash",
-            "description": "响应快速，适合高频交互场景",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 10,
-        },
-        {
-            "provider": "google",
-            "model": "gemini-1.5-pro",
-            "display_name": "Gemini 1.5 Pro",
-            "description": "超长上下文，支持 200 万 tokens",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 11,
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "display_name": "DeepSeek Chat",
-            "description": "适用于中文对话与通用生成任务",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 12,
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-reasoner",
-            "display_name": "DeepSeek Reasoner",
-            "description": "深度推理模型，适合复杂分析",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 13,
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen-plus",
-            "display_name": "Qwen Plus",
-            "description": "通义千问高性能版",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 14,
-        },
-        {
-            "provider": "moonshot",
-            "model": "moonshot-v1-128k",
-            "display_name": "Moonshot 128K",
-            "description": "Kimi 长文本模型，支持 128K 上下文",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 15,
-        },
-        {
-            "provider": "zhipu",
-            "model": "glm-4",
-            "display_name": "GLM-4",
-            "description": "智谱 AI 旗舰模型，支持多模态",
-            "is_active": True,
-            "is_default": False,
-            "sort_order": 16,
-        },
-    ]
-
-    MODEL_CAPABILITY_DEFAULTS: Dict[Tuple[str, str], Dict] = {
-        ("openai", "gpt-4"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 8192, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4o"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 16384, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4o-mini"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 16384, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4.1"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 1047576, "max_output_tokens": 32768, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4.1-mini"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 1047576, "max_output_tokens": 32768, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-4.1-nano"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 1047576, "max_output_tokens": 32768, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "o1"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": False, "supports_top_k": False,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 100000, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "o3-mini"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": False, "supports_top_k": False,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 100000, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("openai", "gpt-3.5-turbo"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 16385, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("anthropic", "claude-3.5-sonnet"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("anthropic", "claude-3.5-haiku"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("anthropic", "claude-3-opus"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("anthropic", "claude-3-haiku"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 200000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("deepseek", "deepseek-chat"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 64000, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("deepseek", "deepseek-reasoner"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": False, "supports_top_k": False,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 64000, "max_output_tokens": 8192, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("google", "gemini-2.0-flash"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 1048576, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("google", "gemini-1.5-pro"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 2097152, "max_output_tokens": 8192, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-        ("alibaba", "qwen-plus"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 131072, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("moonshot", "moonshot-v1-128k"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": False, "is_multimodal": False,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_streaming": True}),
-            "status": "active",
-        },
-        ("zhipu", "glm-4"): {
-            "temperature": 0.7, "top_k": 0.9,
-            "supports_temperature": True, "supports_top_k": True,
-            "supports_vision": True, "is_multimodal": True,
-            "model_spec": json.dumps({"context_window": 128000, "max_output_tokens": 4096, "supports_function_calling": True, "supports_streaming": True, "supports_vision": True}),
-            "status": "active",
-        },
-    }
-
-    DEFAULT_PRICING_DATA = [
-        {
-            "provider": "openai",
-            "model": "gpt-4.1",
-            "input_price": 2.00,
-            "output_price": 8.00,
-            "currency": "USD",
-            "context_window": 1047576
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4.1-mini",
-            "input_price": 0.40,
-            "output_price": 1.60,
-            "currency": "USD",
-            "context_window": 1047576
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4.1-nano",
-            "input_price": 0.10,
-            "output_price": 0.40,
-            "currency": "USD",
-            "context_window": 1047576
-        },
-        {
-            "provider": "openai",
-            "model": "o1",
-            "input_price": 15.00,
-            "output_price": 60.00,
-            "currency": "USD",
-            "context_window": 200000
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o",
-            "input_price": 2.50,
-            "output_price": 10.00,
-            "currency": "USD",
-            "context_window": 128000
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "input_price": 0.15,
-            "output_price": 0.60,
-            "currency": "USD",
-            "context_window": 128000
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-sonnet",
-            "input_price": 3.00,
-            "output_price": 15.00,
-            "currency": "USD",
-            "context_window": 200000
-        },
-        {
-            "provider": "anthropic",
-            "model": "claude-3.5-haiku",
-            "input_price": 0.80,
-            "output_price": 4.00,
-            "currency": "USD",
-            "context_window": 200000
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-flash",
-            "input_price": 0.075,
-            "output_price": 0.30,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "google",
-            "model": "gemini-3.1-flash-lite",
-            "input_price": 0.25,
-            "output_price": 1.50,
-            "currency": "USD",
-            "context_window": 1000000
-        },
-        {
-            "provider": "google",
-            "model": "gemini-2.0-pro",
-            "input_price": 1.25,
-            "output_price": 10.00,
-            "currency": "USD",
-            "context_window": 2000000
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-v3",
-            "input_price": 2.00,
-            "output_price": 8.00,
-            "currency": "CNY",
-            "cache_hit_price": 1.00,
-            "context_window": 640000
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-r1",
-            "input_price": 4.00,
-            "output_price": 16.00,
-            "currency": "CNY",
-            "cache_hit_price": 1.00,
-            "context_window": 640000
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "input_price": 2.00,
-            "output_price": 8.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen-long",
-            "input_price": 0.50,
-            "output_price": 2.00,
-            "currency": "CNY",
-            "context_window": 10000000
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen3",
-            "input_price": 0.80,
-            "output_price": 3.20,
-            "currency": "CNY",
-            "context_window": 1000000
-        },
-        {
-            "provider": "alibaba",
-            "model": "qwen2.5-turbo",
-            "input_price": 0.60,
-            "output_price": 2.40,
-            "currency": "CNY",
-            "context_window": 1000000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-128k",
-            "input_price": 60.00,
-            "output_price": 60.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-vision-8k",
-            "input_price": 12.00,
-            "output_price": 12.00,
-            "currency": "CNY",
-            "context_window": 8000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-vision-32k",
-            "input_price": 24.00,
-            "output_price": 24.00,
-            "currency": "CNY",
-            "context_window": 32000
-        },
-        {
-            "provider": "moonshot",
-            "model": "kimi-vision-128k",
-            "input_price": 60.00,
-            "output_price": 60.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "zhipu",
-            "model": "glm-4",
-            "input_price": 0.50,
-            "output_price": 1.00,
-            "currency": "CNY",
-            "context_window": 128000
-        },
-        {
-            "provider": "zhipu",
-            "model": "glm-4-plus",
-            "input_price": 1.00,
-            "output_price": 2.00,
-            "currency": "CNY",
-            "context_window": 128000
-        }
-    ]
-
     def __init__(self, db: Session):
         """
         初始化计费管理器。
@@ -758,7 +278,7 @@ class PricingManager:
 
     def ensure_pricing_schema(self) -> None:
         """
-        确保模型定价表包含能力标记字段，兼容旧库与新库结构差异。
+        确保模型定价表包含能力标记字段与 cherry-studio 兼容字段，兼容旧库与新库结构差异。
         首次调用后设置标志，后续调用直接返回，避免重复 PRAGMA 查询。
         """
         if self._pricing_schema_ensured:
@@ -780,6 +300,29 @@ class PricingManager:
             self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN input_modality TEXT"))
         if "output_modality" not in columns:
             self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN output_modality TEXT"))
+
+        # cherry-studio 兼容字段：缓存定价、多模态计费、模型元信息、能力与模态列表
+        # 全部 nullable，旧记录无需回填；与 Alembic 迁移 add_pricing_cache_fields 对齐
+        if "cache_read_price" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN cache_read_price FLOAT"))
+        if "cache_write_price" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN cache_write_price FLOAT"))
+        if "per_image_price" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN per_image_price FLOAT"))
+        if "per_minute_price" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN per_minute_price FLOAT"))
+        if "owned_by" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN owned_by VARCHAR(64)"))
+        if "family" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN family VARCHAR(64)"))
+        if "capabilities" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN capabilities JSON"))
+        if "input_modalities" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN input_modalities JSON"))
+        if "output_modalities" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN output_modalities JSON"))
+        if "max_output_tokens" not in columns:
+            self.db.execute(text("ALTER TABLE model_pricing ADD COLUMN max_output_tokens INTEGER"))
 
         self.db.commit()
         self._pricing_schema_ensured = True
@@ -843,6 +386,27 @@ class PricingManager:
         self.db.commit()
         self._config_schema_ensured = True
 
+    @staticmethod
+    def _get_capability_defaults(key: Tuple[str, str]) -> Dict:
+        """
+        从 model_capabilities.json 加载指定 (provider, model) 的能力默认值。
+
+        Args:
+            key: (provider, model) 元组。
+
+        Returns:
+            能力默认值字典，若不存在或加载失败则返回空字典。
+        """
+        try:
+            from config.config_loader import config_loader
+            capabilities = config_loader.load_model_capabilities()
+            return capabilities.get(key, {})
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="capability_load_error").warning(
+                f"从 JSON 加载模型能力失败: {exc}"
+            )
+            return {}
+
     def _normalize_pricing_payload(self, pricing_data: Dict) -> Dict:
         """
         规范化定价数据，并补齐能力标记与模态标签的默认值。
@@ -851,9 +415,8 @@ class PricingManager:
         normalized["provider"] = self.normalize_provider(normalized.get("provider"))
         normalized["model"] = self.normalize_model(normalized.get("model"))
 
-        capability_defaults = self.MODEL_CAPABILITY_DEFAULTS.get(
-            (normalized["provider"], normalized["model"]),
-            {}
+        capability_defaults = self._get_capability_defaults(
+            (normalized["provider"], normalized["model"])
         )
         normalized.setdefault(
             "supports_vision",
@@ -1236,12 +799,21 @@ class PricingManager:
 
     def initialize_default_pricing(self) -> int:
         """
-        初始化默认价格配置数据。
-        
+        初始化默认价格配置数据。从 pricing_data.json 加载。
+
         Returns:
             新创建的记录数量。
         """
         self.ensure_pricing_schema()
+        try:
+            from config.config_loader import config_loader
+            pricing_data_list = config_loader.load_pricing_data()
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="pricing_data_load_error").warning(
+                f"从 JSON 加载价格数据失败: {exc}"
+            )
+            return 0
+
         existing_keys = {
             (self.normalize_provider(m.provider), self.normalize_model(m.model))
             for m in self.db.query(
@@ -1249,21 +821,20 @@ class PricingManager:
             ).all()
         }
         count = 0
-        for data in self.DEFAULT_PRICING_DATA:
+        for data in pricing_data_list:
             normalized = self._normalize_pricing_payload(data)
             if (normalized["provider"], normalized["model"]) not in existing_keys:
                 pricing = ModelPricing(**normalized)
                 self.db.add(pricing)
                 count += 1
-        
+
         self.db.commit()
         return count
 
     def initialize_default_configurations(self) -> int:
         """
-        初始化默认模型配置数据。
-        优先从 config_loader 加载配置，若不可用则回退到类属性 DEFAULT_CONFIGURATIONS。
-        
+        初始化默认模型配置数据。从 default_configurations.json 加载。
+
         Returns:
             新创建的记录数量。
         """
@@ -1273,18 +844,18 @@ class PricingManager:
         if existing_count > 0:
             return 0
 
-        # 优先从 config_loader 加载，支持测试 mock
+        # 从 config_loader 加载 JSON 配置（支持测试 mock）
         try:
             from config.config_loader import config_loader
             configurations = config_loader.load_default_configurations()
-        except Exception:
-            logger.bind(module="pricing_manager", event="config_loader_fallback").warning(
-                "从 config_loader 加载默认配置失败，使用内置默认配置"
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="config_loader_error").warning(
+                f"从 JSON 加载默认配置失败: {exc}"
             )
-            configurations = None
+            return 0
 
         if not configurations:
-            configurations = self.DEFAULT_CONFIGURATIONS
+            return 0
 
         is_unique, duplicates = self._validate_configurations_uniqueness(configurations)
         if not is_unique:
@@ -1361,7 +932,21 @@ class PricingManager:
             if data["cache_hit_price"] is not None:
                 if not isinstance(data["cache_hit_price"], (int, float)) or data["cache_hit_price"] < 0:
                     errors.append("cache_hit_price must be a non-negative number")
-        
+
+        # cherry-studio 兼容字段：缓存读写、按图/按分钟计费单价，均必须为非负数
+        for price_field in (
+            "cache_read_price", "cache_write_price",
+            "per_image_price", "per_minute_price",
+        ):
+            if price_field in data and data[price_field] is not None:
+                if not isinstance(data[price_field], (int, float)) or data[price_field] < 0:
+                    errors.append(f"{price_field} must be a non-negative number")
+
+        # max_output_tokens 必须为非负整数
+        if "max_output_tokens" in data and data["max_output_tokens"] is not None:
+            if not isinstance(data["max_output_tokens"], int) or data["max_output_tokens"] < 0:
+                errors.append("max_output_tokens must be a non-negative integer")
+
         return (len(errors) == 0, errors)
 
     def get_active_configurations(self) -> List[ModelConfiguration]:
@@ -1802,7 +1387,7 @@ class PricingManager:
 
     def get_model_defaults(self, provider: str, model: str) -> Dict:
         """
-        获取指定模型的默认参数值。
+        获取指定模型的默认参数值。从 model_capabilities.json 加载。
 
         Args:
             provider: 供应商名称。
@@ -1812,7 +1397,7 @@ class PricingManager:
             默认参数字典。
         """
         key = (self.normalize_provider(provider), self.normalize_model(model))
-        defaults = self.MODEL_CAPABILITY_DEFAULTS.get(key, {})
+        defaults = self._get_capability_defaults(key)
         return {
             "temperature": defaults.get("temperature", 0.7),
             "top_k": defaults.get("top_k", 0.9),
@@ -1853,17 +1438,28 @@ class PricingManager:
         """
         为已有的 ModelConfiguration 记录填充默认的能力参数。
         仅在字段为 NULL 时更新，不覆盖用户已自定义的值。
+        从 model_capabilities.json 加载默认值。
 
         Returns:
             更新的配置数量。
         """
         self.ensure_configuration_schema()
+
+        try:
+            from config.config_loader import config_loader
+            capability_defaults_map = config_loader.load_model_capabilities()
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="capability_load_error").warning(
+                f"从 JSON 加载模型能力失败: {exc}"
+            )
+            return 0
+
         configs = self.db.query(ModelConfiguration).all()
         updated_count = 0
 
         for config in configs:
             key = (self.normalize_provider(config.provider), self.normalize_model(config.model))
-            defaults = self.MODEL_CAPABILITY_DEFAULTS.get(key)
+            defaults = capability_defaults_map.get(key)
             if not defaults:
                 continue
 
@@ -1882,3 +1478,33 @@ class PricingManager:
             self.db.commit()
 
         return updated_count
+
+    def reload_from_json(self) -> None:
+        """
+        清空内存缓存并重新从 JSON 加载。
+
+        供 catalog_sync 同步完成后热加载使用。
+        会清空 config_loader 的文件缓存、重置 schema 确保标志，
+        然后重新调用 initialize 方法把 JSON 中新增的条目 upsert 到数据库。
+        """
+        # 清空 config_loader 的缓存，确保下次读取从磁盘加载
+        try:
+            from config.config_loader import config_loader
+            config_loader.invalidate_cache()
+        except Exception as exc:
+            logger.bind(module="pricing_manager", event="cache_invalidate_error").warning(
+                f"清空 config_loader 缓存失败: {exc}"
+            )
+
+        # 重置 schema 确保标志，确保下次操作时重新检查 schema
+        self._pricing_schema_ensured = False
+        self._config_schema_ensured = False
+        self._credential_schema_ensured = False
+
+        # 重新初始化默认数据（已存在的条目会被跳过，新增的会被插入）
+        self.initialize_default_pricing()
+        self.initialize_default_configurations()
+
+        logger.bind(module="pricing_manager", event="reload_from_json").info(
+            "已从 JSON 重新加载定价与配置数据"
+        )

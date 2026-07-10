@@ -1,6 +1,8 @@
 import api from '@/shared/api/api'
 
 // 用量记录（与 billing.ts 中 BillingUsage 等价，取并集为权威定义）
+// 新增字段（cache_read_tokens / cache_write_tokens / thoughts_tokens / method / estimated / extra_data）
+// 由后端 usage_tracker.record_llm_call() 写入，对应 Task 7 的前端展示增强
 export interface UsageRecord {
   call_id: string
   user_id: string | null
@@ -17,9 +19,24 @@ export interface UsageRecord {
   cache_hit: boolean
   duration_ms: number
   created_at: string
+  // 新增字段：缓存与思考 token 明细（后端写入 metadata，API 可能返回）
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  cache_read_cost?: number
+  cache_write_cost?: number
+  thoughts_tokens?: number
+  // 计数方法：api_usage=API返回 / stream=流式累计 / tiktoken=本地分词 / ratio=字符比率
+  method?: 'api_usage' | 'stream' | 'tiktoken' | 'ratio'
+  // 是否为估算值（true=估算，false=精确）
+  estimated?: boolean
+  // 附加数据（后端 metadata.extra_data，用于审计与诊断）
+  extra_data?: Record<string, unknown>
 }
 
 // 模型定价（合并自 billing.ts 的 ModelPrice，覆盖多模态字段）
+// 新增字段（cache_read_price / cache_write_price / per_image_price / per_minute_price /
+// owned_by / family / capabilities / input_modalities / output_modalities / max_output_tokens）
+// 对应后端 ModelPricing 表扩展，由 catalog_sync 从 models.dev / openrouter.ai 同步
 export interface ModelPricing {
   id: number
   provider: string
@@ -35,6 +52,41 @@ export interface ModelPricing {
   input_modality?: string[]
   output_modality?: string[]
   updated_at: string | null
+  // 新增字段：缓存定价（每百万 token）
+  cache_read_price?: number
+  cache_write_price?: number
+  // 新增字段：多模态计量定价
+  per_image_price?: number
+  per_minute_price?: number
+  // 新增字段：模型归属与族系（用于目录分组与筛选）
+  owned_by?: string
+  family?: string
+  // 新增字段：能力标签与模态支持（catalog_sync 同步）
+  capabilities?: string[]
+  input_modalities?: string[]
+  output_modalities?: string[]
+  max_output_tokens?: number
+}
+
+// 模型目录同步结果（POST /api/billing/sync-catalog 返回体）
+// 对应后端 billing.routers.sync_model_catalog，admin 权限触发
+export interface CatalogSyncResult {
+  // 后端返回 success 字段表示同步是否成功
+  success?: boolean
+  // 新增的模型数量
+  added: number
+  // 更新的模型数量
+  updated: number
+  // 失效（标记为 inactive）的模型数量
+  removed: number
+  // 跳过未变更的模型数量
+  skipped: number
+  // 同步完成时间（ISO 8601 字符串）
+  synced_at: string
+  // 是否为 dry-run 模式（仅模拟不落库）
+  dry_run?: boolean
+  // 可选的人类可读消息
+  message?: string
 }
 
 // 预算状态（合并自 billing.ts 的 Budget，budget_type 收敛为 union 类型）
@@ -192,4 +244,18 @@ export const billingAPI = {
 
   updateRetention: (data: RetentionUpdate) =>
     api.post('/billing/retention', data),
+
+  // 触发模型目录同步（admin 权限）
+  // 从 models.dev / openrouter.ai 拉取最新模型列表与定价，合并写入本地定价表
+  // 返回同步统计：added / updated / removed / skipped / synced_at
+  syncModelCatalog: () =>
+    api.post<CatalogSyncResult>('/billing/sync-catalog'),
+}
+
+// 顶层函数形式的同步入口，便于在非 billingAPI 命名空间下复用
+// 调用方式：const result = await syncModelCatalog()
+// 错误处理：失败时抛出 AxiosError，由调用方捕获并展示 toast
+export async function syncModelCatalog(): Promise<CatalogSyncResult> {
+  const response = await api.post<CatalogSyncResult>('/billing/sync-catalog')
+  return response.data
 }

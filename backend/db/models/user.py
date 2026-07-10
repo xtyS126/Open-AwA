@@ -137,13 +137,20 @@ class UserProfile(Base):
     """
     用户五层画像模型，存储从行为中推断的用户特征。
     五层结构：surface（行为表象）/interest（兴趣偏好）/role（角色认同）/values（价值驱动）/core（核心人格）。
+
+    profile_json 字段为 SoulEngine 持久化层使用的 OnionProfile JSON 序列化结果，
+    与 profile_data（旧字段，保留以向后兼容）并存，新写入路径只使用 profile_json。
     """
     __tablename__ = "user_profiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
-    # 五层画像 JSON 数据
+    # 五层画像 JSON 数据（旧字段，保留以向后兼容）
     profile_data: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # OnionProfile 序列化后的 JSON 文本（SoulEngine 持久化层主存储字段）
+    profile_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}", server_default="{}")
+    # 画像版本号，每次更新递增（乐观锁/缓存失效依据）
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     # MBTI 类型（如 INTJ、ENFP 等）
     mbti: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     # 认知风格（如 analytical、creative、practical 等）
@@ -317,3 +324,28 @@ class ProfileExtractionLog(Base):
 
     # 扩展元数据
     log_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
+
+class ProfileExtractionState(Base):
+    """
+    用户画像提取状态模型，存储每用户的提取计数器、触发阈值与探针标志。
+
+    与 ProfileExtractionLog（每次提取的日志记录）不同，本表为每用户单行状态记录，
+    用于支撑 PRD 中"低置信度/新兴趣/周期性复审"三类探针触发逻辑的状态机。
+    """
+    __tablename__ = "profile_extraction_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True, index=True, nullable=False,
+    )
+    # 自上次提取以来的对话轮数计数器
+    turns_since_last_extract: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # 触发提取的轮数阈值（达到后自动触发提取）
+    n_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default="5")
+    # 上次提取时间（用于周期性复审判断）
+    last_extracted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # 探针触发标志位 JSON：
+    # {"low_confidence": True, "new_interest": True, "periodic_review": False}
+    probe_flags: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")

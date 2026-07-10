@@ -68,6 +68,8 @@ const ruRU: Record<string, string> = {
   "sidebar.lightMode": "Светлая тема",
   "sidebar.nightMode": "Тёмная",
   "sidebar.dayMode": "Светлая",
+  "sidebar.issueFeedback": "Обратная связь",
+  "sidebar.userProfile": "Мой профиль",
   "sidebar.tts": "TTS Голос",
   "sidebar.agents": "Агенты",
   "sidebar.roles": "Управление ролями",
@@ -1091,6 +1093,29 @@ const ruRU: Record<string, string> = {
   "search.indexFailed": "Ошибка индексации",
   "search.indexRequestFailed": "Ошибка: {error}",
   "pageLayout.app": "Приложение",
+
+  // ===== Обратная связь =====
+  "issueFeedback.title": "Обратная связь",
+  "issueFeedback.typeLabel": "Тип",
+  "issueFeedback.typeBug": "Отчёт об ошибке",
+  "issueFeedback.typeSuggestion": "Предложение функции",
+  "issueFeedback.typeQuestion": "Вопрос по использованию",
+  "issueFeedback.typeOther": "Другое",
+  "issueFeedback.titleLabel": "Заголовок",
+  "issueFeedback.titlePlaceholder": "Кратко опишите проблему",
+  "issueFeedback.contentLabel": "Содержание",
+  "issueFeedback.contentPlaceholder": "Подробно опишите проблему или предложение",
+  "issueFeedback.currentPage": "Текущая страница",
+  "issueFeedback.submit": "Отправить",
+  "issueFeedback.cancel": "Отмена",
+  "issueFeedback.close": "Закрыть",
+  "issueFeedback.submitSuccess": "Отзыв отправлен, спасибо за поддержку",
+  "issueFeedback.submitFailed": "Не удалось отправить, попробуйте позже",
+  "issueFeedback.titleRequired": "Введите заголовок",
+  "issueFeedback.contentRequired": "Введите содержание",
+  "issueFeedback.discardDraftConfirm": "Отклонить несохранённый черновик?",
+  "issueFeedback.discardDraft": "Отклонить",
+  "issueFeedback.keepDraft": "Сохранить черновик",
 };
 
 export default ruRU;
